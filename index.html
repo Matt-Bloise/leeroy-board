@@ -357,7 +357,7 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
         <fieldset id="fs-meet">
           <legend>Launch-night meeting point</legend>
           <div class="opts" id="opts-meet"></div>
-          <div class="writein"><input id="meet-other" name="meet-other" type="text" maxlength="40" placeholder="Write in a place" aria-label="Write in a meeting place" disabled></div>
+          <div class="writein"><input id="meet-place" name="meet-place" type="text" maxlength="40" placeholder="Write in a place" aria-label="Write in a meeting place" disabled></div>
           <div class="tally" id="tally-meet"></div>
         </fieldset>
         <fieldset id="fs-rsvp">
@@ -753,8 +753,22 @@ function buildSignupControls() {
   const sel = $("#as");
   sel.replaceChildren(h("option", { value: "", text: "Not saying" }), ...D.party.members.map((m) => h("option", { value: m.name, text: `${m.name}, ${m.class}` })));
   sel.addEventListener("change", () => { RT.mine.as = sel.value || null; try { localStorage.setItem("board-as", sel.value); } catch (e) {} save("as"); pushPresence(); });
-  const other = $("#meet-other");
-  other.addEventListener("change", () => { RT.mine.meet_other = cleanText(other.value); if (RT.mine.meet_other) { RT.mine.meet = "other"; $("#meet-other").value = RT.mine.meet_other; applyMine(); } save(["meet", "meet_other"]); });
+  const other = $("#meet-place"); /* not "meet-other": that id belongs to the Write-in radio */
+  let pause = 0;
+  const commit = (typing) => {
+    clearTimeout(pause); pause = 0;
+    const v = cleanText(other.value);
+    if (!typing && other.value !== v) other.value = v;
+    if (v === (RT.mine.meet_other || "")) return;
+    RT.mine.meet_other = v;
+    if (v) { RT.mine.meet = "other"; applyMine(); }
+    save(["meet", "meet_other"]);
+  };
+  other.addEventListener("input", () => { clearTimeout(pause); pause = setTimeout(() => commit(true), 1200); });
+  other.addEventListener("change", () => commit(false));
+  other.addEventListener("blur", () => commit(false));
+  other.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(false); } });
+  RT.writeInPending = () => pause !== 0;
   $("#signup").addEventListener("submit", (e) => e.preventDefault());
   try { const as = localStorage.getItem("board-as"); if (as && memberByName(as)) { sel.value = as; RT.mine.as = as; } } catch (e) {}
   renderTallies();
@@ -766,7 +780,7 @@ function setEnabled(on) {
 }
 function applyMine() {
   for (const q of Object.keys(Q)) for (const [v] of Q[q]) { const el = $(`#${q}-${v}`); if (el) el.checked = RT.mine[q] === v; }
-  if (document.activeElement !== $("#meet-other")) $("#meet-other").value = RT.mine.meet_other || "";
+  if (document.activeElement !== $("#meet-place")) $("#meet-place").value = RT.mine.meet_other || "";
   if (RT.mine.as !== undefined && document.activeElement !== $("#as")) $("#as").value = RT.mine.as || "";
 }
 let writeChain = Promise.resolve();
@@ -780,6 +794,7 @@ function save(field) {
   const create = () => ref.set(full()).then(() => { RT.created = true; });
   /* update rejects invalid_argument when the document is gone (deleted elsewhere); write it whole instead. */
   const attempt = () => (RT.signups.has(RT.myId) || RT.created ? ref.update(patch).catch((err) => { if (err && err.code === "invalid_argument") return create(); throw err; }) : create());
+  RT.pending = (RT.pending || 0) + 1;
   writeChain = writeChain.then(() => attempt().catch((err) => {
     const code = err && err.code;
     if (code === "unavailable") return new Promise((r) => setTimeout(r, 400 + Math.random() * 600)).then(attempt);
@@ -789,7 +804,7 @@ function save(field) {
     if (code === "quota_exceeded") setStatus("The board's storage is full, so this answer was not saved.");
     else if (code === "invalid_argument" || code === "not_granted" || code === "revoked" || code === "capability_disabled" || code === "capability_removed") { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus("This board is read-only for you, so answers can't be saved here. Ask in chat instead."); }
     else setStatus("That answer did not save. Try once more in a moment.");
-  });
+  }).then(() => { RT.pending -= 1; });
 }
 let tallyToken = 0;
 async function renderTallies() {
@@ -823,7 +838,8 @@ async function renderPresence() {
   wrap.replaceChildren(...peers.map((p) => {
     const as = p.presence && typeof p.presence.as === "string" ? memberByName(p.presence.as) : null;
     const name = as ? as.name : "a guest";
-    return h("span", { class: `peer${p.isMe ? " me" : ""}`, style: `--pc: ${classVar(as && as.class_key)}`, title: p.isMe ? `${name} (you)` : name, role: "img", "aria-label": p.isMe ? `${name} (you)` : name });
+    const who = p.isMe ? (p.sameTab ? `${name} (you)` : `${name} (you, another tab)`) : name;
+    return h("span", { class: `peer${p.isMe && p.sameTab ? " me" : ""}`, style: `--pc: ${classVar(as && as.class_key)}`, title: who, role: "img", "aria-label": who });
   }));
   const me = peers.find((p) => p.isMe && p.sameTab) || peers.find((p) => p.isMe);
   $("#presence-text").replaceChildren(peers.length === 1 ? "At the board now: just you" : `At the board now: ${peers.length}`, me ? h("span", { class: "peer-you", text: " · ringed dot is you" }) : "");
@@ -843,9 +859,13 @@ async function startRuntime() {
   if (user) { try { RT.myId = await user.id(); } catch (e) { RT.myId = null; } }
   if (!db) { setStatus("Sign-ups are read-only on this view: the shared store is not available here."); renderTallies(); return; }
   setStatus(RT.myId ? "Loading saved answers." : "Sign-ups are read-only for you: this view has no signed-in identity. Answers from others still show.");
+  const fromDoc = (d) => ({ pack: d.pack, meet: d.meet, meet_other: d.meet_other, rsvp: d.rsvp, as: d.as || RT.mine.as || null });
   db.collection("signups").onSnapshot((snap) => {
     RT.signups = new Map(snap.docs.filter((d) => d.exists).map((d) => [d.id, d.data() || {}])); RT.loaded = true;
-    if (RT.myId && RT.signups.has(RT.myId)) RT.seenMine = true;
+    if (RT.myId && RT.signups.has(RT.myId)) {
+      RT.seenMine = true;
+      if (RT.ready && !RT.pending && !(RT.writeInPending && RT.writeInPending())) { RT.mine = fromDoc(RT.signups.get(RT.myId)); applyMine(); }
+    }
     else if (RT.seenMine) {
       /* This viewer's answers were removed elsewhere: show the empty state, keep only the name picked on this device. */
       RT.seenMine = false; RT.created = false; RT.mine = { as: RT.mine.as || null }; applyMine();
@@ -853,7 +873,7 @@ async function startRuntime() {
     if (!RT.ready && RT.myId && !RT.blocked) {
       /* First snapshot: load this viewer's saved answers, then switch the controls on, so a click never writes over them. */
       const d = RT.signups.get(RT.myId);
-      if (d) RT.mine = { pack: d.pack, meet: d.meet, meet_other: d.meet_other, rsvp: d.rsvp, as: d.as || RT.mine.as || null };
+      if (d) RT.mine = fromDoc(d);
       RT.ready = true; RT.readOnly = false; setEnabled(true); applyMine(); pushPresence();
       setStatus("Pick an answer and it saves on its own. Only the person who wrote an answer can change it.");
     }
