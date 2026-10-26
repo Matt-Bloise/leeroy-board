@@ -1,0 +1,58 @@
+{
+ "generated": "2026-10-26T22:14:06.276Z",
+ "sources": [
+  "bot/data/signups.json",
+  "bot/signups.js"
+ ],
+ "present": true,
+ "updated": null,
+ "options": {
+  "meet": [
+   "Valley of Strength",
+   "The Crossroads"
+  ]
+ },
+ "entries": [],
+ "tallies": {
+  "pack": {
+   "yes": {
+    "count": 0,
+    "names": []
+   },
+   "no": {
+    "count": 0,
+    "names": []
+   }
+  },
+  "meet": {
+   "Valley of Strength": {
+    "count": 0,
+    "names": []
+   },
+   "The Crossroads": {
+    "count": 0,
+    "names": []
+   },
+   "other": {
+    "count": 0,
+    "names": [],
+    "places": []
+   }
+  },
+  "rsvp": {
+   "in": {
+    "count": 0,
+    "names": []
+   },
+   "maybe": {
+    "count": 0,
+    "names": []
+   },
+   "out": {
+    "count": 0,
+    "names": []
+   }
+  },
+  "total": 0
+ }
+}

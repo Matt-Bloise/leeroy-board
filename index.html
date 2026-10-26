@@ -1,8 +1,13 @@
 <meta name="robots" content="noindex,nofollow,noarchive">
 <title>Dungeons and Drinking Board</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans+SC:wght@500;700&family=Grenze+Gotisch:wght@500;700&display=swap">
 <style>
+/* Fonts are self-hosted (fonts/, SIL OFL, latin subsets from Google Fonts) so the page loads no third-party host. */
+@font-face { font-family: "Alegreya"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("fonts/alegreya-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Alegreya"; font-style: italic; font-weight: 400; font-display: swap; src: url("fonts/alegreya-italic-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sans-sc-500-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/alegreya-sans-sc-700-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 700; font-display: swap; src: url("fonts/grenze-gotisch-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 /* Layout: a night tavern wall. Dark oak ground, parchment slips pinned on it, the five class colors as the only light sources. One column on phones, a two-up grid from tablet width. */
 :root {
   color-scheme: dark;
@@ -243,6 +248,13 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .writein { display: flex; gap: 8px; flex-wrap: wrap; }
 .writein input, .signup select { font: inherit; font-size: 0.95rem; padding: 6px 10px; border: 1px solid var(--ink-soft); border-radius: 4px; background: var(--parchment-2); color: var(--ink); min-width: 0; flex: 1 1 12rem; max-width: 100%; }
 .picker-note { font-size: 0.88rem; color: var(--ink-soft); }
+[hidden] { display: none !important; }
+.gate { position: relative; z-index: 1; min-height: 70vh; display: grid; place-items: center; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px; }
+.gate-card { display: grid; gap: 12px; text-align: center; max-width: 30rem; padding: 28px 24px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
+.gate-card h1 { font-size: var(--step-3); color: var(--parchment); }
+.gate-card p { color: var(--text-dim); font-size: var(--step-1); }
+.dsu { display: grid; gap: 12px; }
+.dsu h4 { font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); margin: 0; font-weight: 700; }
 .status { font-size: 0.92rem; color: var(--wax); font-style: italic; }
 
 /* librarian */
@@ -270,7 +282,14 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
 </style>
 
 <canvas id="wisps" aria-hidden="true"></canvas>
-<div class="wrap">
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <div class="kicker">The Living Board</div>
+    <h1>Dungeons and Drinking</h1>
+    <p>Open this board from Discord (the rocket icon in #wow-forever).</p>
+  </div>
+</div>
+<div class="wrap" id="board" hidden>
   <header class="hero" id="top">
     <div class="kicker" id="kicker">The Living Board</div>
     <h1>Dungeons and Drinking</h1>
@@ -282,7 +301,7 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
     </div>
     <ol class="timeline" id="timeline"></ol>
     <div class="presence" id="presence">
-      <span id="presence-text">Who is at the board shows here when it is open inside Claude.</span>
+      <span id="presence-text">Who is at the board shows here.</span>
       <div class="peers" id="peers"></div>
     </div>
   </header>
@@ -339,11 +358,19 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
     </section>
     <section aria-labelledby="h-signup">
       <div class="section-head">
-        <h2 id="h-signup">Sign the board</h2>
-        <p>Three questions nobody has answered yet. An answer here shows to everyone who opens this board.</p>
+        <h2 id="h-signup">Launch-night sign-ups</h2>
+        <p>Three questions for launch night, answered with the buttons on the sign-up card in Discord.</p>
       </div>
-      <form class="slip signup" id="signup" autocomplete="off">
-        <p class="status" id="signup-status">Sign-ups switch on when this board is open inside Claude.</p>
+      <div class="slip signup" id="discord-signups">
+        <h3>From Discord</h3>
+        <div class="dsu" id="dsu-body"><p class="loading">Reading the sign-up card.</p></div>
+        <p class="picker-note" id="dsu-stamp"></p>
+        <p class="picker-note">Buttons live in #wow-forever; this page follows them within a minute.</p>
+      </div>
+      <form class="slip signup" id="signup" autocomplete="off" hidden>
+        <h3>On this page</h3>
+        <p class="picker-note">Answers here stay on this page and do not reach Discord.</p>
+        <p class="status" id="signup-status">Loading the page's own sign-ups.</p>
         <fieldset>
           <legend>Which of the five are you?</legend>
           <select id="as" name="as" aria-label="Which of the five are you" disabled></select>
@@ -731,10 +758,10 @@ function renderLibrarian() {
 /* ---------- footer ---------- */
 function renderFooter() {
   const f = $("#footer"); f.replaceChildren();
-  const stamp = ["party", "timeline", "client", "stats"].map((k) => D[k].generated).sort().pop();
+  const stamp = ["party", "timeline", "client", "stats", "signups"].filter((k) => D[k]).map((k) => D[k].generated).sort().pop();
   f.append(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: `${stamp.replace("T", " ").slice(0, 16)} UTC` }), "."),
-    h("p", { text: `Read from four places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, and the bot's log.` }),
+    h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
     h("p", { text: "Spell numbers are the game's own values at the level cap and can move with beta hotfixes. A \"board\" tag means written on the group's cards; \"chat\" means said in Discord and noted down." }));
 }
 
@@ -773,7 +800,7 @@ function buildSignupControls() {
   try { const as = localStorage.getItem("board-as"); if (as && memberByName(as)) { sel.value = as; RT.mine.as = as; } } catch (e) {}
   renderTallies();
 }
-function cleanText(t) { return String(t || "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "").trim().slice(0, 40).replace(/[�-�]$/, ""); }
+function cleanText(t) { return String(t || "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "").trim().slice(0, 40).replace(/[\ud800-\udbff]$/, ""); }
 function setStatus(text) { $("#signup-status").textContent = text; }
 function setEnabled(on) {
   document.querySelectorAll("#signup input, #signup select").forEach((x) => { x.disabled = !on; });
@@ -845,13 +872,57 @@ async function renderPresence() {
   $("#presence-text").replaceChildren(peers.length === 1 ? "At the board now: just you" : `At the board now: ${peers.length}`, me ? h("span", { class: "peer-you", text: " · ringed dot is you" }) : "");
 }
 
+/* ---------- presence inside Discord (Embedded App SDK, no scopes) ---------- */
+let discordPoll = 0;
+function startDiscordPresence(sdk) {
+  const poll = async () => {
+    let list = [];
+    try { const r = await sdk.commands.getActivityInstanceConnectedParticipants(); list = (r && r.participants) || []; }
+    catch (e) { $("#presence-text").textContent = "Presence is not available right now."; return; }
+    const wrap = $("#peers");
+    wrap.replaceChildren(...list.map((p) => {
+      const name = String(p.nickname || p.global_name || p.username || "someone");
+      const m = memberByName(name);
+      return h("span", { class: "peer", style: `--pc: ${classVar(m && m.class_key)}`, title: name, role: "img", "aria-label": name });
+    }));
+    $("#presence-text").textContent = list.length === 1 ? "In this Activity now: one person" : `In this Activity now: ${list.length}`;
+  };
+  poll();
+  clearInterval(discordPoll);
+  discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
+  /* Inside the Activity frame a plain link cannot leave Discord; hand external links to the client instead. */
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("a[href]");
+    if (!a || !/^https?:/i.test(a.getAttribute("href"))) return;
+    e.preventDefault();
+    sdk.commands.openExternalLink({ url: a.href }).catch(() => {});
+  });
+}
+
+/* ---------- sign-ups from Discord (data/signups.json, written by the bot) ---------- */
+function renderDiscordSignups() {
+  const S = D.signups, body = $("#dsu-body");
+  if (!S) { body.replaceChildren(h("p", { text: "The Discord sign-ups did not load." })); $("#dsu-stamp").textContent = ""; return; }
+  const T = S.tallies;
+  const row = (slot, label, extra) => h("div", { class: "tally" }, h("b", { text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || slot.names.join(", ")) : "nobody yet");
+  const groups = [
+    ["Pack", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
+    ["Meeting point", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
+    ["Launch night", [row(T.rsvp.in, "In"), row(T.rsvp.maybe, "Maybe"), row(T.rsvp.out, "Out")]],
+  ];
+  body.replaceChildren(...groups.map(([title, rows]) => h("div", { class: "tally" }, h("h4", { text: title }), ...rows)));
+  $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${dtFull.format(new Date(S.updated))}.` : "Nobody has clicked the card yet.";
+}
+
 /* ---------- runtime ---------- */
 async function startRuntime() {
   const c = window.claude;
-  if (!c || typeof c.use !== "function") { setStatus("Sign-ups switch on when this board is open inside Claude. Everything else on the page works here."); return; }
+  if (!c || typeof c.use !== "function") return;
   const use = (n) => Promise.resolve().then(() => c.use(n)).catch(() => null);
   const [db, user, room] = await Promise.all([use("db"), use("user"), use("room")]);
   RT.db = db; RT.user = user; RT.room = room; RT.tried = true;
+  /* The in-page sign-ups exist only where the claude.ai store is present (the owner preview); elsewhere the Discord panel stands alone. */
+  if (db) $("#signup").hidden = false;
   if (room) {
     room.onPeers((ch) => { RT.peers = ch.peers; renderPresence(); }, () => { RT.room = null; $("#peers").replaceChildren(); $("#presence-text").textContent = "Presence is not available on this view."; });
     pushPresence();
@@ -922,21 +993,50 @@ function startWisps() {
 }
 
 /* ---------- boot ---------- */
-async function boot() {
+async function boot(mode, sdk) {
+  $("#gate").hidden = true;
+  $("#board").hidden = false;
   try {
     const names = ["party", "timeline", "client", "stats"];
     const got = await Promise.all(names.map((n) => fetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })));
     names.forEach((n, i) => { D[n] = got[i]; });
+    D.signups = await fetch("data/signups.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   } catch (e) {
     $("#clock-label").textContent = "The data files did not load";
     $("#footer").textContent = `Could not read the board's data: ${e.message}. The page needs its data folder published beside it.`;
     return;
   }
-  const steps = [renderHero, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, buildSignupControls];
+  const steps = [renderHero, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
   for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
-  startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
+  if (mode === "discord") startDiscordPresence(sdk);
+  else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 startWisps();
-boot();
+/* The board renders only through start(): from the Discord gate below, or as the owner preview. */
+let started = false;
+window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); } });
 })();
+</script>
+<script type="module">
+/* Gate: the board renders inside Discord only. The Embedded App SDK is vendored (vendor/, see VENDOR.md) and loaded by a
+   relative import, so the Activity loads nothing from outside its own URL mapping. Outside Discord the constructor throws
+   (no frame_id) or ready() never settles, and the gate stays. The owner preview skips the gate with ?preview=1 or #preview,
+   but only on claude.ai (whose artifact frame is served from a claudeusercontent.com host and receives only the #anchor)
+   or on a local host. */
+const CLIENT_ID = "1561857940174938114";
+const host = location.hostname;
+const previewHost = host === "claude.ai" || host.endsWith(".claude.ai") || host.endsWith(".claudeusercontent.com") || host === "localhost" || host === "127.0.0.1";
+const previewFlag = new URLSearchParams(location.search).get("preview") === "1" || location.hash === "#preview";
+if (previewHost && previewFlag) {
+  window.__board.start("preview");
+} else {
+  try {
+    const { DiscordSDK } = await import("./vendor/embedded-app-sdk.mjs");
+    const sdk = new DiscordSDK(CLIENT_ID);
+    await sdk.ready();
+    window.__board.start("discord", sdk);
+  } catch (e) {
+    /* stay on the gate */
+  }
+}
 </script>
