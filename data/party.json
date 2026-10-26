@@ -1,0 +1,245 @@
+{
+ "generated": "2026-10-26T21:32:43.032Z",
+ "sources": [
+  "notes/build-board-card.mjs",
+  "notes/build-decisions-card.mjs",
+  "wiki/pages/races/overview.md"
+ ],
+ "party": "Dungeons and Drinking",
+ "extraction": "build-board-card.mjs and build-decisions-card.mjs run in node:vm with a stub fs (writes captured, never written); see build-data.mjs header",
+ "faction": "Horde",
+ "ruleset": "Normal",
+ "members": [
+  {
+   "name": "Santa",
+   "class_key": "druid",
+   "class": "Druid",
+   "race": "Tauren",
+   "spec": "Feral, bear tank",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "tank",
+   "role_detail": null,
+   "color": "#ff7c0a",
+   "start_zone": "Mulgore",
+   "board_line": "Tauren Feral Druid, bear tank",
+   "professions": [
+    {
+     "name": "Leatherworking",
+     "source": "board"
+    },
+    {
+     "name": "Skinning",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Bible Boi",
+   "class_key": "priest",
+   "class": "Priest",
+   "race": "Undead",
+   "spec": "Discipline",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "healer",
+   "role_detail": null,
+   "color": "#ffffff",
+   "start_zone": "Tirisfal Glades",
+   "board_line": "Undead Disc Priest",
+   "professions": [
+    {
+     "name": "Mining",
+     "source": "chat"
+    },
+    {
+     "name": "Engineering",
+     "source": "chat"
+    }
+   ]
+  },
+  {
+   "name": "Street Rat",
+   "class_key": "paladin",
+   "class": "Paladin",
+   "race": "Undead",
+   "spec": "Retribution to 40, then Ret/Holy",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "healer",
+   "role_detail": "damage until 40, healer from level 40",
+   "color": "#f48cba",
+   "start_zone": "Tirisfal Glades",
+   "board_line": "Undead Paladin: Ret to 40, then Ret/Holy",
+   "professions": [
+    {
+     "name": "Blacksmithing",
+     "source": "board"
+    },
+    {
+     "name": "Mining",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Bloise",
+   "class_key": "mage",
+   "class": "Mage",
+   "race": "Undead",
+   "spec": "Frost, Fire at 40",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "damage",
+   "role_detail": null,
+   "color": "#3fc7eb",
+   "start_zone": "Tirisfal Glades",
+   "board_line": "Undead Frost Mage, Fire at 40",
+   "professions": [
+    {
+     "name": "Tailoring",
+     "source": "chat"
+    },
+    {
+     "name": "Enchanting or Alchemy",
+     "source": "board",
+     "status": "undecided"
+    }
+   ]
+  },
+  {
+   "name": "Handsome Squidward",
+   "class_key": "warlock",
+   "class": "Warlock",
+   "race": "Troll",
+   "spec": "Demonology",
+   "spec_status": {
+    "status": "open",
+    "source": "chat"
+   },
+   "role": "damage",
+   "role_detail": null,
+   "color": "#8788ee",
+   "start_zone": "Durotar",
+   "board_line": "Troll Demo Warlock",
+   "professions": [
+    {
+     "name": "Enchanting",
+     "source": "chat"
+    },
+    {
+     "name": "Tailoring",
+     "source": "chat"
+    }
+   ]
+  }
+ ],
+ "settled": [
+  {
+   "text": "Faction: Horde (Bloise, Oct 26)",
+   "source": "board"
+  },
+  {
+   "text": "Ruleset: Normal (poll, Oct 25)",
+   "source": "board"
+  },
+  {
+   "text": "Tank: Santa · Healers: Bible Boi, plus Street Rat from level 40",
+   "source": "board"
+  }
+ ],
+ "settled_extra": [
+  {
+   "text": "Raids open Dec 9: Barrow Deeps 10, Hyjal 20, Onyxia 40",
+   "source": "decisions card"
+  }
+ ],
+ "open": [
+  {
+   "title": "Surname",
+   "text": "round two poll (Alehammer, Mugbreaker, Lastround or a write-in; closes Tue morning). Round one's single vote was not a decision.",
+   "links": [
+    {
+     "label": "poll",
+     "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347273251520579",
+     "message_id": "1564347273251520579"
+    }
+   ],
+   "source": "board"
+  },
+  {
+   "title": "Guild name",
+   "text": "poll, three days. Add names in chat.",
+   "links": [
+    {
+     "label": "poll",
+     "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347272420921356",
+     "message_id": "1564347272420921356"
+    }
+   ],
+   "source": "board"
+  },
+  {
+   "title": "Professions",
+   "text": "the options. Gap: Alchemy.",
+   "links": [
+    {
+     "label": "the options",
+     "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1562650603656712254",
+     "message_id": "1562650603656712254"
+    }
+   ],
+   "source": "board"
+  },
+  {
+   "title": "Launch-night meeting point",
+   "status": "nothing chosen",
+   "detail": "Three starting zones, one square. Classic habit: Orgrimmar's Valley of Strength; at 10, the Crossroads.",
+   "links": [],
+   "source": "decisions card"
+  },
+  {
+   "title": "Who holds a pack",
+   "status": "nobody listed",
+   "detail": "Pack buyers reserve up to 3 names each from Tue 4 PM ET; the surname only exists once one of them types it.",
+   "links": [],
+   "source": "decisions card"
+  },
+  {
+   "title": "Launch night",
+   "status": "the event",
+   "detail": "Wed Nov 4, 6 PM ET, voice in Fellowship. Who's on?",
+   "links": [
+    {
+     "label": "the event",
+     "url": "https://discord.com/events/782702097421565952/1562540569933119538",
+     "message_id": "1562540569933119538"
+    }
+   ],
+   "source": "decisions card"
+  }
+ ],
+ "polls": [
+  {
+   "title": "Surname",
+   "message_id": "1564347273251520579",
+   "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347273251520579",
+   "text": "round two poll (Alehammer, Mugbreaker, Lastround or a write-in; closes Tue morning). Round one's single vote was not a decision."
+  },
+  {
+   "title": "Guild name",
+   "message_id": "1564347272420921356",
+   "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347272420921356",
+   "text": "poll, three days. Add names in chat."
+  }
+ ],
+ "channel_url": "https://discord.com/channels/782702097421565952/1558663575495770193"
+}

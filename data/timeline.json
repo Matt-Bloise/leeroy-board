@@ -1,0 +1,44 @@
+{
+ "generated": "2026-10-26T21:32:43.035Z",
+ "sources": [
+  "notes/build-board-card.mjs",
+  ".claude/skills/leeroy/SKILL.md",
+  "wiki/pages/events/launch.md"
+ ],
+ "events": [
+  {
+   "key": "names_open",
+   "epoch": 1793131200,
+   "label": "Names open: pack holders create characters",
+   "detail": "up to 3 characters each, first come first served",
+   "format": "F"
+  },
+  {
+   "key": "sub_active",
+   "epoch": null,
+   "date": "2026-11-03",
+   "label": "Sub or Game Time active",
+   "detail": "by Nov 3",
+   "format": "D"
+  },
+  {
+   "key": "launch",
+   "epoch": 1793833200,
+   "label": "Launch",
+   "detail": "one global moment, voice in Fellowship",
+   "format": "F"
+  },
+  {
+   "key": "raids",
+   "epoch": 1796857200,
+   "label": "Raids open",
+   "detail": "Barrow Deeps 10, Hyjal 20, Onyxia 40, weekly reset",
+   "format": "D"
+  }
+ ],
+ "countdown_order": [
+  "names_open",
+  "launch",
+  "raids"
+ ]
+}

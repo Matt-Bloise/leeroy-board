@@ -1,0 +1,2155 @@
+{
+ "generated": "2026-10-26T21:32:43.063Z",
+ "sources": [
+  "wiki/data/db2-1.60.1.70532.json",
+  "wiki/scripts/db2-lib.mjs",
+  "wiki/pages/races/horde-racials.md",
+  "wiki/pages/systems/legacy.md",
+  "wiki/pages/classes/mage.md",
+  "wiki/pages/classes/priest.md",
+  "wiki/pages/classes/paladin.md",
+  "wiki/pages/classes/druid.md",
+  "wiki/pages/classes/warlock.md"
+ ],
+ "build": "1.60.1.70532",
+ "level": 60,
+ "formula": "wiki/scripts/db2-lib.mjs scaleEffect at level 60 (min/max = base x (1 -/+ variance/2) + per_level x levels past base, capped at the rank's max level); totals = per-tick x floor(duration / period)",
+ "classes": {
+  "Mage": [
+   {
+    "id": 25304,
+    "name": "Frostbolt",
+    "rank": "Rank 11",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 290,
+     "pct": 0
+    },
+    "cast_ms": 3000,
+    "cooldown": null,
+    "duration_ms": 9000,
+    "values": [
+     {
+      "label": "Frost damage",
+      "spell": 25304,
+      "effect": 1,
+      "mode": "range",
+      "min": 457,
+      "max": 493,
+      "level": 60
+     },
+     {
+      "label": "% slow",
+      "spell": 25304,
+      "effect": 0,
+      "mode": "abs",
+      "n": 40,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 1240047,
+    "name": "Ice Lance",
+    "rank": "Rank 6",
+    "learned": 56,
+    "cost": {
+     "type": "mana",
+     "amount": 160,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Frost damage",
+      "spell": 1240047,
+      "effect": 0,
+      "mode": "range",
+      "min": 137,
+      "max": 161,
+      "level": 60
+     },
+     {
+      "label": "% more vs Frozen",
+      "spell": 1240047,
+      "effect": 1,
+      "mode": "value",
+      "n": 200,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 1237313,
+    "name": "Frostfire Bolt",
+    "rank": "Rank 3",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 370,
+     "pct": 0
+    },
+    "cast_ms": 3000,
+    "cooldown": null,
+    "duration_ms": 9000,
+    "values": [
+     {
+      "label": "Frostfire damage",
+      "spell": 1237313,
+      "effect": 1,
+      "mode": "range",
+      "min": 270,
+      "max": 314,
+      "level": 60
+     },
+     {
+      "label": "Frostfire over time",
+      "spell": 1237313,
+      "effect": 2,
+      "mode": "total",
+      "n": 57,
+      "per_tick": 19,
+      "ticks": 3,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10161,
+    "name": "Cone of Cold",
+    "rank": "Rank 5",
+    "learned": 58,
+    "cost": {
+     "type": "mana",
+     "amount": 555,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 10000,
+     "field": "category_ms"
+    },
+    "duration_ms": 6000,
+    "values": [
+     {
+      "label": "Frost damage in a cone",
+      "spell": 10161,
+      "effect": 1,
+      "mode": "range",
+      "min": 328,
+      "max": 358,
+      "level": 60
+     },
+     {
+      "label": "% slow",
+      "spell": 10161,
+      "effect": 0,
+      "mode": "abs",
+      "n": 40,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10230,
+    "name": "Frost Nova",
+    "rank": "Rank 4",
+    "learned": 54,
+    "cost": {
+     "type": "mana",
+     "amount": 145,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 25000,
+     "field": "category_ms"
+    },
+    "duration_ms": 8000,
+    "values": [
+     {
+      "label": "Frost damage, then frozen",
+      "spell": 10230,
+      "effect": 0,
+      "mode": "range",
+      "min": 72,
+      "max": 79,
+      "level": 59
+     }
+    ]
+   },
+   {
+    "id": 13033,
+    "name": "Ice Barrier",
+    "rank": "Rank 4",
+    "learned": 58,
+    "cost": {
+     "type": "mana",
+     "amount": 480,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 30000,
+     "field": "category_ms"
+    },
+    "duration_ms": 60000,
+    "values": [
+     {
+      "label": "damage absorbed",
+      "spell": 13033,
+      "effect": 0,
+      "mode": "value",
+      "n": 819,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25306,
+    "name": "Fireball",
+    "rank": "Rank 12",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 410,
+     "pct": 0
+    },
+    "cast_ms": 3500,
+    "cooldown": null,
+    "duration_ms": 8000,
+    "values": [
+     {
+      "label": "Fire damage",
+      "spell": 25306,
+      "effect": 0,
+      "mode": "range",
+      "min": 425,
+      "max": 541,
+      "level": 60
+     },
+     {
+      "label": "Fire over time",
+      "spell": 25306,
+      "effect": 1,
+      "mode": "total",
+      "n": 60,
+      "per_tick": 15,
+      "ticks": 4,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 18809,
+    "name": "Pyroblast",
+    "rank": "Rank 8",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 440,
+     "pct": 0
+    },
+    "cast_ms": 6000,
+    "cooldown": null,
+    "duration_ms": 12000,
+    "values": [
+     {
+      "label": "Fire damage",
+      "spell": 18809,
+      "effect": 0,
+      "mode": "range",
+      "min": 520,
+      "max": 646,
+      "level": 60
+     },
+     {
+      "label": "Fire over time",
+      "spell": 18809,
+      "effect": 1,
+      "mode": "total",
+      "n": 212,
+      "per_tick": 53,
+      "ticks": 4,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10202,
+    "name": "Arcane Explosion",
+    "rank": "Rank 6",
+    "learned": 54,
+    "cost": {
+     "type": "mana",
+     "amount": 390,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Arcane damage around you",
+      "spell": 10202,
+      "effect": 0,
+      "mode": "range",
+      "min": 239,
+      "max": 258,
+      "level": 59
+     }
+    ]
+   },
+   {
+    "id": 28272,
+    "name": "Polymorph",
+    "rank": "Pig",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 150,
+     "pct": 0
+    },
+    "cast_ms": 1500,
+    "cooldown": null,
+    "duration_ms": 50000,
+    "values": []
+   },
+   {
+    "id": 10157,
+    "name": "Arcane Intellect",
+    "rank": "Rank 5",
+    "learned": 56,
+    "cost": {
+     "type": "mana",
+     "amount": 1510,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 3600000,
+    "values": [
+     {
+      "label": "Intellect",
+      "spell": 10157,
+      "effect": 0,
+      "mode": "value",
+      "n": 31,
+      "level": 60
+     }
+    ]
+   }
+  ],
+  "Priest": [
+   {
+    "id": 10901,
+    "name": "Power Word: Shield",
+    "rank": "Rank 10",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 500,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 4000,
+     "field": "category_ms"
+    },
+    "duration_ms": 30000,
+    "values": [
+     {
+      "label": "damage absorbed",
+      "spell": 10901,
+      "effect": 0,
+      "mode": "value",
+      "n": 928,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 1316995,
+    "name": "Penance",
+    "rank": "Rank 4",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 385,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 12000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing per hit",
+      "spell": 1316991,
+      "effect": 0,
+      "mode": "value",
+      "n": 425,
+      "level": 60
+     },
+     {
+      "label": "Holy damage per hit",
+      "spell": 1316993,
+      "effect": 0,
+      "mode": "value",
+      "n": 92,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10917,
+    "name": "Flash Heal",
+    "rank": "Rank 7",
+    "learned": 56,
+    "cost": {
+     "type": "mana",
+     "amount": 380,
+     "pct": 0
+    },
+    "cast_ms": 1500,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing",
+      "spell": 10917,
+      "effect": 0,
+      "mode": "range",
+      "min": 774,
+      "max": 910,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25314,
+    "name": "Greater Heal",
+    "rank": "Rank 5",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 710,
+     "pct": 0
+    },
+    "cast_ms": 3000,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing",
+      "spell": 25314,
+      "effect": 0,
+      "mode": "range",
+      "min": 1853,
+      "max": 2067,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 425277,
+    "name": "Renew",
+    "rank": "Rank 10",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 410,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 15000,
+    "values": [
+     {
+      "label": "healing over time",
+      "spell": 425277,
+      "effect": 0,
+      "mode": "total",
+      "n": 970,
+      "per_tick": 194,
+      "ticks": 5,
+      "level": null,
+      "basis": "base"
+     }
+    ]
+   },
+   {
+    "id": 25316,
+    "name": "Prayer of Healing",
+    "rank": "Rank 5",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 1070,
+     "pct": 0
+    },
+    "cast_ms": 3000,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing to the party",
+      "spell": 25316,
+      "effect": 0,
+      "mode": "range",
+      "min": 631,
+      "max": 667,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 1240827,
+    "name": "Prayer of Mending",
+    "rank": "Rank 3",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 390,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 10000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing per jump",
+      "spell": 1240827,
+      "effect": 0,
+      "mode": "value",
+      "n": 413,
+      "level": 60
+     },
+     {
+      "label": "jumps",
+      "spell": 1240827,
+      "effect": 1,
+      "mode": "value",
+      "n": 5,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10938,
+    "name": "Power Word: Fortitude",
+    "rank": "Rank 6",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 1695,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 3600000,
+    "values": [
+     {
+      "label": "Stamina",
+      "spell": 10938,
+      "effect": 0,
+      "mode": "value",
+      "n": 70,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10934,
+    "name": "Smite",
+    "rank": "Rank 8",
+    "learned": 54,
+    "cost": {
+     "type": "mana",
+     "amount": 280,
+     "pct": 0
+    },
+    "cast_ms": 2500,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Holy damage",
+      "spell": 10934,
+      "effect": 0,
+      "mode": "range",
+      "min": 167,
+      "max": 186,
+      "level": 59
+     }
+    ]
+   },
+   {
+    "id": 10894,
+    "name": "Shadow Word: Pain",
+    "rank": "Rank 8",
+    "learned": 58,
+    "cost": {
+     "type": "mana",
+     "amount": 470,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 18000,
+    "values": [
+     {
+      "label": "Shadow over time",
+      "spell": 10894,
+      "effect": 0,
+      "mode": "total",
+      "n": 762,
+      "per_tick": 127,
+      "ticks": 6,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 27801,
+    "name": "Holy Nova",
+    "rank": "Rank 6",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 750,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Holy damage around you",
+      "spell": 27801,
+      "effect": 0,
+      "mode": "range",
+      "min": 174,
+      "max": 200,
+      "level": 60
+     },
+     {
+      "label": "healing around you",
+      "spell": 27805,
+      "effect": 0,
+      "mode": "range",
+      "min": 288,
+      "max": 334,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10890,
+    "name": "Psychic Scream",
+    "rank": "Rank 4",
+    "learned": 56,
+    "cost": {
+     "type": "mana",
+     "amount": 210,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 30000,
+     "field": "category_ms"
+    },
+    "duration_ms": 8000,
+    "values": []
+   }
+  ],
+  "Paladin": [
+   {
+    "id": 25292,
+    "name": "Holy Light",
+    "rank": "Rank 9",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 660,
+     "pct": 0
+    },
+    "cast_ms": 2500,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing",
+      "spell": 25292,
+      "effect": 0,
+      "mode": "range",
+      "min": 1495,
+      "max": 1665,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 19943,
+    "name": "Flash of Light",
+    "rank": "Rank 6",
+    "learned": 58,
+    "cost": {
+     "type": "mana",
+     "amount": 140,
+     "pct": 0
+    },
+    "cast_ms": 1500,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing",
+      "spell": 19943,
+      "effect": 0,
+      "mode": "range",
+      "min": 292,
+      "max": 325,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 20930,
+    "name": "Holy Shock",
+    "rank": "Rank 4",
+    "learned": 56,
+    "cost": {
+     "type": "mana",
+     "amount": 325,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 10000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing",
+      "spell": 25903,
+      "effect": 0,
+      "mode": "range",
+      "min": 307,
+      "max": 333,
+      "level": 60
+     },
+     {
+      "label": "Holy damage",
+      "spell": 25902,
+      "effect": 0,
+      "mode": "range",
+      "min": 334,
+      "max": 362,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 415073,
+    "name": "Exorcism",
+    "rank": "Rank 6",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 345,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 15000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Holy damage",
+      "spell": 415073,
+      "effect": 0,
+      "mode": "range",
+      "min": 505,
+      "max": 563,
+      "level": null,
+      "basis": "base"
+     },
+     {
+      "label": "% crit vs Demons and Undead",
+      "spell": 415073,
+      "effect": 1,
+      "mode": "value",
+      "n": 100,
+      "level": null,
+      "basis": "base"
+     }
+    ]
+   },
+   {
+    "id": 24239,
+    "name": "Hammer of Wrath",
+    "rank": "Rank 3",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 425,
+     "pct": 0
+    },
+    "cast_ms": 1000,
+    "cooldown": {
+     "ms": 6000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Holy damage, under 20% health",
+      "spell": 24239,
+      "effect": 0,
+      "mode": "range",
+      "min": 474,
+      "max": 522,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25291,
+    "name": "Blessing of Might",
+    "rank": "Rank 7",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 130,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 3600000,
+    "values": [
+     {
+      "label": "melee attack power",
+      "spell": 25291,
+      "effect": 0,
+      "mode": "value",
+      "n": 133,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25290,
+    "name": "Blessing of Wisdom",
+    "rank": "Rank 6",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 125,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 3600000,
+    "values": [
+     {
+      "label": "mana every 5 sec",
+      "spell": 25290,
+      "effect": 0,
+      "mode": "value",
+      "n": 40,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 20217,
+    "name": "Blessing of Kings",
+    "rank": null,
+    "learned": 20,
+    "cost": {
+     "type": "mana",
+     "amount": 0,
+     "pct": 8
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 3600000,
+    "values": [
+     {
+      "label": "% all stats",
+      "spell": 20217,
+      "effect": 0,
+      "mode": "value",
+      "n": 10,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10308,
+    "name": "Hammer of Justice",
+    "rank": "Rank 4",
+    "learned": 54,
+    "cost": {
+     "type": "mana",
+     "amount": 100,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 60000,
+     "field": "category_ms"
+    },
+    "duration_ms": 6000,
+    "values": []
+   },
+   {
+    "id": 1020,
+    "name": "Divine Shield",
+    "rank": "Rank 2",
+    "learned": 50,
+    "cost": {
+     "type": "mana",
+     "amount": 110,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 300000,
+     "field": "category_ms"
+    },
+    "duration_ms": 12000,
+    "values": [
+     {
+      "label": "% less damage dealt",
+      "spell": 1020,
+      "effect": 2,
+      "mode": "abs",
+      "n": 50,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 10310,
+    "name": "Lay on Hands",
+    "rank": "Rank 3",
+    "learned": 50,
+    "cost": null,
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 1200000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "mana restored",
+      "spell": 10310,
+      "effect": 1,
+      "mode": "value",
+      "n": 550,
+      "level": 60
+     }
+    ]
+   }
+  ],
+  "Druid": [
+   {
+    "id": 9881,
+    "name": "Maul",
+    "rank": "Rank 7",
+    "learned": 58,
+    "cost": {
+     "type": "rage",
+     "amount": 150,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "extra damage",
+      "spell": 9881,
+      "effect": 0,
+      "mode": "value",
+      "n": 128,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 9908,
+    "name": "Swipe",
+    "rank": "Rank 5",
+    "learned": 54,
+    "cost": {
+     "type": "rage",
+     "amount": 200,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "damage to nearby enemies",
+      "spell": 9908,
+      "effect": 0,
+      "mode": "value",
+      "n": 83,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 1235827,
+    "name": "Lacerate",
+    "rank": "Rank 3",
+    "learned": 58,
+    "cost": {
+     "type": "rage",
+     "amount": 150,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 15000,
+    "values": [
+     {
+      "label": "bleed per stack",
+      "spell": 1235827,
+      "effect": 0,
+      "mode": "total",
+      "n": 75,
+      "per_tick": 15,
+      "ticks": 5,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 9898,
+    "name": "Demoralizing Roar",
+    "rank": "Rank 5",
+    "learned": 52,
+    "cost": {
+     "type": "rage",
+     "amount": 100,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 30000,
+    "values": [
+     {
+      "label": "enemy attack power removed",
+      "spell": 9898,
+      "effect": 0,
+      "mode": "abs",
+      "n": 204.2,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 22842,
+    "name": "Frenzied Regeneration",
+    "rank": null,
+    "learned": 36,
+    "cost": null,
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 180000,
+     "field": "category_ms"
+    },
+    "duration_ms": 10000,
+    "values": []
+   },
+   {
+    "id": 8983,
+    "name": "Bash",
+    "rank": "Rank 3",
+    "learned": 46,
+    "cost": {
+     "type": "rage",
+     "amount": 100,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 60000,
+     "field": "category_ms"
+    },
+    "duration_ms": 4000,
+    "values": []
+   },
+   {
+    "id": 9907,
+    "name": "Faerie Fire",
+    "rank": "Rank 4",
+    "learned": 54,
+    "cost": {
+     "type": "mana",
+     "amount": 115,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 40000,
+    "values": [
+     {
+      "label": "armor removed",
+      "spell": 9907,
+      "effect": 0,
+      "mode": "abs",
+      "n": 505,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 9885,
+    "name": "Mark of the Wild",
+    "rank": "Rank 7",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 445,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 3600000,
+    "values": [
+     {
+      "label": "armor",
+      "spell": 9885,
+      "effect": 0,
+      "mode": "value",
+      "n": 385,
+      "level": 60
+     },
+     {
+      "label": "all attributes",
+      "spell": 9885,
+      "effect": 1,
+      "mode": "value",
+      "n": 16,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25299,
+    "name": "Rejuvenation",
+    "rank": "Rank 11",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 360,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 12000,
+    "values": [
+     {
+      "label": "healing over time",
+      "spell": 25299,
+      "effect": 0,
+      "mode": "total",
+      "n": 776,
+      "per_tick": 194,
+      "ticks": 4,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25297,
+    "name": "Healing Touch",
+    "rank": "Rank 11",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 840,
+     "pct": 0
+    },
+    "cast_ms": 3500,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "healing",
+      "spell": 25297,
+      "effect": 0,
+      "mode": "range",
+      "min": 2139,
+      "max": 2525,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 20748,
+    "name": "Rebirth",
+    "rank": "Rank 5",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 0,
+     "pct": 85
+    },
+    "cast_ms": 2000,
+    "cooldown": {
+     "ms": 1800000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "health on return",
+      "spell": 20748,
+      "effect": 0,
+      "mode": "value",
+      "n": 2200,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 22812,
+    "name": "Barkskin",
+    "rank": null,
+    "learned": 44,
+    "cost": null,
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 60000,
+     "field": "recovery_ms"
+    },
+    "duration_ms": 15000,
+    "values": [
+     {
+      "label": "% less physical damage",
+      "spell": 22812,
+      "effect": 1,
+      "mode": "abs",
+      "n": 20,
+      "level": 60
+     }
+    ]
+   }
+  ],
+  "Warlock": [
+   {
+    "id": 25307,
+    "name": "Shadow Bolt",
+    "rank": "Rank 10",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 380,
+     "pct": 0
+    },
+    "cast_ms": 3000,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Shadow damage",
+      "spell": 25307,
+      "effect": 0,
+      "mode": "range",
+      "min": 253,
+      "max": 283,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25311,
+    "name": "Corruption",
+    "rank": "Rank 7",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 340,
+     "pct": 0
+    },
+    "cast_ms": 2000,
+    "cooldown": null,
+    "duration_ms": 18000,
+    "values": [
+     {
+      "label": "Shadow over time",
+      "spell": 25311,
+      "effect": 0,
+      "mode": "total",
+      "n": 438,
+      "per_tick": 73,
+      "ticks": 6,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 11713,
+    "name": "Bane of Agony",
+    "rank": "Rank 6",
+    "learned": 58,
+    "cost": {
+     "type": "mana",
+     "amount": 215,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 24000,
+    "values": [
+     {
+      "label": "Shadow over time",
+      "spell": 11713,
+      "effect": 0,
+      "mode": "total",
+      "n": 552,
+      "per_tick": 46,
+      "ticks": 12,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 25309,
+    "name": "Immolate",
+    "rank": "Rank 8",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 380,
+     "pct": 0
+    },
+    "cast_ms": 2000,
+    "cooldown": null,
+    "duration_ms": 15000,
+    "values": [
+     {
+      "label": "Fire damage",
+      "spell": 25309,
+      "effect": 1,
+      "mode": "value",
+      "n": 158,
+      "level": 60
+     },
+     {
+      "label": "Fire over time",
+      "spell": 25309,
+      "effect": 0,
+      "mode": "total",
+      "n": 275,
+      "per_tick": 55,
+      "ticks": 5,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 403852,
+    "name": "Shadow Cleave",
+    "rank": "Rank 10",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 190,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 6000,
+     "field": "category_ms"
+    },
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "Shadow to nearby enemies",
+      "spell": 403852,
+      "effect": 0,
+      "mode": "range",
+      "min": 136,
+      "max": 204,
+      "level": null,
+      "basis": "base"
+     }
+    ]
+   },
+   {
+    "id": 403689,
+    "name": "Drain Life",
+    "rank": "Rank 6",
+    "learned": 54,
+    "cost": {
+     "type": "mana",
+     "amount": 600,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 15000,
+     "field": "category_ms"
+    },
+    "duration_ms": 15000,
+    "values": [
+     {
+      "label": "health drained",
+      "spell": 403689,
+      "effect": 0,
+      "mode": "total",
+      "n": 1065,
+      "per_tick": 71,
+      "ticks": 15,
+      "level": null,
+      "basis": "base"
+     }
+    ]
+   },
+   {
+    "id": 11689,
+    "name": "Life Tap",
+    "rank": "Rank 6",
+    "learned": 56,
+    "cost": null,
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": [
+     {
+      "label": "health into mana",
+      "spell": 11689,
+      "effect": 0,
+      "mode": "value",
+      "n": 424,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 6215,
+    "name": "Fear",
+    "rank": "Rank 3",
+    "learned": 56,
+    "cost": {
+     "type": "mana",
+     "amount": 0,
+     "pct": 15
+    },
+    "cast_ms": 1500,
+    "cooldown": null,
+    "duration_ms": 20000,
+    "values": []
+   },
+   {
+    "id": 17926,
+    "name": "Death Coil",
+    "rank": "Rank 3",
+    "learned": 58,
+    "cost": {
+     "type": "mana",
+     "amount": 600,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": {
+     "ms": 120000,
+     "field": "category_ms"
+    },
+    "duration_ms": 3000,
+    "values": [
+     {
+      "label": "Shadow damage, healed back",
+      "spell": 17926,
+      "effect": 0,
+      "mode": "value",
+      "n": 460,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 11695,
+    "name": "Health Funnel",
+    "rank": "Rank 7",
+    "learned": 60,
+    "cost": {
+     "type": "health",
+     "amount": 79,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 10000,
+    "values": [
+     {
+      "label": "pet healing",
+      "spell": 11695,
+      "effect": 0,
+      "mode": "total",
+      "n": 1530,
+      "per_tick": 153,
+      "ticks": 10,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 11735,
+    "name": "Demon Armor",
+    "rank": "Rank 5",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 1580,
+     "pct": 0
+    },
+    "cast_ms": 0,
+    "cooldown": null,
+    "duration_ms": 1800000,
+    "values": [
+     {
+      "label": "armor",
+      "spell": 11735,
+      "effect": 0,
+      "mode": "value",
+      "n": 570,
+      "level": 60
+     }
+    ]
+   },
+   {
+    "id": 20757,
+    "name": "Create Soulstone",
+    "rank": "Rank 5",
+    "learned": 60,
+    "cost": {
+     "type": "mana",
+     "amount": 0,
+     "pct": 85
+    },
+    "cast_ms": 3000,
+    "cooldown": null,
+    "duration_ms": null,
+    "values": []
+   }
+  ]
+ },
+ "racials": {
+  "Tauren": [
+   {
+    "name": "War Stomp",
+    "spell": 20549,
+    "wiki_key": "racial.tauren.war_stomp",
+    "wiki": "active, 2 s stun nearby, 90 s cooldown (2 min before Oct 15)",
+    "kind": "active",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": 90000,
+     "values": []
+    }
+   },
+   {
+    "name": "Endurance",
+    "spell": 20550,
+    "wiki_key": "racial.tauren.endurance",
+    "wiki": "passive, +5% max health and nothing else since Oct 26 (Oct 15 to Oct 26 it also gave +2% crit damage and healing; before Oct 15, +1% hit)",
+    "kind": "passive",
+    "changed_oct26": true,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": null,
+     "values": [
+      {
+       "effect": 0,
+       "label": "% health",
+       "n": 5
+      },
+      {
+       "effect": 1,
+       "label": "% crit damage",
+       "n": 2
+      },
+      {
+       "effect": 2,
+       "label": "% crit healing",
+       "n": 2
+      }
+     ]
+    }
+   },
+   {
+    "name": "Cultivation",
+    "spell": 20552,
+    "wiki_key": "racial.tauren.cultivation",
+    "wiki": "active, grows herbs anyone can pick without Herbalism; cooldown 60 to 15 min on Oct 15",
+    "kind": "active",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": null,
+     "values": []
+    }
+   },
+   {
+    "name": "Plainsrunning",
+    "spell": 1259918,
+    "wiki_key": "racial.tauren.plainsrunning",
+    "wiki": "passive, run speed climbs the longer you move: 2% per stack to a 60% cap since Oct 26 (was 1% to 30%); no longer raises mounted speed (Oct 15 had added 3% mounted speed); since Oct 15 the Tauren must cover a minimum distance per second to keep it",
+    "kind": "passive",
+    "changed_oct26": true,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": null,
+     "values": [
+      {
+       "effect": 0,
+       "label": "% speed per stack",
+       "n": 1
+      },
+      {
+       "effect": 1,
+       "label": "sec per stack",
+       "n": 5
+      },
+      {
+       "effect": 2,
+       "label": "% cap",
+       "n": 30
+      },
+      {
+       "effect": 3,
+       "label": "% mounted",
+       "n": 3
+      }
+     ]
+    }
+   }
+  ],
+  "Troll": [
+   {
+    "name": "Berserking",
+    "spell": 20554,
+    "wiki_key": "racial.troll.berserking",
+    "wiki": "active, +10% cast and attack speed for 10 s; cooldown unpublished",
+    "kind": "active",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": 180000,
+     "values": [
+      {
+       "effect": 0,
+       "label": "% cast speed",
+       "n": 10
+      }
+     ]
+    }
+   },
+   {
+    "name": "Regeneration",
+    "spell": 20555,
+    "wiki_key": "racial.troll.regeneration",
+    "wiki": "passive, 20% of health regen works in combat (10% before Oct 15)",
+    "kind": "passive",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": null,
+     "values": [
+      {
+       "effect": 0,
+       "label": "% health regen",
+       "n": 20
+      },
+      {
+       "effect": 1,
+       "label": "% regen in combat",
+       "n": 20
+      }
+     ]
+    }
+   },
+   {
+    "name": "Beast Slaying",
+    "spell": 20557,
+    "wiki_key": "racial.troll.beast_slaying",
+    "wiki": "passive, +5% damage to Beasts",
+    "kind": "passive",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": null,
+     "values": [
+      {
+       "effect": 0,
+       "label": "% damage vs Beasts",
+       "n": 5
+      }
+     ]
+    }
+   },
+   {
+    "name": "Rapid Regeneration",
+    "spell": 1260270,
+    "wiki_key": "racial.troll.rapid_regeneration",
+    "wiki": "active, channel back 50% of max health; moving or damage cancels; guides say 3 min cooldown and a 6 s channel",
+    "kind": "active",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": 180000,
+     "values": []
+    }
+   }
+  ],
+  "Undead": [
+   {
+    "name": "Underwater Breathing",
+    "spell": 5227,
+    "wiki_key": "racial.undead.underwater_breathing",
+    "wiki": "passive, 300% longer breath",
+    "kind": "passive",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": null,
+     "values": [
+      {
+       "effect": 0,
+       "label": "% longer breath",
+       "n": 300
+      }
+     ]
+    }
+   },
+   {
+    "name": "Will of the Forsaken",
+    "spell": 7744,
+    "wiki_key": "racial.undead.will_of_the_forsaken",
+    "wiki": "active, removes Charm, Fear and Sleep with no immunity after; cooldown unpublished (guides say 2 min); blocked under Scatter Shot since Oct 15",
+    "kind": "active",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": 120000,
+     "values": []
+    }
+   },
+   {
+    "name": "Cannibalize",
+    "spell": 20577,
+    "wiki_key": "racial.undead.cannibalize",
+    "wiki": "active, eat a Humanoid or Undead corpse for 35% health and mana over time",
+    "kind": "active",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": 120000,
+     "values": []
+    }
+   },
+   {
+    "name": "Touch of the Grave",
+    "spell": 1260189,
+    "wiki_key": "racial.undead.touch_of_the_grave",
+    "wiki": "passive, chance to drain health on hit or spell; Oct 15 (as Touch of the Dead): 30% proc for casters, 20% for Paladin, Rogue and Warrior, 25 s internal cooldown, no low-rank penalty; guides say about 5% of max health drained",
+    "kind": "passive",
+    "changed_oct26": false,
+    "client": {
+     "build": "1.60.1.70532",
+     "cooldown_ms": null,
+     "values": [
+      {
+       "effect": 0,
+       "label": "% max health drained",
+       "n": 5
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "legacy": {
+  "total": 65,
+  "earned_now": 0,
+  "earned_note": "nobody can earn a point before launch",
+  "spend_cap": 16,
+  "solo_cap": 29,
+  "categories": [
+   {
+    "key": "classes",
+    "n": 27,
+    "text": "27: each of nine classes at 25, 45 and 60 (client data)"
+   },
+   {
+    "key": "tradeskills",
+    "n": 18,
+    "text": "18: six crafting professions at 150, 225 and 300"
+   },
+   {
+    "key": "pvp",
+    "n": 12,
+    "text": "12: Honor ranks 3, 7, 10, 13 and 14; Exalted with the AV, AB, WSG and Darkspear Islands factions; Field of Honor weeks 4, 7 and 10"
+   },
+   {
+    "key": "dungeons",
+    "n": 3,
+    "text": "3: Novice, Experienced and Master Spelunker"
+   },
+   {
+    "key": "raids",
+    "n": 3,
+    "text": "3: Onyxia, Hyjal Summit, Barrow Deeps"
+   },
+   {
+    "key": "adventure",
+    "n": 2,
+    "text": "2: explore Azeroth; the Lord Valthalak questline from An Earnest Proposition to Saving the Best for Last"
+   }
+  ],
+  "thresholds": [
+   {
+    "n": 15,
+    "alt": 10,
+    "reward": "Replica Ironforge Air Rifle",
+    "kind": "toy"
+   },
+   {
+    "n": 25,
+    "reward": "Spectral Bear Cub",
+    "kind": "pet"
+   },
+   {
+    "n": 40,
+    "reward": "Spectral Bear Tabard",
+    "kind": "tabard"
+   },
+   {
+    "n": 55,
+    "reward": "Reins of the Spectral Bear",
+    "kind": "mount"
+   }
+  ],
+  "thresholds_label": "guide figures (Warcraft Tavern, Zockify), not Blizzard text",
+  "claim": "Innkeeper Wiley in Ratchet",
+  "wiki": {
+   "total": "65, one point each",
+   "thresholds": "toy 15 (Warcraft Tavern) or 10 (Zockify), pet 25, tabard 40, mount 55; counted on points earned, not spent",
+   "track": "Replica Ironforge Air Rifle toy, Spectral Bear Cub pet, Spectral Bear Tabard, Reins of the Spectral Bear 100% mount; items from Blizzard, thresholds from guides",
+   "spend_cap": "16 at launch",
+   "solo_cap": "29 on one character"
+  }
+ },
+ "synergy": [
+  {
+   "from": "mage",
+   "to": [
+    "priest",
+    "paladin",
+    "druid",
+    "warlock",
+    "mage"
+   ],
+   "what": "Arcane Intellect",
+   "lands_on": "everyone with a mana bar",
+   "refs": [
+    {
+     "kind": "client",
+     "spell": 10157,
+     "effect": 0,
+     "label": "Intellect",
+     "name": "Arcane Intellect",
+     "n": 31,
+     "level": 60
+    },
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/mage.md",
+     "key": "mage.arcane_intellect.duration",
+     "text": "1 hour (client 70450, Oct 18; Wowhead; Classic 30 min)"
+    },
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/mage.md",
+     "key": "mage.arcane_brilliance",
+     "text": "level 56, covers party and raid (Sep 24 notes; client 70450; Wowhead)"
+    }
+   ]
+  },
+  {
+   "from": "priest",
+   "to": [
+    "druid",
+    "paladin",
+    "mage",
+    "warlock",
+    "priest"
+   ],
+   "what": "Power Word: Fortitude",
+   "lands_on": "the whole party, Stamina",
+   "refs": [
+    {
+     "kind": "client",
+     "spell": 10938,
+     "effect": 0,
+     "label": "Stamina",
+     "name": "Power Word: Fortitude",
+     "n": 70,
+     "level": 60
+    },
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/priest.md",
+     "key": "priest.fortitude",
+     "text": "Improved Power Word: Fortitude is baseline; 1 hour at max rank (Sep 30 deep dive; Wowhead)"
+    }
+   ]
+  },
+  {
+   "from": "priest",
+   "to": [
+    "druid"
+   ],
+   "what": "Power Word: Shield",
+   "lands_on": "one target at a time, an absorb",
+   "refs": [
+    {
+     "kind": "client",
+     "spell": 10901,
+     "effect": 0,
+     "label": "absorbed",
+     "name": "Power Word: Shield",
+     "n": 928,
+     "level": 60
+    },
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/priest.md",
+     "key": "priest.power_word_shield",
+     "text": "level 6; 4 s cooldown, 30 s duration, 15 s Weakened Soul; your own shield can be overwritten when no Weakened Soul is up (Sep 30 deep dive; Sep 24 notes; Wowhead tooltips)"
+    }
+   ]
+  },
+  {
+   "from": "paladin",
+   "to": [
+    "druid",
+    "priest",
+    "mage",
+    "warlock",
+    "paladin"
+   ],
+   "what": "Blessing of Kings",
+   "lands_on": "one Blessing per paladin on each player",
+   "refs": [
+    {
+     "kind": "client",
+     "spell": 20217,
+     "effect": 0,
+     "label": "% all stats",
+     "name": "Blessing of Kings",
+     "n": 10,
+     "level": 60
+    },
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/paladin.md",
+     "key": "paladin.blessing_of_kings",
+     "text": "baseline at 20; 8% of base mana, +10% stats, 1 hour; Improved Wisdom also baseline (client 70450; Oct 15 deep dive)"
+    }
+   ]
+  },
+  {
+   "from": "paladin",
+   "to": [
+    "druid"
+   ],
+   "what": "Blessing of Might",
+   "lands_on": "melee fighters, the bear included",
+   "refs": [
+    {
+     "kind": "client",
+     "spell": 25291,
+     "effect": 0,
+     "label": "melee attack power",
+     "name": "Blessing of Might",
+     "n": 133,
+     "level": 60
+    }
+   ]
+  },
+  {
+   "from": "paladin",
+   "to": [
+    "priest",
+    "mage",
+    "warlock"
+   ],
+   "what": "Salvation",
+   "lands_on": "anyone, alongside a Blessing, threat down",
+   "refs": [
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/paladin.md",
+     "key": "paladin.salvation",
+     "text": "level 26; Salvation and Mass Salvation replace the Blessing versions, 30% threat reduction, not a Blessing so it sits alongside one; Revoke is new (Oct 15 notes; client 70450)"
+    }
+   ]
+  },
+  {
+   "from": "druid",
+   "to": [
+    "priest",
+    "paladin",
+    "mage",
+    "warlock",
+    "druid"
+   ],
+   "what": "Mark of the Wild",
+   "lands_on": "the whole party, armor and attributes",
+   "refs": [
+    {
+     "kind": "client",
+     "spell": 9885,
+     "effect": 0,
+     "label": "armor",
+     "name": "Mark of the Wild",
+     "n": 385,
+     "level": 60
+    },
+    {
+     "kind": "client",
+     "spell": 9885,
+     "effect": 1,
+     "label": "all attributes",
+     "name": "Mark of the Wild",
+     "n": 16,
+     "level": 60
+    }
+   ]
+  },
+  {
+   "from": "druid",
+   "to": [
+    "paladin",
+    "druid"
+   ],
+   "what": "Leader of the Pack",
+   "lands_on": "the raid, melee and ranged crit, a Feral talent",
+   "refs": [
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/druid.md",
+     "key": "druid.auras",
+     "text": "Leader of the Pack (melee and ranged crit) and Moonkin Aura (spell crit) are raid-wide since Oct 15; the Sep 30 text made the two talents exclusive and the Oct 15 notes do not say whether that holds (Sep 30 deep dive; Oct 15 notes)"
+    }
+   ]
+  },
+  {
+   "from": "druid",
+   "to": [
+    "priest"
+   ],
+   "what": "Innervate",
+   "lands_on": "one caster, mana back",
+   "refs": [
+    {
+     "kind": "client",
+     "spell": 29166,
+     "effect": 1,
+     "label": "% mana regeneration",
+     "name": "Innervate",
+     "n": 400,
+     "level": 60
+    },
+    {
+     "kind": "memory",
+     "text": "Classic baseline: a burst of mana regeneration on one target"
+    }
+   ]
+  },
+  {
+   "from": "warlock",
+   "to": [
+    "druid",
+    "priest",
+    "paladin",
+    "mage",
+    "warlock"
+   ],
+   "what": "Healthstones and a Soulstone",
+   "lands_on": "whoever holds one",
+   "refs": [
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/warlock.md",
+     "key": "warlock.shards",
+     "text": "one Soul Shard each for every pet summon, Healthstone, Soulstone, Firestone, Spellstone, Ritual of Summoning and Soul Fire; shards are Bind on Pickup; a forum thread says they do not stack (client 70450; forum, no Blizzard reply)"
+    },
+    {
+     "kind": "memory",
+     "text": "Classic baseline: a Healthstone is a free heal potion; a Soulstone lets its holder resurrect after dying"
+    }
+   ]
+  },
+  {
+   "from": "warlock",
+   "to": [
+    "druid",
+    "priest",
+    "paladin",
+    "mage"
+   ],
+   "what": "Ritual of Summoning",
+   "lands_on": "anyone away from the group, two clickers needed",
+   "refs": [
+    {
+     "kind": "wiki",
+     "page": "wiki/pages/classes/warlock.md",
+     "key": "warlock.ritual_of_summoning",
+     "text": "level 20, one shard plus two party members clicking the portal, out of combat; meeting stones do not summon (client 70450; Wowhead)"
+    }
+   ]
+  },
+  {
+   "from": "warlock",
+   "to": [
+    "druid",
+    "priest",
+    "paladin",
+    "mage",
+    "warlock"
+   ],
+   "what": "Blood Pact from the Imp",
+   "lands_on": "the party, Stamina",
+   "refs": [
+    {
+     "kind": "memory",
+     "text": "Classic baseline: the Imp's Blood Pact raises party Stamina; the wiki has no Forever value"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,921 @@
+<title>Dungeons and Drinking Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,500;0,700;1,400&family=Alegreya+Sans+SC:wght@500;700&family=Grenze+Gotisch:wght@500;700&display=swap">
+<style>
+/* Layout: a night tavern wall. Dark oak ground, parchment slips pinned on it, the five class colors as the only light sources. One column on phones, a two-up grid from tablet width. */
+:root {
+  color-scheme: dark;
+  --oak-0: #120c08;
+  --oak-1: #1c130c;
+  --oak-2: #2a1c12;
+  --oak-3: #3b2819;
+  --grain: #4a3220;
+  --parchment: #eadfc4;
+  --parchment-2: #d9c9a3;
+  --ink: #2b1d10;
+  --ink-soft: #5b4630;
+  --text: #efe4cc;
+  --text-dim: #b9a886;
+  --brass: #d1a85a;
+  --brass-dim: #8a6c35;
+  --wax: #a8322a;
+  --ok: #8fc97a;
+  --warn: #e6b44c;
+  --c-druid: #ff7c0a;
+  --c-priest: #ffffff;
+  --c-paladin: #f48cba;
+  --c-mage: #3fc7eb;
+  --c-warlock: #8788ee;
+  --c-none: #8d7c60;
+  --seg-1: #c9a45c;
+  --seg-2: #9b7a45;
+  --seg-3: #7d5a3a;
+  --seg-4: #b58f6a;
+  --seg-5: #d9c08a;
+  --seg-6: #6c5236;
+  --shadow: rgba(0, 0, 0, 0.55);
+  --glass: rgba(18, 12, 8, 0.72);
+  --glow-brass: rgba(209, 168, 90, 0.10);
+  --grain-line: rgba(74, 50, 32, 0.18);
+  --slip-burn: rgba(120, 90, 50, 0.25);
+  --slip-sheen: rgba(255, 255, 255, 0.35);
+  --glow-mage: rgba(63, 199, 235, 0.25);
+  --glow-paladin: rgba(244, 140, 186, 0.15);
+  --edge-dark: rgba(0, 0, 0, 0.4);
+  --edge-light: rgba(255, 255, 255, 0.04);
+  --hover-tint: rgba(255, 255, 255, 0.06);
+  --rule: rgba(74, 50, 32, 0.8);
+  --buff-bg: rgba(0, 0, 0, 0.18);
+  --font-display: "Grenze Gotisch", "Palatino Linotype", Georgia, serif;
+  --font-body: "Alegreya", Georgia, "Times New Roman", serif;
+  --font-ui: "Alegreya Sans SC", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  --step--1: 0.875rem;
+  --step-0: 1.0625rem;
+  --step-1: 1.3rem;
+  --step-2: 1.75rem;
+  --step-3: 2.4rem;
+  --step-4: clamp(2.6rem, 8vw, 4.6rem);
+  --radius: 6px;
+  --measure: 65ch;
+}
+html { background: var(--oak-0); }
+body {
+  margin: 0;
+  background: var(--oak-0);
+  background-image:
+    radial-gradient(ellipse at 20% -10%, var(--glow-brass), transparent 55%),
+    repeating-linear-gradient(92deg, var(--grain-line) 0 2px, transparent 2px 11px),
+    linear-gradient(180deg, var(--oak-1), var(--oak-0) 40%);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  overflow-x: hidden;
+}
+#wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.wrap {
+  position: relative; z-index: 1;
+  max-width: 1160px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+  display: grid; gap: 40px;
+}
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-wrap: balance; margin: 0; line-height: 1.05; }
+h2 { font-size: var(--step-3); color: var(--parchment); }
+h3 { font-size: var(--step-1); }
+p { margin: 0; max-width: var(--measure); }
+a { color: var(--brass); text-underline-offset: 3px; }
+a:hover { color: var(--parchment); }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 2px; }
+.label { font-family: var(--font-ui); font-size: var(--step--1); letter-spacing: 0.08em; color: var(--text-dim); }
+.num { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: 0.78rem; letter-spacing: 0.06em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--brass-dim); color: var(--text-dim); white-space: nowrap; }
+.chip.board { border-color: var(--brass); color: var(--brass); }
+.chip.chat { border-style: dashed; }
+.chip.new { border-color: var(--warn); color: var(--warn); }
+.chip.memory { border-style: dashed; border-color: var(--c-none); }
+section { display: grid; gap: 18px; min-width: 0; align-content: start; }
+.section-head { display: grid; gap: 6px; align-content: start; }
+.section-head p { color: var(--text-dim); }
+.two { display: grid; gap: 40px; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .two { grid-template-columns: 1fr 1fr; } }
+.slip {
+  position: relative; background: var(--parchment); color: var(--ink);
+  border-radius: 3px; padding: 22px 20px 20px;
+  box-shadow: 0 14px 30px var(--shadow), inset 0 0 40px var(--slip-burn);
+  background-image: radial-gradient(ellipse at 30% 0%, var(--slip-sheen), transparent 60%);
+  min-width: 0;
+}
+.slip::before { content: ""; position: absolute; top: 8px; left: 50%; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--parchment), var(--brass) 45%, var(--brass-dim)); box-shadow: 0 2px 3px var(--shadow); }
+.slip h3 { color: var(--ink); }
+.slip .label { color: var(--ink-soft); }
+.slip a { color: var(--wax); }
+.slip a:hover { color: var(--ink); }
+
+/* hero */
+.hero { display: grid; gap: 22px; padding-top: 8px; }
+.kicker { font-family: var(--font-ui); letter-spacing: 0.14em; color: var(--brass); font-size: var(--step--1); }
+.hero h1 { font-size: var(--step-4); color: var(--parchment); text-shadow: 0 0 18px var(--glow-mage), 0 0 36px var(--glow-paladin), 0 3px 0 var(--oak-0); }
+.hero-lede { color: var(--text-dim); font-size: var(--step-1); font-style: italic; }
+.clock { display: grid; gap: 10px; padding: 18px 20px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); max-width: 640px; }
+.clock-digits { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
+.clock-unit { display: grid; justify-items: start; }
+.clock-unit b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: clamp(2.2rem, 9vw, 3.6rem); line-height: 1; color: var(--parchment); font-weight: 700; }
+.clock-unit span { font-family: var(--font-ui); letter-spacing: 0.1em; font-size: 0.8rem; color: var(--text-dim); }
+.clock-when { font-size: var(--step-0); }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.timeline li { display: grid; grid-template-columns: 14px 1fr; gap: 10px; align-items: start; }
+.timeline .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; border: 2px solid var(--brass); }
+.timeline li.past .dot { background: var(--brass); }
+.timeline li.next .dot { background: var(--parchment); box-shadow: 0 0 10px var(--brass); }
+.timeline .when { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: var(--step--1); color: var(--brass); letter-spacing: 0.04em; }
+.timeline .what { min-width: 0; }
+.presence { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: var(--step--1); color: var(--text-dim); }
+.peers { display: flex; flex-wrap: wrap; gap: 6px; }
+.peer { width: 14px; height: 14px; border-radius: 50%; background: var(--pc, var(--c-none)); box-shadow: 0 0 10px var(--pc, var(--c-none)); position: relative; }
+.peer.me { outline: 2px solid var(--parchment); outline-offset: 2px; }
+.peer-you { font-family: var(--font-ui); color: var(--parchment); letter-spacing: 0.06em; }
+
+/* class cards */
+.cards { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr)); }
+.card { perspective: 1400px; min-height: 31rem; min-width: 0; display: grid; }
+.card-inner { position: relative; display: grid; transition: transform 700ms cubic-bezier(.2, .7, .2, 1); transform-style: preserve-3d; }
+.card.flipped .card-inner { transform: rotateY(180deg); }
+.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 0 18px 40px var(--shadow), inset 0 1px 0 var(--edge-light); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.face::after { content: ""; position: absolute; inset: -40% -40% auto auto; width: 90%; height: 70%; background: radial-gradient(circle, var(--cc), transparent 65%); opacity: 0.18; pointer-events: none; }
+.front { position: relative; inset: auto; }
+.back { transform: rotateY(180deg); overflow-y: auto; }
+.card { transition: transform 260ms ease; }
+@media (hover: hover) { .card:hover { transform: translateY(-6px); } .card:hover .face { border-color: var(--cc); } }
+.card .who { font-family: var(--font-display); font-size: var(--step-3); color: var(--cc); text-shadow: 0 0 22px var(--cc); line-height: 1; }
+.card .what { font-size: var(--step-1); color: var(--parchment); line-height: 1.2; }
+.card .spec { color: var(--text-dim); font-style: italic; }
+.card dl { margin: 0; display: grid; gap: 8px; }
+.card dt { font-family: var(--font-ui); font-size: 0.78rem; letter-spacing: 0.08em; color: var(--text-dim); }
+.card dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.role { font-family: var(--font-ui); letter-spacing: 0.08em; color: var(--cc); }
+.flip { margin-top: auto; align-self: stretch; font-family: var(--font-ui); letter-spacing: 0.08em; font-size: var(--step--1); color: var(--parchment); background: transparent; border: 1px solid var(--cc); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
+.flip:hover { background: var(--hover-tint); }
+.spells { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.spell { display: grid; gap: 1px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+.spell:last-child { border-bottom: 0; }
+.spell-name { color: var(--parchment); font-weight: 700; line-height: 1.2; }
+.spell-name small { font-weight: 400; color: var(--text-dim); font-family: var(--font-ui); letter-spacing: 0.04em; }
+.spell-vals { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; color: var(--cc); font-size: 0.95rem; line-height: 1.3; }
+.spell-meta { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.03em; }
+.back-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.back-head h3 { color: var(--cc); }
+
+/* map */
+.map-box { border: 1px solid var(--grain); border-radius: var(--radius); background: radial-gradient(ellipse at 60% 40%, var(--oak-2), var(--oak-1) 75%); padding: 10px; overflow: hidden; }
+.map-box svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.map-land { fill: var(--oak-3); stroke: var(--grain); stroke-width: 1.5; }
+.map-sea { fill: var(--oak-0); }
+.map-road { fill: none; stroke: var(--brass-dim); stroke-width: 2.4; stroke-dasharray: 2 7; stroke-linecap: round; animation: march 2.4s linear infinite; }
+.map-air { fill: none; stroke: var(--text-dim); stroke-width: 1.4; stroke-dasharray: 6 8; opacity: 0.7; animation: march 3.2s linear infinite; }
+@keyframes march { to { stroke-dashoffset: -36; } }
+.map-text { fill: var(--text); font-family: var(--font-ui); font-size: 13px; letter-spacing: 0.05em; }
+.map-text.small { fill: var(--text-dim); font-size: 11px; }
+.map-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 2; }
+.map-meet { fill: none; stroke: var(--brass); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.map-caption { color: var(--text-dim); font-size: var(--step--1); }
+
+/* racials */
+.races { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.race h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.race ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
+.race li { display: grid; gap: 2px; }
+.race .rname { font-weight: 700; }
+.race .rwiki { font-size: 0.95rem; }
+.race .rclient { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: 0.78rem; color: var(--ink-soft); letter-spacing: 0.03em; }
+.dots { display: inline-flex; gap: 4px; }
+.dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 1px var(--ink); display: inline-block; }
+
+/* legacy + synergy */
+.ring-wrap { display: grid; gap: 16px; grid-template-columns: 1fr; align-items: center; }
+.ring-wrap svg, .wheel svg { width: 100%; height: auto; max-width: 320px; display: block; margin: 0 auto; }
+.ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 40px; font-variant-numeric: tabular-nums; }
+.ring-sub { fill: var(--text-dim); font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.08em; }
+.ring-tick { stroke: var(--parchment); stroke-width: 2; }
+.ring-tlabel { fill: var(--brass); font-family: var(--font-ui); font-size: 12px; font-weight: 700; }
+.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.95rem; }
+.legend li { min-width: 0; display: grid; grid-template-columns: 12px auto 1fr; gap: 8px; align-items: baseline; }
+.legend .sw { width: 10px; height: 10px; border-radius: 2px; background: var(--sw); display: inline-block; }
+.rewards { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.rewards li { min-width: 0; display: grid; grid-template-columns: 3.2rem 1fr; gap: 8px; align-items: baseline; }
+.rewards b { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--brass); }
+.wheel { display: grid; gap: 14px; }
+.wheel-edge { fill: none; stroke: var(--ec); stroke-width: 1.6; opacity: 0.45; transition: opacity 200ms, stroke-width 200ms; }
+.wheel-edge.on { opacity: 0.95; stroke-width: 2.4; }
+.wheel-tip { fill: var(--ec); opacity: 0.6; }
+.wheel-tip.on { opacity: 1; }
+.wheel-node circle { fill: var(--oak-1); stroke: var(--nc); stroke-width: 3; }
+.wheel-node text { fill: var(--parchment); font-family: var(--font-ui); font-size: 12px; text-anchor: middle; }
+.wheel-node { cursor: pointer; }
+.wheel-node:focus-visible circle, .wheel-node.on circle { fill: var(--oak-3); stroke-width: 5; }
+.buffs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.buff { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; padding: 8px 10px; border-left: 3px solid var(--bc); background: var(--buff-bg); border-radius: 0 4px 4px 0; transition: opacity 200ms; }
+.buff.dim { opacity: 0.35; }
+.buff-what { color: var(--parchment); font-weight: 700; }
+.buff-nums { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--bc); }
+.buff-src { font-size: 0.9rem; color: var(--text-dim); }
+
+/* ledger + signups */
+.ledger { display: grid; gap: 14px; }
+.ledger ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ledger li { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; }
+.ledger .tick { display: inline-block; width: 0.55em; height: 0.95em; border: solid var(--wax); border-width: 0 3px 3px 0; transform: rotate(40deg); margin-right: 8px; }
+.poll { display: grid; gap: 4px; padding: 10px 12px; border: 1px dashed var(--wax); border-radius: 4px; }
+.signup { display: grid; gap: 16px; }
+.signup fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.signup legend { font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); padding: 0; margin-bottom: 4px; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { position: relative; }
+.opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.opt label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--ink-soft); border-radius: 999px; font-family: var(--font-ui); letter-spacing: 0.05em; cursor: pointer; background: var(--parchment-2); color: var(--ink); }
+.opt input:checked + label { background: var(--ink); color: var(--parchment); border-color: var(--ink); }
+.opt input:focus-visible + label { outline: 2px solid var(--wax); outline-offset: 2px; }
+.opt input:disabled + label { cursor: default; opacity: 0.6; }
+.tally { min-width: 0; overflow-wrap: anywhere; font-size: 0.92rem; color: var(--ink-soft); display: grid; gap: 2px; }
+.tally b { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink); }
+.writein { display: flex; gap: 8px; flex-wrap: wrap; }
+.writein input, .signup select { font: inherit; font-size: 0.95rem; padding: 6px 10px; border: 1px solid var(--ink-soft); border-radius: 4px; background: var(--parchment-2); color: var(--ink); min-width: 0; flex: 1 1 12rem; max-width: 100%; }
+.picker-note { font-size: 0.88rem; color: var(--ink-soft); }
+.status { font-size: 0.92rem; color: var(--wax); font-style: italic; }
+
+/* librarian */
+.librarian { display: grid; gap: 18px; grid-template-columns: 1fr; padding: 20px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
+@media (min-width: 760px) { .librarian { grid-template-columns: 1.4fr 1fr; } }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr)); gap: 14px; }
+.stat { min-width: 0; }
+.stat b { display: block; font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: var(--step-2); color: var(--parchment); line-height: 1.1; }
+.lib-note { color: var(--text-dim); font-size: 0.95rem; }
+.spark svg { width: 100%; height: auto; display: block; }
+.spark-line { fill: none; stroke: var(--brass); stroke-width: 2; }
+.spark-area { fill: var(--brass); opacity: 0.12; }
+.spark-dot { fill: var(--parchment); }
+.spark-grid { stroke: var(--grain); stroke-width: 1; }
+.spark-text { fill: var(--text-dim); font-family: var(--font-ui); font-size: 10px; font-variant-numeric: tabular-nums; }
+footer { color: var(--text-dim); font-size: var(--step--1); display: grid; gap: 8px; border-top: 1px solid var(--grain); padding-top: 18px; }
+footer ul { margin: 0; padding-left: 18px; columns: 2 16rem; }
+footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: anywhere; }
+.loading { color: var(--text-dim); font-style: italic; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .card:hover { transform: none; }
+}
+</style>
+
+<canvas id="wisps" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header class="hero" id="top">
+    <div class="kicker" id="kicker">The Living Board</div>
+    <h1>Dungeons and Drinking</h1>
+    <p class="hero-lede" id="lede">A notice board for five friends heading into World of Warcraft: Forever. Everything on it is read from the group's own files.</p>
+    <div class="clock" id="clock" aria-live="polite">
+      <div class="label" id="clock-label">Reading the board</div>
+      <div class="clock-digits" id="clock-digits"></div>
+      <div class="clock-when" id="clock-when"></div>
+    </div>
+    <ol class="timeline" id="timeline"></ol>
+    <div class="presence" id="presence">
+      <span id="presence-text">Who is at the board shows here when it is open inside Claude.</span>
+      <div class="peers" id="peers"></div>
+    </div>
+  </header>
+
+  <section aria-labelledby="h-five">
+    <div class="section-head">
+      <h2 id="h-five">The five</h2>
+      <p>Each card is what the group has said so far. Turn a card over for that class's signature spells at the level cap, straight from the game client.</p>
+    </div>
+    <div class="cards" id="cards"><p class="loading">Pinning up the cards.</p></div>
+  </section>
+
+  <section aria-labelledby="h-map">
+    <div class="section-head">
+      <h2 id="h-map">Three roads to Orgrimmar</h2>
+      <p id="map-lede">Where each character wakes up, and how the roads meet.</p>
+    </div>
+    <div class="map-box" id="map"></div>
+    <p class="map-caption" id="map-caption"></p>
+  </section>
+
+  <section aria-labelledby="h-races">
+    <div class="section-head">
+      <h2 id="h-races">Blood and bone</h2>
+      <p id="races-lede">The racials of the three races at this table, as the wiki has them today.</p>
+    </div>
+    <div class="races" id="races"></div>
+  </section>
+
+  <div class="two">
+    <section aria-labelledby="h-legacy">
+      <div class="section-head">
+        <h2 id="h-legacy">Legacy</h2>
+        <p id="legacy-lede">Account-wide challenges, one point each.</p>
+      </div>
+      <div class="ring-wrap" id="legacy"></div>
+    </section>
+    <section aria-labelledby="h-wheel">
+      <div class="section-head">
+        <h2 id="h-wheel">Who buffs whom</h2>
+        <p>Each name on the wheel lights up what that class brings to the others.</p>
+      </div>
+      <div class="wheel" id="wheel"></div>
+    </section>
+  </div>
+
+  <div class="two">
+    <section aria-labelledby="h-ledger">
+      <div class="section-head">
+        <h2 id="h-ledger">The ledger</h2>
+        <p id="ledger-lede">Settled things, open things, and the polls still taking votes.</p>
+      </div>
+      <div class="slip ledger" id="ledger"></div>
+    </section>
+    <section aria-labelledby="h-signup">
+      <div class="section-head">
+        <h2 id="h-signup">Sign the board</h2>
+        <p>Three questions nobody has answered yet. An answer here shows to everyone who opens this board.</p>
+      </div>
+      <form class="slip signup" id="signup" autocomplete="off">
+        <p class="status" id="signup-status">Sign-ups switch on when this board is open inside Claude.</p>
+        <fieldset>
+          <legend>Which of the five are you?</legend>
+          <select id="as" name="as" aria-label="Which of the five are you" disabled></select>
+          <p class="picker-note">The board trusts whoever picks a name. There is no login check behind it.</p>
+        </fieldset>
+        <fieldset id="fs-pack">
+          <legend>I hold a pack</legend>
+          <div class="opts" id="opts-pack"></div>
+          <div class="tally" id="tally-pack"></div>
+        </fieldset>
+        <fieldset id="fs-meet">
+          <legend>Launch-night meeting point</legend>
+          <div class="opts" id="opts-meet"></div>
+          <div class="writein"><input id="meet-other" name="meet-other" type="text" maxlength="40" placeholder="Write in a place" aria-label="Write in a meeting place" disabled></div>
+          <div class="tally" id="tally-meet"></div>
+        </fieldset>
+        <fieldset id="fs-rsvp">
+          <legend>Launch night</legend>
+          <div class="opts" id="opts-rsvp"></div>
+          <div class="tally" id="tally-rsvp"></div>
+        </fieldset>
+      </form>
+    </section>
+  </div>
+
+  <section aria-labelledby="h-lib">
+    <div class="section-head">
+      <h2 id="h-lib">The librarian</h2>
+      <p>Leeroy answers the group's questions from a local wiki. These are his numbers.</p>
+    </div>
+    <div class="librarian" id="librarian"></div>
+  </section>
+
+  <footer id="footer"><span class="loading">Reading the data files.</span></footer>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const SVGNS = "http://www.w3.org/2000/svg";
+function h(tag, attrs, ...kids) {
+  const svg = attrs && attrs.svg; const n = svg ? document.createElementNS(SVGNS, tag) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "svg" || v === null || v === undefined || v === false) continue;
+    if (k === "class") n.setAttribute("class", v);
+    else if (k === "text") n.textContent = v;
+    else if (k === "style") n.setAttribute("style", v);
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return n;
+}
+const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
+const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
+
+/* ---------- formatting ---------- */
+const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+function fmtMs(ms) {
+  if (ms >= 3600000) return `${nf.format(ms / 3600000)} hr`;
+  if (ms >= 60000) return `${nf.format(ms / 60000)} min`;
+  return `${nf.format(ms / 1000)} sec`;
+}
+function fmtSecs(sec) {
+  if (sec < 60) return `${Math.round(sec)} s`;
+  if (sec < 3600) return Math.round(sec % 60) ? `${Math.floor(sec / 60)} m ${Math.round(sec % 60)} s` : `${Math.floor(sec / 60)} m`;
+  return `${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} m`;
+}
+function fmtVal(v, durMs) {
+  const amount = v.min !== undefined ? `${nf.format(v.min)} to ${nf.format(v.max)}` : nf.format(v.n);
+  const text = v.label.startsWith("%") ? `${amount}%${v.label.slice(1)}` : `${amount} ${v.label}`;
+  return v.mode === "total" && durMs ? `${text} (${fmtMs(durMs)})` : text;
+}
+function fmtCost(c) {
+  if (!c) return null;
+  if (c.pct) return `${c.pct}% base mana`;
+  if (c.type === "rage") return `${nf.format(c.amount / 10)} rage`; /* rage costs are stored in tenths */
+  return `${nf.format(c.amount)} ${c.type}`;
+}
+const dtFull = new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const dtDay = new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+const dtDayUTC = new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+function rel(epoch) {
+  const d = epoch - Date.now() / 1000, a = Math.abs(d);
+  if (a < 3600) return rtf.format(Math.round(d / 60), "minute");
+  if (a < 172800) return rtf.format(Math.round(d / 3600), "hour");
+  return rtf.format(Math.round(d / 86400), "day");
+}
+function eventWhen(e) {
+  if (e.epoch === null) return dtDayUTC.format(new Date(`${e.date}T12:00:00Z`));
+  return e.format === "D" ? dtDay.format(new Date(e.epoch * 1000)) : dtFull.format(new Date(e.epoch * 1000));
+}
+
+/* ---------- state ---------- */
+const D = {};
+const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
+function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
+function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
+
+/* ---------- hero ---------- */
+let clockTimer = null;
+function renderHero() {
+  const p = D.party, t = D.timeline;
+  $("#kicker").textContent = `The Living Board · ${p.faction} · ${p.ruleset} ruleset`;
+  renderTimeline();
+  tick();
+  if (!clockTimer) clockTimer = setInterval(tick, 1000);
+}
+function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
+let shownNext;
+function renderTimeline() {
+  const t = D.timeline, tl = $("#timeline"); tl.replaceChildren();
+  const now = Date.now() / 1000;
+  const next = nextEvent(now);
+  shownNext = next ? next.key : null;
+  for (const e of t.events) {
+    const ts = e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch;
+    const cls = ts < now ? "past" : next && e.key === next.key ? "next" : "";
+    tl.append(h("li", { class: cls }, h("span", { class: "dot", "aria-hidden": "true" }),
+      h("div", { class: "what" }, h("div", { class: "when", text: eventWhen(e) }), h("div", {}, h("strong", { text: e.label }), e.detail ? ` · ${e.detail}` : ""))));
+  }
+}
+/* Calendar days in the viewer's own time zone; rounding absorbs daylight-saving hours. */
+const localDay = (ms) => { const d = new Date(ms); return Math.round(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000); };
+function tick() {
+  const t = D.timeline; if (!t) return;
+  const now = Date.now() / 1000;
+  const next = nextEvent(now);
+  if ((next ? next.key : null) !== shownNext) renderTimeline();
+  const digits = $("#clock-digits");
+  if (!next) { $("#clock-label").textContent = "Every date on the board has passed"; digits.replaceChildren(); $("#clock-when").textContent = ""; return; }
+  let left = Math.max(0, Math.floor(next.epoch - now));
+  /* A date-only event ("D") has no start time on the board, so it counts whole days and nothing finer. */
+  const parts = next.format === "D" ? [["days", localDay(next.epoch * 1000) - localDay(now * 1000)]] : [["days", Math.floor(left / 86400)], ["hours", Math.floor((left % 86400) / 3600)], ["minutes", Math.floor((left % 3600) / 60)], ["seconds", left % 60]];
+  $("#clock-label").textContent = `Until ${next.label.toLowerCase()}`;
+  if (digits.childElementCount !== parts.length) digits.replaceChildren(...parts.map(([u]) => h("div", { class: "clock-unit" }, h("b", { "data-u": u }), h("span", { text: u }))));
+  for (const [u, v] of parts) digits.querySelector(`[data-u="${u}"]`).textContent = String(v).padStart(u === "days" ? 1 : 2, "0");
+  $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : `${eventWhen(next)} in your time zone`;
+}
+
+/* ---------- cards ---------- */
+function renderCards() {
+  const wrap = $("#cards"); wrap.replaceChildren();
+  const lvl = D.client.level;
+  for (const m of D.party.members) {
+    const spells = D.client.classes[m.class] || [];
+    const card = h("article", { class: "card", style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
+    const flipBtn = (label) => h("button", { class: "flip", type: "button", "aria-pressed": "false", text: label, onclick: () => {
+      const on = card.classList.toggle("flipped");
+      card.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", String(on)));
+      card.querySelector(".front").inert = on; card.querySelector(".back").inert = !on;
+      (on ? card.querySelector(".back .flip") : card.querySelector(".front .flip")).focus({ preventScroll: true });
+    } });
+    const profs = m.professions.map((p) => h("span", {}, p.name, " ", h("span", { class: `chip ${p.source}`, title: p.source === "board" ? "Written on the Party Board or the decisions card" : "Said in chat, not on the board yet", text: p.status ? `${p.source}, ${p.status}` : p.source })));
+    const front = h("div", { class: "face front" },
+      h("div", { class: "who", text: m.name }),
+      h("div", { class: "what", text: `${m.race} ${m.class}` }),
+      h("div", { class: "spec", text: m.spec }),
+      h("dl", {},
+        h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: m.role }), m.role_detail ? h("span", { class: "spec", text: m.role_detail }) : null)),
+        h("div", {}, h("dt", { text: "Spec" }), h("dd", {}, h("span", { class: `chip ${m.spec_status.status === "open" ? "new" : "board"}`, text: m.spec_status.status === "open" ? "still open" : "declared" }))),
+        h("div", {}, h("dt", { text: "Wakes up in" }), h("dd", { text: m.start_zone || "unknown" })),
+        h("div", {}, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
+      flipBtn(`${m.class} spells at ${lvl}`));
+    const list = h("ul", { class: "spells" }, spells.map((sp) => {
+      const vals = sp.values.map((v) => fmtVal(v, sp.duration_ms) + (v.basis === "base" && !v.label.startsWith("%") ? " (base, scaling unverified)" : v.level != null && v.level < lvl ? ` (rank caps at ${v.level})` : "")).join(" · ");
+      const meta = [fmtCost(sp.cost), sp.cast_ms ? `${fmtMs(sp.cast_ms)} cast` : "instant", sp.cooldown ? `${fmtMs(sp.cooldown.ms)} cooldown` : null,
+        sp.duration_ms && !sp.values.some((v) => v.mode === "total") ? `lasts ${fmtMs(sp.duration_ms)}` : null, sp.learned ? `learned at ${sp.learned}` : null].filter(Boolean).join(" · ");
+      return h("li", { class: "spell" }, h("div", { class: "spell-name" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null), vals ? h("div", { class: "spell-vals", text: vals }) : null, h("div", { class: "spell-meta", text: meta }));
+    }));
+    const back = h("div", { class: "face back" },
+      h("div", { class: "back-head" }, h("h3", { text: `${m.class} at ${lvl}` }), h("span", { class: "label", text: `client ${D.client.build}` })),
+      list, flipBtn(`Back to ${m.name}`));
+    back.inert = true;
+    card.append(h("div", { class: "card-inner" }, front, back));
+    wrap.append(card);
+  }
+}
+
+/* ---------- map ---------- */
+const ZONES = {
+  "Tirisfal Glades": { x: 92, y: 96, label: [60, 150] },
+  "Mulgore": { x: 268, y: 318, label: [214, 372] },
+  "Durotar": { x: 508, y: 238, label: [470, 292] },
+};
+function renderMap() {
+  const box = $("#map"); box.replaceChildren();
+  const svg = s("svg", { viewBox: "0 0 600 400", role: "img", "aria-label": "Map of the three Horde starting zones with paths to Orgrimmar" });
+  svg.append(
+    s("rect", { class: "map-sea", x: 0, y: 0, width: 600, height: 400 }),
+    s("path", { class: "map-land", d: "M0 30 C40 20 120 30 170 60 C190 110 160 170 110 190 C60 200 20 180 0 170 Z" }),
+    s("path", { class: "map-land", d: "M330 40 C400 30 470 50 540 80 C580 120 570 200 560 260 C540 320 470 360 390 380 C300 395 210 380 180 330 C170 280 220 230 260 200 C300 160 300 90 330 40 Z" }),
+    s("path", { id: "air", class: "map-air", d: "M128 110 C 220 30, 360 30, 456 112" }),
+    s("path", { id: "road-mulgore", class: "map-road", d: "M268 318 C 290 290, 330 250, 392 222 C 430 200, 455 160, 468 128" }),
+    s("path", { id: "road-durotar", class: "map-road", d: "M508 238 C 520 210, 512 170, 478 130" }),
+    s("circle", { class: "map-meet", cx: 470, cy: 122, r: 20 }),
+    s("circle", { class: "map-meet", cx: 392, cy: 222, r: 14 }),
+    s("circle", { class: "map-city", cx: 470, cy: 122, r: 7 }),
+    s("circle", { class: "map-city", cx: 392, cy: 222, r: 5 }),
+    s("text", { class: "map-text", x: 470, y: 88, "text-anchor": "middle", text: "Orgrimmar" }),
+    s("text", { class: "map-text small", x: 470, y: 158, "text-anchor": "middle", text: "Valley of Strength" }),
+    s("text", { class: "map-text small", x: 380, y: 250, "text-anchor": "middle", text: "the Crossroads" }),
+    s("text", { class: "map-text small", x: 290, y: 30, "text-anchor": "middle", text: "zeppelin" })
+  );
+  const byZone = {};
+  for (const m of D.party.members) (byZone[m.start_zone] ||= []).push(m);
+  for (const [zone, ms] of Object.entries(byZone)) {
+    const z = ZONES[zone]; if (!z) continue;
+    svg.append(s("text", { class: "map-text", x: z.label[0], y: z.label[1], text: zone }));
+    ms.forEach((m, i) => {
+      const cx = z.x + (i - (ms.length - 1) / 2) * 34, cy = z.y;
+      svg.append(s("circle", { cx, cy, r: 8, fill: classVar(m.class_key), stroke: "var(--oak-0)", "stroke-width": 2 }, s("title", { text: `${m.name}, ${m.race} ${m.class}` })));
+      svg.append(s("text", { class: "map-text small", x: cx, y: i % 2 ? cy + 24 : cy - 13, "text-anchor": "middle", text: m.name }));
+    });
+  }
+  if (!reduceMQ.matches) {
+    const travel = (pathId, color, dur, begin) => {
+      const g = s("g", {}, s("circle", { r: 4.5, fill: color, opacity: 0.95 }));
+      const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", rotate: "auto" }); am.append(s("mpath", { href: `#${pathId}` }));
+      g.append(am); return g;
+    };
+    const zep = s("g", {}, s("ellipse", { rx: 13, ry: 5.5, fill: "var(--brass)" }), s("rect", { x: -4, y: 5, width: 8, height: 3, fill: "var(--parchment-2)" }));
+    const am = s("animateMotion", { dur: "9s", repeatCount: "indefinite" }); am.append(s("mpath", { href: "#air" })); zep.append(am);
+    svg.append(zep);
+    const color = (zone) => classVar((byZone[zone] || [])[0] && byZone[zone][0].class_key);
+    svg.append(travel("road-mulgore", color("Mulgore"), "7s", "0s"), travel("road-durotar", color("Durotar"), "4s", "1s"));
+  }
+  box.append(svg);
+  const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
+  const names = Object.entries(byZone).map(([z, ms]) => `${ms.map((m) => m.name).join(", ").replace(/, ([^,]*)$/, " and $1")} in ${z}`);
+  $("#map-lede").textContent = `${names.join("; ")}. The Undercity zeppelin and two roads all end in Orgrimmar.`;
+  $("#map-caption").textContent = meet ? `${meet.title}: ${meet.status}. ${meet.detail}` : "";
+}
+
+/* ---------- racials ---------- */
+function renderRaces() {
+  const wrap = $("#races"); wrap.replaceChildren();
+  for (const [race, list] of Object.entries(D.client.racials)) {
+    const ms = D.party.members.filter((m) => m.race === race);
+    const slip = h("div", { class: "slip race" },
+      h("h3", {}, race, h("span", { class: "dots" }, ms.map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}`, title: m.name }))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") })),
+      h("ul", {}, list.map((r) => h("li", {},
+        h("div", {}, h("span", { class: "rname", text: r.name }), " ", r.kind ? h("span", { class: "chip", text: r.kind }) : null, " ", r.changed_oct26 ? h("span", { class: "chip new", text: "changed Oct 26" }) : null),
+        h("div", { class: "rwiki", text: r.wiki ? r.wiki.replace(/^(active|passive),\s*/, "") : "Not on the wiki page yet." }),
+        (r.client.values.length || r.client.cooldown_ms) ? h("div", { class: "rclient", text: `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` }) : null))));
+    wrap.append(slip);
+  }
+}
+
+/* ---------- legacy ring ---------- */
+function renderLegacy() {
+  const L = D.client.legacy, wrap = $("#legacy"); wrap.replaceChildren();
+  $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
+  const r = 84, C = 2 * Math.PI * r;
+  const svg = s("svg", { viewBox: "-130 -130 260 260", role: "img", "aria-label": `Legacy: ${L.earned_now} of ${L.total} points` });
+  let start = 0;
+  L.categories.forEach((c, i) => {
+    const len = (c.n / L.total) * C;
+    svg.append(s("circle", { r, cx: 0, cy: 0, fill: "none", stroke: `var(--seg-${i + 1})`, "stroke-width": 16, "stroke-dasharray": `${Math.max(0, len - 2)} ${C}`, "stroke-dashoffset": -start, transform: "rotate(-90)" }, s("title", { text: `${c.key}: ${c.n}` })));
+    start += len;
+  });
+  svg.append(s("circle", { r: r - 14, cx: 0, cy: 0, fill: "none", stroke: "var(--brass)", "stroke-width": 4, "stroke-dasharray": `${(L.earned_now / L.total) * C} ${C}`, transform: "rotate(-90)", opacity: 0.9 }));
+  for (const t of L.thresholds) {
+    const a = (t.n / L.total) * 2 * Math.PI - Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
+    svg.append(s("line", { class: "ring-tick", x1: ca * (r - 12), y1: sa * (r - 12), x2: ca * (r + 12), y2: sa * (r + 12) }));
+    svg.append(s("text", { class: "ring-tlabel", x: ca * (r + 26), y: sa * (r + 26) + 4, "text-anchor": "middle", text: String(t.n) }));
+  }
+  svg.append(s("text", { class: "ring-num", x: 0, y: 8, "text-anchor": "middle", text: String(L.earned_now) }),
+    s("text", { class: "ring-sub", x: 0, y: 28, "text-anchor": "middle", text: `OF ${L.total} POINTS` }));
+  const legend = h("ul", { class: "legend" }, L.categories.map((c, i) => h("li", {}, h("span", { class: "sw", style: `--sw: var(--seg-${i + 1})` }), h("b", { class: "num", text: String(c.n) }), h("span", { text: `${c.key}: ${c.text.replace(/^\d+:\s*/, "")}` }))));
+  const rewards = h("ul", { class: "rewards" }, L.thresholds.map((t) => h("li", {}, h("b", { text: t.alt ? `${t.n} (${t.alt})` : String(t.n) }), h("span", { text: `${t.reward}, ${t.kind}` }))));
+  wrap.append(h("div", {}, svg),
+    h("div", { style: "display:grid;gap:14px;min-width:0" },
+      h("p", { text: `Earned so far: ${L.earned_now}, because ${L.earned_note}.` }),
+      h("div", {}, h("div", { class: "label", text: `Reward track, ${L.thresholds_label}` }), rewards),
+      h("p", { class: "label", text: `Claimed from ${L.claim}.` }),
+      legend));
+}
+
+/* ---------- synergy wheel ---------- */
+function renderWheel() {
+  const wrap = $("#wheel"); wrap.replaceChildren();
+  const keys = D.party.members.map((m) => m.class_key);
+  const R = 112, pos = {};
+  keys.forEach((k, i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / keys.length; pos[k] = [Math.cos(a) * R, Math.sin(a) * R]; });
+  const svg = s("svg", { viewBox: "-160 -160 320 320", role: "group", "aria-label": "Buff wheel between the five classes" });
+  const edges = [];
+  D.client.synergy.forEach((b, bi) => {
+    for (const to of b.to) {
+      if (to === b.from || !pos[to] || !pos[b.from]) continue;
+      const [x1, y1] = pos[b.from], [x2, y2] = pos[to];
+      const off = ((bi % 4) - 1.5) * 10;
+      const cx = (x1 + x2) * 0.22 + off, cy = (y1 + y2) * 0.22 - off;
+      const path = s("path", { class: "wheel-edge", d: `M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, style: `--ec: ${classVar(b.from)}`, "data-from": b.from, "data-b": bi });
+      const tx = 0.12 * x1 + 0.88 * x2 + 0, ty = 0.12 * y1 + 0.88 * y2;
+      const tip = s("circle", { class: "wheel-tip", cx: (tx * 0.85 + cx * 0.15), cy: (ty * 0.85 + cy * 0.15), r: 3.2, style: `--ec: ${classVar(b.from)}`, "data-from": b.from, "data-b": bi });
+      edges.push(path, tip); svg.append(path, tip);
+    }
+  });
+  const nodes = keys.map((k) => {
+    const m = memberByKey(k), [x, y] = pos[k];
+    const g = s("g", { class: "wheel-node", tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${m.class}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k },
+      s("circle", { cx: x, cy: y, r: 26 }), s("text", { x, y: y - 1, text: m.name }), s("text", { x, y: y + 13, style: "font-size:10px;fill:var(--text-dim)", text: m.class }));
+    svg.append(g); return g;
+  });
+  const items = D.client.synergy.map((b, bi) => {
+    const nums = b.refs.filter((r) => r.kind === "client").map((r) => `${fmtVal(r)} (${r.name})`).join(" · ");
+    const src = b.refs.filter((r) => r.kind !== "client").map((r) => h("div", { class: "buff-src" }, r.kind === "memory" ? h("span", { class: "chip memory", text: "from memory" }) : h("span", { class: "chip board", text: "wiki" }), " ", r.text));
+    const giver = memberByKey(b.from), to = b.to.filter((k) => k !== b.from).map((k) => (memberByKey(k) || {}).name).filter(Boolean);
+    return h("li", { class: "buff", style: `--bc: ${classVar(b.from)}`, "data-from": b.from },
+      h("div", { class: "buff-what" }, `${giver ? giver.class : b.from} brings ${b.what} (${b.lands_on})`),
+      h("div", { class: "label", text: `${giver ? `${giver.name} · ` : ""}reaches ${b.to.includes(b.from) ? "everyone" : to.join(", ")}` }),
+      nums ? h("div", { class: "buff-nums", text: nums }) : null, src);
+  });
+  let active = null;
+  const setActive = (k) => {
+    active = active === k ? null : k;
+    edges.forEach((e) => e.classList.toggle("on", active !== null && e.dataset.from === active));
+    nodes.forEach((n) => { n.classList.toggle("on", n.dataset.k === active); n.setAttribute("aria-pressed", String(n.dataset.k === active)); });
+    items.forEach((i) => i.classList.toggle("dim", active !== null && i.dataset.from !== active));
+  };
+  nodes.forEach((n) => { n.addEventListener("click", () => setActive(n.dataset.k)); n.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(n.dataset.k); } }); });
+  wrap.append(svg, h("ul", { class: "buffs" }, items));
+}
+
+/* ---------- ledger ---------- */
+function renderLedger() {
+  const p = D.party, wrap = $("#ledger"); wrap.replaceChildren();
+  const link = (l) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: l.label });
+  const pollNames = p.polls.map((q) => q.title.toLowerCase());
+  const joined = pollNames.length > 1 ? `${pollNames.slice(0, -1).join(", ")} and ${pollNames[pollNames.length - 1]}` : pollNames.join("");
+  $("#ledger-lede").textContent = p.polls.length
+    ? `Settled things, open things, and ${p.polls.length === 1 ? "one poll" : `${p.polls.length} polls`} still taking votes: ${joined}.`
+    : "Settled things and open things. No poll is taking votes right now.";
+  wrap.append(
+    h("h3", { text: "Settled" }),
+    h("ul", {}, [...p.settled, ...p.settled_extra].map((x) => h("li", {}, h("span", {}, h("span", { class: "tick", "aria-hidden": "true" }), x.text), h("span", { class: "label", text: x.source })))),
+    p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
+    ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` }))),
+    h("h3", { text: "Still open" }),
+    h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o) => h("li", {},
+      h("strong", { text: o.title }),
+      h("span", {}, ...linkify(o.status ? `${o.status}. ${o.detail || ""}` : o.text || "", o.links, link)),
+      h("span", { class: "label", text: o.source })))));
+}
+
+function linkify(text, ls, link) {
+  const out = []; let rest = text;
+  for (const l of ls) {
+    const i = rest.indexOf(l.label);
+    if (i < 0) { out.push(rest, " "); rest = ""; out.push(link(l)); continue; }
+    out.push(rest.slice(0, i), link(l)); rest = rest.slice(i + l.label.length);
+  }
+  out.push(rest);
+  return out;
+}
+
+/* ---------- librarian ---------- */
+function renderLibrarian() {
+  const st = D.stats, wrap = $("#librarian"); wrap.replaceChildren();
+  const stat = (label, value) => h("div", { class: "stat" }, h("b", { text: value }), h("span", { class: "label", text: label }));
+  const vals = st.last7.map((x) => x.seconds);
+  const W = 260, H = 70, pad = 10, max = Math.max(...vals, 1);
+  const xs = (i) => pad + (i * (W - 2 * pad)) / Math.max(1, vals.length - 1), ys = (v) => H - pad - (v / max) * (H - 2 * pad - 10);
+  const pts = vals.map((v, i) => `${xs(i)},${ys(v)}`).join(" ");
+  const spark = s("svg", { viewBox: `0 0 ${W} ${H + 14}`, role: "img", "aria-label": `Last ${vals.length} answer times in seconds: ${vals.join(", ")}` },
+    s("line", { class: "spark-grid", x1: pad, x2: W - pad, y1: H - pad, y2: H - pad }),
+    s("line", { class: "spark-grid", x1: pad, x2: W - pad, y1: ys(max), y2: ys(max), "stroke-dasharray": "2 4" }),
+    s("polygon", { class: "spark-area", points: `${xs(0)},${H - pad} ${pts} ${xs(vals.length - 1)},${H - pad}` }),
+    s("polyline", { class: "spark-line", points: pts }),
+    ...vals.map((v, i) => s("circle", { class: "spark-dot", cx: xs(i), cy: ys(v), r: i === vals.length - 1 ? 4 : 2.2 })),
+    ...vals.map((v, i) => s("text", { class: "spark-text", x: xs(i), y: H + 10, "text-anchor": "middle", text: String(v) })),
+    s("text", { class: "spark-text", x: W - pad, y: ys(max) - 4, "text-anchor": "end", text: `${max} s` }));
+  wrap.append(
+    h("div", { style: "display:grid;gap:14px;min-width:0" },
+      h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("95th percentile", fmtSecs(st.p95_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
+      h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.${st.p95_s > st.miss_threshold_s ? " Those slow ones are what pull the 95th percentile up." : ""}` })),
+    h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark));
+}
+
+/* ---------- footer ---------- */
+function renderFooter() {
+  const f = $("#footer"); f.replaceChildren();
+  const stamp = ["party", "timeline", "client", "stats"].map((k) => D[k].generated).sort().pop();
+  f.append(
+    h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: `${stamp.replace("T", " ").slice(0, 16)} UTC` }), "."),
+    h("p", { text: `Read from four places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, and the bot's log.` }),
+    h("p", { text: "Spell numbers are the game's own values at the level cap and can move with beta hotfixes. A \"board\" tag means written on the group's cards; \"chat\" means said in Discord and noted down." }));
+}
+
+/* ---------- sign-ups (db + user) ---------- */
+const Q = {
+  pack: [["yes", "Yes"], ["no", "No"]],
+  meet: [["valley", "Valley of Strength"], ["crossroads", "the Crossroads"], ["other", "Write-in"]],
+  rsvp: [["in", "In"], ["maybe", "Maybe"], ["out", "Out"]],
+};
+function buildSignupControls() {
+  for (const [q, opts] of Object.entries(Q)) {
+    $(`#opts-${q}`).replaceChildren(...opts.map(([v, label]) => h("span", { class: "opt" },
+      h("input", { type: "radio", name: q, id: `${q}-${v}`, value: v, disabled: true, onchange: () => { RT.mine[q] = v; save(q); } }),
+      h("label", { for: `${q}-${v}`, text: label }))));
+  }
+  const sel = $("#as");
+  sel.replaceChildren(h("option", { value: "", text: "Not saying" }), ...D.party.members.map((m) => h("option", { value: m.name, text: `${m.name}, ${m.class}` })));
+  sel.addEventListener("change", () => { RT.mine.as = sel.value || null; try { localStorage.setItem("board-as", sel.value); } catch (e) {} save("as"); pushPresence(); });
+  const other = $("#meet-other");
+  other.addEventListener("change", () => { RT.mine.meet_other = cleanText(other.value); if (RT.mine.meet_other) { RT.mine.meet = "other"; $("#meet-other").value = RT.mine.meet_other; applyMine(); } save(["meet", "meet_other"]); });
+  $("#signup").addEventListener("submit", (e) => e.preventDefault());
+  try { const as = localStorage.getItem("board-as"); if (as && memberByName(as)) { sel.value = as; RT.mine.as = as; } } catch (e) {}
+  renderTallies();
+}
+function cleanText(t) { return String(t || "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "").trim().slice(0, 40).replace(/[�-�]$/, ""); }
+function setStatus(text) { $("#signup-status").textContent = text; }
+function setEnabled(on) {
+  document.querySelectorAll("#signup input, #signup select").forEach((x) => { x.disabled = !on; });
+}
+function applyMine() {
+  for (const q of Object.keys(Q)) for (const [v] of Q[q]) { const el = $(`#${q}-${v}`); if (el) el.checked = RT.mine[q] === v; }
+  if (document.activeElement !== $("#meet-other")) $("#meet-other").value = RT.mine.meet_other || "";
+  if (RT.mine.as !== undefined && document.activeElement !== $("#as")) $("#as").value = RT.mine.as || "";
+}
+let writeChain = Promise.resolve();
+function save(field) {
+  if (RT.readOnly || !RT.db || !RT.myId || !RT.ready) return;
+  const patch = { updated: Date.now() };
+  for (const k of [].concat(field)) patch[k] = k === "meet_other" ? (RT.mine.meet_other || "") : (RT.mine[k] || null);
+  const ref = RT.db.doc(`signups/${RT.myId}`);
+  /* Merge: update only the fields this click changed. The first write creates the document from everything picked so far. */
+  const full = () => ({ pack: RT.mine.pack || null, meet: RT.mine.meet || null, meet_other: RT.mine.meet_other || "", rsvp: RT.mine.rsvp || null, as: RT.mine.as || null, updated: patch.updated });
+  const create = () => ref.set(full()).then(() => { RT.created = true; });
+  /* update rejects invalid_argument when the document is gone (deleted elsewhere); write it whole instead. */
+  const attempt = () => (RT.signups.has(RT.myId) || RT.created ? ref.update(patch).catch((err) => { if (err && err.code === "invalid_argument") return create(); throw err; }) : create());
+  writeChain = writeChain.then(() => attempt().catch((err) => {
+    const code = err && err.code;
+    if (code === "unavailable") return new Promise((r) => setTimeout(r, 400 + Math.random() * 600)).then(attempt);
+    throw err;
+  })).then(() => setStatus("Saved. Everyone who opens the board sees it.")).catch((err) => {
+    const code = err && err.code;
+    if (code === "quota_exceeded") setStatus("The board's storage is full, so this answer was not saved.");
+    else if (code === "invalid_argument" || code === "not_granted" || code === "revoked" || code === "capability_disabled" || code === "capability_removed") { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus("This board is read-only for you, so answers can't be saved here. Ask in chat instead."); }
+    else setStatus("That answer did not save. Try once more in a moment.");
+  });
+}
+let tallyToken = 0;
+async function renderTallies() {
+  const token = ++tallyToken;
+  const ids = [...RT.signups.keys()];
+  if (token !== tallyToken) return;
+  /* Display rule: a person shows only as the party member they picked, otherwise "a guest". No profile names. */
+  const nameOf = (id) => { const d = RT.signups.get(id) || {}; const base = (typeof d.as === "string" && memberByName(d.as) && d.as) || "a guest"; return id === RT.myId ? `${base} (you)` : base; };
+  for (const [q, opts] of Object.entries(Q)) {
+    const box = $(`#tally-${q}`);
+    const rows = opts.map(([v, label]) => {
+      const who = ids.filter((id) => (RT.signups.get(id) || {})[q] === v);
+      if (!who.length) return null;
+      const names = who.map((id) => q === "meet" && v === "other" ? `${nameOf(id)}: ${cleanText((RT.signups.get(id) || {}).meet_other) || "no place given"}` : nameOf(id));
+      return h("div", {}, h("b", { text: String(who.length) }), ` ${label}: `, names.join(", "));
+    }).filter(Boolean);
+    box.replaceChildren(...(rows.length ? rows : [h("span", { text: RT.db ? (RT.loaded ? "No answers yet." : "Loading answers.") : RT.tried ? "Answers are not visible on this view." : "Answers show here once the board is open inside Claude." })]));
+  }
+  renderPresence();
+}
+
+/* ---------- presence (room) ---------- */
+function pushPresence() {
+  if (!RT.room) return;
+  RT.room.presence({ as: RT.mine.as || null }).catch(() => {});
+}
+async function renderPresence() {
+  const wrap = $("#peers");
+  if (!RT.room) return;
+  const peers = RT.peers.filter((p) => p.kind === "viewer");
+  wrap.replaceChildren(...peers.map((p) => {
+    const as = p.presence && typeof p.presence.as === "string" ? memberByName(p.presence.as) : null;
+    const name = as ? as.name : "a guest";
+    return h("span", { class: `peer${p.isMe ? " me" : ""}`, style: `--pc: ${classVar(as && as.class_key)}`, title: p.isMe ? `${name} (you)` : name, role: "img", "aria-label": p.isMe ? `${name} (you)` : name });
+  }));
+  const me = peers.find((p) => p.isMe && p.sameTab) || peers.find((p) => p.isMe);
+  $("#presence-text").replaceChildren(peers.length === 1 ? "At the board now: just you" : `At the board now: ${peers.length}`, me ? h("span", { class: "peer-you", text: " · ringed dot is you" }) : "");
+}
+
+/* ---------- runtime ---------- */
+async function startRuntime() {
+  const c = window.claude;
+  if (!c || typeof c.use !== "function") { setStatus("Sign-ups switch on when this board is open inside Claude. Everything else on the page works here."); return; }
+  const use = (n) => Promise.resolve().then(() => c.use(n)).catch(() => null);
+  const [db, user, room] = await Promise.all([use("db"), use("user"), use("room")]);
+  RT.db = db; RT.user = user; RT.room = room; RT.tried = true;
+  if (room) {
+    room.onPeers((ch) => { RT.peers = ch.peers; renderPresence(); }, () => { RT.room = null; $("#peers").replaceChildren(); $("#presence-text").textContent = "Presence is not available on this view."; });
+    pushPresence();
+  } else $("#presence-text").textContent = "Presence is not available on this view.";
+  if (user) { try { RT.myId = await user.id(); } catch (e) { RT.myId = null; } }
+  if (!db) { setStatus("Sign-ups are read-only on this view: the shared store is not available here."); renderTallies(); return; }
+  setStatus(RT.myId ? "Loading saved answers." : "Sign-ups are read-only for you: this view has no signed-in identity. Answers from others still show.");
+  db.collection("signups").onSnapshot((snap) => {
+    RT.signups = new Map(snap.docs.filter((d) => d.exists).map((d) => [d.id, d.data() || {}])); RT.loaded = true;
+    if (RT.myId && RT.signups.has(RT.myId)) RT.seenMine = true;
+    else if (RT.seenMine) {
+      /* This viewer's answers were removed elsewhere: show the empty state, keep only the name picked on this device. */
+      RT.seenMine = false; RT.created = false; RT.mine = { as: RT.mine.as || null }; applyMine();
+    }
+    if (!RT.ready && RT.myId && !RT.blocked) {
+      /* First snapshot: load this viewer's saved answers, then switch the controls on, so a click never writes over them. */
+      const d = RT.signups.get(RT.myId);
+      if (d) RT.mine = { pack: d.pack, meet: d.meet, meet_other: d.meet_other, rsvp: d.rsvp, as: d.as || RT.mine.as || null };
+      RT.ready = true; RT.readOnly = false; setEnabled(true); applyMine(); pushPresence();
+      setStatus("Pick an answer and it saves on its own. Only the person who wrote an answer can change it.");
+    }
+    renderTallies();
+  }, (err) => { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus(err && err.code === "revoked" ? "Sign-ups are read-only now." : "Sign-ups stopped updating. Reload the board to see the latest."); });
+}
+
+/* ---------- wisps (canvas) ---------- */
+function startWisps() {
+  const cv = $("#wisps"), ctx = cv.getContext("2d");
+  if (!ctx) return;
+  let W = 0, H = 0, dpr = 1, raf = 0, parts = [], pointer = { x: -1e4, y: -1e4 };
+  const colors = ["--c-druid", "--c-priest", "--c-paladin", "--c-mage", "--c-warlock"].map(cssVar);
+  const size = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+  const seed = () => {
+    const n = Math.min(60, Math.max(18, Math.round((W * H) / 26000)));
+    parts = Array.from({ length: n }, (_, i) => ({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.18, vy: -0.05 - Math.random() * 0.16, r: 1.2 + Math.random() * 2.6, c: colors[i % colors.length], ph: Math.random() * 6.28 }));
+  };
+  const frame = (t) => {
+    ctx.clearRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";
+    for (const p of parts) {
+      const dx = p.x - pointer.x, dy = p.y - pointer.y, d2 = dx * dx + dy * dy;
+      if (d2 < 26000) { const f = (1 - d2 / 26000) * 0.04; p.vx += (dx / Math.sqrt(d2 + 1)) * f; p.vy += (dy / Math.sqrt(d2 + 1)) * f; }
+      p.vx *= 0.985; p.vy = p.vy * 0.985 - 0.0016;
+      p.x += p.vx + Math.sin(t / 2400 + p.ph) * 0.12; p.y += p.vy;
+      if (p.y < -30) { p.y = H + 20; p.x = Math.random() * W; p.vy = -0.05 - Math.random() * 0.16; }
+      if (p.x < -30) p.x = W + 20; if (p.x > W + 30) p.x = -20;
+      const glow = p.r * 9, a = 0.55 + 0.45 * Math.sin(t / 900 + p.ph);
+      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
+      g.addColorStop(0, p.c); g.addColorStop(0.18, p.c + "55"); g.addColorStop(1, p.c + "00");
+      ctx.globalAlpha = 0.35 * a; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, glow, 0, 6.283); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    raf = requestAnimationFrame(frame);
+  };
+  const run = () => { if (!raf && !reduceMQ.matches && !document.hidden) raf = requestAnimationFrame(frame); };
+  const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
+  size(); seed();
+  addEventListener("resize", () => { size(); if (parts.length === 0 || reduceMQ.matches) return; }, { passive: true });
+  addEventListener("pointermove", (e) => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
+  addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
+  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
+  reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) { stop(); ctx.clearRect(0, 0, W, H); } else run(); if (D.party) renderMap(); });
+  run();
+}
+
+/* ---------- boot ---------- */
+async function boot() {
+  try {
+    const names = ["party", "timeline", "client", "stats"];
+    const got = await Promise.all(names.map((n) => fetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })));
+    names.forEach((n, i) => { D[n] = got[i]; });
+  } catch (e) {
+    $("#clock-label").textContent = "The data files did not load";
+    $("#footer").textContent = `Could not read the board's data: ${e.message}. The page needs its data folder published beside it.`;
+    return;
+  }
+  const steps = [renderHero, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, buildSignupControls];
+  for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
+  startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
+}
+startWisps();
+boot();
+})();
+</script>

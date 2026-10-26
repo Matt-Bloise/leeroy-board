@@ -1,0 +1,63 @@
+{
+ "generated": "2026-10-26T21:32:43.066Z",
+ "sources": [
+  "bot/logs/leeroy.log",
+  "bot/tools/latency.mjs",
+  "wiki/INDEX.md"
+ ],
+ "answers": 84,
+ "replies": 84,
+ "noreply": 0,
+ "median_s": 44,
+ "p95_s": 3909,
+ "max_s": 24765,
+ "miss_threshold_s": 900,
+ "misses": 9,
+ "last7": [
+  {
+   "closed_utc": "2026-10-26T19:15:57.217Z",
+   "seconds": 93,
+   "kind": "mention",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-26T19:50:40.779Z",
+   "seconds": 89,
+   "kind": "/ask",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-26T19:57:44.519Z",
+   "seconds": 58,
+   "kind": "mention",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-26T19:59:00.090Z",
+   "seconds": 32,
+   "kind": "/ask",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-26T20:34:50.870Z",
+   "seconds": 73,
+   "kind": "/ask",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-26T20:45:52.024Z",
+   "seconds": 51,
+   "kind": "/ask",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-26T20:55:20.476Z",
+   "seconds": 67,
+   "kind": "/ask",
+   "how": "reply"
+  }
+ ],
+ "wiki_pages": 61,
+ "wiki_facts": 1273,
+ "index_generated": "2026-10-26"
+}
