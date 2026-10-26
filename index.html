@@ -19,6 +19,7 @@
 <body>
 <title>Dungeons and Drinking Board</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preload" as="image" href="img/tavern-hero.jpg" fetchpriority="high">
 <style>
 /* Fonts are self-hosted (fonts/, SIL OFL, latin subsets from Google Fonts) so the page loads no third-party host. */
 @font-face { font-family: "Alegreya"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("fonts/alegreya-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
@@ -70,6 +71,11 @@
   --hover-tint: rgba(255, 255, 255, 0.06);
   --rule: rgba(74, 50, 32, 0.8);
   --buff-bg: rgba(0, 0, 0, 0.18);
+  --shade-deep: rgba(18, 12, 8, 0.94);
+  --shade-mid: rgba(18, 12, 8, 0.62);
+  --shade-light: rgba(18, 12, 8, 0.22);
+  --shade-none: rgba(18, 12, 8, 0);
+  --mask-solid: #000;
   --font-display: "Grenze Gotisch", "Palatino Linotype", Georgia, serif;
   --font-body: "Alegreya", Georgia, "Times New Roman", serif;
   --font-ui: "Alegreya Sans SC", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
@@ -96,9 +102,25 @@ body {
   line-height: 1.55;
   overflow-x: hidden;
 }
-#wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+/* Layers: the tavern painting (z 0) sits under the wisps canvas (z 1), which sits under the content (z 2). */
+.hero-art { position: absolute; top: 0; left: 0; right: 0; height: 44rem; z-index: 0; overflow: hidden; pointer-events: none; }
+.hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: 62% 38%; display: block; max-width: none; }
+.hero-art::after { content: ""; position: absolute; inset: 0; background:
+  linear-gradient(90deg, var(--shade-deep) 0%, var(--shade-mid) 34%, var(--shade-light) 62%, var(--shade-light) 100%),
+  linear-gradient(180deg, var(--shade-none) 55%, var(--oak-0) 100%); }
+.hero-art.gate-mode::after { background: linear-gradient(180deg, var(--shade-mid), var(--shade-deep) 85%, var(--oak-0)); }
+@media (max-width: 700px) {
+  .hero-art img { object-position: 12% 40%; }
+  .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-mid) 60%, var(--oak-0) 100%); }
+}
+#wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.plate-zone { position: relative; isolation: isolate; display: grid; gap: 40px; padding-block: 8px; }
+.plate-art { position: absolute; inset: -24px calc(-1 * max(16px, env(safe-area-inset-left, 0px))); z-index: -1; overflow: hidden; pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent, var(--mask-solid) 12%, var(--mask-solid) 88%, transparent); mask-image: linear-gradient(180deg, transparent, var(--mask-solid) 12%, var(--mask-solid) 88%, transparent); }
+.plate-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 40%; opacity: 0.2; display: block; max-width: none; }
+@media print { #wisps, .hero-art, .plate-art { display: none !important; } }
 .wrap {
-  position: relative; z-index: 1;
+  position: relative; z-index: 2;
   max-width: 1160px; margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -267,7 +289,7 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .writein input, .signup select { font: inherit; font-size: 0.95rem; padding: 6px 10px; border: 1px solid var(--ink-soft); border-radius: 4px; background: var(--parchment-2); color: var(--ink); min-width: 0; flex: 1 1 12rem; max-width: 100%; }
 .picker-note { font-size: 0.88rem; color: var(--ink-soft); }
 [hidden] { display: none !important; }
-.gate { position: relative; z-index: 1; min-height: 70vh; display: grid; place-items: center; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px; }
+.gate { position: relative; z-index: 2; min-height: 90vh; display: grid; place-items: center; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px; }
 .gate-card { display: grid; gap: 12px; text-align: center; max-width: 30rem; padding: 28px 24px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
 .gate-card h1 { font-size: var(--step-3); color: var(--parchment); }
 .gate-card p { color: var(--text-dim); font-size: var(--step-1); }
@@ -299,6 +321,7 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
 }
 </style>
 
+<div class="hero-art gate-mode" id="hero-art" aria-hidden="true"><img src="img/tavern-hero.jpg" alt="" width="1672" height="941" loading="eager" fetchpriority="high" decoding="async"></div>
 <canvas id="wisps" aria-hidden="true"></canvas>
 <div class="gate" id="gate">
   <div class="gate-card">
@@ -324,6 +347,8 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
     </div>
   </header>
 
+  <div class="plate-zone">
+  <div class="plate-art" aria-hidden="true"><img src="img/tavern-plate.jpg" alt="" width="1672" height="941" loading="lazy" decoding="async"></div>
   <section aria-labelledby="h-five">
     <div class="section-head">
       <h2 id="h-five">The five</h2>
@@ -340,6 +365,8 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
     <div class="map-box" id="map"></div>
     <p class="map-caption" id="map-caption"></p>
   </section>
+
+  </div>
 
   <section aria-labelledby="h-races">
     <div class="section-head">
@@ -780,6 +807,7 @@ function renderFooter() {
   f.append(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: `${stamp.replace("T", " ").slice(0, 16)} UTC` }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
+    h("p", { text: "Tavern paintings generated on 2026-10-26 for this board." }),
     h("p", { text: "Spell numbers are the game's own values at the level cap and can move with beta hotfixes. A \"board\" tag means written on the group's cards; \"chat\" means said in Discord and noted down." }));
 }
 
@@ -1053,10 +1081,24 @@ function startWisps() {
   run();
 }
 
+/* ---------- painting layer height ---------- */
+function syncArt() {
+  const art = $("#hero-art"); if (!art) return;
+  const onGate = !$("#gate").hidden;
+  const target = onGate ? $("#gate") : $("#top");
+  art.classList.toggle("gate-mode", onGate);
+  const r = target.getBoundingClientRect();
+  art.style.height = `${Math.ceil(r.bottom + window.scrollY + (onGate ? 0 : 48))}px`;
+}
+if (window.ResizeObserver) { const ro = new ResizeObserver(syncArt); ro.observe($("#gate")); ro.observe($("#top")); }
+addEventListener("resize", syncArt, { passive: true });
+syncArt();
+
 /* ---------- boot ---------- */
 async function boot(mode, sdk) {
   $("#gate").hidden = true;
   $("#board").hidden = false;
+  syncArt();
   try {
     const names = ["party", "timeline", "client", "stats"];
     const got = await Promise.all(names.map((n) => fetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })));
