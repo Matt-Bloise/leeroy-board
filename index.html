@@ -873,20 +873,63 @@ async function renderPresence() {
 }
 
 /* ---------- presence inside Discord (Embedded App SDK, no scopes) ---------- */
+/* SDK 2.5.0 exposes one command under two names: commands.getActivityInstanceConnectedParticipants and the older
+   commands.getInstanceConnectedParticipants both send GET_ACTIVITY_INSTANCE_CONNECTED_PARTICIPANTS, and the reply is
+   checked against a strict schema (id, username, discriminator, flags, bot required). The same list also arrives through
+   the ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE event. Order here: the command, then the event; if neither yields anyone,
+   the viewer is shown alone as "you", and every SDK error goes to console.warn so a launch says why. */
 let discordPoll = 0;
 function startDiscordPresence(sdk) {
-  const poll = async () => {
-    let list = [];
-    try { const r = await sdk.commands.getActivityInstanceConnectedParticipants(); list = (r && r.participants) || []; }
-    catch (e) { $("#presence-text").textContent = "Presence is not available right now."; return; }
+  const warned = new Set();
+  const warn = (where, e) => {
+    const text = `${where}: ${e && e.code !== undefined ? `code ${e.code}, ` : ""}${(e && (e.message || e.toString())) || String(e)}`;
+    if (warned.has(text)) return;
+    warned.add(text);
+    console.warn(`[board] presence ${text}`, e);
+  };
+  const render = (list, source) => {
     const wrap = $("#peers");
+    if (!list || !list.length) {
+      wrap.replaceChildren(h("span", { class: "peer me", style: `--pc: ${classVar(null)}`, title: "you", role: "img", "aria-label": "you" }));
+      $("#presence-text").replaceChildren("In this Activity now: ", h("span", { class: "peer-you", text: "you" }));
+      return;
+    }
     wrap.replaceChildren(...list.map((p) => {
       const name = String(p.nickname || p.global_name || p.username || "someone");
       const m = memberByName(name);
       return h("span", { class: "peer", style: `--pc: ${classVar(m && m.class_key)}`, title: name, role: "img", "aria-label": name });
     }));
     $("#presence-text").textContent = list.length === 1 ? "In this Activity now: one person" : `In this Activity now: ${list.length}`;
+    $("#peers").dataset.source = source;
   };
+  const cmd = sdk.commands.getActivityInstanceConnectedParticipants || sdk.commands.getInstanceConnectedParticipants;
+  let viaEvent = false, eventTried = false;
+  const subscribe = async () => {
+    if (eventTried) return;
+    eventTried = true;
+    try {
+      await sdk.subscribe("ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE", (data) => {
+        const list = (data && data.participants) || [];
+        viaEvent = true;
+        render(list, "event");
+      });
+    } catch (e) { warn("subscribe ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE", e); }
+  };
+  const poll = async () => {
+    if (viaEvent) return;
+    if (typeof cmd !== "function") { warn("command", new Error("no participants command on this SDK")); render([], "none"); subscribe(); return; }
+    try {
+      const r = await cmd.call(sdk.commands);
+      const list = (r && r.participants) || [];
+      render(list, "command");
+      if (!list.length) subscribe();
+    } catch (e) {
+      warn("getActivityInstanceConnectedParticipants", e);
+      render([], "none");
+      subscribe();
+    }
+  };
+  render([], "none");
   poll();
   clearInterval(discordPoll);
   discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
@@ -895,7 +938,7 @@ function startDiscordPresence(sdk) {
     const a = e.target.closest && e.target.closest("a[href]");
     if (!a || !/^https?:/i.test(a.getAttribute("href"))) return;
     e.preventDefault();
-    sdk.commands.openExternalLink({ url: a.href }).catch(() => {});
+    sdk.commands.openExternalLink({ url: a.href }).catch((err) => warn("openExternalLink", err));
   });
 }
 
