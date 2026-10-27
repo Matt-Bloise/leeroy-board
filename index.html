@@ -3744,7 +3744,11 @@ const reviewFlag = REVIEW_KEY.length === 20 && hash === `#review-${REVIEW_KEY}`;
 let pass = null;
 try { pass = sessionStorage.getItem("board-pass"); } catch (e) { pass = null; }
 const remembered = pass === "review" || (pass === "preview" && previewHost);
-if (reviewFlag || (previewHost && previewFlag) || remembered) {
+/* Open web (the owner's call, 2026-10-27: friends must not have to do anything): an unapproved Activity opens only for the app team and
+   invited testers, so the bot links to the board on the web. Opened top-level on the public host or Discord's proxy, the
+   board renders without the gate; inside Discord it is framed and takes the SDK path below. The data is the public repo's. */
+const openWeb = window.top === window && (/\.github\.io$/.test(host) || host.endsWith(".discordsays.com"));
+if (reviewFlag || (previewHost && previewFlag) || remembered || openWeb) {
   try { if (reviewFlag) sessionStorage.setItem("board-pass", "review"); else if (previewHost && previewFlag) sessionStorage.setItem("board-pass", "preview"); } catch (e) {}
   if (reviewFlag || hash === "#preview") { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
   window.__board.start("preview");
