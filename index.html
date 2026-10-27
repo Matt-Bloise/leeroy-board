@@ -27,7 +27,6 @@
 @font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sans-sc-500-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/alegreya-sans-sc-700-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 700; font-display: swap; src: url("fonts/grenze-gotisch-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-/* Layout: a fixed painting, a wall of pinned tiles, each opening a scene in a sheet. */
 :root {
   color-scheme: dark;
   --oak-0: #120c08;
@@ -38,9 +37,21 @@
   --parchment: #eadfc4;
   --parchment-2: #d9c9a3;
   --ink: #2b1d10;
-  --ink-soft: #5b4630;
-  --text: #efe4cc;
-  --text-dim: #b9a886;
+  --ink-soft: #46331f;
+  --cream: #f4ead2;
+  --cream-2: #e6d6b4;
+  --brass-hi: #eecd8c;
+  --l-text: #efe4cc;
+  --l-dim: #b9a886;
+  --lamp: rgba(255, 186, 110, 0.1);
+  --wood-veil: rgba(26, 17, 10, 0.45);
+  --wood-veil-2: rgba(8, 5, 3, 0.72);
+  --edge-hi: rgba(255, 214, 160, 0.3);
+  --wear: rgba(0, 0, 0, 0.45);
+  --fs-small: 0.875rem;
+  --fs-chip: 0.8125rem;
+  --text: var(--l-text);
+  --text-dim: var(--l-dim);
   --brass: #d1a85a;
   --brass-dim: #8a6c35;
   --wax: #a8322a;
@@ -107,7 +118,6 @@
   --ink-line: rgba(43, 29, 16, 0.6);
   --radius: 6px;
   --measure: 65ch;
-  /* Motion tokens (v3); MOTION mirrors them. */
   --t-micro: 160ms;
   --t-move: 320ms;
   --t-hero: 720ms;
@@ -147,7 +157,6 @@ body {
 .candle { position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(ellipse 70% 60% at 14% 26%, var(--candle), transparent 70%), radial-gradient(ellipse at 50% 45%, transparent 48%, var(--vignette) 100%);
   animation: candle 5.2s linear infinite; }
-/* Candlelight: opacity only, between 0.92 and 1 (amplitude 8%). */
 @keyframes candle { 0% { opacity: 1; } 14% { opacity: 0.94; } 27% { opacity: 0.985; } 41% { opacity: 0.92; } 55% { opacity: 0.975; } 68% { opacity: 0.935; } 84% { opacity: 0.99; } 100% { opacity: 1; } }
 #wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; will-change: transform; }
 @media print { #wisps, .hero-art, .candle, .scene-layer { display: none !important; } }
@@ -170,7 +179,7 @@ a:hover { color: var(--parchment); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .label { font-family: var(--font-ui); font-size: var(--step--1); letter-spacing: 0.08em; color: var(--text-dim); }
 .num { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; }
-.chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: 0.78rem; letter-spacing: 0.06em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--brass-dim); color: var(--text-dim); white-space: nowrap; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.06em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--brass-dim); color: var(--text-dim); white-space: nowrap; }
 .chip.board { border-color: var(--brass); color: var(--brass); }
 .chip.chat { border-style: dashed; }
 .chip.new { border-color: var(--warn); color: var(--warn); }
@@ -178,7 +187,7 @@ a:hover { color: var(--parchment); }
 .slip {
   position: relative; background: var(--parchment); color: var(--ink);
   border-radius: 3px; padding: 22px 20px 20px;
-  box-shadow: 0 14px 30px var(--shadow), inset 0 0 40px var(--slip-burn);
+  box-shadow: 6px 14px 30px var(--shadow), inset 1px 1px 0 var(--slip-sheen), inset 0 0 40px var(--slip-burn);
   background-image: radial-gradient(ellipse at 30% 0%, var(--slip-sheen), transparent 60%);
   min-width: 0;
 }
@@ -192,7 +201,7 @@ a:hover { color: var(--parchment); }
 .loading { color: var(--text-dim); font-style: italic; }
 [hidden] { display: none !important; }
 
-/* ---------- hero strip: title, presence, and the countdown (the strip opens the dates scene) ---------- */
+/* ---------- hero strip ---------- */
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .hero-title { display: grid; gap: 4px; min-width: 0; }
 .kicker { font-family: var(--font-ui); letter-spacing: 0.14em; color: var(--brass); font-size: var(--step--1); }
@@ -213,7 +222,7 @@ a:hover { color: var(--parchment); }
 .clock-digits { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: baseline; min-height: 3rem; }
 .clock-unit { display: grid; justify-items: start; }
 .clock-unit b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: var(--step-4); line-height: 0.95; color: var(--brass); font-weight: 700; text-shadow: 0 0 22px var(--hi-brass), 0 2px 0 var(--oak-0); }
-.clock-unit > span { font-family: var(--font-ui); letter-spacing: 0.12em; font-size: 0.74rem; color: var(--text-dim); }
+.clock-unit > span { font-family: var(--font-ui); letter-spacing: 0.12em; font-size: var(--fs-small); color: var(--text-dim); }
 .clock-when { font-size: var(--step--1); color: var(--text-dim); }
 @media (min-width: 1000px) {
   .hero-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; }
@@ -229,62 +238,61 @@ a:hover { color: var(--parchment); }
   .clock-emblem .emblem { width: 36px; height: 36px; }
 }
 
-/* ---------- the wall: the oak notice board behind the tiles, each tile a pinned note ---------- */
+/* ---------- the wall ---------- */
 main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; isolation: isolate; min-width: 0; margin: 6px 0 8px; }
 main:focus { outline: none; }
-/* The board plate falls back to the oak tokens if the painting is missing. */
 .wall-plate { position: absolute; inset: -8px; z-index: -1; border-radius: 10px; pointer-events: none; overflow: hidden;
   background-color: var(--oak-2);
   background-image: radial-gradient(ellipse at 50% 46%, var(--shade-none) 0%, var(--shade-light) 42%, var(--shade-mid) 76%, var(--shade-deep) 100%), url("img/board-wall.jpg");
   background-size: auto, cover; background-position: center, center; background-repeat: no-repeat;
   box-shadow: 0 24px 60px var(--shadow), 0 0 0 1px var(--grain); }
 .wall-plate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--candle-soft), transparent 70%); animation: candle 4.4s linear infinite; }
-/* Light pass canvas; while lit the shader carries the vignette and flicker. */
 .light { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity var(--t-hero) var(--ease-oak); will-change: opacity; }
 .wall-plate.lit .light { opacity: 1; }
 .wall-plate.lit::after { animation: none; opacity: 0; }
-.tilt { font-family: var(--font-ui); font-size: 0.8rem; letter-spacing: 0.08em; color: var(--text-dim); background: var(--glass); border: 1px solid var(--grain); border-radius: 999px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+.tilt { font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.08em; color: var(--text-dim); background: var(--glass); border: 1px solid var(--grain); border-radius: 999px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
 .tilt[aria-pressed="true"] { color: var(--parchment); border-color: var(--brass); }
 .sound-box { position: relative; display: inline-flex; align-items: center; gap: 8px; }
 .vol { width: 0; opacity: 0; accent-color: var(--brass); transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
 .sound-box:hover .vol, .sound-box:focus-within .vol, .sound-box.show .vol { width: 6rem; opacity: 1; }
 .wall { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
 .wall > li { display: grid; min-width: 0; }
-.wall > .t-five, .wall > .t-librarian { grid-column: span 2; }
+.wall > .t-five, .wall > .t-signups { grid-column: span 2; }
 .tile, .clock {
   --acc: var(--brass); --acc-glow: var(--hi-brass);
   position: relative; min-width: 0; box-sizing: border-box; border-radius: var(--radius); border: 1px solid var(--grain);
   color: var(--text); text-decoration: none;
-  box-shadow: 0 12px 26px var(--shadow), 0 2px 0 var(--edge-dark);
-  transition: transform var(--t-micro) var(--ease-oak);
+  box-shadow: inset 1px 1px 0 var(--edge-hi), inset 0 0 22px var(--wear), 8px 14px 26px var(--shadow), 2px 3px 0 var(--edge-dark);
+  transition: transform var(--t-micro) var(--ease-oak), filter var(--t-micro) var(--ease-oak);
 }
 .clock { background-color: var(--tile-face); background-image: linear-gradient(165deg, var(--tile-face), var(--tile-face-2)); }
 .clock::before { content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 2px; border-radius: 2px; background: var(--acc); opacity: 0.75; }
-.tile { display: flex; flex-direction: column; min-height: 7rem; transform: rotate(var(--rot, 0deg));
-  background-color: var(--oak-2);
-  background-image: repeating-linear-gradient(91deg, var(--grain-line) 0 2px, transparent 2px 9px), linear-gradient(172deg, var(--oak-3), var(--oak-1)); }
-/* Iron nails at the two top corners. */
+.tile { display: flex; flex-direction: column; min-height: 7rem; transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg));
+  background-color: var(--oak-3);
+  background-image: radial-gradient(ellipse 130% 100% at 0% 0%, var(--lamp), transparent 70%), linear-gradient(135deg, var(--wood-veil), var(--wood-veil-2)), url("img/board-wall.jpg");
+  background-size: auto, auto, 1600px auto; background-position: 0 0, 0 0, var(--gx, 30%) var(--gy, 60%); background-blend-mode: normal, normal, multiply; }
 .tile::before { content: ""; position: absolute; z-index: 3; top: 5px; left: 6px; right: 6px; height: 10px; pointer-events: none;
-  background: radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) left top / 10px 10px no-repeat,
-    radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) right top / 10px 10px no-repeat; }
+  background: radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) left top / 13px 13px no-repeat,
+    radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) right 3px top / 13px 13px no-repeat,
+    radial-gradient(circle at 7px 8px, var(--shadow) 0 3.5px, transparent 5.5px) left top / 13px 13px no-repeat,
+    radial-gradient(circle at 7px 8px, var(--shadow) 0 3.5px, transparent 5.5px) right 3px top / 13px 13px no-repeat; height: 13px; }
 .tile::after, .clock::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity var(--t-micro) var(--ease-oak);
   box-shadow: 0 0 0 1px var(--acc), 0 0 34px var(--acc-glow), inset 0 0 26px var(--acc-glow); }
 @media (hover: hover) {
-  .tile:hover, .clock:hover { transform: translateY(-4px) rotate(0deg); }
+  .tile:hover, .clock:hover { transform: translate(var(--sx, 0), calc(var(--sy, 0px) - 4px)) rotate(0deg); }
   .tile:hover::after, .clock:hover::after { opacity: 1; }
   .tile:hover .tile-go, .clock:hover .tile-go { transform: translateX(3px); }
 }
 .tile:focus-visible::after, .clock:focus-visible::after { opacity: 1; }
 .tile:active, .clock:active { transform: scale(0.98); }
-/* The parchment header band: ink title, the accent as a ribbon on the left, the emblem top right. Falls back to the parchment token. */
 .tile-band { position: relative; display: block; min-height: 46px; box-sizing: border-box; padding: 12px 58px 9px 15px; border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; color: var(--ink);
   background-color: var(--parchment-2);
   background-image: linear-gradient(180deg, var(--shade-none) 55%, var(--slip-burn)), url("img/parchment-tile.jpg");
   background-size: auto, 320px auto; background-position: center, center;
-  box-shadow: inset 4px 0 0 var(--acc), inset 0 -1px 0 var(--ink-line); }
+  z-index: 1; box-shadow: inset 4px 0 0 var(--acc), inset 1px 1px 0 var(--slip-sheen), inset 0 -1px 0 var(--ink-line), 3px 7px 9px -3px var(--shadow); }
 .tile-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .tile-title { min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1.02; color: var(--ink); text-wrap: balance; }
-.tile-go { flex: none; font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.1em; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 4px; transition: transform var(--t-micro) var(--ease-oak); }
+.tile-go { flex: none; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.1em; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 4px; transition: transform var(--t-micro) var(--ease-oak); }
 .tile-go i { font-style: normal; }
 .tile-go .word { display: none; }
 .emblem-box { position: absolute; right: 6px; top: 50%; width: 48px; height: 48px; margin-top: -24px; display: grid; place-items: center; color: var(--ink); pointer-events: none; }
@@ -292,14 +300,14 @@ main:focus { outline: none; }
 .emblem-img { width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 3px 4px var(--emblem-shade)); }
 .emblem { flex: none; }
 .emblem * { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.tile-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; padding: 10px 12px 12px; font-size: 0.88rem; line-height: 1.3; color: var(--text-dim); }
+.tile-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; padding: 10px 12px 12px; font-size: max(var(--fs-small), 0.88rem); line-height: 1.3; color: var(--text-dim); }
 .tile-line { min-width: 0; overflow-wrap: anywhere; }
 .tile-line b { color: var(--parchment); font-weight: 700; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .minis { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .mini { display: grid; line-height: 1.1; }
 .mini b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: var(--step-1); color: var(--brass); font-weight: 700; text-shadow: 0 0 14px var(--hi-brass); }
-.mini small { font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.08em; color: var(--text-dim); }
+.mini small { font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.08em; color: var(--text-dim); }
 .five-row { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .fm { display: inline-flex; align-items: center; gap: 4px; color: var(--cc); font-family: var(--font-ui); font-weight: 700; letter-spacing: 0.03em; font-size: 0.98rem; text-shadow: 0 0 12px var(--cc); }
 .glyph { width: 12px; height: 12px; flex: none; }
@@ -307,21 +315,20 @@ main:focus { outline: none; }
 .tile-viz { display: none; flex: 1 1 0; min-height: 56px; position: relative; }
 .tile-viz svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .tile-viz.list { position: static; flex: 0 0 auto; min-height: 0; }
-.viz-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 0.86rem; }
+.viz-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: var(--fs-small); }
 .viz-list li { min-width: 0; overflow-wrap: anywhere; }
 .viz-ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 22px; }
 .viz-line { fill: none; stroke: var(--brass); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .viz-thin { fill: none; stroke-width: 1.4; opacity: 0.55; }
 .viz-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 3; }
-.wall-foot { font-size: 0.8rem; color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; }
-/* First render only: tiles drop in, a stagger apart, and settle at their pinned angle. */
+.wall-foot { font-size: var(--fs-small); color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; }
 .wall.settle .tile { animation: settle var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--i, 0) * var(--stagger)); }
 @keyframes settle { from { opacity: 0; transform: translateY(-16px) rotate(calc(var(--rot, 0deg) - 1.2deg)); } to { opacity: 1; transform: rotate(var(--rot, 0deg)); } }
 @media (min-width: 640px) {
   main { margin: 18px 0 14px; }
   .wall-plate { inset: -16px; }
   .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; align-content: stretch; gap: 16px; }
-  .wall > .t-librarian { grid-column: auto; }
+  .wall > .t-signups { grid-column: auto; }
   .tile { min-height: 9rem; }
   .tile-title { font-size: var(--step-1); }
   .tile-name { display: grid; gap: 3px; }
@@ -331,22 +338,26 @@ main:focus { outline: none; }
   .tile-viz.list { display: block; }
 }
 @media (min-width: 1100px) {
-  .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 1fr); grid-auto-rows: auto; gap: 22px; }
-  .wall > .t-five { grid-column: auto; }
-  .tile { min-height: 13rem; }
-  .tile-band { min-height: 76px; padding: 16px 86px 12px 17px; }
+  .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 22px; }
+  .wall > .t-signups, .wall > .t-ledger, .wall > .t-librarian { grid-column: span 2; }
+  .tile { min-height: 10rem; }
+  .tile-band { min-height: 68px; padding: 14px 86px 10px 17px; }
   .emblem-box { width: 64px; height: 64px; margin-top: -32px; right: 10px; }
   .emblem-box .emblem { width: 36px; height: 36px; }
   .tile-body { padding: 12px 16px 14px; font-size: 0.95rem; gap: 8px; }
   .mini b { font-size: var(--step-2); }
+}
+@media (min-width: 1500px) {
+  .wall { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .wall > .t-ledger, .wall > .t-librarian { grid-column: auto; }
 }
 
 /* ---------- the scene sheet ---------- */
 .scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
 .scene-layer.closing { pointer-events: none; }
 .scene-veil { position: absolute; inset: 0; background: var(--veil); }
-.sheet { position: relative; box-sizing: border-box; width: min(1100px, 100%); height: min(940px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
-  border: 1px solid var(--grain); border-radius: 10px; background: var(--sheet-bg); box-shadow: 0 30px 80px var(--shadow); overflow: hidden; isolation: isolate;
+.sheet { position: relative; box-sizing: border-box; width: min(1240px, 100%); height: min(940px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--grain); border-radius: 10px; background: var(--sheet-bg); box-shadow: inset 1px 1px 0 var(--edge-hi), 12px 30px 80px var(--shadow); overflow: hidden; isolation: isolate;
   }
 .scene-layer:not([hidden]) .sheet { will-change: transform, opacity; }
 .scene-layer.rise .sheet { animation: sheet-in var(--t-move) var(--ease-oak) both; }
@@ -355,12 +366,10 @@ main:focus { outline: none; }
 .scene-layer.closing .scene-veil { animation: fade-out var(--t-move) var(--ease-oak) both; }
 .scene-layer.flip .sheet, .scene-layer.morph .sheet { animation: none; transform-origin: 0 0; }
 .scene-layer.morph .scene-veil { animation: none; }
-/* The wall blurs and dims behind a scene. */
 @media (min-width: 700px) {
   #board { transition: filter var(--t-move) var(--ease-oak); }
   html.scene-open #board { filter: blur(var(--wall-blur)) brightness(0.72); }
 }
-/* Shared-element morph name. */
 ::view-transition-group(scene-band) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
 ::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: cover; object-position: left top; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
@@ -368,9 +377,7 @@ main:focus { outline: none; }
 @keyframes sheet-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(24px); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
-.sheet-plate { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.sheet-plate img { width: 100%; height: 100%; object-fit: cover; object-position: center 40%; opacity: 0.13; display: block; max-width: none; }
-.sheet-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 14px 18px 0; border-bottom: 1px solid var(--grain); background: linear-gradient(180deg, var(--oak-2), var(--glass)); }
+.sheet-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 14px 18px 0; border-bottom: 2px solid var(--brass-dim); background: linear-gradient(180deg, var(--oak-2), var(--oak-1)); }
 .sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
 .sheet-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .sheet-name h2 { font-size: var(--step-2); min-width: 0; }
@@ -381,7 +388,7 @@ main:focus { outline: none; }
 .close svg * { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 @media (hover: hover) { .close:hover { transform: rotate(90deg); } }
 .tabs { position: relative; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: thin; margin: 0 -18px; padding: 0 18px; }
-.tab { flex: none; font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 0.92rem; color: var(--text-dim); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 11px 10px; min-height: 44px; cursor: pointer; }
+.tab { flex: none; font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 1rem; color: var(--l-dim); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 9px 13px 11px; min-height: 48px; cursor: pointer; }
 .tab:hover { color: var(--parchment); }
 .tab[aria-selected="true"] { color: var(--parchment); }
 .tab:focus-visible { outline-offset: -3px; }
@@ -408,7 +415,7 @@ main:focus { outline: none; }
   .sheet-body { padding: 16px max(14px, env(safe-area-inset-right, 0px)) max(28px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); }
 }
 
-/* ---------- dates scene: a vertical rail ---------- */
+/* ---------- dates scene ---------- */
 .rail { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 26px; position: relative; max-width: 48rem; }
 .rail::before { content: ""; position: absolute; left: 10px; top: 10px; bottom: 10px; width: 2px; background: var(--grain); }
 .stop { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 16px; position: relative; }
@@ -421,14 +428,14 @@ main:focus { outline: none; }
 .stop.past h3 { color: var(--text-dim); }
 .stop p { color: var(--text-dim); }
 
-/* ---------- the five: a carousel on phones, a five-wide row on desktop ---------- */
+/* ---------- the five ---------- */
 .cards { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(15rem, 84%); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding: 10px 4px 14px; scrollbar-width: thin; }
 .card { perspective: 1400px; min-height: 31rem; min-width: 0; display: grid; scroll-snap-align: center; }
 @media (min-width: 700px) { .cards { grid-auto-columns: minmax(15rem, 44%); } }
 @media (min-width: 1100px) { .cards { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: visible; } .swipe-hint { display: none; } }
 .card-inner { position: relative; display: grid; transition: transform var(--t-hero) var(--ease-spring); transform-style: preserve-3d; }
 .card.flipped .card-inner { transform: rotateY(180deg); }
-.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 0 18px 40px var(--shadow), inset 0 1px 0 var(--edge-light); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 8px 18px 40px var(--shadow), inset 1px 1px 0 var(--edge-hi); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .face::after { content: ""; position: absolute; inset: -40% -40% auto auto; width: 90%; height: 70%; background: radial-gradient(circle, var(--cc), transparent 65%); opacity: 0.18; pointer-events: none; }
 .front { position: relative; inset: auto; }
 .back { transform: rotateY(180deg); overflow-y: auto; }
@@ -439,7 +446,7 @@ main:focus { outline: none; }
 .card .what { font-size: var(--step-1); color: var(--parchment); line-height: 1.2; }
 .card .spec { color: var(--text-dim); font-style: italic; }
 .card dl { margin: 0; display: grid; gap: 8px; }
-.card dt { font-family: var(--font-ui); font-size: 0.78rem; letter-spacing: 0.08em; color: var(--text-dim); }
+.card dt { font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.08em; color: var(--text-dim); }
 .card dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .role { font-family: var(--font-ui); letter-spacing: 0.08em; color: var(--cc); }
 .flip { margin-top: auto; align-self: stretch; font-family: var(--font-ui); letter-spacing: 0.08em; font-size: var(--step--1); color: var(--parchment); background: transparent; border: 1px solid var(--cc); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
@@ -450,12 +457,11 @@ main:focus { outline: none; }
 .spell-name { color: var(--parchment); font-weight: 700; line-height: 1.2; }
 .spell-name small { font-weight: 400; color: var(--text-dim); font-family: var(--font-ui); letter-spacing: 0.04em; }
 .spell-vals { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; color: var(--cc); font-size: 0.95rem; line-height: 1.3; }
-.spell-meta { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: 0.78rem; color: var(--text-dim); letter-spacing: 0.03em; }
+.spell-meta { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: var(--fs-small); color: var(--text-dim); letter-spacing: 0.03em; }
 .back-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .back-head h3 { color: var(--cc); }
 
-/* ---------- roads: the map, drawn on open, with a legend that lights one road ---------- */
-/* The map sits on parchment: the painting at 0.85 over the parchment token (the fallback), with ink strokes and wax marks. */
+/* ---------- roads ---------- */
 .map-box { position: relative; isolation: isolate; border: 1px solid var(--grain); border-radius: var(--radius); padding: 10px; overflow: hidden; max-width: 960px; background-color: var(--parchment-2); box-shadow: 0 14px 30px var(--shadow), inset 0 0 40px var(--slip-burn); }
 .map-box::before { content: ""; position: absolute; inset: 0; z-index: -1; background: url("img/map-parchment.jpg") center / cover no-repeat; opacity: 0.85; pointer-events: none; }
 .map-box svg { display: block; width: 100%; height: auto; max-width: 100%; }
@@ -464,15 +470,14 @@ main:focus { outline: none; }
 .map-road { fill: none; stroke: var(--ink); stroke-width: 2.8; stroke-dasharray: 2 7; stroke-linecap: round; animation: march 2.4s linear infinite; }
 .map-air { fill: none; stroke: var(--ink-soft); stroke-width: 1.8; stroke-dasharray: 6 8; animation: march 3.2s linear infinite; }
 @keyframes march { to { stroke-dashoffset: -36; } }
-.map-text { fill: var(--ink); font-family: var(--font-ui); font-size: 13px; font-weight: 700; letter-spacing: 0.05em; }
-.map-text.small { fill: var(--ink-soft); font-size: 11px; font-weight: 500; }
+.map-text { fill: var(--ink); font-family: var(--font-ui); font-size: 15px; font-weight: 700; letter-spacing: 0.05em; }
+.map-text.small { fill: var(--ink-soft); font-size: 13px; font-weight: 500; }
 .map-city { fill: var(--wax); stroke: var(--parchment); stroke-width: 2; }
 .map-meet { fill: none; stroke: var(--wax); stroke-width: 1.6; stroke-dasharray: 3 3; }
 .map-zep { fill: var(--brass-dim); stroke: var(--ink); stroke-width: 1; }
 .map-caption { color: var(--text-dim); font-size: var(--step--1); }
 .road-g { transition: opacity var(--t-micro) var(--ease-oak); cursor: pointer; }
 .map-svg.focusing .road-g:not(.on) { opacity: 0.2; }
-/* Draw-on: alpha masks over each road (and the legacy ring); the mask stroke runs from 0 to full length once per open. */
 .draw-mask { mask-type: alpha; }
 .draw { fill: none; stroke: var(--brass); stroke-width: 16; stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
 .map-box.drawing .draw, .ring-wrap.filling .draw { animation: draw var(--t-hero) var(--ease-oak) both; animation-delay: calc(var(--di, 0) * var(--stagger) * 4); }
@@ -481,11 +486,11 @@ main:focus { outline: none; }
 @media (min-width: 760px) { .roads-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .road-btn { width: 100%; text-align: left; display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--grain); border-left: 3px solid var(--rc); background: var(--glass); color: var(--text); font: inherit; cursor: pointer; transition: transform var(--t-micro) var(--ease-oak); }
 .road-btn b { font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); }
-.road-btn span { font-size: 0.92rem; color: var(--text-dim); }
+.road-btn span { font-size: max(var(--fs-small), 0.92rem); color: var(--text-dim); }
 .road-btn[aria-pressed="true"], .road-btn.on { border-color: var(--rc); }
 @media (hover: hover) { .road-btn:hover { transform: translateY(-2px); } }
 
-/* ---------- racials: three columns on desktop, an accordion on phones ---------- */
+/* ---------- racials ---------- */
 .races { display: grid; gap: 14px; grid-template-columns: 1fr; align-items: start; }
 @media (min-width: 900px) { .races { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .race summary { list-style: none; cursor: pointer; position: relative; padding-right: 24px; }
@@ -497,7 +502,7 @@ main:focus { outline: none; }
 .race li { display: grid; gap: 2px; }
 .race .rname { font-weight: 700; }
 .race .rwiki { font-size: 0.95rem; }
-.race .rclient { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: 0.78rem; color: var(--ink-soft); letter-spacing: 0.03em; }
+.race .rclient { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: var(--fs-small); color: var(--ink-soft); letter-spacing: 0.03em; }
 .dots { display: inline-flex; gap: 4px; }
 .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 1px var(--ink); display: inline-block; }
 
@@ -506,9 +511,9 @@ main:focus { outline: none; }
 @media (min-width: 760px) { .ring-wrap { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); } }
 .ring-wrap svg, .wheel svg { width: 100%; height: auto; max-width: 340px; display: block; margin: 0 auto; }
 .ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 40px; font-variant-numeric: tabular-nums; }
-.ring-sub { fill: var(--text-dim); font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.08em; }
+.ring-sub { fill: var(--l-dim); font-family: var(--font-ui); font-size: 12px; letter-spacing: 0.08em; }
 .ring-tick { stroke: var(--parchment); stroke-width: 2; }
-.ring-tlabel { fill: var(--brass); font-family: var(--font-ui); font-size: 12px; font-weight: 700; }
+.ring-tlabel { fill: var(--brass-hi); font-family: var(--font-ui); font-size: 12px; font-weight: 700; }
 .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.95rem; }
 .legend li { min-width: 0; display: grid; grid-template-columns: 12px auto 1fr; gap: 8px; align-items: baseline; }
 .legend .sw { width: 10px; height: 10px; border-radius: 2px; background: var(--sw); display: inline-block; }
@@ -528,7 +533,7 @@ main:focus { outline: none; }
 .wheel.lighting .wheel-edge, .wheel.lighting .wheel-tip { animation: light var(--t-move) var(--ease-oak) backwards; animation-delay: calc(var(--di, 0) * var(--stagger) * 3); }
 @keyframes light { from { opacity: 0; } }
 .wheel-node circle { fill: var(--oak-1); stroke: var(--nc); stroke-width: 3; }
-.wheel-node text { fill: var(--parchment); font-family: var(--font-ui); font-size: 12px; text-anchor: middle; }
+.wheel-node text { fill: var(--parchment); font-family: var(--font-ui); font-size: 14px; text-anchor: middle; }
 .wheel-node { cursor: pointer; }
 .wheel-node:focus-visible circle, .wheel-node.on circle { fill: var(--oak-3); stroke-width: 5; }
 .buffs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -536,9 +541,9 @@ main:focus { outline: none; }
 .buff.dim { opacity: 0.35; }
 .buff-what { color: var(--parchment); font-weight: 700; }
 .buff-nums { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--bc); }
-.buff-src { font-size: 0.9rem; color: var(--text-dim); }
+.buff-src { font-size: max(var(--fs-small), 0.9rem); color: var(--text-dim); }
 .toggle { display: inline-flex; border: 1px solid var(--grain); border-radius: 999px; padding: 2px; background: var(--glass); }
-.toggle button { font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 0.88rem; color: var(--text-dim); background: transparent; border: 0; border-radius: 999px; padding: 6px 14px; min-height: 36px; cursor: pointer; }
+.toggle button { font-family: var(--font-ui); letter-spacing: 0.06em; font-size: max(var(--fs-small), 0.88rem); color: var(--text-dim); background: transparent; border: 0; border-radius: 999px; padding: 6px 14px; min-height: 36px; cursor: pointer; }
 .toggle button[aria-pressed="true"] { background: var(--oak-3); color: var(--parchment); }
 
 /* ---------- ledger and sign-ups ---------- */
@@ -558,14 +563,14 @@ main:focus { outline: none; }
 .opt input:checked + label { background: var(--ink); color: var(--parchment); border-color: var(--ink); }
 .opt input:focus-visible + label { outline: 2px solid var(--wax); outline-offset: 2px; }
 .opt input:disabled + label { cursor: default; opacity: 0.6; }
-.tally { min-width: 0; overflow-wrap: anywhere; font-size: 0.92rem; color: var(--ink-soft); display: grid; gap: 2px; }
+.tally { min-width: 0; overflow-wrap: anywhere; font-size: max(var(--fs-small), 0.92rem); color: var(--ink-soft); display: grid; gap: 2px; }
 .tally b { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink); }
 .writein { display: flex; gap: 8px; flex-wrap: wrap; }
 .writein input, .signup select { font: inherit; font-size: 0.95rem; padding: 6px 10px; border: 1px solid var(--ink-soft); border-radius: 4px; background: var(--parchment-2); color: var(--ink); min-width: 0; flex: 1 1 12rem; max-width: 100%; }
-.picker-note { font-size: 0.88rem; color: var(--ink-soft); }
+.picker-note { font-size: max(var(--fs-small), 0.88rem); color: var(--ink-soft); }
 .dsu { display: grid; gap: 12px; }
 .dsu h4 { font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); margin: 0; font-weight: 700; }
-.status { font-size: 0.92rem; color: var(--wax); font-style: italic; }
+.status { font-size: max(var(--fs-small), 0.92rem); color: var(--wax); font-style: italic; }
 
 /* ---------- gate ---------- */
 .gate { position: relative; z-index: 2; min-height: 90vh; display: grid; place-items: center; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px; }
@@ -573,15 +578,15 @@ main:focus { outline: none; }
 .gate-card h1 { font-size: var(--step-3); color: var(--parchment); }
 .gate-card p { color: var(--text-dim); font-size: var(--step-1); }
 
-/* ---------- keyboard legend (desktop: press ?) ---------- */
+/* ---------- keyboard legend ---------- */
 .keys { position: fixed; z-index: 40; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); width: min(19rem, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 16px 16px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--sheet-bg); box-shadow: 0 20px 50px var(--shadow); animation: keys-in var(--t-move) var(--ease-oak) both; }
 @keyframes keys-in { from { opacity: 0; transform: translateY(12px); } }
 .keys-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .keys h2 { font-size: var(--step-1); }
-.keys-list { margin: 8px 0 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; font-size: 0.92rem; align-items: baseline; }
+.keys-list { margin: 8px 0 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; font-size: max(var(--fs-small), 0.92rem); align-items: baseline; }
 .keys-list dt, .keys-list dd { margin: 0; }
 .keys-list dd { color: var(--text-dim); }
-kbd { font-family: var(--font-ui); font-size: 0.82rem; padding: 1px 7px; border: 1px solid var(--brass-dim); border-bottom-width: 2px; border-radius: 4px; color: var(--parchment); background: var(--oak-2); white-space: nowrap; }
+kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; border: 1px solid var(--brass-dim); border-bottom-width: 2px; border-radius: 4px; color: var(--parchment); background: var(--oak-2); white-space: nowrap; }
 .close.small { width: 36px; height: 36px; }
 
 /* ---------- librarian ---------- */
@@ -610,7 +615,7 @@ kbd { font-family: var(--font-ui); font-size: 0.82rem; padding: 1px 7px; border:
   .sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
   .sheet-body { padding-bottom: 20px; }
   .bottombar { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border-top: 1px solid var(--grain); background: var(--oak-1); padding: 0 max(2px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(2px, env(safe-area-inset-left, 0px)); }
-  .bb { min-height: 52px; min-width: 0; padding: 4px 1px; font-family: var(--font-ui); font-size: 0.7rem; letter-spacing: 0.03em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; overflow-wrap: anywhere; }
+  .bb { min-height: 52px; min-width: 0; padding: 4px 1px; font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.03em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; overflow-wrap: anywhere; }
   .bb[aria-current="true"], .bb[aria-expanded="true"] { color: var(--parchment); border-top-color: var(--brass); }
   .more-menu:not([hidden]) { display: grid; position: absolute; z-index: 3; right: 8px; bottom: calc(60px + env(safe-area-inset-bottom, 0px)); min-width: 12rem; gap: 2px; padding: 6px; background: var(--sheet-bg); border: 1px solid var(--grain); border-radius: var(--radius); box-shadow: 0 -12px 30px var(--shadow); animation: keys-in var(--t-micro) var(--ease-oak) both; }
   .more-menu button { min-height: 44px; text-align: left; padding: 8px 12px; font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); background: none; border: 0; border-radius: 4px; cursor: pointer; }
@@ -632,7 +637,7 @@ kbd { font-family: var(--font-ui); font-size: 0.82rem; padding: 1px 7px; border:
 .road-panel { position: absolute; z-index: 2; top: 10px; right: 10px; bottom: 10px; width: min(15rem, 46%); box-sizing: border-box; padding: 14px 16px; overflow: hidden; border-radius: var(--radius); background: var(--sheet-bg); color: var(--text); border-left: 3px solid var(--rc, var(--brass)); box-shadow: -10px 0 30px var(--shadow); transform: translateX(calc(100% + 16px)); transition: transform var(--t-move) var(--ease-oak); pointer-events: none; }
 .road-panel.open { transform: none; }
 .road-panel h3 { font-size: var(--step-1); color: var(--parchment); }
-.road-panel ol { margin: 10px 0 0; padding: 0 0 0 20px; display: grid; gap: 8px; font-size: 0.92rem; color: var(--text-dim); }
+.road-panel ol { margin: 10px 0 0; padding: 0 0 0 20px; display: grid; gap: 8px; font-size: max(var(--fs-small), 0.92rem); color: var(--text-dim); }
 .road-panel li::marker { color: var(--rc, var(--brass)); font-family: var(--font-ui); }
 @media (max-width: 699px) { .road-panel { top: auto; left: 10px; width: auto; max-height: 62%; border-left: 0; border-top: 3px solid var(--rc, var(--brass)); transform: translateY(calc(100% + 16px)); } }
 .rhead { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; width: 100%; padding: 0 24px 0 0; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
@@ -642,7 +647,7 @@ kbd { font-family: var(--font-ui); font-size: 0.82rem; padding: 1px 7px; border:
 .rmore > div { min-height: 0; overflow: hidden; visibility: hidden; transition: visibility var(--t-move) var(--ease-oak); }
 .rrow.open .rmore { grid-template-rows: 1fr; }
 .rrow.open .rmore > div { visibility: visible; }
-.race .rnotes { margin: 6px 0 4px; padding-left: 18px; gap: 3px; list-style: disc; font-size: 0.9rem; color: var(--ink-soft); }
+.race .rnotes { margin: 6px 0 4px; padding-left: 18px; gap: 3px; list-style: disc; font-size: max(var(--fs-small), 0.9rem); color: var(--ink-soft); }
 .race .rnotes li { display: list-item; }
 .chip { position: relative; overflow: hidden; }
 .chip::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 35%, var(--slip-sheen) 50%, transparent 65%); transform: translateX(-120%); }
@@ -658,7 +663,7 @@ kbd { font-family: var(--font-ui); font-size: 0.82rem; padding: 1px 7px; border:
 .dg-now { display: inline-block; transform-origin: 50% 0; backface-visibility: hidden; }
 .dg-old { position: absolute; left: 0; top: 0; opacity: 0; transform-origin: 50% 100%; backface-visibility: hidden; }
 
-/* ---------- v3 art hooks (present only when the files are) ---------- */
+/* ---------- v3 art hooks ---------- */
 .crest { position: absolute; z-index: 1; top: 12px; right: 12px; width: 56px; height: 56px; object-fit: contain; pointer-events: none; filter: drop-shadow(2px 4px 4px var(--shadow)); }
 .crest + .who { padding-right: 62px; }
 .wheel-node.has-crest circle { fill: var(--shade-mid); }
@@ -666,12 +671,47 @@ kbd { font-family: var(--font-ui); font-size: 0.82rem; padding: 1px 7px; border:
 .beam { position: absolute; z-index: 0; top: -44px; left: -2%; width: 104%; height: clamp(52px, 7vw, 96px); object-fit: cover; object-position: center top; pointer-events: none; filter: drop-shadow(0 8px 10px var(--shadow)); }
 main.has-beam { margin-top: 44px; }
 
+/* ---------- stage 8 ---------- */
+.tile-body { color: var(--cream-2); }
+.tile-line b, .viz-list b { color: var(--cream); }
+.mini b { color: var(--brass-hi); }
+.mini small { color: var(--cream-2); }
+.wall > li:not(.hot) .tile { filter: brightness(0.9); }
+.wall > li:not(.hot) .tile:hover, .wall > li:not(.hot) .tile:focus-visible { filter: none; }
+.five-viz { display: none; }
+.med { display: grid; justify-items: center; align-content: start; gap: 2px; min-width: 0; text-align: center; }
+.med-ico { width: clamp(52px, 4.6vw, 88px); height: clamp(52px, 4.6vw, 88px); display: grid; place-items: center; }
+.med-ico img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(3px 4px 3px var(--shadow)); }
+.med-ico i { width: 26px; height: 26px; border-radius: 50%; background: var(--cc); box-shadow: 0 0 14px var(--cc); }
+.med b { color: var(--cc); font-family: var(--font-ui); font-size: 1.15rem; text-shadow: 0 0 10px var(--cc); }
+.med small { color: var(--cream-2); line-height: 1.2; }
+.rsvp-bar { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: var(--shade-deep); box-shadow: inset 1px 1px 0 var(--wear); }
+.rsvp-bar i { min-width: 0; }
+.t-signups .mini b, .t-ledger .mini b { font-size: clamp(2.2rem, 3.4vw, 3.4rem); }
+.t-signups .tile-body, .t-five .tile-body { justify-content: space-between; }
+.t-racials .tile-body { justify-content: space-around; }
+.t-racials .dots { margin-right: 6px; }
+@media (max-width: 639px) { .t-roads .tile-viz, .t-legacy .tile-viz, .t-buffs .tile-viz { display: block; flex: 0 0 72px; } }
+@media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
+/* the scene sheet: parchment surface, dark ink, a darker title band */
+.sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background: var(--parchment-2) url("img/parchment-tile.jpg") center top / 640px auto; background-attachment: local; }
+.face, .road-btn, .librarian, .toggle, .road-panel, .buff { --text: var(--l-text); --text-dim: var(--l-dim); color: var(--l-text); }
+.signup-grid:has(> [hidden]) { grid-template-columns: minmax(0, 52rem); }
+.buff { background: var(--oak-2); }
+.stop h3 { color: var(--ink); }
+.stop .when, .rewards b { color: var(--ink); }
+.clock-when, .clock-unit > span, .wall-foot { color: var(--cream-2); }
+.ring-wrap svg, .wheel svg { background: radial-gradient(circle, var(--oak-2), var(--oak-1) 70%); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--brass-dim), 6px 10px 20px var(--shadow); }
+.sources { border-top-color: var(--ink-line); }
+.slip { background-color: var(--parchment); }
+
+@media (max-width: 699px) { :root { --fs-small: 0.9375rem; --step--1: 0.9375rem; } }
 @media (prefers-reduced-motion: reduce) {
   :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .card:hover, .clock:hover, .clock:active, .road-btn:hover, .close:hover { transform: none; }
-  .tile, .tile:hover, .tile:active { transform: rotate(var(--rot, 0deg)); }
+  .tile, .tile:hover, .tile:active { transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg)); }
   .hero-art img { transform: none !important; }
 }
 </style>
@@ -714,33 +754,33 @@ main.has-beam { margin-top: 44px; }
     <h2 class="sr-only" id="wall-title">The tavern wall</h2>
     <div class="wall-plate" aria-hidden="true"><canvas class="light" id="light"></canvas></div>
     <ul class="wall" id="wall">
-      <li class="t-five"><a class="tile" href="#five" data-scene="five" style="--i:0;--acc:var(--c-mage);--acc-glow:var(--hi-mage)" aria-labelledby="tt-five" aria-describedby="ts-five">
+      <li class="t-five hot"><a class="tile" href="#five" data-scene="five" style="--i:0;--acc:var(--c-mage);--acc-glow:var(--hi-mage)" aria-labelledby="tt-five" aria-describedby="ts-five">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-five">The five</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></svg></span></span>
         <span class="tile-body" id="ts-five"><span class="loading">Pinning up the cards.</span></span>
       </a></li>
-      <li class="t-roads"><a class="tile" href="#roads" data-scene="roads" style="--i:1;--acc:var(--c-druid);--acc-glow:var(--hi-druid)" aria-labelledby="tt-roads" aria-describedby="ts-roads">
+      <li class="t-signups hot"><a class="tile" href="#signups" data-scene="signups" style="--i:1;--acc:var(--ok);--acc-glow:var(--hi-ok)" aria-labelledby="tt-signups" aria-describedby="ts-signups">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-signups">Sign-ups</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></svg></span></span>
+        <span class="tile-body" id="ts-signups"><span class="loading">Reading the sign-up card.</span></span>
+      </a></li>
+      <li class="t-roads"><a class="tile" href="#roads" data-scene="roads" style="--i:2;--acc:var(--c-druid);--acc-glow:var(--hi-druid)" aria-labelledby="tt-roads" aria-describedby="ts-roads">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-roads">Three roads</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span></span>
         <span class="tile-body" id="ts-roads"><span class="loading">Unrolling the map.</span></span>
       </a></li>
-      <li class="t-racials"><a class="tile" href="#racials" data-scene="racials" style="--i:2;--acc:var(--wax);--acc-glow:var(--hi-wax)" aria-labelledby="tt-racials" aria-describedby="ts-racials">
+      <li class="t-racials"><a class="tile" href="#racials" data-scene="racials" style="--i:3;--acc:var(--wax);--acc-glow:var(--hi-wax)" aria-labelledby="tt-racials" aria-describedby="ts-racials">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Blood and bone</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
         <span class="tile-body" id="ts-racials"><span class="loading">Reading the racials.</span></span>
       </a></li>
-      <li class="t-legacy"><a class="tile" href="#legacy" data-scene="legacy" style="--i:3;--acc:var(--brass);--acc-glow:var(--hi-brass)" aria-labelledby="tt-legacy" aria-describedby="ts-legacy">
+      <li class="t-legacy"><a class="tile" href="#legacy" data-scene="legacy" style="--i:4;--acc:var(--brass);--acc-glow:var(--hi-brass)" aria-labelledby="tt-legacy" aria-describedby="ts-legacy">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-legacy">Legacy</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></span>
         <span class="tile-body" id="ts-legacy"><span class="loading">Counting points.</span></span>
       </a></li>
-      <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:4;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)" aria-labelledby="tt-buffs" aria-describedby="ts-buffs">
+      <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:5;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)" aria-labelledby="tt-buffs" aria-describedby="ts-buffs">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-buffs">Who buffs whom</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></svg></span></span>
         <span class="tile-body" id="ts-buffs"><span class="loading">Drawing the wheel.</span></span>
       </a></li>
-      <li class="t-ledger"><a class="tile" href="#ledger" data-scene="ledger" style="--i:5;--acc:var(--c-paladin);--acc-glow:var(--hi-paladin)" aria-labelledby="tt-ledger" aria-describedby="ts-ledger">
+      <li class="t-ledger"><a class="tile" href="#ledger" data-scene="ledger" style="--i:6;--acc:var(--c-paladin);--acc-glow:var(--hi-paladin)" aria-labelledby="tt-ledger" aria-describedby="ts-ledger">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">The ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
         <span class="tile-body" id="ts-ledger"><span class="loading">Opening the ledger.</span></span>
-      </a></li>
-      <li class="t-signups"><a class="tile" href="#signups" data-scene="signups" style="--i:6;--acc:var(--ok);--acc-glow:var(--hi-ok)" aria-labelledby="tt-signups" aria-describedby="ts-signups">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-signups">Sign-ups</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></svg></span></span>
-        <span class="tile-body" id="ts-signups"><span class="loading">Reading the sign-up card.</span></span>
       </a></li>
       <li class="t-librarian"><a class="tile" href="#librarian" data-scene="librarian" style="--i:7;--acc:var(--c-priest);--acc-glow:var(--hi-priest)" aria-labelledby="tt-librarian" aria-describedby="ts-librarian">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">The librarian</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
@@ -756,7 +796,6 @@ main.has-beam { margin-top: 44px; }
 <div class="scene-layer" id="scene" hidden>
   <div class="scene-veil" id="scene-veil"></div>
   <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="sheet-plate" aria-hidden="true"><img src="img/tavern-plate.jpg" alt="" width="1672" height="941" loading="lazy" decoding="async"></div>
     <div class="sheet-head">
       <div class="sheet-top">
         <div class="sheet-name"><span class="sheet-emblem" id="sheet-emblem" aria-hidden="true"></span><h2 id="sheet-title">The five</h2></div>
@@ -869,7 +908,6 @@ main.has-beam { margin-top: 44px; }
 <script>
 (() => {
 "use strict";
-/* Long tasks, for board/tools/longtasks.js. */
 const LT = [];
 try { new PerformanceObserver((l) => { for (const e of l.getEntries()) LT.push({ start: Math.round(e.startTime), ms: Math.round(e.duration) }); }).observe({ type: "longtask", buffered: true }); } catch (e) {}
 const $ = (s, r = document) => r.querySelector(s);
@@ -889,7 +927,6 @@ function h(tag, attrs, ...kids) {
 }
 const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
-/* The motion tokens in ms. */
 const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
@@ -939,7 +976,7 @@ const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signu
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
 function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
 
-/* ---------- role glyphs (tank shield, healer cross, damage blade) ---------- */
+/* ---------- role glyphs ---------- */
 const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M12 5v14M5 12h14", damage: "M5 19L17 7M14 4h6v6M7 15l2 2M4 20l2-2" };
 const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role }, s("path", { d: GLYPH[role] || GLYPH.damage }));
 
@@ -972,14 +1009,11 @@ function renderTimeline() {
         h("p", { class: "label", text: cls === "past" ? "Passed" : cls === "next" ? `Next on the board, ${relText}` : relText }))));
   }
 }
-/* The live region holds the small-caps kicker and the event name; it is written only when either changes. */
 function setClockLabel(kicker, event) {
   if ($("#clock-kicker").textContent !== kicker) $("#clock-kicker").textContent = kicker;
   if ($("#clock-event").textContent !== event) $("#clock-event").textContent = event;
 }
-/* Calendar days in the viewer's own time zone; rounding absorbs daylight-saving hours. */
 const localDay = (ms) => { const d = new Date(ms); return Math.round(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000); };
-/* Digits flip on change, two faces, 240 ms. */
 function setDigits(b, str) {
   const old = b.dataset.v || "";
   if (old === str) return;
@@ -1003,7 +1037,6 @@ function tick() {
   const digits = $("#clock-digits");
   if (!next) { setClockLabel("Every date on the board has passed", ""); digits.replaceChildren(); $("#clock-when").textContent = "Open the dates for the whole rail."; return; }
   const left = Math.max(0, Math.floor(next.epoch - now));
-  /* A date-only event ("D") has no start time on the board, so it counts whole days and nothing finer. */
   const parts = next.format === "D" ? [["days", localDay(next.epoch * 1000) - localDay(now * 1000)]] : [["days", Math.floor(left / 86400)], ["hours", Math.floor((left % 86400) / 3600)], ["minutes", Math.floor((left % 3600) / 60)], ["seconds", left % 60]];
   setClockLabel("Until", next.label);
   if (digits.childElementCount !== parts.length) digits.replaceChildren(...parts.map(([u]) => h("span", { class: "clock-unit" }, h("b", { "data-u": u }), h("span", { text: u }))));
@@ -1011,7 +1044,7 @@ function tick() {
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : `${eventWhen(next)} in your time zone`;
 }
 
-/* ---------- wall tiles: two or three live facts each, all read from the data files ---------- */
+/* ---------- wall tiles ---------- */
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function fill(key, ...kids) { const el = $(`#ts-${key}`); if (el) el.replaceChildren(...kids.flat().filter(Boolean)); }
@@ -1021,7 +1054,7 @@ function renderTiles() {
   fill("five",
     h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), m.name))),
     h("span", { class: "tile-line", text: `${plural(count("tank"), "tank", "tanks")}, ${plural(count("healer"), "healer", "healers")}, ${count("damage")} damage` }),
-    h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, p.members.map((m) => h("li", {}, h("b", { style: `color: ${classVar(m.class_key)}`, text: m.name }), ` · ${m.race} ${m.class}, ${m.spec}`)))));
+    h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), ` ${ms.length}`])),
@@ -1030,7 +1063,7 @@ function renderTiles() {
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
-    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
+    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("span", { class: "dots" }, p.members.filter((m) => m.race === race).map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}` }))), h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
     changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed Oct 26` }) : null);
   fill("legacy",
     minis([[L.earned_now, `of ${L.total} points`]]),
@@ -1044,11 +1077,13 @@ function renderTiles() {
   fill("ledger",
     settled.length ? h("span", { class: "tile-line clamp" }, h("b", { text: "Last settled: " }), settled[settled.length - 1].text) : null,
     minis([[stillOpen.length, "still open"], [p.polls.length, p.polls.length === 1 ? "poll" : "polls"]]),
-    h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 4).map((o) => h("li", { text: o.title })))));
+    h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o) => h("li", { text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
     const when = T.when ? h("span", { class: "tile-line", text: `When: ${[["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "later"]].filter(([k]) => T.when[k]).map(([k, l]) => `${l} ${T.when[k].count}`).join(" · ")}` }) : null;
-    fill("signups", minis([[T.rsvp.in.count, "in"], [T.rsvp.maybe.count, "maybe"], [T.rsvp.out.count, "out"]]), when);
+    const none = Math.max(0, p.members.length - T.rsvp.in.count - T.rsvp.maybe.count - T.rsvp.out.count);
+    fill("signups", minis([[T.rsvp.in.count, "in"], [T.rsvp.maybe.count, "maybe"], [T.rsvp.out.count, "out"], [none, "no answer"]]),
+      h("span", { class: "rsvp-bar", "aria-hidden": "true" }, [["in", "--ok"], ["maybe", "--warn"], ["out", "--wax"]].map(([k, c]) => h("i", { style: `flex: ${T.rsvp[k].count} 1 0; background: var(${c})` })), h("i", { style: `flex: ${none} 1 0` })), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
   fill("librarian",
     minis([[st.answers, "answers"], [fmtSecs(st.median_s), "median reply"], [nf.format(st.wiki_facts), "wiki facts"]]),
@@ -1134,7 +1169,6 @@ function renderCards() {
     card.append(h("div", { class: "card-inner" }, front, back));
     wrap.append(card);
   }
-  /* Phones and tablets: a page dot row under the carousel, following the card in view. */
   const cards = [...wrap.querySelectorAll(".card")];
   const dots = D.party.members.map((m, i) => h("button", { type: "button", "aria-label": `${m.name}'s card`, "aria-current": String(!i), style: `--cc: ${classVar(m.class_key)}`, onclick: () => cards[i].scrollIntoView({ behavior: reduceMQ.matches ? "auto" : "smooth", block: "nearest", inline: "center" }) }));
   $("#five-pager").replaceChildren(...dots);
@@ -1150,7 +1184,6 @@ const ZONES = {
   "Mulgore": { x: 268, y: 318, label: [214, 372] },
   "Durotar": { x: 508, y: 238, label: [470, 292] },
 };
-/* One road per starting zone, each ending in Orgrimmar. Ids carry a prefix so none can equal a scene name in the hash. */
 const ROADS = [
   { key: "air", zone: "Tirisfal Glades", cls: "map-air", d: "M128 110 C 220 30, 360 30, 456 112", how: "the Undercity zeppelin" },
   { key: "mulgore", zone: "Mulgore", cls: "map-road", d: "M268 318 C 290 290, 330 250, 392 222 C 430 200, 455 160, 468 128", how: "the road past the Crossroads" },
@@ -1207,10 +1240,8 @@ function renderMap() {
     travel(groups[1], "path-mulgore", color("Mulgore"), "7s", "0s");
     travel(groups[2], "path-durotar", color("Durotar"), "4s", "1s");
   }
-  /* The road cutaway panel. */
   const panel = h("div", { class: "road-panel", "aria-hidden": "true" });
   box.append(svg, panel);
-  /* Highlight: hover or tap a road (or its legend entry) to light it; a tap sticks until tapped again. */
   const legend = $("#roads-legend"); legend.replaceChildren();
   let sticky = null;
   const btns = [];
@@ -1241,7 +1272,6 @@ function renderMap() {
   $("#map-caption").textContent = meet ? `${meet.title}: ${meet.status}. ${meet.detail}` : "";
 }
 
-/* Racial rows open in place to their dated notes. */
 function splitNotes(text) {
   const notes = [];
   let now = text.replace(/\s*\(([^()]*\b(?:Sep|Oct|Nov) \d[^()]*)\)/g, (m, x) => { notes.push(x); return ""; });
@@ -1258,7 +1288,7 @@ function raceRow(r, i) {
   li.append(btn, h("div", { class: "rwiki", text: now }), h("div", { class: "rmore" }, h("div", {}, notes.length ? h("ul", { class: "rnotes", "aria-label": "Dev notes" }, notes.map((n) => h("li", { text: n }))) : null, client ? h("div", { class: "rclient", text: client }) : null)));
   return li;
 }
-/* ---------- racials: details elements, all open on wide screens, the first open on phones ---------- */
+/* ---------- racials ---------- */
 const wideMQ = window.matchMedia("(min-width: 900px)");
 function renderRaces() {
   const wrap = $("#races"); wrap.replaceChildren();
@@ -1329,7 +1359,7 @@ function renderWheel() {
   const nodes = keys.map((k) => {
     const m = memberByKey(k), [x, y] = pos[k];
     const g = s("g", { class: `wheel-node${ART.crest[k] ? " has-crest" : ""}`, tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${m.class}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k, "data-x": x, "data-y": y },
-      s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y - 1, text: m.name }), s("text", { x, y: y + 13, style: "font-size:10px;fill:var(--text-dim)", text: m.class }));
+      s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y - 1, text: m.name }), s("text", { x, y: y + 14, style: "font-size:12px;fill:var(--l-dim)", text: m.class }));
     svg.append(g); return g;
   });
   const items = D.client.synergy.map((b) => {
@@ -1358,7 +1388,7 @@ function setBuffView(v) {
   try { localStorage.setItem("board-buff-view", v); } catch (e) {}
 }
 
-/* ---------- ledger: settled items stamp in under a wax seal, open items wobble once ---------- */
+/* ---------- ledger ---------- */
 const ART = { crest: {}, seal: false, beam: false };
 const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : null);
 function renderLedger() {
@@ -1414,7 +1444,7 @@ function renderLibrarian() {
     h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark));
 }
 
-/* ---------- footer stamp on the wall; the sources sit with the librarian ---------- */
+/* ---------- footer stamp ---------- */
 function renderFooter() {
   const stamp = ["party", "timeline", "client", "stats", "signups"].filter((k) => D[k]).map((k) => D[k].generated).sort().pop();
   const when = `${stamp.replace("T", " ").slice(0, 16)} UTC`;
@@ -1428,7 +1458,7 @@ function renderFooter() {
     h("p", { text: "Spell numbers are the game's own values at the level cap and can move with beta hotfixes. A \"board\" tag means written on the group's cards; \"chat\" means said in Discord and noted down." }));
 }
 
-/* ---------- sign-ups (db + user) ---------- */
+/* ---------- sign-ups ---------- */
 const Q = {
   pack: [["yes", "Yes"], ["no", "No"]],
   meet: [["valley", "Valley of Strength"], ["crossroads", "the Crossroads"], ["other", "Write-in"]],
@@ -1516,7 +1546,7 @@ async function renderTallies() {
   renderPresence();
 }
 
-/* ---------- presence (room) ---------- */
+/* ---------- presence ---------- */
 function pushPresence() {
   if (!RT.room) return;
   RT.room.presence({ as: RT.mine.as || null }).catch(() => {});
@@ -1535,7 +1565,7 @@ async function renderPresence() {
   $("#presence-text").replaceChildren(peers.length === 1 ? "At the board now: just you" : `At the board now: ${peers.length}`, me ? h("span", { class: "peer-you", text: " · ringed dot is you" }) : "");
 }
 
-/* ---------- presence inside Discord (Embedded App SDK, no scopes) ---------- */
+/* ---------- presence ---------- */
 /* SDK 2.5.0: getActivityInstanceConnectedParticipants (alias getInstanceConnectedParticipants), then the ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE event; else "you" alone. SDK errors go to console.warn. */
 let discordPoll = 0;
 function startDiscordPresence(sdk) {
@@ -1592,7 +1622,6 @@ function startDiscordPresence(sdk) {
   poll();
   clearInterval(discordPoll);
   discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
-  /* Inside the Activity frame a plain link cannot leave Discord; hand external links to the client instead. */
   document.addEventListener("click", (e) => {
     const a = e.target.closest && e.target.closest("a[href]");
     if (!a || !/^https?:/i.test(a.getAttribute("href"))) return;
@@ -1601,12 +1630,12 @@ function startDiscordPresence(sdk) {
   });
 }
 
-/* ---------- sign-ups from Discord (data/signups.json, written by the bot) ---------- */
+/* ---------- sign-ups from Discord ---------- */
 function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
   if (!S) { body.replaceChildren(h("p", { text: "The Discord sign-ups did not load." })); $("#dsu-stamp").textContent = ""; return; }
   const T = S.tallies;
-  const row = (slot, label, extra) => h("div", { class: "tally" }, h("b", { "data-n": slot.count, text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || slot.names.join(", ")) : "nobody yet");
+  const row = (slot, label, extra) => h("div", { class: "trow" }, h("b", { "data-n": slot.count, text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || slot.names.join(", ")) : "nobody yet");
   const groups = [
     ["Pack", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
@@ -1624,7 +1653,6 @@ async function startRuntime() {
   const use = (n) => Promise.resolve().then(() => c.use(n)).catch(() => null);
   const [db, user, room] = await Promise.all([use("db"), use("user"), use("room")]);
   RT.db = db; RT.user = user; RT.room = room; RT.tried = true;
-  /* The in-page sign-ups exist only where the claude.ai store is present (the owner preview); elsewhere the Discord panel stands alone. */
   if (db) $("#signup").hidden = false;
   if (room) {
     room.onPeers((ch) => { RT.peers = ch.peers; renderPresence(); }, () => { RT.room = null; $("#peers").replaceChildren(); $("#presence-text").textContent = "Presence is not available on this view."; });
@@ -1641,11 +1669,9 @@ async function startRuntime() {
       if (RT.ready && !RT.pending && !(RT.writeInPending && RT.writeInPending())) { RT.mine = fromDoc(RT.signups.get(RT.myId)); applyMine(); }
     }
     else if (RT.seenMine) {
-      /* This viewer's answers were removed elsewhere: show the empty state, keep only the name picked on this device. */
       RT.seenMine = false; RT.created = false; RT.mine = { as: RT.mine.as || null }; applyMine();
     }
     if (!RT.ready && RT.myId && !RT.blocked) {
-      /* First snapshot: load this viewer's saved answers, then switch the controls on, so a click never writes over them. */
       const d = RT.signups.get(RT.myId);
       if (d) RT.mine = fromDoc(d);
       RT.ready = true; RT.readOnly = false; setEnabled(true); applyMine(); pushPresence();
@@ -1655,14 +1681,12 @@ async function startRuntime() {
   }, (err) => { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus(err && err.code === "revoked" ? "Sign-ups are read-only now." : "Sign-ups stopped updating. Reload the board to see the latest."); });
 }
 
-/* ---------- scenes: one sheet over the wall, tabs inside it, the hash names the open scene ---------- */
+/* ---------- scenes ---------- */
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian"];
 const TITLES = { timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Legacy", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The librarian" };
-/* Once-per-open effects: the class restarts the scene's CSS animation (roads draw, ring fills, wheel lines light). */
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
 const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
-/* Scene open and close hooks (light, wisps, sound). */
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
 const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : null; };
@@ -1700,9 +1724,7 @@ function selectPanel(key, crossFade) {
   if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
   moveInd(); markBar(key);
 }
-/* The rail indicator; offsets read on a tab change or resize only. */
 function moveInd() { const t = SC.open && $(`#tab-${SC.open}`), ind = $("#tab-ind"); if (t && ind) ind.style.transform = `translateX(${t.offsetLeft}px) scaleX(${Math.max(1, t.offsetWidth)})`; }
-/* Phone bottom bar: the wall, five scenes, sound, More. */
 const BAR = ["timeline", "five", "roads", "signups", "ledger"], MORE = SCENES.filter((k) => !BAR.includes(k));
 function markBar(key) { document.querySelectorAll("#bottombar [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === key || (b.dataset.go === "more" && MORE.includes(key))))); }
 function startBar() {
@@ -1721,7 +1743,6 @@ function startBar() {
   };
   bar.addEventListener("click", go); menu.addEventListener("click", go);
 }
-/* Swipe: touch or pen, 40 px, or 20 px faster than 0.5 px per ms, mostly sideways. */
 function startSwipe() {
   const body = $("#sheet-body"); let s = null;
   body.addEventListener("pointerdown", (e) => { s = e.pointerType === "mouse" || SC.open === null || (e.target.closest && e.target.closest(".cards, input, select, textarea")) ? null : { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId }; });
@@ -1733,7 +1754,6 @@ function startSwipe() {
     if (Math.abs(dx) >= 40 || (v > 0.5 && Math.abs(dx) >= 20)) stepTab(dx < 0 ? 1 : -1);
   });
 }
-/* Tallies count up from 0 on open. */
 let countToken = 0;
 function countUp(box) {
   const els = [...box.querySelectorAll("b[data-n]")], tok = ++countToken;
@@ -1745,7 +1765,6 @@ function countUp(box) {
   requestAnimationFrame(step);
 }
 const ON_OPEN = { signups: () => countUp($("#dsu-body")), ledger: () => sfx("stamp") };
-/* Morph: View Transitions, else FLIP, else the v2 rise. */
 const hasVT = () => typeof document.startViewTransition === "function";
 const canFlip = () => typeof $(".sheet").animate === "function";
 function morphBand(key) {
@@ -1845,13 +1864,12 @@ function requestClose() {
 }
 function switchTab(key) { if (key === SC.open) return; setHash(key, false); selectPanel(key, true); }
 function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); $(`#tab-${k}`).focus({ preventScroll: true }); }
-/* From the wall: push one entry (Back closes); inside a scene: switch tabs. */
 function goScene(k) {
   if (SC.open !== null) { switchTab(k); $(`#tab-${k}`).focus({ preventScroll: true }); return; }
   setHash(k, true); showScene(k);
 }
 
-/* ---------- focus: trapped in the open scene, the wall inert behind it ---------- */
+/* ---------- focus ---------- */
 const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
 function shown(el) {
   for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden || n.inert) return false;
@@ -1867,7 +1885,7 @@ function trapFocus(e) {
   else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
 }
 
-/* ---------- keyboard map: 1 to 9 open scenes, arrows step tabs, Escape closes, ? shows the list ---------- */
+/* ---------- keyboard map ---------- */
 function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
@@ -1913,7 +1931,6 @@ function startScenes() {
   $("#scene-veil").addEventListener("click", requestClose);
   $("#keys-close").addEventListener("click", () => showKeys(false));
   document.addEventListener("keydown", onKey);
-  /* Focus outside the open scene comes back. */
   document.addEventListener("focusin", (e) => {
     if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target)) return;
     const first = focusables($("#scene"))[0]; if (first) first.focus();
@@ -1928,8 +1945,7 @@ function startScenes() {
   addEventListener("resize", () => { if (SC.open) moveInd(); }, { passive: true });
 }
 
-/* ---------- emblems: painted icons from img/icons/<scene>.png, probed so a missing one keeps the line glyph ---------- */
-/* Wall art is plain CSS with token fallbacks; only icons are probed (one 404 each when missing). */
+/* ---------- emblems ---------- */
 const ICONS = {}, GLYPHS = {};
 const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 320, height: 320, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
@@ -1952,12 +1968,17 @@ function startEmblems() {
     im.src = `img/icons/${key}.png`;
   }
 }
-/* Hand-pinned: each tile gets a fixed tilt between -0.6 and 0.6 degrees, once per load; hover straightens it. */
 function pinTiles() {
-  document.querySelectorAll("#wall .tile").forEach((t) => t.style.setProperty("--rot", `${(Math.round((Math.random() * 1.2 - 0.6) * 10) / 10).toFixed(1)}deg`));
+  const LEAN = { roads: ["-1.4deg", "-6px", "4px"], legacy: ["1.2deg", "8px", "-3px"], ledger: ["-1deg", "-5px", "6px"] };
+  document.querySelectorAll("#wall .tile").forEach((t) => {
+    const l = LEAN[t.dataset.scene];
+    t.style.setProperty("--rot", l ? l[0] : `${(Math.round((Math.random() * 1.2 - 0.6) * 10) / 10).toFixed(1)}deg`);
+    if (l) { t.style.setProperty("--sx", l[1]); t.style.setProperty("--sy", l[2]); }
+    t.style.setProperty("--gx", `${Math.round(Math.random() * 100)}%`); t.style.setProperty("--gy", `${Math.round(Math.random() * 100)}%`);
+  });
 }
 
-/* ---------- parallax: the painting drifts up to 12 px against the pointer, mouse on hover-capable screens only ---------- */
+/* ---------- parallax ---------- */
 function startParallax() {
   const hoverMQ = window.matchMedia("(hover: hover) and (pointer: fine)");
   const img = $("#hero-art img"); if (!img) return;
@@ -1970,8 +1991,7 @@ function startParallax() {
   reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) img.style.transform = ""; });
 }
 
-/* ---------- the light pass: WebGL 1 bump lighting on the wall plate ---------- */
-/* Light pass (V3-SPEC 3.2); failures fall back to the plain image. */
+/* ---------- the light pass ---------- */
 const LIGHT_VS = "attribute vec2 p;varying vec2 uv;void main(){uv=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}";
 const LIGHT_FS = `precision mediump float;
 uniform sampler2D tex;uniform vec2 texel,res,cover,lpos;uniform float lint,bump,lh;uniform vec3 warm,cool,shade;varying vec2 uv;
@@ -1991,7 +2011,6 @@ const LIGHT = { bump: 2.5, ease: 0.08, candle: [0.06, 0.1], flicker: 0.1, jitter
 const hexVec = (v, d) => { const m = /^#?([0-9a-f]{6})$/i.exec(v || ""); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255) : d; };
 const LS = { state: "off", draws: 0, why: "", n: 0 };
 const flickAt = (s) => 0.5 * Math.sin(s * 1.7) + 0.3 * Math.sin(s * 2.9 + 1.3) + 0.2 * Math.sin(s * 6.1 + 2.1);
-/* Self-contained GL core: runs in a worker (OffscreenCanvas) or on the page. */
 function lightCore(cv, o, say) {
   let gl = null, u = {}, ready = false, img = null;
   try { gl = cv.getContext("webgl", { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: "low-power" }) || cv.getContext("experimental-webgl"); } catch (e) { gl = null; }
@@ -2005,7 +2024,6 @@ function lightCore(cv, o, say) {
         for (const [t, src] of [[gl.VERTEX_SHADER, o.VS], [gl.FRAGMENT_SHADER, o.FS]]) { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); gl.attachShader(prog, x); }
         gl.linkProgram(prog);
       } catch (e) { say("fallback", "init failed"); return; }
-      /* KHR_parallel_shader_compile: poll the link instead of blocking on it. */
       const poll = () => {
         try {
           if (gl.isContextLost()) { say("fallback", "context lost"); return; }
@@ -2052,7 +2070,6 @@ function startLight() {
     if (state === "lit") { LS.state = "lit"; plate.classList.add("lit"); size(); still(); run(); return; }
     stop(); plate.classList.remove("lit"); LS.state = state; LS.why = why || "";
   };
-  /* Backing pixels: devicePixelRatio capped at 2 and at the texture's width. */
   const size = () => {
     const r = plate.getBoundingClientRect();
     S.W = Math.max(1, Math.round(r.width)); S.H = Math.max(1, Math.round(r.height));
@@ -2064,7 +2081,6 @@ function startLight() {
     const calm = reduceMQ.matches, s = t / 1000;
     const tx = S.tx === null ? S.W * LIGHT.candle[0] : S.tx, ty = S.ty === null ? S.H * LIGHT.candle[1] : S.ty;
     if (calm) { S.lx = tx; S.ly = ty; } else { S.lx += (tx - S.lx) * LIGHT.ease; S.ly += (ty - S.ly) * LIGHT.ease; }
-    /* 1/f-like flicker. */
     S.rw = Math.max(-0.5, Math.min(0.5, S.rw * 0.97 + (Math.random() - 0.5) * 0.08));
     const n = LS.n = calm ? 0 : Math.max(-1, Math.min(1, (flickAt(s) + S.rw) / 1.5));
     const jx = calm ? 0 : LIGHT.jitter * (0.6 * Math.sin(s * 2.3 + 0.4) + 0.4 * Math.sin(s * 4.7 + 1.9));
@@ -2078,7 +2094,6 @@ function startLight() {
   function stop() { if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; }
   const still = () => { if (LS.state === "lit") draw(performance.now()); };
   const onPage = (img) => { LS.via = "page"; S.core = lightCore(cv, opts, say); if (S.core) S.core.start(img); };
-  /* The canvas is handed over only after the worker says "up". */
   const img = new Image();
   img.decoding = "async";
   img.onerror = () => { LS.state = "absent"; };
@@ -2111,7 +2126,6 @@ function startLight() {
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   reduceMQ.addEventListener("change", () => { stop(); still(); run(); });
   sceneHooks.push((on) => { S.scene = on; if (on) stop(); else run(); });
-  /* The pointer is the one per-event DOM read. */
   const aim = (x, y) => { const r = cv.getBoundingClientRect(); S.tx = x - r.left; S.ty = y - r.top; };
   addEventListener("pointermove", (e) => { if (LS.state !== "lit" || S.tilt) return; if (e.pointerType === "mouse" || e.buttons) aim(e.clientX, e.clientY); }, { passive: true });
   addEventListener("pointerdown", (e) => { if (LS.state === "lit" && !S.tilt && e.pointerType !== "mouse") aim(e.clientX, e.clientY); }, { passive: true });
@@ -2128,8 +2142,7 @@ function startLight() {
   }
 }
 
-/* ---------- wisps, second generation: a flow field ---------- */
-/* Flow-field wisps (V3-SPEC 3.3). */
+/* ---------- wisps, second generation ---------- */
 const WS = { n: 0, frames: 0, running: false, near: 0 };
 function startWisps() {
   const cv = $("#wisps"), ctx = cv && cv.getContext && cv.getContext("2d");
@@ -2147,7 +2160,6 @@ function startWisps() {
   };
   const build = (s) => { const f = new Float32Array(GX * GY); for (let j = 0; j < GY; j++) for (let i = 0; i < GX; i++) f[j * GX + i] = -Math.PI / 2 + (noise(i / 7, j / 7, s) * 2 - 1) * Math.PI * 0.9; return f; };
   const at = (f, gx, gy) => { const i = Math.min(GX - 2, gx | 0), j = Math.min(GY - 2, gy | 0), u = gx - i, v = gy - j, k = j * GX + i; return (f[k] * (1 - u) + f[k + 1] * u) * (1 - v) + (f[k + GX] * (1 - u) + f[k + GX + 1] * u) * v; };
-  /* One sprite per colour and layer. */
   let sprites = [];
   const paint = () => {
     sprites = COLORS.map((c) => LAYERS.map((L) => {
@@ -2211,18 +2223,19 @@ function startWisps() {
   addEventListener("pointerup", (e) => { if (e.pointerType === "touch") pointer.x = pointer.y = -1e4; }, { passive: true });
   document.documentElement.addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
-  /* Full-screen sheet below 700 px: stop. */
   sceneHooks.push((on) => { covered = on && innerWidth < 700; if (covered) stop(); else run(); });
   reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) { stop(); ctx.clearRect(0, 0, W, H); } else run(); if (D.party) renderMap(); });
   run();
 }
 
-/* ---------- art hooks: probed at run time ---------- */
-const crestImg = (k) => h("img", { class: "crest", src: `img/crests/${k}.png`, alt: "", width: 56, height: 56, loading: "lazy", decoding: "async" });
+/* ---------- art hooks ---------- */
+const crestImg = (k, c = "crest") => h("img", { class: c, src: `img/crests/${k}.png`, alt: "", width: 56, height: 56, loading: "lazy", decoding: "async" });
 const crestSvg = (k, x, y) => s("image", { class: "crest-node", href: `img/crests/${k}.png`, x: x - 28, y: y - 28, width: 56, height: 56 });
 function placeCrest(k) {
   const front = document.querySelector(`#cards .card[data-k="${k}"] .front`);
   if (front && !front.querySelector(".crest")) front.prepend(crestImg(k));
+  const med = document.querySelector(`#ts-five .med[data-k="${k}"] .med-ico`);
+  if (med && !med.querySelector("img")) med.replaceChildren(crestImg(k, "med-img"));
   const node = document.querySelector(`#wheel .wheel-node[data-k="${k}"]`);
   if (node && !node.querySelector(".crest-node")) { node.classList.add("has-crest"); node.insertBefore(crestSvg(k, Number(node.dataset.x), Number(node.dataset.y)), node.querySelector("text")); }
 }
@@ -2237,8 +2250,7 @@ function startArt() {
   });
 }
 
-/* ---------- sound (V3-SPEC 3.8), off until a tap ---------- */
-/* Synthesized room, ambience and interface sounds; 100 ms scheduler. */
+/* ---------- sound ---------- */
 const AU = { on: false, ctx: null, live: 0, vol: 0.7, buf: {}, next: 0, crack: 0 };
 try { AU.on = localStorage.getItem("board-sound") === "1"; const v = localStorage.getItem("board-vol"); if (v !== null && Number(v) >= 0 && Number(v) <= 1) AU.vol = Number(v); } catch (e) {}
 function audioInit() {
@@ -2253,10 +2265,8 @@ function audioInit() {
   const wn = () => Math.random() * 2 - 1;
   let p1 = 0, p2 = 0;
   const noise = mk(1.5, 1, () => { const w = wn(); p1 += (w - p1) * 0.08; p2 += (p1 - p2) * 0.3; return p2 * 3 + w * 0.08; });
-  /* The room and the interface sounds render in later tasks. */
   const irb = c.createBuffer(2, Math.round(1.6 * R), R);
   [0, 1].forEach((k) => setTimeout(() => { try { const d = irb.getChannelData(k); let l = 0; for (let i = 0; i < d.length; i++) { const t = i / R, e = 1 - t / 1.6; l += (wn() - l) * (0.9 - 0.5 * t / 1.6); d[i] = l * e * e * Math.sqrt(e); } if (k) conv.buffer = irb; } catch (e) {} }, 0));
-  /* Interface sounds: a sine knock and a band-limited rustle. */
   const knock = (t, f, d) => Math.sin(TAU * f * t) * Math.exp(-t / (d / 4));
   const rustle = (dur, f0, f1, amp) => { let a = 0, b = 0, ka = 0, kb = 0, i = 0; return (t) => { if (!(i++ & 63)) { const f = f0 + (f1 - f0) * Math.min(1, t / dur); ka = 1 - Math.exp(-TAU * f * 1.6 / R); kb = 1 - Math.exp(-TAU * f / 1.6 / R); } const w = wn(), e = Math.sin(Math.PI * Math.min(1, t / dur)); a += (w - a) * ka; b += (w - b) * kb; return (a - b) * amp * e * e; }; };
   const r1 = rustle(0.12, 3200, 3600, 0.9), r2 = rustle(0.07, 3800, 4200, 0.6), r3 = rustle(0.14, 1800, 5200, 0.8);
@@ -2289,7 +2299,6 @@ function audioInit() {
   sceneHooks.push((on) => { try { AU.amb.gain.setTargetAtTime(on ? 0.5 : 1, c.currentTime, 0.1); } catch (e) {} });
   return true;
 }
-/* Scheduler: fire level, crackle, wisp gate, the next mug or chair. */
 function audioTick() {
   const c = AU.ctx;
   if (!AU.on || !c || c.state !== "running") return;
@@ -2353,7 +2362,6 @@ function startSound() {
     try { localStorage.setItem("board-vol", String(AU.vol)); } catch (e) {}
     try { if (AU.on && AU.ctx) AU.master.gain.setTargetAtTime(AU.vol * 0.6, AU.ctx.currentTime, 0.05); } catch (e) {}
   });
-  /* Remembered on: the first gesture creates the context. */
   const first = () => { removeEventListener("pointerdown", first, true); removeEventListener("keydown", first, true); if (AU.on && !AU.ctx) setSound(true); };
   if (AU.on) { addEventListener("pointerdown", first, true); addEventListener("keydown", first, true); }
 }
@@ -2381,7 +2389,6 @@ async function boot(mode, sdk) {
   startEmblems();
   startParallax();
   startScenes();
-  /* The light starts when idle, off the first render. */
   (window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => startLight(), { timeout: 1200 });
   startSound();
   try { setBuffView(localStorage.getItem("board-buff-view") === "list" ? "list" : "wheel"); } catch (e) { setBuffView("wheel"); }
@@ -2405,20 +2412,14 @@ async function boot(mode, sdk) {
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 startWisps();
-/* The board renders only through start(): from the Discord gate below, or as the owner preview or review. */
 let started = false;
 window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS }, wisps: { ...WS }, scene: SC.open, longtasks: LT.slice() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus });
 })();
 </script>
 <script type="module">
-/* Gate: the board renders inside Discord only. The Embedded App SDK is vendored (vendor/, see VENDOR.md) and loaded by a
-   relative import, so the Activity loads nothing from outside its own URL mapping. Outside Discord the constructor throws
-   (no frame_id) or ready() never settles, and the gate stays. Two preview paths skip the gate:
-   1. the owner preview, ?preview=1 or #preview, only on claude.ai (whose artifact frame is served from a claudeusercontent.com
-      host and receives only the #anchor) or on a local host;
-   2. the review key, #review-<REVIEW_KEY>, on any host, so the full page can be seen in a plain browser without a Discord launch.
-   The key keeps strangers off; it is not a secret from anyone who reads this file. A pass is remembered for the tab
-   (sessionStorage) so a reload on a scene keeps working, and the pass hash is replaced with the wall state. */
+/* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:
+   #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is
+   no secret. A pass is kept for the tab (sessionStorage) and the pass hash is replaced with the wall state. */
 const CLIENT_ID = "1561857940174938114";
 const REVIEW_KEY = "3bxfn6y72f4irkur6qqh";
 const host = location.hostname;
@@ -2440,7 +2441,6 @@ if (reviewFlag || (previewHost && previewFlag) || remembered) {
     await sdk.ready();
     window.__board.start("discord", sdk);
   } catch (e) {
-    /* stay on the gate */
   }
 }
 </script>
