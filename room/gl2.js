@@ -12,6 +12,9 @@
 //   R.lights                             array of up to 6 { pos: [x, y, z], color: [r, g, b], range }
 //   R.camera                             { pos: [x, y, z], yaw, pitch, fov }  (radians; yaw 0 looks down -z)
 //   R.fog, R.ambient, R.exposure         { color, density }, [r, g, b], number
+//   R.mask                               { rect: [x0, y0, x1, y1] CSS px, cssW, feather CSS px, shadow: [r, g, b] }: the
+//                                        room fades to shadow toward that rectangle (material unmasked: true opts out,
+//                                        edge: true darkens a plane toward its own borders)
 //   R.particles(n, box)                  GPU points drifting up inside box { min: [x, y, z], max: [x, y, z] }; n 0 removes
 //   R.resize(w, h, dpr)  R.draw(seconds) -> { drawCalls, triangles }  R.memory() -> bytes  R.dispose()
 //   R.info                               { renderer, vendor, software }
@@ -52,6 +55,7 @@ in vec3 vW; in vec3 vN; in vec2 vUv; in vec2 vLoc;
 uniform sampler2D uTex; uniform int uHasTex; uniform vec3 uTint, uEmit; uniform float uFire, uTime;
 uniform vec3 uAmb; uniform int uNL; uniform vec3 uLP[6]; uniform vec3 uLC[6]; uniform float uLR[6];
 uniform vec3 uEye, uFogC; uniform float uFogD, uExp, uVH;
+uniform vec4 uRect; uniform float uFeather; uniform int uMask, uEdge; uniform vec3 uShadow;
 out vec4 o;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -73,6 +77,13 @@ void main() {
     col += uFire * (mix(vec3(1.4, 0.32, 0.04), vec3(2.2, 1.3, 0.45), flame) * flame + vec3(0.25, 0.06, 0.0) * shape);
   }
   float fd = length(vW - uEye); col = mix(col, uFogC, 1.0 - exp(-pow(uFogD * fd, 2.0)));
+  /* the room dissolves into the board's shadow: dark at the board's edge, the room's own light only a feather away */
+  if (uMask == 1 && uFeather > 0.0) {
+    vec2 p = gl_FragCoord.xy, out2 = max(max(uRect.xy - p, p - uRect.zw), 0.0);
+    float d = length(out2), inside = step(uRect.x, p.x) * step(p.x, uRect.z) * step(uRect.y, p.y) * step(p.y, uRect.w);
+    col = mix(uShadow, col, (1.0 - inside) * smoothstep(0.0, uFeather, d));
+  }
+  if (uEdge == 1) { float e = min(min(vLoc.x, 1.0 - vLoc.x), min(vLoc.y, 1.0 - vLoc.y)); col = mix(uShadow, col, smoothstep(0.0, 0.06, e)); }
   col *= uExp * mix(1.0, 0.45, smoothstep(0.62, 1.0, gl_FragCoord.y / uVH)); /* a scrim behind the page's heading */
   col = col / (1.0 + col);
   o = vec4(pow(col, vec3(1.0 / 2.2)), 1.0);
@@ -200,6 +211,8 @@ export async function createRenderer(canvas, opts = {}) {
       gl.useProgram(P.p); const u = P.u;
       gl.uniformMatrix4fv(u.uVP, false, VP); gl.uniform3fv(u.uEye, c.pos); gl.uniform3fv(u.uFogC, R.fog.color); gl.uniform1f(u.uFogD, R.fog.density);
       gl.uniform3fv(u.uAmb, R.ambient); gl.uniform1f(u.uExp, R.exposure); gl.uniform1f(u.uTime, t); gl.uniform1f(u.uVH, H);
+      const mk = R.mask; /* CSS px rect, top-left origin -> framebuffer px, bottom-left origin */
+      if (mk && mk.rect) { const k = W / Math.max(1, mk.cssW); gl.uniform4f(u.uRect, mk.rect[0] * k, H - mk.rect[3] * k, mk.rect[2] * k, H - mk.rect[1] * k); gl.uniform1f(u.uFeather, mk.feather * k); gl.uniform3fv(u.uShadow, mk.shadow); } else gl.uniform1f(u.uFeather, 0);
       const L = R.lights.slice(0, 6); gl.uniform1i(u.uNL, L.length);
       if (L.length) { gl.uniform3fv(u.uLP, L.flatMap((l) => l.pos)); gl.uniform3fv(u.uLC, L.flatMap((l) => l.color)); gl.uniform1fv(u.uLR, L.map((l) => l.range)); }
       gl.activeTexture(gl.TEXTURE0); gl.uniform1i(u.uTex, 0);
@@ -207,7 +220,7 @@ export async function createRenderer(canvas, opts = {}) {
         if (!nd.visible) continue;
         const m = nd.m;
         gl.bindTexture(gl.TEXTURE_2D, m.tex || white); gl.uniform1i(u.uHasTex, m.tex ? 1 : 0);
-        gl.uniform3fv(u.uTint, m.tint); gl.uniform3fv(u.uEmit, m.emit); gl.uniform2fv(u.uUv, m.uv); gl.uniform1f(u.uFire, m.fire || 0);
+        gl.uniform3fv(u.uTint, m.tint); gl.uniform3fv(u.uEmit, m.emit); gl.uniform2fv(u.uUv, m.uv); gl.uniform1f(u.uFire, m.fire || 0); gl.uniform1i(u.uMask, m.unmasked ? 0 : 1); gl.uniform1i(u.uEdge, m.edge ? 1 : 0);
         gl.uniformMatrix4fv(u.uModel, false, nd.M);
         gl.bindVertexArray(nd.vao); gl.drawElements(gl.TRIANGLES, nd.n, gl.UNSIGNED_SHORT, 0); calls++; tris += nd.n / 3;
       }

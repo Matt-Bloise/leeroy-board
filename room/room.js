@@ -38,7 +38,7 @@ export async function startRoom(ctx) {
     fog: lin(css("--room-fog", [0.05, 0.03, 0.02])), hearth: lin(css("--room-hearth", [1, 0.54, 0.23])), candle: lin(css("--room-candle", [1, 0.75, 0.44])),
     lantern: lin(css("--room-lantern", [1, 0.82, 0.54])), cool: lin(css("--room-cool", [0.23, 0.28, 0.4])), warm: lin(css("--light-warm", [1, 0.82, 0.55])),
   };
-  let board = null, straps = []; const beams = [];
+  let board = null; const beams = [];
   const build = async () => {
     const tWood = timed(() => R.texture(wood)); await yieldTask();
     const tWall = timed(() => R.texture(wall)); await yieldTask();
@@ -48,10 +48,9 @@ export async function startRoom(ctx) {
     for (const x of [-6.5, 6.5]) R.mesh(box(0.1, 3.2, 6), { tex: tWood, tint: [0.08, 0.06, 0.045], uv: [1.5, 1] }).set({ pos: [x, 1.5, -2.2] });
     for (const z of [-4.1, -3.2]) beams.push(R.mesh(box(9, 0.22, 0.26), { tex: tWood, tint: [0.14, 0.1, 0.08], uv: [4, 0.15] }).set({ pos: [0, 2.86, z] }));
     /* the gutters beside the board show the back wall, lit warm from both sides (posts and candle boxes there read as stray slabs) */
-    /* two straps' posts: they stand behind the ends of the DOM wall's iron strap, placed with the board */
-    straps = [-1, 1].map(() => R.mesh(box(1, 1, 0.12), { tex: tWood, tint: [0.26, 0.19, 0.14], uv: [0.2, 1] }));
+    /* no posts at the board's sides (round 2 of the craft pass read them as slabs): the room fades into the board's shadow instead */
     /* the notice board: the plane the DOM wall sits on */
-    board = R.mesh(plane(1, 1), { tex: tWood, tint: [0.26, 0.21, 0.17] }); /* kept dark: the gutters between tiles stay calm */
+    board = R.mesh(plane(1, 1), { tex: tWood, tint: [0.26, 0.21, 0.17], unmasked: true, edge: true }); /* kept dark; its borders fall to shadow */
   };
   await build();
   const lantern = () => (ctx.newSignup ? 1.6 : 0.5);
@@ -82,8 +81,9 @@ export async function startRoom(ctx) {
     const bw = (r.width / W) * 2 * hw, bh = (r.height / H) * 2 * hh;
     board.set({ pos: [cx, cy, BOARD_Z], scale: [bw, bh, 1] });
     /* the strap image spans 104% of the wall and sits at its top edge: a post under each end, from the floor up past it */
-    const top = cy + bh / 2 + 0.12, pw = bw * 0.035;
-    straps.forEach((p, i) => { const x = cx + (i ? 1 : -1) * (bw / 2 + bw * 0.005); p.set({ pos: [x, top / 2, BOARD_Z - 0.07], scale: [pw, top, 1] }); });
+    /* the soft edge: the room is shadow at the wall's rectangle and its own light a feather (a third of the side gutter, 48 to 140 px) away */
+    const gutter = Math.max(r.left, W - r.right);
+    R.mask = { rect: [r.left - 6, r.top - 6, r.right + 6, r.bottom + 6], cssW: W, feather: Math.max(48, Math.min(140, gutter * 0.9)), shadow: colors.fog.map((c) => c * 0.6) };
   };
   const size = () => { W = innerWidth; H = innerHeight; beams.forEach((b) => { b.visible = W >= H; }); if ((W >= H) !== landscape) { landscape = W >= H; applyTier(); } /* in portrait the beams would cross the heading */ R.camera.fov = (W / H < 1 ? 64 : 52) * DEG; R.resize(W, H, Math.min(T.dpr, window.devicePixelRatio || 1)); placeBoard(); };
   size();
