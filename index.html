@@ -1511,7 +1511,7 @@ function renderTiles() {
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
     races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("span", { class: "dots" }, p.members.filter((m) => m.race === race).map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}` }))), h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
-    changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed Oct 26` }) : null);
+    changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed since Oct 26` }) : null);
   fill("legacy",
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], ". They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."]),
     h("span", { class: "tile-viz" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
@@ -1747,7 +1747,7 @@ function splitNotes(text) {
 function raceRow(r, i) {
   const { now, notes } = splitNotes(r.wiki ? r.wiki.replace(/^(active|passive),\s*/, "") : "Not on the wiki page yet.");
   const client = (r.client.values.length || r.client.cooldown_ms) ? `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` : null;
-  const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: "changed Oct 26" }) : null];
+  const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: `changed ${r.changed_on || "Oct 26"}` }) : null];
   const li = h("li", { class: "rrow", style: `--di: ${i}` });
   if (!notes.length && !client) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
   const btn = h("button", { class: "rhead", type: "button", "aria-expanded": "false", onclick: () => btn.setAttribute("aria-expanded", String(li.classList.toggle("open"))) }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));

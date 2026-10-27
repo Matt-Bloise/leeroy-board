@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T16:00:59.537Z",
+ "generated": "2026-10-27T16:28:24.407Z",
  "build": "1.60.1.70532",
  "level": 60,
  "formula": "wiki/scripts/db2-lib.mjs scaleEffect at level 60 (min/max = base x (1 -/+ variance/2) + per_level x levels past base, capped at the rank's max level); totals = per-tick x floor(duration / period)",
@@ -1553,6 +1553,7 @@
     "wiki": "active, 2 s stun nearby, 90 s cooldown (2 min before Oct 15)",
     "kind": "active",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": 90000,
@@ -1566,6 +1567,7 @@
     "wiki": "passive, +5% max health and nothing else since Oct 26 (Oct 15 to Oct 26 it also gave +2% crit damage and healing; before Oct 15, +1% hit)",
     "kind": "passive",
     "changed_oct26": true,
+    "changed_on": "Oct 26",
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": null,
@@ -1595,6 +1597,7 @@
     "wiki": "active, grows herbs anyone can pick without Herbalism; cooldown 60 to 15 min on Oct 15",
     "kind": "active",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": null,
@@ -1608,6 +1611,7 @@
     "wiki": "passive, run speed climbs the longer you move: 2% per stack to a 60% cap since Oct 26 (was 1% to 30%); no longer raises mounted speed (Oct 15 had added 3% mounted speed); since Oct 15 the Tauren must cover a minimum distance per second to keep it",
     "kind": "passive",
     "changed_oct26": true,
+    "changed_on": "Oct 26",
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": null,
@@ -1644,6 +1648,7 @@
     "wiki": "active, +10% cast and attack speed for 10 s; cooldown unpublished",
     "kind": "active",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": 180000,
@@ -1663,6 +1668,7 @@
     "wiki": "passive, 20% of health regen works in combat (10% before Oct 15)",
     "kind": "passive",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": null,
@@ -1687,6 +1693,7 @@
     "wiki": "passive, +5% damage to Beasts",
     "kind": "passive",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": null,
@@ -1706,6 +1713,7 @@
     "wiki": "active, channel back 50% of max health; moving or damage cancels; guides say 3 min cooldown and a 6 s channel",
     "kind": "active",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": 180000,
@@ -1721,6 +1729,7 @@
     "wiki": "passive, 300% longer breath",
     "kind": "passive",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": null,
@@ -1740,6 +1749,7 @@
     "wiki": "active, removes Charm, Fear and Sleep with no immunity after; cooldown unpublished (guides say 2 min); blocked under Scatter Shot since Oct 15",
     "kind": "active",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": 120000,
@@ -1753,6 +1763,7 @@
     "wiki": "active, eat a Humanoid or Undead corpse for 35% health and mana over time",
     "kind": "active",
     "changed_oct26": false,
+    "changed_on": null,
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": 120000,
@@ -1763,9 +1774,10 @@
     "name": "Touch of the Grave",
     "spell": 1260189,
     "wiki_key": "racial.undead.touch_of_the_grave",
-    "wiki": "passive, chance to drain health on hit or spell; Oct 15 (as Touch of the Dead): 30% proc for casters, 20% for Paladin, Rogue and Warrior, 25 s internal cooldown, no low-rank penalty; guides say about 5% of max health drained",
+    "wiki": "passive, chance to drain health on hit or spell; Oct 15 (as Touch of the Dead): 30% proc for casters, 20% for Paladin, Rogue and Warrior, 15 s internal cooldown since Oct 27 (25 s from Oct 15), no low-rank penalty; guides say about 5% of max health drained",
     "kind": "passive",
-    "changed_oct26": false,
+    "changed_oct26": true,
+    "changed_on": "Oct 27",
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": null,
