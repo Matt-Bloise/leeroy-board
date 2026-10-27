@@ -27,8 +27,7 @@
 @font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sans-sc-500-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/alegreya-sans-sc-700-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 700; font-display: swap; src: url("fonts/grenze-gotisch-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-/* Layout (v2, the tavern wall): the painting is a fixed backdrop, a dashboard of pinned tiles sits on it, and each tile opens
-   its scene in a sheet that slides up over the wall. Dark oak ground, parchment slips, the five class colors as the light. */
+/* Layout: a fixed painting, a wall of pinned tiles, each opening a scene in a sheet. */
 :root {
   color-scheme: dark;
   --oak-0: #120c08;
@@ -108,7 +107,16 @@
   --ink-line: rgba(43, 29, 16, 0.6);
   --radius: 6px;
   --measure: 65ch;
-  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* Motion tokens (v3); MOTION mirrors them. */
+  --t-micro: 160ms;
+  --t-move: 320ms;
+  --t-hero: 720ms;
+  --ease-oak: cubic-bezier(.2, .8, .2, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --stagger: 60ms;
+  --wall-blur: 6px;
+  --light-warm: #ffd18c;
+  --light-cool: #2e3347;
 }
 html { background: var(--oak-0); }
 html.scene-open, html.scene-open body { overflow: hidden; }
@@ -127,7 +135,7 @@ body {
 }
 /* Layers: the painting (z 0, fixed) and the candle vignette over it, the wisps canvas (z 1), the board (z 2), the scene sheet (z 20). */
 .hero-art { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.hero-art img { position: absolute; top: -16px; left: -16px; width: calc(100% + 32px); height: calc(100% + 32px); object-fit: cover; object-position: 62% 38%; display: block; max-width: none; transition: transform 700ms var(--ease-out); }
+.hero-art img { position: absolute; top: -16px; left: -16px; width: calc(100% + 32px); height: calc(100% + 32px); object-fit: cover; object-position: 62% 38%; display: block; max-width: none; transition: transform var(--t-hero) var(--ease-oak); }
 .hero-art::after { content: ""; position: absolute; inset: 0; background:
   linear-gradient(90deg, var(--shade-mid) 0%, var(--shade-light) 45%, var(--shade-mid) 100%),
   linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 30%, var(--shade-mid) 75%, var(--shade-deep) 100%); }
@@ -138,10 +146,10 @@ body {
 }
 .candle { position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(ellipse 70% 60% at 14% 26%, var(--candle), transparent 70%), radial-gradient(ellipse at 50% 45%, transparent 48%, var(--vignette) 100%);
-  animation: candle 5.2s ease-in-out infinite; }
+  animation: candle 5.2s linear infinite; }
 /* Candlelight: opacity only, between 0.92 and 1 (amplitude 8%). */
 @keyframes candle { 0% { opacity: 1; } 14% { opacity: 0.94; } 27% { opacity: 0.985; } 41% { opacity: 0.92; } 55% { opacity: 0.975; } 68% { opacity: 0.935; } 84% { opacity: 0.99; } 100% { opacity: 1; } }
-#wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+#wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; will-change: transform; }
 @media print { #wisps, .hero-art, .candle, .scene-layer { display: none !important; } }
 .wrap {
   position: relative; z-index: 2; box-sizing: border-box;
@@ -205,7 +213,7 @@ a:hover { color: var(--parchment); }
 .clock-digits { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: baseline; min-height: 3rem; }
 .clock-unit { display: grid; justify-items: start; }
 .clock-unit b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: var(--step-4); line-height: 0.95; color: var(--brass); font-weight: 700; text-shadow: 0 0 22px var(--hi-brass), 0 2px 0 var(--oak-0); }
-.clock-unit span { font-family: var(--font-ui); letter-spacing: 0.12em; font-size: 0.74rem; color: var(--text-dim); }
+.clock-unit > span { font-family: var(--font-ui); letter-spacing: 0.12em; font-size: 0.74rem; color: var(--text-dim); }
 .clock-when { font-size: var(--step--1); color: var(--text-dim); }
 @media (min-width: 1000px) {
   .hero-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; }
@@ -230,7 +238,16 @@ main:focus { outline: none; }
   background-image: radial-gradient(ellipse at 50% 46%, var(--shade-none) 0%, var(--shade-light) 42%, var(--shade-mid) 76%, var(--shade-deep) 100%), url("img/board-wall.jpg");
   background-size: auto, cover; background-position: center, center; background-repeat: no-repeat;
   box-shadow: 0 24px 60px var(--shadow), 0 0 0 1px var(--grain); }
-.wall-plate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--candle-soft), transparent 70%); animation: candle 4.4s ease-in-out infinite; }
+.wall-plate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--candle-soft), transparent 70%); animation: candle 4.4s linear infinite; }
+/* Light pass canvas; while lit the shader carries the vignette and flicker. */
+.light { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity var(--t-hero) var(--ease-oak); will-change: opacity; }
+.wall-plate.lit .light { opacity: 1; }
+.wall-plate.lit::after { animation: none; opacity: 0; }
+.tilt { font-family: var(--font-ui); font-size: 0.8rem; letter-spacing: 0.08em; color: var(--text-dim); background: var(--glass); border: 1px solid var(--grain); border-radius: 999px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+.tilt[aria-pressed="true"] { color: var(--parchment); border-color: var(--brass); }
+.sound-box { position: relative; display: inline-flex; align-items: center; gap: 8px; }
+.vol { width: 0; opacity: 0; accent-color: var(--brass); transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
+.sound-box:hover .vol, .sound-box:focus-within .vol, .sound-box.show .vol { width: 6rem; opacity: 1; }
 .wall { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
 .wall > li { display: grid; min-width: 0; }
 .wall > .t-five, .wall > .t-librarian { grid-column: span 2; }
@@ -239,7 +256,7 @@ main:focus { outline: none; }
   position: relative; min-width: 0; box-sizing: border-box; border-radius: var(--radius); border: 1px solid var(--grain);
   color: var(--text); text-decoration: none;
   box-shadow: 0 12px 26px var(--shadow), 0 2px 0 var(--edge-dark);
-  transition: transform 220ms var(--ease-out);
+  transition: transform var(--t-micro) var(--ease-oak);
 }
 .clock { background-color: var(--tile-face); background-image: linear-gradient(165deg, var(--tile-face), var(--tile-face-2)); }
 .clock::before { content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 2px; border-radius: 2px; background: var(--acc); opacity: 0.75; }
@@ -250,7 +267,7 @@ main:focus { outline: none; }
 .tile::before { content: ""; position: absolute; z-index: 3; top: 5px; left: 6px; right: 6px; height: 10px; pointer-events: none;
   background: radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) left top / 10px 10px no-repeat,
     radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) right top / 10px 10px no-repeat; }
-.tile::after, .clock::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 220ms ease;
+.tile::after, .clock::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity var(--t-micro) var(--ease-oak);
   box-shadow: 0 0 0 1px var(--acc), 0 0 34px var(--acc-glow), inset 0 0 26px var(--acc-glow); }
 @media (hover: hover) {
   .tile:hover, .clock:hover { transform: translateY(-4px) rotate(0deg); }
@@ -267,7 +284,7 @@ main:focus { outline: none; }
   box-shadow: inset 4px 0 0 var(--acc), inset 0 -1px 0 var(--ink-line); }
 .tile-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .tile-title { min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1.02; color: var(--ink); text-wrap: balance; }
-.tile-go { flex: none; font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.1em; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 4px; transition: transform 200ms var(--ease-out); }
+.tile-go { flex: none; font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.1em; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 4px; transition: transform var(--t-micro) var(--ease-oak); }
 .tile-go i { font-style: normal; }
 .tile-go .word { display: none; }
 .emblem-box { position: absolute; right: 6px; top: 50%; width: 48px; height: 48px; margin-top: -24px; display: grid; place-items: center; color: var(--ink); pointer-events: none; }
@@ -297,8 +314,8 @@ main:focus { outline: none; }
 .viz-thin { fill: none; stroke-width: 1.4; opacity: 0.55; }
 .viz-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 3; }
 .wall-foot { font-size: 0.8rem; color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; }
-/* First render only: the tiles drop onto the wall, 120 ms apart, 400 ms each, and land at their pinned angle. */
-.wall.settle .tile { animation: settle 400ms var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 120ms); }
+/* First render only: tiles drop in, a stagger apart, and settle at their pinned angle. */
+.wall.settle .tile { animation: settle var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--i, 0) * var(--stagger)); }
 @keyframes settle { from { opacity: 0; transform: translateY(-16px) rotate(calc(var(--rot, 0deg) - 1.2deg)); } to { opacity: 1; transform: rotate(var(--rot, 0deg)); } }
 @media (min-width: 640px) {
   main { margin: 18px 0 14px; }
@@ -327,12 +344,26 @@ main:focus { outline: none; }
 /* ---------- the scene sheet ---------- */
 .scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
 .scene-layer.closing { pointer-events: none; }
-.scene-veil { position: absolute; inset: 0; background: var(--veil); animation: fade-in 260ms ease-out both; }
+.scene-veil { position: absolute; inset: 0; background: var(--veil); }
 .sheet { position: relative; box-sizing: border-box; width: min(1100px, 100%); height: min(940px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--grain); border-radius: 10px; background: var(--sheet-bg); box-shadow: 0 30px 80px var(--shadow); overflow: hidden; isolation: isolate;
-  animation: sheet-in 260ms var(--ease-out) both; }
-.scene-layer.closing .sheet { animation: sheet-out 260ms ease-in both; }
-.scene-layer.closing .scene-veil { animation: fade-out 260ms ease-in both; }
+  }
+.scene-layer:not([hidden]) .sheet { will-change: transform, opacity; }
+.scene-layer.rise .sheet { animation: sheet-in var(--t-move) var(--ease-oak) both; }
+.scene-layer.rise .scene-veil, .scene-layer.flip .scene-veil { animation: fade-in var(--t-move) var(--ease-oak) both; }
+.scene-layer.closing .sheet { animation: sheet-out var(--t-move) var(--ease-oak) both; }
+.scene-layer.closing .scene-veil { animation: fade-out var(--t-move) var(--ease-oak) both; }
+.scene-layer.flip .sheet, .scene-layer.morph .sheet { animation: none; transform-origin: 0 0; }
+.scene-layer.morph .scene-veil { animation: none; }
+/* The wall blurs and dims behind a scene. */
+@media (min-width: 700px) {
+  #board { transition: filter var(--t-move) var(--ease-oak); }
+  html.scene-open #board { filter: blur(var(--wall-blur)) brightness(0.72); }
+}
+/* Shared-element morph name. */
+::view-transition-group(scene-band) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
+::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: cover; object-position: left top; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
 @keyframes sheet-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(24px); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -345,14 +376,14 @@ main:focus { outline: none; }
 .sheet-name h2 { font-size: var(--step-2); min-width: 0; }
 .sheet-emblem { flex: none; width: 40px; height: 40px; display: grid; place-items: center; color: var(--brass); }
 .sheet-emblem .emblem { width: 28px; height: 28px; }
-.close { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--grain); background: var(--glass); color: var(--parchment); cursor: pointer; transition: transform 200ms var(--ease-out); }
+.close { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--grain); background: var(--glass); color: var(--parchment); cursor: pointer; transition: transform var(--t-micro) var(--ease-oak); }
 .close svg { width: 20px; height: 20px; }
 .close svg * { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 @media (hover: hover) { .close:hover { transform: rotate(90deg); } }
 .tabs { position: relative; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: thin; margin: 0 -18px; padding: 0 18px; }
 .tab { flex: none; font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 0.92rem; color: var(--text-dim); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 11px 10px; min-height: 44px; cursor: pointer; }
 .tab:hover { color: var(--parchment); }
-.tab[aria-selected="true"] { color: var(--parchment); border-bottom-color: var(--brass); }
+.tab[aria-selected="true"] { color: var(--parchment); }
 .tab:focus-visible { outline-offset: -3px; }
 .tab-ico { display: none; }
 @media (min-width: 768px) {
@@ -364,8 +395,8 @@ main:focus { outline: none; }
 .sheet-body { overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); padding: 20px 18px 32px; }
 .panel { grid-area: 1 / 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
 .panel:focus-visible { outline-offset: 6px; }
-.panel.entering { animation: fade-in 180ms ease-out both; }
-.panel.leaving { animation: fade-out 180ms ease-in both; pointer-events: none; }
+.panel.entering { animation: fade-in var(--t-micro) var(--ease-oak) both; }
+.panel.leaving { animation: fade-out var(--t-micro) var(--ease-oak) both; pointer-events: none; }
 .lede { color: var(--text-dim); }
 .lede-row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
 @media (max-width: 699px) {
@@ -395,14 +426,14 @@ main:focus { outline: none; }
 .card { perspective: 1400px; min-height: 31rem; min-width: 0; display: grid; scroll-snap-align: center; }
 @media (min-width: 700px) { .cards { grid-auto-columns: minmax(15rem, 44%); } }
 @media (min-width: 1100px) { .cards { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: visible; } .swipe-hint { display: none; } }
-.card-inner { position: relative; display: grid; transition: transform 700ms cubic-bezier(.2, .7, .2, 1); transform-style: preserve-3d; }
+.card-inner { position: relative; display: grid; transition: transform var(--t-hero) var(--ease-spring); transform-style: preserve-3d; }
 .card.flipped .card-inner { transform: rotateY(180deg); }
 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 0 18px 40px var(--shadow), inset 0 1px 0 var(--edge-light); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .face::after { content: ""; position: absolute; inset: -40% -40% auto auto; width: 90%; height: 70%; background: radial-gradient(circle, var(--cc), transparent 65%); opacity: 0.18; pointer-events: none; }
 .front { position: relative; inset: auto; }
 .back { transform: rotateY(180deg); overflow-y: auto; }
 .back .flip { position: sticky; bottom: 0; background: var(--oak-1); box-shadow: 0 -10px 16px var(--oak-1); }
-.card { transition: transform 260ms ease; }
+.card { transition: transform var(--t-micro) var(--ease-oak); }
 @media (hover: hover) { .card:hover { transform: translateY(-6px); } .card:hover .face { border-color: var(--cc); } }
 .card .who { font-family: var(--font-display); font-size: var(--step-3); color: var(--cc); text-shadow: 0 0 22px var(--cc); line-height: 1; }
 .card .what { font-size: var(--step-1); color: var(--parchment); line-height: 1.2; }
@@ -439,16 +470,16 @@ main:focus { outline: none; }
 .map-meet { fill: none; stroke: var(--wax); stroke-width: 1.6; stroke-dasharray: 3 3; }
 .map-zep { fill: var(--brass-dim); stroke: var(--ink); stroke-width: 1; }
 .map-caption { color: var(--text-dim); font-size: var(--step--1); }
-.road-g { transition: opacity 200ms ease; cursor: pointer; }
+.road-g { transition: opacity var(--t-micro) var(--ease-oak); cursor: pointer; }
 .map-svg.focusing .road-g:not(.on) { opacity: 0.2; }
 /* Draw-on: alpha masks over each road (and the legacy ring); the mask stroke runs from 0 to full length once per open. */
 .draw-mask { mask-type: alpha; }
 .draw { fill: none; stroke: var(--brass); stroke-width: 16; stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
-.map-box.drawing .draw, .ring-wrap.filling .draw { animation: draw 1100ms cubic-bezier(0.4, 0, 0.2, 1) both; animation-delay: var(--dd, 0ms); }
+.map-box.drawing .draw, .ring-wrap.filling .draw { animation: draw var(--t-hero) var(--ease-oak) both; animation-delay: calc(var(--di, 0) * var(--stagger) * 4); }
 @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
 .roads-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-width: 960px; }
 @media (min-width: 760px) { .roads-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-.road-btn { width: 100%; text-align: left; display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--grain); border-left: 3px solid var(--rc); background: var(--glass); color: var(--text); font: inherit; cursor: pointer; transition: transform 200ms var(--ease-out); }
+.road-btn { width: 100%; text-align: left; display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--grain); border-left: 3px solid var(--rc); background: var(--glass); color: var(--text); font: inherit; cursor: pointer; transition: transform var(--t-micro) var(--ease-oak); }
 .road-btn b { font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); }
 .road-btn span { font-size: 0.92rem; color: var(--text-dim); }
 .road-btn[aria-pressed="true"], .road-btn.on { border-color: var(--rc); }
@@ -459,7 +490,7 @@ main:focus { outline: none; }
 @media (min-width: 900px) { .races { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .race summary { list-style: none; cursor: pointer; position: relative; padding-right: 24px; }
 .race summary::-webkit-details-marker { display: none; }
-.race summary::after { content: ""; position: absolute; right: 4px; top: 8px; width: 8px; height: 8px; border: solid var(--ink-soft); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform 200ms ease; }
+.race summary::after { content: ""; position: absolute; right: 4px; top: 8px; width: 8px; height: 8px; border: solid var(--ink-soft); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform var(--t-micro) var(--ease-oak); }
 .race[open] summary::after { transform: rotate(-135deg); }
 .race h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
 .race ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
@@ -490,18 +521,18 @@ main:focus { outline: none; }
 .wheel.list-view { grid-template-columns: 1fr; }
 .wheel.list-view svg { display: none; }
 .wheel.list-view .buff.dim { opacity: 1; }
-.wheel-edge { fill: none; stroke: var(--ec); stroke-width: 1.6; opacity: 0.45; transition: opacity 200ms, stroke-width 200ms; }
+.wheel-edge { fill: none; stroke: var(--ec); stroke-width: 1.6; opacity: 0.45; transition: opacity var(--t-micro) var(--ease-oak), stroke-width var(--t-micro) var(--ease-oak); }
 .wheel-edge.on { opacity: 0.95; stroke-width: 2.4; }
 .wheel-tip { fill: var(--ec); opacity: 0.6; }
 .wheel-tip.on { opacity: 1; }
-.wheel.lighting .wheel-edge, .wheel.lighting .wheel-tip { animation: light 520ms ease-out backwards; animation-delay: var(--d, 0ms); }
+.wheel.lighting .wheel-edge, .wheel.lighting .wheel-tip { animation: light var(--t-move) var(--ease-oak) backwards; animation-delay: calc(var(--di, 0) * var(--stagger) * 3); }
 @keyframes light { from { opacity: 0; } }
 .wheel-node circle { fill: var(--oak-1); stroke: var(--nc); stroke-width: 3; }
 .wheel-node text { fill: var(--parchment); font-family: var(--font-ui); font-size: 12px; text-anchor: middle; }
 .wheel-node { cursor: pointer; }
 .wheel-node:focus-visible circle, .wheel-node.on circle { fill: var(--oak-3); stroke-width: 5; }
 .buffs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.buff { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; padding: 8px 10px; border-left: 3px solid var(--bc); background: var(--buff-bg); border-radius: 0 4px 4px 0; transition: opacity 200ms; }
+.buff { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; padding: 8px 10px; border-left: 3px solid var(--bc); background: var(--buff-bg); border-radius: 0 4px 4px 0; transition: opacity var(--t-micro) var(--ease-oak); }
 .buff.dim { opacity: 0.35; }
 .buff-what { color: var(--parchment); font-weight: 700; }
 .buff-nums { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--bc); }
@@ -514,7 +545,6 @@ main:focus { outline: none; }
 .ledger { display: grid; gap: 14px; max-width: 52rem; }
 .ledger ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ledger li { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; }
-.ledger .tick { display: inline-block; width: 0.55em; height: 0.95em; border: solid var(--wax); border-width: 0 3px 3px 0; transform: rotate(40deg); margin-right: 8px; }
 .poll { display: grid; gap: 4px; padding: 10px 12px; border: 1px dashed var(--wax); border-radius: 4px; }
 .signup-grid { display: grid; gap: 22px; align-items: start; }
 @media (min-width: 860px) { .signup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -543,6 +573,17 @@ main:focus { outline: none; }
 .gate-card h1 { font-size: var(--step-3); color: var(--parchment); }
 .gate-card p { color: var(--text-dim); font-size: var(--step-1); }
 
+/* ---------- keyboard legend (desktop: press ?) ---------- */
+.keys { position: fixed; z-index: 40; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); width: min(19rem, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 16px 16px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--sheet-bg); box-shadow: 0 20px 50px var(--shadow); animation: keys-in var(--t-move) var(--ease-oak) both; }
+@keyframes keys-in { from { opacity: 0; transform: translateY(12px); } }
+.keys-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.keys h2 { font-size: var(--step-1); }
+.keys-list { margin: 8px 0 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; font-size: 0.92rem; align-items: baseline; }
+.keys-list dt, .keys-list dd { margin: 0; }
+.keys-list dd { color: var(--text-dim); }
+kbd { font-family: var(--font-ui); font-size: 0.82rem; padding: 1px 7px; border: 1px solid var(--brass-dim); border-bottom-width: 2px; border-radius: 4px; color: var(--parchment); background: var(--oak-2); white-space: nowrap; }
+.close.small { width: 36px; height: 36px; }
+
 /* ---------- librarian ---------- */
 .librarian { display: grid; gap: 18px; grid-template-columns: 1fr; padding: 20px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
 @media (min-width: 760px) { .librarian { grid-template-columns: 1.4fr 1fr; } }
@@ -558,8 +599,77 @@ main:focus { outline: none; }
 .spark-text { fill: var(--text-dim); font-family: var(--font-ui); font-size: 10px; font-variant-numeric: tabular-nums; }
 .sources { color: var(--text-dim); font-size: var(--step--1); display: grid; gap: 8px; border-top: 1px solid var(--grain); padding-top: 16px; }
 
+/* ---------- v3 rail, phone bar, swipe ---------- */
+.tabs { scroll-snap-type: x proximity; }
+.tab { scroll-snap-align: center; }
+@media (pointer: coarse) { .tabs { scrollbar-width: none; } .tabs::-webkit-scrollbar { display: none; } }
+.tab-ind { position: absolute; left: 0; bottom: 0; width: 1px; height: 2px; background: var(--brass); transform-origin: 0 0; transform: scaleX(0); transition: transform var(--t-move) var(--ease-oak); pointer-events: none; }
+.panel:not(#panel-five) { touch-action: pan-y; }
+.bottombar, .more-menu { display: none; }
+@media (max-width: 699px) {
+  .sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .sheet-body { padding-bottom: 20px; }
+  .bottombar { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border-top: 1px solid var(--grain); background: var(--oak-1); padding: 0 max(2px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(2px, env(safe-area-inset-left, 0px)); }
+  .bb { min-height: 52px; min-width: 0; padding: 4px 1px; font-family: var(--font-ui); font-size: 0.7rem; letter-spacing: 0.03em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; overflow-wrap: anywhere; }
+  .bb[aria-current="true"], .bb[aria-expanded="true"] { color: var(--parchment); border-top-color: var(--brass); }
+  .more-menu:not([hidden]) { display: grid; position: absolute; z-index: 3; right: 8px; bottom: calc(60px + env(safe-area-inset-bottom, 0px)); min-width: 12rem; gap: 2px; padding: 6px; background: var(--sheet-bg); border: 1px solid var(--grain); border-radius: var(--radius); box-shadow: 0 -12px 30px var(--shadow); animation: keys-in var(--t-micro) var(--ease-oak) both; }
+  .more-menu button { min-height: 44px; text-align: left; padding: 8px 12px; font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); background: none; border: 0; border-radius: 4px; cursor: pointer; }
+  .more-menu button:hover { background: var(--hover-tint); }
+}
+
+/* ---------- v3 cutaways ---------- */
+.back::before { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; background: linear-gradient(105deg, transparent 30%, var(--slip-sheen) 48%, transparent 66%); }
+.card.flipped .back::before { animation: sheen var(--t-hero) var(--ease-oak) both; }
+@keyframes sheen { from { opacity: 0; transform: translateX(-60%); } 40% { opacity: 0.5; } to { opacity: 0; transform: translateX(60%); } }
+.pager { display: flex; justify-content: center; gap: 2px; }
+.pager button { width: 32px; height: 32px; padding: 0; border: 0; background: none; display: grid; place-items: center; cursor: pointer; }
+.pager button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cc); opacity: 0.35; transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
+.pager button[aria-current="true"]::before { opacity: 1; transform: scale(1.35); }
+@media (min-width: 1100px) { .pager { display: none; } }
+.zone-ring { fill: none; stroke: var(--wax); stroke-width: 2.5; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.map-box.drawing .zone-ring { animation: pulse var(--t-hero) var(--ease-oak) both; animation-delay: calc(var(--t-hero) + var(--stagger) * (8 + var(--di, 0) * 4)); }
+@keyframes pulse { from { opacity: 0; transform: scale(0.4); } 30% { opacity: 0.9; } to { opacity: 0; transform: scale(2.4); } }
+.road-panel { position: absolute; z-index: 2; top: 10px; right: 10px; bottom: 10px; width: min(15rem, 46%); box-sizing: border-box; padding: 14px 16px; overflow: hidden; border-radius: var(--radius); background: var(--sheet-bg); color: var(--text); border-left: 3px solid var(--rc, var(--brass)); box-shadow: -10px 0 30px var(--shadow); transform: translateX(calc(100% + 16px)); transition: transform var(--t-move) var(--ease-oak); pointer-events: none; }
+.road-panel.open { transform: none; }
+.road-panel h3 { font-size: var(--step-1); color: var(--parchment); }
+.road-panel ol { margin: 10px 0 0; padding: 0 0 0 20px; display: grid; gap: 8px; font-size: 0.92rem; color: var(--text-dim); }
+.road-panel li::marker { color: var(--rc, var(--brass)); font-family: var(--font-ui); }
+@media (max-width: 699px) { .road-panel { top: auto; left: 10px; width: auto; max-height: 62%; border-left: 0; border-top: 3px solid var(--rc, var(--brass)); transform: translateY(calc(100% + 16px)); } }
+.rhead { position: relative; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; width: 100%; padding: 0 24px 0 0; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.rcaret { position: absolute; right: 6px; top: 6px; width: 7px; height: 7px; border: solid var(--ink-soft); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform var(--t-micro) var(--ease-oak); }
+.rrow.open .rcaret { transform: rotate(-135deg); }
+.rmore { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--t-move) var(--ease-oak); }
+.rmore > div { min-height: 0; overflow: hidden; visibility: hidden; transition: visibility var(--t-move) var(--ease-oak); }
+.rrow.open .rmore { grid-template-rows: 1fr; }
+.rrow.open .rmore > div { visibility: visible; }
+.race .rnotes { margin: 6px 0 4px; padding-left: 18px; gap: 3px; list-style: disc; font-size: 0.9rem; color: var(--ink-soft); }
+.race .rnotes li { display: list-item; }
+.chip { position: relative; overflow: hidden; }
+.chip::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 35%, var(--slip-sheen) 50%, transparent 65%); transform: translateX(-120%); }
+@media (hover: hover) { .chip:hover::after, .rrow:hover .chip::after { transform: translateX(120%); transition: transform var(--t-hero) var(--ease-oak); } }
+.seal { display: inline-grid; place-items: center; width: 1.15em; height: 1.15em; margin-right: 8px; vertical-align: -0.2em; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--hi-wax), var(--wax) 62%); box-shadow: 0 1px 2px var(--shadow); }
+.seal.art { background: none; box-shadow: none; width: 1.6em; height: 1.6em; vertical-align: -0.45em; }
+.seal img { width: 100%; height: 100%; display: block; }
+.ledger.stamping .settled-li { animation: stamp var(--t-move) var(--ease-spring) both; animation-delay: calc(var(--di, 0) * var(--stagger)); }
+@keyframes stamp { from { opacity: 0; transform: scale(1.15); } to { opacity: 1; transform: none; } }
+.ledger.stamping .open-li { animation: wobble var(--t-hero) var(--ease-oak) both; animation-delay: calc(var(--t-move) + var(--di, 0) * var(--stagger)); }
+@keyframes wobble { 20% { transform: rotate(-1.2deg); } 45% { transform: rotate(0.9deg); } 70% { transform: rotate(-0.5deg); } }
+.dg { position: relative; display: inline-block; perspective: 400px; }
+.dg-now { display: inline-block; transform-origin: 50% 0; backface-visibility: hidden; }
+.dg-old { position: absolute; left: 0; top: 0; opacity: 0; transform-origin: 50% 100%; backface-visibility: hidden; }
+
+/* ---------- v3 art hooks (present only when the files are) ---------- */
+.crest { position: absolute; z-index: 1; top: 12px; right: 12px; width: 56px; height: 56px; object-fit: contain; pointer-events: none; filter: drop-shadow(2px 4px 4px var(--shadow)); }
+.crest + .who { padding-right: 62px; }
+.wheel-node.has-crest circle { fill: var(--shade-mid); }
+.wheel-node.has-crest text { paint-order: stroke; stroke: var(--oak-0); stroke-width: 3px; }
+.beam { position: absolute; z-index: 0; top: -44px; left: -2%; width: 104%; height: clamp(52px, 7vw, 96px); object-fit: cover; object-position: center top; pointer-events: none; filter: drop-shadow(0 8px 10px var(--shadow)); }
+main.has-beam { margin-top: 44px; }
+
 @media (prefers-reduced-motion: reduce) {
+  :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .card:hover, .clock:hover, .clock:active, .road-btn:hover, .close:hover { transform: none; }
   .tile, .tile:hover, .tile:active { transform: rotate(var(--rot, 0deg)); }
   .hero-art img { transform: none !important; }
@@ -585,6 +695,8 @@ main:focus { outline: none; }
       <div class="presence" id="presence">
         <span id="presence-text">Who is at the board shows here.</span>
         <div class="peers" id="peers"></div>
+        <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Tilt light</button>
+        <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"></span>
       </div>
     </div>
     <a class="clock" id="clock" href="#timeline" data-scene="timeline" aria-describedby="clock-when">
@@ -600,7 +712,7 @@ main:focus { outline: none; }
 
   <main id="main" tabindex="-1" aria-labelledby="wall-title">
     <h2 class="sr-only" id="wall-title">The tavern wall</h2>
-    <div class="wall-plate" aria-hidden="true"></div>
+    <div class="wall-plate" aria-hidden="true"><canvas class="light" id="light"></canvas></div>
     <ul class="wall" id="wall">
       <li class="t-five"><a class="tile" href="#five" data-scene="five" style="--i:0;--acc:var(--c-mage);--acc-glow:var(--hi-mage)" aria-labelledby="tt-five" aria-describedby="ts-five">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-five">The five</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></svg></span></span>
@@ -660,6 +772,7 @@ main:focus { outline: none; }
         <button class="tab" type="button" role="tab" id="tab-ledger" data-tab="ledger" aria-controls="panel-ledger" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Ledger</button>
         <button class="tab" type="button" role="tab" id="tab-signups" data-tab="signups" aria-controls="panel-signups" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Sign-ups</button>
         <button class="tab" type="button" role="tab" id="tab-librarian" data-tab="librarian" aria-controls="panel-librarian" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Librarian</button>
+        <span class="tab-ind" id="tab-ind" aria-hidden="true"></span>
       </div>
     </div>
     <div class="sheet-body" id="sheet-body">
@@ -671,6 +784,7 @@ main:focus { outline: none; }
         <p class="lede">Each card is what the group has said so far. Turn a card over for that class's signature spells at the level cap, straight from the game client.</p>
         <p class="label swipe-hint">Swipe sideways for all five.</p>
         <div class="cards" id="cards"><p class="loading">Pinning up the cards.</p></div>
+        <div class="pager" id="five-pager" role="group" aria-label="Cards"></div>
       </div>
       <div class="panel" role="tabpanel" id="panel-roads" aria-labelledby="tab-roads" tabindex="0" hidden>
         <p class="lede" id="map-lede">Where each character wakes up, and how the roads meet.</p>
@@ -743,12 +857,21 @@ main:focus { outline: none; }
         <div class="sources" id="lib-sources"></div>
       </div>
     </div>
+    <nav class="bottombar" id="bottombar" aria-label="Scene shortcuts"></nav>
+    <div class="more-menu" id="more-menu" hidden></div>
   </section>
 </div>
+<aside class="keys" id="keys" aria-labelledby="keys-title" hidden>
+  <div class="keys-top"><h2 id="keys-title">Keys</h2><button class="close small" id="keys-close" type="button" aria-label="Close the key list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <dl class="keys-list" id="keys-list"></dl>
+</aside>
 
 <script>
 (() => {
 "use strict";
+/* Long tasks, for board/tools/longtasks.js. */
+const LT = [];
+try { new PerformanceObserver((l) => { for (const e of l.getEntries()) LT.push({ start: Math.round(e.startTime), ms: Math.round(e.duration) }); }).observe({ type: "longtask", buffered: true }); } catch (e) {}
 const $ = (s, r = document) => r.querySelector(s);
 const SVGNS = "http://www.w3.org/2000/svg";
 function h(tag, attrs, ...kids) {
@@ -766,6 +889,8 @@ function h(tag, attrs, ...kids) {
 }
 const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+/* The motion tokens in ms. */
+const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
@@ -854,6 +979,22 @@ function setClockLabel(kicker, event) {
 }
 /* Calendar days in the viewer's own time zone; rounding absorbs daylight-saving hours. */
 const localDay = (ms) => { const d = new Date(ms); return Math.round(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000); };
+/* Digits flip on change, two faces, 240 ms. */
+function setDigits(b, str) {
+  const old = b.dataset.v || "";
+  if (old === str) return;
+  b.dataset.v = str;
+  if (old.length !== str.length) { b.replaceChildren(...[...str].map((c) => h("span", { class: "dg" }, h("span", { class: "dg-now", text: c }), h("span", { class: "dg-old", "aria-hidden": "true" })))); return; }
+  [...b.children].forEach((d, i) => {
+    if (old[i] === str[i]) return;
+    const [now, was] = d.children;
+    was.textContent = old[i]; now.textContent = str[i];
+    sfx("click");
+    if (reduceMQ.matches || typeof now.animate !== "function") return;
+    now.animate([{ transform: "rotateX(-90deg)", opacity: 0.2 }, { transform: "none", opacity: 1 }], { duration: MOTION.digit, easing: MOTION.oak });
+    was.animate([{ transform: "none", opacity: 1 }, { transform: "rotateX(90deg)", opacity: 0 }], { duration: MOTION.digit, easing: MOTION.oak });
+  });
+}
 function tick() {
   const t = D.timeline; if (!t) return;
   const now = Date.now() / 1000;
@@ -866,7 +1007,7 @@ function tick() {
   const parts = next.format === "D" ? [["days", localDay(next.epoch * 1000) - localDay(now * 1000)]] : [["days", Math.floor(left / 86400)], ["hours", Math.floor((left % 86400) / 3600)], ["minutes", Math.floor((left % 3600) / 60)], ["seconds", left % 60]];
   setClockLabel("Until", next.label);
   if (digits.childElementCount !== parts.length) digits.replaceChildren(...parts.map(([u]) => h("span", { class: "clock-unit" }, h("b", { "data-u": u }), h("span", { text: u }))));
-  for (const [u, v] of parts) digits.querySelector(`[data-u="${u}"]`).textContent = String(v).padStart(u === "days" ? 1 : 2, "0");
+  for (const [u, v] of parts) setDigits(digits.querySelector(`[data-u="${u}"]`), String(v).padStart(u === "days" ? 1 : 2, "0"));
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : `${eventWhen(next)} in your time zone`;
 }
 
@@ -960,15 +1101,17 @@ function renderCards() {
   const lvl = D.client.level;
   for (const m of D.party.members) {
     const spells = D.client.classes[m.class] || [];
-    const card = h("article", { class: "card", style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
+    const card = h("article", { class: "card", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
     const flipBtn = (label) => h("button", { class: "flip", type: "button", "aria-pressed": "false", text: label, onclick: () => {
       const on = card.classList.toggle("flipped");
+      sfx("flip");
       card.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", String(on)));
       card.querySelector(".front").inert = on; card.querySelector(".back").inert = !on;
       (on ? card.querySelector(".back .flip") : card.querySelector(".front .flip")).focus({ preventScroll: true });
     } });
     const profs = m.professions.map((p) => h("span", {}, p.name, " ", h("span", { class: `chip ${p.source}`, title: p.source === "board" ? "Written on the Party Board or the decisions card" : "Said in chat, not on the board yet", text: p.status ? `${p.source}, ${p.status}` : p.source })));
     const front = h("div", { class: "face front" },
+      ART.crest[m.class_key] ? crestImg(m.class_key) : null,
       h("div", { class: "who", text: m.name }),
       h("div", { class: "what", text: `${m.race} ${m.class}` }),
       h("div", { class: "spec", text: m.spec }),
@@ -991,6 +1134,14 @@ function renderCards() {
     card.append(h("div", { class: "card-inner" }, front, back));
     wrap.append(card);
   }
+  /* Phones and tablets: a page dot row under the carousel, following the card in view. */
+  const cards = [...wrap.querySelectorAll(".card")];
+  const dots = D.party.members.map((m, i) => h("button", { type: "button", "aria-label": `${m.name}'s card`, "aria-current": String(!i), style: `--cc: ${classVar(m.class_key)}`, onclick: () => cards[i].scrollIntoView({ behavior: reduceMQ.matches ? "auto" : "smooth", block: "nearest", inline: "center" }) }));
+  $("#five-pager").replaceChildren(...dots);
+  if (typeof IntersectionObserver === "function") {
+    const io = new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) dots.forEach((d, i) => d.setAttribute("aria-current", String(cards[i] === en.target))); }), { root: wrap, threshold: 0.6 });
+    cards.forEach((c) => io.observe(c));
+  }
 }
 
 /* ---------- map ---------- */
@@ -1010,7 +1161,7 @@ function renderMap() {
   const svg = s("svg", { class: "map-svg", viewBox: "0 0 600 400", role: "img", "aria-label": "Map of the three Horde starting zones with paths to Orgrimmar" });
   const defs = s("defs", {});
   ROADS.forEach((r, i) => defs.append(s("mask", { id: `mask-${r.key}`, class: "draw-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: 600, height: 400 },
-    s("path", { class: "draw", d: r.d, pathLength: 1, style: `--dd: ${i * 260}ms` }))));
+    s("path", { class: "draw", d: r.d, pathLength: 1, style: `--di: ${i}` }))));
   svg.append(defs,
     s("rect", { class: "map-sea", x: 0, y: 0, width: 600, height: 400 }),
     s("path", { class: "map-land", d: "M0 30 C40 20 120 30 170 60 C190 110 160 170 110 190 C60 200 20 180 0 170 Z" }),
@@ -1031,11 +1182,12 @@ function renderMap() {
     s("text", { class: "map-text small", x: 470, y: 158, "text-anchor": "middle", text: "Valley of Strength" }),
     s("text", { class: "map-text small", x: 380, y: 250, "text-anchor": "middle", text: "the Crossroads" }),
     s("text", { class: "map-text small", x: 290, y: 30, "text-anchor": "middle", text: "zeppelin" }));
+  let zi = 0;
   for (const [zone, ms] of Object.entries(byZone)) {
     const z = ZONES[zone]; if (!z) continue;
     const road = ROADS.find((r) => r.zone === zone);
     const g = road ? groups[ROADS.indexOf(road)] : svg;
-    g.append(s("text", { class: "map-text", x: z.label[0], y: z.label[1], text: zone }));
+    g.append(s("text", { class: "map-text", x: z.label[0], y: z.label[1], text: zone }), s("circle", { class: "zone-ring", cx: z.x, cy: z.y, r: 18, style: `--di: ${zi++}` }));
     ms.forEach((m, i) => {
       const cx = z.x + (i - (ms.length - 1) / 2) * 34, cy = z.y;
       g.append(s("circle", { cx, cy, r: 8, fill: classVar(m.class_key), stroke: "var(--oak-0)", "stroke-width": 2 }, s("title", { text: `${m.name}, ${m.race} ${m.class}` })));
@@ -1055,7 +1207,9 @@ function renderMap() {
     travel(groups[1], "path-mulgore", color("Mulgore"), "7s", "0s");
     travel(groups[2], "path-durotar", color("Durotar"), "4s", "1s");
   }
-  box.append(svg);
+  /* The road cutaway panel. */
+  const panel = h("div", { class: "road-panel", "aria-hidden": "true" });
+  box.append(svg, panel);
   /* Highlight: hover or tap a road (or its legend entry) to light it; a tap sticks until tapped again. */
   const legend = $("#roads-legend"); legend.replaceChildren();
   let sticky = null;
@@ -1065,6 +1219,12 @@ function renderMap() {
     svg.classList.toggle("focusing", !!k);
     groups.forEach((g) => g.classList.toggle("on", g.dataset.road === k));
     btns.forEach((b) => { b.classList.toggle("on", b.dataset.road === k); b.setAttribute("aria-pressed", String(b.dataset.road === sticky)); });
+    const r = ROADS.find((x) => x.key === k);
+    panel.classList.toggle("open", !!r);
+    if (!r) return;
+    const ms = byZone[r.zone] || [];
+    panel.style.setProperty("--rc", classVar(ms[0] && ms[0].class_key));
+    panel.replaceChildren(h("h3", { text: r.zone }), h("ol", {}, h("li", { text: ms.length ? `${andList(ms.map((m) => m.name))} wake${ms.length === 1 ? "s" : ""} here` : "Nobody starts here" }), h("li", { text: r.how.replace(/^the /, "The ") }), h("li", { text: "Orgrimmar" })));
   };
   const toggle = (key) => { sticky = sticky === key ? null : key; light(null); };
   for (const r of ROADS) {
@@ -1081,6 +1241,23 @@ function renderMap() {
   $("#map-caption").textContent = meet ? `${meet.title}: ${meet.status}. ${meet.detail}` : "";
 }
 
+/* Racial rows open in place to their dated notes. */
+function splitNotes(text) {
+  const notes = [];
+  let now = text.replace(/\s*\(([^()]*\b(?:Sep|Oct|Nov) \d[^()]*)\)/g, (m, x) => { notes.push(x); return ""; });
+  now = now.split(/;\s*/).filter((c) => { if (/\b(?:Sep|Oct|Nov) \d/.test(c) && !/\bsince\b/.test(c)) { notes.push(c); return false; } return true; }).join("; ");
+  return { now, notes: notes.flatMap((n) => n.split(/;\s*/)).filter(Boolean) };
+}
+function raceRow(r, i) {
+  const { now, notes } = splitNotes(r.wiki ? r.wiki.replace(/^(active|passive),\s*/, "") : "Not on the wiki page yet.");
+  const client = (r.client.values.length || r.client.cooldown_ms) ? `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` : null;
+  const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: "changed Oct 26" }) : null];
+  const li = h("li", { class: "rrow", style: `--di: ${i}` });
+  if (!notes.length && !client) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
+  const btn = h("button", { class: "rhead", type: "button", "aria-expanded": "false", onclick: () => btn.setAttribute("aria-expanded", String(li.classList.toggle("open"))) }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));
+  li.append(btn, h("div", { class: "rwiki", text: now }), h("div", { class: "rmore" }, h("div", {}, notes.length ? h("ul", { class: "rnotes", "aria-label": "Dev notes" }, notes.map((n) => h("li", { text: n }))) : null, client ? h("div", { class: "rclient", text: client }) : null)));
+  return li;
+}
 /* ---------- racials: details elements, all open on wide screens, the first open on phones ---------- */
 const wideMQ = window.matchMedia("(min-width: 900px)");
 function renderRaces() {
@@ -1089,10 +1266,7 @@ function renderRaces() {
     const ms = D.party.members.filter((m) => m.race === race);
     wrap.append(h("details", { class: "slip race", open: wideMQ.matches || idx === 0 },
       h("summary", {}, h("h3", {}, race, h("span", { class: "dots" }, ms.map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}`, title: m.name }))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") }))),
-      h("ul", {}, list.map((r) => h("li", {},
-        h("div", {}, h("span", { class: "rname", text: r.name }), " ", r.kind ? h("span", { class: "chip", text: r.kind }) : null, " ", r.changed_oct26 ? h("span", { class: "chip new", text: "changed Oct 26" }) : null),
-        h("div", { class: "rwiki", text: r.wiki ? r.wiki.replace(/^(active|passive),\s*/, "") : "Not on the wiki page yet." }),
-        (r.client.values.length || r.client.cooldown_ms) ? h("div", { class: "rclient", text: `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` }) : null)))));
+      h("ul", {}, list.map((r, i) => raceRow(r, i)))));
   });
 }
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
@@ -1140,7 +1314,7 @@ function renderWheel() {
   const svg = s("svg", { viewBox: "-160 -160 320 320", role: "group", "aria-label": "Buff wheel between the five classes" });
   const edges = [];
   D.client.synergy.forEach((b, bi) => {
-    const delay = `--d: ${Math.max(0, keys.indexOf(b.from)) * 200}ms`;
+    const delay = `--di: ${Math.max(0, keys.indexOf(b.from))}`;
     for (const to of b.to) {
       if (to === b.from || !pos[to] || !pos[b.from]) continue;
       const [x1, y1] = pos[b.from], [x2, y2] = pos[to];
@@ -1154,8 +1328,8 @@ function renderWheel() {
   });
   const nodes = keys.map((k) => {
     const m = memberByKey(k), [x, y] = pos[k];
-    const g = s("g", { class: "wheel-node", tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${m.class}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k },
-      s("circle", { cx: x, cy: y, r: 26 }), s("text", { x, y: y - 1, text: m.name }), s("text", { x, y: y + 13, style: "font-size:10px;fill:var(--text-dim)", text: m.class }));
+    const g = s("g", { class: `wheel-node${ART.crest[k] ? " has-crest" : ""}`, tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${m.class}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k, "data-x": x, "data-y": y },
+      s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y - 1, text: m.name }), s("text", { x, y: y + 13, style: "font-size:10px;fill:var(--text-dim)", text: m.class }));
     svg.append(g); return g;
   });
   const items = D.client.synergy.map((b) => {
@@ -1184,7 +1358,9 @@ function setBuffView(v) {
   try { localStorage.setItem("board-buff-view", v); } catch (e) {}
 }
 
-/* ---------- ledger ---------- */
+/* ---------- ledger: settled items stamp in under a wax seal, open items wobble once ---------- */
+const ART = { crest: {}, seal: false, beam: false };
+const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : null);
 function renderLedger() {
   const p = D.party, wrap = $("#ledger-slip"); wrap.replaceChildren();
   const link = (l) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: l.label });
@@ -1194,11 +1370,11 @@ function renderLedger() {
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(
     h("h3", { text: "Settled" }),
-    h("ul", {}, [...p.settled, ...p.settled_extra].map((x) => h("li", {}, h("span", {}, h("span", { class: "tick", "aria-hidden": "true" }), x.text), h("span", { class: "label", text: x.source })))),
+    h("ul", {}, [...p.settled, ...p.settled_extra].map((x, i) => h("li", { class: "settled-li", style: `--di: ${i}` }, h("span", {}, seal(), x.text), h("span", { class: "label", text: x.source })))),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
     ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` }))),
     h("h3", { text: "Still open" }),
-    h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o) => h("li", {},
+    h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}` },
       h("strong", { text: o.title }),
       h("span", {}, ...linkify(o.status ? `${o.status}. ${o.detail || ""}` : o.text || "", o.links || [], link)),
       h("span", { class: "label", text: o.source })))));
@@ -1244,7 +1420,7 @@ function renderFooter() {
   const when = `${stamp.replace("T", " ").slice(0, 16)} UTC`;
   $("#footer").replaceChildren(
     h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
-    h("span", { text: "Tap a tile to open it. Escape or back returns to the wall." }));
+    h("span", { text: `Tap a tile to open it. Escape or back returns to the wall.${window.matchMedia("(hover: hover) and (pointer: fine)").matches ? " Press ? for keys." : ""}` }));
   $("#lib-sources").replaceChildren(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
@@ -1360,11 +1536,7 @@ async function renderPresence() {
 }
 
 /* ---------- presence inside Discord (Embedded App SDK, no scopes) ---------- */
-/* SDK 2.5.0 exposes one command under two names: commands.getActivityInstanceConnectedParticipants and the older
-   commands.getInstanceConnectedParticipants both send GET_ACTIVITY_INSTANCE_CONNECTED_PARTICIPANTS, and the reply is
-   checked against a strict schema (id, username, discriminator, flags, bot required). The same list also arrives through
-   the ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE event. Order here: the command, then the event; if neither yields anyone,
-   the viewer is shown alone as "you", and every SDK error goes to console.warn so a launch says why. */
+/* SDK 2.5.0: getActivityInstanceConnectedParticipants (alias getInstanceConnectedParticipants), then the ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE event; else "you" alone. SDK errors go to console.warn. */
 let discordPoll = 0;
 function startDiscordPresence(sdk) {
   const warned = new Set();
@@ -1434,7 +1606,7 @@ function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
   if (!S) { body.replaceChildren(h("p", { text: "The Discord sign-ups did not load." })); $("#dsu-stamp").textContent = ""; return; }
   const T = S.tallies;
-  const row = (slot, label, extra) => h("div", { class: "tally" }, h("b", { text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || slot.names.join(", ")) : "nobody yet");
+  const row = (slot, label, extra) => h("div", { class: "tally" }, h("b", { "data-n": slot.count, text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || slot.names.join(", ")) : "nobody yet");
   const groups = [
     ["Pack", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
@@ -1487,9 +1659,12 @@ async function startRuntime() {
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian"];
 const TITLES = { timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Legacy", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The librarian" };
 /* Once-per-open effects: the class restarts the scene's CSS animation (roads draw, ring fills, wheel lines light). */
-const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"] };
-const SC = { open: null, closeTimer: 0, fadeTimer: 0 };
-const motionMs = (ms) => (reduceMQ.matches ? 0 : ms);
+const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
+const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
+const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
+/* Scene open and close hooks (light, wisps, sound). */
+const sceneHooks = [];
+const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
 const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key}` : "");
@@ -1510,44 +1685,157 @@ function selectPanel(key, crossFade) {
   const next = $(`#panel-${key}`);
   if (prev && prev !== key) {
     const old = $(`#panel-${prev}`);
-    if (crossFade && motionMs(180)) {
+    if (crossFade && motionMs("micro")) {
       old.classList.remove("entering"); old.classList.add("leaving");
       clearTimeout(SC.fadeTimer);
-      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); }, 180);
+      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); }, MOTION.micro);
     } else { old.hidden = true; old.classList.remove("entering", "leaving"); }
   }
   next.hidden = false; next.classList.remove("leaving");
-  if (crossFade) replay(next, "entering");
+  if (crossFade) { replay(next, "entering"); sfx("tab"); }
   $("#sheet-body").scrollTop = 0;
   if (PLAY[key]) replay($(PLAY[key][0]), PLAY[key][1]);
+  if (ON_OPEN[key]) ON_OPEN[key]();
   const tabs = $("#tabs"), tab = $(`#tab-${key}`);
   if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
+  moveInd(); markBar(key);
+}
+/* The rail indicator; offsets read on a tab change or resize only. */
+function moveInd() { const t = SC.open && $(`#tab-${SC.open}`), ind = $("#tab-ind"); if (t && ind) ind.style.transform = `translateX(${t.offsetLeft}px) scaleX(${Math.max(1, t.offsetWidth)})`; }
+/* Phone bottom bar: the wall, five scenes, sound, More. */
+const BAR = ["timeline", "five", "roads", "signups", "ledger"], MORE = SCENES.filter((k) => !BAR.includes(k));
+function markBar(key) { document.querySelectorAll("#bottombar [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === key || (b.dataset.go === "more" && MORE.includes(key))))); }
+function startBar() {
+  const label = (k) => $(`#tab-${k}`).textContent.trim(), bar = $("#bottombar"), menu = $("#more-menu");
+  const more = h("button", { class: "bb", type: "button", "data-go": "more", "aria-expanded": "false", "aria-controls": "more-menu", text: "More" });
+  bar.replaceChildren(h("button", { class: "bb", type: "button", "data-go": "wall", "aria-label": "Close and go back to the wall", text: "Wall" }), ...BAR.map((k) => h("button", { class: "bb", type: "button", "data-go": k, text: label(k) })), h("button", { class: "bb", type: "button", "data-go": "sound", "aria-pressed": String(AU.on), text: "Sound" }), more);
+  menu.replaceChildren(...MORE.map((k) => h("button", { type: "button", "data-go": k, text: label(k) })));
+  const setMore = (on) => { menu.hidden = !on; more.setAttribute("aria-expanded", String(on)); };
+  closeMore = (back) => { if (menu.hidden) return false; setMore(false); if (back !== false) more.focus(); return true; };
+  const go = (e) => {
+    const b = e.target.closest && e.target.closest("[data-go]"); if (!b) return;
+    const k = b.dataset.go;
+    if (k === "more") { setMore(menu.hidden); if (!menu.hidden) menu.querySelector("button").focus(); return; }
+    setMore(false);
+    if (k === "sound") setSound(!AU.on); else if (k === "wall") requestClose(); else { switchTab(k); b.focus(); }
+  };
+  bar.addEventListener("click", go); menu.addEventListener("click", go);
+}
+/* Swipe: touch or pen, 40 px, or 20 px faster than 0.5 px per ms, mostly sideways. */
+function startSwipe() {
+  const body = $("#sheet-body"); let s = null;
+  body.addEventListener("pointerdown", (e) => { s = e.pointerType === "mouse" || SC.open === null || (e.target.closest && e.target.closest(".cards, input, select, textarea")) ? null : { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId }; });
+  body.addEventListener("pointercancel", () => { s = null; });
+  body.addEventListener("pointerup", (e) => {
+    if (!s || e.pointerId !== s.id) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y, v = Math.abs(dx) / Math.max(1, e.timeStamp - s.t); s = null;
+    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (Math.abs(dx) >= 40 || (v > 0.5 && Math.abs(dx) >= 20)) stepTab(dx < 0 ? 1 : -1);
+  });
+}
+/* Tallies count up from 0 on open. */
+let countToken = 0;
+function countUp(box) {
+  const els = [...box.querySelectorAll("b[data-n]")], tok = ++countToken;
+  if (reduceMQ.matches || !els.length) return;
+  const t0 = performance.now();
+  const step = (t) => { if (tok !== countToken) return; const k = Math.min(1, Math.max(0, t - t0) / MOTION.count), e = 1 - Math.pow(1 - k, 3); for (const el of els) el.textContent = String(Math.round(Number(el.dataset.n) * e)); if (k < 1) requestAnimationFrame(step); };
+  for (const el of els) el.textContent = "0";
+  sfx("tick");
+  requestAnimationFrame(step);
+}
+const ON_OPEN = { signups: () => countUp($("#dsu-body")), ledger: () => sfx("stamp") };
+/* Morph: View Transitions, else FLIP, else the v2 rise. */
+const hasVT = () => typeof document.startViewTransition === "function";
+const canFlip = () => typeof $(".sheet").animate === "function";
+function morphBand(key) {
+  if (reduceMQ.matches) return null;
+  const t = document.querySelector(`#board [data-scene="${key}"]`);
+  const band = t && (t.querySelector(".tile-band") || t);
+  if (!band) return null;
+  const r = band.getBoundingClientRect();
+  return r.width > 0 && r.bottom > 0 && r.top < innerHeight ? band : null;
+}
+function viewMorph(from, to, update) {
+  const layer = $("#scene");
+  const clear = () => { from.style.viewTransitionName = ""; to.style.viewTransitionName = ""; layer.classList.remove("morph"); };
+  layer.classList.add("morph");
+  from.style.viewTransitionName = "scene-band";
+  try {
+    const vt = document.startViewTransition(() => { from.style.viewTransitionName = ""; if (update()) to.style.viewTransitionName = "scene-band"; });
+    vt.finished.then(clear, clear);
+  } catch (e) { clear(); update(); }
+}
+function stopFlip() { clearTimeout(SC.flipTimer); if (SC.anim) { try { SC.anim.cancel(); } catch (e) {} SC.anim = null; } }
+function flipSheet(band, opening, done) {
+  const layer = $("#scene"), sheet = $(".sheet");
+  stopFlip();
+  const a = band.getBoundingClientRect(), b = sheet.getBoundingClientRect();
+  if (!a.width || !b.width || !b.height) return false;
+  const from = `translate(${(a.left - b.left).toFixed(1)}px, ${(a.top - b.top).toFixed(1)}px) scale(${(a.width / b.width).toFixed(4)}, ${(a.height / b.height).toFixed(4)})`;
+  const kf = [{ transform: from, opacity: 0.4 }, { transform: "none", opacity: 1 }];
+  layer.classList.add("flip");
+  let an = null, ended = false;
+  const end = () => { if (ended) return; ended = true; clearTimeout(SC.flipTimer); if (opening) { layer.classList.remove("flip"); if (SC.anim === an) stopFlip(); } if (done) done(); };
+  try { an = sheet.animate(opening ? kf : kf.reverse(), { duration: MOTION.move, easing: MOTION.oak, fill: opening ? "backwards" : "forwards" }); }
+  catch (e) { layer.classList.remove("flip"); return false; }
+  SC.anim = an;
+  if (an && an.finished) an.finished.then(end, end);
+  SC.flipTimer = setTimeout(end, MOTION.move + 120);
+  return true;
 }
 function showScene(key) {
   const layer = $("#scene");
-  clearTimeout(SC.closeTimer);
+  if (SC.want) { SC.want = key; return; } /* a morph is in flight; it opens whatever was asked for last */
+  clearTimeout(SC.closeTimer); SC.token++;
   const wasOpen = !layer.hidden && !layer.classList.contains("closing") && SC.open !== null;
+  if (SC.anim) { stopFlip(); layer.classList.remove("flip"); }
   layer.classList.remove("closing");
   if (wasOpen) { if (SC.open !== key) selectPanel(key, true); return; }
-  layer.hidden = false;
-  $("#board").inert = true;
-  document.documentElement.classList.add("scene-open");
-  selectPanel(key, false);
-  $(`#tab-${key}`).focus({ preventScroll: true });
+  const open = (k, how) => {
+    layer.classList.remove("rise", "flip", "closing");
+    closeMore(false);
+    if (how) layer.classList.add(how);
+    layer.hidden = false;
+    $("#board").inert = true;
+    document.documentElement.classList.add("scene-open");
+    selectPanel(k, false);
+    $(`#tab-${k}`).focus({ preventScroll: true });
+    sceneState(true);
+    sfx("open");
+  };
+  const band = layer.hidden ? morphBand(key) : null;
+  if (band && hasVT()) {
+    SC.want = key;
+    viewMorph(band, $(".sheet-head"), () => { const k = SC.want; SC.want = null; if (!k) return false; open(k, ""); return true; });
+    return;
+  }
+  if (band && canFlip()) { open(key, ""); if (!flipSheet(band, true)) layer.classList.add("rise"); return; }
+  open(key, reduceMQ.matches ? "" : "rise");
 }
 function hideScene() {
+  if (SC.want) { SC.want = null; return; }
   if (SC.open === null) return;
-  const layer = $("#scene"), key = SC.open;
+  const layer = $("#scene"), key = SC.open, token = ++SC.token;
   SC.open = null;
-  layer.classList.add("closing");
-  $("#board").inert = false;
-  document.documentElement.classList.remove("scene-open");
-  clearTimeout(SC.closeTimer);
-  SC.closeTimer = setTimeout(() => {
-    layer.hidden = true; layer.classList.remove("closing");
-    for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
-  }, motionMs(260));
   const tile = document.querySelector(`#board [data-scene="${key}"]`);
+  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close"); };
+  const finish = () => {
+    if (token !== SC.token) return;
+    clearTimeout(SC.closeTimer); stopFlip();
+    layer.hidden = true; layer.classList.remove("closing", "flip", "rise");
+    for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
+  };
+  const band = morphBand(key);
+  if (band && hasVT()) {
+    viewMorph($(".sheet-head"), band, () => { if (token !== SC.token) return false; unlock(); finish(); if (tile) tile.focus(); return true; });
+    return;
+  }
+  unlock();
+  layer.classList.remove("rise");
+  layer.classList.add("closing");
+  clearTimeout(SC.closeTimer);
+  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, motionMs("move"));
   if (tile) tile.focus();
 }
 function requestClose() {
@@ -1556,6 +1844,55 @@ function requestClose() {
   setHash(null, false); hideScene();
 }
 function switchTab(key) { if (key === SC.open) return; setHash(key, false); selectPanel(key, true); }
+function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); $(`#tab-${k}`).focus({ preventScroll: true }); }
+/* From the wall: push one entry (Back closes); inside a scene: switch tabs. */
+function goScene(k) {
+  if (SC.open !== null) { switchTab(k); $(`#tab-${k}`).focus({ preventScroll: true }); return; }
+  setHash(k, true); showScene(k);
+}
+
+/* ---------- focus: trapped in the open scene, the wall inert behind it ---------- */
+const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
+function shown(el) {
+  for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden || n.inert) return false;
+  return !el.getClientRects || el.getClientRects().length > 0;
+}
+const focusables = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && el.getAttribute("tabindex") !== "-1" && shown(el));
+function trapFocus(e) {
+  const box = $("#scene"), list = focusables(box);
+  if (!list.length) { e.preventDefault(); return; }
+  const first = list[0], last = list[list.length - 1], at = document.activeElement;
+  if (!box.contains(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
+  else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
+}
+
+/* ---------- keyboard map: 1 to 9 open scenes, arrows step tabs, Escape closes, ? shows the list ---------- */
+function showKeys(on) {
+  const box = $("#keys");
+  if (on && !$("#keys-list").childElementCount) {
+    const rows = [...SCENES.map((k, i) => [String(i + 1), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["\u2190 \u2192", "previous or next tab"], ["Esc", "close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
+    $("#keys-list").replaceChildren(...rows.flatMap(([k, what]) => [h("dt", {}, h("kbd", { text: k })), h("dd", { text: what })]));
+  }
+  box.hidden = !on;
+}
+function onKey(e) {
+  if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Escape") {
+    if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); return; }
+    if (closeMore()) { e.preventDefault(); return; }
+    if (SC.open !== null) { e.preventDefault(); requestClose(); }
+    return;
+  }
+  if (e.key === "Tab") { if (SC.open !== null) trapFocus(e); return; }
+  const t = e.target || {}, tag = t.tagName;
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || t.isContentEditable) return;
+  if (e.key === "?") { e.preventDefault(); showKeys($("#keys").hidden); return; }
+  if (e.key === "m" || e.key === "M") { e.preventDefault(); setSound(!AU.on); return; }
+  if (/^[1-9]$/.test(e.key)) { const k = SCENES[Number(e.key) - 1]; if (k) { e.preventDefault(); goScene(k); } return; }
+  if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && SC.open !== null && !(t.closest && t.closest("#tabs, .cards, .opts"))) { e.preventDefault(); stepTab(e.key === "ArrowRight" ? 1 : -1); }
+}
+let closeMore = () => false;
 function route() { const key = sceneFromHash(); if (key) showScene(key); else hideScene(); }
 function startScenes() {
   $("#board").addEventListener("click", (e) => {
@@ -1574,17 +1911,25 @@ function startScenes() {
   });
   $("#scene-close").addEventListener("click", requestClose);
   $("#scene-veil").addEventListener("click", requestClose);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && SC.open !== null) { e.preventDefault(); requestClose(); } });
+  $("#keys-close").addEventListener("click", () => showKeys(false));
+  document.addEventListener("keydown", onKey);
+  /* Focus outside the open scene comes back. */
+  document.addEventListener("focusin", (e) => {
+    if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target)) return;
+    const first = focusables($("#scene"))[0]; if (first) first.focus();
+  });
   addEventListener("popstate", route);
   addEventListener("hashchange", route);
   $("#view-wheel").addEventListener("click", () => setBuffView("wheel"));
   $("#view-list").addEventListener("click", () => setBuffView("list"));
   $("#skip").addEventListener("click", (e) => { e.preventDefault(); $("#main").focus(); });
+  startBar();
+  startSwipe();
+  addEventListener("resize", () => { if (SC.open) moveInd(); }, { passive: true });
 }
 
 /* ---------- emblems: painted icons from img/icons/<scene>.png, probed so a missing one keeps the line glyph ---------- */
-/* The wall art (board-wall, parchment-tile, map-parchment) is plain CSS with token fallbacks; only the icons are probed,
-   because new ones land one at a time. A missing icon costs one 404 in the network log and nothing on the page. */
+/* Wall art is plain CSS with token fallbacks; only icons are probed (one 404 each when missing). */
 const ICONS = {}, GLYPHS = {};
 const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 320, height: 320, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
@@ -1625,44 +1970,403 @@ function startParallax() {
   reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) img.style.transform = ""; });
 }
 
-/* ---------- wisps (canvas) ---------- */
+/* ---------- the light pass: WebGL 1 bump lighting on the wall plate ---------- */
+/* Light pass (V3-SPEC 3.2); failures fall back to the plain image. */
+const LIGHT_VS = "attribute vec2 p;varying vec2 uv;void main(){uv=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}";
+const LIGHT_FS = `precision mediump float;
+uniform sampler2D tex;uniform vec2 texel,res,cover,lpos;uniform float lint,bump,lh;uniform vec3 warm,cool,shade;varying vec2 uv;
+float L(vec2 q){return dot(texture2D(tex,q).rgb,vec3(.299,.587,.114));}
+void main(){
+vec2 q=.5+(uv-.5)*cover;
+vec3 base=texture2D(tex,q).rgb;
+vec3 n=normalize(vec3((L(q-vec2(texel.x,0.))-L(q+vec2(texel.x,0.)))*bump,(L(q-vec2(0.,texel.y))-L(q+vec2(0.,texel.y)))*bump,1.));
+vec3 d=vec3(lpos-uv*res,lh);float dist=length(d);
+float r=dist/(.75*max(res.x,res.y));
+float lit=max(dot(n,d/dist),0.)/(1.+3.*r*r);
+vec3 col=base*(cool*2.4+warm*lit*lint*1.3);
+float v=length((uv-vec2(.5,.46))/vec2(.5,.46))/1.542;
+float a=v<.42?.22*v/.42:v<.76?.22+.4*(v-.42)/.34:.62+.32*clamp((v-.76)/.24,0.,1.);
+gl_FragColor=vec4(mix(col,shade,a),1.);}`;
+const LIGHT = { bump: 2.5, ease: 0.08, candle: [0.06, 0.1], flicker: 0.1, jitter: 6 };
+const hexVec = (v, d) => { const m = /^#?([0-9a-f]{6})$/i.exec(v || ""); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255) : d; };
+const LS = { state: "off", draws: 0, why: "", n: 0 };
+const flickAt = (s) => 0.5 * Math.sin(s * 1.7) + 0.3 * Math.sin(s * 2.9 + 1.3) + 0.2 * Math.sin(s * 6.1 + 2.1);
+/* Self-contained GL core: runs in a worker (OffscreenCanvas) or on the page. */
+function lightCore(cv, o, say) {
+  let gl = null, u = {}, ready = false, img = null;
+  try { gl = cv.getContext("webgl", { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: "low-power" }) || cv.getContext("experimental-webgl"); } catch (e) { gl = null; }
+  if (!gl) { say("absent"); return null; }
+  const api = {
+    start(bmp) {
+      img = bmp; ready = false;
+      let prog, ext;
+      try {
+        ext = gl.getExtension("KHR_parallel_shader_compile"); prog = gl.createProgram();
+        for (const [t, src] of [[gl.VERTEX_SHADER, o.VS], [gl.FRAGMENT_SHADER, o.FS]]) { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); gl.attachShader(prog, x); }
+        gl.linkProgram(prog);
+      } catch (e) { say("fallback", "init failed"); return; }
+      /* KHR_parallel_shader_compile: poll the link instead of blocking on it. */
+      const poll = () => {
+        try {
+          if (gl.isContextLost()) { say("fallback", "context lost"); return; }
+          if (ext && !gl.getProgramParameter(prog, ext.COMPLETION_STATUS_KHR)) { setTimeout(poll, 16); return; }
+          if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("link");
+          gl.useProgram(prog);
+          gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+          const at = gl.getAttribLocation(prog, "p"); gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+          for (const k of ["tex", "texel", "res", "cover", "lpos", "lint", "bump", "lh", "warm", "cool", "shade"]) u[k] = gl.getUniformLocation(prog, k);
+          gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+          for (const [p, v] of [[gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR]]) gl.texParameteri(gl.TEXTURE_2D, p, v);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+          gl.uniform1i(u.tex, 0); gl.uniform2f(u.texel, 1 / img.width, 1 / img.height); gl.uniform1f(u.bump, o.bump);
+          gl.uniform3f(u.warm, ...o.warm); gl.uniform3f(u.cool, ...o.cool); gl.uniform3f(u.shade, ...o.shade);
+        } catch (e) { say("fallback", "init failed"); return; }
+        ready = true; say("lit");
+      };
+      poll();
+    },
+    size(W, H, cw, ch) {
+      if (!ready) return;
+      cv.width = cw; cv.height = ch; gl.viewport(0, 0, cw, ch);
+      const ac = W / H, ai = img.width / img.height;
+      gl.uniform2f(u.cover, ac > ai ? 1 : ac / ai, ac > ai ? ai / ac : 1); gl.uniform2f(u.res, W, H); gl.uniform1f(u.lh, 0.42 * Math.min(W, H));
+    },
+    draw(x, y, i) {
+      if (!ready) return;
+      if (gl.isContextLost()) { ready = false; say("fallback", "context lost"); return; }
+      try { gl.uniform2f(u.lpos, x, y); gl.uniform1f(u.lint, i); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); } catch (e) { ready = false; say("fallback", "draw failed"); }
+    },
+  };
+  cv.addEventListener("webglcontextlost", (e) => { e.preventDefault(); ready = false; say("fallback", "context lost"); });
+  cv.addEventListener("webglcontextrestored", () => { if (img) api.start(img); });
+  return api;
+}
+function startLight() {
+  const cv = $("#light"), plate = cv && cv.parentNode;
+  if (!cv || typeof cv.getContext !== "function") return;
+  const S = { core: null, worker: null, iw: 1, ih: 1, W: 0, H: 0, raf: 0, onScreen: true, scene: false, lx: 0, ly: 0, tx: null, ty: null, rw: 0, tilt: false };
+  const opts = { VS: LIGHT_VS, FS: LIGHT_FS, bump: LIGHT.bump, warm: hexVec(cssVar("--light-warm"), [1, 0.82, 0.55]), cool: hexVec(cssVar("--light-cool"), [0.18, 0.2, 0.28]), shade: hexVec(cssVar("--oak-0"), [0.07, 0.05, 0.03]) };
+  const call = (k, ...a) => { if (S.worker) S.worker.postMessage({ k, a }); else if (S.core) S.core[k](...a); };
+  const say = (state, why) => {
+    if (state === "lit") { LS.state = "lit"; plate.classList.add("lit"); size(); still(); run(); return; }
+    stop(); plate.classList.remove("lit"); LS.state = state; LS.why = why || "";
+  };
+  /* Backing pixels: devicePixelRatio capped at 2 and at the texture's width. */
+  const size = () => {
+    const r = plate.getBoundingClientRect();
+    S.W = Math.max(1, Math.round(r.width)); S.H = Math.max(1, Math.round(r.height));
+    const k = Math.max(0.5, Math.min(2, window.devicePixelRatio || 1, S.iw / S.W));
+    call("size", S.W, S.H, Math.round(S.W * k), Math.round(S.H * k));
+    if (S.tx === null) { S.lx = S.W * LIGHT.candle[0]; S.ly = S.H * LIGHT.candle[1]; }
+  };
+  const draw = (t) => {
+    const calm = reduceMQ.matches, s = t / 1000;
+    const tx = S.tx === null ? S.W * LIGHT.candle[0] : S.tx, ty = S.ty === null ? S.H * LIGHT.candle[1] : S.ty;
+    if (calm) { S.lx = tx; S.ly = ty; } else { S.lx += (tx - S.lx) * LIGHT.ease; S.ly += (ty - S.ly) * LIGHT.ease; }
+    /* 1/f-like flicker. */
+    S.rw = Math.max(-0.5, Math.min(0.5, S.rw * 0.97 + (Math.random() - 0.5) * 0.08));
+    const n = LS.n = calm ? 0 : Math.max(-1, Math.min(1, (flickAt(s) + S.rw) / 1.5));
+    const jx = calm ? 0 : LIGHT.jitter * (0.6 * Math.sin(s * 2.3 + 0.4) + 0.4 * Math.sin(s * 4.7 + 1.9));
+    const jy = calm ? 0 : LIGHT.jitter * (0.6 * Math.sin(s * 1.9 + 2.2) + 0.4 * Math.sin(s * 5.3 + 0.7));
+    call("draw", S.lx + jx, S.ly + jy, 1 - LIGHT.flicker / 2 + (LIGHT.flicker / 2) * n);
+    LS.draws++;
+  };
+  const frame = (t) => { S.raf = 0; if (LS.state !== "lit") return; draw(t); if (live()) S.raf = requestAnimationFrame(frame); };
+  const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene;
+  const run = () => { if (!S.raf && live()) S.raf = requestAnimationFrame(frame); };
+  function stop() { if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; }
+  const still = () => { if (LS.state === "lit") draw(performance.now()); };
+  const onPage = (img) => { LS.via = "page"; S.core = lightCore(cv, opts, say); if (S.core) S.core.start(img); };
+  /* The canvas is handed over only after the worker says "up". */
+  const img = new Image();
+  img.decoding = "async";
+  img.onerror = () => { LS.state = "absent"; };
+  img.onload = () => {
+    S.iw = img.width; S.ih = img.height;
+    if (!(cv.transferControlToOffscreen && window.Worker && window.createImageBitmap && window.URL && window.Blob)) { onPage(img); return; }
+    let w, url, timer = 0;
+    try { url = URL.createObjectURL(new Blob([`const core=${lightCore};let c=null;onmessage=(e)=>{const m=e.data;if(m.cv){c=core(m.cv,m.o,(s,w)=>postMessage([s,w]));if(c)c.start(m.bmp)}else if(c)c[m.k](...m.a)};postMessage(["up"])`], { type: "text/javascript" })); w = new Worker(url); }
+    catch (e) { onPage(img); return; }
+    const fail = () => { clearTimeout(timer); try { w.terminate(); } catch (e) {} if (!S.worker) onPage(img); };
+    timer = setTimeout(fail, 3000);
+    w.onerror = fail;
+    w.onmessage = async (e) => {
+      const [s, why] = e.data;
+      if (s !== "up") { say(s, why); return; }
+      clearTimeout(timer); URL.revokeObjectURL(url);
+      try {
+        const bmp = await createImageBitmap(img), off = cv.transferControlToOffscreen();
+        S.worker = w; LS.via = "worker"; w.onerror = () => say("fallback", "worker error");
+        w.postMessage({ cv: off, o: opts, bmp }, [off, bmp]);
+      } catch (x) { try { w.terminate(); } catch (y) {} if (!S.worker) onPage(img); }
+    };
+  };
+  img.src = "img/board-wall.jpg";
+  let rs = 0;
+  const resize = () => { if (rs || LS.state !== "lit") return; rs = requestAnimationFrame(() => { rs = 0; size(); still(); }); };
+  addEventListener("resize", resize, { passive: true });
+  if (typeof ResizeObserver === "function") new ResizeObserver(resize).observe(plate);
+  if (typeof IntersectionObserver === "function") new IntersectionObserver((es) => { for (const en of es) S.onScreen = en.isIntersecting; S.onScreen ? run() : stop(); }).observe(cv);
+  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
+  reduceMQ.addEventListener("change", () => { stop(); still(); run(); });
+  sceneHooks.push((on) => { S.scene = on; if (on) stop(); else run(); });
+  /* The pointer is the one per-event DOM read. */
+  const aim = (x, y) => { const r = cv.getBoundingClientRect(); S.tx = x - r.left; S.ty = y - r.top; };
+  addEventListener("pointermove", (e) => { if (LS.state !== "lit" || S.tilt) return; if (e.pointerType === "mouse" || e.buttons) aim(e.clientX, e.clientY); }, { passive: true });
+  addEventListener("pointerdown", (e) => { if (LS.state === "lit" && !S.tilt && e.pointerType !== "mouse") aim(e.clientX, e.clientY); }, { passive: true });
+  document.documentElement.addEventListener("pointerleave", () => { if (!S.tilt) S.tx = S.ty = null; });
+  const tilt = $("#tilt");
+  if (tilt && typeof DeviceOrientationEvent !== "undefined" && window.matchMedia("(pointer: coarse)").matches) {
+    tilt.hidden = false;
+    const onTilt = (e) => { if (e.gamma === null || e.beta === null) return; S.tx = S.W * (0.5 + 0.5 * Math.max(-1, Math.min(1, e.gamma / 45))); S.ty = S.H * (0.5 + 0.5 * Math.max(-1, Math.min(1, (e.beta - 40) / 45))); };
+    tilt.addEventListener("click", async () => {
+      if (S.tilt) { S.tilt = false; removeEventListener("deviceorientation", onTilt); S.tx = S.ty = null; tilt.setAttribute("aria-pressed", "false"); return; }
+      try { if (typeof DeviceOrientationEvent.requestPermission === "function" && (await DeviceOrientationEvent.requestPermission()) !== "granted") return; } catch (e) { return; }
+      S.tilt = true; addEventListener("deviceorientation", onTilt); tilt.setAttribute("aria-pressed", "true");
+    });
+  }
+}
+
+/* ---------- wisps, second generation: a flow field ---------- */
+/* Flow-field wisps (V3-SPEC 3.3). */
+const WS = { n: 0, frames: 0, running: false, near: 0 };
 function startWisps() {
-  const cv = $("#wisps"), ctx = cv.getContext("2d");
+  const cv = $("#wisps"), ctx = cv && cv.getContext && cv.getContext("2d");
   if (!ctx) return;
-  let W = 0, H = 0, dpr = 1, raf = 0, parts = [], pointer = { x: -1e4, y: -1e4 };
-  const colors = ["--c-druid", "--c-priest", "--c-paladin", "--c-mage", "--c-warlock"].map(cssVar);
-  const size = () => { dpr = Math.min(2, window.devicePixelRatio || 1); W = innerWidth; H = innerHeight; cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
-  const seed = () => {
-    const n = Math.min(60, Math.max(18, Math.round((W * H) / 26000)));
-    parts = Array.from({ length: n }, (_, i) => ({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 0.18, vy: -0.05 - Math.random() * 0.16, r: 1.2 + Math.random() * 2.6, c: colors[i % colors.length], ph: Math.random() * 6.28 }));
+  const GX = 32, GY = 18, REBUILD = 2000, REPEL = 120;
+  const LAYERS = [{ r: 1.1, a: 0.3, v: 0.32 }, { r: 1.8, a: 0.48, v: 0.55 }, { r: 2.8, a: 0.72, v: 0.9 }];
+  const COLORS = ["--c-mage", "--c-warlock", "--c-mage", "--c-warlock", "--c-mage", "--c-warlock", "--c-mage", "--brass"].map(cssVar);
+  let W = 0, H = 0, dpr = 1, raf = 0, parts = [], trail = [], covered = false, fA = null, fB = null, built = -1e9, gen = 0;
+  const seed = Math.random() * 1000, pointer = { x: -1e4, y: -1e4 };
+  const hash = (x, y, s) => { const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return v - Math.floor(v); };
+  const noise = (x, y, s) => {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const a = hash(xi, yi, s), b = hash(xi + 1, yi, s), c = hash(xi, yi + 1, s), d = hash(xi + 1, yi + 1, s);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+  const build = (s) => { const f = new Float32Array(GX * GY); for (let j = 0; j < GY; j++) for (let i = 0; i < GX; i++) f[j * GX + i] = -Math.PI / 2 + (noise(i / 7, j / 7, s) * 2 - 1) * Math.PI * 0.9; return f; };
+  const at = (f, gx, gy) => { const i = Math.min(GX - 2, gx | 0), j = Math.min(GY - 2, gy | 0), u = gx - i, v = gy - j, k = j * GX + i; return (f[k] * (1 - u) + f[k + 1] * u) * (1 - v) + (f[k + GX] * (1 - u) + f[k + GX + 1] * u) * v; };
+  /* One sprite per colour and layer. */
+  let sprites = [];
+  const paint = () => {
+    sprites = COLORS.map((c) => LAYERS.map((L) => {
+      const R = Math.ceil(L.r * 9 * dpr), s = document.createElement("canvas"); s.width = s.height = R * 2;
+      const g = s.getContext("2d"); if (!g) return null;
+      const gr = g.createRadialGradient(R, R, 0, R, R, R);
+      gr.addColorStop(0, c); gr.addColorStop(0.18, `${c}55`); gr.addColorStop(1, `${c}00`);
+      g.fillStyle = gr; g.fillRect(0, 0, R * 2, R * 2);
+      return { s, R: R / dpr };
+    }));
+  };
+  const spawn = (x, y, life) => { const l = life ? 2 : (Math.random() * 3) | 0; return { x, y, vx: 0, vy: 0, l, c: (Math.random() * COLORS.length) | 0, ph: Math.random() * 6.28, life: life || 0, born: performance.now() }; };
+  const size = () => {
+    const d = Math.min(2, window.devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = Math.round(W * d); cv.height = Math.round(H * d); ctx.setTransform(d, 0, 0, d, 0, 0);
+    if (d !== dpr || !sprites.length) { dpr = d; paint(); }
+    WS.n = Math.max(60, Math.min(120, Math.round((W * H) / 12000)));
+    while (parts.length < WS.n) parts.push(spawn(Math.random() * W, Math.random() * H, 0));
+    parts.length = WS.n;
   };
   const frame = (t) => {
+    raf = 0;
+    if (t - built > REBUILD || !fA) { fA = fB || build(seed + gen++); fB = build(seed + gen++); built = t; }
+    const w = Math.min(1, (t - built) / REBUILD), sx = (GX - 1) / Math.max(1, W), sy = (GY - 1) / Math.max(1, H);
     ctx.clearRect(0, 0, W, H);
     ctx.globalCompositeOperation = "lighter";
+    let near = 0;
+    const draw = (p, alpha) => { const sp = sprites[p.c] && sprites[p.c][p.l]; if (!sp) return; ctx.globalAlpha = alpha; ctx.drawImage(sp.s, p.x - sp.R, p.y - sp.R, sp.R * 2, sp.R * 2); };
     for (const p of parts) {
+      const L = LAYERS[p.l], gx = Math.max(0, Math.min(GX - 1, p.x * sx)), gy = Math.max(0, Math.min(GY - 1, p.y * sy));
+      const ang = at(fA, gx, gy) * (1 - w) + at(fB, gx, gy) * w;
+      p.vx += (Math.cos(ang) * L.v - p.vx) * 0.04;
+      p.vy += (Math.sin(ang) * L.v - 0.18 * L.v - p.vy) * 0.04;
       const dx = p.x - pointer.x, dy = p.y - pointer.y, d2 = dx * dx + dy * dy;
-      if (d2 < 26000) { const f = (1 - d2 / 26000) * 0.04; p.vx += (dx / Math.sqrt(d2 + 1)) * f; p.vy += (dy / Math.sqrt(d2 + 1)) * f; }
-      p.vx *= 0.985; p.vy = p.vy * 0.985 - 0.0016;
-      p.x += p.vx + Math.sin(t / 2400 + p.ph) * 0.12; p.y += p.vy;
-      if (p.y < -30) { p.y = H + 20; p.x = Math.random() * W; p.vy = -0.05 - Math.random() * 0.16; }
-      if (p.x < -30) p.x = W + 20; if (p.x > W + 30) p.x = -20;
-      const glow = p.r * 9, a = 0.55 + 0.45 * Math.sin(t / 900 + p.ph);
-      const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glow);
-      g.addColorStop(0, p.c); g.addColorStop(0.18, p.c + "55"); g.addColorStop(1, p.c + "00");
-      ctx.globalAlpha = 0.35 * a; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, glow, 0, 6.283); ctx.fill();
+      if (d2 < REPEL * REPEL) { near++; const d = Math.sqrt(d2) + 0.01, f = (1 - d / REPEL) * 0.5; p.vx += (dx / d) * f; p.vy += (dy / d) * f; }
+      p.x += p.vx; p.y += p.vy;
+      if (p.y < -30) { p.y = H + 20; p.x = Math.random() * W; } else if (p.y > H + 30) p.y = -20;
+      if (p.x < -30) p.x = W + 20; else if (p.x > W + 30) p.x = -20;
+      draw(p, L.a * (0.55 + 0.45 * Math.sin(t / 900 + p.ph)));
     }
+    trail = trail.filter((p) => t - p.born < p.life);
+    for (const p of trail) { p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy = p.vy * 0.96 - 0.02; draw(p, 0.9 * (1 - (t - p.born) / p.life)); }
     ctx.globalAlpha = 1;
-    raf = requestAnimationFrame(frame);
+    WS.frames++; WS.near = near;
+    if (live()) raf = requestAnimationFrame(frame);
   };
-  const run = () => { if (!raf && !reduceMQ.matches && !document.hidden) raf = requestAnimationFrame(frame); };
-  const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
-  size(); seed();
-  addEventListener("resize", () => { size(); }, { passive: true });
+  const live = () => !reduceMQ.matches && !document.hidden && !covered;
+  const run = () => { WS.running = live(); if (!raf && WS.running) raf = requestAnimationFrame(frame); };
+  const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; WS.running = false; };
+  size();
+  let rs = 0;
+  addEventListener("resize", () => { if (!rs) rs = requestAnimationFrame(() => { rs = 0; size(); }); }, { passive: true });
   addEventListener("pointermove", (e) => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
-  addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
+  addEventListener("pointerdown", (e) => {
+    pointer.x = e.clientX; pointer.y = e.clientY;
+    if (e.pointerType !== "touch" || !raf) return;
+    for (let i = 0; i < 6; i++) { const p = spawn(e.clientX, e.clientY, 700 + i * 60); const a = (i / 6) * 6.283; p.vx = Math.cos(a) * 1.4; p.vy = Math.sin(a) * 1.4 - 0.6; trail.push(p); }
+    if (trail.length > 30) trail.splice(0, trail.length - 30);
+  }, { passive: true });
+  addEventListener("pointerup", (e) => { if (e.pointerType === "touch") pointer.x = pointer.y = -1e4; }, { passive: true });
+  document.documentElement.addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
+  /* Full-screen sheet below 700 px: stop. */
+  sceneHooks.push((on) => { covered = on && innerWidth < 700; if (covered) stop(); else run(); });
   reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) { stop(); ctx.clearRect(0, 0, W, H); } else run(); if (D.party) renderMap(); });
   run();
+}
+
+/* ---------- art hooks: probed at run time ---------- */
+const crestImg = (k) => h("img", { class: "crest", src: `img/crests/${k}.png`, alt: "", width: 56, height: 56, loading: "lazy", decoding: "async" });
+const crestSvg = (k, x, y) => s("image", { class: "crest-node", href: `img/crests/${k}.png`, x: x - 28, y: y - 28, width: 56, height: 56 });
+function placeCrest(k) {
+  const front = document.querySelector(`#cards .card[data-k="${k}"] .front`);
+  if (front && !front.querySelector(".crest")) front.prepend(crestImg(k));
+  const node = document.querySelector(`#wheel .wheel-node[data-k="${k}"]`);
+  if (node && !node.querySelector(".crest-node")) { node.classList.add("has-crest"); node.insertBefore(crestSvg(k, Number(node.dataset.x), Number(node.dataset.y)), node.querySelector("text")); }
+}
+function startArt() {
+  const probe = (src, ok) => { const im = new Image(); im.onload = ok; im.src = src; };
+  for (const k of new Set(D.party.members.map((m) => m.class_key).filter(Boolean))) probe(`img/crests/${k}.png`, () => { ART.crest[k] = true; placeCrest(k); });
+  probe("img/seal.png", () => { ART.seal = true; try { renderLedger(); } catch (e) { console.error(e); } });
+  probe("img/beam.png", () => {
+    ART.beam = true;
+    $("#main").classList.add("has-beam");
+    $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", alt: "", "aria-hidden": "true", decoding: "async" }));
+  });
+}
+
+/* ---------- sound (V3-SPEC 3.8), off until a tap ---------- */
+/* Synthesized room, ambience and interface sounds; 100 ms scheduler. */
+const AU = { on: false, ctx: null, live: 0, vol: 0.7, buf: {}, next: 0, crack: 0 };
+try { AU.on = localStorage.getItem("board-sound") === "1"; const v = localStorage.getItem("board-vol"); if (v !== null && Number(v) >= 0 && Number(v) <= 1) AU.vol = Number(v); } catch (e) {}
+function audioInit() {
+  const C = window.AudioContext || window.webkitAudioContext;
+  if (!C) return false;
+  const c = AU.ctx = new C(), R = c.sampleRate, TAU = 2 * Math.PI;
+  const n = (x) => { AU.live++; return x; };
+  const G = (v, to) => { const g = n(c.createGain()); g.gain.value = v; if (to) g.connect(to); return g; };
+  const F = (type, f, q, to) => { const x = n(c.createBiquadFilter()); x.type = type; x.frequency.value = f; x.Q.value = q; if (to) x.connect(to); return x; };
+  const O = (f, to) => { const o = n(c.createOscillator()); o.frequency.value = f; if (to) o.connect(to); o.start(); return o; };
+  const mk = (sec, ch, fn) => { const b = c.createBuffer(ch, Math.max(1, Math.round(sec * R)), R); for (let k = 0; k < ch; k++) { const d = b.getChannelData(k); for (let i = 0; i < d.length; i++) d[i] = fn(i / R, k); } return b; };
+  const wn = () => Math.random() * 2 - 1;
+  let p1 = 0, p2 = 0;
+  const noise = mk(1.5, 1, () => { const w = wn(); p1 += (w - p1) * 0.08; p2 += (p1 - p2) * 0.3; return p2 * 3 + w * 0.08; });
+  /* The room and the interface sounds render in later tasks. */
+  const irb = c.createBuffer(2, Math.round(1.6 * R), R);
+  [0, 1].forEach((k) => setTimeout(() => { try { const d = irb.getChannelData(k); let l = 0; for (let i = 0; i < d.length; i++) { const t = i / R, e = 1 - t / 1.6; l += (wn() - l) * (0.9 - 0.5 * t / 1.6); d[i] = l * e * e * Math.sqrt(e); } if (k) conv.buffer = irb; } catch (e) {} }, 0));
+  /* Interface sounds: a sine knock and a band-limited rustle. */
+  const knock = (t, f, d) => Math.sin(TAU * f * t) * Math.exp(-t / (d / 4));
+  const rustle = (dur, f0, f1, amp) => { let a = 0, b = 0, ka = 0, kb = 0, i = 0; return (t) => { if (!(i++ & 63)) { const f = f0 + (f1 - f0) * Math.min(1, t / dur); ka = 1 - Math.exp(-TAU * f * 1.6 / R); kb = 1 - Math.exp(-TAU * f / 1.6 / R); } const w = wn(), e = Math.sin(Math.PI * Math.min(1, t / dur)); a += (w - a) * ka; b += (w - b) * kb; return (a - b) * amp * e * e; }; };
+  const r1 = rustle(0.12, 3200, 3600, 0.9), r2 = rustle(0.07, 3800, 4200, 0.6), r3 = rustle(0.14, 1800, 5200, 0.8);
+  let hp = 0;
+  setTimeout(() => { try { AU.buf = {
+    open: mk(0.16, 1, (t) => 0.55 * knock(t, 90, 0.06) + r1(t)),
+    tab: mk(0.08, 1, r2),
+    close: mk(0.1, 1, (t) => 0.6 * knock(t, 60, 0.08)),
+    flip: mk(0.15, 1, r3),
+    stamp: mk(0.12, 1, (t) => { const w = wn(); hp += (w - hp) * 0.2; return 0.55 * knock(t, 70, 0.08) + (t < 0.04 ? (w - hp) * 0.35 * (1 - t / 0.04) : 0); }),
+    tick: mk(0.62, 1, (t) => 0.12 * Math.sin(TAU * 2400 * t) * Math.exp(-(t % 0.05) / 0.004)),
+    click: mk(0.03, 1, (t) => 0.06 * Math.sin(TAU * 3000 * t) * Math.exp(-t / 0.005)),
+  }; } catch (e) {} }, 0);
+  const m = AU.master = G(0, c.destination), conv = n(c.createConvolver());
+  conv.connect(m);
+  const amb = AU.amb = G(1, m); amb.connect(G(0.18, conv));
+  const ui = AU.ui = G(0.9, m); ui.connect(G(0.08, conv));
+  const src = n(c.createBufferSource()); src.buffer = noise; src.loop = true; src.start();
+  AU.noise = noise;
+  AU.fire = G(0.15, amb); src.connect(F("bandpass", 400, 0.9, AU.fire));
+  src.connect(F("lowpass", 120, 0.7, G(0.1, amb)));
+  for (const [f, rate] of [[480, 0.13], [650, 0.27]]) { const g = G(0.02, amb); src.connect(F("bandpass", f, 1.1, g)); O(rate, G(0.015, g.gain)); }
+  AU.wisp = G(0, amb);
+  const vib = G(5);
+  O(0.3, vib);
+  for (const f of [880, 1320, 1760]) vib.connect(O(f, AU.wisp).frequency);
+  AU.next = c.currentTime + 4; AU.crack = c.currentTime;
+  setInterval(audioTick, 100);
+  document.addEventListener("visibilitychange", () => { try { if (document.hidden) c.suspend(); else if (AU.on) c.resume(); } catch (e) {} });
+  sceneHooks.push((on) => { try { AU.amb.gain.setTargetAtTime(on ? 0.5 : 1, c.currentTime, 0.1); } catch (e) {} });
+  return true;
+}
+/* Scheduler: fire level, crackle, wisp gate, the next mug or chair. */
+function audioTick() {
+  const c = AU.ctx;
+  if (!AU.on || !c || c.state !== "running") return;
+  try {
+    const now = c.currentTime, s = performance.now() / 1000;
+    const base = 0.15 * (1 + 0.1 * (LS.state === "lit" ? LS.n : flickAt(s)));
+    AU.fire.gain.setTargetAtTime(base, now, 0.08);
+    if (AU.crack < now + 0.1) { const t = Math.max(now, AU.crack); AU.fire.gain.setTargetAtTime(base + 0.25 + 0.35 * Math.random(), t, 0.004); AU.fire.gain.setTargetAtTime(base, t + 0.02 + 0.03 * Math.random(), 0.03); AU.crack = t + 0.15 + Math.random() * 0.55; }
+    AU.wisp.gain.setTargetAtTime(0.012 * Math.min(1, WS.near / 6), now, 0.6);
+    if (AU.next < now + 0.1) {
+      const t = Math.max(now, AU.next), env = c.createGain(), pan = c.createStereoPanner ? c.createStereoPanner() : c.createGain();
+      let a, b;
+      if (pan.pan) pan.pan.value = (Math.random() < 0.5 ? -1 : 1) * (0.3 + 0.5 * Math.random());
+      env.connect(pan); pan.connect(AU.amb);
+      env.gain.setValueAtTime(0.0001, t);
+      if (Math.random() < 0.6) {
+        const f = 1200 + Math.random() * 1200;
+        a = c.createOscillator(); a.frequency.value = f; b = c.createBiquadFilter(); b.type = "bandpass"; b.frequency.value = f; b.Q.value = 30;
+        env.gain.exponentialRampToValueAtTime(0.06, t + 0.004); env.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      } else {
+        a = c.createBufferSource(); a.buffer = AU.noise; b = c.createBiquadFilter(); b.type = "lowpass"; b.frequency.value = 180;
+        env.gain.exponentialRampToValueAtTime(0.2, t + 0.01); env.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      }
+      a.connect(b); b.connect(env);
+      AU.live += 4; a.onended = () => { AU.live -= 4; try { pan.disconnect(); } catch (e) {} };
+      a.start(t); a.stop(t + 0.25);
+      AU.next = t + 6 + Math.random() * 9;
+    }
+  } catch (e) {}
+}
+function sfx(name) {
+  const c = AU.ctx;
+  if (!AU.on || !c || c.state !== "running" || document.hidden || !AU.buf[name]) return;
+  try { const b = c.createBufferSource(); b.buffer = AU.buf[name]; b.playbackRate.value = 0.96 + Math.random() * 0.08; b.connect(AU.ui); AU.live++; b.onended = () => { AU.live--; }; b.start(); } catch (e) {}
+}
+function setSound(on) {
+  AU.on = on;
+  try { localStorage.setItem("board-sound", on ? "1" : "0"); } catch (e) {}
+  document.querySelectorAll("#sound, #bottombar [data-go=\"sound\"]").forEach((b) => b.setAttribute("aria-pressed", String(on)));
+  try {
+    if (on && !AU.ctx) { let ok = false; try { ok = audioInit(); } catch (e) { try { AU.ctx.close(); } catch (x) {} AU.ctx = null; } if (!ok) return setSound(false); }
+    if (!AU.ctx) return;
+    const c = AU.ctx, g = AU.master.gain, t = c.currentTime;
+    clearTimeout(AU.sus);
+    if (on) c.resume();
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(on ? AU.vol * 0.6 : 0, t + (on ? 1.2 : 0.6));
+    if (!on) AU.sus = setTimeout(() => { try { if (!AU.on) c.suspend(); } catch (e) {} }, 700);
+  } catch (e) {}
+}
+function startSound() {
+  const btn = $("#sound"), vol = $("#vol"), box = $("#sound-box");
+  if (!btn) return;
+  btn.setAttribute("aria-pressed", String(AU.on));
+  vol.value = String(Math.round(AU.vol * 100));
+  let press = 0, held = false;
+  btn.addEventListener("pointerdown", () => { held = false; press = setTimeout(() => { held = true; box.classList.add("show"); }, 500); });
+  btn.addEventListener("pointerup", () => clearTimeout(press));
+  btn.addEventListener("click", () => { if (held) { held = false; return; } setSound(!AU.on); });
+  vol.addEventListener("input", () => {
+    AU.vol = Number(vol.value) / 100;
+    try { localStorage.setItem("board-vol", String(AU.vol)); } catch (e) {}
+    try { if (AU.on && AU.ctx) AU.master.gain.setTargetAtTime(AU.vol * 0.6, AU.ctx.currentTime, 0.05); } catch (e) {}
+  });
+  /* Remembered on: the first gesture creates the context. */
+  const first = () => { removeEventListener("pointerdown", first, true); removeEventListener("keydown", first, true); if (AU.on && !AU.ctx) setSound(true); };
+  if (AU.on) { addEventListener("pointerdown", first, true); addEventListener("keydown", first, true); }
+}
+function audioStatus() {
+  const c = AU.ctx;
+  return { on: AU.on, state: c ? c.state : "none", live: AU.live, master: AU.master ? +AU.master.gain.value.toFixed(3) : 0, ambience: AU.amb ? +AU.amb.gain.value.toFixed(3) : 0, volume: AU.vol,
+    measure: (ms = 500) => new Promise((done) => {
+      if (!c || !AU.master) return done(null);
+      const an = c.createAnalyser(), d = new Float32Array(2048); let peak = 0, sum = 0, k = 0;
+      AU.master.connect(an);
+      const iv = setInterval(() => { an.getFloatTimeDomainData(d); for (const v of d) { peak = Math.max(peak, Math.abs(v)); sum += v * v; k++; } }, 50);
+      setTimeout(() => { clearInterval(iv); an.disconnect(); const rms = Math.sqrt(sum / Math.max(1, k)); done({ rmsDb: +(20 * Math.log10(rms || 1e-9)).toFixed(1), peakDb: +(20 * Math.log10(peak || 1e-9)).toFixed(1) }); }, ms);
+    }) };
 }
 
 /* ---------- boot ---------- */
@@ -1672,11 +2376,14 @@ async function boot(mode, sdk) {
   $("#hero-art").classList.remove("gate-mode");
   const wall = $("#wall");
   wall.classList.add("settle");
-  setTimeout(() => wall.classList.remove("settle"), 120 * 8 + 600);
+  setTimeout(() => wall.classList.remove("settle"), MOTION.stagger * 8 + MOTION.move * 2);
   pinTiles();
   startEmblems();
   startParallax();
   startScenes();
+  /* The light starts when idle, off the first render. */
+  (window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => startLight(), { timeout: 1200 });
+  startSound();
   try { setBuffView(localStorage.getItem("board-buff-view") === "list" ? "list" : "wheel"); } catch (e) { setBuffView("wheel"); }
   try {
     const names = ["party", "timeline", "client", "stats"];
@@ -1692,6 +2399,7 @@ async function boot(mode, sdk) {
   }
   const steps = [renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
   for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
+  try { startArt(); } catch (e) { console.error(e); }
   route();
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
@@ -1699,7 +2407,7 @@ async function boot(mode, sdk) {
 startWisps();
 /* The board renders only through start(): from the Discord gate below, or as the owner preview or review. */
 let started = false;
-window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); } });
+window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS }, wisps: { ...WS }, scene: SC.open, longtasks: LT.slice() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus });
 })();
 </script>
 <script type="module">
