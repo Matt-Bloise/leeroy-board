@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-27T17:59:38.481Z",
+ "generated": "2026-10-27T18:17:09.128Z",
  "present": true,
- "updated": "2026-10-27T00:45:52.346Z",
+ "updated": "2026-10-27T18:16:48.895Z",
  "options": {
   "meet": [
    "Valley of Strength",
@@ -16,11 +16,11 @@
  "entries": [
   {
    "name": "=Bloise=",
-   "pack": null,
+   "pack": "no",
    "meet": null,
-   "rsvp": "maybe",
-   "when": null,
-   "updated": "2026-10-26T22:40:21.977Z"
+   "rsvp": "in",
+   "when": "8pm",
+   "updated": "2026-10-27T18:16:48.895Z"
   },
   {
    "name": "Handsome Squidward",
@@ -46,8 +46,10 @@
     "names": []
    },
    "no": {
-    "count": 0,
-    "names": []
+    "count": 1,
+    "names": [
+     "=Bloise="
+    ]
    }
   },
   "meet": {
@@ -67,17 +69,16 @@
   },
   "rsvp": {
    "in": {
-    "count": 2,
+    "count": 3,
     "names": [
+     "=Bloise=",
      "Handsome Squidward",
      "Street Rat"
     ]
    },
    "maybe": {
-    "count": 1,
-    "names": [
-     "=Bloise="
-    ]
+    "count": 0,
+    "names": []
    },
    "out": {
     "count": 0,
@@ -92,8 +93,9 @@
     ]
    },
    "8pm": {
-    "count": 1,
+    "count": 2,
     "names": [
+     "=Bloise=",
      "Street Rat"
     ]
    },
