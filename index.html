@@ -128,6 +128,11 @@
   --stagger: 60ms;
   --wall-blur: 6px;
   --light-warm: #ffd18c;
+  --room-fog: #0e0906;
+  --room-hearth: #ff8a3a;
+  --room-candle: #ffc070;
+  --room-lantern: #ffd28a;
+  --room-cool: #3a4766;
   --light-cool: #2e3347;
   --fiber: rgba(90, 62, 32, 0.07);
   --q-poor: #a8a8a8;
@@ -275,6 +280,12 @@ main:focus { outline: none; }
 .tilt { font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.08em; color: var(--text-dim); background: var(--glass); border: 1px solid var(--grain); border-radius: 999px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
 .tilt[aria-pressed="true"] { color: var(--parchment); border-color: var(--brass); }
 .sound-box { position: relative; display: inline-flex; align-items: center; gap: 8px; }
+/* V7: the 3D room sits behind the board at medium tier and up; the wall plate's painting and 2D light give way to it */
+#room { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; }
+html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
+.room-pick { box-sizing: border-box; width: 0; opacity: 0; margin-left: -8px; min-height: 32px; font-family: var(--font-ui); font-size: var(--fs-chip); color: var(--cream); background: var(--glass); border: 0 solid var(--grain); border-radius: 999px; padding: 0; appearance: none; transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
+.sound-box:hover .room-pick, .sound-box:focus-within .room-pick, .sound-box.show .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; }
+.room-pick option { color: var(--ink); background: var(--parchment); }
 .vol { width: 0; opacity: 0; accent-color: var(--brass); transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
 .sound-box:hover .vol, .sound-box:focus-within .vol, .sound-box.show .vol { width: 6rem; opacity: 1; }
 @media (min-width: 1500px) {
@@ -395,7 +406,7 @@ main:focus { outline: none; }
 .tile-viz.list { position: static; flex: 0 0 auto; min-height: 0; }
 .viz-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: var(--fs-small); }
 .viz-list li { min-width: 0; overflow-wrap: anywhere; }
-.viz-ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 22px; }
+.viz-ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 32px; }
 .viz-line { fill: none; stroke: var(--brass); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .viz-thin { fill: none; stroke-width: 1.4; opacity: 0.55; }
 .viz-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 3; }
@@ -827,8 +838,11 @@ main.has-beam { margin-top: 44px; }
 .ttc.gloss { width: min(18rem, calc(100% - 20px)); }
 .cat-ini { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font-style: normal; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--ink); background: radial-gradient(circle at 35% 35%, var(--brass-hi), var(--brass) 60%, var(--brass-dim)); box-shadow: 0 1px 2px var(--shadow); }
 .cat span { flex: 1 1 auto; }
-.lib-tile a.tile-band { text-decoration: none; }
-.lib-tile a.tile-band:hover { color: var(--ink); }
+.lib-tile a.tile-band, .gl-tile a.tile-band { text-decoration: none; }
+.lib-tile a.tile-band:hover, .gl-tile a.tile-band:hover { color: var(--ink); }
+.gl-tile .gl { color: var(--cream); text-decoration-color: var(--brass); }
+.gl-tile .gl:hover, .gl-tile .gl[aria-expanded="true"] { color: var(--parchment); }
+.gl-def { display: block; margin-top: 4px; font-style: italic; color: var(--cream); }
 .lib-tile .tile-body { flex: 0 0 auto; }
 .tile-search { display: flex; gap: 8px; margin: 0 12px 10px; }
 .tile-q { flex: 1 1 auto; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 6px 14px; font: inherit; font-size: var(--step-0); color: var(--ink); background: var(--parchment); border: 1px solid var(--brass); border-radius: 999px; box-shadow: inset 1px 2px 4px var(--wear); }
@@ -1088,7 +1102,7 @@ main.has-beam { margin-top: 44px; }
         <div class="peers" id="peers"></div>
         <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Tilt light</button>
         <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Tonight</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
-        <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"></span>
+        <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"><select class="room-pick" id="room-pick" aria-label="Room behind the board"><option value="auto">Room: auto</option><option value="off">Room: off</option><option value="low">Room: low</option><option value="medium">Room: medium</option><option value="high">Room: high</option><option value="ultra">Room: ultra</option></select></span>
       </div>
     </div>
     <a class="clock" id="clock" href="#timeline" data-scene="timeline" aria-describedby="clock-when">
@@ -1130,10 +1144,10 @@ main.has-beam { margin-top: 44px; }
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Blood and bone</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
         <span class="tile-body" id="ts-racials"><span class="loading">Reading the racials.</span></span>
       </a></li>
-      <li class="t-legacy"><a class="tile" href="#legacy" data-scene="legacy" style="--i:5;--acc:var(--brass);--acc-glow:var(--hi-brass)" aria-labelledby="tt-legacy" aria-describedby="ts-legacy">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-legacy">Account bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></span>
+      <li class="t-legacy"><div class="tile gl-tile" data-scene="legacy" style="--i:5;--acc:var(--brass);--acc-glow:var(--hi-brass)">
+        <a class="tile-band" href="#legacy" aria-labelledby="tt-legacy" aria-describedby="ts-legacy"><span class="tile-name"><span class="tile-title" id="tt-legacy">Account bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></a>
         <span class="tile-body" id="ts-legacy"><span class="loading">Counting points.</span></span>
-      </a></li>
+      </div></li>
       <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:6;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)" aria-labelledby="tt-buffs" aria-describedby="ts-buffs">
         <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-buffs">Who buffs whom</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></svg></span></span>
         <span class="tile-body" id="ts-buffs"><span class="loading">Drawing the wheel.</span></span>
@@ -1315,6 +1329,15 @@ function h(tag, attrs, ...kids) {
 }
 const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+const roomHas = (c) => document.documentElement.classList.contains(c);
+/* V7: the room's state, read by window.__board.room() and written by room/tier.js */
+const RS = { tier: "low", why: "not started" };
+function startRoomLadder() {
+  const launch = D.timeline && D.timeline.events.find((e) => e.key === "launch");
+  const seen = MEM.seenMap(), S = D.signups;
+  const host = { state: RS, motion: MOTION, launchEpoch: launch ? launch.epoch : null, newSignup: !!(S && S.updated && seen.signups && Date.parse(S.updated) > seen.signups), select: $("#room-pick"), moreButton: $("#more-room") };
+  import("./room/tier.js").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+}
 const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
@@ -1490,8 +1513,8 @@ function renderTiles() {
     races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("span", { class: "dots" }, p.members.filter((m) => m.race === race).map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}` }))), h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
     changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed Oct 26` }) : null);
   fill("legacy",
-    h("span", { class: "tile-line", text: "Points buy perks for every character you make, plus a pet, a tabard and a bear mount." }),
-    h("span", { class: "tile-viz" }, miniRing(L)), h("span", { class: "viz-cap", text: L.earned_now ? `${L.earned_now} of ${L.total} points earned so far` : `${L.earned_note.charAt(0).toUpperCase()}${L.earned_note.slice(1)}.` }));
+    wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], ". They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."]),
+    h("span", { class: "tile-viz" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
     minis([[p.members.length, "players"], [c.synergy.length, "buffs"]]),
     h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: "Buff links between the five" }));
@@ -1509,8 +1532,19 @@ function renderTiles() {
       h("span", { class: "rsvp-bar", "aria-hidden": "true" }, [["in", "--ok"], ["maybe", "--warn"], ["out", "--wax"]].map(([k, c]) => h("i", { style: `flex: ${T.rsvp[k].count} 1 0; background: var(${c})` })), h("i", { style: `flex: ${none} 1 0` })), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
   fill("librarian",
-    h("span", { class: "tile-line" }, "Leeroy answers questions in Discord; type ", h("b", { text: "/ask" }), "."),
+    h("span", { class: "tile-line" }, "Leeroy answers questions. In any Discord channel here, type ", h("b", { text: "/ask" }), " and your question."),
     h("span", { class: "tile-line", text: "It reads the same library this board searches." }));
+}
+/* A wall line with dotted glossary words: a tap shows the plain sentence under the line (one at a time); a second tap hides it. */
+function wallGloss(G, parts) {
+  const def = h("span", { class: "gl-def", hidden: true });
+  let open = null;
+  const btn = (word, term) => {
+    const b = h("button", { type: "button", class: "gl", "aria-expanded": "false", text: word });
+    b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); const on = open !== b; if (open) open.setAttribute("aria-expanded", "false"); open = on ? b : null; b.setAttribute("aria-expanded", String(on)); def.hidden = !on; def.textContent = on ? `${term}: ${G[term] || ""}` : ""; });
+    return G[term] ? b : word;
+  };
+  return h("span", { class: "tile-line" }, ...parts.map((x) => (Array.isArray(x) ? btn(x[0], x[1]) : x)), def);
 }
 /* Tile text never stops mid-sentence: whole sentences up to max, else whole clauses with an ellipsis. */
 function wholeClause(t, max) {
@@ -1543,7 +1577,7 @@ function miniRing(L) {
     svg.append(s("circle", { r, cx: 0, cy: 0, fill: "none", stroke: `var(--seg-${i + 1})`, "stroke-width": 8, "stroke-dasharray": `${Math.max(0, len - 1.5)} ${C}`, "stroke-dashoffset": -start, transform: "rotate(-90)" }));
     start += len;
   });
-  svg.append(s("text", { class: "viz-ring-num", x: 0, y: 8, "text-anchor": "middle", text: String(L.earned_now) }));
+  svg.append(s("text", { class: "viz-ring-num", x: 0, y: 11, "text-anchor": "middle", text: String(L.earned_now) }));
   return svg;
 }
 function miniWheel() {
@@ -2161,7 +2195,7 @@ function startBar() {
   const label = (k) => $(`#tab-${k}`).textContent.trim(), bar = $("#bottombar"), menu = $("#more-menu");
   const more = h("button", { class: "bb", type: "button", "data-go": "more", "aria-expanded": "false", "aria-controls": "more-menu", text: "More" });
   bar.replaceChildren(h("button", { class: "bb", type: "button", "data-go": "wall", "aria-label": "Close and go back to the wall", text: "Wall" }), h("button", { class: "bb", type: "button", "data-go": "search", "aria-label": "Search the library", text: "Search" }), ...BAR.map((k) => h("button", { class: "bb", type: "button", "data-go": k, "aria-label": BAR_LABEL[k] ? label(k) : null, text: BAR_LABEL[k] || label(k) })), more);
-  menu.replaceChildren(...MORE.map((k) => h("button", { type: "button", "data-go": k, text: label(k) })), h("button", { type: "button", "data-go": "sound", "aria-pressed": String(AU.on), text: "Sound" }));
+  menu.replaceChildren(...MORE.map((k) => h("button", { type: "button", "data-go": k, text: label(k) })), h("button", { type: "button", "data-go": "sound", "aria-pressed": String(AU.on), text: "Sound" }), h("button", { type: "button", "data-go": "room", id: "more-room", text: "Room: auto" }));
   const setMore = (on) => { menu.hidden = !on; more.setAttribute("aria-expanded", String(on)); };
   closeMore = (back) => { if (menu.hidden) return false; setMore(false); if (back !== false) more.focus(); return true; };
   const go = (e) => {
@@ -2169,6 +2203,7 @@ function startBar() {
     const k = b.dataset.go;
     if (k === "more") { setMore(menu.hidden); if (!menu.hidden) menu.querySelector("button").focus(); return; }
     setMore(false);
+    if (k === "room") return; /* room/tier.js cycles it */
     if (k === "sound") setSound(!AU.on); else if (k === "wall") requestClose(); else if (k === "search") LIBUI.focusSearch(); else { switchTab(k); b.focus(); }
   };
   bar.addEventListener("click", go); menu.addEventListener("click", go);
@@ -2354,13 +2389,13 @@ function route() {
   const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
   const tm = raw.match(/^tonight\.([a-z0-9-]{1,40})$/); if (tm && MEM.setMe(tm[1]) && D.party) { renderTonight(); markMe(); }
   /* #wall: the wall at its top (the token names the <ul id="wall">, so the browser would scroll to it). */
-  if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); }
+  if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
   const key = sceneFromHash();
   if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
 }
 function startScenes() {
   $("#board").addEventListener("click", (e) => {
-    if (e.target.closest && e.target.closest(".tile-search")) return;
+    if (e.target.closest && e.target.closest(".tile-search, .gl, .gl-def")) return;
     const a = e.target.closest && e.target.closest("[data-scene]");
     if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
@@ -2535,7 +2570,8 @@ function startLight() {
     LS.draws++;
   };
   const frame = (t) => { S.raf = 0; if (LS.state !== "lit") return; draw(t); if (live()) S.raf = requestAnimationFrame(frame); };
-  const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene;
+  const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene && !roomHas("room-on") && !roomHas("room-off");
+  addEventListener("board-room", () => (live() ? run() : stop()));
   const run = () => { if (!S.raf && live()) S.raf = requestAnimationFrame(frame); };
   function stop() { if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; }
   const still = () => { if (LS.state === "lit") draw(performance.now()); };
@@ -2652,7 +2688,8 @@ function startWisps() {
     WS.frames++; WS.near = near;
     if (live()) raf = requestAnimationFrame(frame);
   };
-  const live = () => !reduceMQ.matches && !document.hidden && !covered;
+  const live = () => !reduceMQ.matches && !document.hidden && !covered && !roomHas("room-wisps") && !roomHas("room-off");
+  addEventListener("board-room", () => { if (live()) run(); else { stop(); ctx.clearRect(0, 0, W, H); } });
   const run = () => { WS.running = live(); if (!raf && WS.running) raf = requestAnimationFrame(frame); };
   const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; WS.running = false; };
   size();
@@ -3485,7 +3522,7 @@ function launchToken(raw) {
   return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) ? t : null;
 }
 /* Memory (V6-SPEC 3.1): browser only, never sent. Depth, the picked person, last-seen stamps, where you left off, expert. */
-const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert"];
+const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak"];
 const MEM = {
   get: (k) => { try { return localStorage.getItem(`board-${k}`); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(`board-${k}`); else localStorage.setItem(`board-${k}`, v); } catch (e) {} },
@@ -3589,12 +3626,14 @@ async function boot(mode, sdk) {
   if (!early) route();
   markNew(); startDepth();
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = "Opens inside Discord";
+  /* the room starts after first paint, when the main thread is idle (V7-SPEC 3.3) */
+  (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(startRoomLadder, { timeout: 2500 });
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 startWisps();
 let started = false;
-window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS }, wisps: { ...WS }, scene: SC.open, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus });
+window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS }, wisps: { ...WS }, scene: SC.open, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });
 })();
 </script>
 <script type="module">
