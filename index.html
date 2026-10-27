@@ -296,9 +296,50 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
   .clock-launch { justify-self: start; }
 }
 /* V8: buffs by level */
-.deep { display: grid; gap: 12px; margin-top: 8px; }
+.deep { display: grid; gap: 10px; align-content: start; }
+.buffs-top { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 1000px) { .buffs-top { grid-template-columns: minmax(0, 1fr) 340px; } .buffs-top .wheel { grid-template-columns: 1fr; position: sticky; top: 0; } }
+.buffs-top .wheel svg { max-width: 340px; }
+.wheel-links summary, .bclass summary, .brules summary { cursor: pointer; min-height: 32px; padding: 4px 0; }
+.wheel-links > ul { margin-top: 8px; }
+.wheel.list-view .wheel-links { grid-column: 1 / -1; }
+.deep-hint { margin: 0; font-size: 1rem; font-style: italic; }
+.bgrid { display: grid; gap: 6px; }
+.bgrid-row { display: grid; gap: 4px 10px; grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr); align-items: baseline; padding: 4px 0 4px 10px; border-left: 4px solid var(--bc); }
+@media (max-width: 699px) { .bgrid-row { grid-template-columns: 1fr; } }
+.bgrid-who { font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1rem; }
+.bgrid-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.bchip { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--ink-soft); background: var(--parchment-2); color: var(--ink); text-decoration: none; font-size: 1rem; }
+.bchip:hover, .bchip:focus-visible { background: var(--parchment); border-color: var(--wax); }
+.bchip.later { border-style: dashed; color: var(--ink); opacity: 0.8; }
+.bq-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.bq { padding: 5px 10px; border-left: 4px solid var(--bc); background: var(--parchment-2); border-radius: 0 6px 6px 0; }
+.bq.later { opacity: 0.8; }
+.bq.lit { outline: 2px solid var(--wax); }
+.bq-line { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; min-height: 32px; }
+.bq-what { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; min-width: 0; }
+.bq-who { display: inline-flex; gap: 8px; align-items: baseline; white-space: nowrap; margin-left: auto; }
+.bq-line::-webkit-details-marker { display: none; }
+.bq-src { font-size: 1rem; color: var(--ink); padding: 0 8px; border: 1px solid var(--ink-soft); border-radius: 999px; background: var(--parchment); }
+.bsrc[open] > .bq-line .bq-src { background: var(--parchment-2); border-color: var(--wax); }
+
+.bq-val { font-weight: 600; }
+.bq-from { font-size: 1rem; font-style: italic; }
+.bclass-names { padding-left: 1.2em; }
+.bsrc > :not(summary) { margin-left: 4px; }
+.bsrc[open] { padding-bottom: 4px; }
+.bgroup-h { margin: 6px 0 0; font-family: var(--font-sc); letter-spacing: 0.05em; font-size: 1.05rem; }
+.bclasses, .brules-row { display: grid; gap: 4px; }
+@media (min-width: 1000px) { .bclasses { grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); align-items: start; } .bclass[open] { grid-column: 1 / -1; } .brules-row { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; } .brules[open] { grid-column: 1 / -1; } }
+.bclass-names { display: block; flex-basis: 100%; font-size: 1rem; }
+@media (max-width: 699px) { .deep-hint { display: none; } }
+.wheel-svg > summary { display: none; }
+@media (max-width: 699px) { .wheel-svg > summary { display: list-item; cursor: pointer; min-height: 32px; padding: 4px 0; font-family: var(--font-sc); letter-spacing: 0.04em; } }
+.bclass, .brules { padding: 2px 8px; border-left: 4px solid var(--bc, var(--ink-soft)); background: var(--parchment-2); border-radius: 0 6px 6px 0; }
+.bclass > ul, .brules > ul { margin: 6px 0; }
 .deep-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .deep-l { font-family: var(--font-sc); font-size: 1.1rem; min-width: 6.5rem; }
+@media (max-width: 699px) { .deep-ctl { gap: 6px 12px; } #deep-level { order: 3; flex-basis: 100%; } .deep-six { order: 4; } .bq { padding: 2px 10px; } .bq-list { gap: 3px; } .bq-giver { margin-bottom: 2px; } }
 .deep-l b { font-size: var(--step-1); }
 #deep-level { flex: 1 1 14rem; accent-color: var(--wax); min-height: 32px; }
 .deep-marks { display: flex; gap: 6px; }
@@ -307,7 +348,13 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
 .deep-six { font-size: 1rem; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; }
 .deep-six input { width: 24px; height: 24px; accent-color: var(--wax); margin: 0; }
 .deep-cols { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
-@media (min-width: 1000px) { .deep-cols:has(.get) { grid-template-columns: 1fr 2fr; } .deep-col.get .deep-list { grid-template-columns: 1fr 1fr; align-items: start; } }
+@media (min-width: 1000px) { .deep-cols:has(.get) { grid-template-columns: 1fr; } .deep-col:not(.get) .bq-list { grid-template-columns: 1fr 1fr; align-items: start; } .deep-col.get { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; align-items: start; } .deep-col.get > h4 { grid-column: 1 / -1; } }
+.deep-stack { margin: 4px 0; } .deep-stack > b { font-family: var(--font-sc); letter-spacing: 0.04em; }
+.tn-buffs { flex-wrap: wrap; }
+.tn-gets { grid-column: 1 / -1; flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-radius: 6px; background: var(--parchment); color: var(--ink); border: 2px solid var(--brass-dim); }
+.tn-gets-l { font-family: var(--font-sc); letter-spacing: 0.05em; }
+.bq-giver { display: grid; gap: 4px; margin-bottom: 6px; }
+.bq-giver h5 { margin: 0; font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1rem; font-weight: 600; color: var(--ink); border-bottom: 2px solid var(--bc); padding-bottom: 2px; }
 .deep-col h4 { margin: 0 0 6px; font-family: var(--font-sc); letter-spacing: 0.05em; font-size: 1.1rem; }
 .deep-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .deep-b { padding: 8px 10px; border-left: 4px solid var(--bc); background: var(--parchment-2); border-radius: 0 6px 6px 0; display: grid; gap: 2px; }
@@ -469,6 +516,36 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
   .wall { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
+/* V9: a laptop's wall is one screen (1366x768, 1440x900). The tiles keep their titles, subtitles and first lines at the
+   same type sizes; the charts, captions and second lines wait in the scenes, one tap away. */
+@media (min-width: 1100px) and (max-height: 960px) {
+  .hero h1 { font-size: var(--step-3); }
+  main { margin: 6px 0 4px; }
+  .wall { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: auto; gap: 10px; align-content: start; }
+  .wall > .t-five, .wall > .t-signups, .wall > .t-library { grid-column: span 2; }
+  .wall > li:not(.t-five):not(.t-signups):not(.t-library) { grid-column: span 1; }
+  .tile { min-height: 0; }
+  .tile-band { min-height: 0; padding: 8px 60px 6px 14px; }
+  .emblem-box { width: 48px; height: 48px; margin-top: -24px; right: 8px; }
+  .emblem-box .emblem { width: 28px; height: 28px; }
+  .tile-body { padding: 8px 14px 10px; gap: 4px; }
+  .tile-viz:not(.five-viz), .viz-cap { display: none !important; }
+  .t-five .tile-viz.five-viz { display: grid; }
+  .t-five .med-ico { --med: 56px; }
+  .mini b { font-size: var(--step-1); }
+  .wall > li:where(:not(.t-five):not(.t-signups):not(.t-library)) .tile-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+  .wall > li:not(.t-five):not(.t-signups):not(.t-library):not(.t-racials) .tile-body > :nth-child(n+3), .t-racials .tile-body > :nth-child(n+4), .t-librarian .tile-body > :nth-child(n+2) { display: none; }
+  .t-racials .tile-body { gap: 2px; }
+  .clock { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "top top digits" "when launch digits"; column-gap: 28px; padding: 4px 28px; }
+  .clock-launch { justify-self: start; }
+  .hero { gap: 6px; }
+  .tile-band { padding-top: 6px; }
+}
+/* the shortest laptops (768 tall): the five keep race and class under smaller medallions; the roles line and launch-night times wait for the scene */
+@media (min-width: 1100px) and (max-height: 820px) {
+  .t-five .med-ico { --med: 44px; }
+  .su-when, .lib-new, .rsvp-bar, .t-five .tile-body > .tile-line { display: none !important; }
+}
 .scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
 .scene-layer.closing { pointer-events: none; }
 .scene-veil { position: absolute; inset: 0; background: var(--veil); }
@@ -579,6 +656,7 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
 .map-box { position: relative; isolation: isolate; border: 1px solid var(--grain); border-radius: var(--radius); padding: 10px; overflow: hidden; max-width: 960px; background-color: var(--parchment-2); box-shadow: 0 14px 30px var(--shadow), inset 0 0 40px var(--slip-burn); }
 .map-box::before { content: ""; position: absolute; inset: 0; z-index: -1; background: url("img/map-parchment.jpg") center / cover no-repeat; opacity: 0.85; pointer-events: none; }
 .map-box svg { display: block; width: 100%; height: auto; max-width: 100%; }
+@media (min-width: 1000px) and (max-height: 960px) { .map-box { max-width: min(960px, calc((100vh - 380px) * 1.6)); } }
 .map-land { fill: var(--ink-wash); stroke: var(--ink-line); stroke-width: 1.6; }
 .map-sea { fill: none; }
 .map-road { fill: none; stroke: var(--ink); stroke-width: 2.8; stroke-dasharray: 2 7; stroke-linecap: round; animation: march 2.4s linear infinite; }
@@ -636,7 +714,7 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
 .wheel { display: grid; gap: 16px; align-items: start; }
 @media (min-width: 760px) { .wheel { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); } .wheel.list-view .buffs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wheel.list-view { grid-template-columns: 1fr; }
-.wheel.list-view svg { display: none; }
+.wheel.list-view svg, .wheel.list-view .wheel-svg { display: none; }
 .wheel.list-view .buff.dim { opacity: 1; }
 .wheel-edge { fill: none; stroke: var(--ec); stroke-width: 1.6; opacity: 0.45; transition: opacity var(--t-micro) var(--ease-oak), stroke-width var(--t-micro) var(--ease-oak); }
 .wheel-edge.on { opacity: 0.95; stroke-width: 2.4; }
@@ -645,7 +723,7 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
 .wheel.lighting .wheel-edge, .wheel.lighting .wheel-tip { animation: light var(--t-move) var(--ease-oak) backwards; animation-delay: calc(var(--di, 0) * var(--stagger) * 3); }
 @keyframes light { from { opacity: 0; } }
 .wheel-node circle { fill: var(--oak-1); stroke: var(--nc); stroke-width: 3; }
-.wheel-node text { fill: var(--parchment); font-family: var(--font-ui); font-size: 14px; text-anchor: middle; }
+.wheel-node text { fill: var(--parchment); font-family: var(--font-ui); font-size: 15.5px; text-anchor: middle; }
 .wheel-node { cursor: pointer; }
 .wheel-node:focus-visible circle, .wheel-node.on circle { fill: var(--oak-3); stroke-width: 5; }
 .buffs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -661,6 +739,12 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
 .ledger { display: grid; gap: 14px; max-width: 52rem; }
 .ledger ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ledger li { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; }
+.ledger .settled-li { display: block; }
+@media (min-width: 1000px) { #ledger-slip { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 40px; align-items: start; max-width: 72rem; } }
+.ledger-col { min-width: 0; display: grid; gap: 10px; align-content: start; }
+.ledger-col > h3 { margin: 0; }
+.ledger-col > h3:not(:first-child) { margin-top: 12px; }
+.ledger .settled-li .label { margin-left: 8px; }
 .poll { display: grid; gap: 4px; padding: 10px 12px; border: 1px dashed var(--wax); border-radius: 4px; }
 .signup-grid { display: grid; gap: 22px; align-items: start; }
 @media (min-width: 860px) { .signup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -801,6 +885,22 @@ main.has-beam { margin-top: 44px; }
 .t-racials .tile-body { justify-content: space-around; }
 .t-racials .dots { margin-right: 6px; }
 @media (max-width: 639px) { .t-roads .tile-viz, .t-legacy .tile-viz, .t-buffs .tile-viz { display: block; flex: 0 0 72px; } }
+/* V9: the phone's wall opens with the Tonight shortcut; tiles show their title, subtitle and first lines, and the small
+   tiles sit two to a row. Charts, captions and later lines wait in the scenes, one tap away. */
+.tonight-link { display: none; }
+@media (max-width: 639px) {
+  .tonight-link { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; min-height: 56px; box-sizing: border-box; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--brass); background: var(--oak-3); color: var(--parchment); text-decoration: none; }
+  .tonight-link b { font-family: var(--font-sc); letter-spacing: 0.06em; font-size: 1.2rem; }
+  .tonight-link span { grid-column: 1; font-size: 1rem; color: var(--cream); }
+  .tonight-link i { grid-column: 2; grid-row: 1 / span 2; font-style: normal; font-size: 1.4rem; color: var(--brass-hi); }
+  .wall > li:not(.t-five):not(.t-signups):not(.t-library) { grid-column: span 1; }
+  .wall > li:not(.t-five):not(.t-signups):not(.t-library) .emblem-box { display: none; }
+  .wall > li:not(.t-five):not(.t-signups):not(.t-library) .tile-band { padding-right: 12px; }
+  .wall .tile-viz:not(.five-viz), .wall .viz-cap, .wall .su-when, .wall .lib-new, .wall .rsvp-bar { display: none !important; }
+  .wall > li:not(.t-five):not(.t-signups):not(.t-library):not(.t-racials) .tile-body > :nth-child(n+2), .t-racials .tile-body > :nth-child(n+4) { display: none !important; }
+  .wall .tile-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+  .wall .tile { min-height: 0; }
+}
 @media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
 .sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("img/parchment-tile.jpg"); background-size: auto, 1400px auto; background-position: 0 0, center top; background-attachment: local; box-shadow: inset 0 0 60px var(--slip-burn), inset 0 0 0 1px var(--ink-line); }
 .face, .road-btn, .librarian, .toggle, .road-panel, .buff { --text: var(--l-text); --text-dim: var(--l-dim); color: var(--l-text); }
@@ -976,6 +1076,24 @@ main.has-beam { margin-top: 44px; }
 .hit-go:hover, .hit-go:focus-visible { color: var(--wax); }
 .hit-go.open-q { color: var(--seal-pending); }
 .hit-val { color: var(--ink); font-size: 1.125rem; line-height: 1.4; overflow-wrap: anywhere; }
+/* V9: a result group shows its best fact, two lines of it; the rest of the page's matches open on "more" */
+.group:not(.all) .hits > li:nth-child(n+2) { display: none; }
+.group:not(.all) .hits > li:first-child .hit-val { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.more-hits-in { margin: 4px 14px 10px; min-height: 36px; }
+.clamp3 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.lf-more { display: inline-block; margin: 2px 0 0; padding: 2px 0; min-height: 24px; background: none; border: 0; color: var(--wax); font: inherit; font-size: 1rem; text-decoration: underline; cursor: pointer; }
+.lib-doors { display: grid; gap: 6px; }
+@media (min-width: 760px) { .lib-doors { grid-template-columns: 1fr 1fr; } }
+.lib-door, .catrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-height: 44px; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--ink-soft); border-left: 4px solid var(--wax); border-radius: 0 8px 8px 0; background: var(--parchment-2); color: var(--ink); text-decoration: none; }
+.lib-door b, .catrow b { font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1.05rem; }
+.lib-door span, .catrow span { font-size: 1rem; }
+.lib-door:hover, .catrow:hover, .lib-door:focus-visible, .catrow:focus-visible { background: var(--parchment); }
+.catrows { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); }
+.catrow { border-left-color: var(--brass-dim); }
+.allshelf > summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; gap: 10px; font-family: var(--font-sc); letter-spacing: 0.04em; color: var(--ink); border-top: 1px solid var(--ink-line); }
+.allshelf > summary::before { content: ""; flex: none; width: 8px; height: 8px; border: solid var(--ink-soft); border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform var(--t-micro) var(--ease-oak); }
+.allshelf[open] > summary::before { transform: rotate(45deg); }
+@media (min-width: 900px) { .catrows, .catrows-h, .lib-doors { display: none; } }
 .score { height: 3px; border-radius: 2px; background: var(--ink-wash); overflow: hidden; max-width: 14rem; }
 .score i { display: block; height: 100%; background: var(--brass-dim); transform-origin: 0 50%; transform: scaleX(var(--w, 0)); }
 .hit-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
@@ -1045,6 +1163,7 @@ main.has-beam { margin-top: 44px; }
 .lib-front-col { display: grid; gap: 12px; align-content: start; min-width: 0; }
 .nk { display: grid; gap: 10px; padding: 14px 16px; border-radius: 4px; border: 2px dashed var(--brass-dim); background: var(--parchment-2); color: var(--ink); }
 .nk-nums { display: flex; gap: 22px; flex-wrap: wrap; }
+@media (min-width: 900px) and (max-height: 820px) { .lib-front .nk > p, .lib-front-col > .lib-sub { display: none; } .lib-front .nk { padding: 10px 14px; } .lib-front .said > li:nth-child(n+2) { display: none; } }
 .said { list-style: none; margin: 0; padding: 4px 0; display: grid; background: var(--parchment); border-radius: 4px; border-left: 4px solid var(--brass); box-shadow: 0 2px 10px var(--wear), inset 0 0 30px var(--slip-burn); }
 .said li { display: grid; gap: 2px; padding: 8px 14px; border-bottom: 1px solid var(--ink-wash); color: var(--ink); overflow-wrap: anywhere; }
 .said li:last-child { border-bottom: 0; }
@@ -1134,6 +1253,7 @@ main.has-beam { margin-top: 44px; }
         <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"><select class="room-pick" id="room-pick" aria-label="Room behind the board"><option value="auto">Room: auto</option><option value="off">Room: off</option><option value="low">Room: low</option><option value="medium">Room: medium</option><option value="high">Room: high</option><option value="ultra">Room: ultra</option></select></span>
       </div>
     </div>
+    <a class="tonight-link" href="#tonight" data-scene="tonight"><b>Tonight</b><span>Your next step, the next date and who is coming</span><i aria-hidden="true">&rarr;</i></a>
     <a class="clock" id="clock" href="#timeline" data-scene="timeline" aria-describedby="clock-when">
       <span class="clock-top">
         <span class="clock-emblem emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/></svg></span>
@@ -1247,14 +1367,16 @@ main.has-beam { margin-top: 44px; }
       </div>
       <div class="panel" role="tabpanel" id="panel-buffs" aria-labelledby="tab-buffs" tabindex="0" hidden>
         <div class="lede-row">
-          <p class="lede">Each name on the wheel lights up what that class brings to the others.</p>
+          <p class="lede">What each of the five brings the others, at the level you pick.</p>
           <div class="toggle" role="group" aria-label="Buff view">
             <button type="button" id="view-wheel" aria-pressed="true">Wheel</button>
             <button type="button" id="view-list" aria-pressed="false">List</button>
           </div>
         </div>
-        <div class="wheel" id="wheel"></div>
-        <section class="deep" id="buffs-deep" aria-labelledby="deep-h"></section>
+        <div class="buffs-top">
+          <section class="deep" id="buffs-deep" aria-labelledby="deep-h"></section>
+          <div class="wheel" id="wheel"></div>
+        </div>
       </div>
       <div class="panel" role="tabpanel" id="panel-ledger" aria-labelledby="tab-ledger" tabindex="0" hidden>
         <p class="lede" id="ledger-lede">Settled things, open things, and the polls still taking votes.</p>
@@ -1834,7 +1956,7 @@ function renderWheel() {
   const keys = D.party.members.map((m) => m.class_key);
   const R = 112, pos = {};
   keys.forEach((k, i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / keys.length; pos[k] = [Math.cos(a) * R, Math.sin(a) * R]; });
-  const svg = s("svg", { viewBox: "-160 -160 320 320", role: "group", "aria-label": "Buff wheel between the five classes" });
+  const svg = s("svg", { viewBox: "-178 -178 356 356", role: "group", "aria-label": "Buff wheel between the five classes" });
   const edges = [];
   D.client.synergy.forEach((b, bi) => {
     const delay = `--di: ${Math.max(0, keys.indexOf(b.from))}`;
@@ -1873,11 +1995,16 @@ function renderWheel() {
     items.forEach((i) => i.classList.toggle("dim", active !== null && i.dataset.from !== active));
   };
   nodes.forEach((n) => { n.addEventListener("click", () => setActive(n.dataset.k)); n.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(n.dataset.k); } }); });
-  wrap.append(svg, h("ul", { class: "buffs" }, items));
+  const wide = !window.matchMedia || window.matchMedia("(min-width: 700px)").matches;
+  wrap.append(h("details", { class: "wheel-svg", ...(wide ? { open: "" } : {}) }, h("summary", { text: "The wheel between the five" }), svg), h("details", { class: "wheel-links", id: "wheel-links" }, h("summary", { text: `The wheel's ${D.client.synergy.length} links, with sources` }), h("ul", { class: "buffs" }, items)));
 }
-/* V8: every buff by level, from the client table; the group rules with their status; what the picked person gives and gets */
+/* V8: every buff by level, from the client table; the group rules with their status; what the picked person gives and gets.
+   V9 (phone first): the default view answers on one screen. With a name: what you give and get at the slider's level, one
+   line each. Without: a grid of who gives what. Every buff's full card sits in a per-class expander (collapsed), each with one
+   "Sources" toggle; the rules sit in three status groups; #buffs.<key> opens and lights any buff. Nothing is removed. */
 const BUFF_STATUS = { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
 const BD = { level: 60, sixth: false };
+const buffTok = (key) => `buffs.${key.replace(/_/g, "-")}`;
 function buffWho(b, m) { /* does member m receive buff b */
   if (b.lands === "tank") return m.role === "tank";
   if (b.lands === "healer") return m.role === "healer";
@@ -1890,57 +2017,98 @@ function renderBuffsDeep() {
   const P = D.party, me = MEM.member(), L = BD.level;
   const giverOf = (cls) => P.members.find((m) => m.class_key === cls);
   const fmtN = (v) => `${nf.format(Math.round(v.n))}${v.max !== undefined ? ` to ${nf.format(Math.round(v.max))}` : ""}${/^%/.test(v.label) ? "" : " "}${v.label}`;
-  const line = (b) => {
-    const a = b.at[L - 1], giver = giverOf(b.class);
-    const first = b.ranks.length ? Math.min(...b.ranks.map((r) => r.learned)) : null;
-    const rk = a ? a.r.filter((i) => i >= 0).map((i) => b.ranks[i]) : [];
-    const what = !b.ranks.length ? (b.classic ? "No client-table row" : "No numbers in the client table")
-      : !a ? `Not yet: learned at ${first}`
-      : a.v.length ? `${rk.map((r) => r.rank || "One rank").join(" and ")}: ${a.v.map(fmtN).join(", ")}`
-      : `${rk.map((r) => `${b.ranks.length > 1 && rk.length > 1 ? `${r.name.replace(/^Conjure /, "")} ` : ""}${r.rank || "one rank"}`).join(", ")} (learned at ${rk.map((r) => r.learned).join(" and ")})`;
-    const extra = [];
+  const first = (b) => (b.ranks.length ? Math.min(...b.ranks.map((r) => r.learned)) : null);
+  const ranksAt = (b) => { const a = b.at[L - 1]; return a ? a.r.filter((i) => i >= 0).map((i) => b.ranks[i]) : []; };
+  /* the short answer: the value at this level, or when it arrives */
+  const short = (b) => {
+    const a = b.at[L - 1];
+    if (!b.ranks.length) return b.classic ? "no client-table row" : "no numbers in the client table";
+    if (!a) return `arrives at ${first(b)}`;
+    return a.v.length ? a.v.map(fmtN).join(", ") : `${ranksAt(b).map((r) => r.rank || "one rank").join(" and ")}`;
+  };
+  const sources = (b) => {
+    const rk = ranksAt(b), a = b.at[L - 1], extra = [];
     if (a && rk[0] && rk[0].mana != null) extra.push(`${nf.format(rk[0].mana)} mana on return`);
     if (a && rk[0] && rk[0].cooldown_ms) extra.push(`cooldown ${Math.round(rk[0].cooldown_ms / 60000)} min`);
     if (b.group && b.group_from) extra.push(L >= b.group_from ? `the group version, ${b.group}, covers everyone` : `the group version, ${b.group}, comes at ${b.group_from}`);
+    const rankLine = !b.ranks.length ? null : !a ? `Not yet: learned at ${first(b)}` : a.v.length ? `${rk.map((r) => r.rank || "One rank").join(" and ")}: ${a.v.map(fmtN).join(", ")}` : `${rk.map((r) => `${rk.length > 1 ? `${r.name.replace(/^Conjure /, "")} ` : ""}${r.rank || "one rank"}`).join(", ")} (learned at ${rk.map((r) => r.learned).join(" and ")})`;
+    const own = rulesFor(b);
     const notes = [...b.wiki.map((w) => h("li", {}, h("span", { class: "st forever", text: "Forever" }), ` ${w.text}`)), b.classic ? h("li", {}, h("span", { class: "st classic", text: "Classic baseline" }), ` ${b.classic.replace(/^Classic baseline: /, "")}`) : null].filter(Boolean);
-    return h("li", { class: `deep-b${a ? "" : " later"}`, style: `--bc: ${classVar(b.class === "shaman" ? null : b.class)}`, "data-key": b.key },
-      h("div", { class: "deep-head" }, h("b", { text: b.name }), h("span", { class: "deep-from", text: giver ? ` from ${giver.name}` : b.class === "shaman" ? " from a shaman" : "" })),
-      h("div", { class: "deep-val", text: what }),
+    return (line) => h("details", { class: "bsrc" }, h("summary", { class: "bq-line" }, h("span", { class: "bq-what" }, ...line.slice(0, -1)), h("span", { class: "bq-who" }, line[line.length - 1], h("span", { class: "bq-src", text: "Details" }))),
+      rankLine ? h("div", { class: "deep-val", text: rankLine }) : null,
+      own.length ? h("div", { class: "deep-stack" }, h("b", { text: "How it stacks: " }), h("ul", { class: "deep-notes" }, own.map((r) => h("li", {}, h("span", { class: `st ${r.status}`, text: BUFF_STATUS[r.status] }), ` ${r.text}`)))) : null,
       h("div", { class: "deep-meta", text: [b.lands_text, ...extra].join(" · ") }),
       b.ranks.length ? h("div", { class: "deep-src", text: `Client table ${B.build.split(".").pop()}, spell ${rk.length ? rk.map((r) => r.spell).join(", ") : b.ranks[0].spell}` }) : null,
-      notes.length ? h("details", { class: "deep-notes" }, h("summary", { text: `What else is known (${plural(notes.length, "note", "notes")})` }), h("ul", {}, notes)) : null);
+      notes.length ? h("ul", { class: "deep-notes" }, notes) : null);
   };
+  /* one buff on one line: name, value at this level, giver; its Sources toggle under it */
+  const row = (b, own, noFrom) => { /* own: the giver group copy carries the id, so ids stay unique; noFrom: a heading already names the giver */
+    const giver = giverOf(b.class), later = !b.at[L - 1];
+    return h("li", { class: `bq${later ? " later" : ""}`, style: `--bc: ${classVar(b.class === "shaman" ? null : b.class)}`, "data-key": b.key, ...(own === true ? { id: `buff-${b.key}` } : {}) },
+      sources(b)([h("b", { text: b.name }), h("span", { class: "bq-val", text: short(b) }), noFrom ? null : h("span", { class: "bq-from", text: giver ? giver.name : b.class === "shaman" ? "a shaman" : "" })]));
+  };
+  /* the group rules that name this buff, its group version, or (for Blessings and auras) its kind */
+  function rulesFor(b) {
+    const words = [b.name, b.group, /^Blessing/.test(b.name) ? "Blessing" : null, b.aura ? "aura" : null].filter(Boolean);
+    return B.rules.filter((r) => words.some((w) => r.text.includes(w)));
+  }
   const shown = B.list.filter((b) => !b.sixth || BD.sixth);
+  const classes = [...P.members.map((m) => m.class_key), ...(BD.sixth ? ["shaman"] : [])];
   const slider = h("input", { type: "range", id: "deep-level", min: 1, max: 60, step: 1, value: L, "aria-label": "Character level", "aria-valuetext": `Level ${L}` });
   const marks = h("div", { class: "deep-marks", role: "group", "aria-label": "Jump to a level" }, B.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(L === k), "aria-label": `Level ${k}`, text: String(k) })));
-  const six = h("label", { class: "deep-six" }, h("input", { type: "checkbox", id: "deep-sixth", ...(BD.sixth ? { checked: "" } : {}) }), " If a sixth joins: show a shaman's totems");
-  const groups = [];
+  const six = h("label", { class: "deep-six" }, h("input", { type: "checkbox", id: "deep-sixth", ...(BD.sixth ? { checked: "" } : {}) }), " If a sixth joins (a shaman)");
+  let answer;
   if (me) {
     const give = shown.filter((b) => b.class === me.class_key);
     const get = shown.filter((b) => b.class !== me.class_key && buffWho(b, me) && (giverOf(b.class) || (b.sixth && BD.sixth)));
-    groups.push(h("div", { class: "deep-col" }, h("h4", { text: `What you give, ${me.name}` }), h("ul", { class: "deep-list" }, give.map(line))),
-      h("div", { class: "deep-col get" }, h("h4", { text: `What you get from the others (${get.length})` }), h("ul", { class: "deep-list" }, get.map(line))));
-  } else {
-    for (const cls of [...P.members.map((m) => m.class_key), "shaman"]) {
-      const list = shown.filter((b) => b.class === cls); if (!list.length) continue;
-      const g = giverOf(cls);
-      groups.push(h("div", { class: "deep-col" }, h("h4", { text: g ? `${g.name}, ${g.class}` : "A sixth player, Shaman" }), h("ul", { class: "deep-list" }, list.map(line))));
-    }
-  }
-  const rules = h("ul", { class: "deep-rules" }, B.rules.map((r) => h("li", {}, h("span", { class: `st ${r.status}`, text: BUFF_STATUS[r.status] }), ` ${r.text}`)));
-  box.replaceChildren(
-    h("h3", { id: "deep-h", text: "Every buff, by level" }),
-    h("p", { class: "lede", text: me ? "What you give and what you get, at the level you pick. Numbers come from the game's own tables." : "Pick a level to see each buff's rank and numbers then. Pick your name on Tonight to see what you give and get." }),
+    answer = h("div", { class: "deep-cols foryou" },
+      h("div", { class: "deep-col get" }, h("h4", { text: `You get (${get.length})` }),
+        ...classes.map((cls) => [cls, get.filter((b) => b.class === cls)]).filter(([, l]) => l.length).map(([cls, l]) => {
+          const g = giverOf(cls);
+          return h("section", { class: "bq-giver", "aria-label": g ? `From ${g.name}` : "From a shaman", style: `--bc: ${classVar(cls === "shaman" ? null : cls)}` },
+            h("h5", { text: g ? `From ${g.name}, ${g.class}` : "From a sixth player, Shaman" }), h("ul", { class: "bq-list" }, l.map((b) => row(b, false, true))));
+        })),
+      h("div", { class: "deep-col" }, h("h4", { text: `You give, ${me.name}` }), h("ul", { class: "bq-list" }, give.map((b) => row(b, false, true)))));
+  } else answer = null; /* who gives what: the giver groups below, each naming its buffs, one tap from the numbers */
+  const groups = classes.map((cls) => {
+    const g = giverOf(cls), list = shown.filter((b) => b.class === cls);
+    return h("details", { class: "bclass", "data-class": cls, style: `--bc: ${classVar(cls === "shaman" ? null : cls)}` },
+      h("summary", {}, h("b", { text: g ? `${g.name}, ${g.class}` : "A sixth player, Shaman" }), h("span", { class: "bclass-names", text: list.map((b) => b.name).join(", ") })),
+      h("ul", { class: "bq-list" }, list.map((b) => row(b, true))));
+  });
+  const rules = ["forever", "classic", "unknown"].map((st) => {
+    const list = B.rules.filter((r) => r.status === st);
+    return h("details", { class: "brules" }, h("summary", {}, h("span", { class: `st ${st}`, text: BUFF_STATUS[st] }), ` ${plural(list.length, "rule", "rules")}`),
+      h("ul", { class: "deep-rules" }, list.map((r) => h("li", { text: r.text }))));
+  });
+  box.replaceChildren(...[
+    h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
-    h("div", { class: "deep-cols" }, groups),
-    h("h3", { text: "Rules in a group" }), rules);
+    me ? null : h("p", { class: "deep-hint", text: "Tap a name for its buffs' numbers. Pick your name on Tonight to see what you give and get." }),
+    answer,
+    me ? h("h4", { class: "bgroup-h", text: `Every buff, by giver (${shown.length})` }) : null, h("div", { class: "bclasses" }, groups),
+    h("h4", { class: "bgroup-h", text: `Rules in a group (${B.rules.length})` }), h("div", { class: "brules-row" }, rules)].filter(Boolean));
   const set = (v) => { BD.level = v; try { localStorage.setItem("board-buff-level", String(v)); } catch (e) {} renderBuffsDeep(); const el = $("#deep-level"); if (el) el.focus({ preventScroll: true }); };
   slider.addEventListener("input", () => set(Number(slider.value)));
   marks.querySelectorAll("button").forEach((b, i) => b.addEventListener("click", () => { set(B.marks[i]); const x = $("#buffs-deep .deep-marks button[aria-pressed=\"true\"]"); if (x) x.focus(); }));
   six.querySelector("input").addEventListener("change", (e) => { BD.sixth = e.target.checked; renderBuffsDeep(); const x = $("#deep-sixth"); if (x) x.focus(); });
 }
+/* #buffs.<key>: open that buff's giver group and its sources, and light it */
+function focusBuff(tokKey) {
+  const key = String(tokKey).replace(/-/g, "_"), B = D.client && D.client.buffs;
+  const b = B && B.list.find((x) => x.key === key); if (!b) return false;
+  if (b.sixth && !BD.sixth) { BD.sixth = true; renderBuffsDeep(); }
+  const grp = document.querySelector(`#buffs-deep .bclass[data-class="${b.class}"]`); if (grp) grp.open = true;
+  const li = grp && grp.querySelector(`li[data-key="${key}"]`); if (!li) return false;
+  const src = li.querySelector("details.bsrc"); if (src) src.open = true;
+  document.querySelectorAll("#buffs-deep li.lit").forEach((x) => x.classList.remove("lit"));
+  li.classList.add("lit");
+  try { li.scrollIntoView({ block: "center" }); } catch (e) {}
+  return true;
+}
 function setBuffView(v) {
   $("#wheel").classList.toggle("list-view", v === "list");
+  const wl = $("#wheel-links"); if (wl) wl.open = v === "list";
   $("#view-wheel").setAttribute("aria-pressed", String(v !== "list"));
   $("#view-list").setAttribute("aria-pressed", String(v === "list"));
   try { localStorage.setItem("board-buff-view", v); } catch (e) {}
@@ -1955,16 +2123,16 @@ function renderLedger() {
   $("#ledger-lede").textContent = p.polls.length
     ? `Settled things, open things, and ${p.polls.length === 1 ? "one poll" : `${p.polls.length} polls`} still taking votes: ${andList(pollNames)}.`
     : "Settled things and open things. No poll is taking votes right now.";
-  wrap.append(
+  wrap.append(h("div", { class: "ledger-col" },
     h("h3", { text: "Settled" }),
     h("ul", {}, [...p.settled, ...p.settled_extra].map((x, i) => h("li", { class: "settled-li", style: `--di: ${i}` }, h("span", {}, seal(), x.text), h("span", { class: "label", text: x.source })))),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
-    ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` }))),
-    h("h3", { text: "Still open" }),
+    ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` })))),
+    h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}` },
       h("strong", { text: o.title }),
       h("span", {}, ...linkify(o.status ? `${o.status}. ${o.detail || ""}` : o.text || "", o.links || [], link)),
-      h("span", { class: "label", text: o.source })))));
+      h("span", { class: "label", text: o.source }))))));
 }
 
 function linkify(text, ls, link) {
@@ -2242,7 +2410,7 @@ const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, 
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
-const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : null; };
+const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z-]{1,40}$/.test(k) ? "buffs" : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
   try { if (push) history.pushState({ boardScene: key }, "", url); else history.replaceState(key ? { boardScene: key } : null, "", url); return true; } catch (e) { return false; }
@@ -2282,7 +2450,7 @@ function selectPanel(key, crossFade) {
   moveInd(); markBar(key);
 }
 function moveInd() { const t = SC.open && $(`#tab-${SC.open}`), ind = $("#tab-ind"); if (t && ind) ind.style.transform = `translateX(${t.offsetLeft}px) scaleX(${Math.max(1, t.offsetWidth)})`; }
-const BAR = ["tonight", "five", "signups"], MORE = SCENES.filter((k) => !BAR.includes(k));
+const BAR = ["tonight", "five", "buffs"], MORE = SCENES.filter((k) => !BAR.includes(k));
 const BAR_LABEL = { five: "Five" };
 function markBar(key) { document.querySelectorAll("#bottombar [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === key || (b.dataset.go === "search" && key === "library") || (b.dataset.go === "more" && MORE.includes(key) && key !== "library")))); }
 function startBar() {
@@ -2485,7 +2653,7 @@ function route() {
   /* #wall: the wall at its top (the token names the <ul id="wall">, so the browser would scroll to it). */
   if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
   const key = sceneFromHash();
-  if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
+  if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); if (key === "buffs" && /^buffs\./.test(raw)) setTimeout(() => focusBuff(raw.slice(6)), 60); } else hideScene();
 }
 function startScenes() {
   $("#board").addEventListener("click", (e) => {
@@ -3165,9 +3333,16 @@ function libRenderShelf(main) {
   };
   const seen = MEM.seenMap(), isNewPage = (p) => { const t = seen[`page:${p.id}`], d = p.checked || p.as_of; return !!t && !!d && Date.parse(`${d}T23:59:59Z`) > t; };
   const kids = [];
-  if (!LIBS.cat && typeof libFront === "function") kids.push(libFront());
-  if (!LIBS.cat && libExpert()) kids.push(libRibbon(null));
-  kids.push(h("h3", { class: "lib-title", text: LIBS.cat ? libCatTitle(LIBS.cat) : "The shelves" }), h("div", { class: "shelf" }, cats.map(card)));
+  if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids); return; }
+  /* V9: the first screen is the search above, three one-line doors and the shelves as compact rows; the front page's full
+     lists and every shelf's pages are one tap away (What changed, Nobody knows yet, Blizzard said, Every page) */
+  if (libExpert()) kids.push(libRibbon(null));
+  kids.push(libDoors(),
+    h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
+    h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
+      h("b", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")} · ${nf.format(c.facts)} facts` })))),
+    h("details", { class: "allshelf" }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
+    h("details", { class: "allshelf", ...(wideLib() ? { open: "" } : {}) }, h("summary", { text: "The front page: what changed, what nobody knows, what Blizzard said" }), libFront(wideLib() ? 2 : 8)));
   main.replaceChildren(...kids.filter(Boolean));
 }
 function libRenderResults(main) {
@@ -3195,7 +3370,8 @@ function libRenderResults(main) {
       h("ul", { class: "hits" }, list.map((x) => h("li", { class: "hit" },
         (() => { const a = pageLink(g.id, `hit-go${x.open ? " open-q" : ""}`, x.open ? "nobody knows yet" : libKey(x.key), x.open ? null : x.key); a.setAttribute("aria-label", x.open ? `Nobody knows yet, on ${g.title}: open the page` : `${libKey(x.key)}, on ${g.title}: open the page`); return a; })(),
         h("span", { class: "hit-val" }, ...libValue(x.value)),
-        x.refs.length ? h("span", { class: "hit-meta" }, x.refs.map(libSrc), libRead(x.refs)) : null)))));
+        x.refs.length ? h("span", { class: "hit-meta" }, x.refs.map(libSrc), libRead(x.refs)) : null))),
+      list.length > 1 ? h("button", { type: "button", class: "lib-btn more-hits-in", "aria-expanded": "false", onclick: (e) => { const sec = e.currentTarget.closest(".group"); const on = !sec.classList.contains("all"); sec.classList.toggle("all", on); e.currentTarget.setAttribute("aria-expanded", String(on)); e.currentTarget.textContent = on ? "Fewer" : `${list.length - 1} more on this page`; } }, `${list.length - 1} more on this page`) : null));
   }
   LIBS.rows = rows;
   const defOnly = !!libGlossFor(String(v.q).trim().toLowerCase()) && LIBS.allFor !== v.q;
@@ -3265,7 +3441,9 @@ async function libRenderPage(v, tok, fresh) {
   const SEAL = { confirmed: "--seal-confirmed", likely: "--seal-likely", speculative: "--seal-speculative", "classic-baseline": "--seal-baseline" };
   const facts = h("dl", { class: "facts" }, p.facts.map((f, i) => h("div", { class: "lf", "data-key": f.key, style: `--di: ${Math.min(i, 14)}` },
     h("dt", { text: libKey(f.key) }),
-    h("dd", {}, ...libValue(f.value), f.refs.length ? h("span", { class: "hit-meta" }, f.refs.map(libSrc), libRead(f.refs), xp ? libXp(f.refs) : null) : null))));
+    h("dd", {}, h("span", { class: `lf-v${String(f.value).length > 170 ? " clamp3" : ""}` }, ...libValue(f.value)),
+      String(f.value).length > 170 ? h("button", { type: "button", class: "lf-more", "aria-expanded": "false", onclick: (e) => { const v = e.currentTarget.previousElementSibling, on = v.classList.toggle("clamp3"); e.currentTarget.setAttribute("aria-expanded", String(!on)); e.currentTarget.textContent = on ? "more" : "less"; } }, "more") : null,
+      f.refs.length ? h("span", { class: "hit-meta" }, f.refs.map(libSrc), libRead(f.refs), xp ? libXp(f.refs) : null) : null))));
   const hist = p.history || [];
   const histLi = (x) => h("li", {}, h("time", { datetime: x.date || "", text: libDay(x.date) }), h("span", { text: x.text }));
   const page = h("article", { class: "lib-page", "aria-labelledby": "lib-page-title" },
@@ -3292,7 +3470,7 @@ async function libRenderPage(v, tok, fresh) {
   if (fresh) { sfx("flip"); if (!reduceMQ.matches) { page.classList.add("revealing"); setTimeout(() => page.classList.remove("revealing"), MOTION.move + MOTION.stagger * 15); } }
   const body = $("#sheet-body");
   const row = v.fact && page.querySelector(`.lf[data-key="${v.fact.replace(/[^a-z0-9_.]/g, "")}"]`);
-  if (row) { row.classList.add("lit"); row.scrollIntoView({ block: "center", behavior: "auto" }); }
+  if (row) { row.classList.add("lit"); const v = row.querySelector(".lf-v.clamp3"); if (v) { v.classList.remove("clamp3"); const b = row.querySelector(".lf-more"); if (b) { b.textContent = "less"; b.setAttribute("aria-expanded", "true"); } } row.scrollIntoView({ block: "center", behavior: "auto" }); }
   else if (fresh && body) { const top = $("#lib-main").offsetTop - 70; if (body.scrollTop > top) body.scrollTop = Math.max(0, top); }
 }
 const LIBUI = {
@@ -3521,16 +3699,25 @@ const changeLi = (c) => {
   return h("li", {}, h("time", { datetime: c.date, text: libDay(c.date) }), h("span", { class: "chg-box" }, body,
     long ? h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `Read the whole change on ${libTitle(c.page)}`, onclick: (e) => { const on = body.classList.toggle("clamp"); e.currentTarget.setAttribute("aria-expanded", String(!on)); e.currentTarget.textContent = on ? "More" : "Less"; } }, "More") : null));
 };
-function libFront() {
+function libDoors() {
+  const ix = LIBD.index, T = ix.totals;
+  const door = (tok, b, rest) => h("a", { class: "lib-door", href: `#${tok}`, "data-lv": tok }, h("b", { text: b }), h("span", { text: rest }));
+  return h("div", { class: "lib-doors" },
+    door(libTok({ kind: "changes" }), "What changed", `${plural(ix.changes.length, "number moved", "numbers moved")} since ${libDay(ix.changes_since)}`),
+    door(libTok({ kind: "open" }), "Nobody knows yet", `${plural(T.open, "open question", "open questions")}, ${plural(T.gaps, "researched", "researched")}`));
+}
+/* at 900 px and up the category rail is a sidebar, so the shelf rows would repeat it: the front page shows open instead */
+function wideLib() { return !!window.matchMedia && window.matchMedia("(min-width: 900px)").matches; }
+function libFront(n = 8) {
   const ix = LIBD.index, T = ix.totals;
   libAux();
-  const said = LIBD.news ? LIBD.news.items.filter((x) => /^BLIZZARD/i.test(x.source)).slice(0, 6) : null;
+  const said = LIBD.news ? LIBD.news.items.filter((x) => /^BLIZZARD/i.test(x.source)).slice(0, n < 8 ? 2 : 6) : null;
   return h("div", { class: "lib-front" },
     h("div", { class: "lib-front-col" },
       h("h3", { class: "lib-title", text: "What changed" }),
-      ix.changes.length >= 3 ? h("ol", { class: "ribbon" }, changeGroups(ix.changes).slice(0, 6).flatMap(changeGroupLi).slice(0, 8)) : h("p", { class: "ribbon-quiet", text: libQuiet(ix) }),
+      ix.changes.length >= 3 ? h("ol", { class: "ribbon" }, changeGroups(ix.changes).slice(0, 6).flatMap(changeGroupLi).slice(0, n)) : h("p", { class: "ribbon-quiet", text: libQuiet(ix) }),
       h("p", { class: "lib-sub", text: `Numbers that moved since ${libDay(ix.changes_since)}. ${plural(ix.rechecks, "other recheck", "other rechecks")} confirmed the rest.` }),
-      ix.changes.length > 8 ? h("div", { class: "lib-row" }, h("a", { class: "lib-btn", href: `#${libTok({ kind: "changes" })}`, "data-lv": libTok({ kind: "changes" }) }, `All ${nf.format(ix.changes.length)} changes`)) : null),
+      ix.changes.length > n ? h("div", { class: "lib-row" }, h("a", { class: "lib-btn", href: `#${libTok({ kind: "changes" })}`, "data-lv": libTok({ kind: "changes" }) }, `All ${nf.format(ix.changes.length)} changes`)) : null),
     h("div", { class: "lib-front-col" },
       h("h3", { class: "lib-title", text: "Nobody knows yet" }),
       h("div", { class: "nk" },
@@ -3613,7 +3800,7 @@ const LAUNCH_LIB = /^library(?:\.(?:q\.[a-z0-9][a-z0-9.-]{0,90}|open|changes|c\.
 function launchToken(raw) {
   const t = typeof raw === "string" ? raw.trim() : "";
   if (!t || t.length > 100 || !/^[A-Za-z0-9._~-]+$/.test(t)) return null;
-  return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) ? t : null;
+  return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) || /^buffs\.[a-z-]{1,40}$/.test(t) ? t : null;
 }
 /* Memory (V6-SPEC 3.1): browser only, never sent. Depth, the picked person, last-seen stamps, where you left off, expert. */
 const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak"];
@@ -3644,11 +3831,14 @@ function renderTonight() {
   const line = (label, names) => h("p", { class: "tn-line" }, h("b", { text: `${label}: ` }), ...names.flatMap((n, i) => [i ? ", " : null, h("span", { class: "tn-n", text: n })]).filter(Boolean));
   const groups = [["in", T.labels.in], ["maybe", T.labels.maybe], ["out", T.labels.out]].map(([k, l]) => [l, who(k)]).filter(([, n]) => n.length);
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
-  box.replaceChildren(
+  box.replaceChildren(...[
     card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch }) : null),
     card(T.cards[1], step === T.steps.signup ? h("p", { class: "tn-big" }, h("a", { class: "tn-link", href: "#signups" }, step)) : h("p", { class: "tn-big", text: step })),
-    card(T.cards[2], mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null));
-  act.replaceChildren(h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]));
+    card(T.cards[2], mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
+  /* V9: with a name, one tap from Tonight to what the others give you at a level (outside the three cards, so their budget holds) */
+  const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
+    h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
+  act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1])].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
   $("#tn-left").replaceChildren(...(left ? ["Last time you read ", h("a", { href: `#${left.tok}`, text: left.title }), " in the library."] : []));
 }

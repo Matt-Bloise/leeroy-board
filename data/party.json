@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T19:32:05.981Z",
+ "generated": "2026-10-27T20:21:19.006Z",
  "party": "Dungeons and Drinking",
  "faction": "Horde",
  "ruleset": "Normal",
@@ -159,7 +159,7 @@
  "open": [
   {
    "title": "Guild name",
-   "text": "poll closes <t:1793299053:R>. Add names in chat.",
+   "text": "poll closes on Thu, Oct 29, 2:37 PM ET. Add names in chat.",
    "links": [
     {
      "label": "poll",
@@ -182,19 +182,6 @@
    "source": "board"
   },
   {
-   "title": "Surname",
-   "status": "vote here",
-   "detail": "Alehammer, Mugbreaker, Lastround, or write yours in. Closes Tuesday morning.",
-   "links": [
-    {
-     "label": "vote here",
-     "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347273251520579",
-     "message_id": "1564347273251520579"
-    }
-   ],
-   "source": "decisions card"
-  },
-  {
    "title": "Launch-night meeting point",
    "status": "nothing chosen",
    "detail": "Three starting zones, one square. Classic habit: Orgrimmar's Valley of Strength; at 10, the Crossroads.",
@@ -204,7 +191,7 @@
   {
    "title": "Who holds a pack",
    "status": "nobody listed",
-   "detail": "Pack buyers reserve up to 3 names each from Tue 4 PM ET; the surname only exists once one of them types it.",
+   "detail": "Pack holders create and name up to three characters each, open since Oct 27 4 PM ET, until Nov 3 (Pacific).",
    "links": [],
    "source": "decisions card"
   },
@@ -227,7 +214,7 @@
    "title": "Guild name",
    "message_id": "1564347272420921356",
    "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347272420921356",
-   "text": "poll closes <t:1793299053:R>. Add names in chat."
+   "text": "poll closes on Thu, Oct 29, 2:37 PM ET. Add names in chat."
   }
  ],
  "channel_url": "https://discord.com/channels/782702097421565952/1558663575495770193"
