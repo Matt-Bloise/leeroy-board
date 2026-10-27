@@ -295,6 +295,33 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
   .clock { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "top top digits" "when launch digits"; column-gap: 28px; padding: 6px 28px; }
   .clock-launch { justify-self: start; }
 }
+/* V8: buffs by level */
+.deep { display: grid; gap: 12px; margin-top: 8px; }
+.deep-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.deep-l { font-family: var(--font-sc); font-size: 1.1rem; min-width: 6.5rem; }
+.deep-l b { font-size: var(--step-1); }
+#deep-level { flex: 1 1 14rem; accent-color: var(--wax); min-height: 32px; }
+.deep-marks { display: flex; gap: 6px; }
+.deep-marks .lib-tool { color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+.deep-marks .lib-tool[aria-pressed="true"] { color: var(--parchment); background: var(--oak-3); }
+.deep-six { font-size: 1rem; display: inline-flex; align-items: center; gap: 8px; min-height: 32px; }
+.deep-six input { width: 24px; height: 24px; accent-color: var(--wax); margin: 0; }
+.deep-cols { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); }
+@media (min-width: 1000px) { .deep-cols:has(.get) { grid-template-columns: 1fr 2fr; } .deep-col.get .deep-list { grid-template-columns: 1fr 1fr; align-items: start; } }
+.deep-col h4 { margin: 0 0 6px; font-family: var(--font-sc); letter-spacing: 0.05em; font-size: 1.1rem; }
+.deep-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.deep-b { padding: 8px 10px; border-left: 4px solid var(--bc); background: var(--parchment-2); border-radius: 0 6px 6px 0; display: grid; gap: 2px; }
+.deep-b.later { opacity: 0.75; }
+.deep-val { font-weight: 600; }
+.deep-meta, .deep-src { font-size: 1rem; color: var(--ink); }
+.deep-src { font-style: italic; }
+.deep-notes summary { cursor: pointer; font-size: 1rem; }
+.deep-notes ul, .deep-rules { margin: 4px 0 0; padding-left: 18px; font-size: 1rem; }
+.deep-rules li { margin: 4px 0; }
+.st { display: inline-block; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.04em; padding: 0 7px; border-radius: 999px; border: 1px solid var(--ink-soft); color: var(--ink); }
+.st.forever { background: var(--parchment); border-color: var(--seal-confirmed); }
+.st.classic { background: var(--parchment-2); border-style: dashed; }
+.st.unknown { background: var(--parchment-2); border-color: var(--wax); color: var(--ink); border-width: 2px; }
 /* V6: depth control, Tonight, the picked person, New badges, the expert lane */
 .depth { display: inline-flex; border: 1px solid var(--brass-dim); border-radius: 999px; overflow: hidden; }
 .depth button { font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.08em; color: var(--cream); background: var(--glass); border: 0; padding: 4px 12px; min-height: 32px; cursor: pointer; }
@@ -1227,6 +1254,7 @@ main.has-beam { margin-top: 44px; }
           </div>
         </div>
         <div class="wheel" id="wheel"></div>
+        <section class="deep" id="buffs-deep" aria-labelledby="deep-h"></section>
       </div>
       <div class="panel" role="tabpanel" id="panel-ledger" aria-labelledby="tab-ledger" tabindex="0" hidden>
         <p class="lede" id="ledger-lede">Settled things, open things, and the polls still taking votes.</p>
@@ -1846,6 +1874,70 @@ function renderWheel() {
   };
   nodes.forEach((n) => { n.addEventListener("click", () => setActive(n.dataset.k)); n.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(n.dataset.k); } }); });
   wrap.append(svg, h("ul", { class: "buffs" }, items));
+}
+/* V8: every buff by level, from the client table; the group rules with their status; what the picked person gives and gets */
+const BUFF_STATUS = { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
+const BD = { level: 60, sixth: false };
+function buffWho(b, m) { /* does member m receive buff b */
+  if (b.lands === "tank") return m.role === "tank";
+  if (b.lands === "healer") return m.role === "healer";
+  if (b.lands === "melee") return m.class_key === "druid" || m.class_key === "paladin";
+  return true;
+}
+function renderBuffsDeep() {
+  const box = $("#buffs-deep"), B = D.client && D.client.buffs; if (!box || !B) return;
+  try { const v = Number(localStorage.getItem("board-buff-level")); if (v >= 1 && v <= 60) BD.level = v; } catch (e) {}
+  const P = D.party, me = MEM.member(), L = BD.level;
+  const giverOf = (cls) => P.members.find((m) => m.class_key === cls);
+  const fmtN = (v) => `${nf.format(Math.round(v.n))}${v.max !== undefined ? ` to ${nf.format(Math.round(v.max))}` : ""}${/^%/.test(v.label) ? "" : " "}${v.label}`;
+  const line = (b) => {
+    const a = b.at[L - 1], giver = giverOf(b.class);
+    const first = b.ranks.length ? Math.min(...b.ranks.map((r) => r.learned)) : null;
+    const rk = a ? a.r.filter((i) => i >= 0).map((i) => b.ranks[i]) : [];
+    const what = !b.ranks.length ? (b.classic ? "No client-table row" : "No numbers in the client table")
+      : !a ? `Not yet: learned at ${first}`
+      : a.v.length ? `${rk.map((r) => r.rank || "One rank").join(" and ")}: ${a.v.map(fmtN).join(", ")}`
+      : `${rk.map((r) => `${b.ranks.length > 1 && rk.length > 1 ? `${r.name.replace(/^Conjure /, "")} ` : ""}${r.rank || "one rank"}`).join(", ")} (learned at ${rk.map((r) => r.learned).join(" and ")})`;
+    const extra = [];
+    if (a && rk[0] && rk[0].mana != null) extra.push(`${nf.format(rk[0].mana)} mana on return`);
+    if (a && rk[0] && rk[0].cooldown_ms) extra.push(`cooldown ${Math.round(rk[0].cooldown_ms / 60000)} min`);
+    if (b.group && b.group_from) extra.push(L >= b.group_from ? `the group version, ${b.group}, covers everyone` : `the group version, ${b.group}, comes at ${b.group_from}`);
+    const notes = [...b.wiki.map((w) => h("li", {}, h("span", { class: "st forever", text: "Forever" }), ` ${w.text}`)), b.classic ? h("li", {}, h("span", { class: "st classic", text: "Classic baseline" }), ` ${b.classic.replace(/^Classic baseline: /, "")}`) : null].filter(Boolean);
+    return h("li", { class: `deep-b${a ? "" : " later"}`, style: `--bc: ${classVar(b.class === "shaman" ? null : b.class)}`, "data-key": b.key },
+      h("div", { class: "deep-head" }, h("b", { text: b.name }), h("span", { class: "deep-from", text: giver ? ` from ${giver.name}` : b.class === "shaman" ? " from a shaman" : "" })),
+      h("div", { class: "deep-val", text: what }),
+      h("div", { class: "deep-meta", text: [b.lands_text, ...extra].join(" · ") }),
+      b.ranks.length ? h("div", { class: "deep-src", text: `Client table ${B.build.split(".").pop()}, spell ${rk.length ? rk.map((r) => r.spell).join(", ") : b.ranks[0].spell}` }) : null,
+      notes.length ? h("details", { class: "deep-notes" }, h("summary", { text: `What else is known (${plural(notes.length, "note", "notes")})` }), h("ul", {}, notes)) : null);
+  };
+  const shown = B.list.filter((b) => !b.sixth || BD.sixth);
+  const slider = h("input", { type: "range", id: "deep-level", min: 1, max: 60, step: 1, value: L, "aria-label": "Character level", "aria-valuetext": `Level ${L}` });
+  const marks = h("div", { class: "deep-marks", role: "group", "aria-label": "Jump to a level" }, B.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(L === k), "aria-label": `Level ${k}`, text: String(k) })));
+  const six = h("label", { class: "deep-six" }, h("input", { type: "checkbox", id: "deep-sixth", ...(BD.sixth ? { checked: "" } : {}) }), " If a sixth joins: show a shaman's totems");
+  const groups = [];
+  if (me) {
+    const give = shown.filter((b) => b.class === me.class_key);
+    const get = shown.filter((b) => b.class !== me.class_key && buffWho(b, me) && (giverOf(b.class) || (b.sixth && BD.sixth)));
+    groups.push(h("div", { class: "deep-col" }, h("h4", { text: `What you give, ${me.name}` }), h("ul", { class: "deep-list" }, give.map(line))),
+      h("div", { class: "deep-col get" }, h("h4", { text: `What you get from the others (${get.length})` }), h("ul", { class: "deep-list" }, get.map(line))));
+  } else {
+    for (const cls of [...P.members.map((m) => m.class_key), "shaman"]) {
+      const list = shown.filter((b) => b.class === cls); if (!list.length) continue;
+      const g = giverOf(cls);
+      groups.push(h("div", { class: "deep-col" }, h("h4", { text: g ? `${g.name}, ${g.class}` : "A sixth player, Shaman" }), h("ul", { class: "deep-list" }, list.map(line))));
+    }
+  }
+  const rules = h("ul", { class: "deep-rules" }, B.rules.map((r) => h("li", {}, h("span", { class: `st ${r.status}`, text: BUFF_STATUS[r.status] }), ` ${r.text}`)));
+  box.replaceChildren(
+    h("h3", { id: "deep-h", text: "Every buff, by level" }),
+    h("p", { class: "lede", text: me ? "What you give and what you get, at the level you pick. Numbers come from the game's own tables." : "Pick a level to see each buff's rank and numbers then. Pick your name on Tonight to see what you give and get." }),
+    h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
+    h("div", { class: "deep-cols" }, groups),
+    h("h3", { text: "Rules in a group" }), rules);
+  const set = (v) => { BD.level = v; try { localStorage.setItem("board-buff-level", String(v)); } catch (e) {} renderBuffsDeep(); const el = $("#deep-level"); if (el) el.focus({ preventScroll: true }); };
+  slider.addEventListener("input", () => set(Number(slider.value)));
+  marks.querySelectorAll("button").forEach((b, i) => b.addEventListener("click", () => { set(B.marks[i]); const x = $("#buffs-deep .deep-marks button[aria-pressed=\"true\"]"); if (x) x.focus(); }));
+  six.querySelector("input").addEventListener("change", (e) => { BD.sixth = e.target.checked; renderBuffsDeep(); const x = $("#deep-sixth"); if (x) x.focus(); });
 }
 function setBuffView(v) {
   $("#wheel").classList.toggle("list-view", v === "list");
@@ -3540,7 +3632,7 @@ function tonightNext(T) { const now = Date.now() / 1000; const ts = (e) => (e.ep
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
   const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
-  const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); } catch (e) {} };
+  const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
   if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, m.name)), h("button", { type: "button", class: "tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
   else meBox.replaceChildren(h("button", { type: "button", class: "tn-chip", "aria-label": `${T.labels.iam} ${member ? `${member.name}, ${member.race} ${member.class}` : T.labels.looking}: change`, onclick: () => { MEM.set("me", null); renderTonight(); markMe(); } }, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking));
   const ev = tonightNext(T);
@@ -3620,7 +3712,7 @@ async function boot(mode, sdk) {
   const early = sceneFromHash() === "tonight";
   for (const step of [renderTonight, markMe]) { try { step(); } catch (e) { console.error(step.name, e); } }
   if (early) { route(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
-  const steps = [markMe, renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
+  const steps = [markMe, renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderBuffsDeep, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
   for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
   try { startArt(); } catch (e) { console.error(e); }
   /* The library's files wait until the person leaves Tonight: Tonight loads no library file. */

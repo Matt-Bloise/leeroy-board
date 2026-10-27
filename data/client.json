@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T16:43:34.536Z",
+ "generated": "2026-10-27T16:51:28.026Z",
  "build": "1.60.1.70532",
  "level": 60,
  "formula": "wiki/scripts/db2-lib.mjs scaleEffect at level 60 (min/max = base x (1 -/+ variance/2) + per_level x levels past base, capped at the rank's max level); totals = per-tick x floor(duration / period)",
@@ -2157,5 +2157,13338 @@
     }
    ]
   }
- ]
+ ],
+ "buffs": {
+  "build": "1.60.1.70532",
+  "levels": [
+   1,
+   60
+  ],
+  "marks": [
+   20,
+   40,
+   60
+  ],
+  "list": [
+   {
+    "key": "arcane_intellect",
+    "class": "mage",
+    "name": "Arcane Intellect",
+    "group": "Arcane Brilliance",
+    "group_from": 56,
+    "group_spells": [
+     23028
+    ],
+    "lands": "mana",
+    "lands_text": "everyone with a mana bar",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 1459,
+      "name": "Arcane Intellect",
+      "rank": "Rank 1",
+      "learned": 1,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 1460,
+      "name": "Arcane Intellect",
+      "rank": "Rank 2",
+      "learned": 14,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 1461,
+      "name": "Arcane Intellect",
+      "rank": "Rank 3",
+      "learned": 28,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 10156,
+      "name": "Arcane Intellect",
+      "rank": "Rank 4",
+      "learned": 42,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 10157,
+      "name": "Arcane Intellect",
+      "rank": "Rank 5",
+      "learned": 56,
+      "duration_ms": 3600000
+     }
+    ],
+    "at": [
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 2
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 22
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 31
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 31
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 31
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 31
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Intellect",
+        "n": 31
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "mage",
+      "key": "mage.arcane_intellect.duration",
+      "text": "1 hour (client 70450, Oct 18; Wowhead; Classic 30 min)"
+     },
+     {
+      "page": "mage",
+      "key": "mage.arcane_brilliance",
+      "text": "level 56, covers party and raid (Sep 24 notes; client 70450; Wowhead)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "conjure",
+    "class": "mage",
+    "name": "Conjured food and water",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "anyone the mage hands it to",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 5504,
+      "name": "Conjure Water",
+      "rank": "Rank 1",
+      "learned": 4,
+      "duration_ms": null
+     },
+     {
+      "spell": 587,
+      "name": "Conjure Food",
+      "rank": "Rank 1",
+      "learned": 6,
+      "duration_ms": null
+     },
+     {
+      "spell": 5505,
+      "name": "Conjure Water",
+      "rank": "Rank 2",
+      "learned": 10,
+      "duration_ms": null
+     },
+     {
+      "spell": 597,
+      "name": "Conjure Food",
+      "rank": "Rank 2",
+      "learned": 12,
+      "duration_ms": null
+     },
+     {
+      "spell": 5506,
+      "name": "Conjure Water",
+      "rank": "Rank 3",
+      "learned": 20,
+      "duration_ms": null
+     },
+     {
+      "spell": 990,
+      "name": "Conjure Food",
+      "rank": "Rank 3",
+      "learned": 22,
+      "duration_ms": null
+     },
+     {
+      "spell": 6127,
+      "name": "Conjure Water",
+      "rank": "Rank 4",
+      "learned": 30,
+      "duration_ms": null
+     },
+     {
+      "spell": 6129,
+      "name": "Conjure Food",
+      "rank": "Rank 4",
+      "learned": 32,
+      "duration_ms": null
+     },
+     {
+      "spell": 10138,
+      "name": "Conjure Water",
+      "rank": "Rank 5",
+      "learned": 40,
+      "duration_ms": null
+     },
+     {
+      "spell": 10144,
+      "name": "Conjure Food",
+      "rank": "Rank 5",
+      "learned": 42,
+      "duration_ms": null
+     },
+     {
+      "spell": 10139,
+      "name": "Conjure Water",
+      "rank": "Rank 6",
+      "learned": 50,
+      "duration_ms": null
+     },
+     {
+      "spell": 10145,
+      "name": "Conjure Food",
+      "rank": "Rank 6",
+      "learned": 52,
+      "duration_ms": null
+     },
+     {
+      "spell": 10140,
+      "name": "Conjure Water",
+      "rank": "Rank 7",
+      "learned": 60,
+      "duration_ms": null
+     },
+     {
+      "spell": 28612,
+      "name": "Conjure Food",
+      "rank": "Rank 7",
+      "learned": 60,
+      "duration_ms": null
+     },
+     {
+      "spell": 468766,
+      "name": "Conjure Water",
+      "rank": "Rank 8",
+      "learned": 60,
+      "duration_ms": null
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0,
+       -1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0,
+       -1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0,
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0,
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0,
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0,
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       5
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       6,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       7
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       8,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       9
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       10,
+       11
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       14,
+       13
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "mageSpellbook",
+      "key": "mage.conjure",
+      "text": "Water ranks at 4, 10, 20, 30, 40, 50, 60 and Food at 6, 12, 22, 32, 42, 52, 60; 20 per cast at water ranks 1 to 4 and food ranks 1 to 5 on both sources; the client list says rank 7 of each makes 10 (Crystal Water, Cinnamon Rolls), the Wowhead tooltips print 20 cinnamon rolls at food rank 7, 22 sweet rolls at food rank 6 and an unparsed tuning template (Max(20, 20) / 20) at water ranks 5 to 7 (client 70450; Wowhead, Oct 26)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "fortitude",
+    "class": "priest",
+    "name": "Power Word: Fortitude",
+    "group": "Prayer of Fortitude",
+    "group_from": 48,
+    "group_spells": [
+     21562,
+     21564
+    ],
+    "lands": "all",
+    "lands_text": "the whole party",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 1243,
+      "name": "Power Word: Fortitude",
+      "rank": "Rank 1",
+      "learned": 1,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 1244,
+      "name": "Power Word: Fortitude",
+      "rank": "Rank 2",
+      "learned": 12,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 1245,
+      "name": "Power Word: Fortitude",
+      "rank": "Rank 3",
+      "learned": 24,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 2791,
+      "name": "Power Word: Fortitude",
+      "rank": "Rank 4",
+      "learned": 36,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 10937,
+      "name": "Power Word: Fortitude",
+      "rank": "Rank 5",
+      "learned": 48,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 10938,
+      "name": "Power Word: Fortitude",
+      "rank": "Rank 6",
+      "learned": 60,
+      "duration_ms": 3600000
+     }
+    ],
+    "at": [
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 4
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 26
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 42
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 56
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Stamina",
+        "n": 70
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "priest",
+      "key": "priest.fortitude",
+      "text": "Improved Power Word: Fortitude is baseline; 1 hour at max rank (Sep 30 deep dive; Wowhead)"
+     },
+     {
+      "page": "priest",
+      "key": "priest.reagents",
+      "text": "Light Feather (Levitate), Holy Candle (Prayer of Fortitude rank 1; rank 2 at 60 takes a Sacred Candle), Sacred Candle (Prayer of Shadow Protection and Prayer of Spirit); vendor sell prices 7 c, 1 s 75 c, 2 s 50 c (client 70450; reagent names per the Wowhead tooltips)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "shadow_protection",
+    "class": "priest",
+    "name": "Shadow Protection",
+    "group": "Prayer of Shadow Protection",
+    "group_from": 56,
+    "group_spells": [
+     27683
+    ],
+    "lands": "all",
+    "lands_text": "the whole party, Shadow resistance",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 976,
+      "name": "Shadow Protection",
+      "rank": "Rank 1",
+      "learned": 30,
+      "duration_ms": 600000
+     },
+     {
+      "spell": 10957,
+      "name": "Shadow Protection",
+      "rank": "Rank 2",
+      "learned": 42,
+      "duration_ms": 600000
+     },
+     {
+      "spell": 10958,
+      "name": "Shadow Protection",
+      "rank": "Rank 3",
+      "learned": 56,
+      "duration_ms": 600000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 45
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 60
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 60
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 60
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 60
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "to each resistance",
+        "n": 60
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "divine_spirit",
+    "class": "priest",
+    "name": "Divine Spirit",
+    "group": "Prayer of Spirit",
+    "group_from": 60,
+    "group_spells": [
+     27681
+    ],
+    "lands": "mana",
+    "lands_text": "casters most of all",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 14752,
+      "name": "Divine Spirit",
+      "rank": "Rank 1",
+      "learned": 30,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 14818,
+      "name": "Divine Spirit",
+      "rank": "Rank 2",
+      "learned": 40,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 14819,
+      "name": "Divine Spirit",
+      "rank": "Rank 3",
+      "learned": 50,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 27841,
+      "name": "Divine Spirit",
+      "rank": "Rank 4",
+      "learned": 60,
+      "duration_ms": 3600000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 17
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 23
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 33
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "Spirit",
+        "n": 40
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "priest",
+      "key": "priest.divine_spirit",
+      "text": "trained at 30; +17 Spirit at rank 1, 1 hour (Sep 30 deep dive; client 70450)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "pw_shield",
+    "class": "priest",
+    "name": "Power Word: Shield",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "one",
+    "lands_text": "one target at a time",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 17,
+      "name": "Power Word: Shield",
+      "rank": "Rank 1",
+      "learned": 6,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 592,
+      "name": "Power Word: Shield",
+      "rank": "Rank 2",
+      "learned": 12,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 600,
+      "name": "Power Word: Shield",
+      "rank": "Rank 3",
+      "learned": 18,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 3747,
+      "name": "Power Word: Shield",
+      "rank": "Rank 4",
+      "learned": 24,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 6065,
+      "name": "Power Word: Shield",
+      "rank": "Rank 5",
+      "learned": 30,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 6066,
+      "name": "Power Word: Shield",
+      "rank": "Rank 6",
+      "learned": 36,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 10898,
+      "name": "Power Word: Shield",
+      "rank": "Rank 7",
+      "learned": 42,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 10899,
+      "name": "Power Word: Shield",
+      "rank": "Rank 8",
+      "learned": 48,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 10900,
+      "name": "Power Word: Shield",
+      "rank": "Rank 9",
+      "learned": 54,
+      "duration_ms": 30000
+     },
+     {
+      "spell": 10901,
+      "name": "Power Word: Shield",
+      "rank": "Rank 10",
+      "learned": 60,
+      "duration_ms": 30000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 44
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 44.8
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 45.6
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 46.4
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 47.2
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 48
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 86
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 87.2
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 88.4
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 89.6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 90.8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 92
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 154
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 155.6
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 157.2
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 158.8
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 160.4
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 162
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 226
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 228
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 230
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 232
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 234
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 236
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 291
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 293.3
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 295.6
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 297.9
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 300.2
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 302.5
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 368
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 370.6
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 373.2
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 375.8
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 378.4
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 381
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 470
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 473
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 476
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 479
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 482
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 485
+       }
+      ]
+     },
+     {
+      "r": [
+       7
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 591
+       }
+      ]
+     },
+     {
+      "r": [
+       7
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 594.4
+       }
+      ]
+     },
+     {
+      "r": [
+       7
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 597.8
+       }
+      ]
+     },
+     {
+      "r": [
+       7
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 601.2
+       }
+      ]
+     },
+     {
+      "r": [
+       7
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 604.6
+       }
+      ]
+     },
+     {
+      "r": [
+       7
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 608
+       }
+      ]
+     },
+     {
+      "r": [
+       8
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 749
+       }
+      ]
+     },
+     {
+      "r": [
+       8
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 752.9
+       }
+      ]
+     },
+     {
+      "r": [
+       8
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 756.8
+       }
+      ]
+     },
+     {
+      "r": [
+       8
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 760.7
+       }
+      ]
+     },
+     {
+      "r": [
+       8
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 764.6
+       }
+      ]
+     },
+     {
+      "r": [
+       8
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 768.5
+       }
+      ]
+     },
+     {
+      "r": [
+       9
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage absorbed",
+        "n": 928
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "priest",
+      "key": "priest.power_word_shield",
+      "text": "level 6; 4 s cooldown, 30 s duration, 15 s Weakened Soul; your own shield can be overwritten when no Weakened Soul is up (Sep 30 deep dive; Sep 24 notes; Wowhead tooltips)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "kings",
+    "class": "paladin",
+    "name": "Blessing of Kings",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "one Blessing per paladin on each player",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 20217,
+      "name": "Blessing of Kings",
+      "rank": null,
+      "learned": 20,
+      "duration_ms": 3600000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% to all stats",
+        "n": 10
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "paladin",
+      "key": "paladin.blessing_of_kings",
+      "text": "baseline at 20; 8% of base mana, +10% stats, 1 hour; Improved Wisdom also baseline (client 70450; Oct 15 deep dive)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "might",
+    "class": "paladin",
+    "name": "Blessing of Might",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "melee",
+    "lands_text": "melee fighters, the bear included",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 19740,
+      "name": "Blessing of Might",
+      "rank": "Rank 1",
+      "learned": 4,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19834,
+      "name": "Blessing of Might",
+      "rank": "Rank 2",
+      "learned": 12,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19835,
+      "name": "Blessing of Might",
+      "rank": "Rank 3",
+      "learned": 22,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19836,
+      "name": "Blessing of Might",
+      "rank": "Rank 4",
+      "learned": 32,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19837,
+      "name": "Blessing of Might",
+      "rank": "Rank 5",
+      "learned": 42,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19838,
+      "name": "Blessing of Might",
+      "rank": "Rank 6",
+      "learned": 52,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 25291,
+      "name": "Blessing of Might",
+      "rank": "Rank 7",
+      "learned": 60,
+      "duration_ms": 3600000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 25
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 40
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 61
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 83
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 112
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "melee attack power",
+        "n": 133
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "wisdom",
+    "class": "paladin",
+    "name": "Blessing of Wisdom",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "mana",
+    "lands_text": "casters",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 19742,
+      "name": "Blessing of Wisdom",
+      "rank": "Rank 1",
+      "learned": 14,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19850,
+      "name": "Blessing of Wisdom",
+      "rank": "Rank 2",
+      "learned": 24,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19852,
+      "name": "Blessing of Wisdom",
+      "rank": "Rank 3",
+      "learned": 34,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19853,
+      "name": "Blessing of Wisdom",
+      "rank": "Rank 4",
+      "learned": 44,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 19854,
+      "name": "Blessing of Wisdom",
+      "rank": "Rank 5",
+      "learned": 54,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 25290,
+      "name": "Blessing of Wisdom",
+      "rank": "Rank 6",
+      "learned": 60,
+      "duration_ms": 3600000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 24
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 30
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 36
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 36
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 36
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 36
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 36
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 36
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "mana every 5 s",
+        "n": 40
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "salvation",
+    "class": "paladin",
+    "name": "Salvation",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "anyone, alongside a Blessing, threat down",
+    "aura": false,
+    "sixth": false,
+    "ranks": [],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "paladin",
+      "key": "paladin.salvation",
+      "text": "level 26; Salvation and Mass Salvation replace the Blessing versions, 30% threat reduction, not a Blessing so it sits alongside one; Revoke is new (Oct 15 notes; client 70450)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "devotion",
+    "class": "paladin",
+    "name": "Devotion Aura",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "the party within 30 yards",
+    "aura": true,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 465,
+      "name": "Devotion Aura",
+      "rank": "Rank 1",
+      "learned": 1,
+      "duration_ms": null
+     },
+     {
+      "spell": 10290,
+      "name": "Devotion Aura",
+      "rank": "Rank 2",
+      "learned": 10,
+      "duration_ms": null
+     },
+     {
+      "spell": 643,
+      "name": "Devotion Aura",
+      "rank": "Rank 3",
+      "learned": 20,
+      "duration_ms": null
+     },
+     {
+      "spell": 10291,
+      "name": "Devotion Aura",
+      "rank": "Rank 4",
+      "learned": 30,
+      "duration_ms": null
+     },
+     {
+      "spell": 1032,
+      "name": "Devotion Aura",
+      "rank": "Rank 5",
+      "learned": 40,
+      "duration_ms": null
+     },
+     {
+      "spell": 10292,
+      "name": "Devotion Aura",
+      "rank": "Rank 6",
+      "learned": 50,
+      "duration_ms": null
+     },
+     {
+      "spell": 10293,
+      "name": "Devotion Aura",
+      "rank": "Rank 7",
+      "learned": 60,
+      "duration_ms": null
+     }
+    ],
+    "at": [
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 55
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 160
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 275
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 390
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 505
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 620
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 735
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "retribution",
+    "class": "paladin",
+    "name": "Retribution Aura",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "the party within 30 yards",
+    "aura": true,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 7294,
+      "name": "Retribution Aura",
+      "rank": "Rank 1",
+      "learned": 16,
+      "duration_ms": null
+     },
+     {
+      "spell": 10298,
+      "name": "Retribution Aura",
+      "rank": "Rank 2",
+      "learned": 26,
+      "duration_ms": null
+     },
+     {
+      "spell": 10299,
+      "name": "Retribution Aura",
+      "rank": "Rank 3",
+      "learned": 36,
+      "duration_ms": null
+     },
+     {
+      "spell": 10300,
+      "name": "Retribution Aura",
+      "rank": "Rank 4",
+      "learned": 46,
+      "duration_ms": null
+     },
+     {
+      "spell": 10301,
+      "name": "Retribution Aura",
+      "rank": "Rank 5",
+      "learned": 56,
+      "duration_ms": null
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 8
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 16
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 20
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "paladin",
+      "key": "paladin.retribution_aura",
+      "text": "back to vanilla base damage, spell power ratio 13.3% to 6% (Oct 8 notes)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "concentration",
+    "class": "paladin",
+    "name": "Concentration Aura",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "mana",
+    "lands_text": "casters within 30 yards",
+    "aura": true,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 19746,
+      "name": "Concentration Aura",
+      "rank": null,
+      "learned": 22,
+      "duration_ms": null
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "% less spell pushback",
+        "n": 35
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "mark",
+    "class": "druid",
+    "name": "Mark of the Wild",
+    "group": "Gift of the Wild",
+    "group_from": 50,
+    "group_spells": [
+     21849,
+     21850
+    ],
+    "lands": "all",
+    "lands_text": "the whole party",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 1126,
+      "name": "Mark of the Wild",
+      "rank": "Rank 1",
+      "learned": 1,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 5232,
+      "name": "Mark of the Wild",
+      "rank": "Rank 2",
+      "learned": 10,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 6756,
+      "name": "Mark of the Wild",
+      "rank": "Rank 3",
+      "learned": 20,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 5234,
+      "name": "Mark of the Wild",
+      "rank": "Rank 4",
+      "learned": 30,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 8907,
+      "name": "Mark of the Wild",
+      "rank": "Rank 5",
+      "learned": 40,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 9884,
+      "name": "Mark of the Wild",
+      "rank": "Rank 6",
+      "learned": 50,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 9885,
+      "name": "Mark of the Wild",
+      "rank": "Rank 7",
+      "learned": 60,
+      "duration_ms": 3600000
+     }
+    ],
+    "at": [
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 34
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 88
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 142
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 5
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 203
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 8
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 7
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 263
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 11
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 14
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 324
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 14
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 20
+       }
+      ]
+     },
+     {
+      "r": [
+       6
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "armor",
+        "n": 385
+       },
+       {
+        "effect": 1,
+        "label": "all attributes",
+        "n": 16
+       },
+       {
+        "effect": 2,
+        "label": "to each resistance",
+        "n": 27
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "thorns",
+    "class": "druid",
+    "name": "Thorns",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "tank",
+    "lands_text": "whoever is being hit, usually the tank",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 467,
+      "name": "Thorns",
+      "rank": "Rank 1",
+      "learned": 6,
+      "duration_ms": 600000
+     },
+     {
+      "spell": 782,
+      "name": "Thorns",
+      "rank": "Rank 2",
+      "learned": 14,
+      "duration_ms": 600000
+     },
+     {
+      "spell": 1075,
+      "name": "Thorns",
+      "rank": "Rank 3",
+      "learned": 24,
+      "duration_ms": 600000
+     },
+     {
+      "spell": 8914,
+      "name": "Thorns",
+      "rank": "Rank 4",
+      "learned": 34,
+      "duration_ms": 600000
+     },
+     {
+      "spell": 9756,
+      "name": "Thorns",
+      "rank": "Rank 5",
+      "learned": 44,
+      "duration_ms": 600000
+     },
+     {
+      "spell": 9910,
+      "name": "Thorns",
+      "rank": "Rank 6",
+      "learned": 54,
+      "duration_ms": 600000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 3
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 6
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 9
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 12
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 15
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 18
+       }
+      ]
+     },
+     {
+      "r": [
+       5
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "damage to each attacker",
+        "n": 18
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "innervate",
+    "class": "druid",
+    "name": "Innervate",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "healer",
+    "lands_text": "one caster, mana back",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 29166,
+      "name": "Innervate",
+      "rank": null,
+      "learned": 40,
+      "duration_ms": 20000,
+      "cooldown_ms": 360000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 1,
+        "label": "% mana regeneration",
+        "n": 400
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "rebirth",
+    "class": "druid",
+    "name": "Rebirth",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "dead",
+    "lands_text": "one fallen player, in combat",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 20484,
+      "name": "Rebirth",
+      "rank": "Rank 1",
+      "learned": 20,
+      "duration_ms": null,
+      "cooldown_ms": 1800000,
+      "mana": 700
+     },
+     {
+      "spell": 20739,
+      "name": "Rebirth",
+      "rank": "Rank 2",
+      "learned": 30,
+      "duration_ms": null,
+      "cooldown_ms": 1800000,
+      "mana": 1200
+     },
+     {
+      "spell": 20742,
+      "name": "Rebirth",
+      "rank": "Rank 3",
+      "learned": 40,
+      "duration_ms": null,
+      "cooldown_ms": 1800000,
+      "mana": 1700
+     },
+     {
+      "spell": 20747,
+      "name": "Rebirth",
+      "rank": "Rank 4",
+      "learned": 50,
+      "duration_ms": null,
+      "cooldown_ms": 1800000,
+      "mana": 2200
+     },
+     {
+      "spell": 20748,
+      "name": "Rebirth",
+      "rank": "Rank 5",
+      "learned": 60,
+      "duration_ms": null,
+      "cooldown_ms": 1800000,
+      "mana": 2800
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 400
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 750
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1100
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 1600
+       }
+      ]
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": [
+       {
+        "effect": 0,
+        "label": "health on return",
+        "n": 2200
+       }
+      ]
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "leader",
+    "class": "druid",
+    "name": "Leader of the Pack",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "the raid, melee and ranged crit, a Feral talent",
+    "aura": false,
+    "sixth": false,
+    "ranks": [],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "druid",
+      "key": "druid.auras",
+      "text": "Leader of the Pack (melee and ranged crit) and Moonkin Aura (spell crit) are raid-wide since Oct 15; the Sep 30 text made the two talents exclusive and the Oct 15 notes do not say whether that holds (Sep 30 deep dive; Oct 15 notes)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "soulstone",
+    "class": "warlock",
+    "name": "Soulstone",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "one",
+    "lands_text": "whoever holds one",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 693,
+      "name": "Create Soulstone",
+      "rank": "Rank 1",
+      "learned": 18,
+      "duration_ms": null
+     },
+     {
+      "spell": 20752,
+      "name": "Create Soulstone",
+      "rank": "Rank 2",
+      "learned": 30,
+      "duration_ms": null
+     },
+     {
+      "spell": 20755,
+      "name": "Create Soulstone",
+      "rank": "Rank 3",
+      "learned": 40,
+      "duration_ms": null
+     },
+     {
+      "spell": 20756,
+      "name": "Create Soulstone",
+      "rank": "Rank 4",
+      "learned": 50,
+      "duration_ms": null
+     },
+     {
+      "spell": 20757,
+      "name": "Create Soulstone",
+      "rank": "Rank 5",
+      "learned": 60,
+      "duration_ms": null
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "warlock",
+      "key": "warlock.shards",
+      "text": "one Soul Shard each for every pet summon, Healthstone, Soulstone, Firestone, Spellstone, Ritual of Summoning and Soul Fire; shards are Bind on Pickup; a forum thread says they do not stack (client 70450; forum, no Blizzard reply)"
+     }
+    ],
+    "classic": "Classic baseline: the holder of a Soulstone can return to life after dying; one per target"
+   },
+   {
+    "key": "healthstone",
+    "class": "warlock",
+    "name": "Healthstone",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "whoever holds one",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 6201,
+      "name": "Create Healthstone",
+      "rank": "Rank 1",
+      "learned": 10,
+      "duration_ms": null
+     },
+     {
+      "spell": 6202,
+      "name": "Create Healthstone",
+      "rank": "Rank 2",
+      "learned": 22,
+      "duration_ms": null
+     },
+     {
+      "spell": 5699,
+      "name": "Create Healthstone",
+      "rank": "Rank 3",
+      "learned": 34,
+      "duration_ms": null
+     },
+     {
+      "spell": 11729,
+      "name": "Create Healthstone",
+      "rank": "Rank 4",
+      "learned": 46,
+      "duration_ms": null
+     },
+     {
+      "spell": 11730,
+      "name": "Create Healthstone",
+      "rank": "Rank 5",
+      "learned": 58,
+      "duration_ms": null
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "warlock",
+      "key": "warlock.shards",
+      "text": "one Soul Shard each for every pet summon, Healthstone, Soulstone, Firestone, Spellstone, Ritual of Summoning and Soul Fire; shards are Bind on Pickup; a forum thread says they do not stack (client 70450; forum, no Blizzard reply)"
+     }
+    ],
+    "classic": "Classic baseline: a Healthstone is a free healing potion that shares no cooldown with potions"
+   },
+   {
+    "key": "summoning",
+    "class": "warlock",
+    "name": "Ritual of Summoning",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "anyone away from the group, two clickers needed",
+    "aura": false,
+    "sixth": false,
+    "ranks": [
+     {
+      "spell": 698,
+      "name": "Ritual of Summoning",
+      "rank": null,
+      "learned": 20,
+      "duration_ms": 600000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "warlock",
+      "key": "warlock.ritual_of_summoning",
+      "text": "level 20, one shard plus two party members clicking the portal, out of combat; meeting stones do not summon (client 70450; Wowhead)"
+     }
+    ],
+    "classic": null
+   },
+   {
+    "key": "blood_pact",
+    "class": "warlock",
+    "name": "Blood Pact from the Imp",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "the party, Stamina",
+    "aura": false,
+    "sixth": false,
+    "ranks": [],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "status": "classic",
+    "wiki": [],
+    "classic": "Classic baseline: the Imp's Blood Pact raises party Stamina; the client table here has no Blood Pact row and the wiki no Forever value"
+   },
+   {
+    "key": "strength_earth",
+    "class": "shaman",
+    "name": "Strength of Earth Totem",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "melee",
+    "lands_text": "melee in the totem's range",
+    "aura": false,
+    "sixth": true,
+    "ranks": [
+     {
+      "spell": 8075,
+      "name": "Strength of Earth Totem",
+      "rank": "Rank 1",
+      "learned": 10,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 8160,
+      "name": "Strength of Earth Totem",
+      "rank": "Rank 2",
+      "learned": 24,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 8161,
+      "name": "Strength of Earth Totem",
+      "rank": "Rank 3",
+      "learned": 38,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10442,
+      "name": "Strength of Earth Totem",
+      "rank": "Rank 4",
+      "learned": 52,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 25361,
+      "name": "Strength of Earth Totem",
+      "rank": "Rank 5",
+      "learned": 60,
+      "duration_ms": 300000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "grace_air",
+    "class": "shaman",
+    "name": "Grace of Air Totem",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "melee",
+    "lands_text": "melee in the totem's range",
+    "aura": false,
+    "sixth": true,
+    "ranks": [
+     {
+      "spell": 8835,
+      "name": "Grace of Air Totem",
+      "rank": "Rank 1",
+      "learned": 42,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10627,
+      "name": "Grace of Air Totem",
+      "rank": "Rank 2",
+      "learned": 56,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 25359,
+      "name": "Grace of Air Totem",
+      "rank": "Rank 3",
+      "learned": 60,
+      "duration_ms": 300000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "windfury",
+    "class": "shaman",
+    "name": "Windfury Totem",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "melee",
+    "lands_text": "melee weapons in range",
+    "aura": false,
+    "sixth": true,
+    "ranks": [
+     {
+      "spell": 8512,
+      "name": "Windfury Totem",
+      "rank": "Rank 1",
+      "learned": 32,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10613,
+      "name": "Windfury Totem",
+      "rank": "Rank 2",
+      "learned": 42,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10614,
+      "name": "Windfury Totem",
+      "rank": "Rank 3",
+      "learned": 52,
+      "duration_ms": 300000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "mana_spring",
+    "class": "shaman",
+    "name": "Mana Spring Totem",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "mana",
+    "lands_text": "casters in range",
+    "aura": false,
+    "sixth": true,
+    "ranks": [
+     {
+      "spell": 5675,
+      "name": "Mana Spring Totem",
+      "rank": "Rank 1",
+      "learned": 26,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10495,
+      "name": "Mana Spring Totem",
+      "rank": "Rank 2",
+      "learned": 36,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10496,
+      "name": "Mana Spring Totem",
+      "rank": "Rank 3",
+      "learned": 46,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10497,
+      "name": "Mana Spring Totem",
+      "rank": "Rank 4",
+      "learned": 56,
+      "duration_ms": 300000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   },
+   {
+    "key": "healing_stream",
+    "class": "shaman",
+    "name": "Healing Stream Totem",
+    "group": null,
+    "group_from": null,
+    "group_spells": [],
+    "lands": "all",
+    "lands_text": "the party in range",
+    "aura": false,
+    "sixth": true,
+    "ranks": [
+     {
+      "spell": 5394,
+      "name": "Healing Stream Totem",
+      "rank": "Rank 1",
+      "learned": 20,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 6375,
+      "name": "Healing Stream Totem",
+      "rank": "Rank 2",
+      "learned": 30,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 6377,
+      "name": "Healing Stream Totem",
+      "rank": "Rank 3",
+      "learned": 40,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10462,
+      "name": "Healing Stream Totem",
+      "rank": "Rank 4",
+      "learned": 50,
+      "duration_ms": 300000
+     },
+     {
+      "spell": 10463,
+      "name": "Healing Stream Totem",
+      "rank": "Rank 5",
+      "learned": 60,
+      "duration_ms": 300000
+     }
+    ],
+    "at": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     null,
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       0
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       1
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       2
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       3
+      ],
+      "v": []
+     },
+     {
+      "r": [
+       4
+      ],
+      "v": []
+     }
+    ],
+    "status": "forever",
+    "wiki": [],
+    "classic": null
+   }
+  ],
+  "rules": [
+   {
+    "text": "Each paladin can keep one Blessing on each player; Blessings from two paladins stack if they differ.",
+    "status": "classic",
+    "wiki": [],
+    "db2": null
+   },
+   {
+    "text": "Salvation is no longer a Blessing: it sits alongside one, so a player can have Kings and Salvation from the same paladin.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "paladin",
+      "key": "paladin.salvation",
+      "text": "level 26; Salvation and Mass Salvation replace the Blessing versions, 30% threat reduction, not a Blessing so it sits alongside one; Revoke is new (Oct 15 notes; client 70450)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Blessing of Kings is baseline at 20 and adds 10% to all stats.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "paladin",
+      "key": "paladin.blessing_of_kings",
+      "text": "baseline at 20; 8% of base mana, +10% stats, 1 hour; Improved Wisdom also baseline (client 70450; Oct 15 deep dive)"
+     }
+    ],
+    "db2": [
+     {
+      "spell": 20217,
+      "learned": 20,
+      "cooldown_ms": null,
+      "duration_ms": 3600000
+     }
+    ]
+   },
+   {
+    "text": "Each paladin runs one aura at a time; two paladins' auras stack only if they differ.",
+    "status": "classic",
+    "wiki": [],
+    "db2": null
+   },
+   {
+    "text": "Greater Blessings (Kings, Might, Wisdom) exist from level 52 in the client table; whether they cover a whole class for longer, as in Classic, is unpublished.",
+    "status": "unknown",
+    "wiki": [],
+    "db2": [
+     {
+      "spell": 25782,
+      "learned": 52,
+      "cooldown_ms": null,
+      "duration_ms": 3600000
+     },
+     {
+      "spell": 25916,
+      "learned": 60,
+      "cooldown_ms": null,
+      "duration_ms": 3600000
+     }
+    ]
+   },
+   {
+    "text": "The group versions (Prayer of Fortitude, Gift of the Wild, Arcane Brilliance) give the same numbers as the top single rank; the newer cast replaces the older on a player.",
+    "status": "classic",
+    "wiki": [],
+    "db2": null
+   },
+   {
+    "text": "Prayer of Fortitude takes a Holy Candle at rank 1 and a Sacred Candle at rank 2; Prayer of Shadow Protection and Prayer of Spirit take a Sacred Candle.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "priest",
+      "key": "priest.reagents",
+      "text": "Light Feather (Levitate), Holy Candle (Prayer of Fortitude rank 1; rank 2 at 60 takes a Sacred Candle), Sacred Candle (Prayer of Shadow Protection and Prayer of Spirit); vendor sell prices 7 c, 1 s 75 c, 2 s 50 c (client 70450; reagent names per the Wowhead tooltips)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Arcane Brilliance arrives at 56 and covers party and raid; Arcane Intellect lasts an hour.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "mage",
+      "key": "mage.arcane_brilliance",
+      "text": "level 56, covers party and raid (Sep 24 notes; client 70450; Wowhead)"
+     },
+     {
+      "page": "mage",
+      "key": "mage.arcane_intellect.duration",
+      "text": "1 hour (client 70450, Oct 18; Wowhead; Classic 30 min)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Divine Spirit is trained at 30, not a talent.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "priest",
+      "key": "priest.divine_spirit",
+      "text": "trained at 30; +17 Spirit at rank 1, 1 hour (Sep 30 deep dive; client 70450)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Leader of the Pack and Moonkin Aura are raid-wide since Oct 15; whether one druid can run both is not said.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "druid",
+      "key": "druid.auras",
+      "text": "Leader of the Pack (melee and ranged crit) and Moonkin Aura (spell crit) are raid-wide since Oct 15; the Sep 30 text made the two talents exclusive and the Oct 15 notes do not say whether that holds (Sep 30 deep dive; Oct 15 notes)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Whether Leader of the Pack and Moonkin Aura are still exclusive talents.",
+    "status": "unknown",
+    "wiki": [
+     {
+      "page": "druid",
+      "key": "druid.auras",
+      "text": "Leader of the Pack (melee and ranged crit) and Moonkin Aura (spell crit) are raid-wide since Oct 15; the Sep 30 text made the two talents exclusive and the Oct 15 notes do not say whether that holds (Sep 30 deep dive; Oct 15 notes)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Every Soulstone, Healthstone and summon costs one Soul Shard, and shards are Bind on Pickup.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "warlock",
+      "key": "warlock.shards",
+      "text": "one Soul Shard each for every pet summon, Healthstone, Soulstone, Firestone, Spellstone, Ritual of Summoning and Soul Fire; shards are Bind on Pickup; a forum thread says they do not stack (client 70450; forum, no Blizzard reply)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Summoning needs the warlock plus two party members clicking, out of combat; meeting stones do not summon.",
+    "status": "forever",
+    "wiki": [
+     {
+      "page": "warlock",
+      "key": "warlock.ritual_of_summoning",
+      "text": "level 20, one shard plus two party members clicking the portal, out of combat; meeting stones do not summon (client 70450; Wowhead)"
+     }
+    ],
+    "db2": null
+   },
+   {
+    "text": "Rebirth works in combat; one cast every 30 minutes.",
+    "status": "forever",
+    "wiki": [],
+    "db2": [
+     {
+      "spell": 20484,
+      "learned": 20,
+      "cooldown_ms": 1800000,
+      "duration_ms": null
+     },
+     {
+      "spell": 20739,
+      "learned": 30,
+      "cooldown_ms": 1800000,
+      "duration_ms": null
+     },
+     {
+      "spell": 20742,
+      "learned": 40,
+      "cooldown_ms": 1800000,
+      "duration_ms": null
+     },
+     {
+      "spell": 20747,
+      "learned": 50,
+      "cooldown_ms": 1800000,
+      "duration_ms": null
+     },
+     {
+      "spell": 20748,
+      "learned": 60,
+      "cooldown_ms": 1800000,
+      "duration_ms": null
+     }
+    ]
+   },
+   {
+    "text": "Innervate: one cast every 6 minutes, 20 seconds of 400% more mana regeneration.",
+    "status": "forever",
+    "wiki": [],
+    "db2": [
+     {
+      "spell": 29166,
+      "learned": 40,
+      "cooldown_ms": 360000,
+      "duration_ms": 20000
+     }
+    ]
+   }
+  ]
+ }
 }
