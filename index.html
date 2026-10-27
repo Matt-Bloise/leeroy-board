@@ -2413,7 +2413,8 @@ const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) 
 const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z-]{1,40}$/.test(k) ? "buffs" : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
-  try { if (push) history.pushState({ boardScene: key }, "", url); else history.replaceState(key ? { boardScene: key } : null, "", url); return true; } catch (e) { return false; }
+  /* pushed marks an entry the wall added, the only kind back may pop; a landing scene (first visit, deep link) is replaced in place and closes in place */
+  try { if (push) history.pushState({ boardScene: key, pushed: true }, "", url); else history.replaceState(key ? { boardScene: key, pushed: !!(history.state && history.state.pushed) } : null, "", url); return true; } catch (e) { return false; }
 }
 function replay(el, cls) { if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
 function selectPanel(key, crossFade) {
@@ -2592,7 +2593,7 @@ function hideScene() {
 }
 function requestClose() {
   if (SC.open === null) return;
-  if (history.state && history.state.boardScene) { history.back(); return; } /* opened from the wall: back pops it */
+  if (history.state && history.state.pushed) { history.back(); return; } /* opened from the wall: back pops it */
   setHash(null, false); hideScene();
 }
 function switchTab(key) { if (key === SC.open) return; setHash(key, false); selectPanel(key, true); swiped(); }
