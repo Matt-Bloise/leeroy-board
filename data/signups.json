@@ -1,9 +1,5 @@
 {
- "generated": "2026-10-26T23:39:58.306Z",
- "sources": [
-  "bot/data/signups.json",
-  "bot/signups.js"
- ],
+ "generated": "2026-10-27T00:17:04.741Z",
  "present": true,
  "updated": "2026-10-26T22:40:21.977Z",
  "options": {
