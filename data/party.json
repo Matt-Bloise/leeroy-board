@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T21:32:06.023Z",
+ "generated": "2026-10-27T21:38:30.633Z",
  "party": "Dungeons and Drinking",
  "faction": "Horde",
  "ruleset": "Normal",
@@ -153,7 +153,7 @@
  "settled_extra": [
   {
    "text": "Raids open Dec 9: Barrow Deeps 10, Hyjal 20, Onyxia 40",
-   "source": "decisions card"
+   "source": "group notes"
   }
  ],
  "open": [
@@ -186,14 +186,14 @@
    "status": "nothing chosen",
    "detail": "Three starting zones, one square. Classic habit: Orgrimmar's Valley of Strength; at 10, the Crossroads.",
    "links": [],
-   "source": "decisions card"
+   "source": "group notes"
   },
   {
    "title": "Who holds a pack",
    "status": "nobody listed",
    "detail": "Pack holders create and name up to three characters each, open since Oct 27 4 PM ET, until Nov 3 (Pacific).",
    "links": [],
-   "source": "decisions card"
+   "source": "group notes"
   },
   {
    "title": "Launch night",
@@ -206,7 +206,7 @@
      "message_id": "1562540569933119538"
     }
    ],
-   "source": "decisions card"
+   "source": "group notes"
   }
  ],
  "polls": [

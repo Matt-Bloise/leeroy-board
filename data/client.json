@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T21:32:06.054Z",
+ "generated": "2026-10-27T21:38:30.664Z",
  "build": "1.60.1.70532",
  "level": 60,
  "formula": "wiki/scripts/db2-lib.mjs scaleEffect at level 60 (min/max = base x (1 -/+ variance/2) + per_level x levels past base, capped at the rank's max level); totals = per-tick x floor(duration / period)",
