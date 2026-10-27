@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-27T00:27:37.970Z",
+ "generated": "2026-10-27T00:40:56.673Z",
  "present": true,
- "updated": "2026-10-26T22:40:21.977Z",
+ "updated": "2026-10-27T00:40:36.565Z",
  "options": {
   "meet": [
    "Valley of Strength",
@@ -21,6 +21,14 @@
    "rsvp": "maybe",
    "when": null,
    "updated": "2026-10-26T22:40:21.977Z"
+  },
+  {
+   "name": "Street Rat",
+   "pack": null,
+   "meet": null,
+   "rsvp": "in",
+   "when": "8pm",
+   "updated": "2026-10-27T00:40:36.565Z"
   }
  ],
  "tallies": {
@@ -51,8 +59,10 @@
   },
   "rsvp": {
    "in": {
-    "count": 0,
-    "names": []
+    "count": 1,
+    "names": [
+     "Street Rat"
+    ]
    },
    "maybe": {
     "count": 1,
@@ -71,14 +81,16 @@
     "names": []
    },
    "8pm": {
-    "count": 0,
-    "names": []
+    "count": 1,
+    "names": [
+     "Street Rat"
+    ]
    },
    "later": {
     "count": 0,
     "names": []
    }
   },
-  "total": 1
+  "total": 2
  }
 }

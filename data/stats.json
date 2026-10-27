@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-27T00:27:37.967Z",
- "answers": 85,
- "replies": 85,
+ "generated": "2026-10-27T00:40:56.658Z",
+ "answers": 86,
+ "replies": 86,
  "noreply": 0,
  "median_s": 45,
  "p95_s": 3909,
@@ -9,12 +9,6 @@
  "miss_threshold_s": 900,
  "misses": 9,
  "last7": [
-  {
-   "closed_utc": "2026-10-26T19:50:40.779Z",
-   "seconds": 89,
-   "kind": "/ask",
-   "how": "reply"
-  },
   {
    "closed_utc": "2026-10-26T19:57:44.519Z",
    "seconds": 58,
@@ -49,6 +43,12 @@
    "closed_utc": "2026-10-27T00:22:29.195Z",
    "seconds": 82,
    "kind": "/ask",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-27T00:28:31.350Z",
+   "seconds": 171,
+   "kind": "mention",
    "how": "reply"
   }
  ],
