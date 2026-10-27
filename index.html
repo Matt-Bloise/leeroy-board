@@ -303,6 +303,7 @@ main:focus { outline: none; }
 .tn-card p { margin: 4px 0 0; font-family: var(--font-body); font-size: 1.1rem; line-height: 1.4; }
 .tn-card .tn-big { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); line-height: 1.15; }
 .tn-card .tn-when { font-weight: 600; }
+.tn-link { color: var(--wax); text-decoration: underline; text-underline-offset: 4px; }
 .tn-card .tn-launch { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--ink-soft); font-weight: 600; }
 .tn-line b { font-family: var(--font-sc); letter-spacing: 0.06em; }
 .tn-actions { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -1489,8 +1490,8 @@ function renderTiles() {
     races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("span", { class: "dots" }, p.members.filter((m) => m.race === race).map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}` }))), h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
     changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed Oct 26` }) : null);
   fill("legacy",
-    h("span", { class: "tile-line", text: `${plural(L.thresholds.length, "reward", "rewards")} on the track, the first at ${L.thresholds[0] ? L.thresholds[0].n : L.total} points.` }),
-    h("span", { class: "tile-viz" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} legacy points earned so far` }));
+    h("span", { class: "tile-line", text: "Points buy perks for every character you make, plus a pet, a tabard and a bear mount." }),
+    h("span", { class: "tile-viz" }, miniRing(L)), h("span", { class: "viz-cap", text: L.earned_now ? `${L.earned_now} of ${L.total} points earned so far` : `${L.earned_note.charAt(0).toUpperCase()}${L.earned_note.slice(1)}.` }));
   fill("buffs",
     minis([[p.members.length, "players"], [c.synergy.length, "buffs"]]),
     h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: "Buff links between the five" }));
@@ -1508,8 +1509,8 @@ function renderTiles() {
       h("span", { class: "rsvp-bar", "aria-hidden": "true" }, [["in", "--ok"], ["maybe", "--warn"], ["out", "--wax"]].map(([k, c]) => h("i", { style: `flex: ${T.rsvp[k].count} 1 0; background: var(${c})` })), h("i", { style: `flex: ${none} 1 0` })), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
   fill("librarian",
-    minis([[st.answers, "answers"], [fmtSecs(st.median_s), "median reply"], [nf.format(st.wiki_facts), "wiki facts"]]),
-    h("span", { class: "tile-viz" }, miniSpark(st.last7.map((x) => x.seconds))), h("span", { class: "viz-cap", text: "Reply time of Leeroy's last 7 answers" }));
+    h("span", { class: "tile-line" }, "Leeroy answers questions in Discord; type ", h("b", { text: "/ask" }), "."),
+    h("span", { class: "tile-line", text: "It reads the same library this board searches." }));
 }
 /* Tile text never stops mid-sentence: whole sentences up to max, else whole clauses with an ellipsis. */
 function wholeClause(t, max) {
@@ -3514,7 +3515,7 @@ function renderTonight() {
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
   box.replaceChildren(
     card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch }) : null),
-    card(T.cards[1], h("p", { class: "tn-big", text: step })),
+    card(T.cards[1], step === T.steps.signup ? h("p", { class: "tn-big" }, h("a", { class: "tn-link", href: "#signups" }, step)) : h("p", { class: "tn-big", text: step })),
     card(T.cards[2], mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null));
   act.replaceChildren(h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
