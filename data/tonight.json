@@ -1,0 +1,92 @@
+{
+ "generated": "2026-10-27T11:34:49.416Z",
+ "cards": [
+  "Next up",
+  "Your next step",
+  "Tonight"
+ ],
+ "labels": {
+  "you": "You",
+  "in": "Coming",
+  "maybe": "Maybe",
+  "out": "Not coming",
+  "nobody": "Nobody yet",
+  "iam": "I am",
+  "looking": "Just looking",
+  "who": "Who are you?",
+  "why": "Pick your name to see your own next step."
+ },
+ "steps": {
+  "spec": "Choose your spec.",
+  "choose": "Choose {x}.",
+  "signup": "Answer the sign-up in Discord.",
+  "none": "Nothing to decide right now.",
+  "looking": "Pick your name above."
+ },
+ "actions": [
+  "See the wall",
+  "Ask the library"
+ ],
+ "events": [
+  {
+   "key": "names_open",
+   "epoch": 1793131200,
+   "date": null,
+   "label": "Names open",
+   "when": "October 27, 4 PM ET",
+   "meaning": "Pack owners can pick names."
+  },
+  {
+   "key": "sub_active",
+   "epoch": null,
+   "date": "2026-11-03",
+   "label": "Game time starts",
+   "when": "November 3",
+   "meaning": "Game time must be active to play."
+  },
+  {
+   "key": "launch",
+   "epoch": 1793833200,
+   "date": null,
+   "label": "Launch",
+   "when": "November 4, 6 PM ET",
+   "meaning": "The game opens for everyone."
+  },
+  {
+   "key": "raids",
+   "epoch": 1796857200,
+   "date": null,
+   "label": "Raids open",
+   "when": "December 9",
+   "meaning": "Raids open for big groups."
+  }
+ ],
+ "launch": "Launch: November 4, 6 PM ET",
+ "people": [
+  {
+   "member": 0,
+   "class_key": "druid",
+   "step": null
+  },
+  {
+   "member": 1,
+   "class_key": "priest",
+   "step": null
+  },
+  {
+   "member": 2,
+   "class_key": "paladin",
+   "step": null
+  },
+  {
+   "member": 3,
+   "class_key": "mage",
+   "step": "Choose Enchanting or Alchemy."
+  },
+  {
+   "member": 4,
+   "class_key": "warlock",
+   "step": "Choose your spec."
+  }
+ ]
+}

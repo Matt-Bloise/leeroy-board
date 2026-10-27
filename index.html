@@ -250,9 +250,8 @@ a:hover { color: var(--parchment); }
   .hero-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; }
   .hero-title .kicker { flex-basis: 100%; }
   .presence { margin-left: auto; }
-  .clock { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "top digits" "when digits" "launch digits" "hint digits"; align-items: center; column-gap: 36px; row-gap: 4px; padding: 16px 28px; }
+  .clock { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "top digits" "when digits" "launch digits"; align-items: center; column-gap: 36px; row-gap: 2px; padding: 8px 28px; }
   .clock-launch { grid-area: launch; }
-  .clock-hint { grid-area: hint; }
   .clock-top { grid-area: top; }
   .clock-when { grid-area: when; }
   .clock-digits { grid-area: digits; flex-wrap: nowrap; gap: 4px 30px; }
@@ -278,6 +277,63 @@ main:focus { outline: none; }
 .sound-box { position: relative; display: inline-flex; align-items: center; gap: 8px; }
 .vol { width: 0; opacity: 0; accent-color: var(--brass); transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
 .sound-box:hover .vol, .sound-box:focus-within .vol, .sound-box.show .vol { width: 6rem; opacity: 1; }
+@media (min-width: 1500px) {
+  .hero { gap: 8px; }
+  main { margin-bottom: 4px; }
+  .wall-foot { line-height: 1.4; }
+  .clock { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "top top digits" "when launch digits"; column-gap: 28px; padding: 6px 28px; }
+  .clock-launch { justify-self: start; }
+}
+/* V6: depth control, Tonight, the picked person, New badges, the expert lane */
+.depth { display: inline-flex; border: 1px solid var(--brass-dim); border-radius: 999px; overflow: hidden; }
+.depth button { font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.08em; color: var(--cream); background: var(--glass); border: 0; padding: 4px 12px; min-height: 32px; cursor: pointer; }
+.depth button + button { border-left: 1px solid var(--brass-dim); }
+.depth button[aria-pressed="true"] { background: var(--oak-3); color: var(--parchment); box-shadow: inset 0 -2px 0 var(--brass); }
+@media (max-width: 699px) { .depth { display: none; } }
+.tn { gap: 16px; max-width: 820px; width: 100%; justify-self: center; }
+.tn-pick { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px 18px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); }
+.tn-who { flex-basis: 100%; margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); }
+.tn-why { flex-basis: 100%; margin: -6px 0 4px; font-size: 1.05rem; color: var(--ink); }
+.tn-name { min-height: 44px; padding: 6px 16px; font-family: var(--font-ui); font-size: 1.05rem; letter-spacing: 0.04em; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); border-left: 4px solid var(--cc, var(--ink-soft)); border-radius: 6px; cursor: pointer; }
+.tn-name:hover { background: var(--cream); }
+.tn-chip { justify-self: start; min-height: 44px; padding: 4px 16px; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.06em; color: var(--parchment); background: var(--oak-3); border: 1px solid var(--brass); border-radius: 999px; cursor: pointer; }
+.tn-cards { display: grid; gap: 14px; }
+.tn-card { padding: 16px 20px 18px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); border-top: 3px solid var(--brass-dim); }
+.tn-card h3 { margin: 0 0 6px; font-family: var(--font-sc); font-size: 1.05rem; letter-spacing: 0.1em; color: var(--ink-soft); }
+.tn-card p { margin: 4px 0 0; font-family: var(--font-body); font-size: 1.1rem; line-height: 1.4; }
+.tn-card .tn-big { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); line-height: 1.15; }
+.tn-card .tn-when { font-weight: 600; }
+.tn-card .tn-launch { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--ink-soft); font-weight: 600; }
+.tn-line b { font-family: var(--font-sc); letter-spacing: 0.06em; }
+.tn-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.tn-left { margin: 0; font-style: italic; color: var(--ink); }
+.tn-left a { color: var(--wax); font-weight: 600; }
+.med.me .med-ico { outline: 3px solid var(--parchment); outline-offset: 3px; border-radius: 50%; }
+.med.me b { text-decoration: underline; text-underline-offset: 4px; }
+.buff.me { outline: 2px solid var(--brass); }
+.new-badge { justify-self: start; font-family: var(--font-sc); font-size: 0.875rem; letter-spacing: 0.08em; padding: 0 8px; border-radius: 999px; background: var(--wax); color: var(--parchment); }
+.lib-tools { display: flex; gap: 8px; margin-left: auto; order: 9; }
+.lib-tool { min-height: 36px; padding: 2px 12px; font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.06em; color: var(--cream); background: var(--glass); border: 1px solid var(--brass-dim); border-radius: 999px; cursor: pointer; }
+.lib-tool[aria-pressed="true"] { color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
+.xp { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; flex-basis: 100%; font-family: var(--font-body); font-size: 1rem; color: var(--ink); }
+.xp a { color: var(--wax); font-weight: 600; }
+.xp-snap { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 6px 0 0; font-family: var(--font-body); font-size: 1rem; color: var(--l-text); }
+.xp-snap code { font-family: ui-monospace, Consolas, monospace; font-size: 1rem; }
+.ribbon { margin: 8px 0; padding: 10px 14px; background: var(--parchment-2); color: var(--ink); border-left: 4px solid var(--wax); border-radius: 0 6px 6px 0; }
+.ribbon summary { cursor: pointer; font-family: var(--font-sc); letter-spacing: 0.06em; font-size: 1.05rem; }
+.ribbon ul { margin: 6px 0 0; padding-left: 18px; font-size: 1rem; }
+.ribbon p { margin: 6px 0 0; font-size: 1rem; font-style: italic; }
+.plink .new-badge { margin-left: 6px; }
+@media (min-width: 1000px) and (min-height: 900px) {
+  .tn { gap: 20px; padding-top: 6px; }
+  .tn-card { padding: 20px 26px 22px; }
+  .tn-card h3 { font-size: 1.15rem; }
+  .tn-card p { font-size: 1.3rem; }
+  .tn-card .tn-big { font-size: var(--step-3); }
+  .tn-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .tn-actions .lib-btn { justify-content: center; min-height: 84px; font-size: 1.3rem; border-radius: 6px; background: var(--parchment); color: var(--ink); border: 2px solid var(--brass-dim); box-shadow: 0 6px 18px var(--shadow); }
+  .tn-actions .lib-btn.strong { background: var(--oak-3); color: var(--parchment); border-color: var(--brass); }
+}
 .wall { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
 .wall > li { display: grid; min-width: 0; }
 .wall > .t-five, .wall > .t-signups, .wall > .t-library { grid-column: span 2; }
@@ -1030,6 +1086,7 @@ main.has-beam { margin-top: 44px; }
         <span id="presence-text"></span>
         <div class="peers" id="peers"></div>
         <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Tilt light</button>
+        <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Tonight</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
         <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"></span>
       </div>
     </div>
@@ -1043,7 +1100,6 @@ main.has-beam { margin-top: 44px; }
       <span class="sr-only" id="clock-left"></span>
       <span class="clock-when" id="clock-when"></span>
       <span class="clock-launch" id="clock-launch"></span>
-      <span class="clock-hint" id="clock-hint" hidden>Tap any card to open it. Ask the library anything.</span>
     </a>
   </header>
 
@@ -1074,7 +1130,7 @@ main.has-beam { margin-top: 44px; }
         <span class="tile-body" id="ts-racials"><span class="loading">Reading the racials.</span></span>
       </a></li>
       <li class="t-legacy"><a class="tile" href="#legacy" data-scene="legacy" style="--i:5;--acc:var(--brass);--acc-glow:var(--hi-brass)" aria-labelledby="tt-legacy" aria-describedby="ts-legacy">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-legacy">Legacy</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-legacy">Account bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></span>
         <span class="tile-body" id="ts-legacy"><span class="loading">Counting points.</span></span>
       </a></li>
       <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:6;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)" aria-labelledby="tt-buffs" aria-describedby="ts-buffs">
@@ -1086,7 +1142,7 @@ main.has-beam { margin-top: 44px; }
         <span class="tile-body" id="ts-ledger"><span class="loading">Opening the ledger.</span></span>
       </a></li>
       <li class="t-librarian"><a class="tile" href="#librarian" data-scene="librarian" style="--i:8;--acc:var(--c-priest);--acc-glow:var(--hi-priest)" aria-labelledby="tt-librarian" aria-describedby="ts-librarian">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">The librarian</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">The helper bot</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
         <span class="tile-body" id="ts-librarian"><span class="loading">Asking the librarian.</span></span>
       </a></li>
     </ul>
@@ -1110,12 +1166,13 @@ main.has-beam { margin-top: 44px; }
         <button class="tab" type="button" role="tab" id="tab-five" data-tab="five" aria-controls="panel-five" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>The five</button>
         <button class="tab" type="button" role="tab" id="tab-roads" data-tab="roads" aria-controls="panel-roads" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Roads</button>
         <button class="tab" type="button" role="tab" id="tab-racials" data-tab="racials" aria-controls="panel-racials" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Racials</button>
-        <button class="tab" type="button" role="tab" id="tab-legacy" data-tab="legacy" aria-controls="panel-legacy" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Legacy</button>
+        <button class="tab" type="button" role="tab" id="tab-legacy" data-tab="legacy" aria-controls="panel-legacy" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Bonuses</button>
         <button class="tab" type="button" role="tab" id="tab-buffs" data-tab="buffs" aria-controls="panel-buffs" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Buffs</button>
         <button class="tab" type="button" role="tab" id="tab-ledger" data-tab="ledger" aria-controls="panel-ledger" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Ledger</button>
         <button class="tab" type="button" role="tab" id="tab-signups" data-tab="signups" aria-controls="panel-signups" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Sign-ups</button>
-        <button class="tab" type="button" role="tab" id="tab-librarian" data-tab="librarian" aria-controls="panel-librarian" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Librarian</button>
+        <button class="tab" type="button" role="tab" id="tab-librarian" data-tab="librarian" aria-controls="panel-librarian" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Helper bot</button>
         <button class="tab" type="button" role="tab" id="tab-library" data-tab="library" aria-controls="panel-library" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Library</button>
+        <button class="tab" type="button" role="tab" id="tab-tonight" data-tab="tonight" aria-controls="panel-tonight" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M15 3a8 8 0 1 0 6 12.5A6.5 6.5 0 0 1 15 3z"/></svg></span>Tonight</button>
         <span class="tab-ind" id="tab-ind" aria-hidden="true"></span>
       </div>
     </div>
@@ -1200,8 +1257,15 @@ main.has-beam { margin-top: 44px; }
         <div class="librarian" id="lib-box"></div>
         <div class="sources" id="lib-sources"></div>
       </div>
+      <div class="panel tn" role="tabpanel" id="panel-tonight" aria-labelledby="tab-tonight" tabindex="0" hidden>
+        <div class="tn-me" id="tn-me"></div>
+        <div class="tn-cards" id="tn-cards"></div>
+        <div class="tn-actions" id="tn-actions"></div>
+        <p class="tn-left" id="tn-left"></p>
+      </div>
       <div class="panel lib" role="tabpanel" id="panel-library" aria-labelledby="tab-library" tabindex="0" hidden>
         <div class="lib-bar" role="search" aria-label="Library search">
+          <div class="lib-tools"><button class="lib-tool" id="lib-expert" type="button" aria-pressed="false" title="Show each source's kind, build, full read date and a Verify link">Expert: off</button><button class="lib-tool" id="lib-forget" type="button" title="Clear what this board remembers in this browser: your name, where you were, what you have seen">Forget me</button></div>
           <label class="sr-only" for="lib-q">Search the library</label>
           <input class="lib-q" id="lib-q" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Search every page, for example onyxia open">
           <div class="lib-examples" id="lib-examples" aria-label="Example searches"></div>
@@ -1293,6 +1357,12 @@ function eventWhen(e) {
 }
 
 const D = {};
+/* The data files start loading as soon as this script runs, while the rest of the page parses and the gate decides
+   (V6-SPEC 3.3: Tonight paints in under 1.0 s on the 4x throttle). Relative loads only. */
+const DATA_NAMES = ["party", "timeline", "client", "stats"];
+const dataGet = (n) => fetch(`data/${n}.json`, { cache: "no-store" });
+const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })), opt: ["signups", "tonight"].map((n) => dataGet(n).then((r) => (r.ok ? r.json() : null)).catch(() => null)) };
+DATA_P.need.forEach((p) => p.catch(() => {}));
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
 function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
@@ -1308,7 +1378,7 @@ function launchLine() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "The party of five", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points for finishing challenges, spent on rewards", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "How the group's helper bot answers", library: "Every fact, searchable" };
+const SUBTITLE = { timeline: "Dates and countdown", five: "The party of five", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Legacy: points from challenges", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "The librarian: our Discord bot", library: "Every fact, searchable" };
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -1720,11 +1790,12 @@ function renderWheel() {
       s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y + 44, text: m.name }), s("text", { x, y: y + 60, style: "font-size:16.5px;fill:var(--l-text)", text: m.class }));
     svg.append(g); return g;
   });
-  const items = D.client.synergy.map((b) => {
+  const meKey = (MEM.member() || {}).class_key;
+  const items = [...D.client.synergy].sort((a, b) => (b.from === meKey) - (a.from === meKey)).map((b) => {
     const nums = b.refs.filter((r) => r.kind === "client").map((r) => `${fmtVal(r)} (${r.name})`).join(" · ");
     const src = b.refs.filter((r) => r.kind !== "client").map((r) => h("div", { class: "buff-src" }, r.kind === "memory" ? h("span", { class: "chip memory", text: "from memory" }) : h("span", { class: "chip board", text: "wiki" }), " ", r.text));
     const giver = memberByKey(b.from), to = b.to.filter((k) => k !== b.from).map((k) => (memberByKey(k) || {}).name).filter(Boolean);
-    return h("li", { class: "buff", style: `--bc: ${classVar(b.from)}`, "data-from": b.from },
+    return h("li", { class: `buff${b.from === meKey ? " me" : ""}`, style: `--bc: ${classVar(b.from)}`, "data-from": b.from },
       h("div", { class: "buff-what" }, `${giver ? giver.class : b.from} brings ${b.what} (${b.lands_on})`),
       h("div", { class: "label", text: `${giver ? `${giver.name} · ` : ""}reaches ${b.to.includes(b.from) ? "everyone" : to.join(", ")}` }),
       nums ? h("div", { class: "buff-nums", text: nums }) : null, src);
@@ -1988,7 +2059,9 @@ function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
   if (!S) { body.replaceChildren(h("p", { text: "The Discord sign-ups did not load." })); $("#dsu-stamp").textContent = ""; return; }
   const T = S.tallies;
-  const row = (slot, label, extra) => h("div", { class: "trow" }, h("b", { "data-n": slot.count, text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || slot.names.map(cleanName).join(", ")) : "nobody yet");
+  const meName = (MEM.member() || {}).name;
+  const mineFirst = (names) => names.map(cleanName).sort((a, b) => (b.toLowerCase() === String(meName).toLowerCase()) - (a.toLowerCase() === String(meName).toLowerCase()));
+  const row = (slot, label, extra) => h("div", { class: "trow" }, h("b", { "data-n": slot.count, text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || mineFirst(slot.names).join(", ")) : "nobody yet");
   const groups = [
     ["Pack", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
@@ -2033,20 +2106,23 @@ async function startRuntime() {
   }, (err) => { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus(err && err.code === "revoked" ? "Sign-ups are read-only now." : "Sign-ups stopped updating. Reload the board to see the latest."); });
 }
 
-const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library"];
-const TITLES = { timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Legacy", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The librarian", library: "The library" };
+const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight"];
+const TITLES = { tonight: "Tonight", timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Account bonuses", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The helper bot", library: "The library" };
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
 const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
-const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : null; };
+const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
   try { if (push) history.pushState({ boardScene: key }, "", url); else history.replaceState(key ? { boardScene: key } : null, "", url); return true; } catch (e) { return false; }
 }
 function replay(el, cls) { if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
 function selectPanel(key, crossFade) {
+  MEM.set("depth", key === "tonight" ? "tonight" : key === "library" ? "library" : "wall");
+  MEM.seen(key);
+  markDepth();
   const prev = SC.open; SC.open = key;
   $("#sheet-title").textContent = TITLES[key];
   $("#sheet-sub").textContent = SUBTITLE[key] || "";
@@ -2077,7 +2153,7 @@ function selectPanel(key, crossFade) {
   moveInd(); markBar(key);
 }
 function moveInd() { const t = SC.open && $(`#tab-${SC.open}`), ind = $("#tab-ind"); if (t && ind) ind.style.transform = `translateX(${t.offsetLeft}px) scaleX(${Math.max(1, t.offsetWidth)})`; }
-const BAR = ["timeline", "five", "roads", "signups"], MORE = SCENES.filter((k) => !BAR.includes(k));
+const BAR = ["tonight", "five", "signups"], MORE = SCENES.filter((k) => !BAR.includes(k));
 const BAR_LABEL = { five: "Five" };
 function markBar(key) { document.querySelectorAll("#bottombar [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === key || (b.dataset.go === "search" && key === "library") || (b.dataset.go === "more" && MORE.includes(key) && key !== "library")))); }
 function startBar() {
@@ -2193,6 +2269,7 @@ const tileFocus = (t) => { const f = t.matches("a, button") ? t : t.querySelecto
 function hideScene() {
   if (SC.want) { SC.want = null; return; }
   if (SC.open === null) return;
+  MEM.set("depth", "wall"); markDepth();
   const layer = $("#scene"), key = SC.open, token = ++SC.token;
   SC.open = null;
   const tile = document.querySelector(`#board [data-scene="${key}"]`);
@@ -2247,7 +2324,7 @@ function trapFocus(e) {
 function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
-    const rows = [...SCENES.map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
+    const rows = [...SCENES.filter((k) => k !== "tonight").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["T", "open Tonight"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
     $("#keys-list").replaceChildren(...rows.flatMap(([k, what]) => [h("dt", {}, h("kbd", { text: k })), h("dd", { text: what })]));
   }
   box.hidden = !on;
@@ -2266,12 +2343,20 @@ function onKey(e) {
   if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || t.isContentEditable) return;
   if (e.key === "?") { e.preventDefault(); showKeys($("#keys").hidden); return; }
   if (e.key === "m" || e.key === "M") { e.preventDefault(); setSound(!AU.on); return; }
+  if (e.key === "t" || e.key === "T") { e.preventDefault(); goScene("tonight"); return; }
   if (e.key === "/") { e.preventDefault(); LIBUI.focusSearch(); return; }
   if (/^[0-9]$/.test(e.key)) { const k = SCENES[(Number(e.key) + 9) % 10]; if (k) { e.preventDefault(); goScene(k); } return; }
   if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && SC.open !== null && !(t.closest && t.closest("#tabs, .cards, .opts"))) { e.preventDefault(); stepTab(e.key === "ArrowRight" ? 1 : -1); }
 }
 let closeMore = () => false;
-function route() { const key = sceneFromHash(); if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene(); }
+function route() {
+  const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
+  const tm = raw.match(/^tonight\.([a-z0-9-]{1,40})$/); if (tm && MEM.setMe(tm[1]) && D.party) { renderTonight(); markMe(); }
+  /* #wall: the wall at its top (the token names the <ul id="wall">, so the browser would scroll to it). */
+  if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); }
+  const key = sceneFromHash();
+  if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
+}
 function startScenes() {
   $("#board").addEventListener("click", (e) => {
     if (e.target.closest && e.target.closest(".tile-search")) return;
@@ -2320,11 +2405,11 @@ function placeIcon(key) {
 }
 function startEmblems() {
   for (const key of SCENES) {
-    const g = document.querySelector(`#board [data-scene="${key}"] .emblem-slot .emblem`);
+    const g = document.querySelector(`#board [data-scene="${key}"] .emblem-slot .emblem`) || document.querySelector(`#tab-${key} .emblem`);
     if (g) GLYPHS[key] = g.cloneNode(true);
     const tab = $(`#tab-${key} .tab-ico`);
     if (tab && GLYPHS[key]) tab.replaceChildren(GLYPHS[key].cloneNode(true));
-    if (key === "library") continue; /* no painted icon for the library yet: the drawn glyph stays, and no request 404s */
+    if (key === "library" || key === "tonight") continue; /* no painted icon for the library yet: the drawn glyph stays, and no request 404s */
     const im = new Image();
     im.onload = () => { ICONS[key] = true; placeIcon(key); };
     im.src = `img/icons/${key}.png`;
@@ -2869,6 +2954,37 @@ function libGo(v, from) {
 }
 
 const libSrc = (r) => h("a", { class: `src t${r.tier}`, href: r.url, target: "_blank", rel: "noopener noreferrer", title: `${r.label}, ${r.host}` }, h("span", { class: "src-l", text: r.label }), h("span", { "aria-hidden": "true", text: "·" }), h("span", { class: "src-h", text: r.host }));
+const TIER_WORD = ["client table", "Blizzard", "guide or wiki", "forum or datamine"];
+const dtRead = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+const libExpert = () => MEM.get("expert") === "1";
+const libXp = (refs) => h("span", { class: "xp" }, refs.map((r) => {
+  const b = (String(r.url).match(/build=[\d.]*?(\d{5,})/) || [])[1];
+  return h("span", {}, h("b", { text: `${r.id} ${r.host}` }), `: ${TIER_WORD[r.tier] || "source"} (tier ${r.tier})`, b ? `, build ${b}` : "", r.accessed ? `, read ${dtRead.format(new Date(`${r.accessed}T12:00:00Z`))} ` : " ", h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer", "aria-label": `Verify at ${r.host}` }, "Verify"));
+}));
+let DIFF = null;
+const libDiff = () => DIFF || (DIFF = fetch("data/library/diff.json").then((r) => (r.ok ? r.json() : null)).catch(() => null));
+/* owners: null for the shelf (every owner), or the page: a class page takes its class, a race page every racial its text names. */
+function libRibbon(page) {
+  const box = h("div", { class: "ribbon-slot" });
+  libDiff().then((d) => {
+    if (!d) return;
+    const cap = (x) => x.charAt(0).toUpperCase() + x.slice(1);
+    const text = page ? page.facts.map((f) => `${f.key} ${f.value}`).join(" ").toLowerCase() : "";
+    const owners = !page ? null : page.category === "classes" ? [cap(page.id.split("/")[1].split("-")[0])] : d.summary.map((s) => s.owner).filter((o) => o.startsWith("Racial: ") && text.includes(o.slice(8).toLowerCase()));
+    if (owners && !owners.length) return;
+    const short = (b) => b.split(".").pop();
+    const rows = owners ? d.rows.filter((r) => owners.includes(r.owner)) : [];
+    const sum = owners ? d.summary.filter((s) => owners.includes(s.owner)) : d.summary;
+    const n = sum.reduce((a, s) => a + s.changed + s.added + s.removed, 0);
+    if (!n) return;
+    box.replaceChildren(h("details", { class: "ribbon" },
+      h("summary", { text: `Changed since build ${short(d.from)}: ${plural(n, "spell row", "spell rows")} in build ${short(d.to)}` }),
+      owners ? h("ul", {}, rows.map((r) => h("li", {}, h("b", { text: r.name }), ` (spell ${r.spell}, ${r.kind}): ${r.change}`)))
+        : h("ul", {}, sum.filter((s) => s.changed + s.added + s.removed).map((s) => h("li", { text: `${s.owner}: ${s.changed} changed, ${s.added} added, ${s.removed} removed` }))),
+      h("p", { text: `Source: ${d.source}.` })));
+  });
+  return box;
+}
 const libRead = (refs) => { const d = refs.map((r) => r.accessed).filter(Boolean).sort().pop(); return d ? h("span", { class: "read", text: `read ${libDay(d)}` }) : null; };
 const libKey = (k) => k.replace(/_/g, " ").split(".").join(" · ");
 /* A fact that is only an ISO date reads as a date; the ISO text stays beside it. */
@@ -2913,10 +3029,12 @@ function libRenderShelf(main) {
     const pages = ix.pages.filter((p) => p.category === c.key), wide = !!LIBS.cat;
     return h("section", { class: `scroll${wide ? " wide" : ""}`, "aria-label": c.title },
       h("div", { class: "scroll-end" }, h("h3", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")}, ${plural(c.facts, "fact", "facts")}` })),
-      h("ul", {}, pages.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: nf.format(p.facts) }), wide && p.blurb ? h("span", { text: p.blurb }) : null])))));
+      h("ul", {}, pages.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: nf.format(p.facts) }), isNewPage(p) ? h("span", { class: "new-badge", text: "New" }) : null, wide && p.blurb ? h("span", { text: p.blurb }) : null])))));
   };
+  const seen = MEM.seenMap(), isNewPage = (p) => { const t = seen[`page:${p.id}`], d = p.checked || p.as_of; return !!t && !!d && Date.parse(`${d}T23:59:59Z`) > t; };
   const kids = [];
   if (!LIBS.cat && typeof libFront === "function") kids.push(libFront());
+  if (!LIBS.cat && libExpert()) kids.push(libRibbon(null));
   kids.push(h("h3", { class: "lib-title", text: LIBS.cat ? libCatTitle(LIBS.cat) : "The shelves" }), h("div", { class: "shelf" }, cats.map(card)));
   main.replaceChildren(...kids.filter(Boolean));
 }
@@ -2948,6 +3066,11 @@ function libRenderResults(main) {
         x.refs.length ? h("span", { class: "hit-meta" }, x.refs.map(libSrc), libRead(x.refs)) : null)))));
   }
   LIBS.rows = rows;
+  const defOnly = !!libGlossFor(String(v.q).trim().toLowerCase()) && LIBS.allFor !== v.q;
+  if (defOnly) {
+    main.replaceChildren(libAnswer(v.q, hits[0]), h("button", { class: "lib-btn", type: "button", onclick: () => { LIBS.allFor = v.q; libRender(); } }, `Show ${plural(hits.length, "match", "matches")} in the game's own words`), h("div", { class: "lib-row" }, linkChip(v), askChip(v.q, "Ask Leeroy this")));
+    return;
+  }
   const kids = [libAnswer(v.q, hits[0]), h("p", { class: "lib-sub", text: "Every match, grouped by page, best first." }), h("div", { class: "groups" }, groups)];
   if (hits.length > rows) kids.push(h("button", { class: "lib-btn more-hits", type: "button", onclick: () => { LIBS.shown += LIB_CAP; libRender(); } }, `Show ${Math.min(LIB_CAP, hits.length - rows)} more`));
   kids.push(h("div", { class: "lib-row" }, linkChip(v), askChip(v.q, "Ask Leeroy this")));
@@ -2958,7 +3081,7 @@ function libAnswer(q, best) {
   const T = LIBD.tips, key = String(q).trim().toLowerCase();
   const ti = T && !TT_SKIP.has(key) ? T.names[key] : undefined;
   const g = libGlossFor(key);
-  if (g) return h("section", { class: "answer", "aria-label": "Best answer" }, h("span", { class: "answer-k", text: "In plain words" }), h("p", { class: "answer-v" }, h("b", { text: `${g.term}: ` }), g.def), h("span", { class: "lib-sub", text: "From the board's glossary. The matches below show it in use." }));
+  if (g) return h("section", { class: "answer", "aria-label": "Best answer" }, h("span", { class: "answer-k", text: "In plain words" }), h("p", { class: "answer-v" }, h("b", { text: `${g.term}: ` }), g.def), h("span", { class: "lib-sub", text: "From the board's glossary." }));
   if (ti !== undefined) return h("section", { class: "answer", "aria-label": "Best answer" }, h("span", { class: "answer-k", text: "From the game's tooltip" }), h("div", { class: "ttc static", "data-static": "1" }, ttCard(ti)));
   return h("section", { class: "answer", "aria-label": "Best answer" },
     h("span", { class: "answer-k" }, "Best answer, from ", pageLink(best.page, "", best.title)),
@@ -3005,10 +3128,12 @@ async function libRenderPage(v, tok, fresh) {
   if (!LIBD.full[v.id]) { main.replaceChildren(back, h("p", { class: "loading", text: `Taking ${head.title} off the shelf.` })); try { await libCat(head.category); } catch (e) { if (tok === LIBS.token) main.replaceChildren(back, h("p", { text: "That shelf did not load." })); return; } }
   if (tok !== LIBS.token) return;
   const p = LIBD.full[v.id];
+  const xp = libExpert(), hostOf = {};
+  for (const f of p.facts) for (const r of f.refs) hostOf[r.id] = r.host;
   const SEAL = { confirmed: "--seal-confirmed", likely: "--seal-likely", speculative: "--seal-speculative", "classic-baseline": "--seal-baseline" };
   const facts = h("dl", { class: "facts" }, p.facts.map((f, i) => h("div", { class: "lf", "data-key": f.key, style: `--di: ${Math.min(i, 14)}` },
     h("dt", { text: libKey(f.key) }),
-    h("dd", {}, ...libValue(f.value), f.refs.length ? h("span", { class: "hit-meta" }, f.refs.map(libSrc), libRead(f.refs)) : null))));
+    h("dd", {}, ...libValue(f.value), f.refs.length ? h("span", { class: "hit-meta" }, f.refs.map(libSrc), libRead(f.refs), xp ? libXp(f.refs) : null) : null))));
   const hist = p.history || [];
   const histLi = (x) => h("li", {}, h("time", { datetime: x.date || "", text: libDay(x.date) }), h("span", { text: x.text }));
   const page = h("article", { class: "lib-page", "aria-labelledby": "lib-page-title" },
@@ -3020,7 +3145,9 @@ async function libRenderPage(v, tok, fresh) {
         p.checked ? h("span", {}, "checked ", h("b", { text: libDay(p.checked) })) : null,
         h("span", { class: "wax", style: `--sc: var(${SEAL[p.confidence] || "--wax"})` }, h("i", { "aria-hidden": "true" }), h("b", { text: p.confidence || "unrated" })),
         p.status ? h("span", { text: p.status.replace(/-/g, " ") }) : null),
+      xp ? h("p", { class: "xp-snap" }, h("span", { text: `${p.recheck_days ? `Sources re-read every ${plural(p.recheck_days, "day", "days")}` : "No re-read interval"}. Saved copies, first 8 characters of each sha256:` }), ...(p.snapshots || []).map((s) => h("span", {}, `${s.id} ${s.host || hostOf[s.id] || ""} `, s.sha8 ? h("code", { text: s.sha8 }) : "no copy yet"))) : null,
       h("div", { class: "lib-row" }, linkChip(v), askChip(p.title, `Ask Leeroy about ${p.title}`))),
+    xp && (p.category === "classes" || p.category === "races") ? libRibbon(p) : null,
     p.blurb ? h("p", { class: "blurb", text: p.blurb }) : null,
     h("h4", { class: "lib-h", text: "Facts" }), facts,
     p.open.length ? h("div", { class: "unknown" }, h("h4", {}, h("span", { class: "pend", "aria-hidden": "true" }), "Nobody knows yet"), h("ul", {}, p.open.map((o) => h("li", {}, ...richText(o))))) : null,
@@ -3028,6 +3155,8 @@ async function libRenderPage(v, tok, fresh) {
     hist.length ? h("div", {}, h("h4", { class: "lib-h", text: "History" }), h("ol", { class: "hist" }, hist.slice(0, 5).map(histLi)),
       hist.length > 5 ? h("details", { class: "hist-more" }, h("summary", { text: `${plural(hist.length - 5, "older entry", "older entries")}` }), h("ol", { class: "hist" }, hist.slice(5).map(histLi))) : null) : null);
   main.replaceChildren(back, page);
+  MEM.seen(`page:${v.id}`);
+  try { MEM.set("left", JSON.stringify({ tok: libTok(v), title: p.title })); } catch (e) {}
   if (fresh) { sfx("flip"); if (!reduceMQ.matches) { page.classList.add("revealing"); setTimeout(() => page.classList.remove("revealing"), MOTION.move + MOTION.stagger * 15); } }
   const body = $("#sheet-body");
   const row = v.fact && page.querySelector(`.lf[data-key="${v.fact.replace(/[^a-z0-9_.]/g, "")}"]`);
@@ -3352,9 +3481,71 @@ const LAUNCH_LIB = /^library(?:\.(?:q\.[a-z0-9][a-z0-9.-]{0,90}|open|changes|c\.
 function launchToken(raw) {
   const t = typeof raw === "string" ? raw.trim() : "";
   if (!t || t.length > 100 || !/^[A-Za-z0-9._~-]+$/.test(t)) return null;
-  return SCENES.includes(t) || LAUNCH_LIB.test(t) ? t : null;
+  return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) ? t : null;
+}
+/* Memory (V6-SPEC 3.1): browser only, never sent. Depth, the picked person, last-seen stamps, where you left off, expert. */
+const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert"];
+const MEM = {
+  get: (k) => { try { return localStorage.getItem(`board-${k}`); } catch (e) { return null; } },
+  set: (k, v) => { try { if (v === null) localStorage.removeItem(`board-${k}`); else localStorage.setItem(`board-${k}`, v); } catch (e) {} },
+  slug: (n) => String(n).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+  me: () => MEM.get("me"),
+  member: () => { const m = MEM.me(); return m && m !== "just-looking" && D.party ? D.party.members.find((x) => MEM.slug(x.name) === m) || null : null; },
+  setMe: (slug) => { const ok = slug === "just-looking" || (D.party ? D.party.members.some((x) => MEM.slug(x.name) === slug) : /^[a-z0-9-]{1,40}$/.test(slug)); if (ok) MEM.set("me", slug); return ok; },
+  seenMap: () => { try { return JSON.parse(MEM.get("seen") || "{}"); } catch (e) { return {}; } },
+  seen: (k) => { const m = MEM.seenMap(); m[k] = Date.now(); MEM.set("seen", JSON.stringify(m)); },
+  forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } },
+};
+function tonightNext(T) { const now = Date.now() / 1000; const ts = (e) => (e.epoch !== null ? e.epoch : Date.parse(`${e.date}T23:59:59Z`) / 1000); return T.events.find((e) => ts(e) > now) || T.events[T.events.length - 1]; }
+function renderTonight() {
+  const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
+  const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
+  const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); } catch (e) {} };
+  if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, m.name)), h("button", { type: "button", class: "tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
+  else meBox.replaceChildren(h("button", { type: "button", class: "tn-chip", "aria-label": `${T.labels.iam} ${member ? `${member.name}, ${member.race} ${member.class}` : T.labels.looking}: change`, onclick: () => { MEM.set("me", null); renderTonight(); markMe(); } }, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking));
+  const ev = tonightNext(T);
+  const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
+  const S = D.signups, entries = S && S.entries ? S.entries : [];
+  const mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
+  const step = !me ? T.steps.looking : !member ? T.steps.none : person && person.step ? person.step : mine ? T.steps.none : T.steps.signup;
+  const who = (k) => entries.filter((e) => e.rsvp === k && e !== mine).map((e) => cleanName(e.name));
+  const line = (label, names) => h("p", { class: "tn-line" }, h("b", { text: `${label}: ` }), ...names.flatMap((n, i) => [i ? ", " : null, h("span", { class: "tn-n", text: n })]).filter(Boolean));
+  const groups = [["in", T.labels.in], ["maybe", T.labels.maybe], ["out", T.labels.out]].map(([k, l]) => [l, who(k)]).filter(([, n]) => n.length);
+  const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
+  box.replaceChildren(
+    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch }) : null),
+    card(T.cards[1], h("p", { class: "tn-big", text: step })),
+    card(T.cards[2], mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null));
+  act.replaceChildren(h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]));
+  const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
+  $("#tn-left").replaceChildren(...(left ? ["Last time you read ", h("a", { href: `#${left.tok}`, text: left.title }), " in the library."] : []));
+}
+/* The picked person's tile and medallion stand out. */
+function markMe() {
+  const m = MEM.member();
+  document.querySelectorAll("#ts-five .med").forEach((x) => x.classList.toggle("me", !!m && x.dataset.k === m.class_key));
+  const chip = $("#depth"); if (chip) chip.dataset.me = m ? m.name : "";
+}
+function markDepth() { const d = MEM.get("depth") || "wall"; document.querySelectorAll("#depth [data-depth]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.depth === d))); }
+function startDepth() {
+  const xb = $("#lib-expert"), fb = $("#lib-forget");
+  const xpLabel = (on) => { xb.setAttribute("aria-pressed", String(on)); xb.textContent = on ? "Expert: on" : "Expert: off"; };
+  if (xb) { xpLabel(libExpert()); xb.addEventListener("click", () => { const on = !libExpert(); MEM.set("expert", on ? "1" : null); xpLabel(on); libRender(false); }); }
+  if (fb) fb.addEventListener("click", () => { MEM.forget(); if (xb) xpLabel(false); renderTonight(); markMe(); markDepth(); document.querySelectorAll(".new-badge").forEach((x) => x.remove()); libRender(false); fb.textContent = "Forgotten"; setTimeout(() => { fb.textContent = "Forget me"; }, 2400); });
+  const nav = $("#depth"); if (!nav) return;
+  markDepth();
+  nav.addEventListener("click", (e) => { const b = e.target.closest("[data-depth]"); if (!b) return; const d = b.dataset.depth; if (d === "wall") { MEM.set("depth", "wall"); requestClose(); markDepth(); } else goScene(d); });
+}
+function whenOffTonight(f) { if (SC.open !== "tonight" && SC.want !== "tonight") { f(); return; } let done = false; sceneHooks.push(() => setTimeout(() => { if (!done && SC.open !== "tonight") { done = true; f(); } }, 0)); }
+/* "New" since the last look: the sign-ups (their own change stamp) and the library (its newest change). */
+function markNew() {
+  const seen = MEM.seenMap();
+  const badge = (k, stamp) => { const t = document.querySelector(`#board [data-scene="${k}"] .tile-title`); if (!t || !seen[k] || !stamp || Date.parse(stamp) <= seen[k] || t.parentNode.querySelector(".new-badge")) return; t.parentNode.insertBefore(h("span", { class: "new-badge", text: "New" }), t.nextSibling); };
+  if (D.signups) badge("signups", D.signups.updated);
+  whenOffTonight(() => libIndex().then((ix) => { if (ix && ix.changes[0]) badge("library", `${ix.changes[0].date}T23:59:59Z`); }).catch(() => {}));
 }
 async function boot(mode, sdk) {
+  try { performance.mark("board-boot"); } catch (e) {}
   $("#gate").hidden = true;
   $("#board").hidden = false;
   $("#hero-art").classList.remove("gate-mode");
@@ -3366,16 +3557,15 @@ async function boot(mode, sdk) {
   startParallax();
   startScenes();
   startSubtitles();
-  startFirstHint();
   startMiniClock();
   (window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => startLight(), { timeout: 1200 });
   startSound();
   try { setBuffView(localStorage.getItem("board-buff-view") === "list" ? "list" : "wheel"); } catch (e) { setBuffView("wheel"); }
   try {
-    const names = ["party", "timeline", "client", "stats"];
-    const got = await Promise.all(names.map((n) => fetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })));
-    names.forEach((n, i) => { D[n] = got[i]; });
-    D.signups = await fetch("data/signups.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const got = await Promise.all(DATA_P.need);
+    DATA_NAMES.forEach((n, i) => { D[n] = got[i]; });
+    [D.signups, D.tonight] = await Promise.all(DATA_P.opt);
+    try { performance.mark("board-data"); } catch (e) {}
   } catch (e) {
     setClockLabel("The data files did not load", "");
     $("#footer").textContent = `Could not read the board's data: ${e.message}. The page needs its data folder published beside it.`;
@@ -3383,12 +3573,20 @@ async function boot(mode, sdk) {
     route();
     return;
   }
-  const steps = [renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
+  if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }
+  /* No hash: open at the depth the person left at; a first visit opens Tonight (V6-SPEC 3.1). */
+  if (!location.hash || location.hash === "#") { const d = MEM.get("depth") || "tonight"; if (d === "tonight" || d === "library") setHash(d, false); }
+  /* Tonight paints first (V6-SPEC 3.3: under 1.0 s on the 4x throttle): its cards and the scene open before the wall renders. */
+  const early = sceneFromHash() === "tonight";
+  for (const step of [renderTonight, markMe]) { try { step(); } catch (e) { console.error(step.name, e); } }
+  if (early) { route(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
+  const steps = [markMe, renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
   for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
   try { startArt(); } catch (e) { console.error(e); }
-  (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 });
-  if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }
-  route();
+  /* The library's files wait until the person leaves Tonight: Tonight loads no library file. */
+  whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
+  if (!early) route();
+  markNew(); startDepth();
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = "Opens inside Discord";
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
