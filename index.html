@@ -27,7 +27,8 @@
 @font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sans-sc-500-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Alegreya Sans SC"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/alegreya-sans-sc-700-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 700; font-display: swap; src: url("fonts/grenze-gotisch-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-/* Layout: a night tavern wall. Dark oak ground, parchment slips pinned on it, the five class colors as the only light sources. One column on phones, a two-up grid from tablet width. */
+/* Layout (v2, the tavern wall): the painting is a fixed backdrop, a dashboard of pinned tiles sits on it, and each tile opens
+   its scene in a sheet that slides up over the wall. Dark oak ground, parchment slips, the five class colors as the light. */
 :root {
   color-scheme: dark;
   --oak-0: #120c08;
@@ -58,14 +59,29 @@
   --seg-4: #b58f6a;
   --seg-5: #d9c08a;
   --seg-6: #6c5236;
+  --tile-face: #2e2016;
+  --tile-face-2: #1d140d;
+  --sheet-bg: #17100a;
   --shadow: rgba(0, 0, 0, 0.55);
   --glass: rgba(18, 12, 8, 0.72);
+  --veil: rgba(8, 5, 3, 0.74);
   --glow-brass: rgba(209, 168, 90, 0.10);
   --grain-line: rgba(74, 50, 32, 0.18);
   --slip-burn: rgba(120, 90, 50, 0.25);
   --slip-sheen: rgba(255, 255, 255, 0.35);
   --glow-mage: rgba(63, 199, 235, 0.25);
   --glow-paladin: rgba(244, 140, 186, 0.15);
+  --hi-brass: rgba(209, 168, 90, 0.34);
+  --hi-mage: rgba(63, 199, 235, 0.32);
+  --hi-druid: rgba(255, 124, 10, 0.32);
+  --hi-paladin: rgba(244, 140, 186, 0.32);
+  --hi-warlock: rgba(135, 136, 238, 0.34);
+  --hi-priest: rgba(255, 255, 255, 0.24);
+  --hi-wax: rgba(200, 70, 58, 0.36);
+  --hi-ok: rgba(143, 201, 122, 0.32);
+  --candle: rgba(255, 168, 82, 0.22);
+  --candle-soft: rgba(255, 150, 60, 0.12);
+  --vignette: rgba(0, 0, 0, 0.62);
   --edge-dark: rgba(0, 0, 0, 0.4);
   --edge-light: rgba(255, 255, 255, 0.04);
   --hover-tint: rgba(255, 255, 255, 0.06);
@@ -84,11 +100,18 @@
   --step-1: 1.3rem;
   --step-2: 1.75rem;
   --step-3: 2.4rem;
-  --step-4: clamp(2.6rem, 8vw, 4.6rem);
+  --step-4: clamp(2.1rem, 7vw, 3.8rem);
+  --iron: #2f2b27;
+  --iron-hi: #9a9086;
+  --emblem-shade: rgba(150, 80, 20, 0.55);
+  --ink-wash: rgba(43, 29, 16, 0.16);
+  --ink-line: rgba(43, 29, 16, 0.6);
   --radius: 6px;
   --measure: 65ch;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 html { background: var(--oak-0); }
+html.scene-open, html.scene-open body { overflow: hidden; }
 body {
   margin: 0;
   background: var(--oak-0);
@@ -102,30 +125,32 @@ body {
   line-height: 1.55;
   overflow-x: hidden;
 }
-/* Layers: the tavern painting (z 0) sits under the wisps canvas (z 1), which sits under the content (z 2). */
-.hero-art { position: absolute; top: 0; left: 0; right: 0; height: 44rem; z-index: 0; overflow: hidden; pointer-events: none; }
-.hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: 62% 38%; display: block; max-width: none; }
+/* Layers: the painting (z 0, fixed) and the candle vignette over it, the wisps canvas (z 1), the board (z 2), the scene sheet (z 20). */
+.hero-art { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.hero-art img { position: absolute; top: -16px; left: -16px; width: calc(100% + 32px); height: calc(100% + 32px); object-fit: cover; object-position: 62% 38%; display: block; max-width: none; transition: transform 700ms var(--ease-out); }
 .hero-art::after { content: ""; position: absolute; inset: 0; background:
-  linear-gradient(90deg, var(--shade-deep) 0%, var(--shade-mid) 34%, var(--shade-light) 62%, var(--shade-light) 100%),
-  linear-gradient(180deg, var(--shade-none) 55%, var(--oak-0) 100%); }
+  linear-gradient(90deg, var(--shade-mid) 0%, var(--shade-light) 45%, var(--shade-mid) 100%),
+  linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 30%, var(--shade-mid) 75%, var(--shade-deep) 100%); }
 .hero-art.gate-mode::after { background: linear-gradient(180deg, var(--shade-mid), var(--shade-deep) 85%, var(--oak-0)); }
 @media (max-width: 700px) {
   .hero-art img { object-position: 12% 40%; }
-  .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-mid) 60%, var(--oak-0) 100%); }
+  .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-mid) 60%, var(--shade-deep) 100%); }
 }
+.candle { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse 70% 60% at 14% 26%, var(--candle), transparent 70%), radial-gradient(ellipse at 50% 45%, transparent 48%, var(--vignette) 100%);
+  animation: candle 5.2s ease-in-out infinite; }
+/* Candlelight: opacity only, between 0.92 and 1 (amplitude 8%). */
+@keyframes candle { 0% { opacity: 1; } 14% { opacity: 0.94; } 27% { opacity: 0.985; } 41% { opacity: 0.92; } 55% { opacity: 0.975; } 68% { opacity: 0.935; } 84% { opacity: 0.99; } 100% { opacity: 1; } }
 #wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
-.plate-zone { position: relative; isolation: isolate; display: grid; gap: 40px; padding-block: 8px; }
-.plate-art { position: absolute; inset: -24px calc(-1 * max(16px, env(safe-area-inset-left, 0px))); z-index: -1; overflow: hidden; pointer-events: none;
-  -webkit-mask-image: linear-gradient(180deg, transparent, var(--mask-solid) 12%, var(--mask-solid) 88%, transparent); mask-image: linear-gradient(180deg, transparent, var(--mask-solid) 12%, var(--mask-solid) 88%, transparent); }
-.plate-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 40%; opacity: 0.2; display: block; max-width: none; }
-@media print { #wisps, .hero-art, .plate-art { display: none !important; } }
+@media print { #wisps, .hero-art, .candle, .scene-layer { display: none !important; } }
 .wrap {
-  position: relative; z-index: 2;
-  max-width: 1160px; margin: 0 auto;
+  position: relative; z-index: 2; box-sizing: border-box;
+  max-width: 1600px; margin: 0 auto; min-height: 100vh; min-height: 100svh;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-block: 28px 48px;
-  display: grid; gap: 40px;
+  padding-top: max(18px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: 16px;
 }
 h1, h2, h3 { font-family: var(--font-display); font-weight: 700; text-wrap: balance; margin: 0; line-height: 1.05; }
 h2 { font-size: var(--step-3); color: var(--parchment); }
@@ -134,6 +159,7 @@ p { margin: 0; max-width: var(--measure); }
 a { color: var(--brass); text-underline-offset: 3px; }
 a:hover { color: var(--parchment); }
 :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .label { font-family: var(--font-ui); font-size: var(--step--1); letter-spacing: 0.08em; color: var(--text-dim); }
 .num { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; }
 .chip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--font-ui); font-size: 0.78rem; letter-spacing: 0.06em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--brass-dim); color: var(--text-dim); white-space: nowrap; }
@@ -141,11 +167,6 @@ a:hover { color: var(--parchment); }
 .chip.chat { border-style: dashed; }
 .chip.new { border-color: var(--warn); color: var(--warn); }
 .chip.memory { border-style: dashed; border-color: var(--c-none); }
-section { display: grid; gap: 18px; min-width: 0; align-content: start; }
-.section-head { display: grid; gap: 6px; align-content: start; }
-.section-head p { color: var(--text-dim); }
-.two { display: grid; gap: 40px; grid-template-columns: 1fr; }
-@media (min-width: 900px) { .two { grid-template-columns: 1fr 1fr; } }
 .slip {
   position: relative; background: var(--parchment); color: var(--ink);
   border-radius: 3px; padding: 22px 20px 20px;
@@ -158,43 +179,229 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .slip .label { color: var(--ink-soft); }
 .slip a { color: var(--wax); }
 .slip a:hover { color: var(--ink); }
-
-/* hero */
-.hero { display: grid; gap: 22px; padding-top: 8px; }
 .skip { position: absolute; left: 16px; top: -100px; z-index: 50; padding: 8px 14px; border-radius: 999px; background: var(--parchment); color: var(--oak-0); font-family: var(--font-ui); letter-spacing: 0.08em; text-decoration: none; }
 .skip:focus { top: calc(16px + env(safe-area-inset-top, 0px)); outline: 2px solid var(--c-mage); outline-offset: 2px; }
-.back .flip { position: sticky; bottom: 0; background: var(--oak-1); box-shadow: 0 -10px 16px var(--oak-1); }
+.loading { color: var(--text-dim); font-style: italic; }
+[hidden] { display: none !important; }
+
+/* ---------- hero strip: title, presence, and the countdown (the strip opens the dates scene) ---------- */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.hero-title { display: grid; gap: 4px; min-width: 0; }
 .kicker { font-family: var(--font-ui); letter-spacing: 0.14em; color: var(--brass); font-size: var(--step--1); }
 .hero h1 { font-size: var(--step-4); color: var(--parchment); text-shadow: 0 0 18px var(--glow-mage), 0 0 36px var(--glow-paladin), 0 3px 0 var(--oak-0); }
-.hero-lede { color: var(--text-dim); font-size: var(--step-1); font-style: italic; }
-.clock { display: grid; gap: 10px; padding: 18px 20px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); max-width: 640px; }
-.clock-digits { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
-.clock-unit { display: grid; justify-items: start; }
-.clock-unit b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: clamp(2.2rem, 9vw, 3.6rem); line-height: 1; color: var(--parchment); font-weight: 700; }
-.clock-unit span { font-family: var(--font-ui); letter-spacing: 0.1em; font-size: 0.8rem; color: var(--text-dim); }
-.clock-when { font-size: var(--step-0); }
-.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.timeline li { display: grid; grid-template-columns: 14px 1fr; gap: 10px; align-items: start; }
-.timeline .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; border: 2px solid var(--brass); }
-.timeline li.past .dot { background: var(--brass); }
-.timeline li.next .dot { background: var(--parchment); box-shadow: 0 0 10px var(--brass); }
-.timeline .when { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: var(--step--1); color: var(--brass); letter-spacing: 0.04em; }
-.timeline .what { min-width: 0; }
-.presence { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: var(--step--1); color: var(--text-dim); }
+.presence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: var(--step--1); color: var(--text-dim); }
 .peers { display: flex; flex-wrap: wrap; gap: 6px; }
-.peer { width: 14px; height: 14px; border-radius: 50%; background: var(--pc, var(--c-none)); box-shadow: 0 0 10px var(--pc, var(--c-none)); position: relative; }
+.peer { width: 12px; height: 12px; border-radius: 50%; background: var(--pc, var(--c-none)); box-shadow: 0 0 10px var(--pc, var(--c-none)); position: relative; }
 .peer.me { outline: 2px solid var(--parchment); outline-offset: 2px; }
 .peer-you { font-family: var(--font-ui); color: var(--parchment); letter-spacing: 0.06em; }
+.clock { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px 14px; }
+.clock-top { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.clock-emblem { flex: none; width: 40px; height: 40px; display: grid; place-items: center; color: var(--brass); }
+.clock-emblem .emblem { width: 28px; height: 28px; }
+.clock-live { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.clock-kicker { font-family: var(--font-ui); font-size: var(--step--1); letter-spacing: 0.14em; color: var(--brass); }
+.clock-event { font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); line-height: 1.05; color: var(--parchment); text-wrap: balance; }
+.clock .tile-go { color: var(--brass); }
+.clock-digits { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: baseline; min-height: 3rem; }
+.clock-unit { display: grid; justify-items: start; }
+.clock-unit b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: var(--step-4); line-height: 0.95; color: var(--brass); font-weight: 700; text-shadow: 0 0 22px var(--hi-brass), 0 2px 0 var(--oak-0); }
+.clock-unit span { font-family: var(--font-ui); letter-spacing: 0.12em; font-size: 0.74rem; color: var(--text-dim); }
+.clock-when { font-size: var(--step--1); color: var(--text-dim); }
+@media (min-width: 1000px) {
+  .hero-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 24px; }
+  .hero-title .kicker { flex-basis: 100%; }
+  .presence { margin-left: auto; }
+  .clock { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "top digits" "when digits"; align-items: center; column-gap: 36px; row-gap: 6px; padding: 18px 28px; }
+  .clock-top { grid-area: top; }
+  .clock-when { grid-area: when; }
+  .clock-digits { grid-area: digits; flex-wrap: nowrap; gap: 4px 30px; }
+  .clock-unit b { font-size: clamp(3.8rem, 4.6vw, 5.4rem); }
+  .clock-event { font-size: var(--step-3); }
+  .clock-emblem { width: 56px; height: 56px; }
+  .clock-emblem .emblem { width: 36px; height: 36px; }
+}
 
-/* class cards */
-.cards { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr)); }
-.card { perspective: 1400px; min-height: 31rem; min-width: 0; display: grid; }
+/* ---------- the wall: the oak notice board behind the tiles, each tile a pinned note ---------- */
+main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; isolation: isolate; min-width: 0; margin: 6px 0 8px; }
+main:focus { outline: none; }
+/* The board plate falls back to the oak tokens if the painting is missing. */
+.wall-plate { position: absolute; inset: -8px; z-index: -1; border-radius: 10px; pointer-events: none; overflow: hidden;
+  background-color: var(--oak-2);
+  background-image: radial-gradient(ellipse at 50% 46%, var(--shade-none) 0%, var(--shade-light) 42%, var(--shade-mid) 76%, var(--shade-deep) 100%), url("img/board-wall.jpg");
+  background-size: auto, cover; background-position: center, center; background-repeat: no-repeat;
+  box-shadow: 0 24px 60px var(--shadow), 0 0 0 1px var(--grain); }
+.wall-plate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--candle-soft), transparent 70%); animation: candle 4.4s ease-in-out infinite; }
+.wall { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
+.wall > li { display: grid; min-width: 0; }
+.wall > .t-five, .wall > .t-librarian { grid-column: span 2; }
+.tile, .clock {
+  --acc: var(--brass); --acc-glow: var(--hi-brass);
+  position: relative; min-width: 0; box-sizing: border-box; border-radius: var(--radius); border: 1px solid var(--grain);
+  color: var(--text); text-decoration: none;
+  box-shadow: 0 12px 26px var(--shadow), 0 2px 0 var(--edge-dark);
+  transition: transform 220ms var(--ease-out);
+}
+.clock { background-color: var(--tile-face); background-image: linear-gradient(165deg, var(--tile-face), var(--tile-face-2)); }
+.clock::before { content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 2px; border-radius: 2px; background: var(--acc); opacity: 0.75; }
+.tile { display: flex; flex-direction: column; min-height: 7rem; transform: rotate(var(--rot, 0deg));
+  background-color: var(--oak-2);
+  background-image: repeating-linear-gradient(91deg, var(--grain-line) 0 2px, transparent 2px 9px), linear-gradient(172deg, var(--oak-3), var(--oak-1)); }
+/* Iron nails at the two top corners. */
+.tile::before { content: ""; position: absolute; z-index: 3; top: 5px; left: 6px; right: 6px; height: 10px; pointer-events: none;
+  background: radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) left top / 10px 10px no-repeat,
+    radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) right top / 10px 10px no-repeat; }
+.tile::after, .clock::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 220ms ease;
+  box-shadow: 0 0 0 1px var(--acc), 0 0 34px var(--acc-glow), inset 0 0 26px var(--acc-glow); }
+@media (hover: hover) {
+  .tile:hover, .clock:hover { transform: translateY(-4px) rotate(0deg); }
+  .tile:hover::after, .clock:hover::after { opacity: 1; }
+  .tile:hover .tile-go, .clock:hover .tile-go { transform: translateX(3px); }
+}
+.tile:focus-visible::after, .clock:focus-visible::after { opacity: 1; }
+.tile:active, .clock:active { transform: scale(0.98); }
+/* The parchment header band: ink title, the accent as a ribbon on the left, the emblem top right. Falls back to the parchment token. */
+.tile-band { position: relative; display: block; min-height: 46px; box-sizing: border-box; padding: 12px 58px 9px 15px; border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; color: var(--ink);
+  background-color: var(--parchment-2);
+  background-image: linear-gradient(180deg, var(--shade-none) 55%, var(--slip-burn)), url("img/parchment-tile.jpg");
+  background-size: auto, 320px auto; background-position: center, center;
+  box-shadow: inset 4px 0 0 var(--acc), inset 0 -1px 0 var(--ink-line); }
+.tile-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.tile-title { min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1.02; color: var(--ink); text-wrap: balance; }
+.tile-go { flex: none; font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.1em; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 4px; transition: transform 200ms var(--ease-out); }
+.tile-go i { font-style: normal; }
+.tile-go .word { display: none; }
+.emblem-box { position: absolute; right: 6px; top: 50%; width: 48px; height: 48px; margin-top: -24px; display: grid; place-items: center; color: var(--ink); pointer-events: none; }
+.emblem-box .emblem { width: 28px; height: 28px; }
+.emblem-img { width: 100%; height: 100%; object-fit: contain; display: block; filter: drop-shadow(0 3px 4px var(--emblem-shade)); }
+.emblem { flex: none; }
+.emblem * { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tile-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; padding: 10px 12px 12px; font-size: 0.88rem; line-height: 1.3; color: var(--text-dim); }
+.tile-line { min-width: 0; overflow-wrap: anywhere; }
+.tile-line b { color: var(--parchment); font-weight: 700; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.minis { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.mini { display: grid; line-height: 1.1; }
+.mini b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: var(--step-1); color: var(--brass); font-weight: 700; text-shadow: 0 0 14px var(--hi-brass); }
+.mini small { font-family: var(--font-ui); font-size: 0.72rem; letter-spacing: 0.08em; color: var(--text-dim); }
+.five-row { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.fm { display: inline-flex; align-items: center; gap: 4px; color: var(--cc); font-family: var(--font-ui); font-weight: 700; letter-spacing: 0.03em; font-size: 0.98rem; text-shadow: 0 0 12px var(--cc); }
+.glyph { width: 12px; height: 12px; flex: none; }
+.glyph * { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tile-viz { display: none; flex: 1 1 0; min-height: 56px; position: relative; }
+.tile-viz svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tile-viz.list { position: static; flex: 0 0 auto; min-height: 0; }
+.viz-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 0.86rem; }
+.viz-list li { min-width: 0; overflow-wrap: anywhere; }
+.viz-ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 22px; }
+.viz-line { fill: none; stroke: var(--brass); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.viz-thin { fill: none; stroke-width: 1.4; opacity: 0.55; }
+.viz-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 3; }
+.wall-foot { font-size: 0.8rem; color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; }
+/* First render only: the tiles drop onto the wall, 120 ms apart, 400 ms each, and land at their pinned angle. */
+.wall.settle .tile { animation: settle 400ms var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 120ms); }
+@keyframes settle { from { opacity: 0; transform: translateY(-16px) rotate(calc(var(--rot, 0deg) - 1.2deg)); } to { opacity: 1; transform: rotate(var(--rot, 0deg)); } }
+@media (min-width: 640px) {
+  main { margin: 18px 0 14px; }
+  .wall-plate { inset: -16px; }
+  .wall { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 1fr; align-content: stretch; gap: 16px; }
+  .wall > .t-librarian { grid-column: auto; }
+  .tile { min-height: 9rem; }
+  .tile-title { font-size: var(--step-1); }
+  .tile-name { display: grid; gap: 3px; }
+  .tile-band { min-height: 56px; padding: 13px 62px 10px 15px; }
+  .tile-go .word { display: inline; }
+  .tile-viz { display: block; }
+  .tile-viz.list { display: block; }
+}
+@media (min-width: 1100px) {
+  .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, 1fr); grid-auto-rows: auto; gap: 22px; }
+  .wall > .t-five { grid-column: auto; }
+  .tile { min-height: 13rem; }
+  .tile-band { min-height: 76px; padding: 16px 86px 12px 17px; }
+  .emblem-box { width: 64px; height: 64px; margin-top: -32px; right: 10px; }
+  .emblem-box .emblem { width: 36px; height: 36px; }
+  .tile-body { padding: 12px 16px 14px; font-size: 0.95rem; gap: 8px; }
+  .mini b { font-size: var(--step-2); }
+}
+
+/* ---------- the scene sheet ---------- */
+.scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+.scene-layer.closing { pointer-events: none; }
+.scene-veil { position: absolute; inset: 0; background: var(--veil); animation: fade-in 260ms ease-out both; }
+.sheet { position: relative; box-sizing: border-box; width: min(1100px, 100%); height: min(940px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--grain); border-radius: 10px; background: var(--sheet-bg); box-shadow: 0 30px 80px var(--shadow); overflow: hidden; isolation: isolate;
+  animation: sheet-in 260ms var(--ease-out) both; }
+.scene-layer.closing .sheet { animation: sheet-out 260ms ease-in both; }
+.scene-layer.closing .scene-veil { animation: fade-out 260ms ease-in both; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes sheet-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(24px); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+.sheet-plate { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.sheet-plate img { width: 100%; height: 100%; object-fit: cover; object-position: center 40%; opacity: 0.13; display: block; max-width: none; }
+.sheet-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 14px 18px 0; border-bottom: 1px solid var(--grain); background: linear-gradient(180deg, var(--oak-2), var(--glass)); }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.sheet-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.sheet-name h2 { font-size: var(--step-2); min-width: 0; }
+.sheet-emblem { flex: none; width: 40px; height: 40px; display: grid; place-items: center; color: var(--brass); }
+.sheet-emblem .emblem { width: 28px; height: 28px; }
+.close { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--grain); background: var(--glass); color: var(--parchment); cursor: pointer; transition: transform 200ms var(--ease-out); }
+.close svg { width: 20px; height: 20px; }
+.close svg * { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+@media (hover: hover) { .close:hover { transform: rotate(90deg); } }
+.tabs { position: relative; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: thin; margin: 0 -18px; padding: 0 18px; }
+.tab { flex: none; font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 0.92rem; color: var(--text-dim); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 8px 11px 10px; min-height: 44px; cursor: pointer; }
+.tab:hover { color: var(--parchment); }
+.tab[aria-selected="true"] { color: var(--parchment); border-bottom-color: var(--brass); }
+.tab:focus-visible { outline-offset: -3px; }
+.tab-ico { display: none; }
+@media (min-width: 768px) {
+  .tab { display: inline-flex; align-items: center; gap: 7px; }
+  .tab-ico { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; }
+  .tab-ico .emblem { width: 18px; height: 18px; }
+  .tab-ico .emblem-img { filter: none; }
+}
+.sheet-body { overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); padding: 20px 18px 32px; }
+.panel { grid-area: 1 / 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
+.panel:focus-visible { outline-offset: 6px; }
+.panel.entering { animation: fade-in 180ms ease-out both; }
+.panel.leaving { animation: fade-out 180ms ease-in both; pointer-events: none; }
+.lede { color: var(--text-dim); }
+.lede-row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
+@media (max-width: 699px) {
+  .scene-layer { padding: 0; }
+  .sheet { width: 100%; height: 100%; border-radius: 0; border: 0; }
+  .sheet-head { padding-top: max(10px, env(safe-area-inset-top, 0px)); padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); }
+  .sheet-name h2 { font-size: var(--step-1); }
+  .tabs { margin: 0 -14px; padding: 0 14px; }
+  .sheet-body { padding: 16px max(14px, env(safe-area-inset-right, 0px)) max(28px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); }
+}
+
+/* ---------- dates scene: a vertical rail ---------- */
+.rail { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 26px; position: relative; max-width: 48rem; }
+.rail::before { content: ""; position: absolute; left: 10px; top: 10px; bottom: 10px; width: 2px; background: var(--grain); }
+.stop { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 16px; position: relative; }
+.stop .dot { width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; margin-top: 5px; border: 2px solid var(--brass); background: var(--oak-1); position: relative; z-index: 1; }
+.stop.past .dot { background: var(--brass); }
+.stop.next .dot { background: var(--parchment); box-shadow: 0 0 12px var(--brass); }
+.stop-body { display: grid; gap: 4px; min-width: 0; }
+.stop .when { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: var(--step--1); color: var(--brass); letter-spacing: 0.04em; }
+.stop h3 { font-size: var(--step-2); color: var(--parchment); }
+.stop.past h3 { color: var(--text-dim); }
+.stop p { color: var(--text-dim); }
+
+/* ---------- the five: a carousel on phones, a five-wide row on desktop ---------- */
+.cards { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(15rem, 84%); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding: 10px 4px 14px; scrollbar-width: thin; }
+.card { perspective: 1400px; min-height: 31rem; min-width: 0; display: grid; scroll-snap-align: center; }
+@media (min-width: 700px) { .cards { grid-auto-columns: minmax(15rem, 44%); } }
+@media (min-width: 1100px) { .cards { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: visible; } .swipe-hint { display: none; } }
 .card-inner { position: relative; display: grid; transition: transform 700ms cubic-bezier(.2, .7, .2, 1); transform-style: preserve-3d; }
 .card.flipped .card-inner { transform: rotateY(180deg); }
 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 0 18px 40px var(--shadow), inset 0 1px 0 var(--edge-light); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .face::after { content: ""; position: absolute; inset: -40% -40% auto auto; width: 90%; height: 70%; background: radial-gradient(circle, var(--cc), transparent 65%); opacity: 0.18; pointer-events: none; }
 .front { position: relative; inset: auto; }
 .back { transform: rotateY(180deg); overflow-y: auto; }
+.back .flip { position: sticky; bottom: 0; background: var(--oak-1); box-shadow: 0 -10px 16px var(--oak-1); }
 .card { transition: transform 260ms ease; }
 @media (hover: hover) { .card:hover { transform: translateY(-6px); } .card:hover .face { border-color: var(--cc); } }
 .card .who { font-family: var(--font-display); font-size: var(--step-3); color: var(--cc); text-shadow: 0 0 22px var(--cc); line-height: 1; }
@@ -216,22 +423,44 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .back-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .back-head h3 { color: var(--cc); }
 
-/* map */
-.map-box { border: 1px solid var(--grain); border-radius: var(--radius); background: radial-gradient(ellipse at 60% 40%, var(--oak-2), var(--oak-1) 75%); padding: 10px; overflow: hidden; }
+/* ---------- roads: the map, drawn on open, with a legend that lights one road ---------- */
+/* The map sits on parchment: the painting at 0.85 over the parchment token (the fallback), with ink strokes and wax marks. */
+.map-box { position: relative; isolation: isolate; border: 1px solid var(--grain); border-radius: var(--radius); padding: 10px; overflow: hidden; max-width: 960px; background-color: var(--parchment-2); box-shadow: 0 14px 30px var(--shadow), inset 0 0 40px var(--slip-burn); }
+.map-box::before { content: ""; position: absolute; inset: 0; z-index: -1; background: url("img/map-parchment.jpg") center / cover no-repeat; opacity: 0.85; pointer-events: none; }
 .map-box svg { display: block; width: 100%; height: auto; max-width: 100%; }
-.map-land { fill: var(--oak-3); stroke: var(--grain); stroke-width: 1.5; }
-.map-sea { fill: var(--oak-0); }
-.map-road { fill: none; stroke: var(--brass-dim); stroke-width: 2.4; stroke-dasharray: 2 7; stroke-linecap: round; animation: march 2.4s linear infinite; }
-.map-air { fill: none; stroke: var(--text-dim); stroke-width: 1.4; stroke-dasharray: 6 8; opacity: 0.7; animation: march 3.2s linear infinite; }
+.map-land { fill: var(--ink-wash); stroke: var(--ink-line); stroke-width: 1.6; }
+.map-sea { fill: none; }
+.map-road { fill: none; stroke: var(--ink); stroke-width: 2.8; stroke-dasharray: 2 7; stroke-linecap: round; animation: march 2.4s linear infinite; }
+.map-air { fill: none; stroke: var(--ink-soft); stroke-width: 1.8; stroke-dasharray: 6 8; animation: march 3.2s linear infinite; }
 @keyframes march { to { stroke-dashoffset: -36; } }
-.map-text { fill: var(--text); font-family: var(--font-ui); font-size: 13px; letter-spacing: 0.05em; }
-.map-text.small { fill: var(--text-dim); font-size: 11px; }
-.map-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 2; }
-.map-meet { fill: none; stroke: var(--brass); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.map-text { fill: var(--ink); font-family: var(--font-ui); font-size: 13px; font-weight: 700; letter-spacing: 0.05em; }
+.map-text.small { fill: var(--ink-soft); font-size: 11px; font-weight: 500; }
+.map-city { fill: var(--wax); stroke: var(--parchment); stroke-width: 2; }
+.map-meet { fill: none; stroke: var(--wax); stroke-width: 1.6; stroke-dasharray: 3 3; }
+.map-zep { fill: var(--brass-dim); stroke: var(--ink); stroke-width: 1; }
 .map-caption { color: var(--text-dim); font-size: var(--step--1); }
+.road-g { transition: opacity 200ms ease; cursor: pointer; }
+.map-svg.focusing .road-g:not(.on) { opacity: 0.2; }
+/* Draw-on: alpha masks over each road (and the legacy ring); the mask stroke runs from 0 to full length once per open. */
+.draw-mask { mask-type: alpha; }
+.draw { fill: none; stroke: var(--brass); stroke-width: 16; stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+.map-box.drawing .draw, .ring-wrap.filling .draw { animation: draw 1100ms cubic-bezier(0.4, 0, 0.2, 1) both; animation-delay: var(--dd, 0ms); }
+@keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.roads-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-width: 960px; }
+@media (min-width: 760px) { .roads-legend { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.road-btn { width: 100%; text-align: left; display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--grain); border-left: 3px solid var(--rc); background: var(--glass); color: var(--text); font: inherit; cursor: pointer; transition: transform 200ms var(--ease-out); }
+.road-btn b { font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); }
+.road-btn span { font-size: 0.92rem; color: var(--text-dim); }
+.road-btn[aria-pressed="true"], .road-btn.on { border-color: var(--rc); }
+@media (hover: hover) { .road-btn:hover { transform: translateY(-2px); } }
 
-/* racials */
-.races { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+/* ---------- racials: three columns on desktop, an accordion on phones ---------- */
+.races { display: grid; gap: 14px; grid-template-columns: 1fr; align-items: start; }
+@media (min-width: 900px) { .races { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.race summary { list-style: none; cursor: pointer; position: relative; padding-right: 24px; }
+.race summary::-webkit-details-marker { display: none; }
+.race summary::after { content: ""; position: absolute; right: 4px; top: 8px; width: 8px; height: 8px; border: solid var(--ink-soft); border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform 200ms ease; }
+.race[open] summary::after { transform: rotate(-135deg); }
 .race h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
 .race ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 10px; }
 .race li { display: grid; gap: 2px; }
@@ -241,9 +470,10 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .dots { display: inline-flex; gap: 4px; }
 .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 1px var(--ink); display: inline-block; }
 
-/* legacy + synergy */
-.ring-wrap { display: grid; gap: 16px; grid-template-columns: 1fr; align-items: center; }
-.ring-wrap svg, .wheel svg { width: 100%; height: auto; max-width: 320px; display: block; margin: 0 auto; }
+/* ---------- legacy ring and buff wheel ---------- */
+.ring-wrap { display: grid; gap: 18px; grid-template-columns: 1fr; align-items: center; }
+@media (min-width: 760px) { .ring-wrap { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); } }
+.ring-wrap svg, .wheel svg { width: 100%; height: auto; max-width: 340px; display: block; margin: 0 auto; }
 .ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 40px; font-variant-numeric: tabular-nums; }
 .ring-sub { fill: var(--text-dim); font-family: var(--font-ui); font-size: 11px; letter-spacing: 0.08em; }
 .ring-tick { stroke: var(--parchment); stroke-width: 2; }
@@ -254,11 +484,18 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .rewards { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .rewards li { min-width: 0; display: grid; grid-template-columns: 3.2rem 1fr; gap: 8px; align-items: baseline; }
 .rewards b { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--brass); }
-.wheel { display: grid; gap: 14px; }
+.stack { display: grid; gap: 14px; min-width: 0; }
+.wheel { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 760px) { .wheel { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); } .wheel.list-view .buffs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.wheel.list-view { grid-template-columns: 1fr; }
+.wheel.list-view svg { display: none; }
+.wheel.list-view .buff.dim { opacity: 1; }
 .wheel-edge { fill: none; stroke: var(--ec); stroke-width: 1.6; opacity: 0.45; transition: opacity 200ms, stroke-width 200ms; }
 .wheel-edge.on { opacity: 0.95; stroke-width: 2.4; }
 .wheel-tip { fill: var(--ec); opacity: 0.6; }
 .wheel-tip.on { opacity: 1; }
+.wheel.lighting .wheel-edge, .wheel.lighting .wheel-tip { animation: light 520ms ease-out backwards; animation-delay: var(--d, 0ms); }
+@keyframes light { from { opacity: 0; } }
 .wheel-node circle { fill: var(--oak-1); stroke: var(--nc); stroke-width: 3; }
 .wheel-node text { fill: var(--parchment); font-family: var(--font-ui); font-size: 12px; text-anchor: middle; }
 .wheel-node { cursor: pointer; }
@@ -269,13 +506,18 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .buff-what { color: var(--parchment); font-weight: 700; }
 .buff-nums { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--bc); }
 .buff-src { font-size: 0.9rem; color: var(--text-dim); }
+.toggle { display: inline-flex; border: 1px solid var(--grain); border-radius: 999px; padding: 2px; background: var(--glass); }
+.toggle button { font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 0.88rem; color: var(--text-dim); background: transparent; border: 0; border-radius: 999px; padding: 6px 14px; min-height: 36px; cursor: pointer; }
+.toggle button[aria-pressed="true"] { background: var(--oak-3); color: var(--parchment); }
 
-/* ledger + signups */
-.ledger { display: grid; gap: 14px; }
+/* ---------- ledger and sign-ups ---------- */
+.ledger { display: grid; gap: 14px; max-width: 52rem; }
 .ledger ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ledger li { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; }
 .ledger .tick { display: inline-block; width: 0.55em; height: 0.95em; border: solid var(--wax); border-width: 0 3px 3px 0; transform: rotate(40deg); margin-right: 8px; }
 .poll { display: grid; gap: 4px; padding: 10px 12px; border: 1px dashed var(--wax); border-radius: 4px; }
+.signup-grid { display: grid; gap: 22px; align-items: start; }
+@media (min-width: 860px) { .signup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .signup { display: grid; gap: 16px; }
 .signup fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
 .signup legend { font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); padding: 0; margin-bottom: 4px; }
@@ -291,16 +533,17 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .writein { display: flex; gap: 8px; flex-wrap: wrap; }
 .writein input, .signup select { font: inherit; font-size: 0.95rem; padding: 6px 10px; border: 1px solid var(--ink-soft); border-radius: 4px; background: var(--parchment-2); color: var(--ink); min-width: 0; flex: 1 1 12rem; max-width: 100%; }
 .picker-note { font-size: 0.88rem; color: var(--ink-soft); }
-[hidden] { display: none !important; }
-.gate { position: relative; z-index: 2; min-height: 90vh; display: grid; place-items: center; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px; }
-.gate-card { display: grid; gap: 12px; text-align: center; max-width: 30rem; padding: 28px 24px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
-.gate-card h1 { font-size: var(--step-3); color: var(--parchment); }
-.gate-card p { color: var(--text-dim); font-size: var(--step-1); }
 .dsu { display: grid; gap: 12px; }
 .dsu h4 { font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); margin: 0; font-weight: 700; }
 .status { font-size: 0.92rem; color: var(--wax); font-style: italic; }
 
-/* librarian */
+/* ---------- gate ---------- */
+.gate { position: relative; z-index: 2; min-height: 90vh; display: grid; place-items: center; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px; }
+.gate-card { display: grid; gap: 12px; text-align: center; max-width: 30rem; padding: 28px 24px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
+.gate-card h1 { font-size: var(--step-3); color: var(--parchment); }
+.gate-card p { color: var(--text-dim); font-size: var(--step-1); }
+
+/* ---------- librarian ---------- */
 .librarian { display: grid; gap: 18px; grid-template-columns: 1fr; padding: 20px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
 @media (min-width: 760px) { .librarian { grid-template-columns: 1.4fr 1fr; } }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr)); gap: 14px; }
@@ -313,18 +556,18 @@ section { display: grid; gap: 18px; min-width: 0; align-content: start; }
 .spark-dot { fill: var(--parchment); }
 .spark-grid { stroke: var(--grain); stroke-width: 1; }
 .spark-text { fill: var(--text-dim); font-family: var(--font-ui); font-size: 10px; font-variant-numeric: tabular-nums; }
-footer { color: var(--text-dim); font-size: var(--step--1); display: grid; gap: 8px; border-top: 1px solid var(--grain); padding-top: 18px; }
-footer ul { margin: 0; padding-left: 18px; columns: 2 16rem; }
-footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: anywhere; }
-.loading { color: var(--text-dim); font-style: italic; }
+.sources { color: var(--text-dim); font-size: var(--step--1); display: grid; gap: 8px; border-top: 1px solid var(--grain); padding-top: 16px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
-  .card:hover { transform: none; }
+  .card:hover, .clock:hover, .clock:active, .road-btn:hover, .close:hover { transform: none; }
+  .tile, .tile:hover, .tile:active { transform: rotate(var(--rot, 0deg)); }
+  .hero-art img { transform: none !important; }
 }
 </style>
 
 <div class="hero-art gate-mode" id="hero-art" aria-hidden="true"><img src="img/tavern-hero.jpg" alt="" width="1672" height="941" loading="eager" fetchpriority="high" decoding="async"></div>
+<div class="candle" aria-hidden="true"></div>
 <canvas id="wisps" aria-hidden="true"></canvas>
 <div class="gate" id="gate">
   <div class="gate-card">
@@ -334,128 +577,173 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
   </div>
 </div>
 <div class="wrap" id="board" hidden>
-  <a class="skip" href="#main">Skip to the board</a>
+  <a class="skip" href="#main" id="skip">Skip to the wall</a>
   <header class="hero" id="top">
-    <div class="kicker" id="kicker">The Living Board</div>
-    <h1>Dungeons and Drinking</h1>
-    <p class="hero-lede" id="lede">A notice board for five friends heading into World of Warcraft: Forever. Everything on it is read from the group's own files.</p>
-    <div class="clock" id="clock">
-      <div class="label" id="clock-label" aria-live="polite">Reading the board</div>
-      <div class="clock-digits" id="clock-digits"></div>
-      <div class="clock-when" id="clock-when"></div>
+    <div class="hero-title">
+      <div class="kicker" id="kicker">The Living Board</div>
+      <h1>Dungeons and Drinking</h1>
+      <div class="presence" id="presence">
+        <span id="presence-text">Who is at the board shows here.</span>
+        <div class="peers" id="peers"></div>
+      </div>
     </div>
-    <ol class="timeline" id="timeline"></ol>
-    <div class="presence" id="presence">
-      <span id="presence-text">Who is at the board shows here.</span>
-      <div class="peers" id="peers"></div>
-    </div>
+    <a class="clock" id="clock" href="#timeline" data-scene="timeline" aria-describedby="clock-when">
+      <span class="clock-top">
+        <span class="clock-emblem emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/></svg></span>
+        <span class="clock-live" id="clock-label" aria-live="polite"><span class="clock-kicker" id="clock-kicker">Reading the board</span><span class="clock-event" id="clock-event"></span></span>
+        <span class="tile-go" aria-hidden="true"><span class="word">Dates</span> <i>&rarr;</i></span>
+      </span>
+      <span class="clock-digits" id="clock-digits"></span>
+      <span class="clock-when" id="clock-when"></span>
+    </a>
   </header>
 
-  <main id="main">
-  <div class="plate-zone">
-  <div class="plate-art" aria-hidden="true"><img src="img/tavern-plate.jpg" alt="" width="1672" height="941" loading="lazy" decoding="async"></div>
-  <section aria-labelledby="h-five">
-    <div class="section-head">
-      <h2 id="h-five">The five</h2>
-      <p>Each card is what the group has said so far. Turn a card over for that class's signature spells at the level cap, straight from the game client.</p>
-    </div>
-    <div class="cards" id="cards"><p class="loading">Pinning up the cards.</p></div>
-  </section>
-
-  <section aria-labelledby="h-map">
-    <div class="section-head">
-      <h2 id="h-map">Three roads to Orgrimmar</h2>
-      <p id="map-lede">Where each character wakes up, and how the roads meet.</p>
-    </div>
-    <div class="map-box" id="map"></div>
-    <p class="map-caption" id="map-caption"></p>
-  </section>
-
-  </div>
-
-  <section aria-labelledby="h-races">
-    <div class="section-head">
-      <h2 id="h-races">Blood and bone</h2>
-      <p id="races-lede">The racials of the three races at this table, as the wiki has them today.</p>
-    </div>
-    <div class="races" id="races"></div>
-  </section>
-
-  <div class="two">
-    <section aria-labelledby="h-legacy">
-      <div class="section-head">
-        <h2 id="h-legacy">Legacy</h2>
-        <p id="legacy-lede">Account-wide challenges, one point each.</p>
-      </div>
-      <div class="ring-wrap" id="legacy"></div>
-    </section>
-    <section aria-labelledby="h-wheel">
-      <div class="section-head">
-        <h2 id="h-wheel">Who buffs whom</h2>
-        <p>Each name on the wheel lights up what that class brings to the others.</p>
-      </div>
-      <div class="wheel" id="wheel"></div>
-    </section>
-  </div>
-
-  <div class="two">
-    <section aria-labelledby="h-ledger">
-      <div class="section-head">
-        <h2 id="h-ledger">The ledger</h2>
-        <p id="ledger-lede">Settled things, open things, and the polls still taking votes.</p>
-      </div>
-      <div class="slip ledger" id="ledger"></div>
-    </section>
-    <section aria-labelledby="h-signup">
-      <div class="section-head">
-        <h2 id="h-signup">Launch-night sign-ups</h2>
-        <p>Four questions for launch night, answered with the buttons on the sign-up card in Discord.</p>
-      </div>
-      <div class="slip signup" id="discord-signups">
-        <h3>From Discord</h3>
-        <div class="dsu" id="dsu-body"><p class="loading">Reading the sign-up card.</p></div>
-        <p class="picker-note" id="dsu-stamp"></p>
-        <p class="picker-note">Buttons live in #wow-forever; this page follows them within a minute.</p>
-      </div>
-      <form class="slip signup" id="signup" autocomplete="off" hidden>
-        <h3>On this page</h3>
-        <p class="picker-note">Answers here stay on this page and do not reach Discord.</p>
-        <p class="status" id="signup-status">Loading the page's own sign-ups.</p>
-        <fieldset>
-          <legend>Which of the five are you?</legend>
-          <select id="as" name="as" aria-label="Which of the five are you" disabled></select>
-          <p class="picker-note">The board trusts whoever picks a name. There is no login check behind it.</p>
-        </fieldset>
-        <fieldset id="fs-pack">
-          <legend>I hold a pack</legend>
-          <div class="opts" id="opts-pack"></div>
-          <div class="tally" id="tally-pack"></div>
-        </fieldset>
-        <fieldset id="fs-meet">
-          <legend>Launch-night meeting point</legend>
-          <div class="opts" id="opts-meet"></div>
-          <div class="writein"><input id="meet-place" name="meet-place" type="text" maxlength="40" placeholder="Write in a place" aria-label="Write in a meeting place" disabled></div>
-          <div class="tally" id="tally-meet"></div>
-        </fieldset>
-        <fieldset id="fs-rsvp">
-          <legend>Launch night</legend>
-          <div class="opts" id="opts-rsvp"></div>
-          <div class="tally" id="tally-rsvp"></div>
-        </fieldset>
-      </form>
-    </section>
-  </div>
-
-  <section aria-labelledby="h-lib">
-    <div class="section-head">
-      <h2 id="h-lib">The librarian</h2>
-      <p>Leeroy answers the group's questions from a local wiki. These are his numbers.</p>
-    </div>
-    <div class="librarian" id="librarian"></div>
-  </section>
+  <main id="main" tabindex="-1" aria-labelledby="wall-title">
+    <h2 class="sr-only" id="wall-title">The tavern wall</h2>
+    <div class="wall-plate" aria-hidden="true"></div>
+    <ul class="wall" id="wall">
+      <li class="t-five"><a class="tile" href="#five" data-scene="five" style="--i:0;--acc:var(--c-mage);--acc-glow:var(--hi-mage)" aria-labelledby="tt-five" aria-describedby="ts-five">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-five">The five</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></svg></span></span>
+        <span class="tile-body" id="ts-five"><span class="loading">Pinning up the cards.</span></span>
+      </a></li>
+      <li class="t-roads"><a class="tile" href="#roads" data-scene="roads" style="--i:1;--acc:var(--c-druid);--acc-glow:var(--hi-druid)" aria-labelledby="tt-roads" aria-describedby="ts-roads">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-roads">Three roads</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span></span>
+        <span class="tile-body" id="ts-roads"><span class="loading">Unrolling the map.</span></span>
+      </a></li>
+      <li class="t-racials"><a class="tile" href="#racials" data-scene="racials" style="--i:2;--acc:var(--wax);--acc-glow:var(--hi-wax)" aria-labelledby="tt-racials" aria-describedby="ts-racials">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Blood and bone</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
+        <span class="tile-body" id="ts-racials"><span class="loading">Reading the racials.</span></span>
+      </a></li>
+      <li class="t-legacy"><a class="tile" href="#legacy" data-scene="legacy" style="--i:3;--acc:var(--brass);--acc-glow:var(--hi-brass)" aria-labelledby="tt-legacy" aria-describedby="ts-legacy">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-legacy">Legacy</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></span>
+        <span class="tile-body" id="ts-legacy"><span class="loading">Counting points.</span></span>
+      </a></li>
+      <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:4;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)" aria-labelledby="tt-buffs" aria-describedby="ts-buffs">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-buffs">Who buffs whom</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></svg></span></span>
+        <span class="tile-body" id="ts-buffs"><span class="loading">Drawing the wheel.</span></span>
+      </a></li>
+      <li class="t-ledger"><a class="tile" href="#ledger" data-scene="ledger" style="--i:5;--acc:var(--c-paladin);--acc-glow:var(--hi-paladin)" aria-labelledby="tt-ledger" aria-describedby="ts-ledger">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">The ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
+        <span class="tile-body" id="ts-ledger"><span class="loading">Opening the ledger.</span></span>
+      </a></li>
+      <li class="t-signups"><a class="tile" href="#signups" data-scene="signups" style="--i:6;--acc:var(--ok);--acc-glow:var(--hi-ok)" aria-labelledby="tt-signups" aria-describedby="ts-signups">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-signups">Sign-ups</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></svg></span></span>
+        <span class="tile-body" id="ts-signups"><span class="loading">Reading the sign-up card.</span></span>
+      </a></li>
+      <li class="t-librarian"><a class="tile" href="#librarian" data-scene="librarian" style="--i:7;--acc:var(--c-priest);--acc-glow:var(--hi-priest)" aria-labelledby="tt-librarian" aria-describedby="ts-librarian">
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">The librarian</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
+        <span class="tile-body" id="ts-librarian"><span class="loading">Asking the librarian.</span></span>
+      </a></li>
+    </ul>
   </main>
 
-  <footer id="footer"><span class="loading">Reading the data files.</span></footer>
+
+  <footer class="wall-foot" id="footer"><span class="loading">Reading the data files.</span></footer>
+</div>
+
+<div class="scene-layer" id="scene" hidden>
+  <div class="scene-veil" id="scene-veil"></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-plate" aria-hidden="true"><img src="img/tavern-plate.jpg" alt="" width="1672" height="941" loading="lazy" decoding="async"></div>
+    <div class="sheet-head">
+      <div class="sheet-top">
+        <div class="sheet-name"><span class="sheet-emblem" id="sheet-emblem" aria-hidden="true"></span><h2 id="sheet-title">The five</h2></div>
+        <button class="close" id="scene-close" type="button" aria-label="Close and go back to the wall"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="tabs" id="tabs" role="tablist" aria-label="Scenes">
+        <button class="tab" type="button" role="tab" id="tab-timeline" data-tab="timeline" aria-controls="panel-timeline" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Dates</button>
+        <button class="tab" type="button" role="tab" id="tab-five" data-tab="five" aria-controls="panel-five" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>The five</button>
+        <button class="tab" type="button" role="tab" id="tab-roads" data-tab="roads" aria-controls="panel-roads" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Roads</button>
+        <button class="tab" type="button" role="tab" id="tab-racials" data-tab="racials" aria-controls="panel-racials" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Racials</button>
+        <button class="tab" type="button" role="tab" id="tab-legacy" data-tab="legacy" aria-controls="panel-legacy" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Legacy</button>
+        <button class="tab" type="button" role="tab" id="tab-buffs" data-tab="buffs" aria-controls="panel-buffs" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Buffs</button>
+        <button class="tab" type="button" role="tab" id="tab-ledger" data-tab="ledger" aria-controls="panel-ledger" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Ledger</button>
+        <button class="tab" type="button" role="tab" id="tab-signups" data-tab="signups" aria-controls="panel-signups" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Sign-ups</button>
+        <button class="tab" type="button" role="tab" id="tab-librarian" data-tab="librarian" aria-controls="panel-librarian" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Librarian</button>
+      </div>
+    </div>
+    <div class="sheet-body" id="sheet-body">
+      <div class="panel" role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" tabindex="0" hidden>
+        <p class="lede">The dates from Blizzard and the group's cards, in your time zone where the board has a time.</p>
+        <ol class="rail" id="rail"></ol>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-five" aria-labelledby="tab-five" tabindex="0" hidden>
+        <p class="lede">Each card is what the group has said so far. Turn a card over for that class's signature spells at the level cap, straight from the game client.</p>
+        <p class="label swipe-hint">Swipe sideways for all five.</p>
+        <div class="cards" id="cards"><p class="loading">Pinning up the cards.</p></div>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-roads" aria-labelledby="tab-roads" tabindex="0" hidden>
+        <p class="lede" id="map-lede">Where each character wakes up, and how the roads meet.</p>
+        <div class="map-box" id="map"></div>
+        <ul class="roads-legend" id="roads-legend" aria-label="Roads"></ul>
+        <p class="map-caption" id="map-caption"></p>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-racials" aria-labelledby="tab-racials" tabindex="0" hidden>
+        <p class="lede" id="races-lede">The racials of the three races at this table, as the wiki has them today.</p>
+        <div class="races" id="races"></div>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-legacy" aria-labelledby="tab-legacy" tabindex="0" hidden>
+        <p class="lede" id="legacy-lede">Account-wide challenges, one point each.</p>
+        <div class="ring-wrap" id="legacy-ring"></div>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-buffs" aria-labelledby="tab-buffs" tabindex="0" hidden>
+        <div class="lede-row">
+          <p class="lede">Each name on the wheel lights up what that class brings to the others.</p>
+          <div class="toggle" role="group" aria-label="Buff view">
+            <button type="button" id="view-wheel" aria-pressed="true">Wheel</button>
+            <button type="button" id="view-list" aria-pressed="false">List</button>
+          </div>
+        </div>
+        <div class="wheel" id="wheel"></div>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-ledger" aria-labelledby="tab-ledger" tabindex="0" hidden>
+        <p class="lede" id="ledger-lede">Settled things, open things, and the polls still taking votes.</p>
+        <div class="slip ledger" id="ledger-slip"></div>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-signups" aria-labelledby="tab-signups" tabindex="0" hidden>
+        <p class="lede">Four questions for launch night, answered with the buttons on the sign-up card in Discord.</p>
+        <div class="signup-grid">
+          <div class="slip signup" id="discord-signups">
+            <h3>From Discord</h3>
+            <div class="dsu" id="dsu-body"><p class="loading">Reading the sign-up card.</p></div>
+            <p class="picker-note" id="dsu-stamp"></p>
+            <p class="picker-note">Buttons live in #wow-forever; this page follows them within a minute.</p>
+          </div>
+          <form class="slip signup" id="signup" autocomplete="off" hidden>
+            <h3>On this page</h3>
+            <p class="picker-note">Answers here stay on this page and do not reach Discord.</p>
+            <p class="status" id="signup-status">Loading the page's own sign-ups.</p>
+            <fieldset>
+              <legend>Which of the five are you?</legend>
+              <select id="as" name="as" aria-label="Which of the five are you" disabled></select>
+              <p class="picker-note">The board trusts whoever picks a name. There is no login check behind it.</p>
+            </fieldset>
+            <fieldset id="fs-pack">
+              <legend>I hold a pack</legend>
+              <div class="opts" id="opts-pack"></div>
+              <div class="tally" id="tally-pack"></div>
+            </fieldset>
+            <fieldset id="fs-meet">
+              <legend>Launch-night meeting point</legend>
+              <div class="opts" id="opts-meet"></div>
+              <div class="writein"><input id="meet-place" name="meet-place" type="text" maxlength="40" placeholder="Write in a place" aria-label="Write in a meeting place" disabled></div>
+              <div class="tally" id="tally-meet"></div>
+            </fieldset>
+            <fieldset id="fs-rsvp">
+              <legend>Launch night</legend>
+              <div class="opts" id="opts-rsvp"></div>
+              <div class="tally" id="tally-rsvp"></div>
+            </fieldset>
+          </form>
+        </div>
+      </div>
+      <div class="panel" role="tabpanel" id="panel-librarian" aria-labelledby="tab-librarian" tabindex="0" hidden>
+        <p class="lede">Leeroy answers the group's questions from a local wiki. These are his numbers.</p>
+        <div class="librarian" id="lib-box"></div>
+        <div class="sources" id="lib-sources"></div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>
@@ -480,6 +768,7 @@ const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), .
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
+const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
 
 /* ---------- formatting ---------- */
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
@@ -525,28 +814,43 @@ const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signu
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
 function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
 
-/* ---------- hero ---------- */
+/* ---------- role glyphs (tank shield, healer cross, damage blade) ---------- */
+const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M12 5v14M5 12h14", damage: "M5 19L17 7M14 4h6v6M7 15l2 2M4 20l2-2" };
+const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role }, s("path", { d: GLYPH[role] || GLYPH.damage }));
+
+/* ---------- hero countdown ---------- */
 let clockTimer = null;
 function renderHero() {
-  const p = D.party, t = D.timeline;
+  const p = D.party;
   $("#kicker").textContent = `The Living Board · ${p.faction} · ${p.ruleset} ruleset`;
   renderTimeline();
   tick();
   if (!clockTimer) clockTimer = setInterval(tick, 1000);
 }
 function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
+const eventTs = (e) => (e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch);
 let shownNext;
 function renderTimeline() {
-  const t = D.timeline, tl = $("#timeline"); tl.replaceChildren();
+  const t = D.timeline, tl = $("#rail"); tl.replaceChildren();
   const now = Date.now() / 1000;
   const next = nextEvent(now);
   shownNext = next ? next.key : null;
   for (const e of t.events) {
-    const ts = e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch;
+    const ts = eventTs(e);
     const cls = ts < now ? "past" : next && e.key === next.key ? "next" : "";
-    tl.append(h("li", { class: cls }, h("span", { class: "dot", "aria-hidden": "true" }),
-      h("div", { class: "what" }, h("div", { class: "when", text: eventWhen(e) }), h("div", {}, h("strong", { text: e.label }), e.detail ? ` · ${e.detail}` : ""))));
+    const relText = e.epoch === null ? rel(Date.parse(`${e.date}T12:00:00Z`) / 1000) : rel(e.epoch);
+    tl.append(h("li", { class: `stop ${cls}`.trim() }, h("span", { class: "dot", "aria-hidden": "true" }),
+      h("div", { class: "stop-body" },
+        h("div", { class: "when", text: eventWhen(e) }),
+        h("h3", { text: e.label }),
+        e.detail ? h("p", { text: e.detail }) : null,
+        h("p", { class: "label", text: cls === "past" ? "Passed" : cls === "next" ? `Next on the board, ${relText}` : relText }))));
   }
+}
+/* The live region holds the small-caps kicker and the event name; it is written only when either changes. */
+function setClockLabel(kicker, event) {
+  if ($("#clock-kicker").textContent !== kicker) $("#clock-kicker").textContent = kicker;
+  if ($("#clock-event").textContent !== event) $("#clock-event").textContent = event;
 }
 /* Calendar days in the viewer's own time zone; rounding absorbs daylight-saving hours. */
 const localDay = (ms) => { const d = new Date(ms); return Math.round(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000); };
@@ -556,14 +860,98 @@ function tick() {
   const next = nextEvent(now);
   if ((next ? next.key : null) !== shownNext) renderTimeline();
   const digits = $("#clock-digits");
-  if (!next) { $("#clock-label").textContent = "Every date on the board has passed"; digits.replaceChildren(); $("#clock-when").textContent = ""; return; }
-  let left = Math.max(0, Math.floor(next.epoch - now));
+  if (!next) { setClockLabel("Every date on the board has passed", ""); digits.replaceChildren(); $("#clock-when").textContent = "Open the dates for the whole rail."; return; }
+  const left = Math.max(0, Math.floor(next.epoch - now));
   /* A date-only event ("D") has no start time on the board, so it counts whole days and nothing finer. */
   const parts = next.format === "D" ? [["days", localDay(next.epoch * 1000) - localDay(now * 1000)]] : [["days", Math.floor(left / 86400)], ["hours", Math.floor((left % 86400) / 3600)], ["minutes", Math.floor((left % 3600) / 60)], ["seconds", left % 60]];
-  $("#clock-label").textContent = `Until ${next.label.toLowerCase()}`;
-  if (digits.childElementCount !== parts.length) digits.replaceChildren(...parts.map(([u]) => h("div", { class: "clock-unit" }, h("b", { "data-u": u }), h("span", { text: u }))));
+  setClockLabel("Until", next.label);
+  if (digits.childElementCount !== parts.length) digits.replaceChildren(...parts.map(([u]) => h("span", { class: "clock-unit" }, h("b", { "data-u": u }), h("span", { text: u }))));
   for (const [u, v] of parts) digits.querySelector(`[data-u="${u}"]`).textContent = String(v).padStart(u === "days" ? 1 : 2, "0");
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : `${eventWhen(next)} in your time zone`;
+}
+
+/* ---------- wall tiles: two or three live facts each, all read from the data files ---------- */
+const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+function fill(key, ...kids) { const el = $(`#ts-${key}`); if (el) el.replaceChildren(...kids.flat().filter(Boolean)); }
+function renderTiles() {
+  const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
+  const count = (role) => p.members.filter((m) => m.role === role).length;
+  fill("five",
+    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), m.name))),
+    h("span", { class: "tile-line", text: `${plural(count("tank"), "tank", "tanks")}, ${plural(count("healer"), "healer", "healers")}, ${count("damage")} damage` }),
+    h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, p.members.map((m) => h("li", {}, h("b", { style: `color: ${classVar(m.class_key)}`, text: m.name }), ` · ${m.race} ${m.class}, ${m.spec}`)))));
+  const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
+  fill("roads",
+    h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), ` ${ms.length}`])),
+    h("span", { class: "tile-line", text: `All ${zones.length === 3 ? "three" : zones.length} end in Orgrimmar.` }),
+    h("span", { class: "tile-viz" }, miniRoads(zones)));
+  const races = Object.entries(c.racials);
+  const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
+  fill("racials",
+    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
+    changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed Oct 26` }) : null);
+  fill("legacy",
+    minis([[L.earned_now, `of ${L.total} points`]]),
+    h("span", { class: "tile-line", text: `${plural(L.thresholds.length, "reward", "rewards")} on the track, the first at ${L.thresholds[0] ? L.thresholds[0].n : L.total}` }),
+    h("span", { class: "tile-viz" }, miniRing(L)));
+  fill("buffs",
+    minis([[p.members.length, "names"], [c.synergy.length, "buffs"]]),
+    h("span", { class: "tile-viz" }, miniWheel()));
+  const settled = [...p.settled, ...p.settled_extra];
+  const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
+  fill("ledger",
+    settled.length ? h("span", { class: "tile-line clamp" }, h("b", { text: "Last settled: " }), settled[settled.length - 1].text) : null,
+    minis([[stillOpen.length, "still open"], [p.polls.length, p.polls.length === 1 ? "poll" : "polls"]]),
+    h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 4).map((o) => h("li", { text: o.title })))));
+  if (S && S.tallies) {
+    const T = S.tallies;
+    const when = T.when ? h("span", { class: "tile-line", text: `When: ${[["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "later"]].filter(([k]) => T.when[k]).map(([k, l]) => `${l} ${T.when[k].count}`).join(" · ")}` }) : null;
+    fill("signups", minis([[T.rsvp.in.count, "in"], [T.rsvp.maybe.count, "maybe"], [T.rsvp.out.count, "out"]]), when);
+  } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
+  fill("librarian",
+    minis([[st.answers, "answers"], [fmtSecs(st.median_s), "median reply"], [nf.format(st.wiki_facts), "wiki facts"]]),
+    h("span", { class: "tile-viz" }, miniSpark(st.last7.map((x) => x.seconds))));
+}
+function miniRoads(zones) {
+  const svg = s("svg", { viewBox: "0 0 600 400", "aria-hidden": "true", preserveAspectRatio: "xMidYMid meet" });
+  const [ox, oy] = [470, 122];
+  for (const [z, ms] of zones) {
+    const Z = ZONES[z];
+    svg.append(s("line", { class: "viz-thin", x1: Z.x, y1: Z.y, x2: ox, y2: oy, stroke: classVar(ms[0].class_key), "stroke-width": 4, "stroke-dasharray": "4 10" }));
+    ms.forEach((m, i) => svg.append(s("circle", { cx: Z.x + (i - (ms.length - 1) / 2) * 30, cy: Z.y, r: 11, fill: classVar(m.class_key) })));
+  }
+  svg.append(s("circle", { class: "viz-city", cx: ox, cy: oy, r: 14 }));
+  return svg;
+}
+function miniRing(L) {
+  const r = 38, C = 2 * Math.PI * r;
+  const svg = s("svg", { viewBox: "-50 -50 100 100", "aria-hidden": "true" });
+  let start = 0;
+  L.categories.forEach((c, i) => {
+    const len = (c.n / L.total) * C;
+    svg.append(s("circle", { r, cx: 0, cy: 0, fill: "none", stroke: `var(--seg-${i + 1})`, "stroke-width": 8, "stroke-dasharray": `${Math.max(0, len - 1.5)} ${C}`, "stroke-dashoffset": -start, transform: "rotate(-90)" }));
+    start += len;
+  });
+  svg.append(s("text", { class: "viz-ring-num", x: 0, y: 8, "text-anchor": "middle", text: String(L.earned_now) }));
+  return svg;
+}
+function miniWheel() {
+  const keys = D.party.members.map((m) => m.class_key), R = 40, pos = {};
+  keys.forEach((k, i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / keys.length; pos[k] = [Math.cos(a) * R, Math.sin(a) * R]; });
+  const svg = s("svg", { viewBox: "-56 -56 112 112", "aria-hidden": "true" });
+  for (const b of D.client.synergy) for (const to of b.to) {
+    if (to === b.from || !pos[to] || !pos[b.from]) continue;
+    svg.append(s("line", { class: "viz-thin", x1: pos[b.from][0], y1: pos[b.from][1], x2: pos[to][0], y2: pos[to][1], stroke: classVar(b.from) }));
+  }
+  for (const k of keys) svg.append(s("circle", { cx: pos[k][0], cy: pos[k][1], r: 7, fill: "var(--oak-1)", stroke: classVar(k), "stroke-width": 2.5 }));
+  return svg;
+}
+function miniSpark(vals) {
+  if (!vals.length) return null;
+  const W = 200, H = 60, max = Math.max(...vals, 1);
+  const pts = vals.map((v, i) => `${(i * W) / Math.max(1, vals.length - 1)},${H - 4 - (v / max) * (H - 10)}`).join(" ");
+  return s("svg", { viewBox: `-4 -4 ${W + 8} ${H + 8}`, "aria-hidden": "true", preserveAspectRatio: "none" }, s("polyline", { class: "viz-line", points: pts }));
 }
 
 /* ---------- cards ---------- */
@@ -611,16 +999,30 @@ const ZONES = {
   "Mulgore": { x: 268, y: 318, label: [214, 372] },
   "Durotar": { x: 508, y: 238, label: [470, 292] },
 };
+/* One road per starting zone, each ending in Orgrimmar. Ids carry a prefix so none can equal a scene name in the hash. */
+const ROADS = [
+  { key: "air", zone: "Tirisfal Glades", cls: "map-air", d: "M128 110 C 220 30, 360 30, 456 112", how: "the Undercity zeppelin" },
+  { key: "mulgore", zone: "Mulgore", cls: "map-road", d: "M268 318 C 290 290, 330 250, 392 222 C 430 200, 455 160, 468 128", how: "the road past the Crossroads" },
+  { key: "durotar", zone: "Durotar", cls: "map-road", d: "M508 238 C 520 210, 512 170, 478 130", how: "the Durotar road" },
+];
 function renderMap() {
   const box = $("#map"); box.replaceChildren();
-  const svg = s("svg", { viewBox: "0 0 600 400", role: "img", "aria-label": "Map of the three Horde starting zones with paths to Orgrimmar" });
-  svg.append(
+  const svg = s("svg", { class: "map-svg", viewBox: "0 0 600 400", role: "img", "aria-label": "Map of the three Horde starting zones with paths to Orgrimmar" });
+  const defs = s("defs", {});
+  ROADS.forEach((r, i) => defs.append(s("mask", { id: `mask-${r.key}`, class: "draw-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: 600, height: 400 },
+    s("path", { class: "draw", d: r.d, pathLength: 1, style: `--dd: ${i * 260}ms` }))));
+  svg.append(defs,
     s("rect", { class: "map-sea", x: 0, y: 0, width: 600, height: 400 }),
     s("path", { class: "map-land", d: "M0 30 C40 20 120 30 170 60 C190 110 160 170 110 190 C60 200 20 180 0 170 Z" }),
-    s("path", { class: "map-land", d: "M330 40 C400 30 470 50 540 80 C580 120 570 200 560 260 C540 320 470 360 390 380 C300 395 210 380 180 330 C170 280 220 230 260 200 C300 160 300 90 330 40 Z" }),
-    s("path", { id: "air", class: "map-air", d: "M128 110 C 220 30, 360 30, 456 112" }),
-    s("path", { id: "road-mulgore", class: "map-road", d: "M268 318 C 290 290, 330 250, 392 222 C 430 200, 455 160, 468 128" }),
-    s("path", { id: "road-durotar", class: "map-road", d: "M508 238 C 520 210, 512 170, 478 130" }),
+    s("path", { class: "map-land", d: "M330 40 C400 30 470 50 540 80 C580 120 570 200 560 260 C540 320 470 360 390 380 C300 395 210 380 180 330 C170 280 220 230 260 200 C300 160 300 90 330 40 Z" }));
+  const byZone = {};
+  for (const m of D.party.members) (byZone[m.start_zone] ||= []).push(m);
+  const groups = ROADS.map((r) => {
+    const g = s("g", { class: "road-g", "data-road": r.key });
+    g.append(s("path", { id: `path-${r.key}`, class: r.cls, d: r.d, mask: `url(#mask-${r.key})` }));
+    svg.append(g); return g;
+  });
+  svg.append(
     s("circle", { class: "map-meet", cx: 470, cy: 122, r: 20 }),
     s("circle", { class: "map-meet", cx: 392, cy: 222, r: 14 }),
     s("circle", { class: "map-city", cx: 470, cy: 122, r: 7 }),
@@ -628,66 +1030,90 @@ function renderMap() {
     s("text", { class: "map-text", x: 470, y: 88, "text-anchor": "middle", text: "Orgrimmar" }),
     s("text", { class: "map-text small", x: 470, y: 158, "text-anchor": "middle", text: "Valley of Strength" }),
     s("text", { class: "map-text small", x: 380, y: 250, "text-anchor": "middle", text: "the Crossroads" }),
-    s("text", { class: "map-text small", x: 290, y: 30, "text-anchor": "middle", text: "zeppelin" })
-  );
-  const byZone = {};
-  for (const m of D.party.members) (byZone[m.start_zone] ||= []).push(m);
+    s("text", { class: "map-text small", x: 290, y: 30, "text-anchor": "middle", text: "zeppelin" }));
   for (const [zone, ms] of Object.entries(byZone)) {
     const z = ZONES[zone]; if (!z) continue;
-    svg.append(s("text", { class: "map-text", x: z.label[0], y: z.label[1], text: zone }));
+    const road = ROADS.find((r) => r.zone === zone);
+    const g = road ? groups[ROADS.indexOf(road)] : svg;
+    g.append(s("text", { class: "map-text", x: z.label[0], y: z.label[1], text: zone }));
     ms.forEach((m, i) => {
       const cx = z.x + (i - (ms.length - 1) / 2) * 34, cy = z.y;
-      svg.append(s("circle", { cx, cy, r: 8, fill: classVar(m.class_key), stroke: "var(--oak-0)", "stroke-width": 2 }, s("title", { text: `${m.name}, ${m.race} ${m.class}` })));
-      svg.append(s("text", { class: "map-text small", x: cx, y: i % 2 ? cy + 24 : cy - 13, "text-anchor": "middle", text: m.name }));
+      g.append(s("circle", { cx, cy, r: 8, fill: classVar(m.class_key), stroke: "var(--oak-0)", "stroke-width": 2 }, s("title", { text: `${m.name}, ${m.race} ${m.class}` })));
+      g.append(s("text", { class: "map-text small", x: cx, y: i % 2 ? cy + 24 : cy - 13, "text-anchor": "middle", text: m.name }));
     });
   }
   if (!reduceMQ.matches) {
-    const travel = (pathId, color, dur, begin) => {
-      const g = s("g", {}, s("circle", { r: 4.5, fill: color, opacity: 0.95 }));
-      const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", rotate: "auto" }); am.append(s("mpath", { href: `#${pathId}` }));
-      g.append(am); return g;
-    };
-    const zep = s("g", {}, s("ellipse", { rx: 13, ry: 5.5, fill: "var(--brass)" }), s("rect", { x: -4, y: 5, width: 8, height: 3, fill: "var(--parchment-2)" }));
-    const am = s("animateMotion", { dur: "9s", repeatCount: "indefinite" }); am.append(s("mpath", { href: "#air" })); zep.append(am);
-    svg.append(zep);
     const color = (zone) => classVar((byZone[zone] || [])[0] && byZone[zone][0].class_key);
-    svg.append(travel("road-mulgore", color("Mulgore"), "7s", "0s"), travel("road-durotar", color("Durotar"), "4s", "1s"));
+    const travel = (g, pathId, fill, dur, begin) => {
+      const t = s("g", {}, s("circle", { r: 4.5, fill, opacity: 0.95 }));
+      const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", rotate: "auto" }); am.append(s("mpath", { href: `#${pathId}` }));
+      t.append(am); g.append(t);
+    };
+    const zep = s("g", {}, s("ellipse", { class: "map-zep", rx: 13, ry: 5.5 }), s("rect", { class: "map-zep", x: -4, y: 5, width: 8, height: 3 }));
+    const am = s("animateMotion", { dur: "9s", repeatCount: "indefinite" }); am.append(s("mpath", { href: "#path-air" })); zep.append(am);
+    groups[0].append(zep);
+    travel(groups[1], "path-mulgore", color("Mulgore"), "7s", "0s");
+    travel(groups[2], "path-durotar", color("Durotar"), "4s", "1s");
   }
   box.append(svg);
+  /* Highlight: hover or tap a road (or its legend entry) to light it; a tap sticks until tapped again. */
+  const legend = $("#roads-legend"); legend.replaceChildren();
+  let sticky = null;
+  const btns = [];
+  const light = (key) => {
+    const k = key || sticky;
+    svg.classList.toggle("focusing", !!k);
+    groups.forEach((g) => g.classList.toggle("on", g.dataset.road === k));
+    btns.forEach((b) => { b.classList.toggle("on", b.dataset.road === k); b.setAttribute("aria-pressed", String(b.dataset.road === sticky)); });
+  };
+  const toggle = (key) => { sticky = sticky === key ? null : key; light(null); };
+  for (const r of ROADS) {
+    const ms = byZone[r.zone] || [];
+    const b = h("button", { class: "road-btn", type: "button", "aria-pressed": "false", "data-road": r.key, style: `--rc: ${classVar(ms[0] && ms[0].class_key)}`,
+      onclick: () => toggle(r.key), onpointerenter: () => light(r.key), onpointerleave: () => light(null), onfocus: () => light(r.key), onblur: () => light(null) },
+      h("b", { text: r.zone }), h("span", { text: `${ms.length ? andList(ms.map((m) => m.name)) : "Nobody"} · ${r.how} to Orgrimmar` }));
+    btns.push(b); legend.append(h("li", {}, b));
+  }
+  groups.forEach((g) => { g.addEventListener("pointerenter", () => light(g.dataset.road)); g.addEventListener("pointerleave", () => light(null)); g.addEventListener("click", () => toggle(g.dataset.road)); });
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
-  const names = Object.entries(byZone).map(([z, ms]) => `${ms.map((m) => m.name).join(", ").replace(/, ([^,]*)$/, " and $1")} in ${z}`);
+  const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
   $("#map-lede").textContent = `${names.join("; ")}. The Undercity zeppelin and two roads all end in Orgrimmar.`;
   $("#map-caption").textContent = meet ? `${meet.title}: ${meet.status}. ${meet.detail}` : "";
 }
 
-/* ---------- racials ---------- */
+/* ---------- racials: details elements, all open on wide screens, the first open on phones ---------- */
+const wideMQ = window.matchMedia("(min-width: 900px)");
 function renderRaces() {
   const wrap = $("#races"); wrap.replaceChildren();
-  for (const [race, list] of Object.entries(D.client.racials)) {
+  Object.entries(D.client.racials).forEach(([race, list], idx) => {
     const ms = D.party.members.filter((m) => m.race === race);
-    const slip = h("div", { class: "slip race" },
-      h("h3", {}, race, h("span", { class: "dots" }, ms.map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}`, title: m.name }))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") })),
+    wrap.append(h("details", { class: "slip race", open: wideMQ.matches || idx === 0 },
+      h("summary", {}, h("h3", {}, race, h("span", { class: "dots" }, ms.map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}`, title: m.name }))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") }))),
       h("ul", {}, list.map((r) => h("li", {},
         h("div", {}, h("span", { class: "rname", text: r.name }), " ", r.kind ? h("span", { class: "chip", text: r.kind }) : null, " ", r.changed_oct26 ? h("span", { class: "chip new", text: "changed Oct 26" }) : null),
         h("div", { class: "rwiki", text: r.wiki ? r.wiki.replace(/^(active|passive),\s*/, "") : "Not on the wiki page yet." }),
-        (r.client.values.length || r.client.cooldown_ms) ? h("div", { class: "rclient", text: `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` }) : null))));
-    wrap.append(slip);
-  }
+        (r.client.values.length || r.client.cooldown_ms) ? h("div", { class: "rclient", text: `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` }) : null)))));
+  });
 }
+wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
 /* ---------- legacy ring ---------- */
 function renderLegacy() {
-  const L = D.client.legacy, wrap = $("#legacy"); wrap.replaceChildren();
+  const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
   const r = 84, C = 2 * Math.PI * r;
   const svg = s("svg", { viewBox: "-130 -130 260 260", role: "img", "aria-label": `Legacy: ${L.earned_now} of ${L.total} points` });
+  svg.append(s("defs", {}, s("mask", { id: "mask-ring", class: "draw-mask", maskUnits: "userSpaceOnUse", x: -130, y: -130, width: 260, height: 260 },
+    s("circle", { class: "draw", r, cx: 0, cy: 0, pathLength: 1, transform: "rotate(-90)", style: "stroke-width: 44; stroke-linecap: butt" }))));
+  const ring = s("g", { mask: "url(#mask-ring)" });
   let start = 0;
   L.categories.forEach((c, i) => {
     const len = (c.n / L.total) * C;
-    svg.append(s("circle", { r, cx: 0, cy: 0, fill: "none", stroke: `var(--seg-${i + 1})`, "stroke-width": 16, "stroke-dasharray": `${Math.max(0, len - 2)} ${C}`, "stroke-dashoffset": -start, transform: "rotate(-90)" }, s("title", { text: `${c.key}: ${c.n}` })));
+    ring.append(s("circle", { r, cx: 0, cy: 0, fill: "none", stroke: `var(--seg-${i + 1})`, "stroke-width": 16, "stroke-dasharray": `${Math.max(0, len - 2)} ${C}`, "stroke-dashoffset": -start, transform: "rotate(-90)" }, s("title", { text: `${c.key}: ${c.n}` })));
     start += len;
   });
-  svg.append(s("circle", { r: r - 14, cx: 0, cy: 0, fill: "none", stroke: "var(--brass)", "stroke-width": 4, "stroke-dasharray": `${(L.earned_now / L.total) * C} ${C}`, transform: "rotate(-90)", opacity: 0.9 }));
+  ring.append(s("circle", { r: r - 14, cx: 0, cy: 0, fill: "none", stroke: "var(--brass)", "stroke-width": 4, "stroke-dasharray": `${(L.earned_now / L.total) * C} ${C}`, transform: "rotate(-90)", opacity: 0.9 }));
+  svg.append(ring);
   for (const t of L.thresholds) {
     const a = (t.n / L.total) * 2 * Math.PI - Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
     svg.append(s("line", { class: "ring-tick", x1: ca * (r - 12), y1: sa * (r - 12), x2: ca * (r + 12), y2: sa * (r + 12) }));
@@ -698,7 +1124,7 @@ function renderLegacy() {
   const legend = h("ul", { class: "legend" }, L.categories.map((c, i) => h("li", {}, h("span", { class: "sw", style: `--sw: var(--seg-${i + 1})` }), h("b", { class: "num", text: String(c.n) }), h("span", { text: `${c.key}: ${c.text.replace(/^\d+:\s*/, "")}` }))));
   const rewards = h("ul", { class: "rewards" }, L.thresholds.map((t) => h("li", {}, h("b", { text: t.alt ? `${t.n} (${t.alt})` : String(t.n) }), h("span", { text: `${t.reward}, ${t.kind}` }))));
   wrap.append(h("div", {}, svg),
-    h("div", { style: "display:grid;gap:14px;min-width:0" },
+    h("div", { class: "stack" },
       h("p", { text: `Earned so far: ${L.earned_now}, because ${L.earned_note}.` }),
       h("div", {}, h("div", { class: "label", text: `Reward track, ${L.thresholds_label}` }), rewards),
       h("p", { class: "label", text: `Claimed from ${L.claim}.` }),
@@ -714,14 +1140,15 @@ function renderWheel() {
   const svg = s("svg", { viewBox: "-160 -160 320 320", role: "group", "aria-label": "Buff wheel between the five classes" });
   const edges = [];
   D.client.synergy.forEach((b, bi) => {
+    const delay = `--d: ${Math.max(0, keys.indexOf(b.from)) * 200}ms`;
     for (const to of b.to) {
       if (to === b.from || !pos[to] || !pos[b.from]) continue;
       const [x1, y1] = pos[b.from], [x2, y2] = pos[to];
       const off = ((bi % 4) - 1.5) * 10;
       const cx = (x1 + x2) * 0.22 + off, cy = (y1 + y2) * 0.22 - off;
-      const path = s("path", { class: "wheel-edge", d: `M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, style: `--ec: ${classVar(b.from)}`, "data-from": b.from, "data-b": bi });
-      const tx = 0.12 * x1 + 0.88 * x2 + 0, ty = 0.12 * y1 + 0.88 * y2;
-      const tip = s("circle", { class: "wheel-tip", cx: (tx * 0.85 + cx * 0.15), cy: (ty * 0.85 + cy * 0.15), r: 3.2, style: `--ec: ${classVar(b.from)}`, "data-from": b.from, "data-b": bi });
+      const path = s("path", { class: "wheel-edge", d: `M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, style: `--ec: ${classVar(b.from)}; ${delay}`, "data-from": b.from, "data-b": bi });
+      const tx = 0.12 * x1 + 0.88 * x2, ty = 0.12 * y1 + 0.88 * y2;
+      const tip = s("circle", { class: "wheel-tip", cx: (tx * 0.85 + cx * 0.15), cy: (ty * 0.85 + cy * 0.15), r: 3.2, style: `--ec: ${classVar(b.from)}; ${delay}`, "data-from": b.from, "data-b": bi });
       edges.push(path, tip); svg.append(path, tip);
     }
   });
@@ -731,7 +1158,7 @@ function renderWheel() {
       s("circle", { cx: x, cy: y, r: 26 }), s("text", { x, y: y - 1, text: m.name }), s("text", { x, y: y + 13, style: "font-size:10px;fill:var(--text-dim)", text: m.class }));
     svg.append(g); return g;
   });
-  const items = D.client.synergy.map((b, bi) => {
+  const items = D.client.synergy.map((b) => {
     const nums = b.refs.filter((r) => r.kind === "client").map((r) => `${fmtVal(r)} (${r.name})`).join(" · ");
     const src = b.refs.filter((r) => r.kind !== "client").map((r) => h("div", { class: "buff-src" }, r.kind === "memory" ? h("span", { class: "chip memory", text: "from memory" }) : h("span", { class: "chip board", text: "wiki" }), " ", r.text));
     const giver = memberByKey(b.from), to = b.to.filter((k) => k !== b.from).map((k) => (memberByKey(k) || {}).name).filter(Boolean);
@@ -750,15 +1177,20 @@ function renderWheel() {
   nodes.forEach((n) => { n.addEventListener("click", () => setActive(n.dataset.k)); n.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(n.dataset.k); } }); });
   wrap.append(svg, h("ul", { class: "buffs" }, items));
 }
+function setBuffView(v) {
+  $("#wheel").classList.toggle("list-view", v === "list");
+  $("#view-wheel").setAttribute("aria-pressed", String(v !== "list"));
+  $("#view-list").setAttribute("aria-pressed", String(v === "list"));
+  try { localStorage.setItem("board-buff-view", v); } catch (e) {}
+}
 
 /* ---------- ledger ---------- */
 function renderLedger() {
-  const p = D.party, wrap = $("#ledger"); wrap.replaceChildren();
+  const p = D.party, wrap = $("#ledger-slip"); wrap.replaceChildren();
   const link = (l) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: l.label });
   const pollNames = p.polls.map((q) => q.title.toLowerCase());
-  const joined = pollNames.length > 1 ? `${pollNames.slice(0, -1).join(", ")} and ${pollNames[pollNames.length - 1]}` : pollNames.join("");
   $("#ledger-lede").textContent = p.polls.length
-    ? `Settled things, open things, and ${p.polls.length === 1 ? "one poll" : `${p.polls.length} polls`} still taking votes: ${joined}.`
+    ? `Settled things, open things, and ${p.polls.length === 1 ? "one poll" : `${p.polls.length} polls`} still taking votes: ${andList(pollNames)}.`
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(
     h("h3", { text: "Settled" }),
@@ -768,7 +1200,7 @@ function renderLedger() {
     h("h3", { text: "Still open" }),
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o) => h("li", {},
       h("strong", { text: o.title }),
-      h("span", {}, ...linkify(o.status ? `${o.status}. ${o.detail || ""}` : o.text || "", o.links, link)),
+      h("span", {}, ...linkify(o.status ? `${o.status}. ${o.detail || ""}` : o.text || "", o.links || [], link)),
       h("span", { class: "label", text: o.source })))));
 }
 
@@ -785,7 +1217,7 @@ function linkify(text, ls, link) {
 
 /* ---------- librarian ---------- */
 function renderLibrarian() {
-  const st = D.stats, wrap = $("#librarian"); wrap.replaceChildren();
+  const st = D.stats, wrap = $("#lib-box"); wrap.replaceChildren();
   const stat = (label, value) => h("div", { class: "stat" }, h("b", { text: value }), h("span", { class: "label", text: label }));
   const vals = st.last7.map((x) => x.seconds);
   const W = 260, H = 70, pad = 10, max = Math.max(...vals, 1);
@@ -800,18 +1232,21 @@ function renderLibrarian() {
     ...vals.map((v, i) => s("text", { class: "spark-text", x: xs(i), y: H + 10, "text-anchor": "middle", text: String(v) })),
     s("text", { class: "spark-text", x: W - pad, y: ys(max) - 4, "text-anchor": "end", text: `${max} s` }));
   wrap.append(
-    h("div", { style: "display:grid;gap:14px;min-width:0" },
+    h("div", { class: "stack" },
       h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("95th percentile", fmtSecs(st.p95_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
       h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.${st.p95_s > st.miss_threshold_s ? " Those slow ones are what pull the 95th percentile up." : ""}` })),
     h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark));
 }
 
-/* ---------- footer ---------- */
+/* ---------- footer stamp on the wall; the sources sit with the librarian ---------- */
 function renderFooter() {
-  const f = $("#footer"); f.replaceChildren();
   const stamp = ["party", "timeline", "client", "stats", "signups"].filter((k) => D[k]).map((k) => D[k].generated).sort().pop();
-  f.append(
-    h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: `${stamp.replace("T", " ").slice(0, 16)} UTC` }), "."),
+  const when = `${stamp.replace("T", " ").slice(0, 16)} UTC`;
+  $("#footer").replaceChildren(
+    h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
+    h("span", { text: "Tap a tile to open it. Escape or back returns to the wall." }));
+  $("#lib-sources").replaceChildren(
+    h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
     h("p", { text: "Tavern paintings generated on 2026-10-26 for this board." }),
     h("p", { text: "Spell numbers are the game's own values at the level cap and can move with beta hotfixes. A \"board\" tag means written on the group's cards; \"chat\" means said in Discord and noted down." }));
@@ -1048,6 +1483,148 @@ async function startRuntime() {
   }, (err) => { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus(err && err.code === "revoked" ? "Sign-ups are read-only now." : "Sign-ups stopped updating. Reload the board to see the latest."); });
 }
 
+/* ---------- scenes: one sheet over the wall, tabs inside it, the hash names the open scene ---------- */
+const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian"];
+const TITLES = { timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Legacy", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The librarian" };
+/* Once-per-open effects: the class restarts the scene's CSS animation (roads draw, ring fills, wheel lines light). */
+const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"] };
+const SC = { open: null, closeTimer: 0, fadeTimer: 0 };
+const motionMs = (ms) => (reduceMQ.matches ? 0 : ms);
+const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : null; };
+function setHash(key, push) {
+  const url = location.pathname + location.search + (key ? `#${key}` : "");
+  try { if (push) history.pushState({ boardScene: key }, "", url); else history.replaceState(key ? { boardScene: key } : null, "", url); return true; } catch (e) { return false; }
+}
+function replay(el, cls) { if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
+function selectPanel(key, crossFade) {
+  const prev = SC.open; SC.open = key;
+  $("#sheet-title").textContent = TITLES[key];
+  setSheetEmblem(key);
+  for (const k of SCENES) {
+    const t = $(`#tab-${k}`), on = k === key;
+    t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1;
+    const p = $(`#panel-${k}`);
+    if (k !== key && k !== prev) { p.hidden = true; p.classList.remove("entering", "leaving"); }
+  }
+  if (key === "timeline" && D.timeline) renderTimeline();
+  const next = $(`#panel-${key}`);
+  if (prev && prev !== key) {
+    const old = $(`#panel-${prev}`);
+    if (crossFade && motionMs(180)) {
+      old.classList.remove("entering"); old.classList.add("leaving");
+      clearTimeout(SC.fadeTimer);
+      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); }, 180);
+    } else { old.hidden = true; old.classList.remove("entering", "leaving"); }
+  }
+  next.hidden = false; next.classList.remove("leaving");
+  if (crossFade) replay(next, "entering");
+  $("#sheet-body").scrollTop = 0;
+  if (PLAY[key]) replay($(PLAY[key][0]), PLAY[key][1]);
+  const tabs = $("#tabs"), tab = $(`#tab-${key}`);
+  if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
+}
+function showScene(key) {
+  const layer = $("#scene");
+  clearTimeout(SC.closeTimer);
+  const wasOpen = !layer.hidden && !layer.classList.contains("closing") && SC.open !== null;
+  layer.classList.remove("closing");
+  if (wasOpen) { if (SC.open !== key) selectPanel(key, true); return; }
+  layer.hidden = false;
+  $("#board").inert = true;
+  document.documentElement.classList.add("scene-open");
+  selectPanel(key, false);
+  $(`#tab-${key}`).focus({ preventScroll: true });
+}
+function hideScene() {
+  if (SC.open === null) return;
+  const layer = $("#scene"), key = SC.open;
+  SC.open = null;
+  layer.classList.add("closing");
+  $("#board").inert = false;
+  document.documentElement.classList.remove("scene-open");
+  clearTimeout(SC.closeTimer);
+  SC.closeTimer = setTimeout(() => {
+    layer.hidden = true; layer.classList.remove("closing");
+    for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
+  }, motionMs(260));
+  const tile = document.querySelector(`#board [data-scene="${key}"]`);
+  if (tile) tile.focus();
+}
+function requestClose() {
+  if (SC.open === null) return;
+  if (history.state && history.state.boardScene) { history.back(); return; } /* opened from the wall: back pops it */
+  setHash(null, false); hideScene();
+}
+function switchTab(key) { if (key === SC.open) return; setHash(key, false); selectPanel(key, true); }
+function route() { const key = sceneFromHash(); if (key) showScene(key); else hideScene(); }
+function startScenes() {
+  $("#board").addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("[data-scene]");
+    if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    if (!setHash(a.dataset.scene, true)) { showScene(a.dataset.scene); return; }
+    showScene(a.dataset.scene);
+  });
+  $("#tabs").addEventListener("click", (e) => { const t = e.target.closest("[data-tab]"); if (t) switchTab(t.dataset.tab); });
+  $("#tabs").addEventListener("keydown", (e) => {
+    const i = SCENES.indexOf(SC.open); if (i < 0) return;
+    const j = e.key === "ArrowRight" ? (i + 1) % SCENES.length : e.key === "ArrowLeft" ? (i - 1 + SCENES.length) % SCENES.length : e.key === "Home" ? 0 : e.key === "End" ? SCENES.length - 1 : null;
+    if (j === null) return;
+    e.preventDefault(); switchTab(SCENES[j]); $(`#tab-${SCENES[j]}`).focus();
+  });
+  $("#scene-close").addEventListener("click", requestClose);
+  $("#scene-veil").addEventListener("click", requestClose);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && SC.open !== null) { e.preventDefault(); requestClose(); } });
+  addEventListener("popstate", route);
+  addEventListener("hashchange", route);
+  $("#view-wheel").addEventListener("click", () => setBuffView("wheel"));
+  $("#view-list").addEventListener("click", () => setBuffView("list"));
+  $("#skip").addEventListener("click", (e) => { e.preventDefault(); $("#main").focus(); });
+}
+
+/* ---------- emblems: painted icons from img/icons/<scene>.png, probed so a missing one keeps the line glyph ---------- */
+/* The wall art (board-wall, parchment-tile, map-parchment) is plain CSS with token fallbacks; only the icons are probed,
+   because new ones land one at a time. A missing icon costs one 404 in the network log and nothing on the page. */
+const ICONS = {}, GLYPHS = {};
+const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 320, height: 320, decoding: "async" });
+const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
+function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); }
+function placeIcon(key) {
+  const slot = document.querySelector(`#board [data-scene="${key}"] .emblem-slot`);
+  if (slot) slot.replaceChildren(iconImg(key));
+  const tab = $(`#tab-${key} .tab-ico`);
+  if (tab) tab.replaceChildren(iconImg(key));
+  if (SC.open === key) setSheetEmblem(key);
+}
+function startEmblems() {
+  for (const key of SCENES) {
+    const g = document.querySelector(`#board [data-scene="${key}"] .emblem-slot .emblem`);
+    if (g) GLYPHS[key] = g.cloneNode(true);
+    const tab = $(`#tab-${key} .tab-ico`);
+    if (tab && GLYPHS[key]) tab.replaceChildren(GLYPHS[key].cloneNode(true));
+    const im = new Image();
+    im.onload = () => { ICONS[key] = true; placeIcon(key); };
+    im.src = `img/icons/${key}.png`;
+  }
+}
+/* Hand-pinned: each tile gets a fixed tilt between -0.6 and 0.6 degrees, once per load; hover straightens it. */
+function pinTiles() {
+  document.querySelectorAll("#wall .tile").forEach((t) => t.style.setProperty("--rot", `${(Math.round((Math.random() * 1.2 - 0.6) * 10) / 10).toFixed(1)}deg`));
+}
+
+/* ---------- parallax: the painting drifts up to 12 px against the pointer, mouse on hover-capable screens only ---------- */
+function startParallax() {
+  const hoverMQ = window.matchMedia("(hover: hover) and (pointer: fine)");
+  const img = $("#hero-art img"); if (!img) return;
+  let raf = 0, tx = 0, ty = 0;
+  addEventListener("pointermove", (e) => {
+    if (!hoverMQ.matches || reduceMQ.matches || e.pointerType !== "mouse") return;
+    tx = -(e.clientX / innerWidth - 0.5) * 24; ty = -(e.clientY / innerHeight - 0.5) * 24;
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; img.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, 0)`; });
+  }, { passive: true });
+  reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) img.style.transform = ""; });
+}
+
 /* ---------- wisps (canvas) ---------- */
 function startWisps() {
   const cv = $("#wisps"), ctx = cv.getContext("2d");
@@ -1080,7 +1657,7 @@ function startWisps() {
   const run = () => { if (!raf && !reduceMQ.matches && !document.hidden) raf = requestAnimationFrame(frame); };
   const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
   size(); seed();
-  addEventListener("resize", () => { size(); if (parts.length === 0 || reduceMQ.matches) return; }, { passive: true });
+  addEventListener("resize", () => { size(); }, { passive: true });
   addEventListener("pointermove", (e) => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
   addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
@@ -1088,41 +1665,39 @@ function startWisps() {
   run();
 }
 
-/* ---------- painting layer height ---------- */
-function syncArt() {
-  const art = $("#hero-art"); if (!art) return;
-  const onGate = !$("#gate").hidden;
-  const target = onGate ? $("#gate") : $("#top");
-  art.classList.toggle("gate-mode", onGate);
-  const r = target.getBoundingClientRect();
-  art.style.height = `${Math.ceil(r.bottom + window.scrollY + (onGate ? 0 : 48))}px`;
-}
-if (window.ResizeObserver) { const ro = new ResizeObserver(syncArt); ro.observe($("#gate")); ro.observe($("#top")); }
-addEventListener("resize", syncArt, { passive: true });
-syncArt();
-
 /* ---------- boot ---------- */
 async function boot(mode, sdk) {
   $("#gate").hidden = true;
   $("#board").hidden = false;
-  syncArt();
+  $("#hero-art").classList.remove("gate-mode");
+  const wall = $("#wall");
+  wall.classList.add("settle");
+  setTimeout(() => wall.classList.remove("settle"), 120 * 8 + 600);
+  pinTiles();
+  startEmblems();
+  startParallax();
+  startScenes();
+  try { setBuffView(localStorage.getItem("board-buff-view") === "list" ? "list" : "wheel"); } catch (e) { setBuffView("wheel"); }
   try {
     const names = ["party", "timeline", "client", "stats"];
     const got = await Promise.all(names.map((n) => fetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })));
     names.forEach((n, i) => { D[n] = got[i]; });
     D.signups = await fetch("data/signups.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   } catch (e) {
-    $("#clock-label").textContent = "The data files did not load";
+    setClockLabel("The data files did not load", "");
     $("#footer").textContent = `Could not read the board's data: ${e.message}. The page needs its data folder published beside it.`;
+    document.querySelectorAll(".tile-body").forEach((b) => b.replaceChildren(h("span", { class: "tile-line", text: "Not loaded." })));
+    route();
     return;
   }
-  const steps = [renderHero, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
+  const steps = [renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
   for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
+  route();
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 startWisps();
-/* The board renders only through start(): from the Discord gate below, or as the owner preview. */
+/* The board renders only through start(): from the Discord gate below, or as the owner preview or review. */
 let started = false;
 window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); } });
 })();
@@ -1130,14 +1705,25 @@ window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; st
 <script type="module">
 /* Gate: the board renders inside Discord only. The Embedded App SDK is vendored (vendor/, see VENDOR.md) and loaded by a
    relative import, so the Activity loads nothing from outside its own URL mapping. Outside Discord the constructor throws
-   (no frame_id) or ready() never settles, and the gate stays. The owner preview skips the gate with ?preview=1 or #preview,
-   but only on claude.ai (whose artifact frame is served from a claudeusercontent.com host and receives only the #anchor)
-   or on a local host. */
+   (no frame_id) or ready() never settles, and the gate stays. Two preview paths skip the gate:
+   1. the owner preview, ?preview=1 or #preview, only on claude.ai (whose artifact frame is served from a claudeusercontent.com
+      host and receives only the #anchor) or on a local host;
+   2. the review key, #review-<REVIEW_KEY>, on any host, so the full page can be seen in a plain browser without a Discord launch.
+   The key keeps strangers off; it is not a secret from anyone who reads this file. A pass is remembered for the tab
+   (sessionStorage) so a reload on a scene keeps working, and the pass hash is replaced with the wall state. */
 const CLIENT_ID = "1561857940174938114";
+const REVIEW_KEY = "3bxfn6y72f4irkur6qqh";
 const host = location.hostname;
 const previewHost = host === "claude.ai" || host.endsWith(".claude.ai") || host.endsWith(".claudeusercontent.com") || host === "localhost" || host === "127.0.0.1";
-const previewFlag = new URLSearchParams(location.search).get("preview") === "1" || location.hash === "#preview";
-if (previewHost && previewFlag) {
+const hash = location.hash;
+const previewFlag = new URLSearchParams(location.search).get("preview") === "1" || hash === "#preview";
+const reviewFlag = REVIEW_KEY.length === 20 && hash === `#review-${REVIEW_KEY}`;
+let pass = null;
+try { pass = sessionStorage.getItem("board-pass"); } catch (e) { pass = null; }
+const remembered = pass === "review" || (pass === "preview" && previewHost);
+if (reviewFlag || (previewHost && previewFlag) || remembered) {
+  try { if (reviewFlag) sessionStorage.setItem("board-pass", "review"); else if (previewHost && previewFlag) sessionStorage.setItem("board-pass", "preview"); } catch (e) {}
+  if (reviewFlag || hash === "#preview") { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
   window.__board.start("preview");
 } else {
   try {
