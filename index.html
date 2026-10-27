@@ -409,7 +409,7 @@ footer code { font-family: var(--font-ui); font-size: 0.85rem; overflow-wrap: an
     <section aria-labelledby="h-signup">
       <div class="section-head">
         <h2 id="h-signup">Launch-night sign-ups</h2>
-        <p>Three questions for launch night, answered with the buttons on the sign-up card in Discord.</p>
+        <p>Four questions for launch night, answered with the buttons on the sign-up card in Discord.</p>
       </div>
       <div class="slip signup" id="discord-signups">
         <h3>From Discord</h3>
@@ -1004,6 +1004,7 @@ function renderDiscordSignups() {
     ["Pack", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
     ["Launch night", [row(T.rsvp.in, "In"), row(T.rsvp.maybe, "Maybe"), row(T.rsvp.out, "Out")]],
+    ...(T.when ? [["When they get on", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
   body.replaceChildren(...groups.map(([title, rows]) => h("div", { class: "tally" }, h("h4", { text: title }), ...rows)));
   $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${dtFull.format(new Date(S.updated))}.` : "Nobody has clicked the card yet.";
