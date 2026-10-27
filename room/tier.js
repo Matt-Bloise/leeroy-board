@@ -1,8 +1,8 @@
 // The quality ladder (V7-SPEC 3.2): off / low / medium / high / ultra. Picks a tier from the device, runs a 2 s probe,
 // remembers the result, takes the menu's override, and demotes on slow frames, a long start-up task or a lost context.
 // off: no room, the 2D light and the wisps pause. low: the V6 page as it was (painted room, 2D light). medium: the 3D room,
-// still lights, 30 fps. high: flickering lights, GPU wisps, bloom, 60 fps. ultra: high at full pixel ratio with more wisps;
-// its soft shadows and reflections need a renderer library and stay off. auto never picks ultra.
+// still lights, 30 fps. high: flickering lights, GPU dust and embers, 60 fps. ultra: high at full pixel ratio with more dust;
+// on three.js (V10) every 3D tier has soft shadows drawn once; ultra gets the sharper shadow maps. auto never picks ultra.
 //   import("./room/tier.js").then((m) => m.startTier(host))
 //   host: { state, motion, launchEpoch, newSignup, select, moreButton }   state is the object window.__board.room() reads
 export const ORDER = ["off", "low", "medium", "high", "ultra"];
@@ -52,18 +52,18 @@ export function detect() {
 
 export async function startTier(host) {
   const S = host.state;
-  S.backend = "webgl2 (hand-written; a renderer library can replace room/gl2.js)";
+  S.backend = "three.js 0.170.0 (vendor/three.module.min.js), modelled in room/tavern.js";
   S.demotions = S.demotions || [];
   let room = null, canvas = null, probeT = 0;
-  /* Default (2026-10-27, main session): the room ships OFF until a critic scores craft with it on at least equal to off
-     (V7 round 2 and an independent round 3 both scored 3 against 4). A viewer turns it on from the menu; a stored
-     "auto" is kept as a real choice so it stays reachable. Flip DEFAULT_CHOICE to "auto" when the gate passes. */
-  const DEFAULT_CHOICE = "off";
+  /* Default: "auto" since V10 (2026-10-27). The V7 room shipped off after four critics scored its craft 3 against 4. The
+     three.js room passed a fresh blind panel (four critics, room on 87 against off 85; board/V10-NOTES.md). A viewer can
+     still pick "off" in the menu, and that choice is remembered. On a phone auto means low: the painted page. */
+  const DEFAULT_CHOICE = "auto";
   const pref = () => get(KEY) || DEFAULT_CHOICE;
   const setClasses = (t) => {
     html().classList.toggle("room-off", t === "off");
     html().classList.toggle("room-on", t === "medium" || t === "high" || t === "ultra");
-    html().classList.toggle("room-wisps", t === "high" || t === "ultra");
+    html().classList.toggle("room-wisps", t === "medium" || t === "high" || t === "ultra"); /* the 2D wisps never float over the 3D room */
     dispatchEvent(new Event("board-room"));
   };
   /* low keeps V6's 2D light and wisps; on a machine that cannot hold them (a software GPU) the same rule demotes to off */
@@ -95,8 +95,10 @@ export async function startTier(host) {
     if (room) { room.setTier(t); setClasses(t); return; }
     canvas = document.createElement("canvas");
     canvas.id = "room"; canvas.setAttribute("aria-hidden", "true"); canvas.tabIndex = -1;
-    const anchor = document.querySelector(".hero-art"); /* above the painting, under the candle glow and vignette */
-    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(canvas, anchor.nextSibling); else document.body.prepend(canvas);
+    /* under the hero's shade (its painting hides while the room is on), the candle glow and the vignette: the room gets the
+       same scrim the painting had, so the heading reads the same over either */
+    const anchor = document.querySelector(".hero-art");
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(canvas, anchor); else document.body.prepend(canvas);
     try {
       const { startRoom } = await import("./room.js");
       room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, onSlow: () => demote("three frames over 50 ms in 5 s"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });

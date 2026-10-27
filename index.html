@@ -280,9 +280,11 @@ main:focus { outline: none; }
 .tilt { font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.08em; color: var(--text-dim); background: var(--glass); border: 1px solid var(--grain); border-radius: 999px; padding: 4px 12px; min-height: 32px; cursor: pointer; }
 .tilt[aria-pressed="true"] { color: var(--parchment); border-color: var(--brass); }
 .sound-box { position: relative; display: inline-flex; align-items: center; gap: 8px; }
-/* V7: the 3D room sits behind the board at medium tier and up; the wall plate's painting and 2D light give way to it */
+/* V7/V10: the 3D room sits behind the board at medium tier and up, under the hero's shade; only the painting gives way to it */
 #room { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; }
-html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
+html.room-on .hero-art img { visibility: hidden; }
+/* the room is lit dark by itself, so its scrim only calms the heading and the foot, where the painting's needs the whole frame */
+html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 18%, var(--shade-none) 34%, var(--shade-none) 80%, var(--shade-mid) 100%); }
 .room-pick { box-sizing: border-box; width: 0; opacity: 0; margin-left: -8px; min-height: 32px; font-family: var(--font-ui); font-size: var(--fs-chip); color: var(--cream); background: var(--glass); border: 0 solid var(--grain); border-radius: 999px; padding: 0; appearance: none; transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
 .sound-box:hover .room-pick, .sound-box:focus-within .room-pick, .sound-box.show .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; }
 .room-pick option { color: var(--ink); background: var(--parchment); }
@@ -560,8 +562,8 @@ html.room-on .wall-plate, html.room-on .hero-art { visibility: hidden; }
 .scene-layer.flip .sheet, .scene-layer.morph .sheet { animation: none; transform-origin: 0 0; }
 .scene-layer.morph .scene-veil { animation: none; }
 @media (min-width: 700px) {
-  #board { transition: filter var(--t-move) var(--ease-oak); }
-  html.scene-open #board { filter: blur(var(--wall-blur)) brightness(0.72); }
+  #board, #room { transition: filter var(--t-move) var(--ease-oak); }
+  html.scene-open #board, html.scene-open #room { filter: blur(var(--wall-blur)) brightness(0.72); } /* the room falls out of focus with the wall behind it */
 }
 ::view-transition-group(scene-band) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
 ::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: cover; object-position: left top; }
