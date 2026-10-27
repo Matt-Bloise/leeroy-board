@@ -4,7 +4,7 @@
 // camera 0.6 m into the room with the v3 easing, closing pulls it back. The board itself stays the DOM's own wall plate.
 //   const room = await startRoom({ tier, canvas, motion, launchEpoch, newSignup, onSlow, onStartCost, onLost })
 //   room.setTier(t)  room.refresh(next)  room.stop()  room.status()
-import { createTavern } from "./tavern.js";
+import { createTavern } from "./tavern.js?v=d3e1367bb0";
 
 /* shadows are drawn once (the lights do not move), so they cost nothing per frame; ultra gets the sharper map */
 const TIERS = {

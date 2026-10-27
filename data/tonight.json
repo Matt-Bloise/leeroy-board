@@ -1,15 +1,15 @@
 {
- "generated": "2026-10-27T23:16:29.043Z",
+ "generated": "2026-10-27T23:21:49.030Z",
  "cards": [
   "Next up",
-  "Your next step",
-  "Tonight"
+  "Your steps",
+  "Launch night"
  ],
  "labels": {
   "you": "You",
   "in": "Coming",
   "maybe": "Maybe",
-  "out": "Not coming",
+  "out": "Out",
   "nobody": "Nobody yet",
   "iam": "I am",
   "looking": "Just looking",
@@ -19,7 +19,8 @@
  "steps": {
   "spec": "Choose your spec.",
   "choose": "Choose {x}.",
-  "signup": "Answer the sign-up in #wow-forever.",
+  "signup": "Answer the sign-up card.",
+  "poll": "Vote: group name.",
   "none": "Nothing to decide right now.",
   "looking": "Pick your name above."
  },
@@ -34,7 +35,9 @@
    "date": null,
    "label": "Names open",
    "when": "October 27, 4 PM ET",
-   "meaning": "Pack owners can pick names."
+   "meaning": "Pack owners make characters.",
+   "until_epoch": 1793779200,
+   "open_when": "Open now, until November 3"
   },
   {
    "key": "launch",
@@ -80,5 +83,12 @@
    "class_key": "warlock",
    "step": null
   }
- ]
+ ],
+ "links": {
+  "signup": "https://discord.com/channels/782702097421565952/1558663575495770193/1564402158181290037",
+  "choose": "#library.professions.overview",
+  "spec": "#five",
+  "poll": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347272420921356"
+ },
+ "poll_closes": 1793299053
 }

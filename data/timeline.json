@@ -1,12 +1,15 @@
 {
- "generated": "2026-10-27T23:16:28.966Z",
+ "generated": "2026-10-27T23:21:48.951Z",
  "events": [
   {
    "key": "names_open",
    "epoch": 1793131200,
    "label": "Names open: people who bought a pack create characters",
    "detail": "up to 3 characters each, first come first served",
-   "format": "F"
+   "format": "F",
+   "until_epoch": 1793779200,
+   "until": "Nov 3",
+   "until_zone": "Pacific"
   },
   {
    "key": "launch",

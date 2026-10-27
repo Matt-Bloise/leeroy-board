@@ -1,11 +1,14 @@
 // Living Board library search worker (V4-SPEC 3.3). A module worker: it loads every category file of data/library/ and
 // search.json off the page's thread, then answers { id, q, cap } with the ranked hits, scored by rank-core.js (the wiki's
 // own ranker, copied by build-data.mjs), so typing never blocks a frame. Hits carry what a result row shows.
-import { rank, factHays } from "./rank-core.js";
+import { rank, factHays } from "./rank-core.js?v=7f8514dc3a";
 let pages = [], hays = [], idf = null, ready = null;
-const get = (f) => fetch(new URL(`../data/library/${f}`, import.meta.url)).then((r) => { if (!r.ok) throw new Error(`${f} answered ${r.status}`); return r.json(); });
+/* V11 cache stamps: index.json loads with "no-cache" and names every other file's stamp, which rides on its URL */
+let stamps = {};
+const get = (f) => fetch(new URL(`../data/library/${f}${stamps[f] ? `?v=${stamps[f]}` : ""}`, import.meta.url), f === "index.json" ? { cache: "no-cache" } : {}).then((r) => { if (!r.ok) throw new Error(`${f} answered ${r.status}`); return r.json(); });
 async function load() {
   const index = await get("index.json");
+  stamps = index.stamps || {};
   const [cats, search] = await Promise.all([Promise.all(index.categories.map((c) => get(`${c.key}.json`))), get("search.json").catch(() => null)]);
   const byId = {};
   for (const c of cats) for (const p of c.pages) byId[p.id] = p;

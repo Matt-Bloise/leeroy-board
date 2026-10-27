@@ -7,7 +7,7 @@
 //   T.setLights(k, s, flicker)      light levels (k: { hearth, candles, lantern }) and the flicker at time s
 //   T.setAir(n, s)                  dust and embers (n 0 removes), animated on the GPU at time s
 //   T.memory()  T.dispose()
-import * as THREE from "../vendor/three.module.min.js";
+import * as THREE from "../vendor/three.module.min.js?v=08fd7545d1";
 
 /* ---------- canvas textures, drawn in code ---------- */
 const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;

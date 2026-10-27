@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T23:16:28.964Z",
+ "generated": "2026-10-27T23:21:48.948Z",
  "party": "Dungeons and Drinking",
  "faction": "Horde",
  "ruleset": "Normal",
@@ -214,8 +214,10 @@
    "title": "Guild name",
    "message_id": "1564347272420921356",
    "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347272420921356",
-   "text": "poll closes on Thu, Oct 29, 2:37 PM ET. Add names in chat."
+   "text": "poll closes on Thu, Oct 29, 2:37 PM ET. Add names in chat.",
+   "closes_epoch": 1793299053
   }
  ],
- "channel_url": "https://discord.com/channels/782702097421565952/1558663575495770193"
+ "channel_url": "https://discord.com/channels/782702097421565952/1558663575495770193",
+ "signup_url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564402158181290037"
 }

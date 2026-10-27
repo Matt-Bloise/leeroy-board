@@ -218,7 +218,7 @@ a:hover { color: var(--parchment); }
   background-image: radial-gradient(ellipse at 30% 0%, var(--slip-sheen), transparent 60%);
   min-width: 0;
 }
-.slip::before { content: ""; position: absolute; top: 8px; left: 50%; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--parchment), var(--brass) 45%, var(--brass-dim)); box-shadow: 0 2px 3px var(--shadow); }
+.slip::before { content: ""; position: absolute; top: 8px; left: 50%; width: 14px; height: 14px; margin-left: -7px; clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%); background: linear-gradient(135deg, transparent 44%, var(--brass-dim) 45% 55%, transparent 56%), radial-gradient(circle at 38% 32%, var(--parchment), var(--brass) 42%, var(--brass-dim)); filter: drop-shadow(0 2px 2px var(--shadow)); }
 .slip h3 { color: var(--ink); }
 .slip .label { color: var(--ink-soft); }
 .slip a { color: var(--wax); }
@@ -235,7 +235,7 @@ a:hover { color: var(--parchment); }
 .presence { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: var(--step--1); color: var(--text-dim); }
 @media (max-width: 699px) { #presence-text { flex: 1 1 100%; } }
 .peers { display: flex; flex-wrap: wrap; gap: 6px; }
-.peer { width: 12px; height: 12px; border-radius: 50%; background: var(--pc, var(--c-none)); box-shadow: 0 0 10px var(--pc, var(--c-none)); position: relative; }
+.peer { width: 12px; height: 15px; clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%); background: linear-gradient(180deg, var(--edge-hi), transparent 40%), var(--pc, var(--c-none)); filter: drop-shadow(0 0 6px var(--pc, var(--c-none))); position: relative; }
 .peer.me { outline: 2px solid var(--parchment); outline-offset: 2px; }
 .peer-you { font-family: var(--font-ui); color: var(--parchment); letter-spacing: 0.06em; }
 .clock { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px 14px; }
@@ -368,9 +368,9 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .deep-notes ul, .deep-rules { margin: 4px 0 0; padding-left: 18px; font-size: 1rem; }
 .deep-rules li { margin: 4px 0; }
 .st { display: inline-block; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.04em; padding: 0 7px; border-radius: 999px; border: 1px solid var(--ink-soft); color: var(--ink); }
-.st.forever { background: var(--parchment); border-color: var(--seal-confirmed); }
-.st.classic { background: var(--parchment-2); border-style: dashed; }
-.st.unknown { background: var(--parchment-2); border-color: var(--wax); color: var(--ink); border-width: 2px; }
+.st.st-forever { background: var(--parchment); border-color: var(--seal-confirmed); }
+.st.st-classic { background: var(--parchment-2); border-style: dashed; }
+.st.st-unknown { background: var(--parchment); border-color: var(--wax); color: var(--ink); }
 /* V6: depth control, Tonight, the picked person, New badges, the expert lane */
 .depth { display: inline-flex; border: 1px solid var(--brass-dim); border-radius: 999px; overflow: hidden; }
 .depth button { font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.08em; color: var(--cream); background: var(--glass); border: 0; padding: 4px 12px; min-height: 32px; cursor: pointer; }
@@ -380,7 +380,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .tn { gap: 16px; max-width: 820px; width: 100%; justify-self: center; }
 .tn-pick { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px 18px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); }
 .tn-who { flex-basis: 100%; margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); }
-.tn-why { flex-basis: 100%; margin: -6px 0 4px; font-size: 1.05rem; color: var(--ink); }
+.tn-why { flex-basis: 100%; max-width: none; margin: -6px 0 4px; font-size: 1.05rem; color: var(--ink); }
 .tn-name { min-height: 44px; padding: 6px 16px; font-family: var(--font-ui); font-size: 1.05rem; letter-spacing: 0.04em; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); border-left: 4px solid var(--cc, var(--ink-soft)); border-radius: 6px; cursor: pointer; }
 .tn-name:hover { background: var(--cream); }
 .tn-chip { justify-self: start; min-height: 44px; padding: 4px 16px; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.06em; color: var(--parchment); background: var(--oak-3); border: 1px solid var(--brass); border-radius: 999px; cursor: pointer; }
@@ -390,7 +390,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .tn-card p { margin: 4px 0 0; font-family: var(--font-body); font-size: 1.1rem; line-height: 1.4; }
 .tn-card .tn-big { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); line-height: 1.15; }
 .tn-card .tn-when { font-weight: 600; }
-.tn-link { color: var(--wax); text-decoration: underline; text-underline-offset: 4px; }
+.tn-link, .tn-link:hover { color: var(--wax); text-decoration: underline; text-underline-offset: 4px; }
 .tn-card .tn-launch { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--ink-soft); font-weight: 600; }
 .tn-line b { font-family: var(--font-sc); letter-spacing: 0.06em; }
 .tn-actions { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -400,7 +400,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .med.me b { text-decoration: underline; text-underline-offset: 4px; }
 .buff.me { outline: 2px solid var(--brass); }
 .new-badge { justify-self: start; font-family: var(--font-sc); font-size: 0.875rem; letter-spacing: 0.08em; padding: 0 8px; border-radius: 999px; background: var(--wax); color: var(--parchment); }
-.lib-tools { display: flex; gap: 8px; margin-left: auto; order: 9; }
+.lib-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; order: 9; }
 .lib-tool { min-height: 36px; padding: 2px 12px; font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.06em; color: var(--cream); background: var(--glass); border: 1px solid var(--brass-dim); border-radius: 999px; cursor: pointer; }
 .lib-tool[aria-pressed="true"] { color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
 .xp { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; flex-basis: 100%; font-family: var(--font-body); font-size: 1rem; color: var(--ink); }
@@ -614,9 +614,6 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .rail { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 26px; position: relative; max-width: 48rem; }
 .rail::before { content: ""; position: absolute; left: 10px; top: 10px; bottom: 10px; width: 2px; background: var(--grain); }
 .stop { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 16px; position: relative; }
-.stop .dot { width: 14px; height: 14px; box-sizing: border-box; border-radius: 50%; margin-top: 5px; border: 2px solid var(--brass); background: var(--oak-1); position: relative; z-index: 1; }
-.stop.past .dot { background: var(--brass); }
-.stop.next .dot { background: var(--parchment); box-shadow: 0 0 12px var(--brass); }
 .stop-body { display: grid; gap: 4px; min-width: 0; }
 .stop .when { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: var(--step--1); color: var(--brass); letter-spacing: 0.04em; }
 .stop h3 { font-size: var(--step-2); color: var(--parchment); }
@@ -633,7 +630,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .face::after { content: ""; position: absolute; inset: -40% -40% auto auto; width: 90%; height: 70%; background: radial-gradient(circle, var(--cc), transparent 65%); opacity: 0.18; pointer-events: none; }
 .front { position: relative; inset: auto; }
 .back { transform: rotateY(180deg); overflow-y: auto; }
-.back .flip { position: sticky; bottom: 0; background: var(--oak-1); box-shadow: 0 -10px 16px var(--oak-1); }
+.back .flip { position: static; margin-top: 12px; background: var(--oak-1); }
 .card { transition: transform var(--t-micro) var(--ease-oak); }
 @media (hover: hover) { .card:hover { transform: translateY(-6px); } .card:hover .face { border-color: var(--cc); } }
 .card .who { font-family: var(--font-display); font-size: var(--step-3); color: var(--cc); text-shadow: 0 0 22px var(--cc); line-height: 1; }
@@ -664,8 +661,8 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .map-road { fill: none; stroke: var(--ink); stroke-width: 2.8; stroke-dasharray: 2 7; stroke-linecap: round; animation: march 2.4s linear infinite; }
 .map-air { fill: none; stroke: var(--ink-soft); stroke-width: 1.8; stroke-dasharray: 6 8; animation: march 3.2s linear infinite; }
 @keyframes march { to { stroke-dashoffset: -36; } }
-.map-text { fill: var(--ink); font-family: var(--font-ui); font-size: 15px; font-weight: 700; letter-spacing: 0.05em; }
-.map-text.small { fill: var(--ink-soft); font-size: 13px; font-weight: 500; }
+.map-text { fill: var(--ink); font-family: var(--font-ui); font-size: 17px; font-weight: 700; letter-spacing: 0.05em; }
+.map-text.small { fill: var(--ink-soft); font-size: 16px; font-weight: 500; }
 .map-city { fill: var(--wax); stroke: var(--parchment); stroke-width: 2; }
 .map-meet { fill: none; stroke: var(--wax); stroke-width: 1.6; stroke-dasharray: 3 3; }
 .map-zep { fill: var(--brass-dim); stroke: var(--ink); stroke-width: 1; }
@@ -697,7 +694,6 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .race .rwiki { font-size: 0.95rem; }
 .race .rclient { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: var(--fs-small); color: var(--ink-soft); letter-spacing: 0.03em; }
 .dots { display: inline-flex; gap: 4px; }
-.dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 1px var(--ink); display: inline-block; }
 
 .ring-wrap { display: grid; gap: 18px; grid-template-columns: 1fr; align-items: center; }
 @media (min-width: 760px) { .ring-wrap { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); } }
@@ -708,7 +704,6 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .ring-tlabel { fill: var(--brass-hi); font-family: var(--font-ui); font-size: 12px; font-weight: 700; }
 .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.95rem; }
 .legend li { min-width: 0; display: grid; grid-template-columns: 12px auto 1fr; gap: 8px; align-items: baseline; }
-.legend .sw { width: 10px; height: 10px; border-radius: 2px; background: var(--sw); display: inline-block; }
 .rewards { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .rewards li { min-width: 0; display: grid; grid-template-columns: 3.2rem 1fr; gap: 8px; align-items: baseline; }
 .rewards b { font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--brass); }
@@ -820,7 +815,7 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 @keyframes sheen { from { opacity: 0; transform: translateX(-60%); } 40% { opacity: 0.5; } to { opacity: 0; transform: translateX(60%); } }
 .pager { display: flex; justify-content: center; gap: 2px; }
 .pager button { width: 32px; height: 32px; padding: 0; border: 0; background: none; display: grid; place-items: center; cursor: pointer; }
-.pager button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cc); opacity: 0.35; transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
+.pager button:not(.pager-crest)::before { content: ""; width: 8px; height: 10px; clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%); background: var(--cc); opacity: 0.35; transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
 .pager button[aria-current="true"]::before { opacity: 1; transform: scale(1.35); }
 @media (min-width: 1100px) { .pager { display: none; } }
 .zone-ring { fill: none; stroke: var(--wax); stroke-width: 2.5; opacity: 0; transform-box: fill-box; transform-origin: center; }
@@ -844,7 +839,8 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .chip { position: relative; overflow: hidden; }
 .chip::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 35%, var(--slip-sheen) 50%, transparent 65%); transform: translateX(-120%); }
 @media (hover: hover) { .chip:hover::after, .rrow:hover .chip::after { transform: translateX(120%); transition: transform var(--t-hero) var(--ease-oak); } }
-.seal { display: inline-grid; place-items: center; width: 1.15em; height: 1.15em; margin-right: 8px; vertical-align: -0.2em; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--hi-wax), var(--wax) 62%); box-shadow: 0 1px 2px var(--shadow); }
+.seal { display: inline-grid; place-items: center; width: 1.3em; height: 1.3em; margin-right: 8px; vertical-align: -0.3em; }
+.seal .emb { width: 100%; height: 100%; --ea: var(--wax); --eh: var(--hi-wax); }
 .seal.art { background: none; box-shadow: none; width: 1.6em; height: 1.6em; vertical-align: -0.45em; }
 .seal img { width: 100%; height: 100%; display: block; }
 .ledger.stamping .settled-li { animation: stamp var(--t-move) var(--ease-spring) both; animation-delay: calc(var(--di, 0) * var(--stagger)); }
@@ -872,7 +868,7 @@ main.has-beam { margin-top: 44px; }
 .med { display: grid; justify-items: center; align-content: start; gap: 2px; min-width: 0; text-align: center; }
 .med-ico { width: var(--med); height: var(--med); --med: clamp(52px, 5.6vw, 120px); display: grid; place-items: center; }
 .med-ico img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(3px 4px 3px var(--shadow)); }
-.med-ico i { width: 26px; height: 26px; border-radius: 50%; background: var(--cc); box-shadow: 0 0 14px var(--cc); }
+.med-ico i { width: 24px; height: 30px; clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%); background: linear-gradient(180deg, var(--edge-hi), transparent 45%), var(--cc); }
 .med b { color: var(--cc); font-family: var(--font-ui); font-size: 1.15rem; text-shadow: 0 0 10px var(--cc); }
 .med small { color: var(--cream); line-height: 1.2; font-size: max(var(--fs-small), 0.875rem); }
 @media (min-width: 1200px) { .med-ico { --med: clamp(96px, 6vw, 120px); } }
@@ -965,7 +961,6 @@ main.has-beam { margin-top: 44px; }
 .gl { display: inline; padding: 0; margin: 0; font: inherit; color: inherit; background: none; border: 0; cursor: help; text-decoration: underline dotted var(--ink-soft); text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .gl:hover, .gl[aria-expanded="true"] { color: var(--seal-confirmed); }
 .ttc.gloss { width: min(18rem, calc(100% - 20px)); }
-.cat-ini { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font-style: normal; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: var(--ink); background: radial-gradient(circle at 35% 35%, var(--brass-hi), var(--brass) 60%, var(--brass-dim)); box-shadow: 0 1px 2px var(--shadow); }
 .cat span { flex: 1 1 auto; }
 .lib-tile a.tile-band, .gl-tile a.tile-band { text-decoration: none; }
 .lib-tile a.tile-band:hover, .gl-tile a.tile-band:hover { color: var(--ink); }
@@ -1113,7 +1108,7 @@ main.has-beam { margin-top: 44px; }
 .page-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.05em; color: var(--l-dim); }
 .page-meta b { color: var(--cream); font-weight: 700; }
 .wax { display: inline-flex; align-items: center; gap: 8px; }
-.wax i { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--edge-hi), var(--sc, var(--wax)) 55%); box-shadow: 0 1px 3px var(--shadow), inset 0 0 0 2px var(--edge-dark); }
+.wax .emb { width: 26px; height: 26px; --ea: var(--sc, var(--wax)); --eh: var(--edge-hi); --el: var(--oak-0); filter: drop-shadow(0 1px 2px var(--shadow)); }
 .page-head .copy { color: var(--cream); background: var(--glass); border-color: var(--brass-dim); }
 .page-head .lib-btn { color: var(--cream); background: var(--glass); border-color: var(--grain); }
 .blurb { font-size: var(--step-1); line-height: 1.45; color: var(--ink); max-width: 60ch; }
@@ -1144,7 +1139,7 @@ main.has-beam { margin-top: 44px; }
 .unknown { display: grid; gap: 8px; padding: 14px 18px; border-radius: 4px; border: 2px dashed var(--brass-dim); background: var(--parchment-2); }
 .unknown h4 { display: flex; align-items: center; gap: 10px; margin: 0; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); }
 .unknown ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink); }
-.pend { width: 22px; height: 22px; flex: none; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--hi-warlock), var(--seal-pending) 62%); box-shadow: 0 1px 3px var(--shadow); }
+.emb.pend { width: 24px; height: 24px; --eb: var(--seal-pending); --el: var(--ink); filter: drop-shadow(0 1px 2px var(--shadow)); }
 .ptabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .ptab { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 8px 14px 6px; border-radius: 8px 8px 2px 2px; color: var(--ink); text-decoration: none; font-family: var(--font-ui); letter-spacing: 0.04em; background: var(--parchment-2) url("img/parchment-tile.jpg") center / 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 2px 6px var(--wear); border-bottom: 2px solid var(--ink-line); }
 .ptab:hover { color: var(--wax); }
@@ -1219,6 +1214,216 @@ main.has-beam { margin-top: 44px; }
 .ttc-src a { color: var(--q-rare); }
 .ttc-x { position: absolute; right: 8px; top: 8px; display: none; min-height: 32px; padding: 2px 10px; font: inherit; color: var(--tt-text); background: transparent; border: 1px solid var(--tt-edge); border-radius: 999px; cursor: pointer; }
 .ttc.sheetmode .ttc-x { display: inline-block; position: static; margin-top: 10px; min-height: 44px; width: 100%; }
+/* ---------- V11: drawn emblems, stamps, crests as marks, scene ornaments ---------- */
+.emb { width: 1.3em; height: 1.3em; flex: none; display: inline-block; vertical-align: -0.28em; overflow: visible; --eb: var(--brass); --ea: var(--wax); --el: var(--ink); --eh: var(--parchment); }
+.emb .eb { fill: var(--eb); stroke: var(--el); stroke-width: 1.1; stroke-linejoin: round; }
+.emb .ea { fill: var(--ea); stroke: var(--el); stroke-width: 0.9; stroke-linejoin: round; }
+.emb .ed { fill: var(--el); }
+.emb .ee { fill: var(--light-warm); opacity: 0; }
+.emb .eh { fill: var(--eh); stroke: var(--el); stroke-width: 0.8; stroke-linejoin: round; }
+.emb .el, .emb .ek, .emb .elb, .emb .edl, .emb .ehl { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.emb .el { stroke: var(--el); stroke-width: 1.3; }
+.emb .ek { stroke: var(--el); stroke-width: 2.3; }
+.emb .elb { stroke: var(--brass-hi); stroke-width: 1.1; }
+.emb .edl { stroke: var(--el); stroke-width: 1.2; stroke-dasharray: 1.2 1.7; }
+.emb .ehl { stroke: var(--cream); stroke-width: 1.2; opacity: 0.7; }
+.emb .es { fill: var(--ea); opacity: 0; }
+.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; }
+.on-oak .emb, .emb.on-oak { --el: var(--oak-0); }
+.crest-mark { width: 1.45em; height: 1.45em; flex: none; display: inline-block; vertical-align: -0.38em; object-fit: contain; filter: drop-shadow(0 1px 1px var(--shadow)); }
+.crest-stack { display: inline-flex; vertical-align: middle; }
+.crest-stack .crest-mark + .crest-mark { margin-left: -0.55em; }
+
+/* the dates: one emblem per event, lit while open, wax-sealed once past, an ember on the next */
+.rail::before { background: linear-gradient(180deg, var(--brass) 0 var(--prog, 0%), var(--grain) var(--prog, 0%)); width: 3px; left: 15px; top: 18px; bottom: 18px; }
+.stop { grid-template-columns: 34px minmax(0, 1fr); }
+.stop-mark { position: relative; z-index: 1; width: 34px; height: 34px; display: grid; place-items: center; margin-top: 0; }
+.stop-mark .emb { width: 34px; height: 34px; --eb: var(--parchment-2); --ea: var(--brass-dim); filter: drop-shadow(0 1px 0 var(--edge-hi)) drop-shadow(0 2px 2px var(--wear)); }
+.stop.next .stop-mark .emb, .stop.open .stop-mark .emb { --eb: var(--brass-hi); --ea: var(--wax); filter: drop-shadow(0 0 6px var(--candle)) drop-shadow(0 2px 2px var(--wear)); }
+.stop.past .stop-mark .emb { --eb: var(--parchment-2); --ea: var(--grain); opacity: 0.7; }
+.stop-seal { position: absolute; right: -6px; bottom: -4px; width: 17px; height: 17px; --ea: var(--wax); --el: var(--ink); --eh: var(--hi-wax); }
+.stop-ember { position: absolute; left: 50%; top: 2px; width: 8px; height: 8px; margin-left: -4px; pointer-events: none; opacity: 0; background: radial-gradient(closest-side, var(--light-warm), var(--candle) 60%, transparent); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.stop .label.state { display: inline-flex; align-items: center; gap: 6px; }
+.stop.open .label.state { color: var(--ink); font-weight: 700; text-decoration: underline 2px var(--wax); text-underline-offset: 5px; }
+.stop.open h3 { color: var(--ink); }
+.dates-grid { display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.cal-col { display: none; }
+@media (min-width: 1100px) { .dates-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 23rem); } .cal-col { display: grid; gap: 10px; } }
+.cal { position: relative; padding: 14px 16px 12px; background: var(--parchment); border: 1px solid var(--brass-dim); border-top: 3px solid var(--oak-3); border-radius: 4px; box-shadow: 0 2px 10px var(--wear), inset 0 0 30px var(--slip-burn); color: var(--ink); }
+.cal h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
+.cal-grid .dow { font-size: var(--fs-small); letter-spacing: 0.04em; color: var(--ink-soft); text-align: center; }
+.cal-day { position: relative; min-height: 2.05rem; display: grid; place-items: center; font-size: 1rem; color: var(--ink); border-radius: 3px; }
+.cal-day.out { color: var(--ink-soft); opacity: 0.45; }
+.cal-day.win { background: var(--hi-brass); }
+.cal-day.win.first { border-radius: 10px 3px 3px 10px; }
+.cal-day.today { outline: 2px solid var(--wax); outline-offset: -2px; font-weight: 700; }
+.cal-day .emb { position: absolute; right: -4px; top: -6px; width: 19px; height: 19px; --el: var(--ink); --eb: var(--brass); filter: drop-shadow(0 1px 1px var(--wear)); }
+.cal-day.has-emb span { font-weight: 700; color: var(--ink); }
+.cal-key .today-k { width: 1.1em; height: 1.1em; outline: 2px solid var(--wax); outline-offset: -2px; border-radius: 3px; }
+.cal-key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-small); color: var(--ink-soft); }
+.cal-key span { display: inline-flex; align-items: center; gap: 5px; }
+.cal-key .sw-win { width: 1.4em; height: 0.8em; background: var(--hi-brass); border: 1px solid var(--brass-dim); border-radius: 2px; }
+
+/* stamped tags: a wax seal for "board", an ink speech mark for "chat", a ribbon for "declared", an open lock for "still open" */
+.chip.stamp { gap: 5px; padding: 1px 9px 1px 4px; border-radius: 3px 10px 10px 3px; overflow: visible; }
+.chip.stamp .emb { width: 1.6em; height: 1.6em; margin: -0.35em 0 -0.35em -0.5em; filter: drop-shadow(0 1px 1px var(--shadow)); }
+.chip.stamp.board { border-color: var(--brass); }
+.chip.stamp.board .emb { --ea: var(--wax); --eh: var(--hi-wax); }
+.chip.stamp.chat .emb { --eb: var(--parchment); --el: var(--oak-0); --ea: var(--ink-soft); }
+.chip.stamp.declared .emb { --eb: var(--brass); --ea: var(--wax); --eh: var(--parchment); --el: var(--oak-0); }
+.chip.stamp.open-lock { border-color: var(--warn); color: var(--warn); }
+.chip.stamp.open-lock .emb { --eb: var(--warn); --el: var(--oak-0); }
+.slip .chip.stamp.open-lock, .slip .chip.stamp.open-lock .emb { color: var(--ink); }
+.label.srctag { display: inline-flex; align-items: center; gap: 6px; justify-self: start; font-variant: small-caps; color: var(--ink-soft); }
+.label.srctag .emb { width: 1.45em; height: 1.45em; filter: drop-shadow(0 1px 0 var(--edge-hi)); }
+.label.srctag.board .emb { --ea: var(--wax); --eh: var(--hi-wax); }
+.label.srctag.notes .emb { --eb: var(--brass); }
+
+/* bonuses: an engraved icon per challenge group, in its ring colour */
+.legend li { grid-template-columns: 1.6rem auto 1fr; align-items: center; }
+.legend .cat-emb { width: 1.5rem; height: 1.5rem; --eb: var(--sw); --ea: var(--parchment); --el: var(--ink); filter: drop-shadow(0 1px 0 var(--edge-hi)); }
+
+/* sign-ups: an icon per question, crests on the names, the counts fill */
+.tally h4 { display: flex; align-items: center; gap: 8px; }
+.tally h4 .emb { width: 1.6em; height: 1.6em; --el: var(--ink); }
+.trow { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 2px 0; }
+.trow-n { flex: none; display: inline-flex; align-items: center; gap: 7px; min-width: 4.6rem; }
+.trow-n b { font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: 1.1rem; }
+.pips { display: inline-flex; gap: 2px; }
+.pips i { width: 7px; height: 11px; background: var(--ink-wash); border: 1px solid var(--ink-line); clip-path: polygon(0 0, 100% 0, 100% 72%, 50% 100%, 0 72%); }
+.pips i.on { background: var(--brass); border-color: var(--ink-soft); }
+.trow-who { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.trow-who .who { display: inline-flex; align-items: center; gap: 4px; }
+.trow-who .crest-mark { width: 1.3em; height: 1.3em; }
+.trow.zero .trow-who { color: var(--ink-soft); }
+.seats { display: none; }
+@media (min-width: 1000px) and (min-height: 850px) { .seats { display: block; } }
+.seats svg { display: block; width: 100%; max-width: 640px; height: auto; margin: 0 auto; }
+.seat-table { fill: var(--oak-2); stroke: var(--oak-0); stroke-width: 3; }
+.seat-plank { fill: none; stroke: var(--grain); stroke-width: 1.5; }
+.seat-name { fill: var(--ink); font-family: var(--font-ui); font-size: 15px; font-weight: 700; text-anchor: middle; }
+.seat-ans { fill: var(--ink-soft); font-family: var(--font-ui); font-size: 14px; text-anchor: middle; letter-spacing: 0.04em; }
+.seat-ans.in { fill: var(--seal-confirmed, var(--ink)); }
+.seat-mug.empty { opacity: 0.35; }
+.seats-cap { margin: 8px 0 0; text-align: center; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); }
+
+/* the helper bot: a quill-ink line drawn on, a wax drop on the latest answer */
+.spark-line { stroke-dasharray: 1; stroke-dashoffset: 0; }
+.spark-drop { fill: var(--wax); stroke: var(--ink); stroke-width: 1; }
+.spark-quill { overflow: visible; }
+
+/* wall tiles: crests and emblems instead of dots */
+.dots { display: inline-flex; align-items: center; }
+.dots .crest-mark { width: 1.35em; height: 1.35em; }
+.dots .crest-mark + .crest-mark { margin-left: -0.45em; }
+.su-keg { display: flex; align-items: center; gap: 10px; }
+.su-keg svg { width: 100%; height: 44px; display: block; }
+.keg-pint { stroke: var(--oak-0); stroke-width: 1.4; }
+.keg-pint.in { fill: var(--ok); } .keg-pint.maybe { fill: var(--warn); } .keg-pint.out { fill: var(--wax); } .keg-pint.none { fill: var(--oak-3); }
+.keg-foam { fill: var(--cream); opacity: 0.9; }
+.keg-handle { fill: none; stroke: var(--brass-dim); stroke-width: 2.2; }
+.keg-pint.none { stroke: var(--brass-dim); }
+
+/* the peers in a claude.ai room, the pager, fallbacks: small shields and crests, not dots */
+.pager button .crest-mark { width: 22px; height: 22px; opacity: 0.45; transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
+.pager button[aria-current="true"] .crest-mark { opacity: 1; transform: scale(1.2); }
+
+/* the library's shelves: an engraved icon per category */
+.cat-ico { width: 28px; height: 28px; --eb: var(--brass); --ea: var(--wax); --el: var(--ink); filter: drop-shadow(0 1px 0 var(--edge-hi)); }
+.cat[aria-pressed="true"] .cat-ico { --eb: var(--brass-hi); }
+
+/* buffs: each rule group a designed card with its own mark */
+.brules { border-left-width: 0; padding: 6px 10px 6px 8px; border: 1px solid var(--brass-dim); border-radius: 4px; background: var(--parchment); box-shadow: 0 1px 4px var(--wear); }
+.brules summary { display: flex; align-items: center; gap: 8px; }
+.brules summary .emb { width: 1.6em; height: 1.6em; }
+.brules.forever summary .emb { --ea: var(--wax); --eh: var(--hi-wax); }
+.brules.classic summary .emb { --eb: var(--parchment-2); --ea: var(--brass-dim); }
+.brules.unknown { border-style: solid; border-color: var(--wax); background: var(--parchment-2); }
+.brules.unknown summary .emb { --eb: var(--parchment); --el: var(--wax); }
+.brules > ul { margin: 6px 0 4px; }
+
+/* each scene's own ornament: its emblem drawn large in ink in the parchment's corner, with its own small motion */
+.sheet-orn { position: absolute; z-index: 2; right: 26px; bottom: 18px; width: clamp(150px, 19vw, 250px); height: auto; pointer-events: none; opacity: 0.13; mix-blend-mode: multiply; --eb: transparent; --ea: transparent; --eh: transparent; --el: var(--ink); }
+.sheet-orn .ek, .sheet-orn .el, .sheet-orn .elb, .sheet-orn .edl { stroke: var(--ink); }
+.sheet-orn .ed, .sheet-orn .ef, .sheet-orn .es, .sheet-orn .ee { fill: var(--ink); stroke: none; }
+.sheet-orn .ef { opacity: 0.6; }
+.sheet-orn .el, .sheet-orn .elb, .sheet-orn .edl { stroke-width: 0.55; }
+.sheet-orn .ek { stroke-width: 1.1; }
+.sheet-orn .eb, .sheet-orn .ea, .sheet-orn .eh { stroke-width: 0.5; }
+.rsvp-bar.su-keg { display: block; height: auto; background: none; box-shadow: none; border-radius: 0; overflow: visible; }
+.su-keg svg { width: auto; max-width: 100%; height: 40px; }
+.wall.settle .keg-fill { animation: pip var(--t-hero) var(--ease-oak) backwards; animation-delay: calc(var(--t-move) + var(--pi, 0) * var(--stagger) * 2); transform-box: fill-box; transform-origin: 50% 100%; }
+.viz-gate { --eb: var(--brass); --el: var(--oak-0); }
+@media (max-width: 999px), (max-height: 700px) { .sheet-orn { display: none; } }
+.sheet-orn.orn-timeline { right: auto; left: 44%; }
+/* V11 motion: one-shots take the tokens; loops are linear and slow; reduced motion stops all of it (the block below) */
+.stop.next .stop-ember, .stop.open .stop-ember { animation: ember 2.8s linear infinite; }
+.stop.next .stop-ember + .stop-ember, .stop.open .stop-ember + .stop-ember { animation-delay: -1.4s; margin-left: 2px; }
+@keyframes ember { 0% { opacity: 0; transform: translate(0, 14px) scale(1); } 15% { opacity: 1; } 55% { opacity: 0.8; transform: translate(3px, -4px) scale(0.75); } 100% { opacity: 0; transform: translate(-2px, -16px) scale(0.3); } }
+.stop.next .emb-hourglass .es, .stop.open .emb-hourglass .es, .orn-timeline .es { animation: sand 1.8s linear infinite; }
+@keyframes sand { 0%, 100% { opacity: 0; } 20%, 80% { opacity: 1; } }
+.stop.open .stop-mark .emb { animation: lit 3.2s linear infinite; }
+@keyframes lit { 0%, 100% { filter: drop-shadow(0 0 3px var(--candle)) drop-shadow(0 2px 2px var(--wear)); } 50% { filter: drop-shadow(0 0 9px var(--light-warm)) drop-shadow(0 2px 2px var(--wear)); } }
+.rail.pressing .stop-seal { animation: press var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--t-move) + var(--di, 0) * var(--stagger) * 3); }
+.ledger.stamping .label.srctag .emb, .cards.stamping .chip.stamp .emb { animation: press var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--t-move) + var(--di, 0) * var(--stagger)); }
+@keyframes press { from { opacity: 0; transform: scale(1.9) rotate(-14deg); } 70% { opacity: 1; transform: scale(0.9) rotate(2deg); } }
+.dsu.filling .pips i.on { animation: pip var(--t-move) var(--ease-oak) backwards; animation-delay: calc(var(--pi, 0) * var(--stagger) + var(--ri, 0) * var(--stagger)); transform-origin: 50% 100%; }
+@keyframes pip { from { transform: scaleY(0); opacity: 0; } }
+.spark.drawing .spark-line { animation: draw calc(var(--t-hero) * 2) var(--ease-oak) both; }
+.spark.drawing .spark-area { animation: fade-in var(--t-hero) var(--ease-oak) backwards; animation-delay: var(--t-hero); }
+.spark.drawing .spark-drop, .spark.drawing .spark-quill { animation: drip var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--t-hero) * 2); }
+@keyframes drip { from { opacity: 0; transform: translateY(-14px); } }
+.sheet-orn.drawing { animation: orn-in var(--t-hero) var(--ease-oak) backwards; animation-delay: var(--t-move); }
+@keyframes orn-in { from { opacity: 0; transform: translateY(10px) rotate(-3deg); } }
+.orn-five .orn-in, .orn-roads .orn-in, .orn-ledger .orn-in, .orn-signups .orn-in, .orn-legacy .orn-in, .orn-buffs .orn-in, .orn-tonight .orn-in, .orn-library .orn-in { transform-box: fill-box; transform-origin: 50% 50%; }
+.orn-five .orn-in { animation: sway 7s linear infinite; transform-origin: 25% 10%; }
+.orn-roads .orn-in { animation: needle 9s linear infinite; }
+.orn-ledger .orn-in { animation: scrawl 5s linear infinite; }
+.orn-signups .orn-in { animation: bob 4s linear infinite; }
+.orn-legacy .orn-in, .orn-buffs .orn-in { animation: breathe 6s linear infinite; }
+.orn-racials .ee { animation: eyes 4s linear infinite; }
+.orn-librarian .ef { animation: flicker 1.4s linear infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.orn-tonight .eh, .orn-library .ea { animation: twinkle 3.6s linear infinite; }
+@keyframes sway { 0%, 100% { transform: rotate(-1.5deg) skewY(0); } 50% { transform: rotate(1.5deg) skewY(1deg); } }
+@keyframes needle { 0%, 100% { transform: rotate(-5deg); } 30% { transform: rotate(4deg); } 60% { transform: rotate(-2deg); } }
+@keyframes scrawl { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-4px, 2px); } 50% { transform: translate(2px, -1px); } 75% { transform: translate(-2px, 3px); } }
+@keyframes bob { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-4px) rotate(-1.5deg); } }
+@keyframes breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.03); opacity: 0.8; } }
+@keyframes eyes { 0%, 60%, 100% { opacity: 0; } 75% { opacity: 1; } }
+@keyframes flicker { 0%, 100% { transform: scale(1, 1); } 25% { transform: scale(0.94, 1.08); } 50% { transform: scale(1.04, 0.95); } 75% { transform: scale(0.97, 1.05); } }
+@keyframes twinkle { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+.map-walker { pointer-events: none; }
+.map-caption a, .map-caption a:hover { color: var(--ink); font-weight: 700; text-decoration-color: var(--wax); text-decoration-thickness: 2px; }
+.deep-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.deep-who .lib-tool { display: inline-flex; align-items: center; gap: 6px; border-left: 3px solid var(--cc); }
+.card .chip.stamp { white-space: normal; max-width: 100%; }
+.label.srctag { white-space: nowrap; }
+.tn-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tn-steps .tn-link { display: inline-flex; align-items: center; gap: 6px; }
+.tn-steps .emb { width: 1.2em; height: 1.2em; }
+.act { display: grid; gap: 6px; justify-items: start; }
+.act-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 18px 6px 12px; border-radius: 6px; background: var(--oak-2); color: var(--cream); font-family: var(--font-ui); font-weight: 700; letter-spacing: 0.04em; text-decoration: none; box-shadow: 0 2px 8px var(--wear), inset 1px 1px 0 var(--edge-hi); }
+.act-btn .emb { width: 1.5em; height: 1.5em; --eb: var(--parchment); --el: var(--oak-0); --ea: var(--brass); }
+.act-btn:hover { background: var(--oak-3); }
+.act-how { margin: 0; color: var(--ink); max-width: 60ch; }
+.key-line { font-size: var(--fs-small); }
+.lib-more { position: relative; display: inline-block; }
+.lib-more summary { list-style: none; cursor: pointer; }
+.lib-more summary::-webkit-details-marker { display: none; }
+.lib-more[open] #lib-expert { position: absolute; right: 0; top: calc(100% + 4px); z-index: 3; white-space: nowrap; }
+@media (max-width: 759px) { .lede-row .toggle { display: none; } }
+.map-pin .pin-body { fill: var(--oak-1); stroke: var(--cc); stroke-width: 3; }
+.map-pin image { filter: drop-shadow(0 1px 1px var(--shadow)); }
+.pin-banner .banner-cloth { fill: var(--parchment); stroke: var(--cc); stroke-width: 3; stroke-linejoin: round; filter: drop-shadow(0 0 0.8px var(--ink)) drop-shadow(0 2px 2px var(--wear)); }
+.pin-banner .banner-text { fill: var(--ink); font-family: var(--font-ui); font-size: 16px; font-weight: 700; letter-spacing: 0.03em; }
+.pin-lead { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-dasharray: 3 3; }
+.walk-reveal { fill: none; stroke: var(--cream); stroke-width: 16; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+.map-mark { --eb: var(--brass); --ea: var(--wax); --el: var(--ink); }
+.map-box.drawing .map-pin > *, .map-box.drawing .pin-banner { animation: pin-drop var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--t-hero) + var(--di, 0) * var(--stagger) * 2); }
+@keyframes pin-drop { from { opacity: 0; transform: translateY(-18px); } }
+@media (max-width: 699px) { .pin-banner .banner-text { font-size: 24px; } .pin-lead { stroke-width: 2.4; } }
+.map-trail { fill: none; stroke: var(--wax); stroke-width: 3.4; stroke-linecap: round; stroke-dasharray: 0.006 0.018; opacity: 0.85; }
 @media (max-width: 699px) { :root { --fs-small: 1rem; --fs-chip: 1rem; --step--1: 1rem; } .map-text { font-size: 26px; } .map-text.small { font-size: 24px; } }
 @media (prefers-reduced-motion: reduce) {
   :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; }
@@ -1237,7 +1442,7 @@ main.has-beam { margin-top: 44px; }
   <div class="gate-card">
     <div class="kicker">The Living Board</div>
     <h1>Dungeons and Drinking</h1>
-    <p>This board opens inside Discord. In #wow-forever, tap the Apps button next to the message box, pick Leeroy Jenkins, then board. It is a notice board for the five of us, not a game, even where Discord calls it one.</p>
+    <p>This board lives on the web and opens in any browser: use the board link Leeroy posts in #wow-forever. No app, no sign-in. It is a notice board for the five of us, not a game.</p>
   </div>
 </div>
 <div class="wrap" id="board" hidden>
@@ -1251,11 +1456,11 @@ main.has-beam { margin-top: 44px; }
         <span id="presence-text"></span>
         <div class="peers" id="peers"></div>
         <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Tilt light</button>
-        <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Tonight</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
+        <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Next steps</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
         <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"><select class="room-pick" id="room-pick" aria-label="Room behind the board"><option value="auto">Room: auto</option><option value="off">Room: off</option><option value="low">Room: low</option><option value="medium">Room: medium</option><option value="high">Room: high</option><option value="ultra">Room: ultra</option></select></span>
       </div>
     </div>
-    <a class="tonight-link" href="#tonight" data-scene="tonight"><b>Tonight</b><span>Your next step, the next date and who is coming</span><i aria-hidden="true">&rarr;</i></a>
+    <a class="tonight-link" href="#tonight" data-scene="tonight"><b>Next steps</b><span>Your next step, the next date and who is coming</span><i aria-hidden="true">&rarr;</i></a>
     <a class="clock" id="clock" href="#timeline" data-scene="timeline" aria-describedby="clock-when">
       <span class="clock-top">
         <span class="clock-emblem emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/></svg></span>
@@ -1331,21 +1536,21 @@ main.has-beam { margin-top: 44px; }
         <button class="tab" type="button" role="tab" id="tab-timeline" data-tab="timeline" aria-controls="panel-timeline" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Dates</button>
         <button class="tab" type="button" role="tab" id="tab-five" data-tab="five" aria-controls="panel-five" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>The five</button>
         <button class="tab" type="button" role="tab" id="tab-roads" data-tab="roads" aria-controls="panel-roads" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Roads</button>
-        <button class="tab" type="button" role="tab" id="tab-racials" data-tab="racials" aria-controls="panel-racials" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Racials</button>
+        <button class="tab" type="button" role="tab" id="tab-racials" data-tab="racials" aria-controls="panel-racials" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Race skills</button>
         <button class="tab" type="button" role="tab" id="tab-legacy" data-tab="legacy" aria-controls="panel-legacy" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Bonuses</button>
         <button class="tab" type="button" role="tab" id="tab-buffs" data-tab="buffs" aria-controls="panel-buffs" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Buffs</button>
         <button class="tab" type="button" role="tab" id="tab-ledger" data-tab="ledger" aria-controls="panel-ledger" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Ledger</button>
         <button class="tab" type="button" role="tab" id="tab-signups" data-tab="signups" aria-controls="panel-signups" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Sign-ups</button>
         <button class="tab" type="button" role="tab" id="tab-librarian" data-tab="librarian" aria-controls="panel-librarian" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Helper bot</button>
         <button class="tab" type="button" role="tab" id="tab-library" data-tab="library" aria-controls="panel-library" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Library</button>
-        <button class="tab" type="button" role="tab" id="tab-tonight" data-tab="tonight" aria-controls="panel-tonight" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M15 3a8 8 0 1 0 6 12.5A6.5 6.5 0 0 1 15 3z"/></svg></span>Tonight</button>
+        <button class="tab" type="button" role="tab" id="tab-tonight" data-tab="tonight" aria-controls="panel-tonight" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M15 3a8 8 0 1 0 6 12.5A6.5 6.5 0 0 1 15 3z"/></svg></span>Next steps</button>
         <span class="tab-ind" id="tab-ind" aria-hidden="true"></span>
       </div>
     </div>
     <div class="sheet-body" id="sheet-body">
       <div class="panel" role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" tabindex="0" hidden>
         <p class="lede">The dates from Blizzard and the group's cards, in your time zone where the board has a time.</p>
-        <ol class="rail" id="rail"></ol>
+        <div class="dates-grid"><ol class="rail" id="rail"></ol><aside class="cal-col" id="cal-col" aria-label="The dates on a calendar"></aside></div>
       </div>
       <div class="panel" role="tabpanel" id="panel-five" aria-labelledby="tab-five" tabindex="0" hidden>
         <p class="lede">Each card is what the group has said so far. Turn a card over for that class's signature spells at the level cap, straight from the game client.</p>
@@ -1360,6 +1565,7 @@ main.has-beam { margin-top: 44px; }
         <p class="map-caption" id="map-caption"></p>
       </div>
       <div class="panel" role="tabpanel" id="panel-racials" aria-labelledby="tab-racials" tabindex="0" hidden>
+        <p class="lede key-line"><b>Active:</b> you press it. <b>Passive:</b> always on. <b>Cooldown:</b> the wait before you can use it again.</p>
         <p class="lede" id="races-lede">The racials of the three races at this table, as the wiki has them today.</p>
         <div class="races" id="races"></div>
       </div>
@@ -1385,13 +1591,15 @@ main.has-beam { margin-top: 44px; }
         <div class="slip ledger" id="ledger-slip"></div>
       </div>
       <div class="panel" role="tabpanel" id="panel-signups" aria-labelledby="tab-signups" tabindex="0" hidden>
-        <p class="lede">Four questions for launch night, answered with the buttons on the sign-up card in Discord.</p>
+        <p class="lede">Four questions for launch night. A pack is the pre-order that lets you make characters early.</p>
+        <div class="act" id="dsu-act"></div>
         <div class="signup-grid">
           <div class="slip signup" id="discord-signups">
             <h3>From Discord</h3>
             <div class="dsu" id="dsu-body"><p class="loading">Reading the sign-up card.</p></div>
             <p class="picker-note" id="dsu-stamp"></p>
             <p class="picker-note">Buttons live in #wow-forever; this page follows them within a minute.</p>
+            <div class="seats" id="dsu-seats"></div>
           </div>
           <form class="slip signup" id="signup" autocomplete="off" hidden>
             <h3>On this page</h3>
@@ -1422,7 +1630,8 @@ main.has-beam { margin-top: 44px; }
         </div>
       </div>
       <div class="panel" role="tabpanel" id="panel-librarian" aria-labelledby="tab-librarian" tabindex="0" hidden>
-        <p class="lede">Leeroy answers the group's questions from a local wiki. These are his numbers.</p>
+        <div class="act"><p class="act-how"><b>Ask Leeroy:</b> in #wow-forever type <b>/ask</b> and your question, or tag Leeroy Jenkins in a message. He answers from the same library this board searches.</p></div>
+        <p class="lede">His numbers so far:</p>
         <div class="librarian" id="lib-box"></div>
         <div class="sources" id="lib-sources"></div>
       </div>
@@ -1434,7 +1643,7 @@ main.has-beam { margin-top: 44px; }
       </div>
       <div class="panel lib" role="tabpanel" id="panel-library" aria-labelledby="tab-library" tabindex="0" hidden>
         <div class="lib-bar" role="search" aria-label="Library search">
-          <div class="lib-tools"><button class="lib-tool" id="lib-expert" type="button" aria-pressed="false" title="Show each source's kind, build, full read date and a Verify link">Expert: off</button><button class="lib-tool" id="lib-forget" type="button" title="Clear what this board remembers in this browser: your name, where you were, what you have seen">Forget me</button></div>
+          <div class="lib-tools"><button class="lib-tool" id="lib-forget" type="button" title="Clear what this board remembers in this browser: your name, where you were, what you have seen">Clear my name</button><details class="lib-more"><summary class="lib-tool">More</summary><button class="lib-tool" id="lib-expert" type="button" aria-pressed="false" title="Show each source's kind, build, full read date and a Verify link">Expert: off</button></details></div>
           <label class="sr-only" for="lib-q">Search the library</label>
           <input class="lib-q" id="lib-q" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Search every page, for example onyxia open">
           <div class="lib-examples" id="lib-examples" aria-label="Example searches"></div>
@@ -1482,6 +1691,54 @@ function h(tag, attrs, ...kids) {
   return n;
 }
 const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
+/* V11 emblems: every mark on the board is drawn here, in SVG on a 24-unit grid, never a plain dot. Each part carries a role
+   class (b body, a accent, d dark, h light, l line, k heavy line, lb brass line, dl dashed line, s sand, f flame) and the
+   colours come from tokens through --eb, --ea, --el and --eh, so one drawing serves parchment and oak alike. */
+const ring = (cx, cy, r) => `M${cx} ${cy - r}a${r} ${r} 0 1 1-.01 0z`;
+const scallop = (cx, cy, r, n, amp) => { let d = ""; for (let i = 0; i <= n * 2; i++) { const a = (i * Math.PI) / n - Math.PI / 2, rr = i % 2 ? r - amp : r; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
+const gear = (cx, cy, r1, r2, n) => { let d = ""; for (let i = 0; i < n * 4; i++) { const a = (i * Math.PI * 2) / (n * 4), rr = (i % 4) < 2 ? r2 : r1; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
+const STAR5 = (cx, cy, r) => { let d = ""; for (let i = 0; i < 10; i++) { const a = (i * Math.PI) / 5 - Math.PI / 2, rr = i % 2 ? r * 0.45 : r; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
+const EMB = {
+  scroll: [["b", "M6 4.5h11.5a2 2 0 0 1 2 2V18H8a2 2 0 0 1-2-2z"], ["d", "M6 4.5a2 2 0 0 0-2 2v1.4h4V6.5a2 2 0 0 0-2-2z"], ["l", "M8.6 8.8h8.2M8.6 11.4h6M8.6 14h3.6"], ["a", "M14.4 19.6l.9-2.8h2l.9 2.8-1.9-.9z"], ["a", ring(16.2, 16.4, 3.3)], ["h", STAR5(16.2, 16.4, 1.5)]],
+  hourglass: [["b", "M7.5 4c0 4.2 3.2 5.6 3.2 8s-3.2 3.8-3.2 8h9c0-4.2-3.2-5.6-3.2-8s3.2-3.8 3.2-8z"], ["a", "M9 7h6c-.7 1.7-2.3 2.6-3 4.2C11.3 9.6 9.7 8.7 9 7z"], ["a", "M8.4 19.6c.3-2 1.8-3.3 3.6-4.2 1.8.9 3.3 2.2 3.6 4.2z"], ["s", "M11.65 11.2h.7v4.6h-.7z"], ["l", "M6.8 3.5v17M17.2 3.5v17"], ["k", "M5.6 3.5h12.8M5.6 20.5h12.8"]],
+  horn: [["b", "M3 14.2C8.5 14.6 13.6 12.4 16.6 6.6l4.4 2.6c-3.4 5.6-9.4 8.2-18 7.1z"], ["a", "M16.4 6.5c.6-1 2.8-.8 4.6.3s2.9 2.8 2.3 3.8-2.8.8-4.6-.3-2.9-2.8-2.3-3.8z"], ["d", "M17.3 7.4c.4-.5 1.7-.3 2.8.4s1.7 1.6 1.4 2.1-1.7.3-2.8-.4-1.7-1.6-1.4-2.1z"], ["lb", "M7.6 14.4l.5 2.1M11.6 13.2l.9 2.1M14.8 10.8l1.4 1.6"], ["l", "M4.6 16.6c3 2.6 9.6 2.6 13.6-2"]],
+  skull: [["a", "M6.6 6.2L2.2 2.6l1.6 5.2zM17.4 6.2l4.4-3.6-1.6 5.2z"], ["b", "M12 3.6c4.3 0 7.4 2.8 7.4 6.6 0 2.1-.9 3.6-2.4 4.5v3.1l-1.8 1.6-1-1.3-1.1 1.6-1.1-1.6-1.1 1.6-1.1-1.6-1 1.3L7 17.8v-3.1C5.5 13.8 4.6 12.3 4.6 10.2c0-3.8 3.1-6.6 7.4-6.6z"], ["d", "M7.4 9.6l3.2 1.3-2.6 1.6zM16.6 9.6l-3.2 1.3 2.6 1.6z"], ["e", "M8.3 10.6l1 .5-.8.5zM15.7 10.6l-1 .5.8.5z"], ["l", "M11.2 14.4l.8-.9.8.9M9 5.6c1.8-.8 4.2-.8 6 0"]],
+  ticket: [["b", "M3 7h18v3.1a1.9 1.9 0 0 0 0 3.8V17H3v-3.1a1.9 1.9 0 0 0 0-3.8z"], ["dl", "M15.6 7.8v8.4"], ["a", STAR5(9.2, 12, 3.4)], ["l", "M18 10v4"]],
+  pin: [["b", "M12 21.5s-6.6-6.5-6.6-11.2a6.6 6.6 0 0 1 13.2 0c0 4.7-6.6 11.2-6.6 11.2z"], ["a", ring(12, 10.3, 2.6)], ["hl", "M8.2 9.2a4 4 0 0 1 2.4-3"]],
+  voice: [["b", "M3.5 9.5h3.2L15 4.6v14.8l-8.3-4.9H3.5z"], ["d", "M3.5 9.5h3.2v5H3.5z"], ["lb", "M9 9.4v5.2M12 7.6v8.8"], ["l", "M17.6 9.2a4 4 0 0 1 0 5.6M19.8 6.8a7.4 7.4 0 0 1 0 10.4"]],
+  clock: [["a", "M10.6 1.8h2.8v2.6h-2.8z"], ["b", ring(12, 12.8, 8.2)], ["h", ring(12, 12.8, 6.3)], ["l", "M12 7.4v1M17.4 12.8h-1M12 18.2v-1M6.6 12.8h1M12 12.8V9.2M12 12.8l2.6 1.6"]],
+  seal: [["a", scallop(12, 12, 9.4, 14, 1.2)], ["l", ring(12, 12, 5.6)], ["h", STAR5(12, 12, 3.4)]],
+  speech: [["b", "M4.5 4.5h15a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H11l-5 4v-4H4.5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2z"], ["d", "M7.6 8.2h2.8v2.6c0 1.7-.9 2.8-2.4 3.2l-.4-1c.8-.3 1.1-.9 1.1-1.5H7.6zM13.4 8.2h2.8v2.6c0 1.7-.9 2.8-2.4 3.2l-.4-1c.8-.3 1.1-.9 1.1-1.5h-1.1z"], ["a", "M19 17.4c.7 1.3 1.2 2.1 1.2 2.8a1.2 1.2 0 0 1-2.4 0c0-.7.5-1.5 1.2-2.8z"]],
+  ribbon: [["a", "M8.2 13l-2.4 8 3.1-1.3 1.9 2.5 1.4-7.2zM15.8 13l2.4 8-3.1-1.3-1.9 2.5-1.4-7.2z"], ["b", scallop(12, 9.4, 7, 12, 0.9)], ["h", ring(12, 9.4, 3.6)], ["l", STAR5(12, 9.4, 1.8)]],
+  lock: [["k", "M8 11V7.4a4 4 0 0 1 7.8-1.3"], ["b", "M5.5 11h13a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z"], ["d", "M12 13.4a1.5 1.5 0 0 1 .8 2.8v2.4h-1.6v-2.4a1.5 1.5 0 0 1 .8-2.8z"], ["lb", "M6.6 12.8v6.6"]],
+  classes: [["k", "M5 20.5L17.4 5.2"], ["a", ring(18.4, 4.2, 2.3)], ["b", "M4 4l3.8.8L18.6 15.6l-2.9 2.9L4.8 7.8z"], ["d", "M14.4 20.6l6.2-6.2 1 1-6.2 6.2zM18.6 19.4l2.2 2.2-1.2 1.2-2.2-2.2z"]],
+  tradeskills: [["b", "M3 9h13c0 1.8 1.6 2.8 4.5 2.8v1.4c-3.2 0-4.4 1-4.8 3H17v2.3H7v-2.3h1.4C8 14.3 6.4 12.8 3 12z"], ["k", "M15.4 4.6l4.4-2.6"], ["d", "M11.4 2.2l3.6 3.6-1.7 1.7-3.6-3.6z"], ["lb", "M5 6.6l-.6-1.6M7.6 6.2l.2-1.8M3.4 7.6l-1.2-.6"]],
+  pvp: [["b", "M3.5 3.5l3.4.6 9.4 9.4-2.8 2.8-9.4-9.4zM20.5 3.5l-.6 3.4-9.4 9.4-2.8-2.8 9.4-9.4z"], ["a", "M12.4 17.6l5.2-5.2 1.2 1.2-5.2 5.2zM11.6 17.6L6.4 12.4l-1.2 1.2 5.2 5.2z"], ["d", "M16.2 17.6l3 3 1.4-1.4-3-3zM7.8 17.6l-3 3-1.4-1.4 3-3z"]],
+  dungeons: [["b", "M4 21V10.5a8 8 0 0 1 16 0V21z"], ["d", "M6.8 21v-9.8a5.2 5.2 0 0 1 10.4 0V21z"], ["lb", "M9.2 7.2V21M12 6V21M14.8 7.2V21M6.8 13.6h10.4M6.8 17.4h10.4"], ["k", "M3 21h18"]],
+  adventure: [["b", "M12 2.2l2.3 7.5 7.5 2.3-7.5 2.3-2.3 7.5-2.3-7.5-7.5-2.3 7.5-2.3z"], ["a", "M12 2.2l2.3 7.5H9.7z"], ["d", ring(12, 12, 1.6)], ["l", "M6.2 6.2l2.4 2.4M17.8 6.2l-2.4 2.4M6.2 17.8l2.4-2.4M17.8 17.8l-2.4-2.4"]],
+  cal: [["b", "M4 5.5h16v15H4z"], ["d", "M4 5.5h16v3.6H4z"], ["k", "M8 3.4v4M16 3.4v4"], ["l", "M7 12.2h2M11 12.2h2M7 15.6h2M11 15.6h2M7 18.6h2"], ["a", "M14.6 14.2h3.6v3.8h-3.6z"]],
+  book: [["b", "M3.6 5.2c3-1.2 6-1.2 8.4.6 2.4-1.8 5.4-1.8 8.4-.6v14c-3-1.2-6-1.2-8.4.6-2.4-1.8-5.4-1.8-8.4-.6z"], ["k", "M12 5.8v14"], ["l", "M6 8.8c1.7-.4 3.3-.3 4.4.3M6 11.6c1.7-.4 3.3-.3 4.4.3M13.6 9.1c1.1-.6 2.7-.7 4.4-.3M13.6 11.9c1.1-.6 2.7-.7 4.4-.3"], ["a", "M15.4 14.6h2.4v6.2l-1.2-1-1.2 1z"]],
+  leveling: [["b", "M12 2.8l7.5 2.8v6c0 4.8-3.2 8.2-7.5 10-4.3-1.8-7.5-5.2-7.5-10v-6z"], ["d", "M12 5.4l5 1.9v4.3c0 3.3-2 5.8-5 7.2z"], ["lb", "M8 12.4l4-3.4 4 3.4M8 16.2l4-3.4 4 3.4"]],
+  races: [["a", "M5.8 9.4C3.6 8.6 2.6 6.4 3 4c1 1.8 2.4 2.8 4.2 3zM18.2 9.4c2.2-.8 3.2-3 2.8-5.4-1 1.8-2.4 2.8-4.2 3z"], ["b", "M5.5 12c0-4 2.9-7 6.5-7s6.5 3 6.5 7v7.5H15V15H9v4.5H5.5z"], ["d", "M7.8 10.6h8.4v2.2H7.8z"], ["k", "M12 10.6v6.4"]],
+  systems: [["b", gear(12, 12, 7, 9.4, 8)], ["d", ring(12, 12, 3.2)], ["lb", ring(12, 12, 5.2)]],
+  ui: [["b", "M3.5 5h17v14h-17z"], ["d", "M3.5 5h17v3h-17z"], ["a", "M6 10.5h5v2.6H6zM6 14.7h5v2.6H6z"], ["l", "M13.2 11h4.8M13.2 14h4.8M13.2 17h3"]],
+  tankard: [["b", "M5 6.5h10v13.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"], ["k", "M15 9h2.6a1.8 1.8 0 0 1 1.8 1.8v3.6a1.8 1.8 0 0 1-1.8 1.8H15"], ["lb", "M5 10.5h10M5 17h10"], ["h", "M4.4 6.8c0-1.8 1.6-2.8 3-2.4.6-1.2 2.4-1.6 3.6-.8 1.2-.8 3-.2 3.6 1.2 1 .2 1.4 1 1.4 2z"]],
+  quill: [["b", "M20.5 3.2c-5.2.6-9.8 3.6-12.2 8.6l-1.4 3.6 3.2-1c4.8-2.2 8.2-6.2 10.4-11.2z"], ["l", "M4 20.5l8.6-9.6M11.4 10.4l2.6.2M13.6 8.2l2.4.2"], ["d", "M3.2 21.2l1.6-3.2 1.4 1.2z"]],
+  candle: [["b", "M9 9.5h6v11H9z"], ["h", "M9 9.5h6v1.4c-.6 0-.8 1.8-1.4 1.8s-.6-1-1.2-1-.8 2.2-1.6 2.2-.6-2-1.8-2.2z"], ["f", "M12 2.4c1.8 2.2 2.4 3.6 2.4 4.6a2.4 2.4 0 0 1-4.8 0c0-1 .6-2.4 2.4-4.6z"], ["d", "M11.8 8h.4v1.5h-.4z"], ["k", "M6 20.8h12"]],
+  banner: [["k", "M6 2.5v19"], ["b", "M6 4h12l-2.6 4.6L18 13.2H6z"], ["a", STAR5(11, 8.6, 2.8)]],
+  laurel: [["l", "M12 21c-4.8-1.6-7.6-5.6-7.2-11.4M12 21c4.8-1.6 7.6-5.6 7.2-11.4"], ["a", "M5 9.6c-1.2-1.6-.8-3.4.6-4.4.8 1.6.4 3.2-.6 4.4zM5.4 13.4c-1.8-.8-2.4-2.6-1.6-4.2 1.4.9 2 2.6 1.6 4.2zM7.6 16.8c-2 0-3.2-1.4-3-3.2 1.6.4 2.8 1.6 3 3.2zM19 9.6c1.2-1.6.8-3.4-.6-4.4-.8 1.6-.4 3.2.6 4.4zM18.6 13.4c1.8-.8 2.4-2.6 1.6-4.2-1.4.9-2 2.6-1.6 4.2zM16.4 16.8c2 0 3.2-1.4 3-3.2-1.6.4-2.8 1.6-3 3.2z"], ["h", STAR5(12, 9.6, 3.6)]],
+  rune: [["b", "M12 2.5l8 9.5-8 9.5L4 12z"], ["d", "M12 6l5 6-5 6-5-6z"], ["lb", "M12 8v8M9.8 10.2L12 12l2.2-1.8M9.8 13.8L12 12l2.2 1.8"]],
+  moon: [["b", "M15.5 3.2a8.8 8.8 0 1 0 5.3 13.6A7.2 7.2 0 0 1 15.5 3.2z"], ["h", STAR5(6.4, 5.6, 2.2)], ["h", STAR5(19.6, 6.6, 1.4)]],
+  question: [["b", "M12 2.8l8.4 4.6v9.2L12 21.2l-8.4-4.6V7.4z"], ["d", "M12 5.4l6.2 3.4v6.4L12 18.6l-6.2-3.4V8.8z"], ["lb", "M9.8 10.2a2.2 2.2 0 1 1 3.4 1.8c-.8.5-1.2 1-1.2 1.9M12 15.8v.2"]],
+};
+const EMB_LABEL = { names_open: "scroll", sub_active: "hourglass", launch: "horn", raids: "skull" };
+/* emb(name, cls): a fresh inline SVG of one emblem; CSS reaches every part, so a scene can light, seal or animate it */
+function emb(name, cls, label) {
+  const parts = EMB[name] || EMB.seal;
+  return s("svg", { class: `emb emb-${name}${cls ? ` ${cls}` : ""}`, viewBox: "0 0 24 24", ...(label ? { role: "img", "aria-label": label } : { "aria-hidden": "true", focusable: "false" }) }, ...parts.map(([c, d]) => s("path", { class: `e${c}`, d })));
+}
+/* a person's mark: their class crest, sized to the text, with the name for screen readers when it stands alone */
+const crestMark = (m, cls = "crest-mark") => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, decoding: "async", title: m.name });
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 const roomHas = (c) => document.documentElement.classList.contains(c);
 /* V7: the room's state, read by window.__board.room() and written by room/tier.js */
@@ -1490,7 +1747,7 @@ function startRoomLadder() {
   const launch = D.timeline && D.timeline.events.find((e) => e.key === "launch");
   const seen = MEM.seenMap(), S = D.signups;
   const host = { state: RS, motion: MOTION, launchEpoch: launch ? launch.epoch : null, newSignup: !!(S && S.updated && seen.signups && Date.parse(S.updated) > seen.signups), select: $("#room-pick"), moreButton: $("#more-room") };
-  import("./room/tier.js").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  import("./room/tier.js?v=2e8a9b45ab").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
 }
 const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -1556,7 +1813,7 @@ function launchLine() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "The party of five", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Legacy: points from challenges", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "The librarian: our Discord bot", library: "Every fact, searchable" };
+const SUBTITLE = { timeline: "Dates and countdown", five: "The party of five", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "The librarian: our Discord bot", library: "Every fact, searchable" };
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -1588,22 +1845,65 @@ function renderHero() {
 function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
 const eventTs = (e) => (e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch);
 let shownNext;
+/* V11: each stop is its event's emblem (sealed scroll, hourglass, horn, dragon skull). A window event reads "Open now, until
+   <day>" while open and "Closed" after; past stops take a wax seal, the next and the open one a slow ember. The rail fills
+   in brass up to now. Beside it on wide screens, the month as a calendar with the same emblems on their days. */
+function eventState(e, now, next) {
+  const ts = eventTs(e);
+  if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, until the end of ${e.until}, ${e.until_zone || "Pacific"} time`];
+  if (e.until_epoch && now >= e.until_epoch) return ["past", `Closed ${e.until}`];
+  if (ts < now) return ["past", "Passed"];
+  const relText = e.epoch === null ? rel(Date.parse(`${e.date}T12:00:00Z`) / 1000) : rel(e.epoch);
+  return next && e.key === next.key ? ["next", `Next on the board, ${relText}`] : ["", relText];
+}
 function renderTimeline() {
   const t = D.timeline, tl = $("#rail"); tl.replaceChildren();
   const now = Date.now() / 1000;
   const next = nextEvent(now);
   shownNext = next ? next.key : null;
-  for (const e of t.events) {
-    const ts = eventTs(e);
-    const cls = ts < now ? "past" : next && e.key === next.key ? "next" : "";
-    const relText = e.epoch === null ? rel(Date.parse(`${e.date}T12:00:00Z`) / 1000) : rel(e.epoch);
-    tl.append(h("li", { class: `stop ${cls}`.trim() }, h("span", { class: "dot", "aria-hidden": "true" }),
+  const starts = t.events.map(eventTs);
+  let i = -1; starts.forEach((x, k) => { if (x <= now) i = k; });
+  const prog = i < 0 ? 0 : i >= starts.length - 1 ? 1 : (i + Math.min(1, (now - starts[i]) / (starts[i + 1] - starts[i]))) / (starts.length - 1);
+  tl.style.setProperty("--prog", `${Math.round(prog * 1000) / 10}%`);
+  t.events.forEach((e, di) => {
+    const [cls, label] = eventState(e, now, next);
+    const lit = cls === "next" || cls === "open";
+    tl.append(h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}` },
+      h("span", { class: "stop-mark", "aria-hidden": "true" }, emb(EMB_LABEL[e.key] || "seal"), cls === "past" ? emb("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
       h("div", { class: "stop-body" },
         h("div", { class: "when", text: eventWhen(e) }),
         h("h3", { text: e.label }),
         e.detail ? h("p", { text: e.detail }) : null,
-        h("p", { class: "label", text: cls === "past" ? "Passed" : cls === "next" ? `Next on the board, ${relText}` : relText }))));
+        h("p", { class: "label state", text: label }))));
+  });
+  renderCalendar(now);
+}
+function renderCalendar(now) {
+  const box = $("#cal-col"); if (!box) return;
+  const t = D.timeline, dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const local = (e) => (e.epoch === null ? new Date(`${e.date}T12:00:00`) : new Date(e.epoch * 1000));
+  const marks = {}; for (const e of t.events) marks[dayKey(local(e))] = e;
+  const win = t.events.find((e) => e.until_epoch);
+  const inWin = (d) => win && d.getTime() + 864e5 > local(win).getTime() && d.getTime() + 432e5 < win.until_epoch * 1000; /* the day counts when its noon falls in the window */
+  const launch = t.events.find((e) => e.key === "launch") || t.events[0];
+  const mid = local(launch), first = new Date(mid.getFullYear(), mid.getMonth(), 1), last = new Date(mid.getFullYear(), mid.getMonth() + 1, 0);
+  const start = new Date(first); start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+  const end = new Date(last); end.setDate(last.getDate() + ((7 - last.getDay()) % 7));
+  const today = dayKey(new Date(now * 1000));
+  const cells = [];
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const e = marks[dayKey(d)], w = inWin(d);
+    const prev = new Date(d); prev.setDate(d.getDate() - 1);
+    cells.push(h("div", { class: `cal-day${d.getMonth() !== mid.getMonth() ? " out" : ""}${w ? " win" : ""}${w && !inWin(prev) ? " first" : ""}${dayKey(d) === today ? " today" : ""}${e ? " has-emb" : ""}`, title: e ? e.label : null },
+      e ? emb(EMB_LABEL[e.key] || "seal") : null, h("span", { text: String(d.getDate()) })));
   }
+  const month = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(mid);
+  const later = t.events.filter((e) => local(e) > end);
+  box.replaceChildren(h("div", { class: "cal", role: "img", "aria-label": `${month}, with the board's dates marked` },
+    h("h4", { text: month }),
+    h("div", { class: "cal-grid" }, ...["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
+    h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}, the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
+      ...later.map((e) => h("span", {}, emb(EMB_LABEL[e.key] || "seal"), `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}`))));
 }
 function setClockLabel(kicker, event) {
   if ($("#clock-kicker").textContent !== kicker) $("#clock-kicker").textContent = kicker;
@@ -1655,7 +1955,7 @@ function renderTiles() {
     h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), m.name))),
     h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many]) => [h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`), " "]),
-      h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Talent choice still open: ${andList(o)}` : "Every talent choice declared"; })())));
+      h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `· Talent choice still open: ${andList(o)}` : "· Every talent choice declared"; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), ` ${ms.length}`])),
@@ -1664,7 +1964,7 @@ function renderTiles() {
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
-    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("span", { class: "dots" }, p.members.filter((m) => m.race === race).map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}` }))), h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
+    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m))), " ", h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
     changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed since Oct 26` }) : null);
   fill("legacy",
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], ". They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."]),
@@ -1683,7 +1983,7 @@ function renderTiles() {
     const when = T.when ? h("span", { class: "tile-line su-when" }, [["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "Later"]].filter(([k]) => T.when[k]).map(([k, l]) => h("span", { class: "su-slot" }, h("b", { text: l }), ` ${T.when[k].names.length ? T.when[k].names.map(cleanName).join(", ") : "nobody yet"}`))) : null;
     const none = Math.max(0, p.members.length - T.rsvp.in.count - T.rsvp.maybe.count - T.rsvp.out.count);
     fill("signups", h("span", { class: "su-nums" }, [[T.rsvp.in.count, "in"], [T.rsvp.maybe.count, "maybe"], [T.rsvp.out.count, "out"], [none, "no answer"]].map(([v, l]) => h("span", { class: "su-num" }, h("b", { text: String(v) }), h("small", { text: l })))),
-      h("span", { class: "rsvp-bar", "aria-hidden": "true" }, [["in", "--ok"], ["maybe", "--warn"], ["out", "--wax"]].map(([k, c]) => h("i", { style: `flex: ${T.rsvp[k].count} 1 0; background: var(${c})` })), h("i", { style: `flex: ${none} 1 0` })), when);
+      h("span", { class: "rsvp-bar su-keg", "aria-hidden": "true" }, kegRow([...Array(T.rsvp.in.count).fill("in"), ...Array(T.rsvp.maybe.count).fill("maybe"), ...Array(T.rsvp.out.count).fill("out"), ...Array(none).fill("none")])), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
   fill("librarian",
     h("span", { class: "tile-line" }, "Leeroy answers questions. In any Discord channel here, type ", h("b", { text: "/ask" }), " and your question."),
@@ -1711,15 +2011,29 @@ function wholeClause(t, max) {
   if (comma > max * 0.4) return `${text.slice(0, comma)}…`;
   return `${cut.slice(0, cut.lastIndexOf(" "))}…`;
 }
+/* the sign-ups tile: one tankard per answer, poured full for in, half for maybe, a wax band for out, empty when nobody answered */
+function kegRow(states) {
+  const svg = s("svg", { viewBox: `0 0 ${states.length * 56} 48`, preserveAspectRatio: "xMinYMid meet" });
+  states.forEach((st, i) => {
+    const x = i * 56 + 6, lvl = st === "in" ? 1 : st === "maybe" ? 0.5 : st === "out" ? 0.18 : 0;
+    const g = s("g", { class: `keg ${st}`, style: `--pi: ${i}` });
+    if (lvl) g.append(s("rect", { class: `keg-pint ${st} keg-fill`, x: x + 2, y: 8 + 36 * (1 - lvl), width: 28, height: 36 * lvl }));
+    if (st === "in") g.append(s("path", { class: "keg-foam", d: `M${x + 1} 9c0-5 5-6 8-4 2-3 7-3 9 0 3-2 8-1 8 4z` }));
+    g.append(s("path", { class: "keg-handle", d: `M${x + 32} 16h6a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5h-6` }), s("rect", { class: "keg-pint none", x, y: 8, width: 32, height: 38, rx: 3, "fill-opacity": 0, style: "fill: none" }));
+    svg.append(g);
+  });
+  return svg;
+}
 function miniRoads(zones) {
   const svg = s("svg", { viewBox: "0 0 600 400", "aria-hidden": "true", preserveAspectRatio: "xMidYMid meet" });
   const [ox, oy] = [470, 122];
   for (const [z, ms] of zones) {
     const Z = ZONES[z];
     svg.append(s("line", { class: "viz-thin", x1: Z.x, y1: Z.y, x2: ox, y2: oy, stroke: classVar(ms[0].class_key), "stroke-width": 4, "stroke-dasharray": "4 10" }));
-    ms.forEach((m, i) => svg.append(s("circle", { cx: Z.x + (i - (ms.length - 1) / 2) * 30, cy: Z.y, r: 11, fill: classVar(m.class_key) })));
+    ms.forEach((m, i) => svg.append(s("image", { href: `img/crests/${m.class_key}.png`, x: Z.x + (i - (ms.length - 1) / 2) * 62 - 36, y: Z.y - 36, width: 72, height: 72 })));
   }
-  svg.append(s("circle", { class: "viz-city", cx: ox, cy: oy, r: 14 }));
+  const gate = emb("dungeons", "viz-gate"); for (const [k, v] of Object.entries({ x: ox - 26, y: oy - 26, width: 52, height: 52 })) gate.setAttribute(k, v);
+  svg.append(gate);
   return svg;
 }
 function miniRing(L) {
@@ -1742,7 +2056,7 @@ function miniWheel() {
     if (to === b.from || !pos[to] || !pos[b.from]) continue;
     svg.append(s("line", { class: "viz-thin", x1: pos[b.from][0], y1: pos[b.from][1], x2: pos[to][0], y2: pos[to][1], stroke: classVar(b.from) }));
   }
-  for (const k of keys) svg.append(s("circle", { cx: pos[k][0], cy: pos[k][1], r: 7, fill: "var(--oak-1)", stroke: classVar(k), "stroke-width": 2.5 }));
+  for (const k of keys) svg.append(s("image", { href: `img/crests/${k}.png`, x: pos[k][0] - 10, y: pos[k][1] - 10, width: 20, height: 20 }));
   return svg;
 }
 function miniSpark(vals) {
@@ -1765,7 +2079,7 @@ function renderCards() {
       card.querySelector(".front").inert = on; card.querySelector(".back").inert = !on;
       (on ? card.querySelector(".back .flip") : card.querySelector(".front .flip")).focus({ preventScroll: true });
     } });
-    const profs = m.professions.map((p) => h("span", {}, p.name, " ", h("span", { class: `chip ${p.source}`, title: p.source === "board" ? "Written on the Party Board or the decisions card" : "Said in chat, not on the board yet", text: p.status ? `${p.source}, ${p.status}` : p.source })));
+    const profs = m.professions.map((p, pi) => h("span", {}, p.name, " ", h("span", { class: `chip stamp ${p.source}`, style: `--di: ${pi + 1}`, title: p.source === "board" ? "Written on the Party Board or in the group notes" : "Said in chat, not on the board yet" }, emb(p.source === "board" ? "seal" : "speech"), p.status ? `${SRC_WORD[p.source] || p.source}, ${p.status}` : SRC_WORD[p.source] || p.source)));
     const front = h("div", { class: "face front" },
       ART.crest[m.class_key] ? crestImg(m.class_key) : null,
       h("div", { class: "who", text: m.name }),
@@ -1773,12 +2087,12 @@ function renderCards() {
       h("div", { class: "spec", text: m.spec }),
       h("dl", {},
         h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: m.role }), m.role_detail ? h("span", { class: "spec", text: m.role_detail }) : null)),
-        h("div", {}, h("dt", { text: "Spec" }), h("dd", {}, h("span", { class: `chip ${m.spec_status.status === "open" ? "new" : "board"}`, text: m.spec_status.status === "open" ? "still open" : "declared" }))),
+        h("div", {}, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not decided yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), "decided")))),
         h("div", {}, h("dt", { text: "Wakes up in" }), h("dd", { text: m.start_zone || "unknown" })),
         h("div", {}, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
       flipBtn(`${m.class} spells at ${lvl}`));
     const list = h("ul", { class: "spells" }, spells.map((sp) => {
-      const vals = sp.values.map((v) => fmtVal(v, sp.duration_ms) + (v.basis === "base" && !v.label.startsWith("%") ? " (base, scaling unverified)" : v.level != null && v.level < lvl ? ` (rank caps at ${v.level})` : "")).join(" · ");
+      const vals = sp.values.map((v) => fmtVal(v, sp.duration_ms) + (v.basis === "base" && !v.label.startsWith("%") ? " (starting value; may grow with level)" : v.level != null && v.level < lvl ? ` (rank caps at ${v.level})` : "")).join(" · ");
       const meta = [fmtCost(sp.cost), sp.cast_ms ? `${fmtMs(sp.cast_ms)} cast` : "instant", sp.cooldown ? `${fmtMs(sp.cooldown.ms)} cooldown` : null,
         sp.duration_ms && !sp.values.some((v) => v.mode === "total") ? `lasts ${fmtMs(sp.duration_ms)}` : null, sp.learned ? `learned at ${sp.learned}` : null].filter(Boolean).join(" · ");
       return h("li", { class: "spell" }, h("div", { class: "spell-name" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null), vals ? h("div", { class: "spell-vals", text: vals }) : null, h("div", { class: "spell-meta", text: meta }));
@@ -1791,7 +2105,8 @@ function renderCards() {
     wrap.append(card);
   }
   const cards = [...wrap.querySelectorAll(".card")];
-  const dots = D.party.members.map((m, i) => h("button", { type: "button", "aria-label": `${m.name}'s card`, "aria-current": String(!i), style: `--cc: ${classVar(m.class_key)}`, onclick: () => cards[i].scrollIntoView({ behavior: reduceMQ.matches ? "auto" : "smooth", block: "nearest", inline: "center" }) }));
+  const dots = D.party.members.map((m, i) => h("button", { class: "pager-crest", type: "button", "aria-label": `${m.name}'s card`, "aria-current": String(!i), style: `--cc: ${classVar(m.class_key)}`, onclick: () => cards[i].scrollIntoView({ behavior: reduceMQ.matches ? "auto" : "smooth", block: "nearest", inline: "center" }) }));
+  dots.forEach((d, i) => d.append(crestMark(D.party.members[i])));
   $("#five-pager").replaceChildren(...dots);
   if (typeof IntersectionObserver === "function") {
     const io = new IntersectionObserver((es) => es.forEach((en) => { if (en.isIntersecting) dots.forEach((d, i) => d.setAttribute("aria-current", String(cards[i] === en.target))); }), { root: wrap, threshold: 0.6 });
@@ -1809,6 +2124,15 @@ const ROADS = [
   { key: "mulgore", zone: "Mulgore", cls: "map-road", d: "M268 318 C 290 290, 330 250, 392 222 C 430 200, 455 160, 468 128", how: "the road past the Crossroads" },
   { key: "durotar", zone: "Durotar", cls: "map-road", d: "M508 238 C 520 210, 512 170, 478 130", how: "the Durotar road" },
 ];
+/* SMIL on the map pauses while the page is hidden; the map redraws when the phone type ramp switches */
+/* a banner whose name runs longer than its cloth (a wide display name) is squeezed to fit, never clipped */
+function fitBanners() { document.querySelectorAll("#map .banner-text").forEach((t) => { const max = Number(t.dataset.fit); t.querySelectorAll("tspan").forEach((l) => { try { if (l.getComputedTextLength() > max) { l.setAttribute("textLength", max); l.setAttribute("lengthAdjust", "spacingAndGlyphs"); } } catch (e) {} }); }); }
+let mapVis = false;
+function mapVisibility() {
+  const vis = () => { const svg = $("#map svg"); try { if (svg) { if (document.hidden) svg.pauseAnimations(); else svg.unpauseAnimations(); } } catch (e) {} };
+  if (!mapVis) { mapVis = true; document.addEventListener("visibilitychange", vis); window.matchMedia("(max-width: 699px)").addEventListener("change", () => { if (D.party) renderMap(); }); }
+  vis();
+}
 function renderMap() {
   const box = $("#map"); box.replaceChildren();
   const svg = s("svg", { class: "map-svg", viewBox: "0 0 600 400", role: "img", "aria-label": "Map of the three Horde starting zones with paths to Orgrimmar" });
@@ -1826,40 +2150,88 @@ function renderMap() {
     g.append(s("path", { id: `path-${r.key}`, class: r.cls, d: r.d, mask: `url(#mask-${r.key})` }));
     svg.append(g); return g;
   });
+  /* V11: each of the five is a pin carrying their class crest, with a name banner. Labels never collide: every banner tries
+     a ladder of spots around its pin against the boxes already placed (fixed place names, other pins, other banners) and
+     takes the first clear one, with a leader line when it had to move. Sizes follow the phone type ramp (26/24 units). */
+  const phone = innerWidth < 700, FS = phone ? 24 : 16, BIG = phone ? 26 : 17, CH = 0.6;
+  const boxes = [];
+  const hit = (b) => b.x < 4 || b.y < 4 || b.x + b.w > 596 || b.y + b.h > 396 || boxes.some((o) => b.x < o.x + o.w && o.x < b.x + b.w && b.y < o.y + o.h && o.y < b.y + b.h);
+  const textBox = (x, y, txt, fs, anchor) => { const w = txt.length * fs * 0.74; /* small caps with tracking run wider than the banners */ return { x: anchor === "middle" ? x - w / 2 : x, y: y - fs * 0.82, w, h: fs }; };
+  const fixedText = (x, y, txt, cls, fs, anchor = "middle") => { boxes.push(textBox(x, y, txt, fs, anchor)); return s("text", { class: cls, x, y, "text-anchor": anchor, text: txt }); };
   svg.append(
     s("circle", { class: "map-meet", cx: 470, cy: 122, r: 20 }),
     s("circle", { class: "map-meet", cx: 392, cy: 222, r: 14 }),
-    s("circle", { class: "map-city", cx: 470, cy: 122, r: 7 }),
-    s("circle", { class: "map-city", cx: 392, cy: 222, r: 5 }),
-    s("text", { class: "map-text", x: 470, y: 88, "text-anchor": "middle", text: "Orgrimmar" }),
-    s("text", { class: "map-text small", x: 470, y: 158, "text-anchor": "middle", text: "Valley of Strength" }),
-    s("text", { class: "map-text small", x: 380, y: 250, "text-anchor": "middle", text: "the Crossroads" }),
-    s("text", { class: "map-text small", x: 290, y: 30, "text-anchor": "middle", text: "zeppelin" }));
+    emb("dungeons", "map-mark"),
+    fixedText(470, 88, "Orgrimmar", "map-text", BIG),
+    fixedText(470, phone ? 164 : 158, "Valley of Strength", "map-text small", FS),
+    fixedText(380, 250, "the Crossroads", "map-text small", FS),
+    fixedText(290, 30, "zeppelin", "map-text small", FS));
+  const gate = svg.querySelector(".map-mark"); for (const [k, v] of Object.entries({ x: 456, y: 104, width: 28, height: 28 })) gate.setAttribute(k, v);
+  const cross = emb("pin", "map-mark"); for (const [k, v] of Object.entries({ x: 382, y: 200, width: 20, height: 22 })) cross.setAttribute(k, v);
+  svg.append(cross);
+  boxes.push({ x: 454, y: 102, w: 32, h: 32 }, { x: 380, y: 198, w: 24, h: 26 });
+  const banners = [];
   let zi = 0;
   for (const [zone, ms] of Object.entries(byZone)) {
     const z = ZONES[zone]; if (!z) continue;
     const road = ROADS.find((r) => r.zone === zone);
     const g = road ? groups[ROADS.indexOf(road)] : svg;
-    g.append(s("text", { class: "map-text", x: z.label[0], y: z.label[1], text: zone }), s("circle", { class: "zone-ring", cx: z.x, cy: z.y, r: 18, style: `--di: ${zi++}` }));
+    g.append(fixedText(z.label[0], z.label[1] + (phone ? 10 : 0), zone, "map-text", BIG, "start"), s("circle", { class: "zone-ring", cx: z.x, cy: z.y, r: 18, style: `--di: ${zi++}` }));
     ms.forEach((m, i) => {
-      const cx = z.x + (i - (ms.length - 1) / 2) * 34, cy = z.y;
-      g.append(s("circle", { cx, cy, r: 8, fill: classVar(m.class_key), stroke: "var(--oak-0)", "stroke-width": 2 }, s("title", { text: `${m.name}, ${m.race} ${m.class}` })));
-      g.append(s("text", { class: "map-text small", x: cx, y: i % 2 ? cy + 24 : cy - 13, "text-anchor": "middle", text: m.name }));
+      const tx = z.x + (i - (ms.length - 1) / 2) * (phone ? 46 : 38), ty = z.y + 12;
+      const pin = s("g", { class: "map-pin", transform: `translate(${tx} ${ty})`, style: `--cc: ${classVar(m.class_key)}; --di: ${zi + i}` },
+        s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
+        s("image", { href: `img/crests/${m.class_key}.png`, x: -13, y: -39, width: 26, height: 26 }),
+        s("title", { text: `${m.name}, ${m.race} ${m.class}` }));
+      g.append(pin);
+      boxes.push({ x: tx - 15, y: ty - 42, w: 30, h: 42 });
+      banners.push({ g, m, tx, ty });
     });
   }
+  /* banners last, so they route around every pin and place name */
+  const SPOTS = [[0, 1], [0, -1], [1, 0], [-1, 0], [0, 2], [0, -2], [1, 1], [-1, 1], [1, -1], [-1, -1], [0, 3], [0, -3], [-1, 2], [1, 2], [-1, -2], [1, -2], [0, 4], [-1, 3], [0, -4]];
+  const overlap = (b) => boxes.reduce((n, o) => n + Math.max(0, Math.min(b.x + b.w, o.x + o.w) - Math.max(b.x, o.x)) * Math.max(0, Math.min(b.y + b.h, o.y + o.h) - Math.max(b.y, o.y)), 0);
+  const labels = s("g", { class: "map-labels" }); /* drawn last, over the roads and the walkers */
+  for (const b of banners) {
+    /* a long display name folds onto two lines at the space nearest its middle, so its banner stays small */
+    const nm = b.m.name, sp = nm.length > 12 ? [...nm.matchAll(/ /g)].map((m) => m.index).sort((p, q) => Math.abs(p - nm.length / 2) - Math.abs(q - nm.length / 2))[0] : undefined;
+    const lines = sp === undefined ? [nm] : [nm.slice(0, sp), nm.slice(sp + 1)];
+    const w = Math.max(...lines.map((l) => l.length)) * FS * CH + 18, hh = lines.length * FS * 1.05 + 10;
+    let at = null, least = null;
+    for (const [sx, sy] of SPOTS) {
+      const cx = b.tx + sx * (w / 2 + 22), cy = sy > 0 ? b.ty + 6 + (sy - 1) * (hh + 4) : sy < 0 ? b.ty - 44 - hh - (-sy - 1) * (hh + 4) : b.ty - 21 - hh / 2;
+      const box = { x: Math.max(5, Math.min(595 - w, cx - w / 2)), y: cy, w, h: hh }; /* slid inside the map before testing */
+      if (!hit(box)) { at = box; break; }
+      if (box.y >= 4 && box.y + hh <= 396) { const n = overlap(box); if (!least || n < least.n) least = { n, box }; }
+    }
+    if (!at) at = least ? least.box : { x: Math.max(5, Math.min(595 - w, b.tx - w / 2)), y: b.ty + 6, w, h: hh }; /* the least-covered spot when none is clear */
+    boxes.push(at);
+    const mid = at.x + w / 2, moved = Math.abs(mid - b.tx) > 2 || at.y > b.ty + 8 || at.y + hh < b.ty - 40;
+    if (moved) labels.append(s("path", { class: "pin-lead", d: `M${b.tx} ${b.ty - 20}L${Math.max(at.x + 6, Math.min(at.x + w - 6, b.tx))} ${at.y + (at.y > b.ty - 20 ? 0 : hh)}` }));
+    labels.append(s("g", { class: "pin-banner", style: `--cc: ${classVar(b.m.class_key)}` },
+      s("path", { class: "banner-cloth", d: `M${at.x} ${at.y}h${w}l-6 ${hh / 2} 6 ${hh / 2}h${-w}l6 ${-hh / 2}z` }),
+      s("text", { class: "banner-text", x: mid, y: at.y + 5 + FS * 0.86, "text-anchor": "middle", "data-fit": Math.round(w - 16) }, lines.map((l, li) => s("tspan", { x: mid, dy: li ? FS * 1.05 : 0, text: l })))));
+  }
   if (!reduceMQ.matches) {
-    const color = (zone) => classVar((byZone[zone] || [])[0] && byZone[zone][0].class_key);
-    const travel = (g, pathId, fill, dur, begin) => {
-      const t = s("g", {}, s("circle", { r: 4.5, fill, opacity: 0.95 }));
-      const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", rotate: "auto" }); am.append(s("mpath", { href: `#${pathId}` }));
-      t.append(am); g.append(t);
+    /* a walking trail: the traveller's crest walks each road, leaving prints that fade at Orgrimmar; the zeppelin flies */
+    const walk = (g, r, k, dur, begin) => {
+      const ms = byZone[r.zone] || []; if (!ms.length) return;
+      defs.append(s("mask", { id: `walk-${r.key}`, class: "draw-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: 600, height: 400 },
+        s("path", { class: "walk-reveal", d: r.d, pathLength: 1 }, s("animate", { attributeName: "stroke-dashoffset", values: "1;0;0", keyTimes: "0;0.8;1", dur, begin, repeatCount: "indefinite" }))));
+      g.append(s("path", { class: "map-trail", d: r.d, pathLength: 1, mask: `url(#walk-${r.key})` }));
+      const walker = s("g", { class: "map-walker" }, s("image", { href: `img/crests/${ms[k % ms.length].class_key}.png`, x: -11, y: -11, width: 22, height: 22 }));
+      const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", keyPoints: "0;1;1", keyTimes: "0;0.8;1", calcMode: "linear" }); am.append(s("mpath", { href: `#path-${r.key}` }));
+      walker.append(am); g.append(walker);
     };
     const zep = s("g", {}, s("ellipse", { class: "map-zep", rx: 13, ry: 5.5 }), s("rect", { class: "map-zep", x: -4, y: 5, width: 8, height: 3 }));
     const am = s("animateMotion", { dur: "9s", repeatCount: "indefinite" }); am.append(s("mpath", { href: "#path-air" })); zep.append(am);
     groups[0].append(zep);
-    travel(groups[1], "path-mulgore", color("Mulgore"), "7s", "0s");
-    travel(groups[2], "path-durotar", color("Durotar"), "4s", "1s");
+    walk(groups[1], ROADS[1], 0, "8s", "0s");
+    walk(groups[2], ROADS[2], 0, "6s", "1s");
+    /* nothing moves on a hidden page */
   }
+  svg.append(labels);
+  mapVisibility();
   const panel = h("div", { class: "road-panel", "aria-hidden": "true" });
   box.append(svg, panel);
   const legend = $("#roads-legend"); legend.replaceChildren();
@@ -1889,9 +2261,16 @@ function renderMap() {
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
   const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
   $("#map-lede").textContent = `${names.join("; ")}. The Undercity zeppelin and two roads all end in Orgrimmar.`;
-  $("#map-caption").textContent = meet ? `${meet.title}: ${meet.status}. ${meet.detail}` : "";
+  $("#map-caption").replaceChildren(...(meet ? meetLine(meet) : []));
 }
 
+/* V11: a meeting point nobody chose reads as a step with the Sign-ups card link; the Classic-habit hint stays */
+const unchosen = (o) => /nothing chosen|not chosen/i.test(o.status || "");
+function meetLine(meet) {
+  const url = D.party.signup_url;
+  if (!unchosen(meet)) return [`${meet.title}: ${meet.status}. ${meet.detail || ""}`];
+  return [h("b", { text: `${meet.title}: ` }), "Not chosen yet. ", url ? h("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: "Answer on the Sign-ups card" }) : "Answer on the Sign-ups card", ". ", meet.detail || ""];
+}
 function splitNotes(text) {
   const notes = [];
   let now = text.replace(/\s*\(([^()]*\b(?:Sep|Oct|Nov) \d[^()]*)\)/g, (m, x) => { notes.push(x); return ""; });
@@ -1914,12 +2293,13 @@ function renderRaces() {
   Object.entries(D.client.racials).forEach(([race, list], idx) => {
     const ms = D.party.members.filter((m) => m.race === race);
     wrap.append(h("details", { class: "slip race", open: wideMQ.matches || idx === 0 },
-      h("summary", {}, h("h3", {}, race, h("span", { class: "dots" }, ms.map((m) => h("i", { style: `--pc: ${classVar(m.class_key)}`, title: m.name }))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") }))),
+      h("summary", {}, h("h3", {}, race, h("span", { class: "dots", "aria-hidden": "true" }, ms.map((m) => crestMark(m))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") }))),
       h("ul", {}, list.map((r, i) => raceRow(r, i)))));
   });
 }
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
+const KIND_WORD = { toy: "a fun item with no stats", tabard: "a cloth crest worn over armor", pet: "a pet that follows you", mount: "a mount to ride" };
 function renderLegacy() {
   const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
@@ -1943,8 +2323,8 @@ function renderLegacy() {
   }
   svg.append(s("text", { class: "ring-num", x: 0, y: 8, "text-anchor": "middle", text: String(L.earned_now) }),
     s("text", { class: "ring-sub", x: 0, y: 28, "text-anchor": "middle", text: `OF ${L.total} POINTS` }));
-  const legend = h("ul", { class: "legend" }, L.categories.map((c, i) => h("li", {}, h("span", { class: "sw", style: `--sw: var(--seg-${i + 1})` }), h("b", { class: "num", text: String(c.n) }), h("span", { text: `${c.key}: ${c.text.replace(/^\d+:\s*/, "")}` }))));
-  const rewards = h("ul", { class: "rewards" }, L.thresholds.map((t) => h("li", {}, h("b", { text: t.alt ? `${t.n} (${t.alt})` : String(t.n) }), h("span", { text: `${t.reward}, ${t.kind}` }))));
+  const legend = h("ul", { class: "legend" }, L.categories.map((c, i) => h("li", { style: `--sw: var(--seg-${i + 1})` }, emb(EMB[c.key] ? c.key : c.key === "raids" ? "skull" : "seal", "cat-emb"), h("b", { class: "num", text: String(c.n) }), h("span", { text: `${c.key}: ${c.text.replace(/^\d+:\s*/, "")}` }))));
+  const rewards = h("ul", { class: "rewards" }, L.thresholds.map((t) => h("li", {}, h("b", { text: t.alt ? `${t.n} (${t.alt})` : String(t.n) }), h("span", { text: `${t.reward}, ${KIND_WORD[t.kind] || t.kind}` }))));
   wrap.append(h("div", {}, svg),
     h("div", { class: "stack" },
       h("p", { text: `Earned so far: ${L.earned_now}, because ${L.earned_note}.` }),
@@ -2024,7 +2404,7 @@ function renderBuffsDeep() {
   /* the short answer: the value at this level, or when it arrives */
   const short = (b) => {
     const a = b.at[L - 1];
-    if (!b.ranks.length) return b.classic ? "no client-table row" : "no numbers in the client table";
+    if (!b.ranks.length) return b.classic ? "numbers not out yet" : "no numbers yet";
     if (!a) return `arrives at ${first(b)}`;
     return a.v.length ? a.v.map(fmtN).join(", ") : `${ranksAt(b).map((r) => r.rank || "one rank").join(" and ")}`;
   };
@@ -2038,7 +2418,7 @@ function renderBuffsDeep() {
     const notes = [...b.wiki.map((w) => h("li", {}, h("span", { class: "st forever", text: "Forever" }), ` ${w.text}`)), b.classic ? h("li", {}, h("span", { class: "st classic", text: "Classic baseline" }), ` ${b.classic.replace(/^Classic baseline: /, "")}`) : null].filter(Boolean);
     return (line) => h("details", { class: "bsrc" }, h("summary", { class: "bq-line" }, h("span", { class: "bq-what" }, ...line.slice(0, -1)), h("span", { class: "bq-who" }, line[line.length - 1], h("span", { class: "bq-src", text: "Details" }))),
       rankLine ? h("div", { class: "deep-val", text: rankLine }) : null,
-      own.length ? h("div", { class: "deep-stack" }, h("b", { text: "How it stacks: " }), h("ul", { class: "deep-notes" }, own.map((r) => h("li", {}, h("span", { class: `st ${r.status}`, text: BUFF_STATUS[r.status] }), ` ${r.text}`)))) : null,
+      own.length ? h("div", { class: "deep-stack" }, h("b", { text: "How it stacks: " }), own.some((r) => /newer cast replaces the older/i.test(r.text)) ? h("p", { class: "deep-plain", text: "In short: two of the same buff do not stack; the newer cast replaces the older." }) : null, h("ul", { class: "deep-notes" }, own.map((r) => h("li", {}, h("span", { class: `st st-${r.status}`, text: BUFF_STATUS[r.status] }), ` ${r.text}`)))) : null,
       h("div", { class: "deep-meta", text: [b.lands_text, ...extra].join(" · ") }),
       b.ranks.length ? h("div", { class: "deep-src", text: `Client table ${B.build.split(".").pop()}, spell ${rk.length ? rk.map((r) => r.spell).join(", ") : b.ranks[0].spell}` }) : null,
       notes.length ? h("ul", { class: "deep-notes" }, notes) : null);
@@ -2058,7 +2438,7 @@ function renderBuffsDeep() {
   const classes = [...P.members.map((m) => m.class_key), ...(BD.sixth ? ["shaman"] : [])];
   const slider = h("input", { type: "range", id: "deep-level", min: 1, max: 60, step: 1, value: L, "aria-label": "Character level", "aria-valuetext": `Level ${L}` });
   const marks = h("div", { class: "deep-marks", role: "group", "aria-label": "Jump to a level" }, B.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(L === k), "aria-label": `Level ${k}`, text: String(k) })));
-  const six = h("label", { class: "deep-six" }, h("input", { type: "checkbox", id: "deep-sixth", ...(BD.sixth ? { checked: "" } : {}) }), " If a sixth joins (a shaman)");
+  const six = h("label", { class: "deep-six" }, h("input", { type: "checkbox", id: "deep-sixth", ...(BD.sixth ? { checked: "" } : {}) }), " Show what a Shaman would add");
   let answer;
   if (me) {
     const give = shown.filter((b) => b.class === me.class_key);
@@ -2080,13 +2460,13 @@ function renderBuffsDeep() {
   });
   const rules = ["forever", "classic", "unknown"].map((st) => {
     const list = B.rules.filter((r) => r.status === st);
-    return h("details", { class: "brules" }, h("summary", {}, h("span", { class: `st ${st}`, text: BUFF_STATUS[st] }), ` ${plural(list.length, "rule", "rules")}`),
+    return h("details", { class: `brules ${st}` }, h("summary", {}, emb({ forever: "seal", classic: "book", unknown: "question" }[st]), h("span", { class: `st st-${st}`, text: BUFF_STATUS[st] }), ` ${plural(list.length, "rule", "rules")}`),
       h("ul", { class: "deep-rules" }, list.map((r) => h("li", { text: r.text }))));
   });
   box.replaceChildren(...[
     h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
+    me ? null : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", style: `--cc: ${classVar(m.class_key)}`, onclick: () => { MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); } }, crestMark(m), m.name))),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
-    me ? null : h("p", { class: "deep-hint", text: "Tap a name for its buffs' numbers. Pick your name on Tonight to see what you give and get." }),
     answer,
     me ? h("h4", { class: "bgroup-h", text: `Every buff, by giver (${shown.length})` }) : null, h("div", { class: "bclasses" }, groups),
     h("h4", { class: "bgroup-h", text: `Rules in a group (${B.rules.length})` }), h("div", { class: "brules-row" }, rules)].filter(Boolean));
@@ -2117,24 +2497,27 @@ function setBuffView(v) {
 }
 
 const ART = { crest: {}, seal: false, beam: false };
-const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : null);
+const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : emb("seal"));
+/* where a ledger line was written: the Party Board under a wax seal, the group notes under a quill */
+const srcTag = (src) => h("span", { class: `label srctag ${src === "board" ? "board" : "notes"}` }, emb(src === "board" ? "seal" : "quill"), SRC_WORD[src] || src);
+const SRC_WORD = { board: "on the Party Board", chat: "said in chat", "group notes": "in the group notes" };
 function renderLedger() {
   const p = D.party, wrap = $("#ledger-slip"); wrap.replaceChildren();
-  const link = (l) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: l.label });
+  const link = (l, o) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: /discord\.com\/events\//.test(l.url) ? "the launch-night event in Discord" : `${l.label}${o ? ` for ${o.title.toLowerCase()}` : ""} in Discord` });
   const pollNames = p.polls.map((q) => q.title.toLowerCase());
   $("#ledger-lede").textContent = p.polls.length
     ? `Settled things, open things, and ${p.polls.length === 1 ? "one poll" : `${p.polls.length} polls`} still taking votes: ${andList(pollNames)}.`
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(h("div", { class: "ledger-col" },
     h("h3", { text: "Settled" }),
-    h("ul", {}, [...p.settled, ...p.settled_extra].map((x, i) => h("li", { class: "settled-li", style: `--di: ${i}` }, h("span", {}, seal(), x.text), h("span", { class: "label", text: x.source })))),
+    h("ul", {}, [...p.settled, ...p.settled_extra].map((x, i) => h("li", { class: "settled-li", style: `--di: ${i}` }, h("span", {}, seal(), x.text), srcTag(x.source)))),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
     ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` })))),
     h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}` },
       h("strong", { text: o.title }),
-      h("span", {}, ...linkify(o.status ? `${o.status}. ${o.detail || ""}` : o.text || "", o.links || [], link)),
-      h("span", { class: "label", text: o.source }))))));
+      h("span", {}, ...(unchosen(o) ? meetLine(o).slice(1) : linkify((o.status ? `${o.status}. ${o.detail || ""}` : o.text || "").replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (l) => link(l, o)))),
+      srcTag(o.source))))));
 }
 
 function linkify(text, ls, link) {
@@ -2159,14 +2542,16 @@ function renderLibrarian() {
     s("line", { class: "spark-grid", x1: pad, x2: W - pad, y1: H - pad, y2: H - pad }),
     s("line", { class: "spark-grid", x1: pad, x2: W - pad, y1: ys(max), y2: ys(max), "stroke-dasharray": "2 4" }),
     s("polygon", { class: "spark-area", points: `${xs(0)},${H - pad} ${pts} ${xs(vals.length - 1)},${H - pad}` }),
-    s("polyline", { class: "spark-line", points: pts }),
-    ...vals.map((v, i) => s("circle", { class: "spark-dot", cx: xs(i), cy: ys(v), r: i === vals.length - 1 ? 4 : 2.2 })),
+    s("polyline", { class: "spark-line", points: pts, pathLength: 1 }),
+    ...vals.slice(0, -1).map((v, i) => s("path", { class: "spark-dot", d: `M${xs(i)} ${ys(v) - 3}l3 3-3 3-3-3z` })),
+    s("path", { class: "spark-drop", d: `M${xs(vals.length - 1)} ${ys(vals[vals.length - 1]) - 8}c3 4 5 6.6 5 9.2a5 5 0 0 1-10 0c0-2.6 2-5.2 5-9.2z` }),
+    (() => { const q = emb("quill", "spark-quill"); for (const [k, v] of Object.entries({ x: xs(vals.length - 1) - 34, y: ys(vals[vals.length - 1]) - 2, width: 22, height: 22 })) q.setAttribute(k, v); return q; })(),
     ...vals.map((v, i) => s("text", { class: "spark-text", x: xs(i), y: H + 10, "text-anchor": "middle", text: String(v) })),
     s("text", { class: "spark-text", x: W - pad, y: ys(max) - 4, "text-anchor": "end", text: `${max} s` }));
   wrap.append(
     h("div", { class: "stack" },
-      h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("95th percentile", fmtSecs(st.p95_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
-      h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.${st.p95_s > st.miss_threshold_s ? " Those slow ones are what pull the 95th percentile up." : ""}` })),
+      h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("slowest 1 in 20", fmtSecs(st.p95_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
+      h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.${st.p95_s > st.miss_threshold_s ? " Those slow ones set the slowest 1 in 20." : ""}` })),
     h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark));
 }
 
@@ -2180,7 +2565,7 @@ function renderFooter() {
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
     h("p", { text: "Tavern paintings generated on 2026-10-26 for this board." }),
-    h("p", { text: "Spell numbers are the game's own values at the level cap and can move with beta hotfixes. A \"board\" tag means written on the group's cards; \"chat\" means said in Discord and noted down." }));
+    h("p", { text: "Spell numbers are the game's own values at the level cap and can move with Blizzard's hotfixes. A wax seal marks what is written on the Party Board; a speech mark, what was said in chat and noted down." }));
 }
 
 const Q = {
@@ -2354,23 +2739,55 @@ function startDiscordPresence(sdk) {
 
 /* Discord display names sometimes carry decoration ("=Name="); the board shows the name inside it. */
 const cleanName = (n) => String(n).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "") || String(n);
+/* the launch-night table: one seat per member with their crest, a tankard full when they are in, and their answer */
+/* V11: one clear way to answer: the Sign-ups card in Discord */
+function actRow() {
+  const url = D.party && D.party.signup_url; if (!url) return;
+  $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "Answer in Discord"), h("p", { class: "act-how", text: "Open #wow-forever in Discord and tap your answers on the Sign-ups card." }));
+}
+function renderSeats(S) {
+  const box = $("#dsu-seats"); if (!box) return;
+  const ms = D.party.members, W = 640, step = (W - 80) / ms.length;
+  const ans = (m) => (S.entries || []).find((e) => cleanName(e.name).toLowerCase() === m.name.toLowerCase()) || null;
+  const WHEN = { "6pm": "6 PM ET", "8pm": "8 PM ET", later: "later" }, SAY = { in: "in", maybe: "maybe", out: "out" };
+  const svg = s("svg", { viewBox: `0 0 ${W} 236`, role: "img", "aria-label": `Launch-night table: ${ms.map((m) => { const a = ans(m); return `${m.name} ${a && a.rsvp ? SAY[a.rsvp] || a.rsvp : "no answer yet"}`; }).join(", ")}` },
+    s("path", { class: "seat-table", d: `M40 78h${W - 80}q12 0 12 12v62q0 12-12 12H40q-12 0-12-12V90q0-12 12-12z` }),
+    s("path", { class: "seat-plank", d: `M30 109h${W - 60}M30 134h${W - 60}` }));
+  ms.forEach((m, i) => {
+    const x = 40 + step * (i + 0.5), a = ans(m), state = a && a.rsvp ? a.rsvp : "none";
+    const mug = emb("tankard", `seat-mug${state === "in" ? "" : " empty"}`);
+    for (const [k, v] of Object.entries({ x: x - 15, y: 82, width: 30, height: 30 })) mug.setAttribute(k, v);
+    svg.append(s("image", { href: `img/crests/${m.class_key}.png`, x: x - 24, y: 14, width: 48, height: 48 }), mug,
+      s("text", { class: "seat-name", x, y: 192, text: m.name }),
+      s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : "no answer yet" }));
+  });
+  box.replaceChildren(h("h4", { class: "seats-cap", text: launchLine() ? `The table on launch night: ${launchLine()}` : "The table on launch night" }), svg);
+}
 function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
   if (!S) { body.replaceChildren(h("p", { text: "The Discord sign-ups did not load." })); $("#dsu-stamp").textContent = ""; return; }
   const T = S.tallies;
   const meName = (MEM.member() || {}).name;
   const mineFirst = (names) => names.map(cleanName).sort((a, b) => (b.toLowerCase() === String(meName).toLowerCase()) - (a.toLowerCase() === String(meName).toLowerCase()));
-  const row = (slot, label, extra) => h("div", { class: "trow" }, h("b", { "data-n": slot.count, text: String(slot.count) }), ` ${label}: `, slot.count ? (extra || mineFirst(slot.names).join(", ")) : "nobody yet");
+  /* V11: a name carries its crest when it is one of the five; the count fills a row of five pennants */
+  const who = (n) => { const m = memberByName(cleanName(n)); return h("span", { class: "who" }, m ? crestMark(m) : emb("speech"), cleanName(n)); };
+  let ri = 0;
+  const row = (slot, label, extra) => h("div", { class: `trow${slot.count ? "" : " zero"}`, style: `--ri: ${ri++}` },
+    h("span", { class: "trow-n" }, h("b", { "data-n": slot.count, text: String(slot.count) }), h("span", { class: "pips", "aria-hidden": "true" }, Array.from({ length: Math.max(D.party.members.length, slot.count) }, (_, k) => h("i", { class: k < slot.count ? "on" : null, style: `--pi: ${k}` })))),
+    h("span", { class: "trow-who" }, h("span", { text: `${label}:` }), ...(slot.count ? (extra ? [extra] : mineFirst(slot.names).map(who)) : ["nobody yet"])));
   const groups = [
-    ["Pack", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
-    ["Meeting point", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
-    ["Launch night", [row(T.rsvp.in, "In"), row(T.rsvp.maybe, "Maybe"), row(T.rsvp.out, "Out")]],
-    ...(T.when ? [["When they get on", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
+    ["Pack", "ticket", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
+    ["Meeting point", "pin", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
+    ["Launch night", "voice", [row(T.rsvp.in, "In"), row(T.rsvp.maybe, "Maybe"), row(T.rsvp.out, "Out")]],
+    ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
-  body.replaceChildren(...groups.map(([title, rows]) => h("div", { class: "tally" }, h("h4", { text: title }), ...rows)));
+  body.replaceChildren(...groups.map(([title, icon, rows]) => h("div", { class: "tally" }, h("h4", {}, emb(icon), title), ...rows)));
+  renderSeats(S); actRow();
   $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${dtFull.format(new Date(S.updated))}.` : "Nobody has clicked the card yet.";
 }
 
+/* V11: the board opens in any browser from the web link; nobody needs Discord's Activity to read it */
+const PRESENCE_WEB = "Open in any browser, no sign-in";
 async function startRuntime() {
   const c = window.claude;
   if (!c || typeof c.use !== "function") return;
@@ -2379,9 +2796,9 @@ async function startRuntime() {
   RT.db = db; RT.user = user; RT.room = room; RT.tried = true;
   if (db) $("#signup").hidden = false;
   if (room) {
-    room.onPeers((ch) => { RT.peers = ch.peers; renderPresence(); }, () => { RT.room = null; $("#peers").replaceChildren(); $("#presence-text").textContent = "Opens inside Discord"; });
+    room.onPeers((ch) => { RT.peers = ch.peers; renderPresence(); }, () => { RT.room = null; $("#peers").replaceChildren(); $("#presence-text").textContent = PRESENCE_WEB; });
     pushPresence();
-  } else $("#presence-text").textContent = "Opens inside Discord";
+  } else $("#presence-text").textContent = PRESENCE_WEB;
   if (user) { try { RT.myId = await user.id(); } catch (e) { RT.myId = null; } }
   if (!db) { setStatus("Sign-ups are read-only on this view: the shared store is not available here."); renderTallies(); return; }
   setStatus(RT.myId ? "Loading saved answers." : "Sign-ups are read-only for you: this view has no signed-in identity. Answers from others still show.");
@@ -2406,7 +2823,7 @@ async function startRuntime() {
 }
 
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight"];
-const TITLES = { tonight: "Tonight", timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Account bonuses", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The helper bot", library: "The library" };
+const TITLES = { tonight: "Next steps", timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Account bonuses", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The helper bot", library: "The library" };
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
 const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
@@ -2427,6 +2844,7 @@ function selectPanel(key, crossFade) {
   $("#sheet-title").textContent = TITLES[key];
   $("#sheet-sub").textContent = SUBTITLE[key] || "";
   setSheetEmblem(key);
+  placeOrnament(key);
   for (const k of SCENES) {
     const t = $(`#tab-${k}`), on = k === key;
     t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1;
@@ -2453,14 +2871,14 @@ function selectPanel(key, crossFade) {
   moveInd(); markBar(key);
 }
 function moveInd() { const t = SC.open && $(`#tab-${SC.open}`), ind = $("#tab-ind"); if (t && ind) ind.style.transform = `translateX(${t.offsetLeft}px) scaleX(${Math.max(1, t.offsetWidth)})`; }
-const BAR = ["tonight", "five", "buffs"], MORE = SCENES.filter((k) => !BAR.includes(k));
-const BAR_LABEL = { five: "Five" };
-function markBar(key) { document.querySelectorAll("#bottombar [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === key || (b.dataset.go === "search" && key === "library") || (b.dataset.go === "more" && MORE.includes(key) && key !== "library")))); }
+const BAR = ["tonight", "signups", "five", "buffs"], MORE = SCENES.filter((k) => !BAR.includes(k));
+const BAR_LABEL = { five: "Five", tonight: "Next steps" };
+function markBar(key) { document.querySelectorAll("#bottombar [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === key || (b.dataset.go === "search" && key === "library") || (b.dataset.go === "more" && MORE.includes(key))))); }
 function startBar() {
   const label = (k) => $(`#tab-${k}`).textContent.trim(), bar = $("#bottombar"), menu = $("#more-menu");
   const more = h("button", { class: "bb", type: "button", "data-go": "more", "aria-expanded": "false", "aria-controls": "more-menu", text: "More" });
-  bar.replaceChildren(h("button", { class: "bb", type: "button", "data-go": "wall", "aria-label": "Close and go back to the wall", text: "Wall" }), h("button", { class: "bb", type: "button", "data-go": "search", "aria-label": "Search the library", text: "Search" }), ...BAR.map((k) => h("button", { class: "bb", type: "button", "data-go": k, "aria-label": BAR_LABEL[k] ? label(k) : null, text: BAR_LABEL[k] || label(k) })), more);
-  menu.replaceChildren(...MORE.map((k) => h("button", { type: "button", "data-go": k, text: label(k) })), h("button", { type: "button", "data-go": "sound", "aria-pressed": String(AU.on), text: "Sound" }), h("button", { type: "button", "data-go": "room", id: "more-room", text: "Room: auto" }));
+  bar.replaceChildren(...BAR.map((k) => h("button", { class: "bb", type: "button", "data-go": k, "aria-label": BAR_LABEL[k] ? label(k) : null, text: BAR_LABEL[k] || label(k) })), more);
+  menu.replaceChildren(h("button", { type: "button", "data-go": "wall", text: "The wall" }), ...MORE.map((k) => h("button", { type: "button", "data-go": k, text: label(k) })), h("button", { type: "button", "data-go": "sound", "aria-pressed": String(AU.on), text: "Sound" }), h("button", { type: "button", "data-go": "room", id: "more-room", text: "Room: auto" }));
   const setMore = (on) => { menu.hidden = !on; more.setAttribute("aria-expanded", String(on)); };
   closeMore = (back) => { if (menu.hidden) return false; setMore(false); if (back !== false) more.focus(); return true; };
   const go = (e) => {
@@ -2497,7 +2915,16 @@ function countUp(box) {
   sfx("tick");
   requestAnimationFrame(step);
 }
-const ON_OPEN = { signups: () => countUp($("#dsu-body")), ledger: () => sfx("stamp"), library: () => LIBUI.open() };
+const ON_OPEN = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => sfx("stamp"), library: () => LIBUI.open(), timeline: () => replay($("#rail"), "pressing"), roads: () => requestAnimationFrame(fitBanners), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
+/* V11: every scene has its own ornament, its emblem engraved large in the parchment's corner with its own small motion */
+const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials: "skull", legacy: "laurel", buffs: "rune", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon" };
+function placeOrnament(key) {
+  const sheet = document.querySelector("#scene .sheet"); if (!sheet) return;
+  const old = $("#sheet-orn"); if (old && old.parentNode) old.parentNode.removeChild(old);
+  const art = emb(ORN[key] || "seal");
+  const o = s("svg", { id: "sheet-orn", class: `sheet-orn emb orn-${key}`, viewBox: "-2 -2 28 28", "aria-hidden": "true", focusable: "false" }, s("g", { class: "orn-in" }, ...art.childNodes));
+  sheet.append(o); replay(o, "drawing");
+}
 const hasVT = () => typeof document.startViewTransition === "function";
 const canFlip = () => typeof $(".sheet").animate === "function";
 function morphBand(key) {
@@ -3132,11 +3559,13 @@ const LIBS = { state: "idle", via: "none", why: "", worker: null, core: null, co
 const LIB_CAP = 60;
 const dtShort = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const libDay = (d) => (d ? dtShort.format(new Date(`${d}T12:00:00Z`)) : "undated");
-const libGet = (url) => fetch(url).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
+/* V11 cache stamps: index.json names each library file's stamp, so every other file loads as <file>?v=<stamp> */
+const libStamped = (url) => { const v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[url.replace(/^data\/library\//, "")]; return v ? `${url}?v=${v}` : url; };
+const libGet = (url) => libIndex().catch(() => null).then(() => fetch(libStamped(url))).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
 const libTitle = (id) => (LIBD.head[id] ? LIBD.head[id].title : id);
 const libCatTitle = (key) => { const c = LIBD.index && LIBD.index.categories.find((x) => x.key === key); return c ? c.title : key; };
 function libIndex() {
-  LIBD.indexP ||= fetch("data/library/index.json").then((r) => { if (!r.ok) throw new Error(`the library index answered ${r.status}`); return r.json(); }).then((j) => {
+  LIBD.indexP ||= fetch("data/library/index.json", { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(`the library index answered ${r.status}`); return r.json(); }).then((j) => {
     LIBD.index = j; for (const p of j.pages) LIBD.head[p.id] = p;
     try { renderLibTile(); } catch (e) { console.error(e); }
     return j;
@@ -3195,10 +3624,10 @@ const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copi
 function libStart() {
   if (LIBS.state !== "idle") return;
   LIBS.state = "loading";
-  LIBS.coreP = import("./vendor/rank-core.js").then((m) => (LIBS.core = m)).catch(() => null);
+  LIBS.coreP = import("./vendor/rank-core.js?v=7f8514dc3a").then((m) => (LIBS.core = m)).catch(() => null);
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=13d350b9c7", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);
@@ -3265,7 +3694,7 @@ const libXp = (refs) => h("span", { class: "xp" }, refs.map((r) => {
   return h("span", {}, h("b", { text: `${r.id} ${r.host}` }), `: ${TIER_WORD[r.tier] || "source"} (tier ${r.tier})`, b ? `, build ${b}` : "", r.accessed ? `, read ${dtRead.format(new Date(`${r.accessed}T12:00:00Z`))} ` : " ", h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer", "aria-label": `Verify at ${r.host}` }, "Verify"));
 }));
 let DIFF = null;
-const libDiff = () => DIFF || (DIFF = fetch("data/library/diff.json").then((r) => (r.ok ? r.json() : null)).catch(() => null));
+const libDiff = () => DIFF || (DIFF = libGet("data/library/diff.json").catch(() => null));
 /* owners: null for the shelf (every owner), or the page: a class page takes its class, a race page every racial its text names. */
 function libRibbon(page) {
   const box = h("div", { class: "ribbon-slot" });
@@ -3303,12 +3732,13 @@ function libRenderHead() {
     st ? extra(stat(String(st.answers), "answers by Leeroy")) : null, st ? extra(stat(fmtSecs(st.median_s), "median reply")) : null,
     extra(stat(libDay(ix.generated.slice(0, 10)), "as of")));
 }
+const CAT_EMB = { classes: "classes", dungeons: "dungeons", events: "cal", history: "book", leveling: "leveling", professions: "tradeskills", pvp: "pvp", races: "races", raids: "skull", systems: "systems", ui: "ui" };
 function libRenderRail() {
   const ix = LIBD.index, rail = $("#lib-rail"); if (!ix || !rail) return;
   const counts = {};
   if (LIBS.view.kind === "results" && LIBS.res) for (const x of LIBS.res.hits) counts[x.category] = (counts[x.category] || 0) + 1;
   const res = LIBS.view.kind === "results" && LIBS.res;
-  const btn = (key, label, n) => h("button", { class: "cat", type: "button", "data-cat": key, "aria-pressed": String(LIBS.cat === key) }, h("i", { class: "cat-ini", "aria-hidden": "true", text: label.charAt(0) }), h("span", { text: label }), h("b", { text: nf.format(n) }));
+  const btn = (key, label, n) => h("button", { class: "cat", type: "button", "data-cat": key, "aria-pressed": String(LIBS.cat === key) }, emb(CAT_EMB[key] || "adventure", "cat-ico"), h("span", { text: label }), h("b", { text: nf.format(n) }));
   rail.replaceChildren(btn("", "All", res ? LIBS.res.hits.length : ix.totals.pages), ...ix.categories.map((c) => btn(c.key, c.title, res ? counts[c.key] || 0 : c.pages)));
 }
 function libRender(fresh) {
@@ -3456,14 +3886,14 @@ async function libRenderPage(v, tok, fresh) {
         h("span", {}, h("b", { text: libCatTitle(p.category) })),
         p.as_of ? h("span", {}, "as of ", h("b", { text: libDay(p.as_of) })) : null,
         p.checked ? h("span", {}, "checked ", h("b", { text: libDay(p.checked) })) : null,
-        h("span", { class: "wax", style: `--sc: var(${SEAL[p.confidence] || "--wax"})` }, h("i", { "aria-hidden": "true" }), h("b", { text: p.confidence || "unrated" })),
+        h("span", { class: "wax", style: `--sc: var(${SEAL[p.confidence] || "--wax"})` }, emb("seal"), h("b", { text: p.confidence || "unrated" })),
         p.status ? h("span", { text: p.status.replace(/-/g, " ") }) : null),
       xp ? h("p", { class: "xp-snap" }, h("span", { text: `${p.recheck_days ? `Sources re-read every ${plural(p.recheck_days, "day", "days")}` : "No re-read interval"}. Saved copies, first 8 characters of each sha256:` }), ...(p.snapshots || []).map((s) => h("span", {}, `${s.id} ${s.host || hostOf[s.id] || ""} `, s.sha8 ? h("code", { text: s.sha8 }) : "no copy yet"))) : null,
       h("div", { class: "lib-row" }, linkChip(v), askChip(p.title, `Ask Leeroy about ${p.title}`))),
     xp && (p.category === "classes" || p.category === "races") ? libRibbon(p) : null,
     p.blurb ? h("p", { class: "blurb", text: p.blurb }) : null,
     h("h4", { class: "lib-h", text: "Facts" }), facts,
-    p.open.length ? h("div", { class: "unknown" }, h("h4", {}, h("span", { class: "pend", "aria-hidden": "true" }), "Nobody knows yet"), h("ul", {}, p.open.map((o) => h("li", {}, ...richText(o))))) : null,
+    p.open.length ? h("div", { class: "unknown" }, h("h4", {}, emb("question", "pend"), "Nobody knows yet"), h("ul", {}, p.open.map((o) => h("li", {}, ...richText(o))))) : null,
     p.related.length ? h("div", {}, h("h4", { class: "lib-h", text: "Related" }), h("div", { class: "ptabs" }, p.related.filter((id) => LIBD.head[id]).map((id) => pageLink(id, "ptab", libTitle(id))))) : null,
     hist.length ? h("div", {}, h("h4", { class: "lib-h", text: "History" }), h("ol", { class: "hist" }, hist.slice(0, 5).map(histLi)),
       hist.length > 5 ? h("details", { class: "hist-more" }, h("summary", { text: `${plural(hist.length - 5, "older entry", "older entries")}` }), h("ol", { class: "hist" }, hist.slice(5).map(histLi))) : null) : null);
@@ -3740,7 +4170,7 @@ function libRenderOpen(main, tok) {
     h("p", { text: `${plural(O.open.length, "open question", "open questions")} written on the pages, page by page, then ${plural(O.gaps.length, "question", "questions")} the library had to research.` }),
     h("div", { class: "groups" }, [...byPage.entries()].filter(([id]) => !LIBS.cat || (LIBD.head[id] && LIBD.head[id].category === LIBS.cat)).map(([id, list]) => h("section", { class: "group", "aria-label": libTitle(id) },
       h("div", { class: "group-head" }, pageLink(id, "", libTitle(id)), h("span", { class: "lib-sub", text: LIBD.head[id] ? libCatTitle(LIBD.head[id].category) : "" })),
-      h("ul", { class: "hits" }, list.map((t) => h("li", { class: "hit" }, h("span", { class: "hit-val" }, h("span", { class: "pend", "aria-hidden": "true" }), " ", ...richText(t)))))))),
+      h("ul", { class: "hits" }, list.map((t) => h("li", { class: "hit" }, h("span", { class: "hit-val" }, emb("question", "pend"), " ", ...richText(t)))))))),
     h("section", { class: "group", "aria-label": "Researched questions" }, h("div", { class: "group-head" }, h("span", { class: "lib-title", text: "Researched questions" })),
       O.gaps.map((g) => h("div", { class: "gap" }, h("h4", {}, g.question), h("span", { class: "lib-sub", text: `${libDay(g.date)}${g.updated ? `, updated ${g.updated}` : ""} · ${g.status}` }),
         g.findings.length ? h("ul", {}, g.findings.map((f) => h("li", {}, ...richText(f)))) : null,
@@ -3818,7 +4248,21 @@ const MEM = {
   seen: (k) => { const m = MEM.seenMap(); m[k] = Date.now(); MEM.set("seen", JSON.stringify(m)); },
   forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } },
 };
-function tonightNext(T) { const now = Date.now() / 1000; const ts = (e) => (e.epoch !== null ? e.epoch : Date.parse(`${e.date}T23:59:59Z`) / 1000); return T.events.find((e) => ts(e) > now) || T.events[T.events.length - 1]; }
+/* V11: an event with a window (names) is "Next up" while it is open, and reads "Open now, until <day>" */
+function tonightNext(T) { const now = Date.now() / 1000; const ts = (e) => (e.epoch !== null ? e.epoch : Date.parse(`${e.date}T23:59:59Z`) / 1000); const open = T.events.find((e) => e.until_epoch && e.epoch <= now && now < e.until_epoch); if (open) return { ...open, when: open.open_when || open.when, open: true }; return T.events.find((e) => ts(e) > now) || T.events[T.events.length - 1]; }
+/* the meeting point on Next steps: chosen, or the Sign-ups card to choose it */
+function meetP() {
+  const m = D.party && D.party.open.find((o) => /meeting point/i.test(o.title));
+  if (!m) return null;
+  const url = D.party.signup_url;
+  return h("p", { class: "tn-line" }, h("b", { text: "Meeting point: " }), unchosen(m) ? (url ? h("a", { class: "tn-link", href: url, target: "_blank", rel: "noopener noreferrer", "aria-label": "Meeting point not chosen yet: answer on the sign-up card in Discord" }, "not chosen yet") : "not chosen yet") : m.status);
+}
+function yourTime(T) {
+  const l = T.events.find((e) => e.key === "launch"); if (!l || !l.epoch) return "";
+  const f = (tz) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", ...(tz ? { timeZone: tz } : {}) }).format(new Date(l.epoch * 1000)).replace(":00", "");
+  const mine = f(), et = f("America/New_York");
+  return mine === et ? "" : ` (${mine} your time)`;
+}
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
   const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
@@ -3829,15 +4273,27 @@ function renderTonight() {
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
   const S = D.signups, entries = S && S.entries ? S.entries : [];
   const mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
-  const step = !me ? T.steps.looking : !member ? T.steps.none : person && person.step ? person.step : mine ? T.steps.none : T.steps.signup;
+  /* V11: every step says where to act. An open poll is on everyone's list until it closes; the sign-up step stays until they answer */
+  const L = T.links || {}, nowS = Date.now() / 1000;
+  const pollOpen = !!L.poll && (!T.poll_closes || nowS < T.poll_closes);
+  const steps = [];
+  if (!me) steps.push([T.steps.looking, null]);
+  else if (member) {
+    if (person && person.step) steps.push([person.step, person.step === T.steps.spec ? L.spec : L.choose]);
+    if (pollOpen && T.steps.poll) steps.push([T.steps.poll, L.poll]);
+    if (!mine) steps.push([T.steps.signup, L.signup]);
+  }
+  if (!steps.length) steps.push([pollOpen && T.steps.poll ? T.steps.poll : T.steps.none, pollOpen ? L.poll : null]);
+  const ext = (href) => href && /^https?:/.test(href);
+  const stepEl = ([t, href]) => h("li", { class: "tn-big" }, href ? h("a", { class: "tn-link", href, ...(ext(href) ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `${t} Opens Discord.` } : {}) }, ext(href) ? emb("speech") : null, t) : t);
   const who = (k) => entries.filter((e) => e.rsvp === k && e !== mine).map((e) => cleanName(e.name));
   const line = (label, names) => h("p", { class: "tn-line" }, h("b", { text: `${label}: ` }), ...names.flatMap((n, i) => [i ? ", " : null, h("span", { class: "tn-n", text: n })]).filter(Boolean));
   const groups = [["in", T.labels.in], ["maybe", T.labels.maybe], ["out", T.labels.out]].map(([k, l]) => [l, who(k)]).filter(([, n]) => n.length);
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
   box.replaceChildren(...[
-    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch }) : null),
-    card(T.cards[1], step === T.steps.signup ? h("p", { class: "tn-big" }, h("a", { class: "tn-link", href: "#signups" }, step)) : h("p", { class: "tn-big", text: step })),
-    card(T.cards[2], mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
+    card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl))),
+    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch + yourTime(T) }) : null),
+    card(T.cards[2], meetP(), mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
   /* V9: with a name, one tap from Tonight to what the others give you at a level (outside the three cards, so their budget holds) */
   const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
@@ -3912,7 +4368,7 @@ async function boot(mode, sdk) {
   whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
   if (!early) route();
   markNew(); startDepth();
-  if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = "Opens inside Discord";
+  if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = PRESENCE_WEB;
   /* the room starts after first paint, when the main thread is idle (V7-SPEC 3.3) */
   (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(startRoomLadder, { timeout: 2500 });
   if (mode === "discord") startDiscordPresence(sdk);
@@ -3947,7 +4403,7 @@ if (reviewFlag || (previewHost && previewFlag) || remembered || openWeb) {
   window.__board.start("preview");
 } else {
   try {
-    const { DiscordSDK } = await import("./vendor/embedded-app-sdk.mjs");
+    const { DiscordSDK } = await import("./vendor/embedded-app-sdk.mjs?v=b681569ce2");
     const sdk = new DiscordSDK(CLIENT_ID);
     await sdk.ready();
     window.__board.start("discord", sdk);
