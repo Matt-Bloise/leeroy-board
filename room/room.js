@@ -7,9 +7,9 @@
 import { createRenderer, box, plane } from "./gl2.js";
 
 const TIERS = {
-  medium: { dpr: 1, fps: 30, flicker: false, particles: 0, bloom: false, exposure: 1.1 },
-  high: { dpr: 1.5, fps: 60, flicker: true, particles: 420, bloom: true, exposure: 1.15, bloomK: 0.6 },
-  ultra: { dpr: 2, fps: 60, flicker: true, particles: 1200, bloom: true, exposure: 1.2, bloomK: 0.8 },
+  medium: { dpr: 1, fps: 30, flicker: false, particles: 0, bloom: false, exposure: 1.45 },
+  high: { dpr: 1.5, fps: 60, flicker: true, particles: 300, bloom: true, exposure: 1.5, bloomK: 0.5 },
+  ultra: { dpr: 2, fps: 60, flicker: true, particles: 800, bloom: true, exposure: 1.55, bloomK: 0.65 },
 };
 export const NEEDS_LIBRARY = ["soft shadows", "screen-space reflections on the ale and glass"];
 const DEG = Math.PI / 180, BOARD_Z = -2.2, EYE = [0, 1.55, 0];
@@ -38,31 +38,20 @@ export async function startRoom(ctx) {
     fog: lin(css("--room-fog", [0.05, 0.03, 0.02])), hearth: lin(css("--room-hearth", [1, 0.54, 0.23])), candle: lin(css("--room-candle", [1, 0.75, 0.44])),
     lantern: lin(css("--room-lantern", [1, 0.82, 0.54])), cool: lin(css("--room-cool", [0.23, 0.28, 0.4])), warm: lin(css("--light-warm", [1, 0.82, 0.55])),
   };
-  let board = null; const beams = [];
+  let board = null, straps = []; const beams = [];
   const build = async () => {
     const tWood = timed(() => R.texture(wood)); await yieldTask();
     const tWall = timed(() => R.texture(wall)); await yieldTask();
     R.mesh(box(9, 0.1, 6), { tex: tWood, tint: [0.34, 0.27, 0.22], uv: [2, 1.4] }).set({ pos: [0, -0.05, -2.2] });
     R.mesh(box(9, 0.1, 6), { tex: tWood, tint: [0.09, 0.07, 0.055], uv: [2, 1.4] }).set({ pos: [0, 3.05, -2.2] });
-    R.mesh(plane(9.2, 4.2), { tex: tWall, tint: [0.3, 0.25, 0.21] }).set({ pos: [0, 1.7, -4.6] });
-    for (const x of [-3.6, 3.6]) R.mesh(box(0.1, 3.2, 6), { tex: tWall, tint: [0.2, 0.17, 0.14] }).set({ pos: [x, 1.5, -2.2] }); /* the back wall's own texture, so no seam where they meet */
+    R.mesh(plane(11, 4.2), { tex: tWall, tint: [0.5, 0.42, 0.35] }).set({ pos: [0, 1.7, -4.6] });
+    for (const x of [-6.5, 6.5]) R.mesh(box(0.1, 3.2, 6), { tex: tWood, tint: [0.08, 0.06, 0.045], uv: [1.5, 1] }).set({ pos: [x, 1.5, -2.2] });
     for (const z of [-4.1, -3.2]) beams.push(R.mesh(box(9, 0.22, 0.26), { tex: tWood, tint: [0.14, 0.1, 0.08], uv: [4, 0.15] }).set({ pos: [0, 2.86, z] }));
-    for (const x of [-2.9, 2.9]) R.mesh(box(0.26, 3, 0.26), { tex: tWood, tint: [0.2, 0.15, 0.12], uv: [0.15, 1.5] }).set({ pos: [x, 1.5, -4.0] });
-    /* candle sconces where the candle lights hang, so the light has a source */
-    for (const x of [-1.9, 1.9]) { R.mesh(box(0.06, 0.16, 0.06), { tint: [0.9, 0.85, 0.7], emit: [0.35, 0.3, 0.2] }).set({ pos: [x, 2.33, -4.45] }); R.mesh(box(0.03, 0.05, 0.03), { tint: [0, 0, 0], emit: scale(colors.candle, 3) }).set({ pos: [x, 2.45, -4.45] }); }
-    /* the hearth, back left: a dark stone surround (two jambs and a lintel), the mantel, a fire in its mouth */
-    const stone = { tex: tWood, tint: [0.05, 0.045, 0.04] };
-    for (const dx of [-0.6, 0.6]) R.mesh(box(0.3, 1.2, 0.5), stone).set({ pos: [-3.0 + dx, 0.6, -4.3] });
-    R.mesh(box(1.5, 0.3, 0.5), stone).set({ pos: [-3.0, 1.2, -4.3] });
-    R.mesh(box(1.8, 0.1, 0.65), { tex: tWood, tint: [0.18, 0.13, 0.1] }).set({ pos: [-3.0, 1.4, -4.25] });
-    R.mesh(plane(0.9, 1.05), { tint: [0.01, 0.005, 0.0], emit: [0.02, 0.005, 0], fire: 1 }).set({ pos: [-3.0, 0.53, -4.4] });
-    /* the bar, back right: a dark counter that catches the warm light on its top edge */
-    R.mesh(box(2.4, 1.05, 0.7), { tex: tWood, tint: [0.16, 0.12, 0.09] }).set({ pos: [2.9, 0.53, -3.9] });
-    R.mesh(box(2.6, 0.07, 0.85), { tex: tWood, tint: [0.32, 0.24, 0.18], uv: [1, 0.2] }).set({ pos: [2.9, 1.09, -3.9] });
-    /* the lantern by the door, far right */
-    R.mesh(box(0.18, 0.28, 0.18), { tint: [0.2, 0.15, 0.1], emit: scale(colors.lantern, 0.0) }).set({ pos: [3.35, 2.05, -3.3] });
+    /* the gutters beside the board show the back wall, lit warm from both sides (posts and candle boxes there read as stray slabs) */
+    /* two straps' posts: they stand behind the ends of the DOM wall's iron strap, placed with the board */
+    straps = [-1, 1].map(() => R.mesh(box(1, 1, 0.12), { tex: tWood, tint: [0.26, 0.19, 0.14], uv: [0.2, 1] }));
     /* the notice board: the plane the DOM wall sits on */
-    board = R.mesh(plane(1, 1), { tex: tWood, tint: [0.4, 0.33, 0.27] }); /* kept dark: the gutters between tiles stay calm */
+    board = R.mesh(plane(1, 1), { tex: tWood, tint: [0.26, 0.21, 0.17] }); /* kept dark: the gutters between tiles stay calm */
   };
   await build();
   const lantern = () => (ctx.newSignup ? 1.6 : 0.5);
@@ -70,17 +59,18 @@ export async function startRoom(ctx) {
   const baseLights = () => {
     const lit = launchNight() ? 1.6 : 1;
     return [
-      { pos: [-3.0, 0.55, -4.05], color: scale(colors.hearth, 2.0), range: 4.0, f: 0.18, ph: 0.3 },
-      { pos: [-1.9, 2.45, -4.1], color: scale(colors.candle, 1.5 * lit), range: 3.4, f: 0.12, ph: 1.7 },
-      { pos: [1.9, 2.45, -4.1], color: scale(colors.candle, 1.5 * lit), range: 3.4, f: 0.12, ph: 2.9 },
+      { pos: [-3.4, 0.6, -4.2], color: scale(colors.hearth, 1.4), range: 3.2, f: 0.18, ph: 0.3 }, /* a hearth low on the left, seen only by its glow on the back wall */
+      { pos: [-3.75, 2.3, -3.95], color: scale(colors.candle, 1.8 * lit), range: 3.2, f: 0.12, ph: 1.7 },
+      { pos: [3.75, 2.3, -3.95], color: scale(colors.candle, 1.8 * lit), range: 3.2, f: 0.12, ph: 2.9 },
       { pos: [2.6, 2.2, -3.3], color: scale(colors.warm, 1.0), range: 3.0, f: 0.05, ph: 4.1 },
-      { pos: [3.3, 2.0, -3.1], color: scale(colors.lantern, lantern() * lit), range: 2.6, f: 0.1, ph: 5.3 },
+      { pos: [4.6, 1.9, -3.4], color: scale(colors.lantern, lantern() * lit), range: 3.0, f: 0.1, ph: 5.3 }, /* the lantern by the door, off to the right */
       { pos: [0, 1.5, -0.4], color: scale(colors.warm, 0.6), range: 4.2, f: 0.06, ph: 0.9 }, /* below the beams, so their undersides stay dark behind the heading */
     ];
   };
   let L = baseLights();
-  R.fog = { color: colors.fog, density: 0.15 }; R.ambient = scale(colors.cool, 0.35); R.exposure = T.exposure;
-  const applyTier = () => { R.exposure = T.exposure; R.bloom = T.bloom; R.bloomK = T.bloomK || 0.9; R.particles(T.particles, { min: [-3.4, 0.1, -4.4], max: [3.4, 2.9, -0.8] }); };
+  R.fog = { color: colors.fog, density: 0.1 }; R.ambient = [...scale(colors.cool, 0.3)].map((c, i) => c + [0.05, 0.035, 0.02][i]); R.exposure = T.exposure;
+  let landscape = innerWidth >= innerHeight;
+  const applyTier = () => { R.exposure = T.exposure; R.bloom = T.bloom; R.bloomK = T.bloomK || 0.9; R.particles(landscape ? T.particles : 0, { min: [-3.4, 0.1, -4.4], max: [3.4, 2.9, -0.8] }); }; /* no embers in portrait: on a phone they read as dust */
   applyTier();
 
   /* where the DOM wall is: the board plane fills that rectangle at BOARD_Z when the camera is at rest */
@@ -89,9 +79,13 @@ export async function startRoom(ctx) {
   const placeBoard = () => {
     const r = anchor.getBoundingClientRect(), fov = R.camera.fov, d = -BOARD_Z, hh = d * Math.tan(fov / 2), hw = hh * (W / H);
     const cx = ((r.left + r.width / 2) / W - 0.5) * 2 * hw, cy = EYE[1] + (0.5 - (r.top + r.height / 2) / H) * 2 * hh;
-    board.set({ pos: [cx, cy, BOARD_Z], scale: [(r.width / W) * 2 * hw, (r.height / H) * 2 * hh, 1] });
+    const bw = (r.width / W) * 2 * hw, bh = (r.height / H) * 2 * hh;
+    board.set({ pos: [cx, cy, BOARD_Z], scale: [bw, bh, 1] });
+    /* the strap image spans 104% of the wall and sits at its top edge: a post under each end, from the floor up past it */
+    const top = cy + bh / 2 + 0.12, pw = bw * 0.035;
+    straps.forEach((p, i) => { const x = cx + (i ? 1 : -1) * (bw / 2 + bw * 0.005); p.set({ pos: [x, top / 2, BOARD_Z - 0.07], scale: [pw, top, 1] }); });
   };
-  const size = () => { W = innerWidth; H = innerHeight; beams.forEach((b) => { b.visible = W >= H; }); /* in portrait the beams would cross the heading */ R.camera.fov = (W / H < 1 ? 64 : 52) * DEG; R.resize(W, H, Math.min(T.dpr, window.devicePixelRatio || 1)); placeBoard(); };
+  const size = () => { W = innerWidth; H = innerHeight; beams.forEach((b) => { b.visible = W >= H; }); if ((W >= H) !== landscape) { landscape = W >= H; applyTier(); } /* in portrait the beams would cross the heading */ R.camera.fov = (W / H < 1 ? 64 : 52) * DEG; R.resize(W, H, Math.min(T.dpr, window.devicePixelRatio || 1)); placeBoard(); };
   size();
 
   /* camera: parallax from pointer and tilt, dolly on scene open */

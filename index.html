@@ -775,7 +775,7 @@ main.has-beam { margin-top: 44px; }
 .t-racials .dots { margin-right: 6px; }
 @media (max-width: 639px) { .t-roads .tile-viz, .t-legacy .tile-viz, .t-buffs .tile-viz { display: block; flex: 0 0 72px; } }
 @media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
-.sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("img/parchment-tile.jpg"); background-size: auto, 640px auto; background-position: 0 0, center top; background-attachment: local; box-shadow: inset 0 0 60px var(--slip-burn), inset 0 0 0 1px var(--ink-line); }
+.sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("img/parchment-tile.jpg"); background-size: auto, 1400px auto; background-position: 0 0, center top; background-attachment: local; box-shadow: inset 0 0 60px var(--slip-burn), inset 0 0 0 1px var(--ink-line); }
 .face, .road-btn, .librarian, .toggle, .road-panel, .buff { --text: var(--l-text); --text-dim: var(--l-dim); color: var(--l-text); }
 .signup-grid:has(> [hidden]) { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) { .signup-grid:has(> [hidden]) .dsu { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; } }
@@ -857,6 +857,8 @@ main.has-beam { margin-top: 44px; }
 .tab { margin-top: 10px; color: var(--ink-soft); background-color: var(--parchment-2); background-image: linear-gradient(180deg, var(--shade-none) 40%, var(--slip-burn)), url("img/parchment-tile.jpg"); background-size: auto, 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -1px 6px var(--wear); border-radius: 8px 8px 0 0; }
 .tab:hover { color: var(--ink); }
 .tab[aria-selected="true"] { margin-top: 4px; padding-bottom: 14px; color: var(--ink); background-image: url("img/parchment-tile.jpg"); background-size: 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -3px 12px var(--wear); }
+/* eleven tabs since Tonight: they fit the sheet on a desktop, so the rail shows no scrollbar and clips no tab */
+@media (min-width: 1000px) { .tabs { gap: 2px; scrollbar-width: none; } .tabs::-webkit-scrollbar { display: none; } .tab { padding-left: 8px; padding-right: 8px; letter-spacing: 0.03em; } }
 .tab-ind { display: none; }
 .scene-hint { display: none; margin: 0; font-family: var(--font-body); font-style: italic; font-size: 0.9375rem; color: var(--l-dim); transition: opacity var(--t-move) var(--ease-oak); }
 .scene-hint.used { opacity: 0; }
@@ -890,7 +892,7 @@ main.has-beam { margin-top: 44px; }
 .lib:not([data-view="shelf"]) .lib-head { display: none; }
 .lib-stat { display: grid; line-height: 1.1; min-width: 0; }
 .lib-stat b { font-family: var(--font-ui); font-variant-numeric: tabular-nums lining-nums; font-size: var(--step-1); color: var(--ink); }
-.lib-stat span { font-family: var(--font-ui); font-size: 1rem; letter-spacing: 0.03em; color: var(--ink-soft); }
+.lib-stat span { font-family: var(--font-ui); font-size: 1rem; letter-spacing: 0.03em; color: var(--ink); }
 .lib-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .lib-rail { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 6px; margin: 0 -4px; scroll-snap-type: x proximity; }
 .lib-rail::-webkit-scrollbar { display: none; }

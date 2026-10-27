@@ -44,7 +44,7 @@ export function detect() {
   let tier = "high";
   const mem = navigator.deviceMemory || 8, coarse = matchMedia("(pointer: coarse)").matches, cores = navigator.hardwareConcurrency || 4;
   if (mem < 4) { tier = "medium"; why.push(`device memory ${mem} GB`); }
-  if (coarse) { tier = "medium"; why.push("touch device"); }
+  if (coarse) return { tier: "low", why: ["touch device: a phone shows almost none of the room"], gpu, software };
   if (cores < 4) { tier = "medium"; why.push(`${cores} cores`); }
   if (tier === "high" && navigator.gpu) why.push("WebGPU present");
   return { tier, why: why.length ? why : ["capable GPU"], gpu, software };
@@ -120,7 +120,7 @@ export async function startTier(host) {
     const d = detect(); S.gpu = d.gpu || ""; S.detected = d.tier; S.detectWhy = d.why;
     const p = pref(); S.choice = p;
     if (d.tier === "off") { await apply("off", d.why.join(", ")); return; }
-    if (p !== "auto") { await apply(p, "chosen in the menu"); return; }
+    if (p !== "auto") { await apply(p, get(KEY) ? "chosen in the menu" : `${p} by default`); return; }
     let record = null; try { record = JSON.parse(get(AUTO_KEY) || "null"); } catch (e) {}
     const start = startFrom(d.tier, S.gpu, record);
     await apply(start.tier, start.why || d.why.join(", "));
