@@ -1,10 +1,10 @@
 {
- "generated": "2026-10-27T05:36:40.980Z",
+ "generated": "2026-10-27T07:00:19.428Z",
  "events": [
   {
    "key": "names_open",
    "epoch": 1793131200,
-   "label": "Names open: pack holders create characters",
+   "label": "Names open: people who bought a pack create characters",
    "detail": "up to 3 characters each, first come first served",
    "format": "F"
   },
