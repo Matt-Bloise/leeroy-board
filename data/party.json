@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T18:17:08.958Z",
+ "generated": "2026-10-27T18:25:38.665Z",
  "party": "Dungeons and Drinking",
  "faction": "Horde",
  "ruleset": "Normal",
@@ -158,18 +158,6 @@
  ],
  "open": [
   {
-   "title": "Surname",
-   "text": "round two poll closed Oct 27 with both votes on Write-in and no name typed in chat yet, so it stays open. A name typed in chat goes on the next poll.",
-   "links": [
-    {
-     "label": "poll",
-     "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347273251520579",
-     "message_id": "1564347273251520579"
-    }
-   ],
-   "source": "board"
-  },
-  {
    "title": "Guild name",
    "text": "poll closes <t:1793299053:R>. Add names in chat.",
    "links": [
@@ -192,6 +180,19 @@
     }
    ],
    "source": "board"
+  },
+  {
+   "title": "Surname",
+   "status": "vote here",
+   "detail": "Alehammer, Mugbreaker, Lastround, or write yours in. Closes Tuesday morning.",
+   "links": [
+    {
+     "label": "vote here",
+     "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347273251520579",
+     "message_id": "1564347273251520579"
+    }
+   ],
+   "source": "decisions card"
   },
   {
    "title": "Launch-night meeting point",
@@ -222,12 +223,6 @@
   }
  ],
  "polls": [
-  {
-   "title": "Surname",
-   "message_id": "1564347273251520579",
-   "url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347273251520579",
-   "text": "round two poll closed Oct 27 with both votes on Write-in and no name typed in chat yet, so it stays open. A name typed in chat goes on the next poll."
-  },
   {
    "title": "Guild name",
    "message_id": "1564347272420921356",
