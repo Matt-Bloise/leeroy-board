@@ -38,18 +38,19 @@
   --parchment-2: #d9c9a3;
   --ink: #2b1d10;
   --ink-soft: #46331f;
-  --cream: #f4ead2;
-  --cream-2: #e6d6b4;
+  --cream: #fbf4e4;
+  --cream-2: #f4ead2;
   --brass-hi: #eecd8c;
   --l-text: #efe4cc;
-  --l-dim: #b9a886;
-  --lamp: rgba(255, 186, 110, 0.1);
-  --wood-veil: rgba(26, 17, 10, 0.45);
-  --wood-veil-2: rgba(8, 5, 3, 0.72);
+  --l-dim: #e3d4b2;
+  --lamp: rgba(255, 186, 110, 0.14);
+  --wood-veil: rgba(26, 17, 10, 0.3);
+  --wood-veil-2: rgba(8, 5, 3, 0.78);
+  --grain-2: rgba(0, 0, 0, 0.3);
   --edge-hi: rgba(255, 214, 160, 0.3);
   --wear: rgba(0, 0, 0, 0.45);
-  --fs-small: 0.875rem;
-  --fs-chip: 0.8125rem;
+  --fs-small: 0.9375rem;
+  --fs-chip: 0.9375rem;
   --text: var(--l-text);
   --text-dim: var(--l-dim);
   --brass: #d1a85a;
@@ -143,7 +144,6 @@ body {
   line-height: 1.55;
   overflow-x: hidden;
 }
-/* Layers: the painting (z 0, fixed) and the candle vignette over it, the wisps canvas (z 1), the board (z 2), the scene sheet (z 20). */
 .hero-art { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .hero-art img { position: absolute; top: -16px; left: -16px; width: calc(100% + 32px); height: calc(100% + 32px); object-fit: cover; object-position: 62% 38%; display: block; max-width: none; transition: transform var(--t-hero) var(--ease-oak); }
 .hero-art::after { content: ""; position: absolute; inset: 0; background:
@@ -187,7 +187,7 @@ a:hover { color: var(--parchment); }
 .slip {
   position: relative; background: var(--parchment); color: var(--ink);
   border-radius: 3px; padding: 22px 20px 20px;
-  box-shadow: 6px 14px 30px var(--shadow), inset 1px 1px 0 var(--slip-sheen), inset 0 0 40px var(--slip-burn);
+  box-shadow: 0 2px 10px var(--wear), 6px 14px 30px var(--shadow), inset 1px 1px 0 var(--slip-sheen), inset 0 0 40px var(--slip-burn);
   background-image: radial-gradient(ellipse at 30% 0%, var(--slip-sheen), transparent 60%);
   min-width: 0;
 }
@@ -201,7 +201,6 @@ a:hover { color: var(--parchment); }
 .loading { color: var(--text-dim); font-style: italic; }
 [hidden] { display: none !important; }
 
-/* ---------- hero strip ---------- */
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .hero-title { display: grid; gap: 4px; min-width: 0; }
 .kicker { font-family: var(--font-ui); letter-spacing: 0.14em; color: var(--brass); font-size: var(--step--1); }
@@ -238,7 +237,6 @@ a:hover { color: var(--parchment); }
   .clock-emblem .emblem { width: 36px; height: 36px; }
 }
 
-/* ---------- the wall ---------- */
 main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; isolation: isolate; min-width: 0; margin: 6px 0 8px; }
 main:focus { outline: none; }
 .wall-plate { position: absolute; inset: -8px; z-index: -1; border-radius: 10px; pointer-events: none; overflow: hidden;
@@ -269,13 +267,11 @@ main:focus { outline: none; }
 .clock::before { content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 2px; border-radius: 2px; background: var(--acc); opacity: 0.75; }
 .tile { display: flex; flex-direction: column; min-height: 7rem; transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg));
   background-color: var(--oak-3);
-  background-image: radial-gradient(ellipse 130% 100% at 0% 0%, var(--lamp), transparent 70%), linear-gradient(135deg, var(--wood-veil), var(--wood-veil-2)), url("img/board-wall.jpg");
-  background-size: auto, auto, 1600px auto; background-position: 0 0, 0 0, var(--gx, 30%) var(--gy, 60%); background-blend-mode: normal, normal, multiply; }
+  background-image: radial-gradient(ellipse 130% 100% at 0% 0%, var(--lamp), transparent 70%), repeating-linear-gradient(91deg, var(--grain-2) 0 1px, transparent 1px 7px, var(--grain-2) 7px 9px, transparent 9px 16px), linear-gradient(135deg, var(--wood-veil), var(--wood-veil-2)), url("img/board-wall.jpg");
+  background-size: auto, auto, auto, 1600px auto; background-position: 0 0, 0 0, 0 0, var(--gx, 30%) var(--gy, 60%); background-blend-mode: normal, normal, normal, multiply; }
 .tile::before { content: ""; position: absolute; z-index: 3; top: 5px; left: 6px; right: 6px; height: 10px; pointer-events: none;
-  background: radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) left top / 13px 13px no-repeat,
-    radial-gradient(circle at 5px 5px, var(--iron-hi) 0 1.3px, var(--iron) 2.3px 3.9px, transparent 4.5px) right 3px top / 13px 13px no-repeat,
-    radial-gradient(circle at 7px 8px, var(--shadow) 0 3.5px, transparent 5.5px) left top / 13px 13px no-repeat,
-    radial-gradient(circle at 7px 8px, var(--shadow) 0 3.5px, transparent 5.5px) right 3px top / 13px 13px no-repeat; height: 13px; }
+  background: radial-gradient(circle at 7px 7px, var(--iron-hi) 0 1.8px, var(--iron) 3px 5px, transparent 5.6px) left top / 18px 18px no-repeat, radial-gradient(circle at 7px 7px, var(--iron-hi) 0 1.8px, var(--iron) 3px 5px, transparent 5.6px) right top / 18px 18px no-repeat,
+    radial-gradient(circle at 9px 10px, var(--shadow) 0 4.5px, transparent 7px) left top / 18px 18px no-repeat, radial-gradient(circle at 9px 10px, var(--shadow) 0 4.5px, transparent 7px) right top / 18px 18px no-repeat; height: 18px; top: 3px; left: 4px; right: 2px; }
 .tile::after, .clock::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity var(--t-micro) var(--ease-oak);
   box-shadow: 0 0 0 1px var(--acc), 0 0 34px var(--acc-glow), inset 0 0 26px var(--acc-glow); }
 @media (hover: hover) {
@@ -289,7 +285,7 @@ main:focus { outline: none; }
   background-color: var(--parchment-2);
   background-image: linear-gradient(180deg, var(--shade-none) 55%, var(--slip-burn)), url("img/parchment-tile.jpg");
   background-size: auto, 320px auto; background-position: center, center;
-  z-index: 1; box-shadow: inset 4px 0 0 var(--acc), inset 1px 1px 0 var(--slip-sheen), inset 0 -1px 0 var(--ink-line), 3px 7px 9px -3px var(--shadow); }
+  z-index: 1; box-shadow: inset 4px 0 0 var(--acc), inset 1px 1px 0 var(--slip-sheen), inset 0 -1px 0 var(--ink-line), 0 2px 10px var(--wear); }
 .tile-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .tile-title { min-width: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1.02; color: var(--ink); text-wrap: balance; }
 .tile-go { flex: none; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.1em; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 4px; transition: transform var(--t-micro) var(--ease-oak); }
@@ -341,7 +337,7 @@ main:focus { outline: none; }
   .wall { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 22px; }
   .wall > .t-signups, .wall > .t-ledger, .wall > .t-librarian { grid-column: span 2; }
   .tile { min-height: 10rem; }
-  .tile-band { min-height: 68px; padding: 14px 86px 10px 17px; }
+  .tile-band { min-height: 62px; padding: 12px 86px 8px 17px; }
   .emblem-box { width: 64px; height: 64px; margin-top: -32px; right: 10px; }
   .emblem-box .emblem { width: 36px; height: 36px; }
   .tile-body { padding: 12px 16px 14px; font-size: 0.95rem; gap: 8px; }
@@ -352,7 +348,6 @@ main:focus { outline: none; }
   .wall > .t-ledger, .wall > .t-librarian { grid-column: auto; }
 }
 
-/* ---------- the scene sheet ---------- */
 .scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
 .scene-layer.closing { pointer-events: none; }
 .scene-veil { position: absolute; inset: 0; background: var(--veil); }
@@ -387,10 +382,11 @@ main:focus { outline: none; }
 .close svg { width: 20px; height: 20px; }
 .close svg * { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 @media (hover: hover) { .close:hover { transform: rotate(90deg); } }
-.tabs { position: relative; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: thin; margin: 0 -18px; padding: 0 18px; }
+.tabs { position: relative; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; margin: 0 -18px; padding: 0 18px; }
 .tab { flex: none; font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 1rem; color: var(--l-dim); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 9px 13px 11px; min-height: 48px; cursor: pointer; }
 .tab:hover { color: var(--parchment); }
-.tab[aria-selected="true"] { color: var(--parchment); }
+.tab { margin-top: 6px; border-radius: 7px 7px 0 0; background: var(--oak-3); color: var(--cream); box-shadow: inset 1px 1px 0 var(--edge-hi); }
+.tab[aria-selected="true"] { color: var(--ink); background: var(--parchment-2) url("img/parchment-tile.jpg") center / 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -2px 10px var(--wear); }
 .tab:focus-visible { outline-offset: -3px; }
 .tab-ico { display: none; }
 @media (min-width: 768px) {
@@ -415,7 +411,6 @@ main:focus { outline: none; }
   .sheet-body { padding: 16px max(14px, env(safe-area-inset-right, 0px)) max(28px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); }
 }
 
-/* ---------- dates scene ---------- */
 .rail { list-style: none; margin: 0; padding: 0 0 0 4px; display: grid; gap: 26px; position: relative; max-width: 48rem; }
 .rail::before { content: ""; position: absolute; left: 10px; top: 10px; bottom: 10px; width: 2px; background: var(--grain); }
 .stop { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 16px; position: relative; }
@@ -428,14 +423,13 @@ main:focus { outline: none; }
 .stop.past h3 { color: var(--text-dim); }
 .stop p { color: var(--text-dim); }
 
-/* ---------- the five ---------- */
 .cards { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(15rem, 84%); gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; padding: 10px 4px 14px; scrollbar-width: thin; }
 .card { perspective: 1400px; min-height: 31rem; min-width: 0; display: grid; scroll-snap-align: center; }
 @media (min-width: 700px) { .cards { grid-auto-columns: minmax(15rem, 44%); } }
 @media (min-width: 1100px) { .cards { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: visible; } .swipe-hint { display: none; } }
 .card-inner { position: relative; display: grid; transition: transform var(--t-hero) var(--ease-spring); transform-style: preserve-3d; }
 .card.flipped .card-inner { transform: rotateY(180deg); }
-.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 8px 18px 40px var(--shadow), inset 1px 1px 0 var(--edge-hi); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 0 2px 10px var(--wear), 8px 18px 40px var(--shadow), inset 1px 1px 0 var(--edge-hi); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .face::after { content: ""; position: absolute; inset: -40% -40% auto auto; width: 90%; height: 70%; background: radial-gradient(circle, var(--cc), transparent 65%); opacity: 0.18; pointer-events: none; }
 .front { position: relative; inset: auto; }
 .back { transform: rotateY(180deg); overflow-y: auto; }
@@ -461,7 +455,6 @@ main:focus { outline: none; }
 .back-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .back-head h3 { color: var(--cc); }
 
-/* ---------- roads ---------- */
 .map-box { position: relative; isolation: isolate; border: 1px solid var(--grain); border-radius: var(--radius); padding: 10px; overflow: hidden; max-width: 960px; background-color: var(--parchment-2); box-shadow: 0 14px 30px var(--shadow), inset 0 0 40px var(--slip-burn); }
 .map-box::before { content: ""; position: absolute; inset: 0; z-index: -1; background: url("img/map-parchment.jpg") center / cover no-repeat; opacity: 0.85; pointer-events: none; }
 .map-box svg { display: block; width: 100%; height: auto; max-width: 100%; }
@@ -490,7 +483,6 @@ main:focus { outline: none; }
 .road-btn[aria-pressed="true"], .road-btn.on { border-color: var(--rc); }
 @media (hover: hover) { .road-btn:hover { transform: translateY(-2px); } }
 
-/* ---------- racials ---------- */
 .races { display: grid; gap: 14px; grid-template-columns: 1fr; align-items: start; }
 @media (min-width: 900px) { .races { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .race summary { list-style: none; cursor: pointer; position: relative; padding-right: 24px; }
@@ -506,7 +498,6 @@ main:focus { outline: none; }
 .dots { display: inline-flex; gap: 4px; }
 .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 0 1px var(--ink); display: inline-block; }
 
-/* ---------- legacy ring and buff wheel ---------- */
 .ring-wrap { display: grid; gap: 18px; grid-template-columns: 1fr; align-items: center; }
 @media (min-width: 760px) { .ring-wrap { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); } }
 .ring-wrap svg, .wheel svg { width: 100%; height: auto; max-width: 340px; display: block; margin: 0 auto; }
@@ -546,7 +537,6 @@ main:focus { outline: none; }
 .toggle button { font-family: var(--font-ui); letter-spacing: 0.06em; font-size: max(var(--fs-small), 0.88rem); color: var(--text-dim); background: transparent; border: 0; border-radius: 999px; padding: 6px 14px; min-height: 36px; cursor: pointer; }
 .toggle button[aria-pressed="true"] { background: var(--oak-3); color: var(--parchment); }
 
-/* ---------- ledger and sign-ups ---------- */
 .ledger { display: grid; gap: 14px; max-width: 52rem; }
 .ledger ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ledger li { min-width: 0; overflow-wrap: anywhere; display: grid; gap: 2px; }
@@ -572,13 +562,11 @@ main:focus { outline: none; }
 .dsu h4 { font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); margin: 0; font-weight: 700; }
 .status { font-size: max(var(--fs-small), 0.92rem); color: var(--wax); font-style: italic; }
 
-/* ---------- gate ---------- */
 .gate { position: relative; z-index: 2; min-height: 90vh; display: grid; place-items: center; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px; }
 .gate-card { display: grid; gap: 12px; text-align: center; max-width: 30rem; padding: 28px 24px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
 .gate-card h1 { font-size: var(--step-3); color: var(--parchment); }
 .gate-card p { color: var(--text-dim); font-size: var(--step-1); }
 
-/* ---------- keyboard legend ---------- */
 .keys { position: fixed; z-index: 40; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); width: min(19rem, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 16px 16px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--sheet-bg); box-shadow: 0 20px 50px var(--shadow); animation: keys-in var(--t-move) var(--ease-oak) both; }
 @keyframes keys-in { from { opacity: 0; transform: translateY(12px); } }
 .keys-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -589,7 +577,6 @@ main:focus { outline: none; }
 kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; border: 1px solid var(--brass-dim); border-bottom-width: 2px; border-radius: 4px; color: var(--parchment); background: var(--oak-2); white-space: nowrap; }
 .close.small { width: 36px; height: 36px; }
 
-/* ---------- librarian ---------- */
 .librarian { display: grid; gap: 18px; grid-template-columns: 1fr; padding: 20px; border: 1px solid var(--grain); border-radius: var(--radius); background: var(--glass); }
 @media (min-width: 760px) { .librarian { grid-template-columns: 1.4fr 1fr; } }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr)); gap: 14px; }
@@ -604,7 +591,6 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .spark-text { fill: var(--text-dim); font-family: var(--font-ui); font-size: 10px; font-variant-numeric: tabular-nums; }
 .sources { color: var(--text-dim); font-size: var(--step--1); display: grid; gap: 8px; border-top: 1px solid var(--grain); padding-top: 16px; }
 
-/* ---------- v3 rail, phone bar, swipe ---------- */
 .tabs { scroll-snap-type: x proximity; }
 .tab { scroll-snap-align: center; }
 @media (pointer: coarse) { .tabs { scrollbar-width: none; } .tabs::-webkit-scrollbar { display: none; } }
@@ -614,15 +600,14 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 @media (max-width: 699px) {
   .sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
   .sheet-body { padding-bottom: 20px; }
-  .bottombar { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); border-top: 1px solid var(--grain); background: var(--oak-1); padding: 0 max(2px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(2px, env(safe-area-inset-left, 0px)); }
-  .bb { min-height: 52px; min-width: 0; padding: 4px 1px; font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.03em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; overflow-wrap: anywhere; }
+  .bottombar { display: flex; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; border-top: 1px solid var(--grain); background: var(--oak-1); padding: 0 max(2px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(2px, env(safe-area-inset-left, 0px)); }
+  .bb { flex: 1 0 auto; scroll-snap-align: start; white-space: nowrap; min-height: 52px; min-width: 0; padding: 4px 10px; font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.03em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; }
   .bb[aria-current="true"], .bb[aria-expanded="true"] { color: var(--parchment); border-top-color: var(--brass); }
   .more-menu:not([hidden]) { display: grid; position: absolute; z-index: 3; right: 8px; bottom: calc(60px + env(safe-area-inset-bottom, 0px)); min-width: 12rem; gap: 2px; padding: 6px; background: var(--sheet-bg); border: 1px solid var(--grain); border-radius: var(--radius); box-shadow: 0 -12px 30px var(--shadow); animation: keys-in var(--t-micro) var(--ease-oak) both; }
   .more-menu button { min-height: 44px; text-align: left; padding: 8px 12px; font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); background: none; border: 0; border-radius: 4px; cursor: pointer; }
   .more-menu button:hover { background: var(--hover-tint); }
 }
 
-/* ---------- v3 cutaways ---------- */
 .back::before { content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; background: linear-gradient(105deg, transparent 30%, var(--slip-sheen) 48%, transparent 66%); }
 .card.flipped .back::before { animation: sheen var(--t-hero) var(--ease-oak) both; }
 @keyframes sheen { from { opacity: 0; transform: translateX(-60%); } 40% { opacity: 0.5; } to { opacity: 0; transform: translateX(60%); } }
@@ -663,7 +648,6 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .dg-now { display: inline-block; transform-origin: 50% 0; backface-visibility: hidden; }
 .dg-old { position: absolute; left: 0; top: 0; opacity: 0; transform-origin: 50% 100%; backface-visibility: hidden; }
 
-/* ---------- v3 art hooks ---------- */
 .crest { position: absolute; z-index: 1; top: 12px; right: 12px; width: 56px; height: 56px; object-fit: contain; pointer-events: none; filter: drop-shadow(2px 4px 4px var(--shadow)); }
 .crest + .who { padding-right: 62px; }
 .wheel-node.has-crest circle { fill: var(--shade-mid); }
@@ -671,20 +655,23 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .beam { position: absolute; z-index: 0; top: -44px; left: -2%; width: 104%; height: clamp(52px, 7vw, 96px); object-fit: cover; object-position: center top; pointer-events: none; filter: drop-shadow(0 8px 10px var(--shadow)); }
 main.has-beam { margin-top: 44px; }
 
-/* ---------- stage 8 ---------- */
-.tile-body { color: var(--cream-2); }
+.tile-body { color: var(--cream); }
 .tile-line b, .viz-list b { color: var(--cream); }
 .mini b { color: var(--brass-hi); }
-.mini small { color: var(--cream-2); }
+.mini small { color: var(--cream); }
 .wall > li:not(.hot) .tile { filter: brightness(0.9); }
 .wall > li:not(.hot) .tile:hover, .wall > li:not(.hot) .tile:focus-visible { filter: none; }
 .five-viz { display: none; }
 .med { display: grid; justify-items: center; align-content: start; gap: 2px; min-width: 0; text-align: center; }
-.med-ico { width: clamp(52px, 4.6vw, 88px); height: clamp(52px, 4.6vw, 88px); display: grid; place-items: center; }
+.med-ico { width: var(--med); height: var(--med); --med: clamp(52px, 5.6vw, 120px); display: grid; place-items: center; }
 .med-ico img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(3px 4px 3px var(--shadow)); }
 .med-ico i { width: 26px; height: 26px; border-radius: 50%; background: var(--cc); box-shadow: 0 0 14px var(--cc); }
 .med b { color: var(--cc); font-family: var(--font-ui); font-size: 1.15rem; text-shadow: 0 0 10px var(--cc); }
-.med small { color: var(--cream-2); line-height: 1.2; }
+.med small { color: var(--cream); line-height: 1.2; }
+@media (min-width: 1200px) { .med-ico { --med: clamp(96px, 6vw, 120px); } }
+.five-strip { display: flex; flex-wrap: wrap; gap: 4px 18px; padding-top: 10px; border-top: 1px solid var(--edge-hi); font-family: var(--font-ui); letter-spacing: 0.05em; }
+.five-strip b { color: var(--brass-hi); }
+.t-signups .tile { border: 2px solid var(--brass); }
 .rsvp-bar { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: var(--shade-deep); box-shadow: inset 1px 1px 0 var(--wear); }
 .rsvp-bar i { min-width: 0; }
 .t-signups .mini b, .t-ledger .mini b { font-size: clamp(2.2rem, 3.4vw, 3.4rem); }
@@ -693,19 +680,20 @@ main.has-beam { margin-top: 44px; }
 .t-racials .dots { margin-right: 6px; }
 @media (max-width: 639px) { .t-roads .tile-viz, .t-legacy .tile-viz, .t-buffs .tile-viz { display: block; flex: 0 0 72px; } }
 @media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
-/* the scene sheet: parchment surface, dark ink, a darker title band */
 .sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background: var(--parchment-2) url("img/parchment-tile.jpg") center top / 640px auto; background-attachment: local; }
 .face, .road-btn, .librarian, .toggle, .road-panel, .buff { --text: var(--l-text); --text-dim: var(--l-dim); color: var(--l-text); }
 .signup-grid:has(> [hidden]) { grid-template-columns: minmax(0, 52rem); }
 .buff { background: var(--oak-2); }
+.road-btn, .buff, .librarian, .toggle { box-shadow: 0 2px 10px var(--wear), inset 1px 1px 0 var(--edge-hi); }
+.map-box { box-shadow: 0 2px 10px var(--wear), 6px 14px 30px var(--shadow), inset 0 0 40px var(--slip-burn); }
 .stop h3 { color: var(--ink); }
 .stop .when, .rewards b { color: var(--ink); }
-.clock-when, .clock-unit > span, .wall-foot { color: var(--cream-2); }
+.clock-when, .clock-unit > span, .wall-foot, .card dt { color: var(--cream); }
 .ring-wrap svg, .wheel svg { background: radial-gradient(circle, var(--oak-2), var(--oak-1) 70%); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--brass-dim), 6px 10px 20px var(--shadow); }
 .sources { border-top-color: var(--ink-line); }
 .slip { background-color: var(--parchment); }
 
-@media (max-width: 699px) { :root { --fs-small: 0.9375rem; --step--1: 0.9375rem; } }
+@media (max-width: 699px) { :root { --fs-small: 1rem; --fs-chip: 1rem; --step--1: 1rem; } .map-text { font-size: 24px; } .map-text.small { font-size: 20px; } }
 @media (prefers-reduced-motion: reduce) {
   :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
@@ -932,7 +920,6 @@ const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyV
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
 
-/* ---------- formatting ---------- */
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 function fmtMs(ms) {
   if (ms >= 3600000) return `${nf.format(ms / 3600000)} hr`;
@@ -970,17 +957,14 @@ function eventWhen(e) {
   return e.format === "D" ? dtDay.format(new Date(e.epoch * 1000)) : dtFull.format(new Date(e.epoch * 1000));
 }
 
-/* ---------- state ---------- */
 const D = {};
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
 function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
 
-/* ---------- role glyphs ---------- */
 const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M12 5v14M5 12h14", damage: "M5 19L17 7M14 4h6v6M7 15l2 2M4 20l2-2" };
 const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role }, s("path", { d: GLYPH[role] || GLYPH.damage }));
 
-/* ---------- hero countdown ---------- */
 let clockTimer = null;
 function renderHero() {
   const p = D.party;
@@ -1044,7 +1028,6 @@ function tick() {
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : `${eventWhen(next)} in your time zone`;
 }
 
-/* ---------- wall tiles ---------- */
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function fill(key, ...kids) { const el = $(`#ts-${key}`); if (el) el.replaceChildren(...kids.flat().filter(Boolean)); }
@@ -1053,8 +1036,9 @@ function renderTiles() {
   const count = (role) => p.members.filter((m) => m.role === role).length;
   fill("five",
     h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), m.name))),
-    h("span", { class: "tile-line", text: `${plural(count("tank"), "tank", "tanks")}, ${plural(count("healer"), "healer", "healers")}, ${count("damage")} damage` }),
-    h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))));
+    h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
+    h("span", { class: "tile-line five-strip" }, ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many]) => [h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`), " "]),
+      h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Spec still open: ${andList(o)}` : "Every spec declared"; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), ` ${ms.length}`])),
@@ -1130,7 +1114,6 @@ function miniSpark(vals) {
   return s("svg", { viewBox: `-4 -4 ${W + 8} ${H + 8}`, "aria-hidden": "true", preserveAspectRatio: "none" }, s("polyline", { class: "viz-line", points: pts }));
 }
 
-/* ---------- cards ---------- */
 function renderCards() {
   const wrap = $("#cards"); wrap.replaceChildren();
   const lvl = D.client.level;
@@ -1178,7 +1161,6 @@ function renderCards() {
   }
 }
 
-/* ---------- map ---------- */
 const ZONES = {
   "Tirisfal Glades": { x: 92, y: 96, label: [60, 150] },
   "Mulgore": { x: 268, y: 318, label: [214, 372] },
@@ -1288,7 +1270,6 @@ function raceRow(r, i) {
   li.append(btn, h("div", { class: "rwiki", text: now }), h("div", { class: "rmore" }, h("div", {}, notes.length ? h("ul", { class: "rnotes", "aria-label": "Dev notes" }, notes.map((n) => h("li", { text: n }))) : null, client ? h("div", { class: "rclient", text: client }) : null)));
   return li;
 }
-/* ---------- racials ---------- */
 const wideMQ = window.matchMedia("(min-width: 900px)");
 function renderRaces() {
   const wrap = $("#races"); wrap.replaceChildren();
@@ -1301,7 +1282,6 @@ function renderRaces() {
 }
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
-/* ---------- legacy ring ---------- */
 function renderLegacy() {
   const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
@@ -1335,7 +1315,6 @@ function renderLegacy() {
       legend));
 }
 
-/* ---------- synergy wheel ---------- */
 function renderWheel() {
   const wrap = $("#wheel"); wrap.replaceChildren();
   const keys = D.party.members.map((m) => m.class_key);
@@ -1388,7 +1367,6 @@ function setBuffView(v) {
   try { localStorage.setItem("board-buff-view", v); } catch (e) {}
 }
 
-/* ---------- ledger ---------- */
 const ART = { crest: {}, seal: false, beam: false };
 const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : null);
 function renderLedger() {
@@ -1421,7 +1399,6 @@ function linkify(text, ls, link) {
   return out;
 }
 
-/* ---------- librarian ---------- */
 function renderLibrarian() {
   const st = D.stats, wrap = $("#lib-box"); wrap.replaceChildren();
   const stat = (label, value) => h("div", { class: "stat" }, h("b", { text: value }), h("span", { class: "label", text: label }));
@@ -1444,7 +1421,6 @@ function renderLibrarian() {
     h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark));
 }
 
-/* ---------- footer stamp ---------- */
 function renderFooter() {
   const stamp = ["party", "timeline", "client", "stats", "signups"].filter((k) => D[k]).map((k) => D[k].generated).sort().pop();
   const when = `${stamp.replace("T", " ").slice(0, 16)} UTC`;
@@ -1458,7 +1434,6 @@ function renderFooter() {
     h("p", { text: "Spell numbers are the game's own values at the level cap and can move with beta hotfixes. A \"board\" tag means written on the group's cards; \"chat\" means said in Discord and noted down." }));
 }
 
-/* ---------- sign-ups ---------- */
 const Q = {
   pack: [["yes", "Yes"], ["no", "No"]],
   meet: [["valley", "Valley of Strength"], ["crossroads", "the Crossroads"], ["other", "Write-in"]],
@@ -1546,7 +1521,6 @@ async function renderTallies() {
   renderPresence();
 }
 
-/* ---------- presence ---------- */
 function pushPresence() {
   if (!RT.room) return;
   RT.room.presence({ as: RT.mine.as || null }).catch(() => {});
@@ -1565,7 +1539,6 @@ async function renderPresence() {
   $("#presence-text").replaceChildren(peers.length === 1 ? "At the board now: just you" : `At the board now: ${peers.length}`, me ? h("span", { class: "peer-you", text: " · ringed dot is you" }) : "");
 }
 
-/* ---------- presence ---------- */
 /* SDK 2.5.0: getActivityInstanceConnectedParticipants (alias getInstanceConnectedParticipants), then the ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE event; else "you" alone. SDK errors go to console.warn. */
 let discordPoll = 0;
 function startDiscordPresence(sdk) {
@@ -1630,7 +1603,6 @@ function startDiscordPresence(sdk) {
   });
 }
 
-/* ---------- sign-ups from Discord ---------- */
 function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
   if (!S) { body.replaceChildren(h("p", { text: "The Discord sign-ups did not load." })); $("#dsu-stamp").textContent = ""; return; }
@@ -1646,7 +1618,6 @@ function renderDiscordSignups() {
   $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${dtFull.format(new Date(S.updated))}.` : "Nobody has clicked the card yet.";
 }
 
-/* ---------- runtime ---------- */
 async function startRuntime() {
   const c = window.claude;
   if (!c || typeof c.use !== "function") return;
@@ -1681,7 +1652,6 @@ async function startRuntime() {
   }, (err) => { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus(err && err.code === "revoked" ? "Sign-ups are read-only now." : "Sign-ups stopped updating. Reload the board to see the latest."); });
 }
 
-/* ---------- scenes ---------- */
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian"];
 const TITLES = { timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Legacy", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The librarian" };
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
@@ -1869,7 +1839,6 @@ function goScene(k) {
   setHash(k, true); showScene(k);
 }
 
-/* ---------- focus ---------- */
 const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
 function shown(el) {
   for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden || n.inert) return false;
@@ -1885,7 +1854,6 @@ function trapFocus(e) {
   else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
 }
 
-/* ---------- keyboard map ---------- */
 function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
@@ -1945,7 +1913,6 @@ function startScenes() {
   addEventListener("resize", () => { if (SC.open) moveInd(); }, { passive: true });
 }
 
-/* ---------- emblems ---------- */
 const ICONS = {}, GLYPHS = {};
 const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 320, height: 320, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
@@ -1969,7 +1936,7 @@ function startEmblems() {
   }
 }
 function pinTiles() {
-  const LEAN = { roads: ["-1.4deg", "-6px", "4px"], legacy: ["1.2deg", "8px", "-3px"], ledger: ["-1deg", "-5px", "6px"] };
+  const LEAN = { roads: ["-1.4deg", "-6px", "4px"], legacy: ["1.2deg", "8px", "-3px"], ledger: ["-1.5deg", "-5px", "6px"] };
   document.querySelectorAll("#wall .tile").forEach((t) => {
     const l = LEAN[t.dataset.scene];
     t.style.setProperty("--rot", l ? l[0] : `${(Math.round((Math.random() * 1.2 - 0.6) * 10) / 10).toFixed(1)}deg`);
@@ -1978,7 +1945,6 @@ function pinTiles() {
   });
 }
 
-/* ---------- parallax ---------- */
 function startParallax() {
   const hoverMQ = window.matchMedia("(hover: hover) and (pointer: fine)");
   const img = $("#hero-art img"); if (!img) return;
@@ -1991,7 +1957,6 @@ function startParallax() {
   reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) img.style.transform = ""; });
 }
 
-/* ---------- the light pass ---------- */
 const LIGHT_VS = "attribute vec2 p;varying vec2 uv;void main(){uv=vec2(p.x*.5+.5,.5-p.y*.5);gl_Position=vec4(p,0.,1.);}";
 const LIGHT_FS = `precision mediump float;
 uniform sampler2D tex;uniform vec2 texel,res,cover,lpos;uniform float lint,bump,lh;uniform vec3 warm,cool,shade;varying vec2 uv;
@@ -2142,7 +2107,6 @@ function startLight() {
   }
 }
 
-/* ---------- wisps, second generation ---------- */
 const WS = { n: 0, frames: 0, running: false, near: 0 };
 function startWisps() {
   const cv = $("#wisps"), ctx = cv && cv.getContext && cv.getContext("2d");
@@ -2228,7 +2192,6 @@ function startWisps() {
   run();
 }
 
-/* ---------- art hooks ---------- */
 const crestImg = (k, c = "crest") => h("img", { class: c, src: `img/crests/${k}.png`, alt: "", width: 56, height: 56, loading: "lazy", decoding: "async" });
 const crestSvg = (k, x, y) => s("image", { class: "crest-node", href: `img/crests/${k}.png`, x: x - 28, y: y - 28, width: 56, height: 56 });
 function placeCrest(k) {
@@ -2250,7 +2213,6 @@ function startArt() {
   });
 }
 
-/* ---------- sound ---------- */
 const AU = { on: false, ctx: null, live: 0, vol: 0.7, buf: {}, next: 0, crack: 0 };
 try { AU.on = localStorage.getItem("board-sound") === "1"; const v = localStorage.getItem("board-vol"); if (v !== null && Number(v) >= 0 && Number(v) <= 1) AU.vol = Number(v); } catch (e) {}
 function audioInit() {
@@ -2377,7 +2339,6 @@ function audioStatus() {
     }) };
 }
 
-/* ---------- boot ---------- */
 async function boot(mode, sdk) {
   $("#gate").hidden = true;
   $("#board").hidden = false;
