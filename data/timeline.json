@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T21:43:15.453Z",
+ "generated": "2026-10-27T22:12:04.127Z",
  "events": [
   {
    "key": "names_open",
@@ -7,14 +7,6 @@
    "label": "Names open: people who bought a pack create characters",
    "detail": "up to 3 characters each, first come first served",
    "format": "F"
-  },
-  {
-   "key": "sub_active",
-   "epoch": null,
-   "date": "2026-11-03",
-   "label": "Sub or Game Time active",
-   "detail": "by Nov 3",
-   "format": "D"
   },
   {
    "key": "launch",

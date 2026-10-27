@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T21:43:15.451Z",
+ "generated": "2026-10-27T22:12:04.124Z",
  "party": "Dungeons and Drinking",
  "faction": "Horde",
  "ruleset": "Normal",
@@ -116,8 +116,8 @@
    "race": "Troll",
    "spec": "Demonology",
    "spec_status": {
-    "status": "open",
-    "source": "chat"
+    "status": "declared",
+    "source": "board"
    },
    "role": "damage",
    "role_detail": null,

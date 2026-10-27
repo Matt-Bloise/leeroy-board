@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-27T21:43:15.529Z",
+ "generated": "2026-10-27T22:12:04.207Z",
  "cards": [
   "Next up",
   "Your next step",
@@ -35,14 +35,6 @@
    "label": "Names open",
    "when": "October 27, 4 PM ET",
    "meaning": "Pack owners can pick names."
-  },
-  {
-   "key": "sub_active",
-   "epoch": null,
-   "date": "2026-11-03",
-   "label": "Game time starts",
-   "when": "November 3",
-   "meaning": "Game time must be active to play."
   },
   {
    "key": "launch",
@@ -86,7 +78,7 @@
   {
    "member": 4,
    "class_key": "warlock",
-   "step": "Choose your spec."
+   "step": null
   }
  ]
 }
