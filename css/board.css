@@ -34,6 +34,8 @@
   --brass: #d1a85a;
   --brass-dim: #8a6c35;
   --wax: #a8322a;
+  --wax-hi: #c8574a; /* V13c: the lit and shaded sides of a wax seal (slider thumb, Shaman toggle) */
+  --wax-lo: #5a1712;
   --ok: #8fc97a;
   --warn: #e6b44c;
   --c-druid: #ff7c0a;
@@ -110,10 +112,12 @@
   --t-micro: 160ms;
   --t-move: 320ms;
   --t-hero: 720ms;
+  --t-flip: 480ms; /* V13c (craft 31): a card turns in 480 ms */
   --t-close: 200ms;
   --t-fade: 160ms;
   --ease-oak: cubic-bezier(.2, .8, .2, 1);
   --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --ease-card: cubic-bezier(.3, 1.22, .6, 1); /* a smaller overshoot for the card turn */
   --ease-shut: cubic-bezier(.55, 0, .75, .2);
   --stagger: 60ms;
   --wall-blur: 6px;
@@ -551,13 +555,15 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .scene-layer.warming { opacity: 0.01; will-change: opacity; pointer-events: none; }
 .scene-layer .panel.warm { position: absolute; top: 20px; left: 18px; right: 18px; opacity: 0.01; will-change: opacity; pointer-events: none; }
 .scene-layer.warming .panel.warm { position: static; }
+/* V13c: inside an open frame the warmed panel is clipped to it, so the open scene's scroll box never grows for a moment */
+.scene-layer:not(.warming) .panel.warm { bottom: 0; overflow: hidden; }
 /* the wall's blur, drawn once on a small square in the same invisible layer, so the GPU program for it exists before the
    first opening needs it */
 .scene-layer .warm-fx { position: absolute; left: 0; top: 0; width: 256px; height: 256px; background: var(--oak-2); filter: blur(var(--wall-blur)) brightness(0.72); opacity: 0.01; will-change: filter; pointer-events: none; }
 .scene-veil { position: absolute; inset: 0; background: var(--veil); }
 /* owner-9: a scene opens corner to corner, inside a small safe margin, and fits its content to that space */
 .sheet { position: relative; box-sizing: border-box; width: 100%; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
-  border: 1px solid var(--grain); border-radius: 10px; background: var(--sheet-bg); box-shadow: inset 1px 1px 0 var(--edge-hi), 12px 30px 80px var(--shadow); overflow: hidden; isolation: isolate;
+  border: 1px solid var(--grain); border-radius: 10px; background: var(--sheet-bg); box-shadow: inset 1px 1px 0 var(--edge-hi), 0 16px 36px var(--shadow); overflow: hidden; isolation: isolate;
   }
 .scene-layer:not([hidden]) .sheet { will-change: transform, opacity; }
 .scene-layer.rise .sheet { animation: sheet-in var(--t-move) var(--ease-oak) both; }
@@ -652,7 +658,7 @@ html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); an
 .card { perspective: 1400px; min-height: 31rem; min-width: 0; display: grid; scroll-snap-align: center; }
 @media (min-width: 700px) { .cards { grid-auto-columns: minmax(15rem, 44%); } }
 @media (min-width: 1100px) { .cards { grid-auto-flow: row; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: visible; } .swipe-hint { display: none; } }
-.card-inner { position: relative; display: grid; transition: transform var(--t-hero) var(--ease-spring); transform-style: preserve-3d; }
+.card-inner { position: relative; display: grid; transition: transform var(--t-flip) var(--ease-card); transform-style: preserve-3d; }
 .card.flipped .card-inner { transform: rotateY(180deg); }
 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--radius); border: 1px solid var(--grain); background: linear-gradient(170deg, var(--oak-2), var(--oak-1) 70%); box-shadow: 0 0 0 1px var(--edge-dark), 0 2px 10px var(--wear), 8px 18px 40px var(--shadow), inset 1px 1px 0 var(--edge-hi); padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
 .face::after { content: ""; position: absolute; inset: -40% -40% auto auto; width: 90%; height: 70%; background: radial-gradient(circle, var(--cc), transparent 65%); opacity: 0.18; pointer-events: none; }
@@ -939,14 +945,14 @@ main.has-beam { margin-top: 44px; }
   .wall .tile { min-height: 0; }
 }
 @media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
-.sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("../img/parchment-tile.jpg"); background-size: auto, 1400px auto; background-position: 0 0, center top; box-shadow: inset 0 0 0 1px var(--ink-line); }
+.sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: url("../img/paper-baked.jpg"); background-size: 1395px auto; background-position: center top; box-shadow: inset 0 0 0 1px var(--ink-line); }
 /* V13b: the sheet fills the screen now, so its paper is drawn once at the box's size (not down the whole scroll height,
    which background-attachment: local did) and its burnt edge is a gradient, not a 60 px blurred shadow: measured, the two
    cost a first opening at 3440x1440 about 40 dropped frames between them */
 /* and the sheet's own candle corner and vignette move onto the paper itself: an overlay over the whole full-screen sheet
    was a second full-screen layer to draw and blend on every first opening */
 .sheet::after { content: none; }
-.sheet-body { background-image: radial-gradient(ellipse 55% 45% at 0% 0%, var(--candle-soft), transparent 70%), radial-gradient(ellipse 75% 70% at 50% 45%, transparent 70%, var(--slip-burn) 100%), repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("../img/parchment-tile.jpg"); background-size: auto, auto, auto, 1400px auto; background-position: 0 0, 0 0, 0 0, center top; }
+.sheet-body { background-image: radial-gradient(ellipse 55% 45% at 0% 0%, var(--candle-soft), transparent 70%), radial-gradient(ellipse 75% 70% at 50% 45%, transparent 70%, var(--slip-burn) 100%), url("../img/paper-baked.jpg"); background-size: auto, auto, 1395px auto; background-position: 0 0, 0 0, center top; }
 .face, .road-btn, .librarian, .toggle, .road-panel, .buff { --text: var(--l-text); --text-dim: var(--l-dim); color: var(--l-text); }
 .signup-grid:has(> [hidden]) { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) { .signup-grid:has(> [hidden]) .dsu { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; } }
@@ -1059,7 +1065,6 @@ main.has-beam { margin-top: 44px; }
 .chg-more { min-height: 28px; padding: 0 2px; font-family: var(--font-ui); font-size: 1rem; letter-spacing: 0.05em; color: var(--wax); background: none; border: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .ribbon-quiet { padding: 12px 16px; background: var(--parchment); border-left: 4px solid var(--seal-confirmed); border-radius: 4px; color: var(--ink); }
 .lib-zero { display: grid; gap: 18px; min-width: 0; }
-.sheet::after { content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none; border-radius: inherit; background: radial-gradient(ellipse 55% 45% at 0% 0%, var(--candle-soft), transparent 70%), radial-gradient(ellipse 120% 95% at 50% 45%, transparent 64%, var(--shade-light) 100%); }
 .t-library .tile-body { justify-content: space-between; }
 .t-library .mini b { font-size: clamp(1.6rem, 2.4vw, 2.4rem); }
 .lib-new { display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--edge-hi); }
@@ -1957,7 +1962,7 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 @media (prefers-contrast: more) { .scene-veil, html.room-on .scene-veil { background: var(--veil-strong); } .tile-sheen { display: none; } .map-svg .pin-banner .banner-cloth { fill-opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; --t-close: 1ms; }
+  :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; --t-close: 1ms; --t-flip: 1ms; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .card:hover, .clock:hover, .clock:active, .road-btn:hover, .close:hover { transform: none; }
@@ -1965,3 +1970,117 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
   .scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both !important; } /* spec 1.2: reduced motion opens with a cross-fade, no move */
   .hero-art img { transform: none !important; }
 }
+
+/* ================= V13c ================= */
+/* retest-11, spec 1.1: with the room on, an open scene's wall steps out of the way instead of blurring: the room shows clean
+   around the frame, and no opening re-rasters a full-screen blur of the wall */
+@media (min-width: 700px) { html.room-on.scene-open #board { filter: none; opacity: 0; } }
+html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
+
+/* spec 2 (frames full, retest-4, retest-10, retest-12): rows shrink to their content and sit on the centre line; Next steps puts
+   the name picker beside its two cards instead of above an empty "Your steps" card */
+.tn-actions { justify-content: center; gap: 16px; width: fit-content; max-width: 100%; margin-inline: auto; }
+@media (min-width: 2200px) { /* where the reading frame is 1300 px or wider */
+  .tn { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 20px; align-items: start; max-width: min(100%, 1500px); }
+  .tn > .tn-cards { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 20px; align-items: start; }
+  .tn > .tn-cards > :first-child { grid-column: auto; }
+  .tn > .tn-me { grid-column: 1 / -1; justify-self: center; }
+  .tn:has(.tn-pick) > .tn-me { grid-column: 1; grid-row: 1; justify-self: stretch; width: auto; }
+  .tn:has(.tn-pick) > .tn-cards { grid-column: 2 / -1; grid-row: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tn:has(.tn-pick) .tn-card:first-child { display: none; }
+  .tn > .tn-actions, .tn > .tn-left { grid-column: 1 / -1; }
+  .tn > .tn-actions { display: flex; justify-self: center; width: max-content; }
+  .tn > .tn-actions .lib-btn { flex: none; width: auto; }
+  .tn > .tn-actions .lib-btn { min-height: 64px; padding-inline: 28px; }
+  /* the picker's chips fill its card two to a row, under the question */
+  .tn:has(.tn-pick) .tn-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; }
+  .tn:has(.tn-pick) .tn-pick > p { grid-column: 1 / -1; margin: 0; }
+  .tn:has(.tn-pick) .tn-pick .tn-name { justify-content: flex-start; }
+}
+.act-how { max-width: 78ch; text-wrap: balance; }
+/* the Discord slip hugs its two columns and the table under them (no blank half-slip at 2560 and 3440) */
+@media (min-width: 1100px) { .signup-grid:has(> [hidden]) { width: max-content; max-width: 100%; justify-self: center; margin-inline: auto; } #discord-signups { width: fit-content; max-width: 100%; justify-self: center; margin-inline: auto; } #dsu-act { display: flex; align-items: center; gap: 18px; } #dsu-act .act-how { max-width: 52ch; text-align: left; } }
+@media (min-width: 1100px) {
+  .signup-grid:has(> [hidden]) .dsu { grid-template-columns: repeat(2, max-content); justify-content: center; gap: 16px 56px; }
+  #ledger-slip { justify-content: center; grid-template-columns: repeat(2, minmax(0, max-content)); }
+  .dates-grid { justify-content: center; grid-template-columns: minmax(0, max-content) minmax(0, 23rem); }
+}
+/* retest-4: the tab rail wraps to a second row when the frame is narrower than all eleven tabs, so no tab is ever cut */
+/* (on laptops shorter than 900 px the rail stays one scrolling row, started at its first tab, so the scenes keep their height) */
+@media (max-height: 899px) and (min-width: 1000px) { .sheet-head .tabs { justify-content: flex-start; } }
+@media (min-width: 1000px) and (min-height: 900px) { .sheet-head .tabs { flex-wrap: wrap; overflow: visible; row-gap: 2px; justify-content: center; margin: 0; padding: 0; -webkit-mask-image: none; mask-image: none; } }
+.lede-row { width: max-content; max-width: 100%; margin-inline: auto; }
+.lede-row > .lede { width: auto; max-width: 70ch; } /* no percentage: the row's own width is measured from it */
+/* Next steps below 2200 px: the picker hugs its chips; the three cards stand as tall as the tallest, their words centred in them */
+.tn > #tn-me { width: fit-content; max-width: min(100%, 760px); justify-self: center; margin-inline: auto; }
+/* with the picker shown, "Your steps" would only say "Pick your name above": from 1100 px it steps aside and the other two
+   cards share the row */
+@media (min-width: 1100px) { .tn:has(.tn-pick) .tn-card:first-child { display: none; } .tn:has(.tn-pick) .tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 1100px; margin-inline: auto; width: 100%; } }
+/* owner-6, craft 16, 17 (spec 6): Who buffs whom in the tavern's materials. Each buff is a lit parchment card with its painted
+   emblem, the giver's class colour as a wax tab, light from the candle side; giver groups are oak panels; the level slider is a
+   brass rail with a wax thumb; the Shaman option is a wax seal. Pointing at a buff draws a moving thread on the wheel. */
+.bq { position: relative; padding: 3px 12px 3px 18px; border-left: 0; border-radius: 6px; color: var(--ink); --text: var(--ink); --text-dim: var(--ink-soft);
+  background: radial-gradient(ellipse 80% 120% at 0% 0%, var(--candle-soft), transparent 70%), var(--parchment);
+  box-shadow: inset 1px 1px 0 var(--edge-hi), 0 3px 8px var(--shadow-soft, var(--wear)); }
+.bq::before { content: ""; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 7px; border-radius: 3px 2px 2px 3px; background: var(--bc); box-shadow: inset -1px -1px 0 var(--wear), inset 1px 1px 0 var(--edge-hi); }
+.bq-line { align-items: center; }
+.bq-emb { flex: none; width: 28px; height: 28px; margin-right: 2px; }
+.bq.lit { box-shadow: inset 1px 1px 0 var(--edge-hi), 0 0 0 2px var(--brass), 0 6px 16px var(--shadow); }
+.bclass { border-radius: 8px; padding: 6px 12px; color: var(--l-text); --text: var(--l-text); --text-dim: var(--l-dim);
+  background: radial-gradient(ellipse 60% 140% at 0% 0%, var(--lamp), transparent 70%), linear-gradient(180deg, var(--oak-3), var(--oak-2)); /* no angled grain: a 91 degree repeating gradient rasters slowly */
+  border-top: 3px solid var(--bc); box-shadow: inset 1px 1px 0 var(--edge-hi), 0 4px 12px var(--shadow); }
+.bclass > summary b { color: var(--parchment); }
+.bclass-names .bq-emb { width: 24px; height: 24px; vertical-align: -6px; margin: 0 4px 0 0; }
+.bclass-names .bn { white-space: nowrap; margin-right: 10px; }
+.buff { border-left: 0; position: relative; padding-left: 18px; border-radius: 6px; background: radial-gradient(ellipse 70% 120% at 0% 0%, var(--lamp), transparent 70%), var(--oak-2); box-shadow: inset 1px 1px 0 var(--edge-hi), 0 3px 8px var(--shadow); }
+.buff::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 6px; border-radius: 3px; background: var(--bc); }
+#deep-level { -webkit-appearance: none; appearance: none; height: 32px; background: transparent; accent-color: auto; }
+#deep-level::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: linear-gradient(180deg, var(--brass-hi), var(--brass) 45%, var(--brass-dim)); box-shadow: inset 0 1px 2px var(--wear), 0 1px 0 var(--edge-hi); }
+#deep-level::-moz-range-track { height: 8px; border-radius: 4px; background: linear-gradient(180deg, var(--brass-hi), var(--brass) 45%, var(--brass-dim)); }
+#deep-level::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -9px; border-radius: 50%; border: 0; background: radial-gradient(circle at 35% 30%, var(--wax-hi), var(--wax) 55%, var(--wax-lo)); box-shadow: 0 2px 4px var(--shadow), inset 0 0 0 3px var(--wear); cursor: grab; }
+#deep-level::-moz-range-thumb { width: 26px; height: 26px; border-radius: 50%; border: 0; background: radial-gradient(circle at 35% 30%, var(--wax-hi), var(--wax) 55%, var(--wax-lo)); }
+#deep-level:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 4px; }
+.deep-six input { -webkit-appearance: none; appearance: none; width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center; cursor: pointer;
+  background: radial-gradient(circle at 35% 30%, var(--parchment), var(--parchment-2)); box-shadow: inset 0 0 0 2px var(--brass-dim), 0 1px 2px var(--shadow); }
+.deep-six input:checked { background: radial-gradient(circle at 35% 30%, var(--wax-hi), var(--wax) 55%, var(--wax-lo)); box-shadow: inset 0 0 0 3px var(--wear), 0 2px 4px var(--shadow); }
+.deep-six input:checked::after { content: ""; width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 0 0 2px var(--edge-hi); }
+.wheel-edge.flow { opacity: 1; stroke-width: 3; stroke-dasharray: 7 7; animation: wheel-flow var(--t-hero) linear infinite; }
+.wheel.flowing .wheel-edge:not(.flow) { opacity: 0.15; }
+@keyframes wheel-flow { to { stroke-dashoffset: -28; } }
+@media (max-width: 699px) { .bclass-names .bq-emb { display: none; } .bclass-names .bn { white-space: normal; margin: 0; } .bclass { padding: 2px 10px; }
+  .bq-emb { width: 22px; height: 22px; } .bq { padding: 2px 10px 2px 16px; } .bq::before { top: 5px; bottom: 5px; width: 5px; } }
+@media not (prefers-reduced-motion: no-preference) { .wheel-edge.flow { animation: none; stroke-dasharray: none; } }
+/* craft 16: the road cards are oak panels lit from the candle side with the traveller's colour as a wax tab, not stripe cards */
+.road-btn { position: relative; border-left: 1px solid var(--grain); padding-left: 22px; background: radial-gradient(ellipse 70% 130% at 0% 0%, var(--lamp), transparent 70%), linear-gradient(180deg, var(--oak-3), var(--oak-2)); box-shadow: inset 1px 1px 0 var(--edge-hi), 0 4px 10px var(--shadow); }
+.road-btn::before { content: ""; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 7px; border-radius: 3px; background: var(--rc); box-shadow: inset -1px -1px 0 var(--wear), inset 1px 1px 0 var(--edge-hi); }
+/* craft 21: a scene opened again this visit fades in over 200 ms instead of replaying its entrance */
+.panel.again { animation: fade-in var(--t-close) var(--ease-oak) both; }
+/* retest-7: the head is never shorter than its 44 px controls, so the close and Look at the room buttons sit inside it */
+.sheet-top { min-height: 44px; }
+/* and the head gives the 44 px back from its padding where height is short (phones, 768 px laptops) */
+@media (max-width: 599px) { .sheet-head { padding-top: max(2px, env(safe-area-inset-top, 0px)); } }
+@media (min-width: 1000px) and (max-height: 820px) { .sheet-head { padding-top: 8px; } }
+/* retest-1, retest-6: a phone on its side or a short screen (200% zoom): the head is one row (title and controls), the tab rail
+   and the introductions step aside; scenes change by swipe, arrow keys or the bottom bar */
+@media (max-height: 500px) {
+  .sheet-head .tabs, .sheet-sub, .scene-hint, #panel-five > .lede, .panel > .lede-row > .lede { display: none !important; }
+  .sheet-head { padding-top: max(4px, env(safe-area-inset-top, 0px)); padding-bottom: 4px; gap: 0; border-bottom-width: 2px; }
+  .sheet-name h2 { font-size: 1.1rem; }
+  .sheet-emblem { width: 30px; height: 30px; }
+}
+/* retest-8: on a phone Look at the room is an eye, with its pupil */
+@media (max-width: 599px) { .peek-btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: currentColor; } }
+/* retest-5: with the room off (reduced motion, a weak GPU) an open scene stands in the painted tavern, never on a flat void */
+html.room-off.scene-open body { background: var(--oak-0) url("../img/tavern-plate.jpg") center / cover no-repeat fixed; }
+/* retest-3: on a phone the Sign-ups tile shows its row of pints, and the five's roles line wraps to a second line instead of
+   being cut */
+@media (max-width: 599px) {
+  .wall .t-signups .rsvp-bar.su-keg { display: block !important; margin-top: 6px; }
+  .wall .t-signups .su-keg svg { height: 30px; }
+  .su-num small { white-space: nowrap; }
+}
+/* with the full names (spec 7.1) the eleven tabs still fit one row in a 1150 px frame: tighter tabs between 1000 and 2199 px */
+@media (min-width: 1000px) and (max-width: 2199px) { .sheet-head .tab { padding-left: 5px; padding-right: 5px; letter-spacing: 0.01em; font-size: 0.875rem; } .sheet-head .tab-ico { width: 17px; height: 17px; } .sheet-head .tabs { gap: 1px; } }
+/* spec 7.6, retest-9: every inline word you can tap is at least 24 px tall */
+.gl[data-term], .sheet-body .gl[data-term] { padding-block: 4px; margin-block: -4px; } /* a taller tap box, the same line height (the margin gives the padding back) */
+.sheet-body a, .tn-link, #panel-ledger a { padding-block: 3px; }

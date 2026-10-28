@@ -18,9 +18,10 @@
 </head>
 <body>
 <title>Dungeons and Drinking Board</title>
+<link rel="icon" type="image/png" href="img/icons/tab-five.png">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preload" as="image" href="img/tavern-hero.jpg" fetchpriority="high">
-<link rel="stylesheet" href="css/board.css?v=e2d4560ef0">
+<link rel="stylesheet" href="css/board.css?v=f2bd963444">
 
 <div class="hero-art gate-mode" id="hero-art" aria-hidden="true"><img src="img/tavern-hero.jpg" alt="" width="1672" height="941" loading="eager" fetchpriority="high" decoding="async"></div>
 <div class="candle" aria-hidden="true"></div>
@@ -74,7 +75,7 @@
         <span class="tile-body" id="ts-signups"><span class="loading">Reading the sign-up card.</span></span>
       </a></li>
       <li class="t-library hot"><div class="tile lib-tile" data-scene="library" style="--i:2;--acc:var(--brass-hi);--acc-glow:var(--hi-brass)">
-        <a class="tile-band" href="#library" aria-labelledby="tt-library" aria-describedby="ts-library"><span class="tile-name"><span class="tile-title" id="tt-library">The library</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3 20.5h18"/><path d="M4.5 20.5V6h3v14.5M7.5 20.5V8.5h3v12"/><path d="M11.5 9.2l2.9-.8 3.6 11.6-2.9.8z"/><path d="M5.5 9h1M8.5 11.5h1"/></svg></span></a>
+        <a class="tile-band" href="#library" aria-labelledby="tt-library" aria-describedby="ts-library"><span class="tile-name"><span class="tile-title" id="tt-library">Library</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3 20.5h18"/><path d="M4.5 20.5V6h3v14.5M7.5 20.5V8.5h3v12"/><path d="M11.5 9.2l2.9-.8 3.6 11.6-2.9.8z"/><path d="M5.5 9h1M8.5 11.5h1"/></svg></span></a>
         <span class="tile-body" id="ts-library"><span class="loading">Opening the stacks.</span></span>
         <form class="tile-search" id="tile-search" role="search" aria-label="Search the library"><input class="tile-q" id="tile-q" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Search every page" aria-label="Search every page of the library"><button class="tile-q-go" type="submit">Search</button></form>
         <span class="tile-line lib-new" id="ts-library-new"></span>
@@ -84,11 +85,11 @@
         <span class="tile-body" id="ts-roads"><span class="loading">Unrolling the map.</span></span>
       </a></li>
       <li class="t-racials"><a class="tile" href="#racials" data-scene="racials" style="--i:4;--acc:var(--wax);--acc-glow:var(--hi-wax)" aria-labelledby="tt-racials" aria-describedby="ts-racials">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Blood and bone</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Race skills</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
         <span class="tile-body" id="ts-racials"><span class="loading">Reading the racials.</span></span>
       </a></li>
       <li class="t-legacy"><div class="tile gl-tile" data-scene="legacy" style="--i:5;--acc:var(--brass);--acc-glow:var(--hi-brass)">
-        <a class="tile-band" href="#legacy" aria-labelledby="tt-legacy" aria-describedby="ts-legacy"><span class="tile-name"><span class="tile-title" id="tt-legacy">Account bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></a>
+        <a class="tile-band" href="#legacy" aria-labelledby="tt-legacy" aria-describedby="ts-legacy"><span class="tile-name"><span class="tile-title" id="tt-legacy">Bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></a>
         <span class="tile-body" id="ts-legacy"><span class="loading">Counting points.</span></span>
       </div></li>
       <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:6;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)" aria-labelledby="tt-buffs" aria-describedby="ts-buffs">
@@ -96,11 +97,11 @@
         <span class="tile-body" id="ts-buffs"><span class="loading">Drawing the wheel.</span></span>
       </a></li>
       <li class="t-ledger"><a class="tile" href="#ledger" data-scene="ledger" style="--i:7;--acc:var(--c-paladin);--acc-glow:var(--hi-paladin)" aria-labelledby="tt-ledger" aria-describedby="ts-ledger">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">The ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">Ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
         <span class="tile-body" id="ts-ledger"><span class="loading">Opening the ledger.</span></span>
       </a></li>
       <li class="t-librarian"><a class="tile" href="#librarian" data-scene="librarian" style="--i:8;--acc:var(--c-priest);--acc-glow:var(--hi-priest)" aria-labelledby="tt-librarian" aria-describedby="ts-librarian">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">The helper bot</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">Leeroy</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
         <span class="tile-body" id="ts-librarian"><span class="loading">Asking the librarian.</span></span>
       </a></li>
     </ul>
@@ -123,13 +124,13 @@
       <div class="tabs" id="tabs" role="tablist" aria-label="Scenes">
         <button class="tab" type="button" role="tab" id="tab-timeline" data-tab="timeline" aria-controls="panel-timeline" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Dates</button>
         <button class="tab" type="button" role="tab" id="tab-five" data-tab="five" aria-controls="panel-five" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>The five</button>
-        <button class="tab" type="button" role="tab" id="tab-roads" data-tab="roads" aria-controls="panel-roads" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Roads</button>
+        <button class="tab" type="button" role="tab" id="tab-roads" data-tab="roads" aria-controls="panel-roads" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Three roads</button>
         <button class="tab" type="button" role="tab" id="tab-racials" data-tab="racials" aria-controls="panel-racials" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Race skills</button>
         <button class="tab" type="button" role="tab" id="tab-legacy" data-tab="legacy" aria-controls="panel-legacy" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Bonuses</button>
-        <button class="tab" type="button" role="tab" id="tab-buffs" data-tab="buffs" aria-controls="panel-buffs" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Buffs</button>
+        <button class="tab" type="button" role="tab" id="tab-buffs" data-tab="buffs" aria-controls="panel-buffs" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Who buffs whom</button>
         <button class="tab" type="button" role="tab" id="tab-ledger" data-tab="ledger" aria-controls="panel-ledger" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Ledger</button>
         <button class="tab" type="button" role="tab" id="tab-signups" data-tab="signups" aria-controls="panel-signups" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Sign-ups</button>
-        <button class="tab" type="button" role="tab" id="tab-librarian" data-tab="librarian" aria-controls="panel-librarian" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Helper bot</button>
+        <button class="tab" type="button" role="tab" id="tab-librarian" data-tab="librarian" aria-controls="panel-librarian" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Leeroy</button>
         <button class="tab" type="button" role="tab" id="tab-library" data-tab="library" aria-controls="panel-library" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"></span>Library</button>
         <button class="tab" type="button" role="tab" id="tab-tonight" data-tab="tonight" aria-controls="panel-tonight" aria-selected="false" tabindex="-1"><span class="tab-ico" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M15 3a8 8 0 1 0 6 12.5A6.5 6.5 0 0 1 15 3z"/></svg></span>Next steps</button>
         <span class="tab-ind" id="tab-ind" aria-hidden="true"></span>
@@ -259,7 +260,8 @@
   <dl class="keys-list" id="keys-list"></dl>
 </aside>
 
-<script src="js/board.js?v=d954432a1e"></script>
+<script src="js/sound.js?v=d181ff431f"></script>
+<script src="js/board.js?v=36cc2deaaa"></script>
 <script type="module">
 /* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:
    #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is

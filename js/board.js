@@ -71,6 +71,15 @@ const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 const roomHas = (c) => document.documentElement.classList.contains(c);
 /* V7: the room's state, read by window.__board.room() and written by room/tier.js */
 const RS = { tier: "low", why: "not started" };
+/* a new sign-up since the last look: the lantern's door latch and a murmur swelling; launch night: a cheer */
+const ROOM_CUES = { signup: false, launch: false, played: false };
+function roomCues() {
+  if (ROOM_CUES.played || !AU.on || !(ROOM_CUES.signup || ROOM_CUES.launch)) return;
+  const S = window.BoardSound; if (!S || !S.running()) return;
+  ROOM_CUES.played = true;
+  if (ROOM_CUES.signup) { sfx("latch", { delay: 500 }); sfx("swell", { delay: 700 }); }
+  if (ROOM_CUES.launch) sfx("cheer", { delay: 1200 });
+}
 function startRoomLadder() {
   const launch = D.timeline && D.timeline.events.find((e) => e.key === "launch");
   const seen = MEM.seenMap(), S = D.signups;
@@ -79,6 +88,8 @@ function startRoomLadder() {
        flicker, and hands its eased key light position back */
     aim: () => LB, signal: flickAt, tiltOn: () => LB.tilt,
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
+  /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
+  ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
   import("../room/tier.js?v=43d21c1deb").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
 }
 const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, close: 200, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
@@ -118,6 +129,27 @@ function rel(epoch) {
   if (a < 172800) return rtf.format(Math.round(d / 3600), "hour");
   return rtf.format(Math.round(d / 86400), "day");
 }
+/* V13c (spec 7.2): one formatter for every date the board writes itself. The viewer's own zone with the weekday, plus ET when
+   the viewer is not on ET ("Thu, Nov 5, 8 AM your time (Wed, Nov 4, 6 PM ET)"); ET viewers read one line ("Wed, Nov 4, 6 PM
+   ET"); rel adds the distance from now ("in 7 days"). o.tz and o.now exist for the tests. */
+const ET_ZONE = "America/New_York";
+const viewerZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ET_ZONE; } catch (e) { return ET_ZONE; } };
+const rtfEn = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
+function relWhen(epoch, now) {
+  const d = epoch - (now === undefined ? Date.now() / 1000 : now), a = Math.abs(d);
+  if (a < 60) return "now";
+  if (a < 3600) return rtfEn.format(Math.round(d / 60), "minute");
+  if (a < 86400 * 2) return rtfEn.format(Math.round(d / 3600), "hour");
+  return rtfEn.format(Math.trunc(d / 86400), "day"); /* whole days, as the countdown counts them */
+}
+function fmtWhen(epoch, o = {}) {
+  if (!Number.isFinite(epoch)) return "";
+  const d = new Date(epoch * 1000), tz = o.tz || viewerZone(), time = o.time !== false;
+  const one = (zone) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short", month: "short", day: "numeric", ...(time ? { hour: "numeric", minute: "2-digit" } : {}) }).formatToParts(d).map((x) => [x.type, x.value])); return `${p.weekday}, ${p.month} ${p.day}${time ? `, ${p.hour}${p.minute !== "00" ? `:${p.minute}` : ""} ${p.dayPeriod}` : ""}`; };
+  const et = one(ET_ZONE), mine = one(tz);
+  const s = mine === et ? `${et} ET` : `${mine} your time (${et} ET)`;
+  return o.rel ? `${s}, ${relWhen(epoch, o.now)}` : s;
+}
 function eventWhen(e) {
   if (e.epoch === null) return dtDayUTC.format(new Date(`${e.date}T12:00:00Z`));
   return e.format === "D" ? dtDay.format(new Date(e.epoch * 1000)) : dtFull.format(new Date(e.epoch * 1000));
@@ -145,7 +177,7 @@ function launchLine() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "The party of five", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "The librarian: our Discord bot", library: "Every fact, searchable" };
+const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable" };
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -258,12 +290,18 @@ function setDigits(b, str) {
     if (old[i] === str[i]) return;
     const [now, was] = d.children;
     was.textContent = old[i]; now.textContent = str[i];
-    sfx("click");
+    clockTick();
     if (reduceMQ.matches || typeof now.animate !== "function") return;
-    now.animate([{ transform: "rotateX(-90deg)", opacity: 0.2 }, { transform: "none", opacity: 1 }], { duration: MOTION.digit, easing: MOTION.oak });
-    was.animate([{ transform: "none", opacity: 1 }, { transform: "rotateX(90deg)", opacity: 0 }], { duration: MOTION.digit, easing: MOTION.oak });
+    /* V13c (craft 30): the old half falls first (0 to 120 ms, accelerating, darkening to 70% edge-on), then the new half
+       settles (120 to 240 ms) with a small overshoot */
+    const half = MOTION.digit / 2;
+    was.animate([{ transform: "none", opacity: 1, filter: "brightness(1)" }, { transform: "rotateX(90deg)", opacity: 0.6, filter: "brightness(0.7)" }], { duration: half, easing: "cubic-bezier(.55, 0, 1, .45)", fill: "forwards" });
+    now.animate([{ transform: "rotateX(-90deg)", filter: "brightness(0.7)" }, { transform: "rotateX(9deg)", offset: 0.7 }, { transform: "none", filter: "brightness(1)" }], { duration: half, delay: half, easing: MOTION.oak, fill: "backwards" });
   });
 }
+/* V13c (craft 29): the clock's sound is one tick or tock a second, never one per changed digit, and silent under a scene */
+const CT = { last: 0, k: 0 };
+function clockTick() { const n = performance.now(); if (n - CT.last < 500 || SC.open !== null) return; CT.last = n; CT.k ^= 1; sfx(CT.k ? "tick" : "tock"); }
 function tick() {
   const t = D.timeline; if (!t) return;
   const now = Date.now() / 1000;
@@ -279,7 +317,7 @@ function tick() {
   /* Screen readers get the countdown as words, once a minute, not digit by digit. */
   const leftText = parts.filter(([u]) => u !== "seconds").map(([u, v]) => `${v} ${v === 1 ? u.replace(/s$/, "") : u}`).join(", ") + " left";
   const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").setAttribute("aria-label", `Dates. ${next.label}: ${leftText}. Launch: ${launchLine()}. Open all the dates.`); }
-  $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : `${eventWhen(next)} in your time zone`;
+  $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { rel: false }); /* V13c (consistency 10): the one formatter */
   const mc = $("#mini-clock");
   /* V12: the phone bar fits 375 px: the countdown, then the launch in the viewer's own time, short (no repeated "Launch", no zone) */
   if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
@@ -311,7 +349,8 @@ function renderTiles() {
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], ". They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."]),
     h("span", { class: "tile-viz" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
-    minis([[p.members.length, "players"], [c.synergy.length, "buffs"]]),
+    /* consistency 5: the count the scene shows (every buff the five bring), not the wheel's links */
+    minis([[p.members.length, "players"], [c.buffs ? c.buffs.list.filter((b) => !b.sixth).length : c.synergy.length, "buffs"]]),
     h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: "Buff links between the five" }));
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
@@ -322,9 +361,11 @@ function renderTiles() {
   if (S && S.tallies) {
     const T = S.tallies;
     const when = T.when ? h("span", { class: "tile-line su-when" }, [["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "Later"]].filter(([k]) => T.when[k]).map(([k, l]) => h("span", { class: "su-slot" }, h("b", { text: l }), ` ${T.when[k].names.length ? T.when[k].names.map(cleanName).join(", ") : "nobody yet"}`))) : null;
-    const none = Math.max(0, p.members.length - T.rsvp.in.count - T.rsvp.maybe.count - T.rsvp.out.count);
-    fill("signups", h("span", { class: "su-nums" }, [[T.rsvp.in.count, "in"], [T.rsvp.maybe.count, "maybe"], [T.rsvp.out.count, "out"], [none, "not answered"]].map(([v, l]) => h("span", { class: "su-num" }, h("b", { text: String(v) }), h("small", { text: l })))),
-      h("span", { class: "rsvp-bar su-keg", "aria-hidden": "true" }, kegRow([...Array(T.rsvp.in.count).fill("in"), ...Array(T.rsvp.maybe.count).fill("maybe"), ...Array(T.rsvp.out.count).fill("out"), ...Array(none).fill("none")])), when);
+    const cnt = (k) => (T.rsvp[k] ? T.rsvp[k].count : 0), none = Math.max(0, p.members.length - RSVP_KEYS.reduce((n, k) => n + cnt(k), 0));
+    /* V13c (retest-3): a state shows only when someone holds it; in and no answer always do */
+    const nums = [...RSVP_KEYS.filter((k) => k === "in" || cnt(k)).map((k) => [cnt(k), RSVP_SAY[k]]), [none, "No answer"]];
+    fill("signups", h("span", { class: "su-nums" }, nums.map(([v, l]) => h("span", { class: "su-num" }, h("b", { text: String(v) }), h("small", { text: l })))),
+      h("span", { class: "rsvp-bar su-keg", "aria-hidden": "true" }, kegRow([...RSVP_KEYS.flatMap((k) => Array(cnt(k)).fill(k)), ...Array(none).fill("none")])), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
   fill("librarian",
     h("span", { class: "tile-line" }, "Leeroy answers questions. In any Discord channel here, type ", h("b", { text: "/ask" }), " and your question."),
@@ -349,6 +390,7 @@ function glShow(b) {
   pop.hidden = false;
   glPlace();
   pop.classList.remove("in"); void pop.offsetWidth; pop.classList.add("in");
+  sfx("card");
 }
 /* the card follows its word while the page or a scene scrolls; it closes once the word leaves the screen */
 function glPlace() {
@@ -414,14 +456,15 @@ function wholeClause(t, max) {
   return `${cut.slice(0, cut.lastIndexOf(" "))}…`;
 }
 /* the sign-ups tile: one tankard per answer, poured full for in, half for maybe, a wax band for out, empty when nobody answered */
+/* V13c (craft 15, spec 8): painted pints, amber ale with a cream head for I'm in, half for Tentative, a pocket watch for
+   Running late, an empty pewter mug for Out; no answer is a faint outline. The keg-fill rect stays as the state's hit box. */
 function kegRow(states) {
   const svg = s("svg", { viewBox: `0 0 ${states.length * 56} 48`, preserveAspectRatio: "xMinYMid meet" });
   states.forEach((st, i) => {
-    const x = i * 56 + 6, lvl = st === "in" ? 1 : st === "maybe" ? 0.5 : st === "out" ? 0.18 : 0;
+    const x = i * 56 + 2;
     const g = s("g", { class: `keg ${st}`, style: `--pi: ${i}` });
-    if (lvl) g.append(s("rect", { class: `keg-pint ${st} keg-fill`, x: x + 2, y: 8 + 36 * (1 - lvl), width: 28, height: 36 * lvl }));
-    if (st === "in") g.append(s("path", { class: "keg-foam", d: `M${x + 1} 9c0-5 5-6 8-4 2-3 7-3 9 0 3-2 8-1 8 4z` }));
-    g.append(s("path", { class: "keg-handle", d: `M${x + 32} 16h6a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5h-6` }), s("rect", { class: "keg-pint none", x, y: 8, width: 32, height: 38, rx: 3, "fill-opacity": 0, style: "fill: none" }));
+    if (st !== "none") g.append(s("image", { class: `keg-img ${st}`, href: `img/pints/${st}.png`, x, y: 0, width: 48, height: 48 }), s("rect", { class: `keg-pint ${st} keg-fill`, x: x + 8, y: 10, width: 28, height: 34, "fill-opacity": 0, style: "fill: none" }));
+    else g.append(s("rect", { class: "keg-pint none", x: x + 8, y: 10, width: 28, height: 34, rx: 3, "fill-opacity": 0, style: "fill: none" }), s("path", { class: "keg-handle", d: `M${x + 36} 18h5a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4h-5` }));
     svg.append(g);
   });
   return svg;
@@ -488,7 +531,7 @@ function renderCards() {
     const card = h("article", { class: "card", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
     const flipBtn = (label) => h("button", { class: "flip", type: "button", "aria-pressed": "false", text: label, onclick: () => {
       const on = card.classList.toggle("flipped");
-      sfx("flip");
+      sfx("flip", { delay: 120 });
       card.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", String(on)));
       card.querySelector(".front").inert = on; card.querySelector(".back").inert = !on;
       (on ? card.querySelector(".back .flip") : card.querySelector(".front .flip")).focus({ preventScroll: true });
@@ -617,7 +660,10 @@ function STAR8(x, y, r1, r2) { let d = ""; for (let i = 0; i < 16; i++) { const 
    without one (reduced motion) it holds still at the top of the route. */
 function zeppelin(am) {
   const g = s("g", { class: "map-zep-g", ...(am ? {} : { transform: "translate(292 52)" }) },
-    s("ellipse", { class: "zep-shadow", cx: 3, cy: 20, rx: 17, ry: 4.2 }),
+    s("ellipse", { class: "zep-shadow", cx: 3, cy: 20, rx: 17, ry: 4.2 }));
+  /* V13c: the painted top-down zeppelin (generated art), nose along its route; the drawn hull stays as the fallback */
+  if (ART.zep) { g.append(s("image", { class: "zep-img", href: "img/map/zeppelin.png", x: -20, y: -20, width: 40, height: 40, transform: "rotate(90)" })); if (am) g.append(am); return g; }
+  g.append(
     s("path", { class: "zep-fin", d: "M-14 -1l-8-7h5l6 4zM-14 1l-8 7h5l6-4z" }),
     s("ellipse", { class: "zep-hull", rx: 17, ry: 7 }),
     s("path", { class: "zep-rib", d: "M-9 -6.2c1.4 4 1.4 8.4 0 12.4M0 -7c1.6 4.6 1.6 9.4 0 14M9 -6.2c1.4 4 1.4 8.4 0 12.4" }),
@@ -668,6 +714,7 @@ function renderMap() {
     fixedText(380, 250, "the Crossroads", "map-text small", SMALL),
     );
   const gate = svg.querySelector(".map-mark"); for (const [k, v] of Object.entries({ x: 456, y: 104, width: 28, height: 28 })) gate.setAttribute(k, v);
+  if (ART.town) { const town = s("image", { class: "map-town", href: "img/map/town.png", x: 448, y: 98, width: 44, height: 44 }); const pa = gate.parentNode; pa.insertBefore(town, gate); pa.removeChild(gate); }
   const cross = emb("pin", "map-mark"); for (const [k, v] of Object.entries({ x: 382, y: 200, width: 20, height: 22 })) cross.setAttribute(k, v);
   svg.append(cross);
   boxes.push({ x: 454, y: 102, w: 32, h: 32 }, { x: 380, y: 198, w: 24, h: 26 });
@@ -916,6 +963,16 @@ function renderWheel() {
    line each. Without: a grid of who gives what. Every buff's full card sits in a per-class expander (collapsed), each with one
    "Sources" toggle; the rules sit in three status groups; #buffs.<key> opens and lights any buff. Nothing is removed. */
 const BUFF_STATUS = { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
+/* V13c (owner-6, spec 6): every buff carries a painted emblem of what it gives (assets/board/generated, generated with ChatGPT) */
+const BUFF_CAT = { arcane_intellect: "intellect", conjure: "mana", fortitude: "stamina", shadow_protection: "resistance", divine_spirit: "spirit", pw_shield: "armor", kings: "allstats", might: "attackpower", wisdom: "mana", salvation: "spirit", devotion: "armor", retribution: "thorns", concentration: "intellect", mark: "allstats", thorns: "thorns", innervate: "mana", rebirth: "healing", leader: "attackpower", soulstone: "healing", healthstone: "healing", summoning: "spirit", blood_pact: "stamina", strength_earth: "attackpower", grace_air: "attackpower", windfury: "attackpower", mana_spring: "mana", healing_stream: "healing" };
+const buffCat = (b) => BUFF_CAT[b.key] || (/intellect/i.test(b.name) ? "intellect" : /stamina|fortitude/i.test(b.name) ? "stamina" : /mana/i.test(b.name) ? "mana" : /heal/i.test(b.name) ? "healing" : "allstats");
+const buffEmb = (b) => h("img", { class: "bq-emb", src: `img/buffs/${buffCat(b)}.png`, alt: "", width: 96, height: 96, loading: "lazy", decoding: "async" });
+/* the animated link: pointing at a buff (or focusing it) draws a moving thread from its giver to each receiver on the wheel */
+function wheelFlow(b) {
+  const edges = document.querySelectorAll("#wheel .wheel-edge");
+  edges.forEach((e) => { const s = D.client.synergy[Number(e.dataset.b)]; e.classList.toggle("flow", !!b && !!s && (s.what === b.name || (s.from === b.class && !D.client.synergy.some((x) => x.what === b.name)))); });
+  const w = $("#wheel"); if (w) w.classList.toggle("flowing", !!b);
+}
 const BD = { level: 60, sixth: false };
 const buffTok = (key) => `buffs.${key.replace(/_/g, "-")}`;
 function buffWho(b, m) { /* does member m receive buff b */
@@ -958,7 +1015,7 @@ function renderBuffsDeep() {
   const row = (b, own, noFrom) => { /* own: the giver group copy carries the id, so ids stay unique; noFrom: a heading already names the giver */
     const giver = giverOf(b.class), later = !b.at[L - 1];
     return h("li", { class: `bq${later ? " later" : ""}`, style: `--bc: ${classVar(b.class === "shaman" ? null : b.class)}`, "data-key": b.key, ...(own === true ? { id: `buff-${b.key}` } : {}) },
-      sources(b)([h("b", { text: b.name }), h("span", { class: "bq-val", text: short(b) }), noFrom ? null : h("span", { class: "bq-from", text: giver ? giver.name : b.class === "shaman" ? "a shaman" : "" })]));
+      sources(b)([buffEmb(b), h("b", { text: b.name }), h("span", { class: "bq-val", text: short(b) }), noFrom ? null : h("span", { class: "bq-from", text: giver ? giver.name : b.class === "shaman" ? "a shaman" : "" })]));
   };
   /* the group rules that name this buff, its group version, or (for Blessings and auras) its kind */
   function rulesFor(b) {
@@ -986,7 +1043,7 @@ function renderBuffsDeep() {
   const groups = classes.map((cls) => {
     const g = giverOf(cls), list = shown.filter((b) => b.class === cls);
     return h("details", { class: "bclass", "data-class": cls, style: `--bc: ${classVar(cls === "shaman" ? null : cls)}` },
-      h("summary", {}, h("b", { text: g ? `${g.name}, ${g.class}` : "A sixth player, Shaman" }), h("span", { class: "bclass-names", text: list.map((b) => b.name).join(", ") })),
+      h("summary", {}, h("b", { text: g ? `${g.name}, ${g.class}` : "A sixth player, Shaman" }), h("span", { class: "bclass-names" }, list.flatMap((b, i) => [h("span", { class: "bn" }, buffEmb(b), b.name, i < list.length - 1 ? "," : ""), i < list.length - 1 ? " " : null]).filter(Boolean))),
       h("ul", { class: "bq-list" }, list.map((b) => row(b, true))));
   });
   const rules = ["forever", "classic", "unknown"].map((st) => {
@@ -1008,7 +1065,14 @@ function renderBuffsDeep() {
   const set = (v) => { BD.level = v; try { localStorage.setItem("board-buff-level", String(v)); } catch (e) {} renderBuffsDeep(); const el = $("#deep-level"); if (el) el.focus({ preventScroll: true }); };
   slider.addEventListener("input", () => set(Number(slider.value)));
   marks.querySelectorAll("button").forEach((b, i) => b.addEventListener("click", () => { set(B.marks[i]); const x = $("#buffs-deep .deep-marks button[aria-pressed=\"true\"]"); if (x) x.focus(); }));
-  six.querySelector("input").addEventListener("change", (e) => { BD.sixth = e.target.checked; renderBuffsDeep(); const x = $("#deep-sixth"); if (x) x.focus(); });
+  six.querySelector("input").addEventListener("change", (e) => { sfx("latch"); BD.sixth = e.target.checked; renderBuffsDeep(); const x = $("#deep-sixth"); if (x) x.focus(); });
+  /* V13c: the level slider clicks into its detents at the marks */
+  slider.addEventListener("input", () => { if (B.marks.includes(Number(slider.value))) sfx("detent"); });
+  const rowOf = (e) => { const li = e.target.closest && e.target.closest("li.bq[data-key]"); return li ? B.list.find((x) => x.key === li.dataset.key) : null; };
+  box.addEventListener("pointerover", (e) => wheelFlow(rowOf(e)));
+  box.addEventListener("pointerleave", () => wheelFlow(null));
+  box.addEventListener("focusin", (e) => wheelFlow(rowOf(e)));
+  box.addEventListener("focusout", () => wheelFlow(null));
 }
 /* #buffs.<key>: open that buff's giver group and its sources, and light it */
 function focusBuff(tokKey) {
@@ -1031,7 +1095,7 @@ function setBuffView(v) {
   try { localStorage.setItem("board-buff-view", v); } catch (e) {}
 }
 
-const ART = { crest: {}, seal: false, beam: false };
+const ART = { crest: {}, seal: false, beam: false, zep: false, town: false };
 const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : emb("seal"));
 /* where a ledger line was written: the Party Board under a wax seal, the group notes under a quill */
 const srcTag = (src) => h("span", { class: `label srctag ${src === "board" ? "board" : "notes"}` }, emb(src === "board" ? "seal" : "quill"), SRC_WORD[src] || src);
@@ -1096,7 +1160,7 @@ function renderLibrarian() {
 
 function renderFooter() {
   const stamp = ["party", "timeline", "client", "stats", "signups"].filter((k) => D[k]).map((k) => D[k].generated).sort().pop();
-  const when = `${stamp.replace("T", " ").slice(0, 16)} UTC`;
+  const when = fmtWhen(Date.parse(stamp) / 1000); /* V13c (consistency 10): the one formatter, not a UTC stamp */
   $("#footer").replaceChildren(
     h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     /* V12: touch wording on touch screens; keys only where there is a keyboard and mouse */
@@ -1104,14 +1168,14 @@ function renderFooter() {
   $("#lib-sources").replaceChildren(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
-    h("p", { text: "Tavern paintings generated on 2026-10-26 for this board." }),
+    h("p", { text: "Tavern paintings generated on 2026-10-26 for this board. Scene, buff, pint and map emblems generated with ChatGPT on 2026-10-28." }),
     h("p", { text: "Spell numbers are the game's own values at the level cap and can move with Blizzard's hotfixes. A wax seal marks what is written on the Party Board; a speech mark, what was said in chat and noted down." }));
 }
 
 const Q = {
   pack: [["yes", "Yes"], ["no", "No"]],
   meet: [["valley", "Valley of Strength"], ["crossroads", "the Crossroads"], ["other", "Write-in"]],
-  rsvp: [["in", "In"], ["maybe", "Maybe"], ["out", "Out"]],
+  rsvp: [["in", "I'm in"], ["maybe", "Tentative"], ["late", "Running late"], ["out", "Out"]],
 };
 function buildSignupControls() {
   for (const [q, opts] of Object.entries(Q)) {
@@ -1277,31 +1341,34 @@ function startDiscordPresence(sdk) {
   });
 }
 
+/* V13c (spec 8): the four answers in the bot's calendar words; "late" exists once the bot's states are on */
+const RSVP_KEYS = ["in", "maybe", "late", "out"];
+const RSVP_SAY = { in: "I'm in", maybe: "Tentative", late: "Running late", out: "Out" };
 /* Discord display names sometimes carry decoration ("=Name="); the board shows the name inside it. */
 const cleanName = (n) => String(n).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "") || String(n);
 /* the launch-night table: one seat per member with their crest, a tankard full when they are in, and their answer */
 /* V11: one clear way to answer: the Sign-ups card in Discord */
 function actRow() {
   const url = D.party && D.party.signup_url; if (!url) return;
-  $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "Answer in Discord"), h("p", { class: "act-how", text: "Open #wow-forever in Discord and tap I'm in, Maybe or Out on the Sign-ups card." }));
+  $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "Answer in Discord"), h("p", { class: "act-how", text: "Open #wow-forever in Discord and tap I'm in, Tentative, Running late or Out on the Sign-ups card." }));
 }
 function renderSeats(S) {
   const box = $("#dsu-seats"); if (!box) return;
   const ms = D.party.members, W = 640, step = (W - 80) / ms.length;
   const ans = (m) => (S.entries || []).find((e) => cleanName(e.name).toLowerCase() === m.name.toLowerCase()) || null;
-  const WHEN = { "6pm": "6 PM ET", "8pm": "8 PM ET", later: "later" }, SAY = { in: "in", maybe: "maybe", out: "out" };
+  const WHEN = { "6pm": "6 PM ET", "8pm": "8 PM ET", later: "later" }, SAY = RSVP_SAY;
   const svg = s("svg", { viewBox: `0 0 ${W} 236`, role: "img", "aria-label": `Launch-night table: ${ms.map((m) => { const a = ans(m); return `${m.name} ${a && a.rsvp ? SAY[a.rsvp] || a.rsvp : "no answer yet"}`; }).join(", ")}` },
     s("path", { class: "seat-table", d: `M40 78h${W - 80}q12 0 12 12v62q0 12-12 12H40q-12 0-12-12V90q0-12 12-12z` }),
     s("path", { class: "seat-plank", d: `M30 109h${W - 60}M30 134h${W - 60}` }));
   ms.forEach((m, i) => {
     const x = 40 + step * (i + 0.5), a = ans(m), state = a && a.rsvp ? a.rsvp : "none";
-    const mug = emb("tankard", `seat-mug${state === "in" ? "" : " empty"}`);
-    for (const [k, v] of Object.entries({ x: x - 15, y: 82, width: 30, height: 30 })) mug.setAttribute(k, v);
+    /* V13c: the painted pint for the answer (full, half, late with its watch, empty); no answer is a faint outline */
+    const mug = state === "none" ? s("rect", { class: "seat-mug-none", x: x - 13, y: 84, width: 26, height: 28, rx: 3 }) : s("image", { class: `seat-mug ${state}`, href: `img/pints/${state}.png`, x: x - 18, y: 78, width: 36, height: 36 });
     svg.append(s("image", { href: `img/crests/${m.class_key}.png`, x: x - 24, y: 14, width: 48, height: 48 }), mug,
       s("text", { class: "seat-name", x, y: 192, text: m.name }),
       s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : "no answer yet" }));
   });
-  box.replaceChildren(h("h4", { class: "seats-cap", text: launchLine() ? `The table on launch night: ${launchLine()}` : "The table on launch night" }), svg);
+  box.replaceChildren(h("h4", { class: "seats-cap", text: launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
 }
 function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
@@ -1318,12 +1385,12 @@ function renderDiscordSignups() {
   const groups = [
     ["Pack", "ticket", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", "pin", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
-    ["Launch night", "voice", [row(T.rsvp.in, "In"), row(T.rsvp.maybe, "Maybe"), row(T.rsvp.out, "Out")]],
+    ["Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k]))],
     ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
   body.replaceChildren(...groups.map(([title, icon, rows]) => h("div", { class: "tally" }, h("h4", {}, emb(icon), title), ...rows)));
   renderSeats(S); actRow();
-  $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${dtFull.format(new Date(S.updated))}.` : "Nobody has clicked the card yet.";
+  $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${fmtWhen(Date.parse(S.updated) / 1000, { rel: true })}.` : "Nobody has clicked the card yet.";
 }
 
 /* V11: the board opens in any browser from the web link; nobody needs Discord's Activity to read it */
@@ -1363,7 +1430,12 @@ async function startRuntime() {
 }
 
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight"];
-const TITLES = { tonight: "Next steps", timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Account bonuses", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The helper bot", library: "The library" };
+/* V13c (spec 7.1, NORTH-STAR "One vocabulary"): one name per thing; tiles, tabs, sheet titles, the bar, the menu, the key list
+   and the page title all read this table */
+const TITLES = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library" };
+const PAGE_TITLE = { base: "" };
+/* spec 7.4: the document title follows the open scene */
+function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
 /* owner-12b: the scenes where the picture is the point get the larger frame */
 const VISUAL = ["roads", "five", "buffs", "library"];
@@ -1386,6 +1458,7 @@ function selectPanel(key, crossFade) {
   const prev = SC.open; SC.open = key;
   $("#scene").dataset.kind = VISUAL.includes(key) ? "visual" : "reading"; /* owner-12b: the frame fits what it holds */
   $("#sheet-title").textContent = TITLES[key];
+  setPageTitle(key);
   $("#sheet-sub").textContent = SUBTITLE[key] || "";
   setSheetEmblem(key);
   placeOrnament(key);
@@ -1412,16 +1485,52 @@ function selectPanel(key, crossFade) {
   next.hidden = false; next.classList.remove("leaving");
   if (crossFade) { replay(next, "entering"); sfx("tab"); }
   $("#sheet-body").scrollTop = 0;
-  if (PLAY[key]) replay($(PLAY[key][0]), PLAY[key][1]);
+  fitScene();
+  /* V13c (craft 21): a scene's entrance choreography plays in full on its first open of the visit; later opens are a short fade */
+  const first = !PLAYED.has(key); PLAYED.add(key);
+  if (first) { if (PLAY[key]) replay($(PLAY[key][0]), PLAY[key][1]); if (ON_FIRST[key]) ON_FIRST[key](); }
+  else replay(next, "again");
   if (ON_OPEN[key]) ON_OPEN[key]();
   mapClock();
   const tabs = $("#tabs"), tab = $(`#tab-${key}`);
   if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
   moveInd(); markBar(key);
 }
+/* V13c (spec 2, retest-10): content scaled to its frame, never the frame shrunk. On screens of 1100 px and wider, a scene whose
+   content leaves its frame half empty is zoomed (CSS zoom on the panel: type, columns and art together) by the smaller of
+   two shares: the frame's width over the 1150 px the scenes were laid out for (at most 1.45), and the height the frame can
+   give over the height the content takes. Never below 1, so nothing gets smaller and nothing starts to scroll. The map and
+   the library measure their own SVG and lists and keep zoom 1. */
+const FIT_SKIP = ["roads", "library"];
+const FIT = {};
+const fitKey = (key) => `${key}:${innerWidth}x${innerHeight}`;
+function fitScene(want) {
+  const key = want || SC.open, p = key && $(`#panel-${key}`), body = $("#sheet-body"), sheet = $(".sheet");
+  if (!p || !body || !sheet) return;
+  const k = fitKey(key);
+  if (!want && FIT[k] !== undefined) { p.style.zoom = FIT[k]; return; }
+  const done = (z) => { if (D.party) FIT[k] = z; p.style.zoom = z; };
+  p.style.zoom = "";
+  if (FIT_SKIP.includes(key) || innerWidth < 1100 || typeof CSS === "undefined" || !CSS.supports || !CSS.supports("zoom", "1.2")) return;
+  const cs = getComputedStyle(body), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom), padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const head = $(".sheet-head").getBoundingClientRect().height, maxH = innerHeight * 0.85 - head - padY - 4;
+  /* a zoomed panel lays out in a narrower width, so its text wraps more: step the zoom down until the content fits */
+  /* at most three layouts: the natural height, a first guess, one correction (a zoom costs a layout of the whole panel) */
+  const wide = Math.min(1.45, (body.clientWidth - padX) / 1150);
+  if (wide < 1.04) { done(""); return; }
+  const tall0 = p.getBoundingClientRect().height;
+  let z = Math.min(wide, (maxH * 0.95) / Math.max(1, tall0));
+  for (let i = 0; i < 2 && z >= 1.04; i++) {
+    p.style.zoom = z.toFixed(3);
+    const tall = p.getBoundingClientRect().height;
+    if (tall <= maxH * 0.98) { done(z.toFixed(3)); return; }
+    z = z * Math.pow((maxH * 0.94) / tall, 1.6); /* narrower columns wrap more: step down harder than the ratio */
+  }
+  done("");
+}
 function moveInd() { const t = SC.open && $(`#tab-${SC.open}`), ind = $("#tab-ind"); if (t && ind) ind.style.transform = `translateX(${t.offsetLeft}px) scaleX(${Math.max(1, t.offsetWidth)})`; }
 const BAR = ["tonight", "signups", "five", "buffs"], MORE = SCENES.filter((k) => !BAR.includes(k));
-const BAR_LABEL = { five: "Five", tonight: "Next steps" };
+const BAR_LABEL = { tonight: "Next steps" };
 function markBar(key) { document.querySelectorAll("#bottombar [data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === key || (b.dataset.go === "search" && key === "library") || (b.dataset.go === "more" && MORE.includes(key))))); }
 function startBar() {
   const label = (k) => $(`#tab-${k}`).textContent.trim(), bar = $("#bottombar"), menu = $("#more-menu");
@@ -1497,7 +1606,17 @@ function countUp(box) {
   sfx("tick");
   requestAnimationFrame(step);
 }
-const ON_OPEN = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => sfx("stamp"), library: () => LIBUI.open(), timeline: () => replay($("#rail"), "pressing"), roads: () => { mapFit(); requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ }, five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
+/* V13c (craft 6): one soft stamp per seal as it lands (its press animation runs 320 ms; the seal meets the paper at 70%) */
+function ledgerStamps() {
+  const box = $("#ledger-slip") || $("#panel-ledger"); if (!box) return;
+  const seals = [...box.querySelectorAll(".label.srctag .emb")].slice(0, 6), t0 = performance.now();
+  seals.forEach((el, i) => { const di = Number(getComputedStyle(el).getPropertyValue("--di")) || i; const at = MOTION.move + di * MOTION.stagger + 0.7 * MOTION.move; sfx("stamp", { delay: at, gain: i ? 0.7 : 1 }); });
+  if (!seals.length) sfx("stamp", { delay: MOTION.move * 1.7 });
+  return t0;
+}
+const PLAYED = new Set();
+const ON_FIRST = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => ledgerStamps(), timeline: () => replay($("#rail"), "pressing"), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
+const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ } };
 /* V11: every scene has its own ornament, its emblem engraved large in the parchment's corner with its own small motion */
 const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials: "skull", legacy: "laurel", buffs: "rune", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon" };
 function placeOrnament(key) {
@@ -1583,7 +1702,7 @@ function showScene(key) {
     selectPanel(k, false);
     focusScene(k);
     sceneState(true);
-    sfx("open");
+    sfx("open", { delay: motionMs("move") * 0.7 });
   };
   const band = layer.hidden ? morphBand(key) : null;
   if (band && hasVT()) {
@@ -1603,8 +1722,9 @@ function hideScene() {
   MEM.set("depth", "wall"); markDepth();
   const layer = $("#scene"), key = SC.open, token = ++SC.token;
   SC.open = null;
-  const tile = document.querySelector(`#board [data-scene="${key}"]`);
-  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close"); unflip(); };
+  setPageTitle(null);
+  const tile = document.querySelector(`#board [data-scene="${key}"]`) || document.querySelector(`#board a[href="#${key}"]`);
+  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close", { delay: motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
     clearTimeout(SC.closeTimer); stopFlip();
@@ -1673,7 +1793,7 @@ function trapFocus(e) {
 function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
-    const rows = [...SCENES.filter((k) => k !== "tonight").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["T", "open Tonight"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
+    const rows = [...SCENES.filter((k) => k !== "tonight").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
     $("#keys-list").replaceChildren(...rows.flatMap(([k, what]) => [h("dt", {}, h("kbd", { text: k })), h("dd", { text: what })]));
   }
   box.hidden = !on;
@@ -1681,9 +1801,9 @@ function showKeys(on) {
 function onKey(e) {
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "Escape") {
-    if (glClose(true)) { e.preventDefault(); return; }
-    if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); return; }
-    if (closeMore()) { e.preventDefault(); return; }
+    if (glClose(true)) { e.preventDefault(); sfx("esc"); return; }
+    if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); sfx("esc"); return; }
+    if (closeMore()) { e.preventDefault(); sfx("esc"); return; }
     if (SC.open === "library" && LIBUI.escape()) { e.preventDefault(); return; }
     if (SC.open !== null) { e.preventDefault(); requestClose(); }
     return;
@@ -1746,18 +1866,20 @@ function startScenes() {
   startLibBar();
   startLibrary();
   let mf = 0;
-  addEventListener("resize", () => { if (SC.open) moveInd(); clearTimeout(mf); mf = setTimeout(() => { if (SC.open === "roads") mapFit(); }, 250); }, { passive: true });
+  addEventListener("resize", () => { if (SC.open) { moveInd(); clearTimeout(SC.fitT); SC.fitT = setTimeout(() => fitScene(), 200); } clearTimeout(mf); mf = setTimeout(() => { if (SC.open === "roads") mapFit(); }, 250); }, { passive: true });
 }
 
 const ICONS = {}, GLYPHS = {};
-const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 320, height: 320, decoding: "async" });
+const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 192, height: 192, decoding: "async" });
+/* V13c: tabs show a 48 px coin cut to the emblem's motif and sharpened, not the 192 px medallion shrunk to a blur */
+const tabImg = (key) => h("img", { class: "emblem-img tab-img", src: `img/icons/tab-${key}.png`, alt: "", width: 48, height: 48, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
 function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); }
 function placeIcon(key) {
   const slot = document.querySelector(`#board [data-scene="${key}"] .emblem-slot`);
   if (slot) slot.replaceChildren(iconImg(key));
   const tab = $(`#tab-${key} .tab-ico`);
-  if (tab) tab.replaceChildren(iconImg(key));
+  if (tab) tab.replaceChildren(tabImg(key));
   if (SC.open === key) setSheetEmblem(key);
 }
 function startEmblems() {
@@ -1766,7 +1888,6 @@ function startEmblems() {
     if (g) GLYPHS[key] = g.cloneNode(true);
     const tab = $(`#tab-${key} .tab-ico`);
     if (tab && GLYPHS[key]) tab.replaceChildren(GLYPHS[key].cloneNode(true));
-    if (key === "library" || key === "tonight") continue; /* no painted icon for the library yet: the drawn glyph stays, and no request 404s */
     const im = new Image();
     im.onload = () => { ICONS[key] = true; placeIcon(key); };
     im.src = `img/icons/${key}.png`;
@@ -1819,7 +1940,11 @@ const LS = { state: "off", draws: 0, why: "", n: 0 };
    sound's fire bed already reads flickAt; its crackles join in V13c). Noise, not sines: it never repeats a visible beat. */
 const flickHash = (i) => { const v = Math.sin(i * 127.1 + 311.7 * 7.31) * 43758.5453; return (v - Math.floor(v)) * 2 - 1; };
 const flickOct = (x) => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return flickHash(i) * (1 - u) + flickHash(i + 1) * u; };
-const flickAt = (s) => Math.max(-1, Math.min(1, 1.25 * (0.55 * flickOct(s * 1.9) + 0.3 * flickOct(s * 4.3 + 17) + 0.15 * flickOct(s * 9.7 + 41))));
+const flickBase = (s) => 1.25 * (0.55 * flickOct(s * 1.9) + 0.3 * flickOct(s * 4.3 + 17) + 0.15 * flickOct(s * 9.7 + 41));
+/* V13c: a fire crackle heard in the sound (js/sound.js) adds a short pop, so the light jumps with the sound it makes */
+const FLICK_POP = { t: -1, amp: 0, ms: 75 };
+const flickPop = (s) => { if (FLICK_POP.t < 0) return 0; const d = s * 1000 - FLICK_POP.t; return d < 0 || d > FLICK_POP.ms ? 0 : FLICK_POP.amp * (1 - d / FLICK_POP.ms); };
+const flickAt = (s) => Math.max(-1, Math.min(1, flickBase(s) + flickPop(s)));
 /* V13b: one light position for the whole wall (section 2). The pointer, a touch or the tilt aims it (tx, ty in viewport
    pixels; null when nobody points, and the light rests at the candle, top left). With the room on, the room's key light
    eases toward the aim and hands its eased position back (onLight above); with the room off, the cards ease toward it
@@ -2168,6 +2293,8 @@ function placeCrest(k) {
 function startArt() {
   const probe = (src, ok) => { const im = new Image(); im.onload = ok; im.src = src; };
   for (const k of new Set(D.party.members.map((m) => m.class_key).filter(Boolean))) probe(`img/crests/${k}.png`, () => { ART.crest[k] = true; placeCrest(k); });
+  probe("img/map/zeppelin.png", () => { ART.zep = true; if (MAPW.drawn) renderMap(); });
+  probe("img/map/town.png", () => { ART.town = true; if (MAPW.drawn) renderMap(); });
   probe("img/seal.png", () => { ART.seal = true; try { renderLedger(); } catch (e) { console.error(e); } });
   probe("img/beam.png", () => {
     ART.beam = true;
@@ -2176,134 +2303,59 @@ function startArt() {
   });
 }
 
-const AU = { on: false, ctx: null, live: 0, vol: 0.7, buf: {}, next: 0, crack: 0 };
+/* Sound (V13c): the mixer, the takes and the ambience are js/sound.js (window.BoardSound); this layer keeps the toggle, the
+   remembered choice, the unlock on a real gesture and the page's moments. Sound is off by default. */
+const SND = () => window.BoardSound || null;
+const AU = { on: false, vol: 0.7 };
 try { AU.on = localStorage.getItem("board-sound") === "1"; const v = localStorage.getItem("board-vol"); if (v !== null && Number(v) >= 0 && Number(v) <= 1) AU.vol = Number(v); } catch (e) {}
-function audioInit() {
-  const C = window.AudioContext || window.webkitAudioContext;
-  if (!C) return false;
-  const c = AU.ctx = new C(), R = c.sampleRate, TAU = 2 * Math.PI;
-  const n = (x) => { AU.live++; return x; };
-  const G = (v, to) => { const g = n(c.createGain()); g.gain.value = v; if (to) g.connect(to); return g; };
-  const F = (type, f, q, to) => { const x = n(c.createBiquadFilter()); x.type = type; x.frequency.value = f; x.Q.value = q; if (to) x.connect(to); return x; };
-  const O = (f, to) => { const o = n(c.createOscillator()); o.frequency.value = f; if (to) o.connect(to); o.start(); return o; };
-  const mk = (sec, ch, fn) => { const b = c.createBuffer(ch, Math.max(1, Math.round(sec * R)), R); for (let k = 0; k < ch; k++) { const d = b.getChannelData(k); for (let i = 0; i < d.length; i++) d[i] = fn(i / R, k); } return b; };
-  const wn = () => Math.random() * 2 - 1;
-  let p1 = 0, p2 = 0;
-  const noise = mk(1.5, 1, () => { const w = wn(); p1 += (w - p1) * 0.08; p2 += (p1 - p2) * 0.3; return p2 * 3 + w * 0.08; });
-  const irb = c.createBuffer(2, Math.round(1.6 * R), R);
-  [0, 1].forEach((k) => setTimeout(() => { try { const d = irb.getChannelData(k); let l = 0; for (let i = 0; i < d.length; i++) { const t = i / R, e = 1 - t / 1.6; l += (wn() - l) * (0.9 - 0.5 * t / 1.6); d[i] = l * e * e * Math.sqrt(e); } if (k) conv.buffer = irb; } catch (e) {} }, 0));
-  const knock = (t, f, d) => Math.sin(TAU * f * t) * Math.exp(-t / (d / 4));
-  const rustle = (dur, f0, f1, amp) => { let a = 0, b = 0, ka = 0, kb = 0, i = 0; return (t) => { if (!(i++ & 63)) { const f = f0 + (f1 - f0) * Math.min(1, t / dur); ka = 1 - Math.exp(-TAU * f * 1.6 / R); kb = 1 - Math.exp(-TAU * f / 1.6 / R); } const w = wn(), e = Math.sin(Math.PI * Math.min(1, t / dur)); a += (w - a) * ka; b += (w - b) * kb; return (a - b) * amp * e * e; }; };
-  const r1 = rustle(0.12, 3200, 3600, 0.9), r2 = rustle(0.07, 3800, 4200, 0.6), r3 = rustle(0.14, 1800, 5200, 0.8);
-  let hp = 0;
-  setTimeout(() => { try { AU.buf = {
-    open: mk(0.16, 1, (t) => 0.55 * knock(t, 90, 0.06) + r1(t)),
-    tab: mk(0.08, 1, r2),
-    close: mk(0.1, 1, (t) => 0.6 * knock(t, 60, 0.08)),
-    flip: mk(0.15, 1, r3),
-    stamp: mk(0.12, 1, (t) => { const w = wn(); hp += (w - hp) * 0.2; return 0.55 * knock(t, 70, 0.08) + (t < 0.04 ? (w - hp) * 0.35 * (1 - t / 0.04) : 0); }),
-    tick: mk(0.62, 1, (t) => 0.12 * Math.sin(TAU * 2400 * t) * Math.exp(-(t % 0.05) / 0.004)),
-    click: mk(0.03, 1, (t) => 0.06 * Math.sin(TAU * 3000 * t) * Math.exp(-t / 0.005)),
-  }; } catch (e) {} }, 0);
-  const m = AU.master = G(0, c.destination), conv = n(c.createConvolver());
-  conv.connect(m);
-  const amb = AU.amb = G(1, m); amb.connect(G(0.18, conv));
-  const ui = AU.ui = G(0.9, m); ui.connect(G(0.08, conv));
-  const src = n(c.createBufferSource()); src.buffer = noise; src.loop = true; src.start();
-  AU.noise = noise;
-  AU.fire = G(0.15, amb); src.connect(F("bandpass", 400, 0.9, AU.fire));
-  src.connect(F("lowpass", 120, 0.7, G(0.1, amb)));
-  for (const [f, rate] of [[480, 0.13], [650, 0.27]]) { const g = G(0.02, amb); src.connect(F("bandpass", f, 1.1, g)); O(rate, G(0.015, g.gain)); }
-  AU.wisp = G(0, amb);
-  const vib = G(5);
-  O(0.3, vib);
-  for (const f of [880, 1320, 1760]) vib.connect(O(f, AU.wisp).frequency);
-  AU.next = c.currentTime + 4; AU.crack = c.currentTime;
-  setInterval(audioTick, 100);
-  document.addEventListener("visibilitychange", () => { try { if (document.hidden) c.suspend(); else if (AU.on) c.resume(); } catch (e) {} });
-  sceneHooks.push((on) => { try { AU.amb.gain.setTargetAtTime(on ? 0.5 : 1, c.currentTime, 0.1); } catch (e) {} });
-  return true;
+/* the fire's crackle pops the shared flicker (FLICK_POP) for 60 to 90 ms: the wall light, the candles and the room's fire brighten with it */
+function sfx(name, opt) { const S = SND(); return S ? S.play(name, opt) : false; }
+/* wait: the toggle says on, the browser has not let the sound start yet (no gesture since load) */
+function soundWaiting() { const S = SND(); return AU.on && !(S && S.running()); }
+function soundLabel(on) {
+  const wait = on && soundWaiting();
+  return [s("svg", { class: "spk", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M4 9h4l5-4v14l-5-4H4z" }), on ? s("path", { d: "M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" }) : s("path", { d: "M16.5 9.5l5 5M21.5 9.5l-5 5" })), wait ? "Sound: tap to start" : on ? "Sound: on" : "Sound: off"];
 }
-function audioTick() {
-  const c = AU.ctx;
-  if (!AU.on || !c || c.state !== "running") return;
-  try {
-    const now = c.currentTime, s = performance.now() / 1000;
-    const base = 0.15 * (1 + 0.1 * (LS.state === "lit" ? LS.n : flickAt(s)));
-    AU.fire.gain.setTargetAtTime(base, now, 0.08);
-    if (AU.crack < now + 0.1) { const t = Math.max(now, AU.crack); AU.fire.gain.setTargetAtTime(base + 0.25 + 0.35 * Math.random(), t, 0.004); AU.fire.gain.setTargetAtTime(base, t + 0.02 + 0.03 * Math.random(), 0.03); AU.crack = t + 0.15 + Math.random() * 0.55; }
-    AU.wisp.gain.setTargetAtTime(0.012 * Math.min(1, WS.near / 6), now, 0.6);
-    if (AU.next < now + 0.1) {
-      const t = Math.max(now, AU.next), env = c.createGain(), pan = c.createStereoPanner ? c.createStereoPanner() : c.createGain();
-      let a, b;
-      if (pan.pan) pan.pan.value = (Math.random() < 0.5 ? -1 : 1) * (0.3 + 0.5 * Math.random());
-      env.connect(pan); pan.connect(AU.amb);
-      env.gain.setValueAtTime(0.0001, t);
-      if (Math.random() < 0.6) {
-        const f = 1200 + Math.random() * 1200;
-        a = c.createOscillator(); a.frequency.value = f; b = c.createBiquadFilter(); b.type = "bandpass"; b.frequency.value = f; b.Q.value = 30;
-        env.gain.exponentialRampToValueAtTime(0.06, t + 0.004); env.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-      } else {
-        a = c.createBufferSource(); a.buffer = AU.noise; b = c.createBiquadFilter(); b.type = "lowpass"; b.frequency.value = 180;
-        env.gain.exponentialRampToValueAtTime(0.2, t + 0.01); env.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-      }
-      a.connect(b); b.connect(env);
-      AU.live += 4; a.onended = () => { AU.live -= 4; try { pan.disconnect(); } catch (e) {} };
-      a.start(t); a.stop(t + 0.25);
-      AU.next = t + 6 + Math.random() * 9;
-    }
-  } catch (e) {}
-}
-function sfx(name) {
-  const c = AU.ctx;
-  if (!AU.on || !c || c.state !== "running" || document.hidden || !AU.buf[name]) return;
-  try { const b = c.createBufferSource(); b.buffer = AU.buf[name]; b.playbackRate.value = 0.96 + Math.random() * 0.08; b.connect(AU.ui); AU.live++; b.onended = () => { AU.live--; }; b.start(); } catch (e) {}
-}
+function soundButtons() { document.querySelectorAll("#sound, #bottombar [data-go=\"sound\"], #more-menu [data-go=\"sound\"]").forEach((b) => { b.setAttribute("aria-pressed", String(AU.on)); if (b.id === "sound") b.replaceChildren(...soundLabel(AU.on)); else b.textContent = AU.on ? (soundWaiting() ? "Sound: tap to start" : "Sound: on") : "Sound: off"; }); }
 function setSound(on) {
   AU.on = on;
   try { localStorage.setItem("board-sound", on ? "1" : "0"); } catch (e) {}
-  document.querySelectorAll("#sound, #bottombar [data-go=\"sound\"], #more-menu [data-go=\"sound\"]").forEach((b) => { b.setAttribute("aria-pressed", String(on)); b.replaceChildren(...soundLabel(on)); });
-  try {
-    if (on && !AU.ctx) { let ok = false; try { ok = audioInit(); } catch (e) { try { AU.ctx.close(); } catch (x) {} AU.ctx = null; } if (!ok) return setSound(false); }
-    if (!AU.ctx) return;
-    const c = AU.ctx, g = AU.master.gain, t = c.currentTime;
-    clearTimeout(AU.sus);
-    if (on) c.resume();
-    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(on ? AU.vol * 0.6 : 0, t + (on ? 1.2 : 0.6));
-    if (!on) AU.sus = setTimeout(() => { try { if (!AU.on) c.suspend(); } catch (e) {} }, 700);
-  } catch (e) {}
+  const S = SND();
+  if (S) { S.setVol(AU.vol); if (!S.setOn(on)) AU.on = false; if (AU.on) { S.setFlick(flickAt); S.onCrackle(() => { if (!reduceMQ.matches) { FLICK_POP.t = performance.now(); FLICK_POP.amp = 0.35 + Math.random() * 0.3; } }); S.setScene(SC.open !== null); } }
+  else AU.on = false;
+  soundButtons();
+  setTimeout(() => { soundButtons(); roomCues(); }, 300);
 }
-/* "Sound: off" / "Sound: on" with a speaker glyph, so the button says what it does. */
-function soundLabel(on) { return [s("svg", { class: "spk", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M4 9h4l5-4v14l-5-4H4z" }), on ? s("path", { d: "M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" }) : s("path", { d: "M16.5 9.5l5 5M21.5 9.5l-5 5" })), on ? "Sound: on" : "Sound: off"]; }
 function startSound() {
   const btn = $("#sound"), vol = $("#vol"), box = $("#sound-box");
   if (!btn) return;
-  btn.setAttribute("aria-pressed", String(AU.on));
-  btn.replaceChildren(...soundLabel(AU.on));
+  soundButtons();
   vol.value = String(Math.round(AU.vol * 100));
   let press = 0, held = false;
   btn.addEventListener("pointerdown", () => { held = false; press = setTimeout(() => { held = true; box.classList.add("show"); }, 500); });
   btn.addEventListener("pointerup", () => clearTimeout(press));
-  btn.addEventListener("click", () => { if (held) { held = false; return; } setSound(!AU.on); });
-  vol.addEventListener("input", () => {
-    AU.vol = Number(vol.value) / 100;
-    try { localStorage.setItem("board-vol", String(AU.vol)); } catch (e) {}
-    try { if (AU.on && AU.ctx) AU.master.gain.setTargetAtTime(AU.vol * 0.6, AU.ctx.currentTime, 0.05); } catch (e) {}
-  });
-  const first = () => { for (const t of ["click", "touchend", "keydown"]) removeEventListener(t, first, true); if (AU.on && !AU.ctx) setSound(true); };
-  if (AU.on) for (const t of ["click", "touchend", "keydown"]) addEventListener(t, first, true); /* V13b: a touch's pointerdown is no user activation; click and touchend are */
+  btn.addEventListener("click", () => { if (held) { held = false; return; } setSound(soundWaiting() ? true : !AU.on); });
+  vol.addEventListener("input", () => { AU.vol = Number(vol.value) / 100; try { localStorage.setItem("board-vol", String(AU.vol)); } catch (e) {} const S = SND(); if (S) S.setVol(AU.vol); });
+  /* V13c (phone-deep 2.1): a click, a touch end or a key starts a remembered sound, and resumes a context the browser left
+     suspended (a phone call, a locked screen) on every such gesture; while it runs a gesture costs one check */
+  const gesture = () => { if (!AU.on) return; const S = SND(); if (!S || S.running()) return; if (S.status().state === "none") setSound(true); else S.gesture(); setTimeout(soundButtons, 60); };
+  for (const t of ["click", "touchend", "keydown"]) addEventListener(t, gesture, true);
+  sceneHooks.push((on) => { const S = SND(); if (S && AU.on) S.setScene(on); });
+  /* V13c (craft 27): a touch for every touch. Name chips (a wooden token), toggles (a latch), every details expander (paper),
+     the map's roads (a pin), the library's search (a quill), the More menu, copy buttons; one listener for the page */
+  document.addEventListener("toggle", (e) => { if (e.target && e.target.tagName === "DETAILS" && e.target.closest("#scene")) sfx("paper", { gain: e.target.open ? 1 : 0.7 }); }, true);
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest && e.target.closest("button, a"); if (!t || !AU.on) return;
+    if (t.matches(".tn-name, .deep-who .lib-tool, #tn-change, #deep-change")) sfx("chip");
+    else if (t.matches("#view-wheel, #view-list, #lib-expert, .toggle button, .deep-marks button, .tilt")) sfx("latch");
+    else if (t.matches(".road-btn, .map-pin, [data-road]")) sfx("pin");
+    else if (t.matches('[data-go="more"]')) sfx("menu");
+    else if (t.matches(".copy, .lib-copy")) sfx("copy");
+  }, true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target && (e.target.id === "lib-q" || e.target.id === "tile-q")) sfx("quill"); }, true);
+  document.addEventListener("submit", () => sfx("quill"), true);
 }
-function audioStatus() {
-  const c = AU.ctx;
-  return { on: AU.on, state: c ? c.state : "none", live: AU.live, master: AU.master ? +AU.master.gain.value.toFixed(3) : 0, ambience: AU.amb ? +AU.amb.gain.value.toFixed(3) : 0, volume: AU.vol,
-    measure: (ms = 500) => new Promise((done) => {
-      if (!c || !AU.master) return done(null);
-      const an = c.createAnalyser(), d = new Float32Array(2048); let peak = 0, sum = 0, k = 0;
-      AU.master.connect(an);
-      const iv = setInterval(() => { an.getFloatTimeDomainData(d); for (const v of d) { peak = Math.max(peak, Math.abs(v)); sum += v * v; k++; } }, 50);
-      setTimeout(() => { clearInterval(iv); an.disconnect(); const rms = Math.sqrt(sum / Math.max(1, k)); done({ rmsDb: +(20 * Math.log10(rms || 1e-9)).toFixed(1), peakDb: +(20 * Math.log10(peak || 1e-9)).toFixed(1) }); }, ms);
-    }) };
-}
+function audioStatus() { const S = SND(); const st = S ? S.status() : { on: false, state: "none" }; return { ...st, on: AU.on, volume: AU.vol, measure: (ms) => (S ? S.measure(ms) : Promise.resolve(null)) }; }
 
 /* The library (V4-SPEC 3.3): index.json prefetched when the wall is idle, everything else once the scene opens. Search runs
    in vendor/library-worker.js (the wiki's own ranker, vendor/rank-core.js); without a worker the same ranker runs here. */
@@ -2760,7 +2812,7 @@ async function libRenderPage(v, tok, fresh) {
   main.replaceChildren(back, page);
   MEM.seen(`page:${v.id}`);
   try { MEM.set("left", JSON.stringify({ tok: libTok(v), title: p.title })); } catch (e) {}
-  if (fresh) { sfx("flip"); if (!reduceMQ.matches) { page.classList.add("revealing"); setTimeout(() => page.classList.remove("revealing"), MOTION.move + MOTION.stagger * 15); } }
+  if (fresh) { sfx("page"); if (!reduceMQ.matches) { page.classList.add("revealing"); setTimeout(() => page.classList.remove("revealing"), MOTION.move + MOTION.stagger * 15); } }
   const body = $("#sheet-body");
   const row = v.fact && page.querySelector(`.lf[data-key="${v.fact.replace(/[^a-z0-9_.]/g, "")}"]`);
   if (row) { row.classList.add("lit"); const v = row.querySelector(".lf-v.clamp3"); if (v) { v.classList.remove("clamp3"); const b = row.querySelector(".lf-more"); if (b) { b.textContent = "less"; b.setAttribute("aria-expanded", "true"); } } row.scrollIntoView({ block: "center", behavior: "auto" }); }
@@ -2926,7 +2978,7 @@ function ttShow(trig, pinned, idx) {
   trig.setAttribute("aria-expanded", "true");
   ttPlace(card, trig);
   card.classList.remove("flipin"); void card.offsetWidth; card.classList.add("flipin");
-  if (pinned) sfx("tab");
+  if (pinned) sfx("card");
 }
 function ttClose(now) {
   const card = $("#ttc");
@@ -3124,6 +3176,8 @@ function yourTime(T) {
   const mine = f(), et = f("America/New_York");
   return mine === et ? "" : ` (${mine} your time)`;
 }
+/* V13c: "Launch: Wed, Nov 4, 6 PM ET, in 7 days" in the viewer's zone, from the launch event's epoch */
+function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `Launch: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
   const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
@@ -3149,16 +3203,16 @@ function renderTonight() {
   if (!steps.length) steps.push([pollOpen && T.steps.poll ? T.steps.poll : T.steps.none, pollOpen ? L.poll : null]);
   const ext = (href) => href && /^https?:/.test(href);
   /* V12: the vote step carries its deadline in the viewer's own time */
-  const stepEl = ([t0, href]) => { const t = t0 === T.steps.poll && T.poll_closes ? `${t0.replace(/\.$/, "")}, by ${whenLocal(T.poll_closes)}.` : t0; return stepLi(t, href); };
+  const stepEl = ([t0, href]) => { const t = t0 === T.steps.poll && T.poll_closes ? `${t0.replace(/\.$/, "")}, by ${fmtWhen(T.poll_closes)}.` : t0; return stepLi(t, href); };
   const stepLi = (t, href) => h("li", { class: "tn-big" }, href ? h("a", { class: "tn-link", href, ...(ext(href) ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `${t} Opens Discord.` } : {}) }, ext(href) ? emb("speech") : null, t) : t);
   const who = (k) => entries.filter((e) => e.rsvp === k && e !== mine).map((e) => cleanName(e.name));
   const line = (label, names) => h("p", { class: "tn-line" }, h("b", { text: `${label}: ` }), ...names.flatMap((n, i) => [i ? ", " : null, h("span", { class: "tn-n", text: n })]).filter(Boolean));
-  const groups = [["in", T.labels.in], ["maybe", T.labels.maybe], ["out", T.labels.out]].map(([k, l]) => [l, who(k)]).filter(([, n]) => n.length);
+  const groups = RSVP_KEYS.map((k) => [T.labels[k] || RSVP_SAY[k], who(k)]).filter(([, n]) => n.length);
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
   box.replaceChildren(...[
     card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl))),
-    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
-    card(T.cards[2], meetP(), mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
+    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
+    card(T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
   /* V9: with a name, one tap from Tonight to what the others give you at a level (outside the three cards, so their budget holds) */
   const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
@@ -3191,7 +3245,8 @@ function whenOffTonight(f) { if (SC.open !== "tonight" && SC.want !== "tonight")
    inert, one scene per idle moment, and put back the moment anything else asks for the scene layer. Scenes that are open
    (Tonight at a first visit) warm the others as an absolute, invisible panel inside the open sheet. */
 const WARM = { queue: null, step: null, done: false, ms: 0, scenes: 0 };
-const WARM_IMAGES = ["img/parchment-tile.jpg", "img/board-wall.jpg", "img/map-parchment.jpg"];
+/* V13c: the baked paper is the sheet's paper now; the buff emblems and pints are decoded ahead too */
+const WARM_IMAGES = ["img/paper-baked.jpg", "img/parchment-tile.jpg", "img/board-wall.jpg", "img/map-parchment.jpg", "img/map/zeppelin.png", "img/map/town.png", ...["in", "maybe", "late", "out"].map((k) => `img/pints/${k}.png`), ...["allstats", "armor", "attackpower", "healing", "intellect", "mana", "resistance", "spirit", "stamina", "thorns"].map((k) => `img/buffs/${k}.png`)];
 /* the scene layer is wanted for real: the warm-up steps aside at once, and comes back to the scene it lost later */
 function warmStop() {
   WARM.calm = performance.now() + MOTION.move + 300; /* a scene moving in or out is left alone */
@@ -3222,13 +3277,15 @@ function warmNext() {
   const panel = $(`#panel-${key}`); if (!panel) { warmLater(); return; }
   const t0 = performance.now();
   const step = { key, panel, layer: SC.open === null, raf: 0, timer: 0 };
-  if (step.layer) { L.inert = true; L.classList.add("warming"); L.hidden = false; }
+  /* V13c: the warm-up draws a scene in the frame it will open in (reading or visual), so its first raster at that size is
+     done while idle */
+  if (step.layer) { L.inert = true; L.classList.add("warming"); L.dataset.kind = VISUAL.includes(key) ? "visual" : "reading"; L.hidden = false; }
   if (!WARM.fx) { WARM.fx = true; step.fx = h("div", { class: "warm-fx", "aria-hidden": "true" }); L.append(step.fx); }
   panel.classList.add("warm"); panel.hidden = false;
   WARM.step = step;
   /* three frames: the commit, the raster, the draw; then the panel goes back */
   /* V13b: the Roads map is drawn again once at its real width while it warms, so its first opening never redraws it */
-  let n = 0; const tick = () => { if (WARM.step !== step) return; if (n === 0 && key === "roads") { try { mapFit(); } catch (e) {} } if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
+  let n = 0; const tick = () => { if (WARM.step !== step) return; if (n === 0 && key === "roads") { try { mapFit(); } catch (e) {} } if (n === 1 && step.layer && !FIT_SKIP.includes(key)) { try { fitScene(key); } catch (e) {} } if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
   step.raf = requestAnimationFrame(tick);
 }
 function warmLater() { if (WARM.done) return; (window.requestIdleCallback || ((f) => setTimeout(f, 200)))(warmNext, { timeout: 1500 }); }
@@ -3297,5 +3354,5 @@ async function boot(mode, sdk) {
 }
 startWisps();
 let started = false;
-window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS, aim: { tx: LB.tx, ty: LB.ty, x: Math.round(LB.x), y: Math.round(LB.y), tilt: LB.tilt, frames: LB.frames, running: LB.running } }, wisps: { ...WS }, scene: SC.open, warm: { scenes: WARM.scenes, ms: Math.round(WARM.ms), done: WARM.done }, map: { running: !!(MC.raf || MC.timer), t: Math.round(MC.t), untangled: MC.untangled || 0, moved: MC.moved || 0 }, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });
+window.__board = Object.freeze({ fmt: { when: fmtWhen, rel: relWhen, rsvp: RSVP_SAY }, start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS, aim: { tx: LB.tx, ty: LB.ty, x: Math.round(LB.x), y: Math.round(LB.y), tilt: LB.tilt, frames: LB.frames, running: LB.running } }, wisps: { ...WS }, scene: SC.open, warm: { scenes: WARM.scenes, ms: Math.round(WARM.ms), done: WARM.done }, map: { running: !!(MC.raf || MC.timer), t: Math.round(MC.t), untangled: MC.untangled || 0, moved: MC.moved || 0 }, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });
 })();

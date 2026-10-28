@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-28T10:37:28.099Z",
+ "generated": "2026-10-28T11:28:36.407Z",
  "cards": [
   "Next up",
   "Your steps",
@@ -7,8 +7,9 @@
  ],
  "labels": {
   "you": "You",
-  "in": "Coming",
-  "maybe": "Maybe",
+  "in": "I'm in",
+  "maybe": "Tentative",
+  "late": "Running late",
   "out": "Out",
   "nobody": "Nobody yet",
   "iam": "I am",
@@ -37,7 +38,7 @@
    "when": "October 27, 4 PM ET",
    "meaning": "Pack owners make characters.",
    "until_epoch": 1793779200,
-   "open_when": "Open now, until November 3"
+   "open_when": "Open now, until the end of Nov 3, Pacific time"
   },
   {
    "key": "launch",
