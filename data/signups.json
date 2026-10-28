@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-28T23:29:37.067Z",
+ "generated": "2026-10-28T23:30:57.369Z",
  "present": true,
- "updated": "2026-10-28T23:29:16.887Z",
+ "updated": "2026-10-28T23:29:56.017Z",
  "options": {
   "meet": [
    "Valley of Strength",
@@ -17,10 +17,10 @@
   {
    "name": "=Bloise=",
    "pack": "no",
-   "meet": "the Orgrimmar bank (test)",
+   "meet": null,
    "rsvp": "in",
    "when": "8pm",
-   "updated": "2026-10-28T23:29:16.887Z"
+   "updated": "2026-10-28T23:29:56.017Z"
   },
   {
    "name": "Handsome Squidward",
@@ -62,16 +62,9 @@
     "names": []
    },
    "other": {
-    "count": 1,
-    "names": [
-     "=Bloise="
-    ],
-    "places": [
-     {
-      "name": "=Bloise=",
-      "place": "the Orgrimmar bank (test)"
-     }
-    ]
+    "count": 0,
+    "names": [],
+    "places": []
    }
   },
   "rsvp": {
