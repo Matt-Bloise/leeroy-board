@@ -4,7 +4,7 @@
 // still lights, 30 fps. high: flickering lights, GPU dust and embers, every display refresh (V13a). ultra: high at full pixel ratio with more dust;
 // on three.js (V10) every 3D tier has soft shadows drawn once; ultra gets the sharper shadow maps. auto never picks ultra.
 //   import("./room/tier.js").then((m) => m.startTier(host))
-//   host: { state, motion, launchEpoch, newSignup, select, moreButton }   state is the object window.__board.room() reads
+//   host: { state, motion, launchEpoch, newSignup, select, moreButton, aim, signal, onLight, tiltOn }   state is the object window.__board.room() reads
 export const ORDER = ["off", "low", "medium", "high", "ultra"];
 export const BUDGET = { medium: 33.3, high: 16.7, ultra: 16.7 };
 /* V13a: how long a scene change or a resize (QUIET) and an input (INPUT_QUIET) keep the judges from counting frames */
@@ -77,7 +77,10 @@ export async function startTier(host) {
   const hush = (ms = QUIET) => { quietUntil = Math.max(quietUntil, performance.now() + ms); };
   const quiet = () => performance.now() < quietUntil;
   let sceneWas = html().classList.contains("scene-open");
-  new MutationObserver(() => { const o = html().classList.contains("scene-open"); if (o !== sceneWas) { sceneWas = o; hush(); } }).observe(html(), { attributes: true, attributeFilter: ["class"] });
+  /* V13b (phone-deep T1): a phone's first scene opening and closing are the slowest frames it draws; they never count, and
+     the quiet after a phone's scene change is twice as long */
+  const coarse = matchMedia("(pointer: coarse)").matches;
+  new MutationObserver(() => { const o = html().classList.contains("scene-open"); if (o !== sceneWas) { sceneWas = o; hush(coarse ? QUIET * 2 : QUIET); } }).observe(html(), { attributes: true, attributeFilter: ["class"] });
   for (const t of ["keydown", "pointerdown", "wheel", "touchstart", "resize"]) addEventListener(t, () => hush(INPUT_QUIET), { passive: true, capture: true });
   addEventListener("scroll", () => hush(INPUT_QUIET), { passive: true, capture: true });
   /* low keeps V6's 2D light and wisps; on a machine that cannot hold them (a software GPU) the same judge demotes to off:
@@ -97,7 +100,8 @@ export async function startTier(host) {
       if (now - w0 >= 2000) {
         const v = p95(d); S.lowP95 = +v.toFixed(1); S.lowWindows = (S.lowWindows || 0) + 1;
         slowWins = v > 50 ? slowWins + 1 : 0; clean = v > 50 ? 0 : clean + 1;
-        if (slowWins >= 2) { slowWins = 0; slow(`frame p95 ${v.toFixed(1)} ms over 50 ms in two quiet 2 s windows`); if (S.tier !== "low") return; }
+        /* V13b: a phone needs three slow quiet windows in a row, and a viewer who switched the tilt on keeps the light */
+        if (slowWins >= (coarse ? 3 : 2) && !(host.tiltOn && host.tiltOn())) { slowWins = 0; slow(`frame p95 ${v.toFixed(1)} ms over 50 ms in ${coarse ? "three" : "two"} quiet 2 s windows`); if (S.tier !== "low") return; }
         if (clean >= LOW_CLEAN) return; /* this machine holds the low tier: the watch ends */
         if (!slowWins) { later(); return; }
         d = []; w0 = now;
@@ -130,8 +134,8 @@ export async function startTier(host) {
     const anchor = document.querySelector(".hero-art");
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(canvas, anchor); else document.body.prepend(canvas);
     try {
-      const { startRoom } = await import("./room.js?v=fbb816eec2");
-      room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });
+      const { startRoom } = await import("./room.js?v=b0dafa48d2");
+      room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, aim: host.aim, signal: host.signal, onLight: host.onLight, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });
       setClasses(S.tier);
       S.renderer = room.info.renderer; S.software = room.info.software;
     } catch (e) { stopRoom(); S.tier = "low"; S.why = `room did not start: ${e.message}`; setClasses("low"); }

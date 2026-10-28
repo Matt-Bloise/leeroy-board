@@ -74,10 +74,14 @@ const RS = { tier: "low", why: "not started" };
 function startRoomLadder() {
   const launch = D.timeline && D.timeline.events.find((e) => e.key === "launch");
   const seen = MEM.seenMap(), S = D.signups;
-  const host = { state: RS, motion: MOTION, launchEpoch: launch ? launch.epoch : null, newSignup: !!(S && S.updated && seen.signups && Date.parse(S.updated) > seen.signups), select: $("#room-pick"), moreButton: $("#more-room") };
-  import("../room/tier.js?v=7d776d61a8").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  const host = { state: RS, motion: MOTION, launchEpoch: launch ? launch.epoch : null, newSignup: !!(S && S.updated && seen.signups && Date.parse(S.updated) > seen.signups), select: $("#room-pick"), moreButton: $("#more-room"),
+    /* V13b: the room's key light and the page's card highlights are one light (LB); the room reads the aim and the shared
+       flicker, and hands its eased key light position back */
+    aim: () => LB, signal: flickAt, tiltOn: () => LB.tilt,
+    onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
+  import("../room/tier.js?v=43d21c1deb").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
 }
-const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)" });
+const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, close: 200, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
@@ -297,7 +301,7 @@ function renderTiles() {
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), ` ${ms.length}`])),
     h("span", { class: "tile-line", text: `All ${zones.length === 3 ? "three" : zones.length} end in Orgrimmar.` }),
-    h("span", { class: "tile-viz" }, miniRoads(zones)), h("span", { class: "viz-cap", text: "Where each of the five starts" }));
+    h("span", { class: "tile-viz roads-viz" }, miniRoads()), h("span", { class: "viz-cap", text: "Where each of the five starts" }));
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
@@ -365,7 +369,7 @@ function dotPanel(root) {
   if (!root || !G.length || typeof document.createTreeWalker !== "function") return;
   if (!GL.re) { const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); GL.re = new RegExp(`(?<![A-Za-z0-9'])(${G.flatMap((g) => g.forms).sort((a, b) => b.length - a.length).map(esc).join("|")})(?![A-Za-z0-9'])`, "gi"); }
   const have = new Set([...root.querySelectorAll(".gl[data-term]")].map((b) => b.dataset.term));
-  const skip = "a, button, label, input, select, textarea, summary, svg, h1, h2, h3, h4, .gl, .tt, .ttc, [aria-hidden=\"true\"], .lib, .tn-pick, .tn-chip";
+  const skip = "a, button, label, input, select, textarea, summary, svg, h1, h2, h3, h4, .gl, .tt, .ttc, [aria-hidden=\"true\"], .lib, .tn-pick, .tn-chip, .tilt-note";
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), todo = [];
   /* text a reader cannot see yet (a shut details) waits until it opens, so the first dot is always on screen */
   for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.parentElement && !n.parentElement.closest(skip) && !n.parentElement.closest("details:not([open]), [inert]")) todo.push(n);
@@ -422,16 +426,28 @@ function kegRow(states) {
   });
   return svg;
 }
-function miniRoads(zones) {
-  const svg = s("svg", { viewBox: "0 0 600 400", "aria-hidden": "true", preserveAspectRatio: "xMidYMid meet" });
-  const [ox, oy] = [470, 122];
-  for (const [z, ms] of zones) {
-    const Z = ZONES[z];
-    svg.append(s("line", { class: "viz-thin", x1: Z.x, y1: Z.y, x2: ox, y2: oy, stroke: classVar(ms[0].class_key), "stroke-width": 4, "stroke-dasharray": "4 10" }));
-    ms.forEach((m, i) => svg.append(s("image", { href: `img/crests/${m.class_key}.png`, x: Z.x + (i - (ms.length - 1) / 2) * 62 - 36, y: Z.y - 36, width: 72, height: 72 })));
-  }
-  const gate = emb("dungeons", "viz-gate"); for (const [k, v] of Object.entries({ x: ox - 26, y: oy - 26, width: 52, height: 52 })) gate.setAttribute(k, v);
+/* V13b (spec 1.4): the wall's Three roads tile is a miniature of the Roads map itself: the same land, the same three roads
+   and the zeppelin's line, Orgrimmar, and a pin with a crest for each of the five where they wake up. It is drawn from the
+   same ZONES and ROADS as the scene's map, so the two never disagree; it holds still (the map moves in its scene). */
+function miniRoads() {
+  const svg = s("svg", { class: "mini-map", viewBox: "0 -10 600 420", "aria-hidden": "true", preserveAspectRatio: "xMidYMid meet" });
+  svg.append(
+    s("path", { class: "mm-land", d: "M0 30 C40 20 120 30 170 60 C190 110 160 170 110 190 C60 200 20 180 0 170 Z" }),
+    s("path", { class: "mm-land", d: "M330 40 C400 30 470 50 540 80 C580 120 570 200 560 260 C540 320 470 360 390 380 C300 395 210 380 180 330 C170 280 220 230 260 200 C300 160 300 90 330 40 Z" }),
+    ...ROADS.map((r) => s("path", { class: r.cls === "map-air" ? "mm-air" : "mm-road", d: r.d })), zeppelin(null));
+  const gate = emb("dungeons", "viz-gate"); for (const [k, v] of Object.entries({ x: 444, y: 96, width: 52, height: 52 })) gate.setAttribute(k, v);
   svg.append(gate);
+  const byZone = {};
+  for (const m of D.party.members) (byZone[m.start_zone] ||= []).push(m);
+  for (const [zone, ms] of Object.entries(byZone)) {
+    const z = ZONES[zone]; if (!z) continue;
+    ms.forEach((m, i) => {
+      const tx = z.x + (i - (ms.length - 1) / 2) * 60, ty = z.y + 20;
+      svg.append(s("g", { class: "mm-pin", transform: `translate(${tx} ${ty}) scale(1.7)`, style: `--cc: ${classVar(m.class_key)}` },
+        s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
+        s("image", { href: `img/crests/${m.class_key}.png`, x: -13, y: -39, width: 26, height: 26 })));
+    });
+  }
   return svg;
 }
 function miniRing(L) {
@@ -523,6 +539,42 @@ const ROADS = [
   { key: "durotar", zone: "Durotar", cls: "map-road", d: "M508 238 C 520 210, 512 170, 478 130", how: "the Durotar road" },
 ];
 /* SMIL on the map pauses while the page is hidden; the map redraws when the phone type ramp switches */
+/* V13b: the map's drawn width, to size its labels in screen pixels; a hidden scene has none yet, so it is estimated from the
+   sheet's width rule (the Roads scene measures the real one when it opens, mapFit) */
+const MAPW = { drawn: 0 };
+function mapWidth() {
+  const b = $("#map"), w = b && b.clientWidth;
+  if (w > 40) return Math.max(200, w - 20);
+  const sheet = innerWidth < 600 || innerHeight <= 500 ? innerWidth * 0.94 : innerWidth * 0.85;
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16, side = innerWidth >= 1300 && innerWidth / innerHeight >= 4 / 3;
+  const H = innerHeight * 0.85, tall = side ? (H - 300 - 3 * rem + 20) * 1.5 : innerWidth >= 1300 ? (H - 470 - 6 * rem + 20) * 1.5 : 960;
+  return Math.max(200, Math.min(side ? tall : Math.max(960, tall), sheet - 36 - (side ? 26 * rem + 28 : 0)) - 20);
+}
+/* V13b (owner-8): the layout above works from estimated text widths; once the map is on screen its place names are
+   measured for real, and any that touch a plate, a pin or another name step to the nearest clear spot (plates and pins
+   never move) */
+function mapUntangle() {
+  /* in map units, from the drawing's own attributes and getBBox, so the pins' and plates' drop-in motion never skews it */
+  const sv = $("#map svg"); if (!sv) return;
+  MC.untangled = (MC.untangled || 0) + 1;
+  const pad = 1.5, num = (e, a) => Number(e.getAttribute(a)) || 0;
+  const hits = (a, b) => a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
+  const fixed = [...sv.querySelectorAll(".banner-cloth")].map((r) => ({ x: num(r, "x"), y: num(r, "y"), w: num(r, "width"), h: num(r, "height") }));
+  for (const p of sv.querySelectorAll(".map-pin")) { const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(p.getAttribute("transform") || ""); if (m) fixed.push({ x: +m[1] - 15, y: +m[2] - 42, w: 30, h: 42 }); }
+  for (const e of sv.querySelectorAll(".map-mark")) fixed.push({ x: num(e, "x"), y: num(e, "y"), w: num(e, "width"), h: num(e, "height") });
+  const placed = [];
+  for (const t of sv.querySelectorAll(".map-text")) {
+    let r; try { const b = t.getBBox(); r = { x: b.x, y: b.y, w: b.width, h: b.height }; } catch (e) { continue; }
+    if (!r.w) continue;
+    const ok = (b) => b.x >= 2 && b.y >= 2 && b.x + b.w <= 598 && b.y + b.h <= 398 && !fixed.some((o) => hits(b, o)) && !placed.some((o) => hits(b, o));
+    let best = ok(r) ? [0, 0] : null;
+    /* the nearest clear spot anywhere on the map (a scan in 3-unit steps; a few thousand box tests, once per opening) */
+    if (!best) { let d0 = Infinity; for (let y = 2; y + r.h <= 398; y += 3) for (let x = 2; x + r.w <= 598; x += 3) { const d = (x - r.x) ** 2 + (y - r.y) ** 2; if (d < d0 && ok({ ...r, x, y })) { d0 = d; best = [x - r.x, y - r.y]; } } }
+    if (best && (best[0] || best[1])) { MC.moved = (MC.moved || 0) + 1; t.setAttribute("x", (num(t, "x") + best[0]).toFixed(1)); t.setAttribute("y", (num(t, "y") + best[1]).toFixed(1)); }
+    placed.push(best ? { ...r, x: r.x + best[0], y: r.y + best[1] } : r);
+  }
+}
+function mapFit() { if (!D.party || !MAPW.drawn) return; const w = mapWidth(); if (Math.abs(w - MAPW.drawn) / MAPW.drawn > 0.16) renderMap(); }
 /* a banner whose name runs longer than its cloth (a wide display name) is squeezed to fit, never clipped */
 function fitBanners() { document.querySelectorAll("#map .banner-text").forEach((t) => { const max = Number(t.dataset.fit); t.querySelectorAll("tspan").forEach((l) => { try { if (l.getComputedTextLength() > max) { l.setAttribute("textLength", max); l.setAttribute("lengthAdjust", "spacingAndGlyphs"); } } catch (e) {} }); }); }
 let mapVis = false;
@@ -558,6 +610,25 @@ function mapStep(now) {
   try { svg.setCurrentTime(MC.t / 1000); } catch (e) {}
   MC.timer = setTimeout(() => { MC.timer = 0; MC.raf = requestAnimationFrame(mapStep); }, Math.max(0, 1000 / MAP_FPS - 8));
 }
+/* an eight-point compass star, centre (x, y), long and short radii */
+function STAR8(x, y, r1, r2) { let d = ""; for (let i = 0; i < 16; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 8, r = i % 2 ? r2 : i % 4 ? r1 * 0.7 : r1; d += `${i ? "L" : "M"}${(x + Math.cos(a) * r).toFixed(1)} ${(y + Math.sin(a) * r).toFixed(1)}`; } return `${d}Z`; }
+/* V13b (owner-10): the Undercity zeppelin, drawn in the map's painted style: a ribbed hull with light catching its top,
+   fins, a gondola on ropes, a Horde pennant, and a soft shadow cast on the map below it. am drifts it along its route;
+   without one (reduced motion) it holds still at the top of the route. */
+function zeppelin(am) {
+  const g = s("g", { class: "map-zep-g", ...(am ? {} : { transform: "translate(292 52)" }) },
+    s("ellipse", { class: "zep-shadow", cx: 3, cy: 20, rx: 17, ry: 4.2 }),
+    s("path", { class: "zep-fin", d: "M-14 -1l-8-7h5l6 4zM-14 1l-8 7h5l6-4z" }),
+    s("ellipse", { class: "zep-hull", rx: 17, ry: 7 }),
+    s("path", { class: "zep-rib", d: "M-9 -6.2c1.4 4 1.4 8.4 0 12.4M0 -7c1.6 4.6 1.6 9.4 0 14M9 -6.2c1.4 4 1.4 8.4 0 12.4" }),
+    s("path", { class: "zep-shine", d: "M-12 -3.6C-6 -6.4 6 -6.4 12 -3.6" }),
+    s("path", { class: "zep-rope", d: "M-4 6.4l-1.2 2.4M4 6.4l1.2 2.4" }),
+    s("rect", { class: "zep-gondola", x: -6, y: 8.6, width: 12, height: 4, rx: 1.4 }),
+    s("path", { class: "zep-pole", d: "M12 -5.4v-8" }),
+    s("path", { class: "zep-flag", d: "M12 -13.4h8l-2.2 2.4 2.2 2.4h-8z" }));
+  if (am) g.append(am);
+  return g;
+}
 function renderMap() {
   const box = $("#map"); box.replaceChildren();
   const svg = s("svg", { class: "map-svg", viewBox: "0 0 600 400", role: "img", "aria-label": "Map of the three Horde starting zones with paths to Orgrimmar" });
@@ -580,64 +651,96 @@ function renderMap() {
   /* V11: each of the five is a pin carrying their class crest, with a name banner. Labels never collide: every banner tries
      a ladder of spots around its pin against the boxes already placed (fixed place names, other pins, other banners) and
      takes the first clear one, with a leader line when it had to move. Sizes follow the phone type ramp (26/24 units). */
-  const phone = innerWidth < 700, FS = phone ? 24 : 16, BIG = phone ? 26 : 17, CH = 0.6;
+  /* V13b (spec 1.5): a name is a small label (12.5 px on screen at any map size) on a quiet plate beside its pin, and place
+     names 14 px, so the pins carry the map. The sizes are in map units for the map's drawn width; the map draws again when
+     that width changes by more than a sixth (mapFit). */
+  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, FS = 12.5 * u, BIG = 14.5 * u, SMALL = 13 * u, CH = 0.6;
+  MAPW.drawn = mw;
+  svg.style.setProperty("--fs", `${FS.toFixed(2)}px`); svg.style.setProperty("--fb", `${BIG.toFixed(2)}px`); svg.style.setProperty("--fsm", `${SMALL.toFixed(2)}px`);
   const boxes = [];
   const hit = (b) => b.x < 4 || b.y < 4 || b.x + b.w > 596 || b.y + b.h > 396 || boxes.some((o) => b.x < o.x + o.w && o.x < b.x + b.w && b.y < o.y + o.h && o.y < b.y + b.h);
-  const textBox = (x, y, txt, fs, anchor) => { const w = txt.length * fs * 0.74; /* small caps with tracking run wider than the banners */ return { x: anchor === "middle" ? x - w / 2 : x, y: y - fs * 0.82, w, h: fs }; };
+  const textBox = (x, y, txt, fs, anchor) => { const w = txt.length * fs * 0.95 + fs * 0.6; /* small caps with tracking run wider than the banners; the outline stroke adds a little all round */ return { x: (anchor === "middle" ? x - w / 2 : x) - fs * 0.15, y: y - fs * 0.98, w, h: fs * 1.3 }; };
   const fixedText = (x, y, txt, cls, fs, anchor = "middle") => { boxes.push(textBox(x, y, txt, fs, anchor)); return s("text", { class: cls, x, y, "text-anchor": anchor, text: txt }); };
   svg.append(
-    s("circle", { class: "map-meet", cx: 470, cy: 122, r: 20 }),
-    s("circle", { class: "map-meet", cx: 392, cy: 222, r: 14 }),
     emb("dungeons", "map-mark"),
     fixedText(470, 88, "Orgrimmar", "map-text", BIG),
-    fixedText(470, phone ? 164 : 158, "Valley of Strength", "map-text small", FS),
-    fixedText(380, 250, "the Crossroads", "map-text small", FS),
-    fixedText(290, 30, "zeppelin", "map-text small", FS));
+    fixedText(470, 122 + 26 + SMALL, "Valley of Strength", "map-text small", SMALL),
+    fixedText(380, 250, "the Crossroads", "map-text small", SMALL),
+    );
   const gate = svg.querySelector(".map-mark"); for (const [k, v] of Object.entries({ x: 456, y: 104, width: 28, height: 28 })) gate.setAttribute(k, v);
   const cross = emb("pin", "map-mark"); for (const [k, v] of Object.entries({ x: 382, y: 200, width: 20, height: 22 })) cross.setAttribute(k, v);
   svg.append(cross);
   boxes.push({ x: 454, y: 102, w: 32, h: 32 }, { x: 380, y: 198, w: 24, h: 26 });
-  const banners = [];
+  const banners = [], zoneNames = [];
   let zi = 0;
   for (const [zone, ms] of Object.entries(byZone)) {
     const z = ZONES[zone]; if (!z) continue;
     const road = ROADS.find((r) => r.zone === zone);
     const g = road ? groups[ROADS.indexOf(road)] : svg;
-    g.append(fixedText(z.label[0], z.label[1] + (phone ? 10 : 0), zone, "map-text", BIG, "start"), s("circle", { class: "zone-ring", cx: z.x, cy: z.y, r: 18, style: `--di: ${zi++}` }));
+    /* a starting zone flares once as the map opens: a drawn compass star, not a plain ring (owner-10) */
+    g.append(s("path", { class: "zone-ring", d: STAR8(z.x, z.y, 20, 7), style: `--di: ${zi++}` }));
+    zoneNames.push({ g, zone, x: z.label[0], y: z.label[1] + (phone ? 6 : 0) });
+    /* V13b (owner-8): each pin carries a small name plate under it. The pins of one zone stand far enough apart that their
+       plates sit side by side without touching; when a row of plates would run off the zone, every other plate drops to
+       a second row (the pins then need only half the room). */
+    const plates = ms.map((m) => { const nm = m.name, sp = nm.length > 12 ? [...nm.matchAll(/ /g)].map((x) => x.index).sort((p, q) => Math.abs(p - nm.length / 2) - Math.abs(q - nm.length / 2))[0] : undefined; const lines = sp === undefined ? [nm] : [nm.slice(0, sp), nm.slice(sp + 1)]; return { lines, w: Math.max(...lines.map((l) => l.length)) * FS * CH + FS * 1.2, h: lines.length * FS * 1.05 + FS * 0.75 }; });
+    const maxw = Math.max(...plates.map((p) => p.w)), stagger = ms.length > 2 && ms.length * (maxw + 6) > 210;
+    const step = Math.max(36, stagger ? (maxw + 8) / 2 : maxw + 8), span = step * (ms.length - 1);
+    const x0 = Math.max(18 + maxw / 2 - (stagger ? 0 : 0), Math.min(582 - maxw / 2 - span, z.x - span / 2));
     ms.forEach((m, i) => {
-      const tx = z.x + (i - (ms.length - 1) / 2) * (phone ? 46 : 38), ty = z.y + 12;
+      const tx = x0 + i * step, ty = z.y + 12;
       const pin = s("g", { class: "map-pin", transform: `translate(${tx} ${ty})`, style: `--cc: ${classVar(m.class_key)}; --di: ${zi + i}` },
         s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
         s("image", { href: `img/crests/${m.class_key}.png`, x: -13, y: -39, width: 26, height: 26 }),
         s("title", { text: `${m.name}, ${m.race} ${m.class}` }));
       g.append(pin);
       boxes.push({ x: tx - 15, y: ty - 42, w: 30, h: 42 });
-      banners.push({ g, m, tx, ty });
+      banners.push({ g, m, tx, ty, plate: plates[i], row: stagger ? i % 2 : 0 });
     });
   }
-  /* banners last, so they route around every pin and place name */
-  const SPOTS = [[0, 1], [0, -1], [1, 0], [-1, 0], [0, 2], [0, -2], [1, 1], [-1, 1], [1, -1], [-1, -1], [0, 3], [0, -3], [-1, 2], [1, 2], [-1, -2], [1, -2], [0, 4], [-1, 3], [0, -4]];
-  const overlap = (b) => boxes.reduce((n, o) => n + Math.max(0, Math.min(b.x + b.w, o.x + o.w) - Math.max(b.x, o.x)) * Math.max(0, Math.min(b.y + b.h, o.y + o.h) - Math.max(b.y, o.y)), 0);
+  /* the plates last, so they keep clear of every pin and place name: under the pin, one row lower at a time until clear
+     (with a thin leader line back to the pin), and over it when the map runs out below. Nothing overlaps. */
   const labels = s("g", { class: "map-labels" }); /* drawn last, over the roads and the walkers */
+  const clear = (b) => b.x >= 3 && b.y >= 3 && b.x + b.w <= 597 && b.y + b.h <= 397 && !boxes.some((o) => b.x < o.x + o.w + 2 && o.x < b.x + b.w + 2 && b.y < o.y + o.h + 2 && o.y < b.y + b.h + 2);
   for (const b of banners) {
-    /* a long display name folds onto two lines at the space nearest its middle, so its banner stays small */
-    const nm = b.m.name, sp = nm.length > 12 ? [...nm.matchAll(/ /g)].map((m) => m.index).sort((p, q) => Math.abs(p - nm.length / 2) - Math.abs(q - nm.length / 2))[0] : undefined;
-    const lines = sp === undefined ? [nm] : [nm.slice(0, sp), nm.slice(sp + 1)];
-    const w = Math.max(...lines.map((l) => l.length)) * FS * CH + 18, hh = lines.length * FS * 1.05 + 10;
-    let at = null, least = null;
-    for (const [sx, sy] of SPOTS) {
-      const cx = b.tx + sx * (w / 2 + 22), cy = sy > 0 ? b.ty + 6 + (sy - 1) * (hh + 4) : sy < 0 ? b.ty - 44 - hh - (-sy - 1) * (hh + 4) : b.ty - 21 - hh / 2;
-      const box = { x: Math.max(5, Math.min(595 - w, cx - w / 2)), y: cy, w, h: hh }; /* slid inside the map before testing */
-      if (!hit(box)) { at = box; break; }
-      if (box.y >= 4 && box.y + hh <= 396) { const n = overlap(box); if (!least || n < least.n) least = { n, box }; }
-    }
-    if (!at) at = least ? least.box : { x: Math.max(5, Math.min(595 - w, b.tx - w / 2)), y: b.ty + 6, w, h: hh }; /* the least-covered spot when none is clear */
+    const { lines, w, h: hh } = b.plate;
+    const x = Math.max(4, Math.min(596 - w, b.tx - w / 2));
+    let at = null;
+    for (let k = b.row; k < b.row + 8 && !at; k++) { const box = { x, y: b.ty + 4 + k * (hh + 3), w, h: hh }; if (clear(box)) at = box; }
+    for (let k = 0; k < 6 && !at; k++) { const box = { x, y: b.ty - 46 - hh - k * (hh + 3), w, h: hh }; if (clear(box)) at = box; }
+    /* still nothing: the nearest clear spot on a grid around the pin, rows below and above, steps sideways */
+    for (let k = 0; k < 10 && !at; k++) for (const dy of [k, -k - 1]) for (const dx of [0, 0.55, -0.55, 1.1, -1.1, 1.65, -1.65, 2.2, -2.2]) {
+      if (at) break; const y = dy >= 0 ? b.ty + 4 + dy * (hh + 3) : b.ty - 46 - hh + (dy + 1) * (hh + 3); const box = { x: Math.max(4, Math.min(596 - w, x + dx * w)), y, w, h: hh }; if (clear(box)) at = box; }
+    /* last: the nearest clear spot anywhere on the map, so a plate never lands on another */
+    if (!at) { let d0 = Infinity; for (let y = 4; y + hh <= 396; y += 3) for (let x2 = 4; x2 + w <= 596; x2 += 3) { const d = (x2 - x) ** 2 + (y - b.ty) ** 2; if (d < d0 && clear({ x: x2, y, w, h: hh })) { d0 = d; at = { x: x2, y, w, h: hh }; } } }
+    if (!at) at = { x, y: Math.min(396 - hh, b.ty + 4), w, h: hh };
     boxes.push(at);
-    const mid = at.x + w / 2, moved = Math.abs(mid - b.tx) > 2 || at.y > b.ty + 8 || at.y + hh < b.ty - 40;
-    if (moved) labels.append(s("path", { class: "pin-lead", d: `M${b.tx} ${b.ty - 20}L${Math.max(at.x + 6, Math.min(at.x + w - 6, b.tx))} ${at.y + (at.y > b.ty - 20 ? 0 : hh)}` }));
-    labels.append(s("g", { class: "pin-banner", style: `--cc: ${classVar(b.m.class_key)}` },
-      s("path", { class: "banner-cloth", d: `M${at.x} ${at.y}h${w}l-6 ${hh / 2} 6 ${hh / 2}h${-w}l6 ${-hh / 2}z` }),
-      s("text", { class: "banner-text", x: mid, y: at.y + 5 + FS * 0.86, "text-anchor": "middle", "data-fit": Math.round(w - 16) }, lines.map((l, li) => s("tspan", { x: mid, dy: li ? FS * 1.05 : 0, text: l })))));
+    const mid = at.x + w / 2;
+    if (at.y > b.ty + 8 || at.y + hh < b.ty - 40 || Math.abs(mid - b.tx) > w / 2) labels.append(s("path", { class: "pin-lead", d: `M${b.tx} ${at.y > b.ty ? b.ty + 1 : b.ty - 42}L${Math.max(at.x + 4, Math.min(at.x + w - 4, b.tx))} ${at.y > b.ty ? at.y : at.y + hh}` }));
+    b.box = at; plateAt(at, lines, `--cc: ${classVar(b.m.class_key)}`);
+  }
+  /* the zone names, then the zeppelin's route card, each at its own spot if clear, else the nearest clear spot around it */
+  const spotFor = (bx) => { for (let k = 0; k < 40; k++) for (const [dx, dy] of [[0, k], [0, -k], [k, 0], [-k, 0], [k, k], [-k, k], [k, -k], [-k, -k]]) { const b2 = { ...bx, x: Math.max(3, Math.min(597 - bx.w, bx.x + dx * 6)), y: Math.max(3, Math.min(397 - bx.h, bx.y + dy * 6)) }; if (clear(b2)) return b2; } let best = null, d0 = Infinity; for (let y = 3; y + bx.h <= 397; y += 3) for (let x = 3; x + bx.w <= 597; x += 3) { const d = (x - bx.x) ** 2 + (y - bx.y) ** 2; if (d < d0 && clear({ ...bx, x, y })) { d0 = d; best = { ...bx, x, y }; } } return best || bx; };
+  for (const zn of zoneNames) {
+    /* a zone's name sits under its pins' plates, centred on them, unless that is taken */
+    const mine = banners.filter((b) => b.m.start_zone === zn.zone).map((b) => b.box).filter(Boolean);
+    const tb0 = textBox(zn.x, zn.y, zn.zone, BIG, "start");
+    const tb = mine.length ? { ...tb0, x: (Math.min(...mine.map((b) => b.x)) + Math.max(...mine.map((b) => b.x + b.w))) / 2 - tb0.w / 2, y: Math.max(...mine.map((b) => b.y + b.h)) + 4 } : tb0;
+    const at = spotFor(tb); boxes.push(at);
+    zn.g.append(s("text", { class: "map-text", x: zn.x + (at.x - tb0.x), y: zn.y + (at.y - tb0.y), "text-anchor": "start", text: zn.zone }));
+  }
+  /* the zeppelin's card: its full name, else "Zeppelin", else none on a map too small to hold it clear (the legend names it) */
+  for (const name of ["Undercity zeppelin", "Zeppelin"]) {
+    const lines = [name], w = name.length * FS * CH + FS * 1.2, hh = FS * 1.8, want = { x: 290 - w / 2, y: 6, w, h: hh }, at = spotFor(want);
+    if (at === want && !clear(want)) continue;
+    boxes.push(at); plateAt(at, lines, "--cc: var(--wax)", "route-plate"); break;
+  }
+  function plateAt(at, lines, style, extra) {
+    const w = at.w, hh = at.h, mid = at.x + w / 2;
+    labels.append(s("g", { class: `pin-banner${extra ? ` ${extra}` : ""}`, style },
+      s("rect", { class: "banner-cloth", x: at.x, y: at.y, width: w, height: hh, rx: FS * 0.18 }),
+      s("rect", { class: "banner-stripe", x: at.x + FS * 0.3, y: at.y + FS * 0.16, width: w - FS * 0.6, height: Math.max(1.2, FS * 0.12) }),
+      s("text", { class: "banner-text", x: mid, y: at.y + FS * 0.42 + FS * 0.86, "text-anchor": "middle", "data-fit": Math.round(w - FS * 0.8) }, lines.map((l, li) => s("tspan", { x: mid, dy: li ? FS * 1.05 : 0, text: l })))));
   }
   if (!reduceMQ.matches) {
     /* a walking trail: the traveller's crest walks each road, leaving prints that fade at Orgrimmar; the zeppelin flies */
@@ -650,15 +753,16 @@ function renderMap() {
       const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", keyPoints: "0;1;1", keyTimes: "0;0.8;1", calcMode: "linear" }); am.append(s("mpath", { href: `#path-${r.key}` }));
       walker.append(am); g.append(walker);
     };
-    const zep = s("g", {}, s("ellipse", { class: "map-zep", rx: 13, ry: 5.5 }), s("rect", { class: "map-zep", x: -4, y: 5, width: 8, height: 3 }));
-    const am = s("animateMotion", { dur: "9s", repeatCount: "indefinite" }); am.append(s("mpath", { href: "#path-air" })); zep.append(am);
-    groups[0].append(zep);
+    const am = s("animateMotion", { dur: "16s", repeatCount: "indefinite", rotate: "auto" }); am.append(s("mpath", { href: "#path-air" }));
+    groups[0].append(zeppelin(am));
     walk(groups[1], ROADS[1], 0, "8s", "0s");
     walk(groups[2], ROADS[2], 0, "6s", "1s");
     /* nothing moves on a hidden page */
   }
+  if (reduceMQ.matches) groups[0].append(zeppelin(null)); /* reduced motion: the zeppelin holds still at the top of its route */
   svg.append(labels);
   mapVisibility();
+  if (SC.open === "roads") requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); /* drawn again while open (a resize): measured again */
   const panel = h("div", { class: "road-panel", "aria-hidden": "true" });
   box.append(svg, panel);
   const legend = $("#roads-legend"); legend.replaceChildren();
@@ -1261,6 +1365,8 @@ async function startRuntime() {
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight"];
 const TITLES = { tonight: "Next steps", timeline: "The dates", five: "The five", roads: "Three roads to Orgrimmar", racials: "Blood and bone", legacy: "Account bonuses", buffs: "Who buffs whom", ledger: "The ledger", signups: "Launch-night sign-ups", librarian: "The helper bot", library: "The library" };
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
+/* owner-12b: the scenes where the picture is the point get the larger frame */
+const VISUAL = ["roads", "five", "buffs", "library"];
 const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
@@ -1268,7 +1374,7 @@ const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) 
 const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z-]{1,40}$/.test(k) ? "buffs" : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
-  /* pushed marks an entry the wall added, the only kind back may pop; a landing scene (first visit, deep link) is replaced in place and closes in place */
+  /* pushed marks an entry over the wall's own, the only kind back may pop; since V13b a landing scene gets one too (route) */
   try { if (push) history.pushState({ boardScene: key, pushed: true }, "", url); else history.replaceState(key ? { boardScene: key, pushed: !!(history.state && history.state.pushed) } : null, "", url); return true; } catch (e) { return false; }
 }
 function replay(el, cls) { if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
@@ -1278,6 +1384,7 @@ function selectPanel(key, crossFade) {
   MEM.seen(key);
   markDepth();
   const prev = SC.open; SC.open = key;
+  $("#scene").dataset.kind = VISUAL.includes(key) ? "visual" : "reading"; /* owner-12b: the frame fits what it holds */
   $("#sheet-title").textContent = TITLES[key];
   $("#sheet-sub").textContent = SUBTITLE[key] || "";
   setSheetEmblem(key);
@@ -1290,8 +1397,12 @@ function selectPanel(key, crossFade) {
   }
   if (key === "timeline" && D.timeline) renderTimeline();
   const next = $(`#panel-${key}`);
+  /* V13b (craft 20): a tab change slides a little in its direction of travel (the shorter way round the ring) */
+  const di = prev ? (SCENES.indexOf(key) - SCENES.indexOf(prev) + SCENES.length) % SCENES.length : 0, dir = !di ? 0 : di <= SCENES.length / 2 ? 1 : -1;
+  next.style.setProperty("--dir", String(dir)); next.style.transform = "";
   if (prev && prev !== key) {
     const old = $(`#panel-${prev}`);
+    old.style.setProperty("--dir", String(dir)); old.style.transform = ""; old.classList.remove("spring");
     if (crossFade && motionMs("micro")) {
       old.classList.remove("entering"); old.classList.add("leaving");
       clearTimeout(SC.fadeTimer);
@@ -1328,20 +1439,53 @@ function startBar() {
     if (k === "sound") setSound(!AU.on); else if (k === "wall") requestClose(); else if (k === "search") LIBUI.focusSearch(); else { switchTab(k); b.focus(); }
   };
   bar.addEventListener("click", go); menu.addEventListener("click", go);
+  /* V13b (mobile 13): a tap anywhere outside the menu and its button closes it */
+  document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !more.contains(e.target)) setMore(false); }, true);
 }
 /* The swipe hint fades after the first swipe and stays gone (localStorage, inside try). */
 function swiped() { const hint = $("#scene-hint"); if (hint) hint.classList.add("used"); try { localStorage.setItem("board-swiped", "1"); } catch (e) {} }
+/* V13b: the open panel follows a sideways finger (with a little give past the first 80 px) and snaps on release, to the
+   next scene past 40 px or a quick flick, back into place otherwise. A touch that starts within EDGE px of either side of
+   the screen is the system's Back gesture and is left alone. Inside a sideways carousel (The five, 600 to 1099 px) the
+   carousel scrolls itself; once it stands at its end, the swipe goes on to the next scene. */
+const SWIPE_EDGE = 20;
+function startLibBar() {
+  const body = $("#sheet-body"), bar = document.querySelector(".lib-bar"); if (!body || !bar) return;
+  let on = false, raf = 0;
+  body.addEventListener("scroll", () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; const st = SC.open === "library" && body.scrollTop > 48; if (st !== on) { on = st; bar.classList.toggle("stuck", st); } }); }, { passive: true });
+}
 function startSwipe() {
   try { if (localStorage.getItem("board-swiped") === "1") { const hint = $("#scene-hint"); if (hint) hint.classList.add("used"); } } catch (e) {}
   const body = $("#sheet-body"); let s = null;
-  body.addEventListener("pointerdown", (e) => { s = e.pointerType === "mouse" || SC.open === null || (e.target.closest && e.target.closest(".cards, input, select, textarea, .lib-rail, .lib-bar")) ? null : { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId }; });
-  body.addEventListener("pointercancel", () => { s = null; });
-  body.addEventListener("pointerup", (e) => {
-    if (!s || e.pointerId !== s.id) return;
-    const dx = e.clientX - s.x, dy = e.clientY - s.y, v = Math.abs(dx) / Math.max(1, e.timeStamp - s.t); s = null;
-    if (Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    if (Math.abs(dx) >= 40 || (v > 0.5 && Math.abs(dx) >= 20)) { stepTab(dx < 0 ? 1 : -1); swiped(); }
+  const panel = () => (SC.open ? $(`#panel-${SC.open}`) : null);
+  const give = (dx) => { const a = Math.abs(dx), d = a <= 80 ? a : 80 + (a - 80) * 0.35; return Math.sign(dx) * d * 0.85; };
+  const back = (p) => { if (!p) return; if (reduceMQ.matches) { p.style.transform = ""; return; } p.classList.add("spring"); p.style.transform = ""; setTimeout(() => p.classList.remove("spring"), MOTION.micro + 40); };
+  const atEnd = (c, dx) => (dx > 0 ? c.scrollLeft <= 2 : c.scrollLeft >= c.scrollWidth - c.clientWidth - 2);
+  body.addEventListener("pointerdown", (e) => {
+    s = null;
+    if (e.pointerType === "mouse" || SC.open === null) return;
+    if (e.clientX < SWIPE_EDGE || e.clientX > innerWidth - SWIPE_EDGE) return;
+    if (e.target.closest && e.target.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar")) return;
+    const car = e.target.closest && e.target.closest(".cards");
+    s = { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId, car: car && car.scrollWidth > car.clientWidth + 2 ? car : null, sl: car ? car.scrollLeft : 0, live: false, dx: 0 };
   });
+  body.addEventListener("pointermove", (e) => {
+    if (!s || e.pointerId !== s.id || s.car) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (!s.live) { if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) { s = null; return; } if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return; s.live = true; }
+    s.dx = dx; const p = panel(); if (p && !reduceMQ.matches) { p.classList.remove("spring"); p.style.transform = `translateX(${give(dx).toFixed(1)}px)`; }
+  }, { passive: true });
+  body.addEventListener("pointercancel", () => { if (s && s.live) back(panel()); s = null; });
+  const release = (x, y, ts, id) => {
+    if (!s || (id !== undefined && id !== s.id)) return;
+    const dx = x - s.x, dy = y - s.y, v = Math.abs(dx) / Math.max(1, ts - s.t), st = s; s = null;
+    if (st.car && !(st.car.scrollLeft === st.sl && atEnd(st.car, dx))) return; /* the carousel moved: its own swipe */
+    if (Math.abs(dx) < Math.abs(dy) * 1.5 || !(Math.abs(dx) >= 40 || (v > 0.5 && Math.abs(dx) >= 20))) { if (st.live) back(panel()); return; }
+    stepTab(dx < 0 ? 1 : -1); swiped();
+  };
+  body.addEventListener("pointerup", (e) => release(e.clientX, e.clientY, e.timeStamp, e.pointerId));
+  /* a carousel's own pan cancels the pointer; its touch end still says where the finger went */
+  body.addEventListener("touchend", (e) => { if (!s || !s.car || !e.changedTouches || !e.changedTouches[0]) return; const t = e.changedTouches[0]; release(t.clientX, t.clientY, e.timeStamp); }, { passive: true });
 }
 let countToken = 0;
 function countUp(box) {
@@ -1353,7 +1497,7 @@ function countUp(box) {
   sfx("tick");
   requestAnimationFrame(step);
 }
-const ON_OPEN = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => sfx("stamp"), library: () => LIBUI.open(), timeline: () => replay($("#rail"), "pressing"), roads: () => requestAnimationFrame(fitBanners), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
+const ON_OPEN = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => sfx("stamp"), library: () => LIBUI.open(), timeline: () => replay($("#rail"), "pressing"), roads: () => { mapFit(); requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ }, five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
 /* V11: every scene has its own ornament, its emblem engraved large in the parchment's corner with its own small motion */
 const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials: "skull", legacy: "laurel", buffs: "rune", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon" };
 function placeOrnament(key) {
@@ -1389,10 +1533,13 @@ function morphBand(key) {
   const r = band.getBoundingClientRect();
   return r.width > 0 && r.bottom > 0 && r.top < innerHeight ? band : null;
 }
-function viewMorph(from, to, update) {
-  const layer = $("#scene");
-  const clear = () => { from.style.viewTransitionName = ""; to.style.viewTransitionName = ""; layer.classList.remove("morph"); };
-  layer.classList.add("morph");
+/* V13b (craft 11, 12): a View Transition is the only motion of a tile open or close. The root snapshot does not cross-fade
+   (the live page shows through at once, the wall taking its blur in one step under the veil); the band morphs and the veil
+   fades as its own group, and a close runs quicker on an accelerating curve (html.vt-close). */
+function viewMorph(from, to, update, closing) {
+  const layer = $("#scene"), root = document.documentElement;
+  const clear = () => { from.style.viewTransitionName = ""; to.style.viewTransitionName = ""; layer.classList.remove("morph"); root.classList.remove("vt-close"); };
+  layer.classList.add("morph"); root.classList.toggle("vt-close", !!closing);
   from.style.viewTransitionName = "scene-band";
   try {
     const vt = document.startViewTransition(() => { from.style.viewTransitionName = ""; if (update()) to.style.viewTransitionName = "scene-band"; });
@@ -1410,11 +1557,11 @@ function flipSheet(band, opening, done) {
   layer.classList.add("flip");
   let an = null, ended = false;
   const end = () => { if (ended) return; ended = true; clearTimeout(SC.flipTimer); if (opening) { layer.classList.remove("flip"); if (SC.anim === an) stopFlip(); } if (done) done(); };
-  try { an = sheet.animate(opening ? kf : kf.reverse(), { duration: MOTION.move, easing: MOTION.oak, fill: opening ? "backwards" : "forwards" }); }
+  try { an = sheet.animate(opening ? kf : kf.reverse(), { duration: opening ? MOTION.move : MOTION.close, easing: opening ? MOTION.oak : MOTION.shut, fill: opening ? "backwards" : "forwards" }); }
   catch (e) { layer.classList.remove("flip"); return false; }
   SC.anim = an;
   if (an && an.finished) an.finished.then(end, end);
-  SC.flipTimer = setTimeout(end, MOTION.move + 120);
+  SC.flipTimer = setTimeout(end, (opening ? MOTION.move : MOTION.close) + 120);
   return true;
 }
 function showScene(key) {
@@ -1427,7 +1574,7 @@ function showScene(key) {
   layer.classList.remove("closing");
   if (wasOpen) { if (SC.open !== key) selectPanel(key, true); return; }
   const open = (k, how) => {
-    layer.classList.remove("rise", "flip", "closing");
+    layer.classList.remove("rise", "flip", "closing", "fade");
     closeMore(false);
     if (how) layer.classList.add(how);
     layer.hidden = false;
@@ -1445,7 +1592,7 @@ function showScene(key) {
     return;
   }
   if (band && canFlip()) { open(key, ""); if (!flipSheet(band, true)) layer.classList.add("rise"); return; }
-  open(key, reduceMQ.matches ? "" : "rise");
+  open(key, reduceMQ.matches ? "fade" : "rise"); /* reduced motion: a short cross-fade, no move */
 }
 /* The library tile is a div holding a link and a search field; focus returns to its link. */
 const tileFocus = (t) => { const f = t.matches("a, button") ? t : t.querySelector("a[href]"); if (f) f.focus(); };
@@ -1457,24 +1604,42 @@ function hideScene() {
   const layer = $("#scene"), key = SC.open, token = ++SC.token;
   SC.open = null;
   const tile = document.querySelector(`#board [data-scene="${key}"]`);
-  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close"); };
+  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close"); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
     clearTimeout(SC.closeTimer); stopFlip();
-    layer.hidden = true; layer.classList.remove("closing", "flip", "rise");
+    layer.hidden = true; layer.classList.remove("closing", "flip", "rise", "fade");
     for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
   };
   const band = morphBand(key);
   if (band && hasVT()) {
-    viewMorph($(".sheet-head"), band, () => { if (token !== SC.token) return false; unlock(); finish(); if (tile) tileFocus(tile); return true; });
+    viewMorph($(".sheet-head"), band, () => { if (token !== SC.token) return false; unlock(); finish(); if (tile) tileFocus(tile); return true; }, true);
     return;
   }
   unlock();
   layer.classList.remove("rise");
   layer.classList.add("closing");
   clearTimeout(SC.closeTimer);
-  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, motionMs("move"));
+  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, motionMs("close"));
   if (tile) tileFocus(tile);
+}
+/* V13b (craft 31): a card turned over in The five is face up again the next time the scene opens */
+function unflip() { document.querySelectorAll("#cards .card.flipped").forEach((c) => { c.classList.remove("flipped"); c.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", "false")); const f = c.querySelector(".front"), b = c.querySelector(".back"); if (f) f.inert = false; if (b) b.inert = true; }); }
+/* owner-12b: "Look at the room": while the button, or a press on the frame's edge, is held, the scene fades to 15% and the
+   tavern shows through; letting go brings it back. A key held on the button does the same. */
+function startPeek() {
+  const btn = $("#scene-peek"), layer = $("#scene"), sheet = $(".sheet"); if (!btn || !sheet) return;
+  let held = false, timer = 0;
+  const on = () => { if (held || SC.open === null) return; held = true; layer.classList.add("peek"); btn.setAttribute("aria-pressed", "true"); };
+  const off = () => { clearTimeout(timer); if (!held) return; held = false; layer.classList.remove("peek"); btn.setAttribute("aria-pressed", "false"); };
+  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); on(); });
+  btn.addEventListener("click", (e) => { if (e.detail === 0) { held ? off() : on(); } }); /* a keyboard click (Enter) toggles */
+  btn.addEventListener("keydown", (e) => { if (e.key === " " && !e.repeat) { e.preventDefault(); on(); } });
+  btn.addEventListener("keyup", (e) => { if (e.key === " ") off(); });
+  sheet.addEventListener("pointerdown", (e) => { if (e.target === btn) return; const r = sheet.getBoundingClientRect(), edge = 18; if (e.clientX - r.left < edge || r.right - e.clientX < edge || e.clientY - r.top < edge || r.bottom - e.clientY < edge) timer = setTimeout(on, 380); });
+  for (const t of ["pointerup", "pointercancel", "blur"]) addEventListener(t, off, true);
+  btn.addEventListener("pointerleave", off);
+  sceneHooks.push((open) => { if (!open) off(); });
 }
 function requestClose() {
   if (SC.open === null) return;
@@ -1540,6 +1705,10 @@ function route() {
   /* #wall: the wall at its top (the token names the <ul id="wall">, so the browser would scroll to it). */
   if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
   const key = sceneFromHash();
+  /* V13b (mobile 5): a landing scene (a first visit's Tonight, a deep link, a typed hash) is turned into a wall entry with
+     the scene pushed over it, so the close button and the phone's Back both return to the wall and Back never leaves the
+     board. A scene the wall pushed (state.pushed) is left alone. */
+  if (key && !(history.state && history.state.pushed)) { const url = location.pathname + location.search + location.hash; try { history.replaceState(null, "", location.pathname + location.search); history.pushState({ boardScene: key, pushed: true }, "", url); } catch (e) {} }
   if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); if (key === "buffs" && /^buffs\./.test(raw)) setTimeout(() => focusBuff(raw.slice(6)), 60); } else hideScene();
 }
 function startScenes() {
@@ -1559,6 +1728,7 @@ function startScenes() {
     e.preventDefault(); switchTab(SCENES[j]); $(`#tab-${SCENES[j]}`).focus();
   });
   $("#scene-close").addEventListener("click", requestClose);
+  startPeek();
   $("#scene-veil").addEventListener("click", requestClose);
   $("#keys-close").addEventListener("click", () => showKeys(false));
   document.addEventListener("keydown", onKey);
@@ -1573,8 +1743,10 @@ function startScenes() {
   $("#skip").addEventListener("click", (e) => { e.preventDefault(); $("#main").focus(); });
   startBar();
   startSwipe();
+  startLibBar();
   startLibrary();
-  addEventListener("resize", () => { if (SC.open) moveInd(); }, { passive: true });
+  let mf = 0;
+  addEventListener("resize", () => { if (SC.open) moveInd(); clearTimeout(mf); mf = setTimeout(() => { if (SC.open === "roads") mapFit(); }, 250); }, { passive: true });
 }
 
 const ICONS = {}, GLYPHS = {};
@@ -1604,9 +1776,11 @@ function pinTiles() {
   const LEAN = { roads: ["-1.4deg", "-6px", "4px"], legacy: ["1.2deg", "8px", "-3px"], ledger: ["-1.5deg", "-5px", "6px"] };
   document.querySelectorAll("#wall .tile").forEach((t) => {
     const l = LEAN[t.dataset.scene];
-    t.style.setProperty("--rot", l ? l[0] : `${(Math.round((Math.random() * 1.2 - 0.6) * 10) / 10).toFixed(1)}deg`);
+    /* V13b (craft 32): the lean and the grain are seeded by the tile's own key, so the wall hangs the same on every visit */
+    const k = t.dataset.scene || "", r = (i) => { let x = 7 + i; for (const c of k) x = (x * 31 + c.charCodeAt(0)) % 2147483647; const v = Math.sin(x) * 43758.5453; return v - Math.floor(v); };
+    t.style.setProperty("--rot", l ? l[0] : `${(Math.round((r(1) * 1.2 - 0.6) * 10) / 10).toFixed(1)}deg`);
     if (l) { t.style.setProperty("--sx", l[1]); t.style.setProperty("--sy", l[2]); }
-    t.style.setProperty("--gx", `${Math.round(Math.random() * 100)}%`); t.style.setProperty("--gy", `${Math.round(Math.random() * 100)}%`);
+    t.style.setProperty("--gx", `${Math.round(r(2) * 100)}%`); t.style.setProperty("--gy", `${Math.round(r(3) * 100)}%`);
   });
 }
 
@@ -1640,7 +1814,20 @@ gl_FragColor=vec4(mix(col,shade,a),1.);}`;
 const LIGHT = { bump: 2.5, ease: 0.08, candle: [0.06, 0.1], flicker: 0.1, jitter: 6 };
 const hexVec = (v, d) => { const m = /^#?([0-9a-f]{6})$/i.exec(v || ""); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255) : d; };
 const LS = { state: "off", draws: 0, why: "", n: 0 };
-const flickAt = (s) => 0.5 * Math.sin(s * 1.7) + 0.3 * Math.sin(s * 2.9 + 1.3) + 0.2 * Math.sin(s * 6.1 + 2.1);
+/* V13b: one shared flicker signal (craft 2): seeded value noise in three octaves, -1 to 1. The wall light, the card
+   highlights, the candle glow and the room's fire all read it, so every flame on the page dips and flares together (the
+   sound's fire bed already reads flickAt; its crackles join in V13c). Noise, not sines: it never repeats a visible beat. */
+const flickHash = (i) => { const v = Math.sin(i * 127.1 + 311.7 * 7.31) * 43758.5453; return (v - Math.floor(v)) * 2 - 1; };
+const flickOct = (x) => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return flickHash(i) * (1 - u) + flickHash(i + 1) * u; };
+const flickAt = (s) => Math.max(-1, Math.min(1, 1.25 * (0.55 * flickOct(s * 1.9) + 0.3 * flickOct(s * 4.3 + 17) + 0.15 * flickOct(s * 9.7 + 41))));
+/* V13b: one light position for the whole wall (section 2). The pointer, a touch or the tilt aims it (tx, ty in viewport
+   pixels; null when nobody points, and the light rests at the candle, top left). With the room on, the room's key light
+   eases toward the aim and hands its eased position back (onLight above); with the room off, the cards ease toward it
+   themselves and the 2D wall light follows the same aim. The card highlights (startSheen) read x, y. */
+const LB = { tx: null, ty: null, x: 0, y: 0, rn: 0, roomAt: 0, tilt: false, frames: 0, running: false };
+const LIGHT_REST = [0.08, 0.16]; /* the candle's corner of the viewport, as a share of its width and height */
+const pageX = () => window.scrollX || 0, pageY = () => window.scrollY || 0;
+function aimAt(x, y) { LB.tx = x; LB.ty = y; if (LB.wake) LB.wake(); }
 function lightCore(cv, o, say) {
   let gl = null, u = {}, ready = false, img = null;
   try { gl = cv.getContext("webgl", { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: "low-power" }) || cv.getContext("experimental-webgl"); } catch (e) { gl = null; }
@@ -1693,7 +1880,7 @@ function lightCore(cv, o, say) {
 function startLight() {
   const cv = $("#light"), plate = cv && cv.parentNode;
   if (!cv || typeof cv.getContext !== "function") return;
-  const S = { core: null, worker: null, iw: 1, ih: 1, W: 0, H: 0, raf: 0, onScreen: true, scene: SC.open !== null /* V13a: a scene open before the light starts (Tonight at a first visit) already covers it */, lx: 0, ly: 0, tx: null, ty: null, rw: 0, tilt: false };
+  const S = { core: null, worker: null, iw: 1, ih: 1, W: 0, H: 0, raf: 0, onScreen: true, scene: SC.open !== null /* V13a: a scene open before the light starts (Tonight at a first visit) already covers it */, lx: 0, ly: 0, tx: null, ty: null, px: 0, py: 0, last: 0 };
   const opts = { VS: LIGHT_VS, FS: LIGHT_FS, bump: LIGHT.bump, warm: hexVec(cssVar("--light-warm"), [1, 0.82, 0.55]), cool: hexVec(cssVar("--light-cool"), [0.18, 0.2, 0.28]), shade: hexVec(cssVar("--oak-0"), [0.07, 0.05, 0.03]) };
   const call = (k, ...a) => { if (S.worker) S.worker.postMessage({ k, a }); else if (S.core) S.core[k](...a); };
   const say = (state, why) => {
@@ -1702,6 +1889,7 @@ function startLight() {
   };
   const size = () => {
     const r = plate.getBoundingClientRect();
+    S.px = r.left + pageX(); S.py = r.top + pageY(); /* the plate in page pixels: the shared aim is turned into plate pixels per frame without a layout read */
     S.W = Math.max(1, Math.round(r.width)); S.H = Math.max(1, Math.round(r.height));
     const k = Math.max(0.5, Math.min(2, window.devicePixelRatio || 1, S.iw / S.W));
     call("size", S.W, S.H, Math.round(S.W * k), Math.round(S.H * k));
@@ -1709,17 +1897,23 @@ function startLight() {
   };
   const draw = (t) => {
     const calm = reduceMQ.matches, s = t / 1000;
+    /* the shared aim (viewport pixels) in plate pixels */
+    S.tx = LB.tx === null ? null : LB.tx - (S.px - pageX()); S.ty = LB.ty === null ? null : LB.ty - (S.py - pageY());
     const tx = S.tx === null ? S.W * LIGHT.candle[0] : S.tx, ty = S.ty === null ? S.H * LIGHT.candle[1] : S.ty;
-    if (calm) { S.lx = tx; S.ly = ty; } else { S.lx += (tx - S.lx) * LIGHT.ease; S.ly += (ty - S.ly) * LIGHT.ease; }
-    S.rw = Math.max(-0.5, Math.min(0.5, S.rw * 0.97 + (Math.random() - 0.5) * 0.08));
-    const n = LS.n = calm ? 0 : Math.max(-1, Math.min(1, (flickAt(s) + S.rw) / 1.5));
+    /* V13b: eased by elapsed time, so the 30 fps cap moves the light as fast as the old 60 fps loop did */
+    const e = 1 - Math.pow(1 - LIGHT.ease, Math.min(6, Math.max(1, (t - (S.drawn || t - 16.7)) / 16.7))); S.drawn = t;
+    if (calm) { S.lx = tx; S.ly = ty; } else { S.lx += (tx - S.lx) * e; S.ly += (ty - S.ly) * e; }
+    const n = LS.n = calm ? 0 : flickAt(s);
     const jx = calm ? 0 : LIGHT.jitter * (0.6 * Math.sin(s * 2.3 + 0.4) + 0.4 * Math.sin(s * 4.7 + 1.9));
     const jy = calm ? 0 : LIGHT.jitter * (0.6 * Math.sin(s * 1.9 + 2.2) + 0.4 * Math.sin(s * 5.3 + 0.7));
     call("draw", S.lx + jx, S.ly + jy, 1 - LIGHT.flicker / 2 + (LIGHT.flicker / 2) * n);
     LS.draws++;
   };
-  const frame = (t) => { S.raf = 0; if (LS.state !== "lit") return; draw(t); if (live()) S.raf = requestAnimationFrame(frame); };
-  const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene && !roomHas("room-on") && !roomHas("room-off");
+  /* V13b: 30 frames a second (phone-deep 8; the flicker reads the same), on every tier where the room is not drawing the
+     wall's light itself: room off and low included (craft 1: the old test stopped it under room-off, so a desktop's wall
+     never moved) */
+  const frame = (t) => { S.raf = 0; if (LS.state !== "lit") return; if (t - S.last >= 1000 / 30 - 3) { S.last = t; draw(t); } if (live()) S.raf = requestAnimationFrame(frame); };
+  const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene && !roomHas("room-on");
   addEventListener("board-room", () => (live() ? run() : stop()));
   const run = () => { if (!S.raf && live()) S.raf = requestAnimationFrame(frame); };
   function stop() { if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; }
@@ -1757,20 +1951,122 @@ function startLight() {
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   reduceMQ.addEventListener("change", () => { stop(); still(); run(); });
   sceneHooks.push((on) => { S.scene = on; if (on) stop(); else run(); });
-  const aim = (x, y) => { const r = cv.getBoundingClientRect(); S.tx = x - r.left; S.ty = y - r.top; };
-  addEventListener("pointermove", (e) => { if (LS.state !== "lit" || S.tilt) return; if (e.pointerType === "mouse" || e.buttons) aim(e.clientX, e.clientY); }, { passive: true });
-  addEventListener("pointerdown", (e) => { if (LS.state === "lit" && !S.tilt && e.pointerType !== "mouse") aim(e.clientX, e.clientY); }, { passive: true });
-  document.documentElement.addEventListener("pointerleave", () => { if (!S.tilt) S.tx = S.ty = null; });
+  /* the aim moved (pointer, touch, tilt): a light that is not looping draws once toward it */
+  const prevWake = LB.wake; LB.wake = () => { if (prevWake) prevWake(); if (live()) run(); };
+  tiltReady();
+}
+/* V13b: the pointer and a touch aim the shared light (LB); the light's own loops read it, so there is one input path */
+function startAim() {
+  addEventListener("pointermove", (e) => { if (LB.tilt) return; if (e.pointerType === "mouse" || e.buttons) aimAt(e.clientX, e.clientY); }, { passive: true });
+  addEventListener("pointerdown", (e) => { if (!LB.tilt && e.pointerType !== "mouse") aimAt(e.clientX, e.clientY); }, { passive: true });
+  document.documentElement.addEventListener("pointerleave", () => { if (!LB.tilt) { LB.tx = LB.ty = null; } });
+}
+/* V13b tilt (phone-deep T2 to T8): the angle aims the shared light in viewport space, so the light moves where the eye is
+   (the cards on screen, the plate behind them); "centre" is however the phone is held when the toggle turns on, re-taken
+   when the screen turns; the axes follow screen.orientation. The toggle shows only where something can move, says on or
+   off, and says so when the browser shares no motion or the viewer declined it. */
+const TILT = { b0: null, g0: null, got: 0, dog: 0 };
+function tiltLabel(on) { const t = $("#tilt"); if (!t) return; t.setAttribute("aria-pressed", String(on)); t.replaceChildren(s("svg", { class: "tilt-ico", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M12 3c2.6 3 4 5.3 4 7.6a4 4 0 0 1-8 0C8 8.3 9.4 6 12 3z" }), s("path", { d: "M10 14.5h4v6h-4zM8 20.5h8" })), on ? "Light follows your phone: on" : "Light follows your phone: off"); }
+function tiltSay(msg) {
+  let n = $("#tilt-note");
+  if (!n) { const t = $("#tilt"); if (!t) return; n = h("span", { class: "tilt-note", id: "tilt-note", role: "status" }); t.parentNode.insertBefore(n, t.nextSibling); }
+  n.textContent = msg || "";
+}
+function onTilt(e) {
+  if (e.gamma == null || e.beta == null) return;
+  TILT.got++;
+  const so = window.screen && window.screen.orientation, a = so && typeof so.angle === "number" ? so.angle : (window.orientation || 0);
+  let x = e.gamma, y = e.beta; /* portrait */
+  if (a === 90) { x = e.beta; y = -e.gamma; } else if (a === 270 || a === -90) { x = -e.beta; y = e.gamma; } else if (a === 180) { x = -e.gamma; y = -e.beta; }
+  if (TILT.b0 === null) { TILT.b0 = y; TILT.g0 = x; }
+  const nx = Math.max(-1, Math.min(1, (x - TILT.g0) / 25)), ny = Math.max(-1, Math.min(1, (y - TILT.b0) / 20));
+  aimAt(innerWidth * (0.5 + 0.5 * nx), innerHeight * (0.5 + 0.5 * ny));
+}
+function tiltOff(msg) {
+  LB.tilt = false; clearTimeout(TILT.dog); removeEventListener("deviceorientation", onTilt); LB.tx = LB.ty = null; tiltLabel(false);
+  if (msg) tiltSay(msg);
+}
+let tiltBound = false;
+function tiltReady() {
   const tilt = $("#tilt");
-  if (tilt && typeof DeviceOrientationEvent !== "undefined" && window.matchMedia("(pointer: coarse)").matches) {
-    tilt.hidden = false;
-    const onTilt = (e) => { if (e.gamma === null || e.beta === null) return; S.tx = S.W * (0.5 + 0.5 * Math.max(-1, Math.min(1, e.gamma / 45))); S.ty = S.H * (0.5 + 0.5 * Math.max(-1, Math.min(1, (e.beta - 40) / 45))); };
-    tilt.addEventListener("click", async () => {
-      if (S.tilt) { S.tilt = false; removeEventListener("deviceorientation", onTilt); S.tx = S.ty = null; tilt.setAttribute("aria-pressed", "false"); return; }
-      try { if (typeof DeviceOrientationEvent.requestPermission === "function" && (await DeviceOrientationEvent.requestPermission()) !== "granted") return; } catch (e) { return; }
-      S.tilt = true; addEventListener("deviceorientation", onTilt); tilt.setAttribute("aria-pressed", "true");
-    });
-  }
+  if (!tilt || typeof DeviceOrientationEvent === "undefined" || !window.matchMedia("(pointer: coarse)").matches) return;
+  /* nothing to move under reduced motion: the light holds still there */
+  tilt.hidden = reduceMQ.matches;
+  if (tiltBound) return; tiltBound = true;
+  tiltLabel(false);
+  reduceMQ.addEventListener("change", () => { tilt.hidden = reduceMQ.matches; if (reduceMQ.matches && LB.tilt) tiltOff(); });
+  if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) window.screen.orientation.addEventListener("change", () => { TILT.b0 = TILT.g0 = null; });
+  tilt.addEventListener("click", async () => {
+    if (LB.tilt) { tiltOff(); tiltSay(""); return; }
+    try { if (typeof DeviceOrientationEvent.requestPermission === "function" && (await DeviceOrientationEvent.requestPermission()) !== "granted") { tiltOff("Motion access was declined; reload the page to be asked again."); return; } }
+    catch (e) { tiltOff("Motion access was declined; reload the page to be asked again."); return; }
+    LB.tilt = true; TILT.b0 = TILT.g0 = null; TILT.got = 0; addEventListener("deviceorientation", onTilt); tiltLabel(true); tiltSay("");
+    /* a browser that shares no motion (a blocked site setting, an app view) sends nothing: say so and step aside */
+    clearTimeout(TILT.dog); TILT.dog = setTimeout(() => { if (LB.tilt && !TILT.got) { tiltOff("Your browser is not sharing motion here."); tilt.hidden = true; } }, 1500);
+  });
+}
+
+/* V13b: the card highlights (spec 1.1, 2; craft 7, 8). Every tile and the countdown carry a highlight layer: a warm glow
+   that sits where the shared light is, so the edge facing the light is the bright one, and whose strength follows the
+   shared flicker and the light's distance. Each glow is its own composited box moved by transform and faded by opacity,
+   so a frame costs a few style writes and no repaint. The shadow side (--ldx, --ldy: the unit vector from the light to the
+   tile) is written only when it turns by a quarter, so the shadows lengthen away from the light without repainting the
+   wall every frame. It runs at 30 fps on the wall, stops under an open scene, a hidden page or reduced motion (one still
+   frame there), and with the room on it takes the room's own eased key light position. */
+const SHEEN = { items: [], raf: 0, last: 0, scene: false, onScreen: true, dirs: 0 };
+function startSheen() {
+  const els = [...document.querySelectorAll("#wall .tile, #clock")];
+  SHEEN.items = els.map((t) => { const i = h("i"); t.append(h("span", { class: "tile-sheen", "aria-hidden": "true" }, i)); return { t, i, x: 0, y: 0, w: 0, h: 0, dx: 9, dy: 9 }; });
+  const candle = document.querySelector(".candle");
+  document.documentElement.classList.add("flick-js"); /* the CSS candle loops step aside: the shared signal drives them */
+  SHEEN.scene = SC.open !== null;
+  LB.x = innerWidth * LIGHT_REST[0]; LB.y = innerHeight * LIGHT_REST[1];
+  const measure = () => { for (const it of SHEEN.items) { const r = it.t.getBoundingClientRect(); it.x = r.left + pageX(); it.y = r.top + pageY(); it.w = r.width; it.h = r.height; } };
+  let mq = 0; const remeasure = () => { if (!mq) mq = requestAnimationFrame(() => { mq = 0; measure(); paint(performance.now(), true); }); };
+  const live = () => !reduceMQ.matches && !document.hidden && !SHEEN.scene && SHEEN.onScreen && SHEEN.items.length;
+  const paint = (t, force) => {
+    const calm = reduceMQ.matches, s = t / 1000, n = calm ? 0 : flickAt(s);
+    const roomLit = roomHas("room-on") && t - LB.roomAt < 400;
+    if (!roomLit) {
+      const tx = LB.tx === null ? innerWidth * LIGHT_REST[0] : LB.tx, ty = LB.ty === null ? innerHeight * LIGHT_REST[1] : LB.ty;
+      const e = calm ? 1 : 1 - Math.pow(0.92, Math.min(6, Math.max(1, (t - (SHEEN.last || t - 16.7)) / 16.7)));
+      LB.x += (tx - LB.x) * e; LB.y += (ty - LB.y) * e;
+    }
+    SHEEN.last = t;
+    if (candle) candle.style.opacity = (0.955 + 0.045 * n).toFixed(3);
+    const sx = pageX(), sy = pageY(), diag = Math.hypot(innerWidth, innerHeight), turn = force || t - SHEEN.dirs > 250;
+    if (turn) SHEEN.dirs = t;
+    for (const it of SHEEN.items) {
+      const left = it.x - sx, top = it.y - sy;
+      if (!force && (top > innerHeight + 40 || top + it.h < -40)) continue; /* off screen: nothing to light */
+      const lx = Math.max(-80, Math.min(it.w + 80, LB.x - left)), ly = Math.max(-80, Math.min(it.h + 80, LB.y - top));
+      const cx = left + it.w / 2, cy = top + it.h / 2, d = Math.hypot(LB.x - cx, LB.y - cy), near = 1 / (1 + Math.pow(d / (0.55 * diag), 2));
+      it.i.style.transform = `translate(${lx.toFixed(1)}px, ${ly.toFixed(1)}px)`;
+      it.i.style.opacity = Math.max(0, Math.min(1, near * (0.86 + 0.14 * n))).toFixed(3);
+      if (turn) {
+        const ux = d ? (cx - LB.x) / d : 0.5, uy = d ? (cy - LB.y) / d : 0.7, qx = Math.round(ux * 4) / 4, qy = Math.round(uy * 4) / 4;
+        if (qx !== it.dx || qy !== it.dy) { it.dx = qx; it.dy = qy; it.t.style.setProperty("--ldx", String(qx)); it.t.style.setProperty("--ldy", String(qy)); }
+      }
+    }
+    LB.frames++;
+  };
+  const frame = (t) => { SHEEN.raf = 0; if (t - SHEEN.last >= 1000 / 30 - 3) paint(t); if (live()) SHEEN.raf = requestAnimationFrame(frame); LB.running = !!SHEEN.raf; };
+  const run = () => { if (!SHEEN.raf && live()) { SHEEN.raf = requestAnimationFrame(frame); LB.running = true; } };
+  const stop = () => { if (SHEEN.raf) cancelAnimationFrame(SHEEN.raf); SHEEN.raf = 0; LB.running = false; };
+  const prevWake = LB.wake; LB.wake = () => { if (prevWake) prevWake(); if (live()) run(); else if (!SHEEN.scene && !document.hidden) requestAnimationFrame((t) => paint(t)); };
+  measure(); paint(performance.now(), true);
+  addEventListener("resize", remeasure, { passive: true });
+  if (typeof ResizeObserver === "function") new ResizeObserver(remeasure).observe($("#wall"));
+  /* the wall settles in (tiles drop into place), the fonts land: measure again once it has */
+  setTimeout(remeasure, MOTION.stagger * 8 + MOTION.move * 2 + 50);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(remeasure).catch(() => {});
+  if (typeof IntersectionObserver === "function") new IntersectionObserver((es) => { for (const en of es) SHEEN.onScreen = en.isIntersecting; SHEEN.onScreen ? run() : stop(); }).observe($("#main"));
+  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
+  reduceMQ.addEventListener("change", () => { stop(); paint(performance.now(), true); run(); });
+  sceneHooks.push((on) => { SHEEN.scene = on; if (on) stop(); else { remeasure(); run(); } });
+  addEventListener("board-room", () => { remeasure(); run(); });
+  run();
+  tiltReady();
 }
 
 const WS = { n: 0, frames: 0, running: false, near: 0 };
@@ -1994,8 +2290,8 @@ function startSound() {
     try { localStorage.setItem("board-vol", String(AU.vol)); } catch (e) {}
     try { if (AU.on && AU.ctx) AU.master.gain.setTargetAtTime(AU.vol * 0.6, AU.ctx.currentTime, 0.05); } catch (e) {}
   });
-  const first = () => { removeEventListener("pointerdown", first, true); removeEventListener("keydown", first, true); if (AU.on && !AU.ctx) setSound(true); };
-  if (AU.on) { addEventListener("pointerdown", first, true); addEventListener("keydown", first, true); }
+  const first = () => { for (const t of ["click", "touchend", "keydown"]) removeEventListener(t, first, true); if (AU.on && !AU.ctx) setSound(true); };
+  if (AU.on) for (const t of ["click", "touchend", "keydown"]) addEventListener(t, first, true); /* V13b: a touch's pointerdown is no user activation; click and touchend are */
 }
 function audioStatus() {
   const c = AU.ctx;
@@ -2832,8 +3128,10 @@ function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
   const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
   const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
-  if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, m.name)), h("button", { type: "button", class: "tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
-  else meBox.replaceChildren(h("button", { type: "button", class: "tn-chip", "aria-label": `${T.labels.iam} ${member ? `${member.name}, ${member.race} ${member.class}` : T.labels.looking}: change`, onclick: () => { MEM.set("me", null); renderTonight(); markMe(); } }, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking));
+  /* V13b (mobile 8): one name chip everywhere: the same crest pills as the Buffs picker, and once chosen, a plain line saying
+     who and the one action, "Change person" */
+  if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, crestMark(m), m.name)), h("button", { type: "button", class: "lib-tool tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
+  else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
   const S = D.signups, entries = S && S.entries ? S.entries : [];
@@ -2929,7 +3227,8 @@ function warmNext() {
   panel.classList.add("warm"); panel.hidden = false;
   WARM.step = step;
   /* three frames: the commit, the raster, the draw; then the panel goes back */
-  let n = 0; const tick = () => { if (WARM.step !== step) return; if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
+  /* V13b: the Roads map is drawn again once at its real width while it warms, so its first opening never redraws it */
+  let n = 0; const tick = () => { if (WARM.step !== step) return; if (n === 0 && key === "roads") { try { mapFit(); } catch (e) {} } if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
   step.raf = requestAnimationFrame(tick);
 }
 function warmLater() { if (WARM.done) return; (window.requestIdleCallback || ((f) => setTimeout(f, 200)))(warmNext, { timeout: 1500 }); }
@@ -2949,6 +3248,7 @@ async function boot(mode, sdk) {
   wall.classList.add("settle");
   setTimeout(() => wall.classList.remove("settle"), MOTION.stagger * 8 + MOTION.move * 2);
   pinTiles();
+  startAim();
   startEmblems();
   startParallax();
   startScenes();
@@ -2982,6 +3282,7 @@ async function boot(mode, sdk) {
   /* V12: an early scene (Tonight) painted before party.json's glossary was in hand: dot it now */
   if (SC.open && SC.open !== "library") { try { dotPanel($(`#panel-${SC.open}`)); } catch (e) {} }
   try { startArt(); } catch (e) { console.error(e); }
+  try { startSheen(); } catch (e) { console.error(e); }
   /* The library's files wait until the person leaves Tonight: Tonight loads no library file. */
   whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
   if (!early) route();
@@ -2996,5 +3297,5 @@ async function boot(mode, sdk) {
 }
 startWisps();
 let started = false;
-window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS }, wisps: { ...WS }, scene: SC.open, warm: { scenes: WARM.scenes, ms: Math.round(WARM.ms), done: WARM.done }, map: { running: !!(MC.raf || MC.timer), t: Math.round(MC.t) }, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });
+window.__board = Object.freeze({ start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS, aim: { tx: LB.tx, ty: LB.ty, x: Math.round(LB.x), y: Math.round(LB.y), tilt: LB.tilt, frames: LB.frames, running: LB.running } }, wisps: { ...WS }, scene: SC.open, warm: { scenes: WARM.scenes, ms: Math.round(WARM.ms), done: WARM.done }, map: { running: !!(MC.raf || MC.timer), t: Math.round(MC.t), untangled: MC.untangled || 0, moved: MC.moved || 0 }, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });
 })();

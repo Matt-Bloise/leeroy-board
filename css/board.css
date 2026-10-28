@@ -81,6 +81,15 @@
   --shade-light: rgba(18, 12, 8, 0.22);
   --shade-none: rgba(18, 12, 8, 0);
   --mask-solid: #000;
+  --sheen-hot: rgba(255, 206, 140, 0.34);
+  --sheen-warm: rgba(255, 170, 90, 0.12);
+  --edge-glint: rgba(255, 214, 160, 0.55);
+  --shadow-soft: rgba(0, 0, 0, 0.42);
+  --shadow-room: rgba(0, 0, 0, 0.7);
+  --veil-room: rgba(8, 5, 3, 0.5);
+  --veil-strong: rgba(8, 5, 3, 0.92);
+  --plate-name: rgba(18, 12, 8, 0.62);
+  --plate-ink: rgba(234, 223, 196, 0.86);
   --font-display: "Grenze Gotisch", "Palatino Linotype", Georgia, serif;
   --font-body: "Alegreya", Georgia, "Times New Roman", serif;
   --font-sc: "Alegreya Sans SC", "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
@@ -101,8 +110,11 @@
   --t-micro: 160ms;
   --t-move: 320ms;
   --t-hero: 720ms;
+  --t-close: 200ms;
+  --t-fade: 160ms;
   --ease-oak: cubic-bezier(.2, .8, .2, 1);
   --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --ease-shut: cubic-bezier(.55, 0, .75, .2);
   --stagger: 60ms;
   --wall-blur: 6px;
   --light-warm: #ffd18c;
@@ -166,9 +178,9 @@ body {
 @media print { #wisps, .hero-art, .candle, .scene-layer { display: none !important; } }
 .wrap {
   position: relative; z-index: 2; box-sizing: border-box;
-  max-width: 1600px; margin: 0 auto; min-height: 100vh; min-height: 100svh;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  margin: 0 auto; min-height: 100vh; min-height: 100svh;
+  padding-left: max(clamp(16px, 3vw, 96px), env(safe-area-inset-left, 0px));
+  padding-right: max(clamp(16px, 3vw, 96px), env(safe-area-inset-right, 0px));
   padding-top: max(18px, env(safe-area-inset-top, 0px));
   padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
   display: flex; flex-direction: column; gap: 16px;
@@ -178,7 +190,7 @@ h2 { font-size: var(--step-3); color: var(--parchment); }
 h3 { font-size: var(--step-1); }
 p { margin: 0; max-width: var(--measure); }
 a { color: var(--brass); text-underline-offset: 3px; }
-a:hover { color: var(--parchment); }
+@media (hover: hover) { a:hover { color: var(--parchment); } }
 :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .label { font-family: var(--font-ui); font-size: var(--step--1); letter-spacing: 0.08em; color: var(--text-dim); }
@@ -200,7 +212,7 @@ a:hover { color: var(--parchment); }
 .slip h3 { color: var(--ink); }
 .slip .label { color: var(--ink-soft); }
 .slip a { color: var(--wax); }
-.slip a:hover { color: var(--ink); }
+@media (hover: hover) { .slip a:hover { color: var(--ink); } }
 .skip { position: absolute; left: 16px; top: -100px; z-index: 50; padding: 8px 14px; border-radius: 999px; background: var(--parchment); color: var(--oak-0); font-family: var(--font-ui); letter-spacing: 0.08em; text-decoration: none; }
 .skip:focus { top: calc(16px + env(safe-area-inset-top, 0px)); outline: 2px solid var(--c-mage); outline-offset: 2px; }
 .loading { color: var(--text-dim); font-style: italic; }
@@ -264,10 +276,12 @@ html.room-on .hero-art img { visibility: hidden; }
 /* the room is lit dark by itself, so its scrim only calms the heading and the foot, where the painting's needs the whole frame */
 html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 18%, var(--shade-none) 34%, var(--shade-none) 80%, var(--shade-mid) 100%); }
 .room-pick { box-sizing: border-box; width: 0; opacity: 0; margin-left: -8px; min-height: 32px; font-family: var(--font-ui); font-size: var(--fs-chip); color: var(--cream); background: var(--glass); border: 0 solid var(--grain); border-radius: 999px; padding: 0; appearance: none; transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
-.sound-box:hover .room-pick, .sound-box:focus-within .room-pick, .sound-box.show .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; }
+.sound-box:focus-within .room-pick, .sound-box.show .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; }
+@media (hover: hover) { .sound-box:hover .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; } }
 .room-pick option { color: var(--ink); background: var(--parchment); }
 .vol { width: 0; opacity: 0; accent-color: var(--brass); transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
-.sound-box:hover .vol, .sound-box:focus-within .vol, .sound-box.show .vol { width: 6rem; opacity: 1; }
+.sound-box:focus-within .vol, .sound-box.show .vol { width: 6rem; opacity: 1; }
+@media (hover: hover) { .sound-box:hover .vol { width: 6rem; opacity: 1; } }
 @media (min-width: 1500px) {
   .hero { gap: 8px; }
   main { margin-bottom: 4px; }
@@ -290,7 +304,8 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .bgrid-who { font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1rem; }
 .bgrid-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
 .bchip { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--ink-soft); background: var(--parchment-2); color: var(--ink); text-decoration: none; font-size: 1rem; }
-.bchip:hover, .bchip:focus-visible { background: var(--parchment); border-color: var(--wax); }
+.bchip:focus-visible { background: var(--parchment); border-color: var(--wax); }
+@media (hover: hover) { .bchip:hover { background: var(--parchment); border-color: var(--wax); } }
 .bchip.later { border-style: dashed; color: var(--ink); opacity: 0.8; }
 .bq-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .bq { padding: 5px 10px; border-left: 4px solid var(--bc); background: var(--parchment-2); border-radius: 0 6px 6px 0; }
@@ -360,7 +375,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .tn-who { flex-basis: 100%; margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); }
 .tn-why { flex-basis: 100%; max-width: none; margin: -6px 0 4px; font-size: 1.05rem; color: var(--ink); }
 .tn-name { min-height: 44px; padding: 6px 16px; font-family: var(--font-ui); font-size: 1.05rem; letter-spacing: 0.04em; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); border-left: 4px solid var(--cc, var(--ink-soft)); border-radius: 6px; cursor: pointer; }
-.tn-name:hover { background: var(--cream); }
+@media (hover: hover) { .tn-name:hover { background: var(--cream); } }
 .tn-chip { justify-self: start; min-height: 44px; padding: 4px 16px; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.06em; color: var(--parchment); background: var(--oak-3); border: 1px solid var(--brass); border-radius: 999px; cursor: pointer; }
 .tn-cards { display: grid; gap: 14px; }
 .tn-card { padding: 16px 20px 18px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); border-top: 3px solid var(--brass-dim); }
@@ -368,7 +383,8 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .tn-card p { margin: 4px 0 0; font-family: var(--font-body); font-size: 1.1rem; line-height: 1.4; }
 .tn-card .tn-big { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); line-height: 1.15; }
 .tn-card .tn-when { font-weight: 600; }
-.tn-link, .tn-link:hover { color: var(--wax); text-decoration: underline; text-underline-offset: 4px; }
+.tn-link { color: var(--wax); text-decoration: underline; text-underline-offset: 4px; }
+@media (hover: hover) { .tn-link:hover { color: var(--wax); text-decoration: underline; text-underline-offset: 4px; } }
 .tn-card .tn-launch { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--ink-soft); font-weight: 600; }
 .tn-line b { font-family: var(--font-sc); letter-spacing: 0.06em; }
 .tn-actions { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -407,8 +423,8 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
   --acc: var(--brass); --acc-glow: var(--hi-brass);
   position: relative; min-width: 0; box-sizing: border-box; border-radius: var(--radius); border: 1px solid var(--grain);
   color: var(--text); text-decoration: none;
-  box-shadow: inset 1px 1px 0 var(--edge-hi), inset 0 0 22px var(--wear), 8px 14px 26px var(--shadow), 2px 3px 0 var(--edge-dark);
-  transition: transform var(--t-micro) var(--ease-oak), filter var(--t-micro) var(--ease-oak);
+  box-shadow: inset 1px 1px 0 var(--edge-hi), inset 0 0 22px var(--wear), calc(var(--ldx, 0.5) * 16px) calc(var(--ldy, 0.75) * 16px + 4px) 26px var(--shadow), 2px 3px 0 var(--edge-dark);
+  transition: transform var(--t-micro) var(--ease-oak), filter var(--t-micro) var(--ease-oak), box-shadow var(--t-micro) var(--ease-oak);
 }
 .clock { background-color: var(--tile-face); background-image: linear-gradient(165deg, var(--tile-face), var(--tile-face-2)); }
 .clock::before { content: ""; position: absolute; left: 10px; right: 10px; top: 0; height: 2px; border-radius: 2px; background: var(--acc); opacity: 0.75; }
@@ -427,7 +443,8 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
   .tile:hover .tile-go, .clock:hover .tile-go { transform: translateX(3px); }
 }
 .tile:focus-visible::after, .clock:focus-visible::after { opacity: 1; }
-.tile:active, .clock:active { transform: scale(0.98); }
+.tile:active { transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg)) scale(0.985); }
+.clock:active { transform: scale(0.99); }
 .tile-band { position: relative; display: block; min-height: 46px; box-sizing: border-box; padding: 12px 58px 9px 15px; border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0; color: var(--ink);
   background-color: var(--parchment-2);
   background-image: linear-gradient(180deg, var(--shade-none) 55%, var(--slip-burn)), url("../img/parchment-tile.jpg");
@@ -466,7 +483,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .viz-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 3; }
 .wall-foot { font-size: var(--fs-small); color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; }
 .wall.settle .tile { animation: settle var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--i, 0) * var(--stagger)); }
-@keyframes settle { from { opacity: 0; transform: translateY(-16px) rotate(calc(var(--rot, 0deg) - 1.2deg)); } to { opacity: 1; transform: rotate(var(--rot, 0deg)); } }
+@keyframes settle { from { opacity: 0; transform: translate(var(--sx, 0), calc(var(--sy, 0px) - 16px)) rotate(calc(var(--rot, 0deg) - 1.2deg)); } to { opacity: 1; transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg)); } }
 @media (min-width: 640px) {
   main { margin: 18px 0 14px; }
   .wall-plate { inset: -16px; }
@@ -526,7 +543,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
   .t-five .med-ico { --med: 44px; }
   .su-when, .lib-new, .rsvp-bar, .t-five .tile-body > .tile-line { display: none !important; }
 }
-.scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }
+.scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); box-sizing: border-box; }
 .scene-layer.closing { pointer-events: none; }
 /* V13a warm-up (warmNext in js/board.js): a scene drawn once while the page is idle, for three frames at 1% opacity (a
    layer at opacity 0 is never rastered, so it warms nothing; at 1% a pixel moves about two levels in 255 for 50 ms); inside an open sheet the warmed panel sits out of the flow so the open
@@ -538,29 +555,43 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
    first opening needs it */
 .scene-layer .warm-fx { position: absolute; left: 0; top: 0; width: 256px; height: 256px; background: var(--oak-2); filter: blur(var(--wall-blur)) brightness(0.72); opacity: 0.01; will-change: filter; pointer-events: none; }
 .scene-veil { position: absolute; inset: 0; background: var(--veil); }
-.sheet { position: relative; box-sizing: border-box; width: min(1240px, 100%); height: min(940px, 100%); display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+/* owner-9: a scene opens corner to corner, inside a small safe margin, and fits its content to that space */
+.sheet { position: relative; box-sizing: border-box; width: 100%; height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--grain); border-radius: 10px; background: var(--sheet-bg); box-shadow: inset 1px 1px 0 var(--edge-hi), 12px 30px 80px var(--shadow); overflow: hidden; isolation: isolate;
   }
 .scene-layer:not([hidden]) .sheet { will-change: transform, opacity; }
 .scene-layer.rise .sheet { animation: sheet-in var(--t-move) var(--ease-oak) both; }
 .scene-layer.rise .scene-veil, .scene-layer.flip .scene-veil { animation: fade-in var(--t-move) var(--ease-oak) both; }
-.scene-layer.closing .sheet { animation: sheet-out var(--t-move) var(--ease-oak) both; }
-.scene-layer.closing .scene-veil { animation: fade-out var(--t-move) var(--ease-oak) both; }
+.scene-layer.closing .sheet { animation: sheet-out var(--t-close) var(--ease-shut) both; }
+.scene-layer.closing .scene-veil { animation: fade-out var(--t-close) var(--ease-shut) both; }
+.scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both; }
 .scene-layer.flip .sheet, .scene-layer.morph .sheet { animation: none; transform-origin: 0 0; }
 .scene-layer.morph .scene-veil { animation: none; }
 /* V13a: the wall and the room take the blur at once, at one radius. An animated radius drew a new blur on every frame of the
    opening and, on a fresh browser, compiled a new GPU program for each radius it passed through; the View Transition's
    cross-fade (and the veil fading in) carries the change instead. */
 @media (min-width: 700px) {
-  html.scene-open #board, html.scene-open #room { filter: blur(var(--wall-blur)) brightness(0.72); } /* the room falls out of focus with the wall behind it */
+  html.scene-open #board { filter: blur(var(--wall-blur)) brightness(0.72); } /* V13b: the wall falls out of focus; the room behind it keeps drawing, dimmed by its own exposure and the veil (room.js scene state) */
 }
 /* V13a: behind an open scene nothing in the wall moves, so the blur is drawn once per opening, not on every refresh; the room
    holds its last frame (room.js) and the plate's candle waits */
 html.scene-open .wall-plate::after, html.scene-open .candle { animation-play-state: paused; }
+/* V13b: the shared flicker signal drives the candle glow from js/board.js (startSheen); the CSS loops are the fallback */
+html.flick-js .candle, html.flick-js .wall-plate::after { animation: none; }
+html.flick-js .candle { will-change: opacity; }
 
-::view-transition-group(scene-band) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
-::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: cover; object-position: left top; }
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
+/* V13b (craft 11, 12): a tile open or close is one View Transition and nothing else. The root does not cross-fade (the old
+   wall image dissolving over the live, blurring wall made a double image); the band morphs, the veil fades in its own
+   group; a close takes --t-close on an accelerating curve instead of the open played backwards. */
+/* measured (V13b): a full-screen sheet captured as its own group cost a first opening at 3440x1440 about 35 dropped frames;
+   the sheet stands at once under the morphing band and only the veil fades */
+.scene-layer.morph .scene-veil { view-transition-name: scene-veil; }
+::view-transition-group(*) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
+/* V13b: the band and the sheet head keep their own size as the box between them grows or shrinks (a full-width sheet head
+   scaled down to a tile, or a tile band blown up to the sheet's width, read as giant or tiny type) */
+::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: none; object-position: left top; }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); animation-timing-function: var(--ease-shut); }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
 @keyframes sheet-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(24px); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -577,7 +608,7 @@ html.scene-open .wall-plate::after, html.scene-open .candle { animation-play-sta
 @media (hover: hover) { .close:hover { transform: rotate(90deg); } }
 .tabs { position: relative; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; margin: 0 -18px; padding: 0 18px; }
 .tab { flex: none; font-family: var(--font-ui); letter-spacing: 0.06em; font-size: 1rem; color: var(--l-dim); background: transparent; border: 0; border-bottom: 2px solid transparent; padding: 9px 13px 11px; min-height: 48px; cursor: pointer; }
-.tab:hover { color: var(--parchment); }
+@media (hover: hover) { .tab:hover { color: var(--parchment); } }
 .tab { margin-top: 6px; border-radius: 7px 7px 0 0; background: var(--oak-3); color: var(--cream); box-shadow: inset 1px 1px 0 var(--edge-hi); }
 .tab[aria-selected="true"] { color: var(--ink); background: var(--parchment-2) url("../img/parchment-tile.jpg") center / 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -2px 10px var(--wear); }
 .tab:focus-visible { outline-offset: -3px; }
@@ -591,8 +622,12 @@ html.scene-open .wall-plate::after, html.scene-open .candle { animation-play-sta
 .sheet-body { overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); padding: 20px 18px 32px; }
 .panel { grid-area: 1 / 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
 .panel:focus-visible { outline-offset: 6px; }
-.panel.entering { animation: fade-in var(--t-micro) var(--ease-oak) both; }
-.panel.leaving { animation: fade-out var(--t-micro) var(--ease-oak) both; pointer-events: none; }
+.panel.entering { animation: slide-in var(--t-move) var(--ease-oak) both; }
+.panel.leaving { animation: slide-out var(--t-micro) var(--ease-shut) both; pointer-events: none; }
+.panel.spring { transition: transform var(--t-micro) var(--ease-oak); }
+/* V13b (craft 20): a tab change travels: out 16 px one way, in from 16 px the other */
+@keyframes slide-in { from { opacity: 0; transform: translateX(calc(var(--dir, 0) * 16px)); } to { opacity: 1; transform: none; } }
+@keyframes slide-out { from { opacity: 1; } to { opacity: 0; transform: translateX(calc(var(--dir, 0) * -16px)); } }
 .lede { color: var(--text-dim); }
 .lede-row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
 @media (max-width: 699px) {
@@ -634,7 +669,7 @@ html.scene-open .wall-plate::after, html.scene-open .candle { animation-play-sta
 .card dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .role { font-family: var(--font-ui); letter-spacing: 0.08em; color: var(--cc); }
 .flip { margin-top: auto; align-self: stretch; font-family: var(--font-ui); letter-spacing: 0.08em; font-size: var(--step--1); color: var(--parchment); background: transparent; border: 1px solid var(--cc); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
-.flip:hover { background: var(--hover-tint); }
+@media (hover: hover) { .flip:hover { background: var(--hover-tint); } }
 .spells { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
 .spell { display: grid; gap: 1px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
 .spell:last-child { border-bottom: 0; }
@@ -659,8 +694,16 @@ html.scene-open .wall-plate::after, html.scene-open .candle { animation-play-sta
 .map-text { fill: var(--ink); font-family: var(--font-ui); font-size: 17px; font-weight: 700; letter-spacing: 0.05em; }
 .map-text.small { fill: var(--ink-soft); font-size: 16px; font-weight: 500; }
 .map-city { fill: var(--wax); stroke: var(--parchment); stroke-width: 2; }
-.map-meet { fill: none; stroke: var(--wax); stroke-width: 1.6; stroke-dasharray: 3 3; }
-.map-zep { fill: var(--brass-dim); stroke: var(--ink); stroke-width: 1; }
+/* owner-10: the zeppelin, painted: a brass-and-oak hull lit from above, a wax-red Horde pennant, a soft shadow on the map */
+.zep-shadow { fill: var(--ink); opacity: 0.18; }
+.zep-hull { fill: var(--brass-dim); stroke: var(--ink); stroke-width: 1.1; }
+.zep-rib { fill: none; stroke: var(--ink); stroke-width: 0.7; opacity: 0.55; }
+.zep-shine { fill: none; stroke: var(--brass-hi); stroke-width: 1.6; stroke-linecap: round; opacity: 0.9; }
+.zep-fin { fill: var(--oak-3); stroke: var(--ink); stroke-width: 0.8; stroke-linejoin: round; }
+.zep-gondola { fill: var(--oak-2); stroke: var(--ink); stroke-width: 0.8; }
+.zep-rope, .zep-pole { fill: none; stroke: var(--ink); stroke-width: 0.8; }
+.zep-flag { fill: var(--wax); stroke: var(--ink); stroke-width: 0.6; }
+.route-plate .banner-text { font-style: italic; }
 .map-caption { color: var(--text-dim); font-size: var(--step--1); }
 .road-g { transition: opacity var(--t-micro) var(--ease-oak); cursor: pointer; }
 .map-svg.focusing .road-g:not(.on) { opacity: 0.2; }
@@ -813,7 +856,7 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .pager button:not(.pager-crest)::before { content: ""; width: 8px; height: 10px; clip-path: polygon(0 0, 100% 0, 100% 70%, 50% 100%, 0 70%); background: var(--cc); opacity: 0.35; transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
 .pager button[aria-current="true"]::before { opacity: 1; transform: scale(1.35); }
 @media (min-width: 1100px) { .pager { display: none; } }
-.zone-ring { fill: none; stroke: var(--wax); stroke-width: 2.5; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.zone-ring { fill: var(--brass-hi); stroke: var(--wax); stroke-width: 1.2; stroke-linejoin: round; opacity: 0; transform-box: fill-box; transform-origin: center; }
 .map-box.drawing .zone-ring { animation: pulse var(--t-hero) var(--ease-oak) both; animation-delay: calc(var(--t-hero) + var(--stagger) * (8 + var(--di, 0) * 4)); }
 @keyframes pulse { from { opacity: 0; transform: scale(0.4); } 30% { opacity: 0.9; } to { opacity: 0; transform: scale(2.4); } }
 .road-panel { position: absolute; z-index: 2; top: 10px; right: 10px; bottom: 10px; width: min(15rem, 46%); box-sizing: border-box; padding: 14px 16px; overflow: hidden; border-radius: var(--radius); background: var(--sheet-bg); color: var(--text); border-left: 3px solid var(--rc, var(--brass)); box-shadow: -10px 0 30px var(--shadow); transform: translateX(calc(100% + 16px)); transition: transform var(--t-move) var(--ease-oak); pointer-events: none; }
@@ -858,7 +901,8 @@ main.has-beam { margin-top: 44px; }
 .mini b { color: var(--brass-hi); }
 .mini small { color: var(--cream); }
 .wall > li:not(.hot) .tile { filter: brightness(0.9); }
-.wall > li:not(.hot) .tile:hover, .wall > li:not(.hot) .tile:focus-visible { filter: none; }
+.wall > li:not(.hot) .tile:focus-visible { filter: none; }
+@media (hover: hover) { .wall > li:not(.hot) .tile:hover { filter: none; } }
 .five-viz { display: none; }
 .med { display: grid; justify-items: center; align-content: start; gap: 2px; min-width: 0; text-align: center; }
 .med-ico { width: var(--med); height: var(--med); --med: clamp(52px, 5.6vw, 120px); display: grid; place-items: center; }
@@ -895,7 +939,14 @@ main.has-beam { margin-top: 44px; }
   .wall .tile { min-height: 0; }
 }
 @media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
-.sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("../img/parchment-tile.jpg"); background-size: auto, 1400px auto; background-position: 0 0, center top; background-attachment: local; box-shadow: inset 0 0 60px var(--slip-burn), inset 0 0 0 1px var(--ink-line); }
+.sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("../img/parchment-tile.jpg"); background-size: auto, 1400px auto; background-position: 0 0, center top; box-shadow: inset 0 0 0 1px var(--ink-line); }
+/* V13b: the sheet fills the screen now, so its paper is drawn once at the box's size (not down the whole scroll height,
+   which background-attachment: local did) and its burnt edge is a gradient, not a 60 px blurred shadow: measured, the two
+   cost a first opening at 3440x1440 about 40 dropped frames between them */
+/* and the sheet's own candle corner and vignette move onto the paper itself: an overlay over the whole full-screen sheet
+   was a second full-screen layer to draw and blend on every first opening */
+.sheet::after { content: none; }
+.sheet-body { background-image: radial-gradient(ellipse 55% 45% at 0% 0%, var(--candle-soft), transparent 70%), radial-gradient(ellipse 75% 70% at 50% 45%, transparent 70%, var(--slip-burn) 100%), repeating-linear-gradient(91deg, var(--fiber) 0 1px, transparent 1px 7px, var(--fiber) 7px 8px, transparent 8px 15px), url("../img/parchment-tile.jpg"); background-size: auto, auto, auto, 1400px auto; background-position: 0 0, 0 0, 0 0, center top; }
 .face, .road-btn, .librarian, .toggle, .road-panel, .buff { --text: var(--l-text); --text-dim: var(--l-dim); color: var(--l-text); }
 .signup-grid:has(> [hidden]) { grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) { .signup-grid:has(> [hidden]) .dsu { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 32px; } }
@@ -948,19 +999,21 @@ main.has-beam { margin-top: 44px; }
 .lib-examples { display: flex; flex-wrap: wrap; gap: 6px 8px; flex: 1 1 100%; }
 .lib[data-view="results"] .lib-examples, .lib[data-view="page"] .lib-examples, .lib[data-view="zero"] .lib-examples { display: none; }
 .ex { min-height: 40px; padding: 4px 14px; font-size: 1rem; letter-spacing: 0.03em; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--brass); border-radius: 999px; cursor: pointer; }
-.ex:hover { background: var(--parchment); }
+@media (hover: hover) { .ex:hover { background: var(--parchment); } }
 .rail-hint { display: none; margin: -8px 0 0; font-family: var(--font-body); font-style: italic; font-size: 1rem; color: var(--ink); }
 @media (max-width: 899px) { .rail-hint:not([hidden]) { display: block; } }
 .lib-legend { flex: 1 1 100%; margin: 0; font-family: var(--font-body); font-style: italic; font-size: 1rem; color: var(--l-dim); }
 .lib[data-view="shelf"] .lib-q { min-height: 52px; font-size: var(--step-1); }
 .gl { display: inline; padding: 0; margin: 0; font: inherit; color: inherit; background: none; border: 0; cursor: help; text-decoration: underline dotted var(--ink-soft); text-decoration-thickness: 2px; text-underline-offset: 4px; }
-.gl:hover, .gl[aria-expanded="true"] { color: var(--seal-confirmed); }
+.gl[aria-expanded="true"] { color: var(--seal-confirmed); }
+@media (hover: hover) { .gl:hover { color: var(--seal-confirmed); } }
 .ttc.gloss { width: min(18rem, calc(100% - 20px)); }
 .cat span { flex: 1 1 auto; }
 .lib-tile a.tile-band, .gl-tile a.tile-band { text-decoration: none; }
-.lib-tile a.tile-band:hover, .gl-tile a.tile-band:hover { color: var(--ink); }
+@media (hover: hover) { .lib-tile a.tile-band:hover, .gl-tile a.tile-band:hover { color: var(--ink); } }
 .gl-tile .gl { color: var(--cream); text-decoration-color: var(--brass); }
-.gl-tile .gl:hover, .gl-tile .gl[aria-expanded="true"] { color: var(--parchment); }
+.gl-tile .gl[aria-expanded="true"] { color: var(--parchment); }
+@media (hover: hover) { .gl-tile .gl:hover { color: var(--parchment); } }
 .gl-def { display: block; margin-top: 4px; font-style: italic; color: var(--cream); }
 /* V12: a dotted word's card sits outside every tile and scene, fixed to the viewport beside the word */
 .gl-pop { position: fixed; z-index: 70; left: 16px; top: 16px; box-sizing: border-box; width: max-content; max-width: min(20rem, calc(100vw - 32px)); padding: 10px 12px; border-radius: 6px; color: var(--tt-text); background: var(--tt-bg); border: 1px solid var(--tt-edge); box-shadow: 0 10px 28px var(--shade-deep); font-family: var(--font-body); font-size: 1rem; font-style: normal; line-height: 1.4; text-align: left; letter-spacing: 0; text-transform: none; }
@@ -980,14 +1033,14 @@ main.has-beam { margin-top: 44px; }
 .tile-q { flex: 1 1 auto; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 6px 14px; font: inherit; font-size: var(--step-0); color: var(--ink); background: var(--parchment); border: 1px solid var(--brass); border-radius: 999px; box-shadow: inset 1px 2px 4px var(--wear); }
 .tile-q::placeholder { color: var(--ink-soft); opacity: 1; }
 .tile-q-go { flex: none; min-height: 44px; padding: 6px 16px; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.06em; color: var(--ink); background: var(--brass); border: 1px solid var(--brass-hi); border-radius: 999px; cursor: pointer; }
-.tile-q-go:hover { background: var(--brass-hi); }
+@media (hover: hover) { .tile-q-go:hover { background: var(--brass-hi); } }
 .lib-tile .lib-new { margin: auto 12px 12px; }
 @media (min-width: 1100px) { .tile-search { margin: 0 16px 8px; } .lib-tile .lib-new { margin: auto 16px 12px; } .lib-tile .lib-new .clamp { -webkit-line-clamp: 1; } .t-library .mini b { font-size: clamp(1.6rem, 2vw, 2.1rem); } .lib-tile .tile-body { padding-bottom: 8px; } }
 @media (max-width: 639px) { .lib-tile .lib-new { display: none; } }
 .sheet-body { overflow-x: hidden; }
 .sheet-head { position: relative; background-color: var(--oak-3); background-image: radial-gradient(ellipse 70% 160% at 0% 0%, var(--lamp), transparent 70%), repeating-linear-gradient(91deg, var(--grain-2) 0 1px, transparent 1px 7px, var(--grain-2) 7px 9px, transparent 9px 16px), linear-gradient(180deg, var(--wood-veil), var(--wood-veil-2)), url("../img/board-wall.jpg"); background-size: auto, auto, auto, 1600px auto; background-position: 0 0, 0 0, 0 0, 30% 70%; background-blend-mode: normal, normal, normal, multiply; border-bottom: 3px solid var(--brass-dim); box-shadow: inset 1px 1px 0 var(--edge-hi), 0 3px 10px var(--wear); }
 .tab { margin-top: 10px; color: var(--ink-soft); background-color: var(--parchment-2); background-image: linear-gradient(180deg, var(--shade-none) 40%, var(--slip-burn)), url("../img/parchment-tile.jpg"); background-size: auto, 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -1px 6px var(--wear); border-radius: 8px 8px 0 0; }
-.tab:hover { color: var(--ink); }
+@media (hover: hover) { .tab:hover { color: var(--ink); } }
 .tab[aria-selected="true"] { margin-top: 4px; padding-bottom: 14px; color: var(--ink); background-image: url("../img/parchment-tile.jpg"); background-size: 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -3px 12px var(--wear); }
 /* eleven tabs since Tonight: they fit the sheet on a desktop, so the rail shows no scrollbar and clips no tab */
 @media (min-width: 1000px) { .tabs { gap: 2px; scrollbar-width: none; } .tabs::-webkit-scrollbar { display: none; } .tab { padding-left: 8px; padding-right: 8px; letter-spacing: 0.03em; } }
@@ -1053,7 +1106,7 @@ main.has-beam { margin-top: 44px; }
 .lib-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .lib-btn, .copy { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; box-sizing: border-box; padding: 6px 14px; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.05em; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); border-radius: 999px; cursor: pointer; text-decoration: none; }
 .copy { border-style: dashed; }
-.lib-btn:hover, .copy:hover { background: var(--parchment); }
+@media (hover: hover) { .lib-btn:hover, .copy:hover { background: var(--parchment); } }
 .lib-btn.strong { background: var(--oak-3); color: var(--cream); border-color: var(--brass); }
 .shelf { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
 .scroll { position: relative; display: grid; align-content: start; gap: 6px; padding: 0 0 12px; background: var(--parchment); border-radius: 4px; box-shadow: 0 2px 10px var(--wear), 4px 10px 22px var(--shadow), inset 0 0 30px var(--slip-burn); }
@@ -1065,7 +1118,7 @@ main.has-beam { margin-top: 44px; }
 .scroll-end span { font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.06em; color: var(--l-dim); }
 .scroll ul { list-style: none; margin: 0; padding: 4px 12px 0; display: grid; gap: 0; }
 .plink { display: flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 6px 4px; border-bottom: 1px solid var(--ink-wash); color: var(--ink); text-decoration: none; line-height: 1.2; }
-.plink:hover { color: var(--wax); }
+@media (hover: hover) { .plink:hover { color: var(--wax); } }
 .plink small { margin-left: auto; padding-left: 8px; font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink-soft); }
 .scroll.wide { grid-column: 1 / -1; }
 .scroll.wide .plink { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; }
@@ -1077,12 +1130,13 @@ main.has-beam { margin-top: 44px; }
 .groups > .group { content-visibility: auto; contain-intrinsic-size: auto 260px; overflow-clip-margin: 14px; }
 .group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 14px 8px; border-bottom: 1px solid var(--ink-line); }
 .group-head a { font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); text-decoration: none; }
-.group-head a:hover { color: var(--wax); }
+@media (hover: hover) { .group-head a:hover { color: var(--wax); } }
 .hits { list-style: none; margin: 0; padding: 0; }
 .hit { display: grid; gap: 3px; min-height: 44px; box-sizing: border-box; padding: 8px 14px 9px; border-bottom: 1px solid var(--ink-wash); }
 .hit:last-child { border-bottom: 0; }
 .hit-go { justify-self: start; display: inline-flex; align-items: center; min-height: 28px; font-family: var(--font-ui); font-size: 1rem; letter-spacing: 0.06em; color: var(--ink-soft); text-decoration: none; border-radius: 3px; }
-.hit-go:hover, .hit-go:focus-visible { color: var(--wax); }
+.hit-go:focus-visible { color: var(--wax); }
+@media (hover: hover) { .hit-go:hover { color: var(--wax); } }
 .hit-go.open-q { color: var(--seal-pending); }
 .hit-val { color: var(--ink); font-size: 1.125rem; line-height: 1.4; overflow-wrap: anywhere; }
 /* V9: a result group shows its best fact, two lines of it; the rest of the page's matches open on "more" */
@@ -1096,7 +1150,8 @@ main.has-beam { margin-top: 44px; }
 .lib-door, .catrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-height: 44px; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--ink-soft); border-left: 4px solid var(--wax); border-radius: 0 8px 8px 0; background: var(--parchment-2); color: var(--ink); text-decoration: none; }
 .lib-door b, .catrow b { font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1.05rem; }
 .lib-door span, .catrow span { font-size: 1rem; }
-.lib-door:hover, .catrow:hover, .lib-door:focus-visible, .catrow:focus-visible { background: var(--parchment); }
+.lib-door:focus-visible, .catrow:focus-visible { background: var(--parchment); }
+@media (hover: hover) { .lib-door:hover, .catrow:hover { background: var(--parchment); } }
 .catrows { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); }
 .catrow { border-left-color: var(--brass-dim); }
 .allshelf > summary { cursor: pointer; min-height: 40px; display: flex; align-items: center; gap: 10px; font-family: var(--font-sc); letter-spacing: 0.04em; color: var(--ink); border-top: 1px solid var(--ink-line); }
@@ -1154,7 +1209,7 @@ main.has-beam { margin-top: 44px; }
 .emb.pend { width: 24px; height: 24px; --eb: var(--seal-pending); --el: var(--ink); filter: drop-shadow(0 1px 2px var(--shadow)); }
 .ptabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .ptab { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 8px 14px 6px; border-radius: 8px 8px 2px 2px; color: var(--ink); text-decoration: none; font-family: var(--font-ui); letter-spacing: 0.04em; background: var(--parchment-2) url("../img/parchment-tile.jpg") center / 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 2px 6px var(--wear); border-bottom: 2px solid var(--ink-line); }
-.ptab:hover { color: var(--wax); }
+@media (hover: hover) { .ptab:hover { color: var(--wax); } }
 .hist { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
 .hist li { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--ink-wash); color: var(--ink); overflow-wrap: anywhere; }
 .hist time { position: relative; font-family: var(--font-ui); font-variant-numeric: tabular-nums; color: var(--ink-soft); }
@@ -1200,7 +1255,8 @@ main.has-beam { margin-top: 44px; }
   .hist time::after { display: none; }
 }
 .tt { display: inline; padding: 0; margin: 0; font: inherit; color: inherit; background: none; border: 0; cursor: help; text-decoration: underline solid var(--wax); text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.tt:hover, .tt[aria-expanded="true"] { color: var(--wax); text-decoration-color: var(--wax); }
+.tt[aria-expanded="true"] { color: var(--wax); text-decoration-color: var(--wax); }
+@media (hover: hover) { .tt:hover { color: var(--wax); text-decoration-color: var(--wax); } }
 .ttc { position: absolute; z-index: 30; width: min(22rem, calc(100% - 20px)); box-sizing: border-box; padding: 12px 14px 10px; border-radius: 6px; color: var(--tt-text); background: var(--tt-bg); border: 1px solid var(--tt-edge); box-shadow: inset 0 0 0 1px var(--shade-deep), 0 14px 34px var(--shadow); font-family: var(--font-ui); font-size: var(--fs-small); line-height: 1.35; overflow: hidden; transform-origin: 0 50%; }
 .ttc::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(105deg, transparent 30%, var(--slip-sheen) 48%, transparent 66%); }
 .ttc.flipin { animation: tt-in var(--t-move) var(--ease-spring) both; }
@@ -1218,7 +1274,7 @@ main.has-beam { margin-top: 44px; }
 .ttc-line.y { color: var(--tt-gold); margin-top: 6px; font-family: var(--font-body); font-size: var(--step-0); }
 .ttc-line.g { color: var(--tt-green); }
 .ttc .tt { text-decoration-color: var(--tt-edge); }
-.ttc .tt:hover { color: var(--q-rare); }
+@media (hover: hover) { .ttc .tt:hover { color: var(--q-rare); } }
 .ttc-ranks { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .ttc-rk { min-width: 32px; min-height: 32px; font: inherit; color: var(--tt-text); background: transparent; border: 1px solid var(--tt-edge); border-radius: 4px; cursor: pointer; }
 .ttc-rk[aria-pressed="true"] { color: var(--tt-bg); background: var(--tt-gold); border-color: var(--tt-gold); }
@@ -1422,7 +1478,8 @@ main.has-beam { margin-top: 44px; }
 @keyframes flicker { 0%, 100% { transform: scale(1, 1); } 25% { transform: scale(0.94, 1.08); } 50% { transform: scale(1.04, 0.95); } 75% { transform: scale(0.97, 1.05); } }
 @keyframes twinkle { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 .map-walker { pointer-events: none; }
-.map-caption a, .map-caption a:hover { color: var(--ink); font-weight: 700; text-decoration-color: var(--wax); text-decoration-thickness: 2px; }
+.map-caption a { color: var(--ink); font-weight: 700; text-decoration-color: var(--wax); text-decoration-thickness: 2px; }
+@media (hover: hover) { .map-caption a:hover { color: var(--ink); font-weight: 700; text-decoration-color: var(--wax); text-decoration-thickness: 2px; } }
 .deep-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .deep-who .lib-tool { display: inline-flex; align-items: center; gap: 6px; border-left: 3px solid var(--cc); }
 .card .chip.stamp { white-space: normal; max-width: 100%; }
@@ -1433,7 +1490,7 @@ main.has-beam { margin-top: 44px; }
 .act { display: grid; gap: 6px; justify-items: start; }
 .act-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 18px 6px 12px; border-radius: 6px; background: var(--oak-2); color: var(--cream); font-family: var(--font-ui); font-weight: 700; letter-spacing: 0.04em; text-decoration: none; box-shadow: 0 2px 8px var(--wear), inset 1px 1px 0 var(--edge-hi); }
 .act-btn .emb { width: 1.5em; height: 1.5em; --eb: var(--parchment); --el: var(--oak-0); --ea: var(--brass); }
-.act-btn:hover { background: var(--oak-3); }
+@media (hover: hover) { .act-btn:hover { background: var(--oak-3); } }
 .act-how { margin: 0; color: var(--ink); max-width: 60ch; }
 .key-line { font-size: var(--fs-small); }
 .lib-more { position: relative; display: inline-block; }
@@ -1453,11 +1510,458 @@ main.has-beam { margin-top: 44px; }
 @media (max-width: 699px) { .pin-banner .banner-text { font-size: 24px; } .pin-lead { stroke-width: 2.4; } }
 .map-trail { fill: none; stroke: var(--wax); stroke-width: 3.4; stroke-linecap: round; stroke-dasharray: 0.006 0.018; opacity: 0.85; }
 @media (max-width: 699px) { :root { --fs-small: 1rem; --fs-chip: 1rem; --step--1: 1rem; } .map-text { font-size: 26px; } .map-text.small { font-size: 24px; } }
+/* ============ V13b: the room, the light, edge to edge, and a phone version (board/V13B-SPEC.md) ============ */
+/* phone behaviour (spec 4): no blue tap box, no long-press callouts on controls, no text inflation on rotation */
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+html.scene-open { overscroll-behavior: none; }
+.tile, .tab, .bb, .bchip, .flip, .tilt, .emblem-box img, .close, .lib-tool, .cat, .ex, .tonight-link, .clock, .pager button { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+input, select, textarea { font-size: max(16px, 1em); }
+/* fluid root type (layout 3): 16 px to about 2000 px wide, then up to 22 px on the widest screens */
+html { font-size: clamp(16px, 0.25vw + 12px, 22px); }
+@media (min-width: 2200px) { .wall { gap: clamp(22px, 1.4vw, 40px); } }
+
+/* 1.1 see through to the room: with the room on, the painted plate goes and the cards hang in the tavern itself, each on its
+   own surface, casting a deeper shadow into the room away from the light. The plate is the fallback when the room is off. */
+html.room-on .wall-plate { background: none; box-shadow: none; }
+html.room-on .wall-plate::after, html.room-on .wall-plate .light { display: none; }
+html.room-on main.has-beam .beam { display: none; }
+html.room-on .tile, html.room-on .clock { box-shadow: inset 1px 1px 0 var(--edge-hi), inset 0 0 22px var(--wear), calc(var(--ldx, 0.5) * 24px) calc(var(--ldy, 0.75) * 24px + 10px) 38px var(--shadow-room), 2px 3px 0 var(--edge-dark); }
+html.room-on .scene-veil { background: var(--veil-room); }
+html.room-on .wall-foot { padding: 6px 12px; border-radius: var(--radius); background: var(--shade-mid); }
+
+/* the card highlight (startSheen): a warm glow where the shared light is; js moves it and fades it */
+.tile-sheen { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; opacity: 0.8; transition: opacity var(--t-micro) var(--ease-oak); }
+.tile-sheen > i { position: absolute; left: -240px; top: -240px; width: 480px; height: 480px; border-radius: 50%; background: radial-gradient(closest-side, var(--sheen-hot), var(--sheen-warm) 45%, transparent); opacity: 0; will-change: transform, opacity; }
+@media (hover: hover) {
+  .tile:hover .tile-sheen, .clock:hover .tile-sheen { opacity: 1; }
+  /* craft 10: a tile lifted toward the light: the edge facing it catches, the shadow lengthens and softens away from it */
+  .tile:hover, .clock:hover { box-shadow: inset calc(var(--ldx, 0.5) * 3px) calc(var(--ldy, 0.75) * 3px) 0 var(--edge-glint), inset 0 0 22px var(--wear), calc(var(--ldx, 0.5) * 28px) calc(var(--ldy, 0.75) * 28px + 10px) 42px var(--shadow-soft), 2px 3px 0 var(--edge-dark); }
+}
+.tile:active .tile-sheen { opacity: 1; }
+html.scene-open .tile-sheen { visibility: hidden; }
+
+/* the tilt toggle says what it does; its note says why it stepped aside */
+.tilt .tilt-ico { width: 18px; height: 18px; vertical-align: -0.2em; margin-right: 6px; }
+.tilt .tilt-ico * { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tilt-note { flex-basis: 100%; font-size: var(--fs-small); font-style: italic; color: var(--brass-hi); }
+.tilt-note:empty { display: none; }
+.peers:empty { display: none; }
+/* mobile 17, phone-deep 2.7: the beam's overhang never makes the page scroll sideways; the search's clear cross reads on cream */
+main { overflow-x: clip; overflow-clip-margin: 60px; }
+.lib-q::-webkit-search-cancel-button { filter: brightness(0.35); }
+.kicker { text-wrap: balance; }
+.dg { overflow: clip; }
+
+/* layout 4 and 14: no half-empty stretched tiles: rows take their content's height and the wall sits in the middle of its
+   space (the room or the plate shows around it) */
+@media (min-width: 1100px) and (min-height: 961px) { .wall { grid-auto-rows: auto; align-content: start; } }
+@media (max-width: 1099px) { .wall { grid-auto-rows: auto; align-items: start; align-content: start; } }
+/* layout 5: Next steps uses the width */
+@media (min-width: 1200px) {
+  .tn { max-width: min(100%, 1500px); }
+  .tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .tn-cards > :first-child { grid-column: 1 / -1; }
+}
+@media (min-width: 1800px) { .tn-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } .tn-cards > :first-child { grid-column: auto; } }
+/* layout 7: the shortest laptops fit one screen */
+@media (min-width: 1100px) and (max-height: 820px) {
+  .wrap { padding-top: 8px; padding-bottom: 6px; gap: 8px; }
+  .hero h1 { font-size: 2rem; }
+  main.has-beam { margin-top: 34px; }
+  .beam { top: -34px; height: 46px; }
+  .clock { padding-top: 2px; padding-bottom: 2px; }
+  .wrap { gap: 4px; padding-top: 4px; }
+  .wall { row-gap: 8px; }
+  .hero h1 { font-size: 1.75rem; }
+  main.has-beam { margin-top: 28px; margin-bottom: 2px; }
+  .beam { top: -28px; height: 40px; }
+}
+/* layout 11: names in the five tile line up, one name per column */
+.med b { min-height: 1.3em; display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 0.95rem; background: var(--plate-name); text-shadow: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box; }
+/* layout 13: a scrolling tab rail fades at its edge, so the hidden tabs show they are there */
+@media (max-width: 1099px) { .tabs { -webkit-mask-image: linear-gradient(90deg, var(--mask-solid) calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, var(--mask-solid) calc(100% - 44px), transparent); padding-right: 44px; } }
+/* layout 15: a turned card grows to fit its back; nothing scrolls inside it */
+.card-inner { grid-template-areas: "face"; }
+.card-inner > .face { grid-area: face; position: relative; inset: auto; }
+.back { overflow: visible; }
+/* the card takes the height of the face that shows; the hidden face lies over it, clipped, until the turn */
+.card:not(.flipped) .back, .card.flipped .front { position: absolute; inset: 0; overflow: hidden; }
+/* the stamps' sheen waits out of sight until a hover sweeps it across (it showed beside the word on touch screens) */
+.chip::after { opacity: 0; }
+@media (hover: hover) { .chip:hover::after, .rrow:hover .chip::after { opacity: 1; } }
+/* layout 17: chart labels 14 px at least */
+.ring-tlabel, .ring-sub, .spark-text { font-size: 14px; }
+
+/* 1.5 names are labels, not headings: small type on a quiet plate beside the person's icon (the person's own card keeps its
+   name large: there the name is the subject) */
+.fm { font-size: 0.875rem; text-shadow: none; }
+.wheel-node text { font-size: 13px; }
+.trow-who .who { font-size: 0.9rem; }
+.seat-name { font-size: 13px; }
+.tn-n { font-size: 0.95em; }
+.su-when { font-size: 0.875rem; }
+/* the map's names: a quiet plate; sizes come from the map's drawn width (renderMap sets --fs, --fb, --fsm in map units) */
+.map-svg .map-text { font-size: var(--fb, 17px); }
+.map-svg .map-text.small { font-size: var(--fsm, 16px); }
+/* owner-8: a formal name plate under each pin, like a map legend plaque: dark oak, a brass rim, a thin class stripe, cream type */
+.map-svg .pin-banner .banner-text { font-size: var(--fs, 16px); font-family: var(--font-sc); font-weight: 700; fill: var(--cream); letter-spacing: 0.04em; }
+.map-svg .pin-banner .banner-cloth { fill: var(--oak-1); fill-opacity: 0.94; stroke: var(--brass); stroke-width: 1.2; filter: drop-shadow(0 1px 1.5px var(--shadow)); }
+.map-svg .pin-banner .banner-stripe { fill: var(--cc); }
+.map-svg .pin-lead { stroke: var(--oak-1); stroke-width: 1.2; stroke-dasharray: none; }
+.map-svg .map-pin .pin-body { stroke-width: 3.4; }
+
+/* section 3: the sheet grew with the screen, so the map grows with the sheet, as tall as the sheet leaves room for */
+@media (min-width: 1300px) { .map-box, .roads-legend { max-width: min(100%, calc((85vh - 450px - 6rem) * 1.5)); } }
+/* owner-9: on a wide screen the roads' legend and the meeting note stand beside the map, so the map takes the sheet's height */
+@media (min-width: 1300px) and (min-aspect-ratio: 4/3) {
+  #panel-roads { grid-template-columns: minmax(0, max-content) minmax(16rem, 26rem); grid-template-rows: auto auto auto 1fr; column-gap: 28px; }
+  #panel-roads > #map-lede { grid-column: 1 / -1; }
+  #panel-roads > .map-box { grid-column: 1; grid-row: 2 / span 3; width: calc((85vh - 280px - 3rem) * 1.5); max-width: 100%; }
+  #panel-roads > .roads-legend { grid-column: 2; grid-row: 2; grid-template-columns: minmax(0, 1fr); max-width: none; }
+  #panel-roads > .map-caption { grid-column: 2; grid-row: 3; }
+}
+/* owner-9: the scenes that ran over a 1080 px sheet fit it: Next steps keeps its big type for tall screens only, and the
+   sign-ups' seat drawing waits for a screen tall enough to hold it */
+@media (min-width: 1000px) and (min-height: 900px) and (max-height: 1199px) {
+  .tn-card p { font-size: 1.12rem; }
+  .tn-card .tn-big { font-size: var(--step-2); }
+  .tn-actions .lib-btn { min-height: 46px; font-size: 1.05rem; }
+  .tn-card { padding: 12px 18px 14px; }
+  .tn { gap: 12px; padding-top: 0; }
+  .tn-card p { font-size: 1.05rem; }
+  .tn-gets { padding: 6px 12px; }
+}
+@media (min-width: 1000px) and (max-height: 1199px) { .seats { display: none; } }
+/* 1.4 the Three roads tile: the map itself, in miniature */
+.t-roads .tile-viz.roads-viz { display: block; position: relative; flex: 1 1 auto; min-height: 0; aspect-ratio: 3 / 2; max-height: 220px; border-radius: 4px; overflow: hidden; background: var(--parchment-2) url("../img/map-parchment.jpg") center / cover; box-shadow: inset 0 0 18px var(--slip-burn), 0 1px 0 var(--edge-hi); }
+.t-roads .tile-viz.roads-viz svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mm-land { fill: var(--ink-wash); stroke: var(--ink-line); stroke-width: 2.4; }
+.mm-road { fill: none; stroke: var(--ink); stroke-width: 5; stroke-dasharray: 3 11; stroke-linecap: round; }
+.mm-air { fill: none; stroke: var(--ink-soft); stroke-width: 3.5; stroke-dasharray: 10 12; }
+.mini-map .map-zep-g { transform: translate(292px, 52px) scale(1.8); }
+.mm-pin .pin-body { fill: var(--oak-1); stroke: var(--cc); stroke-width: 3; }
+.mm-pin image { filter: drop-shadow(0 1px 1px var(--shadow)); }
+.t-roads .viz-cap { display: none; }
+@media (min-width: 1100px) and (max-height: 960px) { #wall .t-roads .tile-body > .tile-viz.roads-viz { display: block !important; max-height: 132px; } .wall .t-roads .tile-body > .tile-line { display: none !important; } }
+@media (max-width: 639px) { #wall .t-roads .tile-body > .tile-viz.roads-viz { display: block !important; max-height: none; } .wall .t-roads .tile-body > .tile-line { display: none !important; } }
+
+/* 4: tap targets 44 px on touch screens */
+@media (pointer: coarse) {
+  .tilt, .depth button, .lib-tool, .toggle button, .flip, .pager button, .deep-six, #deep-level, .wheel-links summary, .bclass summary, .brules summary, .bq-line, .chg-more, .hit-go, .ex, .srcs > summary, .lf-more, .ttc-rk, .ttc-x { min-height: 44px; }
+  .pager button { min-width: 44px; }
+  .gl, .tt { position: relative; }
+  .gl::after, .tt::after { content: ""; position: absolute; left: -2px; right: -2px; top: 50%; height: 44px; margin-top: -22px; }
+  .deep-six input { width: 28px; height: 28px; }
+  .chg-more, .lf-more, .hit-go { display: inline-flex; align-items: center; }
+}
+/* 4: the library: once the results scroll, or while typing, only the search row stays; the bottom bar steps aside for the keyboard */
+.lib-bar.stuck > :not(.lib-q):not(.lib-count), .lib-bar:focus-within > .lib-examples, .lib-bar:focus-within > .lib-legend, .lib-bar:focus-within > .lib-tools, .lib-bar:focus-within > .lib-kbd { display: none; }
+.lib-bar.stuck .lib-count { flex: 0 1 auto; }
+.sheet:has(input:focus, textarea:focus) .bottombar { display: none; }
+@media (max-width: 699px) {
+  .lib-examples { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px; }
+  .lib-examples::-webkit-scrollbar { display: none; }
+  .ex { flex: none; }
+  .lib-legend { display: none; }
+  .lib-tools { width: 100%; justify-content: flex-end; }
+  .lib-tool { min-height: 44px; display: inline-flex; align-items: center; }
+  .lib-more summary { display: inline-flex; align-items: center; }
+}
+/* mobile 7: the sound control keeps its size; its volume and room menu open over the page, not into it */
+@media (max-width: 699px) {
+  .sound-box .vol, .sound-box .room-pick { position: absolute; z-index: 5; top: calc(100% + 6px); right: 0; }
+  .sound-box .room-pick { top: calc(100% + 44px); }
+}
+
+/* layout 6, mobile 1 and 2: a phone on its side gets a full-screen compact sheet */
+@media (max-height: 500px) and (orientation: landscape) {
+  .scene-layer { padding: 0; }
+  .sheet { width: 100%; height: 100%; border-radius: 0; border: 0; }
+  .sheet-sub, .scene-hint { display: none !important; }
+  .sheet-head { gap: 0; padding: max(4px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px)); }
+  .sheet-name h2 { font-size: 1.15rem; }
+  .sheet-emblem { width: 30px; height: 30px; }
+  .close { width: 44px; height: 44px; }
+  .tab { min-height: 44px; margin-top: 2px; padding-top: 6px; padding-bottom: 6px; font-size: 0.9rem; }
+  .tab[aria-selected="true"] { margin-top: 0; padding-bottom: 8px; }
+  .sheet-body { padding: 10px max(14px, env(safe-area-inset-right, 0px)) 16px max(14px, env(safe-area-inset-left, 0px)); }
+  .lib-bar { position: static; margin-top: -10px; }
+  .lib-legend, .lib-examples, .lib-tools, .lib-kbd { display: none !important; }
+  .lede { font-size: 0.95rem; }
+}
+
+/* ---------- 1.3 the phone version: same look, more per screen (under 600 px, and a phone on its side for the wall) ---------- */
+@media (max-width: 599px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  :root { --step-0: 0.97rem; --step--1: 0.8125rem; --fs-small: 0.8125rem; --fs-chip: 0.8125rem; --step-1: 1.12rem; --step-2: 1.32rem; --step-3: 1.6rem; --step-4: 1.75rem; }
+  body { line-height: 1.45; }
+  .wrap { gap: 8px; padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
+  /* collapsed header: one line of title, one row of controls */
+  .hero { gap: 8px; }
+  .hero-title { gap: 2px; }
+  .hero h1 { font-size: 1.75rem; line-height: 1; }
+  .presence { flex-wrap: nowrap; gap: 6px; }
+  #presence-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.8125rem; }
+  .presence .tilt { flex: none; width: 44px; min-height: 44px; padding: 0; font-size: 0; display: inline-grid; place-items: center; }
+  .presence .tilt .tilt-ico, .presence .tilt .spk { width: 20px; height: 20px; margin: 0; }
+  .tilt-note { flex: 0 1 auto; font-size: 0.75rem; }
+  .tonight-link { min-height: 44px; padding: 6px 12px; grid-template-columns: minmax(0, 1fr) auto; }
+  .tonight-link span { display: none; }
+  .tonight-link b { font-size: 1.05rem; }
+  /* a slim countdown */
+  .clock { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 6px 12px 6px; }
+  .clock-top { align-items: center; gap: 8px; }
+  .clock-emblem { width: 28px; height: 28px; }
+  .clock-emblem .emblem, .clock-emblem img { width: 24px; height: 24px; }
+  .clock-live { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .clock-kicker { font-size: 0.8125rem; }
+  .clock-event { font-size: 1.1rem; }
+  .clock .tile-go { display: none; }
+  .clock-digits { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 6px; min-height: 0; }
+  .clock-unit { justify-items: center; }
+  .clock-unit b { font-size: 1.75rem; }
+  .clock-unit > span { font-size: 0.8125rem; letter-spacing: 0.08em; }
+  .clock-when { font-size: 0.8125rem; line-height: 1.3; }
+  .clock-launch { display: none; }
+  .mini-clock { padding-top: calc(4px + env(safe-area-inset-top, 0px)); padding-bottom: 4px; font-size: 0.875rem; }
+  /* denser tiles, two to a row, icon first */
+  main { margin: 4px 0 6px; }
+  main.has-beam { margin-top: 20px; }
+  .beam { top: -20px; height: 30px; }
+  .wall-plate { inset: -6px; }
+  .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; grid-auto-rows: auto; align-items: stretch; }
+  .wall > li { grid-column: span 1 !important; }
+  .wall > .t-five { grid-column: 1 / -1 !important; }
+  .tile { min-height: 0; }
+  .tile-band { min-height: 0; padding: 7px 8px 6px 40px !important; }
+  .wall .emblem-box, .wall > li:not(.t-five):not(.t-signups):not(.t-library) .emblem-box { display: grid; left: 5px; right: auto; width: 30px; height: 30px; margin-top: -15px; }
+  .emblem-box .emblem { width: 22px; height: 22px; }
+  .tile-name { display: flex; gap: 2px 6px; }
+  .tile-title { font-size: 0.98rem; }
+  .tile-go { display: none; }
+  .new-badge { font-size: 0.75rem; }
+  .tile-body { padding: 6px 8px 8px; gap: 4px; font-size: 0.8125rem; line-height: 1.3; min-height: 3.2em; }
+  .wall .tile-line { -webkit-line-clamp: 3; }
+  .t-five .tile-body { min-height: 0; }
+  .t-five .five-row { display: none; }
+  .t-five .tile-viz.five-viz { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+  .t-five .med-ico { --med: 40px; }
+  .t-five .med b { font-size: 0.8125rem; padding: 0 4px; }
+  .t-five .med small { display: none; }
+  .t-five .five-strip { padding-top: 4px; gap: 2px 10px; font-size: 0.8125rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+  .su-num small { font-size: 0.75rem; }
+  .su-num { padding: 0 2px; }
+  .t-library .mini b { font-size: 1.2rem; }
+  .t-library .mini:nth-child(n+3) { display: none; }
+  .tile-sub { display: none; }
+  /* the title and the two controls share one row; who is here moves under the title in small type */
+  .hero-title { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; }
+  .hero-title .kicker { grid-column: 1 / -1; }
+  .hero-title h1 { grid-column: 1; grid-row: 2; }
+  .hero-title .presence { grid-column: 2; grid-row: 2 / span 2; }
+  .hero-title #presence-text { display: none; }
+  .t-five .five-strip { display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset; }
+  .t-roads .tile-viz.roads-viz { flex: none; width: 100%; height: auto; }
+  .hero-title .kicker { font-size: 0.75rem; letter-spacing: 0.1em; }
+  .clock-when { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .t-signups .tile-body > .su-nums { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .t-signups .su-num:nth-child(3) { border-left: 1px solid var(--edge-hi) !important; }
+  .su-nums b, .su-num b { font-size: 1.3rem !important; }
+  .tile-q-go { display: none; }
+  .wall .tile-line { -webkit-line-clamp: 2; }
+  .t-library .minis { gap: 2px 10px; }
+  .tile-search { margin: 0 8px 8px; gap: 6px; }
+  .tile-q { min-height: 44px; padding: 4px 10px; font-size: 16px; }
+  .tile-q-go { min-height: 44px; padding: 4px 10px; }
+  .t-racials .tile-line { font-size: 0.8125rem; }
+  .wall-foot { font-size: 0.8125rem; }
+}
+/* the phone's scenes: full-screen sheets with a compact header and denser panels (twice the first screen) */
+@media (max-width: 599px) {
+  .sheet-head { gap: 0; padding: max(6px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) 6px max(10px, env(safe-area-inset-left, 0px)); }
+  .sheet-top { gap: 8px; }
+  .sheet-name { gap: 8px; }
+  .sheet-emblem { width: 30px; height: 30px; }
+  .sheet-emblem .emblem { width: 22px; height: 22px; }
+  .sheet-name h2 { font-size: 1.15rem; }
+  .sheet-sub, .scene-hint { display: none !important; }
+  .sheet-body { padding: 10px max(12px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)); }
+  .panel { gap: 10px; }
+  .lede, .lede-row .lede { font-size: 0.875rem; line-height: 1.4; }
+  .bb { min-height: 48px; font-size: 0.8125rem; padding: 2px 8px; }
+  .slip { padding: 16px 12px 12px; }
+  .slip::before { top: 4px; }
+  /* The five: one compact card per person down the page; no sideways carousel, so a swipe is always the next scene */
+  .cards { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); grid-auto-columns: auto; overflow: visible; scroll-snap-type: none; padding: 0; gap: 8px; }
+  .card { min-height: 0; }
+  .face { padding: 10px 12px 8px; gap: 4px; }
+  .crest { width: 44px; height: 44px; top: 8px; right: 8px; }
+  .crest + .who { padding-right: 50px; }
+  .card .who { font-size: 1.45rem; }
+  .card .what { font-size: 1rem; }
+  .card .spec { font-size: 0.875rem; }
+  .card dl { grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; font-size: 0.875rem; }
+  .card dl > div { display: contents; }
+  .card dt { font-size: 0.8125rem; }
+  .flip { min-height: 44px; padding: 4px 10px; margin-top: 4px; }
+  .spells { gap: 4px; } .spell { padding-bottom: 4px; } .spell-vals, .spell-meta { font-size: 0.8125rem; }
+  .swipe-hint, .pager { display: none !important; }
+  #panel-five > .lede { display: none; }
+  .card .chip.stamp { font-size: 0.75rem; padding: 0 6px 0 3px; }
+  .card dd { gap: 2px 6px; }
+  .card .spec { line-height: 1.25; }
+  /* the dates, roads, racials, bonuses, ledger, sign-ups, helper bot: tighter and smaller */
+  .rail { gap: 12px; }
+  .stop { gap: 10px; grid-template-columns: 28px minmax(0, 1fr); }
+  .stop-mark, .stop-mark .emb { width: 28px; height: 28px; }
+  .stop h3 { font-size: 1.08rem; }
+  .stop p { font-size: 0.875rem; line-height: 1.35; }
+  .rail::before { left: 12px; }
+  .map-box { padding: 4px; }
+  .roads-legend { gap: 6px; }
+  .road-btn { padding: 6px 10px; }
+  .road-btn span { font-size: 0.8125rem; }
+  .races { gap: 8px; }
+  .race ul { gap: 6px; margin-top: 6px; }
+  .race .rwiki { font-size: 0.875rem; }
+  .ring-wrap { gap: 10px; }
+  .ring-wrap svg { max-width: 220px; }
+  .legend, .rewards { font-size: 0.875rem; gap: 3px; }
+  .ledger { gap: 8px; }
+  .ledger ul { gap: 4px; }
+  .ledger li { font-size: 0.9rem; line-height: 1.35; }
+  .signup-grid { gap: 10px; }
+  .dsu { gap: 6px; }
+  .trow { font-size: 0.875rem; }
+  .librarian { padding: 12px; gap: 10px; }
+  .stat b { font-size: 1.3rem; }
+  /* buffs: the same parts, tighter (V13c rebuilds the look) */
+  .deep { gap: 6px; }
+  .bq { font-size: 0.875rem; }
+  .bq-giver h5, .deep-col h4 { font-size: 0.9rem; }
+  /* Next steps */
+  .tn { gap: 10px; }
+  .tn-pick { padding: 10px 12px; gap: 6px; }
+  .tn-who { font-size: 1.15rem; }
+  .tn-card { padding: 10px 12px 12px; }
+  .tn-card h3 { font-size: 0.875rem; margin-bottom: 2px; }
+  .tn-card p { font-size: 0.95rem; }
+  .tn-card .tn-big { font-size: 1.12rem; }
+  /* the library */
+  .lib { gap: 8px; }
+  .lib-bar { padding: 8px 12px; gap: 6px 8px; margin: -10px -12px 0; top: -10px; }
+  .lib-q { min-height: 44px; padding: 6px 12px; }
+  .lib[data-view="shelf"] .lib-q { min-height: 44px; font-size: 16px; }
+  .lib-head { gap: 2px 8px; }
+  .lib-stat b { font-size: 1.05rem; }
+  .lib-stat span { font-size: 0.75rem; }
+  .shelf { gap: 8px; }
+  .scroll-end { padding: 8px 12px 6px; }
+  .scroll-end h3 { font-size: 1.05rem; }
+  .plink { min-height: 44px; font-size: 0.9rem; }
+  .hit { padding: 6px 10px; }
+  .hit-val, .lf dd { font-size: 0.95rem; }
+  /* the library's tools share the chips' row: the chips scroll, the two buttons stay at its end */
+  .lib-bar .lib-examples { flex: 1 1 0; min-width: 0; margin: 0; padding: 0; order: 2; }
+  .lib-bar .lib-tools { width: auto; order: 3; flex: none; margin-left: 0; }
+  .lib-bar .lib-q { order: 1; }
+  .lib-bar .lib-count { order: 4; }
+  .lib-tool { padding: 2px 10px; font-size: 0.8125rem; }
+  .ex { min-height: 40px; padding: 2px 10px; font-size: 0.8125rem; }
+  .lib-head { margin-top: 2px; }
+  /* the ledger and the sign-ups: their lines are tighter, the ledger's lede waits (its slip says the same) */
+  #ledger-lede { display: none; }
+  .ledger .settled-li, .ledger li { line-height: 1.3; }
+  .ledger h3, .signup h3, .dsu h4 { font-size: 1.05rem; }
+  .act-btn { min-height: 44px; padding: 4px 12px 4px 8px; font-size: 0.875rem; }
+  #panel-signups > .lede { font-size: 0.8125rem; }
+  .trow { padding: 0; gap: 0 8px; }
+  .picker-note { font-size: 0.8125rem; }
+}
+/* the name chip (mobile 8): one component in Next steps and Buffs */
+.tn-pick .tn-name { display: inline-flex; align-items: center; gap: 6px; border-left: 3px solid var(--cc, var(--brass-dim)); color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+.tn-pick .tn-name .crest-mark { width: 1.3em; height: 1.3em; }
+.tn-chip.deep-who { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 0; color: var(--ink); background: none; border: 0; min-height: 0; }
+.tn-chip .deep-me { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-body); font-weight: 700; color: var(--parchment); }
+.sheet-body .tn-chip .deep-me { color: var(--ink); }
+.tn-chip .lib-tool { color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+
+
+/* ---------- owner-12 and owner-11 (board/NORTH-STAR.md pillars 1 and 2): full but framed, center first ---------- */
+/* the open scene is a frame of about 85% of the screen each way, centred, with the living room showing in the band around
+   it (dimmed by the veil, never blurred, never stopped); a phone's frame is about 94% each way */
+.scene-layer { padding: 0; }
+.sheet { width: 85vw; height: 85vh; height: 85svh; }
+@media (max-width: 599px) { .sheet { width: 94vw; height: 94vh; height: 94svh; border-radius: 10px; border: 1px solid var(--grain); } .sheet-head { padding-top: 6px; } }
+@media (max-height: 500px) and (orientation: landscape) { .sheet { width: 94vw; height: 92vh; height: 92svh; border-radius: 10px; border: 1px solid var(--grain); } }
+/* the wall: tiles spread over about 85% of the width from the centre out (phones keep a slim gutter), the room between them */
+.wrap { padding-left: max(clamp(12px, 7.5vw, 340px), env(safe-area-inset-left, 0px)); padding-right: max(clamp(12px, 7.5vw, 340px), env(safe-area-inset-right, 0px)); }
+@media (max-width: 599px) { .wrap { padding-left: max(3vw, 10px, env(safe-area-inset-left, 0px)); padding-right: max(3vw, 10px, env(safe-area-inset-right, 0px)); } }
+@media (min-width: 1100px) and (min-height: 961px) { .wall { align-content: center; row-gap: clamp(22px, 3vh, 64px); } }
+/* headings, the countdown, the tab rail and short rows sit on the centre line; reading text stays left-aligned in its column */
+.hero-title { justify-content: center; justify-items: center; text-align: center; }
+.presence { justify-content: center; }
+@media (min-width: 1000px) {
+  .hero-title .presence { margin-left: 0; }
+  .clock { grid-template-columns: auto auto; justify-content: center; column-gap: clamp(36px, 4vw, 120px); }
+}
+@media (min-width: 1500px), (min-width: 1100px) and (max-height: 960px) { .clock { grid-template-columns: auto auto auto; } }
+.clock-top { justify-content: center; }
+.wall-foot { justify-content: center; text-align: center; gap: 4px 28px; }
+.tabs { justify-content: safe center; }
+.sheet-top { justify-content: center; position: relative; }
+.sheet-top .close { position: absolute; right: 0; top: 50%; margin-top: -22px; }
+.sheet-name { padding: 0 52px; }
+.sheet-titles { text-align: center; }
+/* a scene's content: each block on the centre line at its own measure, the whole panel centred in the frame's height */
+.sheet-body { align-content: safe center; justify-items: stretch; }
+.panel > :not(.lib-bar) { justify-self: center; width: 100%; box-sizing: border-box; }
+/* a short row is as wide as what it holds, on the centre line, not a full-width strip with its content packed left */
+#tn-me, .lede-row, #dsu-act, .panel > .act { width: fit-content; max-width: 100%; }
+.signup-grid { max-width: min(100%, 92rem); }
+.sources { max-width: min(100%, 72ch); }
+.seats svg { max-width: 520px; }
+/* the laptops (768 to 960 tall) take the frame's wider end (90%) and shorter blocks, so the wall stays one screen and the
+   scenes stay inside the scroll budget */
+@media (min-width: 1100px) and (max-height: 960px) {
+  .wrap { padding-left: max(5vw, env(safe-area-inset-left, 0px)); padding-right: max(5vw, env(safe-area-inset-right, 0px)); }
+  .sheet { width: 90vw; height: 88vh; }
+  .card { min-height: 0; }
+  .face { padding: 14px 14px 12px; gap: 6px; }
+  .lib-legend, .lib:not([data-view="results"]) .lib-head { display: none; }
+}
+@media (max-width: 599px) { .sheet { height: 96vh; height: 96svh; } .card dl > div:nth-child(3) { display: none; } }
+@media (min-width: 1800px) and (min-height: 1200px) { .tn-card p { font-size: 1.45rem; } .tn-card .tn-big { font-size: var(--step-3); } .tn-card h3 { font-size: 1.3rem; } }
+.lede, .panel > p { width: 100%; max-width: min(100%, 70ch); text-align: left; }
+.lede-row, .tn-actions, .deep-ctl, .deep-who, .lib-row, .act { justify-content: center; justify-items: center; }
+.roads-legend, .ledger, .rail, .map-box, .ring-wrap, .signup-grid, .librarian, .tn { margin-inline: auto; }
+@media (min-width: 1300px) and (min-aspect-ratio: 4/3) { #panel-roads { justify-content: center; } #panel-roads > #map-lede { justify-self: center; } }
+/* owner-12b: the frame is sized to what it holds. A reading scene is a centred frame wide enough to read in columns, up to
+   1700 px or 60% of a very wide screen, as tall as its content (up to 85%), so the room stays in view on both sides. A
+   visual scene (the map, the five, the wheel, the library) takes up to 85% each way. Under 900 px every frame is near full
+   width. "Look at the room" (and a held press on the frame's edge) fades the open scene to 15% while it is held. */
+@media (min-width: 900px) and (min-height: 501px) {
+  #scene[data-kind="reading"] .sheet { width: min(85vw, max(1100px, min(60vw, 1700px))); height: auto; max-height: 85vh; max-height: 85svh; display: flex; flex-direction: column; }
+  #scene[data-kind="reading"] .sheet-head { flex: none; }
+  /* size containment would make a content-fitted frame collapse; layout and paint containment keep the V13a isolation */
+  #scene[data-kind="reading"] .sheet-body { flex: 0 1 auto; min-height: 0; contain: content; }
+}
+@media (max-width: 899px) and (min-width: 600px) and (min-height: 501px) { .sheet { width: 94vw; height: 92vh; height: 92svh; } }
+.sheet, .scene-veil { transition: opacity var(--t-move) var(--ease-oak); }
+.scene-layer.peek .sheet { opacity: 0.15; }
+.scene-layer.peek .scene-veil { opacity: 0.1; }
+.peek-btn { position: absolute; left: 0; top: 50%; margin-top: -22px; min-height: 44px; padding: 2px 12px; border-radius: 999px; border: 1px solid var(--grain); background: var(--glass); color: var(--parchment); font-family: var(--font-sc); font-size: var(--fs-chip); letter-spacing: 0.06em; cursor: pointer; -webkit-touch-callout: none; user-select: none; touch-action: none; }
+.peek-btn[aria-pressed="true"] { border-color: var(--brass); color: var(--brass-hi); }
+@media (max-width: 599px) { .peek-btn { font-size: 0; width: 44px; padding: 0; } .peek-btn::before { content: ""; display: inline-block; width: 18px; height: 12px; border: 2px solid currentColor; border-radius: 50% / 60%; box-sizing: border-box; } }
+@media (min-width: 600px) { .sheet-name { padding: 0 11rem; } }
+/* prefers-contrast: more: a darker veil, no moving highlights over the cards, solid name plates */
+@media (prefers-contrast: more) { .scene-veil, html.room-on .scene-veil { background: var(--veil-strong); } .tile-sheen { display: none; } .map-svg .pin-banner .banner-cloth { fill-opacity: 1; } }
+
 @media (prefers-reduced-motion: reduce) {
-  :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; }
+  :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; --t-close: 1ms; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .card:hover, .clock:hover, .clock:active, .road-btn:hover, .close:hover { transform: none; }
   .tile, .tile:hover, .tile:active { transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg)); }
+  .scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both !important; } /* spec 1.2: reduced motion opens with a cross-fade, no move */
   .hero-art img { transform: none !important; }
 }

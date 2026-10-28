@@ -4,7 +4,8 @@
 //   const T = await createTavern(canvas, { shadows, power, yieldTask, timed })   shadows: 1 (512 maps) or 2 (1024)
 //   T.renderer T.scene T.camera     three objects; room.js owns the loop and the camera motion
 //   T.layout(W, H, rect)            places the hearth and the shelves in the side gutters beside the board's rectangle
-//   T.setLights(k, s, flicker)      light levels (k: { hearth, candles, lantern }) and the flicker at time s
+//   T.setLights(k, s, flicker, n)   light levels (k: { hearth, candles, lantern, key }) and the flicker at time s (n: shared signal)
+//   T.setKey(nx, ny)                moves the key light with the pointer or the tilt (-1 to 1)
 //   T.setAir(n, s)                  dust and embers (n 0 removes), animated on the GPU at time s
 //   T.memory()  T.dispose()
 import * as THREE from "../vendor/three.module.min.js?v=08fd7545d1";
@@ -325,7 +326,7 @@ export async function createTavern(canvas, opt) {
   const hemi = new THREE.HemisphereLight(0x5a6a8a, 0x3a1c0a, 0.9); room.add(hemi);
   const shadowLights = opt.shadows ? [fireL, chandL] : [];
   for (const l of shadowLights) { l.castShadow = true; l.shadow.mapSize.set(opt.shadows > 1 ? 1024 : 512, opt.shadows > 1 ? 1024 : 512); l.shadow.radius = 4; l.shadow.bias = -0.004; l.shadow.camera.near = 0.1; l.shadow.camera.far = 12; }
-  const base = { fire: fireL.intensity, chand: chandL.intensity, lant: lantL.intensity };
+  const base = { fire: fireL.intensity, chand: chandL.intensity, lant: lantL.intensity, fill: fillL.intensity };
 
   /* ---------- air: dust in the light, embers over the fire ---------- */
   const air = [];
@@ -358,11 +359,18 @@ export async function createTavern(canvas, opt) {
     }
   };
   const flick = (s, ph) => 0.5 * Math.sin(s * 7.1 + ph) + 0.3 * Math.sin(s * 13.7 + ph * 2.3) + 0.2 * Math.sin(s * 23.1 + ph * 0.7);
-  const setLights = (k, s, flicker) => {
-    const fl = (ph, amt) => (flicker ? 1 + amt * flick(s, ph) * flicker : 1);
+  /* V13b: n is the page's shared flicker signal (-1 to 1, the same one the wall light and the card highlights read); the
+     hearth follows it, the candles and the lantern keep a little of their own flutter on top */
+  const setLights = (k, s, flicker, n) => {
+    const own = (ph) => (n == null ? flick(s, ph) : 0.7 * n + 0.3 * flick(s, ph));
+    const fl = (ph, amt) => (flicker ? 1 + amt * own(ph) * flicker : 1);
     fireL.intensity = base.fire * k.hearth * fireK * fl(0.3, 0.22); chandL.intensity = base.chand * k.candles * fl(1.7, 0.08); lantL.intensity = base.lant * k.lantern * fl(5.3, 0.1);
+    fillL.intensity = base.fill * (k.key == null ? 1 : k.key) * fl(2.9, 0.12);
     for (const g of glows) g.s.material.opacity = g.base * (g.s.parent === hearth ? k.hearth * fl(0.3, 0.15) : g.s.parent === chand ? k.candles : g.s.parent === lanternG ? k.lantern : k.candles);
   };
+  /* V13b: the key light is the warm fill over the room's middle; the pointer (or the phone's tilt) moves it, nx and ny from
+     -1 to 1, the same light position the card highlights on the page use. It casts no shadow, so moving it costs nothing. */
+  const setKey = (nx, ny) => { fillL.position.set(nx * 2.4, 2.35 - ny * 0.75, -2.3 - Math.abs(nx) * 0.6); };
 
   /* no environment reflections: three's PMREM capture compiles its blur shaders in one task (1.1 s on ANGLE D3D11, measured),
      which the room's start must never cost; the glass and metal get their glints from the point lights instead */
@@ -403,7 +411,7 @@ export async function createTavern(canvas, opt) {
   if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   let lost = false;
   return {
-    renderer, scene, camera, info, layout, setLights, tick, pose,
+    renderer, scene, camera, info, layout, setLights, setKey, tick, pose,
     setAir: (n) => setAir(n),
     shadowsOn: () => renderer.shadowMap.enabled,
     memory: () => Math.round(texBytes + renderer.info.memory.geometries * 24e3),
