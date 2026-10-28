@@ -90,7 +90,7 @@ function startRoomLadder() {
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  import("../room/tier.js?v=43d21c1deb").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  import("../room/tier.js?v=f372a513c9").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
 }
 const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, close: 200, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -277,11 +277,16 @@ function renderCalendar(now) {
   }
   const month = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(mid);
   const later = t.events.filter((e) => local(e) > end);
-  box.replaceChildren(h("div", { class: "cal", role: "group", "aria-label": `${month}, with the board's dates marked` },
+  /* V13e retest-10: on a phone the month folds under "The month on a calendar" (it used to be missing there); from 1100 px it
+     is always open. Days past the month (the raids on Dec 9) are buttons too, so every date on the rail has a day to light. */
+  const wideCal = matchMedia("(min-width: 1100px)").matches, wasOpen = box.querySelector("details.cal-wrap");
+  const calOpen = wideCal || !!(wasOpen && wasOpen.open);
+  const fmtDay = (d) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d);
+  box.replaceChildren(h("details", { class: "cal-wrap", ...(calOpen ? { open: "" } : {}) }, h("summary", { class: "cal-sum" }, "The month on a calendar"), h("div", { class: "cal", role: "group", "aria-label": `${month}, with the board's dates marked` },
     h("h4", { text: month }),
     h("div", { class: "cal-grid" }, ...["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
     h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}, the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
-      ...later.map((e) => h("span", {}, emb(EMB_LABEL[e.key] || "seal"), `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}`))));
+      ...later.map((e) => h("button", { type: "button", class: "cal-day cal-later", "data-ev": e.key, "data-day": dayKey(local(e)), "aria-label": `${fmtDay(local(e))}: ${e.label}` }, emb(EMB_LABEL[e.key] || "seal"), h("span", { text: `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}` }))))));
 }
 function setClockLabel(kicker, event) {
   if ($("#clock-kicker").textContent !== kicker) $("#clock-kicker").textContent = kicker;
@@ -363,7 +368,8 @@ function renderTiles() {
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
-    minis([[stillOpen.length, "still open"], [p.polls.length, p.polls.length === 1 ? "poll" : "polls"]]),
+    /* V13e retest-14: the "still open" count lands on the first open line, so the landing works where the list is hidden (1500 px and up) */
+    (() => { const mm = minis([[stillOpen.length, "still open"], [p.polls.length, p.polls.length === 1 ? "poll" : "polls"]]); if (stillOpen.length && mm.firstChild) mm.firstChild.setAttribute("data-land", "ledger.open-0"); return mm; })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
@@ -1408,7 +1414,8 @@ function renderDiscordSignups() {
     ["Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
     ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
-  body.replaceChildren(...groups.map(([title, icon, rows]) => h("div", { class: "tally" }, h("h4", {}, emb(icon), title), ...rows)));
+  /* V13e: each question is one ledger line (label, the answers with names, then the empty answers as quiet "0" chips) */
+  body.replaceChildren(...groups.map(([title, icon, rows], gi) => h("div", { class: "tally", "data-q": ["pack", "meet", "rsvp", "when"][gi] }, h("h4", {}, emb(icon), title), ...rows)));
   renderSeats(S); actRow();
   $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${fmtWhen(Date.parse(S.updated) / 1000, { rel: true })}.` : "Nobody has clicked the card yet.";
   KIT.emit("signups");
@@ -1594,15 +1601,21 @@ function startSwipe() {
   const give = (dx) => { const a = Math.abs(dx), d = a <= 80 ? a : 80 + (a - 80) * 0.35; return Math.sign(dx) * d * 0.85; };
   const back = (p) => { if (!p) return; if (reduceMQ.matches) { p.style.transform = ""; return; } p.classList.add("spring"); p.style.transform = ""; setTimeout(() => p.classList.remove("spring"), MOTION.micro + 40); };
   const atEnd = (c, dx) => (dx > 0 ? c.scrollLeft <= 2 : c.scrollLeft >= c.scrollWidth - c.clientWidth - 2);
+  /* V13e touch pass: a second finger (a pinch on the map) is never a swipe; nor is any touch that starts on the map */
+  let fingers = 0;
+  body.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") fingers++; }, true);
+  for (const t of ["pointerup", "pointercancel"]) body.addEventListener(t, (e) => { if (e.pointerType === "touch") fingers = Math.max(0, fingers - 1); }, true);
   body.addEventListener("pointerdown", (e) => {
     s = null;
     if (e.pointerType === "mouse" || SC.open === null) return;
+    if (fingers > 1 || (e.target.closest && e.target.closest("#map"))) return;
     if (e.clientX < SWIPE_EDGE || e.clientX > innerWidth - SWIPE_EDGE) return;
     if (e.target.closest && e.target.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar")) return;
     const car = e.target.closest && e.target.closest(".cards");
     s = { x: e.clientX, y: e.clientY, t: e.timeStamp, id: e.pointerId, car: car && car.scrollWidth > car.clientWidth + 2 ? car : null, sl: car ? car.scrollLeft : 0, live: false, dx: 0 };
   });
   body.addEventListener("pointermove", (e) => {
+    if (s && fingers > 1) { if (s.live) back(panel()); s = null; return; }
     if (!s || e.pointerId !== s.id || s.car) return;
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (!s.live) { if (Math.abs(dy) > 14 && Math.abs(dy) > Math.abs(dx)) { s = null; return; } if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return; s.live = true; }
@@ -1666,7 +1679,11 @@ function glintOrigin(g, part) {
     g.style.setProperty("--gx", `${(((x0 + x1) / 2 + 2) / 28 * 100).toFixed(1)}%`); g.style.setProperty("--gy", `${((y1 + 2) / 28 * 100).toFixed(1)}%`);
   } catch (e) {}
 }
-const hasVT = () => typeof document.startViewTransition === "function";
+/* V13e: WebKit (Safari, and every browser on iOS) crashed the page when a scene opened through a View Transition at large
+   viewports (1280x960 and up; reproduced in Playwright WebKit, also on the live V13d site). WebKit takes the FLIP morph that
+   Firefox uses. Blink keeps View Transitions. */
+const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
+const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;
 const canFlip = () => typeof $(".sheet").animate === "function";
 function morphBand(key) {
   if (reduceMQ.matches) return null;
@@ -1727,6 +1744,9 @@ function showScene(key) {
     document.documentElement.classList.add("scene-open");
     selectPanel(k, false);
     focusScene(k);
+    /* V13e: WebKit drops a focus set while the page is still loading (a deep link); put it back once the frame has painted */
+    const refocus = () => { if (SC.open === k && (!document.activeElement || document.activeElement === document.body)) focusScene(k); };
+    requestAnimationFrame(() => setTimeout(refocus, 60)); if (document.readyState !== "complete") addEventListener("load", () => setTimeout(refocus, 30), { once: true });
     sceneState(true);
     sfx("open", { delay: motionMs("move") * 0.7 });
     return landing(k);
@@ -1860,6 +1880,8 @@ function onKey(e) {
 let closeMore = () => false;
 function route() {
   const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
+  /* V13e retest-6: #dates (the scene's name everywhere) is the Dates scene, whose key is timeline */
+  if (/^dates(?:\.|$)/.test(raw)) { try { history.replaceState(history.state, "", `${location.pathname}${location.search}#${raw.replace(/^dates/, "timeline")}`); } catch (e) { return; } return route(); }
   const tm = raw.match(/^tonight\.([a-z0-9-]{1,40})$/); if (tm && MEM.setMe(tm[1]) && D.party) { renderTonight(); markMe(); }
   /* #wall: the wall at its top (the token names the <ul id="wall">, so the browser would scroll to it). */
   if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
@@ -3194,7 +3216,7 @@ function startLibrary() {
    by ->, open, changes, or c.<category>. Letters, digits, dot, underscore, tilde and hyphen only; 100 characters at most. */
 const LAUNCH_LIB = /^library(?:\.(?:q\.[a-z0-9][a-z0-9.-]{0,90}|open|changes|c\.[a-z]+|[a-z]+\.[a-z0-9-]+(?:~[a-z0-9_.]+)?))?$/;
 function launchToken(raw) {
-  const t = typeof raw === "string" ? raw.trim() : "";
+  const t = (typeof raw === "string" ? raw.trim() : "").replace(/^dates(?=\.|$)/, "timeline"); /* V13e: the Dates alias */
   if (!t || t.length > 100 || !/^[A-Za-z0-9._~-]+$/.test(t)) return null;
   return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) || /^buffs\.[a-z_-]{1,40}$/.test(t) || LAND_RE.test(t) ? t : null;
 }

@@ -7,7 +7,7 @@
 // SCENE_FPS instead of being swapped for a still, and closing reverses the move back to exactly the wall state.
 //   const room = await startRoom({ tier, canvas, motion, launchEpoch, newSignup, aim, signal, onLight, onSlow, onStartCost, onLost })
 //   room.setTier(t)  room.refresh(next)  room.stop()  room.status()
-import { createTavern } from "./tavern.js?v=68b40f93b9";
+import { createTavern } from "./tavern.js?v=ed81b3f938";
 
 /* shadows are drawn once (the lights do not move), so they cost nothing per frame; ultra gets the sharper map.
    V13a: fps 0 draws on every display refresh (a 175 Hz panel gets 175 draws, not every third one); budget is the frame

@@ -1,6 +1,6 @@
 /* V13d: the board side of the shared brain (notes/SHARED-BRAIN-DESIGN.md section 3, stage 3; cloudflare/STAGE12-NOTES.md).
    window.BoardBrain reads the bot's mirror from the leeroy-brain Worker (GET /api/state, then the /api/live WebSocket, with a
-   15 s poll when the socket is not there) and, with a personal board key, sends one person's sign-up state and journey
+   15 s poll when the socket is not there; V13e: the socket only with a key, keyless boards poll) and, with a personal board key, sends one person's sign-up state and journey
    (POST /api/intent). It never sends a name, an id or anything but the fixed answer words.
    - The key arrives once in the address bar (#k=<key>&signups from "My board link" on the Sign-ups card); this file runs
      before the board and the gate, stores it as board-key and takes it out of the address bar at once.
@@ -12,7 +12,7 @@ const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"];
 const POLL_MS = 15000, PING_MS = 45000, WS_RETRY_MS = 120000, SLOW_MS = 30000;
-const B = { key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, errors: 0, sent: 0, polls: 0, wsMsgs: 0 };
+const B = { key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, sent: 0, polls: 0, wsMsgs: 0 };
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
@@ -88,6 +88,8 @@ function journeyFromMirror() {
   const me = B.me, J = B.signups && B.signups.journeys; if (!me || !Array.isArray(J)) return;
   const row = J.find((j) => j.slug && j.slug === me.slug) || J.find((j) => nameOf(j.name) === nameOf(me.name));
   const v = row && JOURNEYS.includes(row.journey) ? row.journey : null;
+  /* while this board's own pick is on its way, an older mirror row must not flip the page back (V13e) */
+  if (B.jWant) { if (v === B.jWant || Date.now() - B.jWantAt > 60000) B.jWant = null; else return; }
   if (v && v !== B.mirrorJ) { B.mirrorJ = v; emit("journey", v); }
 }
 
@@ -107,7 +109,7 @@ async function pollOnce() {
 }
 function openWs() {
   clearTimeout(B.wsT);
-  if (!B.base || typeof WebSocket !== "function" || B.ws) return false;
+  if (!B.base || !B.key || typeof WebSocket !== "function" || B.ws) return false;
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
   ws.onopen = () => { if (B.ws !== ws) return; opened = true; B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
@@ -117,7 +119,7 @@ function openWs() {
     B.ws = null; clearInterval(B.pingT); B.via = "poll";
     emit("status", status());
     schedulePoll(opened ? 0 : POLL_MS);
-    B.wsT = setTimeout(openWs, WS_RETRY_MS);
+    if (B.key) B.wsT = setTimeout(openWs, WS_RETRY_MS);
   };
   ws.onclose = down; ws.onerror = () => { down(); try { ws.close(); } catch (e) {} };
   return true;
@@ -159,12 +161,14 @@ async function setRsvp(v) {
   emit("pending", pending());
   return { ok: p.state !== "failed", state: p.state };
 }
-/* the journey goes the same way; the Worker of 2026-10-28 takes only sign-up changes, so a refusal is remembered for the
-   visit and the board keeps the choice in this browser (V13D-NOTES.md has the Worker proposal) */
+/* the journey goes the same way (V13e: the Worker takes { kind: "journey" }, last one per key wins, and the bot stores it in
+   journeys.json and mirrors it); an older Worker answers 400, which is remembered for the visit, and the choice stays local */
 async function setJourney(j) {
   if (!B.base || !B.key || !JOURNEYS.includes(j) || B.journeyRefused) return { ok: false, refused: B.journeyRefused };
   try {
+    B.jWant = j; B.jWantAt = Date.now();
     const r = await call("POST", "/intent", { kind: "journey", patch: { journey: j } }); B.sent++;
+    if (r.status !== 200 && B.jWant === j) B.jWant = null;
     if (r.status === 400) { B.journeyRefused = true; emit("status", status()); return { ok: false, refused: true }; }
     return { ok: r.status === 200 };
   } catch (e) { B.errors++; return { ok: false }; }
@@ -176,12 +180,14 @@ function start(handlers) {
   if (!B.base) { B.via = "off"; emit("status", status()); return status(); }
   B.via = "poll";
   pollOnce();
-  openWs();
+  /* V13e (retest defect 3): only a board with a key opens the socket. A keyless board reads the mirror with the 15 s poll
+     while visible, so a public viewer never opens /api/live and never logs a failed socket (the 503 seen on github.io). */
+  if (B.key) openWs();
   if (B.key) me(); else emit("me", null);
   if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", () => { if (!hidden() && B.via !== "ws") pollOnce(); });
   if (typeof addEventListener === "function") addEventListener("focus", () => { if (B.via !== "ws") pollOnce(); });
   return status();
 }
-function forget() { store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; emit("me", null); emit("pending", {}); }
+function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; emit("me", null); emit("pending", {}); }
 window.BoardBrain = Object.freeze({ start, status, setRsvp, setJourney, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, _state: onState, _poll: pollOnce });
 })();

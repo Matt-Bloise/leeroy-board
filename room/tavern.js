@@ -150,6 +150,11 @@ export async function createTavern(canvas, opt) {
   const yieldTask = opt.yieldTask, timed = opt.timed;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: opt.power || "high-performance", stencil: false });
   if (!renderer.getContext()) throw new Error("WebGL did not start");
+  /* V13e: a context lost while the room starts (WebKit at 2120x909 lost it during the shader compile) must end as a failed start,
+     never an uncaught error: three's shader log check reads a null log on a lost context, so it is off, and the loss is caught */
+  renderer.debug.checkShaderErrors = false;
+  let lostEarly = false; const onEarlyLoss = (e) => { e.preventDefault(); lostEarly = true; };
+  canvas.addEventListener("webglcontextlost", onEarlyLoss);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1;
   renderer.shadowMap.enabled = !!opt.shadows; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
   const gl = renderer.getContext(), dbg = gl.getExtension("WEBGL_debug_renderer_info");
@@ -406,7 +411,10 @@ export async function createTavern(canvas, opt) {
   setAir(AIR_MAX); tick(0); layout(innerWidth, innerHeight, null); /* everything visible while it compiles */
   /* shaders compile in parallel where the browser can (KHR_parallel_shader_compile), so no long task; without it (software
      GPUs, which auto never gives a 3D tier) they compile in one step, timed, and the ladder judges the frames after */
-  if (gl.getExtension("KHR_parallel_shader_compile")) await renderer.compileAsync(scene, camera); else timed(() => renderer.compile(scene, camera));
+  try { if (gl.getExtension("KHR_parallel_shader_compile")) await renderer.compileAsync(scene, camera); else timed(() => renderer.compile(scene, camera)); }
+  catch (er) { if (!(lostEarly || gl.isContextLost())) throw er; }
+  canvas.removeEventListener("webglcontextlost", onEarlyLoss);
+  if (lostEarly || gl.isContextLost()) { try { renderer.dispose(); } catch (er) {} throw new Error("WebGL context lost while the room started"); }
   setAir(0);
   if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   let lost = false;

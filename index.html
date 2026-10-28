@@ -21,8 +21,8 @@
 <link rel="icon" type="image/png" href="img/icons/tab-five.png">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preload" as="image" href="img/tavern-hero.jpg" fetchpriority="high">
-<link rel="stylesheet" href="css/board.css?v=f2bd963444">
-<link rel="stylesheet" href="css/v13d.css?v=a00048eafe">
+<link rel="stylesheet" href="css/board.css?v=9ebdc3aa4a">
+<link rel="stylesheet" href="css/v13d.css?v=d793b62d77">
 
 <div class="hero-art gate-mode" id="hero-art" aria-hidden="true"><img src="img/tavern-hero.jpg" alt="" width="1672" height="941" loading="eager" fetchpriority="high" decoding="async"></div>
 <div class="candle" aria-hidden="true"></div>
@@ -186,15 +186,12 @@
         <div class="act" id="dsu-act"></div>
         <div class="signup-grid">
           <div class="slip signup" id="discord-signups">
-            <h3>From Discord</h3>
+            <div class="dsu-top"><h3>From Discord</h3><p class="picker-note" id="dsu-stamp"></p><p class="picker-note">Buttons live in #wow-forever; this page follows them within a minute.</p></div>
             <div class="dsu" id="dsu-body"><p class="loading">Reading the sign-up card.</p></div>
-            <p class="picker-note" id="dsu-stamp"></p>
-            <p class="picker-note">Buttons live in #wow-forever; this page follows them within a minute.</p>
             <div class="seats" id="dsu-seats" data-j="c e"></div>
           </div>
           <form class="slip signup" id="signup" autocomplete="off" hidden>
             <h3>On this page</h3>
-            <p class="picker-note">Answers here stay on this page and do not reach Discord.</p>
             <p class="status" id="signup-status">Loading the page's own sign-ups.</p>
             <fieldset>
               <legend>Which of the five are you?</legend>
@@ -263,9 +260,9 @@
 </aside>
 
 <script src="js/sound.js?v=d181ff431f"></script>
-<script src="js/brain.js?v=0f337fce45"></script>
-<script src="js/board.js?v=bb8a50aec3"></script>
-<script src="js/v13d.js?v=dfb03ce33b"></script>
+<script src="js/brain.js?v=f71b352f6c"></script>
+<script src="js/board.js?v=552e88427d"></script>
+<script src="js/v13d.js?v=e690ee6d46"></script>
 <script type="module">
 /* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:
    #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is

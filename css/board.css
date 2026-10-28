@@ -1660,7 +1660,8 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
   .chg-more, .lf-more, .hit-go { display: inline-flex; align-items: center; }
 }
 /* 4: the library: once the results scroll, or while typing, only the search row stays; the bottom bar steps aside for the keyboard */
-.lib-bar.stuck > :not(.lib-q):not(.lib-count), .lib-bar:focus-within > .lib-examples, .lib-bar:focus-within > .lib-legend, .lib-bar:focus-within > .lib-tools, .lib-bar:focus-within > .lib-kbd { display: none; }
+/* V13e crawl: only typing in the search box folds the bar (a focused tool button folding it made its own click miss) */
+.lib-bar.stuck > :not(.lib-q):not(.lib-count), .lib-bar:has(#lib-q:focus) > .lib-examples, .lib-bar:has(#lib-q:focus) > .lib-legend, .lib-bar:has(#lib-q:focus) > .lib-tools, .lib-bar:has(#lib-q:focus) > .lib-kbd { display: none; }
 .lib-bar.stuck .lib-count { flex: 0 1 auto; }
 .sheet:has(input:focus, textarea:focus) .bottombar { display: none; }
 @media (max-width: 699px) {

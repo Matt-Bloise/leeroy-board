@@ -14,13 +14,15 @@ const rm = (el) => { if (el && el.parentNode) el.parentNode.removeChild(el); };
 const kid = (el, cls) => [...el.children].find((c) => c.classList.contains(cls)) || null;
 const FIRST = !get("board-seen") && !get("board-glowed");
 const V = { picked: JOURNEYS.includes(get("board-journey")), path: {}, zoom: null, map: null, dial: null, glow: false };
+/* V13e retest-3: the page names its own icon (a brass tankard drawn inline), so no browser asks the host for /favicon.ico */
+if (!document.querySelector('link[rel="icon"]')) { const ic = document.createElement("link"); ic.rel = "icon"; ic.type = "image/svg+xml"; ic.href = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#2a1a10"/><path d="M8 9h13v16a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2z" fill="#c9952e"/><path d="M21 12h3a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-3" fill="none" stroke="#c9952e" stroke-width="2.4"/><path d="M7 9a3 3 0 0 1 3-3h1a3 3 0 0 1 5 0h1a3 3 0 0 1 3 3z" fill="#f3e6c8"/></svg>'); (document.head || document.documentElement).appendChild(ic); }
 
 // ---------------- 1. Journeys ----------------
 const journey = () => (JOURNEYS.includes(root.dataset.journey) ? root.dataset.journey : "curious");
 root.dataset.journey = JOURNEYS.includes(get("board-journey")) ? get("board-journey") : "curious";
 function markJourney() {
   const j = journey();
-  document.querySelectorAll("#journey [data-journey], #more-menu [data-journey]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.journey === j)));
+  document.querySelectorAll(".journey [data-journey], #more-menu [data-journey]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.journey === j)));
 }
 /* one switch, effects at once, nothing lost: the open scene and its scroll stay; every renderer draws the new depth */
 function setJourney(j, how) {
@@ -45,7 +47,7 @@ function applyDepth() {
 /* the launch date at each depth: the same epoch through the board's one formatter */
 function preview(j) {
   const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); if (!e || !e.epoch) return "";
-  if (j === "guided") return `Launch: ${K.relWhen(e.epoch)}, ${K.fmtWhen(e.epoch, { time: false })}.`;
+  if (j === "guided") return `Launch: ${K.relWhen(e.epoch)}, ${K.fmtWhen(e.epoch)}.`; /* V13e retest-2: with the time */
   if (j === "curious") return `Launch: ${K.fmtWhen(e.epoch)}.`;
   return `Launch: ${K.fmtWhen(e.epoch, { rel: true })}. Source: Blizzard.`;
 }
@@ -65,15 +67,19 @@ K.on("tonight", () => {
 function startJourneySwitch() {
   const nav = $("#journey");
   const phone = window.matchMedia("(max-width: 699px)");
-  /* on a phone the header has room for one plate beside the title: it shows the journey, a tap opens the three */
-  if (nav) nav.addEventListener("click", (e) => { const b = e.target.closest("[data-journey]"); if (!b) return; if (phone.matches && !nav.classList.contains("open") && b.getAttribute("aria-pressed") === "true") { nav.classList.add("open"); b.setAttribute("aria-expanded", "true"); return; } nav.classList.remove("open"); nav.querySelectorAll("[aria-expanded]").forEach((x) => x.removeAttribute("aria-expanded")); setJourney(b.dataset.journey); });
-  document.addEventListener("pointerdown", (e) => { if (nav && nav.classList.contains("open") && !nav.contains(e.target)) nav.classList.remove("open"); }, true);
+  if (!nav) return;
+  /* V13e perf: two plates, never moved. The wall keeps #journey in its header; the scene head has its own copy
+     (#journey-scene), so opening or closing a scene changes no layout outside the sheet (moving one plate in and out of the
+     scene head cost a reflow of both heads on every open and close, worst on phones). */
+  const sceneNav = h("nav", { class: "journey journey-scene", "aria-label": nav.getAttribute("aria-label") || "How do you want to explore?" }, JOURNEYS.map((j) => h("button", { type: "button", "data-journey": j, "aria-pressed": String(j === journey()) }, j.charAt(0).toUpperCase() + j.slice(1)))); sceneNav.setAttribute("id", "journey-scene");
+  const top = $(".sheet-top"), peek = $("#scene-peek"); if (top) top.insertBefore(sceneNav, peek && peek.parentNode === top ? peek : null);
+  const plates = [nav, sceneNav];
+  /* on a phone the head has room for one plate: it shows the journey, a tap opens the three */
+  const onClick = (pl) => (e) => { const b = e.target.closest("[data-journey]"); if (!b) return; if (phone.matches && !pl.classList.contains("open") && b.getAttribute("aria-pressed") === "true") { pl.classList.add("open"); b.setAttribute("aria-expanded", "true"); return; } pl.classList.remove("open"); pl.querySelectorAll("[aria-expanded]").forEach((x) => x.removeAttribute("aria-expanded")); setJourney(b.dataset.journey); };
+  for (const pl of plates) pl.addEventListener("click", onClick(pl));
+  document.addEventListener("pointerdown", (e) => { for (const pl of plates) if (pl.classList.contains("open") && !pl.contains(e.target)) pl.classList.remove("open"); }, true);
   markJourney();
-  /* one switch, always reachable: it sits in the board's header on the wall and moves into the open scene's head */
-  const home = nav && nav.parentNode, anchor = nav && nav.nextSibling;
-  const atHome = () => home.insertBefore(nav, anchor && anchor.parentNode === home ? anchor : null);
-  const place = (open) => { if (!nav) return; if (open) { if (phone.matches) return; /* the phone's scene head has no room: the plate stays on the wall */ const top = $(".sheet-top"), peek = $("#scene-peek"); if (top && peek) top.insertBefore(nav, peek); } else { atHome(); V.confirm = null; } };
-  K.sceneHooks.push(place); if (SC.open) place(true); else if (nav) atHome();
+  K.sceneHooks.push((open) => { if (!open) { V.confirm = null; for (const pl of plates) pl.classList.remove("open"); } });
 }
 
 // ---------------- Guided: a day-one path on every scene, one step at a time ----------------
@@ -98,10 +104,11 @@ function steps(key) {
       const ev = T.events.find((e) => (e.until_epoch && e.epoch <= now && now < e.until_epoch) || (e.epoch && e.epoch > now));
       const person = me && D.tonight ? D.tonight.people.find((x) => x.member === P.members.indexOf(me)) : null, su = mineSU();
       return [
-        [me ? `You are ${me.name}, ${me.race} ${me.class}.` : "First, pick your name above, or Just looking."],
+        /* V13e retest-2: launch day and time are in step 1, never three taps away */
+        [`${launch ? `Launch: ${K.fmtWhen(launch.epoch, { rel: true })}. ` : ""}${me ? `You are ${me.name}, ${me.race} ${me.class}.` : "First, pick your name above, or Just looking."}`],
         ev ? [`${ev.label.split(":")[0]}: ${ev.until_epoch && ev.epoch <= now ? `open now, until the end of ${ev.until}, ${ev.until_zone || "Pacific"} time` : K.fmtWhen(ev.epoch, { rel: true })}.`] : null,
         person && person.step ? [`Your one step: ${person.step}`] : [su ? `Your launch-night answer: ${sayOf(su.rsvp)}.` : "Your one step: answer the Sign-ups card in Discord."],
-        launch ? [`Launch: ${K.fmtWhen(launch.epoch, { rel: true })}. A pack is the pre-order that lets you make characters early.`] : null,
+        ["A pack is the pre-order that lets you make characters early."],
       ].filter(Boolean);
     }
     case "timeline": return T.events.filter((e) => (e.until_epoch ? e.until_epoch : e.epoch) > now).slice(0, 3).map((e) => [`${e.label.split(":")[0]}: ${e.epoch ? K.fmtWhen(e.epoch, { rel: true, time: e.format !== "D" }) : e.date}. ${e.detail ? `${e.detail.charAt(0).toUpperCase()}${e.detail.slice(1)}.` : ""}`, land(`timeline.${e.key}`, "Show it on the rail")]);
@@ -125,7 +132,7 @@ function steps(key) {
       const open = P.open.filter((o) => !P.polls.some((q) => q.title === o.title));
       return [...P.polls.map((q) => [`Poll: ${q.title}${q.closes_epoch ? `, closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` : ""}.`]), ...open.map((o, i) => [`Still open: ${o.title}.`, land(`ledger.open-${i}`, "Show it")])];
     }
-    case "signups": { const su = mineSU(); return [launch ? [`Launch: ${K.fmtWhen(launch.epoch, { rel: true })}.`] : null, ["A pack is the pre-order that lets you make characters early."], ["Answer on the Sign-ups card in Discord: I'm in, Tentative, Running late or Out."], su ? [`Your answer now: ${sayOf(su.rsvp)}.`] : null].filter(Boolean); }
+    case "signups": { const su = mineSU(); return [["A pack is the pre-order that lets you make characters early."], ["Answer on the Sign-ups card in Discord: I'm in, Tentative, Running late or Out."], su ? [`Your answer now: ${sayOf(su.rsvp)}.`] : null].filter(Boolean); }
     case "librarian": return [["In any Discord channel here, type /ask and your question."], ["Leeroy answers from the same library this board searches."]];
     case "library": return [["Type a question in the search box, for example onyxia open."], ["Underlined words open a game tooltip; dotted words a plain definition."]];
     default: return [];
@@ -138,13 +145,16 @@ function paths(only) {
     const panel = $(`#panel-${key}`); if (!panel) continue;
     let box = kid(panel, "jr-path");
     if (!box) { box = h("section", { class: "jr-path", "data-j": "g", "aria-label": "Your path" }); const after = key === "tonight" ? $("#tn-cards") : null; panel.insertBefore(box, after || panel.firstChild); }
-    const list = steps(key), dl = nextDeadline();
+    const list = steps(key), dl = nextDeadline(), launchEv = D.timeline && D.timeline.events.find((e) => e.key === "launch" && e.epoch > Date.now() / 1000);
     const i = Math.max(0, Math.min(list.length - 1, V.path[key] || 0)); V.path[key] = i;
     const step = list[i];
     const go = (d) => { V.path[key] = i + d; sfx("page"); paths(key); const b = panel.querySelector(`.jr-path .jr-${d > 0 ? "next" : "back"}`); if (b && !b.disabled) b.focus({ preventScroll: true }); else { const o = panel.querySelector(".jr-path .jr-step"); if (o) o.focus({ preventScroll: true }); } };
     box.replaceChildren(...[
       h("h3", { class: "jr-h", text: "Your path" }),
-      dl ? h("p", { class: "jr-dl" }, emb("hourglass", "jr-dl-emb"), h("b", { text: "Next date: " }), dl.text, ".") : null,
+      /* V13e retest-2 and 12: launch is the date most friends need, so it sits beside the next date on every Guided path */
+      dl || launchEv ? h("p", { class: "jr-dates" },
+        dl ? h("span", { class: "jr-dl" }, emb("hourglass", "jr-dl-emb"), h("b", { text: "Next date: " }), dl.text, ".") : null,
+        launchEv && (!dl || dl.t !== launchEv.epoch) ? h("span", { class: "jr-dl jr-launch" }, emb("moon", "jr-dl-emb"), h("b", { text: "Launch: " }), K.fmtWhen(launchEv.epoch, { rel: true }), ".") : null) : null,
       /* the cost is never a step away: on Next steps and Sign-ups the play line stays in view */
       ["tonight", "signups"].includes(key) && D.tonight && D.tonight.play ? h("p", { class: "jr-dl jr-cost" }, emb("ticket", "jr-dl-emb"), h("b", { text: "Cost: " }), D.tonight.play) : null,
       step ? h("div", { class: "jr-step", tabindex: "-1" }, h("span", { class: "jr-n", text: `Step ${i + 1} of ${list.length}` }), h("p", { class: "jr-say", text: step[0] }), step[1] || null) : null,
@@ -195,7 +205,10 @@ K.on("closed", () => { document.querySelectorAll(".panel.landing").forEach((p) =
 
 // ---------------- 3. Roads: two zoom levels (interaction 4) ----------------
 const FULL = [0, 0, 600, 400];
-function zoneBox(z) { const w = 250, hh = 250 / 1.5, x = Math.max(0, Math.min(600 - w, z.x - w / 2 + 20)), y = Math.max(0, Math.min(400 - hh, z.y - hh / 2 + 10)); return [x, y, w, hh]; }
+function zoneBox(z) { const w = 250, hh = 250 / 1.5, y = Math.max(0, Math.min(400 - hh, z.y - hh / 2 + 10)); let x = Math.max(0, Math.min(600 - w, z.x - w / 2 + 20));
+  /* V13e retest-5: a box edge never cuts the Crossroads label (centred at 380, y 250): it moves to show the whole name */
+  if (y < 256 && y + hh > 236) { if (x > 326 && x < 424) x = 326; else if (x + w > 336 && x + w < 434) x = Math.min(600 - w, 434 - w); }
+  return [x, y, w, hh]; }
 function animateBox(svg, to) {
   const from = (svg.getAttribute("viewBox") || "0 0 600 400").split(/\s+/).map(Number);
   if (V.boxRaf) cancelAnimationFrame(V.boxRaf);
@@ -239,24 +252,37 @@ function zoomOut(focus) {
 }
 K.on("map", (M) => {
   V.map = M;
+  M.svg.setAttribute("role", "group"); /* V13e axe: the zones inside are buttons, so the map is a labelled group, not a picture */
   const zoneOf = (g) => M.roads.find((r) => r.key === g.dataset.road).zone;
   for (const g of M.groups) {
     const zone = zoneOf(g);
     g.setAttribute("tabindex", "0"); g.setAttribute("role", "button"); g.setAttribute("data-zone", MEM.slug(zone)); g.setAttribute("aria-label", `Zoom to ${zone}`);
+    /* V13e retest-4: the zone's own land and name take the tap too (a transparent hit area under the pins) */
+    const zz = M.zones[zone]; if (zz && !g.querySelector(".zone-hit")) { const lx = zz.label ? zz.label[0] : zz.x, ly = zz.label ? zz.label[1] : zz.y; const x0 = Math.min(zz.x, lx) - 70, y0 = Math.min(zz.y, ly) - 60, x1 = Math.max(zz.x, lx) + 70, y1 = Math.max(zz.y, ly) + 22; g.insertBefore(K.s("rect", { class: "zone-hit", x: Math.max(0, x0), y: Math.max(0, y0), width: Math.min(600, x1) - Math.max(0, x0), height: Math.min(400, y1) - Math.max(0, y0) }), g.firstChild); }
     g.addEventListener("click", (e) => { e.stopPropagation(); if (V.zoom === zone) zoomOut(); else zoomTo(MEM.slug(zone)); });
     g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (V.zoom === zone) zoomOut(); else zoomTo(MEM.slug(zone)); } });
   }
-  M.svg.addEventListener("click", (e) => { if (V.zoom && !(e.target.closest && e.target.closest(".road-g"))) zoomOut(); });
+  M.svg.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest(".road-g")) return;
+    if (V.zoom) { zoomOut(); return; }
+    /* V13e retest-4: a tap anywhere on a zone's land, name or name plates zooms to it (the nearest zone within reach) */
+    const r = M.svg.getBoundingClientRect(), vb = (M.svg.getAttribute("viewBox") || "0 0 600 400").split(/\s+/).map(Number);
+    const x = vb[0] + (e.clientX - r.left) / r.width * vb[2], y = vb[1] + (e.clientY - r.top) / r.height * vb[3];
+    const near = Object.entries(M.zones).map(([z, p]) => [z, Math.min(Math.hypot(p.x - x, p.y - y), p.label ? Math.hypot(p.label[0] - x, p.label[1] - y) : 1e9)]).sort((a, b) => a[1] - b[1])[0];
+    if (near && near[1] < 95) zoomTo(MEM.slug(near[0]));
+  });
   /* a pinch on the map zooms the map, never the page: out zooms to the zone nearest the fingers, in returns to the whole map */
   const pts = new Map(); let d0 = 0;
-  M.svg.addEventListener("pointerdown", (e) => { if (e.pointerType !== "touch") return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
-  M.svg.addEventListener("pointermove", (e) => {
+  /* V13e: the pinch is read on the whole map box, so a pinch in also works over the zone card (on a phone it covers the map) */
+  const PZ = M.svg.closest("#map") || M.svg;
+  PZ.addEventListener("pointerdown", (e) => { if (e.pointerType !== "touch") return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
+  PZ.addEventListener("pointermove", (e) => {
     if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size !== 2 || !d0) return;
     const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
     if (d / d0 > 1.18 && !V.zoom) { const r = M.svg.getBoundingClientRect(), mx = ((a[0] + b[0]) / 2 - r.left) / r.width * 600, my = ((a[1] + b[1]) / 2 - r.top) / r.height * 400; const z = Object.entries(M.zones).sort(([, p], [, q]) => Math.hypot(p.x - mx, p.y - my) - Math.hypot(q.x - mx, q.y - my))[0]; if (z) zoomTo(MEM.slug(z[0])); d0 = 0; }
     else if (d / d0 < 0.85 && V.zoom) { zoomOut(); d0 = 0; }
   });
-  for (const t of ["pointerup", "pointercancel"]) M.svg.addEventListener(t, (e) => { pts.delete(e.pointerId); if (pts.size < 2) d0 = 0; });
+  for (const t of ["pointerup", "pointercancel"]) PZ.addEventListener(t, (e) => { pts.delete(e.pointerId); if (pts.size < 2) d0 = 0; });
   if (V.zoom) { const z = V.zoom; V.zoom = null; zoomTo(MEM.slug(z)); }
 });
 K.on("closed", (k) => { if (k === "roads" && V.zoom) { V.zoom = null; if (V.map) { V.map.svg.setAttribute("viewBox", FULL.join(" ")); V.map.svg.classList.remove("zoomed"); V.map.pick(null); } const box = $("#map"); if (box) { box.classList.remove("zoomed"); rm(box.querySelector(".zone-card")); } } });
@@ -344,7 +370,9 @@ K.on("legacy", ({ svg, r, C, L, rewards, legend }) => {
   dial.addEventListener("keydown", (e) => { const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 5, PageDown: -5 }[e.key]; if (d) { e.preventDefault(); e.stopPropagation(); set(V.dial.v + d, true); } else if (e.key === "Home") { e.preventDefault(); set(0, true); } else if (e.key === "End") { e.preventDefault(); set(total, true); } });
   /* a category lights its share of the ring, and a share of the ring its category */
   const cat = (k) => { svg.querySelectorAll(".ring-seg").forEach((x) => x.classList.toggle("dim", !!k && x.dataset.cat !== k)); legend.querySelectorAll("li[data-cat]").forEach((x) => x.classList.toggle("lit", x.dataset.cat === k)); };
-  legend.querySelectorAll("li[data-cat]").forEach((li) => { li.setAttribute("tabindex", "0"); li.setAttribute("role", "button"); li.addEventListener("click", () => { const on = !li.classList.contains("lit"); cat(on ? li.dataset.cat : null); if (on) sfx("chip"); }); li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); li.click(); } }); });
+  /* V13e axe: a list item cannot be a button, so each category's line is wrapped in a real button (Enter and Space for free) */
+  legend.querySelectorAll("li[data-cat]").forEach((li) => { const b = h("button", { type: "button", class: "cat-line", "aria-pressed": "false" }, ...li.childNodes); li.replaceChildren(b); b.addEventListener("click", () => { const on = !li.classList.contains("lit"); cat(on ? li.dataset.cat : null); legend.querySelectorAll(".cat-line").forEach((x) => x.setAttribute("aria-pressed", String(x.parentNode.classList.contains("lit")))); if (on) sfx("chip"); }); });
+  svg.setAttribute("role", "group"); /* V13e axe: it holds the dial (a slider), so it is a group, not a picture */
   svg.querySelectorAll(".ring-seg").forEach((seg) => seg.addEventListener("click", () => cat(seg.dataset.cat)));
 });
 
@@ -358,9 +386,9 @@ function glossRe() {
 /* text with the board's glossary words dotted as a second-level card (never the card's own term) */
 function dotted(text, self) {
   const re = glossRe(); if (!re) return [text];
-  const out = []; let last = 0; const seen = new Set();
+  const out = []; let last = 0; const seen = new Set([].concat(self).filter(Boolean)); /* V13e retest-7: self may list the parent too */
   re.lastIndex = 0;
-  for (const m of String(text).matchAll(re)) { const g = K.glDef(m[1]); if (!g || g.term === self || seen.has(g.term)) continue; seen.add(g.term); out.push(text.slice(last, m.index), h("button", { type: "button", class: "gl2", "data-term": g.term, "aria-expanded": "false" }, m[1])); last = m.index + m[1].length; }
+  for (const m of String(text).matchAll(re)) { const g = K.glDef(m[1]); if (!g || seen.has(g.term)) continue; seen.add(g.term); out.push(text.slice(last, m.index), h("button", { type: "button", class: "gl2", "data-term": g.term, "aria-expanded": "false" }, m[1])); last = m.index + m[1].length; }
   out.push(text.slice(last));
   return out.filter((x) => x !== "");
 }
@@ -391,7 +419,9 @@ function spellShow(btn, pinned) {
   if (!card.classList.contains("sheetmode")) {
     const sr = $(".sheet").getBoundingClientRect(), cr = (btn.closest(".card") || btn).getBoundingClientRect(), br = btn.getBoundingClientRect(), w = card.offsetWidth, ht = card.offsetHeight;
     let x = cr.right - sr.left + 10; if (x + w > sr.width - 10) x = cr.left - sr.left - w - 10; if (x < 10) x = Math.max(10, Math.min(sr.width - w - 10, br.left - sr.left));
-    const y = Math.max(10, Math.min(sr.height - ht - 10, br.top - sr.top - 12));
+    /* V13e retest-9: never over the neighbouring card's name band (the top 110 px of the row of cards) */
+    const nameBand = cr.top - sr.top + 110;
+    const y = Math.max(10, nameBand, Math.min(sr.height - ht - 10, br.top - sr.top - 12));
     card.style.left = `${Math.round(x)}px`; card.style.top = `${Math.round(y)}px`;
   }
   card.classList.remove("flipin"); void card.offsetWidth; card.classList.add("flipin");
@@ -405,6 +435,8 @@ function startSpells() {
   panel.addEventListener("mouseover", (e) => { const t = trig(e); if (t && hover.matches) spellShow(t, false); });
   panel.addEventListener("mouseout", (e) => { const t = trig(e); if (t && !K.TT.pinned) K.TT.hideT = setTimeout(() => { if (!K.TT.pinned) K.ttClose(); }, 160); });
   panel.addEventListener("focusin", (e) => { const t = trig(e); if (t) spellShow(t, false); });
+  /* V13e retest-9: a turned card can be taller than the frame; once it has turned, its own button is brought into view */
+  panel.addEventListener("click", (e) => { const f = e.target.closest && e.target.closest(".flip"); if (!f) return; const card = f.closest(".card"); setTimeout(() => { if (!card || !card.classList.contains("flipped")) return; const back = card.querySelector(".back .flip"); if (back) { try { back.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" }); } catch (er) {} } }, (K.MOTION && K.MOTION.hero) || 500); });
 }
 
 // ---------------- 7. Nested definitions, two deep (interaction 9) ----------------
@@ -418,7 +450,7 @@ function pop2Show(btn) {
   if (V.pop2From && V.pop2From !== btn) V.pop2From.setAttribute("aria-expanded", "false");
   V.pop2From = btn; V.pop2Parent = parentCard; btn.setAttribute("aria-expanded", "true");
   const back = parentCard ? (parentCard.querySelector(".ttc-name, b") || {}).textContent || "" : "";
-  el.replaceChildren(h("button", { type: "button", class: "gl-back", "aria-label": `Back to ${back}`, onclick: () => pop2Close() }, "‹ ", back), h("b", { text: g.term.charAt(0).toUpperCase() + g.term.slice(1) }), h("span", {}, ...dotted(g.def, g.term)));
+  el.replaceChildren(h("button", { type: "button", class: "gl-back", "aria-label": `Back to ${back}`, onclick: () => pop2Close() }, "‹ ", back), h("b", { text: g.term.charAt(0).toUpperCase() + g.term.slice(1) }), h("span", {}, ...dotted(g.def, [g.term, (K.glDef(back.trim()) || {}).term])));
   el.hidden = false;
   /* beside the first card: right of it when there is room, else under it */
   const r = (parentCard || btn).getBoundingClientRect(), w = Math.min(320, innerWidth - 24), m = 12;
@@ -504,14 +536,16 @@ for (const [ev, key] of [["ledger", "ledger"], ["signups", "signups"], ["timelin
 function glow() {
   if (V.glow || !FIRST || get("board-glowed")) return;
   const tile = document.querySelector("#board .t-five"); if (!tile) return;
-  V.glow = true; put("board-glowed", "1");
+  V.glow = true; /* V13e retest-13: remembered when the glow ends while the page is seen, not when it starts */
   const plate = h("span", { class: "glow-plate", "aria-hidden": "true", text: "Tap a face to meet them." });
   const body = tile.querySelector(".tile-body"); if (body) body.append(plate);
   tile.classList.add("glow-five");
   let on = true;
-  const stop = () => { if (!on) return; on = false; tile.classList.remove("glow-five"); rm(plate); };
-  setTimeout(stop, 8000);
+  const stop = (e) => { if (!on) return; on = false; tile.classList.remove("glow-five"); rm(plate); if (e !== "timer" || document.visibilityState === "visible") put("board-glowed", "1"); };
+  setTimeout(() => stop("timer"), 8000);
   document.addEventListener("pointerdown", stop, true); document.addEventListener("keydown", stop, true);
+  /* V13e perf: a scene opening ends it too (under a scene nobody sees the wall, and the pulse cost frames in the open) */
+  K.sceneHooks.push((open) => { if (open) stop(); });
 }
 
 // ---------------- 10. Sign-ups from the board (the shared brain, stage 3) ----------------
@@ -523,7 +557,7 @@ function suControls() {
   const B = window.BoardBrain, st = B ? B.status() : { base: null, key: false };
   const live = !!(st.base && st.key && BR.me);
   const mine = B && B.mine ? B.mine() : null, p = BR.pend.rsvp;
-  const btns = K.RSVP_KEYS.map((k) => h("button", { type: "button", class: `su-st${p && p.value === k ? ` ${p.state}` : ""}`, "data-rsvp": k, "aria-pressed": String(!!((p && p.value === k && p.state !== "failed" && p.state !== "newer") || (!p && mine && mine.rsvp === k))), disabled: live ? null : "", onclick: () => { if (B) B.setRsvp(k); sfx("latch"); } }, h("img", { class: "su-pint", src: `img/pints/${k}.png`, alt: "", width: 36, height: 36, decoding: "async" }), K.RSVP_SAY[k]));
+  const btns = K.RSVP_KEYS.map((k) => h("button", { type: "button", class: `su-st${p && p.value === k ? ` ${p.state}` : ""}`, "data-rsvp": k, "aria-pressed": String(!!((p && p.value === k && p.state !== "failed" && p.state !== "newer") || (!p && mine && mine.rsvp === k))), "aria-disabled": live ? null : "true", onclick: (e) => { if (!live) { /* V13e retest-11: a tap without a key says why, in the status line */ const pl = e.currentTarget.closest(".su-states"), pn = pl && pl.querySelector(".su-pend"), as = pl && pl.querySelector(".su-as"); if (pn && as) { pn.textContent = ""; requestAnimationFrame(() => { pn.textContent = as.textContent; }); as.classList.remove("nudge"); void as.offsetWidth; as.classList.add("nudge"); } sfx("chip"); return; } if (B) B.setRsvp(k); sfx("latch"); } }, h("img", { class: "su-pint", src: `img/pints/${k}.png`, alt: "", width: 36, height: 36, decoding: "async" }), K.RSVP_SAY[k]));
   const say = !st.base ? "Answers from this view go through Discord: the Sign-ups card." : !st.key ? "To answer here, tap My board link on the Sign-ups card in Discord. It opens this board as you." : st.keyBad ? "This board link is no longer valid. Tap My board link on the Sign-ups card again." : !BR.me ? "Checking who this board link belongs to." : `Answering as ${BR.me.name}.`;
   act.append(h("div", { class: `su-states${live ? "" : " off"}`, role: "group", "aria-label": "Your answer for launch night, from the board" }, h("p", { class: "su-as", text: say }), h("div", { class: "su-row" }, btns), h("p", { class: "su-pend", role: "status", "aria-live": "polite", text: p ? `${K.RSVP_SAY[p.value]}: ${PEND_SAY[p.state] || ""}${p.state === "newer" && p.other ? ` (${K.RSVP_SAY[p.other] || p.other})` : ""}.` : "" })));
 }
@@ -581,7 +615,8 @@ K.on("booted", () => {
   for (const ev of ["ledger", "timeline", "signups"]) K.on(ev, () => paths(ev));
 });
 K.on("scene", (key) => { applyDepth(); looked(key); sealRows(key); });
-K.on("closed", (k) => { if (k === "tonight") setTimeout(glow, K.motionMs("move") + 200); });
+/* V13e perf: the glow waits until the wall has settled after the close (its first frames used to land in the close) */
+K.on("closed", (k) => { if (k === "tonight") setTimeout(glow, K.motionMs("move") + 900); });
 K.on("legacy", () => sealRows("legacy"));
 for (const f of ["races", "cards"]) { const orig = K.render[f]; K.render[f] = () => { orig(); applyDepth(); sealRows(f === "races" ? "racials" : "five"); }; }
 window.__v13d = Object.freeze({ journey, setJourney, landOn, zoomTo, zoomOut, steps, nextDeadline, preview, status: () => ({ journey: journey(), picked: V.picked, zoom: V.zoom, dial: V.dial ? V.dial.v : null, glow: V.glow, isNew: JSON.parse(JSON.stringify(NEW)), brain: window.BoardBrain ? window.BoardBrain.status() : null }) });
