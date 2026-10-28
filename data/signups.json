@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-28T23:20:36.893Z",
+ "generated": "2026-10-28T23:29:16.301Z",
  "present": true,
- "updated": "2026-10-28T23:00:59.387Z",
+ "updated": "2026-10-28T23:28:56.130Z",
  "options": {
   "meet": [
    "Valley of Strength",
@@ -17,10 +17,10 @@
   {
    "name": "=Bloise=",
    "pack": "no",
-   "meet": null,
+   "meet": "The Crossroads",
    "rsvp": "in",
    "when": "8pm",
-   "updated": "2026-10-28T23:00:59.387Z"
+   "updated": "2026-10-28T23:28:56.130Z"
   },
   {
    "name": "Handsome Squidward",
@@ -58,8 +58,10 @@
     "names": []
    },
    "The Crossroads": {
-    "count": 0,
-    "names": []
+    "count": 1,
+    "names": [
+     "=Bloise="
+    ]
    },
    "other": {
     "count": 0,
