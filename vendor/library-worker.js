@@ -1,5 +1,5 @@
 // Living Board library search worker (V4-SPEC 3.3). A module worker: it loads every category file of data/library/ and
-// search.json off the page's thread, then answers { id, q, cap } with the ranked hits, scored by rank-core.js (the wiki's
+// search.json off the page's thread, then answers { id, q, cap, full, cat, more } with the ranked hits, scored by rank-core.js (the wiki's
 // own ranker, copied by build-data.mjs), so typing never blocks a frame. Hits carry what a result row shows.
 import { rank, factHays } from "./rank-core.js?v=7f8514dc3a";
 let pages = [], hays = [], idf = null, ready = null;
@@ -26,7 +26,17 @@ onmessage = async (e) => {
     const t0 = performance.now();
     const { words, hits } = rank(m.q, pages, { hays, idf });
     const cap = m.cap || 400;
-    postMessage({ id: m.id, q: m.q, words, total: hits.length, ms: Math.round((performance.now() - t0) * 10) / 10,
-      hits: hits.slice(0, cap).map((h) => ({ score: h.score, page: h.page, title: h.p.title, category: h.p.category, key: h.key, value: h.value, open: h.open, refs: h.f ? h.f.refs : [] })) });
+    /* V13a: only the rows the page can show carry their text: the first `full` hits on the shelf asked for (`cat`, or every
+       shelf). The rest come slim (page, title, shelf, score), enough for the counts; the page asks again for more. */
+    /* the page draws rows grouped by page in first-hit order, so the rows it draws first are picked the same way */
+    const top = hits.slice(0, cap), groups = new Map(), full = new Set();
+    for (const h of top) if (!m.cat || h.p.category === m.cat) { if (!groups.has(h.page)) groups.set(h.page, []); groups.get(h.page).push(h); }
+    let left = m.full > 0 ? m.full : Infinity;
+    for (const list of groups.values()) { for (const h of list) { if (left <= 0) break; full.add(h); left--; } if (left <= 0) break; }
+    postMessage({ id: m.id, q: m.q, words, total: hits.length, ms: Math.round((performance.now() - t0) * 10) / 10, more: !!m.more, full: m.full || 0, cat: m.cat || "",
+      hits: top.map((h) => {
+        const slim = { score: h.score, page: h.page, title: h.p.title, category: h.p.category };
+        return full.has(h) ? { ...slim, key: h.key, value: h.value, open: h.open, refs: h.f ? h.f.refs : [] } : slim;
+      }) });
   } catch (err) { postMessage({ id: m.id, error: String(err && err.message || err) }); }
 };

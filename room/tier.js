@@ -1,12 +1,17 @@
 // The quality ladder (V7-SPEC 3.2): off / low / medium / high / ultra. Picks a tier from the device, runs a 2 s probe,
 // remembers the result, takes the menu's override, and demotes on slow frames, a long start-up task or a lost context.
 // off: no room, the 2D light and the wisps pause. low: the V6 page as it was (painted room, 2D light). medium: the 3D room,
-// still lights, 30 fps. high: flickering lights, GPU dust and embers, 60 fps. ultra: high at full pixel ratio with more dust;
+// still lights, 30 fps. high: flickering lights, GPU dust and embers, every display refresh (V13a). ultra: high at full pixel ratio with more dust;
 // on three.js (V10) every 3D tier has soft shadows drawn once; ultra gets the sharper shadow maps. auto never picks ultra.
 //   import("./room/tier.js").then((m) => m.startTier(host))
 //   host: { state, motion, launchEpoch, newSignup, select, moreButton }   state is the object window.__board.room() reads
 export const ORDER = ["off", "low", "medium", "high", "ultra"];
 export const BUDGET = { medium: 33.3, high: 16.7, ultra: 16.7 };
+/* V13a: how long a scene change or a resize (QUIET) and an input (INPUT_QUIET) keep the judges from counting frames */
+export const QUIET = 1500, INPUT_QUIET = 1000;
+/* the low tier's watch: one 2 s window every LOW_GAP ms, done after LOW_CLEAN clean windows */
+export const LOW_GAP = 6000, LOW_CLEAN = 4;
+export function p95(a) { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * 0.95))] : 0; }
 const KEY = "board-room", AUTO_KEY = "board-room-streak";
 const get = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const put = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
@@ -66,20 +71,45 @@ export async function startTier(host) {
     html().classList.toggle("room-wisps", t === "medium" || t === "high" || t === "ultra"); /* the 2D wisps never float over the 3D room */
     dispatchEvent(new Event("board-room"));
   };
-  /* low keeps V6's 2D light and wisps; on a machine that cannot hold them (a software GPU) the same rule demotes to off */
-  let lowRaf = 0;
+  /* V13a: the page's own work is never the room's fault. A scene opening or closing, a resize and any input (a key, a tap,
+     a wheel, a scroll) quiet the judges for QUIET ms; the startup probe waits for a quiet moment and starts over when one ends */
+  let quietUntil = performance.now() + QUIET;
+  const hush = (ms = QUIET) => { quietUntil = Math.max(quietUntil, performance.now() + ms); };
+  const quiet = () => performance.now() < quietUntil;
+  let sceneWas = html().classList.contains("scene-open");
+  new MutationObserver(() => { const o = html().classList.contains("scene-open"); if (o !== sceneWas) { sceneWas = o; hush(); } }).observe(html(), { attributes: true, attributeFilter: ["class"] });
+  for (const t of ["keydown", "pointerdown", "wheel", "touchstart", "resize"]) addEventListener(t, () => hush(INPUT_QUIET), { passive: true, capture: true });
+  addEventListener("scroll", () => hush(INPUT_QUIET), { passive: true, capture: true });
+  /* low keeps V6's 2D light and wisps; on a machine that cannot hold them (a software GPU) the same judge demotes to off:
+     the p95 frame interval of two quiet 2 s windows in a row over 50 ms. A frame in a window that was not quiet throws
+     the window away. V13a: the watch samples one 2 s window every LOW_GAP ms while the wall shows (the light and wisps run
+     only there), and stops after LOW_CLEAN clean windows, so a phone is not kept awake by a loop that measures nothing. */
+  let lowRaf = 0, lowTimer = 0;
   const watchLow = () => {
-    cancelAnimationFrame(lowRaf);
-    let last = 0, slow = []; const t0 = performance.now();
+    cancelAnimationFrame(lowRaf); clearTimeout(lowTimer);
+    let last = 0, d = [], w0 = 0, slowWins = 0, clean = 0; const t0 = performance.now();
+    const later = () => { cancelAnimationFrame(lowRaf); lowRaf = 0; last = 0; d = []; w0 = 0; lowTimer = setTimeout(() => { lowRaf = requestAnimationFrame(f); }, LOW_GAP); };
     const f = (now) => {
       if (S.tier !== "low") return;
-      if (document.hidden) { last = 0; slow = []; lowRaf = requestAnimationFrame(f); return; } /* a background tab is throttled, not slow */
-      if (last && now - t0 > 2000 && now - last > 50) slow.push(now);
-      slow = slow.filter((x) => now - x < 5000); last = now;
-      if (slow.length >= 3) { demote("three frames over 50 ms in 5 s"); return; }
+      if (document.hidden || quiet() || now - t0 < 2000 || html().classList.contains("scene-open")) { later(); return; } /* a background tab is throttled, not slow */
+      if (last) d.push(now - last);
+      last = now; if (!w0) w0 = now;
+      if (now - w0 >= 2000) {
+        const v = p95(d); S.lowP95 = +v.toFixed(1); S.lowWindows = (S.lowWindows || 0) + 1;
+        slowWins = v > 50 ? slowWins + 1 : 0; clean = v > 50 ? 0 : clean + 1;
+        if (slowWins >= 2) { slowWins = 0; slow(`frame p95 ${v.toFixed(1)} ms over 50 ms in two quiet 2 s windows`); if (S.tier !== "low") return; }
+        if (clean >= LOW_CLEAN) return; /* this machine holds the low tier: the watch ends */
+        if (!slowWins) { later(); return; }
+        d = []; w0 = now;
+      }
       lowRaf = requestAnimationFrame(f);
     };
     lowRaf = requestAnimationFrame(f);
+  };
+  /* a tier the viewer picked in the menu is never demoted: the slow verdict is recorded and nothing changes */
+  const slow = (why) => {
+    if (get(KEY)) { S.slowKept = (S.slowKept || 0) + 1; S.slowWhy = `kept ${S.tier} (chosen in the menu): ${why}`; return; }
+    demote(why);
   };
   const stopRoom = () => { if (room) { room.stop(); room = null; } if (canvas) { canvas.remove(); canvas = null; } };
   const demote = (why) => {
@@ -100,8 +130,8 @@ export async function startTier(host) {
     const anchor = document.querySelector(".hero-art");
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(canvas, anchor); else document.body.prepend(canvas);
     try {
-      const { startRoom } = await import("./room.js?v=e5b2499a84");
-      room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, onSlow: () => demote("three frames over 50 ms in 5 s"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });
+      const { startRoom } = await import("./room.js?v=fbb816eec2");
+      room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });
       setClasses(S.tier);
       S.renderer = room.info.renderer; S.software = room.info.software;
     } catch (e) { stopRoom(); S.tier = "low"; S.why = `room did not start: ${e.message}`; setClasses("low"); }
@@ -111,12 +141,13 @@ export async function startTier(host) {
   const visible = () => (document.hidden ? new Promise((r) => { const h = () => { if (!document.hidden) { document.removeEventListener("visibilitychange", h); r(); } }; document.addEventListener("visibilitychange", h); }) : Promise.resolve());
   const probe = () => new Promise((res) => {
     const d = []; let last = 0; const t0 = performance.now();
-    const f = (now) => { if (document.hidden) { res({ d, aborted: true }); return; } if (last) d.push(now - last); last = now; if (now - t0 < 2000) probeT = requestAnimationFrame(f); else res({ d, aborted: false }); };
+    const f = (now) => { if (document.hidden || quiet()) { res({ d, aborted: true }); return; } if (last) d.push(now - last); last = now; if (now - t0 < 2000) probeT = requestAnimationFrame(f); else res({ d, aborted: false }); };
     probeT = requestAnimationFrame(f);
   });
-  const p95 = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length * 0.95)] : 0; };
-  /* the probe waits for the page to be idle after first paint: the DOM's own start-up is not the room's */
+  /* the probe waits for the page to be idle after first paint and for a quiet moment: the DOM's own start-up and a scene
+     opening are not the room's */
   const idle = () => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(() => r(), { timeout: 2000 }) : setTimeout(r, 600)));
+  const calm = async () => { while (quiet()) await new Promise((r) => setTimeout(r, Math.max(50, quietUntil - performance.now()))); };
   async function choose() {
     cancelAnimationFrame(probeT);
     const d = detect(); S.gpu = d.gpu || ""; S.detected = d.tier; S.detectWhy = d.why;
@@ -130,7 +161,7 @@ export async function startTier(host) {
     if (BUDGET[S.tier]) {
       for (let tries = 0; tries < 6 && !judged; tries++) {
         if (document.hidden) S.probeWaiting = "the page is hidden; the probe waits for it to show";
-        await visible(); await idle(); S.probeWaiting = null;
+        await visible(); await idle(); await calm(); S.probeWaiting = null;
         const r = await probe();
         if (r.aborted) { S.probeAborted = (S.probeAborted || 0) + 1; continue; }
         const p95v = p95(r.d); S.probe = { tier: S.tier, p95: +p95v.toFixed(1), budget: BUDGET[S.tier] };
