@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-28T00:37:27.947Z",
+ "generated": "2026-10-28T01:03:18.924Z",
  "party": "Dungeons and Drinking",
  "faction": "Horde",
  "ruleset": "Normal",
@@ -219,5 +219,118 @@
   }
  ],
  "channel_url": "https://discord.com/channels/782702097421565952/1558663575495770193",
- "signup_url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564402158181290037"
+ "signup_url": "https://discord.com/channels/782702097421565952/1558663575495770193/1564402158181290037",
+ "play": {
+  "text": "To play from launch: a subscription or Game Time (the Epic pack adds 30 days from Nov 4)",
+  "source": "board"
+ },
+ "glossary": [
+  {
+   "term": "racial",
+   "forms": [
+    "racial",
+    "racials",
+    "racial ability",
+    "racial abilities"
+   ],
+   "def": "A special ability every character of one race gets for free, like a Troll's faster attacks."
+  },
+  {
+   "term": "spec",
+   "forms": [
+    "spec",
+    "specs",
+    "specialization"
+   ],
+   "def": "The way a character focuses its class, for example a Mage who studies Frost rather than Fire."
+  },
+  {
+   "term": "talent",
+   "forms": [
+    "talent",
+    "talents",
+    "talent tree",
+    "talent trees"
+   ],
+   "def": "Points a character earns while levelling and spends on upgrades that shape its spec."
+  },
+  {
+   "term": "cooldown",
+   "forms": [
+    "cooldown",
+    "cooldowns"
+   ],
+   "def": "The wait before a spell or ability can be used again."
+  },
+  {
+   "term": "challenge",
+   "forms": [
+    "challenge",
+    "challenges"
+   ],
+   "def": "One of 65 account-wide goals, such as reaching level 25 with a class or 150 skill in a crafting profession; each one earns one legacy point."
+  },
+  {
+   "term": "tabard",
+   "forms": [
+    "tabard",
+    "tabards"
+   ],
+   "def": "A cloth worn over armor that shows a design."
+  },
+  {
+   "term": "legacy points",
+   "forms": [
+    "legacy points",
+    "legacy point",
+    "Legacy"
+   ],
+   "def": "Account-wide points earned by finishing challenges, spent on rewards for any character."
+  },
+  {
+   "term": "pack",
+   "forms": [
+    "pack",
+    "packs",
+    "Epic pack",
+    "Heroic pack"
+   ],
+   "def": "A paid bundle that includes the game time and extras, and lets its owner reserve names early."
+  },
+  {
+   "term": "Game Time",
+   "forms": [
+    "Game Time",
+    "game time",
+    "subscription"
+   ],
+   "def": "Paid time to play: a monthly subscription or a block of Game Time; the game needs one of them from launch."
+  },
+  {
+   "term": "stats",
+   "forms": [
+    "stats",
+    "Stamina",
+    "Spirit",
+    "Intellect"
+   ],
+   "def": "Numbers that shape a character: Stamina adds health, Intellect adds mana, Spirit refills health and mana faster."
+  },
+  {
+   "term": "Valley of Strength",
+   "forms": [
+    "Valley of Strength"
+   ],
+   "def": "A big open square inside Orgrimmar, the Horde's main city, where groups often meet."
+  },
+  {
+   "term": "Normal ruleset",
+   "forms": [
+    "Normal ruleset",
+    "Normal realm",
+    "ruleset"
+   ],
+   "def": "A server type where players only fight each other if they choose to."
+  }
+ ]
 }

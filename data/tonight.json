@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-28T00:37:28.029Z",
+ "generated": "2026-10-28T01:03:19.006Z",
  "cards": [
   "Next up",
   "Your steps",
@@ -90,5 +90,6 @@
   "spec": "#five",
   "poll": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347272420921356"
  },
- "poll_closes": 1793299053
+ "poll_closes": 1793299053,
+ "play": "To play from launch: a subscription or Game Time (the Epic pack adds 30 days from Nov 4)"
 }

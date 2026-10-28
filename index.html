@@ -967,6 +967,19 @@ main.has-beam { margin-top: 44px; }
 .gl-tile .gl { color: var(--cream); text-decoration-color: var(--brass); }
 .gl-tile .gl:hover, .gl-tile .gl[aria-expanded="true"] { color: var(--parchment); }
 .gl-def { display: block; margin-top: 4px; font-style: italic; color: var(--cream); }
+/* V12: a dotted word's card sits outside every tile and scene, fixed to the viewport beside the word */
+.gl-pop { position: fixed; z-index: 70; left: 16px; top: 16px; box-sizing: border-box; width: max-content; max-width: min(20rem, calc(100vw - 32px)); padding: 10px 12px; border-radius: 6px; color: var(--tt-text); background: var(--tt-bg); border: 1px solid var(--tt-edge); box-shadow: 0 10px 28px var(--shade-deep); font-family: var(--font-body); font-size: 1rem; font-style: normal; line-height: 1.4; text-align: left; letter-spacing: 0; text-transform: none; }
+.gl-pop b { display: block; margin-bottom: 2px; color: var(--tt-gold); }
+.gl-pop.in { animation: tt-in var(--t-move) var(--ease-spring) both; }
+.sheet-body .gl[data-term] { color: inherit; padding: 3px 0; }
+.fm-n { display: inline-flex; flex-direction: column; line-height: 1.15; }
+.fm-rc { font-family: var(--font-body); font-weight: 400; font-size: 0.9rem; letter-spacing: 0; color: var(--cream); text-shadow: none; }
+.et-anchor { font-size: 0.9em; }
+.srcs { margin-top: 4px; }
+.srcs > summary { cursor: pointer; min-height: 24px; color: inherit; font-size: 0.92em; }
+.srcs .srcs-note { display: block; margin-top: 2px; font-size: 0.92em; }
+.hit-lead, .answer-lead { display: block; }
+.deep-who .deep-me { margin-right: 8px; }
 .lib-tile .tile-body { flex: 0 0 auto; }
 .tile-search { display: flex; gap: 8px; margin: 0 12px 10px; }
 .tile-q { flex: 1 1 auto; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 6px 14px; font: inherit; font-size: var(--step-0); color: var(--ink); background: var(--parchment); border: 1px solid var(--brass); border-radius: 999px; box-shadow: inset 1px 2px 4px var(--wear); }
@@ -1455,7 +1468,7 @@ main.has-beam { margin-top: 44px; }
       <div class="presence" id="presence">
         <span id="presence-text"></span>
         <div class="peers" id="peers"></div>
-        <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Tilt light</button>
+        <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Light follows your phone</button>
         <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Next steps</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
         <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"><select class="room-pick" id="room-pick" aria-label="Room behind the board"><option value="auto">Room: auto</option><option value="off">Room: off</option><option value="low">Room: low</option><option value="medium">Room: medium</option><option value="high">Room: high</option><option value="ultra">Room: ultra</option></select></span>
       </div>
@@ -1665,6 +1678,7 @@ main.has-beam { margin-top: 44px; }
     <div class="ttc" id="ttc" role="dialog" aria-labelledby="ttc-name" hidden></div>
   </section>
 </div>
+<div class="gl-pop" id="glpop" role="tooltip" hidden></div>
 <aside class="keys" id="keys" aria-labelledby="keys-title" hidden>
   <div class="keys-top"><h2 id="keys-title">Keys</h2><button class="close small" id="keys-close" type="button" aria-label="Close the key list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   <dl class="keys-list" id="keys-list"></dl>
@@ -1942,7 +1956,8 @@ function tick() {
   const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").setAttribute("aria-label", `Dates. ${next.label}: ${leftText}. Launch: ${launchLine()}. Open all the dates.`); }
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : `${eventWhen(next)} in your time zone`;
   const mc = $("#mini-clock");
-  if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const txt = `${next.label.split(":")[0]} in ${t} · Launch ${launchLine().replace(/^(\w+), (\w+) /, (m, d, mo) => `${d.slice(0, 3)}, ${mo.slice(0, 3)} `)}`; if (mc.textContent !== txt) mc.textContent = txt; }
+  /* V12: the phone bar fits 375 px: the countdown, then the launch in the viewer's own time, short (no repeated "Launch", no zone) */
+  if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
 }
 
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
@@ -1952,10 +1967,11 @@ function renderTiles() {
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
   const count = (role) => p.members.filter((m) => m.role === role).length;
   fill("five",
-    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), m.name))),
+    /* V12: phones show race and class under each name too, as the laptop medallions do */
+    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
     h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many]) => [h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`), " "]),
-      h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `· Talent choice still open: ${andList(o)}` : "· Every talent choice declared"; })())));
+      h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `· Still choosing a play style: ${andList(o)}` : "· All five have picked a play style"; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), ` ${ms.length}`])),
@@ -1982,23 +1998,84 @@ function renderTiles() {
     const T = S.tallies;
     const when = T.when ? h("span", { class: "tile-line su-when" }, [["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "Later"]].filter(([k]) => T.when[k]).map(([k, l]) => h("span", { class: "su-slot" }, h("b", { text: l }), ` ${T.when[k].names.length ? T.when[k].names.map(cleanName).join(", ") : "nobody yet"}`))) : null;
     const none = Math.max(0, p.members.length - T.rsvp.in.count - T.rsvp.maybe.count - T.rsvp.out.count);
-    fill("signups", h("span", { class: "su-nums" }, [[T.rsvp.in.count, "in"], [T.rsvp.maybe.count, "maybe"], [T.rsvp.out.count, "out"], [none, "no answer"]].map(([v, l]) => h("span", { class: "su-num" }, h("b", { text: String(v) }), h("small", { text: l })))),
+    fill("signups", h("span", { class: "su-nums" }, [[T.rsvp.in.count, "in"], [T.rsvp.maybe.count, "maybe"], [T.rsvp.out.count, "out"], [none, "not answered"]].map(([v, l]) => h("span", { class: "su-num" }, h("b", { text: String(v) }), h("small", { text: l })))),
       h("span", { class: "rsvp-bar su-keg", "aria-hidden": "true" }, kegRow([...Array(T.rsvp.in.count).fill("in"), ...Array(T.rsvp.maybe.count).fill("maybe"), ...Array(T.rsvp.out.count).fill("out"), ...Array(none).fill("none")])), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
   fill("librarian",
     h("span", { class: "tile-line" }, "Leeroy answers questions. In any Discord channel here, type ", h("b", { text: "/ask" }), " and your question."),
     h("span", { class: "tile-line", text: "It reads the same library this board searches." }));
 }
-/* A wall line with dotted glossary words: a tap shows the plain sentence under the line (one at a time); a second tap hides it. */
+/* A wall line with dotted glossary words. V12: the plain sentence opens in the dotted-word card outside the tile (the tile
+   line is clipped to a few lines, so a sentence inside it was invisible on phones and laptops). */
 function wallGloss(G, parts) {
-  const def = h("span", { class: "gl-def", hidden: true });
-  let open = null;
-  const btn = (word, term) => {
-    const b = h("button", { type: "button", class: "gl", "aria-expanded": "false", text: word });
-    b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); const on = open !== b; if (open) open.setAttribute("aria-expanded", "false"); open = on ? b : null; b.setAttribute("aria-expanded", String(on)); def.hidden = !on; def.textContent = on ? `${term}: ${G[term] || ""}` : ""; });
-    return G[term] ? b : word;
-  };
-  return h("span", { class: "tile-line" }, ...parts.map((x) => (Array.isArray(x) ? btn(x[0], x[1]) : x)), def);
+  return h("span", { class: "tile-line" }, ...parts.map((x) => (Array.isArray(x) ? dotBtn(x[0], x[1]) : x)));
+}
+/* V12: dotted words outside the library. A tap (or Enter) opens one small card fixed to the viewport beside the word, outside
+   every tile and scroll box; a second tap, a tap elsewhere, Escape, the word scrolling off screen or leaving the scene closes it. The sentences
+   come from wiki/GLOSSARY.md through party.json. Scenes get the first use of each term dotted after every render. */
+const GL = { open: null, re: null };
+function glDef(term) { const G = (D.party && D.party.glossary) || [], k = String(term).toLowerCase(); return G.find((g) => g.forms.some((f) => f.toLowerCase() === k)) || null; }
+function dotBtn(word, term) { const g = glDef(term || word); return g ? h("button", { type: "button", class: "gl", "data-term": g.term, "aria-expanded": "false", "aria-controls": "glpop", text: word }) : word; }
+function glShow(b) {
+  const pop = $("#glpop"), g = glDef(b.dataset.term); if (!pop || !g) return;
+  if (GL.open && GL.open !== b) GL.open.setAttribute("aria-expanded", "false");
+  GL.open = b; b.setAttribute("aria-expanded", "true");
+  pop.replaceChildren(h("b", { text: g.term.charAt(0).toUpperCase() + g.term.slice(1) }), h("span", { text: g.def }));
+  pop.hidden = false;
+  glPlace();
+  pop.classList.remove("in"); void pop.offsetWidth; pop.classList.add("in");
+}
+/* the card follows its word while the page or a scene scrolls; it closes once the word leaves the screen */
+function glPlace() {
+  const pop = $("#glpop"), b = GL.open; if (!pop || !b || pop.hidden) return;
+  const r = b.getBoundingClientRect(), m = 16, w = pop.offsetWidth, ht = pop.offsetHeight;
+  if (!b.isConnected || r.bottom < 0 || r.top > innerHeight) { glClose(); return; }
+  let y = r.bottom + 8; if (y + ht > innerHeight - m) y = Math.max(m, r.top - ht - 8);
+  pop.style.left = `${Math.round(Math.max(m, Math.min(r.left, innerWidth - w - m)))}px`; pop.style.top = `${Math.round(y)}px`;
+}
+function glClose(focus) {
+  const pop = $("#glpop"); if (!pop || pop.hidden) return false;
+  pop.hidden = true; const b = GL.open; GL.open = null;
+  if (b) { b.setAttribute("aria-expanded", "false"); if (focus && b.isConnected) b.focus({ preventScroll: true }); }
+  return true;
+}
+function dotPanel(root) {
+  const G = (D.party && D.party.glossary) || [];
+  if (!root || !G.length || typeof document.createTreeWalker !== "function") return;
+  if (!GL.re) { const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); GL.re = new RegExp(`(?<![A-Za-z0-9'])(${G.flatMap((g) => g.forms).sort((a, b) => b.length - a.length).map(esc).join("|")})(?![A-Za-z0-9'])`, "gi"); }
+  const have = new Set([...root.querySelectorAll(".gl[data-term]")].map((b) => b.dataset.term));
+  const skip = "a, button, label, input, select, textarea, summary, svg, h1, h2, h3, h4, .gl, .tt, .ttc, [aria-hidden=\"true\"], .lib, .tn-pick, .tn-chip";
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), todo = [];
+  /* text a reader cannot see yet (a shut details) waits until it opens, so the first dot is always on screen */
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.parentElement && !n.parentElement.closest(skip) && !n.parentElement.closest("details:not([open]), [inert]")) todo.push(n);
+  for (let node of todo) {
+    for (;;) {
+      const text = node.nodeValue; GL.re.lastIndex = 0; let m, hit = null;
+      /* a name, not the word: "Leader of the Pack" */
+      while ((m = GL.re.exec(text))) { const g = glDef(m[1]); if (g && !have.has(g.term) && !/\bof the\s$/i.test(text.slice(0, m.index))) { hit = [m, g]; break; } }
+      if (!hit) break;
+      have.add(hit[1].term);
+      const at = node.splitText(hit[0].index), rest = at.splitText(hit[0][1].length);
+      at.replaceWith(dotBtn(hit[0][1], hit[1].term)); node = rest;
+    }
+  }
+}
+function startGloss() {
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest(".gl[data-term]");
+    if (b) { e.preventDefault(); e.stopPropagation(); if (GL.open === b) glClose(); else glShow(b); return; }
+    if (!(e.target.closest && e.target.closest("#glpop"))) glClose();
+  }, true);
+  addEventListener("scroll", () => glPlace(), { passive: true, capture: true });
+  addEventListener("resize", () => glClose());
+  sceneHooks.push(() => glClose());
+  const sc = $("#scene"); if (!sc || typeof MutationObserver !== "function") return;
+  let queued = false;
+  const run = () => { queued = false; for (const p of sc.querySelectorAll(".panel:not([hidden]):not(#panel-library)")) { try { dotPanel(p); } catch (e) {} } };
+  /* a re-render, a tab switch (a panel's hidden flips) or a details opening: dot the open panel again. A timer, not a frame:
+     a frame callback can wait out a view transition and leave the queue shut. */
+  new MutationObserver(() => { if (!queued) { queued = true; setTimeout(run, 40); } }).observe(sc, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "open", "inert"] });
+  sceneHooks.push((on) => { if (on) setTimeout(run, 40); });
 }
 /* Tile text never stops mid-sentence: whole sentences up to max, else whole clauses with an ellipsis. */
 function wholeClause(t, max) {
@@ -2087,8 +2164,8 @@ function renderCards() {
       h("div", { class: "spec", text: m.spec }),
       h("dl", {},
         h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: m.role }), m.role_detail ? h("span", { class: "spec", text: m.role_detail }) : null)),
-        h("div", {}, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not decided yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), "decided")))),
-        h("div", {}, h("dt", { text: "Wakes up in" }), h("dd", { text: m.start_zone || "unknown" })),
+        h("div", {}, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), "chosen")))),
+        h("div", {}, h("dt", { text: "Starts in" }), h("dd", { text: m.start_zone || "unknown" })),
         h("div", {}, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
       flipBtn(`${m.class} spells at ${lvl}`));
     const list = h("ul", { class: "spells" }, spells.map((sp) => {
@@ -2465,8 +2542,12 @@ function renderBuffsDeep() {
   });
   box.replaceChildren(...[
     h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
-    me ? null : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", style: `--cc: ${classVar(m.class_key)}`, onclick: () => { MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); } }, crestMark(m), m.name))),
+    /* V12: with a name picked, a plain "Change person" control brings the picker back */
+    me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${me.race} ${me.class}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
+      : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
+    /* V12: the stat words the buffs use, in plain words */
+    h("p", { class: "deep-key", text: "Stamina adds health, Intellect adds mana, Spirit refills health and mana faster." }),
     answer,
     me ? h("h4", { class: "bgroup-h", text: `Every buff, by giver (${shown.length})` }) : null, h("div", { class: "bclasses" }, groups),
     h("h4", { class: "bgroup-h", text: `Rules in a group (${B.rules.length})` }), h("div", { class: "brules-row" }, rules)].filter(Boolean));
@@ -2501,18 +2582,22 @@ const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hid
 /* where a ledger line was written: the Party Board under a wax seal, the group notes under a quill */
 const srcTag = (src) => h("span", { class: `label srctag ${src === "board" ? "board" : "notes"}` }, emb(src === "board" ? "seal" : "quill"), SRC_WORD[src] || src);
 const SRC_WORD = { board: "on the Party Board", chat: "said in chat", "group notes": "in the group notes" };
+/* V12: a time in the viewer's own zone, short ("Thu, Oct 29, 1:37 PM"); with a zone, that zone's clock instead */
+function whenLocal(epoch, tz) { return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", ...(tz ? { timeZone: tz } : {}) }).format(new Date(epoch * 1000)).replace(":00", ""); }
 function renderLedger() {
   const p = D.party, wrap = $("#ledger-slip"); wrap.replaceChildren();
   const link = (l, o) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: /discord\.com\/events\//.test(l.url) ? "the launch-night event in Discord" : `${l.label}${o ? ` for ${o.title.toLowerCase()}` : ""} in Discord` });
   const pollNames = p.polls.map((q) => q.title.toLowerCase());
   $("#ledger-lede").textContent = p.polls.length
-    ? `Settled things, open things, and ${p.polls.length === 1 ? "one poll" : `${p.polls.length} polls`} still taking votes: ${andList(pollNames)}.`
+    ? `What is settled, what is open, and ${p.polls.length === 1 ? "a poll" : `${p.polls.length} polls`} to vote in: ${andList(pollNames)}.`
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(h("div", { class: "ledger-col" },
     h("h3", { text: "Settled" }),
-    h("ul", {}, [...p.settled, ...p.settled_extra].map((x, i) => h("li", { class: "settled-li", style: `--di: ${i}` }, h("span", {}, seal(), x.text), srcTag(x.source)))),
+    /* V12: the Party Board's "Next up" line on what it takes to play closes the Settled list */
+    h("ul", {}, [...p.settled, ...p.settled_extra].map((x, i) => h("li", { class: "settled-li", style: `--di: ${i}` }, h("span", {}, seal(), x.text), srcTag(x.source))),
+      p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), p.play.text), srcTag(p.play.source)) : null),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
-    ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` })))),
+    ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), q.closes_epoch ? h("span", {}, `Closes ${whenLocal(q.closes_epoch)} your time`, h("small", { class: "et-anchor", text: ` (${whenLocal(q.closes_epoch, "America/New_York").replace(whenLocal(q.closes_epoch).replace(/,[^,]*$/, ""), "").replace(/^,\s*/, "")} ET)` }), `. ${q.text.replace(/^poll closes on [^.]*?ET\.\s*/i, "")}`) : h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` })))),
     h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}` },
       h("strong", { text: o.title }),
@@ -2560,7 +2645,8 @@ function renderFooter() {
   const when = `${stamp.replace("T", " ").slice(0, 16)} UTC`;
   $("#footer").replaceChildren(
     h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
-    h("span", { text: `Tap a tile to open it. Escape or back returns to the wall.${window.matchMedia("(hover: hover) and (pointer: fine)").matches ? " Press ? for keys." : ""}` }));
+    /* V12: touch wording on touch screens; keys only where there is a keyboard and mouse */
+    h("span", { text: window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click a tile to open it. Escape or the browser's back button returns to the wall. Press ? for keys." : "Tap a tile to open it. The X at the top, or your phone's back gesture, returns to the wall." }));
   $("#lib-sources").replaceChildren(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
@@ -2743,7 +2829,7 @@ const cleanName = (n) => String(n).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, 
 /* V11: one clear way to answer: the Sign-ups card in Discord */
 function actRow() {
   const url = D.party && D.party.signup_url; if (!url) return;
-  $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "Answer in Discord"), h("p", { class: "act-how", text: "Open #wow-forever in Discord and tap your answers on the Sign-ups card." }));
+  $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "Answer in Discord"), h("p", { class: "act-how", text: "Open #wow-forever in Discord and tap I'm in, Maybe or Out on the Sign-ups card." }));
 }
 function renderSeats(S) {
   const box = $("#dsu-seats"); if (!box) return;
@@ -3060,6 +3146,7 @@ function showKeys(on) {
 function onKey(e) {
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "Escape") {
+    if (glClose(true)) { e.preventDefault(); return; }
     if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); return; }
     if (closeMore()) { e.preventDefault(); return; }
     if (SC.open === "library" && LIBUI.escape()) { e.preventDefault(); return; }
@@ -3800,10 +3887,13 @@ function libRenderResults(main) {
     const list = g.hits.slice(0, left); left -= list.length; rows += list.length;
     groups.push(h("section", { class: "group", "aria-label": g.title },
       h("div", { class: "group-head" }, pageLink(g.id, "", g.title), h("span", { class: "lib-sub", text: libCatTitle(g.category) })),
-      h("ul", { class: "hits" }, list.map((x) => h("li", { class: "hit" },
-        (() => { const a = pageLink(g.id, `hit-go${x.open ? " open-q" : ""}`, x.open ? "nobody knows yet" : libKey(x.key), x.open ? null : x.key); a.setAttribute("aria-label", x.open ? `Nobody knows yet, on ${g.title}: open the page` : `${libKey(x.key)}, on ${g.title}: open the page`); return a; })(),
-        h("span", { class: "hit-val" }, ...libValue(x.value)),
-        x.refs.length ? h("span", { class: "hit-meta" }, x.refs.map(libSrc), libRead(x.refs)) : null))),
+      h("ul", { class: "hits" }, list.map((x) => {
+        const go = (() => { const a = pageLink(g.id, `hit-go${x.open ? " open-q" : ""}`, x.open ? "nobody knows yet" : libKey(x.key), x.open ? null : x.key); a.setAttribute("aria-label", x.open ? `Nobody knows yet, on ${g.title}: open the page` : `${libKey(x.key)}, on ${g.title}: open the page`); return a; })();
+        /* V12: the plain sentence first; ids, builds and source sites wait behind Sources (Expert keeps them inline) */
+        if (libExpert()) return h("li", { class: "hit" }, go, h("span", { class: "hit-val" }, ...libValue(x.value)), x.refs.length ? h("span", { class: "hit-meta" }, x.refs.map(libSrc), libRead(x.refs)) : null);
+        const P = libPlain(x);
+        return h("li", { class: "hit" }, h("span", { class: "hit-val hit-lead" }, ...P.lead), go, libSources(P.prov, x.refs));
+      })),
       list.length > 1 ? h("button", { type: "button", class: "lib-btn more-hits-in", "aria-expanded": "false", onclick: (e) => { const sec = e.currentTarget.closest(".group"); const on = !sec.classList.contains("all"); sec.classList.toggle("all", on); e.currentTarget.setAttribute("aria-expanded", String(on)); e.currentTarget.textContent = on ? "Fewer" : `${list.length - 1} more on this page`; } }, `${list.length - 1} more on this page`) : null));
   }
   LIBS.rows = rows;
@@ -3823,12 +3913,69 @@ function libAnswer(q, best) {
   const ti = T && !TT_SKIP.has(key) ? T.names[key] : undefined;
   const g = libGlossFor(key);
   if (g) return h("section", { class: "answer", "aria-label": "Best answer" }, h("span", { class: "answer-k", text: "In plain words" }), h("p", { class: "answer-v" }, h("b", { text: `${g.term}: ` }), g.def), h("span", { class: "lib-sub", text: "From the board's glossary." }));
-  if (ti !== undefined) return h("section", { class: "answer", "aria-label": "Best answer" }, h("span", { class: "answer-k", text: "From the game's tooltip" }), h("div", { class: "ttc static", "data-static": "1" }, ttCard(ti)));
-  return h("section", { class: "answer", "aria-label": "Best answer" },
+  const buffs = libBuffAnswer(key);
+  if (buffs) return buffs;
+  if (ti !== undefined) return h("section", { class: "answer", "aria-label": "Best answer" }, h("span", { class: "answer-k", text: "From the game's tooltip" }), libTipLead(ti), h("div", { class: "ttc static", "data-static": "1" }, ttCard(ti)));
+  if (libExpert()) return h("section", { class: "answer", "aria-label": "Best answer" },
     h("span", { class: "answer-k" }, "Best answer, from ", pageLink(best.page, "", best.title)),
     h("span", { class: "lib-sub", text: best.open ? "Nobody knows yet" : libKey(best.key) }),
     h("p", { class: "answer-v" }, ...libValue(best.value)),
     best.refs.length ? h("span", { class: "hit-meta" }, best.refs.map(libSrc), libRead(best.refs)) : null);
+  const P = libPlain(best);
+  return h("section", { class: "answer", "aria-label": "Best answer" },
+    h("span", { class: "answer-k" }, "Best answer, from ", pageLink(best.page, "", best.title)),
+    h("p", { class: "answer-v answer-lead" }, ...P.lead),
+    libSources(P.prov, best.refs));
+}
+/* V12 (first-visitor test): a result reads as one plain sentence. The fact's own words lead, after its subject; asides that
+   only say where a number came from (client builds, spell ids, notes, datamines, tiers) move behind Sources with the links. */
+const PROV_RE = /\s*\((?=[^()]*\b(?:client|build|spell \d|datamine|notes|deep dive|hotfix|forum|Wowhead|wiki|tier|source|cache|S\d+)\b)[^()]*\)/gi;
+function libPlain(x) {
+  const raw = String(x.value == null ? "" : x.value).trim(), prov = [];
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const segs = String(x.key || "").split("."), subj = cap((segs.length <= 2 ? segs.join(" ") : segs[segs.length - 1]).replace(/_/g, " "));
+  const iso = /^(\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?Z)$/.exec(raw), day = /^(\d{4}-\d\d-\d\d)$/.exec(raw);
+  if (iso || day) { prov.push(raw); return { lead: [h("b", { text: `${subj}: ` }), iso ? dtET.format(new Date(iso[1])) : dtDayUTC.format(new Date(`${day[1]}T12:00:00Z`)), "."], prov }; }
+  let v = raw.replace(PROV_RE, (m) => { prov.push(m.trim().replace(/^\(|\)$/g, "")); return ""; }).replace(/\s+([.,;:])/g, "$1").trim();
+  if (!/[.!?"]$/.test(v)) v += ".";
+  return { lead: [h("b", { text: x.open ? "Nobody knows yet: " : `${subj}: ` }), ...richText(v)], prov };
+}
+function libSources(prov, refs) {
+  if (!prov.length && !refs.length) return null;
+  return h("details", { class: "srcs" }, h("summary", { text: "Sources" }),
+    prov.length ? h("span", { class: "srcs-note", text: `Where the numbers come from: ${prov.join("; ")}.` }) : null,
+    refs.length ? h("span", { class: "hit-meta" }, refs.map(libSrc), libRead(refs)) : null);
+}
+/* a tooltip answer leads with who learns it and when, in words */
+function libTipLead(i) {
+  const t = LIBD.tips.tooltips[i], L = t.lines || [];
+  const cls = (L.find((l) => /^(?:Requires|Classes:) [A-Z]/.test(l) && !/level/i.test(l)) || "").replace(/^(?:Requires|Classes:)\s*/, "");
+  const lvl = (L.find((l) => /^Requires level \d+/i.test(l)) || "").replace(/\D+/g, "");
+  const what = t.kind === "item" ? "an item" : `a${cls ? ` ${cls}` : ""} spell`;
+  return h("p", { class: "answer-v answer-lead" }, `${t.name} is ${what}${lvl ? `, from level ${lvl}` : ""}. Here is what the game's own tooltip says.`);
+}
+/* "what does the priest give a mage", "what buff does Bible Boi give my class": the board's own buff table answers in one sentence */
+const LIB_CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
+function libBuffAnswer(key) {
+  const B = D.client && D.client.buffs; if (!B || !/\bgives?\b|\bbuffs?\b/.test(key)) return null;
+  const P = D.party, words = key.replace(/[?.!,']/g, " ").split(/\s+/).filter(Boolean);
+  const asClass = (w) => { const c = w.replace(/s$/, ""); if (LIB_CLASSES.includes(c)) return { cls: c }; const m = P && P.members.find((x) => x.name.toLowerCase() === w || MEM.slug(x.name) === w); return m ? { cls: m.class_key, m } : null; };
+  const found = []; words.forEach((w, i) => { const a = asClass(w); if (a) found.push({ ...a, i }); });
+  const gi = words.indexOf("give") >= 0 ? words.indexOf("give") : words.indexOf("gives");
+  const giver = found.find((f) => gi < 0 || f.i < gi); if (!giver) return null;
+  let target = found.find((f) => f !== giver && (gi < 0 || f.i > gi)) || null;
+  const mine = /\bmy\b|\bme\b/.test(key) && MEM.member(); if (!target && mine) target = { cls: mine.class_key, m: mine };
+  const L = BD.level, mana = (c) => !["warrior", "rogue"].includes(c), melee = (c) => ["warrior", "rogue", "paladin", "druid", "shaman", "hunter"].includes(c);
+  const list = B.list.filter((b) => b.class === giver.cls && (!target || b.lands === "all" || b.lands === "one" || b.lands === "dead" || (b.lands === "mana" && mana(target.cls)) || (b.lands === "melee" && melee(target.cls)) || (target.m ? buffWho(b, target.m) && ["tank", "healer"].includes(b.lands) : false)));
+  if (!list.length) return null;
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1), an = (c) => (/^[aeiou]/.test(c) ? "an" : "a");
+  const name = (f) => (f.m ? `${f.m.name} (${cap(f.cls)})` : `${an(f.cls)} ${cap(f.cls)}`);
+  const val = (b) => { const a = b.at && b.at[L - 1]; return a && a.v && a.v.length ? ` (${a.v.map((v) => `${nf.format(Math.round(v.n))}${/^%/.test(v.label) ? "" : " "}${v.label}`).join(", ")})` : ""; };
+  const names = list.map((b) => `${b.name}${val(b)}`);
+  const said = `${cap(name(giver))} can give ${target ? name(target) : "the party"} ${names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0]}, at level ${L}.`;
+  return h("section", { class: "answer", "aria-label": "Best answer" }, h("span", { class: "answer-k", text: "From the board's buff table" }),
+    h("p", { class: "answer-v answer-lead", text: said }),
+    h("button", { type: "button", class: "lib-btn", onclick: () => goScene("buffs") }, "See every level in Who buffs whom"));
 }
 /* "what is a racial", "racials", "define cooldown": the glossary term the question asks about, if any. */
 function libGlossFor(key) {
@@ -4172,9 +4319,10 @@ function libRenderOpen(main, tok) {
       h("div", { class: "group-head" }, pageLink(id, "", libTitle(id)), h("span", { class: "lib-sub", text: LIBD.head[id] ? libCatTitle(LIBD.head[id].category) : "" })),
       h("ul", { class: "hits" }, list.map((t) => h("li", { class: "hit" }, h("span", { class: "hit-val" }, emb("question", "pend"), " ", ...richText(t)))))))),
     h("section", { class: "group", "aria-label": "Researched questions" }, h("div", { class: "group-head" }, h("span", { class: "lib-title", text: "Researched questions" })),
-      O.gaps.map((g) => h("div", { class: "gap" }, h("h4", {}, g.question), h("span", { class: "lib-sub", text: `${libDay(g.date)}${g.updated ? `, updated ${g.updated}` : ""} · ${g.status}` }),
-        g.findings.length ? h("ul", {}, g.findings.map((f) => h("li", {}, ...richText(f)))) : null,
-        g.links.length ? h("div", { class: "hit-meta" }, g.links.map((u) => h("a", { class: "src", href: u, target: "_blank", rel: "noopener noreferrer", text: (() => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return "link"; } })() }))) : null))));
+      /* V12: the question and its plain answer; the research log's own words stay out (build-data readerGaps), links behind Sources */
+      O.gaps.map((g) => h("div", { class: "gap" }, h("h4", {}, g.question), h("span", { class: "lib-sub", text: `${g.status}, ${libDay(g.date)}` }),
+        h("ul", {}, (g.answer || []).map((f) => h("li", {}, h("span", {}, ...richText(f))))),
+        g.links.length ? h("details", { class: "srcs" }, h("summary", { text: "Sources" }), h("span", { class: "hit-meta" }, g.links.map((u) => h("a", { class: "src", href: u, target: "_blank", rel: "noopener noreferrer", text: (() => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return "link"; } })() })))) : null))));
 }
 function libRenderChanges(main) {
   const ix = LIBD.index;
@@ -4285,14 +4433,16 @@ function renderTonight() {
   }
   if (!steps.length) steps.push([pollOpen && T.steps.poll ? T.steps.poll : T.steps.none, pollOpen ? L.poll : null]);
   const ext = (href) => href && /^https?:/.test(href);
-  const stepEl = ([t, href]) => h("li", { class: "tn-big" }, href ? h("a", { class: "tn-link", href, ...(ext(href) ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `${t} Opens Discord.` } : {}) }, ext(href) ? emb("speech") : null, t) : t);
+  /* V12: the vote step carries its deadline in the viewer's own time */
+  const stepEl = ([t0, href]) => { const t = t0 === T.steps.poll && T.poll_closes ? `${t0.replace(/\.$/, "")}, by ${whenLocal(T.poll_closes)}.` : t0; return stepLi(t, href); };
+  const stepLi = (t, href) => h("li", { class: "tn-big" }, href ? h("a", { class: "tn-link", href, ...(ext(href) ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `${t} Opens Discord.` } : {}) }, ext(href) ? emb("speech") : null, t) : t);
   const who = (k) => entries.filter((e) => e.rsvp === k && e !== mine).map((e) => cleanName(e.name));
   const line = (label, names) => h("p", { class: "tn-line" }, h("b", { text: `${label}: ` }), ...names.flatMap((n, i) => [i ? ", " : null, h("span", { class: "tn-n", text: n })]).filter(Boolean));
   const groups = [["in", T.labels.in], ["maybe", T.labels.maybe], ["out", T.labels.out]].map(([k, l]) => [l, who(k)]).filter(([, n]) => n.length);
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
   box.replaceChildren(...[
     card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl))),
-    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch + yourTime(T) }) : null),
+    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
     card(T.cards[2], meetP(), mine ? line(T.labels.you, [mine.rsvp === "in" ? T.labels.in : mine.rsvp === "out" ? T.labels.out : T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
   /* V9: with a name, one tap from Tonight to what the others give you at a level (outside the three cards, so their budget holds) */
   const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
@@ -4337,6 +4487,7 @@ async function boot(mode, sdk) {
   startEmblems();
   startParallax();
   startScenes();
+  try { startGloss(); } catch (e) { console.error(e); }
   startSubtitles();
   startMiniClock();
   (window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => startLight(), { timeout: 1200 });
@@ -4363,6 +4514,8 @@ async function boot(mode, sdk) {
   if (early) { route(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
   const steps = [markMe, renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderBuffsDeep, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
   for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
+  /* V12: an early scene (Tonight) painted before party.json's glossary was in hand: dot it now */
+  if (SC.open && SC.open !== "library") { try { dotPanel($(`#panel-${SC.open}`)); } catch (e) {} }
   try { startArt(); } catch (e) { console.error(e); }
   /* The library's files wait until the person leaves Tonight: Tonight loads no library file. */
   whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
