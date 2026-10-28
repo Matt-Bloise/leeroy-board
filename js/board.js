@@ -156,6 +156,10 @@ function eventWhen(e) {
 }
 
 const D = {};
+/* V13d: the page's own hooks for js/v13d.js (journeys, landings, the dial, the zoom) and js/brain.js (the shared brain). The
+   renderers say what they drew; v13d.js adds to it. KIT carries the internals v13d.js needs (filled in at the end). */
+const KIT = { hooks: {}, on(n, f) { (this.hooks[n] ||= []).push(f); }, emit(n, ...a) { for (const f of this.hooks[n] || []) { try { f(...a); } catch (e) { console.error(n, e); } } }, lander: null };
+const JR = () => document.documentElement.dataset.journey || "curious";
 /* The data files start loading as soon as this script runs, while the rest of the page parses and the gate decides
    (V6-SPEC 3.3: Tonight paints in under 1.0 s on the 4x throttle). Relative loads only. */
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
@@ -239,7 +243,7 @@ function renderTimeline() {
   t.events.forEach((e, di) => {
     const [cls, label] = eventState(e, now, next);
     const lit = cls === "next" || cls === "open";
-    tl.append(h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}` },
+    tl.append(h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
       h("span", { class: "stop-mark", "aria-hidden": "true" }, ...stopEmblem(EMB_LABEL[e.key] || "seal", lit), cls === "past" ? emb("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
       h("div", { class: "stop-body" },
         h("div", { class: "when", text: eventWhen(e) }),
@@ -248,6 +252,7 @@ function renderTimeline() {
         h("p", { class: "label state", text: label }))));
   });
   renderCalendar(now);
+  KIT.emit("timeline");
 }
 function renderCalendar(now) {
   const box = $("#cal-col"); if (!box) return;
@@ -265,12 +270,14 @@ function renderCalendar(now) {
   for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const e = marks[dayKey(d)], w = inWin(d);
     const prev = new Date(d); prev.setDate(d.getDate() - 1);
-    cells.push(h("div", { class: `cal-day${d.getMonth() !== mid.getMonth() ? " out" : ""}${w ? " win" : ""}${w && !inWin(prev) ? " first" : ""}${dayKey(d) === today ? " today" : ""}${e ? " has-emb" : ""}`, title: e ? e.label : null },
+    /* V13d (interaction 6): a day with a date on it is a button that lights its stop on the rail (js/v13d.js links them) */
+    const isToday = dayKey(d) === today;
+    cells.push(h(e || isToday ? "button" : "div", { class: `cal-day${d.getMonth() !== mid.getMonth() ? " out" : ""}${w ? " win" : ""}${w && !inWin(prev) ? " first" : ""}${isToday ? " today" : ""}${e ? " has-emb" : ""}`, ...(e || isToday ? { type: "button", "data-ev": e ? e.key : "today", "data-day": dayKey(d), "aria-label": `${new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d)}${e ? `: ${e.label}` : ", today"}` } : { "data-day": dayKey(d) }), title: e ? e.label : null },
       e ? emb(EMB_LABEL[e.key] || "seal") : null, h("span", { text: String(d.getDate()) })));
   }
   const month = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(mid);
   const later = t.events.filter((e) => local(e) > end);
-  box.replaceChildren(h("div", { class: "cal", role: "img", "aria-label": `${month}, with the board's dates marked` },
+  box.replaceChildren(h("div", { class: "cal", role: "group", "aria-label": `${month}, with the board's dates marked` },
     h("h4", { text: month }),
     h("div", { class: "cal-grid" }, ...["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
     h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}, the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
@@ -331,8 +338,8 @@ function renderTiles() {
   const count = (role) => p.members.filter((m) => m.role === role).length;
   fill("five",
     /* V12: phones show race and class under each name too, as the laptop medallions do */
-    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
-    h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
+    h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
+    h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many]) => [h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`), " "]),
       h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `· Still choosing a play style: ${andList(o)}` : "· All five have picked a play style"; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
@@ -343,11 +350,11 @@ function renderTiles() {
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
-    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line" }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m))), " ", h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
-    changed ? h("span", { class: "tile-line", text: `${plural(changed, "racial", "racials")} changed since Oct 26` }) : null);
+    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line", "data-land": `racials.${MEM.slug(race)}` }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m))), " ", h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
+    changed ? h("span", { class: "tile-line", "data-land": "racials.changed", text: `${plural(changed, "racial", "racials")} changed since Oct 26` }) : null);
   fill("legacy",
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], ". They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."]),
-    h("span", { class: "tile-viz" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
+    h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
     /* consistency 5: the count the scene shows (every buff the five bring), not the wheel's links */
     minis([[p.members.length, "players"], [c.buffs ? c.buffs.list.filter((b) => !b.sixth).length : c.synergy.length, "buffs"]]),
@@ -355,16 +362,16 @@ function renderTiles() {
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
-    settled.length ? h("span", { class: "tile-line" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
+    settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
     minis([[stillOpen.length, "still open"], [p.polls.length, p.polls.length === 1 ? "poll" : "polls"]]),
-    h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o) => h("li", { text: o.title })))));
+    h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
     const when = T.when ? h("span", { class: "tile-line su-when" }, [["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "Later"]].filter(([k]) => T.when[k]).map(([k, l]) => h("span", { class: "su-slot" }, h("b", { text: l }), ` ${T.when[k].names.length ? T.when[k].names.map(cleanName).join(", ") : "nobody yet"}`))) : null;
     const cnt = (k) => (T.rsvp[k] ? T.rsvp[k].count : 0), none = Math.max(0, p.members.length - RSVP_KEYS.reduce((n, k) => n + cnt(k), 0));
     /* V13c (retest-3): a state shows only when someone holds it; in and no answer always do */
-    const nums = [...RSVP_KEYS.filter((k) => k === "in" || cnt(k)).map((k) => [cnt(k), RSVP_SAY[k]]), [none, "No answer"]];
-    fill("signups", h("span", { class: "su-nums" }, nums.map(([v, l]) => h("span", { class: "su-num" }, h("b", { text: String(v) }), h("small", { text: l })))),
+    const nums = [...RSVP_KEYS.filter((k) => k === "in" || cnt(k)).map((k) => [cnt(k), RSVP_SAY[k], k]), [none, "No answer", "none"]];
+    fill("signups", h("span", { class: "su-nums" }, nums.map(([v, l, k]) => h("span", { class: "su-num", "data-land": `signups.${k}` }, h("b", { text: String(v) }), h("small", { text: l })))),
       h("span", { class: "rsvp-bar su-keg", "aria-hidden": "true" }, kegRow([...RSVP_KEYS.flatMap((k) => Array(cnt(k)).fill(k)), ...Array(none).fill("none")])), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
   fill("librarian",
@@ -462,7 +469,7 @@ function kegRow(states) {
   const svg = s("svg", { viewBox: `0 0 ${states.length * 56} 48`, preserveAspectRatio: "xMinYMid meet" });
   states.forEach((st, i) => {
     const x = i * 56 + 2;
-    const g = s("g", { class: `keg ${st}`, style: `--pi: ${i}` });
+    const g = s("g", { class: `keg ${st}`, style: `--pi: ${i}`, "data-land": `signups.${st}` });
     if (st !== "none") g.append(s("image", { class: `keg-img ${st}`, href: `img/pints/${st}.png`, x, y: 0, width: 48, height: 48 }), s("rect", { class: `keg-pint ${st} keg-fill`, x: x + 8, y: 10, width: 28, height: 34, "fill-opacity": 0, style: "fill: none" }));
     else g.append(s("rect", { class: "keg-pint none", x: x + 8, y: 10, width: 28, height: 34, rx: 3, "fill-opacity": 0, style: "fill: none" }), s("path", { class: "keg-handle", d: `M${x + 36} 18h5a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4h-5` }));
     svg.append(g);
@@ -486,7 +493,7 @@ function miniRoads() {
     const z = ZONES[zone]; if (!z) continue;
     ms.forEach((m, i) => {
       const tx = z.x + (i - (ms.length - 1) / 2) * 60, ty = z.y + 20;
-      svg.append(s("g", { class: "mm-pin", transform: `translate(${tx} ${ty}) scale(1.7)`, style: `--cc: ${classVar(m.class_key)}` },
+      svg.append(s("g", { class: "mm-pin", transform: `translate(${tx} ${ty}) scale(1.7)`, style: `--cc: ${classVar(m.class_key)}`, "data-land": `roads.${MEM.slug(zone)}` },
         s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
         s("image", { href: `img/crests/${m.class_key}.png`, x: -13, y: -39, width: 26, height: 26 })));
     });
@@ -513,7 +520,7 @@ function miniWheel() {
     if (to === b.from || !pos[to] || !pos[b.from]) continue;
     svg.append(s("line", { class: "viz-thin", x1: pos[b.from][0], y1: pos[b.from][1], x2: pos[to][0], y2: pos[to][1], stroke: classVar(b.from) }));
   }
-  for (const k of keys) svg.append(s("image", { href: `img/crests/${k}.png`, x: pos[k][0] - 10, y: pos[k][1] - 10, width: 20, height: 20 }));
+  for (const k of keys) svg.append(s("image", { href: `img/crests/${k}.png`, x: pos[k][0] - 10, y: pos[k][1] - 10, width: 20, height: 20, "data-land": `buffs.${k}` }));
   return svg;
 }
 function miniSpark(vals) {
@@ -528,7 +535,7 @@ function renderCards() {
   const lvl = D.client.level;
   for (const m of D.party.members) {
     const spells = D.client.classes[m.class] || [];
-    const card = h("article", { class: "card", "data-k": m.class_key, style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
+    const card = h("article", { class: "card", "data-k": m.class_key, "data-slug": MEM.slug(m.name), style: `--cc: ${classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.race} ${m.class}` });
     const flipBtn = (label) => h("button", { class: "flip", type: "button", "aria-pressed": "false", text: label, onclick: () => {
       const on = card.classList.toggle("flipped");
       sfx("flip", { delay: 120 });
@@ -542,7 +549,7 @@ function renderCards() {
       h("div", { class: "who", text: m.name }),
       h("div", { class: "what", text: `${m.race} ${m.class}` }),
       h("div", { class: "spec", text: m.spec }),
-      h("dl", {},
+      h("dl", { "data-j": "c e" },
         h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: m.role }), m.role_detail ? h("span", { class: "spec", text: m.role_detail }) : null)),
         h("div", {}, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), "chosen")))),
         h("div", {}, h("dt", { text: "Starts in" }), h("dd", { text: m.start_zone || "unknown" })),
@@ -554,9 +561,13 @@ function renderCards() {
         sp.duration_ms && !sp.values.some((v) => v.mode === "total") ? `lasts ${fmtMs(sp.duration_ms)}` : null, sp.learned ? `learned at ${sp.learned}` : null].filter(Boolean).join(" · ");
       return h("li", { class: "spell" }, h("div", { class: "spell-name" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null), vals ? h("div", { class: "spell-vals", text: vals }) : null, h("div", { class: "spell-meta", text: meta }));
     }));
+    /* V13d (interaction 8): the back is a list of spell names; a tap opens the game-style card (js/v13d.js). Everything shows
+       every row with its numbers, as V13c did. */
+    list.setAttribute("data-j", "e");
+    const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class} spells at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class, "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
     const back = h("div", { class: "face back" },
       h("div", { class: "back-head" }, h("h3", { text: `${m.class} at ${lvl}` }), h("span", { class: "label", text: `client ${D.client.build}` })),
-      list, flipBtn(`Back to ${m.name}`));
+      names, list, flipBtn(`Back to ${m.name}`));
     back.inert = true;
     card.append(h("div", { class: "card-inner" }, front, back));
     wrap.append(card);
@@ -835,7 +846,9 @@ function renderMap() {
       h("b", { text: r.zone }), h("span", { text: `${ms.length ? andList(ms.map((m) => m.name)) : "Nobody"} · ${r.how} to Orgrimmar` }));
     btns.push(b); legend.append(h("li", {}, b));
   }
-  groups.forEach((g) => { g.addEventListener("pointerenter", () => light(g.dataset.road)); g.addEventListener("pointerleave", () => light(null)); g.addEventListener("click", () => toggle(g.dataset.road)); });
+  groups.forEach((g) => { g.addEventListener("pointerenter", () => light(g.dataset.road)); g.addEventListener("pointerleave", () => light(null)); });
+  /* V13d (interaction 4): zones are buttons; a click or Enter zooms the map to the zone (js/v13d.js), the road stays lit */
+  KIT.emit("map", { svg, groups, byZone, roads: ROADS, zones: ZONES, pick: (key) => { sticky = key; light(null); } });
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
   const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
   $("#map-lede").textContent = `${names.join("; ")}. The Undercity zeppelin and two roads all end in Orgrimmar.`;
@@ -859,10 +872,15 @@ function raceRow(r, i) {
   const { now, notes } = splitNotes(r.wiki ? r.wiki.replace(/^(active|passive),\s*/, "") : "Not on the wiki page yet.");
   const client = (r.client.values.length || r.client.cooldown_ms) ? `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` : null;
   const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: `changed ${r.changed_on || "Oct 26"}` }) : null];
-  const li = h("li", { class: "rrow", style: `--di: ${i}` });
-  if (!notes.length && !client) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
-  const btn = h("button", { class: "rhead", type: "button", "aria-expanded": "false", onclick: () => btn.setAttribute("aria-expanded", String(li.classList.toggle("open"))) }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));
-  li.append(btn, h("div", { class: "rwiki", text: now }), h("div", { class: "rmore" }, h("div", {}, notes.length ? h("ul", { class: "rnotes", "aria-label": "Dev notes" }, notes.map((n) => h("li", { text: n }))) : null, client ? h("div", { class: "rclient", text: client }) : null)));
+  const li = h("li", { class: "rrow", style: `--di: ${i}`, "data-key": MEM.slug(r.name), ...(r.changed_oct26 ? { "data-changed": r.changed_on || "Oct 26" } : {}) });
+  /* V13d (interaction 3): closed by default, one plain line each (the first clause); the whole line, the dated notes and the
+     client numbers open on tap. Everything opens every row. */
+  const plain = wholeClause(now.split(/;\s*/)[0].replace(/\s*\([^)]*\)/g, ""), 90);
+  const open = JR() === "everything";
+  if (!notes.length && !client && plain === now) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
+  if (open) li.classList.add("open");
+  const btn = h("button", { class: "rhead", type: "button", "aria-expanded": String(open), onclick: () => { const on = li.classList.toggle("open"); btn.setAttribute("aria-expanded", String(on)); sfx("paper"); } }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));
+  li.append(btn, h("div", { class: plain === now ? "rwiki" : "rplain", text: plain }), h("div", { class: "rmore" }, h("div", {}, plain !== now ? h("p", { class: "rwiki rfull", text: now }) : null, notes.length ? h("ul", { class: "rnotes", "aria-label": "Dev notes" }, notes.map((n) => h("li", { text: n }))) : null, client ? h("div", { class: "rclient", text: client }) : null)));
   return li;
 }
 const wideMQ = window.matchMedia("(min-width: 900px)");
@@ -870,7 +888,7 @@ function renderRaces() {
   const wrap = $("#races"); wrap.replaceChildren();
   Object.entries(D.client.racials).forEach(([race, list], idx) => {
     const ms = D.party.members.filter((m) => m.race === race);
-    wrap.append(h("details", { class: "slip race", open: wideMQ.matches || idx === 0 },
+    wrap.append(h("details", { class: "slip race", "data-race": MEM.slug(race), open: wideMQ.matches || idx === 0 || JR() === "everything" },
       h("summary", {}, h("h3", {}, race, h("span", { class: "dots", "aria-hidden": "true" }, ms.map((m) => crestMark(m))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") }))),
       h("ul", {}, list.map((r, i) => raceRow(r, i)))));
   });
@@ -889,7 +907,7 @@ function renderLegacy() {
   let start = 0;
   L.categories.forEach((c, i) => {
     const len = (c.n / L.total) * C;
-    ring.append(s("circle", { r, cx: 0, cy: 0, fill: "none", stroke: `var(--seg-${i + 1})`, "stroke-width": 16, "stroke-dasharray": `${Math.max(0, len - 2)} ${C}`, "stroke-dashoffset": -start, transform: "rotate(-90)" }, s("title", { text: `${c.key}: ${c.n}` })));
+    ring.append(s("circle", { class: "ring-seg", "data-cat": c.key, r, cx: 0, cy: 0, fill: "none", stroke: `var(--seg-${i + 1})`, "stroke-width": 16, "stroke-dasharray": `${Math.max(0, len - 2)} ${C}`, "stroke-dashoffset": -start, transform: "rotate(-90)" }, s("title", { text: `${c.key}: ${c.n}` })));
     start += len;
   });
   ring.append(s("circle", { r: r - 14, cx: 0, cy: 0, fill: "none", stroke: "var(--brass)", "stroke-width": 4, "stroke-dasharray": `${(L.earned_now / L.total) * C} ${C}`, transform: "rotate(-90)", opacity: 0.9 }));
@@ -901,14 +919,15 @@ function renderLegacy() {
   }
   svg.append(s("text", { class: "ring-num", x: 0, y: 8, "text-anchor": "middle", text: String(L.earned_now) }),
     s("text", { class: "ring-sub", x: 0, y: 28, "text-anchor": "middle", text: `OF ${L.total} POINTS` }));
-  const legend = h("ul", { class: "legend" }, L.categories.map((c, i) => h("li", { style: `--sw: var(--seg-${i + 1})` }, emb(EMB[c.key] ? c.key : c.key === "raids" ? "skull" : "seal", "cat-emb"), h("b", { class: "num", text: String(c.n) }), h("span", { text: `${c.key}: ${c.text.replace(/^\d+:\s*/, "")}` }))));
-  const rewards = h("ul", { class: "rewards" }, L.thresholds.map((t) => h("li", {}, h("b", { text: t.alt ? `${t.n} (${t.alt})` : String(t.n) }), h("span", { text: `${t.reward}, ${KIND_WORD[t.kind] || t.kind}` }))));
-  wrap.append(h("div", {}, svg),
+  const legend = h("ul", { class: "legend", "data-j": "c e" }, L.categories.map((c, i) => h("li", { "data-cat": c.key, style: `--sw: var(--seg-${i + 1})` }, emb(EMB[c.key] ? c.key : c.key === "raids" ? "skull" : "seal", "cat-emb"), h("b", { class: "num", text: String(c.n) }), h("span", { text: `${c.key}: ${c.text.replace(/^\d+:\s*/, "")}` }))));
+  const rewards = h("ul", { class: "rewards" }, L.thresholds.map((t) => h("li", { "data-n": t.n }, h("b", { text: t.alt ? `${t.n} (${t.alt})` : String(t.n) }), h("span", { text: `${t.reward}, ${KIND_WORD[t.kind] || t.kind}` }))));
+  wrap.append(h("div", { class: "ring-box", "data-land-to": "ring" }, svg),
     h("div", { class: "stack" },
       h("p", { text: `Earned so far: ${L.earned_now}, because ${L.earned_note}.` }),
       h("div", {}, h("div", { class: "label", text: `Reward track, ${L.thresholds_label}` }), rewards),
-      h("p", { class: "label", text: `Claimed from ${L.claim}.` }),
+      h("p", { class: "label", "data-j": "c e", text: `Claimed from ${L.claim}.` }),
       legend));
+  KIT.emit("legacy", { svg, r, C, L, rewards, legend });
 }
 
 function renderWheel() {
@@ -1110,17 +1129,18 @@ function renderLedger() {
     ? `What is settled, what is open, and ${p.polls.length === 1 ? "a poll" : `${p.polls.length} polls`} to vote in: ${andList(pollNames)}.`
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(h("div", { class: "ledger-col" },
-    h("h3", { text: "Settled" }),
+    h("h3", { "data-j": "c e", text: "Settled" }),
     /* V12: the Party Board's "Next up" line on what it takes to play closes the Settled list */
-    h("ul", {}, [...p.settled, ...p.settled_extra].map((x, i) => h("li", { class: "settled-li", style: `--di: ${i}` }, h("span", {}, seal(), x.text), srcTag(x.source))),
+    h("ul", { "data-j": "c e" }, [...p.settled, ...p.settled_extra].map((x, i, all) => h("li", { class: "settled-li", style: `--di: ${i}`, ...(i === all.length - 1 ? { "data-land-to": "settled" } : {}) }, h("span", {}, seal(), x.text), srcTag(x.source))),
       p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), p.play.text), srcTag(p.play.source)) : null),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
     ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), q.closes_epoch ? h("span", {}, `Closes ${whenLocal(q.closes_epoch)} your time`, h("small", { class: "et-anchor", text: ` (${whenLocal(q.closes_epoch, "America/New_York").replace(whenLocal(q.closes_epoch).replace(/,[^,]*$/, ""), "").replace(/^,\s*/, "")} ET)` }), `. ${q.text.replace(/^poll closes on [^.]*?ET\.\s*/i, "")}`) : h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` })))),
     h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
-    h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}` },
+    h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}`, "data-land-to": `open-${i}`, "data-title": o.title },
       h("strong", { text: o.title }),
-      h("span", {}, ...(unchosen(o) ? meetLine(o).slice(1) : linkify((o.status ? `${o.status}. ${o.detail || ""}` : o.text || "").replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (l) => link(l, o)))),
+      h("span", { "data-j": "c e" }, ...(unchosen(o) ? meetLine(o).slice(1) : linkify((o.status ? `${o.status}. ${o.detail || ""}` : o.text || "").replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (l) => link(l, o)))),
       srcTag(o.source))))));
+  KIT.emit("ledger");
 }
 
 function linkify(text, ls, link) {
@@ -1379,18 +1399,19 @@ function renderDiscordSignups() {
   /* V11: a name carries its crest when it is one of the five; the count fills a row of five pennants */
   const who = (n) => { const m = memberByName(cleanName(n)); return h("span", { class: "who" }, m ? crestMark(m) : emb("speech"), cleanName(n)); };
   let ri = 0;
-  const row = (slot, label, extra) => h("div", { class: `trow${slot.count ? "" : " zero"}`, style: `--ri: ${ri++}` },
+  const row = (slot, label, extra, key) => h("div", { class: `trow${slot.count ? "" : " zero"}`, style: `--ri: ${ri++}`, ...(key ? { "data-land-to": key } : {}) },
     h("span", { class: "trow-n" }, h("b", { "data-n": slot.count, text: String(slot.count) }), h("span", { class: "pips", "aria-hidden": "true" }, Array.from({ length: Math.max(D.party.members.length, slot.count) }, (_, k) => h("i", { class: k < slot.count ? "on" : null, style: `--pi: ${k}` })))),
     h("span", { class: "trow-who" }, h("span", { text: `${label}:` }), ...(slot.count ? (extra ? [extra] : mineFirst(slot.names).map(who)) : ["nobody yet"])));
   const groups = [
     ["Pack", "ticket", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", "pin", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
-    ["Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k]))],
+    ["Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
     ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
   body.replaceChildren(...groups.map(([title, icon, rows]) => h("div", { class: "tally" }, h("h4", {}, emb(icon), title), ...rows)));
   renderSeats(S); actRow();
   $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${fmtWhen(Date.parse(S.updated) / 1000, { rel: true })}.` : "Nobody has clicked the card yet.";
+  KIT.emit("signups");
 }
 
 /* V11: the board opens in any browser from the web link; nobody needs Discord's Activity to read it */
@@ -1443,7 +1464,9 @@ const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, 
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
-const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z-]{1,40}$/.test(k) ? "buffs" : null; };
+/* V13d (interaction 1): "<scene>.<thing>" lands on that thing inside the scene (#five.santa, #roads.durotar, #signups.in) */
+const LAND_RE = /^(timeline|five|roads|racials|legacy|ledger|signups|librarian)\.([a-z0-9][a-z0-9_-]{0,40})$/;
+const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z_-]{1,40}$/.test(k) ? "buffs" : LAND_RE.test(k) ? k.split(".")[0] : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
   /* pushed marks an entry over the wall's own, the only kind back may pop; since V13b a landing scene gets one too (route) */
@@ -1495,6 +1518,7 @@ function selectPanel(key, crossFade) {
   const tabs = $("#tabs"), tab = $(`#tab-${key}`);
   if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
   moveInd(); markBar(key);
+  KIT.emit("scene", key, prev);
 }
 /* V13c (spec 2, retest-10): content scaled to its frame, never the frame shrunk. On screens of 1100 px and wider, a scene whose
    content leaves its frame half empty is zoomed (CSS zoom on the panel: type, columns and art together) by the smaller of
@@ -1655,9 +1679,11 @@ function morphBand(key) {
 /* V13b (craft 11, 12): a View Transition is the only motion of a tile open or close. The root snapshot does not cross-fade
    (the live page shows through at once, the wall taking its blur in one step under the veil); the band morphs and the veil
    fades as its own group, and a close runs quicker on an accelerating curve (html.vt-close). */
+/* V13d: the marks that fly with a morph (a crest from its tile to its card) are named here and cleared with the band */
+const VTX = [];
 function viewMorph(from, to, update, closing) {
   const layer = $("#scene"), root = document.documentElement;
-  const clear = () => { from.style.viewTransitionName = ""; to.style.viewTransitionName = ""; layer.classList.remove("morph"); root.classList.remove("vt-close"); };
+  const clear = () => { from.style.viewTransitionName = ""; to.style.viewTransitionName = ""; VTX.splice(0).forEach((e) => { e.style.viewTransitionName = ""; }); layer.classList.remove("morph"); root.classList.remove("vt-close"); };
   layer.classList.add("morph"); root.classList.toggle("vt-close", !!closing);
   from.style.viewTransitionName = "scene-band";
   try {
@@ -1691,7 +1717,7 @@ function showScene(key) {
   const wasOpen = !layer.hidden && !layer.classList.contains("closing") && SC.open !== null;
   if (SC.anim) { stopFlip(); layer.classList.remove("flip"); }
   layer.classList.remove("closing");
-  if (wasOpen) { if (SC.open !== key) selectPanel(key, true); return; }
+  if (wasOpen) { if (SC.open !== key) selectPanel(key, true); landing(key); return; }
   const open = (k, how) => {
     layer.classList.remove("rise", "flip", "closing", "fade");
     closeMore(false);
@@ -1703,15 +1729,27 @@ function showScene(key) {
     focusScene(k);
     sceneState(true);
     sfx("open", { delay: motionMs("move") * 0.7 });
+    return landing(k);
   };
   const band = layer.hidden ? morphBand(key) : null;
+  /* V13d: the clicked mark (a crest, a pin) flies to the thing it names, as a second shared element of the same morph */
+  const fl = !reduceMQ.matches && SC.land && SC.land.key === key && SC.land.from && document.contains(SC.land.from) ? SC.land.from : null;
   if (band && hasVT()) {
     SC.want = key;
-    viewMorph(band, $(".sheet-head"), () => { const k = SC.want; SC.want = null; if (!k) return false; open(k, ""); return true; });
+    if (fl) { fl.style.viewTransitionName = "land-flight"; VTX.push(fl); }
+    viewMorph(band, $(".sheet-head"), () => { const k = SC.want; SC.want = null; if (!k) return false; const got = open(k, ""); if (fl) fl.style.viewTransitionName = ""; if (got && fl) { got.style.viewTransitionName = "land-flight"; VTX.push(got); } return true; });
     return;
   }
-  if (band && canFlip()) { open(key, ""); if (!flipSheet(band, true)) layer.classList.add("rise"); return; }
-  open(key, reduceMQ.matches ? "fade" : "rise"); /* reduced motion: a short cross-fade, no move */
+  if (band && canFlip()) { const got = open(key, ""); if (!flipSheet(band, true)) layer.classList.add("rise"); if (got && fl) KIT.emit("fly", fl, got); return; }
+  const got = open(key, reduceMQ.matches ? "fade" : "rise"); /* reduced motion: a short cross-fade, no move */
+  if (got && fl) KIT.emit("fly", fl, got);
+}
+/* V13d: the thing a deep link names, found, scrolled to and lit by js/v13d.js (KIT.lander); null when there is none */
+function landing(k) {
+  const L = SC.land; if (!L || L.key !== k) return null;
+  SC.land = null;
+  if (k === "buffs" && focusBuff(L.sub)) return document.querySelector("#buffs-deep li.lit");
+  return KIT.lander ? KIT.lander(k, L.sub) || null : null;
 }
 /* The library tile is a div holding a link and a search field; focus returns to its link. */
 const tileFocus = (t) => { const f = t.matches("a, button") ? t : t.querySelector("a[href]"); if (f) f.focus(); };
@@ -1723,6 +1761,7 @@ function hideScene() {
   const layer = $("#scene"), key = SC.open, token = ++SC.token;
   SC.open = null;
   setPageTitle(null);
+  KIT.emit("closed", key);
   const tile = document.querySelector(`#board [data-scene="${key}"]`) || document.querySelector(`#board a[href="#${key}"]`);
   const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close", { delay: motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
@@ -1829,7 +1868,10 @@ function route() {
      the scene pushed over it, so the close button and the phone's Back both return to the wall and Back never leaves the
      board. A scene the wall pushed (state.pushed) is left alone. */
   if (key && !(history.state && history.state.pushed)) { const url = location.pathname + location.search + location.hash; try { history.replaceState(null, "", location.pathname + location.search); history.pushState({ boardScene: key, pushed: true }, "", url); } catch (e) {} }
-  if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); if (key === "buffs" && /^buffs\./.test(raw)) setTimeout(() => focusBuff(raw.slice(6)), 60); } else hideScene();
+  /* V13d: a "<scene>.<thing>" hash lands on the thing (the wall's own clicks set SC.land with the mark that flies) */
+  const lm = key && key !== "library" && key !== "tonight" ? raw.match(/^([a-z]+)\.([a-z0-9_-]{1,40})$/) : null;
+  if (lm && !(SC.land && SC.land.key === key && SC.land.sub === lm[2])) SC.land = { key, sub: lm[2], from: null };
+  if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
 }
 function startScenes() {
   $("#board").addEventListener("click", (e) => {
@@ -1837,6 +1879,14 @@ function startScenes() {
     const a = e.target.closest && e.target.closest("[data-scene]");
     if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
+    /* V13d (interaction 1): a crest, a pin, a pint or a line inside a tile lands on that very thing, and its mark flies there */
+    const land = e.target.closest("[data-land]"), tok = land && land.getAttribute("data-land"), lk = tok && tok.split(".")[0];
+    if (tok && a.contains(land) && lk === a.dataset.scene) {
+      SC.land = { key: lk, sub: tok.slice(lk.length + 1), from: land };
+      KIT.emit("tap", land);
+      if (SC.open !== null) { switchTab(lk); landing(lk); return; }
+      setHash(tok, true); showScene(lk); return;
+    }
     if (!setHash(a.dataset.scene, true)) { showScene(a.dataset.scene); return; }
     showScene(a.dataset.scene);
   });
@@ -2511,7 +2561,7 @@ function libGo(v, from) {
 const libSrc = (r) => h("a", { class: `src t${r.tier}`, href: r.url, target: "_blank", rel: "noopener noreferrer", title: `${r.label}, ${r.host}` }, h("span", { class: "src-l", text: r.label }), h("span", { "aria-hidden": "true", text: "·" }), h("span", { class: "src-h", text: r.host }));
 const TIER_WORD = ["client table", "Blizzard", "guide or wiki", "forum or datamine"];
 const dtRead = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-const libExpert = () => MEM.get("expert") === "1";
+const libExpert = () => MEM.get("expert") === "1" || JR() === "everything"; /* V13d: the Everything journey reads the library as an expert */
 const libXp = (refs) => h("span", { class: "xp" }, refs.map((r) => {
   const b = (String(r.url).match(/build=[\d.]*?(\d{5,})/) || [])[1];
   return h("span", {}, h("b", { text: `${r.id} ${r.host}` }), `: ${TIER_WORD[r.tier] || "source"} (tier ${r.tier})`, b ? `, build ${b}` : "", r.accessed ? `, read ${dtRead.format(new Date(`${r.accessed}T12:00:00Z`))} ` : " ", h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer", "aria-label": `Verify at ${r.host}` }, "Verify"));
@@ -3146,10 +3196,10 @@ const LAUNCH_LIB = /^library(?:\.(?:q\.[a-z0-9][a-z0-9.-]{0,90}|open|changes|c\.
 function launchToken(raw) {
   const t = typeof raw === "string" ? raw.trim() : "";
   if (!t || t.length > 100 || !/^[A-Za-z0-9._~-]+$/.test(t)) return null;
-  return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) || /^buffs\.[a-z-]{1,40}$/.test(t) ? t : null;
+  return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) || /^buffs\.[a-z_-]{1,40}$/.test(t) || LAND_RE.test(t) ? t : null;
 }
 /* Memory (V6-SPEC 3.1): browser only, never sent. Depth, the picked person, last-seen stamps, where you left off, expert. */
-const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak"];
+const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak", "board-journey", "board-key", "board-glowed"];
 const MEM = {
   get: (k) => { try { return localStorage.getItem(`board-${k}`); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(`board-${k}`); else localStorage.setItem(`board-${k}`, v); } catch (e) {} },
@@ -3219,6 +3269,7 @@ function renderTonight() {
   act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1])].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
   $("#tn-left").replaceChildren(...(left ? ["Last time you read ", h("a", { href: `#${left.tok}`, text: left.title }), " in the library."] : []));
+  KIT.emit("tonight");
 }
 /* The picked person's tile and medallion stand out. */
 function markMe() {
@@ -3231,7 +3282,7 @@ function startDepth() {
   const xb = $("#lib-expert"), fb = $("#lib-forget");
   const xpLabel = (on) => { xb.setAttribute("aria-pressed", String(on)); xb.textContent = on ? "Expert: on" : "Expert: off"; };
   if (xb) { xpLabel(libExpert()); xb.addEventListener("click", () => { const on = !libExpert(); MEM.set("expert", on ? "1" : null); xpLabel(on); libRender(false); }); }
-  if (fb) fb.addEventListener("click", () => { MEM.forget(); if (xb) xpLabel(false); renderTonight(); markMe(); markDepth(); document.querySelectorAll(".new-badge").forEach((x) => x.remove()); libRender(false); fb.textContent = "Forgotten"; setTimeout(() => { fb.textContent = "Forget me"; }, 2400); });
+  if (fb) fb.addEventListener("click", () => { MEM.forget(); KIT.emit("forget"); if (xb) xpLabel(false); renderTonight(); markMe(); markDepth(); document.querySelectorAll(".new-badge").forEach((x) => x.remove()); libRender(false); fb.textContent = "Forgotten"; setTimeout(() => { fb.textContent = "Forget me"; }, 2400); });
   const nav = $("#depth"); if (!nav) return;
   markDepth();
   nav.addEventListener("click", (e) => { const b = e.target.closest("[data-depth]"); if (!b) return; const d = b.dataset.depth; if (d === "wall") { MEM.set("depth", "wall"); requestClose(); markDepth(); } else goScene(d); });
@@ -3342,8 +3393,10 @@ async function boot(mode, sdk) {
   try { startSheen(); } catch (e) { console.error(e); }
   /* The library's files wait until the person leaves Tonight: Tonight loads no library file. */
   whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
+  KIT.emit("rendered");
   if (!early) route();
   markNew(); startDepth();
+  KIT.emit("booted", mode);
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = PRESENCE_WEB;
   /* the room starts after first paint, when the main thread is idle (V7-SPEC 3.3) */
   (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(startRoomLadder, { timeout: 2500 });
@@ -3352,6 +3405,10 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
+/* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
+Object.assign(KIT, { $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, ttPlace, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
+  render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
+window.__boardKit = KIT;
 startWisps();
 let started = false;
 window.__board = Object.freeze({ fmt: { when: fmtWhen, rel: relWhen, rsvp: RSVP_SAY }, start: (mode, sdk) => { if (started) return; started = true; boot(mode, sdk); }, status: () => ({ light: { ...LS, aim: { tx: LB.tx, ty: LB.ty, x: Math.round(LB.x), y: Math.round(LB.y), tilt: LB.tilt, frames: LB.frames, running: LB.running } }, wisps: { ...WS }, scene: SC.open, warm: { scenes: WARM.scenes, ms: Math.round(WARM.ms), done: WARM.done }, map: { running: !!(MC.raf || MC.timer), t: Math.round(MC.t), untangled: MC.untangled || 0, moved: MC.moved || 0 }, longtasks: LT.slice(), library: LIBUI.status() }), sound: (on) => { if (on !== undefined) setSound(!!on); return AU.on; }, audio: audioStatus, room: () => ({ ...RS, room: RS.status ? RS.status() : null }) });

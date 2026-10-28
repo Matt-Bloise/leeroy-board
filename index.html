@@ -22,6 +22,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preload" as="image" href="img/tavern-hero.jpg" fetchpriority="high">
 <link rel="stylesheet" href="css/board.css?v=f2bd963444">
+<link rel="stylesheet" href="css/v13d.css?v=a00048eafe">
 
 <div class="hero-art gate-mode" id="hero-art" aria-hidden="true"><img src="img/tavern-hero.jpg" alt="" width="1672" height="941" loading="eager" fetchpriority="high" decoding="async"></div>
 <div class="candle" aria-hidden="true"></div>
@@ -44,6 +45,7 @@
         <span id="presence-text"></span>
         <div class="peers" id="peers"></div>
         <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Light follows your phone</button>
+        <nav class="journey" id="journey" aria-label="How do you want to explore?"><button type="button" data-journey="guided" aria-pressed="false">Guided</button><button type="button" data-journey="curious" aria-pressed="true">Curious</button><button type="button" data-journey="everything" aria-pressed="false">Everything</button></nav>
         <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Next steps</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
         <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"><select class="room-pick" id="room-pick" aria-label="Room behind the board"><option value="auto">Room: auto</option><option value="off">Room: off</option><option value="low">Room: low</option><option value="medium">Room: medium</option><option value="high">Room: high</option><option value="ultra">Room: ultra</option></select></span>
       </div>
@@ -67,41 +69,41 @@
     <div class="wall-plate" aria-hidden="true"><canvas class="light" id="light"></canvas></div>
     <ul class="wall" id="wall">
       <li class="t-five hot"><a class="tile" href="#five" data-scene="five" style="--i:0;--acc:var(--c-mage);--acc-glow:var(--hi-mage)" aria-labelledby="tt-five" aria-describedby="ts-five">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-five">The five</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-five">The five</span><span class="tile-go" aria-hidden="true"><span class="word">Turn their cards</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></svg></span></span>
         <span class="tile-body" id="ts-five"><span class="loading">Pinning up the cards.</span></span>
       </a></li>
       <li class="t-signups hot"><a class="tile" href="#signups" data-scene="signups" style="--i:1;--acc:var(--ok);--acc-glow:var(--hi-ok)" aria-labelledby="tt-signups" aria-describedby="ts-signups">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-signups">Sign-ups</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-signups">Sign-ups</span><span class="tile-go" aria-hidden="true"><span class="word">Who is coming</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></svg></span></span>
         <span class="tile-body" id="ts-signups"><span class="loading">Reading the sign-up card.</span></span>
       </a></li>
       <li class="t-library hot"><div class="tile lib-tile" data-scene="library" style="--i:2;--acc:var(--brass-hi);--acc-glow:var(--hi-brass)">
-        <a class="tile-band" href="#library" aria-labelledby="tt-library" aria-describedby="ts-library"><span class="tile-name"><span class="tile-title" id="tt-library">Library</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3 20.5h18"/><path d="M4.5 20.5V6h3v14.5M7.5 20.5V8.5h3v12"/><path d="M11.5 9.2l2.9-.8 3.6 11.6-2.9.8z"/><path d="M5.5 9h1M8.5 11.5h1"/></svg></span></a>
+        <a class="tile-band" href="#library" aria-labelledby="tt-library" aria-describedby="ts-library"><span class="tile-name"><span class="tile-title" id="tt-library">Library</span><span class="tile-go" aria-hidden="true"><span class="word">Search the shelves</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3 20.5h18"/><path d="M4.5 20.5V6h3v14.5M7.5 20.5V8.5h3v12"/><path d="M11.5 9.2l2.9-.8 3.6 11.6-2.9.8z"/><path d="M5.5 9h1M8.5 11.5h1"/></svg></span></a>
         <span class="tile-body" id="ts-library"><span class="loading">Opening the stacks.</span></span>
         <form class="tile-search" id="tile-search" role="search" aria-label="Search the library"><input class="tile-q" id="tile-q" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Search every page" aria-label="Search every page of the library"><button class="tile-q-go" type="submit">Search</button></form>
         <span class="tile-line lib-new" id="ts-library-new"></span>
       </div></li>
       <li class="t-roads"><a class="tile" href="#roads" data-scene="roads" style="--i:3;--acc:var(--c-druid);--acc-glow:var(--hi-druid)" aria-labelledby="tt-roads" aria-describedby="ts-roads">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-roads">Three roads</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-roads">Three roads</span><span class="tile-go" aria-hidden="true"><span class="word">Trace the roads</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span></span>
         <span class="tile-body" id="ts-roads"><span class="loading">Unrolling the map.</span></span>
       </a></li>
       <li class="t-racials"><a class="tile" href="#racials" data-scene="racials" style="--i:4;--acc:var(--wax);--acc-glow:var(--hi-wax)" aria-labelledby="tt-racials" aria-describedby="ts-racials">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Race skills</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Race skills</span><span class="tile-go" aria-hidden="true"><span class="word">See what changed</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
         <span class="tile-body" id="ts-racials"><span class="loading">Reading the racials.</span></span>
       </a></li>
       <li class="t-legacy"><div class="tile gl-tile" data-scene="legacy" style="--i:5;--acc:var(--brass);--acc-glow:var(--hi-brass)">
-        <a class="tile-band" href="#legacy" aria-labelledby="tt-legacy" aria-describedby="ts-legacy"><span class="tile-name"><span class="tile-title" id="tt-legacy">Bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></a>
+        <a class="tile-band" href="#legacy" aria-labelledby="tt-legacy" aria-describedby="ts-legacy"><span class="tile-name"><span class="tile-title" id="tt-legacy">Bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Fill the ring</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></a>
         <span class="tile-body" id="ts-legacy"><span class="loading">Counting points.</span></span>
       </div></li>
       <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:6;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)" aria-labelledby="tt-buffs" aria-describedby="ts-buffs">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-buffs">Who buffs whom</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-buffs">Who buffs whom</span><span class="tile-go" aria-hidden="true"><span class="word">Spin the wheel</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></svg></span></span>
         <span class="tile-body" id="ts-buffs"><span class="loading">Drawing the wheel.</span></span>
       </a></li>
       <li class="t-ledger"><a class="tile" href="#ledger" data-scene="ledger" style="--i:7;--acc:var(--c-paladin);--acc-glow:var(--hi-paladin)" aria-labelledby="tt-ledger" aria-describedby="ts-ledger">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">Ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">Ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Read the decisions</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
         <span class="tile-body" id="ts-ledger"><span class="loading">Opening the ledger.</span></span>
       </a></li>
       <li class="t-librarian"><a class="tile" href="#librarian" data-scene="librarian" style="--i:8;--acc:var(--c-priest);--acc-glow:var(--hi-priest)" aria-labelledby="tt-librarian" aria-describedby="ts-librarian">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">Leeroy</span><span class="tile-go" aria-hidden="true"><span class="word">Open</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">Leeroy</span><span class="tile-go" aria-hidden="true"><span class="word">Ask Leeroy</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
         <span class="tile-body" id="ts-librarian"><span class="loading">Asking the librarian.</span></span>
       </a></li>
     </ul>
@@ -139,7 +141,7 @@
     <div class="sheet-body" id="sheet-body">
       <div class="panel" role="tabpanel" id="panel-timeline" aria-labelledby="tab-timeline" tabindex="0" hidden>
         <p class="lede">The dates from Blizzard and the group's cards, in your time zone where the board has a time.</p>
-        <div class="dates-grid"><ol class="rail" id="rail"></ol><aside class="cal-col" id="cal-col" aria-label="The dates on a calendar"></aside></div>
+        <div class="dates-grid"><ol class="rail" id="rail"></ol><aside class="cal-col" id="cal-col" data-j="c e" aria-label="The dates on a calendar"></aside></div>
       </div>
       <div class="panel" role="tabpanel" id="panel-five" aria-labelledby="tab-five" tabindex="0" hidden>
         <p class="lede">Each card is what the group has said so far. Turn a card over for that class's signature spells at the level cap, straight from the game client.</p>
@@ -188,7 +190,7 @@
             <div class="dsu" id="dsu-body"><p class="loading">Reading the sign-up card.</p></div>
             <p class="picker-note" id="dsu-stamp"></p>
             <p class="picker-note">Buttons live in #wow-forever; this page follows them within a minute.</p>
-            <div class="seats" id="dsu-seats"></div>
+            <div class="seats" id="dsu-seats" data-j="c e"></div>
           </div>
           <form class="slip signup" id="signup" autocomplete="off" hidden>
             <h3>On this page</h3>
@@ -222,7 +224,7 @@
         <div class="act"><p class="act-how"><b>Ask Leeroy:</b> in #wow-forever type <b>/ask</b> and your question, or tag Leeroy Jenkins in a message. He answers from the same library this board searches.</p></div>
         <p class="lede">His numbers so far:</p>
         <div class="librarian" id="lib-box"></div>
-        <div class="sources" id="lib-sources"></div>
+        <div class="sources" id="lib-sources" data-j="c e"></div>
       </div>
       <div class="panel tn" role="tabpanel" id="panel-tonight" aria-labelledby="tab-tonight" tabindex="0" hidden>
         <div class="tn-me" id="tn-me"></div>
@@ -261,7 +263,9 @@
 </aside>
 
 <script src="js/sound.js?v=d181ff431f"></script>
-<script src="js/board.js?v=36cc2deaaa"></script>
+<script src="js/brain.js?v=0f337fce45"></script>
+<script src="js/board.js?v=bb8a50aec3"></script>
+<script src="js/v13d.js?v=dfb03ce33b"></script>
 <script type="module">
 /* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:
    #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is

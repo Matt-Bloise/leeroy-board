@@ -1,0 +1,179 @@
+/* V13d (board/V13D-SPEC.md): journeys, landings, the zoom, the dial, the spell cards, nested cards, seals, the glow, the
+   board's own sign-up controls, header plates and the rail's arrows. Colours come from the :root tokens in board.css. */
+
+/* ---------- journeys: one data source, three depths ---------- */
+html[data-journey="guided"] [data-j]:not([data-j~="g"]),
+html[data-journey="curious"] [data-j]:not([data-j~="c"]),
+html[data-journey="everything"] [data-j]:not([data-j~="e"]) { display: none !important; }
+html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { display: none !important; }
+
+/* the header switch and the pills beside it are brass plates (craft 18) */
+.journey { display: inline-flex; }
+.journey, .depth { border: 1px solid var(--brass-dim); border-radius: 4px; overflow: hidden; background: linear-gradient(180deg, var(--oak-3), var(--oak-1)); box-shadow: inset 0 1px 0 var(--edge-hi), 0 2px 6px var(--wear); }
+.journey button, .depth button { font-family: var(--font-sc); font-size: var(--fs-chip); letter-spacing: 0.06em; color: var(--l-dim); background: transparent; border: 0; padding: 4px 12px; min-height: 36px; cursor: pointer; }
+.journey button + button, .depth button + button { border-left: 1px solid var(--brass-dim); }
+.journey button[aria-pressed="true"], .depth button[aria-pressed="true"] { color: var(--oak-0); background: linear-gradient(180deg, var(--brass-hi), var(--brass)); box-shadow: inset 0 -2px 0 var(--brass-dim); }
+@media (hover: hover) { .journey button:hover, .depth button:hover { color: var(--parchment); } .journey button[aria-pressed="true"]:hover { color: var(--oak-0); } }
+.tilt { border-radius: 4px; border-color: var(--brass-dim); background: linear-gradient(180deg, var(--oak-3), var(--oak-1)); box-shadow: inset 0 1px 0 var(--edge-hi), 0 2px 6px var(--wear); color: var(--l-dim); }
+@media (max-width: 699px) {
+  .journey { position: relative; flex: none; overflow: visible; }
+  .journey button { min-height: 44px; padding: 4px 10px; font-size: 0.95rem; }
+  .journey:not(.open) button:not([aria-pressed="true"]) { display: none; }
+  .journey:not(.open) button[aria-pressed="true"]::after { content: " \25BE"; }
+  .journey.open { position: absolute; z-index: 40; right: 0; flex-direction: column; }
+  .journey.open button + button { border-left: 0; border-top: 1px solid var(--brass-dim); }
+  .sheet-top .journey { display: none; }
+}
+
+/* the first-visit picker, right under Who are you? */
+.jr-pick { margin-top: 10px; padding: 10px 16px 12px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); display: grid; gap: 10px; }
+.jr-pick .tn-who { margin: 0; flex-basis: auto; font-size: var(--step-1); }
+.jr-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; }
+.jr-cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.jr-card { display: grid; gap: 2px; align-content: start; text-align: left; padding: 8px 12px; line-height: 1.3; min-height: 44px; font: inherit; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); border-top: 4px solid var(--brass-dim); border-radius: 6px; cursor: pointer; transition: transform var(--t-micro) var(--ease-oak), box-shadow var(--t-micro) var(--ease-oak); }
+.jr-card[aria-pressed="true"] { background: var(--cream); border-color: var(--ink); border-top-color: var(--wax); box-shadow: 0 0 0 2px var(--brass), 0 6px 14px var(--shadow-soft); }
+@media (hover: hover) { .jr-card:hover { transform: translateY(-2px); background: var(--cream); } }
+.jr-name { font-family: var(--font-display); font-size: var(--step-1); }
+.jr-line { font-size: 1.05rem; }
+.jr-fact { font-family: var(--font-ui); font-size: 1rem; color: var(--ink-soft); border-top: 1px dashed var(--ink-line); padding-top: 4px; margin-top: 2px; }
+.jr-start { font-family: var(--font-sc); font-size: 0.95rem; letter-spacing: 0.04em; color: var(--wax); }
+.jr-note { margin: 0; font-size: 1rem; color: var(--ink-soft); }
+.jr-skip { color: var(--ink); background: transparent; border-color: var(--ink-soft); }
+.jr-done { margin: 0; font-size: 1.05rem; }
+
+/* Guided: the path card on top of every scene */
+.jr-path { margin: 0 0 16px; padding: 14px 18px; display: grid; gap: 8px; background: var(--cream-2); color: var(--ink); border: 1px solid var(--ink-line); border-left: 5px solid var(--wax); border-radius: 6px; box-shadow: 0 4px 14px var(--shadow-soft); }
+.jr-h { margin: 0; font-family: var(--font-display); font-size: var(--step-2); color: var(--ink); }
+.jr-dl { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 1.05rem; }
+.jr-dl-emb { width: 22px; height: 22px; --eb: var(--brass); --ea: var(--wax); --el: var(--ink); }
+.jr-step { display: grid; gap: 6px; outline-offset: 4px; }
+.jr-n { font-family: var(--font-sc); font-size: 0.95rem; letter-spacing: 0.06em; color: var(--ink-soft); }
+.jr-say { margin: 0; font-size: var(--step-1); line-height: 1.35; max-width: var(--measure); }
+.jr-go { justify-self: start; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); min-height: 44px; }
+.jr-nav { display: flex; align-items: center; gap: 12px; }
+.jr-nav .lib-tool { min-height: 44px; min-width: 5rem; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+.jr-nav .lib-tool[disabled] { opacity: 0.45; cursor: default; }
+.jr-dots { display: inline-flex; gap: 6px; }
+.jr-dots i { width: 9px; height: 9px; transform: rotate(45deg); background: var(--ink-wash); border: 1px solid var(--ink-soft); }
+.jr-dots i.on { background: var(--wax); border-color: var(--wax-lo); }
+html[data-journey="guided"] .tn-cards { display: none; }
+
+/* Race skills: closed rows read one plain line; an open row shows the whole line in its fold (interaction 3) */
+.rrow.open > .rplain { display: none; }
+.rplain { color: var(--ink-soft); font-size: 1rem; }
+.rfull { margin: 0 0 6px; }
+
+/* Everything: nothing folds, nothing scrolls inside a card */
+html[data-journey="everything"] .card .back { overflow: visible; }
+html[data-journey="everything"] .cards { align-items: start; }
+
+/* ---------- landing on the thing (interaction 1) ---------- */
+#board [data-land] { cursor: pointer; }
+@media (hover: hover) { #board .med[data-land]:hover, #board .fm[data-land]:hover, #board .su-num[data-land]:hover, #board .tile-line[data-land]:hover, #board .viz-list li[data-land]:hover { outline: 2px solid var(--brass); outline-offset: 2px; border-radius: 4px; } #board svg [data-land]:hover { filter: drop-shadow(0 0 4px var(--brass-hi)); } }
+.panel.landing .card:not(.landed), .panel.landing .race:not(.landed), .panel.landing .stop:not(.landed), .panel.landing .open-li:not(.landed), .panel.landing .trow:not(.landed) { opacity: 0.85; transition: opacity var(--t-move) var(--ease-oak); }
+.landed { position: relative; box-shadow: 0 0 0 3px var(--brass-hi), 0 0 26px var(--candle); border-radius: 6px; transition: box-shadow var(--t-move) var(--ease-oak); }
+.card.landed .face { border-color: var(--cc, var(--brass)); }
+::view-transition-group(land-flight) { animation-duration: var(--t-hero); animation-timing-function: var(--ease-oak); z-index: 3; }
+.fly-ghost { position: fixed; z-index: 90; pointer-events: none; border-radius: 50%; }
+.fly-ghost img { width: 100%; height: 100%; object-fit: contain; }
+
+/* ---------- Roads: two zoom levels (interaction 4) ---------- */
+#map { position: relative; }
+#map .map-svg { touch-action: pan-x pan-y; }
+#map .road-g { cursor: zoom-in; }
+#map .map-svg.zoomed .road-g { cursor: zoom-out; }
+#map .road-g:focus { outline: none; }
+#map .road-g:focus-visible .zone-ring { opacity: 1; stroke: var(--brass-hi); stroke-width: 2.5; }
+.zone-card { position: absolute; left: 12px; top: 12px; z-index: 2; max-width: min(22rem, calc(100% - 24px)); padding: 12px 14px; display: grid; gap: 8px; color: var(--ink); background: var(--cream-2); border: 1px solid var(--ink-line); border-left: 4px solid var(--wax); border-radius: 6px; box-shadow: 0 8px 22px var(--shadow); animation: tt-in var(--t-move) var(--ease-spring) both; }
+.zone-card h3 { margin: 0; font-family: var(--font-display); font-size: var(--step-2); }
+.zone-steps { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; font-size: 1.05rem; }
+.zone-whole { justify-self: start; min-height: 44px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+@media (max-width: 699px) { .zone-card { position: static; max-width: none; margin-top: 10px; } }
+
+/* ---------- Dates: the calendar and the rail light each other (interaction 6) ---------- */
+button.cal-day { font: inherit; color: var(--ink); background: transparent; border: 0; padding: 0; cursor: pointer; }
+button.cal-day.win { background: var(--hi-brass); }
+.cal-day.lit, button.cal-day:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 1px; box-shadow: 0 0 12px var(--candle); z-index: 1; }
+.stop.lit .stop-body { box-shadow: -6px 0 0 var(--brass-hi); background: var(--ink-wash); border-radius: 4px; }
+.cal-card { margin: 8px 0 0; font-size: 1rem; color: var(--ink); }
+.stop.open .label.state { text-decoration: none; color: var(--wax-lo); }
+.ics { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 40px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+.ics .emb { width: 18px; height: 18px; --eb: var(--parchment); --ea: var(--wax); --el: var(--ink); --ed: var(--ink-soft); }
+
+/* ---------- Bonuses: the what-if dial (interaction 7) ---------- */
+.dial { cursor: grab; outline: none; }
+.dial:active { cursor: grabbing; }
+.dial-hit { stroke: transparent; stroke-width: 34; pointer-events: stroke; }
+.dial-arc { stroke: var(--wax); stroke-width: 5; stroke-linecap: round; opacity: 0.9; pointer-events: none; transition: stroke-dasharray var(--t-micro) var(--ease-oak); }
+.dial-knob circle { fill: var(--brass-hi); stroke: var(--oak-0); stroke-width: 2; }
+.dial-knob .dial-knob-in { fill: var(--wax); stroke: none; }
+.dial:focus-visible .dial-knob circle:first-child { stroke: var(--parchment); stroke-width: 3; }
+.dial-you line { stroke: var(--ink); stroke-width: 3; }
+.dial-ctl { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; }
+.dial-k { font-family: var(--font-sc); letter-spacing: 0.06em; color: var(--wax-lo); font-size: 1.05rem; }
+.dial-btn { min-width: 44px; min-height: 44px; font-size: 1.25rem; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+.dial-out { min-width: 5.5rem; text-align: center; font-family: var(--font-sc); font-size: 1.15rem; color: var(--ink); }
+.dial-now { font-size: 1rem; color: var(--ink-soft); }
+.rewards li { transition: background var(--t-micro) var(--ease-oak); border-radius: 4px; }
+.rewards li.lit { background: var(--hi-brass); }
+.rewards li.lit b { color: var(--wax-lo); }
+.rewards li.pop { animation: press var(--t-move) var(--ease-spring) both; }
+.ring-seg { transition: opacity var(--t-micro) var(--ease-oak); cursor: pointer; }
+.ring-seg.dim { opacity: 0.25; }
+.legend li[data-cat] { cursor: pointer; border-radius: 4px; }
+.legend li.lit { background: var(--hi-brass); box-shadow: inset 4px 0 0 var(--sw, var(--brass)); }
+
+/* ---------- The five: spell names, game-style cards (interaction 8) ---------- */
+.sp-names { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.sp-tt { width: 100%; min-height: 40px; text-align: left; padding: 6px 10px; font-family: var(--font-body); font-size: 1.05rem; color: var(--l-text); background: var(--buff-bg); border: 1px solid var(--grain); border-left: 3px solid var(--cc, var(--brass)); border-radius: 4px; cursor: help; }
+.sp-tt small { color: var(--l-dim); font-size: 0.95rem; }
+.sp-tt[aria-expanded="true"], .sp-tt:focus-visible { border-color: var(--brass); background: var(--oak-3); }
+@media (hover: hover) { .sp-tt:hover { background: var(--oak-3); } }
+
+/* ---------- nested definitions, two deep (interaction 9) ---------- */
+.gl2 { display: inline; padding: 0; margin: 0; font: inherit; color: inherit; background: none; border: 0; cursor: help; text-decoration: underline dotted currentColor; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.gl2[aria-expanded="true"] { color: var(--tt-gold); }
+.gl-pop2 { z-index: 71; border-color: var(--brass); }
+.gl-back { display: block; margin: -2px 0 6px; padding: 2px 0; min-height: 28px; font: inherit; font-size: 0.95rem; color: var(--tt-dim); background: none; border: 0; cursor: pointer; }
+
+/* ---------- new since you last looked (interaction 5) ---------- */
+.v-seal { display: inline-flex; vertical-align: middle; width: 22px; height: 22px; margin-right: 6px; transition: opacity var(--t-hero) var(--ease-oak), transform var(--t-hero) var(--ease-oak); }
+.v-seal .emb { width: 22px; height: 22px; --ea: var(--wax); --el: var(--ink); --eh: var(--hi-wax); filter: drop-shadow(0 1px 1px var(--wear)); }
+.v-seal.v-seen { opacity: 0; transform: scale(0.6); }
+.v-new { box-shadow: inset 3px 0 0 var(--wax); }
+
+/* ---------- the one first-visit glow on the five crests (interaction 10) ---------- */
+.glow-five .med-ico, .glow-five .fm { box-shadow: 0 0 0 2px var(--brass-hi), 0 0 18px var(--candle); border-radius: 50%; animation: crest-glow 2.4s linear infinite; }
+.glow-five .fm { border-radius: 6px; }
+@keyframes crest-glow { 0%, 100% { box-shadow: 0 0 0 2px var(--brass-dim), 0 0 8px var(--candle-soft); } 50% { box-shadow: 0 0 0 3px var(--brass-hi), 0 0 24px var(--candle); } }
+.glow-plate { display: block; justify-self: center; margin-top: 6px; padding: 2px 12px; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.05em; color: var(--oak-0); background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-radius: 3px; box-shadow: 0 2px 6px var(--wear); }
+@media (prefers-reduced-motion: reduce) { .glow-five .med-ico, .glow-five .fm { animation: none; } }
+
+/* ---------- Sign-ups from the board (shared brain stage 3) ---------- */
+.su-states { flex-basis: 100%; display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--ink-line); }
+.su-as { margin: 0; font-size: 1.05rem; color: var(--ink); }
+.su-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.su-st { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 4px 12px 4px 6px; font-family: var(--font-ui); font-size: 1.05rem; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); border-radius: 6px; cursor: pointer; }
+.su-st .su-pint { width: 32px; height: 32px; }
+.su-st[aria-pressed="true"] { background: var(--cream); border-color: var(--ink); box-shadow: 0 0 0 2px var(--brass); }
+.su-st.sending, .su-st.waiting, .su-st.stored { box-shadow: 0 0 0 2px var(--brass-dim); border-style: dashed; }
+.su-st.newer { border-color: var(--wax); }
+.su-st[disabled] { opacity: 0.55; cursor: not-allowed; }
+.su-pend { margin: 0; min-height: 1.4em; font-size: 1rem; color: var(--ink-soft); }
+/* wide frames: the board's own answer sits beside "Answer in Discord" on the same row, so the scene keeps its height */
+@media (min-width: 1100px) { #dsu-act .su-states { flex: 1 1 26rem; margin-top: 0; padding: 0 0 0 18px; border-top: 0; border-left: 1px dashed var(--ink-line); } #dsu-act .su-pend:empty { display: none; } }
+
+/* ---------- the tab rail's arrows (retest-16) ---------- */
+.tabs-wrap { position: relative; }
+.tabs-arrow { position: absolute; top: 50%; z-index: 2; transform: translateY(-50%); width: 32px; height: 40px; font-size: 1.6rem; line-height: 1; color: var(--parchment); background: linear-gradient(180deg, var(--oak-3), var(--oak-1)); border: 1px solid var(--brass-dim); border-radius: 4px; cursor: pointer; }
+.tabs-arrow.prev { left: -14px; }
+.tabs-arrow.next { right: -14px; }
+.tabs-arrow[hidden] { display: none; }
+@media (max-width: 699px) { .tabs-arrow { display: none; } }
+#map.zoomed .road-panel { display: none; }
+
+/* ---------- V13c deferral: the small phone labels under the APCA bar (V13C-NOTES spec 7.7) ----------
+   Under 700 px every label, link and lede that measured 13 to 15.5 px reads at 16 px (APCA asks Lc 60 there instead of 75) */
+@media (max-width: 699px) {
+  .chip.new, a.tn-link, .lib-btn, .tn-name, .sheet-body .lib-tool, .sheet-body .gl, .map-caption, .panel > .lede, .act-how, .act-how b, .sheet-body .label, .clock-kicker, .tile-title, .legend span, .legend .num, #panel-ledger a, #panel-roads a, #panel-librarian p, .lib-note, #sheet-body .panel .lede, .ttc .ttc-rank, .ttc .ttc-src, .ttc-src a, .lib-examples .ex, .rewards span, .lib-main a { font-size: max(1rem, 1em); }
+}
