@@ -93,7 +93,7 @@ function startRoomLadder() {
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
-const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 420, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
+const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 480, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
@@ -1499,10 +1499,10 @@ function selectPanel(key, crossFade) {
   if (prev && prev !== key) {
     const old = $(`#panel-${prev}`);
     old.style.setProperty("--dir", String(dir)); old.style.transform = ""; old.classList.remove("spring");
-    if (crossFade && motionMs("micro")) {
+    if (crossFade) {
       old.classList.remove("entering"); old.classList.add("leaving");
       clearTimeout(SC.fadeTimer);
-      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); }, MOTION.micro);
+      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); }, (parseFloat(cssVar("--t-leave")) || 220) + 30); /* the CSS fade runs --t-leave; hiding the panel earlier cut it short in one frame */
     } else { old.hidden = true; old.classList.remove("entering", "leaving"); }
   }
   next.hidden = false; next.classList.remove("leaving");
@@ -1664,6 +1664,13 @@ function glintOrigin(g, part) {
     g.style.setProperty("--gx", `${(((x0 + x1) / 2 + 2) / 28 * 100).toFixed(1)}%`); g.style.setProperty("--gy", `${((y1 + 2) / 28 * 100).toFixed(1)}%`);
   } catch (e) {}
 }
+/* the wall's photograph decodes late and used to pop in on the first paint; the plate fades in once the image is decoded (a 1.8 s fallback shows it anyway) */
+(function wallFade() {
+  const plate = document.querySelector(".wall-plate"); if (!plate) return;
+  let done = false; const show = () => { if (done) return; done = true; plate.classList.add("ready"); };
+  try { const im = new Image(); im.src = "img/board-wall.jpg"; if (im.decode) im.decode().then(show, show); else im.onload = show; } catch (e) { show(); }
+  setTimeout(show, 1800);
+})();
 /* V13e: */
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
 const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;

@@ -113,12 +113,15 @@
   --t-move: 520ms;
   --t-hero: 900ms;
   --t-flip: 480ms; /* V13c (craft 31): a card turns in 480 ms */
-  --t-close: 420ms;
+  --t-close: 480ms;
   --t-fade: 160ms;
   --ease-oak: cubic-bezier(.2, .8, .2, 1);
   --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
   --ease-card: cubic-bezier(.3, 1.22, .6, 1); /* a smaller overshoot for the card turn */
   --ease-shut: cubic-bezier(.55, 0, .75, .2);
+  --ease-fade: cubic-bezier(.45, 0, .55, 1); /* opacity wants a symmetric ease; --ease-shut holds an opacity near 1 and then drops it in a few frames */
+  --t-leave: 300ms; /* a tab change: the old panel eases out, then the new one eases in (js/board.js reads --t-leave) */
+  --t-enter: 420ms;
   --stagger: 70ms;
   --wall-blur: 6px;
   --light-warm: #ffd18c;
@@ -267,6 +270,9 @@ main:focus { outline: none; }
   background-image: radial-gradient(ellipse at 50% 46%, var(--shade-none) 0%, var(--shade-light) 42%, var(--shade-mid) 76%, var(--shade-deep) 100%), url("../img/board-wall.jpg");
   background-size: auto, cover; background-position: center, center; background-repeat: no-repeat;
   box-shadow: 0 24px 60px var(--shadow), 0 0 0 1px var(--grain); }
+/* the photograph decodes late and used to pop in on the first paint: the plate fades in once js/board.js has decoded it (.ready) */
+.wall-plate { opacity: 0; transition: opacity var(--t-hero) var(--ease-fade); }
+.wall-plate.ready { opacity: 1; }
 .wall-plate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--candle-soft), transparent 70%); animation: candle 4.4s linear infinite; }
 .light { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity var(--t-hero) var(--ease-oak); will-change: opacity; }
 .wall-plate.lit .light { opacity: 1; }
@@ -565,8 +571,8 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .scene-layer:not([hidden]) .sheet { will-change: transform, opacity; }
 .scene-layer.rise .sheet { animation: sheet-in var(--t-move) var(--ease-oak) both; }
 .scene-layer.rise .scene-veil, .scene-layer.flip .scene-veil { animation: fade-in var(--t-move) var(--ease-oak) both; }
-.scene-layer.closing .sheet { animation: sheet-out var(--t-close) var(--ease-shut) both; }
-.scene-layer.closing .scene-veil { animation: fade-out var(--t-close) var(--ease-shut) both; }
+.scene-layer.closing .sheet { animation: sheet-out var(--t-close) var(--ease-fade) both; }
+.scene-layer.closing .scene-veil { animation: fade-out var(--t-close) var(--ease-fade) both; }
 .scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both; }
 .scene-layer.flip .sheet, .scene-layer.morph .sheet { animation: none; transform-origin: 0 0; }
 .scene-layer.morph .scene-veil { animation: none; }
@@ -583,7 +589,7 @@ html.flick-js .candle { will-change: opacity; }
 
 /* V13b (craft 11, 12): */
 /* measured (V13b): */
-.scene-layer.morph .scene-veil { view-transition-name: scene-veil; }
+/* the veil is not a named group: as its own group it painted over the sheet body (which lives in the root snapshot) and the sheet popped bright when the transition ended; inside the root snapshots it layers as it does live */
 ::view-transition-group(*) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
 /* V13b: */
 ::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: none; object-position: left top; }
@@ -619,8 +625,8 @@ html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); an
 .sheet-body { overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); padding: 20px 18px 32px; }
 .panel { grid-area: 1 / 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
 .panel:focus-visible { outline-offset: 6px; }
-.panel.entering { animation: slide-in var(--t-move) var(--ease-oak) both; }
-.panel.leaving { animation: slide-out var(--t-micro) var(--ease-shut) both; pointer-events: none; }
+.panel.entering { animation: slide-in var(--t-enter) var(--ease-fade) calc(var(--t-leave) * 0.5) both; }
+.panel.leaving { animation: slide-out var(--t-leave) var(--ease-fade) both; pointer-events: none; }
 .panel.spring { transition: transform var(--t-micro) var(--ease-oak); }
 /* V13b (craft 20): a tab change travels: out 16 px one way, in from 16 px the other */
 @keyframes slide-in { from { opacity: 0; transform: translateX(calc(var(--dir, 0) * 16px)); } to { opacity: 1; transform: none; } }
@@ -1944,11 +1950,13 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 @media (prefers-contrast: more) { .scene-veil, html.room-on .scene-veil { background: var(--veil-strong); } .tile-sheen { display: none; } .map-svg .pin-banner .banner-cloth { fill-opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; --t-close: 1ms; --t-flip: 1ms; }
+  :root { --t-micro: 1ms; --t-move: 1ms; --t-hero: 1ms; --stagger: 0ms; --t-close: 1ms; --t-flip: 1ms; --t-leave: 120ms; --t-enter: 120ms; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
   .card:hover, .clock:hover, .clock:active, .road-btn:hover, .close:hover { transform: none; }
   .tile, .tile:hover, .tile:active { transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg)); }
+  .panel.entering { animation: fade-in var(--t-enter) linear both !important; } /* a tab change is a short plain fade */
+  .panel.leaving { animation: fade-out var(--t-leave) linear both !important; }
   .scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both !important; } /* spec 1.2: reduced motion opens with a cross-fade, no move */
   .hero-art img { transform: none !important; }
 }

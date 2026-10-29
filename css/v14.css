@@ -19,7 +19,7 @@ html.first-beat .depth button[data-depth="tonight"], html.first-beat .tonight-li
 .hero-art, #room { animation: v14-fade 1200ms ease-out both; }
 #board:not([hidden]) .hero, #board:not([hidden]) .mini-clock, #board:not([hidden]) .wall-foot, #board:not([hidden]) .clock { animation: v14-fade 900ms ease-out 250ms both; }
 /* a tab change cross-fades: the old panel eases out, the new one eases in, no flash between */
-.panel.leaving { animation-duration: 240ms; animation-timing-function: ease-in; }
+/* (the leave and enter timing now lives in board.css as --t-leave and --t-enter) */
 
 /* 3. Scene medallions: the painted 640 px coin (1254 px originals), lit, with a slow light sweep. */
 .sheet-emblem { padding: 0; border: 0; background: none; cursor: zoom-in; width: 44px; height: 44px; border-radius: 50%; position: relative; }
@@ -150,8 +150,8 @@ html.idle-dim .idle-veil { opacity: 0.45; }
 
 @keyframes v14-vt-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes v14-vt-in { from { opacity: 0; } to { opacity: 1; } }
-::view-transition-old(root) { animation: v14-vt-out var(--t-move) cubic-bezier(.4, 0, .2, 1) both; mix-blend-mode: normal; }
-::view-transition-new(root) { animation: v14-vt-in var(--t-move) cubic-bezier(.4, 0, .2, 1) both; mix-blend-mode: normal; }
+::view-transition-old(root) { animation: v14-vt-out var(--t-move) var(--ease-fade) both; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: v14-vt-in var(--t-move) var(--ease-fade) both; mix-blend-mode: normal; }
 html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(root) { animation-duration: var(--t-close); }
 @media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; } }
 

@@ -182,23 +182,52 @@
     sy(all ? "All five cards are back on their fronts." : "All five cards are turned to their spells.");
   } };
 
-  /* ---------- Race skills: the coin's back shows one racial at a time; each press spins to the next ---------- */
-  const R = { i: -1 };
+  /* ---------- Race skills: the coin's back shows one racial at a time; chips narrow the sequence to active, passive or a change date ---------- */
+  const R = { i: -1, f: "all" }, KS = {};
+  document.addEventListener("keydown", (e) => { const t = e.target, f = KS[S.key]; if (!f || !S.btn || t !== S.btn || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return; e.preventDefault(); f(e.key === "ArrowRight" ? 1 : -1); });
   const racialList = () => { const r = K.D && K.D.client ? K.D.client.racials : null; return r ? Object.entries(r).flatMap(([race, l]) => l.map((x) => [race, x])) : []; };
   const clause = (x) => (x.wiki ? x.wiki.replace(/^(active|passive),\s*/, "").split(/[;(]/)[0].trim() : "Not on the wiki page yet");
+  const chDate = (x) => (x.changed_oct26 ? x.changed_on || "Oct 26" : null);
+  const passF = ([, x]) => R.f === "all" || R.f === x.kind || R.f === `ch:${chDate(x)}`;
+  const rowOf = (race, x) => $(`#races .race[data-race="${K.MEM.slug(race)}"] .rrow[data-key="${K.MEM.slug(x.name)}"]`);
   function faceRacial(l) {
-    const [race, x] = l[R.i]; const el = $("#seal");
-    $(".seal-b", el).textContent = x.name; $(".seal-i", el).textContent = `${race} · ${x.kind || "racial"}${x.changed_oct26 ? ` · changed ${x.changed_on || "Oct 26"}` : ""}`;
+    const [race, x] = l[R.i], el = $("#seal"), back = $(".seal-back-in", el), n = l.filter(passF), at = n.findIndex(([r, y]) => r === race && y === x);
+    $(".seal-b", el).textContent = x.name; $(".seal-i", el).textContent = `${race} · ${x.kind || "racial"}`;
+    let chip = $(".seal-chip", back), num = $(".seal-n", back);
+    if (!chip) { chip = h("span", { class: "seal-chip" }); num = h("small", { class: "seal-n" }); back.append(chip, num); }
+    chip.textContent = chDate(x) ? `changed ${chDate(x)}` : ""; chip.hidden = !chDate(x); num.textContent = at >= 0 ? `${at + 1} of ${n.length}` : "";
     el.dataset.kind = x.kind || "";
-    return `${race}, ${x.name} (${x.kind || "racial"}): ${clause(x)}.`;
+    S.btn.setAttribute("aria-label", `Race skills seal, showing ${x.name}, ${race}, ${x.kind || "racial"}${chDate(x) ? `, changed ${chDate(x)}` : ""}. Press for the next racial; arrow keys go either way.`);
+    document.querySelectorAll("#races .rr-now").forEach((r) => r.classList.remove("rr-now"));
+    const row = rowOf(race, x); if (row) { const d = row.closest("details"); if (d) d.open = true; row.classList.add("rr-now"); if (row.scrollIntoView && !reduceMQ.matches) row.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    return `${race}, ${x.name} (${x.kind || "racial"}${chDate(x) ? `, changed ${chDate(x)}` : ""}): ${clause(x)}.`;
+  }
+  function raceTo(i) {
+    const l = racialList(); if (!l[i]) return; R.i = i; let msg = "";
+    S.el.removeAttribute("data-kind"); snd(l[i][1].kind === "active" ? "stamp" : "latch");
+    spin({ land: "back", mid: () => { msg = faceRacial(l); } }).then(() => say(msg || faceRacial(l)));
   }
   function raceStep(by) {
-    const l = racialList(); if (!l.length) return; R.i = ((R.i < 0 ? (by < 0 ? 0 : -1) : R.i) + by + l.length) % l.length;
-    let msg = ""; spin({ land: "back", mid: () => { msg = faceRacial(l); } }).then(() => say(msg || faceRacial(l)));
+    const l = racialList(), cyc = l.map((e, i) => [e, i]).filter(([e]) => passF(e)); if (!cyc.length) { say("Nothing matches that chip."); return; }
+    let pos = cyc.findIndex((c) => c[1] === R.i); if (pos < 0) pos = by > 0 ? -1 : 0;
+    raceTo(cyc[(pos + by + cyc.length) % cyc.length][1]);
   }
+  function raceChips() {
+    const l = racialList(), host = $("#races"); if (!l.length || !host || !host.parentNode) return;
+    const old = $("#race-chips"); if (old && old.parentNode) old.parentNode.removeChild(old);
+    const dates = [...new Set(l.map(([, x]) => chDate(x)).filter(Boolean))].sort(), cnt = (f) => { const o = R.f; R.f = f; const n = l.filter(passF).length; R.f = o; return n; };
+    const chips = [["all", "All"], ["active", "Active"], ["passive", "Passive"], ...dates.map((d) => [`ch:${d}`, `Changed ${d}`])];
+    const bar = h("div", { class: "rc-bar", id: "race-chips", role: "group", "aria-label": "Narrow the racials the coin spins through" }, ...chips.map(([f, label]) => h("button", { class: "lib-tool rc-chip", type: "button", "data-f": f, "aria-pressed": String(R.f === f),
+      onclick: () => { R.f = R.f === f ? "all" : f; syncChips(); applyRaceFilter(); snd("chip"); hap("tick"); const n = racialList().filter(passF).length; say(`${n} racial${n === 1 ? "" : "s"} in the spin${R.f === "all" ? "" : `: ${label}`}.`); } }, `${label} `, h("b", { text: String(cnt(f)) }))));
+    host.parentNode.insertBefore(bar, host);
+  }
+  const syncChips = () => document.querySelectorAll("#race-chips .rc-chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.f === R.f)));
+  function applyRaceFilter() { racialList().forEach(([race, x]) => { const row = rowOf(race, x); if (row) row.classList.toggle("rr-off", !passF([race, x])); }); }
   MECH.racials = { hint: "to spin the coin to the next racial", spin: false, press: () => raceStep(1) };
-  document.addEventListener("click", (e) => { const row = e.target && e.target.closest && e.target.closest("#races .rrow"); if (!row || !S.el || S.el.hidden || S.key !== "racials") return; const l = racialList(), k = l.findIndex(([, x]) => K.MEM.slug(x.name) === row.dataset.key); if (k >= 0 && k !== R.i) { R.i = k - 1; raceStep(1); } });
-  K.on("scene", (k) => { if (k === "racials") R.i = -1; });
+  document.addEventListener("click", (e) => { const t = e.target, row = t && t.closest && t.closest("#races .rrow"); if (!row || !S.el || S.el.hidden || S.key !== "racials") return; const k = racialList().findIndex(([race, x]) => K.MEM.slug(x.name) === row.dataset.key && row.closest(`.race[data-race="${K.MEM.slug(race)}"]`)); if (k >= 0 && k !== R.i) raceTo(k); });
+  KS.racials = raceStep;
+  K.on("scene", (k) => { if (k === "racials") { R.i = -1; raceChips(); applyRaceFilter(); } });
+  if (K.SC && K.SC.open === "racials") { raceChips(); applyRaceFilter(); }
 
   /* ---------- Bonuses: the what-if dial is the coin's rim. Tapping a challenge pours its points into the ring; the seal steps through the reward track ---------- */
   const tween = (from, to, ms, step) => new Promise((done) => {
@@ -311,6 +340,21 @@
     const ex = [...document.querySelectorAll("#lib-examples button")]; if (!ex.length) { const q = $("#lib-q"); if (q) q.focus(); return; }
     const b = ex[Math.floor(Math.random() * ex.length)]; sy(`Trying: ${b.textContent.trim()}`); b.click();
   } };
-  MECH.librarian = { hint: "to see how to ask Leeroy", press: ({ say: sy }) => sy("In #wow-forever type /ask and your question, or tag Leeroy Jenkins. He answers from the same library.") };
+  /* Leeroy: the seal reads his last answers one at a time and moves a marker along the chart; arrow keys go either way */
+  const LR = { i: -1 };
+  const lrVals = () => (K.D && K.D.stats && K.D.stats.last7 ? K.D.stats.last7 : []);
+  function lrStep(by) {
+    const l = lrVals(), svg = $("#lib-box .spark svg"); if (!l.length || !svg) return;
+    LR.i = ((LR.i < 0 ? (by > 0 ? -1 : 0) : LR.i) + by + l.length) % l.length; const x = l[LR.i], el = $("#seal"), W = 260, H = 70, pad = 10, vs = l.map((v) => v.seconds), max = Math.max(...vs, 1);
+    const cx = pad + (LR.i * (W - 2 * pad)) / Math.max(1, l.length - 1), cy = H - pad - (x.seconds / max) * (H - 2 * pad - 10);
+    let mk = $(".spark-cur", svg); if (!mk) { mk = document.createElementNS("http://www.w3.org/2000/svg", "circle"); mk.setAttribute("class", "spark-cur"); mk.setAttribute("r", "6.5"); svg.append(mk); }
+    mk.style.transform = `translate(${cx}px, ${cy}px)`; svg.querySelectorAll(".spark-text").forEach((tx, k) => tx.classList.toggle("on", k === LR.i));
+    const when = K.fmtWhen(Date.parse(x.closed_utc) / 1000), msg = `Answer ${LR.i + 1} of ${l.length}: ${x.seconds} s, ${x.kind === "/ask" ? "an /ask question" : "a mention"}, ${when}.`;
+    S.btn.setAttribute("aria-label", `Leeroy seal, showing ${msg} Press for the next answer; arrow keys go either way.`);
+    snd("latch"); spin({ land: "back", mid: () => { $(".seal-b", el).textContent = `${x.seconds} s`; $(".seal-i", el).textContent = `answer ${LR.i + 1} of ${l.length} · ${x.kind === "/ask" ? "/ask" : "mention"}`; } }).then(() => say(msg));
+  }
+  KS.librarian = lrStep;
+  K.on("scene", (k) => { if (k === "librarian") LR.i = -1; });
+  MECH.librarian = { hint: "to read his last answers one by one, then ask him in #wow-forever", spin: false, press: () => lrStep(1) };
   window.BoardSeals = Object.freeze({ MECH, press, spin, say, snd, hap, h, $, mq, reduceMQ, clamp, status: () => ({ key: S.key, hidden: S.el ? S.el.hidden : true, spun: S.spun }) });
 })();
