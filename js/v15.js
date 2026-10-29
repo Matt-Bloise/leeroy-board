@@ -161,7 +161,8 @@
   /* the state buttons: the mirror's row for the key's person wins, then this device's own choice */
   const meSlug = () => { const m = K.MEM.member(); return m ? K.MEM.slug(m.name) : "just-looking"; };
   const localState = () => { const v = K.MEM.get(`launch-${meSlug()}`); return STATES.some(([k]) => k === v) ? v : null; };
-  function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch ? B.mineLaunch() : null; return (mine && mine.state) || localState(); }
+  /* a tap that is still on its way, or did not get through (2026-10-30), shows as pressed: the mirror's older row must not outrank it */
+function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch ? B.mineLaunch() : null, st = B && B.status ? B.status() : null, p = st && st.launchPending; if (p && (p.state === "sending" || p.state === "failed" || p.state === "local") && STATES.some(([k]) => k === p.value)) return p.value; return (mine && mine.state) || localState(); }
   function renderStates() {
     const row = $("#lh-st-row"); if (!row) return;
     const cur = currentState();

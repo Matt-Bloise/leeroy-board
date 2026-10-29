@@ -86,3 +86,10 @@
 @media (prefers-reduced-motion: reduce) { .dc-main.dc-in > * { animation: none; } }
 @media (max-width: 599px) { .dc-card { padding: 0 12px 2px; } .dc-name { font-size: var(--step-1); } }
 @media (forced-colors: active) { .dc-state[data-state="open"], .dc-state[data-state="locked"] { forced-color-adjust: none; } .dc-tick { stroke: CanvasText; } }
+/* integration pass (2026-10-30): source lines and column names reach 16 px; every card summary is a 44 px target */
+.dc-src, .dc-colname, .dc-ref { font-size: max(16px, 0.95rem); }
+.dc-sumy { min-height: 44px; }
+/* the summary row wraps (2026-10-30): in the four-column card row at 3440 px the state chip sat on top of the title; now the chip drops under it when the row is too narrow */
+.dc-sumy { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; }
+.dc-sumy > .dc-stext { flex: 0 0 100%; }
+.dc-sumy > .dc-title { flex: 0 1 auto; }

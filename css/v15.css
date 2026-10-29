@@ -103,3 +103,14 @@
 @media (max-width: 599px) { .lh { --seal: 72px; padding: 14px 12px 16px; gap: 12px; } .lh .seal-free .seal-b, .lh .seal-free .seal-i { display: block; } .lh-title { font-size: var(--step-2); } .lh-st { padding: 8px 4px 8px; } .lh-st-line { display: none; } .lh-st-name { font-size: var(--step-0); } }
 @media (prefers-reduced-motion: reduce) { .lh-say, .lh-st, .lh-wax { transition: none; } }
 @media (forced-colors: active) { .lh-st[aria-pressed="true"] { text-decoration: underline 2px; } .lh-wax { border: 1px solid CanvasText; } }
+/* integration pass (2026-10-30, board/qa/2026-10-30-integration.md): hero text and targets reach 16 px and 44 px on every size;
+   after launch the "live since" block takes the top spot and the next date's countdown line is visible (it was screen-reader only) */
+.lh-kicker, .lh-fact dt, .lh-check-count, .lh-live-k, .lh-st-line, .lh-sub, .lh-say, .lh-st-say, .lh-st-who, .lh-fact dd, .lh-moments, .lh-ask, .lh-check-sum, .lh-ck-tick, .lh-h, .lh-st-name, .lh-m-when, .lh-m-title, .lh-m-note { font-size: max(16px, var(--fs-lh, 0px)); }
+.lh-kicker, .lh-fact dt, .lh-check-count, .lh-live-k, .lh-st-line { --fs-lh: var(--step--1); }
+.lh-sub, .lh-say, .lh-st-say, .lh-st-who, .lh-fact dd, .lh-moments, .lh-ask, .lh-check-sum, .lh-ck-tick, .lh-h { --fs-lh: var(--step-0); }
+.lh-st-name { --fs-lh: var(--step-1); }
+.lh-check-sum { box-sizing: border-box; min-height: 44px; padding: 10px 0; } /* stays a list item so the disclosure triangle shows */
+.lh-count > .lh-live { order: -1; }
+.lh.is-live #clock-left { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; font-family: var(--font-body); font-size: max(16px, var(--step-0)); color: var(--cream); }
+@media (min-width: 1000px) and (max-height: 820px) { .lh-ck-tick { min-height: 44px; } }
+.lh .clock-unit > span, .lh .clock-kicker, .lh .clock-top .word { font-size: max(16px, 0.8rem); }
