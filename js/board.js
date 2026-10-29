@@ -88,8 +88,9 @@ function startRoomLadder() {
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  /* the tier module's first run blocks the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance: it starts after the entrance */
-  const bootRoom = () => import("../room/tier.js?v=fbab4d7b2c").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  /* the tier module's first run blocked the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance: it starts after the entrance.
+     2026-10-30: the room now draws in a Web Worker where the browser has OffscreenCanvas (room/tier.js), so that cost is off this thread; the page path is the fallback */
+  const bootRoom = () => import("../room/tier.js?v=79778955ae").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
@@ -1521,10 +1522,13 @@ function selectPanel(key, crossFade) {
   if (crossFade) { replay(next, "entering"); sfx("tab"); }
   $("#sheet-body").scrollTop = 0;
   fitScene();
-  /* V13c (craft 21): a scene's entrance choreography plays in full on its first open of the visit; later opens are a short fade */
+  /* V13c (craft 21): a scene's entrance choreography plays in full on its first open of the visit; later opens are a short fade.
+     2026-10-30: only on a tab change. An open already fades the whole sheet (the view transition, the FLIP, the rise, the
+     reduced-motion fade); a second fade on the panel under it put the bright paper on screen before its cards, a 22 luma hump
+     on a phone (board/qa/2026-10-30-render.md) */
   const first = !PLAYED.has(key); PLAYED.add(key);
   if (first) { if (PLAY[key]) replay($(PLAY[key][0]), PLAY[key][1]); if (ON_FIRST[key]) ON_FIRST[key](); }
-  else replay(next, "again");
+  else if (crossFade) replay(next, "again");
   if (ON_OPEN[key]) ON_OPEN[key]();
   mapClock();
   const tabs = $("#tabs"), tab = $(`#tab-${key}`);
@@ -2428,7 +2432,7 @@ function setSound(on) {
   AU.on = on;
   try { localStorage.setItem("board-sound", on ? "1" : "0"); } catch (e) {}
   const S = SND();
-  if (S) { S.setVol(AU.vol); if (!S.setOn(on)) AU.on = false; if (AU.on) { S.setFlick(flickAt); S.onCrackle(() => { if (!reduceMQ.matches) { FLICK_POP.t = performance.now(); FLICK_POP.amp = 0.35 + Math.random() * 0.3; } }); S.setScene(SC.open !== null); } }
+  if (S) { S.setVol(AU.vol); if (!S.setOn(on)) AU.on = false; if (AU.on) { S.setFlick(flickAt); S.onCrackle(() => { if (!reduceMQ.matches) { FLICK_POP.t = performance.now(); FLICK_POP.amp = 0.35 + Math.random() * 0.3; if (RS.pop) RS.pop(FLICK_POP.t, FLICK_POP.amp, FLICK_POP.ms); /* the room's worker hears the same pop (room/tier.js) */ } }); S.setScene(SC.open !== null); } }
   else AU.on = false;
   soundButtons();
   setTimeout(() => { soundButtons(); roomCues(); }, 300);

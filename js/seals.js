@@ -78,7 +78,7 @@
   }
 
   function show(key) {
-    if (!BACK[key]) return;
+    if (!BACK[key]) { document.documentElement.classList.remove("has-seal"); return; } /* a scene without a seal gets its emblem button back here, inside the open */
     const el = S.el || build(); S.key = key; el.dataset.k = key;
     const title = K.TITLES ? K.TITLES[key] : key, m = MECH[key];
     const img = $(".seal-img", el), src = `img/medal/${key}.webp`; if (img.getAttribute("src") !== src) img.setAttribute("src", src);
@@ -89,7 +89,10 @@
     $(".seal-say", el).classList.remove("on");
     lightTo(innerWidth * 0.5, innerHeight * 0.1);
   }
-  function hide() { if (S.el) S.el.hidden = true; document.documentElement.classList.remove("has-seal"); }
+  /* 2026-10-30: has-seal stays on while the sheet is away. Taking it off here brought the emblem button back and moved the
+     tabs a few pixels in the frame the close transition captured (a 0.076 layout shift at every close); the next open
+     settles it inside its own update, where nothing is on screen yet */
+  function hide() { if (S.el) S.el.hidden = true; }
   K.on("scene", show); K.on("closed", hide);
   if (K.SC && K.SC.open) show(K.SC.open);
 

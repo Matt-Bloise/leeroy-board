@@ -1,7 +1,8 @@
 // The modelled tavern (V10): the room's scenery and renderer on the vendored three.js 0.170.0. It replaces the hand-written
 // WebGL2 backend (gl2.js) and its painted back wall. Everything is built here from primitives (boxes, cylinders, lathes,
 // tori) and canvas textures drawn in code: wood planks, field stone, lime plaster. No model or image downloads.
-//   const T = await createTavern(canvas, { shadows, power, yieldTask, timed })   shadows: 1 (512 maps) or 2 (1024)
+//   const T = await createTavern(canvas, { shadows, power, yieldTask, timed, W, H })   shadows: 1 (512 maps) or 2 (1024); W, H: the viewport
+//   (2026-10-30: no window or document here, so the same code runs in the room's Web Worker on an OffscreenCanvas)
 //   T.renderer T.scene T.camera     three objects; room.js owns the loop and the camera motion
 //   T.layout(W, H, rect)            places the hearth and the shelves in the side gutters beside the board's rectangle
 //   T.setLights(k, s, flicker, n)   light levels (k: { hearth, candles, lantern, key }) and the flicker at time s (n: shared signal)
@@ -12,7 +13,8 @@ import * as THREE from "../vendor/three.module.min.js?v=08fd7545d1";
 
 /* ---------- canvas textures, drawn in code ---------- */
 const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-const cv = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return [c, c.getContext("2d")]; };
+/* a texture canvas: an OffscreenCanvas inside the worker (2026-10-30), an element on the page */
+const cv = (w, h) => { const c = typeof document === "undefined" ? new OffscreenCanvas(w, h) : document.createElement("canvas"); c.width = w; c.height = h; return [c, c.getContext("2d")]; };
 const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
 
 function woodCanvas(seed, base, planks = 4, S = 512) {
@@ -165,9 +167,10 @@ export async function createTavern(canvas, opt) {
      attempted: Chromium's WebGL takes only srgb and display-p3 (probe: board/tools/oracle/hdr-probe.mjs). Tiers are untouched. */
   info.colorSpace = "srgb"; info.wideWhy = "not a P3 display";
   try {
-    const off = /[?&]hdr=0(?:&|#|$)/.test(location.search || "") || document.documentElement.classList.contains("hdr-off");
-    if (off) info.wideWhy = "hdr=0";
-    else if (matchMedia("(color-gamut: p3)").matches) {
+    /* 2026-10-30: the switch and the gamut come from the page (room/tier.js pageEnv, opt.wide), since this runs inside the worker */
+    const wide = opt.wide || { off: false, p3: false };
+    if (wide.off) info.wideWhy = "hdr=0";
+    else if (wide.p3) {
       if (!("drawingBufferColorSpace" in gl)) info.wideWhy = "no drawingBufferColorSpace";
       else if (!THREE.DisplayP3ColorSpace) info.wideWhy = "this three.js build has no DisplayP3ColorSpace";
       else { gl.drawingBufferColorSpace = "display-p3"; if (gl.drawingBufferColorSpace === "display-p3") { renderer.outputColorSpace = THREE.DisplayP3ColorSpace; info.colorSpace = "display-p3"; info.wideWhy = ""; } else info.wideWhy = "context refused display-p3"; }
@@ -175,7 +178,7 @@ export async function createTavern(canvas, opt) {
   } catch (e) { info.colorSpace = "srgb"; info.wideWhy = "error: " + (e && e.message); }
   info.software = /swiftshader|llvmpipe|software|basic render|warp/i.test(info.renderer);
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(52, 1, 0.05, 40);
-  scene.background = new THREE.Color(0x000000); scene.fog = new THREE.FogExp2(0x030201, 0.075); /* V14: true black at the far edge (OLED), no lifted brown */
+  scene.background = new THREE.Color(0x000000); scene.fog = new THREE.FogExp2(0x000000, 0.075); /* V14: true black at the far edge (OLED), no lifted brown; 2026-10-30: the fog itself is black, so the far wall ends at 0, not 1 */
   const room = new THREE.Group(); scene.add(room);
   const owned = { tex: [], geo: new Set(), mat: new Set() }; let texBytes = 0;
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -422,7 +425,7 @@ export async function createTavern(canvas, opt) {
   };
 
   await yieldTask();
-  setAir(AIR_MAX); tick(0); layout(innerWidth, innerHeight, null); /* everything visible while it compiles */
+  setAir(AIR_MAX); tick(0); layout(opt.W || 1, opt.H || 1, null); /* everything visible while it compiles */
   /* shaders compile in parallel where the browser can (KHR_parallel_shader_compile), so no long task; without it (software
      GPUs, which auto never gives a 3D tier) they compile in one step, timed, and the ladder judges the frames after */
   try { if (gl.getExtension("KHR_parallel_shader_compile")) await renderer.compileAsync(scene, camera); else timed(() => renderer.compile(scene, camera)); }

@@ -3,6 +3,10 @@
 // off: no room, the 2D light and the wisps pause. low: the V6 page as it was (painted room, 2D light). medium: the 3D room,
 // still lights, 30 fps. high: flickering lights, GPU dust and embers, every display refresh (V13a). ultra: high at full pixel ratio with more dust;
 // on three.js (V10) every 3D tier has soft shadows drawn once; ultra gets the sharper shadow maps. auto never picks ultra.
+// 2026-10-30: the room draws in a Web Worker on an OffscreenCanvas where the browser has them, so its first frame, its
+// shader compile and its textures never block the page; the page's own thread runs the same room.js when they are missing
+// or the worker fails. This file is the page side of both: one set of listeners feeds whichever room runs, and the room's
+// light position, slow verdicts and status come back the same way. The worker is never a change in the ladder's rules.
 //   import("./room/tier.js").then((m) => m.startTier(host))
 //   host: { state, motion, launchEpoch, newSignup, select, moreButton, aim, signal, onLight, tiltOn }   state is the object window.__board.room() reads
 export const ORDER = ["off", "low", "medium", "high", "ultra"];
@@ -11,8 +15,10 @@ export const BUDGET = { medium: 33.3, high: 16.7, ultra: 16.7 };
 export const QUIET = 1500, INPUT_QUIET = 1000;
 /* the low tier's watch: one 2 s window every LOW_GAP ms, done after LOW_CLEAN clean windows */
 export const LOW_GAP = 6000, LOW_CLEAN = 4;
+/* the worker handshake: how long the page waits for the worker module to say it is up before it draws the room itself */
+export const WORKER_UP_MS = 15000;
 export function p95(a) { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * 0.95))] : 0; }
-const KEY = "board-room", AUTO_KEY = "board-room-streak";
+const KEY = "board-room", AUTO_KEY = "board-room-streak", RM = "(prefers-reduced-motion: reduce)";
 const get = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const put = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
 const html = () => document.documentElement;
@@ -36,7 +42,7 @@ export function recordAfter(record, gpu, detected, ended, now = Date.now()) {
 
 export function detect() {
   const why = [];
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return { tier: "off", why: ["reduced motion"] };
+  if (matchMedia(RM).matches) return { tier: "off", why: ["reduced motion"] };
   if (navigator.connection && navigator.connection.saveData) return { tier: "off", why: ["data saver"] };
   let gpu = "", software = false, gl2 = false;
   try {
@@ -54,6 +60,18 @@ export function detect() {
   if (tier === "high" && navigator.gpu) why.push("WebGPU present");
   return { tier, why: why.length ? why : ["capable GPU"], gpu, software };
 }
+
+/* the page as the room sees it (room.js ctx.env): its size, the board's rectangle for the gutters, and the states a worker
+   cannot read for itself */
+export function pageEnv() {
+  const a = document.querySelector("#main") || document.body, r = a.getBoundingClientRect();
+  /* wide: the 2026-10-29 wide-gamut switch (?hdr=0 or html.hdr-off from js/hdr.js) and the display's gamut, read here because tavern.js has no page in the worker */
+  const wide = { off: /[?&]hdr=0(?:&|#|$)/.test(location.search || "") || html().classList.contains("hdr-off"), p3: matchMedia("(color-gamut: p3)").matches };
+  return { W: innerWidth, H: innerHeight, dpr: window.devicePixelRatio || 1, rect: { left: r.left, right: r.right, top: r.top, bottom: r.bottom }, reduce: matchMedia(RM).matches, hidden: document.hidden, sceneOpen: html().classList.contains("scene-open"), wide };
+}
+/* the worker needs a module Worker, an OffscreenCanvas and a canvas that can hand itself over; ?room-worker=off (a preview
+   switch for the harness) forces the page's own thread */
+export const canWorker = () => typeof Worker === "function" && typeof OffscreenCanvas === "function" && typeof HTMLCanvasElement !== "undefined" && typeof HTMLCanvasElement.prototype.transferControlToOffscreen === "function" && !/[?&]room-worker=off\b/.test(location.search);
 
 export async function startTier(host) {
   const S = host.state;
@@ -80,9 +98,17 @@ export async function startTier(host) {
   /* V13b (phone-deep T1): a phone's first scene opening and closing are the slowest frames it draws; they never count, and
      the quiet after a phone's scene change is twice as long */
   const coarse = matchMedia("(pointer: coarse)").matches;
-  new MutationObserver(() => { const o = html().classList.contains("scene-open"); if (o !== sceneWas) { sceneWas = o; hush(coarse ? QUIET * 2 : QUIET); } }).observe(html(), { attributes: true, attributeFilter: ["class"] });
+  new MutationObserver(() => { const o = html().classList.contains("scene-open"); if (o !== sceneWas) { sceneWas = o; hush(coarse ? QUIET * 2 : QUIET); if (room) room.scene(o); } }).observe(html(), { attributes: true, attributeFilter: ["class"] });
   for (const t of ["keydown", "pointerdown", "wheel", "touchstart", "resize"]) addEventListener(t, () => hush(INPUT_QUIET), { passive: true, capture: true });
   addEventListener("scroll", () => hush(INPUT_QUIET), { passive: true, capture: true });
+  /* the page side of the room (2026-10-30): a resize (one per frame), the tab hiding or showing, reduced motion, and for the
+     worker the aim, which the page's shared light position wakes on every move (js/board.js aimAt), sent once a frame */
+  let rsz = 0; addEventListener("resize", () => { if (!rsz) rsz = requestAnimationFrame(() => { rsz = 0; if (room) room.resize(pageEnv()); }); }, { passive: true });
+  document.addEventListener("visibilitychange", () => { if (room) room.visible(!document.hidden); });
+  const A = host.aim ? host.aim() : null; let aimT = 0;
+  const sendAim = () => { if (!aimT) aimT = requestAnimationFrame(() => { aimT = 0; if (room && room.aim && A) room.aim(A.tx == null ? null : A.tx, A.ty == null ? null : A.ty); }); };
+  if (A) { const prev = A.wake; A.wake = () => { if (prev) prev(); sendAim(); }; html().addEventListener("pointerleave", sendAim); }
+  S.pop = (at, amp, ms) => { if (room && room.pop) room.pop(at, amp, ms); }; /* a fire crackle's pop on the shared flicker (js/board.js) */
   /* low keeps V6's 2D light and wisps; on a machine that cannot hold them (a software GPU) the same judge demotes to off:
      the p95 frame interval of two quiet 2 s windows in a row over 50 ms. A frame in a window that was not quiet throws
      the window away. V13a: the watch samples one 2 s window every LOW_GAP ms while the wall shows (the light and wisps run
@@ -123,21 +149,73 @@ export async function startTier(host) {
     S.demotions.push({ from: S.tier, to: next, why, at: Math.round(performance.now()) });
     apply(next, `demoted: ${why}`); /* per session: never stored here */
   };
+  const lost = () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); };
+  /* the canvas under the hero's shade (its painting hides while the room is on), the candle glow and the vignette: the room
+     gets the same scrim the painting had, so the heading reads the same over either */
+  const mount = () => {
+    const c = document.createElement("canvas");
+    c.id = "room"; c.setAttribute("aria-hidden", "true"); c.tabIndex = -1; S.transferred = false;
+    const anchor = document.querySelector(".hero-art");
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(c, anchor); else document.body.prepend(c);
+    return c;
+  };
+  /* the room in its worker: the handshake (up, then the canvas goes over, then started or fail), the messages back, and a
+     room-shaped proxy for the ladder. Resolves null when the worker cannot run it, and the page draws the room itself. */
+  const viaWorker = (cv, t) => new Promise((res) => {
+    let w = null, timer = 0, settled = false, dead = false, mirror = null, info = null, drawn = false;
+    const fail = (why) => { S.workerWhy = why; if (settled) return; settled = true; clearTimeout(timer); dead = true; try { if (w) w.terminate(); } catch (e) {} res(null); };
+    try { w = new Worker(new URL("./worker.js?v=8e9683e969", import.meta.url), { type: "module" }); } catch (e) { fail(`no module worker: ${e && e.message}`); return; }
+    timer = setTimeout(() => fail(`the worker did not answer in ${WORKER_UP_MS / 1000} s`), WORKER_UP_MS);
+    w.onerror = (e) => { if (!settled) fail(`worker error: ${(e && e.message) || "unknown"}`); else if (room === proxy) lost(); };
+    const send = (m) => { if (!dead) w.postMessage(m); };
+    const proxy = {
+      via: "worker", get info() { return info; },
+      setTier: (next) => send({ t: "tier", tier: next }), refresh: (next) => send({ t: "refresh", next }), status: () => mirror,
+      resize: (env) => send({ t: "resize", env }), scene: (o) => send({ t: "scene", open: !!o }), visible: (on) => send({ t: "visible", on: !!on }), motion: (r) => send({ t: "motion", reduce: !!r }),
+      aim: (x, y) => send({ t: "aim", x, y }), pop: (at, amp, ms) => send({ t: "pop", at, amp, ms }),
+      stop: () => { send({ t: "stop" }); dead = true; setTimeout(() => { try { w.terminate(); } catch (e) {} }, 500); },
+    };
+    w.onmessage = (e) => {
+      const m = e.data;
+      if (m.t === "up") {
+        let off; try { off = cv.transferControlToOffscreen(); } catch (x) { fail(`the canvas would not transfer: ${x && x.message}`); return; }
+        S.transferred = true;
+        try { w.postMessage({ t: "init", canvas: off, tier: t, env: pageEnv(), motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, timeOrigin: performance.timeOrigin }, [off]); }
+        catch (x) { fail(`the canvas would not go over: ${x && x.message}`); return; }
+        /* the worker is up: from here the only failure is the room itself, which has no time limit on a slow start */
+        clearTimeout(timer); return;
+      }
+      if (m.t === "fail") { fail(`room did not start in the worker: ${m.message}`); return; }
+      if (m.t === "started") { if (settled) return; settled = true; info = m.info; mirror = m.status; res(proxy); return; }
+      if (dead || room !== proxy) return;
+      if (m.t === "frame" && !drawn) { drawn = true; mirror = mirror ? { ...mirror, frames: m.frames } : mirror; setClasses(S.tier); return; } /* the photograph gives way only once the room has drawn */
+      if (m.t === "status") { mirror = m.status; return; }
+      if (m.t === "light") { if (host.onLight) host.onLight(m.x, m.y, m.n); return; }
+      if (m.t === "slow") { slow(m.why || "slow frames"); return; }
+      if (m.t === "startCost") { S.startCost = m.ms; return; } /* recorded, never a demotion: the tier is judged on steady-state frames */
+      if (m.t === "lost") lost();
+    };
+  });
+  /* the room on the page's own thread: the path every browser took before 2026-10-30, and the fallback */
+  const viaPage = async (cv, t) => {
+    const { startRoom } = await import("./room.js?v=f28908cc4f");
+    const r = await startRoom({ tier: t, canvas: cv, env: pageEnv(), motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, aim: host.aim, signal: host.signal, onLight: host.onLight, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; }, onLost: lost });
+    r.via = "page"; return r;
+  };
   async function apply(t, why) {
     S.tier = t; S.why = why;
     if (t === "off" || t === "low") { stopRoom(); setClasses(t); if (t === "low") watchLow(); return; }
     if (room) { room.setTier(t); setClasses(t); return; }
-    canvas = document.createElement("canvas");
-    canvas.id = "room"; canvas.setAttribute("aria-hidden", "true"); canvas.tabIndex = -1;
-    /* under the hero's shade (its painting hides while the room is on), the candle glow and the vignette: the room gets the
-       same scrim the painting had, so the heading reads the same over either */
-    const anchor = document.querySelector(".hero-art");
-    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(canvas, anchor); else document.body.prepend(canvas);
+    canvas = mount();
     try {
-      const { startRoom } = await import("./room.js?v=cdd0212dc0");
-      room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, aim: host.aim, signal: host.signal, onLight: host.onLight, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });
-      setClasses(S.tier);
-      S.renderer = room.info.renderer; S.software = room.info.software; S.colorSpace = room.info.colorSpace; S.wideWhy = room.info.wideWhy;
+      let r = canWorker() ? await viaWorker(canvas, t) : null;
+      if (!r) {
+        if (S.transferred) { canvas.remove(); canvas = mount(); S.transferred = false; } /* a canvas handed to a worker cannot draw on the page again */
+        r = await viaPage(canvas, t);
+      }
+      room = r; S.via = r.via;
+      S.renderer = r.info.renderer; S.software = r.info.software; S.colorSpace = r.info.colorSpace; S.wideWhy = r.info.wideWhy;
+      if (r.via === "page") setClasses(S.tier); /* same frame as the page room's first draw; the worker's first frame sets the classes itself */
     } catch (e) { stopRoom(); S.tier = "low"; S.why = `room did not start: ${e.message}`; setClasses("low"); }
   }
   /* the 2 s probe: frame intervals while the room runs; p95 over the tier's budget demotes one tier. It runs only while the
@@ -183,7 +261,7 @@ export async function startTier(host) {
   const setPref = (v) => { put(KEY, v === DEFAULT_CHOICE ? null : v); sync(); choose(); };
   if (host.select) host.select.addEventListener("change", () => setPref(host.select.value));
   if (host.moreButton) host.moreButton.addEventListener("click", () => { const opts = ["auto", "off", "low", "medium", "high", "ultra"]; setPref(opts[(opts.indexOf(pref()) + 1) % opts.length]); });
-  matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", () => choose());
+  matchMedia(RM).addEventListener("change", (e) => { if (room) room.motion(e.matches); choose(); });
   put("board-room-auto", null); /* the first build's ratcheting record, if a browser still has it */
   sync();
   S.status = () => (room ? room.status() : null);

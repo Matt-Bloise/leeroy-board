@@ -5,9 +5,15 @@
 // and the key light following that same position, so the room's light and the page's card highlights move together. The
 // scene state pushes the camera 0.6 m in and dims the room while the sheet comes up; the room keeps drawing behind it at
 // SCENE_FPS instead of being swapped for a still, and closing reverses the move back to exactly the wall state.
-//   const room = await startRoom({ tier, canvas, motion, launchEpoch, newSignup, aim, signal, onLight, onSlow, onStartCost, onLost })
+// 2026-10-30: this file never touches the DOM, so the same loop runs inside a Web Worker on an OffscreenCanvas (worker.js)
+// and on the page (tier.js's fallback). The page describes itself in ctx.env and pushes every change it sees (a resize, a
+// scene opening or closing, the tab hiding, reduced motion) through the methods below; the aim is read through ctx.aim().
+//   const room = await startRoom({ tier, canvas, env, motion, launchEpoch, newSignup, aim, signal, yieldTask, onLight, onSlow, onStartCost, onLost, onFrame })
+//   env: { W, H, dpr, rect, reduce, hidden, sceneOpen, wide }   rect: the board's rectangle in viewport pixels ({ left, right, top, bottom }) or null;
+//        wide: { off, p3 } (the page's ?hdr=0 or html.hdr-off switch, and whether the display reports a P3 gamut) for tavern.js's drawing buffer
 //   room.setTier(t)  room.refresh(next)  room.stop()  room.status()
-import { createTavern } from "./tavern.js?v=35dd430f29";
+//   room.resize(env)  room.scene(open)  room.visible(on)  room.motion(reduce)
+import { createTavern } from "./tavern.js?v=fdf948578e";
 
 /* shadows are drawn once (the lights do not move), so they cost nothing per frame; ultra gets the sharper map.
    V13a: fps 0 draws on every display refresh (a 175 Hz panel gets 175 draws, not every third one); budget is the frame
@@ -36,17 +42,21 @@ function bezier(x1, y1, x2, y2) { /* the v3 motion token as a function of t */
   const X = (t) => ((ax * t + bx) * t + cx) * t, Y = (t) => ((ay * t + by) * t + cy) * t, dX = (t) => (3 * ax * t + 2 * bx) * t + cx;
   return (x) => { let t = x; for (let i = 0; i < 6; i++) { const d = dX(t); if (Math.abs(d) < 1e-6) break; t -= (X(t) - x) / d; } return Y(Math.max(0, Math.min(1, t))); };
 }
-const yieldTask = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); /* one step per frame */
+/* the frame clock: requestAnimationFrame on the page and in a worker that has it (Chrome, Firefox); a 16 ms timer elsewhere */
+const hasRaf = typeof requestAnimationFrame === "function";
+const nextFrame = hasRaf ? (f) => requestAnimationFrame(f) : (f) => setTimeout(() => f(performance.now()), 16);
+const dropFrame = hasRaf ? (id) => cancelAnimationFrame(id) : (id) => clearTimeout(id);
+const yieldFrame = () => new Promise((r) => nextFrame(() => setTimeout(r, 0))); /* one step per frame */
 
 export async function startRoom(ctx) {
   let T = TIERS[ctx.tier] || TIERS.high, tierName = ctx.tier;
   const ease = bezier(0.2, 0.8, 0.2, 1);
-  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  const E = { W: 1, H: 1, dpr: 1, rect: null, reduce: false, hidden: false, sceneOpen: false, ...(ctx.env || {}) };
   const cam = { tx: 0, ty: 0, x: 0, y: 0, dolly: 0, from: 0, to: 0, t0: 0, dim: 1, dimFrom: 1, dimTo: 1, kx: -0.7, ky: -0.55 };
   const canvas = ctx.canvas;
   /* the room times its own synchronous start-up steps (recorded by the ladder, never a demotion) */
   let startCost = 0; const timed = (f) => { const t0 = performance.now(); const v = f(); startCost = Math.max(startCost, Math.round(performance.now() - t0)); return v; };
-  const R = await createTavern(canvas, { shadows: tierName === "ultra" ? 2 : 1, power: tierName === "medium" ? "low-power" : "high-performance", yieldTask, timed });
+  const R = await createTavern(canvas, { shadows: tierName === "ultra" ? 2 : 1, power: tierName === "medium" ? "low-power" : "high-performance", yieldTask: ctx.yieldTask || yieldFrame, timed, W: E.W, H: E.H, wide: E.wide });
   const { renderer, scene, camera } = R;
 
   const lantern = () => (ctx.newSignup ? 1.8 : 1);
@@ -54,35 +64,30 @@ export async function startRoom(ctx) {
   const levels = () => { const lit = launchNight() ? 1.5 : 1; return { hearth: 1, candles: lit, lantern: lantern() * lit }; };
   let K = levels(), Kmove = null;
   const applyTier = () => { renderer.toneMappingExposure = T.exposure * cam.dim; R.setAir(landscape ? T.air : 0); }; /* no dust in portrait: on a phone it reads as noise */
-  let landscape = innerWidth >= innerHeight;
+  let landscape = E.W >= E.H;
 
   /* the camera keeps one horizontal field of view on every landscape screen, so the hearth and the shelves stay in the gutters */
-  const anchor = document.querySelector("#main") || document.body;
-  let W = innerWidth, H = innerHeight;
+  let W = E.W, H = E.H;
   const size = () => {
-    W = innerWidth; H = innerHeight; camera.aspect = W / H;
+    W = E.W; H = E.H; camera.aspect = W / H;
     const wide = Math.atan(Math.tan((HFOV / 2) * DEG) / camera.aspect) * 2 / DEG;
     camera.fov = Math.max(46, Math.min(70, wide)); camera.updateProjectionMatrix();
-    renderer.setPixelRatio(Math.min(T.dpr, Math.max(window.devicePixelRatio || 1, T.dpr >= 1.5 ? 1.5 : 1))); /* high and ultra supersample a 1x screen so the stone, wood and flames stay crisp */ renderer.setSize(W, H, false);
+    renderer.setPixelRatio(Math.min(T.dpr, Math.max(E.dpr || 1, T.dpr >= 1.5 ? 1.5 : 1))); /* high and ultra supersample a 1x screen so the stone, wood and flames stay crisp */ renderer.setSize(W, H, false);
     if ((W >= H) !== landscape) { landscape = W >= H; applyTier(); }
-    R.layout(W, H, anchor.getBoundingClientRect());
+    R.layout(W, H, E.rect);
   };
   applyTier(); size();
 
   /* camera: parallax from the shared light position (ctx.aim, in viewport pixels), the drift, the push on scene open */
-  const html = document.documentElement;
-  const sceneOpen = () => html.classList.contains("scene-open");
-  let opened = sceneOpen(), quietUntil = 0;
+  let opened = !!E.sceneOpen, quietUntil = 0;
   const hush = () => { quietUntil = performance.now() + QUIET_MS; judge.samples = []; judge.t0 = 0; };
   /* the aim is null when nobody points: the key light rests at the candle, top left */
   const aimN = () => { const a = ctx.aim ? ctx.aim() : null; return a && a.tx != null ? [Math.max(-1, Math.min(1, (a.tx / W - 0.5) * 2)), Math.max(-1, Math.min(1, (a.ty / H - 0.5) * 2))] : null; };
   /* reduced motion: no camera move, only the dim (the page cross-fades the sheet) */
-  const mo = new MutationObserver(() => { const o = sceneOpen(); if (o === opened) return; opened = o; cam.from = cam.dolly; cam.to = o && !reduce.matches ? 0.6 : 0; cam.dimFrom = cam.dim; cam.dimTo = o ? SCENE_DIM : 1; cam.t0 = performance.now(); hush(); wake(); });
-  mo.observe(html, { attributes: true, attributeFilter: ["class"] });
-  if (opened) { cam.dolly = cam.to = reduce.matches ? 0 : 0.6; cam.dim = cam.dimFrom = cam.dimTo = SCENE_DIM; applyTier(); } /* a landing scene: the room starts in the scene state */
+  const sceneTo = (o) => { o = !!o; if (o === opened) return; opened = o; cam.from = cam.dolly; cam.to = o && !E.reduce ? 0.6 : 0; cam.dimFrom = cam.dim; cam.dimTo = o ? SCENE_DIM : 1; cam.t0 = performance.now(); hush(); wake(); };
+  if (opened) { cam.dolly = cam.to = E.reduce ? 0 : 0.6; cam.dim = cam.dimFrom = cam.dimTo = SCENE_DIM; applyTier(); } /* a landing scene: the room starts in the scene state */
   /* only a resize moves the gutters; a scroll moves the board but the room is fixed behind it */
-  let rsz = 0; const onResize = () => { hush(); wake(); if (!rsz) rsz = requestAnimationFrame(() => { rsz = 0; size(); dirty = true; }); };
-  addEventListener("resize", onResize, { passive: true });
+  let rsz = 0; const onResize = () => { hush(); wake(); if (!rsz) rsz = nextFrame(() => { rsz = 0; size(); dirty = true; }); };
 
   /* the loop, the stats and the slow-frame watch */
   const st = { fps: 0, drawCalls: 0, triangles: 0, frames: 0, lost: false, paused: false, held: false, renderP95: 0, windows: 0, slowWindows: 0 };
@@ -90,7 +95,7 @@ export async function startRoom(ctx) {
   let raf = 0, last = 0, lastDraw = 0, dts = [], firstDraw = 0, stopped = false, dirty = true;
   /* V13b: while a scene is open the room keeps drawing at SCENE_FPS behind the veil. Nothing blurs it any more, so a new
      frame recomposites only the room's own canvas; the parallax and the key light hold still under the sheet. */
-  const wake = () => { st.held = false; if (!raf && !stopped && !document.hidden) raf = requestAnimationFrame(frame); };
+  const wake = () => { st.held = false; if (!raf && !stopped && !E.hidden) raf = nextFrame(frame); };
   const judgeDraw = (now, ms) => {
     if (!firstDraw || now - firstDraw < QUIET_MS || now < quietUntil) return; /* warm-up, a scene change, a resize */
     if (!judge.t0) judge.t0 = now;
@@ -103,7 +108,7 @@ export async function startRoom(ctx) {
   };
   const frame = (now) => {
     raf = 0;
-    if (document.hidden) { st.paused = true; return; }
+    if (E.hidden) { st.paused = true; return; }
     st.paused = false;
     const dt = last ? now - last : 16.7; last = now;
     dts.push(dt); if (dts.length > 120) dts.shift();
@@ -125,7 +130,7 @@ export async function startRoom(ctx) {
       const dim = cam.dimFrom + (cam.dimTo - cam.dimFrom) * ek;
       if (dim !== cam.dim) { cam.dim = dim; renderer.toneMappingExposure = T.exposure * dim; }
       /* the drift: a slow figure on top of the parallax, so the room breathes while nobody touches anything */
-      const calm = reduce.matches, dx = calm ? 0 : DRIFT.x * Math.sin((s * 2 * Math.PI) / DRIFT.px), dy = calm ? 0 : DRIFT.y * Math.sin((s * 2 * Math.PI) / DRIFT.py + 1.1);
+      const calm = E.reduce, dx = calm ? 0 : DRIFT.x * Math.sin((s * 2 * Math.PI) / DRIFT.px), dy = calm ? 0 : DRIFT.y * Math.sin((s * 2 * Math.PI) / DRIFT.py + 1.1);
       const px = cam.x + dx, py = cam.y + dy;
       /* the pose (tavern.js) faces the board on a wide screen and the hearth on a tall one; parallax slides along its right
          vector and the push moves along its forward vector */
@@ -147,14 +152,13 @@ export async function startRoom(ctx) {
       if (ctx.onFrame) ctx.onFrame(dt);
     }
     const avg = dts.reduce((a, b) => a + b, 0) / dts.length; st.fps = Math.round(1000 / avg);
-    if (!stopped) raf = requestAnimationFrame(frame);
+    if (!stopped) raf = nextFrame(frame);
   };
   /* back from hidden: a fresh judge window and a fresh warm-up, so the throttled frames never count */
-  const vis = () => { judge.samples = []; judge.t0 = 0; last = 0; if (!document.hidden) { firstDraw = 0; dirty = true; } if (!document.hidden && !raf && !stopped) raf = requestAnimationFrame(frame); };
-  document.addEventListener("visibilitychange", vis);
-  const onLost = (e) => { e.preventDefault(); if (stopped) return; st.lost = true; if (ctx.onLost) ctx.onLost(); };
+  const visible = (on) => { E.hidden = !on; judge.samples = []; judge.t0 = 0; last = 0; if (on) { firstDraw = 0; dirty = true; } if (on && !raf && !stopped) raf = nextFrame(frame); };
+  const onLost = (e) => { if (e && e.preventDefault) e.preventDefault(); if (stopped) return; st.lost = true; if (ctx.onLost) ctx.onLost(); };
   canvas.addEventListener("webglcontextlost", onLost, { once: true }); /* our own dispose() loses the context on purpose */
-  raf = requestAnimationFrame(frame);
+  if (!E.hidden) raf = nextFrame(frame);
 
   return {
     info: { renderer: R.info.renderer, software: R.info.software, three: R.info.three, colorSpace: R.info.colorSpace, wideWhy: R.info.wideWhy },
@@ -162,11 +166,16 @@ export async function startRoom(ctx) {
     /* V13b (craft 22): a new sign-up's lantern and launch night's candles ease up over 1.5 s with a brief flare, never in one frame */
     refresh(next) { Object.assign(ctx, next); const to = levels(), from = { ...K }, t0 = performance.now(); Kmove = (now) => { const k = Math.min(1, (now - t0) / 1500), flare = Math.sin(Math.PI * k) * 0.25; for (const n of ["hearth", "candles", "lantern"]) K[n] = from[n] + (to[n] - from[n]) * ease(k) + (to[n] !== from[n] ? flare : 0); if (k >= 1) Kmove = null; }; dirty = true; wake(); },
     status: () => ({ tier: tierName, fps: st.fps, drawCalls: st.drawCalls, triangles: st.triangles, memory: R.memory(), frames: st.frames, paused: st.paused, held: st.held, renderP95: st.renderP95, judged: st.windows, slowWindows: st.slowWindows, lost: st.lost, renderer: R.info.renderer, software: R.info.software, three: R.info.three, shadows: R.shadowsOn(), needsLibrary: NEEDS_LIBRARY }),
+    /* what the page pushes in (2026-10-30): its size and the board's rectangle, a scene opening or closing, the tab hiding or
+       showing, and reduced motion turning on or off */
+    resize(env) { Object.assign(E, env); onResize(); },
+    scene: sceneTo,
+    visible,
+    motion(reduce) { E.reduce = !!reduce; dirty = true; wake(); },
     stop() {
-      stopped = true; if (raf) cancelAnimationFrame(raf); raf = 0; mo.disconnect();
+      stopped = true; if (raf) dropFrame(raf); raf = 0; if (rsz) dropFrame(rsz); rsz = 0;
       canvas.removeEventListener("webglcontextlost", onLost);
-      removeEventListener("resize", onResize);
-      document.removeEventListener("visibilitychange", vis); R.dispose();
+      R.dispose();
     },
   };
 }

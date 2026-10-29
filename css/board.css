@@ -53,7 +53,7 @@
   --seg-6: #6c5236;
   --tile-face: #2e2016;
   --tile-face-2: #1d140d;
-  --sheet-bg: #17100a;
+  --sheet-bg: #000; /* 2026-10-30 (OLED): the sheet's backing shows only at its corners and in a gap; real black there, not a lifted brown */
   --shadow: rgba(0, 0, 0, 0.55);
   --glass: rgba(18, 12, 8, 0.72);
   --veil: rgba(0, 0, 0, 0.74);
@@ -288,10 +288,18 @@ main:focus { outline: none; }
 .tilt[aria-pressed="true"] { color: var(--parchment); border-color: var(--brass); }
 .sound-box { position: relative; display: inline-flex; align-items: center; gap: 8px; }
 /* V7/V10: the 3D room sits behind the board at medium tier and up, under the hero's shade; only the painting gives way to it */
-#room { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; }
-html.room-on .hero-art img { visibility: hidden; }
-/* the room is lit dark by itself, so its scrim only calms the heading and the foot, where the painting's needs the whole frame */
-html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 18%, var(--shade-none) 34%, var(--shade-none) 80%, var(--shade-mid) 100%); }
+/* 2026-10-30 (OLED): real black under the canvas before its first frame, and nothing but black under the room: with it on,
+   the page's oak gradient never shows, so the body does not paint it */
+#room { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; background: var(--black); }
+html.room-on body { background-image: none; }
+/* the photograph gives way to the room over the hero's fade, not in one frame (2026-10-30; the room has drawn before the class lands) */
+html.room-on .hero-art img { opacity: 0; visibility: hidden; transition: opacity var(--t-hero) var(--ease-fade), visibility var(--t-micro) linear var(--t-hero); }
+/* the room is lit dark by itself, so its scrim only calms the heading and the foot, where the painting's needs the whole frame.
+   The two scrims are two layers that cross-fade with the photograph (the painting's on ::after, the room's on ::before), so the
+   swap is never a step in the hero band */
+.hero-art::before { content: ""; position: absolute; inset: 0; z-index: 1; opacity: 0; pointer-events: none; background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 18%, var(--shade-none) 34%, var(--shade-none) 80%, var(--shade-mid) 100%); }
+html.room-on .hero-art::before { opacity: 1; transition: opacity var(--t-hero) var(--ease-fade); }
+html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) var(--ease-fade); }
 .room-pick { box-sizing: border-box; width: 0; opacity: 0; margin-left: -8px; min-height: 32px; font-family: var(--font-ui); font-size: var(--fs-chip); color: var(--cream); background: var(--glass); border: 0 solid var(--grain); border-radius: 999px; padding: 0; appearance: none; transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
 .sound-box:focus-within .room-pick, .sound-box.show .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; }
 @media (hover: hover) { .sound-box:hover .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; } }
@@ -600,6 +608,9 @@ html.flick-js .candle { will-change: opacity; }
 ::view-transition-group(*) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
 /* V13b: */
 ::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: none; object-position: left top; }
+/* 2026-10-30: the band's two images cross-fade on the symmetric ease like the root (the UA default is the asymmetric ease, so
+   the tile band dropped out ahead of the sheet head coming in); their duration follows the group's (the move, or the close) */
+::view-transition-old(scene-band), ::view-transition-new(scene-band) { animation-timing-function: var(--ease-fade); }
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); animation-timing-function: var(--ease-shut); }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
