@@ -555,11 +555,11 @@ function renderCards() {
       h("div", { class: "who", text: m.name }),
       h("div", { class: "what", text: `${m.race} ${m.class}` }),
       h("div", { class: "spec", text: m.spec }),
-      h("dl", { "data-j": "c e" },
+      h("dl", { "data-j": "g c e" },
         h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: m.role }), m.role_detail ? h("span", { class: "spec", text: m.role_detail }) : null)),
-        h("div", {}, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), "chosen")))),
+        h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), "chosen")))),
         h("div", {}, h("dt", { text: "Starts in" }), h("dd", { text: m.start_zone || "unknown" })),
-        h("div", {}, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
+        h("div", { "data-j": "c e" }, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
       flipBtn(`${m.class} spells at ${lvl}`));
     const list = h("ul", { class: "spells" }, spells.map((sp) => {
       const vals = sp.values.map((v) => fmtVal(v, sp.duration_ms) + (v.basis === "base" && !v.label.startsWith("%") ? " (starting value; may grow with level)" : v.level != null && v.level < lvl ? ` (rank caps at ${v.level})` : "")).join(" · ");

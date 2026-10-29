@@ -447,3 +447,8 @@ button.cal-day.win { background: var(--hi-brass); }
   #scene[data-kind="reading"] .sheet { max-height: 92vh; max-height: 92svh; }
 }
 .jr-cards { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
+/* first visit: the "how do you want to explore" picker keeps its full width so the three cards sit in one row */
+.tn:not(:has(.tn-pick)) > .tn-me:has(.jr-pick) { width: min(100%, 760px) !important; }
+
+/* "no answer yet" seat: an empty-mug outline instead of the default black fill */
+.seat-mug-none { fill: rgba(240, 205, 140, 0.06); stroke: var(--brass, #c9a24c); stroke-opacity: 0.55; stroke-width: 1.6; stroke-dasharray: 3 3; }
