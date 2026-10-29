@@ -1,0 +1,24 @@
+/* Sensory panel, invitation and wow glow (audio-sensory pass). Tokens fall back to the board's own palette. */
+.sense-fab { position: fixed; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 60; min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid rgba(255, 214, 150, .28); background: rgba(24, 16, 10, .72); color: #f1dfc0; font: 600 13px/1 system-ui, sans-serif; letter-spacing: .02em; cursor: pointer; backdrop-filter: blur(6px); opacity: .62; transition: opacity .2s; }
+.sense-fab:hover, .sense-fab:focus-visible, .sense-fab[aria-expanded="true"] { opacity: 1; }
+.sense-fab:focus-visible, .sense-panel button:focus-visible, .sense-panel input:focus-visible, .sense-invite button:focus-visible { outline: 2px solid #ffcf7a; outline-offset: 2px; }
+.sense-panel { position: fixed; left: 12px; bottom: calc(56px + env(safe-area-inset-bottom, 0px)); z-index: 61; width: min(340px, calc(100vw - 24px)); box-sizing: border-box; padding: 14px 16px 12px; border-radius: 14px; border: 1px solid rgba(255, 214, 150, .3); background: rgb(22, 15, 9); color: #f1dfc0; font: 14px/1.35 system-ui, sans-serif; box-shadow: 0 10px 40px rgba(0, 0, 0, .5); }
+.sense-panel[hidden] { display: none; }
+.sense-panel h2 { margin: 0 0 10px; font: 700 15px/1.2 system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; color: #ffcf7a; }
+.sense-presets, .sense-toggles { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.sense-panel button { min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255, 214, 150, .3); background: rgba(255, 214, 150, .08); color: inherit; font: 600 13px/1 system-ui, sans-serif; cursor: pointer; }
+.sense-panel button[aria-pressed="true"] { background: rgba(255, 190, 90, .28); border-color: #ffcf7a; color: #fff3da; }
+.sense-presets button { flex: 1; }
+.sense-row { display: grid; grid-template-columns: 82px 1fr; align-items: center; gap: 8px; margin: 4px 0; min-height: 36px; }
+.sense-row input { width: 100%; accent-color: #ffcf7a; min-height: 28px; }
+.sense-note { margin: 8px 0 0; font-size: 12px; opacity: .72; }
+.sense-invite { position: fixed; left: 50%; bottom: calc(60px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 59; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 16px; border-radius: 22px; background: rgba(22, 15, 9, .9); border: 1px solid rgba(255, 214, 150, .3); color: #f1dfc0; font: 14px/1.2 system-ui, sans-serif; animation: sense-in .5s ease both; max-width: calc(100vw - 24px); }
+.sense-invite button { min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #ffcf7a; background: rgba(255, 190, 90, .22); color: #fff3da; font: 600 13px/1 system-ui, sans-serif; cursor: pointer; }
+.sense-invite .sense-x { border: 0; background: transparent; padding: 0 10px; font-size: 18px; }
+.sense-invite.out { opacity: 0; transition: opacity .4s; }
+@keyframes sense-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+/* wow mode (Everything preset): a slow warm breath over the page, 0.1 Hz, under 6% opacity, never over content */
+.sense-wow body::after { content: ""; position: fixed; inset: 0; z-index: 1; pointer-events: none; background: radial-gradient(ellipse at 50% 100%, rgba(255, 150, 60, .5), transparent 60%); opacity: .04; animation: sense-breath 9s ease-in-out infinite; mix-blend-mode: screen; }
+@keyframes sense-breath { 50% { opacity: .075; } }
+@media (prefers-reduced-motion: reduce) { .sense-invite { animation: none; } .sense-wow body::after { animation: none; } .sense-fab { transition: none; } }
+@media (max-width: 700px) { .sense-fab { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } .sense-panel { bottom: calc(120px + env(safe-area-inset-bottom, 0px)); } .sense-invite { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); } }

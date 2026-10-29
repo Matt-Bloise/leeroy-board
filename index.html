@@ -33,6 +33,7 @@
 <link rel="stylesheet" href="css/board.css?v=7d53ba2b70">
 <link rel="stylesheet" href="css/v13d.css?v=456166e0b2">
 <link rel="stylesheet" href="css/v14.css?v=2b90a7cd2e">
+<link rel="stylesheet" href="css/sensory.css?v=03d80c85f3"><!-- HOOK audio-sensory 1/3 -->
 
 <div class="hero-art gate-mode" id="hero-art" aria-hidden="true"><img src="img/tavern-hero.jpg" alt="" width="1672" height="941" loading="eager" fetchpriority="high" decoding="async"></div>
 <noscript><p style="position:fixed;inset:auto 16px 16px;z-index:5;margin:0;padding:12px 16px;border-radius:8px;background:#1c130c;color:#eadfc4;font:16px/1.4 Georgia,serif">The board needs JavaScript to show the group's dates, cards and library. Turn it on for this page and reload.</p></noscript>
@@ -270,10 +271,11 @@
   <dl class="keys-list" id="keys-list"></dl>
 </aside>
 
-<script src="js/sound.js?v=d181ff431f"></script>
+<script src="js/sound.js?v=1aa8e7ce8a"></script>
 <script src="js/brain.js?v=f71b352f6c"></script>
 <script src="js/board.js?v=f0e7c0b336"></script>
 <script src="js/v13d.js?v=e690ee6d46"></script>
+<script src="js/haptics.js?v=f1dc5103c7"></script><script src="js/sensory.js?v=902932484e"></script><!-- HOOK audio-sensory 2/3, 3/3 -->
 <script type="module">
 /* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:
    #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is
