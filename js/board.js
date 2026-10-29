@@ -3479,8 +3479,7 @@ async function boot(mode, sdk) {
   for (const step of [renderTonight, markMe]) { try { step(); } catch (e) { console.error(step.name, e); } }
   if (early) { route(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
   const steps = [markMe, renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderBuffsDeep, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
-  /* each step yields to the browser, so the wall's entrance never waits on a 450 ms block of DOM building (long-frame trace) */
-  for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } await new Promise((r) => setTimeout(r, 0)); }
+  for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
   /* V12: an early scene (Tonight) painted before party.json's glossary was in hand: dot it now */
   if (SC.open && SC.open !== "library") { try { dotPanel($(`#panel-${SC.open}`)); } catch (e) {} }
   try { startArt(); } catch (e) { console.error(e); }
