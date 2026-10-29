@@ -3229,7 +3229,7 @@ const MEM = {
   me: () => MEM.get("me"),
   member: () => { const m = MEM.me(); return m && m !== "just-looking" && D.party ? D.party.members.find((x) => MEM.slug(x.name) === m) || null : null; },
   setMe: (slug) => { const ok = slug === "just-looking" || (D.party ? D.party.members.some((x) => MEM.slug(x.name) === slug) : /^[a-z0-9-]{1,40}$/.test(slug)); if (ok) MEM.set("me", slug); return ok; },
-  seenMap: () => { try { return JSON.parse(MEM.get("seen") || "{}"); } catch (e) { return {}; } },
+  seenMap: () => { try { const m = JSON.parse(MEM.get("seen") || "{}"); return m && typeof m === "object" && !Array.isArray(m) ? m : {}; } catch (e) { return {}; } }, /* a stored value that is not an object (a number, a list) is treated as empty, never thrown on */
   seen: (k) => { const m = MEM.seenMap(); m[k] = Date.now(); MEM.set("seen", JSON.stringify(m)); },
   forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } },
 };
