@@ -107,8 +107,8 @@ html[data-journey="everything"] .cards { align-items: start; }
 /* ---------- Roads: two zoom levels (interaction 4) ---------- */
 #map { position: relative; }
 #map .map-svg { touch-action: pan-x pan-y; }
-#map .road-g { cursor: zoom-in; }
-#map .map-svg.zoomed .road-g { cursor: zoom-out; }
+#map .road-g, #map .road-line { cursor: zoom-in; }
+#map .map-svg.zoomed .road-g, #map .map-svg.zoomed .road-line { cursor: zoom-out; }
 #map .road-g:focus { outline: none; }
 #map .road-g:focus-visible .zone-ring { opacity: 1; stroke: var(--brass-hi); stroke-width: 2.5; }
 .zone-card { position: absolute; left: 12px; top: 12px; z-index: 2; max-width: min(22rem, calc(100% - 24px)); padding: 12px 14px; display: grid; gap: 8px; color: var(--ink); background: var(--cream-2); border: 1px solid var(--ink-line); border-left: 4px solid var(--wax); border-radius: 6px; box-shadow: 0 8px 22px var(--shadow); animation: tt-in var(--t-move) var(--ease-spring) both; }

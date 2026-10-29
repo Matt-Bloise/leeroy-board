@@ -715,8 +715,13 @@ html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); an
 .zep-flag { fill: var(--wax); stroke: var(--ink); stroke-width: 0.6; }
 .route-plate .banner-text { font-style: italic; }
 .map-caption { color: var(--text-dim); font-size: var(--step--1); }
-.road-g { transition: opacity var(--t-micro) var(--ease-oak); cursor: pointer; }
-.map-svg.focusing .road-g:not(.on) { opacity: 0.2; }
+.road-g, .road-line { transition: opacity var(--t-micro) var(--ease-oak); cursor: pointer; }
+.map-svg.focusing .road-g:not(.on), .map-svg.focusing .road-line:not(.on) { opacity: 0.2; }
+/* the lines layer paints under every mark, pin and plate (document order); a soft parchment halo keeps a dotted line crisp on the land and off the icons */
+.map-road-halo { stroke: var(--parchment); stroke-width: 6.5; opacity: 0.7; stroke-linejoin: round; pointer-events: none; }
+.map-road-halo.map-air { stroke-width: 5; }
+.road-line .map-trail { pointer-events: none; }
+.map-mark, .map-town { paint-order: stroke; filter: drop-shadow(0 0 1.5px var(--parchment)) drop-shadow(0 0 3px var(--parchment)); }
 .draw-mask { mask-type: alpha; }
 .draw { fill: none; stroke: var(--brass); stroke-width: 16; stroke-linecap: round; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
 .map-box.drawing .draw, .ring-wrap.filling .draw { animation: draw var(--t-hero) var(--ease-oak) both; animation-delay: calc(var(--di, 0) * var(--stagger) * 4); }

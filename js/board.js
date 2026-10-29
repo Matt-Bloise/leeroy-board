@@ -702,13 +702,18 @@ function renderMap() {
     s("path", { class: "map-land", d: "M330 40 C400 30 470 50 540 80 C580 120 570 200 560 260 C540 320 470 360 390 380 C300 395 210 380 180 330 C170 280 220 230 260 200 C300 160 300 90 330 40 Z" }));
   const byZone = {};
   for (const m of D.party.members) (byZone[m.start_zone] ||= []).push(m);
-  const groups = ROADS.map((r) => {
-    const g = s("g", { class: "road-g", "data-road": r.key });
+  /* paint order is document order: the road lines, their trail prints, the walkers and the zeppelin (the "lines" layer) come
+     first, then the town and crossroads marks and the place names, then the pins (the road-g groups), then the plates. So a
+     line never runs over an icon. Each road has a lines group and a pin group, both keyed by data-road. */
+  const lines = ROADS.map((r) => {
+    const g = s("g", { class: "road-line", "data-road": r.key });
     /* V13a: the march is SMIL on the map's own clock (mapClock), not a CSS animation that repainted the page every refresh */
-    g.append(s("path", { id: `path-${r.key}`, class: r.cls, d: r.d, mask: `url(#mask-${r.key})` },
-      reduceMQ.matches ? null : s("animate", { attributeName: "stroke-dashoffset", from: "0", to: "-36", dur: r.cls === "map-air" ? "3.2s" : "2.4s", repeatCount: "indefinite" })));
+    const dur = r.cls === "map-air" ? "3.2s" : "2.4s", march = () => (reduceMQ.matches ? null : s("animate", { attributeName: "stroke-dashoffset", from: "0", to: "-36", dur, repeatCount: "indefinite" }));
+    g.append(s("path", { class: `map-road-halo ${r.cls}`, d: r.d, mask: `url(#mask-${r.key})` }, march()),
+      s("path", { id: `path-${r.key}`, class: r.cls, d: r.d, mask: `url(#mask-${r.key})` }, march()));
     svg.append(g); return g;
   });
+  const groups = [];
   /* V11: each of the five is a pin carrying their class crest, with a name banner. Labels never collide: every banner tries
      a ladder of spots around its pin against the boxes already placed (fixed place names, other pins, other banners) and
      takes the first clear one, with a leader line when it had to move. Sizes follow the phone type ramp (26/24 units). */
@@ -734,6 +739,7 @@ function renderMap() {
   const cross = emb("pin", "map-mark"); for (const [k, v] of Object.entries({ x: 382, y: 200, width: 20, height: 22 })) cross.setAttribute(k, v);
   svg.append(cross);
   boxes.push({ x: 454, y: 102, w: 32, h: 32 }, { x: 380, y: 198, w: 24, h: 26 });
+  for (const r of ROADS) { const g = s("g", { class: "road-g", "data-road": r.key }); svg.append(g); groups.push(g); }
   const banners = [], zoneNames = [];
   let zi = 0;
   for (const [zone, ms] of Object.entries(byZone)) {
@@ -808,18 +814,19 @@ function renderMap() {
       const ms = byZone[r.zone] || []; if (!ms.length) return;
       defs.append(s("mask", { id: `walk-${r.key}`, class: "draw-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: 600, height: 400 },
         s("path", { class: "walk-reveal", d: r.d, pathLength: 1 }, s("animate", { attributeName: "stroke-dashoffset", values: "1;0;0", keyTimes: "0;0.8;1", dur, begin, repeatCount: "indefinite" }))));
-      g.append(s("path", { class: "map-trail", d: r.d, pathLength: 1, mask: `url(#walk-${r.key})` }));
+      const ln = lines[ROADS.indexOf(r)];
+      ln.append(s("path", { class: "map-trail", d: r.d, pathLength: 1, mask: `url(#walk-${r.key})` }));
       const walker = s("g", { class: "map-walker" }, s("image", { href: `img/crests/${ms[k % ms.length].class_key}.png`, x: -11, y: -11, width: 22, height: 22 }));
       const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", keyPoints: "0;1;1", keyTimes: "0;0.8;1", calcMode: "linear" }); am.append(s("mpath", { href: `#path-${r.key}` }));
-      walker.append(am); g.append(walker);
+      walker.append(am); ln.append(walker);
     };
     const am = s("animateMotion", { dur: "16s", repeatCount: "indefinite", rotate: "auto" }); am.append(s("mpath", { href: "#path-air" }));
-    groups[0].append(zeppelin(am));
+    lines[0].append(zeppelin(am));
     walk(groups[1], ROADS[1], 0, "8s", "0s");
     walk(groups[2], ROADS[2], 0, "6s", "1s");
     /* nothing moves on a hidden page */
   }
-  if (reduceMQ.matches) groups[0].append(zeppelin(null)); /* reduced motion: the zeppelin holds still at the top of its route */
+  if (reduceMQ.matches) lines[0].append(zeppelin(null)); /* reduced motion: the zeppelin holds still at the top of its route */
   svg.append(labels);
   mapVisibility();
   if (SC.open === "roads") requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); /* drawn again while open (a resize): measured again */
@@ -831,7 +838,7 @@ function renderMap() {
   const light = (key) => {
     const k = key || sticky;
     svg.classList.toggle("focusing", !!k);
-    groups.forEach((g) => g.classList.toggle("on", g.dataset.road === k));
+    groups.concat(lines).forEach((g) => g.classList.toggle("on", g.dataset.road === k));
     btns.forEach((b) => { b.classList.toggle("on", b.dataset.road === k); b.setAttribute("aria-pressed", String(b.dataset.road === sticky)); });
     const r = ROADS.find((x) => x.key === k);
     panel.classList.toggle("open", !!r);
@@ -848,9 +855,11 @@ function renderMap() {
       h("b", { text: r.zone }), h("span", { text: `${ms.length ? andList(ms.map((m) => m.name)) : "Nobody"} · ${r.how} to Orgrimmar` }));
     btns.push(b); legend.append(h("li", {}, b));
   }
-  groups.forEach((g) => { g.addEventListener("pointerenter", () => light(g.dataset.road)); g.addEventListener("pointerleave", () => light(null)); });
+  groups.concat(lines).forEach((g) => { g.addEventListener("pointerenter", () => light(g.dataset.road)); g.addEventListener("pointerleave", () => light(null)); });
+  /* a tap on a road line (under the pins now) does what a tap on its zone does: the zone group takes it */
+  lines.forEach((l, i) => l.addEventListener("click", (e) => { e.stopPropagation(); if (typeof groups[i].click === "function") groups[i].click(); }));
   /* V13d (interaction 4): zones are buttons; a click or Enter zooms the map to the zone (js/v13d.js), the road stays lit */
-  KIT.emit("map", { svg, groups, byZone, roads: ROADS, zones: ZONES, pick: (key) => { sticky = key; light(null); } });
+  KIT.emit("map", { svg, groups, lines, byZone, roads: ROADS, zones: ZONES, pick: (key) => { sticky = key; light(null); } });
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
   const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
   $("#map-lede").textContent = `${names.join("; ")}. The Undercity zeppelin and two roads all end in Orgrimmar.`;

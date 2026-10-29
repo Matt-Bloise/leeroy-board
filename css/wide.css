@@ -30,7 +30,7 @@
   #panel-roads.wide-map > .map-box.dragging { cursor: grabbing; }
   #panel-roads.wide-map > .map-box svg { width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
   #panel-roads.wide-map > .map-box:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: -3px; }
-  #panel-roads.wide-map > .map-box .road-g { cursor: pointer; }
+  #panel-roads.wide-map > .map-box :is(.road-g, .road-line) { cursor: pointer; }
   /* zoom buttons: the map's bottom right corner, over the parchment (top right when the cards are under the map) */
   #panel-roads.wide-map > .map-ctl { grid-area: map; z-index: 3; align-self: end; justify-self: end; margin: 14px; display: flex; gap: 6px; }
   #panel-roads.wide-map[data-lay="below"] > .map-ctl { align-self: start; }

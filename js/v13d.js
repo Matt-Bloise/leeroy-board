@@ -258,7 +258,7 @@ K.on("map", (M) => {
     const zone = zoneOf(g);
     g.setAttribute("tabindex", "0"); g.setAttribute("role", "button"); g.setAttribute("data-zone", MEM.slug(zone)); g.setAttribute("aria-label", `Zoom to ${zone}`);
     /* V13e retest-4: the zone's own land and name take the tap too (a transparent hit area under the pins) */
-    const zz = M.zones[zone]; if (zz && !g.querySelector(".zone-hit")) { const lx = zz.label ? zz.label[0] : zz.x, ly = zz.label ? zz.label[1] : zz.y; const x0 = Math.min(zz.x, lx) - 70, y0 = Math.min(zz.y, ly) - 60, x1 = Math.max(zz.x, lx) + 70, y1 = Math.max(zz.y, ly) + 22; g.insertBefore(K.s("rect", { class: "zone-hit", x: Math.max(0, x0), y: Math.max(0, y0), width: Math.min(600, x1) - Math.max(0, x0), height: Math.min(400, y1) - Math.max(0, y0) }), g.firstChild); }
+    const zz = M.zones[zone]; if (zz && !(g.querySelector(".zone-hit") || (M.lines || []).some((l) => l.dataset.road === g.dataset.road && l.querySelector(".zone-hit")))) { const lx = zz.label ? zz.label[0] : zz.x, ly = zz.label ? zz.label[1] : zz.y; const x0 = Math.min(zz.x, lx) - 70, y0 = Math.min(zz.y, ly) - 60, x1 = Math.max(zz.x, lx) + 70, y1 = Math.max(zz.y, ly) + 22; const hh = (M.lines && M.lines.find((l) => l.dataset.road === g.dataset.road)) || g; hh.insertBefore(K.s("rect", { class: "zone-hit", x: Math.max(0, x0), y: Math.max(0, y0), width: Math.min(600, x1) - Math.max(0, x0), height: Math.min(400, y1) - Math.max(0, y0) }), hh.firstChild); }
     g.addEventListener("click", (e) => { e.stopPropagation(); if (V.zoom === zone) zoomOut(); else zoomTo(MEM.slug(zone)); });
     g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (V.zoom === zone) zoomOut(); else zoomTo(MEM.slug(zone)); } });
   }

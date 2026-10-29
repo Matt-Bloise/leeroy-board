@@ -241,12 +241,12 @@ function roads(M) {
   if (!card) { card = h("div", { class: "place-card road-card", id: "road-card", role: "tooltip", hidden: "" }); sheet.append(card); }
   if (RM.wired) return;
   RM.wired = true;
-  const SEL = ".map-pin, .road-btn, .road-g, .map-town, .map-mark, .map-zep-g, .route-plate";
+  const SEL = ".map-pin, .road-btn, .road-g, .road-line, .map-town, .map-mark, .map-zep-g, .route-plate";
   const P = K.D.party;
   const who = (name) => P.members.find((m) => m.name === name);
   const idOf = (t) => {
     if (t.matches(".map-pin")) { const g = t.closest(".road-g"), m = who((t.getAttribute("data-who") || "").split(",")[0]); return { key: g ? g.dataset.road : null, member: m, kind: "pin" }; }
-    if (t.matches(".road-btn, .road-g")) return { key: t.dataset.road, kind: "road" };
+    if (t.matches(".road-btn, .road-g, .road-line")) return { key: t.dataset.road, kind: "road" };
     if (t.matches(".map-zep-g, .route-plate")) return { key: "air", kind: "zep" };
     if (t.matches(".map-cross")) return { key: "mulgore", kind: "cross" };
     return { key: "all", kind: "end" };
@@ -267,14 +267,14 @@ function roads(M) {
   const setCtx = (id) => {
     const M = RM.M, all = id.key === "all", k = id.key;
     M.svg.classList.add("focusing");
-    M.groups.forEach((g) => g.classList.toggle("on", all || g.dataset.road === k));
+    M.groups.concat(M.lines || []).forEach((g) => g.classList.toggle("on", all || g.dataset.road === k));
     panel.dataset.ctx = "road";
     legend.querySelectorAll(".road-btn").forEach((b) => { const on = all || b.dataset.road === k; b.parentElement.classList.toggle("ctx-on", on); b.parentElement.classList.toggle("ctx-dim", !on); });
     RM.M.svg.querySelectorAll(".map-pin").forEach((p) => p.classList.toggle("ctx-on", !!cur && cur.t === p));
   };
   const clearCtx = () => {
     delete panel.dataset.ctx; legend.querySelectorAll("li").forEach((li) => li.classList.remove("ctx-on", "ctx-dim")); RM.M.svg.querySelectorAll(".map-pin.ctx-on").forEach((p) => p.classList.remove("ctx-on"));
-    if (!sticky()) { RM.M.svg.classList.remove("focusing"); RM.M.groups.forEach((g) => g.classList.remove("on")); }
+    if (!sticky()) { RM.M.svg.classList.remove("focusing"); RM.M.groups.concat(RM.M.lines || []).forEach((g) => g.classList.remove("on")); }
   };
   const fill = (id) => {
     const b = body(id);
