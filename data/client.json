@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-29T16:46:41.363Z",
+ "generated": "2026-10-29T16:51:15.557Z",
  "build": "1.60.1.70532",
  "level": 60,
  "formula": "wiki/scripts/db2-lib.mjs scaleEffect at level 60 (min/max = base x (1 -/+ variance/2) + per_level x levels past base, capped at the rank's max level); totals = per-tick x floor(duration / period)",
@@ -1645,10 +1645,10 @@
     "name": "Berserking",
     "spell": 20554,
     "wiki_key": "racial.troll.berserking",
-    "wiki": "active, +10% cast and attack speed for 10 s; cooldown unpublished",
+    "wiki": "active, +10% cast and attack speed for 15 s since the Blizzard community manager update (10 s before; Blizzard community manager update to dev notes post 8, edited after the Oct 27 snapshot, live text read 2026-10-29; Wowhead news \"More Racial Ability Tuning\" quotes it); cooldown unpublished",
     "kind": "active",
-    "changed_oct26": false,
-    "changed_on": null,
+    "changed_oct26": true,
+    "changed_on": "Oct 27",
     "client": {
      "build": "1.60.1.70532",
      "cooldown_ms": 180000,
