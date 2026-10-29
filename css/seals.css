@@ -153,3 +153,6 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .spark-text.on { font-weight: 700; fill: var(--brass-hi); }
 @media (prefers-reduced-motion: reduce) { .spark-cur { transition: none; } }
 @media (min-width: 600px) { html.has-seal .sheet-head { min-height: calc(var(--seal) + 22px); } }
+
+/* the scene seal is a DIV; the small wax-seal bullets (span.seal.art from seal() in board.js) share the class name and must stay inline */
+span.seal { position: relative; left: auto; top: auto; z-index: auto; perspective: none; display: inline-block; }
