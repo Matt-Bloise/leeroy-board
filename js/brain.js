@@ -2,6 +2,9 @@
    window.BoardBrain reads the bot's mirror from the leeroy-brain Worker (GET /api/state, then the /api/live WebSocket, with a
    15 s poll when the socket is not there; V13e: the socket only with a key, keyless boards poll) and, with a personal board key, sends one person's sign-up state and journey
    (POST /api/intent). It never sends a name, an id or anything but the fixed answer words.
+   - V15 (2026-10-30, board/V15-LAUNCH-SPEC.md 5): the launch-night state (queue, in, done) goes the same way as a third kind;
+     the Worker keeps it per key and mirrors it as `launch` rows in GET /api/state. Without a Worker, a key, or against the
+     Worker deployed before this change (which answers 400), setLaunch reports local: the page keeps the state on the device.
    - The key arrives once in the address bar (#k=<key>&signups from "My board link" on the Sign-ups card); this file runs
      before the board and the gate, stores it as board-key and takes it out of the address bar at once.
    - Where it talks: relative /api on Discord's proxy (*.discordsays.com), the workers.dev URL on the public host, relative
@@ -10,14 +13,16 @@
 "use strict";
 const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
-const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"];
+const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"]; /* V15: the launch-night state */
 const POLL_MS = 15000, PING_MS = 45000, WS_RETRY_MS = 120000, SLOW_MS = 30000;
-const B = { key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, sent: 0, polls: 0, wsMsgs: 0 };
+const B = { key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, subs: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, sent: 0, polls: 0, wsMsgs: 0, launch: [], lPend: null, launchRefused: false };
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
 };
-const emit = (n, ...a) => { const f = B.h[n]; if (typeof f === "function") { try { f(...a); } catch (e) { console.error("brain", n, e); } } };
+/* the board's own handlers (start) and any later listener (on, V15: js/v15.js hears the launch rows without owning start) */
+const emit = (n, ...a) => { for (const f of [B.h[n], ...(B.subs[n] || [])]) if (typeof f === "function") { try { f(...a); } catch (e) { console.error("brain", n, e); } } };
+function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
 
 /* the key: read from the address bar once, kept in this browser, never shown or logged */
 (function capture() {
@@ -41,11 +46,11 @@ function baseFor() {
 }
 B.base = baseFor();
 
-/* only these bodies ever leave the page: a kind, one answer word from a fixed list, and the mirror version */
+/* only these bodies ever leave the page: a kind, one answer word from that kind's fixed list, and the mirror version */
 function safe(body) {
-  const ok = body && (body.kind === "signup" || body.kind === "journey") && Object.keys(body).every((k) => ["kind", "patch", "ver"].includes(k))
-    && body.patch && Object.keys(body.patch).length === 1
-    && ((body.patch.rsvp !== undefined && RSVP.includes(body.patch.rsvp)) || (body.patch.journey !== undefined && JOURNEYS.includes(body.patch.journey)))
+  const p = body && body.patch, one = p && typeof p === "object" && Object.keys(p).length === 1;
+  const word = !one ? false : body.kind === "signup" ? RSVP.includes(p.rsvp) : body.kind === "journey" ? JOURNEYS.includes(p.journey) : body.kind === "launch" ? LAUNCH.includes(p.state) : false;
+  const ok = word && Object.keys(body).every((k) => ["kind", "patch", "ver"].includes(k))
     && (body.ver === undefined || (Number.isInteger(body.ver) && body.ver >= 0));
   if (!ok || /\d{17,20}/.test(JSON.stringify(body))) throw new Error("refused: only an answer word may leave the board");
   return body;
@@ -74,9 +79,17 @@ function settle() {
   }
   if (moved) emit("pending", pending());
 }
+/* V15: the Worker's own launch-night rows ride beside the bot's snapshot; an older Worker sends none and the list stays empty */
+const launchRow = (r) => r && typeof r.slug === "string" && typeof r.name === "string" && LAUNCH.includes(r.state) && !/\d{17,20}/.test(`${r.slug} ${r.name}`);
+function mineLaunch() { const me = B.me; return me ? B.launch.find((r) => r.slug === me.slug) || null : null; }
+function settleLaunch() {
+  const p = B.lPend, r = mineLaunch(); if (!p || !r || p.state === "sending" || p.state === "failed" || p.state === "local" || p.state === "saved") return;
+  if (r.state === p.value && (!p.at || !r.at || Date.parse(r.at) >= Date.parse(p.at) - 1000)) { p.state = "saved"; emit("launchPending", launchPending()); }
+}
 function onState(m) {
   if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups)) return false;
   B.ver = m.ver; B.at = m.at || null;
+  if (Array.isArray(m.launch)) { B.launch = m.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null })); emit("launch", B.launch.slice()); settleLaunch(); }
   if (!m.signups) return false;
   B.signups = m.signups;
   emit("state", m.signups, m.ver);
@@ -131,17 +144,19 @@ async function me() {
     if (r.status === 200 && r.data && r.data.slug) {
       B.me = { slug: r.data.slug, name: r.data.name }; B.keyBad = false;
       /* waiting changes from an earlier visit show as waiting again */
-      for (const p of r.data.pending || []) for (const [f, v] of Object.entries(p.patch || {})) if (f === "rsvp") B.pend.rsvp = { value: v, at: p.at, state: "waiting", seq: p.seq };
+      for (const p of r.data.pending || []) for (const [f, v] of Object.entries(p.patch || {})) { if (f === "rsvp") B.pend.rsvp = { value: v, at: p.at, state: "waiting", seq: p.seq }; if (p.kind === "launch" && f === "state" && LAUNCH.includes(v)) B.lPend = { value: v, at: p.at, state: "waiting", seq: p.seq }; }
     } else if (r.status === 401) { B.me = null; B.keyBad = true; }
   } catch (e) { B.errors++; }
   emit("me", B.me);
-  settle(); journeyFromMirror();
+  settle(); journeyFromMirror(); settleLaunch();
   emit("pending", pending());
+  emit("launchPending", launchPending());
   return B.me;
 }
 
 function pending() { const out = {}; for (const [f, p] of Object.entries(B.pend)) out[f] = { value: p.value, state: p.state, ...(p.other ? { other: p.other } : {}), ...(p.error ? { error: p.error } : {}) }; return out; }
-function status() { return { via: B.via, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused }; }
+function launchPending() { const p = B.lPend; return p ? { value: p.value, state: p.state, ...(p.error ? { error: p.error } : {}) } : null; }
+function status() { return { via: B.via, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused, launch: B.launch.length, launchPending: launchPending(), launchRefused: B.launchRefused }; }
 
 async function setRsvp(v) {
   if (!B.base) return { ok: false, why: "nowhere to send" };
@@ -173,6 +188,28 @@ async function setJourney(j) {
     return { ok: r.status === 200 };
   } catch (e) { B.errors++; return { ok: false }; }
 }
+/* V15: the launch-night state. local: true means the page keeps it on this device only (no Worker, no key, or a Worker that
+   does not know the kind yet); waiting means the Worker has it and the mirror will confirm; saved once a launch row carries it */
+async function setLaunch(v) {
+  if (!LAUNCH.includes(v)) return { ok: false, why: "not a state" };
+  if (!B.base) return { ok: false, local: true, why: "nowhere to send" };
+  if (!B.key) return { ok: false, local: true, why: "no key" };
+  if (B.launchRefused) return { ok: false, local: true, why: "refused" };
+  const p = B.lPend = { value: v, state: "sending", t: Date.now() };
+  emit("launchPending", launchPending());
+  try {
+    const r = await call("POST", "/intent", { kind: "launch", patch: { state: v }, ...(B.ver ? { ver: B.ver } : {}) }); B.sent++;
+    if (B.lPend !== p) return { ok: r.status === 200 };
+    if (r.status === 200) {
+      p.state = "waiting"; p.at = (r.data && r.data.at) || new Date().toISOString(); p.seq = r.data && r.data.seq;
+      setTimeout(() => { if (B.lPend === p && p.state === "waiting") { p.state = "stored"; emit("launchPending", launchPending()); } }, SLOW_MS);
+      settleLaunch();
+    } else if (r.status === 400) { B.launchRefused = true; p.state = "local"; emit("status", status()); }
+    else { p.state = "failed"; p.error = r.status === 401 ? "key" : r.status === 429 ? "busy" : "refused"; if (r.status === 401) B.keyBad = true; }
+  } catch (e) { p.state = "failed"; p.error = "offline"; B.errors++; }
+  emit("launchPending", launchPending());
+  return { ok: p.state === "waiting" || p.state === "saved", local: p.state === "local", state: p.state };
+}
 function start(handlers) {
   B.h = handlers || {};
   if (B.started) return status();
@@ -188,6 +225,6 @@ function start(handlers) {
   if (typeof addEventListener === "function") addEventListener("focus", () => { if (B.via !== "ws") pollOnce(); });
   return status();
 }
-function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; emit("me", null); emit("pending", {}); }
-window.BoardBrain = Object.freeze({ start, status, setRsvp, setJourney, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, _state: onState, _poll: pollOnce });
+function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; emit("me", null); emit("pending", {}); emit("launchPending", null); }
+window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, _state: onState, _poll: pollOnce });
 })();

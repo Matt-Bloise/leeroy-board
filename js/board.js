@@ -3503,7 +3503,7 @@ async function boot(mode, sdk) {
   /* V14: */
   let firstBeat = null;
   if (!location.hash || location.hash === "#") {
-    const d = MEM.get("depth");
+    const d = (KIT.openDepth ? KIT.openDepth() : null) || MEM.get("depth"); /* V15 (2026-10-30): launch night opens on the wall's hero (js/v15.js), the memory untouched */
     if (!d) {
       document.documentElement.classList.add("first-beat");
       const cancel = () => { if (firstBeat) { clearTimeout(firstBeat); firstBeat = null; } document.documentElement.classList.remove("first-beat"); removeEventListener("pointerdown", cancel, true); removeEventListener("keydown", cancel, true); removeEventListener("hashchange", cancel); };

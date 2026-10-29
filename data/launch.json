@@ -1,0 +1,76 @@
+{
+ "generated": "2026-10-29T21:47:22.507Z",
+ "launch_epoch": 1793833200,
+ "event": {
+  "name": "WoW Forever Launch Night",
+  "start_epoch": 1793833200,
+  "end_epoch": 1793851200,
+  "location": "#wow-forever, voice in Fellowship",
+  "description": "World of Warcraft: Forever opens at 6 PM ET, the same moment worldwide. The party gathers in Fellowship voice; the Sign-ups card in #wow-forever shows who is on and when."
+ },
+ "voice": "Fellowship",
+ "moments": [
+  {
+   "id": "launch-24h",
+   "epoch": 1793746800,
+   "until_epoch": null,
+   "kind": "card",
+   "title": "Launch is tomorrow",
+   "label": "Launch",
+   "ping": "no"
+  },
+  {
+   "id": "launch-1h",
+   "epoch": 1793829600,
+   "until_epoch": 1793833200,
+   "kind": "countdown",
+   "title": "One hour to Forever",
+   "label": "Launch",
+   "ping": "no"
+  },
+  {
+   "id": "launch-0",
+   "epoch": 1793833200,
+   "until_epoch": null,
+   "kind": "post",
+   "title": "Forever is live",
+   "label": "Launch",
+   "ping": "all"
+  },
+  {
+   "id": "launch-10m",
+   "epoch": 1793833800,
+   "until_epoch": null,
+   "kind": "card",
+   "title": "First-night facts",
+   "label": "Launch",
+   "ping": "no"
+  }
+ ],
+ "checklist": [
+  {
+   "id": "names",
+   "text": "The reserved names, written down outside the game"
+  },
+  {
+   "id": "client",
+   "text": "The Battle.net app logged in and the client patched"
+  },
+  {
+   "id": "addons",
+   "text": "Addons updated for the Forever client, or a plan to play bare"
+  },
+  {
+   "id": "meet",
+   "text": "A meeting point (the party's so far: {signups:meet})"
+  },
+  {
+   "id": "voice",
+   "text": "Voice: {voice}"
+  },
+  {
+   "id": "snacks",
+   "text": "Snacks. Nobody has ever pulled well hungry."
+  }
+ ]
+}

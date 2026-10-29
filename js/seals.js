@@ -16,11 +16,13 @@
   const MECH = {};
   const S = { ang: 0, el: null, btn: null, disc: null, key: null, light: { x: 0.3, y: 0.2 }, raf: 0, spun: 0 };
 
+  /* the coin itself: seven brass edges between a medallion front and a lettered back (shared with coin() below, V15) */
+  const makeDisc = () => h("span", { class: "seal-disc" },
+    ...Array.from({ length: 7 }, (_, i) => h("span", { class: "seal-edge", style: `--i:${i}` })),
+    h("span", { class: "seal-face seal-front" }, h("img", { class: "seal-img", alt: "", width: 640, height: 640, decoding: "async" }), h("span", { class: "seal-spec" }), h("span", { class: "seal-sweep" })),
+    h("span", { class: "seal-face seal-back" }, h("span", { class: "seal-back-in" }, h("b", { class: "seal-b" }), h("i", { class: "seal-i" }))));
   function build() {
-    const disc = h("span", { class: "seal-disc" },
-      ...Array.from({ length: 7 }, (_, i) => h("span", { class: "seal-edge", style: `--i:${i}` })),
-      h("span", { class: "seal-face seal-front" }, h("img", { class: "seal-img", alt: "", width: 640, height: 640, decoding: "async" }), h("span", { class: "seal-spec" }), h("span", { class: "seal-sweep" })),
-      h("span", { class: "seal-face seal-back" }, h("span", { class: "seal-back-in" }, h("b", { class: "seal-b" }), h("i", { class: "seal-i" }))));
+    const disc = makeDisc();
     const btn = h("button", { class: "seal-btn", type: "button" }, h("span", { class: "seal-cast" }), disc);
     const el = h("div", { class: "seal", id: "seal", hidden: true }, btn, h("span", { class: "seal-say", role: "status" }));
     S.el = el; S.btn = btn; S.disc = disc;
@@ -356,5 +358,37 @@
   KS.librarian = lrStep;
   K.on("scene", (k) => { if (k === "librarian") LR.i = -1; });
   MECH.librarian = { hint: "to read his last answers one by one, then ask him in #wow-forever", spin: false, press: () => lrStep(1) };
-  window.BoardSeals = Object.freeze({ MECH, press, spin, say, snd, hap, h, $, mq, reduceMQ, clamp, status: () => ({ key: S.key, hidden: S.el ? S.el.hidden : true, spun: S.spun }) });
+  /* ---------- V15 (2026-10-30): a free-standing coin of the same make for the wall's Launch night hero (board/V15-LAUNCH-SPEC.md 3.1) ----------
+     o = { key (medallion, default timeline), title, back (the two lines on the back), label (aria), press({ turn, face, say }) }.
+     Not the scene seal: its own element and angle, no light tracking, no has-seal class; the page positions it (.seal-free).
+     A press without a mechanic turns it over; reduced motion brightens instead of spinning. say() goes to o.say when given. */
+  function coin(o) {
+    o = o || {};
+    const key = o.key || "timeline", d = makeDisc(), el = h("div", { class: "seal seal-free", "data-k": key });
+    const btn = h("button", { class: "seal-btn", type: "button", "aria-label": o.label || `${o.title || "Dates"} seal. Press it to turn it over.` }, h("span", { class: "seal-cast" }), d);
+    el.append(btn);
+    $(".seal-img", el).setAttribute("src", `img/medal/${key}.webp`);
+    const C = { ang: 0, n: 0 };
+    const face = (title, line) => { $(".seal-b", el).textContent = title || ""; $(".seal-i", el).textContent = line || ""; };
+    face(o.title, o.back);
+    const say = (t) => { if (typeof o.say === "function") { try { o.say(t); } catch (e) {} } };
+    /* land: "back" or "front" keeps that face; nothing flips to the other one; mid runs once the coin is edge-on */
+    const turn = (land, mid) => {
+      C.n++; const from = C.ang, keep = land === "back" ? 180 : land === "front" ? 0 : from === 180 ? 0 : 180, dir = C.n % 2 ? 1 : -1, to = from + dir * (keep === from ? 720 : 540);
+      if (mid) setTimeout(mid, reduceMQ.matches ? 0 : 380);
+      const fin = () => { C.ang = keep; d.style.transform = `rotateY(${keep}deg)`; el.classList.remove("spinning"); };
+      if (reduceMQ.matches || !d.animate) { fin(); const a = el.animate && el.animate([{ filter: "brightness(1)" }, { filter: "brightness(1.5)" }, { filter: "brightness(1)" }], { duration: 260 }); return a ? a.finished.catch(() => {}) : Promise.resolve(); }
+      const m = from + (to - from) * 0.55;
+      const a = d.animate([{ transform: `rotateY(${from}deg) translateZ(0)` }, { transform: `rotateY(${m}deg) translateZ(18px)`, offset: 0.55 }, { transform: `rotateY(${to}deg) translateZ(0)` }], { duration: 900, easing: "cubic-bezier(.2,.75,.25,1)" });
+      el.classList.add("spinning"); d.style.transform = `rotateY(${keep}deg)`; C.ang = keep;
+      return a.finished.then(fin, fin);
+    };
+    btn.addEventListener("pointerdown", (e) => { if (e.button > 0) return; el.classList.add("down"); snd("latch"); hap("tap"); });
+    for (const ev of ["pointerup", "pointerleave", "pointercancel", "blur"]) btn.addEventListener(ev, () => el.classList.remove("down"));
+    btn.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") el.classList.add("down"); });
+    btn.addEventListener("keyup", () => el.classList.remove("down"));
+    btn.addEventListener("click", () => { snd("stamp"); hap("tap"); if (typeof o.press === "function") { try { o.press({ el, btn, turn, face, say }); } catch (e) { console.error("coin", key, e); } } else turn(); });
+    return { el, btn, turn, face, say, side: () => (C.ang === 180 ? "back" : "front") };
+  }
+  window.BoardSeals = Object.freeze({ MECH, press, spin, say, snd, hap, h, $, mq, reduceMQ, clamp, coin, status: () => ({ key: S.key, hidden: S.el ? S.el.hidden : true, spun: S.spun }) });
 })();
