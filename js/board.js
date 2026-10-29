@@ -178,7 +178,7 @@ function launchLine() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable" };
+const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open for each of us, by Blizzard's dates" };
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -1146,7 +1146,9 @@ function renderLedger() {
     h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}`, "data-land-to": `open-${i}`, "data-title": o.title },
       h("strong", { text: o.title }),
-      h("span", { "data-j": "c e" }, ...(unchosen(o) ? meetLine(o).slice(1) : linkify((o.status ? `${o.status}. ${o.detail || ""}` : o.text || "").replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (l) => link(l, o)))),
+      h("span", { "data-j": "c e" }, ...(unchosen(o) ? meetLine(o).slice(1) : linkify((o.status ? `${o.status}. ${o.detail || ""}` : o.text || "").replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (l) => link(l, o))),
+        /* V16: the professions item opens the decision view, where each option's facts are */
+        /profession/i.test(o.title) ? [" ", h("a", { class: "tn-link ledger-decide", href: "#decide", text: "The options, by person." })] : null),
       srcTag(o.source))))));
   KIT.emit("ledger");
 }
@@ -1459,10 +1461,11 @@ async function startRuntime() {
   }, (err) => { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus(err && err.code === "revoked" ? "Sign-ups are read-only now." : "Sign-ups stopped updating. Reload the board to see the latest."); });
 }
 
-const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight"];
+/* V16 (2026-10-30): "decide" (What to decide) sits before Next steps, which stays last; js/decide.js adds its tab and panel at load */
+const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "decide", "tonight"];
 /* V13c (spec 7.1, NORTH-STAR "One vocabulary"): one name per thing; tiles, tabs, sheet titles, the bar, the menu, the key list
    and the page title all read this table */
-const TITLES = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library" };
+const TITLES = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const PAGE_TITLE = { base: "" };
 /* spec 7.4: the document title follows the open scene */
 function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
@@ -1474,7 +1477,7 @@ const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTI
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
 /* V13d (interaction 1): "<scene>.<thing>" lands on that thing inside the scene (#five.santa, #roads.durotar, #signups.in) */
-const LAND_RE = /^(timeline|five|roads|racials|legacy|ledger|signups|librarian)\.([a-z0-9][a-z0-9_-]{0,40})$/;
+const LAND_RE = /^(timeline|five|roads|racials|legacy|ledger|signups|librarian|decide)\.([a-z0-9][a-z0-9_-]{0,40})$/;
 const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z_-]{1,40}$/.test(k) ? "buffs" : LAND_RE.test(k) ? k.split(".")[0] : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
@@ -1650,7 +1653,7 @@ const PLAYED = new Set();
 const ON_FIRST = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => ledgerStamps(), timeline: () => replay($("#rail"), "pressing"), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
 const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ } };
 /* V11: every scene has its own ornament, its emblem engraved large in the parchment's corner with its own small motion */
-const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials: "skull", legacy: "laurel", buffs: "rune", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon" };
+const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials: "skull", legacy: "laurel", buffs: "rune", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon", decide: "scroll" };
 function placeOrnament(key) {
   const sheet = document.querySelector("#scene .sheet"); if (!sheet) return;
   const old = $("#sheet-orn"); if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -1781,7 +1784,7 @@ function landing(k) {
   return KIT.lander ? KIT.lander(k, L.sub) || null : null;
 }
 /* The library tile is a div holding a link and a search field; focus returns to its link. */
-const tileFocus = (t) => { const f = t.matches("a, button") ? t : t.querySelector("a[href]"); if (f) f.focus(); };
+const tileFocus = (t) => { const f = t.matches("a, button, main") ? t : t.querySelector("a[href]"); if (f) f.focus({ preventScroll: true }); };
 function hideScene() {
   warmStop();
   if (SC.want) { SC.want = null; return; }
@@ -1791,7 +1794,7 @@ function hideScene() {
   SC.open = null;
   setPageTitle(null);
   KIT.emit("closed", key);
-  const tile = document.querySelector(`#board [data-scene="${key}"]`) || document.querySelector(`#board a[href="#${key}"]`);
+  const tile = document.querySelector(`#board [data-scene="${key}"]`) || document.querySelector(`#board a[href="#${key}"]`) || $("#main"); /* V16: a scene with no tile (What to decide) hands focus to the wall itself */
   const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close", { delay: motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
@@ -1842,7 +1845,8 @@ function goScene(k) {
   setHash(k, true); showScene(k);
 }
 
-const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]";
+/* V16 (2026-10-30): a details' summary is focusable on its own, so Tab from one stays in the scene instead of wrapping to the top */
+const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
 function shown(el) {
   for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden || n.inert) return false;
   return !el.getClientRects || el.getClientRects().length > 0;
@@ -1862,7 +1866,8 @@ function trapFocus(e) {
 function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
-    const rows = [...SCENES.filter((k) => k !== "tonight").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
+    /* the ten digits open the ten scenes before What to decide (V16: D) and Next steps (T) */
+    const rows = [...SCENES.filter((k) => k !== "tonight" && k !== "decide").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["D", "open What to decide"], ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
     $("#keys-list").replaceChildren(...rows.flatMap(([k, what]) => [h("dt", {}, h("kbd", { text: k })), h("dd", { text: what })]));
   }
   box.hidden = !on;
@@ -1884,6 +1889,7 @@ function onKey(e) {
   if (e.key === "?") { e.preventDefault(); showKeys($("#keys").hidden); return; }
   if (e.key === "m" || e.key === "M") { e.preventDefault(); setSound(!AU.on); return; }
   if (e.key === "t" || e.key === "T") { e.preventDefault(); goScene("tonight"); return; }
+  if (e.key === "d" || e.key === "D") { e.preventDefault(); goScene("decide"); return; } /* V16 */
   if (e.key === "/") { e.preventDefault(); LIBUI.focusSearch(); return; }
   if (/^[0-9]$/.test(e.key)) { const k = SCENES[(Number(e.key) + 9) % 10]; if (k) { e.preventDefault(); goScene(k); } return; }
   if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && SC.open !== null && !(t.closest && t.closest("#tabs, .cards, .opts"))) { e.preventDefault(); stepTab(e.key === "ArrowRight" ? 1 : -1); }
@@ -1957,8 +1963,8 @@ const tabImg = (key) => h("img", { class: "emblem-img tab-img", src: `img/icons/
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
 function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); placeSideMedal(key); }
 /* V14: */
-const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library" };
-const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable." };
+const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
+const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes." };
 const medalImg = (key, cls) => h("img", { class: cls || "medal-img", src: `img/medal/${key}.webp`, alt: "", width: 640, height: 640, decoding: "async", loading: "lazy" });
 function placeSideMedal(key) {
   const layer = $("#scene"); if (!layer || !MEDAL[key]) return;
@@ -3310,7 +3316,8 @@ function renderTonight() {
   /* V9: with a name, one tap from Tonight to what the others give you at a level (outside the three cards, so their budget holds) */
   const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
-  act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1])].filter(Boolean));
+  /* V16: the decision view is one tap away (a link, so the two action buttons stay two) */
+  act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]), h("a", { class: "lib-btn tn-decide", href: "#decide", text: TITLES.decide })].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
   try { renderBefore(); startHow(); } catch (e) { console.error("before", e); }
   $("#tn-left").replaceChildren(...(left ? ["Last time you read ", h("a", { href: `#${left.tok}`, text: left.title }), " in the library."] : []));

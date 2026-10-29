@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-29T22:03:26.162Z",
+ "generated": "2026-10-29T22:08:24.049Z",
  "cards": [
   "Next up",
   "Your steps",
@@ -87,7 +87,7 @@
  ],
  "links": {
   "signup": "https://discord.com/channels/782702097421565952/1558663575495770193/1564402158181290037",
-  "choose": "#library.professions.overview",
+  "choose": "#decide",
   "spec": "#five",
   "poll": "https://discord.com/channels/782702097421565952/1558663575495770193/1564347272420921356"
  },

@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-29T22:03:26.234Z",
+ "generated": "2026-10-29T22:08:24.124Z",
  "build": "1.60.1.70532",
  "as_of": "2026-10-29",
  "labels": {
@@ -280,6 +280,7 @@
      "key": "spec40",
      "title": "Spec at 40",
      "state": "declared",
+     "at40": false,
      "state_text": "On the Party Board: Feral, bear tank. The board names no change at 40.",
      "by": {
       "event": "raids",
@@ -1071,6 +1072,7 @@
      "key": "spec40",
      "title": "Spec at 40",
      "state": "declared",
+     "at40": false,
      "state_text": "On the Party Board: Discipline. The board names no change at 40.",
      "by": {
       "event": "raids",
@@ -1801,6 +1803,7 @@
      "key": "spec40",
      "title": "Spec at 40",
      "state": "declared",
+     "at40": true,
      "state_text": "On the Party Board: Retribution to 40, then Ret/Holy.",
      "by": {
       "event": "raids",
@@ -2761,6 +2764,7 @@
      "key": "spec40",
      "title": "Spec at 40",
      "state": "declared",
+     "at40": true,
      "state_text": "On the Party Board: Frost, Fire at 40.",
      "by": {
       "event": "raids",
@@ -3762,6 +3766,7 @@
      "key": "spec40",
      "title": "Spec at 40",
      "state": "declared",
+     "at40": false,
      "state_text": "On the Party Board: Demonology. The board names no change at 40.",
      "by": {
       "event": "raids",

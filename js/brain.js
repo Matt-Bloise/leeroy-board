@@ -1,7 +1,8 @@
 /* V13d: the board side of the shared brain (notes/SHARED-BRAIN-DESIGN.md section 3, stage 3; cloudflare/STAGE12-NOTES.md).
    window.BoardBrain reads the bot's mirror from the leeroy-brain Worker (GET /api/state, then the /api/live WebSocket, with a
    15 s poll when the socket is not there; V13e: the socket only with a key, keyless boards poll) and, with a personal board key, sends one person's sign-up state and journey
-   (POST /api/intent). It never sends a name, an id or anything but the fixed answer words.
+   (POST /api/intent). It never sends a name, an id or anything but the fixed answer words, plus (Ask Leeroy, 2026-10-29) the
+   one question a person types into the ask box and its share tick; the answer comes back with GET /api/ask.
    - V15 (2026-10-30, board/V15-LAUNCH-SPEC.md 5): the launch-night state (queue, in, done) goes the same way as a third kind;
      the Worker keeps it per key and mirrors it as `launch` rows in GET /api/state. Without a Worker, a key, or against the
      Worker deployed before this change (which answers 400), setLaunch reports local: the page keeps the state on the device.
@@ -48,6 +49,12 @@ B.base = baseFor();
 
 /* only these bodies ever leave the page: a kind, one answer word from that kind's fixed list, and the mirror version */
 function safe(body) {
+  if (body && body.kind === "ask") {
+    const p = body.patch, okAsk = Object.keys(body).every((k) => k === "kind" || k === "patch") && p && typeof p === "object" && typeof p.text === "string" && p.text.length <= 1200
+      && Object.keys(p).every((k) => k === "text" || (k === "share" && typeof p.share === "boolean"));
+    if (!okAsk || /\d{17,20}/.test(p ? p.text : "")) throw new Error("refused: an ask carries only its text and the share tick");
+    return body;
+  }
   const p = body && body.patch, one = p && typeof p === "object" && Object.keys(p).length === 1;
   const word = !one ? false : body.kind === "signup" ? RSVP.includes(p.rsvp) : body.kind === "journey" ? JOURNEYS.includes(p.journey) : body.kind === "launch" ? LAUNCH.includes(p.state) : false;
   const ok = word && Object.keys(body).every((k) => ["kind", "patch", "ver"].includes(k))
@@ -57,7 +64,7 @@ function safe(body) {
 }
 async function call(method, route, body) {
   const headers = {};
-  if (B.key && (route === "/me" || route === "/intent")) headers.Authorization = `Board ${B.key}`;
+  if (B.key && (route === "/me" || route === "/intent" || route === "/ask")) headers.Authorization = `Board ${B.key}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const r = await fetch(`${B.base.http}${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(safe(body)), cache: "no-store", credentials: "omit" });
   let data = null; try { data = await r.json(); } catch (e) {}
@@ -151,6 +158,7 @@ async function me() {
   settle(); journeyFromMirror(); settleLaunch();
   emit("pending", pending());
   emit("launchPending", launchPending());
+  if (B.me) askRead(); else askEmit();
   return B.me;
 }
 
@@ -210,6 +218,52 @@ async function setLaunch(v) {
   emit("launchPending", launchPending());
   return { ok: p.state === "waiting" || p.state === "saved", local: p.state === "local", state: p.state };
 }
+/* Ask Leeroy (2026-10-29): one ask at a time via the "ask" intent, the answer read back with GET /ask. States: idle sending queued answered failed error limited. */
+const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
+const askStatus = () => ({ state: AK.st, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
+const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };
+const askAdopt = (a) => { AK.ask = a || null; AK.st = !a ? "idle" : a.status === "queued" ? "queued" : a.status === "answered" ? "answered" : "failed"; AK.err = ""; AK.retry = 0; if (AK.st === "queued") { if (!AK.since) AK.since = Date.now(); } else AK.since = 0; };
+async function askRead() {
+  clearTimeout(AK.t);
+  if (!B.base || !B.key || AK.st === "sending") return;
+  let again = false;
+  try {
+    const r = await call("GET", "/ask");
+    if (r.status === 200 && r.data) {
+      if (r.data.limit) AK.left = r.data.limit.left;
+      if (AK.st !== "sending") askAdopt(r.data.ask);
+      again = AK.st === "queued";
+    } else if (r.status === 401) { B.keyBad = true; AK.st = "error"; AK.err = "key"; } else if (r.status !== 429) { again = AK.st === "queued"; }
+    else again = AK.st === "queued";
+  } catch (e) { B.errors++; again = AK.st === "queued"; }
+  askEmit();
+  const waited = Date.now() - AK.since;
+  if (again && AK.st === "queued" && waited < 600000) AK.t = setTimeout(askRead, hidden() ? 20000 : waited < 120000 ? 4000 : waited < 300000 ? 10000 : 20000);
+}
+async function ask(text, share) {
+  const t = String(text == null ? "" : text).replace(/\s+/g, " ").trim(), n = Array.from(t).length;
+  if (!B.base || !B.key) return { ok: false, why: B.key ? "nowhere" : "no key" };
+  if (n < 3) return { ok: false, why: "short" };
+  if (n > 280) return { ok: false, why: "long" };
+  if (AK.st === "sending" || AK.st === "queued") return { ok: false, why: "busy" };
+  AK.st = "sending"; AK.err = ""; AK.retry = 0; clearTimeout(AK.t); askEmit();
+  try {
+    const r = await call("POST", "/intent", { kind: "ask", patch: { text: t, share: share === true } }); B.sent++;
+    if (r.status === 200 && r.data && r.data.ok) {
+      AK.left = typeof r.data.left === "number" ? r.data.left : AK.left;
+      AK.ask = { id: r.data.id, status: "queued", text: t, share: share === true, at: r.data.at, answer: null, sources: [] };
+      AK.st = "queued"; AK.since = Date.now(); askEmit(); AK.t = setTimeout(askRead, 3000);
+      return { ok: true, state: "queued" };
+    }
+    if (r.status === 409) { AK.st = "idle"; await askRead(); return { ok: false, why: "open" }; }
+    if (r.status === 429) { AK.st = "limited"; AK.retry = Math.max(1, Number(r.data && r.data.retryAfter) || 3600); AK.left = 0; }
+    else if (r.status === 401) { B.keyBad = true; AK.st = "error"; AK.err = "key"; }
+    else if (r.status === 400) { AK.st = "error"; AK.err = "refused"; }
+    else { AK.st = "error"; AK.err = "busy"; }
+  } catch (e) { B.errors++; AK.st = "error"; AK.err = "offline"; }
+  askEmit();
+  return { ok: false, why: AK.st === "limited" ? "limited" : AK.err };
+}
 function start(handlers) {
   B.h = handlers || {};
   if (B.started) return status();
@@ -225,6 +279,6 @@ function start(handlers) {
   if (typeof addEventListener === "function") addEventListener("focus", () => { if (B.via !== "ws") pollOnce(); });
   return status();
 }
-function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; emit("me", null); emit("pending", {}); emit("launchPending", null); }
-window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, _state: onState, _poll: pollOnce });
+function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); }
+window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, _state: onState, _poll: pollOnce });
 })();

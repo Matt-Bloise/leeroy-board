@@ -1,0 +1,26 @@
+/* Ask Leeroy box: text at least 1rem, controls 44 px, motion a fade only. */
+.ask { display: grid; gap: 12px; align-content: start; grid-template-columns: minmax(0, 1fr); padding: 14px 16px; border: 1px solid var(--brass-dim); border-radius: 6px; background: var(--parchment); color: var(--ink); }
+.ask-h { margin: 0; font-family: var(--font-ui); font-size: 1.2rem; color: var(--ink); }
+.ask-note { margin: 0; max-width: 62ch; font-size: 1rem; color: var(--ink-soft); }
+.ask-form { display: grid; gap: 10px; min-width: 0; }
+.ask-label { font-family: var(--font-ui); font-size: 1rem; font-weight: 700; }
+.ask-form textarea { width: 100%; box-sizing: border-box; min-height: 6.5rem; padding: 10px 12px; font: inherit; font-size: max(16px, 1rem); line-height: 1.45; color: var(--ink); background: var(--cream); border: 1px solid var(--brass); border-radius: 6px; resize: vertical; }
+.ask-form textarea:focus-visible, .ask-send:focus-visible, .ask-check:focus-visible, .ask-share input:focus-visible { outline: 2px solid var(--wax); outline-offset: 2px; }
+.ask-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.ask-share { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 1rem; cursor: pointer; }
+.ask-share input { width: 24px; height: 24px; accent-color: var(--wax); }
+.ask-count { font-size: 1rem; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.ask-count.over { color: var(--wax); font-weight: 700; }
+.ask-send, .ask-check { min-height: 44px; padding: 6px 20px; border-radius: 6px; font-family: var(--font-ui); font-size: 1rem; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; }
+.ask-send { color: var(--cream); background: var(--oak-2); border: 1px solid var(--oak-0); box-shadow: 0 2px 8px var(--wear), inset 1px 1px 0 var(--edge-hi); }
+.ask-send[aria-disabled="true"] { opacity: 0.6; cursor: default; box-shadow: none; }
+.ask-check { color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); }
+.ask-status { margin: 0; min-height: 1.5em; font-size: 1rem; color: var(--ink); }
+.ask-out:empty { display: none; }
+.ask-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--ink-soft); border-left: 4px solid var(--brass); border-radius: 6px; background: var(--cream); animation: ask-in 240ms var(--ease-oak) both; }
+.ask-card p { margin: 0; max-width: 70ch; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
+.ask-who { font-family: var(--font-ui); font-weight: 700; letter-spacing: 0.05em; color: var(--wax); }
+.ask-src, .ask-wait { color: var(--ink-soft); }
+@keyframes ask-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ask-card { animation: none; } }
+@media (min-width: 1000px) { .ask { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: clamp(20px, 3vw, 64px); align-items: start; } .ask-h, .ask-note { grid-column: 1 / -1; } .ask-form { grid-column: 1; } .ask-out { grid-column: 2; } }

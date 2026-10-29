@@ -134,6 +134,15 @@ function steps(key) {
     }
     case "signups": { const su = mineSU(); return [["A pack is the pre-order that lets you make characters early."], ["Answer on the Sign-ups card in Discord: I'm in, Tentative, Running late or Out."], su ? [`Your answer now: ${sayOf(su.rsvp)}.`] : null].filter(Boolean); }
     case "librarian": return [["In any Discord channel here, type /ask and your question."], ["Leeroy answers from the same library this board searches."]];
+    case "decide": { /* V16 (2026-10-30): what the records leave open for you, then the two dates Blizzard has given */
+      const raids = T.events.find((e) => e.key === "raids"), profOpen = me && (me.professions || []).some((p) => p.status === "undecided");
+      return [
+        [me ? `${me.name}: ${profOpen ? "a profession pair is still open on the Party Board" : "nothing is still open on the Party Board"}; the spec reads ${me.spec}.` : "With a name picked on Next steps, this page opens on what is still open for you."],
+        [`${launch ? `Launch: ${K.fmtWhen(launch.epoch, { rel: true })}. ` : ""}Levels, professions and talents all start then; nothing locks before.`],
+        raids && raids.epoch ? [`Raids open ${K.fmtWhen(raids.epoch, { time: false })}: the only later date Blizzard has given.`] : null,
+        ["Each card below is facts with a status and a source: Forever, Classic baseline or Unknown."],
+      ].filter(Boolean);
+    }
     case "library": return [["Type a question in the search box, for example onyxia open."], ["Underlined words open a game tooltip; dotted words a plain definition."]];
     default: return [];
   }
