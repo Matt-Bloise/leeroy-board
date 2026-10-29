@@ -1707,9 +1707,6 @@ function viewMorph(from, to, update, closing) {
   try {
     const vt = document.startViewTransition(() => { from.style.viewTransitionName = ""; if (update()) to.style.viewTransitionName = "scene-band"; });
     vt.finished.then(clear, clear);
-    /* a newer transition skips this one: its ready and update promises reject, which surfaced as uncaught errors (release gate 2026-10-29) */
-    if (vt.ready && vt.ready.catch) vt.ready.catch(() => {});
-    if (vt.updateCallbackDone && vt.updateCallbackDone.catch) vt.updateCallbackDone.catch(() => {});
   } catch (e) { clear(); update(); }
 }
 function stopFlip() { clearTimeout(SC.flipTimer); if (SC.anim2) { try { SC.anim2.cancel(); } catch (e) {} SC.anim2 = null; } if (SC.anim) { try { SC.anim.cancel(); } catch (e) {} SC.anim = null; } }

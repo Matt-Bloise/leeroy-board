@@ -1,5 +1,3 @@
-/* release gate 2026-10-29: the zoom buttons only exist in the wide map layout; on phones and short windows they showed unstyled in the page flow */
-.map-ctl { display: none; }
 /* Wide screens (owner, 2026-10-29): use the width. Loaded after v14.css. Phones and short landscape screens are untouched. */
 
 /* ---- Three roads: the map is the sheet. js/wide.js sets .wide-map, data-lay (side | side2 | below) and --mw on the panel ---- */
