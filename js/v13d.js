@@ -205,7 +205,7 @@ K.on("closed", () => { document.querySelectorAll(".panel.landing").forEach((p) =
 
 // ---------------- 3. Roads: two zoom levels (interaction 4) ----------------
 const FULL = [0, 0, 600, 400];
-function zoneBox(z) { const w = 250, hh = 250 / 1.5, y = Math.max(0, Math.min(400 - hh, z.y - hh / 2 + 10)); let x = Math.max(0, Math.min(600 - w, z.x - w / 2 + 20));
+function zoneBox(z) { const w = innerWidth >= 700 && innerHeight >= 501 ? 340 : 250, hh = w / 1.5, y = Math.max(0, Math.min(400 - hh, z.y - hh / 2 + 10)); let x = Math.max(0, Math.min(600 - w, z.x - w / 2 + 20));
   /* V13e retest-5: a box edge never cuts the Crossroads label (centred at 380, y 250): it moves to show the whole name */
   if (y < 256 && y + hh > 236) { if (x > 326 && x < 424) x = 326; else if (x + w > 336 && x + w < 434) x = Math.min(600 - w, 434 - w); }
   return [x, y, w, hh]; }
@@ -277,7 +277,7 @@ K.on("map", (M) => {
   const PZ = M.svg.closest("#map") || M.svg;
   PZ.addEventListener("pointerdown", (e) => { if (e.pointerType !== "touch") return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
   PZ.addEventListener("pointermove", (e) => {
-    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size !== 2 || !d0) return;
+    if (!pts.has(e.pointerId) || (PZ.dataset.pan && innerWidth >= 700 && innerHeight >= 501)) return; /* js/wide.js pinches the wide map itself */ pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size !== 2 || !d0) return;
     const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
     if (d / d0 > 1.18 && !V.zoom) { const r = M.svg.getBoundingClientRect(), mx = ((a[0] + b[0]) / 2 - r.left) / r.width * 600, my = ((a[1] + b[1]) / 2 - r.top) / r.height * 400; const z = Object.entries(M.zones).sort(([, p], [, q]) => Math.hypot(p.x - mx, p.y - my) - Math.hypot(q.x - mx, q.y - my))[0]; if (z) zoomTo(MEM.slug(z[0])); d0 = 0; }
     else if (d / d0 < 0.85 && V.zoom) { zoomOut(); d0 = 0; }

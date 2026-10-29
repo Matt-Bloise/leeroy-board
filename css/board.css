@@ -517,8 +517,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
   .wall { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
-/* V9: a laptop's wall is one screen (1366x768, 1440x900). The tiles keep their titles, subtitles and first lines at the
-   same type sizes; the charts, captions and second lines wait in the scenes, one tap away. */
+/* V9: */
 @media (min-width: 1100px) and (max-height: 960px) {
   .hero h1 { font-size: var(--step-3); }
   main { margin: 6px 0 4px; }
@@ -549,9 +548,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 }
 .scene-layer { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: max(10px, env(safe-area-inset-top, 0px)) max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px)); box-sizing: border-box; }
 .scene-layer.closing { pointer-events: none; }
-/* V13a warm-up (warmNext in js/board.js): a scene drawn once while the page is idle, for three frames at 1% opacity (a
-   layer at opacity 0 is never rastered, so it warms nothing; at 1% a pixel moves about two levels in 255 for 50 ms); inside an open sheet the warmed panel sits out of the flow so the open
-   scene's scroll height never changes. */
+/* V13a warm-up (warmNext in js/board.js): */
 .scene-layer.warming { opacity: 0.01; will-change: opacity; pointer-events: none; }
 .scene-layer .panel.warm { position: absolute; top: 20px; left: 18px; right: 18px; opacity: 0.01; will-change: opacity; pointer-events: none; }
 .scene-layer.warming .panel.warm { position: static; }
@@ -573,9 +570,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both; }
 .scene-layer.flip .sheet, .scene-layer.morph .sheet { animation: none; transform-origin: 0 0; }
 .scene-layer.morph .scene-veil { animation: none; }
-/* V13a: the wall and the room take the blur at once, at one radius. An animated radius drew a new blur on every frame of the
-   opening and, on a fresh browser, compiled a new GPU program for each radius it passed through; the View Transition's
-   cross-fade (and the veil fading in) carries the change instead. */
+/* V13a: */
 @media (min-width: 700px) {
   html.scene-open #board { filter: blur(var(--wall-blur)) brightness(0.72); } /* V13b: the wall falls out of focus; the room behind it keeps drawing, dimmed by its own exposure and the veil (room.js scene state) */
 }
@@ -586,15 +581,11 @@ html.scene-open .wall-plate::after, html.scene-open .candle { animation-play-sta
 html.flick-js .candle, html.flick-js .wall-plate::after { animation: none; }
 html.flick-js .candle { will-change: opacity; }
 
-/* V13b (craft 11, 12): a tile open or close is one View Transition and nothing else. The root does not cross-fade (the old
-   wall image dissolving over the live, blurring wall made a double image); the band morphs, the veil fades in its own
-   group; a close takes --t-close on an accelerating curve instead of the open played backwards. */
-/* measured (V13b): a full-screen sheet captured as its own group cost a first opening at 3440x1440 about 35 dropped frames;
-   the sheet stands at once under the morphing band and only the veil fades */
+/* V13b (craft 11, 12): */
+/* measured (V13b): */
 .scene-layer.morph .scene-veil { view-transition-name: scene-veil; }
 ::view-transition-group(*) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
-/* V13b: the band and the sheet head keep their own size as the box between them grows or shrinks (a full-width sheet head
-   scaled down to a tile, or a tile band blown up to the sheet's width, read as giant or tiny type) */
+/* V13b: */
 ::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: none; object-position: left top; }
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); animation-timing-function: var(--ease-shut); }
@@ -928,8 +919,7 @@ main.has-beam { margin-top: 44px; }
 .t-racials .tile-body { justify-content: space-around; }
 .t-racials .dots { margin-right: 6px; }
 @media (max-width: 639px) { .t-roads .tile-viz, .t-legacy .tile-viz, .t-buffs .tile-viz { display: block; flex: 0 0 72px; } }
-/* V9: the phone's wall opens with the Tonight shortcut; tiles show their title, subtitle and first lines, and the small
-   tiles sit two to a row. Charts, captions and later lines wait in the scenes, one tap away. */
+/* V9: */
 .tonight-link { display: none; }
 @media (max-width: 639px) {
   .tonight-link { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; min-height: 56px; box-sizing: border-box; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--brass); background: var(--oak-3); color: var(--parchment); text-decoration: none; }
@@ -946,9 +936,7 @@ main.has-beam { margin-top: 44px; }
 }
 @media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
 .sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: url("../img/paper-baked.jpg"); background-size: 1395px auto; background-position: center top; box-shadow: inset 0 0 0 1px var(--ink-line); }
-/* V13b: the sheet fills the screen now, so its paper is drawn once at the box's size (not down the whole scroll height,
-   which background-attachment: local did) and its burnt edge is a gradient, not a 60 px blurred shadow: measured, the two
-   cost a first opening at 3440x1440 about 40 dropped frames between them */
+/* V13b: */
 /* and the sheet's own candle corner and vignette move onto the paper itself: an overlay over the whole full-screen sheet
    was a second full-screen layer to draw and blend on every first opening */
 .sheet::after { content: none; }
@@ -1436,9 +1424,7 @@ main.has-beam { margin-top: 44px; }
 .stop.next .stop-ember, .stop.open .stop-ember { animation: ember 2.8s linear infinite; }
 .stop.next .stop-ember + .stop-ember, .stop.open .stop-ember + .stop-ember { animation-delay: -1.4s; margin-left: 2px; }
 @keyframes ember { 0% { opacity: 0; transform: translate(0, 14px) scale(1); } 15% { opacity: 1; } 55% { opacity: 0.8; transform: translate(3px, -4px) scale(0.75); } 100% { opacity: 0; transform: translate(-2px, -16px) scale(0.3); } }
-/* V13a: every loop animates opacity or transform on an HTML box or an outer svg, so the compositor runs it without a
-   repaint. A moving part of an emblem (sand, eyes, a flame, a star) is drawn a second time in a "glint" copy of the svg
-   that shows only that part; the copy's own opacity or transform moves, and the part is hidden in the still drawing. */
+/* V13a: */
 .glint { position: absolute; inset: 0; pointer-events: none; }
 .glint * { visibility: hidden; }
 .stop-mark .glint .es, .orn-timeline .glint .es { visibility: visible; opacity: 1; }
@@ -1525,8 +1511,7 @@ input, select, textarea { font-size: max(16px, 1em); }
 html { font-size: clamp(16px, 0.25vw + 12px, 22px); }
 @media (min-width: 2200px) { .wall { gap: clamp(22px, 1.4vw, 40px); } }
 
-/* 1.1 see through to the room: with the room on, the painted plate goes and the cards hang in the tavern itself, each on its
-   own surface, casting a deeper shadow into the room away from the light. The plate is the fallback when the room is off. */
+/* 1.1 see through to the room: */
 html.room-on .wall-plate { background: none; box-shadow: none; }
 html.room-on .wall-plate::after, html.room-on .wall-plate .light { display: none; }
 html.room-on main.has-beam .beam { display: none; }
@@ -1893,8 +1878,7 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 
 
 /* ---------- owner-12 and owner-11 (board/NORTH-STAR.md pillars 1 and 2): full but framed, center first ---------- */
-/* the open scene is a frame of about 85% of the screen each way, centred, with the living room showing in the band around
-   it (dimmed by the veil, never blurred, never stopped); a phone's frame is about 94% each way */
+/* the open scene is a frame of about 85% of the screen each way, centred, with the living room showing in the band around it (dimmed by the veil, never */
 .scene-layer { padding: 0; }
 .sheet { width: 85vw; height: 85vh; height: 85svh; }
 @media (max-width: 599px) { .sheet { width: 94vw; height: 94vh; height: 94svh; border-radius: 10px; border: 1px solid var(--grain); } .sheet-head { padding-top: 6px; } }
@@ -1941,10 +1925,7 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 .lede-row, .tn-actions, .deep-ctl, .deep-who, .lib-row, .act { justify-content: center; justify-items: center; }
 .roads-legend, .ledger, .rail, .map-box, .ring-wrap, .signup-grid, .librarian, .tn { margin-inline: auto; }
 @media (min-width: 1300px) and (min-aspect-ratio: 4/3) { #panel-roads { justify-content: center; } #panel-roads > #map-lede { justify-self: center; } }
-/* owner-12b: the frame is sized to what it holds. A reading scene is a centred frame wide enough to read in columns, up to
-   1700 px or 60% of a very wide screen, as tall as its content (up to 85%), so the room stays in view on both sides. A
-   visual scene (the map, the five, the wheel, the library) takes up to 85% each way. Under 900 px every frame is near full
-   width. "Look at the room" (and a held press on the frame's edge) fades the open scene to 15% while it is held. */
+/* owner-12b: */
 @media (min-width: 900px) and (min-height: 501px) {
   #scene[data-kind="reading"] .sheet { width: min(85vw, max(1100px, min(60vw, 1700px))); height: auto; max-height: 85vh; max-height: 85svh; display: flex; flex-direction: column; }
   #scene[data-kind="reading"] .sheet-head { flex: none; }
@@ -1973,13 +1954,11 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 }
 
 /* ================= V13c ================= */
-/* retest-11, spec 1.1: with the room on, an open scene's wall steps out of the way instead of blurring: the room shows clean
-   around the frame, and no opening re-rasters a full-screen blur of the wall */
+/* retest-11, spec 1.1: */
 @media (min-width: 700px) { html.room-on.scene-open #board { filter: none; opacity: 0; } }
 html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
 
-/* spec 2 (frames full, retest-4, retest-10, retest-12): rows shrink to their content and sit on the centre line; Next steps puts
-   the name picker beside its two cards instead of above an empty "Your steps" card */
+/* spec 2 (frames full, retest-4, retest-10, retest-12): */
 .tn-actions { justify-content: center; gap: 16px; width: fit-content; max-width: 100%; margin-inline: auto; }
 @media (min-width: 2200px) { /* where the reading frame is 1300 px or wider */
   .tn { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 20px; align-items: start; max-width: min(100%, 1500px); }
@@ -2017,9 +1996,7 @@ html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
 /* with the picker shown, "Your steps" would only say "Pick your name above": from 1100 px it steps aside and the other two
    cards share the row */
 @media (min-width: 1100px) { .tn:has(.tn-pick) .tn-card:first-child { display: none; } .tn:has(.tn-pick) .tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 1100px; margin-inline: auto; width: 100%; } }
-/* owner-6, craft 16, 17 (spec 6): Who buffs whom in the tavern's materials. Each buff is a lit parchment card with its painted
-   emblem, the giver's class colour as a wax tab, light from the candle side; giver groups are oak panels; the level slider is a
-   brass rail with a wax thumb; the Shaman option is a wax seal. Pointing at a buff draws a moving thread on the wheel. */
+/* owner-6, craft 16, 17 (spec 6): */
 .bq { position: relative; padding: 3px 12px 3px 18px; border-left: 0; border-radius: 6px; color: var(--ink); --text: var(--ink); --text-dim: var(--ink-soft);
   background: radial-gradient(ellipse 80% 120% at 0% 0%, var(--candle-soft), transparent 70%), var(--parchment);
   box-shadow: inset 1px 1px 0 var(--edge-hi), 0 3px 8px var(--shadow-soft, var(--wear)); }
@@ -2061,8 +2038,7 @@ html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
 /* and the head gives the 44 px back from its padding where height is short (phones, 768 px laptops) */
 @media (max-width: 599px) { .sheet-head { padding-top: max(2px, env(safe-area-inset-top, 0px)); } }
 @media (min-width: 1000px) and (max-height: 820px) { .sheet-head { padding-top: 8px; } }
-/* retest-1, retest-6: a phone on its side or a short screen (200% zoom): the head is one row (title and controls), the tab rail
-   and the introductions step aside; scenes change by swipe, arrow keys or the bottom bar */
+/* retest-1, retest-6: */
 @media (max-height: 500px) {
   .sheet-head .tabs, .sheet-sub, .scene-hint, #panel-five > .lede, .panel > .lede-row > .lede { display: none !important; }
   .sheet-head { padding-top: max(4px, env(safe-area-inset-top, 0px)); padding-bottom: 4px; gap: 0; border-bottom-width: 2px; }

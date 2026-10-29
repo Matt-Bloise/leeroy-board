@@ -1,0 +1,68 @@
+/* Wide screens (owner, 2026-10-29): use the width. Loaded after v14.css. Phones and short landscape screens are untouched. */
+
+/* ---- Three roads: the map is the sheet. js/wide.js sets .wide-map, data-lay (side | side2 | below) and --mw on the panel ---- */
+@media (min-width: 700px) and (min-height: 501px) {
+  .sheet:has(#panel-roads.wide-map:not([hidden])) .sheet-orn { display: none; }
+  .sheet-body:has(#panel-roads.wide-map:not([hidden])) { padding: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); align-content: stretch; }
+  #panel-roads.wide-map { --side: clamp(19rem, 25%, 31rem); width: 100%; min-height: 0; margin: 0; zoom: 1 !important; grid-template-columns: var(--side) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "lede map" "legend map" "cap map"; gap: 0; align-content: stretch; }
+  #panel-roads.wide-map:not([hidden]) { display: grid; }
+  #panel-roads.wide-map[data-lay="side2"] { grid-template-columns: minmax(0, 1fr) var(--mw) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "legend map lede" "legend map cap" "legend map ."; }
+  #panel-roads.wide-map[data-lay="below"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto auto; grid-template-areas: "map" "legend" "lede" "cap"; }
+  #panel-roads.wide-map > * { margin: 0; max-width: none; width: auto; justify-self: stretch; min-width: 0; }
+  #panel-roads.wide-map > #map-lede { grid-area: lede; padding: 20px 24px 6px; font-size: 1em; line-height: 1.45; }
+  #panel-roads.wide-map > .roads-legend { grid-area: legend; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px 24px 14px; align-content: start; }
+  #panel-roads.wide-map > .map-caption { grid-area: cap; padding: 6px 24px 24px; align-self: start; font-size: 1em; line-height: 1.5; }
+  #panel-roads.wide-map[data-lay="side2"] > .roads-legend { padding-top: 24px; }
+  #panel-roads.wide-map[data-lay="below"] > .roads-legend { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); padding: 14px 24px 6px; }
+  #panel-roads.wide-map[data-lay="below"] > #map-lede { padding: 6px 24px 0; }
+  #panel-roads.wide-map[data-lay="below"] > .map-caption { padding: 4px 24px 18px; }
+  #panel-roads.wide-map .road-btn b { font-size: 1.05em; }
+  #panel-roads.wide-map .road-btn span { font-size: 0.95em; text-wrap: balance; }
+  #panel-roads.wide-map[data-lay="side2"] { font-size: clamp(1rem, 0.62vw, 1.4rem); }
+  #panel-roads.wide-map[data-lay="below"] { font-size: clamp(1rem, 1.3vw, 1.4rem); }
+  /* a short screen: the who-is-where line repeats the cards, so it stays for screen readers only and the cards and the note fit */
+  @media (max-height: 900px) { #panel-roads.wide-map[data-lay="side"] > #map-lede { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; } #panel-roads.wide-map[data-lay="side"] > .roads-legend { padding-top: 20px; } }
+  /* the map box is the viewport: no padding, no frame of its own, the parchment runs to the sheet's edges */
+  #panel-roads.wide-map > .map-box { grid-area: map; height: 100%; padding: 0; border: 0; border-radius: 0; border-left: 2px solid var(--brass-dim); box-shadow: inset 0 0 70px var(--slip-burn); touch-action: none; cursor: grab; overflow: hidden; }
+  #panel-roads.wide-map[data-lay="side2"] > .map-box { border-right: 2px solid var(--brass-dim); }
+  #panel-roads.wide-map[data-lay="below"] > .map-box { border-left: 0; border-bottom: 2px solid var(--brass-dim); }
+  #panel-roads.wide-map > .map-box.dragging { cursor: grabbing; }
+  #panel-roads.wide-map > .map-box svg { width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #panel-roads.wide-map > .map-box:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: -3px; }
+  #panel-roads.wide-map > .map-box .road-g { cursor: pointer; }
+  /* zoom buttons: the map's bottom right corner, over the parchment (top right when the cards are under the map) */
+  #panel-roads.wide-map > .map-ctl { grid-area: map; z-index: 3; align-self: end; justify-self: end; margin: 14px; display: flex; gap: 6px; }
+  #panel-roads.wide-map[data-lay="below"] > .map-ctl { align-self: start; }
+  #panel-roads:not(.wide-map) .map-ctl { display: none; }
+  .m-btn { width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border-radius: 50%; border: 1px solid var(--brass-dim); background: linear-gradient(180deg, var(--oak-3), var(--oak-2)); color: var(--parchment); box-shadow: inset 1px 1px 0 var(--edge-hi), 0 3px 8px var(--shadow); cursor: pointer; transition: transform var(--t-micro) var(--ease-oak); }
+  .m-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .m-btn:disabled { opacity: 0.4; cursor: default; }
+  @media (hover: hover) { .m-btn:not(:disabled):hover { transform: translateY(-2px); color: var(--brass-hi); } }
+  .m-btn:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
+  /* a zone's card sits on the map's top left corner, clear of the cards beside it */
+  #map .zone-card { left: 14px; top: 14px; }
+}
+
+/* ---- cards carry a wax pip pressed into the top left corner, in the card's own colour, in place of a bar down the left edge ---- */
+:is(.tile-band, .road-btn, .bq, .buff, .deep-b, .ribbon, .ribbon-quiet, .answer, .said, .jr-path) { position: relative; border-left-width: 0; }
+.tile-band { --pip: var(--acc); box-shadow: inset 1px 1px 0 var(--slip-sheen), inset 0 -1px 0 var(--ink-line), 0 2px 10px var(--wear); }
+.road-btn { --pip: var(--rc); }
+:is(.bq, .buff, .deep-b) { --pip: var(--bc); border-radius: 6px; }
+:is(.answer, .said) { --pip: var(--brass); }
+:is(.ribbon, .jr-path) { --pip: var(--wax); }
+.ribbon-quiet { --pip: var(--seal-confirmed); }
+:is(.tile-band, .road-btn, .bq, .buff, .deep-b, .ribbon, .ribbon-quiet, .answer, .said, .jr-path)::before {
+  content: ""; position: absolute; z-index: 2; left: -5px; top: -5px; bottom: auto; width: 15px; height: 15px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 33% 27%, color-mix(in srgb, var(--pip) 45%, var(--cream)) 0 12%, transparent 40%), radial-gradient(circle, color-mix(in srgb, var(--pip) 78%, var(--oak-0)) 0 30%, var(--pip) 32% 64%, color-mix(in srgb, var(--pip) 62%, var(--oak-0)) 100%);
+  box-shadow: 0 1px 2px var(--shadow), inset 0 -1px 1px var(--wear), inset 0 1px 0 var(--edge-hi); }
+
+/* ---- 1366 px and wider: type measures follow the frame, headings balance, lists sit one to a line ---- */
+@media (min-width: 1366px) {
+  .lede, .panel > p { max-width: min(100%, 120ch); }
+  :is(h2, h3, h4, .tile-title, .tn-card h3) { text-wrap: balance; }
+  .rail { max-width: none; }
+  .bclasses { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+  .bclass-names { display: grid; gap: 2px; }
+  .bclass-names .bn { margin: 0; white-space: normal; }
+  .bclass-names .bc { display: none; }
+}

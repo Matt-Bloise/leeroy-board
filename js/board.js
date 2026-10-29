@@ -19,9 +19,7 @@ function h(tag, attrs, ...kids) {
   return n;
 }
 const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
-/* V11 emblems: every mark on the board is drawn here, in SVG on a 24-unit grid, never a plain dot. Each part carries a role
-   class (b body, a accent, d dark, h light, l line, k heavy line, lb brass line, dl dashed line, s sand, f flame) and the
-   colours come from tokens through --eb, --ea, --el and --eh, so one drawing serves parchment and oak alike. */
+/* V11 emblems: */
 const ring = (cx, cy, r) => `M${cx} ${cy - r}a${r} ${r} 0 1 1-.01 0z`;
 const scallop = (cx, cy, r, n, amp) => { let d = ""; for (let i = 0; i <= n * 2; i++) { const a = (i * Math.PI) / n - Math.PI / 2, rr = i % 2 ? r - amp : r; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
 const gear = (cx, cy, r1, r2, n) => { let d = ""; for (let i = 0; i < n * 4; i++) { const a = (i * Math.PI * 2) / (n * 4), rr = (i % 4) < 2 ? r2 : r1; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
@@ -132,9 +130,7 @@ function rel(epoch) {
   if (a < 172800) return rtf.format(Math.round(d / 3600), "hour");
   return rtf.format(Math.round(d / 86400), "day");
 }
-/* V13c (spec 7.2): one formatter for every date the board writes itself. The viewer's own zone with the weekday, plus ET when
-   the viewer is not on ET ("Thu, Nov 5, 8 AM your time (Wed, Nov 4, 6 PM ET)"); ET viewers read one line ("Wed, Nov 4, 6 PM
-   ET"); rel adds the distance from now ("in 7 days"). o.tz and o.now exist for the tests. */
+/* V13c (spec 7.2): */
 const ET_ZONE = "America/New_York";
 const viewerZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ET_ZONE; } catch (e) { return ET_ZONE; } };
 const rtfEn = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
@@ -159,12 +155,10 @@ function eventWhen(e) {
 }
 
 const D = {};
-/* V13d: the page's own hooks for js/v13d.js (journeys, landings, the dial, the zoom) and js/brain.js (the shared brain). The
-   renderers say what they drew; v13d.js adds to it. KIT carries the internals v13d.js needs (filled in at the end). */
+/* V13d: */
 const KIT = { hooks: {}, on(n, f) { (this.hooks[n] ||= []).push(f); }, emit(n, ...a) { for (const f of this.hooks[n] || []) { try { f(...a); } catch (e) { console.error(n, e); } } }, lander: null };
 const JR = () => document.documentElement.dataset.journey || "curious";
-/* The data files start loading as soon as this script runs, while the rest of the page parses and the gate decides
-   (V6-SPEC 3.3: Tonight paints in under 1.0 s on the 4x throttle). Relative loads only. */
+/* The data files start loading as soon as this script runs, while the rest of the page parses and the gate decides (V6-SPEC 3.3: */
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
 const dataGet = (n) => fetch(`data/${n}.json`, { cache: "no-store" });
 const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })), opt: ["signups", "tonight"].map((n) => dataGet(n).then((r) => (r.ok ? r.json() : null)).catch(() => null)) };
@@ -216,9 +210,7 @@ function renderHero() {
 function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
 const eventTs = (e) => (e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch);
 let shownNext;
-/* V11: each stop is its event's emblem (sealed scroll, hourglass, horn, dragon skull). A window event reads "Open now, until
-   <day>" while open and "Closed" after; past stops take a wax seal, the next and the open one a slow ember. The rail fills
-   in brass up to now. Beside it on wide screens, the month as a calendar with the same emblems on their days. */
+/* V11: */
 function eventState(e, now, next) {
   const ts = eventTs(e);
   if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, until the end of ${e.until}, ${e.until_zone || "Pacific"} time`];
@@ -280,8 +272,7 @@ function renderCalendar(now) {
   }
   const month = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(mid);
   const later = t.events.filter((e) => local(e) > end);
-  /* V13e retest-10: on a phone the month folds under "The month on a calendar" (it used to be missing there); from 1100 px it
-     is always open. Days past the month (the raids on Dec 9) are buttons too, so every date on the rail has a day to light. */
+  /* V13e retest-10: */
   const wideCal = matchMedia("(min-width: 1100px)").matches, wasOpen = box.querySelector("details.cal-wrap");
   const calOpen = wideCal || !!(wasOpen && wasOpen.open);
   const fmtDay = (d) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d);
@@ -387,14 +378,11 @@ function renderTiles() {
     h("span", { class: "tile-line" }, "Leeroy answers questions. In any Discord channel here, type ", h("b", { text: "/ask" }), " and your question."),
     h("span", { class: "tile-line", text: "It reads the same library this board searches." }));
 }
-/* A wall line with dotted glossary words. V12: the plain sentence opens in the dotted-word card outside the tile (the tile
-   line is clipped to a few lines, so a sentence inside it was invisible on phones and laptops). */
+/* A wall line with dotted glossary words. */
 function wallGloss(G, parts) {
   return h("span", { class: "tile-line" }, ...parts.map((x) => (Array.isArray(x) ? dotBtn(x[0], x[1]) : x)));
 }
-/* V12: dotted words outside the library. A tap (or Enter) opens one small card fixed to the viewport beside the word, outside
-   every tile and scroll box; a second tap, a tap elsewhere, Escape, the word scrolling off screen or leaving the scene closes it. The sentences
-   come from wiki/GLOSSARY.md through party.json. Scenes get the first use of each term dotted after every render. */
+/* V12: */
 const GL = { open: null, re: null };
 function glDef(term) { const G = (D.party && D.party.glossary) || [], k = String(term).toLowerCase(); return G.find((g) => g.forms.some((f) => f.toLowerCase() === k)) || null; }
 function dotBtn(word, term) { const g = glDef(term || word); return g ? h("button", { type: "button", class: "gl", "data-term": g.term, "aria-expanded": "false", "aria-controls": "glpop", text: word }) : word; }
@@ -413,8 +401,7 @@ function glPlace() {
   const pop = $("#glpop"), b = GL.open; if (!pop || !b || pop.hidden) return;
   const r = b.getBoundingClientRect(), m = 16, w = pop.offsetWidth, ht = pop.offsetHeight;
   if (!b.isConnected || r.bottom < 0 || r.top > innerHeight) { glClose(); return; }
-  /* V14: four candidate spots (below, above, right, left of the word); the card takes the one that covers the least of what a
-     reader may want to see: other cards, buttons and links (the word's own card counts a little, its neighbours a lot). */
+  /* V14: */
   const own = b.closest(".card, li, .race, .tile") || b.parentElement;
   const hit = [...document.querySelectorAll("#scene .sheet .card, #scene .sheet button, #scene .sheet a[href], #scene .sheet .spell, #scene .sheet li")].filter((el) => el !== b && !pop.contains(el) && !b.contains(el) && el.offsetParent !== null);
   const rects = hit.map((el) => [el, el.getBoundingClientRect()]).filter(([, q]) => q.width > 0 && q.bottom > 0 && q.top < innerHeight);
@@ -469,8 +456,7 @@ function startGloss() {
   const sc = $("#scene"); if (!sc || typeof MutationObserver !== "function") return;
   let queued = false;
   const run = () => { queued = false; for (const p of sc.querySelectorAll(".panel:not([hidden]):not(#panel-library)")) { try { dotPanel(p); } catch (e) {} } };
-  /* a re-render, a tab switch (a panel's hidden flips) or a details opening: dot the open panel again. A timer, not a frame:
-     a frame callback can wait out a view transition and leave the queue shut. */
+  /* a re-render, a tab switch (a panel's hidden flips) or a details opening: */
   new MutationObserver(() => { if (!queued) { queued = true; setTimeout(run, 40); } }).observe(sc, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "open", "inert"] });
   sceneHooks.push((on) => { if (on) setTimeout(run, 40); });
 }
@@ -486,8 +472,7 @@ function wholeClause(t, max) {
   return `${cut.slice(0, cut.lastIndexOf(" "))}…`;
 }
 /* the sign-ups tile: one tankard per answer, poured full for in, half for maybe, a wax band for out, empty when nobody answered */
-/* V13c (craft 15, spec 8): painted pints, amber ale with a cream head for I'm in, half for Tentative, a pocket watch for
-   Running late, an empty pewter mug for Out; no answer is a faint outline. The keg-fill rect stays as the state's hit box. */
+/* V13c (craft 15, spec 8): */
 function kegRow(states) {
   const svg = s("svg", { viewBox: `0 0 ${states.length * 56} 48`, preserveAspectRatio: "xMinYMid meet" });
   states.forEach((st, i) => {
@@ -499,9 +484,7 @@ function kegRow(states) {
   });
   return svg;
 }
-/* V13b (spec 1.4): the wall's Three roads tile is a miniature of the Roads map itself: the same land, the same three roads
-   and the zeppelin's line, Orgrimmar, and a pin with a crest for each of the five where they wake up. It is drawn from the
-   same ZONES and ROADS as the scene's map, so the two never disagree; it holds still (the map moves in its scene). */
+/* V13b (spec 1.4): */
 function miniRoads() {
   const svg = s("svg", { class: "mini-map", viewBox: "0 -10 600 420", "aria-hidden": "true", preserveAspectRatio: "xMidYMid meet" });
   svg.append(
@@ -616,20 +599,22 @@ const ROADS = [
   { key: "durotar", zone: "Durotar", cls: "map-road", d: "M508 238 C 520 210, 512 170, 478 130", how: "the Durotar road" },
 ];
 /* SMIL on the map pauses while the page is hidden; the map redraws when the phone type ramp switches */
-/* V13b: the map's drawn width, to size its labels in screen pixels; a hidden scene has none yet, so it is estimated from the
-   sheet's width rule (the Roads scene measures the real one when it opens, mapFit) */
+/* V13b: */
 const MAPW = { drawn: 0 };
 function mapWidth() {
   const b = $("#map"), w = b && b.clientWidth;
-  if (w > 40) return Math.max(200, w - 20);
+  /* the wide layout (js/wide.js): the box is the map's viewport and the map is what fits in it, no padding */
+  if (w > 40) return Math.max(200, b.closest(".wide-map") ? Math.min(w, b.clientHeight * 1.5) : w - 20);
+  if (innerWidth >= 700 && innerHeight >= 501) {
+    const sw = innerWidth * (innerWidth >= 1100 && innerHeight <= 960 ? 0.9 : 0.85), bh = innerHeight * (innerWidth >= 1100 && innerHeight <= 960 ? 0.88 : 0.85) - 140, rm = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    return Math.max(200, sw / bh < 1.3 ? Math.min(sw, (bh - 230) * 1.5) : Math.min(bh * 1.5, sw - 19 * rm));
+  }
   const sheet = innerWidth < 600 || innerHeight <= 500 ? innerWidth * 0.94 : innerWidth * 0.85;
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16, side = innerWidth >= 1300 && innerWidth / innerHeight >= 4 / 3;
   const H = innerHeight * 0.85, tall = side ? (H - 300 - 3 * rem + 20) * 1.5 : innerWidth >= 1300 ? (H - 470 - 6 * rem + 20) * 1.5 : 960;
   return Math.max(200, Math.min(side ? tall : Math.max(960, tall), sheet - 36 - (side ? 26 * rem + 28 : 0)) - 20);
 }
-/* V13b (owner-8): the layout above works from estimated text widths; once the map is on screen its place names are
-   measured for real, and any that touch a plate, a pin or another name step to the nearest clear spot (plates and pins
-   never move) */
+/* V13b (owner-8): */
 function mapUntangle() {
   /* in map units, from the drawing's own attributes and getBBox, so the pins' and plates' drop-in motion never skews it */
   const sv = $("#map svg"); if (!sv) return;
@@ -665,10 +650,7 @@ function mapVisibility() {
   }
   mapClock();
 }
-/* V13a: the map's motion (the marching roads, the walkers' trails, the zeppelin) is SMIL on one clock the page drives. The
-   svg's own timeline stays paused; while the Roads scene is open, the page shows and the map is on screen, the clock steps
-   it MAP_FPS times a second by elapsed time, so the roads march at the speed they always did while the map repaints 30 times
-   a second instead of on every refresh. Anywhere else nothing on the map moves. */
+/* V13a: */
 const MAP_FPS = 30, MC = { timer: 0, raf: 0, last: 0, t: 0, onScreen: true };
 const mapLive = () => SC.open === "roads" && !document.hidden && !reduceMQ.matches && MC.onScreen;
 function mapClock() {
@@ -689,9 +671,7 @@ function mapStep(now) {
 }
 /* an eight-point compass star, centre (x, y), long and short radii */
 function STAR8(x, y, r1, r2) { let d = ""; for (let i = 0; i < 16; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 8, r = i % 2 ? r2 : i % 4 ? r1 * 0.7 : r1; d += `${i ? "L" : "M"}${(x + Math.cos(a) * r).toFixed(1)} ${(y + Math.sin(a) * r).toFixed(1)}`; } return `${d}Z`; }
-/* V13b (owner-10): the Undercity zeppelin, drawn in the map's painted style: a ribbed hull with light catching its top,
-   fins, a gondola on ropes, a Horde pennant, and a soft shadow cast on the map below it. am drifts it along its route;
-   without one (reduced motion) it holds still at the top of the route. */
+/* V13b (owner-10): */
 function zeppelin(am) {
   const g = s("g", { class: "map-zep-g", ...(am ? {} : { transform: "translate(292 52)" }) },
     s("ellipse", { class: "zep-shadow", cx: 3, cy: 20, rx: 17, ry: 4.2 }));
@@ -734,7 +714,8 @@ function renderMap() {
   /* V13b (spec 1.5): a name is a small label (12.5 px on screen at any map size) on a quiet plate beside its pin, and place
      names 14 px, so the pins carry the map. The sizes are in map units for the map's drawn width; the map draws again when
      that width changes by more than a sixth (mapFit). */
-  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, FS = (tiny ? 11 : 12.5) * u, BIG = (tiny ? 12 : 14.5) * u, SMALL = (tiny ? 11 : 13) * u, CH = 0.6;
+  /* a larger map carries larger names (up to 1.8 times at 1400 px and more), so they stay readable at arm's length */
+  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = (tiny ? 11 : 12.5) * u * bump, BIG = (tiny ? 12 : 14.5) * u * bump, SMALL = (tiny ? 11 : 13) * u * bump, CH = 0.6;
   MAPW.drawn = mw;
   svg.style.setProperty("--fs", `${FS.toFixed(2)}px`); svg.style.setProperty("--fb", `${BIG.toFixed(2)}px`); svg.style.setProperty("--fsm", `${SMALL.toFixed(2)}px`);
   const boxes = [];
@@ -761,9 +742,7 @@ function renderMap() {
     /* a starting zone flares once as the map opens: a drawn compass star, not a plain ring (owner-10) */
     g.append(s("path", { class: "zone-ring", d: STAR8(z.x, z.y, 20, 7), style: `--di: ${zi++}` }));
     zoneNames.push({ g, zone, x: z.label[0], y: z.label[1] + (phone ? 6 : 0) });
-    /* V13b (owner-8): each pin carries a small name plate under it. The pins of one zone stand far enough apart that their
-       plates sit side by side without touching; when a row of plates would run off the zone, every other plate drops to
-       a second row (the pins then need only half the room). */
+    /* V13b (owner-8): */
     const plates = ms.map((m) => { const nm = m.name, sp = nm.length > 12 ? [...nm.matchAll(/ /g)].map((x) => x.index).sort((p, q) => Math.abs(p - nm.length / 2) - Math.abs(q - nm.length / 2))[0] : undefined; const lines = sp === undefined ? [nm] : [nm.slice(0, sp), nm.slice(sp + 1)]; return { lines, w: Math.max(...lines.map((l) => l.length)) * FS * CH + FS * 1.2, h: lines.length * FS * 1.05 + FS * 0.75 }; });
     const maxw = Math.max(...plates.map((p) => p.w)), stagger = ms.length > 2 && ms.length * (maxw + 6) > 210;
     const step = Math.max(36, stagger ? (maxw + 8) / 2 : maxw + 8), span = step * (ms.length - 1);
@@ -779,8 +758,7 @@ function renderMap() {
       banners.push({ g, m, tx, ty, plate: plates[i], row: stagger ? i % 2 : 0 });
     });
   }
-  /* the plates last, so they keep clear of every pin and place name: under the pin, one row lower at a time until clear
-     (with a thin leader line back to the pin), and over it when the map runs out below. Nothing overlaps. */
+  /* the plates last, so they keep clear of every pin and place name: */
   const labels = s("g", { class: "map-labels" }); /* drawn last, over the roads and the walkers */
   const clear = (b) => b.x >= 3 && b.y >= 3 && b.x + b.w <= 597 && b.y + b.h <= 397 && !boxes.some((o) => b.x < o.x + o.w + 2 && o.x < b.x + b.w + 2 && b.y < o.y + o.h + 2 && o.y < b.y + b.h + 2);
   for (const b of banners) {
@@ -1000,10 +978,7 @@ function renderWheel() {
   const wide = !window.matchMedia || window.matchMedia("(min-width: 700px)").matches;
   wrap.append(h("details", { class: "wheel-svg", ...(wide ? { open: "" } : {}) }, h("summary", { text: "The wheel between the five" }), svg), h("details", { class: "wheel-links", id: "wheel-links" }, h("summary", { text: `The wheel's ${D.client.synergy.length} links, with sources` }), h("ul", { class: "buffs" }, items)));
 }
-/* V8: every buff by level, from the client table; the group rules with their status; what the picked person gives and gets.
-   V9 (phone first): the default view answers on one screen. With a name: what you give and get at the slider's level, one
-   line each. Without: a grid of who gives what. Every buff's full card sits in a per-class expander (collapsed), each with one
-   "Sources" toggle; the rules sit in three status groups; #buffs.<key> opens and lights any buff. Nothing is removed. */
+/* V8: */
 const BUFF_STATUS = { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
 /* V13c (owner-6, spec 6): every buff carries a painted emblem of what it gives (assets/board/generated, generated with ChatGPT) */
 const BUFF_CAT = { arcane_intellect: "intellect", conjure: "mana", fortitude: "stamina", shadow_protection: "resistance", divine_spirit: "spirit", pw_shield: "armor", kings: "allstats", might: "attackpower", wisdom: "mana", salvation: "spirit", devotion: "armor", retribution: "thorns", concentration: "intellect", mark: "allstats", thorns: "thorns", innervate: "mana", rebirth: "healing", leader: "attackpower", soulstone: "healing", healthstone: "healing", summoning: "spirit", blood_pact: "stamina", strength_earth: "attackpower", grace_air: "attackpower", windfury: "attackpower", mana_spring: "mana", healing_stream: "healing" };
@@ -1085,7 +1060,7 @@ function renderBuffsDeep() {
   const groups = classes.map((cls) => {
     const g = giverOf(cls), list = shown.filter((b) => b.class === cls);
     return h("details", { class: "bclass", "data-class": cls, style: `--bc: ${classVar(cls === "shaman" ? null : cls)}` },
-      h("summary", {}, h("b", { text: g ? `${g.name}, ${g.class}` : "A sixth player, Shaman" }), h("span", { class: "bclass-names" }, list.flatMap((b, i) => [h("span", { class: "bn" }, buffEmb(b), b.name, i < list.length - 1 ? "," : ""), i < list.length - 1 ? " " : null]).filter(Boolean))),
+      h("summary", {}, h("b", { text: g ? `${g.name}, ${g.class}` : "A sixth player, Shaman" }), h("span", { class: "bclass-names" }, list.flatMap((b, i) => [h("span", { class: "bn" }, buffEmb(b), b.name, i < list.length - 1 ? h("span", { class: "bc", text: "," }) : null), i < list.length - 1 ? " " : null]).filter(Boolean))),
       h("ul", { class: "bq-list" }, list.map((b) => row(b, true))));
   });
   const rules = ["forever", "classic", "unknown"].map((st) => {
@@ -1320,7 +1295,7 @@ async function renderPresence() {
   $("#presence-text").replaceChildren(peers.length === 1 ? "At the board now: just you" : `At the board now: ${peers.length}`, me ? h("span", { class: "peer-you", text: " · ringed dot is you" }) : "");
 }
 
-/* SDK 2.5.0: getActivityInstanceConnectedParticipants (alias getInstanceConnectedParticipants), then the ACTIVITY_INSTANCE_PARTICIPANTS_UPDATE event; else "you" alone. SDK errors go to console.warn. */
+/* SDK 2.5.0: */
 let discordPoll = 0;
 function startDiscordPresence(sdk) {
   const warned = new Set();
@@ -1544,11 +1519,7 @@ function selectPanel(key, crossFade) {
   moveInd(); markBar(key);
   KIT.emit("scene", key, prev);
 }
-/* V13c (spec 2, retest-10): content scaled to its frame, never the frame shrunk. On screens of 1100 px and wider, a scene whose
-   content leaves its frame half empty is zoomed (CSS zoom on the panel: type, columns and art together) by the smaller of
-   two shares: the frame's width over the 1150 px the scenes were laid out for (at most 1.45), and the height the frame can
-   give over the height the content takes. Never below 1, so nothing gets smaller and nothing starts to scroll. The map and
-   the library measure their own SVG and lists and keep zoom 1. */
+/* V13c (spec 2, retest-10): */
 const FIT_SKIP = ["roads", "library"];
 const FIT = {};
 const fitKey = (key) => `${key}:${innerWidth}x${innerHeight}`;
@@ -1601,10 +1572,7 @@ function startBar() {
 }
 /* The swipe hint fades after the first swipe and stays gone (localStorage, inside try). */
 function swiped() { const hint = $("#scene-hint"); if (hint) hint.classList.add("used"); try { localStorage.setItem("board-swiped", "1"); } catch (e) {} }
-/* V13b: the open panel follows a sideways finger (with a little give past the first 80 px) and snaps on release, to the
-   next scene past 40 px or a quick flick, back into place otherwise. A touch that starts within EDGE px of either side of
-   the screen is the system's Back gesture and is left alone. Inside a sideways carousel (The five, 600 to 1099 px) the
-   carousel scrolls itself; once it stands at its end, the swipe goes on to the next scene. */
+/* V13b: */
 const SWIPE_EDGE = 20;
 function startLibBar() {
   const body = $("#sheet-body"), bar = document.querySelector(".lib-bar"); if (!body || !bar) return;
@@ -1676,8 +1644,7 @@ const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials
 function placeOrnament(key) {
   const sheet = document.querySelector("#scene .sheet"); if (!sheet) return;
   const old = $("#sheet-orn"); if (old && old.parentNode) old.parentNode.removeChild(old);
-  /* V13a: a div that carries the place, the ink and the blend, a div that moves, the still drawing and, for the emblems with
-     a moving part, a glint copy that shows only that part; every loop runs on a box the compositor can move */
+  /* V13a: */
   const art = () => s("svg", { class: "emb orn-art", viewBox: "-2 -2 28 28", "aria-hidden": "true", focusable: "false" }, ...emb(ORN[key] || "seal").childNodes);
   const still = art(), move = h("div", { class: "orn-in" }, still);
   const part = ORN_GLINT[key];
@@ -1696,9 +1663,7 @@ function glintOrigin(g, part) {
     g.style.setProperty("--gx", `${(((x0 + x1) / 2 + 2) / 28 * 100).toFixed(1)}%`); g.style.setProperty("--gy", `${((y1 + 2) / 28 * 100).toFixed(1)}%`);
   } catch (e) {}
 }
-/* V13e: WebKit (Safari, and every browser on iOS) crashed the page when a scene opened through a View Transition at large
-   viewports (1280x960 and up; reproduced in Playwright WebKit, also on the live V13d site). WebKit takes the FLIP morph that
-   Firefox uses. Blink keeps View Transitions. */
+/* V13e: */
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
 const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;
 const canFlip = () => typeof $(".sheet").animate === "function";
@@ -1710,9 +1675,7 @@ function morphBand(key) {
   const r = band.getBoundingClientRect();
   return r.width > 0 && r.bottom > 0 && r.top < innerHeight ? band : null;
 }
-/* V13b (craft 11, 12): a View Transition is the only motion of a tile open or close. The root snapshot does not cross-fade
-   (the live page shows through at once, the wall taking its blur in one step under the veil); the band morphs and the veil
-   fades as its own group, and a close runs quicker on an accelerating curve (html.vt-close). */
+/* V13b (craft 11, 12): */
 /* V13d: the marks that fly with a morph (a crest from its tile to its card) are named here and cleared with the band */
 const VTX = [];
 function viewMorph(from, to, update, closing) {
@@ -1821,8 +1784,7 @@ function hideScene() {
 }
 /* V13b (craft 31): a card turned over in The five is face up again the next time the scene opens */
 function unflip() { document.querySelectorAll("#cards .card.flipped").forEach((c) => { c.classList.remove("flipped"); c.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", "false")); const f = c.querySelector(".front"), b = c.querySelector(".back"); if (f) f.inert = false; if (b) b.inert = true; }); }
-/* owner-12b: "Look at the room": while the button, or a press on the frame's edge, is held, the scene fades to 15% and the
-   tavern shows through; letting go brings it back. A key held on the button does the same. */
+/* owner-12b: */
 function startPeek() {
   const btn = $("#scene-peek"), layer = $("#scene"), sheet = $(".sheet"); if (!btn || !sheet) return;
   let held = false, timer = 0;
@@ -1906,9 +1868,7 @@ function route() {
   /* #wall: the wall at its top (the token names the <ul id="wall">, so the browser would scroll to it). */
   if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
   const key = sceneFromHash();
-  /* V13b (mobile 5): a landing scene (a first visit's Tonight, a deep link, a typed hash) is turned into a wall entry with
-     the scene pushed over it, so the close button and the phone's Back both return to the wall and Back never leaves the
-     board. A scene the wall pushed (state.pushed) is left alone. */
+  /* V13b (mobile 5): */
   if (key && !(history.state && history.state.pushed)) { const url = location.pathname + location.search + location.hash; try { history.replaceState(null, "", location.pathname + location.search); history.pushState({ boardScene: key, pushed: true }, "", url); } catch (e) {} }
   /* V13d: a "<scene>.<thing>" hash lands on the thing (the wall's own clicks set SC.land with the mark that flies) */
   const lm = key && key !== "library" && key !== "tonight" ? raw.match(/^([a-z]+)\.([a-z0-9_-]{1,40})$/) : null;
@@ -1967,8 +1927,7 @@ const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.
 const tabImg = (key) => h("img", { class: "emblem-img tab-img", src: `img/icons/tab-${key}.png`, alt: "", width: 48, height: 48, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
 function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); placeSideMedal(key); }
-/* V14: the 640 px scene medallion (img/medal/<key>.webp, from the 1254 px painted originals). Beside the sheet, where a wide
-   screen leaves a band of room, it hangs as a lit coin; pressing the head emblem opens it large and turns it over. */
+/* V14: */
 const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library" };
 const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable." };
 const medalImg = (key, cls) => h("img", { class: cls || "medal-img", src: `img/medal/${key}.webp`, alt: "", width: 640, height: 640, decoding: "async", loading: "lazy" });
@@ -2065,9 +2024,7 @@ gl_FragColor=vec4(mix(col,shade,a),1.);}`;
 const LIGHT = { bump: 2.5, ease: 0.08, candle: [0.06, 0.1], flicker: 0.1, jitter: 6 };
 const hexVec = (v, d) => { const m = /^#?([0-9a-f]{6})$/i.exec(v || ""); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255) : d; };
 const LS = { state: "off", draws: 0, why: "", n: 0 };
-/* V13b: one shared flicker signal (craft 2): seeded value noise in three octaves, -1 to 1. The wall light, the card
-   highlights, the candle glow and the room's fire all read it, so every flame on the page dips and flares together (the
-   sound's fire bed already reads flickAt; its crackles join in V13c). Noise, not sines: it never repeats a visible beat. */
+/* V13b: */
 const flickHash = (i) => { const v = Math.sin(i * 127.1 + 311.7 * 7.31) * 43758.5453; return (v - Math.floor(v)) * 2 - 1; };
 const flickOct = (x) => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return flickHash(i) * (1 - u) + flickHash(i + 1) * u; };
 const flickBase = (s) => 1.25 * (0.55 * flickOct(s * 1.9) + 0.3 * flickOct(s * 4.3 + 17) + 0.15 * flickOct(s * 9.7 + 41));
@@ -2075,10 +2032,7 @@ const flickBase = (s) => 1.25 * (0.55 * flickOct(s * 1.9) + 0.3 * flickOct(s * 4
 const FLICK_POP = { t: -1, amp: 0, ms: 75 };
 const flickPop = (s) => { if (FLICK_POP.t < 0) return 0; const d = s * 1000 - FLICK_POP.t; return d < 0 || d > FLICK_POP.ms ? 0 : FLICK_POP.amp * (1 - d / FLICK_POP.ms); };
 const flickAt = (s) => Math.max(-1, Math.min(1, flickBase(s) + flickPop(s)));
-/* V13b: one light position for the whole wall (section 2). The pointer, a touch or the tilt aims it (tx, ty in viewport
-   pixels; null when nobody points, and the light rests at the candle, top left). With the room on, the room's key light
-   eases toward the aim and hands its eased position back (onLight above); with the room off, the cards ease toward it
-   themselves and the 2D wall light follows the same aim. The card highlights (startSheen) read x, y. */
+/* V13b: */
 const LB = { tx: null, ty: null, x: 0, y: 0, rn: 0, roomAt: 0, tilt: false, frames: 0, running: false };
 const LIGHT_REST = [0.08, 0.16]; /* the candle's corner of the viewport, as a share of its width and height */
 const pageX = () => window.scrollX || 0, pageY = () => window.scrollY || 0;
@@ -2164,9 +2118,7 @@ function startLight() {
     call("draw", S.lx + jx, S.ly + jy, 1 - LIGHT.flicker / 2 + (LIGHT.flicker / 2) * n);
     LS.draws++;
   };
-  /* V13b: 30 frames a second (phone-deep 8; the flicker reads the same), on every tier where the room is not drawing the
-     wall's light itself: room off and low included (craft 1: the old test stopped it under room-off, so a desktop's wall
-     never moved) */
+  /* V13b: */
   const frame = (t) => { S.raf = 0; if (LS.state !== "lit") return; if (t - S.last >= 1000 / 30 - 3) { S.last = t; draw(t); } if (live()) S.raf = requestAnimationFrame(frame); };
   const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene && !roomHas("room-on");
   addEventListener("board-room", () => (live() ? run() : stop()));
@@ -2216,10 +2168,7 @@ function startAim() {
   addEventListener("pointerdown", (e) => { if (!LB.tilt && e.pointerType !== "mouse") aimAt(e.clientX, e.clientY); }, { passive: true });
   document.documentElement.addEventListener("pointerleave", () => { if (!LB.tilt) { LB.tx = LB.ty = null; } });
 }
-/* V13b tilt (phone-deep T2 to T8): the angle aims the shared light in viewport space, so the light moves where the eye is
-   (the cards on screen, the plate behind them); "centre" is however the phone is held when the toggle turns on, re-taken
-   when the screen turns; the axes follow screen.orientation. The toggle shows only where something can move, says on or
-   off, and says so when the browser shares no motion or the viewer declined it. */
+/* V13b tilt (phone-deep T2 to T8): */
 const TILT = { b0: null, g0: null, got: 0, dog: 0 };
 function tiltLabel(on) { const t = $("#tilt"); if (!t) return; t.setAttribute("aria-pressed", String(on)); t.replaceChildren(s("svg", { class: "tilt-ico", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M12 3c2.6 3 4 5.3 4 7.6a4 4 0 0 1-8 0C8 8.3 9.4 6 12 3z" }), s("path", { d: "M10 14.5h4v6h-4zM8 20.5h8" })), on ? "Light follows your phone: on" : "Light follows your phone: off"); }
 function tiltSay(msg) {
@@ -2261,13 +2210,7 @@ function tiltReady() {
   });
 }
 
-/* V13b: the card highlights (spec 1.1, 2; craft 7, 8). Every tile and the countdown carry a highlight layer: a warm glow
-   that sits where the shared light is, so the edge facing the light is the bright one, and whose strength follows the
-   shared flicker and the light's distance. Each glow is its own composited box moved by transform and faded by opacity,
-   so a frame costs a few style writes and no repaint. The shadow side (--ldx, --ldy: the unit vector from the light to the
-   tile) is written only when it turns by a quarter, so the shadows lengthen away from the light without repainting the
-   wall every frame. It runs at 30 fps on the wall, stops under an open scene, a hidden page or reduced motion (one still
-   frame there), and with the room on it takes the room's own eased key light position. */
+/* V13b: */
 const SHEEN = { items: [], raf: 0, last: 0, scene: false, onScreen: true, dirs: 0 };
 function startSheen() {
   const els = [...document.querySelectorAll("#wall .tile, #clock")];
@@ -2433,8 +2376,7 @@ function startArt() {
   });
 }
 
-/* Sound (V13c): the mixer, the takes and the ambience are js/sound.js (window.BoardSound); this layer keeps the toggle, the
-   remembered choice, the unlock on a real gesture and the page's moments. Sound is off by default. */
+/* Sound (V13c): */
 const SND = () => window.BoardSound || null;
 const AU = { on: false, vol: 0.7 };
 try { AU.on = localStorage.getItem("board-sound") === "1"; const v = localStorage.getItem("board-vol"); if (v !== null && Number(v) >= 0 && Number(v) <= 1) AU.vol = Number(v); } catch (e) {}
@@ -2466,13 +2408,11 @@ function startSound() {
   btn.addEventListener("pointerup", () => clearTimeout(press));
   btn.addEventListener("click", () => { if (held) { held = false; return; } setSound(soundWaiting() ? true : !AU.on); });
   vol.addEventListener("input", () => { AU.vol = Number(vol.value) / 100; try { localStorage.setItem("board-vol", String(AU.vol)); } catch (e) {} const S = SND(); if (S) S.setVol(AU.vol); });
-  /* V13c (phone-deep 2.1): a click, a touch end or a key starts a remembered sound, and resumes a context the browser left
-     suspended (a phone call, a locked screen) on every such gesture; while it runs a gesture costs one check */
+  /* V13c (phone-deep 2.1): */
   const gesture = () => { if (!AU.on) return; const S = SND(); if (!S || S.running()) return; if (S.status().state === "none") setSound(true); else S.gesture(); setTimeout(soundButtons, 60); };
   for (const t of ["click", "touchend", "keydown"]) addEventListener(t, gesture, true);
   sceneHooks.push((on) => { const S = SND(); if (S && AU.on) S.setScene(on); });
-  /* V13c (craft 27): a touch for every touch. Name chips (a wooden token), toggles (a latch), every details expander (paper),
-     the map's roads (a pin), the library's search (a quill), the More menu, copy buttons; one listener for the page */
+  /* V13c (craft 27): */
   document.addEventListener("toggle", (e) => { if (e.target && e.target.tagName === "DETAILS" && e.target.closest("#scene")) sfx("paper", { gain: e.target.open ? 1 : 0.7 }); }, true);
   document.addEventListener("click", (e) => {
     const t = e.target.closest && e.target.closest("button, a"); if (!t || !AU.on) return;
@@ -2487,8 +2427,7 @@ function startSound() {
 }
 function audioStatus() { const S = SND(); const st = S ? S.status() : { on: false, state: "none" }; return { ...st, on: AU.on, volume: AU.vol, measure: (ms) => (S ? S.measure(ms) : Promise.resolve(null)) }; }
 
-/* The library (V4-SPEC 3.3): index.json prefetched when the wall is idle, everything else once the scene opens. Search runs
-   in vendor/library-worker.js (the wiki's own ranker, vendor/rank-core.js); without a worker the same ranker runs here. */
+/* The library (V4-SPEC 3.3): */
 const LIBD = { index: null, indexP: null, head: {}, full: {}, catP: {}, tips: null, tipsP: null, tipRe: null, open: null, openP: null, news: null, newsP: null };
 const LIBS = { state: "idle", via: "none", why: "", worker: null, core: null, coreP: null, ready: false, view: { kind: "shelf" }, cat: "", q: "", req: 0, res: null, shown: 60, ms: null, timer: 0, all: null, hays: null, back: null, searches: 0, rows: 0, token: 0, toastT: 0 };
 const LIB_CAP = 60;
@@ -2727,8 +2666,7 @@ function libRenderShelf(main) {
   const seen = MEM.seenMap(), isNewPage = (p) => { const t = seen[`page:${p.id}`], d = p.checked || p.as_of; return !!t && !!d && Date.parse(`${d}T23:59:59Z`) > t; };
   const kids = [];
   if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids); return; }
-  /* V9: the first screen is the search above, three one-line doors and the shelves as compact rows; the front page's full
-     lists and every shelf's pages are one tap away (What changed, Nobody knows yet, Blizzard said, Every page) */
+  /* V9: */
   if (libExpert()) kids.push(libRibbon(null));
   kids.push(libDoors(),
     h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
@@ -2755,8 +2693,7 @@ function libRenderResults(main) {
   const max = hits[0].score || 1;
   let left = LIBS.shown, rows = 0;
   const groups = [];
-  /* V13a: the worker sends text only for the rows drawn first (grouped by page, the same order as here). When a row to be
-     drawn is still slim (a shelf picked, Show more), the worker is asked for those rows and the page waits for them. */
+  /* V13a: */
   { let need = LIBS.shown; for (const g of pages.values()) { for (const x of g.hits) { if (need-- <= 0) break; if (x.key === undefined) { libFill(); return; } } if (need <= 0) break; } }
   const plan = [];
   for (const g of pages.values()) {
@@ -2780,9 +2717,7 @@ function libRenderResults(main) {
     main.replaceChildren(libAnswer(v.q, hits[0]), h("button", { class: "lib-btn", type: "button", onclick: () => { LIBS.allFor = v.q; libRender(); } }, `Show ${plural(hits.length, "match", "matches")} in the game's own words`), h("div", { class: "lib-row" }, linkChip(v), askChip(v.q, "Ask Leeroy this")));
     return;
   }
-  /* V13a: the answer and the first rows (libFirst) draw now, in reading order (so a dotted word is dotted where it is first
-     read); the other groups follow in slices of about LIB_SLICE rows, one per frame, so a keystroke never holds a frame for
-     the whole list. A newer render (LIBS.token) drops the slices still to come. */
+  /* V13a: */
   const answer = libAnswer(v.q, hits[0]);
   const first = []; let n = 0;
   const firstN = libFirst();
@@ -2822,8 +2757,7 @@ function libAnswer(q, best) {
     h("p", { class: "answer-v answer-lead" }, ...P.lead),
     libSources(P.prov, best.refs));
 }
-/* V12 (first-visitor test): a result reads as one plain sentence. The fact's own words lead, after its subject; asides that
-   only say where a number came from (client builds, spell ids, notes, datamines, tiers) move behind Sources with the links. */
+/* V12 (first-visitor test): */
 const PROV_RE = /\s*\((?=[^()]*\b(?:client|build|spell \d|datamine|notes|deep dive|hotfix|forum|Wowhead|wiki|tier|source|cache|S\d+)\b)[^()]*\)/gi;
 function libPlain(x) {
   const raw = String(x.value == null ? "" : x.value).trim(), prov = [];
@@ -2991,9 +2925,7 @@ const LIBUI = {
   },
   status: () => ({ state: LIBS.state, via: LIBS.via, why: LIBS.why, ready: LIBS.ready, view: LIBS.view.kind, cat: LIBS.cat, searches: LIBS.searches, ms: LIBS.ms, renderMs: LIBS.renderMs, rows: LIBS.rows, index: !!LIBD.index, tooltips: LIBD.tips ? LIBD.tips.tooltips.length : 0 }),
 };
-/* Tooltips (V4-SPEC 3.3): names from the Wowhead captures get a dotted underline wherever a fact, an Open bullet or another
-   tooltip line says them (longest name first, whole words, case as the game writes it). Hover or focus shows the card on a
-   desktop; a tap opens it as a bottom sheet. Esc, a tap outside or a scroll closes it. "Blizzard" is left alone: the company. */
+/* Tooltips (V4-SPEC 3.3): */
 const TT = { open: false, pinned: false, i: -1, trigger: null, hideT: 0 };
 const TT_SKIP = new Set(["blizzard"]);
 function libTips() {
@@ -3270,9 +3202,7 @@ function startLibrary() {
     list[Math.max(0, Math.min(list.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))].focus();
   });
 }
-/* Discord launch parameter (activities link ?custom_id=<token>, read by the SDK as customId): the same tokens the hash router
-   takes, nothing else. A scene key, "library", or "library." then: a page (category.slug, optionally ~fact.key), q.<words joined
-   by ->, open, changes, or c.<category>. Letters, digits, dot, underscore, tilde and hyphen only; 100 characters at most. */
+/* Discord launch parameter (activities link ?custom_id=<token>, read by the SDK as customId): */
 const LAUNCH_LIB = /^library(?:\.(?:q\.[a-z0-9][a-z0-9.-]{0,90}|open|changes|c\.[a-z]+|[a-z]+\.[a-z0-9-]+(?:~[a-z0-9_.]+)?))?$/;
 function launchToken(raw) {
   const t = (typeof raw === "string" ? raw.trim() : "").replace(/^dates(?=\.|$)/, "timeline"); /* V13e: the Dates alias */
@@ -3290,7 +3220,7 @@ const MEM = {
   setMe: (slug) => { const ok = slug === "just-looking" || (D.party ? D.party.members.some((x) => MEM.slug(x.name) === slug) : /^[a-z0-9-]{1,40}$/.test(slug)); if (ok) MEM.set("me", slug); return ok; },
   seenMap: () => { try { const m = JSON.parse(MEM.get("seen") || "{}"); return m && typeof m === "object" && !Array.isArray(m) ? m : {}; } catch (e) { return {}; } }, /* a stored value that is not an object (a number, a list) is treated as empty, never thrown on */
   seen: (k) => { const m = MEM.seenMap(); m[k] = Date.now(); MEM.set("seen", JSON.stringify(m)); },
-  forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } },
+  forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } try { Object.keys(localStorage).filter((k) => k.startsWith("board-before-")).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
 };
 /* V11: an event with a window (names) is "Next up" while it is open, and reads "Open now, until <day>" */
 function tonightNext(T) { const now = Date.now() / 1000; const ts = (e) => (e.epoch !== null ? e.epoch : Date.parse(`${e.date}T23:59:59Z`) / 1000); const open = T.events.find((e) => e.until_epoch && e.epoch <= now && now < e.until_epoch); if (open) return { ...open, when: open.open_when || open.when, open: true }; return T.events.find((e) => ts(e) > now) || T.events[T.events.length - 1]; }
@@ -3349,8 +3279,89 @@ function renderTonight() {
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
   act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1])].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
+  try { renderBefore(); startHow(); } catch (e) { console.error("before", e); }
   $("#tn-left").replaceChildren(...(left ? ["Last time you read ", h("a", { href: `#${left.tok}`, text: left.title }), " in the library."] : []));
   KIT.emit("tonight");
+}
+/* V15: "Before launch" checklist (per person, ticks in this browser only) and "How things work" strip. Facts come from the
+   generated tonight/party data and from library pages already shipped; a fact the library lacks reads "not published yet". */
+function beforeTicks(slug) { try { const a = JSON.parse(MEM.get(`before-${slug}`) || "[]"); return Array.isArray(a) ? a.filter((x) => typeof x === "string") : []; } catch (e) { return []; } }
+function beforeItems(T, P, member, mine) {
+  const open = (rx) => P.open.find((o) => rx.test(o.title)), nowS = Date.now() / 1000, L = T.links || {};
+  const ev = (k) => T.events.find((e) => e.key === k), names = ev("names_open"), launch = ev("launch");
+  const dt = (epoch) => fmtWhen(epoch), out = [];
+  if (member) out.push({ id: "build", text: `Your build on the board: ${member.race} ${member.class}, ${member.spec}.`, more: `As the group has it (${(member.spec_status && member.spec_status.status) || "listed"}).` });
+  if (T.poll_closes) out.push({ id: "guild", text: `Guild name: the poll ${nowS < T.poll_closes ? "closes" : "closed"} ${dt(T.poll_closes)}.`, href: L.poll, more: "Names can also be added in chat.", stamp: T.poll_closes });
+  if (member) {
+    const po = open(/profession/i) || {}, pr = member.professions || [], und = pr.some((p) => p.status === "undecided"), gap = (po.text || "").match(/Gap: ([A-Za-z]+)/);
+    out.push({ id: "prof", text: `Professions on the board: ${pr.map((p) => p.name).join(" and ") || "none yet"}${und ? " (one still undecided)" : ""}.`, href: po.links && po.links[0] ? po.links[0].url : L.choose, more: gap ? `The group has no ${gap[1]} yet.` : "" });
+  }
+  if (names && names.until_epoch) out.push({ id: "names", text: nowS < names.until_epoch ? "Names: open now for pack holders, until the end of Nov 3 (Pacific time)." : "Names: the pack-holder window has closed.", more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
+  if (member) out.push({ id: "signup", text: mine ? `Sign-up card: you answered "${T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || mine.rsvp}".` : "Sign-up card: no answer from you yet.", href: L.signup });
+  const meet = open(/meeting point/i);
+  if (meet) out.push({ id: "meet", text: unchosen(meet) ? "Meeting point: nothing chosen yet." : `Meeting point: ${meet.status}.`, href: unchosen(meet) ? P.signup_url : null, more: meet.detail || "" });
+  if (launch && launch.epoch) { const night = open(/launch night/i); out.push({ id: "launch", text: `Launch: ${fmtWhen(launch.epoch, { rel: true })}.`, href: night && night.links && night.links[0] ? night.links[0].url : null, more: `${night ? night.detail + " " : ""}${T.play || ""}`.trim(), stamp: launch.epoch }); }
+  return out;
+}
+function groupOpenLine(T, P) {
+  const nowS = Date.now() / 1000, bits = [];
+  for (const o of P.open) {
+    if (o.status === "the event") continue;
+    if (/guild/i.test(o.title)) bits.push(T.poll_closes ? `${o.title} (poll ${nowS < T.poll_closes ? "closes" : "closed"} ${fmtWhen(T.poll_closes)})` : o.title);
+    else if (/profession/i.test(o.title)) { const g = (o.text || "").match(/Gap: ([A-Za-z]+)/); bits.push(`${o.title}${g ? ` (gap: ${g[1]})` : ""}`); }
+    else bits.push(`${o.title}${o.status ? ` (${o.status})` : ""}`);
+  }
+  return bits.length ? `Still open for the group: ${bits.join("; ")}.` : "Nothing is open for the group right now.";
+}
+function renderBefore() {
+  const T = D.tonight, P = D.party, box = $("#tn-before"); if (!T || !P || !box) return;
+  const me = MEM.me(), member = MEM.member(), slug = member ? MEM.slug(member.name) : "just-looking";
+  const S = D.signups, entries = S && S.entries ? S.entries : [], mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
+  const items = me ? beforeItems(T, P, member, mine) : [], ticks = new Set(beforeTicks(slug));
+  const ext = (u) => u && /^https?:/.test(u);
+  const count = h("p", { class: "tnb-count", "aria-live": "polite" });
+  const upd = () => { const n = items.filter((i) => ticks.has(i.id)).length; count.textContent = items.length ? `${n} of ${items.length} ticked on this device${member ? ` for ${member.name}` : ""}.` : ""; };
+  const row = (i) => h("li", { class: "tnb-item", "data-on": ticks.has(i.id) ? "1" : "0" },
+    h("label", { class: "tnb-tick" }, h("input", { type: "checkbox", checked: ticks.has(i.id), onchange: (ev) => { const li = ev.target.closest("li"); if (ev.target.checked) ticks.add(i.id); else ticks.delete(i.id); li.dataset.on = ev.target.checked ? "1" : "0"; MEM.set(`before-${slug}`, ticks.size ? JSON.stringify([...ticks]) : null); upd(); } }), h("span", { text: i.text })),
+    i.href ? h("a", { class: "tn-link tnb-go", href: i.href, ...(ext(i.href) ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `Open in Discord: ${i.text}` } : { "aria-label": `Open in the library: ${i.text}` }) }, ext(i.href) ? emb("speech") : null, "Open") : null,
+    i.more || i.stamp ? h("p", { class: "tnb-more", "data-j": "c e" }, i.more || "", i.stamp ? [" ", h("code", { "data-j": "e", text: `<t:${i.stamp}:F>`, title: "Discord timestamp: pasted into chat, it shows each reader their own local time" })] : null) : null);
+  box.replaceChildren(h("h3", { id: "tnb-h", text: "Before launch" }),
+    h("p", { class: "tnb-group", text: groupOpenLine(T, P) }),
+    me ? h("ul", { class: "tnb-list", "aria-label": member ? `Before launch, ${member.name}` : "Before launch" }, items.map(row)) : h("p", { class: "tnb-hint", text: "With a name picked above, a short list of what the board knows about your side shows here." }),
+    count);
+  upd();
+}
+const HOW_Q = ["How do guilds work?", "Can I chat in game without a guild?", "How big is a dungeon group?", "How does loot rolling work?", "What does a pack do?", "Where does the group meet?"];
+function renderHow() {
+  const box = $("#tn-how"); if (!box) return;
+  const page = (id) => LIBD.full[id] || null;
+  const fact = (id, k) => { const p = page(id), f = p && p.facts && p.facts.find((x) => x.key === k); return f ? f.value : null; };
+  const cite = (id, k) => { const p = page(id); return p ? { id, title: p.title, asOf: p.as_of, fact: k } : null; };
+  const NP = "Not published yet.", A = [];
+  const g1 = fact("history/beta-builds", "beta.known_issues_sep_17"), g2 = fact("systems/gold-and-riding", "gold.rules.economy_holds");
+  A.push({ t: `${NP} The library has no Forever guild how-to yet (founding one, charters, what a guild gets).${g1 ? " What it does hold: guild charters could not be signed in the Sep 17 beta build." : ""}${g2 ? " The guild bank was among the features paused in the Oct 13 economy hold." : ""}`, c: [cite("history/beta-builds", "beta.known_issues_sep_17"), cite("systems/gold-and-riding", "gold.rules.economy_holds")].filter(Boolean), miss: true });
+  const c1 = fact("systems/names", "names.surname_hidden"), c2 = fact("dungeons/overview", "voice.discord");
+  A.push({ t: `${NP} No channel list for Forever (say, yell, general, party) is in the library.${c1 ? " Nearby: a hidden second name still shows in chat." : ""}${c2 ? " Discord voice can be switched on under Audio settings, set by the party leader for the whole party." : ""}`, c: [cite("systems/names", "names.surname_hidden"), cite("dungeons/overview", "voice.discord")].filter(Boolean), miss: true });
+  const gs = fact("dungeons/overview", "new_dungeons.group_size"), cnt = fact("dungeons/overview", "new_dungeons.count"), gf = fact("dungeons/overview", "group_finder.type");
+  A.push({ t: gs ? `Blizzard's ${cnt || "new"} new dungeons are for ${gs}. Whether the returning Classic dungeons keep a 10-player cap is contested between guide sites.${gf ? ` The Group Finder is a ${gf}.` : ""}` : `${NP} Group size is missing from the library data.`, c: [cite("dungeons/overview", "new_dungeons.group_size")].filter(Boolean), miss: !gs });
+  const q = fact("dungeons/overview", "quest_drops.party");
+  A.push({ t: `${NP} The library holds no loot-rolling rules for Forever.${q ? " Nearby: quest drops are spread more evenly in a party, and each player still needs their own drop." : ""}`, c: [cite("dungeons/overview", "quest_drops.party")].filter(Boolean), miss: true });
+  const pk = (k) => fact("systems/packs-and-pricing", k), req = pk("pack.required"), hv = pk("pack.heroic.contents"), ep = pk("pack.epic.contents"), co = pk("pack.collection.contents"), pr = ["heroic", "epic", "collection"].map((k) => (pk(`pack.${k}.price`) || "").split(" (")[0]);
+  const all = req && hv && ep && co;
+  A.push({ t: all ? `A pack is optional: ${req.replace(/^no; /, "")}. Heroic adds ${hv.replace(/, 1 Invite-A-Friend code/, " and 1 friend code")}. Epic is Heroic plus ${ep.replace(/^Heroic plus /, "")}. Collection is Epic plus ${co.replace(/^Epic plus /, "")}. None lists early access.${pr.every(Boolean) ? ` Shop prices read on Oct 18: ${pr.join(" / ")}.` : ""}` : `${NP} Pack contents are missing from the library data.`, c: [cite("systems/packs-and-pricing", "pack.heroic.contents")].filter(Boolean), miss: !all });
+  const mp = D.party && D.party.open.find((o) => /meeting point/i.test(o.title));
+  A.push({ t: mp ? `${unchosen(mp) ? "Nothing chosen yet." : mp.status + "."} ${mp.detail || ""} Launch night itself is a voice call in Fellowship.` : `${NP} No meeting point on the board.`, c: [], group: true, miss: !mp });
+  box.replaceChildren(h("h3", { id: "tnh-h", text: "How things work" }), h("p", { class: "tnh-sub", text: "Plain answers from the library. Where it has nothing, it says so." }),
+    h("div", { class: "tnh-grid" }, A.map((a, i) => h("section", { class: "tnh-card", "data-miss": a.miss ? "1" : "0", "aria-labelledby": `tnh-q${i}` }, h("h4", { id: `tnh-q${i}`, text: HOW_Q[i] }), h("p", { class: "tnh-a", text: a.t }),
+      h("p", { class: "tnh-c" }, ...(a.group ? ["From the board's group notes."] : a.c.length ? ["From ", ...a.c.flatMap((c, j) => [j ? ", " : null, h("a", { class: "tn-link", href: `#library.${c.id.replace("/", ".")}`, text: c.title }), h("span", { "data-j": "e", text: ` (${c.fact}, as of ${c.asOf})` })]).filter(Boolean)] : ["Library page not loaded."]))))));
+  { const kids = [...box.children], d = h("details", { class: "tnh-det" }, h("summary", { class: "tnh-sum", text: "How things work: six plain answers (tap to open)" })); d.append(...kids); box.replaceChildren(d); }
+}
+let howWatch = false;
+function startHow() {
+  const panel = $("#panel-tonight"); if (!panel || !$("#tn-how")) return;
+  const go = () => { if (panel.hidden || document.documentElement.dataset.journey === "guided") return; (window.requestIdleCallback ? (f) => window.requestIdleCallback(f, { timeout: 2500 }) : (f) => setTimeout(f, 800))(() => Promise.all(["dungeons", "systems", "history"].map(libCat)).then(() => renderHow()).catch(() => { const b = $("#tn-how"); if (b) b.replaceChildren(h("h3", { text: "How things work" }), h("p", { class: "tnh-sub", text: "The library facts did not load just now. A refresh may help." })); })); };
+  if (!howWatch) { howWatch = true; new MutationObserver(go).observe(panel, { attributes: true, attributeFilter: ["hidden"] }); }
+  go();
 }
 /* The picked person's tile and medallion stand out. */
 function markMe() {
@@ -3370,12 +3381,7 @@ function startDepth() {
 }
 /* V13a: work deferred past Tonight starts after the close has finished moving, not inside its frames */
 function whenOffTonight(f) { if (SC.open !== "tonight" && SC.want !== "tonight") { f(); return; } let done = false; sceneHooks.push(() => setTimeout(() => { if (!done && SC.open !== "tonight") { done = true; f(); } }, motionMs("move") + 160)); }
-/* V13a warm-up. The first time a scene opens, the GPU meets its paper, wood, maps, crests, type and blends for the first time:
-   it decodes the images, compiles the shaders and rasters the glyphs while the sheet is moving, and the opening stutters.
-   While the page is idle after load, each scene is drawn once, invisibly, so the first real opening finds all of that ready.
-   The layer is shown at opacity 0 with will-change: opacity (the compositor still rasters a layer that may become visible),
-   inert, one scene per idle moment, and put back the moment anything else asks for the scene layer. Scenes that are open
-   (Tonight at a first visit) warm the others as an absolute, invisible panel inside the open sheet. */
+/* V13a warm-up. */
 const WARM = { queue: null, step: null, done: false, ms: 0, scenes: 0 };
 /* V13c: the baked paper is the sheet's paper now; the buff emblems and pints are decoded ahead too */
 const WARM_IMAGES = ["img/paper-baked.jpg", "img/parchment-tile.jpg", "img/board-wall.jpg", "img/map-parchment.jpg", "img/map/zeppelin.png", "img/map/town.png", ...["in", "maybe", "late", "out"].map((k) => `img/pints/${k}.png`), ...["allstats", "armor", "attackpower", "healing", "intellect", "mana", "resistance", "spirit", "stamina", "thorns"].map((k) => `img/buffs/${k}.png`)];
@@ -3461,8 +3467,7 @@ async function boot(mode, sdk) {
   }
   if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }
   /* No hash: open at the depth the person left at; a first visit opens Tonight (V6-SPEC 3.1). */
-  /* V14: a first visit paints the wall and the room first; Next steps unfolds over a ready page after a beat (a click, a key or a
-     hash change in that beat cancels it), and the Next steps links glow until then. */
+  /* V14: */
   let firstBeat = null;
   if (!location.hash || location.hash === "#") {
     const d = MEM.get("depth");
@@ -3471,7 +3476,7 @@ async function boot(mode, sdk) {
       const cancel = () => { if (firstBeat) { clearTimeout(firstBeat); firstBeat = null; } document.documentElement.classList.remove("first-beat"); removeEventListener("pointerdown", cancel, true); removeEventListener("keydown", cancel, true); removeEventListener("hashchange", cancel); };
       addEventListener("pointerdown", cancel, true); addEventListener("keydown", cancel, true); addEventListener("hashchange", cancel);
       const open = () => { if (!firstBeat) return; firstBeat = null; if (!location.hash || location.hash === "#") { document.documentElement.classList.remove("first-beat"); goScene("tonight"); } };
-      /* the room's first frame freezes the main thread for about a second (long-frame trace, 2026-10-29), so on a room-capable screen the sheet waits for the room, then a beat for its first frame; touch and small screens keep the short beat */
+      /* the room's first frame freezes the main thread for about a second (long-frame trace, 2026-10-29), so on a room-capable screen the sheet waits for the */
       const small = innerWidth < 700 || matchMedia("(pointer: coarse)").matches || MEM.get("room") === "off" || !(() => { try { const g = document.createElement("canvas").getContext("webgl2"); if (g) { const x = g.getExtension("WEBGL_lose_context"); x && x.loseContext(); } return !!g; } catch (e) { return false; } })(), calm = reduceMQ && reduceMQ.matches;
       firstBeat = setTimeout(open, calm ? 900 : small ? 1500 : 7500);
       if (!calm && !small) { const onRoom = () => { if (!document.documentElement.classList.contains("room-on") || !firstBeat) return; removeEventListener("board-room", onRoom); clearTimeout(firstBeat); firstBeat = setTimeout(open, 1700); }; addEventListener("board-room", onRoom); }
@@ -3516,9 +3521,7 @@ document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagNa
   idle = Date.now();
   setInterval(() => { if (document.hidden) return; if (!veil) { veil = document.createElement("div"); veil.setAttribute("class", "idle-veil"); veil.setAttribute("aria-hidden", "true"); document.body.appendChild(veil); } if (Date.now() - idle > 120000) root.classList.add("idle-dim"); }, 10000);
 })();
-/* V14: a visible build stamp (the board.js stamp from index.html) and a version check: every 5 minutes and whenever the tab
-   comes back, index.html is fetched with no-store and its stamps compared with the running ones; a difference shows a soft
-   "A newer board is ready" pill. Pressing it (or the next full navigation) loads the new build. */
+/* V14: */
 KIT.on("booted", () => {
   if (typeof document.querySelectorAll !== "function") return;
   const stampOf = (txt) => { const m = /js\/board\.js\?v=([0-9a-f]{10})/.exec(txt || ""); return m ? m[1] : ""; };
