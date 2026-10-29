@@ -1,0 +1,5140 @@
+{
+ "generated": "2026-10-29T21:11:48.378Z",
+ "build": "1.60.1.70532",
+ "as_of": "2026-10-27",
+ "labels": {
+  "forever": "Forever",
+  "classic": "Classic baseline",
+  "unknown": "Unknown"
+ },
+ "dates": {
+  "names_open": {
+   "key": "names_open",
+   "epoch": 1793131200,
+   "label": "Names open: people who bought a pack create characters",
+   "until_epoch": 1793779200,
+   "until": "Nov 3",
+   "until_zone": "Pacific"
+  },
+  "launch": {
+   "key": "launch",
+   "epoch": 1793833200,
+   "label": "Launch"
+  },
+  "raids": {
+   "key": "raids",
+   "epoch": 1796857200,
+   "label": "Raids open"
+  }
+ },
+ "people": [
+  {
+   "class_key": "druid",
+   "race": "Tauren",
+   "decisions": [
+    {
+     "key": "professions",
+     "title": "Professions",
+     "state": "declared",
+     "state_text": "Leatherworking (on the Party Board) and Skinning (on the Party Board)",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. Training opens at a level, after launch."
+     },
+     "lines": [
+      {
+       "label": "Apprentice",
+       "text": "level 5, cap 75",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.apprentice",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Journeyman",
+       "text": "level 10 and skill 50, cap 150",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.journeyman",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Expert",
+       "text": "level 20, skill 125 and 50 silver, cap 225",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.expert",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Artisan",
+       "text": "level 35 and skill 200, cap 300",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.artisan",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Tier 1 camp objects",
+       "text": "a Camping 101 quest or the trainer at skill 20",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/camping-objects",
+        "key": "camp_object.tier1_source",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Untested",
+       "text": "225 to 300 untested; the beta capped at level 30",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.untested_range",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Leatherworking",
+       "lines": [
+        {
+         "label": "The Camp Tent's rested XP",
+         "text": "raises the rested pool to 5% of a level when the pool is below that, then a 1-hour Boosted Rest lockout; higher-tier tents reported to give the same",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.tent.rested",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Tent against inn",
+         "text": "an inn-rested pool is far larger, so the tent matters most late in long sessions",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.tent.vs_inn",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Camp Tent (rested XP); 5 Light Leather; Tanning Rack (Razorclaw, Shadowfang Keep) / Sewing Machine",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.leatherworking",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Camp Tent at skill 20, Tanning Rack at skill 140, Sewing Machine at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279978,
+           279941,
+           279945
+          ],
+          "skill": 165
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Library",
+         "text": "The library has no Leatherworking page yet.",
+         "status": "unknown",
+         "src": {
+          "kind": "library"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Skinning",
+       "lines": [
+        {
+         "label": "Camp object and its buff",
+         "text": "Camp Chair (crit, listed as Moonkin Aura or Leader of the Pack); 3 Light Leather, 2 Simple Wood; Field Guide (tracks beasts) / Trapper's Workbench",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.skinning",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Camp Chair at skill 20, Field Guide at skill 140, Trapper's Workbench at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279979,
+           279969,
+           279938
+          ],
+          "skill": 393
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "no; only the six crafting professions count",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/legacy",
+          "key": "legacy.gathering_counts",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Library",
+         "text": "The library has no Skinning page yet.",
+         "status": "unknown",
+         "src": {
+          "kind": "library"
+         }
+        }
+       ]
+      }
+     ],
+     "group": [
+      {
+       "label": "Leatherworking",
+       "text": "nobody else's on the board.",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      },
+      {
+       "label": "Skinning",
+       "text": "nobody else's on the board.",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      }
+     ]
+    },
+    {
+     "key": "spec40",
+     "title": "Spec at 40",
+     "state": "declared",
+     "state_text": "On the Party Board: Feral, bear tank. The board names no change at 40.",
+     "by": {
+      "event": "raids",
+      "text": "No Blizzard date for level 40. Dual spec opens at 40; raids open Dec 9."
+     },
+     "lines": [
+      {
+       "label": "Dual spec",
+       "text": "available at level 40; price unpublished (10 gold circulates in community notes)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/gold-and-riding",
+        "key": "gold.dual_spec",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "At 40 the trainer has",
+       "text": "Cower rank 2, Dire Bear Form, Ferocious Bite rank 2, Hurricane rank 1, Innervate, Mark of the Wild rank 5, Moonfire rank 7, Prowl rank 2, Rebirth rank 3, Rejuvenation rank 7, Tranquility rank 2, Wild Growth rank 1",
+       "status": "forever",
+       "src": {
+        "kind": "client",
+        "build": "1.60.1.70532",
+        "spells": [
+         9000,
+         9634,
+         22827,
+         16914,
+         29166,
+         8907,
+         8929,
+         6783,
+         20742,
+         8910,
+         8918,
+         408120
+        ],
+        "level": 40
+       }
+      },
+      {
+       "label": "New baseline spells",
+       "text": "Nature's Grasp 10, Revive 12 (out-of-combat resurrection), Omen of Clarity 20, Shred 20 (since Oct 15), Lacerate 42 (Sep 30 deep dive; Oct 15 notes)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/druid",
+        "key": "druid.baseline_new",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      },
+      {
+       "label": "Bear levels",
+       "text": "Bear Form, Maul, Growl and Demoralizing Roar at 10 from the class quest; Enrage 12; Bash 14; Swipe 16; Feral Charge 20 (talent); Primal Bite 25 (talent); Challenging Roar 28; Leader of the Pack 30; Frenzied Regeneration 36; Dire Bear Form 40 (Warcraft Tavern); Lacerate 42 (Blizzard)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/druid",
+        "key": "druid.bear.levels_guide",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "The trade-off",
+       "text": "Blizzard's summary: no snares, silences or interrupts, weaker crowd control (Sep 30 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/druid",
+        "key": "druid.tradeoff",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Auras",
+       "text": "Leader of the Pack (melee and ranged crit) and Moonkin Aura (spell crit) are raid-wide since Oct 15; the Sep 30 text made the two talents exclusive and the Oct 15 notes do not say whether that holds (Sep 30 deep dive; Oct 15 notes)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/druid",
+        "key": "druid.auras",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      },
+      {
+       "label": "Endurance",
+       "text": "passive, +5% max health and nothing else since Oct 26 (Oct 15 to Oct 26 it also gave +2% crit damage and healing; before Oct 15, +1% hit)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/horde-racials",
+        "key": "racial.tauren.endurance",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Feral Combat",
+       "lines": [
+        {
+         "label": "Medals",
+         "text": "Feral Charge 11 (now with a Cat version), Shifting Power and Primal Bite 16, Leader of the Pack 21, Berserk 31; Balance Nature's Splendor 11, Insect Swarm 16; Restoration Gift of the Earthmother 11, Swiftmend 16, Wild Growth 31; client data adds Nature's Grace, Moonkin Form, Nature's Swiftness (Sep 30 deep dive; client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.medals",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-27"
+         }
+        },
+        {
+         "label": "Primal Bite",
+         "text": "the renamed Mangle; 20 Rage, very high threat, doubled Oct 1 (Sep 30 deep dive; Oct 1 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.feral.primal_bite",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-27"
+         }
+        },
+        {
+         "label": "Berserk",
+         "text": "15 s, removes Fear, resets Primal Bite and lets it hit up to 3 targets, +100% crit on Cat combo abilities (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.feral.berserk",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Frenzied Regeneration",
+         "text": "can heal 100% of max health with enough Rage (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.bear.frenzied_regeneration",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Swipe",
+         "text": "hits 3 targets and scales with Attack Power (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.bear.swipe",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Thick Hide",
+         "text": "armor scales with Defense from gear, so bears want the same Defense items as other tanks (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.bear.thick_hide",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Bear threat",
+         "text": "50% (Oct 8 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.bear.threat_bonus",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-27"
+         }
+        },
+        {
+         "label": "Full tanks",
+         "text": "Protection Warrior and Feral Druid (Sep 30 deep dives), Protection Paladin (Oct 15 deep dive); all three have a taunt",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/tanking",
+          "key": "tanking.full_tanks",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ],
+       "board": true
+      },
+      {
+       "name": "Restoration",
+       "lines": [
+        {
+         "label": "Wild Growth",
+         "text": "party HoT every second for 7 s, pets included (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.resto.wild_growth",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Swiftmend",
+         "text": "16-point medal; no longer consumes Rejuvenation or Regrowth (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.resto.swiftmend",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Balance",
+       "lines": [
+        {
+         "label": "Balance baseline",
+         "text": "Hurricane has no cooldown; Faerie Fire is free on a 6 s cooldown and castable in Bear and Cat; Entangling Roots works indoors (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.balance.baseline",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Eclipse",
+         "text": "Wrath shortens the next 2 Starfires (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/druid",
+          "key": "druid.balance.eclipse",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "talents",
+     "title": "First talents",
+     "state": "none",
+     "state_text": "Nothing on the Party Board names a first talent for anyone.",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. The first talent point comes at level 10."
+     },
+     "lines": [
+      {
+       "label": "The first point (Blizzard's mage deep dive; the other classes are not restated)",
+       "text": "51, first point at level 10 (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage-talents",
+        "key": "mage.talents.points_at_60",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "A level 30 Feral layout one guide prints",
+       "text": "Icy Veins' level 30 Feral build is 0/21/0 through Ferocity, Feral Instinct, Savage Fury, Shredding Attacks, Shifting Power, Primal Bite and Leader of the Pack (Oct 18)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/druid",
+        "key": "druid.layout_30",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Feral Combat",
+       "lines": [
+        {
+         "label": "Ferocity",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 796,
+          "spell": 16934,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Feral Aggression",
+         "text": "5 ranks; rank 1: Increases the Attack Power reduction of your Demoralizing Roar by 8% and the damage caused by your Ferocious Bite by 3%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 795,
+          "spell": 16858,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Restoration",
+       "lines": [
+        {
+         "label": "Improved Mark of the Wild",
+         "text": "5 ranks; rank 1: Increases the effects of your Mark of the Wild and Gift of the Wild spells by 7%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 821,
+          "spell": 17050,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Furor",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 822,
+          "spell": 17056,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Balance",
+       "lines": [
+        {
+         "label": "Improved Wrath",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 762,
+          "spell": 16814,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Nature's Grasp",
+         "text": "1 rank",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 761,
+          "spell": 16689,
+          "ranks": 1
+         }
+        },
+        {
+         "label": "Overgrowth",
+         "text": "4 ranks; rank 1: Increases the maximum number of targets you may have affected by Entangling Roots by 2.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 921,
+          "spell": 17245,
+          "ranks": 4
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "locked",
+     "title": "Already locked",
+     "state": "locked",
+     "state_text": "Tauren Feral Druid, bear tank (the Party Board).",
+     "by": {
+      "event": "names_open",
+      "text": "Names opened for pack holders and close at the end of the window; a reserved character is created with its ruleset, faction, race and class."
+     },
+     "lines": [
+      {
+       "label": "What reservation fixes",
+       "text": "full character creation: ruleset, faction, race and class",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/pre-purchase",
+        "key": "name_reservation.scope",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Ruleset",
+       "text": "fixed at creation: reservation creates characters in a chosen ruleset, and playing another ruleset needs a new character",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "launch.reserved_character_ruleset",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      },
+      {
+       "label": "Characters per pack",
+       "text": "up to 3",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "name_reservation.characters",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Racials in form",
+       "text": "most objects usable in form, plus Shadowmeld, War Stomp and Walk on Air (Sep 30 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/druid",
+        "key": "druid.forms.objects_racials",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "War Stomp",
+       "text": "active, 2 s stun nearby, 90 s cooldown (2 min before Oct 15)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/horde-racials",
+        "key": "racial.tauren.war_stomp",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [],
+     "group": []
+    }
+   ]
+  },
+  {
+   "class_key": "priest",
+   "race": "Undead",
+   "decisions": [
+    {
+     "key": "professions",
+     "title": "Professions",
+     "state": "chat",
+     "state_text": "Mining (said in chat) and Engineering (said in chat)",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. Training opens at a level, after launch."
+     },
+     "lines": [
+      {
+       "label": "Apprentice",
+       "text": "level 5, cap 75",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.apprentice",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Journeyman",
+       "text": "level 10 and skill 50, cap 150",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.journeyman",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Expert",
+       "text": "level 20, skill 125 and 50 silver, cap 225",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.expert",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Artisan",
+       "text": "level 35 and skill 200, cap 300",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.artisan",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Tier 1 camp objects",
+       "text": "a Camping 101 quest or the trainer at skill 20",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/camping-objects",
+        "key": "camp_object.tier1_source",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Untested",
+       "text": "225 to 300 untested; the beta capped at level 30",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.untested_range",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Mining",
+       "lines": [
+        {
+         "label": "Camp object and its buff",
+         "text": "Lodestone (Blessing of Might); Rough Stone, Copper Bar; Rock Garden / Molten Foundry",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.mining",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Rock Garden at skill 140, Molten Foundry at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279948,
+           279952
+          ],
+          "skill": 186
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "no; only the six crafting professions count",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/legacy",
+          "key": "legacy.gathering_counts",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Library",
+         "text": "The library has no Mining page yet.",
+         "status": "unknown",
+         "src": {
+          "kind": "library"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Engineering",
+       "lines": [
+        {
+         "label": "Bomb satchels",
+         "text": "thrown-slot items, no ammo, area damage",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/engineering",
+          "key": "engineering.bomb_satchels",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "SAF-T bombs",
+         "text": "SAF-T Dynamite and SAF-T Copper Bomb are usable by non-engineers",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/engineering",
+          "key": "engineering.saf_t",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Specialization",
+         "text": "Goblin or Gnomish at 200 through a quest chain",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/engineering",
+          "key": "engineering.specialization",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Favor vendor copper bombs",
+         "text": "skill 85, 45 Favor",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/engineering",
+          "key": "engineering.favor.copper_bombs",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Not documented yet",
+         "text": "no Forever versions documented for nets, the Goblin Rocket Helmet, the Arcanite Dragonling or the Gnomish Death Ray",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/engineering",
+          "key": "engineering.undocumented",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Reagent Bot (a reagent vendor, no buff); Copper Bolts, Copper Tube; Repair Bot / Anarchist's Workbench",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.engineering",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Reagent Bot at skill 20, Repair Bot at skill 140, Gnomish Mind Control Cap at skill 215, Goblin Rocket Helmet at skill 235, Anarchist's Workbench at skill 300, Arcanite Dragonling at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279950,
+           279949,
+           10726,
+           10588,
+           279989,
+           16022
+          ],
+          "skill": 202
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": [
+      {
+       "label": "Mining",
+       "text": "also {paladin}'s.",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      },
+      {
+       "label": "Engineering",
+       "text": "nobody else's on the board.",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      }
+     ]
+    },
+    {
+     "key": "spec40",
+     "title": "Spec at 40",
+     "state": "declared",
+     "state_text": "On the Party Board: Discipline. The board names no change at 40.",
+     "by": {
+      "event": "raids",
+      "text": "No Blizzard date for level 40. Dual spec opens at 40; raids open Dec 9."
+     },
+     "lines": [
+      {
+       "label": "Dual spec",
+       "text": "available at level 40; price unpublished (10 gold circulates in community notes)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/gold-and-riding",
+        "key": "gold.dual_spec",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "At 40 the trainer has",
+       "text": "Dark Sacrifice rank 3, Fade rank 4, Greater Heal rank 1, Inner Fire rank 4, Mana Burn rank 3, Mind Blast rank 6, Penance rank 2, Prayer of Healing rank 2, Prayer of Mending rank 1, Shackle Undead rank 2, Shadow Word: Death rank 2, Touch of Weakness rank 4",
+       "status": "forever",
+       "src": {
+        "kind": "client",
+        "build": "1.60.1.70532",
+        "spells": [
+         1277326,
+         9592,
+         2060,
+         1006,
+         10874,
+         8106,
+         1240720,
+         996,
+         401859,
+         9485,
+         1309633,
+         19252
+        ],
+        "level": 40
+       }
+      },
+      {
+       "label": "Divine Spirit",
+       "text": "trained at 30; +17 Spirit at rank 1, 1 hour (Sep 30 deep dive; client 70450)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.divine_spirit",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Prayer of Healing",
+       "text": "heals the target's party and their pets at 40 yd (Sep 30 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.prayer_of_healing",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Fear Ward",
+       "text": "every priest at 20; 3 min cooldown, 3 min duration, 100 mana (Sep 30 deep dive; Wowhead tooltip; Classic Dwarf only)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.fear_ward",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Levels",
+       "text": "Power Word: Shield 6; Renew and Fade 8; Mind Blast, Resurrection and racial spell 1 at 10; Inner Fire 12; Psychic Scream 14; Heal 16; Dispel Magic 18; Flash Heal, Holy Fire, Fear Ward, Devouring Plague, Shackle Undead, Mind Soothe and racial spell 2 at 20; Mana Burn 24; Holy Nova and Mind Flay 28 (unchecked in game); Prayer of Healing, Divine Spirit, Mind Control and Shadow Protection 30; Shadow Word: Death 32; Levitate 34; Greater Heal 40; Prayer of Fortitude 48; Prayer of Shadow Protection 56; Prayer of Spirit 60 (client 70450)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.levels",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Leveling guides",
+       "text": "beta-time guides describe Discipline with a wand to 39 and Shadowform at 40 as the Shadow payoff; Warcraft Tavern says Shadow does not start shining until 28; Spirit Tap and Penance cannot both fit in 21 points (Method, Oct 4; Warcraft Tavern)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.leveling_guides",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Touch of the Grave, by role",
+       "text": "passive, chance to drain health on hit or spell; Oct 15 (as Touch of the Dead): 30% proc for casters, 20% for Paladin, Rogue and Warrior, 15 s internal cooldown since Oct 27 (25 s from Oct 15), no low-rank penalty; guides say about 5% of max health drained",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/horde-racials",
+        "key": "racial.undead.touch_of_the_grave",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Discipline",
+       "lines": [
+        {
+         "label": "Soul Warding",
+         "text": "16-point medal, needs Improved Power Word: Shield; removes the shield cooldown and cuts its cost 15% (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.disc.soul_warding",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Penance",
+         "text": "21-point medal; 2 s channel, 12 s cooldown, three hits, heals an ally or damages an enemy; rank 1 150 mana, 45 damage or 134 healing per hit after the Oct 8 cut that fixed a 3 s channel bug (Sep 30 deep dive; Oct 8 notes; client 70450; Wowhead rank 1 tooltip)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.disc.penance",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Divine Aegis",
+         "text": "row 6; non-periodic crit heals leave an absorb worth 15% of the heal, capped at 1,200, 12 s, no stacking (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.disc.divine_aegis",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Power Infusion",
+         "text": "31 points; +20% spell damage and healing on a target for 15 s, 3 min cooldown (client 70450 only; absent from Blizzard's text)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.disc.power_infusion",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        }
+       ],
+       "board": true
+      },
+      {
+       "name": "Holy",
+       "lines": [
+        {
+         "label": "Holy talents",
+         "text": "Twilight Focus (pushback protection), Divine Fury (-0.5 s on Smite, Holy Fire, Heal, Greater Heal), Inspiration on any non-periodic crit heal, Improved Healing also cheapens Penance and Prayer of Mending, Binding Heal (16 points), Litany of Light, Spiritual Guidance (25% of Spirit to healing, 8% to damage), Prayer of Mending (31 points, needs Spirit of Redemption); Lightwell and Improved Prayer of Healing removed (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.holy.talents",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Shadow",
+       "lines": [
+        {
+         "label": "Shadowform",
+         "text": "allows every non-healing spell, halves Shadow mana costs, +100% crit damage (Sep 30 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.shadow.shadowform",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Vampiric Embrace",
+         "text": "16-point medal; 30 s duration, 30 s cooldown, unresistable (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.shadow.vampiric_embrace",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "New Shadow talents",
+         "text": "Dark Inspiration (row 4: Mind Blast or a full Mind Flay gives the party +15% Spirit for 10 s), Devouring Contagion (spreads to 2 targets), Early Demise, Improved Mind Flay (each tick +20% over the last); Shadow Focus is the row 1 hit talent (Sep 30 deep dive; client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/priest",
+          "key": "priest.shadow.new_talents",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "talents",
+     "title": "First talents",
+     "state": "none",
+     "state_text": "Nothing on the Party Board names a first talent for anyone.",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. The first talent point comes at level 10."
+     },
+     "lines": [
+      {
+       "label": "The first point (Blizzard's mage deep dive; the other classes are not restated)",
+       "text": "51, first point at level 10 (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage-talents",
+        "key": "mage.talents.points_at_60",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Discipline row 1 per Blizzard's notes",
+       "text": "Power in Light (new: Smite and Penance +10% against targets with your Holy Fire or Shadow Word: Pain); Wand Specialization (2 ranks, +25%); Twin Disciplines (new: instant damage and healing +5%) (Oct 15 notes; client 70450)",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.disc.row1",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Removed from Discipline",
+       "text": "Unbreakable Will, Force of Will, Improved Power Word: Fortitude and Divine Spirit; the last two are baseline (Sep 30 deep dive)",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.disc.removed",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Discipline",
+       "lines": [
+        {
+         "label": "Unbreakable Will",
+         "text": "5 ranks; rank 1: Reduces the duration of Stun, Fear, and Silence effects inflicted on you by 30%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 342,
+          "spell": 14522,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Wand Specialization",
+         "text": "5 ranks; rank 1: Increases your damage with Wands by 25%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 345,
+          "spell": 14524,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Holy",
+       "lines": [
+        {
+         "label": "Twilight Focus",
+         "text": "2 ranks; rank 1: Gives you a 70% chance to avoid interruption caused by damage while casting any spell.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 410,
+          "spell": 14913,
+          "ranks": 2
+         }
+        },
+        {
+         "label": "Improved Renew",
+         "text": "3 ranks; rank 1: Increases the amount healed by your Renew spell by 5%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 406,
+          "spell": 14908,
+          "ranks": 3
+         }
+        },
+        {
+         "label": "Holy Specialization",
+         "text": "5 ranks; rank 1: Increases the critical effect chance of your Holy spells by 1%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 401,
+          "spell": 14889,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Shadow",
+       "lines": [
+        {
+         "label": "Spirit Tap",
+         "text": "5 ranks; rank 1: Gives you a 0% chance to increase your Spirit by 100% for 15 sec after killing a non-trivial target or when an enemy afflicted by your Vampiric Embrace dies. For the duration, 50% of your Mana regeneration will continue while casting.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 465,
+          "spell": 15270,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Blackout",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 464,
+          "spell": 15268,
+          "ranks": 5
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "locked",
+     "title": "Already locked",
+     "state": "locked",
+     "state_text": "Undead Disc Priest (the Party Board).",
+     "by": {
+      "event": "names_open",
+      "text": "Names opened for pack holders and close at the end of the window; a reserved character is created with its ruleset, faction, race and class."
+     },
+     "lines": [
+      {
+       "label": "What reservation fixes",
+       "text": "full character creation: ruleset, faction, race and class",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/pre-purchase",
+        "key": "name_reservation.scope",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Ruleset",
+       "text": "fixed at creation: reservation creates characters in a chosen ruleset, and playing another ruleset needs a new character",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "launch.reserved_character_ruleset",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      },
+      {
+       "label": "Characters per pack",
+       "text": "up to 3",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "name_reservation.characters",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Undead priest spells",
+       "text": "Touch of Weakness at 10; Dark Sacrifice at 20 (health into mana over 15 s, scales with Spirit, ranks at 20/30/40/50/60, quest listed as coming soon on Oct 6) (Wowhead; Blizzard Watch)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.racial.undead",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Dark Sacrifice",
+       "text": "Forever confirmed by tooltip: instant, 10 min cooldown, health into mana over 15 s, on rank 1 (spell 1277324, level 20) and rank 5 (spell 1277328, level 60); Wowhead tooltips read 2026-10-27, build 70532 client table also prints 10 min",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/priest",
+        "key": "priest.racial.undead.dark_sacrifice_cooldown",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-27"
+       }
+      }
+     ],
+     "options": [],
+     "group": []
+    }
+   ]
+  },
+  {
+   "class_key": "paladin",
+   "race": "Undead",
+   "decisions": [
+    {
+     "key": "professions",
+     "title": "Professions",
+     "state": "declared",
+     "state_text": "Blacksmithing (on the Party Board) and Mining (on the Party Board)",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. Training opens at a level, after launch."
+     },
+     "lines": [
+      {
+       "label": "Apprentice",
+       "text": "level 5, cap 75",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.apprentice",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Journeyman",
+       "text": "level 10 and skill 50, cap 150",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.journeyman",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Expert",
+       "text": "level 20, skill 125 and 50 silver, cap 225",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.expert",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Artisan",
+       "text": "level 35 and skill 200, cap 300",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.artisan",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Tier 1 camp objects",
+       "text": "a Camping 101 quest or the trainer at skill 20",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/camping-objects",
+        "key": "camp_object.tier1_source",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Untested",
+       "text": "225 to 300 untested; the beta capped at level 30",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.untested_range",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Blacksmithing",
+       "lines": [
+        {
+         "label": "Crafted plate sets, 35 to 50",
+         "text": "Justicar's, Sentinel's, Officer's, Prefect's and Warder's crafted plate sets (Gauntlets 35, Pauldrons 42, Wristguards 45, Sabatons 47, Waistguard 50), 60 Favor at Friendly up to 90 at Honored; Blacksmithing shields only at skill 300 (Evergreen Shield, Jagged Obsidian Shield) (Warcraft Tavern; Kami Labs; Justicar's Pauldrons, Wristguards, Sabatons and Waistguard levels per the Wowhead tooltips)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/tanking",
+          "key": "tanking.gear.plate_35_50",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Shoulders at 24 to 30",
+         "text": "Chestnut Mantle (Blackfathom quest) or Rough Bronze Shoulders (Blacksmithing) (Wowhead)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/tanking",
+          "key": "tanking.gear.shoulders_24_30",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Sharpening Wheel (Strength of Earth); Rough Stone, Copper Bar; Anvil / Master Forge",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.blacksmithing",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Sharpening Wheel at skill 20, Master Forge at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279944,
+           279955
+          ],
+          "skill": 164
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Library",
+         "text": "The library has no Blacksmithing page yet; the two lines above come from the tanking page.",
+         "status": "unknown",
+         "src": {
+          "kind": "library"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Mining",
+       "lines": [
+        {
+         "label": "Camp object and its buff",
+         "text": "Lodestone (Blessing of Might); Rough Stone, Copper Bar; Rock Garden / Molten Foundry",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.mining",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Rock Garden at skill 140, Molten Foundry at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279948,
+           279952
+          ],
+          "skill": 186
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "no; only the six crafting professions count",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/legacy",
+          "key": "legacy.gathering_counts",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Library",
+         "text": "The library has no Mining page yet.",
+         "status": "unknown",
+         "src": {
+          "kind": "library"
+         }
+        }
+       ]
+      }
+     ],
+     "group": [
+      {
+       "label": "Blacksmithing",
+       "text": "nobody else's on the board.",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      },
+      {
+       "label": "Mining",
+       "text": "also {priest}'s (said in chat).",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      }
+     ]
+    },
+    {
+     "key": "spec40",
+     "title": "Spec at 40",
+     "state": "declared",
+     "state_text": "On the Party Board: Retribution to 40, then Ret/Holy.",
+     "by": {
+      "event": "raids",
+      "text": "No Blizzard date for level 40. Dual spec opens at 40; raids open Dec 9."
+     },
+     "lines": [
+      {
+       "label": "Dual spec",
+       "text": "available at level 40; price unpublished (10 gold circulates in community notes)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/gold-and-riding",
+        "key": "gold.dual_spec",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "At 40 the trainer has",
+       "text": "Blessing of Light rank 1, Devotion Aura rank 5, Hammer of Justice rank 3, Hammer of the Righteous, Light's Vigil rank 1, Seal of Light rank 2, Shadow Resistance Aura rank 2",
+       "status": "forever",
+       "src": {
+        "kind": "client",
+        "build": "1.60.1.70532",
+        "spells": [
+         19977,
+         1032,
+         5589,
+         407632,
+         1310911,
+         20347,
+         19895
+        ],
+        "level": 40
+       }
+      },
+      {
+       "label": "Blessing of Kings",
+       "text": "baseline at 20; 8% of base mana, +10% stats, 1 hour; Improved Wisdom also baseline (client 70450; Oct 15 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/paladin",
+        "key": "paladin.blessing_of_kings",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Salvation",
+       "text": "level 26; Salvation and Mass Salvation replace the Blessing versions, 30% threat reduction, not a Blessing so it sits alongside one; Revoke is new (Oct 15 notes; client 70450)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/paladin",
+        "key": "paladin.salvation",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Levels",
+       "text": "Seal of Righteousness, Holy Light and Devotion Aura 1; Judgement 4; Holy Strike and Divine Protection 6; Hammer of Justice 8; Seal of Fury, Blessing of Protection and Lay on Hands 10; Redemption 12 (quest); Blessing of Wisdom 14; Retribution Aura and Righteous Fury 16; Blessing of Freedom 18; Consecration, Kings, Exorcism and Flash of Light 20; Concentration Aura 22; Salvation and Revoke 26; Divine Intervention and Seal of Light 30; Seal of Wisdom 38; Blessing of Light and Summon Warhorse 40; Cleanse 42; Hammer of Wrath 44; Blessing of Sacrifice 46; Greater Might 52 and Greater Wisdom 54 (Symbol of Kings); Greater Kings, Greater Light and Mass Salvation 60 (client 70450)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/paladin",
+        "key": "paladin.levels",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Mounts",
+       "text": "the same read marks Summon Warhorse, Summon Charger and Sense Undead as not in Forever, while the wowforevertools 70450 list has Warhorse at 40 and Charger at 60",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/paladin",
+        "key": "paladin.mounts.70532",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Touch of the Grave, by role",
+       "text": "passive, chance to drain health on hit or spell; Oct 15 (as Touch of the Dead): 30% proc for casters, 20% for Paladin, Rogue and Warrior, 15 s internal cooldown since Oct 27 (25 s from Oct 15), no low-rank penalty; guides say about 5% of max health drained",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/horde-racials",
+        "key": "racial.undead.touch_of_the_grave",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Retribution",
+       "lines": [
+        {
+         "label": "Champion of the Light",
+         "text": "20/40/60% of Intellect after the Oct 18 server hotfix (was 33/66/100 before Oct 1, 20/40/60 after it, 10/20/30 on Oct 15)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.ret.champion_of_the_light",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Retribution Aura",
+         "text": "back to vanilla base damage, spell power ratio 13.3% to 6% (Oct 8 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.retribution_aura",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Leveling reports",
+         "text": "Wowhead's beta author: 10 to 15 an auto-attack simulator with Holy Strike, threat reliable from Retribution Aura and Righteous Fury at 16, the spec comes online at 20 with Consecration and spell power; Mobalytics (Oct 18) calls Prot a big-pull leveler; Method (Oct 10) and Warcraft Tavern lean Retribution or Holy talents until 20 to 30",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.leveling_reports",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        }
+       ],
+       "board": true
+      },
+      {
+       "name": "Holy",
+       "lines": [
+        {
+         "label": "Holy medals",
+         "text": "Voice of Truth 11 (6 s immunity to Silence and Interrupt, 3 minute cooldown); Divine Favor 16 (next Flash of Light, Holy Light or Holy Shock a guaranteed crit; was 21); Holy Shock 21 (instant, 10 s cooldown, was 30; rank 1 heals 110 to 118 or hits 129 to 139); Light's Vigil 31 (Oct 15 deep dive; client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.holy.medals",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Light's Vigil",
+         "text": "needs Holy Shock; 1.5 s cast, 30 s buff, 6 s cooldown, one per party; the next Holy Shock on that ally skips its cooldown and heals the whole party (325 to 344 at rank 1); on an enemy it hits harder and refunds 75% of its mana (Oct 15 deep dive; client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.holy.lights_vigil",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Other Holy talents",
+         "text": "Healing Light also boosts Holy Shock; Reverence keeps up to 30% of Spirit regen while casting; Illumination (needs Reverence) refunds 50% of base cost; Infusion of Light cuts the next Holy Light by up to 1 s after a Holy Shock or Flash of Light crit; Divine Precision (needs Holy Shock) up to 18% Holy hit (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.holy.other_talents",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        }
+       ],
+       "board": true
+      },
+      {
+       "name": "Protection",
+       "lines": [
+        {
+         "label": "Templar's Bulwark",
+         "text": "21-point medal; absorbs 100% of max health for 8 s, 5 minute cooldown, applies Forbearance (Oct 15 deep dive; Wowhead tooltip)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.prot.templars_bulwark",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Seal of Fury",
+         "text": "level 10; a Holy hit per swing plus a small absorb that needs a shield and does not stack; rank 7 at 60 hits for 35 plus 10% of spell power; rank 3 at 26; per-swing, so fast weapons get more (Oct 15 deep dive; client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.seal_of_fury",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Judgement taunt",
+         "text": "Judgement with Seal of Fury active taunts for 4 s at 10 yd; rank 7 hits 153 to 167 plus 42.9% of spell power; damage lands before the taunt applies (Oct 15 deep dive; client 70450; beta feedback Oct 5)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.judgement_taunt",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Swift Judgement",
+         "text": "16-point medal; 1 minute cooldown, no mana, ends Judgement's cooldown and makes the next one free (Oct 15 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/paladin",
+          "key": "paladin.prot.swift_judgement",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Full tanks",
+         "text": "Protection Warrior and Feral Druid (Sep 30 deep dives), Protection Paladin (Oct 15 deep dive); all three have a taunt",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/tanking",
+          "key": "tanking.full_tanks",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "talents",
+     "title": "First talents",
+     "state": "none",
+     "state_text": "Nothing on the Party Board names a first talent for anyone.",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. The first talent point comes at level 10."
+     },
+     "lines": [
+      {
+       "label": "The first point (Blizzard's mage deep dive; the other classes are not restated)",
+       "text": "51, first point at level 10 (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage-talents",
+        "key": "mage.talents.points_at_60",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Protection rows 1 and 2",
+       "text": "Toughness (+10% armor from items); Redoubt (10% chance per melee hit taken for up to 20% block, 10 s or 5 blocks, block chance cut Oct 1); Precision (+3% hit on spells and attacks, helps the taunt land); Anticipation (+20 Defense); Guardian's Favor (Oct 15 deep dive; Oct 1 notes; client 70450)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/paladin",
+        "key": "paladin.prot.rows_1_2",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Retribution",
+       "lines": [
+        {
+         "label": "Improved Blessing of Might",
+         "text": "5 ranks; rank 1: Increases the melee attack power bonus of your Blessing of Might by 4%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1401,
+          "spell": 20042,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Benediction",
+         "text": "5 ranks; rank 1: Reduces the Mana cost of all instant cast spells and abilities by 10%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1407,
+          "spell": 20101,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Holy",
+       "lines": [
+        {
+         "label": "Divine Strength",
+         "text": "5 ranks; rank 1: Increases your Strength by 2%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1450,
+          "spell": 20262,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Divine Intellect",
+         "text": "5 ranks; rank 1: Increases your total Intellect by 2%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1449,
+          "spell": 20257,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Protection",
+       "lines": [
+        {
+         "label": "Improved Devotion Aura",
+         "text": "5 ranks; rank 1: Increases the armor bonus of your Devotion Aura by 5%, and increases all healing received by party members affected by your Auras by 2%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1422,
+          "spell": 20138,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Redoubt",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1421,
+          "spell": 20127,
+          "ranks": 5
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "locked",
+     "title": "Already locked",
+     "state": "locked",
+     "state_text": "Undead Paladin: Ret to 40, then Ret/Holy (the Party Board).",
+     "by": {
+      "event": "names_open",
+      "text": "Names opened for pack holders and close at the end of the window; a reserved character is created with its ruleset, faction, race and class."
+     },
+     "lines": [
+      {
+       "label": "What reservation fixes",
+       "text": "full character creation: ruleset, faction, race and class",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/pre-purchase",
+        "key": "name_reservation.scope",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Ruleset",
+       "text": "fixed at creation: reservation creates characters in a chosen ruleset, and playing another ruleset needs a new character",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "launch.reserved_character_ruleset",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      },
+      {
+       "label": "Characters per pack",
+       "text": "up to 3",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "name_reservation.characters",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Horde paladins",
+       "text": "Undead",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/overview",
+        "key": "races.horde.paladin",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "New combinations",
+       "text": "Orc Mage, Troll Warlock, Undead Paladin, Human Hunter, Gnome Priest, Dwarf Shaman",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/overview",
+        "key": "races.new_combos",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [],
+     "group": []
+    }
+   ]
+  },
+  {
+   "class_key": "mage",
+   "race": "Undead",
+   "decisions": [
+    {
+     "key": "professions",
+     "title": "Professions",
+     "state": "open",
+     "state_text": "Tailoring (said in chat) and Enchanting or Alchemy (still open on the Party Board)",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. Training opens at a level, after launch."
+     },
+     "lines": [
+      {
+       "label": "Apprentice",
+       "text": "level 5, cap 75",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.apprentice",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Journeyman",
+       "text": "level 10 and skill 50, cap 150",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.journeyman",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Expert",
+       "text": "level 20, skill 125 and 50 silver, cap 225",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.expert",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Artisan",
+       "text": "level 35 and skill 200, cap 300",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.artisan",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Tier 1 camp objects",
+       "text": "a Camping 101 quest or the trainer at skill 20",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/camping-objects",
+        "key": "camp_object.tier1_source",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Untested",
+       "text": "225 to 300 untested; the beta capped at level 30",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.untested_range",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Tailoring",
+       "lines": [
+        {
+         "label": "Favor vendor sets",
+         "text": "six-piece sets at level 12, 30 Favor a piece, no rep: Fire, Shadow, Silky, Pearly, Shining and Pristine lines",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.favor_lines",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Bags",
+         "text": "Red Linen Bag holds 8 slots; Linen and Woolen Reagent Bags fill the new fifth (reagent) slot",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.bags",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "School variants",
+         "text": "Frost, Holy, Healing, Arcane and Fire variants exist; the line-to-school mapping is unpublished",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.school_variants",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Materials from 1 to 150",
+         "text": "65 Linen, 459 Wool, 29 Elixir of Wisdom, about 216 Silk and 115 Mageweave",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.materials_1_150",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Artisan's Tier at skill 300",
+         "text": "Tailoring 300 plus a placed Loom; the pants also need Friendly with Guardians of Hyjal and the quest Friendly Advice",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.artisans_tier.gate",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Faction Banner (Divine Spirit); Bolt of Linen, Coarse Thread; Spinning Wheel / Loom (a pattern workstation)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.tailoring",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Faction Banner at skill 20, Spinning Wheel at skill 140",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279972,
+           279943
+          ],
+          "skill": 197
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Enchanting",
+       "lines": [
+        {
+         "label": "Wizard Oils",
+         "text": "Minor +8, Lesser +16, Wizard Oil +24 spell power (Sep 24 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.wizard_oils",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Favor vendor staff at skill 140",
+         "text": "Glimmering Staff or Soulstaff: skill 140, 45 Favor, no rep; +11 Stamina, +11 Intellect",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.favor.staff_140",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Favor vendor wand at skill 275",
+         "text": "skill 275, 180 Favor, Honored; +7 Intellect, +9 spell power",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.favor.brilliant_wand",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "New wands",
+         "text": "Twisted Nether +6, Dreambough +7, Lesser Eternal +8, Greater Eternal +9 spell power",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.new_wands",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Materials from 1 to 225",
+         "text": "about 19 motes, 309 Lesser Magic Essence, 272 Strange Dust, 39 to 61 Soul Dust, 46 to 77 Vision Dust",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.materials_1_225",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Enchanted Lute (Mark of the Wild); Simple Wood, Strange Dust; Arcane Salvager / Arcane Forge",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.enchanting",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Enchanted Lute at skill 20, Arcane Salvager at skill 140, Arcane Forge at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279976,
+           279985,
+           279987
+          ],
+          "skill": 333
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Alchemy",
+       "lines": [
+        {
+         "label": "Flask of Supreme Power",
+         "text": "Flask of Supreme Power (item 13512, requires level 50): +150 spell damage for 2 hours, one flask at a time, persists through death (confirmed: client table build 70532, item 13512, spell 17628; the Wowhead tooltip read live Oct 26 agrees)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/alchemy",
+          "key": "alchemy.flask_of_supreme_power",
+          "tier": 0,
+          "label": "client table",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Greater Arcane Elixir",
+         "text": "Greater Arcane Elixir (item 13454, requires level 47): +35 spell damage for 1 hour (confirmed: client table build 70532, item 13454, spell 17539)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/alchemy",
+          "key": "alchemy.greater_arcane_elixir",
+          "tier": 0,
+          "label": "client table",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Elixir of the Sages",
+         "text": "Elixir of the Sages (item 13447, requires level 38): +18 Intellect and +18 Spirit for 1 hour (confirmed: client table build 70532, item 13447, spell 17535; the Wowhead tooltip read live Oct 26 agrees)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/alchemy",
+          "key": "alchemy.elixir_of_the_sages",
+          "tier": 0,
+          "label": "client table",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Healing potions",
+         "text": "moved to First Aid; mana potions stay",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/alchemy",
+          "key": "alchemy.healing_potions",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Minor Arcane Elixir",
+         "text": "new low-level spell power elixir",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/alchemy",
+          "key": "alchemy.minor_arcane_elixir",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Alchemy Laboratory",
+         "text": "tier 3 camp object, reported to brew flasks at camp with no Scholomance trip",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/alchemy",
+          "key": "alchemy.laboratory",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Caster elixir at the Favor vendor",
+         "text": "none in the visible vendor text",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/alchemy",
+          "key": "alchemy.favor.caster_elixir",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Mana Well (Blessing of Wisdom); Peacebloom, Empty Vial; Fermenter (blueprint from Ruins of Lordaeron) / Alchemy Laboratory, reported to brew flasks at camp",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.alchemy",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Mana Well at skill 20, Alchemy Laboratory at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279956,
+           279990
+          ],
+          "skill": 171
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": [
+      {
+       "label": "Tailoring",
+       "text": "also {warlock}'s (said in chat).",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      },
+      {
+       "label": "Enchanting",
+       "text": "also {warlock}'s (said in chat).",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      },
+      {
+       "label": "Alchemy",
+       "text": "nobody else's on the board. The Party Board's open item names it as the group's gap.",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      }
+     ]
+    },
+    {
+     "key": "spec40",
+     "title": "Spec at 40",
+     "state": "declared",
+     "state_text": "On the Party Board: Frost, Fire at 40.",
+     "by": {
+      "event": "raids",
+      "text": "No Blizzard date for level 40. Dual spec opens at 40; raids open Dec 9."
+     },
+     "lines": [
+      {
+       "label": "Dual spec",
+       "text": "available at level 40; price unpublished (10 gold circulates in community notes)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/gold-and-riding",
+        "key": "gold.dual_spec",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "At 40 the trainer has",
+       "text": "Arcane Blast rank 3, Arcane Missiles rank 5, Conjure Water rank 5, Fire Ward rank 3, Flamestrike rank 4, Frost Nova rank 3, Frostfire Bolt rank 1, Ice Armor rank 2, Polymorph rank 3, Portal: Orgrimmar, Portal: Undercity, Scorch rank 4",
+       "status": "forever",
+       "src": {
+        "kind": "client",
+        "build": "1.60.1.70532",
+        "spells": [
+         1239697,
+         8417,
+         10138,
+         8458,
+         8423,
+         6131,
+         401502,
+         7320,
+         12825,
+         11417,
+         11418,
+         8446
+        ],
+        "level": 40
+       }
+      },
+      {
+       "label": "Frostfire Bolt at 40",
+       "text": "level 40, counts as Fire and Frost, uses the higher of your two bonuses and the target's lower resistance (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage",
+        "key": "mage.frostfire_bolt",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Portals",
+       "text": "home capitals at 40, Darnassus or Thunder Bluff at 50 (client 70450, Oct 18)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage",
+        "key": "mage.portals",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Medals",
+       "text": "gold medals at 11, 16, 21 and 31 points spent in a tree (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage-talents",
+        "key": "mage.talents.medal_points",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Row gates",
+       "text": "rows 1 to 7 open at 0, 5, 10, 15, 20, 25 and 30 points in that tree (client 70450, Oct 18)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage-talents",
+        "key": "mage.talents.row_gates",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Stats",
+       "text": "spell power first in every spec (Warcraft Tavern, Oct 18)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage",
+        "key": "mage.stats.priority",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Touch of the Grave, by role",
+       "text": "passive, chance to drain health on hit or spell; Oct 15 (as Touch of the Dead): 30% proc for casters, 20% for Paladin, Rogue and Warrior, 15 s internal cooldown since Oct 27 (25 s from Oct 15), no low-rank penalty; guides say about 5% of max health drained",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/horde-racials",
+        "key": "racial.undead.touch_of_the_grave",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Frost",
+       "lines": [
+        {
+         "label": "Ice Lance",
+         "text": "11-point medal, instant, +200% damage on frozen targets (Oct 15 notes; +300% before that; Wowhead tooltip)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.frost.ice_lance",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Ice Block",
+         "text": "16-point medal (Oct 7 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.frost.ice_block",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Cold Snap",
+         "text": "21-point medal, 10 minute cooldown (Oct 7 deep dive; client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.frost.cold_snap",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Fingers of Frost",
+         "text": "row 5, needs Ice Lance; chills have a 15% chance at 1 to 2 charges that treat the target as frozen; procs from Frost Armor and Ice Armor too (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.frost.fingers_of_frost",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Ice Barrier",
+         "text": "row 7, 305 mana, 30 s cooldown; absorbs 448 plus 10% of Frost spell power at rank 1, +3% Frost damage, another +3% and no cast-time loss while the shield holds (Oct 23 hotfix cache, build 70532; the 70450 files had a flat 448 absorb)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.frost.ice_barrier",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Shatter",
+         "text": "+17/34/50% crit on frozen targets; no longer needs Improved Frost Nova (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.frost.shatter",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        }
+       ],
+       "board": true
+      },
+      {
+       "name": "Fire",
+       "lines": [
+        {
+         "label": "Heating Up",
+         "text": "row 4, needs Pyroblast; crits from Fireball, Frostfire Bolt, Fire Blast and Scorch each cut the next Pyroblast cast by 25%, 3 stacks within 20 s; Fire Blast adds one charge on hit, two on a crit (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.fire.heating_up",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Ignite",
+         "text": "8 to 40% of crit damage over 4 s, personal to each mage, no double-dipping on percentage modifiers (Sep 24 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.fire.ignite",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Critical Mass",
+         "text": "5 ranks, 10% total (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.fire.critical_mass",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Combustion",
+         "text": "3 charges, needs Critical Mass 5/5 (client 70450; 4 charges earlier in the beta)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.fire.combustion",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Fire Power",
+         "text": "+1/2/3% Fire damage per Fire effect of yours on the target, up to 12%; Ignite, Improved Scorch, Fireball, Pyroblast and Impact count; Frostfire Bolt benefits but adds no stack (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.fire.fire_power",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ],
+       "board": true
+      },
+      {
+       "name": "Arcane",
+       "lines": [
+        {
+         "label": "Arcane Blast",
+         "text": "11-point medal, 1.5 s cast, stacks to 4 within 15 s; each stack adds 15% of Intellect as spell damage and raises its own cost by 175% (client 70450, Oct 18; live tooltip unread)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.arcane.arcane_blast",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Arcane Wrath",
+         "text": "16-point medal, 3.5 s cast, 6 s cooldown, Fireball-like base damage plus spell power equal to 5% of max mana (Oct 15 notes; Wowhead tooltip)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.arcane.arcane_wrath",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Missile Barrage",
+         "text": "2-point Arcane row 1 talent; procs 20/40% from Arcane Blast and 10/20% from Fireball, Frostbolt, Frost Blast, Frostfire Bolt and Arcane Wrath; next Arcane Missiles is free, half length, one bolt every 0.5 s (Oct 15 notes; 70450 hotfix added Frost Blast)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage",
+          "key": "mage.arcane.missile_barrage",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Arcane Power",
+         "text": "row 7, needs Presence of Mind; +30% damage and +30% mana cost for 15 s, 3 min cooldown (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.arcane.arcane_power",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "talents",
+     "title": "First talents",
+     "state": "none",
+     "state_text": "Nothing on the Party Board names a first talent for anyone.",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. The first talent point comes at level 10."
+     },
+     "lines": [
+      {
+       "label": "The first point (Blizzard's mage deep dive; the other classes are not restated)",
+       "text": "51, first point at level 10 (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage-talents",
+        "key": "mage.talents.points_at_60",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Fire",
+       "lines": [
+        {
+         "label": "Improved Fireball",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 26,
+          "spell": 11069,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Improved Fireball, the wiki",
+         "text": "-0.5 s on Fireball and Frostfire Bolt (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.fire.improved_fireball",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Impact",
+         "text": "5 ranks; rank 1: Gives your Fire spells a 10% chance to stun the target for 2 sec.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 30,
+          "spell": 11103,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Impact, the wiki",
+         "text": "low-rank casts proc it less; Flamestrike ticks no longer proc it (Oct 8 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.fire.impact",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Frost",
+       "lines": [
+        {
+         "label": "Frost Warding",
+         "text": "2 ranks; rank 1: Increases the Armor and resistance given by your Frost Armor and Ice Armor spells by 15%. In addition, gives your Frost Ward a 10% chance to reflect Frost spells and effects while active.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 70,
+          "spell": 11189,
+          "ranks": 2
+         }
+        },
+        {
+         "label": "Frost Warding, the wiki",
+         "text": "+15/30% armor and resistances on Frost and Ice Armor, 10/20% chance for Frost Ward to negate the warded spell, +10/20% to Ice Barrier and Frost Ward absorbs (Oct 23 hotfix cache, build 70532)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.frost.frost_warding",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Improved Frostbolt",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 37,
+          "spell": 11070,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Improved Frostbolt, the wiki",
+         "text": "-0.5 s on Frostbolt and Frost Blast (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.frost.improved_frostbolt",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Elemental Precision",
+         "text": "3 ranks; rank 1: Improves your chance to hit with Frost and Fire spells by 6%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1649,
+          "spell": 29438,
+          "ranks": 3
+         }
+        },
+        {
+         "label": "Elemental Precision, the wiki",
+         "text": "3 ranks (spells 29438 to 29440); rank 1 is +6% hit with Fire and Frost spells (confirmed: client table build 70532, spell 29438); ranks 2 and 3 have no rows in the client export or on Wowhead, so their values are an in-game check at launch; alternative, labelled datamine: the wowforevertalents read of the Oct 23 hotfix cache says +2/4/6% by rank (5 ranks of 1% in build 70450, a resistance reduction before that)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.frost.elemental_precision",
+          "tier": 0,
+          "label": "client table",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Arcane",
+       "lines": [
+        {
+         "label": "Arcane Subtlety",
+         "text": "2 ranks; rank 1: Reduces your target's resistance to all your spells by 15 and reduces the threat caused by your Arcane spells by 30%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 74,
+          "spell": 11210,
+          "ranks": 2
+         }
+        },
+        {
+         "label": "Arcane Subtlety, the wiki",
+         "text": "row 2; -8/-15 target resistance, -15/-30% threat (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.arcane.arcane_subtlety",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Arcane Focus",
+         "text": "5 ranks; rank 1: Improves your chance to hit with Arcane spells by 2%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 76,
+          "spell": 11222,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Arcane Focus, the wiki",
+         "text": "5 ranks (spells 11222, 12839 to 12842); rank 1 is +2% hit with Arcane spells (confirmed: client table build 70532, spell 11222; the Wowhead tooltip read live Oct 26 agrees); ranks 2 to 5 have no rows in the client export or on Wowhead, so their values are an in-game check at launch",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.arcane.arcane_focus",
+          "tier": 0,
+          "label": "client table",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Improved Channeling",
+         "text": "5 ranks; rank 1: Gives you a 20% chance to avoid interruption caused by damage while channeling Arcane Missiles and a 14% chance while casting Arcane Blast or Arcane Wrath.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 80,
+          "spell": 11237,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Improved Channeling, the wiki",
+         "text": "replaces Improved Arcane Missiles; 14 to 70% pushback protection on Arcane Missiles, Arcane Blast and Arcane Wrath (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/mage-talents",
+          "key": "mage.arcane.improved_channeling",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "locked",
+     "title": "Already locked",
+     "state": "locked",
+     "state_text": "Undead Frost Mage, Fire at 40 (the Party Board).",
+     "by": {
+      "event": "names_open",
+      "text": "Names opened for pack holders and close at the end of the window; a reserved character is created with its ruleset, faction, race and class."
+     },
+     "lines": [
+      {
+       "label": "What reservation fixes",
+       "text": "full character creation: ruleset, faction, race and class",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/pre-purchase",
+        "key": "name_reservation.scope",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Ruleset",
+       "text": "fixed at creation: reservation creates characters in a chosen ruleset, and playing another ruleset needs a new character",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "launch.reserved_character_ruleset",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      },
+      {
+       "label": "Characters per pack",
+       "text": "up to 3",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "name_reservation.characters",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Comprehension",
+       "text": "mage only; a minor tradeskill with a Comprehend Scroll spell at level 6",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/comprehension",
+        "key": "comprehension.class",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Teleports",
+       "text": "home capitals at 20 (Stormwind and Ironforge, or Orgrimmar and Undercity), Darnassus or Thunder Bluff at 30 (client 70450, Oct 18)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage",
+        "key": "mage.teleports",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [],
+     "group": []
+    }
+   ]
+  },
+  {
+   "class_key": "warlock",
+   "race": "Troll",
+   "decisions": [
+    {
+     "key": "professions",
+     "title": "Professions",
+     "state": "chat",
+     "state_text": "Enchanting (said in chat) and Tailoring (said in chat)",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. Training opens at a level, after launch."
+     },
+     "lines": [
+      {
+       "label": "Apprentice",
+       "text": "level 5, cap 75",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.apprentice",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Journeyman",
+       "text": "level 10 and skill 50, cap 150",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.journeyman",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Expert",
+       "text": "level 20, skill 125 and 50 silver, cap 225",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.expert",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Artisan",
+       "text": "level 35 and skill 200, cap 300",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.tier.artisan",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Tier 1 camp objects",
+       "text": "a Camping 101 quest or the trainer at skill 20",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/camping-objects",
+        "key": "camp_object.tier1_source",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Untested",
+       "text": "225 to 300 untested; the beta capped at level 30",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/overview",
+        "key": "professions.untested_range",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Enchanting",
+       "lines": [
+        {
+         "label": "Wizard Oils",
+         "text": "Minor +8, Lesser +16, Wizard Oil +24 spell power (Sep 24 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.wizard_oils",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Favor vendor staff at skill 140",
+         "text": "Glimmering Staff or Soulstaff: skill 140, 45 Favor, no rep; +11 Stamina, +11 Intellect",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.favor.staff_140",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Favor vendor wand at skill 275",
+         "text": "skill 275, 180 Favor, Honored; +7 Intellect, +9 spell power",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.favor.brilliant_wand",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "New wands",
+         "text": "Twisted Nether +6, Dreambough +7, Lesser Eternal +8, Greater Eternal +9 spell power",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.new_wands",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Materials from 1 to 225",
+         "text": "about 19 motes, 309 Lesser Magic Essence, 272 Strange Dust, 39 to 61 Soul Dust, 46 to 77 Vision Dust",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/enchanting",
+          "key": "enchanting.materials_1_225",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Enchanted Lute (Mark of the Wild); Simple Wood, Strange Dust; Arcane Salvager / Arcane Forge",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.enchanting",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Enchanted Lute at skill 20, Arcane Salvager at skill 140, Arcane Forge at skill 300",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279976,
+           279985,
+           279987
+          ],
+          "skill": 333
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Tailoring",
+       "lines": [
+        {
+         "label": "Favor vendor sets",
+         "text": "six-piece sets at level 12, 30 Favor a piece, no rep: Fire, Shadow, Silky, Pearly, Shining and Pristine lines",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.favor_lines",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Bags",
+         "text": "Red Linen Bag holds 8 slots; Linen and Woolen Reagent Bags fill the new fifth (reagent) slot",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.bags",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "School variants",
+         "text": "Frost, Holy, Healing, Arcane and Fire variants exist; the line-to-school mapping is unpublished",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.school_variants",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Materials from 1 to 150",
+         "text": "65 Linen, 459 Wool, 29 Elixir of Wisdom, about 216 Silk and 115 Mageweave",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.materials_1_150",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Artisan's Tier at skill 300",
+         "text": "Tailoring 300 plus a placed Loom; the pants also need Friendly with Guardians of Hyjal and the quest Friendly Advice",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/tailoring",
+          "key": "tailoring.artisans_tier.gate",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp object and its buff",
+         "text": "Faction Banner (Divine Spirit); Bolt of Linen, Coarse Thread; Spinning Wheel / Loom (a pattern workstation)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "systems/camping-objects",
+          "key": "camp_object.tailoring",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Camp objects in the client table",
+         "text": "Faction Banner at skill 20, Spinning Wheel at skill 140",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "items": [
+           279972,
+           279943
+          ],
+          "skill": 197
+         }
+        },
+        {
+         "label": "Legacy points",
+         "text": "crafting at 150, 225 and 300 is one Legacy point each; gathering never counts",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "professions/overview",
+          "key": "professions.legacy_points",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      }
+     ],
+     "group": [
+      {
+       "label": "Enchanting",
+       "text": "also {mage}'s (one of two open options).",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      },
+      {
+       "label": "Tailoring",
+       "text": "also {mage}'s (said in chat).",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      }
+     ]
+    },
+    {
+     "key": "spec40",
+     "title": "Spec at 40",
+     "state": "declared",
+     "state_text": "On the Party Board: Demonology. The board names no change at 40.",
+     "by": {
+      "event": "raids",
+      "text": "No Blizzard date for level 40. Dual spec opens at 40; raids open Dec 9."
+     },
+     "lines": [
+      {
+       "label": "Dual spec",
+       "text": "available at level 40; price unpublished (10 gold circulates in community notes)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/gold-and-riding",
+        "key": "gold.dual_spec",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "At 40 the trainer has",
+       "text": "Create Soulstone rank 3, Curse of the Elements rank 3, Demon Armor rank 3, Howl of Terror rank 1, Immolate rank 5, Incinerate rank 1, Wrack rank 1",
+       "status": "forever",
+       "src": {
+        "kind": "client",
+        "build": "1.60.1.70532",
+        "spells": [
+         20755,
+         1311677,
+         11733,
+         5484,
+         11665,
+         412758,
+         1316697
+        ],
+        "level": 40
+       }
+      },
+      {
+       "label": "Pets",
+       "text": "Imp, Voidwalker, Succubus or Incubus (same pet, separate quests), Felhunter; no Felguard, no Metamorphosis (Zockify, Oct 17)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/warlock",
+        "key": "warlock.pet_roster",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Pet scaling",
+       "text": "pets scale from the warlock's stats instead of fixed per-level values (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/warlock",
+        "key": "warlock.pets.scaling",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Levels",
+       "text": "Healthstone and Voidwalker 10, Health Funnel 12, Soulstone 18, Succubus or Incubus and Rain of Fire 20, Seduction 26, Banish and Firestone 28, Felhunter and Hellfire 30, Spellstone and Spell Lock 36, Howl of Terror and Felsteed 40, Death Coil 42, Soul Fire 48, Inferno 50, Bane of Doom, Ritual of Doom and Dreadsteed 60 (client 70450)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/warlock",
+        "key": "warlock.levels",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Mounts",
+       "text": "the wowforevertalents read of build 70532 (Oct 23 hotfix cache) marks Summon Felsteed, Summon Dreadsteed, Curse of Idiocy, Curse of Shadow and Dark Pact as not in Forever and adds Portal of Summoning at 60; the wowforevertools 70450 list still has Felsteed 40, Dreadsteed 60 and Curse of Idiocy 38",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/warlock",
+        "key": "warlock.mounts.70532",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Berserking",
+       "text": "active, +10% cast and attack speed for 15 s since the Blizzard community manager update (10 s before; Blizzard community manager update to dev notes post 8, edited after the Oct 27 snapshot, live text read 2026-10-29; Wowhead news \"More Racial Ability Tuning\" quotes it); cooldown unpublished",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/horde-racials",
+        "key": "racial.troll.berserking",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Destruction",
+       "lines": [
+        {
+         "label": "Firestone and Spellstone",
+         "text": "weapon imbues that stack with Wizard Oil; Firestone adds Fire damage and crit, Spellstone Shadow damage and spell haste (Oct 7 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.firestone_spellstone",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Affliction",
+       "lines": [
+        {
+         "label": "Shadow Mastery",
+         "text": "2/4/6/8/10%, was 1 to 5% (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.affliction.shadow_mastery",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Grim Reach",
+         "text": "+10/20% Affliction range, replaced Malediction (Oct 15 notes)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.affliction.grim_reach",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Affliction row 1",
+         "text": "Improved Life Tap (+20% mana), Suppression (+5% hit, -20% threat), Improved Corruption (instant, +10% damage) (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.affliction.row1",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        }
+       ]
+      },
+      {
+       "name": "Demonology",
+       "lines": [
+        {
+         "label": "Demonic Sacrifice",
+         "text": "11-point medal; the pet becomes a 2-hour buff: Imp +15% Shadow damage, Voidwalker 2% mana every 4 s, Succubus or Incubus +15% Fire damage, Felhunter 3% health every 4 s (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.demonology.demonic_sacrifice",
+          "tier": 3,
+          "label": "forum or datamine",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Fel Domination",
+         "text": "16-point medal, needs Master Summoner; next summon 6 s faster at half mana, 5 min cooldown; instant with Master Summoner per Wowhead, 0.5 s left per client data (client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.demonology.fel_domination",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Soul Link",
+         "text": "21-point medal; 30% of damage taken moves to the pet, both deal +3%, 20% base mana, 100 yd (Oct 7 deep dive; client 70450)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.demonology.soul_link",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Demonic Pact",
+         "text": "31-point medal, needs Soul Link; Demonic Sacrifice survives summoning a different pet, resummoning the sacrificed one cancels it (Oct 7 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.demonology.demonic_pact",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Master Demonologist",
+         "text": "row 6; Imp +10% Fire damage; Voidwalker -10% physical damage taken for warlock and pet; Succubus or Incubus +10% Shadow; Felhunter -10% magic damage taken (Oct 7 deep dive)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.demonology.master_demonologist",
+          "tier": 1,
+          "label": "Blizzard",
+          "accessed": "2026-10-26"
+         }
+        },
+        {
+         "label": "Leveling guides",
+         "text": "Affliction levels faster to the mid-20s; Demonology activates at Demonic Brand, 25 at the earliest (Method, Oct 17; Warcraft Tavern)",
+         "status": "forever",
+         "src": {
+          "kind": "wiki",
+          "page": "classes/warlock",
+          "key": "warlock.leveling_guides",
+          "tier": 2,
+          "label": "guide",
+          "accessed": "2026-10-26"
+         }
+        }
+       ],
+       "board": true
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "talents",
+     "title": "First talents",
+     "state": "none",
+     "state_text": "Nothing on the Party Board names a first talent for anyone.",
+     "by": {
+      "event": "launch",
+      "text": "No Blizzard date. The first talent point comes at level 10."
+     },
+     "lines": [
+      {
+       "label": "The first point (Blizzard's mage deep dive; the other classes are not restated)",
+       "text": "51, first point at level 10 (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/mage-talents",
+        "key": "mage.talents.points_at_60",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Demonology rows 1 to 3",
+       "text": "Improved Health Funnel (+40% transfer, -30% cost, -100% threat); Improved Imp; Demonic Embrace (+15% Stamina, no Spirit penalty); Unholy Power (+10% pet damage); Demonic Aegis; Improved Voidwalker (+30%); Fel Vitality (+15% pet health and mana, +15% warlock mana); Demonic Energies; Improved Sayaad; Master Summoner (summons 4 s faster, 40% cheaper) (client 70450)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/warlock",
+        "key": "warlock.demonology.rows_1_3",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Removed from Demonology",
+       "text": "Improved Healthstone, Fel Intellect, Fel Stamina, Improved Subjugate Demon, Improved Firestone, Improved Spellstone (client 70450)",
+       "status": "unknown",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/warlock",
+        "key": "warlock.demonology.removed",
+        "tier": 3,
+        "label": "forum or datamine",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [
+      {
+       "name": "Destruction",
+       "lines": [
+        {
+         "label": "Improved Shadow Bolt",
+         "text": "5 ranks; rank 1: Your Shadow Bolt critical strikes increase Shadow damage taken by the target from your attacks by 0% for 12 sec.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 944,
+          "spell": 17793,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Cataclysm",
+         "text": "5 ranks; rank 1: Reduces the Mana cost of your Destruction spells by 10%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 941,
+          "spell": 17778,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Affliction",
+       "lines": [
+        {
+         "label": "Suppression",
+         "text": "5 ranks; rank 1: Improves your chance to hit by 5% and reduces all threat you generate by 20%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1005,
+          "spell": 18174,
+          "ranks": 5
+         }
+        },
+        {
+         "label": "Improved Corruption",
+         "text": "5 ranks",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1003,
+          "spell": 17810,
+          "ranks": 5
+         }
+        }
+       ]
+      },
+      {
+       "name": "Demonology",
+       "lines": [
+        {
+         "label": "Improved Healthstone",
+         "text": "2 ranks; rank 1: Increases the amount of Health restored by your Healthstone by 10%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1221,
+          "spell": 18692,
+          "ranks": 2
+         }
+        },
+        {
+         "label": "Improved Imp",
+         "text": "3 ranks; rank 1: Increases the damage of your Imp's Firebolt spell by 30% and the effect of its Fire Shield spell by 30%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1222,
+          "spell": 18694,
+          "ranks": 3
+         }
+        },
+        {
+         "label": "Demonic Embrace",
+         "text": "5 ranks; rank 1: Increases your total Stamina by 15%.",
+         "status": "forever",
+         "src": {
+          "kind": "client",
+          "build": "1.60.1.70532",
+          "talent": 1223,
+          "spell": 18697,
+          "ranks": 5
+         }
+        }
+       ]
+      }
+     ],
+     "group": []
+    },
+    {
+     "key": "locked",
+     "title": "Already locked",
+     "state": "locked",
+     "state_text": "Troll Demo Warlock (the Party Board).",
+     "by": {
+      "event": "names_open",
+      "text": "Names opened for pack holders and close at the end of the window; a reserved character is created with its ruleset, faction, race and class."
+     },
+     "lines": [
+      {
+       "label": "What reservation fixes",
+       "text": "full character creation: ruleset, faction, race and class",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/pre-purchase",
+        "key": "name_reservation.scope",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Ruleset",
+       "text": "fixed at creation: reservation creates characters in a chosen ruleset, and playing another ruleset needs a new character",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "launch.reserved_character_ruleset",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-27"
+       }
+      },
+      {
+       "label": "Characters per pack",
+       "text": "up to 3",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "events/launch",
+        "key": "name_reservation.characters",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "New combinations",
+       "text": "Orc Mage, Troll Warlock, Undead Paladin, Human Hunter, Gnome Priest, Dwarf Shaman",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/overview",
+        "key": "races.new_combos",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Touch of the Dead, for the Undead at this table",
+       "text": "Undead racial: 30% proc for casters on a 25 s internal cooldown (Oct 15 notes); drains proc it only on their first tick (Kami Labs beta tests; Wowhead Touch of the Grave tooltips)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/warlock",
+        "key": "warlock.touch_of_the_dead",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ],
+     "options": [],
+     "group": []
+    }
+   ]
+  }
+ ],
+ "party": {
+  "brackets": [
+   {
+    "from": 1,
+    "to": 39,
+    "note": "as the Party Board has the roles",
+    "tank": [
+     "druid"
+    ],
+    "healer": [
+     "priest"
+    ],
+    "damage": [
+     "paladin",
+     "mage",
+     "warlock"
+    ]
+   },
+   {
+    "from": 40,
+    "to": 60,
+    "note": "the board's line: a second healer from level 40",
+    "tank": [
+     "druid"
+    ],
+    "healer": [
+     "priest",
+     "paladin"
+    ],
+    "damage": [
+     "mage",
+     "warlock"
+    ]
+   }
+  ],
+  "role_lines": [
+   {
+    "label": "Tank",
+    "text": "Growl at 10",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      6795
+     ],
+     "level": 10
+    }
+   },
+   {
+    "label": "Tank",
+    "text": "Frenzied Regeneration at 36",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      22842
+     ],
+     "level": 36
+    }
+   },
+   {
+    "label": "Tank",
+    "text": "Dire Bear Form at 40",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      9634
+     ],
+     "level": 40
+    }
+   },
+   {
+    "label": "Tank",
+    "text": "Nature's Grasp 10, Revive 12 (out-of-combat resurrection), Omen of Clarity 20, Shred 20 (since Oct 15), Lacerate 42 (Sep 30 deep dive; Oct 15 notes)",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "classes/druid",
+     "key": "druid.baseline_new",
+     "tier": 1,
+     "label": "Blizzard",
+     "accessed": "2026-10-27"
+    }
+   },
+   {
+    "label": "Healer",
+    "text": "Prayer of Healing rank 1 at 30",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      596
+     ],
+     "level": 30
+    }
+   },
+   {
+    "label": "Healer",
+    "text": "Greater Heal rank 1 at 40",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      2060
+     ],
+     "level": 40
+    }
+   },
+   {
+    "label": "Healer",
+    "text": "Prayer of Fortitude rank 1 at 48",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      21562
+     ],
+     "level": 48
+    }
+   },
+   {
+    "label": "Healer",
+    "text": "Flash of Light rank 1 at 20",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      19750
+     ],
+     "level": 20
+    }
+   },
+   {
+    "label": "Healer",
+    "text": "Blessing of Light rank 1 at 40",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      19977
+     ],
+     "level": 40
+    }
+   },
+   {
+    "label": "Healer",
+    "text": "Mass Salvation at 60",
+    "status": "forever",
+    "src": {
+     "kind": "client",
+     "build": "1.60.1.70532",
+     "spells": [
+      25895
+     ],
+     "level": 60
+    }
+   }
+  ],
+  "buffs": [
+   {
+    "key": "arcane_intellect",
+    "name": "Arcane Intellect",
+    "giver": "mage",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "everyone with a mana bar"
+   },
+   {
+    "key": "conjure",
+    "name": "Conjured food and water",
+    "giver": "mage",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "anyone the mage hands it to"
+   },
+   {
+    "key": "fortitude",
+    "name": "Power Word: Fortitude",
+    "giver": "priest",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "the whole party"
+   },
+   {
+    "key": "shadow_protection",
+    "name": "Shadow Protection",
+    "giver": "priest",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "the whole party, Shadow resistance"
+   },
+   {
+    "key": "divine_spirit",
+    "name": "Divine Spirit",
+    "giver": "priest",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "casters most of all"
+   },
+   {
+    "key": "pw_shield",
+    "name": "Power Word: Shield",
+    "giver": "priest",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "one target at a time"
+   },
+   {
+    "key": "kings",
+    "name": "Blessing of Kings",
+    "giver": "paladin",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "one Blessing per paladin on each player"
+   },
+   {
+    "key": "might",
+    "name": "Blessing of Might",
+    "giver": "paladin",
+    "to": [
+     "druid",
+     "paladin"
+    ],
+    "lands_text": "melee fighters, the bear included"
+   },
+   {
+    "key": "wisdom",
+    "name": "Blessing of Wisdom",
+    "giver": "paladin",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "casters"
+   },
+   {
+    "key": "salvation",
+    "name": "Salvation",
+    "giver": "paladin",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "anyone, alongside a Blessing, threat down"
+   },
+   {
+    "key": "devotion",
+    "name": "Devotion Aura",
+    "giver": "paladin",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "the party within 30 yards"
+   },
+   {
+    "key": "retribution",
+    "name": "Retribution Aura",
+    "giver": "paladin",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "the party within 30 yards"
+   },
+   {
+    "key": "concentration",
+    "name": "Concentration Aura",
+    "giver": "paladin",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "casters within 30 yards"
+   },
+   {
+    "key": "mark",
+    "name": "Mark of the Wild",
+    "giver": "druid",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "the whole party"
+   },
+   {
+    "key": "thorns",
+    "name": "Thorns",
+    "giver": "druid",
+    "to": [
+     "druid"
+    ],
+    "lands_text": "whoever is being hit, usually the tank"
+   },
+   {
+    "key": "innervate",
+    "name": "Innervate",
+    "giver": "druid",
+    "to": [
+     "priest",
+     "paladin"
+    ],
+    "lands_text": "one caster, mana back"
+   },
+   {
+    "key": "rebirth",
+    "name": "Rebirth",
+    "giver": "druid",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "one fallen player, in combat"
+   },
+   {
+    "key": "leader",
+    "name": "Leader of the Pack",
+    "giver": "druid",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "the raid, melee and ranged crit, a Feral talent"
+   },
+   {
+    "key": "soulstone",
+    "name": "Soulstone",
+    "giver": "warlock",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "whoever holds one"
+   },
+   {
+    "key": "healthstone",
+    "name": "Healthstone",
+    "giver": "warlock",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "whoever holds one"
+   },
+   {
+    "key": "summoning",
+    "name": "Ritual of Summoning",
+    "giver": "warlock",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "anyone away from the group, two clickers needed"
+   },
+   {
+    "key": "blood_pact",
+    "name": "Blood Pact from the Imp",
+    "giver": "warlock",
+    "to": [
+     "druid",
+     "priest",
+     "paladin",
+     "mage",
+     "warlock"
+    ],
+    "lands_text": "the party, Stamina"
+   }
+  ],
+  "nobody": {
+   "classes": [
+    {
+     "name": "Warrior",
+     "lines": [
+      {
+       "label": "Tanks",
+       "text": "Protection Warrior and Feral Druid (Sep 30 deep dives), Protection Paladin (Oct 15 deep dive); all three have a taunt",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/tanking",
+        "key": "tanking.full_tanks",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ]
+    },
+    {
+     "name": "Hunter",
+     "lines": [
+      {
+       "label": "Library",
+       "text": "No library fact names what a Hunter brings a party.",
+       "status": "unknown",
+       "src": {
+        "kind": "library"
+       }
+      }
+     ]
+    },
+    {
+     "name": "Rogue",
+     "lines": [
+      {
+       "label": "Locks, from a mage scroll",
+       "text": "The Blade, Imbue Accuracy (staff, +0.5% spell hit), Imbue Quickening (wand speed proc), Imbue Balefrost (-3 Frost resistance), Imbue Flame (+12 Fire), Imbue Manablade (dagger, mana on hit), Khadgar's Unlocking (locks up to 125), Cat Familiar (+12 Int), Rebuke Elemental (+15% spell damage to an elemental of level 50 or below for 20 s)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/comprehension",
+        "key": "comprehension.tier50",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ]
+    },
+    {
+     "name": "Shaman",
+     "lines": [
+      {
+       "label": "A temporary tank",
+       "text": "a temporary tank in small group gameplay: Spirit Weapons raises threat while Rockbiter is active, Improved Stormstrike can reset Stormstrike on a dodge or parry; both need about 20 to 21 points (level 30 at launch); Stoneclaw Totem is the only taunt; Toughness gives Stamina now, not armor (Oct 7 deep dive)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "classes/tanking",
+        "key": "tanking.partial.enhancement",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ]
+    }
+   ],
+   "professions": [
+    {
+     "name": "Alchemy",
+     "lines": [
+      {
+       "label": "Open",
+       "text": "one of {mage}'s two open options.",
+       "status": "forever",
+       "src": {
+        "kind": "board"
+       }
+      },
+      {
+       "label": "Camp object and its buff",
+       "text": "Mana Well (Blessing of Wisdom); Peacebloom, Empty Vial; Fermenter (blueprint from Ruins of Lordaeron) / Alchemy Laboratory, reported to brew flasks at camp",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/camping-objects",
+        "key": "camp_object.alchemy",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Camp objects in the client table",
+       "text": "Mana Well at skill 20, Alchemy Laboratory at skill 300",
+       "status": "forever",
+       "src": {
+        "kind": "client",
+        "build": "1.60.1.70532",
+        "items": [
+         279956,
+         279990
+        ],
+        "skill": 171
+       }
+      },
+      {
+       "label": "Flask of Supreme Power",
+       "text": "Flask of Supreme Power (item 13512, requires level 50): +150 spell damage for 2 hours, one flask at a time, persists through death (confirmed: client table build 70532, item 13512, spell 17628; the Wowhead tooltip read live Oct 26 agrees)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/alchemy",
+        "key": "alchemy.flask_of_supreme_power",
+        "tier": 0,
+        "label": "client table",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Greater Arcane Elixir",
+       "text": "Greater Arcane Elixir (item 13454, requires level 47): +35 spell damage for 1 hour (confirmed: client table build 70532, item 13454, spell 17539)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/alchemy",
+        "key": "alchemy.greater_arcane_elixir",
+        "tier": 0,
+        "label": "client table",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Elixir of the Sages",
+       "text": "Elixir of the Sages (item 13447, requires level 38): +18 Intellect and +18 Spirit for 1 hour (confirmed: client table build 70532, item 13447, spell 17535; the Wowhead tooltip read live Oct 26 agrees)",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/alchemy",
+        "key": "alchemy.elixir_of_the_sages",
+        "tier": 0,
+        "label": "client table",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Healing potions",
+       "text": "moved to First Aid; mana potions stay",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/alchemy",
+        "key": "alchemy.healing_potions",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Minor Arcane Elixir",
+       "text": "new low-level spell power elixir",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/alchemy",
+        "key": "alchemy.minor_arcane_elixir",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Alchemy Laboratory",
+       "text": "tier 3 camp object, reported to brew flasks at camp with no Scholomance trip",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/alchemy",
+        "key": "alchemy.laboratory",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Caster elixir at the Favor vendor",
+       "text": "none in the visible vendor text",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "professions/alchemy",
+        "key": "alchemy.favor.caster_elixir",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      }
+     ]
+    },
+    {
+     "name": "Herbalism",
+     "lines": [
+      {
+       "label": "Camp object and its buff",
+       "text": "Incense Candle (Arcane Intellect); Peacebloom, Silverleaf; Greenhouse / Seed Hybridizer",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "systems/camping-objects",
+        "key": "camp_object.herbalism",
+        "tier": 2,
+        "label": "guide",
+        "accessed": "2026-10-26"
+       }
+      },
+      {
+       "label": "Camp objects in the client table",
+       "text": "Incense Candle at skill 20, Seed Hybridizer at skill 300",
+       "status": "forever",
+       "src": {
+        "kind": "client",
+        "build": "1.60.1.70532",
+        "items": [
+         279962,
+         279947
+        ],
+        "skill": 182
+       }
+      },
+      {
+       "label": "Tauren Cultivation",
+       "text": "active, grows herbs anyone can pick without Herbalism; cooldown 60 to 15 min on Oct 15",
+       "status": "forever",
+       "src": {
+        "kind": "wiki",
+        "page": "races/horde-racials",
+        "key": "racial.tauren.cultivation",
+        "tier": 1,
+        "label": "Blizzard",
+        "accessed": "2026-10-26"
+       }
+      }
+     ]
+    }
+   ],
+   "secondaries": [
+    {
+     "label": "Secondary skills",
+     "text": "Fishing and First Aid objects come from secondary skills and cost no primary profession slot",
+     "status": "forever",
+     "src": {
+      "kind": "wiki",
+      "page": "systems/camping-objects",
+      "key": "camp_object.secondaries",
+      "tier": 2,
+      "label": "guide",
+      "accessed": "2026-10-26"
+     }
+    },
+    {
+     "label": "Camp objects in the client table",
+     "text": "Cookie's Feast at skill 140, Iron Oven at skill 300",
+     "status": "forever",
+     "src": {
+      "kind": "client",
+      "build": "1.60.1.70532",
+      "items": [
+       279957,
+       279982
+      ],
+      "skill": 185
+     }
+    },
+    {
+     "label": "Camp objects in the client table",
+     "text": "First Aid Kit at skill 20, Toxin Study at skill 140",
+     "status": "forever",
+     "src": {
+      "kind": "client",
+      "build": "1.60.1.70532",
+      "items": [
+       279968,
+       279940
+      ],
+      "skill": 129
+     }
+    },
+    {
+     "label": "Camp objects in the client table",
+     "text": "Fish Bowl at skill 20, Fishing Rack at skill 140, Fishing Hut at skill 300",
+     "status": "forever",
+     "src": {
+      "kind": "client",
+      "build": "1.60.1.70532",
+      "items": [
+       279967,
+       279965,
+       279966
+      ],
+      "skill": 356
+     }
+    }
+   ],
+   "buffs": [
+    {
+     "key": "strength_earth",
+     "name": "Strength of Earth Totem",
+     "lands_text": "melee in the totem's range"
+    },
+    {
+     "key": "grace_air",
+     "name": "Grace of Air Totem",
+     "lands_text": "melee in the totem's range"
+    },
+    {
+     "key": "windfury",
+     "name": "Windfury Totem",
+     "lands_text": "melee weapons in range"
+    },
+    {
+     "key": "mana_spring",
+     "name": "Mana Spring Totem",
+     "lands_text": "casters in range"
+    },
+    {
+     "key": "healing_stream",
+     "name": "Healing Stream Totem",
+     "lands_text": "the party in range"
+    }
+   ]
+  },
+  "lines": [
+   {
+    "label": "Dungeon groups",
+    "text": "5 players",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "dungeons/overview",
+     "key": "new_dungeons.group_size",
+     "tier": 1,
+     "label": "Blizzard",
+     "accessed": "2026-10-26"
+    }
+   },
+   {
+    "label": "Barrow Deeps",
+    "text": "10",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "events/raids-dec-9",
+     "key": "barrow_deeps.size",
+     "tier": 1,
+     "label": "Blizzard",
+     "accessed": "2026-10-26"
+    }
+   },
+   {
+    "label": "Hyjal Summit",
+    "text": "20",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "events/raids-dec-9",
+     "key": "hyjal_summit.size",
+     "tier": 1,
+     "label": "Blizzard",
+     "accessed": "2026-10-26"
+    }
+   },
+   {
+    "label": "Onyxia's Lair",
+    "text": "40",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "events/raids-dec-9",
+     "key": "onyxia.size",
+     "tier": 1,
+     "label": "Blizzard",
+     "accessed": "2026-10-26"
+    }
+   },
+   {
+    "label": "Tank tuning",
+    "text": "tanks tuned to hold 3 to 5 targets, also why mage AoE was limited (Kami Labs recap of the Oct 1 podcast, no Blizzard transcript)",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "classes/tanking",
+     "key": "tanking.target_count",
+     "tier": 3,
+     "label": "forum or datamine",
+     "accessed": "2026-10-26"
+    }
+   },
+   {
+    "label": "Tank and healer counts per raid",
+    "text": "Tank and healer counts per raid: Classic convention only, nothing from Blizzard. Searched 2026-10-27: Blizzard raid preview (S1) and panel recap (S2) re-read, the Blizzard tracker (us.forums.blizzard.com blizzard-tracker posts through Oct 27 15:37Z), the dev notes thread 2360696 posts 1 to 8, and a web search: no Blizzard text gives a role count; one guild-planning site suggests 2 tanks and 2 to 3 healers per 10 (not cited, tier 3 opinion). Settles with a Blizzard raid post or the Dec 9 encounter journal.",
+    "status": "unknown",
+    "src": {
+     "kind": "wiki",
+     "page": "events/raids-dec-9",
+     "open": true,
+     "tier": null,
+     "label": "open question",
+     "accessed": "2026-10-27"
+    }
+   },
+   {
+    "label": "Summons",
+    "text": "the warlock's Ritual of Summoning; three of five still travel to every entrance",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "dungeons/overview",
+     "key": "summoning.only_teleport",
+     "tier": 2,
+     "label": "guide",
+     "accessed": "2026-10-26"
+    }
+   },
+   {
+    "label": "Group Finder",
+    "text": "listing board, no automatic matching, no teleport",
+    "status": "forever",
+    "src": {
+     "kind": "wiki",
+     "page": "dungeons/overview",
+     "key": "group_finder.type",
+     "tier": 2,
+     "label": "guide",
+     "accessed": "2026-10-26"
+    }
+   }
+  ]
+ }
+}
