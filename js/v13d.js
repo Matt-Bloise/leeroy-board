@@ -350,18 +350,19 @@ K.on("legacy", ({ svg, r, C, L, rewards, legend }) => {
   svg.parentNode.append(ctl);
   const C2 = 2 * Math.PI * (r + 13);
   const reach = (v) => L.thresholds.filter((t) => t.n <= v);
-  function set(v, sound) {
+  function set(v, sound, quiet) {
     v = Math.max(0, Math.min(total, Math.round(v)));
     const before = V.dial ? V.dial.v : -1; V.dial = { v, total };
     arc.setAttribute("stroke-dasharray", `${((v / total) * C2).toFixed(1)} ${C2.toFixed(1)}`);
     const a = (v / total) * 2 * Math.PI - Math.PI / 2; knob.setAttribute("transform", `translate(${(Math.cos(a) * (r + 13)).toFixed(1)} ${(Math.sin(a) * (r + 13)).toFixed(1)})`);
     const got = reach(v), top = got[got.length - 1];
     dial.setAttribute("aria-valuenow", String(v)); dial.setAttribute("aria-valuetext", `${v} points${top ? `: unlocks ${top.reward}` : ": no reward yet"}`);
-    out.textContent = `${v} points`;
+    if (!quiet) { out.textContent = `${v} points`; if (K.dialHook) { try { K.dialHook(v, got, top); } catch (er) {} } }
     rewards.querySelectorAll("li[data-n]").forEach((li) => { const on = Number(li.dataset.n) <= v; if (on && !li.classList.contains("lit") && before >= 0 && Number(li.dataset.n) > before) { li.classList.remove("pop"); void li.offsetWidth; li.classList.add("pop"); if (sound) sfx("stamp"); } li.classList.toggle("lit", on); });
     if (sound && before >= 0 && v !== before && !got.some((t) => t.n > before && t.n <= v)) sfx("detent", { gain: 0.6 });
   }
   set(D0, false);
+  K.dial = { set, get: () => V.dial.v, now, total };
   const fromPoint = (e) => { const b = svg.getBoundingClientRect(); const x = e.clientX - (b.left + b.width / 2), y = e.clientY - (b.top + b.height / 2); let a = Math.atan2(y, x) + Math.PI / 2; if (a < 0) a += 2 * Math.PI; return (a / (2 * Math.PI)) * total; };
   let drag = false;
   dial.addEventListener("pointerdown", (e) => { drag = true; try { dial.setPointerCapture(e.pointerId); } catch (er) {} set(fromPoint(e), true); e.preventDefault(); });

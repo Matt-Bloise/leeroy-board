@@ -200,22 +200,90 @@
   document.addEventListener("click", (e) => { const row = e.target && e.target.closest && e.target.closest("#races .rrow"); if (!row || !S.el || S.el.hidden || S.key !== "racials") return; const l = racialList(), k = l.findIndex(([, x]) => K.MEM.slug(x.name) === row.dataset.key); if (k >= 0 && k !== R.i) { R.i = k - 1; raceStep(1); } });
   K.on("scene", (k) => { if (k === "racials") R.i = -1; });
 
-  /* ---------- Bonuses: the coin fills the ring, the number counts up to what the group has earned ---------- */
-  MECH.legacy = { hint: "to fill the ring again", press: ({ say: sy }) => {
-    const L = K.D && K.D.client ? K.D.client.legacy : null, wrap = $("#legacy-ring"); if (!L || !wrap) return;
+  /* ---------- Bonuses: the what-if dial is the coin's rim. Tapping a challenge pours its points into the ring; the seal steps through the reward track ---------- */
+  const tween = (from, to, ms, step) => new Promise((done) => {
+    if (reduceMQ.matches || from === to) { step(to); done(); return; }
+    const t0 = performance.now(), ease = (x) => 1 - Math.pow(1 - x, 3);
+    const tick = (n) => { const x = Math.min(1, (n - t0) / ms); step(from + (to - from) * ease(x)); if (x < 1) requestAnimationFrame(tick); else done(); };
+    requestAnimationFrame(tick);
+  });
+  const LG = { picks: [], step: -1, run: 0, ctx: null };
+  const lgNow = () => (K.dial ? K.dial.now : 0);
+  function lgRead(v) {
+    const L = K.D.client.legacy, out = $("#wi-read"); if (!out) return;
+    const got = L.thresholds.filter((t) => t.n <= v), next = L.thresholds.find((t) => t.n > v), names = LG.picks.map((k) => L.categories.find((c) => c.key === k).key);
+    const head = v === lgNow() && !names.length ? `Where the group is now: ${v} of ${L.total} points.` : `${v} of ${L.total} points${names.length ? ` if all the ${names.join(" and ")} challenges get done` : ""}.`;
+    out.textContent = `${head} ${got.length ? `That reaches ${got.map((t) => t.reward).join(", ")}.` : "No reward on the track yet."} ${next ? `${next.n - v} more for ${next.reward}.` : "That is the whole track."}${v > L.solo_cap ? ` One character can earn ${L.solo_cap} alone, so this one needs more than one.` : ""}`;
+  }
+  /* one eased move of the dial to v; a newer move cancels the one in flight, so quick taps never fight */
+  function lgTo(v, ms) {
+    const d = K.dial; if (!d) return Promise.resolve(); const id = ++LG.run, from = d.get();
+    return tween(from, v, ms || 700, (x) => { if (id === LG.run) d.set(x, false, true); }).then(() => { if (id === LG.run) d.set(v, false); });
+  }
+  function lgMark(svg, legend) {
+    const set = new Set(LG.picks);
+    svg.querySelectorAll(".ring-seg").forEach((x) => x.classList.toggle("dim", set.size > 0 && !set.has(x.dataset.cat)));
+    legend.querySelectorAll("li[data-cat]").forEach((li) => { const on = set.has(li.dataset.cat), b = $(".cat-line", li); li.classList.toggle("lit", on); if (b) b.setAttribute("aria-pressed", String(on)); });
+  }
+  K.on("legacy", ({ svg, L, legend }) => {
+    if (!K.dial) return;
+    const wrap = svg.parentNode, read = h("p", { class: "wi-read", id: "wi-read", "aria-live": "polite" });
+    wrap.append(read); LG.picks = []; LG.step = -1; LG.ctx = { svg, legend }; K.dialHook = lgRead; lgRead(K.dial.get());
+    const toggle = (k) => {
+      if (K.dial.get() !== Math.min(L.total, lgNow() + LG.picks.reduce((n, c) => n + L.categories.find((x) => x.key === c).n, 0))) LG.picks = [];
+      const i = LG.picks.indexOf(k); if (i < 0) LG.picks.push(k); else LG.picks.splice(i, 1);
+      lgMark(svg, legend); snd(i < 0 ? "coin" : "latch"); hap("tap");
+      const goal = Math.min(L.total, lgNow() + LG.picks.reduce((n, c) => n + L.categories.find((x) => x.key === c).n, 0));
+      lgTo(goal, 700).then(() => { if (L.thresholds.some((t) => t.n > K.dial.now && t.n <= goal) && i < 0) snd("stamp"); });
+    };
+    legend.querySelectorAll("li[data-cat]").forEach((li) => { const b = $(".cat-line", li); if (b) b.addEventListener("click", () => toggle(li.dataset.cat)); });
+    svg.querySelectorAll(".ring-seg").forEach((sg) => sg.addEventListener("click", () => toggle(sg.dataset.cat)));
+  });
+  MECH.legacy = { hint: "to step to the next reward on the track", press: ({ say: sy }) => {
+    const L = K.D && K.D.client ? K.D.client.legacy : null, wrap = $("#legacy-ring"); if (!L || !wrap || !K.dial) return;
     wrap.classList.remove("filling"); void wrap.getBoundingClientRect(); wrap.classList.add("filling");
-    const num = $(".ring-num", wrap), to = L.earned_now, t0 = performance.now(), ease = (x) => 1 - Math.pow(1 - x, 3);
-    if (num) { if (reduceMQ.matches) num.textContent = String(to); else { const tick = (n) => { const x = Math.min(1, (n - t0) / 900); num.textContent = String(Math.round(to * ease(x))); if (x < 1) requestAnimationFrame(tick); }; requestAnimationFrame(tick); } }
-    const next = L.thresholds.find((x) => x.n > to);
-    sy(`${to} of ${L.total} points earned so far.${next ? ` Next reward on the track: ${next.reward} at ${next.n}.` : ""}`);
+    const stops = [...L.thresholds.map((t) => t.n), lgNow()], i = (LG.step + 1) % stops.length, n = stops[i], t = L.thresholds[i]; LG.step = i; LG.picks = [];
+    if (LG.ctx) lgMark(LG.ctx.svg, LG.ctx.legend);
+    lgTo(n, 900).then(() => { if (t) snd("stamp"); });
+    sy(t ? `${n} points: ${t.reward}, ${t.kind === "toy" ? "a fun item with no stats" : t.kind === "pet" ? "a pet that follows you" : t.kind === "tabard" ? "a cloth crest worn over armor" : "a mount to ride"}.${t.alt ? ` One guide says ${t.alt} for the first.` : ""}` : `Back to where the group is now: ${n} of ${L.total}.`);
   } };
 
-  /* ---------- Sign-ups: raising a mug answers through the page's own RSVP buttons ---------- */
-  document.addEventListener("pointerdown", (e) => { const b = e.target.closest && e.target.closest(".su-st"); if (!b) return; b.classList.remove("lift"); void b.offsetWidth; b.classList.add("lift"); snd("clink"); hap("rsvp"); setTimeout(() => b.classList.remove("lift"), 600); }, true);
-  MECH.signups = { hint: "to read the night's count, then raise a mug below", press: ({ say: sy }) => {
-    const S = K.D && K.D.signups, rs = S && S.tallies && S.tallies.rsvp ? S.tallies.rsvp : {}, n = (k) => (rs[k] ? rs[k].count : 0);
-    sy(`Launch night: ${K.RSVP_KEYS.map((k) => `${K.RSVP_SAY[k]} ${n(k)}`).join(", ")}.`);
-    const b = $("#dsu-act .su-st[aria-pressed=\"true\"]") || $("#dsu-act .su-st"); if (b) b.focus({ preventScroll: false });
+  /* ---------- Sign-ups: raising a mug answers through the page's own RSVP buttons (v13d suControls); the counts sit on a shelf of wax seals ---------- */
+  /* a live answer lifts the mug and tips its neighbour toward it for the clink; the sound and the buzz come from the sensory layer's own click handler */
+  document.addEventListener("click", (e) => {
+    const t = e.target, b = t && t.closest && t.closest(".su-st"); if (!b || b.getAttribute("aria-disabled") === "true" || reduceMQ.matches) return;
+    const row = b.parentNode, bs = row ? [...row.children].filter((x) => x.classList && x.classList.contains("su-st")) : [], i = bs.indexOf(b), nb = bs[i + 1] || bs[i - 1];
+    b.classList.remove("lift"); void b.offsetWidth; b.classList.add("lift"); b.style.setProperty("--tip", i < bs.length - 1 ? "1" : "-1");
+    if (nb) { nb.style.setProperty("--tip", i < bs.length - 1 ? "-1" : "1"); setTimeout(() => { nb.classList.remove("clinked"); void nb.offsetWidth; nb.classList.add("clinked"); setTimeout(() => nb.classList.remove("clinked"), 520); }, 190); }
+    setTimeout(() => b.classList.remove("lift"), 620);
+  }, true);
+  const SH = { prev: {} };
+  const shelfCounts = () => {
+    const S = K.D && K.D.signups, rs = S && S.tallies && S.tallies.rsvp; if (!rs) return null;
+    const c = K.RSVP_KEYS.map((k) => [k, K.RSVP_SAY[k], rs[k] ? rs[k].count : 0, rs[k] ? rs[k].names.map(K.cleanName) : []]), said = c.reduce((n, x) => n + x[2], 0), ms = K.D.party.members;
+    return [...c, ["none", "No answer", Math.max(0, ms.length - said), null]];
+  };
+  function shelf() {
+    const body = $("#dsu-body"), items = shelfCounts(); if (!body || !items) return;
+    const B = window.BoardBrain, mine = B && B.mine ? B.mine() : null, old = $("#su-shelf"); if (old && old.parentNode) old.parentNode.removeChild(old); if (!body.parentNode) return;
+    const who = h("p", { class: "sh-who", id: "sh-who", role: "status", "aria-live": "polite" });
+    const list = (x) => (x[3] ? `${x[1]}: ${x[3].length ? x[3].join(", ") : "nobody yet"}.` : `${x[2]} of ${K.D.party.members.length} have not answered yet.`);
+    const seals = items.map((x, i) => h("button", { class: `sh-seal${x[0] === "none" ? " none" : ""}${mine && mine.rsvp === x[0] ? " mine" : ""}${SH.prev[x[0]] != null && SH.prev[x[0]] !== x[2] ? " bump" : ""}`, type: "button", "data-k": x[0], "aria-pressed": "false", style: `--i:${i}`, "aria-label": `${x[1]}: ${x[2]}${mine && mine.rsvp === x[0] ? ", your answer" : ""}. Press to see who.`,
+      onclick: (e) => { const me = e.currentTarget; shelfSeals().forEach((s) => s.setAttribute("aria-pressed", String(s === me && s.getAttribute("aria-pressed") !== "true"))); who.textContent = me.getAttribute("aria-pressed") === "true" ? list(x) : ""; snd("stamp"); hap("tap"); } },
+      h("span", { class: "sh-wax" }, x[0] === "none" ? null : h("img", { class: "sh-pint", src: `img/pints/${x[0]}.png`, alt: "", width: 36, height: 36, decoding: "async" }), h("span", { class: "sh-lit" })),
+      h("b", { class: "sh-n", text: String(x[2]) }), h("span", { class: "sh-l", text: x[1] })));
+    items.forEach((x) => { SH.prev[x[0]] = x[2]; });
+    const el = h("div", { class: "su-shelf", id: "su-shelf", role: "group", "aria-label": `Launch night so far: ${items.map((x) => `${x[1]} ${x[2]}`).join(", ")}` }, h("div", { class: "sh-row" }, seals), h("span", { class: "sh-plank", "aria-hidden": "true" }), who);
+    body.parentNode.insertBefore(el, body);
+    setTimeout(() => el.querySelectorAll(".bump").forEach((x) => x.classList.remove("bump")), 900);
+  }
+  const shelfSeals = () => [...document.querySelectorAll("#su-shelf .sh-seal")];
+  K.on("signups", shelf);
+  MECH.signups = { hint: "to stamp the shelf of counts again, then raise a mug below", press: ({ say: sy }) => {
+    const items = shelfCounts(); if (!items) return;
+    shelfSeals().forEach((x) => { x.classList.remove("bump"); void x.offsetWidth; x.classList.add("bump"); setTimeout(() => x.classList.remove("bump"), 900); });
+    sy(`Launch night: ${items.filter((x) => x[0] !== "none").map((x) => `${x[1]} ${x[2]}`).join(", ")}${items[items.length - 1][2] ? `, ${items[items.length - 1][2]} yet to answer` : ""}.`);
+    const b = $("#dsu-act .su-st[aria-pressed=\"true\"]") || $("#dsu-act .su-st"); if (b) b.focus({ preventScroll: true });
   } };
 
   /* ---------- the scenes that replay their own motion, and the ones whose coin shows facts on its back ---------- */

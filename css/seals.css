@@ -102,11 +102,35 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .su-st[aria-pressed="true"] { background: none; border-color: transparent; box-shadow: none; font-weight: 700; }
 .su-st[aria-pressed="true"] .su-pint { transform: translateY(-16px) rotate(-7deg) scale(1.06); filter: drop-shadow(0 14px 8px rgba(40, 20, 8, 0.4)) drop-shadow(0 0 12px rgba(255, 190, 80, 0.55)); }
 .su-st.lift .su-pint { animation: su-lift 520ms var(--ease-spring); }
+.su-st.clinked .su-pint { animation: su-clink 460ms var(--ease-oak); }
 @media (hover: hover) { .su-st:not([aria-pressed="true"]):hover .su-pint { transform: translateY(-6px) rotate(-3deg); } }
 .su-st.sending, .su-st.waiting, .su-st.stored { box-shadow: none; }
+@keyframes su-clink { 0% { transform: none; } 38% { transform: translateY(-8px) rotate(calc(var(--tip, 1) * 7deg)); } 100% { transform: none; } }
 @keyframes su-lift { 0% { transform: translateY(0); } 40% { transform: translateY(-26px) rotate(-12deg); } 100% { transform: translateY(-16px) rotate(-7deg) scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .su-st .su-pint { transition: none; } .su-st.lift .su-pint { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .su-st .su-pint { transition: none; } .su-st.lift .su-pint, .su-st.clinked .su-pint { animation: none; } .sh-seal.bump .sh-wax { animation: none; } }
 
 /* The crest or coin already says whose it is: the repeated thin left-edge bars go from the spell rows and the name pills */
 .sp-tt { border-left: 1px solid var(--grain); }
 .tn-name, .tn-pick .tn-name, .deep-who .lib-tool { border-left: 1px solid var(--ink-soft); }
+.wi-read { margin: 6px auto 0; max-width: 34em; text-align: center; font-size: 1rem; line-height: 1.4; color: var(--ink); min-height: 4.2em; }
+
+/* Sign-ups: the counts as wax seals on a shelf; a seal that changed settles with a short stamp */
+.su-shelf { --shw: clamp(52px, 6vw, 92px); position: relative; padding: 8px 0 0; margin: 4px auto 14px; max-width: 46rem; }
+.sh-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(6px, 2vw, 28px); justify-items: center; position: relative; z-index: 1; }
+.sh-seal { display: grid; justify-items: center; gap: 2px; min-height: 44px; padding: 2px 4px 6px; background: none; border: 0; color: var(--ink); font: inherit; cursor: pointer; }
+.sh-wax { --w1: var(--wax-hi); --w2: var(--wax); --w3: var(--wax-lo); position: relative; display: block; width: var(--shw); aspect-ratio: 1; border-radius: 52% 48% 55% 45% / 47% 55% 45% 53%; background: radial-gradient(circle at 34% 28%, var(--w1), var(--w2) 52%, var(--w3)); box-shadow: inset 0 3px 5px rgba(255, 255, 255, 0.28), inset 0 -5px 8px rgba(0, 0, 0, 0.4), 0 6px 8px rgba(40, 20, 10, 0.45); transition: transform 300ms var(--ease-oak), box-shadow 300ms var(--ease-oak); }
+.sh-seal[data-k="out"] .sh-wax { --w1: var(--wax); --w2: var(--wax-lo); --w3: var(--oak-0); }
+.sh-seal.none .sh-wax { background: none; box-shadow: inset 0 0 0 2px var(--ink-soft); border-radius: 50%; }
+.sh-pint { position: absolute; inset: 14%; width: 72%; height: 72%; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5)); }
+.sh-lit { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.26), transparent 40%); }
+.sh-n { font-family: var(--font-display); font-size: var(--step-2, 1.4rem); line-height: 1; }
+.sh-l { font-size: 0.95rem; line-height: 1.2; text-align: center; }
+.sh-seal.mine .sh-l::after { content: " (you)"; font-weight: 700; }
+.sh-seal[aria-pressed="true"] .sh-wax { box-shadow: inset 0 6px 12px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.45); transform: scale(0.94); }
+.sh-seal.none[aria-pressed="true"] .sh-wax { box-shadow: inset 0 0 0 3px var(--ink); }
+.sh-seal.bump .sh-wax { animation: sh-stamp 560ms var(--ease-oak) both; animation-delay: calc(var(--i) * 70ms); }
+@keyframes sh-stamp { 0% { transform: scale(1); } 28% { transform: scale(0.84); } 62% { transform: scale(1.06); } 100% { transform: scale(1); } }
+@media (hover: hover) { .sh-seal:hover .sh-wax { transform: translateY(-3px); } .sh-seal[aria-pressed="true"]:hover .sh-wax { transform: scale(0.94); } }
+.sh-plank { position: absolute; left: 0; right: 0; top: calc(8px + var(--shw) * 0.94); height: 10px; z-index: 0; border-radius: 3px; background: linear-gradient(180deg, rgba(110, 70, 30, 0.55), rgba(70, 42, 16, 0.75)); }
+.sh-who { min-height: 1.5em; margin: 4px 0 0; text-align: center; font-size: 1rem; color: var(--ink); }
+@media (prefers-reduced-motion: reduce) { .sh-wax { transition: none; } }
