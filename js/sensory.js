@@ -189,7 +189,7 @@
     const now = performance.now(); if (t && t !== lastHover && now - lastHoverT > 90 && cfg.fx) { BS.play("hover", { noHook: true }); lastHoverT = now; } lastHover = t || null;
   }, true);
   document.addEventListener("click", (e) => {
-    const b = e.target.closest && e.target.closest("button, a"); if (!b) return;
+    const b = e.target && e.target.closest && e.target.closest("button, a"); if (!b) return;
     let h = "tap";
     if (b.matches("a.tile")) h = "open"; else if (b.matches("[data-tab]")) h = "tab";
     const tx = (b.textContent || "").trim().toLowerCase();

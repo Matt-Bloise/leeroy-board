@@ -186,8 +186,8 @@ function hover(c) {
     clearTimeout(inT); left = { p: { x: e.clientX, y: e.clientY }, t: Date.now() };
     if (cur === t || (c.isOpen && c.isOpen())) arm(OUT); else if (c.leave) c.leave(t);
   });
-  c.root.addEventListener("focusin", (e) => { const t = e.target.closest && e.target.closest(c.sel); if (!t || !(keyMode || c.focusAlways)) return; clearTimeout(outT); clearTimeout(inT); if (c.enter) c.enter(t); cur = t; c.open(t, "focus"); });
-  c.root.addEventListener("focusout", (e) => { const t = e.target.closest && e.target.closest(c.sel); if (!t) return; const el = cardEl(); if (el && el.contains(e.relatedTarget)) return; left = null; if (!(c.pinned && c.pinned())) arm(OUT); });
+  c.root.addEventListener("focusin", (e) => { const t = e.target && e.target.closest && e.target.closest(c.sel); if (!t || !(keyMode || c.focusAlways)) return; clearTimeout(outT); clearTimeout(inT); if (c.enter) c.enter(t); cur = t; c.open(t, "focus"); });
+  c.root.addEventListener("focusout", (e) => { const t = e.target && e.target.closest && e.target.closest(c.sel); if (!t) return; const el = cardEl(); if (el && el.contains(e.relatedTarget)) return; left = null; if (!(c.pinned && c.pinned())) arm(OUT); });
   const el0 = () => { const el = cardEl(); if (el && !el.dataset.hb) { el.dataset.hb = "1"; el.addEventListener("pointerenter", () => { clearTimeout(outT); outT = 0; }); el.addEventListener("pointerleave", (e) => { if (e.pointerType === "touch") return; left = null; if (!(c.pinned && c.pinned())) arm(OUT); }); } };
   const o0 = c.open; c.open = (t, via) => { el0(); return o0(t, via); };
   return { cancel() { clearTimeout(inT); clearTimeout(outT); cur = null; } };
@@ -211,7 +211,7 @@ function glossary() {
   const scope = document.body;
   hover({ root: scope, sel, card: () => pop, open: (t, via) => { if (K.GL.open !== t) { pinned = false; K.glShow(t); } }, close: () => { if (!pinned) K.glClose(); }, pinned: () => pinned, isOpen: () => !pop.hidden });
   /* a click on a word its hover already opened pins it instead of closing it */
-  addEventListener("click", (e) => { const b = e.target.closest && e.target.closest(sel); if (!b || pop.hidden) return; if (K.GL.open === b && !pinned) { pinned = true; e.stopImmediatePropagation(); e.preventDefault(); return; } pinned = false; }, true);
+  addEventListener("click", (e) => { const b = e.target && e.target.closest && e.target.closest(sel); if (!b || pop.hidden) return; if (K.GL.open === b && !pinned) { pinned = true; e.stopImmediatePropagation(); e.preventDefault(); return; } pinned = false; }, true);
   K.sceneHooks.push(() => { pinned = false; });
 }
 
@@ -222,7 +222,7 @@ function roads(M) {
   const svg = M.svg, panel = $("#panel-roads"), legend = $("#roads-legend"), sheet = $(".sheet"); if (!panel || !legend || !sheet) return;
   RM.M = M;
   /* no native tooltips on the pins: the card below says it, and a title tooltip lands wherever the browser likes */
-  svg.querySelectorAll(".map-pin").forEach((p) => { const t = Array.from(p.children).find((c) => c.tagName.toLowerCase() === "title"); if (t) { p.setAttribute("data-who", t.textContent); t.remove(); } });
+  svg.querySelectorAll(".map-pin").forEach((p) => { const t = Array.from(p.children).find((c) => c.tagName.toLowerCase() === "title"); if (t) { p.setAttribute("data-who", t.textContent); (t.parentNode && t.parentNode.removeChild(t)); } });
   /* Orgrimmar, the Crossroads and the zeppelin take pointers too (they sat under the pins as plain pictures) */
   svg.querySelectorAll(".map-town, .map-mark, .map-zep-g, .route-plate").forEach((e) => { e.style.pointerEvents = "all"; e.classList.add("place-target"); if (e.matches(".map-mark") && Number(e.getAttribute("x")) === 382) e.classList.add("map-cross"); });
   /* the pins are reached from the keyboard through their zone (a focusable group); the group lists the names for a screen reader */
@@ -312,7 +312,7 @@ function context() {
   if (deep) {
     deep.addEventListener("pointerover", (e) => { if (e.pointerType === "touch") return; const r = e.target.closest && e.target.closest("li.bq"); mark(!!r, r); });
     deep.addEventListener("pointerleave", () => mark(false));
-    deep.addEventListener("focusin", (e) => { const r = e.target.closest && e.target.closest("li.bq"); if (r) mark(true, r); });
+    deep.addEventListener("focusin", (e) => { const r = e.target && e.target.closest && e.target.closest("li.bq"); if (r) mark(true, r); });
     deep.addEventListener("focusout", () => mark(false));
   }
   const wall = $("#wall");
@@ -321,7 +321,7 @@ function context() {
     const off = () => { wall.classList.remove("ctx"); wall.querySelectorAll(".ctx-on").forEach((e) => e.classList.remove("ctx-on")); };
     wall.addEventListener("pointerover", (e) => { if (e.pointerType === "touch") return; const t = e.target.closest && e.target.closest(".tile, .lib-tile"); if (t) on(t); });
     wall.addEventListener("pointerleave", off);
-    wall.addEventListener("focusin", (e) => { const t = e.target.closest && e.target.closest(".tile, .lib-tile"); if (t) on(t); });
+    wall.addEventListener("focusin", (e) => { const t = e.target && e.target.closest && e.target.closest(".tile, .lib-tile"); if (t) on(t); });
     wall.addEventListener("focusout", (e) => { if (!wall.contains(e.relatedTarget)) off(); });
   }
 }
@@ -339,10 +339,10 @@ function tips() {
       e.setAttribute("data-tip", t);
       if (!(e.textContent || "").trim() && !e.getAttribute("aria-label") && !e.getAttribute("aria-labelledby")) e.setAttribute("aria-label", t);
     }
-    if (root.nodeType === 1) root.querySelectorAll("svg > title, svg title").forEach((x) => { const p = x.parentElement; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", x.textContent); x.remove(); });
+    if (root.nodeType === 1) root.querySelectorAll("svg title").forEach((x) => { const p = x.parentElement; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", x.textContent); x.remove(); });
   };
   strip(document.body);
-  new MutationObserver((ms) => { for (const m of ms) { if (m.type === "attributes") strip(m.target); else m.addedNodes.forEach((n) => { if (n.nodeType === 1) strip(n); }); } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["title"] });
+  if (typeof MutationObserver === "function") new MutationObserver((ms) => { for (const m of ms) { if (m.type === "attributes") strip(m.target); else m.addedNodes.forEach((n) => { if (n.nodeType === 1) strip(n); }); } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["title"] });
   let cur = null;
   const open = (t) => {
     cur = t; card.replaceChildren(h("span", { text: t.getAttribute("data-tip") })); card.hidden = false; t.setAttribute("aria-describedby", "place-tip");

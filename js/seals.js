@@ -197,7 +197,7 @@
     let msg = ""; spin({ land: "back", mid: () => { msg = faceRacial(l); } }).then(() => say(msg || faceRacial(l)));
   }
   MECH.racials = { hint: "to spin the coin to the next racial", spin: false, press: () => raceStep(1) };
-  document.addEventListener("click", (e) => { const row = e.target.closest && e.target.closest("#races .rrow"); if (!row || !S.el || S.el.hidden || S.key !== "racials") return; const l = racialList(), k = l.findIndex(([, x]) => K.MEM.slug(x.name) === row.dataset.key); if (k >= 0 && k !== R.i) { R.i = k - 1; raceStep(1); } });
+  document.addEventListener("click", (e) => { const row = e.target && e.target.closest && e.target.closest("#races .rrow"); if (!row || !S.el || S.el.hidden || S.key !== "racials") return; const l = racialList(), k = l.findIndex(([, x]) => K.MEM.slug(x.name) === row.dataset.key); if (k >= 0 && k !== R.i) { R.i = k - 1; raceStep(1); } });
   K.on("scene", (k) => { if (k === "racials") R.i = -1; });
 
   /* ---------- Bonuses: the coin fills the ring, the number counts up to what the group has earned ---------- */
