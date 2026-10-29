@@ -63,7 +63,7 @@ export async function startRoom(ctx) {
     W = innerWidth; H = innerHeight; camera.aspect = W / H;
     const wide = Math.atan(Math.tan((HFOV / 2) * DEG) / camera.aspect) * 2 / DEG;
     camera.fov = Math.max(46, Math.min(70, wide)); camera.updateProjectionMatrix();
-    renderer.setPixelRatio(Math.min(T.dpr, window.devicePixelRatio || 1)); renderer.setSize(W, H, false);
+    renderer.setPixelRatio(Math.min(T.dpr, Math.max(window.devicePixelRatio || 1, T.dpr >= 1.5 ? 1.5 : 1))); /* high and ultra supersample a 1x screen so the stone, wood and flames stay crisp */ renderer.setSize(W, H, false);
     if ((W >= H) !== landscape) { landscape = W >= H; applyTier(); }
     R.layout(W, H, anchor.getBoundingClientRect());
   };

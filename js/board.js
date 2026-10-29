@@ -90,7 +90,7 @@ function startRoomLadder() {
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  import("../room/tier.js?v=f372a513c9").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  import("../room/tier.js?v=2b33288a61").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
 }
 const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, close: 200, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -3065,8 +3065,9 @@ function startTooltips() {
   const panel = $("#panel-library"), card = $("#ttc"), body = $("#sheet-body");
   if (!panel || !card) return;
   const hover = window.matchMedia("(hover: hover) and (pointer: fine)");
-  panel.addEventListener("mouseover", (e) => { const t = e.target.closest && e.target.closest(".tt, .gl"); if (t && hover.matches) ttShow(t, false); });
-  panel.addEventListener("mouseout", (e) => { const t = e.target.closest && e.target.closest(".tt, .gl"); if (t && !TT.pinned) TT.hideT = setTimeout(() => { if (!TT.pinned) ttClose(); }, 160); });
+  /* hover intent: a card opens only when the pointer rests on a term for a moment, so sweeping across a page never throws cards over the text */
+  panel.addEventListener("mouseover", (e) => { const t = e.target.closest && e.target.closest(".tt, .gl"); if (t && hover.matches) { clearTimeout(TT.intentT); TT.intentT = setTimeout(() => { if (t.isConnected && t.matches(":hover")) ttShow(t, false); }, TT.open ? 120 : 420); } });
+  panel.addEventListener("mouseout", (e) => { const t = e.target.closest && e.target.closest(".tt, .gl"); if (t) clearTimeout(TT.intentT); if (t && !TT.pinned) TT.hideT = setTimeout(() => { if (!TT.pinned) ttClose(); }, 160); });
   card.addEventListener("mouseenter", () => clearTimeout(TT.hideT));
   card.addEventListener("mouseleave", () => { if (!TT.pinned) TT.hideT = setTimeout(() => { if (!TT.pinned) ttClose(); }, 160); });
   panel.addEventListener("focusin", (e) => { const t = e.target.closest && e.target.closest(".tt, .gl"); if (t) ttShow(t, false); });
