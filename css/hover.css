@@ -39,6 +39,12 @@
 .wall > li .tile { transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
 .wall.ctx > li.ctx-on { z-index: 2; }
 
+/* ---- every other trigger answers the pointer and the keyboard too: a brass ring, so nothing is ever silent ---- */
+@media (hover: hover) {
+  :where(button, a[href], summary, [role=button], [data-land], .tab, .bb, .chip, .tn-chip, .bchip, .cal-day, .tonight-link, .lib-tool, .lib-btn, .tn-name, .jr-card, .peer, .src, .wheel-node, .wheel-edge, li.bq, .tile, .tile-band, .clock, summary, .flip, .tilt, .opt label):hover:not(:focus-visible) { outline: 2px solid color-mix(in srgb, var(--brass-hi, #f0cf84) 75%, transparent); outline-offset: 2px; }
+  :where(.map-pin, .road-g, svg .wheel-edge):hover { filter: drop-shadow(0 0 4px var(--brass-hi, #f0cf84)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .place-card.flipin { animation: place-fade 120ms linear both; }
   .place-card.sheetmode.flipin { animation: place-fade 120ms linear both; }

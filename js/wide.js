@@ -102,6 +102,21 @@ function bindInput() {
   });
 }
 
+/* the seal hangs from the sheet head into the body; whatever stands in the first row at its side (the cards, or the note) starts below it */
+function clearSeal() {
+  const sl = $("#seal"), lg = panel.querySelector(".roads-legend"), ld = $("#map-lede");
+  panel.style.removeProperty("--seal-clear");
+  for (const e of [lg, ld]) if (e) e.classList.remove("seal-clear");
+  if (!sl || sl.hidden || !lg || panel.dataset.lay === "below") return;
+  const s = sl.getBoundingClientRect(), b = panel.getBoundingClientRect(); if (!s.width) return;
+  const first = [lg, ld].filter((e) => e && e.getClientRects().length && e.getBoundingClientRect().left < s.right && e.getBoundingClientRect().top < s.bottom + 12)
+    .sort((a, c) => a.getBoundingClientRect().top - c.getBoundingClientRect().top)[0];
+  if (!first) return;
+  const r = first.getBoundingClientRect();
+  panel.style.setProperty("--seal-clear", `${Math.ceil(s.bottom + 14 - r.top)}px`);
+  first.classList.add("seal-clear");
+}
+
 /* the layout the panel is in: the map with the cards beside it (one or both sides) or the map with the cards under it */
 function lay() {
   if (!panel) return;
@@ -114,6 +129,7 @@ function lay() {
   if (W / H < 1.3) l = "below"; else if (W - H * 1.5 >= 2 * min + 24) l = "side2";
   panel.dataset.lay = l;
   panel.style.setProperty("--mw", `${Math.floor(l === "side2" ? H * 1.5 : full)}px`);
+  clearSeal();
   if (box.querySelector("svg")) put(read(), true);
 }
 
@@ -130,7 +146,7 @@ K.on("map", (M) => {
   lay();
   if (st && st.z > 1.02 && wideOn()) put(st, true); /* the map redrew (a resize): the same view again */
 });
-K.on("scene", (k) => { if (k === "roads") requestAnimationFrame(lay); });
+K.on("scene", (k) => { if (k === "roads") { requestAnimationFrame(lay); setTimeout(lay, 400); } });
 K.on("closed", (k) => { if (k === "roads") { st = null; if (box && box.querySelector("svg") && wideOn()) put({ z: 1, cx: 300, cy: 200 }, true); } });
 addEventListener("resize", () => lay());
 })();

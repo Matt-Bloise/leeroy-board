@@ -13,6 +13,7 @@
   #panel-roads.wide-map > .roads-legend { grid-area: legend; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px 24px 14px; align-content: start; }
   #panel-roads.wide-map > .map-caption { grid-area: cap; padding: 6px 24px 24px; align-self: start; font-size: 1em; line-height: 1.5; }
   #panel-roads.wide-map[data-lay="side2"] > .roads-legend { padding-top: 24px; }
+  #panel-roads.wide-map[data-lay][data-lay] > .seal-clear { padding-top: max(10px, var(--seal-clear, 0px)); }
   #panel-roads.wide-map[data-lay="below"] > .roads-legend { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); padding: 14px 24px 6px; }
   #panel-roads.wide-map[data-lay="below"] > #map-lede { padding: 6px 24px 0; }
   #panel-roads.wide-map[data-lay="below"] > .map-caption { padding: 4px 24px 18px; }

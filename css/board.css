@@ -7,6 +7,7 @@
 @font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 700; font-display: swap; src: url("../fonts/grenze-gotisch-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 :root {
   color-scheme: dark;
+  --black: #000; /* real black for the room, the backdrop, the shades and the veils: an OLED panel switches those pixels off */
   --oak-0: #120c08;
   --oak-1: #1c130c;
   --oak-2: #2a1c12;
@@ -55,7 +56,7 @@
   --sheet-bg: #17100a;
   --shadow: rgba(0, 0, 0, 0.55);
   --glass: rgba(18, 12, 8, 0.72);
-  --veil: rgba(8, 5, 3, 0.74);
+  --veil: rgba(0, 0, 0, 0.74);
   --glow-brass: rgba(209, 168, 90, 0.10);
   --grain-line: rgba(74, 50, 32, 0.18);
   --slip-burn: rgba(120, 90, 50, 0.25);
@@ -78,18 +79,18 @@
   --hover-tint: rgba(255, 255, 255, 0.06);
   --rule: rgba(74, 50, 32, 0.8);
   --buff-bg: rgba(0, 0, 0, 0.18);
-  --shade-deep: rgba(18, 12, 8, 0.94);
-  --shade-mid: rgba(18, 12, 8, 0.62);
-  --shade-light: rgba(18, 12, 8, 0.22);
-  --shade-none: rgba(18, 12, 8, 0);
+  --shade-deep: rgba(0, 0, 0, 0.94);
+  --shade-mid: rgba(0, 0, 0, 0.62);
+  --shade-light: rgba(0, 0, 0, 0.22);
+  --shade-none: rgba(0, 0, 0, 0);
   --mask-solid: #000;
   --sheen-hot: rgba(255, 206, 140, 0.34);
   --sheen-warm: rgba(255, 170, 90, 0.12);
   --edge-glint: rgba(255, 214, 160, 0.55);
   --shadow-soft: rgba(0, 0, 0, 0.42);
   --shadow-room: rgba(0, 0, 0, 0.7);
-  --veil-room: rgba(8, 5, 3, 0.5);
-  --veil-strong: rgba(8, 5, 3, 0.92);
+  --veil-room: rgba(0, 0, 0, 0.5);
+  --veil-strong: rgba(0, 0, 0, 0.92);
   --plate-name: rgba(18, 12, 8, 0.62);
   --plate-ink: rgba(234, 223, 196, 0.86);
   --font-display: "Grenze Gotisch", "Palatino Linotype", Georgia, serif;
@@ -152,34 +153,38 @@
   --seal-baseline: #6f6250;
   --seal-pending: #5f4a8c;
 }
-html { background: var(--oak-0); }
+html { background: var(--black); }
 html.scene-open, html.scene-open body { overflow: hidden; }
 body {
   margin: 0;
-  background: var(--oak-0);
+  background: var(--black);
   background-image:
     radial-gradient(ellipse at 20% -10%, var(--glow-brass), transparent 55%),
     repeating-linear-gradient(92deg, var(--grain-line) 0 2px, transparent 2px 11px),
-    linear-gradient(180deg, var(--oak-1), var(--oak-0) 40%);
+    linear-gradient(180deg, var(--oak-1), var(--black) 40%);
   color: var(--text);
   font-family: var(--font-body);
   font-size: var(--step-0);
   line-height: 1.55;
   overflow-x: hidden;
 }
+/* dither: a 64 px tile of white at alpha 1/255 on a quarter of its pixels, over everything but the open scene. It breaks the one-step contours of dark gradients (the shades, the veil, the blurred wall) on an 8-bit OLED panel; normal blending, so it costs one tiled quad and no backdrop read. It only ever adds one level, so black stays under 2/255. */
+html::after { content: ""; position: fixed; inset: 0; z-index: 6; pointer-events: none; background: url("../img/dither.png") 0 0 / 64px 64px; }
+@media print { html::after { display: none; } }
 .hero-art { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
 .hero-art img { position: absolute; top: -16px; left: -16px; width: calc(100% + 32px); height: calc(100% + 32px); object-fit: cover; object-position: 62% 38%; display: block; max-width: none; transition: transform var(--t-hero) var(--ease-oak); }
 .hero-art::after { content: ""; position: absolute; inset: 0; background:
-  linear-gradient(90deg, var(--shade-mid) 0%, var(--shade-light) 45%, var(--shade-mid) 100%),
-  linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 30%, var(--shade-mid) 75%, var(--shade-deep) 100%); }
-.hero-art.gate-mode::after { background: linear-gradient(180deg, var(--shade-mid), var(--shade-deep) 85%, var(--oak-0)); }
+  linear-gradient(90deg, var(--black) 0%, var(--shade-mid) 6%, var(--shade-light) 45%, var(--shade-mid) 94%, var(--black) 100%),
+  linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 30%, var(--shade-mid) 70%, var(--shade-deep) 90%, var(--black) 96%); } /* the frame of the room reaches real black at every edge, so an OLED panel draws nothing there */
+.hero-art.gate-mode::after { background: linear-gradient(90deg, var(--black) 0%, var(--shade-none) 7%, var(--shade-none) 93%, var(--black) 100%), linear-gradient(180deg, var(--shade-mid), var(--shade-deep) 80%, var(--black) 95%); }
 @media (max-width: 700px) {
   .hero-art img { object-position: 12% 40%; }
-  .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-mid) 60%, var(--shade-deep) 100%); }
+  .hero-art::after { background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-mid) 60%, var(--shade-deep) 90%, var(--black) 96%); }
 }
 .candle { position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(ellipse 70% 60% at 14% 26%, var(--candle), transparent 70%), radial-gradient(ellipse at 50% 45%, transparent 48%, var(--vignette) 100%);
-  animation: candle 5.2s linear infinite; }
+  animation: candle 5.2s linear infinite;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, var(--black) 7%, var(--black) 93%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0%, var(--black) 7%, var(--black) 93%, transparent 100%); } /* the candle's glow ends before the frame, which stays black */
 @keyframes candle { 0% { opacity: 1; } 14% { opacity: 0.94; } 27% { opacity: 0.985; } 41% { opacity: 0.92; } 55% { opacity: 0.975; } 68% { opacity: 0.935; } 84% { opacity: 0.99; } 100% { opacity: 1; } }
 #wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; will-change: transform; }
 @media print { #wisps, .hero-art, .candle, .scene-layer { display: none !important; } }
@@ -2057,7 +2062,7 @@ html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
 /* retest-8: on a phone Look at the room is an eye, with its pupil */
 @media (max-width: 599px) { .peek-btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: currentColor; } }
 /* retest-5: with the room off (reduced motion, a weak GPU) an open scene stands in the painted tavern, never on a flat void */
-html.room-off.scene-open body { background: var(--oak-0) url("../img/tavern-plate.jpg") center / cover no-repeat fixed; }
+html.room-off.scene-open body { background: var(--black) url("../img/tavern-plate.jpg") center / cover no-repeat fixed; }
 /* retest-3: on a phone the Sign-ups tile shows its row of pints, and the five's roles line wraps to a second line instead of
    being cut */
 @media (max-width: 599px) {

@@ -96,7 +96,7 @@ function setPos(card, x, y) {
 }
 /* the siblings a card must also stay off: other triggers of the same family in the same list or map */
 function siblingsOf(t, sel) {
-  const c = t.closest("ul, ol, .spells, .map-box, .roads-legend, .wheel, .cal-col, .races, .tn-cards, .bclass") || t.parentElement;
+  const c = t.closest("ul, ol, .spells, .map-box, .roads-legend, .wheel, .cal-col, .races, .tn-cards, .bclass, .tabs, .cal, .chips, .seg, [role=tablist], [role=group]") || t.parentElement;
   return c ? [...c.querySelectorAll(sel)].filter((e) => e !== t && !e.contains(t) && !t.contains(e) && isShown(e)).map(R) : [];
 }
 function visibleBounds(pad = 8) {
@@ -347,7 +347,7 @@ function tips() {
   const open = (t) => {
     cur = t; card.replaceChildren(h("span", { text: t.getAttribute("data-tip") })); card.hidden = false; t.setAttribute("aria-describedby", "place-tip");
     const B = box(8, 8, innerWidth - 16, innerHeight - 16), scope = $("#scene:not([hidden]) .sheet") || $("#board") || document.body;
-    const pos = choose(card.offsetWidth, card.offsetHeight, R(t), { bounds: B, row: R(t), gap: 8, content: contentRects(scope, B, card) });
+    const pos = choose(card.offsetWidth, card.offsetHeight, R(t), { bounds: B, row: R(t), gap: 8, avoid: siblingsOf(t, "[data-tip], .tab, button, a[href]"), content: contentRects(scope, B, card) });
     card.style.left = `${Math.round(pos.x)}px`; card.style.top = `${Math.round(pos.y)}px`;
   };
   const close = () => { card.hidden = true; if (cur) cur.removeAttribute("aria-describedby"); cur = null; };
