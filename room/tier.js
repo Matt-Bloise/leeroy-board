@@ -134,10 +134,10 @@ export async function startTier(host) {
     const anchor = document.querySelector(".hero-art");
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(canvas, anchor); else document.body.prepend(canvas);
     try {
-      const { startRoom } = await import("./room.js?v=9b7814158f");
+      const { startRoom } = await import("./room.js?v=cdd0212dc0");
       room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, aim: host.aim, signal: host.signal, onLight: host.onLight, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });
       setClasses(S.tier);
-      S.renderer = room.info.renderer; S.software = room.info.software;
+      S.renderer = room.info.renderer; S.software = room.info.software; S.colorSpace = room.info.colorSpace; S.wideWhy = room.info.wideWhy;
     } catch (e) { stopRoom(); S.tier = "low"; S.why = `room did not start: ${e.message}`; setClasses("low"); }
   }
   /* the 2 s probe: frame intervals while the room runs; p95 over the tier's budget demotes one tier. It runs only while the

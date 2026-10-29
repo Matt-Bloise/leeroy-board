@@ -1,0 +1,54 @@
+/* Wide gamut, HDR highlights and OLED care (2026-10-29, board/qa/2026-10-29-hdr.md).
+   Rules: new --x-* tokens only (board.js reads --t-leave, --light-warm and --oak-0 through cssVar, none is touched here);
+   every rule that changes a look sits inside a media query and @supports, so an SDR screen computes what it did before;
+   `?hdr=0` puts html.hdr-off on the page and every rule below steps aside. Body text, parchment and ink are never touched. */
+:root {
+  --x-brass: #d1a85a; --x-gold: #eecd8c; --x-flame: #ffa852; --x-flame-50: rgba(255, 168, 60, 0.5);
+  --x-candle: rgba(255, 168, 82, 0.22); --x-candle-soft: rgba(255, 150, 60, 0.12); --x-glow: rgba(209, 168, 90, 0.34);
+  --x-glint: rgba(255, 255, 255, 0.36); --x-glint-hi: rgba(255, 255, 255, 0.5); --x-glint-soft: rgba(255, 236, 190, 0.22);
+  --x-count: #eecd8c; --x-count-glow: rgba(209, 168, 90, 0.34); --x-oled-x: 0px; --x-oled-y: 0px;
+}
+
+/* 1. Wide gamut: the brass, gold, flame and candle accents in Display P3, same hue, a little more chroma. */
+@supports (color: color(display-p3 1 0 0)) {
+  @media (color-gamut: p3) {
+    :root:not(.hdr-off) {
+      --x-brass: color(display-p3 0.83 0.66 0.31); --x-gold: color(display-p3 0.95 0.8 0.51); --x-flame: color(display-p3 1 0.62 0.2);
+      --x-flame-50: color(display-p3 1 0.6 0.14 / 0.5); --x-candle: color(display-p3 1 0.62 0.2 / 0.22);
+      --x-candle-soft: color(display-p3 1 0.56 0.14 / 0.12); --x-glow: color(display-p3 0.83 0.66 0.31 / 0.34);
+      --x-count: color(display-p3 0.95 0.8 0.51); --x-count-glow: color(display-p3 0.83 0.66 0.31 / 0.34);
+    }
+    :root:not(.hdr-off) .clock-kicker, :root:not(.hdr-off) .clock-unit b { color: var(--x-gold); }
+    :root:not(.hdr-off) .clock-unit b { text-shadow: 0 0 22px var(--x-glow), 0 2px 0 var(--oak-0); }
+    :root:not(.hdr-off) .mini b { color: var(--x-gold); text-shadow: 0 0 14px var(--x-glow); }
+    :root:not(.hdr-off) .tab-ind { background: var(--x-brass); }
+    :root:not(.hdr-off) .candle { background: radial-gradient(ellipse 70% 60% at 14% 26%, var(--x-candle), transparent 70%), radial-gradient(ellipse at 50% 45%, transparent 48%, var(--vignette) 100%); }
+    :root:not(.hdr-off) .wall-plate::after { background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--x-candle-soft), transparent 70%); }
+    :root:not(.hdr-off) .stop-ember { background: radial-gradient(closest-side, var(--x-flame), var(--x-candle) 60%, transparent); }
+  }
+}
+
+/* 2. HDR highlights: the countdown, the seal and coin glints and the flame glow reach above SDR white where the browser
+   draws color(rec2100-hlg). Signal 0.9 in HLG is about 500 nits on a 1000-nit display; nothing here goes to the peak. */
+@media (dynamic-range: high) {
+  @supports (color: color(rec2100-hlg 1 1 1)) {
+    :root:not(.hdr-off) {
+      --x-count: color(rec2100-hlg 0.9 0.76 0.44); --x-count-glow: color(rec2100-hlg 0.8 0.6 0.28 / 0.5);
+      --x-glint: color(rec2100-hlg 0.95 0.9 0.78 / 0.5); --x-glint-hi: color(rec2100-hlg 0.98 0.96 0.9 / 0.7);
+      --x-glint-soft: color(rec2100-hlg 0.9 0.8 0.6 / 0.34); --x-flame-50: color(rec2100-hlg 0.9 0.5 0.18 / 0.6);
+    }
+    :root:not(.hdr-off) .clock-unit b { color: var(--x-count); text-shadow: 0 0 22px var(--x-count-glow), 0 2px 0 var(--oak-0); }
+    :root:not(.hdr-off) .seal-sweep::before { background: linear-gradient(90deg, transparent, var(--x-glint-soft), var(--x-glint-hi), var(--x-glint-soft), transparent); }
+    :root:not(.hdr-off) .coin-shine::before { background: linear-gradient(90deg, transparent, var(--x-glint-soft), var(--x-glint-hi), var(--x-glint-soft), transparent); }
+    :root:not(.hdr-off) .seal-spec { background: radial-gradient(circle at var(--lx) var(--ly), var(--x-glint), var(--x-glint-soft) 26%, transparent 54%), radial-gradient(circle at 50% 50%, transparent 66%, rgba(0, 0, 0, 0.26) 100%); }
+    :root:not(.hdr-off) .seal[data-kind="active"] { filter: drop-shadow(var(--sx) var(--sy) calc(var(--seal) * 0.1) rgba(0, 0, 0, 0.62)) drop-shadow(0 0 calc(var(--seal) * 0.22) var(--x-flame-50)); }
+  }
+}
+
+/* 3. OLED care (js/hdr.js sets html.oled-care when the display reports HDR and a dark scheme, or ?oled=1): a wider
+   drift on the corner chrome and a deeper dim after 60 s of no input. */
+:root.oled-care .sense-fab, :root.oled-care .bottombar, :root.oled-care .seal { translate: var(--x-oled-x) var(--x-oled-y); transition: translate 30s linear; }
+.oled-veil { position: fixed; inset: 0; z-index: 2147482998; background: #000; opacity: 0; pointer-events: none; transition: opacity 6s ease; }
+:root.oled-care.oled-dim .oled-veil { opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) { :root.oled-care .sense-fab, :root.oled-care .bottombar, :root.oled-care .seal, .oled-veil { transition: none; } }
+@media print { .oled-veil { display: none; } }

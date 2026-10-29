@@ -159,6 +159,20 @@ export async function createTavern(canvas, opt) {
   renderer.shadowMap.enabled = !!opt.shadows; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
   const gl = renderer.getContext(), dbg = gl.getExtension("WEBGL_debug_renderer_info");
   const info = { renderer: String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)), vendor: String(gl.getParameter(gl.VENDOR)), three: THREE.REVISION };
+  /* 2026-10-29 wide gamut: a Display P3 drawing buffer only where all of it is there: a P3 display, a context that accepts the
+     colour space, this three.js build knowing "display-p3" as an output space (the vendored 0.170.0 min build does not export
+     DisplayP3ColorSpace, so today this stays sRGB and says why), and no ?hdr=0 or html.hdr-off. HDR (extended range) is not
+     attempted: Chromium's WebGL takes only srgb and display-p3 (probe: board/tools/oracle/hdr-probe.mjs). Tiers are untouched. */
+  info.colorSpace = "srgb"; info.wideWhy = "not a P3 display";
+  try {
+    const off = /[?&]hdr=0(?:&|#|$)/.test(location.search || "") || document.documentElement.classList.contains("hdr-off");
+    if (off) info.wideWhy = "hdr=0";
+    else if (matchMedia("(color-gamut: p3)").matches) {
+      if (!("drawingBufferColorSpace" in gl)) info.wideWhy = "no drawingBufferColorSpace";
+      else if (!THREE.DisplayP3ColorSpace) info.wideWhy = "this three.js build has no DisplayP3ColorSpace";
+      else { gl.drawingBufferColorSpace = "display-p3"; if (gl.drawingBufferColorSpace === "display-p3") { renderer.outputColorSpace = THREE.DisplayP3ColorSpace; info.colorSpace = "display-p3"; info.wideWhy = ""; } else info.wideWhy = "context refused display-p3"; }
+    }
+  } catch (e) { info.colorSpace = "srgb"; info.wideWhy = "error: " + (e && e.message); }
   info.software = /swiftshader|llvmpipe|software|basic render|warp/i.test(info.renderer);
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(52, 1, 0.05, 40);
   scene.background = new THREE.Color(0x000000); scene.fog = new THREE.FogExp2(0x030201, 0.075); /* V14: true black at the far edge (OLED), no lifted brown */

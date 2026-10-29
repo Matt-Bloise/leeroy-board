@@ -7,7 +7,7 @@
 // SCENE_FPS instead of being swapped for a still, and closing reverses the move back to exactly the wall state.
 //   const room = await startRoom({ tier, canvas, motion, launchEpoch, newSignup, aim, signal, onLight, onSlow, onStartCost, onLost })
 //   room.setTier(t)  room.refresh(next)  room.stop()  room.status()
-import { createTavern } from "./tavern.js?v=dca9e6a7b3";
+import { createTavern } from "./tavern.js?v=35dd430f29";
 
 /* shadows are drawn once (the lights do not move), so they cost nothing per frame; ultra gets the sharper map.
    V13a: fps 0 draws on every display refresh (a 175 Hz panel gets 175 draws, not every third one); budget is the frame
@@ -157,7 +157,7 @@ export async function startRoom(ctx) {
   raf = requestAnimationFrame(frame);
 
   return {
-    info: { renderer: R.info.renderer, software: R.info.software, three: R.info.three },
+    info: { renderer: R.info.renderer, software: R.info.software, three: R.info.three, colorSpace: R.info.colorSpace, wideWhy: R.info.wideWhy },
     setTier(t) { if (!TIERS[t]) return; T = TIERS[t]; tierName = t; applyTier(); size(); hush(); dirty = true; wake(); },
     /* V13b (craft 22): a new sign-up's lantern and launch night's candles ease up over 1.5 s with a brief flare, never in one frame */
     refresh(next) { Object.assign(ctx, next); const to = levels(), from = { ...K }, t0 = performance.now(); Kmove = (now) => { const k = Math.min(1, (now - t0) / 1500), flare = Math.sin(Math.PI * k) * 0.25; for (const n of ["hearth", "candles", "lantern"]) K[n] = from[n] + (to[n] - from[n]) * ease(k) + (to[n] !== from[n] ? flare : 0); if (k >= 1) Kmove = null; }; dirty = true; wake(); },

@@ -89,7 +89,7 @@ function startRoomLadder() {
   /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
   /* the tier module's first run blocks the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance: it starts after the entrance */
-  const bootRoom = () => import("../room/tier.js?v=5f83267947").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  const bootRoom = () => import("../room/tier.js?v=fbab4d7b2c").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
