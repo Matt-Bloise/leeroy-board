@@ -3465,7 +3465,10 @@ async function boot(mode, sdk) {
       const cancel = () => { if (firstBeat) { clearTimeout(firstBeat); firstBeat = null; } document.documentElement.classList.remove("first-beat"); removeEventListener("pointerdown", cancel, true); removeEventListener("keydown", cancel, true); removeEventListener("hashchange", cancel); };
       addEventListener("pointerdown", cancel, true); addEventListener("keydown", cancel, true); addEventListener("hashchange", cancel);
       const open = () => { if (!firstBeat) return; firstBeat = null; if (!location.hash || location.hash === "#") { document.documentElement.classList.remove("first-beat"); goScene("tonight"); } };
-      firstBeat = setTimeout(open, reduceMQ && reduceMQ.matches ? 900 : 1500);
+      /* the room's first frame freezes the main thread for about a second (long-frame trace, 2026-10-29), so on a room-capable screen the sheet waits for the room, then a beat for its first frame; touch and small screens keep the short beat */
+      const small = innerWidth < 700 || matchMedia("(pointer: coarse)").matches || MEM.get("room") === "off" || !(() => { try { const g = document.createElement("canvas").getContext("webgl2"); if (g) { const x = g.getExtension("WEBGL_lose_context"); x && x.loseContext(); } return !!g; } catch (e) { return false; } })(), calm = reduceMQ && reduceMQ.matches;
+      firstBeat = setTimeout(open, calm ? 900 : small ? 1500 : 5200);
+      if (!calm && !small) { const onRoom = () => { if (!document.documentElement.classList.contains("room-on") || !firstBeat) return; removeEventListener("board-room", onRoom); clearTimeout(firstBeat); firstBeat = setTimeout(open, 1700); }; addEventListener("board-room", onRoom); }
     } else if (d === "tonight" || d === "library") setHash(d, false);
   }
   /* Tonight paints first (V6-SPEC 3.3: under 1.0 s on the 4x throttle): its cards and the scene open before the wall renders. */
