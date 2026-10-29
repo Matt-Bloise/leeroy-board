@@ -83,7 +83,7 @@ function choose(w, ht, tr, o) {
   tries.forEach(consider);
   /* nothing clean next to it: scan the bounds for the emptiest spot nearest the trigger */
   if (!best || best.hardLap > 0 || best.soft > 900) {
-    const step = Math.max(12, Math.round(Math.min(B.w, B.h) / 40));
+    const step = Math.max(8, Math.round(Math.min(B.w, B.h) / 64));
     for (let y = B.y; y <= B.b - ht + 0.5; y += step) for (let x = B.x; x <= B.r - w + 0.5; x += step) consider({ side: "free", x, y, pri: 6 });
   }
   return best || { x: B.x, y: B.y, side: "none", hardLap: 0, soft: 0 };
@@ -163,12 +163,12 @@ K.placePop = (pop, t) => {
 };
 
 /* ---------------- intent controller ---------------- */
-const pt = { x: -1, y: -1 };
+const pt = { x: -1, y: -1, t: 0 };
 /* a card opens on focus only for a keyboard user: script focus (a tab opening a scene) and a click's focus stay quiet */
 let keyMode = false;
 addEventListener("keydown", () => { keyMode = true; }, true);
 addEventListener("pointerdown", () => { keyMode = false; }, true);
-addEventListener("pointermove", (e) => { pt.x = e.clientX; pt.y = e.clientY; }, { passive: true, capture: true });
+addEventListener("pointermove", (e) => { pt.x = e.clientX; pt.y = e.clientY; pt.t = Date.now(); }, { passive: true, capture: true });
 function hull(points) { /* convex hull, monotone chain */
   const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y), cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), lo = [], up = [];
   for (const q of p) { while (lo.length > 1 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
@@ -180,7 +180,7 @@ function inside(poly, q) { for (let i = 0; i < poly.length; i++) { const a = pol
 function hover(c) {
   let inT = 0, outT = 0, cur = null, left = null, pend = null;
   const cardEl = () => (c.card ? c.card() : null);
-  const finish = () => { outT = 0; if (c.pinned && c.pinned()) return; const el = cardEl(); if (el && !el.hidden) { if (el.matches(":hover")) return; if (left && Date.now() - left.t < 1400 && cur && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt)) { arm(110); return; } } cur = null; c.leave && c.leave(null); c.close(); };
+  const finish = () => { outT = 0; if (c.pinned && c.pinned()) return; const el = cardEl(); if (el && !el.hidden) { if (el.matches(":hover")) return; if (left && Date.now() - left.t < 1400 && Date.now() - pt.t < 350 && cur && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt)) { arm(110); return; } } cur = null; c.leave && c.leave(null); c.close(); };
   const corners = (r) => [{ x: r.x, y: r.y }, { x: r.r, y: r.y }, { x: r.x, y: r.b }, { x: r.r, y: r.b }];
   const arm = (ms) => { clearTimeout(outT); outT = setTimeout(finish, ms); };
   c.root.addEventListener("pointerover", (e) => {
@@ -248,10 +248,9 @@ function roads(M) {
   svg.querySelectorAll(".map-town, .map-mark, .map-zep-g, .route-plate").forEach((e) => {
     e.style.pointerEvents = "all"; e.classList.add("place-target");
     if (e.matches(".map-mark") && Number(e.getAttribute("x")) === 382) e.classList.add("map-cross");
-    /* reachable from the keyboard and named for a screen reader; the zeppelin's icon takes the focus, not its plate */
-    if (e.matches(".route-plate")) return;
+    /* reachable from the keyboard and named for a screen reader */
     if (!e.hasAttribute("tabindex")) e.setAttribute("tabindex", "0");
-    if (!e.hasAttribute("aria-label")) e.setAttribute("aria-label", e.matches(".map-town") ? "Orgrimmar, where all three roads end" : e.matches(".map-zep-g") ? "The Undercity zeppelin" : "The Crossroads");
+    if (!e.hasAttribute("aria-label")) e.setAttribute("aria-label", e.matches(".map-town") ? "Orgrimmar, where all three roads end" : e.matches(".map-zep-g, .route-plate") ? "The Undercity zeppelin" : "The Crossroads");
   });
   /* the pins are reached from the keyboard through their zone (a focusable group); the group lists the names for a screen reader */
   svg.querySelectorAll(".road-g").forEach((g) => { const pins = [...g.querySelectorAll(".map-pin")].map((p) => p.getAttribute("data-who")).filter(Boolean); if (pins.length) g.setAttribute("aria-description", pins.join("; ")); });
@@ -288,7 +287,8 @@ function roads(M) {
     M.groups.concat(M.lines || []).forEach((g) => g.classList.toggle("on", all || g.dataset.road === k));
     panel.dataset.ctx = "road";
     legend.querySelectorAll(".road-btn").forEach((b) => { const on = all || b.dataset.road === k; b.parentElement.classList.toggle("ctx-on", on); b.parentElement.classList.toggle("ctx-dim", !on); });
-    RM.M.svg.querySelectorAll(".map-pin").forEach((p) => p.classList.toggle("ctx-on", !!cur && cur.t === p));
+    /* a pin you point at glows; pointing at a road (its legend row or its land) makes all of that road's pins glow with its row */
+    RM.M.svg.querySelectorAll(".map-pin").forEach((p) => { const g = p.closest(".road-g"); p.classList.toggle("ctx-on", id.kind === "pin" ? !!cur && cur.t === p : !all && !!g && g.dataset.road === k); });
   };
   const clearCtx = () => {
     delete panel.dataset.ctx; legend.querySelectorAll("li").forEach((li) => li.classList.remove("ctx-on", "ctx-dim")); RM.M.svg.querySelectorAll(".map-pin.ctx-on").forEach((p) => p.classList.remove("ctx-on"));
