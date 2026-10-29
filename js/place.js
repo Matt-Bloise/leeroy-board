@@ -113,18 +113,29 @@ function visibleBounds(pad = 8) {
 function dock(card, t, avoid) {
   const body = $("#sheet-body"), sh = $(".sheet");
   if (!body || !sh) return;
-  const bb = R(body), ch = card.offsetHeight, tr = R(t);
-  const dockTop = bb.y + 6;
+  const bb = R(body), ch = card.offsetHeight, tr = R(t), shb = R(sh), dockTop = bb.y + 6;
   card.classList.add("sheetmode"); card.style.left = ""; card.style.right = "";
-  const bottomBox = box(bb.x, R(sh).b - ch, bb.w, ch), topBox = box(bb.x, dockTop, bb.w, ch);
-  const hitB = lap(grow(tr, 6), bottomBox) + (avoid || []).reduce((n, a) => n + lap(a, bottomBox), 0), hitT = lap(grow(tr, 6), topBox) + (avoid || []).reduce((n, a) => n + lap(a, topBox), 0);
-  const up = hitT < hitB && hitB > 0;
-  card.classList.toggle("dock-top", up);
-  if (up) { card.style.top = `${Math.round(dockTop - R(sh).y)}px`; card.style.bottom = "auto"; } else { card.style.top = ""; card.style.bottom = ""; }
-  /* the trigger must stay in sight on the open side of the screen */
-  const room = up ? { lo: dockTop + ch + 10, hi: bb.b - 10 } : { lo: bb.y + 10, hi: R(sh).b - ch - 10 };
-  let dy = 0; if (tr.b > room.hi) dy = tr.b - room.hi; else if (tr.y < room.lo) dy = tr.y - room.lo;
-  if (dy) body.scrollTo({ top: body.scrollTop + dy, behavior: "auto" });
+  const bottomBox = box(bb.x, shb.b - ch, bb.w, ch), topBox = box(bb.x, dockTop, bb.w, ch), avoidR = avoid || [];
+  const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
+  /* for each side: how far the list must scroll to keep the trigger in sight on the open side, and what the card then still touches (the neighbours move with the scroll) */
+  const plan = (up) => {
+    const room = up ? { lo: dockTop + ch + 10, hi: bb.b - 10 } : { lo: bb.y + 10, hi: shb.b - ch - 10 };
+    let dy = 0; if (tr.b > room.hi) dy = tr.b - room.hi; else if (tr.y < room.lo) dy = tr.y - room.lo;
+    dy = clamp(body.scrollTop + dy, 0, maxScroll) - body.scrollTop;
+    const cb = up ? topBox : bottomBox, all = [grow(tr, 6), ...avoidR];
+    const mv = (r, d) => box(r.x, r.y - d, r.w, r.h), hits = (d) => all.reduce((n, a) => n + lap(mv(a, d), cb), 0);
+    /* the neighbours the card still touches: scroll on so the whole cluster clears it, while the trigger stays in the room */
+    if (hits(dy)) {
+      const need = all.filter((a) => lap(mv(a, dy), cb) > 0).reduce((m, a) => Math.max(m, up ? cb.b + 6 - mv(a, dy).y : mv(a, dy).b - (cb.y - 6)), 0);
+      const d2 = clamp(body.scrollTop + dy + (up ? -need : need), 0, maxScroll) - body.scrollTop, t2 = mv(tr, d2);
+      if (hits(d2) < hits(dy) && t2.b <= room.hi && t2.y >= room.lo - 1) dy = d2;
+    }
+    return { up, dy, hit: hits(dy) };
+  };
+  const down = plan(false), top = plan(true), pick = top.hit < down.hit ? top : down;
+  card.classList.toggle("dock-top", pick.up);
+  if (pick.up) { card.style.top = `${Math.round(dockTop - shb.y)}px`; card.style.bottom = "auto"; } else { card.style.top = ""; card.style.bottom = ""; }
+  if (pick.dy) body.scrollTo({ top: body.scrollTop + pick.dy, behavior: "auto" });
 }
 
 /* ---------------- the cards the board already has ---------------- */
@@ -167,7 +178,7 @@ function hull(points) { /* convex hull, monotone chain */
 function inside(poly, q) { for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; if ((b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) < -6) return false; } return true; }
 /* hover({root, sel, open(t, via), close(), card(), pinned(), isOpen(), enter(t), leave(t)}) */
 function hover(c) {
-  let inT = 0, outT = 0, cur = null, left = null;
+  let inT = 0, outT = 0, cur = null, left = null, pend = null;
   const cardEl = () => (c.card ? c.card() : null);
   const finish = () => { outT = 0; if (c.pinned && c.pinned()) return; const el = cardEl(); if (el && !el.hidden) { if (el.matches(":hover")) return; if (left && Date.now() - left.t < 1400 && cur && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt)) { arm(110); return; } } cur = null; c.leave && c.leave(null); c.close(); };
   const corners = (r) => [{ x: r.x, y: r.y }, { x: r.r, y: r.y }, { x: r.x, y: r.b }, { x: r.r, y: r.b }];
@@ -178,22 +189,25 @@ function hover(c) {
     /* crossing to the open card: a trigger passed on the way does not take the card away; it counts only when the pointer rests on it */
     const el = cardEl(), open = c.isOpen && c.isOpen(), cross = open && cur && cur !== t && el && !el.hidden && left && Date.now() - left.t < 1400 && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt);
     if (cross) { clearTimeout(inT); inT = setTimeout(() => { if (!t.isConnected || !t.matches(":hover")) return; clearTimeout(outT); outT = 0; left = null; if (c.enter) c.enter(t); cur = t; c.open(t, "hover"); }, 300); return; }
-    clearTimeout(outT); outT = 0; clearTimeout(inT); left = null;
+    clearTimeout(outT); outT = 0; left = null;
     if (c.enter) c.enter(t);
-    if (cur === t) return;
-    inT = setTimeout(() => { if (!t.isConnected || !t.matches(":hover")) return; cur = t; c.open(t, "hover"); }, open ? SWITCH : IN);
+    if (cur === t) { clearTimeout(inT); pend = null; return; }
+    /* moving between the parts of one trigger does not start the wait again */
+    if (pend === t) return;
+    clearTimeout(inT); pend = t;
+    inT = setTimeout(() => { pend = null; if (!t.isConnected || !t.matches(":hover")) return; cur = t; c.open(t, "hover"); }, open ? SWITCH : IN);
   });
   c.root.addEventListener("pointerout", (e) => {
     if (e.pointerType === "touch") return;
     const t = e.target.closest && e.target.closest(c.sel); if (!t || (e.relatedTarget && t.contains(e.relatedTarget))) return;
-    clearTimeout(inT); left = { p: { x: e.clientX, y: e.clientY }, t: Date.now() };
+    clearTimeout(inT); pend = null; left = { p: { x: e.clientX, y: e.clientY }, t: Date.now() };
     if (cur === t || (c.isOpen && c.isOpen())) arm(OUT); else if (c.leave) c.leave(t);
   });
   c.root.addEventListener("focusin", (e) => { const t = e.target && e.target.closest && e.target.closest(c.sel); if (!t || !(keyMode || c.focusAlways)) return; clearTimeout(outT); clearTimeout(inT); if (c.enter) c.enter(t); cur = t; c.open(t, "focus"); });
   c.root.addEventListener("focusout", (e) => { const t = e.target && e.target.closest && e.target.closest(c.sel); if (!t) return; const el = cardEl(); if (el && el.contains(e.relatedTarget)) return; left = null; if (!(c.pinned && c.pinned())) arm(OUT); });
   const el0 = () => { const el = cardEl(); if (el && !el.dataset.hb) { el.dataset.hb = "1"; el.addEventListener("pointerenter", () => { clearTimeout(outT); outT = 0; }); el.addEventListener("pointerleave", (e) => { if (e.pointerType === "touch") return; left = null; if (!(c.pinned && c.pinned())) arm(OUT); }); } };
   const o0 = c.open; c.open = (t, via) => { el0(); return o0(t, via); };
-  return { cancel() { clearTimeout(inT); clearTimeout(outT); cur = null; } };
+  return { cancel() { clearTimeout(inT); clearTimeout(outT); cur = null; pend = null; } };
 }
 
 /* ---------------- spell, item and glossary cards (library, the five) ---------------- */
@@ -202,6 +216,8 @@ function tooltips() {
   const TT = K.TT;
   /* the old mouseover/out handlers are replaced by this controller: stop them before they run */
   for (const p of [lib, five].filter(Boolean)) for (const ev of ["mouseover", "mouseout"]) p.addEventListener(ev, (e) => { if (e.target.closest && e.target.closest(".tt, .gl, .sp-tt")) e.stopImmediatePropagation(); }, true);
+  /* a tap or a click focuses the word before its click arrives; a card opening (and docking, and scrolling) at that moment moves the word out from under the finger and the click lands elsewhere. Only the keyboard opens a card by focus. */
+  for (const p of [lib, five].filter(Boolean)) p.addEventListener("focusin", (e) => { if (!keyMode && e.target.closest && e.target.closest(".tt, .gl, .sp-tt")) e.stopImmediatePropagation(); }, true);
   if (lib) hover({ focusAlways: true, root: lib, sel: ".tt, .gl", card: () => ttc, open: (t, via) => { if (K.ttShow) K.ttShow(t, false); }, close: () => { if (!TT.pinned) K.ttClose(); }, pinned: () => TT.pinned, isOpen: () => TT.open });
   if (five && K.spellShow) hover({ focusAlways: true, root: five, sel: ".sp-tt", card: () => ttc, open: (t) => K.spellShow(t, false), close: () => { if (!TT.pinned) K.ttClose(); }, pinned: () => TT.pinned, isOpen: () => TT.open });
 }
@@ -209,12 +225,14 @@ function tooltips() {
 /* the plain-word card outside the library (#glpop): hover and focus open it, a click pins it */
 function glossary() {
   const pop = $("#glpop"); if (!pop || !K.glShow || !K.GL) return;
-  let pinned = false;
+  let pinned = false, viaHover = false;
   const sel = ".gl[data-term]";
   const scope = document.body;
-  hover({ root: scope, sel, card: () => pop, open: (t, via) => { if (K.GL.open !== t) { pinned = false; K.glShow(t); } }, close: () => { if (!pinned) K.glClose(); }, pinned: () => pinned, isOpen: () => !pop.hidden });
+  hover({ root: scope, sel, card: () => pop, open: (t, via) => { if (K.GL.open !== t) { pinned = false; K.glShow(t); } viaHover = true; }, close: () => { if (!pinned) { viaHover = false; K.glClose(); } }, pinned: () => pinned, isOpen: () => !pop.hidden });
   /* a click on a word its hover already opened pins it instead of closing it */
-  addEventListener("click", (e) => { const b = e.target && e.target.closest && e.target.closest(sel); if (!b || pop.hidden) return; if (K.GL.open === b && !pinned) { pinned = true; e.stopImmediatePropagation(); e.preventDefault(); return; } pinned = false; }, true);
+  addEventListener("click", (e) => { const b = e.target && e.target.closest && e.target.closest(sel); if (!b || pop.hidden) return; if (K.GL.open === b && !pinned && viaHover) { pinned = true; viaHover = false; e.stopImmediatePropagation(); e.preventDefault(); return; } pinned = false; viaHover = false; }, true);
+  /* a finger never hovers: its first tap opens, its second closes */
+  addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") viaHover = false; }, true);
   K.sceneHooks.push(() => { pinned = false; });
 }
 
@@ -286,7 +304,8 @@ function roads(M) {
     if (coarse()) { card.classList.add("sheetmode"); dock(card, t, [...svg.querySelectorAll(".map-pin")].map(R).concat([...legend.querySelectorAll(".road-btn")].map(R))); return; }
     card.classList.remove("sheetmode", "dock-top"); card.style.bottom = "";
     const B = visibleBounds(10), w = card.offsetWidth, ht = card.offsetHeight, mb = R($("#map") || svg);
-    const avoid = [...svg.querySelectorAll(".map-pin, .pin-banner, .map-town, .map-zep-g")].map(R).concat([...legend.querySelectorAll(".road-btn")].map(R));
+    /* the other roads' lands count as neighbours too: a card for one road never lies across another */
+    const avoid = [...svg.querySelectorAll(".map-pin, .pin-banner, .map-town, .map-zep-g, .map-mark")].map(R).concat([...legend.querySelectorAll(".road-btn")].map(R), [...svg.querySelectorAll(".road-g")].filter((g) => !g.contains(t) && !t.contains(g)).map(R));
     const pos = choose(w, ht, R(t), { bounds: B, row: rowRect(t), avoid, anchors: [mb], content: contentRects(panel, B, card).map((q) => (lap(q, mb) > 0 && q.w > mb.w * 0.8 ? { ...q, wt: 0.5 } : q)) });
     setPos(card, pos.x, pos.y); card.dataset.side = pos.side;
   };
