@@ -428,3 +428,14 @@ button.cal-day.win { background: var(--hi-brass); }
   .sheet-top > .journey button { padding: 4px 4px; }
   .sheet-top > .journey:not(.open) button[aria-pressed="true"]::after { content: none; }
 }
+
+/* V13e polish (walk of the live site, phone on its side): the hero was 431 px tall on an 844x390 screen, so a friend opened on nothing
+   but header. In short landscape screens the title block and the countdown sit side by side and the title shrinks; the tiles start
+   above the fold. Portrait phones and every screen over 500 px tall are untouched. */
+@media (max-height: 500px) and (orientation: landscape) and (min-width: 640px) {
+  .hero { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: center; gap: 8px 18px; }
+  .hero h1 { font-size: 2.05rem; line-height: 1.05; }
+  .hero .kicker { font-size: 0.7rem; }
+  .hero .clock { padding: 10px 14px; }
+  .hero .clock-launch { display: none; } /* the same launch time is on the line above it */
+}
