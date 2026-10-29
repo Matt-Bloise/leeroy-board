@@ -120,7 +120,7 @@
   --ease-card: cubic-bezier(.3, 1.22, .6, 1); /* a smaller overshoot for the card turn */
   --ease-shut: cubic-bezier(.55, 0, .75, .2);
   --ease-fade: cubic-bezier(.45, 0, .55, 1); /* opacity wants a symmetric ease; --ease-shut holds an opacity near 1 and then drops it in a few frames */
-  --t-leave: 300ms; /* a tab change: the old panel eases out, then the new one eases in (js/board.js reads --t-leave) */
+  --t-leave: 420ms; /* a tab change: the old panel eases out, then the new one eases in (js/board.js reads --t-leave) */
   --t-enter: 420ms;
   --stagger: 70ms;
   --wall-blur: 6px;
@@ -625,7 +625,7 @@ html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); an
 .sheet-body { overflow-y: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); padding: 20px 18px 32px; }
 .panel { grid-area: 1 / 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
 .panel:focus-visible { outline-offset: 6px; }
-.panel.entering { animation: slide-in var(--t-enter) var(--ease-fade) calc(var(--t-leave) * 0.5) both; }
+.panel.entering { animation: slide-in var(--t-enter) var(--ease-fade) calc(var(--t-leave) * 0.4) both; }
 .panel.leaving { animation: slide-out var(--t-leave) var(--ease-fade) both; pointer-events: none; }
 .panel.spring { transition: transform var(--t-micro) var(--ease-oak); }
 /* V13b (craft 20): a tab change travels: out 16 px one way, in from 16 px the other */
@@ -1957,6 +1957,7 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
   .tile, .tile:hover, .tile:active { transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg)); }
   .panel.entering { animation: fade-in var(--t-enter) linear both !important; } /* a tab change is a short plain fade */
   .panel.leaving { animation: fade-out var(--t-leave) linear both !important; }
+  .scene-layer.closing .sheet, .scene-layer.closing .scene-veil { animation: fade-out var(--t-fade) linear both !important; }
   .scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both !important; } /* spec 1.2: reduced motion opens with a cross-fade, no move */
   .hero-art img { transform: none !important; }
 }

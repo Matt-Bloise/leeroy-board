@@ -1787,7 +1787,7 @@ function hideScene() {
   layer.classList.remove("rise");
   layer.classList.add("closing");
   clearTimeout(SC.closeTimer);
-  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, motionMs("close"));
+  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, reduceMQ.matches ? MOTION.micro : motionMs("close")); /* reduced motion: the same short fade as the open, not a cut */
   if (tile) tileFocus(tile);
 }
 /* V13b (craft 31): a card turned over in The five is face up again the next time the scene opens */

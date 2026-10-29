@@ -150,8 +150,8 @@ html.idle-dim .idle-veil { opacity: 0.45; }
 
 @keyframes v14-vt-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes v14-vt-in { from { opacity: 0; } to { opacity: 1; } }
-::view-transition-old(root) { animation: v14-vt-out var(--t-move) var(--ease-fade) both; mix-blend-mode: normal; }
-::view-transition-new(root) { animation: v14-vt-in var(--t-move) var(--ease-fade) both; mix-blend-mode: normal; }
+::view-transition-old(root) { animation: v14-vt-out var(--t-move) var(--ease-fade) both; mix-blend-mode: plus-lighter; }
+::view-transition-new(root) { animation: v14-vt-in var(--t-move) var(--ease-fade) both; mix-blend-mode: plus-lighter; }
 html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(root) { animation-duration: var(--t-close); }
 @media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; } }
 
