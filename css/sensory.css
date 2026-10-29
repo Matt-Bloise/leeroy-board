@@ -22,3 +22,4 @@
 @keyframes sense-breath { 50% { opacity: .075; } }
 @media (prefers-reduced-motion: reduce) { .sense-invite { animation: none; } .sense-wow body::after { animation: none; } .sense-fab { transition: none; } }
 @media (max-width: 700px) { .sense-fab { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } .sense-panel { bottom: calc(120px + env(safe-area-inset-bottom, 0px)); } .sense-invite { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); } }
+@media (max-width: 700px) { .sense-invite { display: none; } }
