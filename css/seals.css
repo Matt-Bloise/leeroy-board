@@ -152,3 +152,4 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .spark-cur { fill: none; stroke: var(--wax); stroke-width: 2.5; transition: transform var(--t-move) var(--ease-oak); transform: translate(-20px, -20px); }
 .spark-text.on { font-weight: 700; fill: var(--brass-hi); }
 @media (prefers-reduced-motion: reduce) { .spark-cur { transition: none; } }
+@media (min-width: 600px) { html.has-seal .sheet-head { min-height: calc(var(--seal) + 22px); } }
