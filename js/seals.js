@@ -142,7 +142,7 @@
       h("div", { class: "fl-row", role: "group", "aria-label": "Party formation" }, ...LANES.map(([r, l]) => h("div", { class: "fl", "data-role": r }, h("span", { class: "fl-name", text: l }), h("div", { class: "fl-tray" })))),
       h("p", { class: "fv-sum", id: "five-sum", role: "status" }), h("button", { class: "lib-tool", id: "five-reset", type: "button", hidden: true, text: "Back to the cards' roles", onclick: () => { ms.forEach((m) => placeCoin($(`#five-form .fc[data-name="${m.name}"]`), m.role, true)); snd("latch"); } }),
       h("p", { class: "sr-only", text: "Press a coin to turn its card over. Drag a coin between lanes to try a different formation; arrow keys move the focused coin." }));
-    lede.after(form);
+    lede.parentNode.insertBefore(form, lede.nextSibling);
     ms.forEach((m) => {
       const b = h("button", { class: "fc", type: "button", "data-name": m.name, "data-k": m.class_key, "aria-pressed": "false", style: `--cc: ${K.classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.class}. Turn the card over. Arrow keys move between lanes.` },
         h("span", { class: "fc-in" }, h("span", { class: "fc-face fc-f" }, h("img", { src: `img/crests/${m.class_key}.png`, alt: "", width: 320, height: 320, decoding: "async" }), h("span", { class: "fc-nm", text: m.name })), h("span", { class: "fc-face fc-b" }, h("b", { text: m.class }), h("i", { text: "spells" }))));

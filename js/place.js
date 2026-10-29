@@ -222,7 +222,7 @@ function roads(M) {
   const svg = M.svg, panel = $("#panel-roads"), legend = $("#roads-legend"), sheet = $(".sheet"); if (!panel || !legend || !sheet) return;
   RM.M = M;
   /* no native tooltips on the pins: the card below says it, and a title tooltip lands wherever the browser likes */
-  svg.querySelectorAll(".map-pin").forEach((p) => { const t = p.querySelector(":scope > title"); if (t) { p.setAttribute("data-who", t.textContent); t.remove(); } });
+  svg.querySelectorAll(".map-pin").forEach((p) => { const t = Array.from(p.children).find((c) => c.tagName.toLowerCase() === "title"); if (t) { p.setAttribute("data-who", t.textContent); t.remove(); } });
   /* Orgrimmar, the Crossroads and the zeppelin take pointers too (they sat under the pins as plain pictures) */
   svg.querySelectorAll(".map-town, .map-mark, .map-zep-g, .route-plate").forEach((e) => { e.style.pointerEvents = "all"; e.classList.add("place-target"); if (e.matches(".map-mark") && Number(e.getAttribute("x")) === 382) e.classList.add("map-cross"); });
   /* the pins are reached from the keyboard through their zone (a focusable group); the group lists the names for a screen reader */
