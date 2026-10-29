@@ -399,6 +399,7 @@ function glShow(b) {
 /* the card follows its word while the page or a scene scrolls; it closes once the word leaves the screen */
 function glPlace() {
   const pop = $("#glpop"), b = GL.open; if (!pop || !b || pop.hidden) return;
+  if (KIT.placePop && b.isConnected) { const q = b.getBoundingClientRect(); if (q.bottom < 0 || q.top > innerHeight) { glClose(); return; } return KIT.placePop(pop, b); } /* js/place.js */
   const r = b.getBoundingClientRect(), m = 16, w = pop.offsetWidth, ht = pop.offsetHeight;
   if (!b.isConnected || r.bottom < 0 || r.top > innerHeight) { glClose(); return; }
   /* V14: */
@@ -3013,6 +3014,7 @@ function ttCard(i) {
     h("div", { class: "ttc-src" }, h("a", { href: t.url, target: "_blank", rel: "noopener noreferrer", text: "Wowhead Forever" }), ` read ${libDay(T.captured)}`));
 }
 function ttPlace(card, trig) {
+  if (KIT.placeCard) return KIT.placeCard(card, trig); /* js/place.js: one placing for every card */
   const sheet = $(".sheet"), sr = sheet.getBoundingClientRect();
   const sheetMode = innerWidth < 700 || window.matchMedia("(pointer: coarse)").matches;
   card.classList.toggle("sheetmode", sheetMode);
@@ -3507,7 +3509,7 @@ async function boot(mode, sdk) {
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 /* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
-Object.assign(KIT, { $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, ttPlace, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
+Object.assign(KIT, { $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 /* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image icon. */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

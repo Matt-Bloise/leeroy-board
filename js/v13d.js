@@ -416,7 +416,7 @@ function spellShow(btn, pinned) {
   card.hidden = false; btn.setAttribute("aria-expanded", "true");
   K.ttPlace(card, btn);
   /* beside the five's card, never over the name that opened it (the board's placing puts it under the word) */
-  if (!card.classList.contains("sheetmode")) {
+  if (!K.placeCard && !card.classList.contains("sheetmode")) {
     const sr = $(".sheet").getBoundingClientRect(), cr = (btn.closest(".card") || btn).getBoundingClientRect(), br = btn.getBoundingClientRect(), w = card.offsetWidth, ht = card.offsetHeight;
     let x = cr.right - sr.left + 10; if (x + w > sr.width - 10) x = cr.left - sr.left - w - 10; if (x < 10) x = Math.max(10, Math.min(sr.width - w - 10, br.left - sr.left));
     /* V13e retest-9: never over the neighbouring card's name band (the top 110 px of the row of cards) */
@@ -427,6 +427,7 @@ function spellShow(btn, pinned) {
   card.classList.remove("flipin"); void card.offsetWidth; card.classList.add("flipin");
   if (pinned) sfx("card");
 }
+K.spellShow = spellShow; /* js/place.js opens it on its own hover intent */
 function startSpells() {
   const panel = $("#panel-five"), card = $("#ttc"); if (!panel || !card) return;
   const hover = window.matchMedia("(hover: hover) and (pointer: fine)");
