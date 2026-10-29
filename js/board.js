@@ -352,13 +352,13 @@ function renderTiles() {
       h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `· Still choosing a play style: ${andList(o)}` : "· All five have picked a play style"; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
-    h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), ` ${ms.length}`])),
+    h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), `\u00a0${ms.length}`])),
     h("span", { class: "tile-line", text: `All ${zones.length === 3 ? "three" : zones.length} end in Orgrimmar.` }),
     h("span", { class: "tile-viz roads-viz" }, miniRoads()), h("span", { class: "viz-cap", text: "Where each of the five starts" }));
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
-    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line", "data-land": `racials.${MEM.slug(race)}` }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m))), " ", h("b", { text: race }), a ? ` · ${a.name}` : ""); }),
+    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line", "data-land": `racials.${MEM.slug(race)}` }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m))), " ", h("b", { text: race }), a ? `\u00a0· ${a.name}` : ""); }),
     changed ? h("span", { class: "tile-line", "data-land": "racials.changed", text: `${plural(changed, "racial", "racials")} changed since Oct 26` }) : null);
   fill("legacy",
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], ". They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."]),
@@ -734,7 +734,7 @@ function renderMap() {
   /* V13b (spec 1.5): a name is a small label (12.5 px on screen at any map size) on a quiet plate beside its pin, and place
      names 14 px, so the pins carry the map. The sizes are in map units for the map's drawn width; the map draws again when
      that width changes by more than a sixth (mapFit). */
-  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, FS = 12.5 * u, BIG = 14.5 * u, SMALL = 13 * u, CH = 0.6;
+  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, FS = (tiny ? 11 : 12.5) * u, BIG = (tiny ? 12 : 14.5) * u, SMALL = (tiny ? 11 : 13) * u, CH = 0.6;
   MAPW.drawn = mw;
   svg.style.setProperty("--fs", `${FS.toFixed(2)}px`); svg.style.setProperty("--fb", `${BIG.toFixed(2)}px`); svg.style.setProperty("--fsm", `${SMALL.toFixed(2)}px`);
   const boxes = [];
@@ -744,8 +744,8 @@ function renderMap() {
   svg.append(
     emb("dungeons", "map-mark"),
     fixedText(470, 88, "Orgrimmar", "map-text", BIG),
-    fixedText(470, 122 + 26 + SMALL, "Valley of Strength", "map-text small", SMALL),
-    fixedText(380, 250, "the Crossroads", "map-text small", SMALL),
+    ...(tiny ? [] : [fixedText(470, 122 + 26 + SMALL, "Valley of Strength", "map-text small", SMALL)]),
+    ...(tiny ? [] : [fixedText(380, 250, "the Crossroads", "map-text small", SMALL)]),
     );
   const gate = svg.querySelector(".map-mark"); for (const [k, v] of Object.entries({ x: 456, y: 104, width: 28, height: 28 })) gate.setAttribute(k, v);
   if (ART.town) { const town = s("image", { class: "map-town", href: "img/map/town.png", x: 448, y: 98, width: 44, height: 44 }); const pa = gate.parentNode; pa.insertBefore(town, gate); pa.removeChild(gate); }
@@ -1751,7 +1751,7 @@ function showScene(key) {
   const wasOpen = !layer.hidden && !layer.classList.contains("closing") && SC.open !== null;
   if (SC.anim) { stopFlip(); layer.classList.remove("flip"); }
   layer.classList.remove("closing");
-  if (wasOpen) { if (SC.open !== key) selectPanel(key, true); landing(key); return; }
+  if (wasOpen) { if (SC.open !== key) { selectPanel(key, true); if (document.activeElement && document.activeElement.closest("#tabs")) focusScene(key); } landing(key); return; }
   const open = (k, how) => {
     layer.classList.remove("rise", "flip", "closing", "fade");
     closeMore(false);
@@ -1857,11 +1857,13 @@ function shown(el) {
   return !el.getClientRects || el.getClientRects().length > 0;
 }
 const focusables = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && el.getAttribute("tabindex") !== "-1" && shown(el));
+/* the Sensory button and its panel sit outside the scene layer: they join the scene's Tab loop so a keyboard user can reach them */
+const senseBox = () => ["#sense-btn", "#sense-panel"].map((q) => $(q)).filter(Boolean);
 function trapFocus(e) {
-  const box = $("#scene"), list = focusables(box);
+  const box = $("#scene"), list = [...focusables(box), ...senseBox().flatMap((n) => (n.matches(FOCUSABLE) ? (shown(n) ? [n] : []) : focusables(n)))];
   if (!list.length) { e.preventDefault(); return; }
   const first = list[0], last = list[list.length - 1], at = document.activeElement;
-  if (!box.contains(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  if (!list.includes(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
   else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
   else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
 }
@@ -1877,6 +1879,7 @@ function showKeys(on) {
 function onKey(e) {
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "Escape") {
+    if (senseBox().some((n) => n.id === "sense-panel" && !n.hidden)) return; /* the Sensory panel's own Escape closes it first */
     if (glClose(true)) { e.preventDefault(); sfx("esc"); return; }
     if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); sfx("esc"); return; }
     if (closeMore()) { e.preventDefault(); sfx("esc"); return; }
@@ -1942,7 +1945,7 @@ function startScenes() {
   $("#keys-close").addEventListener("click", () => showKeys(false));
   document.addEventListener("keydown", onKey);
   document.addEventListener("focusin", (e) => {
-    if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target)) return;
+    if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target) || senseBox().some((n) => n.contains(e.target))) return;
     const first = focusables($("#scene"))[0]; if (first) first.focus();
   });
   addEventListener("popstate", route);
@@ -3385,7 +3388,7 @@ function warmStop() {
 }
 function warmRestore(s) {
   WARM.step = null; cancelAnimationFrame(s.raf); clearTimeout(s.timer);
-  s.panel.classList.remove("warm");
+  s.panel.classList.remove("warm"); s.panel.inert = false;
   if (s.fx) s.fx.remove();
   if (SC.open !== s.key) s.panel.hidden = true;
   if (s.layer) { const L = $("#scene"); L.classList.remove("warming"); L.inert = false; if (SC.open === null && !SC.want) L.hidden = true; }
@@ -3410,7 +3413,7 @@ function warmNext() {
      done while idle */
   if (step.layer) { L.inert = true; L.classList.add("warming"); L.dataset.kind = VISUAL.includes(key) ? "visual" : "reading"; L.hidden = false; }
   if (!WARM.fx) { WARM.fx = true; step.fx = h("div", { class: "warm-fx", "aria-hidden": "true" }); L.append(step.fx); }
-  panel.classList.add("warm"); panel.hidden = false;
+  panel.classList.add("warm"); panel.inert = true; panel.hidden = false;
   WARM.step = step;
   /* three frames: the commit, the raster, the draw; then the panel goes back */
   /* V13b: the Roads map is drawn again once at its real width while it warms, so its first opening never redraws it */

@@ -381,7 +381,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
 .tn-name { min-height: 44px; padding: 6px 16px; font-family: var(--font-ui); font-size: 1.05rem; letter-spacing: 0.04em; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); border-left: 4px solid var(--cc, var(--ink-soft)); border-radius: 6px; cursor: pointer; }
 @media (hover: hover) { .tn-name:hover { background: var(--cream); } }
 .tn-chip { justify-self: start; min-height: 44px; padding: 4px 16px; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.06em; color: var(--parchment); background: var(--oak-3); border: 1px solid var(--brass); border-radius: 999px; cursor: pointer; }
-.tn-cards { display: grid; gap: 14px; }
+.tn-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .tn-card { padding: 16px 20px 18px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); border-top: 3px solid var(--brass-dim); }
 .tn-card h3 { margin: 0 0 6px; font-family: var(--font-sc); font-size: 1.05rem; letter-spacing: 0.1em; color: var(--ink-soft); }
 .tn-card p { margin: 4px 0 0; font-family: var(--font-body); font-size: 1.1rem; line-height: 1.4; }
@@ -1489,7 +1489,7 @@ main.has-beam { margin-top: 44px; }
 .deep-who .lib-tool { display: inline-flex; align-items: center; gap: 6px; border-left: 3px solid var(--cc); }
 .card .chip.stamp { white-space: normal; max-width: 100%; }
 .label.srctag { white-space: nowrap; }
-.tn-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tn-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .tn-steps .tn-link { display: inline-flex; align-items: center; gap: 6px; }
 .tn-steps .emb { width: 1.2em; height: 1.2em; }
 .act { display: grid; gap: 6px; justify-items: start; }

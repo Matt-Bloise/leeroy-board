@@ -174,3 +174,35 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
   .tn:has(.tn-pick) > .tn-cards { grid-column: 1 / -1; grid-row: 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tn:has(.tn-pick) .jr-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* visual sweep 2026-10-29: gutters, rows, orphans */
+.lede, .panel > p, .card dd, .tn-card p, .ledger li, .tally, .map-caption, .picker-note, .act-how, .jr-note, .jr-fact { text-wrap: pretty; }
+.sense-invite button { white-space: nowrap; }
+.sense-invite span, .sense-invite { text-wrap: nowrap; }
+@media (max-width: 699px) {
+  .sheet-body { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .slip { padding-left: 16px; padding-right: 16px; }
+  html.scene-open .sense-fab { opacity: 0; pointer-events: none; }
+}
+@media (max-width: 359px) { .sheet-name h2 { white-space: normal; font-size: 1rem; line-height: 1.1; } }
+/* ledger: the seal hangs in the margin so a wrapped line and its source tag line up under the text */
+.ledger .settled-li > span:not(.label) { display: block; padding-left: calc(1.6em + 8px); }
+.ledger .settled-li > span:not(.label) > .seal { margin-left: calc(-1.6em - 8px); }
+.ledger .settled-li .label { margin: 2px 0 0 calc(1.6em + 8px); display: flex; justify-content: flex-start; }
+/* the five: a profession and its stamp sit on one aligned row */
+.card dd > span:has(> .chip.stamp) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+/* sign-ups: each question's label starts its own line on phones and  */
+@media (max-width: 699px) { #dsu-body .tally > h4 { flex-basis: 100%; } }
+#discord-signups .dsu-top .picker-note { text-wrap: balance; }
+/* buffs: the class cards of one row share a height */
+@media (min-width: 1000px) { .bclasses { align-items: stretch; } }
+/* wall tiles: a long title takes two lines instead of an ellipsis */
+.tile-title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+/* a long step (the group-name vote with its time) wraps instead of running past the sheet at 200% zoom */
+.tn-steps .tn-link { white-space: normal; }
+
+/* forced colors (Windows High Contrast): a pressed or selected control is underlined (colour is gone), and the focus ring is a system color */
+@media (forced-colors: active) {
+  button[aria-pressed="true"], .tab[aria-selected="true"], [role="tab"][aria-selected="true"] { text-decoration: underline 2px; text-underline-offset: 3px; }
+  :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+}
