@@ -3360,7 +3360,7 @@ let howWatch = false;
 function startHow() {
   const panel = $("#panel-tonight"); if (!panel || !$("#tn-how")) return;
   const go = () => { if (panel.hidden || document.documentElement.dataset.journey === "guided") return; (window.requestIdleCallback ? (f) => window.requestIdleCallback(f, { timeout: 2500 }) : (f) => setTimeout(f, 800))(() => Promise.all(["dungeons", "systems", "history"].map(libCat)).then(() => renderHow()).catch(() => { const b = $("#tn-how"); if (b) b.replaceChildren(h("h3", { text: "How things work" }), h("p", { class: "tnh-sub", text: "The library facts did not load just now. A refresh may help." })); })); };
-  if (!howWatch) { howWatch = true; new MutationObserver(go).observe(panel, { attributes: true, attributeFilter: ["hidden"] }); }
+  if (!howWatch && typeof MutationObserver === "function") { howWatch = true; new MutationObserver(go).observe(panel, { attributes: true, attributeFilter: ["hidden"] }); }
   go();
 }
 /* The picked person's tile and medallion stand out. */
