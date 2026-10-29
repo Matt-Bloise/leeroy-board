@@ -114,15 +114,15 @@
   --t-move: 520ms;
   --t-hero: 900ms;
   --t-flip: 480ms; /* V13c (craft 31): a card turns in 480 ms */
-  --t-close: 480ms;
+  --t-close: 540ms;
   --t-fade: 160ms;
   --ease-oak: cubic-bezier(.2, .8, .2, 1);
   --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
   --ease-card: cubic-bezier(.3, 1.22, .6, 1); /* a smaller overshoot for the card turn */
   --ease-shut: cubic-bezier(.55, 0, .75, .2);
   --ease-fade: cubic-bezier(.45, 0, .55, 1); /* opacity wants a symmetric ease; --ease-shut holds an opacity near 1 and then drops it in a few frames */
-  --t-leave: 420ms; /* a tab change: the old panel eases out, then the new one eases in (js/board.js reads --t-leave) */
-  --t-enter: 420ms;
+  --t-leave: 460ms; /* a tab change: the old panel eases out, then the new one eases in (js/board.js reads --t-leave) */
+  --t-enter: 400ms;
   --stagger: 70ms;
   --wall-blur: 6px;
   --light-warm: #ffd18c;
@@ -278,6 +278,8 @@ main:focus { outline: none; }
 /* the photograph decodes late and used to pop in on the first paint: the plate fades in once js/board.js has decoded it (.ready) */
 .wall-plate { opacity: 0; transition: opacity var(--t-hero) var(--ease-fade); }
 .wall-plate.ready { opacity: 1; }
+.hero-art img:not(.ready) { opacity: 0; }
+.hero-art img.ready { transition: opacity var(--t-hero) var(--ease-fade), transform var(--t-hero) var(--ease-oak); }
 .wall-plate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--candle-soft), transparent 70%); animation: candle 4.4s linear infinite; }
 .light { position: absolute; inset: 0; width: 100%; height: 100%; display: block; opacity: 0; transition: opacity var(--t-hero) var(--ease-oak); will-change: opacity; }
 .wall-plate.lit .light { opacity: 1; }
@@ -575,7 +577,7 @@ html.room-on .hero-art::after { background: linear-gradient(180deg, var(--shade-
   }
 .scene-layer:not([hidden]) .sheet { will-change: transform, opacity; }
 .scene-layer.rise .sheet { animation: sheet-in var(--t-move) var(--ease-oak) both; }
-.scene-layer.rise .scene-veil, .scene-layer.flip .scene-veil { animation: fade-in var(--t-move) var(--ease-oak) both; }
+.scene-layer.rise .scene-veil, .scene-layer.flip .scene-veil { animation: fade-in var(--t-move) var(--ease-fade) both; }
 .scene-layer.closing .sheet { animation: sheet-out var(--t-close) var(--ease-fade) both; }
 .scene-layer.closing .scene-veil { animation: fade-out var(--t-close) var(--ease-fade) both; }
 .scene-layer.fade .sheet, .scene-layer.fade .scene-veil { animation: fade-in var(--t-fade) linear both; }
@@ -2046,7 +2048,7 @@ html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
 .road-btn { position: relative; border-left: 1px solid var(--grain); padding-left: 22px; background: radial-gradient(ellipse 70% 130% at 0% 0%, var(--lamp), transparent 70%), linear-gradient(180deg, var(--oak-3), var(--oak-2)); box-shadow: inset 1px 1px 0 var(--edge-hi), 0 4px 10px var(--shadow); }
 .road-btn::before { content: ""; position: absolute; left: 7px; top: 10px; bottom: 10px; width: 7px; border-radius: 3px; background: var(--rc); box-shadow: inset -1px -1px 0 var(--wear), inset 1px 1px 0 var(--edge-hi); }
 /* craft 21: a scene opened again this visit fades in over 200 ms instead of replaying its entrance */
-.panel.again { animation: fade-in var(--t-close) var(--ease-oak) both; }
+.panel.again { animation: fade-in var(--t-close) var(--ease-fade) both; }
 /* retest-7: the head is never shorter than its 44 px controls, so the close and Look at the room buttons sit inside it */
 .sheet-top { min-height: 44px; }
 /* and the head gives the 44 px back from its padding where height is short (phones, 768 px laptops) */

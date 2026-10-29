@@ -93,7 +93,7 @@ function startRoomLadder() {
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
-const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 480, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
+const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 540, oak: "cubic-bezier(.2, .8, .2, 1)", fade: "cubic-bezier(.45, 0, .55, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
@@ -946,7 +946,7 @@ function renderWheel() {
       const [x1, y1] = pos[b.from], [x2, y2] = pos[to];
       const off = ((bi % 4) - 1.5) * 10;
       const cx = (x1 + x2) * 0.22 + off, cy = (y1 + y2) * 0.22 - off;
-      const path = s("path", { class: "wheel-edge", d: `M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, style: `--ec: ${classVar(b.from)}; ${delay}`, "data-from": b.from, "data-b": bi });
+      const path = s("path", { class: "wheel-edge", d: `M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`, style: `--ec: ${classVar(b.from)}; ${delay}`, "data-from": b.from, "data-b": bi, tabindex: 0, role: "img", "aria-label": `${(memberByKey(b.from) || {}).class || b.from} brings ${b.what} to ${(memberByKey(to) || {}).name || to}` });
       const tx = 0.12 * x1 + 0.88 * x2, ty = 0.12 * y1 + 0.88 * y2;
       const tip = s("circle", { class: "wheel-tip", cx: (tx * 0.85 + cx * 0.15), cy: (ty * 0.85 + cy * 0.15), r: 3.2, style: `--ec: ${classVar(b.from)}; ${delay}`, "data-from": b.from, "data-b": bi });
       edges.push(path, tip); svg.append(path, tip);
@@ -1500,7 +1500,7 @@ function selectPanel(key, crossFade) {
     const old = $(`#panel-${prev}`);
     old.style.setProperty("--dir", String(dir)); old.style.transform = ""; old.classList.remove("spring");
     if (crossFade) {
-      old.classList.remove("entering"); old.classList.add("leaving");
+      old.classList.remove("entering", "again"); old.classList.add("leaving"); /* "again" (the short fade of a later open) is declared after .leaving and would keep the old panel at full opacity until it is hidden */
       clearTimeout(SC.fadeTimer);
       SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); }, (parseFloat(cssVar("--t-leave")) || 220) + 30); /* the CSS fade runs --t-leave; hiding the panel earlier cut it short in one frame */
     } else { old.hidden = true; old.classList.remove("entering", "leaving"); }
@@ -1666,10 +1666,14 @@ function glintOrigin(g, part) {
 }
 /* the wall's photograph decodes late and used to pop in on the first paint; the plate fades in once the image is decoded (a 1.8 s fallback shows it anyway) */
 (function wallFade() {
-  const plate = document.querySelector(".wall-plate"); if (!plate) return;
-  let done = false; const show = () => { if (done) return; done = true; plate.classList.add("ready"); };
-  try { const im = new Image(); im.src = "img/board-wall.jpg"; if (im.decode) im.decode().then(show, show); else im.onload = show; } catch (e) { show(); }
-  setTimeout(show, 1800);
+  const mark = (el, src) => {
+    if (!el) return;
+    let done = false; const show = () => { if (done) return; done = true; el.classList.add("ready"); };
+    try { const im = new Image(); im.src = src; if (im.decode) im.decode().then(show, show); else im.onload = show; } catch (e) { show(); }
+    setTimeout(show, 1800);
+  };
+  mark(document.querySelector(".wall-plate"), "img/board-wall.jpg");
+  mark(document.querySelector(".hero-art img"), "img/tavern-hero.jpg");
 })();
 /* V13e: */
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
@@ -1696,18 +1700,23 @@ function viewMorph(from, to, update, closing) {
     vt.finished.then(clear, clear);
   } catch (e) { clear(); update(); }
 }
-function stopFlip() { clearTimeout(SC.flipTimer); if (SC.anim) { try { SC.anim.cancel(); } catch (e) {} SC.anim = null; } }
+function stopFlip() { clearTimeout(SC.flipTimer); if (SC.anim2) { try { SC.anim2.cancel(); } catch (e) {} SC.anim2 = null; } if (SC.anim) { try { SC.anim.cancel(); } catch (e) {} SC.anim = null; } }
 function flipSheet(band, opening, done) {
   const layer = $("#scene"), sheet = $(".sheet");
   stopFlip();
   const a = band.getBoundingClientRect(), b = sheet.getBoundingClientRect();
   if (!a.width || !b.width || !b.height) return false;
   const from = `translate(${(a.left - b.left).toFixed(1)}px, ${(a.top - b.top).toFixed(1)}px) scale(${(a.width / b.width).toFixed(4)}, ${(a.height / b.height).toFixed(4)})`;
-  const kf = [{ transform: from, opacity: 0.4 }, { transform: "none", opacity: 1 }];
+  const kf = [{ transform: from }, { transform: "none" }];
   layer.classList.add("flip");
   let an = null, ended = false;
   const end = () => { if (ended) return; ended = true; clearTimeout(SC.flipTimer); if (opening) { layer.classList.remove("flip"); if (SC.anim === an) stopFlip(); } if (done) done(); };
-  try { an = sheet.animate(opening ? kf : kf.reverse(), { duration: opening ? MOTION.move : MOTION.close, easing: opening ? MOTION.oak : MOTION.shut, fill: opening ? "backwards" : "forwards" }); }
+  try {
+    const dur = opening ? MOTION.move : MOTION.close, fill = opening ? "backwards" : "forwards";
+    an = sheet.animate(opening ? kf : kf.reverse(), { duration: dur, easing: opening ? MOTION.oak : MOTION.shut, fill });
+    /* the opacity rides its own symmetric ease: on the move's ease a bright sheet reached most of its opacity in two frames */
+    SC.anim2 = sheet.animate(opening ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 1 }, { opacity: 0 }], { duration: dur, easing: MOTION.fade, fill });
+  }
   catch (e) { layer.classList.remove("flip"); return false; }
   SC.anim = an;
   if (an && an.finished) an.finished.then(end, end);

@@ -65,7 +65,7 @@ function choose(w, ht, tr, o) {
     let hardLap = 0; for (const a of hard) hardLap += lap(c, a);
     let soft = 0; for (const q of content) soft += lap(c, q) * (q.wt || 1);
     const d = Math.hypot(c.x + c.w / 2 - cx, c.y + c.h / 2 - cy);
-    return { hardLap, soft, total: hardLap * 1000 + soft + shift * 30 + d * 0.4 + pri * 40 };
+    return { hardLap, soft, total: hardLap * 1000 + soft + shift * 30 + d * (o.far || 1) + pri * 40 };
   };
   const tries = [];
   const around = (a, tag) => {
@@ -169,16 +169,19 @@ function inside(poly, q) { for (let i = 0; i < poly.length; i++) { const a = pol
 function hover(c) {
   let inT = 0, outT = 0, cur = null, left = null;
   const cardEl = () => (c.card ? c.card() : null);
-  const finish = () => { outT = 0; if (c.pinned && c.pinned()) return; const el = cardEl(); if (el && !el.hidden) { if (el.matches(":hover")) return; if (left && Date.now() - left.t < 900 && inside(hull([left.p, ...corners(R(el))]), pt)) { arm(110); return; } } cur = null; c.leave && c.leave(null); c.close(); };
+  const finish = () => { outT = 0; if (c.pinned && c.pinned()) return; const el = cardEl(); if (el && !el.hidden) { if (el.matches(":hover")) return; if (left && Date.now() - left.t < 1400 && cur && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt)) { arm(110); return; } } cur = null; c.leave && c.leave(null); c.close(); };
   const corners = (r) => [{ x: r.x, y: r.y }, { x: r.r, y: r.y }, { x: r.x, y: r.b }, { x: r.r, y: r.b }];
   const arm = (ms) => { clearTimeout(outT); outT = setTimeout(finish, ms); };
   c.root.addEventListener("pointerover", (e) => {
     if (e.pointerType === "touch") return;
     const t = e.target.closest && e.target.closest(c.sel); if (!t) return;
+    /* crossing to the open card: a trigger passed on the way does not take the card away; it counts only when the pointer rests on it */
+    const el = cardEl(), open = c.isOpen && c.isOpen(), cross = open && cur && cur !== t && el && !el.hidden && left && Date.now() - left.t < 1400 && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt);
+    if (cross) { clearTimeout(inT); inT = setTimeout(() => { if (!t.isConnected || !t.matches(":hover")) return; clearTimeout(outT); outT = 0; left = null; if (c.enter) c.enter(t); cur = t; c.open(t, "hover"); }, 300); return; }
     clearTimeout(outT); outT = 0; clearTimeout(inT); left = null;
     if (c.enter) c.enter(t);
     if (cur === t) return;
-    inT = setTimeout(() => { if (!t.isConnected || !t.matches(":hover")) return; cur = t; c.open(t, "hover"); }, c.isOpen && c.isOpen() ? SWITCH : IN);
+    inT = setTimeout(() => { if (!t.isConnected || !t.matches(":hover")) return; cur = t; c.open(t, "hover"); }, open ? SWITCH : IN);
   });
   c.root.addEventListener("pointerout", (e) => {
     if (e.pointerType === "touch") return;
@@ -224,7 +227,14 @@ function roads(M) {
   /* no native tooltips on the pins: the card below says it, and a title tooltip lands wherever the browser likes */
   svg.querySelectorAll(".map-pin").forEach((p) => { const t = Array.from(p.children).find((c) => c.tagName.toLowerCase() === "title"); if (t) { p.setAttribute("data-who", t.textContent); (t.parentNode && t.parentNode.removeChild(t)); } });
   /* Orgrimmar, the Crossroads and the zeppelin take pointers too (they sat under the pins as plain pictures) */
-  svg.querySelectorAll(".map-town, .map-mark, .map-zep-g, .route-plate").forEach((e) => { e.style.pointerEvents = "all"; e.classList.add("place-target"); if (e.matches(".map-mark") && Number(e.getAttribute("x")) === 382) e.classList.add("map-cross"); });
+  svg.querySelectorAll(".map-town, .map-mark, .map-zep-g, .route-plate").forEach((e) => {
+    e.style.pointerEvents = "all"; e.classList.add("place-target");
+    if (e.matches(".map-mark") && Number(e.getAttribute("x")) === 382) e.classList.add("map-cross");
+    /* reachable from the keyboard and named for a screen reader; the zeppelin's icon takes the focus, not its plate */
+    if (e.matches(".route-plate")) return;
+    if (!e.hasAttribute("tabindex")) e.setAttribute("tabindex", "0");
+    if (!e.hasAttribute("aria-label")) e.setAttribute("aria-label", e.matches(".map-town") ? "Orgrimmar, where all three roads end" : e.matches(".map-zep-g") ? "The Undercity zeppelin" : "The Crossroads");
+  });
   /* the pins are reached from the keyboard through their zone (a focusable group); the group lists the names for a screen reader */
   svg.querySelectorAll(".road-g").forEach((g) => { const pins = [...g.querySelectorAll(".map-pin")].map((p) => p.getAttribute("data-who")).filter(Boolean); if (pins.length) g.setAttribute("aria-description", pins.join("; ")); });
   let card = $("#road-card");
@@ -315,6 +325,16 @@ function context() {
     deep.addEventListener("focusin", (e) => { const r = e.target && e.target.closest && e.target.closest("li.bq"); if (r) mark(true, r); });
     deep.addEventListener("focusout", () => mark(false));
   }
+  /* a thread on the wheel: pointing at it (or focusing it) lights the whole link, its giver's threads and the rows that describe it */
+  const wheel = $("#wheel");
+  if (wheel) {
+    const lit = (t) => { wheel.querySelectorAll(".wheel-edge.on, .wheel-tip.on").forEach((e) => e.classList.remove("on")); document.querySelectorAll("#wheel-links .ctx-on").forEach((e) => e.classList.remove("ctx-on")); if (!t) return; wheel.querySelectorAll(`.wheel-edge[data-b="${t.dataset.b}"], .wheel-tip[data-b="${t.dataset.b}"]`).forEach((e) => e.classList.add("on")); document.querySelectorAll(`#wheel-links li.buff[data-from="${t.dataset.from}"]`).forEach((e) => e.classList.add("ctx-on")); };
+    const edge = (e) => e.target && e.target.closest && e.target.closest(".wheel-edge, .wheel-tip");
+    wheel.addEventListener("pointerover", (e) => { if (e.pointerType !== "touch") lit(edge(e)); });
+    wheel.addEventListener("pointerleave", () => lit(null));
+    wheel.addEventListener("focusin", (e) => lit(edge(e)));
+    wheel.addEventListener("focusout", () => lit(null));
+  }
   const wall = $("#wall");
   if (wall) {
     const on = (t) => { wall.classList.add("ctx"); wall.querySelectorAll(".ctx-on").forEach((e) => e.classList.remove("ctx-on")); const li = t.closest("li"); if (li) li.classList.add("ctx-on"); };
@@ -340,6 +360,13 @@ function tips() {
       if (!(e.textContent || "").trim() && !e.getAttribute("aria-label") && !e.getAttribute("aria-labelledby")) e.setAttribute("aria-label", t);
     }
     if (root.nodeType === 1) root.querySelectorAll("svg title").forEach((x) => { const p = x.parentElement; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", x.textContent); x.remove(); });
+    /* whatever has a tip is reachable from the keyboard too (a chip, a badge, a drawn thing), and a screen reader hears the tip */
+    if (root.nodeType === 1) for (const p of [root, ...root.querySelectorAll("[data-tip]")]) {
+      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip")) continue;
+      p.setAttribute("tabindex", "0");
+      if (!p.getAttribute("aria-label") && !p.getAttribute("aria-labelledby") && !(p.textContent || "").trim()) p.setAttribute("aria-label", p.getAttribute("data-tip"));
+      else if (!p.getAttribute("aria-description")) p.setAttribute("aria-description", p.getAttribute("data-tip"));
+    }
   };
   strip(document.body);
   if (typeof MutationObserver === "function") new MutationObserver((ms) => { for (const m of ms) { if (m.type === "attributes") strip(m.target); else m.addedNodes.forEach((n) => { if (n.nodeType === 1) strip(n); }); } }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["title"] });

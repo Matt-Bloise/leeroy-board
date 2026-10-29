@@ -24,6 +24,7 @@
 .map-svg .map-pin.ctx-on { filter: drop-shadow(0 0 5px var(--cc)) drop-shadow(0 0 2px var(--cc)); }
 .map-svg .map-pin.ctx-on .pin-body { stroke-width: 4.6; }
 .map-svg .place-target { cursor: help; }
+.map-svg .place-target:focus-visible { outline: 3px solid var(--brass-hi, #f0cf84); outline-offset: 3px; }
 .map-svg .map-town.ctx-on, .map-svg .map-town:hover { filter: drop-shadow(0 0 6px var(--brass-hi)); }
 /* the old side panel hid half of the map; the fact card replaces it */
 .road-panel { display: none !important; }
@@ -33,6 +34,9 @@
 #buffs-deep li.bq { transition: opacity var(--t-micro) var(--ease-oak), box-shadow var(--t-micro) var(--ease-oak); }
 #buffs-deep li.bq.ctx-on { opacity: 1; box-shadow: 0 0 0 2px var(--bc), 0 4px 12px var(--shadow); }
 #buffs-deep li.bq.ctx-on .bq-line { color: var(--ink); }
+
+#wheel-links li.buff.ctx-on { box-shadow: 0 0 0 2px var(--bc), 0 4px 12px var(--shadow); }
+.wheel-edge:focus-visible { outline: none; stroke-width: 3.4; opacity: 1; }
 
 /* ---- the wall: the tile you point at lifts and glows (board.css), the others step back a little ---- */
 .wall.ctx > li:not(.ctx-on) .tile { opacity: 0.82; transition: opacity var(--t-micro) var(--ease-oak); }

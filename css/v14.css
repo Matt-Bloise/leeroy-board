@@ -13,8 +13,9 @@ html.first-beat .depth button[data-depth="tonight"], html.first-beat .tonight-li
 #wall > .tile, #wall > li { animation: v14-rise 720ms var(--ease-oak) both; animation-delay: calc(450ms + var(--i, 0) * 75ms); }
 #wall > :nth-child(1) { --i: 0; } #wall > :nth-child(2) { --i: 1; } #wall > :nth-child(3) { --i: 2; } #wall > :nth-child(4) { --i: 3; } #wall > :nth-child(5) { --i: 4; } #wall > :nth-child(6) { --i: 5; } #wall > :nth-child(7) { --i: 6; } #wall > :nth-child(8) { --i: 7; }
 /* the sheet unfolds from its top edge, so a first-visit Next steps reads as a page opening, not a slam */
-@keyframes v14-unfold { from { opacity: 0; transform: perspective(1400px) rotateX(-9deg) translateY(18px); transform-origin: 50% 0; } to { opacity: 1; transform: none; transform-origin: 50% 0; } }
-.scene-layer.rise .sheet { animation: v14-unfold var(--t-move) var(--ease-oak) both; }
+/* the unfold moves on the oak ease; the opacity has its own symmetric ease (a front-loaded opacity put a bright sheet on a dark wall in two frames) */
+@keyframes v14-unfold { from { transform: perspective(1400px) rotateX(-9deg) translateY(18px); transform-origin: 50% 0; } to { transform: none; transform-origin: 50% 0; } }
+.scene-layer.rise .sheet { animation: v14-unfold var(--t-move) var(--ease-oak) both, fade-in var(--t-move) var(--ease-fade) both; }
 @keyframes v14-fade { from { opacity: 0; } to { opacity: 1; } }
 .hero-art, #room { animation: v14-fade 1200ms ease-out both; }
 #board:not([hidden]) .hero, #board:not([hidden]) .mini-clock, #board:not([hidden]) .wall-foot, #board:not([hidden]) .clock { animation: v14-fade 900ms ease-out 250ms both; }
