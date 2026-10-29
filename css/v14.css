@@ -1,0 +1,176 @@
+
+:root { --g1: 0.618rem; --g2: 1rem; --g3: 1.618rem; --g4: 2.618rem; --g5: 4.236rem; --drift-x: 0px; --drift-y: 0px; }
+
+:root { --oak-0: #000; --room-fog: #000; --shade-deep: rgba(0, 0, 0, 0.94); --shade-mid: rgba(0, 0, 0, 0.62); --shade-light: rgba(0, 0, 0, 0.22); --shade-none: rgba(0, 0, 0, 0); --veil: rgba(0, 0, 0, 0.74); --veil-room: rgba(0, 0, 0, 0.5); --veil-strong: rgba(0, 0, 0, 0.92); color-scheme: dark; }
+html, body { background-color: #000; }
+body { background-image: repeating-linear-gradient(92deg, var(--grain-line) 0 2px, transparent 2px 11px), linear-gradient(180deg, var(--oak-1), #000 38%); }
+body.nograin::after { content: ""; position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; opacity: 0.035; mix-blend-mode: overlay; background-image: var(--noise, none); background-size: 128px 128px; }
+@media print { body::after { display: none; } }
+
+@keyframes v14-nudge { 0%, 100% { box-shadow: 0 0 0 0 rgba(238, 205, 140, 0); } 50% { box-shadow: 0 0 0 3px rgba(238, 205, 140, 0.55), 0 0 28px 6px rgba(255, 170, 70, 0.35); } }
+html.first-beat .depth button[data-depth="tonight"], html.first-beat .tonight-link { animation: v14-nudge 1.4s var(--ease-oak) 2 both; }
+@keyframes v14-rise { from { opacity: 0; translate: 0 14px; scale: 0.985; } to { opacity: 1; translate: 0 0; scale: 1; } }
+#wall > .tile, #wall > li { animation: v14-rise 720ms var(--ease-oak) both; animation-delay: calc(450ms + var(--i, 0) * 75ms); }
+#wall > :nth-child(1) { --i: 0; } #wall > :nth-child(2) { --i: 1; } #wall > :nth-child(3) { --i: 2; } #wall > :nth-child(4) { --i: 3; } #wall > :nth-child(5) { --i: 4; } #wall > :nth-child(6) { --i: 5; } #wall > :nth-child(7) { --i: 6; } #wall > :nth-child(8) { --i: 7; }
+/* the sheet unfolds from its top edge, so a first-visit Next steps reads as a page opening, not a slam */
+@keyframes v14-unfold { from { opacity: 0; transform: perspective(1400px) rotateX(-9deg) translateY(18px); transform-origin: 50% 0; } to { opacity: 1; transform: none; transform-origin: 50% 0; } }
+.scene-layer.rise .sheet { animation: v14-unfold var(--t-move) var(--ease-oak) both; }
+@keyframes v14-fade { from { opacity: 0; } to { opacity: 1; } }
+.hero-art, #room { animation: v14-fade 1200ms ease-out both; }
+#board:not([hidden]) .hero, #board:not([hidden]) .mini-clock, #board:not([hidden]) .wall-foot, #board:not([hidden]) .clock { animation: v14-fade 900ms ease-out 250ms both; }
+/* a tab change cross-fades: the old panel eases out, the new one eases in, no flash between */
+.panel.leaving { animation-duration: 240ms; animation-timing-function: ease-in; }
+
+/* 3. Scene medallions: the painted 640 px coin (1254 px originals), lit, with a slow light sweep. */
+.sheet-emblem { padding: 0; border: 0; background: none; cursor: zoom-in; width: 44px; height: 44px; border-radius: 50%; position: relative; }
+.sheet-emblem .emblem-img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7)); transition: transform 420ms var(--ease-spring); }
+@media (hover: hover) { .sheet-emblem:hover .emblem-img { transform: rotateY(180deg) scale(1.08); } }
+.medal-side { position: fixed; z-index: 3; top: 50%; width: var(--ms, 280px); height: var(--ms, 280px); margin-top: calc(var(--ms, 280px) / -2); pointer-events: none; }
+.medal-side[hidden] { display: none; }
+.coin { position: relative; display: block; width: 100%; height: 100%; border-radius: 50%; animation: coin-bob 9s ease-in-out infinite; filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 48px rgba(255, 150, 50, 0.22)); }
+.coin-in { display: block; width: 100%; height: 100%; border-radius: 50%; overflow: hidden; animation: coin-sway 14s ease-in-out infinite; transform-style: preserve-3d; }
+.coin .medal-img, .lb-front .medal-img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.coin-shine { position: absolute; inset: 3%; border-radius: 50%; pointer-events: none; overflow: hidden; mix-blend-mode: plus-lighter; }
+.coin-shine::before { content: ""; position: absolute; top: -20%; bottom: -20%; width: 34%; left: -50%; transform: skewX(-18deg); background: linear-gradient(90deg, transparent, rgba(255, 236, 190, 0.34), rgba(255, 255, 255, 0.5), rgba(255, 236, 190, 0.34), transparent); animation: coin-sweep 7.5s ease-in-out infinite; }
+@keyframes coin-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes coin-sway { 0%, 100% { transform: perspective(900px) rotateY(-9deg) rotateX(2deg); } 50% { transform: perspective(900px) rotateY(9deg) rotateX(-2deg); } }
+@keyframes coin-sweep { 0%, 55% { left: -50%; } 100% { left: 130%; } }
+/* the lightbox: the coin large on black, turned over with a press */
+.medal-lb { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: radial-gradient(ellipse at 50% 45%, rgba(40, 24, 10, 0.92), #000 72%); animation: fade-in 260ms var(--ease-oak) both; }
+.medal-lb.out { animation: fade-out 180ms var(--ease-shut) both; }
+.lb-stage { display: grid; justify-items: center; gap: var(--g3); padding: var(--g3); }
+.lb-coin { --rx: 0deg; --ry: 0deg; --sx: 50%; position: relative; display: block; width: min(78vmin, 640px); aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; transform-style: preserve-3d; transform: perspective(1400px) rotateX(var(--rx)) rotateY(var(--ry)); transition: transform 240ms var(--ease-oak); filter: drop-shadow(0 30px 50px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 80px rgba(255, 150, 50, 0.25)); }
+.lb-face { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; transition: transform 640ms var(--ease-card); }
+.lb-front { transform: rotateY(0); }
+.lb-back { transform: rotateY(180deg); display: grid; place-items: center; background: radial-gradient(circle at 35% 30%, #e9c779, #a67c2e 55%, #5f4217); box-shadow: inset 0 0 0 10px #8a6c35, inset 0 0 0 14px #d1a85a, inset 0 0 40px rgba(0, 0, 0, 0.55); }
+.lb-back-in { display: grid; gap: var(--g2); padding: 18%; text-align: center; color: #2b1d10; }
+.lb-back-in b { font-family: var(--font-display); font-size: clamp(1.6rem, 5vmin, 2.8rem); line-height: 1.05; }
+.lb-back-in i { font-family: var(--font-body); font-size: clamp(1rem, 2.8vmin, 1.4rem); text-wrap: balance; }
+.lb-coin.turned .lb-front { transform: rotateY(-180deg); }
+.lb-coin.turned .lb-back { transform: rotateY(0); }
+.lb-front .coin-shine::before { animation-duration: 5.5s; }
+.lb-front .coin-shine { background: radial-gradient(circle at var(--sx) 20%, rgba(255, 240, 200, 0.18), transparent 45%); }
+.lb-hint { margin: 0; font-family: var(--font-ui); letter-spacing: 0.08em; font-size: var(--fs-small); color: var(--brass-hi); }
+.lb-close { position: absolute; top: max(16px, env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* 4. Next steps: one clear action first, then the picker; the golden steps between blocks. */
+.tn { max-width: 960px; gap: var(--g2); padding: var(--g1) var(--g2) var(--g2); }
+.tn-pick, .jr-pick, .tn-card { padding: var(--g2) var(--g3); border-radius: 8px; }
+.tn-pick { gap: var(--g1); }
+.tn-pick .tn-who, .jr-pick .tn-who { font-size: var(--step-1); margin-bottom: 0; }
+.tn-pick .tn-why { margin: 0 0 var(--g1); color: var(--ink-soft); }
+.jr-pick { margin-top: 0; gap: var(--g2); }
+.jr-top { align-items: baseline; }
+.jr-note { font-size: 1rem; }
+.jr-cards { gap: var(--g2); grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
+@media (max-width: 640px) { .jr-cards { grid-template-columns: minmax(0, 1fr); } }
+.jr-card { padding: var(--g2); gap: var(--g1); height: 100%; box-sizing: border-box; }
+.jr-line { text-wrap: balance; }
+.jr-fact { margin-top: auto; text-wrap: pretty; }
+.tn-cards { gap: var(--g2); }
+.tn-cards > :first-child { border-top-width: 4px; border-top-color: var(--wax); background-image: linear-gradient(180deg, rgba(255, 244, 214, 0.5), transparent 60%); }
+.tn-cards > :first-child .tn-big { font-size: var(--step-3); }
+.tn-card { text-wrap: pretty; }
+.tn-card h3 { margin-bottom: var(--g1); }
+.tn-card .tn-launch { margin-top: var(--g2); padding-top: var(--g1); }
+.tn-actions { gap: var(--g2); }
+.tn-actions .lib-btn { min-height: 52px; }
+@media (min-width: 1100px) { .tn { max-width: min(100%, 1100px); } .tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1800px) { .tn { max-width: min(100%, 1300px); } }
+
+@media (max-width: 640px), (max-height: 900px) { .tn { gap: var(--g1); padding: 0 0 var(--g1); } .tn-pick, .jr-pick, .tn-card { padding: var(--g1) var(--g2); } .jr-card { padding: var(--g1) var(--g2); gap: 2px; } .tn-pick .tn-why { margin-bottom: 0; } .tn-cards > :first-child .tn-big { font-size: var(--step-2); } .tn-actions .lib-btn { min-height: 46px; } .tn-card h3 { margin-bottom: 2px; } .tn-card .tn-launch { margin-top: var(--g1); padding-top: 4px; } .jr-pick { gap: var(--g1); } .jr-cards { gap: var(--g1); } }
+
+/* 5. Type, buttons, focus. Short labels stay on one line; long text breaks where it reads well. */
+.tile-title, .sheet-name h2, .jr-name, .tn-who, .tn-big { text-wrap: balance; }
+.tile-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tile-sub, .tile-line, .viz-cap, .spell-meta, .sheet-sub, .scene-hint, .legend li, .roads-legend li { text-wrap: pretty; }
+.sheet-sub { text-wrap: balance; }
+.tile-body, .tn-card p, .race, .rwiki { hyphens: manual; }
+.tn-link, .tn-n, .pill, .tn-when b, .tile-line b, .rsvp-n { white-space: nowrap; }
+.sheet-body { padding-inline: clamp(14px, 3.2vw, var(--g4)); }
+.sheet-body p, .sheet-body li { text-wrap: pretty; }
+.sheet-body :where(h2, h3) { text-wrap: balance; }
+/* one button family: the same radius, height and press on every control that is a button, in every scene */
+:where(.lib-tool, .lib-btn, .tn-name, .jr-card, .jr-skip, .jr-go, .flip, .bb, .bchip, .tilt, .pager button) { box-sizing: border-box; min-height: 44px; border-radius: 999px; transition: transform var(--t-micro) var(--ease-oak), background var(--t-micro) var(--ease-oak), box-shadow var(--t-micro) var(--ease-oak); }
+:where(.jr-card) { border-radius: 10px; }
+:where(.lib-tool, .lib-btn, .tn-name, .jr-skip, .jr-go, .tilt, .pager button):active { transform: translateY(1px) scale(0.985); }
+/* focus: a two-tone ring that reads on parchment and on oak alike, only for keyboard users */
+:focus { outline: none; }
+:focus-visible { outline: 3px solid #ffe3a0; outline-offset: 2px; box-shadow: 0 0 0 5px #1c130c; border-radius: inherit; }
+.sheet-body :focus-visible { outline-color: #2b1d10; box-shadow: 0 0 0 5px #ffe3a0; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offset: 1px; }
+.skip:focus-visible { z-index: 100; }
+/* tables where data is tabular: the shared look for any <table> the scenes render */
+.sheet-body table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums lining-nums; }
+.sheet-body th { text-align: left; font-family: var(--font-sc); letter-spacing: 0.06em; color: var(--ink-soft); border-bottom: 2px solid var(--brass-dim); padding: var(--g1) var(--g2); }
+.sheet-body td { padding: var(--g1) var(--g2); border-bottom: 1px solid var(--ink-line); vertical-align: top; }
+.sheet-body td:last-child, .sheet-body th:last-child { text-align: right; }
+/* the roads scene: the legend keeps its own column and never runs under the map */
+#panel-roads { column-gap: var(--g3); row-gap: var(--g3); }
+.roads-legend { min-width: 0; }
+.roads-legend li { min-width: 0; overflow-wrap: break-word; }
+
+.gl-pop { padding-right: 34px; }
+.gl-x { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; font-size: 1.2rem; line-height: 1; color: inherit; background: transparent; border: 0; border-radius: 50%; cursor: pointer; opacity: 0.8; }
+.gl-x:hover { opacity: 1; background: rgba(255, 255, 255, 0.12); }
+
+/* 7. Loading and missing images: a soft placeholder instead of blank or a broken-image icon. */
+@keyframes v14-skel { 0% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+.tile-body:empty, .tile-line:empty { min-height: 1.2em; border-radius: 4px; background: linear-gradient(100deg, rgba(255, 255, 255, 0.04) 30%, rgba(255, 220, 160, 0.12) 50%, rgba(255, 255, 255, 0.04) 70%) 0 0 / 240% 100%; animation: v14-skel 1.6s linear infinite; }
+img:not([src]), img[src=""] { visibility: hidden; }
+img.img-missing { visibility: hidden; }
+
+/* 8. Wide gamut and HDR. sRGB values above stay as the fallback; P3 only where the display reports it. */
+@supports (color: color(display-p3 1 1 1)) {
+  @media (color-gamut: p3) {
+        .jr-start, .tn-link, .tn-card h3 + .tn-big { color: color(display-p3 0.72 0.13 0.09); }
+    .newer-pill, .tab[aria-selected="true"] .tab-ico { background-color: color(display-p3 0.98 0.83 0.5); }
+    .lb-back { background: radial-gradient(circle at 35% 30%, color(display-p3 0.96 0.8 0.46), color(display-p3 0.68 0.5 0.18) 55%, #5f4217); }
+    .tonight-link i, .tile-go i { color: color(display-p3 1 0.84 0.5); }
+    .coin { filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 54px color(display-p3 1 0.52 0.12 / 0.3)); }
+  }
+}
+@media (dynamic-range: high) {
+  .coin-shine::before { background: linear-gradient(90deg, transparent, rgba(255, 220, 150, 0.5), rgba(255, 255, 255, 0.85), rgba(255, 220, 150, 0.5), transparent); }
+  .candle { mix-blend-mode: plus-lighter; }
+  .coin { filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 64px rgba(255, 150, 40, 0.4)); }
+  .lb-coin { filter: drop-shadow(0 30px 50px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 110px rgba(255, 150, 40, 0.4)); }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { --parchment: #d6cab0; --parchment-2: #c8b996; --cream: #e8dfc8; --cream-2: #ddd2b6; }
+  .sheet-body { background-color: #c2b595; background-blend-mode: normal, normal, multiply; }
+}
+:root[data-paper="dim"] { --parchment: #cfc3a8; --parchment-2: #bfb08d; --cream: #e0d7be; --cream-2: #d5caae; }
+:root[data-paper="dim"] .sheet-body { background-color: #b8ab8c; background-blend-mode: normal, normal, multiply; }
+
+.hero-title, .mini-clock, .sheet-head .sheet-top, .tabs { translate: var(--drift-x) var(--drift-y); transition: translate 30s linear; }
+.idle-veil { position: fixed; inset: 0; z-index: 2147482999; background: #000; opacity: 0; pointer-events: none; transition: opacity 4s ease; }
+html.idle-dim .idle-veil { opacity: 0.45; }
+
+@keyframes v14-vt-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes v14-vt-in { from { opacity: 0; } to { opacity: 1; } }
+::view-transition-old(root) { animation: v14-vt-out var(--t-move) cubic-bezier(.4, 0, .2, 1) both; mix-blend-mode: normal; }
+::view-transition-new(root) { animation: v14-vt-in var(--t-move) cubic-bezier(.4, 0, .2, 1) both; mix-blend-mode: normal; }
+html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(root) { animation-duration: var(--t-close); }
+@media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; } }
+
+/* 11. Reduced motion: no sweep, no bob, no unfold; the coin still shows and still turns instantly. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-art, #room, #board .hero, #board .mini-clock, #board .wall-foot, #board .clock { animation: none !important; }
+  .coin, .coin-in, .coin-shine::before, #wall > .tile, #wall > li, html.first-beat .depth button, html.first-beat .tonight-link, .scene-layer.rise .sheet { animation: none !important; }
+  .lb-face, .lb-coin, .sheet-emblem .emblem-img { transition: none !important; }
+  .hero-title, .mini-clock, .sheet-head .sheet-top, .tabs { transition: none; }
+}
+
+/* build stamp and the newer-build pill */
+.build-stamp { margin-left: auto; font-family: var(--font-ui); font-size: 0.75rem; letter-spacing: 0.08em; color: var(--text-dim); opacity: 0.7; }
+.newer-pill { position: fixed; z-index: 95; left: 50%; bottom: max(16px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); min-height: 44px; padding: 8px 20px; font-family: var(--font-ui); letter-spacing: 0.05em; color: #2b1d10; background: var(--brass-hi); border: 1px solid var(--brass); border-radius: 999px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6); cursor: pointer; animation: v14-fade 700ms ease-out both; }
+
+@media (min-width: 641px) and (max-width: 1099px) { .tn:has(.tn-pick) .jr-cards { grid-template-columns: minmax(0, 1fr); } }
+@media (min-width: 1100px) {
+  .tn:has(.tn-pick) > .tn-me { grid-column: 1 / -1; grid-row: 1; display: grid; grid-template-columns: minmax(16rem, 1fr) minmax(0, 2.2fr); gap: var(--g2); align-items: stretch; justify-self: stretch; width: 100% !important; max-width: none !important; }
+  .tn:has(.tn-pick) > .tn-me > .tn-chip { display: none; }
+  .tn:has(.tn-pick) > .tn-cards { grid-column: 1 / -1; grid-row: 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tn:has(.tn-pick) .jr-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

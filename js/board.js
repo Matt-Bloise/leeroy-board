@@ -90,9 +90,9 @@ function startRoomLadder() {
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  import("../room/tier.js?v=2b33288a61").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  import("../room/tier.js?v=5f83267947").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
 }
-const MOTION = Object.freeze({ micro: 160, move: 320, hero: 720, stagger: 60, count: 600, digit: 240, close: 200, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
+const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 420, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
@@ -399,7 +399,7 @@ function glShow(b) {
   const pop = $("#glpop"), g = glDef(b.dataset.term); if (!pop || !g) return;
   if (GL.open && GL.open !== b) GL.open.setAttribute("aria-expanded", "false");
   GL.open = b; b.setAttribute("aria-expanded", "true");
-  pop.replaceChildren(h("b", { text: g.term.charAt(0).toUpperCase() + g.term.slice(1) }), h("span", { text: g.def }));
+  pop.replaceChildren(h("b", { text: g.term.charAt(0).toUpperCase() + g.term.slice(1) }), h("span", { text: g.def }), h("button", { type: "button", class: "gl-x", "aria-label": "Close this card" }, "\u00d7"));
   pop.hidden = false;
   glPlace();
   pop.classList.remove("in"); void pop.offsetWidth; pop.classList.add("in");
@@ -410,8 +410,21 @@ function glPlace() {
   const pop = $("#glpop"), b = GL.open; if (!pop || !b || pop.hidden) return;
   const r = b.getBoundingClientRect(), m = 16, w = pop.offsetWidth, ht = pop.offsetHeight;
   if (!b.isConnected || r.bottom < 0 || r.top > innerHeight) { glClose(); return; }
-  let y = r.bottom + 8; if (y + ht > innerHeight - m) y = Math.max(m, r.top - ht - 8);
-  pop.style.left = `${Math.round(Math.max(m, Math.min(r.left, innerWidth - w - m)))}px`; pop.style.top = `${Math.round(y)}px`;
+  /* V14: four candidate spots (below, above, right, left of the word); the card takes the one that covers the least of what a
+     reader may want to see: other cards, buttons and links (the word's own card counts a little, its neighbours a lot). */
+  const own = b.closest(".card, li, .race, .tile") || b.parentElement;
+  const hit = [...document.querySelectorAll("#scene .sheet .card, #scene .sheet button, #scene .sheet a[href], #scene .sheet .spell, #scene .sheet li")].filter((el) => el !== b && !pop.contains(el) && !b.contains(el) && el.offsetParent !== null);
+  const rects = hit.map((el) => [el, el.getBoundingClientRect()]).filter(([, q]) => q.width > 0 && q.bottom > 0 && q.top < innerHeight);
+  const clampX = (x) => Math.round(Math.max(m, Math.min(x, innerWidth - w - m))), clampY = (y) => Math.round(Math.max(m, Math.min(y, innerHeight - ht - m)));
+  const cands = [[clampX(r.left), clampY(r.bottom + 8)], [clampX(r.left), clampY(r.top - ht - 8)], [clampX(r.right + 10), clampY(r.top - 4)], [clampX(r.left - w - 10), clampY(r.top - 4)]];
+  let best = null;
+  for (const [x, y] of cands) {
+    if (x < r.right && x + w > r.left && y < r.bottom && y + ht > r.top) continue; /* never on top of its own word */
+    let cost = 0; for (const [el, q] of rects) { const ox = Math.min(x + w, q.right) - Math.max(x, q.left), oy = Math.min(y + ht, q.bottom) - Math.max(y, q.top); if (ox > 0 && oy > 0) cost += ox * oy * (own && own.contains(el) ? 0.25 : 1); }
+    if (!best || cost < best.cost - 400) best = { x, y, cost };
+  }
+  if (!best) best = { x: cands[0][0], y: cands[0][1] };
+  pop.style.left = `${best.x}px`; pop.style.top = `${best.y}px`;
 }
 function glClose(focus) {
   const pop = $("#glpop"); if (!pop || pop.hidden) return false;
@@ -443,6 +456,7 @@ function dotPanel(root) {
 function startGloss() {
   document.addEventListener("click", (e) => {
     const b = e.target.closest && e.target.closest(".gl[data-term]");
+    if (e.target.closest && e.target.closest(".gl-x")) { e.preventDefault(); e.stopPropagation(); glClose(true); return; }
     if (b) { e.preventDefault(); e.stopPropagation(); if (GL.open === b) glClose(); else glShow(b); return; }
     if (!(e.target.closest && e.target.closest("#glpop"))) glClose();
   }, true);
@@ -1946,7 +1960,45 @@ const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.
 /* V13c: tabs show a 48 px coin cut to the emblem's motif and sharpened, not the 192 px medallion shrunk to a blur */
 const tabImg = (key) => h("img", { class: "emblem-img tab-img", src: `img/icons/tab-${key}.png`, alt: "", width: 48, height: 48, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
-function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); }
+function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); placeSideMedal(key); }
+/* V14: the 640 px scene medallion (img/medal/<key>.webp, from the 1254 px painted originals). Beside the sheet, where a wide
+   screen leaves a band of room, it hangs as a lit coin; pressing the head emblem opens it large and turns it over. */
+const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library" };
+const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable." };
+const medalImg = (key, cls) => h("img", { class: cls || "medal-img", src: `img/medal/${key}.webp`, alt: "", width: 640, height: 640, decoding: "async", loading: "lazy" });
+function placeSideMedal(key) {
+  const layer = $("#scene"); if (!layer || !MEDAL[key]) return;
+  let m = $("#medal-side");
+  if (!m) { m = h("div", { class: "medal-side", id: "medal-side", "aria-hidden": "true" }, h("span", { class: "coin" }, h("span", { class: "coin-in" }, h("img", { class: "medal-img", alt: "", width: 640, height: 640, decoding: "async" })), h("span", { class: "coin-shine" }))); layer.appendChild(m); }
+  const img = m.querySelector("img"); const src = `img/medal/${key}.webp`; if (!img.getAttribute("src") || !img.getAttribute("src").endsWith(src)) img.setAttribute("src", src);
+  img.onerror = () => { m.hidden = true; };
+  sizeSideMedal();
+}
+function sizeSideMedal() {
+  const m = $("#medal-side"), sheet = document.querySelector("#scene .sheet"); if (!m || !sheet) return;
+  const r = sheet.getBoundingClientRect(), room = Math.floor(r.left);
+  const size = Math.min(room - 72, 360, innerHeight * 0.5);
+  if (size < 150 || !SC.open) { m.hidden = true; return; }
+  m.hidden = false; m.style.setProperty("--ms", `${Math.round(size)}px`); m.style.left = `${Math.round((r.left - size) / 2)}px`;
+}
+function openMedal(key, opener) {
+  if (!MEDAL[key] || $("#medal-lb")) return;
+  const flipped = { v: false };
+  const coin = h("button", { class: "lb-coin", type: "button", "aria-label": `${MEDAL[key]} medallion. Press to turn it over.`, "aria-pressed": "false" },
+    h("span", { class: "lb-face lb-front" }, medalImg(key, "medal-img"), h("span", { class: "coin-shine" })),
+    h("span", { class: "lb-face lb-back" }, h("span", { class: "lb-back-in" }, h("b", { text: MEDAL[key] }), h("i", { text: MEDAL_BACK[key] || "" }))));
+  const close = h("button", { class: "lb-close close", type: "button", "aria-label": "Close the medallion" }, s("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M6 6l12 12M18 6L6 18" })));
+  const lb = h("div", { class: "medal-lb", id: "medal-lb", role: "dialog", "aria-modal": "true", "aria-label": `${MEDAL[key]} medallion` }, h("div", { class: "lb-stage" }, coin, h("p", { class: "lb-hint", text: "Press the coin to turn it over. Esc closes." })), close);
+  const done = () => { document.removeEventListener("keydown", onKey, true); lb.classList.add("out"); setTimeout(() => lb.remove(), reduceMQ.matches ? 0 : 180); try { (opener || $("#scene-close")).focus(); } catch (e) {} };
+  const turn = () => { flipped.v = !flipped.v; coin.classList.toggle("turned", flipped.v); coin.setAttribute("aria-pressed", String(flipped.v)); try { sfx && sfx("flip"); } catch (e) {} };
+  const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(); } else if (e.key === "Tab") { e.preventDefault(); (document.activeElement === coin ? close : coin).focus(); } };
+  coin.addEventListener("click", turn); close.addEventListener("click", done); lb.addEventListener("click", (e) => { if (e.target === lb || e.target.classList.contains("lb-stage")) done(); });
+  coin.addEventListener("pointermove", (e) => { if (reduceMQ.matches || e.pointerType === "touch") return; const r = coin.getBoundingClientRect(); coin.style.setProperty("--rx", `${(((e.clientY - r.top) / r.height) - 0.5) * -14}deg`); coin.style.setProperty("--ry", `${(((e.clientX - r.left) / r.width) - 0.5) * 14}deg`); coin.style.setProperty("--sx", `${Math.round(((e.clientX - r.left) / r.width) * 100)}%`); });
+  document.addEventListener("keydown", onKey, true);
+  document.body.appendChild(lb); coin.focus();
+}
+document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest("#sheet-emblem"); if (b && SC.open) { e.preventDefault(); openMedal(SC.open, b); } });
+addEventListener("resize", () => { if (SC.open) sizeSideMedal(); });
 function placeIcon(key) {
   const slot = document.querySelector(`#board [data-scene="${key}"] .emblem-slot`);
   if (slot) slot.replaceChildren(iconImg(key));
@@ -3403,7 +3455,19 @@ async function boot(mode, sdk) {
   }
   if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }
   /* No hash: open at the depth the person left at; a first visit opens Tonight (V6-SPEC 3.1). */
-  if (!location.hash || location.hash === "#") { const d = MEM.get("depth") || "tonight"; if (d === "tonight" || d === "library") setHash(d, false); }
+  /* V14: a first visit paints the wall and the room first; Next steps unfolds over a ready page after a beat (a click, a key or a
+     hash change in that beat cancels it), and the Next steps links glow until then. */
+  let firstBeat = null;
+  if (!location.hash || location.hash === "#") {
+    const d = MEM.get("depth");
+    if (!d) {
+      document.documentElement.classList.add("first-beat");
+      const cancel = () => { if (firstBeat) { clearTimeout(firstBeat); firstBeat = null; } document.documentElement.classList.remove("first-beat"); removeEventListener("pointerdown", cancel, true); removeEventListener("keydown", cancel, true); removeEventListener("hashchange", cancel); };
+      addEventListener("pointerdown", cancel, true); addEventListener("keydown", cancel, true); addEventListener("hashchange", cancel);
+      const open = () => { if (!firstBeat) return; firstBeat = null; if (!location.hash || location.hash === "#") { document.documentElement.classList.remove("first-beat"); goScene("tonight"); } };
+      firstBeat = setTimeout(open, reduceMQ && reduceMQ.matches ? 900 : 1500);
+    } else if (d === "tonight" || d === "library") setHash(d, false);
+  }
   /* Tonight paints first (V6-SPEC 3.3: under 1.0 s on the 4x throttle): its cards and the scene open before the wall renders. */
   const early = sceneFromHash() === "tonight";
   for (const step of [renderTonight, markMe]) { try { step(); } catch (e) { console.error(step.name, e); } }
@@ -3431,6 +3495,38 @@ async function boot(mode, sdk) {
 /* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
 Object.assign(KIT, { $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, ttPlace, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
+/* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image icon. */
+document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
+/* V14: burn-in care. Persistent chrome drifts a few pixels every 45 s; after 120 s without input a black veil dims the page. */
+(function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();
+(function burnIn() {
+  const root = document.documentElement; let n = 0, idle = 0, veil = null;
+  setInterval(() => { if (document.hidden) return; n += 1; root.style.setProperty("--drift-x", `${Math.round(Math.cos(n * 1.7) * 3)}px`); root.style.setProperty("--drift-y", `${Math.round(Math.sin(n * 1.3) * 3)}px`); }, 45000);
+  const wake = () => { idle = Date.now(); if (root.classList.contains("idle-dim")) root.classList.remove("idle-dim"); };
+  ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"].forEach((ev) => addEventListener(ev, wake, { passive: true, capture: true }));
+  idle = Date.now();
+  setInterval(() => { if (document.hidden) return; if (!veil) { veil = document.createElement("div"); veil.setAttribute("class", "idle-veil"); veil.setAttribute("aria-hidden", "true"); document.body.appendChild(veil); } if (Date.now() - idle > 120000) root.classList.add("idle-dim"); }, 10000);
+})();
+/* V14: a visible build stamp (the board.js stamp from index.html) and a version check: every 5 minutes and whenever the tab
+   comes back, index.html is fetched with no-store and its stamps compared with the running ones; a difference shows a soft
+   "A newer board is ready" pill. Pressing it (or the next full navigation) loads the new build. */
+KIT.on("booted", () => {
+  if (typeof document.querySelectorAll !== "function") return;
+  const stampOf = (txt) => { const m = /js\/board\.js\?v=([0-9a-f]{10})/.exec(txt || ""); return m ? m[1] : ""; };
+  const mine = stampOf([...document.querySelectorAll("script[src]")].map((x) => x.getAttribute("src") || "").join(" "));
+  const foot = $("#footer"); if (foot && mine && !foot.querySelector(".build-stamp")) foot.appendChild(h("span", { class: "build-stamp", title: "Build stamp of this page", text: `build ${mine.slice(0, 7)}` }));
+  if (!mine || location.protocol === "file:") return;
+  let shown = false;
+  const check = async () => {
+    if (shown || document.hidden) return;
+    try {
+      const self = new URL(location.href); self.hash = ""; const r = await fetch(self.href, { cache: "no-store", credentials: "omit" }); if (!r.ok) return;
+      const theirs = stampOf(await r.text());
+      if (theirs && theirs !== mine) { shown = true; const pill = h("button", { class: "newer-pill", type: "button", role: "status", text: "A newer board is ready. Refresh" }); pill.addEventListener("click", () => location.reload()); document.body.appendChild(pill); }
+    } catch (e) {}
+  };
+  setTimeout(check, 20000); setInterval(check, 300000); document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(check, 1500); });
+});
 window.__boardKit = KIT;
 startWisps();
 let started = false;

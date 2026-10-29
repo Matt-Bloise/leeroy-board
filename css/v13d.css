@@ -1,5 +1,3 @@
-/* V13d (board/V13D-SPEC.md): journeys, landings, the zoom, the dial, the spell cards, nested cards, seals, the glow, the
-   board's own sign-up controls, header plates and the rail's arrows. Colours come from the :root tokens in board.css. */
 
 /* ---------- journeys: one data source, three depths ---------- */
 html[data-journey="guided"] [data-j]:not([data-j~="g"]),
@@ -22,10 +20,7 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
   .journey:not(.open) button[aria-pressed="true"]::after { content: " \25BE"; }
   .journey.open { position: absolute; z-index: 40; right: 0; flex-direction: column; }
   .journey.open button + button { border-left: 0; border-top: 1px solid var(--brass-dim); }
-  /* V13e retest-1: inside a scene the plate gets its own row under the title, so the switch is one tap away on a phone too;
-     opened, the three sit in that row instead of dropping over the close button */
-  /* one row (the scroll budget counts every pixel of the head): look, title, the plate, close; the title gives way first */
-  .sheet-top:has(> .journey) { justify-content: flex-start; gap: 3px; }
+      .sheet-top:has(> .journey) { justify-content: flex-start; gap: 3px; }
   .sheet-top:has(> .journey) > .peek-btn, .sheet-top:has(> .journey) > .close { position: static; margin: 0; flex: none; }
   .sheet-top:has(> .journey) > .peek-btn { order: -1; position: relative; top: auto; left: auto; } /* relative, so the eye's pupil (::after) stays on the button */
   .sheet-top:has(> .journey) > .close { order: 2; }
@@ -40,10 +35,6 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 }
 /* V13e: from 700 px the plate sits left of the close button, never under it */
 @media (min-width: 700px) { .sheet-top > .journey { margin-right: 56px; } }
-/* V13e sweep fix (tablet portrait, big phones on their side, small windows): from 700 to 1099 px the look button, the plate and the
-   close button left the title 31 to 64 px, so the subtitle broke one word per line and the head grew to 79 to 158 px. The phone's
-   one-row head holds here too: the title on one line with an ellipsis, the subtitle hidden, the plate left of the close button. */
-/* the look button is the phone's eye icon up to 859 px, so the title keeps room beside the plate and the close button */
 @media (min-width: 600px) and (max-width: 859px) {
   .peek-btn { font-size: 0; width: 44px; padding: 0; }
   .peek-btn::before { content: ""; display: inline-block; width: 18px; height: 12px; border: 2px solid currentColor; border-radius: 50% / 60%; box-sizing: border-box; }
@@ -95,7 +86,6 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 .jr-dots i.on { background: var(--wax); border-color: var(--wax-lo); }
 html[data-journey="guided"] .tn-cards { display: none; }
 
-/* Race skills: closed rows read one plain line; an open row shows the whole line in its fold (interaction 3) */
 .rrow.open > .rplain { display: none; }
 .rplain { color: var(--ink-soft); font-size: 1rem; }
 .rfull { margin: 0 0 6px; }
@@ -180,8 +170,6 @@ button.cal-day.win { background: var(--hi-brass); }
 .v-new { box-shadow: inset 3px 0 0 var(--wax); }
 
 /* ---------- the one first-visit glow on the five crests (interaction 10) ---------- */
-/* V13e perf: the pulse is an opacity animation of a fixed glow layer (compositor only), not an animated box-shadow that repainted
-   five crests every frame through the close of Next steps */
 .glow-five .med-ico, .glow-five .fm { position: relative; border-radius: 50%; }
 .glow-five .med-ico::after, .glow-five .fm::after { content: ""; position: absolute; inset: -3px; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 3px var(--brass-hi), 0 0 24px var(--candle); opacity: 0.35; animation: crest-glow-o 2.4s linear infinite; will-change: opacity; }
 @keyframes crest-glow-o { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
@@ -201,7 +189,6 @@ button.cal-day.win { background: var(--hi-brass); }
 .su-st.newer { border-color: var(--wax); }
 .su-st[disabled], .su-st[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
 .su-pend { margin: 0; min-height: 1.4em; font-size: 1rem; color: var(--ink-soft); }
-/* wide frames: the board's own answer sits beside "Answer in Discord" on the same row, so the scene keeps its height */
 @media (min-width: 1100px) { #dsu-act .su-states { flex: 1 1 26rem; margin-top: 0; padding: 0 0 0 18px; border-top: 0; border-left: 1px dashed var(--ink-line); } #dsu-act .su-pend:empty { display: none; } }
 
 /* ---------- the tab rail's arrows (retest-16) ---------- */
@@ -213,15 +200,10 @@ button.cal-day.win { background: var(--hi-brass); }
 @media (max-width: 699px) { .tabs-arrow { display: none; } }
 #map.zoomed .road-panel { display: none; }
 
-/* ---------- V13c deferral: the small phone labels under the APCA bar (V13C-NOTES spec 7.7) ----------
-   Under 700 px every label, link and lede that measured 13 to 15.5 px reads at 16 px (APCA asks Lc 60 there instead of 75) */
 @media (max-width: 699px) {
   .chip.new, a.tn-link, .lib-btn, .tn-name, .sheet-body .lib-tool, .sheet-body .gl, .map-caption, .panel > .lede, .act-how, .act-how b, .sheet-body .label, .clock-kicker, .tile-title, .legend span, .legend .num, #panel-ledger a, #panel-roads a, #panel-librarian p, .lib-note, #sheet-body .panel .lede, .ttc .ttc-rank, .ttc .ttc-src, .ttc-src a, .lib-examples .ex, .rewards span, .lib-main a { font-size: max(1rem, 1em); }
 }
 
-/* ---------- V13e item 2: Sign-ups at most 30% empty at every size, no name ever wraps ----------
-   The slip is a ledger: one line per question (label, the answers with names, then the empty answers as quiet "0" chips);
-   the head carries the source line; the Guided path card hugs two columns (the dates on the left, the step on the right) */
 .dsu-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; }
 .dsu-top h3 { margin: 0; }
 .dsu-top .picker-note { margin: 0; }
@@ -371,15 +353,11 @@ button.cal-day.win { background: var(--hi-brass); }
 @media (prefers-reduced-motion: reduce) { .su-as.nudge { animation: none; text-decoration: underline; } }
 #sheet-body #dsu-act .su-states.off .su-pend:empty { display: none; }
 
-/* ---------- V13e retest-8: every touch target at least 44 px on a phone or any coarse pointer ----------
-   Inline words (glossary dots, links in prose) get an invisible 44 px hit area (::after), so the text and its line keep their
-   place; blocks get a 44 px minimum */
 @media (max-width: 699px), (pointer: coarse) {
   .gl, .gl2, .sheet-body .panel p a, .sheet-body .panel li > a, .sheet-body .panel .tn-link, .lib-main a { position: relative; }
   .gl::after, .gl2::after, .sheet-body .panel p a::after, .sheet-body .panel li > a::after, .sheet-body .panel .tn-link::after, .lib-main a::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100% + 4px, 44px); height: max(100%, 44px); margin: 0; transform: translate(-50%, -50%); }
   .rhead, .skip, .sheet-body .lib-tool, .lib-examples .ex { min-height: 44px; box-sizing: border-box; }
-  /* the wall keeps its compact tile heads (six whole tiles on the first phone screen); their hit area grows invisibly */
-  .tile-band::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: max(100%, 44px); } /* grows upward, never over the tile body's own words */
+    .tile-band::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: max(100%, 44px); } /* grows upward, never over the tile body's own words */
   .rhead { align-items: center; }
   .sheet-body summary { min-height: 44px; box-sizing: border-box; padding-block: 10px; }
   .sheet-body .lib-tool, .chg-more, .lib-examples .ex { min-width: 44px; }
@@ -388,7 +366,6 @@ button.cal-day.win { background: var(--hi-brass); }
   .lib-main .lib-list a, #panel-library .catrow { min-height: 44px; }
 }
 
-/* ---------- V13e item 3: the last phone labels over the APCA bar (re-measured with board/tools/harness/apca.mjs) ---------- */
 .lede.key-line, .lede.key-line b { color: #1d130a; }
 .map-svg .map-text.small { fill: var(--ink); }
 .spark-text { fill: var(--text); }
@@ -400,7 +377,6 @@ button.cal-day.win { background: var(--hi-brass); }
 @media (max-width: 699px) { #panel-legacy b { font-size: max(1rem, 1em); } }
 .sheet-head .tab:not([aria-selected="true"]) { color: #140c05; }
 #panel-buffs .bgroup-h, #panel-legacy .dial-k { color: #120a04; }
-/* ---------- V13e retest-10: the calendar on every screen, the raids day as a button, a warm lit day ---------- */
 #sheet-body .cal-col { display: grid; gap: 10px; }
 .cal-wrap > .cal-sum { cursor: pointer; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); min-height: 44px; display: list-item; padding-block: 10px; }
 @media (min-width: 1100px) { .cal-wrap > .cal-sum { display: none; } }
@@ -417,10 +393,8 @@ button.cal-day.win { background: var(--hi-brass); }
 .legend li > .cat-line:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
 #map.zoomed, #map .zone-card { touch-action: pan-x pan-y; }
 
-/* V13e crawl: on any touch screen the plates and the header controls are 44 px tall (844x390 showed 36 px plates) */
 @media (pointer: coarse) { .journey button, .depth button { min-height: 44px; } .skip { min-height: 44px; display: inline-flex; align-items: center; } }
 @media (max-width: 699px), (pointer: coarse) { #sheet-body .cal { padding-left: 6px; padding-right: 6px; } #sheet-body .cal-grid { gap: 1px; } #sheet-body .cal-day { min-height: 44px; } }
-/* V13e sweep: the Roads side panel waits off the frame hidden, so nothing sits past the right edge of the viewport */
 .road-panel:not(.open) { visibility: hidden; transition: transform var(--t-move) var(--ease-oak), visibility 0s linear var(--t-move); }
 .road-panel.open { visibility: visible; transition: transform var(--t-move) var(--ease-oak), visibility 0s; }
 /* V13e sweep: at 320 px the title keeps 100 px and more (the plate drops its arrow and some padding) */
@@ -429,9 +403,6 @@ button.cal-day.win { background: var(--hi-brass); }
   .sheet-top > .journey:not(.open) button[aria-pressed="true"]::after { content: none; }
 }
 
-/* V13e polish (walk of the live site, phone on its side): the hero was 431 px tall on an 844x390 screen, so a friend opened on nothing
-   but header. In short landscape screens the title block and the countdown sit side by side and the title shrinks; the tiles start
-   above the fold. Mouse-driven windows only (pointer: fine): touch phones keep their own compact header in the phone block of board.css. Portrait phones and every screen over 500 px tall are untouched. */
 @media (max-height: 500px) and (orientation: landscape) and (min-width: 640px) and (pointer: fine) {
   .hero { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: center; gap: 8px 18px; }
   .hero h1 { font-size: 2.05rem; line-height: 1.05; }
@@ -440,14 +411,10 @@ button.cal-day.win { background: var(--hi-brass); }
   .hero .clock-launch { display: none; } /* the same launch time is on the line above it */
 }
 
-/* V13e polish (real-window walk on a 3440x1392 ultrawide): the Next steps frame was 73 px short, so its two buttons overhung the frame's
-   bottom edge at rest. On tall wide screens a reading frame may use 92% of the height (the tavern still shows on both sides), and the
-   three journey cards sit two across when their column is narrow instead of stacking three high. */
 @media (min-width: 1700px) and (min-height: 1100px) {
   #scene[data-kind="reading"] .sheet { max-height: 92vh; max-height: 92svh; }
 }
 .jr-cards { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
-/* first visit: the "how do you want to explore" picker keeps its full width so the three cards sit in one row */
 .tn:not(:has(.tn-pick)) > .tn-me:has(.jr-pick) { width: min(100%, 760px) !important; }
 
 /* "no answer yet" seat: an empty-mug outline instead of the default black fill */

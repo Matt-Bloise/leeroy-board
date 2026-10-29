@@ -134,7 +134,7 @@ export async function startTier(host) {
     const anchor = document.querySelector(".hero-art");
     if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(canvas, anchor); else document.body.prepend(canvas);
     try {
-      const { startRoom } = await import("./room.js?v=7e66bd8332");
+      const { startRoom } = await import("./room.js?v=9b7814158f");
       room = await startRoom({ tier: t, canvas, motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, aim: host.aim, signal: host.signal, onLight: host.onLight, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; /* recorded, never a demotion: the tier is judged on steady-state frames */ }, onLost: () => { stopRoom(); S.tier = "off"; S.why = "lost the WebGL context"; setClasses("off"); } });
       setClasses(S.tier);
       S.renderer = room.info.renderer; S.software = room.info.software;

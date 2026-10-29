@@ -161,7 +161,7 @@ export async function createTavern(canvas, opt) {
   const info = { renderer: String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)), vendor: String(gl.getParameter(gl.VENDOR)), three: THREE.REVISION };
   info.software = /swiftshader|llvmpipe|software|basic render|warp/i.test(info.renderer);
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(52, 1, 0.05, 40);
-  scene.background = new THREE.Color(0x0b0705); scene.fog = new THREE.FogExp2(0x0e0906, 0.075);
+  scene.background = new THREE.Color(0x000000); scene.fog = new THREE.FogExp2(0x030201, 0.075); /* V14: true black at the far edge (OLED), no lifted brown */
   const room = new THREE.Group(); scene.add(room);
   const owned = { tex: [], geo: new Set(), mat: new Set() }; let texBytes = 0;
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -418,6 +418,8 @@ export async function createTavern(canvas, opt) {
   setAir(0);
   if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   let lost = false;
+  /* V14: ordered dithering on every lit material: dark fog and wall gradients band on 8-bit OLED panels without it */
+  scene.traverse((o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) { if (m && m.isMeshStandardMaterial) m.dithering = true; } });
   return {
     renderer, scene, camera, info, layout, setLights, setKey, tick, pose,
     setAir: (n) => setAir(n),

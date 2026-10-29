@@ -110,16 +110,16 @@
   --radius: 6px;
   --measure: 65ch;
   --t-micro: 160ms;
-  --t-move: 320ms;
-  --t-hero: 720ms;
+  --t-move: 520ms;
+  --t-hero: 900ms;
   --t-flip: 480ms; /* V13c (craft 31): a card turns in 480 ms */
-  --t-close: 200ms;
+  --t-close: 420ms;
   --t-fade: 160ms;
   --ease-oak: cubic-bezier(.2, .8, .2, 1);
   --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
   --ease-card: cubic-bezier(.3, 1.22, .6, 1); /* a smaller overshoot for the card turn */
   --ease-shut: cubic-bezier(.55, 0, .75, .2);
-  --stagger: 60ms;
+  --stagger: 70ms;
   --wall-blur: 6px;
   --light-warm: #ffd18c;
   --room-fog: #0e0906;
