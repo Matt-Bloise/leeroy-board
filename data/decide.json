@@ -1,7 +1,7 @@
 {
- "generated": "2026-10-29T21:52:04.506Z",
+ "generated": "2026-10-29T21:56:50.671Z",
  "build": "1.60.1.70532",
- "as_of": "2026-10-27",
+ "as_of": "2026-10-29",
  "labels": {
   "forever": "Forever",
   "classic": "Classic baseline",
@@ -4930,7 +4930,7 @@
       },
       {
        "label": "Tauren Cultivation",
-       "text": "active, grows herbs anyone can pick without Herbalism; cooldown 60 to 15 min on Oct 15",
+       "text": "active, grows herbs anyone can pick without Herbalism; cooldown 60 to 15 min on Oct 15; each herb needs a player level of its pick skill divided by 5, so herbs above 300 skill can be Cultivated at level 60 (Sep 24 notes)",
        "status": "forever",
        "src": {
         "kind": "wiki",
@@ -4938,7 +4938,7 @@
         "key": "racial.tauren.cultivation",
         "tier": 1,
         "label": "Blizzard",
-        "accessed": "2026-10-26"
+        "accessed": "2026-10-29"
        }
       }
      ]

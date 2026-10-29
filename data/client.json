@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-29T21:52:04.398Z",
+ "generated": "2026-10-29T21:56:50.546Z",
  "build": "1.60.1.70532",
  "level": 60,
  "formula": "wiki/scripts/db2-lib.mjs scaleEffect at level 60 (min/max = base x (1 -/+ variance/2) + per_level x levels past base, capped at the rank's max level); totals = per-tick x floor(duration / period)",
@@ -1594,7 +1594,7 @@
     "name": "Cultivation",
     "spell": 20552,
     "wiki_key": "racial.tauren.cultivation",
-    "wiki": "active, grows herbs anyone can pick without Herbalism; cooldown 60 to 15 min on Oct 15",
+    "wiki": "active, grows herbs anyone can pick without Herbalism; cooldown 60 to 15 min on Oct 15; each herb needs a player level of its pick skill divided by 5, so herbs above 300 skill can be Cultivated at level 60 (Sep 24 notes)",
     "kind": "active",
     "changed_oct26": false,
     "changed_on": null,
