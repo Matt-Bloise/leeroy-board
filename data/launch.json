@@ -1,10 +1,10 @@
 {
- "generated": "2026-10-29T21:59:41.443Z",
+ "generated": "2026-10-29T22:03:26.235Z",
  "launch_epoch": 1793833200,
  "event": {
   "name": "WoW Forever Launch Night",
-  "start_epoch": 1793833200,
-  "end_epoch": 1793851200,
+  "start_epoch": 1793832300,
+  "end_epoch": 1793847600,
   "location": "#wow-forever, voice in Fellowship",
   "description": "World of Warcraft: Forever opens at 6 PM ET, the same moment worldwide. The party gathers in Fellowship voice; the Sign-ups card in #wow-forever shows who is on and when."
  },
