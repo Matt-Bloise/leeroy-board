@@ -3149,7 +3149,10 @@ function wideLib() { return !!window.matchMedia && window.matchMedia("(min-width
 function libFront(n = 8) {
   const ix = LIBD.index, T = ix.totals;
   libAux();
-  const said = LIBD.news ? LIBD.news.items.filter((x) => /^BLIZZARD/i.test(x.source)).slice(0, n < 8 ? 2 : 6) : null;
+  /* the learn loop's applied edits (news.json updates, from wiki/CHANGELOG.md) lead the shelf: "Library updated: what, source, date" */
+  const updates = LIBD.news && Array.isArray(LIBD.news.updates) ? LIBD.news.updates.slice(0, n < 8 ? 1 : 2) : [];
+  const said = LIBD.news ? LIBD.news.items.filter((x) => /^BLIZZARD/i.test(x.source)).slice(0, Math.max(1, (n < 8 ? 2 : 6) - updates.length)) : null;
+  const updateLi = (u) => h("li", { class: "updated" }, pageLink(u.page, "", `Library updated: ${u.what}`, u.key), h("small", { text: `${u.source}, ${libDay(u.date)}` }), h("a", { class: "upd-src", href: u.url, target: "_blank", rel: "noopener noreferrer", text: u.posted ? `Blizzard's post of ${libDay(u.posted)}` : "Blizzard's post" }));
   return h("div", { class: "lib-front" },
     h("div", { class: "lib-front-col" },
       h("h3", { class: "lib-title", text: "What changed" }),
@@ -3163,7 +3166,7 @@ function libFront(n = 8) {
         h("p", { text: "An honest unknown is an answer too. These settle at launch, in game, or when Blizzard posts." }),
         h("div", { class: "lib-row" }, h("a", { class: "lib-btn strong", href: `#${libTok({ kind: "open" })}`, "data-lv": libTok({ kind: "open" }) }, "Open the list"))),
       h("h3", { class: "lib-title", text: "Blizzard said" }),
-      said ? (said.length ? h("ul", { class: "said" }, said.map((x) => h("li", {}, h("a", { href: x.url, target: "_blank", rel: "noopener noreferrer", text: x.title }), h("small", { text: `${newsLabel(x.source)}, ${libDay(x.stamp)}` }), x.snippet ? h("span", { class: "clamp", text: x.snippet }) : null))) : h("p", { text: "No Blizzard post in the news watch yet." })) : h("p", { class: "loading", text: "Reading the news watch." })));
+      said ? (said.length || updates.length ? h("ul", { class: "said" }, ...updates.map(updateLi), said.map((x) => h("li", {}, h("a", { href: x.url, target: "_blank", rel: "noopener noreferrer", text: x.title }), h("small", { text: `${newsLabel(x.source)}, ${libDay(x.stamp)}` }), x.snippet ? h("span", { class: "clamp", text: x.snippet }) : null))) : h("p", { text: "No Blizzard post in the news watch yet." })) : h("p", { class: "loading", text: "Reading the news watch." })));
 }
 function libRenderOpen(main, tok) {
   const back = h("div", { class: "lib-row" }, h("button", { class: "lib-btn", type: "button", "data-back": "1" }, "Back to the shelf"), linkChip(LIBS.view));
