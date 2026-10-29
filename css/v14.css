@@ -192,7 +192,7 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
 /* the five: a profession and its stamp sit on one aligned row */
 .card dd > span:has(> .chip.stamp) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 /* sign-ups: each question's label starts its own line on phones and  */
-@media (max-width: 699px) { #dsu-body .tally > h4 { flex-basis: 100%; } }
+@media (max-width: 599px) { #dsu-body .tally > h4 { display: flex; margin: 8px 0 2px; } #dsu-body .tally:first-child > h4 { margin-top: 0; } }
 #discord-signups .dsu-top .picker-note { text-wrap: balance; }
 /* buffs: the class cards of one row share a height */
 @media (min-width: 1000px) { .bclasses { align-items: stretch; } }
@@ -206,3 +206,10 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
   button[aria-pressed="true"], .tab[aria-selected="true"], [role="tab"][aria-selected="true"] { text-decoration: underline 2px; text-underline-offset: 3px; }
   :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
 }
+/* a tall portrait screen keeps the scene under its tabs instead of floating it mid-sheet */
+@media (min-width: 900px) and (orientation: portrait) { .sheet-body { align-content: safe start; padding-top: 24px; } }
+/* labels that were too faint on their surface */
+.cal-day.out { opacity: 0.8; }
+.su-st[disabled], .su-st[aria-disabled="true"] { opacity: 0.8; }
+.sheet-body, .tile-body { text-wrap: pretty; }
+@media (max-width: 359px) { .su-st { font-size: 0.9rem; gap: 4px; padding-right: 8px; } .su-st .su-pint { width: 26px; height: 26px; } }
