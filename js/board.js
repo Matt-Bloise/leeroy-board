@@ -90,7 +90,10 @@ function startRoomLadder() {
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  import("../room/tier.js?v=5f83267947").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  /* the tier module's first run blocks the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance: it starts after the entrance */
+  const bootRoom = () => import("../room/tier.js?v=5f83267947").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  const later = () => setTimeout(bootRoom, 1500);
+  if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
 const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, count: 600, digit: 240, close: 420, oak: "cubic-bezier(.2, .8, .2, 1)", spring: "cubic-bezier(.34, 1.4, .64, 1)", shut: "cubic-bezier(.55, 0, .75, .2)" });
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -3467,7 +3470,7 @@ async function boot(mode, sdk) {
       const open = () => { if (!firstBeat) return; firstBeat = null; if (!location.hash || location.hash === "#") { document.documentElement.classList.remove("first-beat"); goScene("tonight"); } };
       /* the room's first frame freezes the main thread for about a second (long-frame trace, 2026-10-29), so on a room-capable screen the sheet waits for the room, then a beat for its first frame; touch and small screens keep the short beat */
       const small = innerWidth < 700 || matchMedia("(pointer: coarse)").matches || MEM.get("room") === "off" || !(() => { try { const g = document.createElement("canvas").getContext("webgl2"); if (g) { const x = g.getExtension("WEBGL_lose_context"); x && x.loseContext(); } return !!g; } catch (e) { return false; } })(), calm = reduceMQ && reduceMQ.matches;
-      firstBeat = setTimeout(open, calm ? 900 : small ? 1500 : 5200);
+      firstBeat = setTimeout(open, calm ? 900 : small ? 1500 : 7500);
       if (!calm && !small) { const onRoom = () => { if (!document.documentElement.classList.contains("room-on") || !firstBeat) return; removeEventListener("board-room", onRoom); clearTimeout(firstBeat); firstBeat = setTimeout(open, 1700); }; addEventListener("board-room", onRoom); }
     } else if (d === "tonight" || d === "library") setHash(d, false);
   }
