@@ -1245,6 +1245,8 @@ main.has-beam { margin-top: 44px; }
 .lib-front { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1000px) { .lib-front { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
 .lib-front-col { display: grid; gap: 12px; align-content: start; min-width: 0; }
+/* frame leftovers (2026-10-30): on an ultrawide frame the front page takes three columns, so Nobody knows yet no longer stacks over Blizzard said and the default view fits (it ran 93 px over at 3440x1440) */
+@media (min-width: 2200px) { .lib-front { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 12px 28px; } .lib-front > .lib-front-col:first-child { grid-row: 1 / span 2; } .lib-front > .lib-front-col + .lib-front-col { display: contents; } .lib-front-col + .lib-front-col > .lib-title { grid-row: 1; grid-column: 2; align-self: end; } .lib-front-col + .lib-front-col > .lib-title ~ .lib-title { grid-column: 3; } .lib-front-col + .lib-front-col > .nk { grid-row: 2; grid-column: 2; align-self: start; } .lib-front-col + .lib-front-col > .said, .lib-front-col + .lib-front-col > p { grid-row: 2; grid-column: 3; align-self: start; } }
 .nk { display: grid; gap: 10px; padding: 14px 16px; border-radius: 4px; border: 2px dashed var(--brass-dim); background: var(--parchment-2); color: var(--ink); }
 .nk-nums { display: flex; gap: 22px; flex-wrap: wrap; }
 @media (min-width: 900px) and (max-height: 820px) { .lib-front .nk > p, .lib-front-col > .lib-sub { display: none; } .lib-front .nk { padding: 10px 14px; } .lib-front .said > li:nth-child(n+2) { display: none; } }

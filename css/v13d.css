@@ -126,6 +126,9 @@ button.cal-day.win { background: var(--hi-brass); }
 .stop.open .label.state { text-decoration: none; color: var(--wax-lo); }
 .ics { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 40px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
 .ics .emb { width: 18px; height: 18px; --eb: var(--parchment); --ea: var(--wax); --el: var(--ink); --ed: var(--ink-soft); }
+/* frame leftovers (2026-10-30): from 900 px the calendar button stands at the end of the line before it ("in 6 days"), so Dates fits a 1366x768 frame (it ran 78 px over) */
+@media (min-width: 900px) { .stop-body:has(> .ics) { grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; align-items: center; } .stop-body:has(> .ics) > * { grid-column: 1 / -1; } .stop-body > .label.state:has(+ .ics), .stop-body > .label.state + .ics { grid-column: auto; } }
+@media (min-width: 900px) and (max-height: 820px) { #panel-timeline .rail { gap: 12px; } #panel-timeline .cal-day { min-height: 1.8rem; } #panel-timeline .cal-col { gap: 6px; } }
 
 /* ---------- Bonuses: the what-if dial (interaction 7) ---------- */
 .dial { cursor: grab; outline: none; }

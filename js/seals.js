@@ -96,7 +96,8 @@
   function face(key) {
     const el = S.el, title = K.TITLES ? K.TITLES[key] : key, m = MECH[key];
     el.dataset.k = key;
-    const img = $(".seal-img", el), src = `img/medal/${key}.webp`; if (img.getAttribute("src") !== src) img.setAttribute("src", src);
+    /* frame leftovers (2026-10-30): the face takes its medal once decoded (board.js preloads every medal in idle time) */
+    const img = $(".seal-img", el), src = `img/medal/${key}.webp`; if (K.medalSet) K.medalSet(img, key); else if (img.getAttribute("src") !== src) img.setAttribute("src", src);
     $(".seal-b", el).textContent = title; $(".seal-i", el).textContent = BACK[key];
     S.btn.setAttribute("aria-label", `${title} seal. Press it ${m && m.hint ? m.hint : "to give it a spin and read what it holds"}.`);
     $(".seal-say", el).classList.remove("on");
@@ -114,7 +115,7 @@
       setTimeout(swap, a ? 60 : 0); if (a) a.finished.then(done, done); else done();
       return;
     }
-    const ready = typeof Image !== "function" ? Promise.resolve() : new Promise((r) => { const img = new Image(); img.onload = img.onerror = r; img.src = `img/medal/${key}.webp`; if (img.decode) img.decode().then(r, r); });
+    const ready = K.medalLoad ? K.medalLoad(key).p : typeof Image !== "function" ? Promise.resolve() : new Promise((r) => { const img = new Image(); img.onload = img.onerror = r; img.src = `img/medal/${key}.webp`; if (img.decode) img.decode().then(r, r); });
     S.ang = S.ang || 0;
     spin({ land: "front", edge: true, mid: swap, ready }).then(done, done);
   }
@@ -407,7 +408,7 @@
     const key = o.key || "timeline", d = makeDisc(), el = h("div", { class: "seal seal-free", "data-k": key });
     const btn = h("button", { class: "seal-btn", type: "button", "aria-label": o.label || `${o.title || "Dates"} seal. Press it to turn it over.` }, h("span", { class: "seal-cast" }), d);
     el.append(btn);
-    $(".seal-img", el).setAttribute("src", `img/medal/${key}.webp`);
+    if (K.medalSet) K.medalSet($(".seal-img", el), key); else $(".seal-img", el).setAttribute("src", `img/medal/${key}.webp`);
     const C = { ang: 0, n: 0 };
     const face = (title, line) => { $(".seal-b", el).textContent = title || ""; $(".seal-i", el).textContent = line || ""; };
     face(o.title, o.back);

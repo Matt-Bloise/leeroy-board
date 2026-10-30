@@ -2018,11 +2018,38 @@ function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.repl
 const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes." };
 const medalImg = (key, cls) => h("img", { class: cls || "medal-img", src: `img/medal/${key}.webp`, alt: "", width: 640, height: 640, decoding: "async", loading: "lazy" });
+/* frame leftovers (2026-10-30): every medal (640 px webp: the coin's face, the side medal) is fetched and decoded in idle time after load,
+   one at a time, and an img takes a medal only once it is decoded, keeping what it shows until then. A first open never decodes one
+   mid-transition (the owner's Edge, Oct 29: frames of 315 to 455 ms on the first open, then the coin popped in on an empty disc) */
+const MEDALS = {};
+function medalLoad(key) {
+  let m = MEDALS[key]; if (m) return m;
+  m = MEDALS[key] = { ok: false, p: null, im: null };
+  if (typeof Image !== "function") { m.ok = true; m.p = Promise.resolve(); return m; }
+  const im = new Image(); m.im = im; im.decoding = "async";
+  const loaded = new Promise((r, j) => { im.onload = r; im.onerror = j; });
+  im.src = `img/medal/${key}.webp`;
+  m.p = (typeof im.decode === "function" ? im.decode() : loaded).then(() => { m.ok = true; }, () => { m.ok = true; m.failed = true; });
+  return m;
+}
+function medalSet(img, key) {
+  if (!img) return;
+  const src = `img/medal/${key}.webp`; img.setAttribute("data-medal", key);
+  if (img.getAttribute("src") === src) return;
+  const m = medalLoad(key), put = () => { if (img.getAttribute("data-medal") === key && img.getAttribute("src") !== src) img.setAttribute("src", src); };
+  if (m.ok) put(); else m.p.then(put);
+}
+function medalsIdle() {
+  if (typeof navigator !== "undefined" && navigator.connection && navigator.connection.saveData) return; /* data saver: each medal loads on its first open instead */
+  const idle = window.requestIdleCallback || ((f) => setTimeout(f, 300)), keys = Object.keys(MEDAL);
+  const step = () => { const k = keys.shift(); if (k) medalLoad(k).p.then(() => idle(step, { timeout: 2000 })); };
+  idle(step, { timeout: 2000 });
+}
 function placeSideMedal(key) {
   const layer = $("#scene"); if (!layer || !MEDAL[key]) return;
   let m = $("#medal-side");
   if (!m) { m = h("div", { class: "medal-side", id: "medal-side", "aria-hidden": "true" }, h("span", { class: "coin" }, h("span", { class: "coin-in" }, h("img", { class: "medal-img", alt: "", width: 640, height: 640, decoding: "async" })), h("span", { class: "coin-shine" }))); layer.appendChild(m); }
-  const img = m.querySelector("img"); const src = `img/medal/${key}.webp`; if (!img.getAttribute("src") || !img.getAttribute("src").endsWith(src)) img.setAttribute("src", src);
+  const img = m.querySelector("img"); medalSet(img, key);
   img.onerror = () => { m.hidden = true; };
   sizeSideMedal();
 }
@@ -3543,6 +3570,7 @@ async function boot(mode, sdk) {
   startSubtitles();
   startMiniClock();
   (window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => startLight(), { timeout: 1200 });
+  (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(() => medalsIdle(), { timeout: 2500 });
   startSound();
   try { setBuffView(localStorage.getItem("board-buff-view") === "list" ? "list" : "wheel"); } catch (e) { setBuffView("wheel"); }
   try {
@@ -3599,7 +3627,7 @@ async function boot(mode, sdk) {
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 /* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
-Object.assign(KIT, { $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
+Object.assign(KIT, { medalSet, medalLoad, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 /* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image icon. */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

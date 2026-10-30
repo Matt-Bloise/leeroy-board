@@ -108,13 +108,28 @@ function clearSeal() {
   panel.style.removeProperty("--seal-clear");
   for (const e of [lg, ld]) if (e) e.classList.remove("seal-clear");
   if (!sl || sl.hidden || !lg || panel.dataset.lay === "below") return;
-  const s = sl.getBoundingClientRect(), b = panel.getBoundingClientRect(); if (!s.width) return;
+  /* frame leftovers (2026-10-30): measured in layout pixels, so an opening sheet's scale or the coin's own move never changes the
+     answer; the checks at the next frame and at 400 ms find the same clearance and nothing moves after the first paint */
+  const k = panel.offsetHeight ? panel.getBoundingClientRect().height / panel.offsetHeight || 1 : 1;
+  const s = sl.getBoundingClientRect(); if (!s.width) return;
   const first = [lg, ld].filter((e) => e && e.getClientRects().length && e.getBoundingClientRect().left < s.right && e.getBoundingClientRect().top < s.bottom + 12)
     .sort((a, c) => a.getBoundingClientRect().top - c.getBoundingClientRect().top)[0];
   if (!first) return;
   const r = first.getBoundingClientRect();
-  panel.style.setProperty("--seal-clear", `${Math.ceil(s.bottom + 14 - r.top)}px`);
+  panel.style.setProperty("--seal-clear", `${Math.ceil((s.bottom - r.top) / k + 14)}px`);
   first.classList.add("seal-clear");
+}
+/* frame leftovers (2026-10-30): the cards and the meeting note beside the map fit the frame's height (they ran 32 to 57 px past it at
+   1366x768). The side column widens, so its text wraps into fewer lines, as far as the map keeps its full height; past that the note
+   scrolls by itself (wide.css), never the frame */
+function fitSide(W, H) {
+  panel.style.removeProperty("--side");
+  if (panel.dataset.lay !== "side") return;
+  const parts = [$("#map-lede"), panel.querySelector(".roads-legend"), panel.querySelector(".map-caption")].filter(Boolean);
+  const tall = () => parts.reduce((a, e) => a + (getComputedStyle(e).position === "absolute" ? 0 : Math.max(e.offsetHeight, e.scrollHeight)), 0);
+  const lg = parts.find((e) => e.classList.contains("roads-legend")); if (!lg) return;
+  let w = lg.offsetWidth; const most = Math.floor(W - H * 1.5);
+  for (let i = 0; i < 6 && tall() > H && w + 8 < most; i++) { w = Math.min(most, w + 40); panel.style.setProperty("--side", `${w}px`); }
 }
 
 /* the layout the panel is in: the map with the cards beside it (one or both sides) or the map with the cards under it */
@@ -129,6 +144,7 @@ function lay() {
   if (W / H < 1.3) l = "below"; else if (W - H * 1.5 >= 2 * min + 24) l = "side2";
   panel.dataset.lay = l;
   panel.style.setProperty("--mw", `${Math.floor(l === "side2" ? H * 1.5 : full)}px`);
+  fitSide(W, H);
   clearSeal();
   if (box.querySelector("svg")) put(read(), true);
 }
@@ -146,7 +162,10 @@ K.on("map", (M) => {
   lay();
   if (st && st.z > 1.02 && wideOn()) put(st, true); /* the map redrew (a resize): the same view again */
 });
-K.on("scene", (k) => { if (k === "roads") { requestAnimationFrame(lay); setTimeout(lay, 400); } });
+/* frame leftovers (2026-10-30): the layout is set before the first paint (a microtask runs once the open's own script is done, after the
+   seal is placed and before the browser draws); before, data-lay waited a frame, so the first paint showed the lede and the cards
+   where the layout does not keep them and they jumped (a 0.37 layout shift opening Three roads in the owner's Edge) */
+K.on("scene", (k) => { if (k === "roads") { (typeof queueMicrotask === "function" ? queueMicrotask : (f) => Promise.resolve().then(f))(lay); requestAnimationFrame(lay); setTimeout(lay, 400); } });
 K.on("closed", (k) => { if (k === "roads") { st = null; if (box && box.querySelector("svg") && wideOn()) put({ z: 1, cx: 300, cy: 200 }, true); } });
 addEventListener("resize", () => lay());
 })();
