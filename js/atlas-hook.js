@@ -13,7 +13,7 @@
   /* the engine */
   const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : k === "reduceMQ" ? { get matches() { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } } : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=a986d438e8");
+    const m = await import("../atlas/atlas.js?v=b096d4ddbd");
     return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {

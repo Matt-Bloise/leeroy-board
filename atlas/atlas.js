@@ -276,7 +276,9 @@ export async function createAtlas(opts) {
     const ids = [...S.planPlaces], many = pl.who.length > 1;
     setAway(many ? ids : [], pl.meet, pl.who);
     // the party's plan frames where everyone starts and where they meet; one friend's plan frames that friend's whole route
-    return fitIds(many ? [...S.planEnds] : ids, o);
+    // integration 1, item 4 (2026-10-30): one friend's plan frames the whole route and also every start (the day-one starts and the meeting
+    // point), so no start pin sits outside the view at any size (1920x1080 #atlas.plan.orgrimmar~mage framed the route and left Red Cloud Mesa at x=-85)
+    return fitIds(many ? [...S.planEnds] : [...new Set([...ids, ...dayOneIds()])], o);
   }
   // the edge pointers to the away clusters: one button each, on the line from the free centre toward the cluster
   function placeAway() {

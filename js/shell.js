@@ -25,7 +25,8 @@ const moveMs = () => (K.MOTION && K.MOTION.move) || 520;
 const sheetView = () => { try { return !!(window.__sheet && window.__sheet.status().view === "sheet"); } catch (e) { return false; } };
 function placeFor(key) {
   if (!key) return null;
-  if (key === "five") return sheetView() || S.pick ? "sheet" : "five";
+  if (S.pick) return "sheet";
+  if (key === "five") return sheetView() ? "sheet" : "five";
   return key === "tonight" || key === "librarian" ? key : "more";
 }
 function markPlaces() {
@@ -134,19 +135,26 @@ function openMySheet() {
   pickSheet();
 }
 function pickSheet() {
-  K.goScene("five");
-  const panel = $("#panel-five"), P = K.D.party; if (!panel || !P) return;
-  let box = $("#sh-pick");
-  if (!box) {
-    const pick = (m) => { K.MEM.setMe(K.MEM.slug(m.name)); unpick(); try { K.render.tonight(); } catch (e) {} openMySheet(); };
-    box = h("div", { class: "tn-pick sh-pick", id: "sh-pick", role: "group", "aria-labelledby": "sh-pick-h" }, h("p", { class: "tn-who", id: "sh-pick-h", text: "Whose sheet? Pick a name." }),
-      ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${K.classVar(m.class_key)}`, onclick: () => pick(m) }, K.crestMark(m), m.name)));
-    panel.insertBefore(box, panel.firstChild);
-  }
+  /* integration 1, item 6 (2026-10-30): with no name picked, My sheet asks in place. A bottom sheet over whatever scene is open carries the
+     same buttons (.tn-pick, .tn-name) the Next scene uses; picking a name closes it and opens that sheet. No jump to The five. */
+  const B = window.BoardSheets, P = K.D && K.D.party; if (!B || !P) { K.goScene("five"); return; }
+  const mb = placeBtn("sheet");
+  const pick = (m) => { K.MEM.setMe(K.MEM.slug(m.name)); unpick(); try { K.render.tonight(); } catch (e) {} openMySheet(); };
   S.pick = true; markPlaces();
-  setTimeout(() => { const f = box.querySelector("button"); if (f && f.focus) f.focus({ preventScroll: true }); }, moveMs() / 2);
+  B.open({
+    id: "pick", title: "Whose sheet?", start: "peek", peek: 0.4, returnTo: mb || undefined,
+    onClose: () => { if (S.pick) { S.pick = false; markPlaces(); } },
+    build(body) {
+      body.append(h("div", { class: "tn-pick sh-pick", id: "sh-pick", role: "group", "aria-label": "Whose sheet? Pick a name." },
+        ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${K.classVar(m.class_key)}`, onclick: () => pick(m) }, K.crestMark(m), m.name))));
+    },
+  });
+  const first = $("#sh-pick button"); if (first && first.focus) { try { first.focus({ preventScroll: true }); } catch (e) {} } /* the sheet focuses its body; the first name is where a keyboard wants to be */
 }
-function unpick() { const b = $("#sh-pick"); if (b) b.remove(); if (S.pick) { S.pick = false; markPlaces(); } }
+function unpick() {
+  const B = window.BoardSheets; if (B && B.status().open === "pick") B.close("pick");
+  if (S.pick) { S.pick = false; markPlaces(); }
+}
 function go(place) {
   hap("select");
   if (place !== "sheet") unpick();
@@ -217,7 +225,7 @@ function onClick(e) {
 sceneHooksInit();
 function sceneHooksInit() {
   K.sceneHooks.push((open) => { if (open && S.phone && !S.built) { build(); } });
-  K.on("scene", (key) => { if (!S.phone) return; if (key !== "five") unpick(); build(); headFor(key); markPlaces(); setTimeout(markPlaces, 0); raf(placeCoin); });
+  K.on("scene", (key) => { if (!S.phone) return; build(); headFor(key); markPlaces(); setTimeout(markPlaces, 0); raf(placeCoin); });
   const five = $("#panel-five"); if (five) five.addEventListener("click", () => { if (S.phone) setTimeout(markPlaces, 60); }, true);
   K.on("sheet", markPlaces);
   K.on("closed", () => { unpick(); if (S.phone) closeMore(); });

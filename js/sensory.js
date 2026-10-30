@@ -244,7 +244,7 @@
   function dock() {
     if (!btn) return;
     const foot = $("#footer"), head = E.scene && ($("#mode-btn-scene") || $("#scene-peek"));
-    if (document.documentElement.classList.contains("phone-shell") || innerWidth < 700) { if (btn.parentNode !== document.body) document.body.insertBefore(btn, panel); }
+    if (document.documentElement.classList.contains("phone-shell") || innerWidth < 700 || (E.scene && innerWidth < 1024)) { /* integration 1: under 1024 px the scene head has no room for the pill (768: the title ran under it), so it keeps its corner */ if (btn.parentNode !== document.body) document.body.insertBefore(btn, panel); }
     else if (head) { if (btn.previousSibling !== head) head.parentNode.insertBefore(btn, head.nextSibling); }
     else if (foot && foot.firstChild !== btn) foot.insertBefore(btn, foot.firstChild);
   }
@@ -279,20 +279,35 @@
     try { if (sessionStorage.getItem("board-fanfare")) { E.fanfared = true; return; } } catch (e) {}
     if (fanfare()) { E.fanfared = true; try { sessionStorage.setItem("board-fanfare", "1"); } catch (e) {} }
   }
-  /* fix E8: beside the pill, never over a tile, never focused; gone after 8 s, a scroll or a press elsewhere */
-  function invite() {
-    try { if (sessionStorage.getItem("board-invite")) return; sessionStorage.setItem("board-invite", "1"); } catch (e) {}
-    setTimeout(() => {
-      const foot = $("#footer");
-      if (isOn() || !btn || btn.parentNode !== foot || document.hidden || document.documentElement.classList.contains("play")) return; /* polish: Play holds the sound, so no invitation to it */
-      const t = el("div", { class: "sense-invite", role: "status" }), b = el("button", { type: "button", text: "Hear the tavern" }), x = el("button", { type: "button", class: "sense-x", "aria-label": "Dismiss", text: "×" });
-      t.append(el("span", { text: "Sound is off." }), b, x); foot.insertBefore(t, btn.nextSibling);
-      const gone = () => { removeEventListener("pointerdown", away, true); t.classList.add("out"); setTimeout(() => t.remove(), 400); };
-      const away = (e) => { if (!t.contains(e.target)) gone(); };
-      b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); gone(); }); x.addEventListener("click", gone); setTimeout(gone, 8000);
-      addEventListener("pointerdown", away, true); document.addEventListener("scroll", gone, { capture: true, passive: true, once: true });
-    }, 7000);
+  /* fix E8: beside the pill, never over a tile, never focused; gone after 8 s, a document scroll or a press elsewhere.
+     Integration 1 (2026-10-30), items 2 and 3: a first visit with no remembered depth auto-opens Next steps after 7.5 s (board.js firstBeat), which
+     moves the pill into the scene head and scrolls the tab rail. The old code (a) took that scroll of #tabs for the visitor's and ended the invitation
+     after 1 s in Chromium, and (b) in Firefox, where the scene opens before the 7 s timer fires, never showed it at all (the pill was no longer in the
+     footer). Now: it first shows 3.5 s in, only the document's own scroll ends it, a scene opening hides it without using it up, and it comes back
+     (a full 8 s) when the wall does. Only a press, a dismissal or its 8 s on the wall mark it done for the session. */
+  const INV = { el: null, life: 0, done: false, timer: 0, away: null, gone: null };
+  try { INV.done = !!sessionStorage.getItem("board-invite"); } catch (e) {}
+  function inviteEnd(used) {
+    if (INV.away) removeEventListener("pointerdown", INV.away, true);
+    if (INV.gone) { try { removeEventListener("scroll", INV.gone, true); } catch (e) {} }
+    clearTimeout(INV.life); INV.life = 0; INV.away = INV.gone = null;
+    const t = INV.el; INV.el = null;
+    if (t) { t.classList.add("out"); setTimeout(() => t.remove(), 400); }
+    if (used) { INV.done = true; try { sessionStorage.setItem("board-invite", "1"); } catch (e) {} }
   }
+  function inviteTry() {
+    if (INV.done || INV.el) return;
+    const foot = $("#footer");
+    if (isOn() || !btn || !foot || btn.parentNode !== foot || document.hidden || document.documentElement.classList.contains("play")) return; /* polish: Play holds the sound, so no invitation to it */
+    const t = el("div", { class: "sense-invite", role: "status" }), b = el("button", { type: "button", text: "Hear the tavern" }), x = el("button", { type: "button", class: "sense-x", "aria-label": "Dismiss", text: "×" });
+    t.append(el("span", { text: "Sound is off." }), b, x); foot.insertBefore(t, btn.nextSibling); INV.el = t;
+    INV.away = (e) => { if (!t.contains(e.target)) inviteEnd(true); };
+    INV.gone = (e) => { if (!e || !e.target || e.target === document || e.target === document.documentElement || e.target === document.scrollingElement) inviteEnd(true); }; /* a scroll of #tabs or a panel is not the visitor leaving */
+    b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); inviteEnd(true); }); x.addEventListener("click", () => inviteEnd(true));
+    INV.life = setTimeout(() => inviteEnd(true), 8000);
+    addEventListener("pointerdown", INV.away, true); addEventListener("scroll", INV.gone, { capture: true, passive: true });
+  }
+  function invite() { if (!INV.done) setTimeout(inviteTry, 3500); }
 
   /* ---------- lifecycle ---------- */
   function start() {
@@ -306,7 +321,7 @@
   BS.onState((on) => { if (on) setTimeout(start, 0); else stop(); setTimeout(sync, 150); });
   function kit() {
     const K = window.__boardKit; if (!K) return false;
-    K.on("scene", (key) => { E.scene = key; levels(); sync(); dock(); }); K.on("closed", () => { E.scene = null; levels(); dock(); });
+    K.on("scene", (key) => { E.scene = key; levels(); sync(); dock(); if (INV.el) inviteEnd(false); }); K.on("closed", () => { E.scene = null; levels(); dock(); if (!INV.done) setTimeout(inviteTry, 600); });
     K.on("rendered", dock); addEventListener("resize", dock); dock();
     return true;
   }

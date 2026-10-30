@@ -35,3 +35,11 @@
 #footer .sense-fab { min-height: 0; line-height: 1.1; border: 0; box-shadow: inset 0 0 0 1px currentColor; align-self: flex-start; position: relative; top: -2px; }
 @media (min-width: 700px) { html.scene-open .sense-panel { top: 76px; bottom: auto; left: auto; right: 24px; } }
 @media (pointer: coarse) { #footer .sense-fab, .sheet-head .sense-fab, .sense-invite button { min-height: 44px; } }
+/* integration 1, item 1 (2026-10-30): at 1024 to 1199 px the scene head is full (under 1024 the pill keeps its corner, see dock()) (peek, title, journey, pill, Play, close). The title box was
+   squeezed to 116 px, so a long title ("Who buffs whom", 131 px at 1024) ran under the pill. The title now keeps its own width, the gaps
+   tighten and the pill drops 2 px of side padding; the title can never reach the pill at any width this row is used at */
+@media (min-width: 1024px) and (max-width: 1199px) {
+  #scene .sheet-top { gap: 5px; }
+  #scene .sheet-top > .sheet-name { flex: 0 0 auto; }
+  .sheet-head .sense-fab { padding: 0 8px; }
+}
