@@ -1480,7 +1480,7 @@ const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
 /* V13d (interaction 1): "<scene>.<thing>" lands on that thing inside the scene (#five.santa, #roads.durotar, #signups.in) */
 const LAND_RE = /^(timeline|five|roads|racials|legacy|ledger|signups|librarian|decide)\.([a-z0-9][a-z0-9_-]{0,40})$/;
-const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z_-]{1,40}$/.test(k) ? "buffs" : LAND_RE.test(k) ? k.split(".")[0] : null; };
+const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^atlas(?:\.|$)/.test(k) ? "roads" : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z_-]{1,40}$/.test(k) ? "buffs" : LAND_RE.test(k) ? k.split(".")[0] : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
   /* pushed marks an entry over the wall's own, the only kind back may pop; since V13b a landing scene gets one too (route) */
@@ -1696,7 +1696,7 @@ function ledgerStamps() {
 }
 const PLAYED = new Set();
 const ON_FIRST = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => ledgerStamps(), timeline: () => replay($("#rail"), "pressing"), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
-const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ } };
+const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); KIT.emit("roads-open"); /* the Atlas hook opens on #atlas or ATLAS_DEFAULT */ requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ } };
 /* V11: every scene has its own ornament, its emblem engraved large in the parchment's corner with its own small motion */
 const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials: "skull", legacy: "laurel", buffs: "rune", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon", decide: "scroll" };
 function placeOrnament(key) {
@@ -1958,7 +1958,7 @@ function route() {
   /* V13b (mobile 5): */
   if (key && !(history.state && history.state.pushed)) { const url = location.pathname + location.search + location.hash; try { history.replaceState(null, "", location.pathname + location.search); history.pushState({ boardScene: key, pushed: true }, "", url); } catch (e) {} }
   /* V13d: a "<scene>.<thing>" hash lands on the thing (the wall's own clicks set SC.land with the mark that flies) */
-  const lm = key && key !== "library" && key !== "tonight" ? raw.match(/^([a-z]+)\.([a-z0-9_-]{1,40})$/) : null;
+  const lm = key && key !== "library" && key !== "tonight" && !/^atlas(?:\.|$)/.test(raw) ? raw.match(/^([a-z]+)\.([a-z0-9_-]{1,40})$/) : null;
   if (lm && !(SC.land && SC.land.key === key && SC.land.sub === lm[2])) SC.land = { key, sub: lm[2], from: null };
   if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
 }

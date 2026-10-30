@@ -361,7 +361,7 @@
   /* ---------- the scenes that replay their own motion, and the ones whose coin shows facts on its back ---------- */
   const replayOn = (sel, cls) => { const el = $(sel); if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); };
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  MECH.roads = { hint: "to draw the roads again", press: ({ say: sy }) => { replayOn("#map", "drawing"); sy("The roads draw again from where each character starts."); } };
+  MECH.roads = { hint: "to draw the roads again", press: ({ say: sy }) => { const at = window.__atlas && window.__atlas.api, m = $("#map"); if (at && m && m.classList.contains("atlas-on")) { at.showPlan(at.plan({}), { animate: true }); sy("The courses draw again on the Atlas from where each character starts."); return; } /* the Atlas (2026-10-30) */ replayOn("#map", "drawing"); sy("The roads draw again from where each character starts."); } };
   MECH.buffs = { hint: "to light the wheel again", press: ({ say: sy }) => { replayOn("#wheel", "lighting"); sy("The wheel lights each link between the five."); } };
   MECH.ledger = { hint: "to stamp the ledger again", press: ({ say: sy }) => {
     replayOn("#ledger-slip", "stamping");
