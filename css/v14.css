@@ -4,7 +4,7 @@
 :root { --oak-0: #000; --room-fog: #000; --shade-deep: rgba(0, 0, 0, 0.94); --shade-mid: rgba(0, 0, 0, 0.62); --shade-light: rgba(0, 0, 0, 0.22); --shade-none: rgba(0, 0, 0, 0); --veil: rgba(0, 0, 0, 0.74); --veil-room: rgba(0, 0, 0, 0.5); --veil-strong: rgba(0, 0, 0, 0.92); color-scheme: dark; }
 html, body { background-color: #000; }
 body { background-image: repeating-linear-gradient(92deg, var(--grain-line) 0 2px, transparent 2px 11px), linear-gradient(180deg, var(--oak-1), #000 38%); }
-body.nograin::after { content: ""; position: fixed; inset: 0; z-index: 2147483000; pointer-events: none; opacity: 0.035; mix-blend-mode: overlay; background-image: var(--noise, none); background-size: 128px 128px; }
+
 @media print { body::after { display: none; } }
 
 @keyframes v14-nudge { 0%, 100% { box-shadow: 0 0 0 0 rgba(238, 205, 140, 0); } 50% { box-shadow: 0 0 0 3px rgba(238, 205, 140, 0.55), 0 0 28px 6px rgba(255, 170, 70, 0.35); } }
@@ -87,12 +87,12 @@ html.first-beat .depth button[data-depth="tonight"], html.first-beat .tonight-li
 .tile-sub, .tile-line, .viz-cap, .spell-meta, .sheet-sub, .scene-hint, .legend li, .roads-legend li { text-wrap: pretty; }
 .sheet-sub { text-wrap: balance; }
 .tile-body, .tn-card p, .race, .rwiki { hyphens: manual; }
-.tn-link, .tn-n, .pill, .tn-when b, .tile-line b, .rsvp-n { white-space: nowrap; }
+.tn-link, .tn-n, .pill, .tn-when b, .tile-line b { white-space: nowrap; }
 .sheet-body { padding-inline: clamp(14px, 3.2vw, var(--g4)); }
 .sheet-body p, .sheet-body li { text-wrap: pretty; }
 .sheet-body :where(h2, h3) { text-wrap: balance; }
 /* one button family: the same radius, height and press on every control that is a button, in every scene */
-:where(.lib-tool, .lib-btn, .tn-name, .jr-card, .jr-skip, .jr-go, .flip, .bb, .bchip, .tilt, .pager button) { box-sizing: border-box; min-height: 44px; border-radius: 999px; transition: transform var(--t-micro) var(--ease-oak), background var(--t-micro) var(--ease-oak), box-shadow var(--t-micro) var(--ease-oak); }
+:where(.lib-tool, .lib-btn, .tn-name, .jr-card, .jr-skip, .jr-go, .flip, .bb, .tilt, .pager button) { box-sizing: border-box; min-height: 44px; border-radius: 999px; transition: transform var(--t-micro) var(--ease-oak), background var(--t-micro) var(--ease-oak), box-shadow var(--t-micro) var(--ease-oak); }
 :where(.jr-card) { border-radius: 10px; }
 :where(.lib-tool, .lib-btn, .tn-name, .jr-skip, .jr-go, .tilt, .pager button):active { transform: translateY(1px) scale(0.985); }
 /* focus: a two-tone ring that reads on parchment and on oak alike, only for keyboard users */
@@ -245,3 +245,10 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
 
 .tnh-det > summary{cursor:pointer;font-family:var(--font-sc);letter-spacing:.06em;padding:var(--g1,8px) 0;color:var(--ink)}
 .tnh-det[open] > summary{margin-bottom:var(--g1,8px)}
+
+/* CLS (2026-10-30): the library panel is a short stub until its index lands (about 0.5 s), and the scene body centers short panels, so the
+   stub sat mid-frame and jumped to the top when the shelf rail and list arrived (0.17 to 0.8 at 375 and 768). It starts at the top, and
+   the rail holds its row height before the shelf buttons are in. */
+.sheet-body:has(> #panel-library:not([hidden], .warm)) { align-content: safe start; }
+@media (max-width: 899px) { .lib-rail { min-height: 60px; } }
+.lib-stat.sk { visibility: hidden; } /* CLS (2026-10-30): index.html holds the stat row's cells until libRenderHead writes the real ones, so the row has its height from the first paint */

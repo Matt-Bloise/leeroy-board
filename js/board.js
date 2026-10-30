@@ -2480,16 +2480,16 @@ function placeCrest(k) {
   if (node && !node.querySelector(".crest-node")) { node.classList.add("has-crest"); node.insertBefore(crestSvg(k, Number(node.dataset.x), Number(node.dataset.y)), node.querySelector("text")); }
 }
 function startArt() {
-  const probe = (src, ok) => { const im = new Image(); im.onload = ok; im.src = src; };
+  const probe = (src, ok, bad) => { const im = new Image(); im.onload = ok; if (bad) im.onerror = bad; im.src = src; };
   for (const k of new Set(D.party.members.map((m) => m.class_key).filter(Boolean))) probe(`img/crests/${k}.png`, () => { ART.crest[k] = true; placeCrest(k); });
   probe("img/map/zeppelin.png", () => { ART.zep = true; if (MAPW.drawn) renderMap(); });
   probe("img/map/town.png", () => { ART.town = true; if (MAPW.drawn) renderMap(); });
   probe("img/seal.png", () => { ART.seal = true; try { renderLedger(); } catch (e) { console.error(e); } });
   probe("img/beam.png", () => {
     ART.beam = true;
-    $("#main").classList.add("has-beam");
+    $("#main").classList.add("has-beam"); $("#main").classList.remove("beam-soon");
     $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", alt: "", "aria-hidden": "true", decoding: "async" }));
-  });
+  }, () => { $("#main").classList.remove("beam-soon"); }); /* CLS (2026-10-30): main.beam-soon (set in index.html) holds the beam's margin from the first paint; it was added by this probe about 0.5 s in and moved the whole wall 22 px */
 }
 
 /* Sound (V13c): */
@@ -3517,7 +3517,7 @@ function warmStop() {
 }
 function warmRestore(s) {
   WARM.step = null; cancelAnimationFrame(s.raf); clearTimeout(s.timer);
-  s.panel.classList.remove("warm"); s.panel.inert = false;
+  s.panel.classList.remove("warm", "warm-m"); s.panel.inert = false;
   if (s.fx) s.fx.remove();
   if (SC.open !== s.key) s.panel.hidden = true;
   if (s.layer) { const L = $("#scene"); L.classList.remove("warming"); L.inert = false; if (SC.open === null && !SC.want) L.hidden = true; }
@@ -3542,11 +3542,12 @@ function warmNext() {
      done while idle */
   if (step.layer) { L.inert = true; L.classList.add("warming"); L.hidden = false; }
   if (!WARM.fx) { WARM.fx = true; step.fx = h("div", { class: "warm-fx", "aria-hidden": "true" }); L.append(step.fx); }
-  panel.classList.add("warm"); panel.inert = true; panel.hidden = false;
+  /* CLS (2026-10-30): the panel is laid out and fitted while visibility: hidden (.warm-m), then shown for the raster frames: a box that was not visible in the previous frame is not a layout shift, and the fit zoom / late rows used to count 0.05 to 0.1 per scene on the wall */
+  panel.classList.add("warm", "warm-m"); panel.inert = true; panel.hidden = false;
   WARM.step = step;
   /* three frames: the commit, the raster, the draw; then the panel goes back */
   /* V13b: the Roads map is drawn again once at its real width while it warms, so its first opening never redraws it */
-  let n = 0; const tick = () => { if (WARM.step !== step) return; if (n === 0 && key === "roads") { try { mapFit(); } catch (e) {} } if (n === 1 && step.layer && !FIT_SKIP.includes(key)) { try { fitScene(key); } catch (e) {} } if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
+  let n = 0; const tick = () => { if (WARM.step !== step) return; if (n === 0 && key === "roads") { try { mapFit(); } catch (e) {} } if (n === 1 && step.layer && !FIT_SKIP.includes(key)) { try { fitScene(key); } catch (e) {} } if (n === 1) panel.classList.remove("warm-m"); if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
   step.raf = requestAnimationFrame(tick);
 }
 function warmLater() { if (WARM.done) return; (window.requestIdleCallback || ((f) => setTimeout(f, 200)))(warmNext, { timeout: 1500 }); }

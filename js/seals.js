@@ -16,6 +16,8 @@
   const BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes." /* V16: the mechanic lives in js/decide.js */ };
   /* MECH[key] = { hint, press(api) }: hint finishes "Press the seal to ..."; press runs after the spin starts, api = { seal, key, say, spin } */
   const MECH = {};
+  /* WebKit (2026-10-30): backface-visibility alone left the back showing mirrored (Playwright WebKit 27.2 ignores it, even in a bare two-div test); the resting face is also named here and CSS hides the other with visibility */
+  const side = (el, ang) => { if (el) el.setAttribute("data-side", ((ang % 360) + 360) % 360 === 180 ? "back" : "front"); };
   const S = { ang: 0, el: null, btn: null, disc: null, key: null, light: { x: 0.3, y: 0.2 }, raf: 0, spun: 0 };
 
   /* the coin itself: seven brass edges between a medallion front and a lettered back (shared with coin() below, V15) */
@@ -62,11 +64,11 @@
     S.spun++; const from = S.ang || 0, same = o.land ? (o.land === "back") === (from === 180) : true, dir = S.spun % 2 ? 1 : -1, to = from + dir * (same ? 720 : 540), keep = o.land ? (o.land === "back" ? 180 : 0) : from;
     if (o.edge && !reduceMQ.matches && S.disc.animate) return edgeSpin(o, from, to, keep, same, dir);
     if (o.mid) setTimeout(o.mid, reduceMQ.matches ? 0 : 380);
-    const fin = () => { S.ang = keep; S.disc.style.transform = `rotateY(${keep}deg)`; if (S.el) S.el.classList.remove("spinning"); };
+    const fin = () => { S.ang = keep; S.disc.style.transform = `rotateY(${keep}deg)`; side(S.el, keep); if (S.el) S.el.classList.remove("spinning"); };
     if (reduceMQ.matches || !S.disc.animate) { fin(); const a = S.el.animate && S.el.animate([{ filter: "brightness(1)" }, { filter: "brightness(1.5)" }, { filter: "brightness(1)" }], { duration: 260 }); return a ? a.finished.catch(() => {}) : Promise.resolve(); }
     const mid = from + (to - from) * 0.55;
     const a = S.disc.animate([{ transform: `rotateY(${from}deg) translateZ(0)` }, { transform: `rotateY(${mid}deg) translateZ(18px)`, offset: 0.55 }, { transform: `rotateY(${to}deg) translateZ(0)` }], { duration: 900, easing: "cubic-bezier(.2,.75,.25,1)" });
-    S.el.classList.add("spinning"); S.disc.style.transform = `rotateY(${keep}deg)`; S.ang = keep;
+    S.el.classList.add("spinning"); S.disc.style.transform = `rotateY(${keep}deg)`; S.ang = keep; if (keep !== from) setTimeout(() => side(S.el, keep), 300);
     return a.finished.then(fin, fin);
   }
   /* edge: the swap runs exactly when the coin is edge-on (both faces a sliver, so nothing visible changes), in two moves that meet there; the second waits for
@@ -74,10 +76,11 @@
   function edgeSpin(o, from, to, keep, same, dir) {
     const e = from + dir * (same ? 450 : 270), t = (a, z) => `rotateY(${a}deg) translateZ(${z}px)`;
     S.el.classList.add("spinning");
-    const fin = () => { S.ang = keep; S.disc.style.transform = `rotateY(${keep}deg)`; if (S.el) S.el.classList.remove("spinning"); };
+    const fin = () => { S.ang = keep; S.disc.style.transform = `rotateY(${keep}deg)`; side(S.el, keep); if (S.el) S.el.classList.remove("spinning"); };
     const a1 = S.disc.animate([{ transform: t(from, 0) }, { transform: t(e, 18) }], { duration: 380, easing: "cubic-bezier(.45,0,.85,.7)", fill: "forwards" });
     return a1.finished.then(() => Promise.race([o.ready || Promise.resolve(), new Promise((r) => setTimeout(r, 400))])).then(() => {
       if (o.mid) o.mid();
+      side(S.el, keep);
       const a2 = S.disc.animate([{ transform: t(e, 18) }, { transform: t(to, 0) }], { duration: 520, easing: "cubic-bezier(.2,.75,.25,1)" });
       S.disc.style.transform = `rotateY(${keep}deg)`; S.ang = keep; a1.cancel();
       return a2.finished.then(fin, fin);
@@ -111,7 +114,7 @@
     if (S.swapping) return;
     S.swapping = true;
     const done = () => { S.swapping = false; };
-    const swap = () => { S.ang = 0; face(S.want); };
+    const swap = () => { S.ang = 0; side(S.el, 0); face(S.want); };
     if (reduceMQ.matches || !S.disc.animate) {
       const a = S.el.animate ? S.el.animate([{ opacity: 1 }, { opacity: 0.25, offset: 0.5 }, { opacity: 1 }], { duration: 120 }) : null;
       setTimeout(swap, a ? 60 : 0); if (a) a.finished.then(done, done); else done();
@@ -125,7 +128,7 @@
     if (!BACK[key]) { document.documentElement.classList.remove("has-seal"); return; } /* a scene without a seal gets its emblem button back here, inside the open */
     if (prev && prev !== key && S.el && !S.el.hidden && BACK[prev] && S.disc) { tabSwap(key); return; }
     const el = S.el || build(); S.key = key; S.want = key; face(key);
-    S.ang = 0; S.disc.style.transform = ""; el.removeAttribute("data-kind");
+    S.ang = 0; S.disc.style.transform = ""; side(el, 0); el.removeAttribute("data-kind");
     el.hidden = false; document.documentElement.classList.add("has-seal");
     lightTo(innerWidth * 0.5, innerHeight * 0.1);
   }
@@ -419,11 +422,11 @@
     const turn = (land, mid) => {
       C.n++; const from = C.ang, keep = land === "back" ? 180 : land === "front" ? 0 : from === 180 ? 0 : 180, dir = C.n % 2 ? 1 : -1, to = from + dir * (keep === from ? 720 : 540);
       if (mid) setTimeout(mid, reduceMQ.matches ? 0 : 380);
-      const fin = () => { C.ang = keep; d.style.transform = `rotateY(${keep}deg)`; el.classList.remove("spinning"); };
+      const fin = () => { C.ang = keep; d.style.transform = `rotateY(${keep}deg)`; side(el, keep); el.classList.remove("spinning"); };
       if (reduceMQ.matches || !d.animate) { fin(); const a = el.animate && el.animate([{ filter: "brightness(1)" }, { filter: "brightness(1.5)" }, { filter: "brightness(1)" }], { duration: 260 }); return a ? a.finished.catch(() => {}) : Promise.resolve(); }
       const m = from + (to - from) * 0.55;
       const a = d.animate([{ transform: `rotateY(${from}deg) translateZ(0)` }, { transform: `rotateY(${m}deg) translateZ(18px)`, offset: 0.55 }, { transform: `rotateY(${to}deg) translateZ(0)` }], { duration: 900, easing: "cubic-bezier(.2,.75,.25,1)" });
-      el.classList.add("spinning"); d.style.transform = `rotateY(${keep}deg)`; C.ang = keep;
+      el.classList.add("spinning"); d.style.transform = `rotateY(${keep}deg)`; C.ang = keep; if (keep !== from) setTimeout(() => side(el, keep), 300);
       return a.finished.then(fin, fin);
     };
     btn.addEventListener("pointerdown", (e) => { if (e.button > 0) return; el.classList.add("down"); snd("latch"); hap("tap"); });

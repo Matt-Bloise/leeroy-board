@@ -4,8 +4,9 @@
 
 /* ---- Three roads: the map is the sheet. js/wide.js sets .wide-map, data-lay (side | side2 | below) and --mw on the panel ---- */
 @media (min-width: 700px) and (min-height: 501px) {
-  .sheet:has(#panel-roads.wide-map:not([hidden])) .sheet-orn { display: none; }
-  .sheet-body:has(#panel-roads.wide-map:not([hidden]):not(.leaving)) { padding: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); align-content: stretch; }
+  /* CLS (2026-10-30): the roads panel the warm-up un-hides inside an open scene is not the scene on show; it used to take the open sheet's body padding and stretch the open panel for about 90 ms (0.4 at 768 on Sign-ups, shifting out and back). In the warming layer it still sets the frame it will open in. */
+  .scene-layer.warming .sheet:has(#panel-roads.wide-map:not([hidden])) .sheet-orn, .scene-layer:not(.warming) .sheet:has(#panel-roads.wide-map:not([hidden], .warm)) .sheet-orn { display: none; }
+  .scene-layer.warming .sheet-body:has(#panel-roads.wide-map:not([hidden]):not(.leaving)), .scene-layer:not(.warming) .sheet-body:has(#panel-roads.wide-map:not([hidden], .leaving, .warm)) { padding: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); align-content: stretch; }
   #panel-roads.wide-map { --side: clamp(19rem, 25%, 31rem); width: 100%; min-height: 0; margin: 0; zoom: 1 !important; grid-template-columns: var(--side) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "lede map" "legend map" "cap map"; gap: 0; align-content: stretch; }
   #panel-roads.wide-map:not([hidden]) { display: grid; }
   #panel-roads.wide-map[data-lay="side2"] { grid-template-columns: minmax(0, 1fr) var(--mw) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "legend map lede" "legend map cap" "legend map ."; }

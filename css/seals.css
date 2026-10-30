@@ -88,8 +88,8 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 @media (hover: hover) { .fc:not(.drag):hover { transform: translateY(-3px); } }
 .fc:focus-visible { outline: 3px solid var(--wax); outline-offset: 4px; }
 .fv-sum { margin: 0; font-size: var(--step-0); max-width: 34ch; }
-.fv-hint { margin: 0; font-size: 0.9rem; opacity: 0.75; text-align: center; max-width: 60ch; }
-@media (max-width: 899px) { .five-form { margin-bottom: 8px; } .fl-row { gap: 6px; } .fl { padding: 6px 6px 8px; min-width: 0; } .fc, .fl { --fc: 52px; } .fc-nm { font-size: 0.62rem; padding: 0 4px; } .fv-hint { display: none; } }
+
+@media (max-width: 899px) { .five-form { margin-bottom: 8px; } .fl-row { gap: 6px; } .fl { padding: 6px 6px 8px; min-width: 0; } .fc, .fl { --fc: 52px; } .fc-nm { font-size: 0.62rem; padding: 0 4px; }  }
 @media (prefers-reduced-motion: reduce) { .fc-in { transition: none; } .fc { transition: none; } }
 /* Race skills: active racials glow amber, passive ones teal */
 .seal[data-kind="active"] { filter: drop-shadow(var(--sx) var(--sy) calc(var(--seal) * 0.1) rgba(0, 0, 0, 0.62)) drop-shadow(0 0 calc(var(--seal) * 0.22) rgba(255, 168, 60, 0.5)); }
@@ -158,3 +158,24 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 
 /* the scene seal is a DIV; the small wax-seal bullets (span.seal.art from seal() in board.js) share the class name and must stay inline */
 span.seal { position: relative; left: auto; top: auto; z-index: auto; perspective: none; display: inline-block; }
+
+/* WebKit two-face fix (2026-10-30): Playwright WebKit 27.2 paints a face's back in a bare two-div test even with backface-visibility: hidden
+   and -webkit-backface-visibility on both faces, so the turned-away face showed mirrored (header seal, class coins, class cards). The face
+   that is turned away is also hidden outright, the swap timed to the half-way point of the turn (--t-flip / 2, or the coin's own half), so the
+   turn itself is unchanged and every engine shows the front at rest and the right face after a flip. opacity, not visibility, so the face
+   that is about to show stays focusable the moment the flip button is pressed. */
+.seal:not([data-side="back"]) .seal-back, .seal[data-side="back"] .seal-front { visibility: hidden; }
+.card .front, .card .back { transition: opacity 0s linear calc(var(--t-flip) / 2); }
+.card:not(.flipped) .back, .card.flipped .front { opacity: 0; pointer-events: none; }
+.fc-f, .fc-b { transition: opacity 0s linear 320ms; }
+.fc:not(.turned) .fc-b, .fc.turned .fc-f { opacity: 0; pointer-events: none; }
+.lb-face { transition: transform 640ms var(--ease-card), opacity 0s linear 320ms; }
+.lb-coin:not(.turned) .lb-back, .lb-coin.turned .lb-front { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .fc-f, .fc-b, .lb-face { transition-delay: 0s; } }
+
+/* The five, wide screens (2026-10-30): the seat name sits under its coin, not over the bottom of the art (a two-line display name such as
+   "Handsome Squidward" covered a fifth of the coin at 1920). The lane tray takes the two lines of room; phones keep the pill on the coin. */
+@media (min-width: 900px) {
+  .fc-nm { bottom: auto; top: calc(100% + 4px); width: max-content; max-width: calc(var(--fc) + 16px); padding: 0 8px; border-radius: 10px; text-align: center; line-height: 1.25; }
+  .fl-tray { padding-bottom: 2.35em; }
+}

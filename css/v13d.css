@@ -367,7 +367,7 @@ button.cal-day.win { background: var(--hi-brass); }
   .sheet-body .lib-tool, .chg-more, .lib-examples .ex { min-width: 44px; }
   .deep-six { display: inline-flex; align-items: center; min-height: 44px; gap: 8px; padding-left: 14px; margin-left: -14px; }
   .sheet-body .panel li[tabindex="0"] { min-height: 44px; display: flex; align-items: center; }
-  .lib-main .lib-list a, #panel-library .catrow { min-height: 44px; }
+  #panel-library .catrow { min-height: 44px; }
 }
 
 .lede.key-line, .lede.key-line b { color: #1d130a; }
@@ -419,4 +419,4 @@ button.cal-day.win { background: var(--hi-brass); }
 .tn:not(:has(.tn-pick)) > .tn-me:has(.jr-pick) { width: min(100%, 760px) !important; }
 
 /* "no answer yet" seat: an empty-mug outline instead of the default black fill */
-.seat-mug-none { fill: rgba(240, 205, 140, 0.06); stroke: var(--brass, #c9a24c); stroke-opacity: 0.55; stroke-width: 1.6; stroke-dasharray: 3 3; }
+

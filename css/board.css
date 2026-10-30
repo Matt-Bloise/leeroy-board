@@ -322,16 +322,16 @@ html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) va
 .wheel-links summary, .bclass summary, .brules summary { cursor: pointer; min-height: 32px; padding: 4px 0; }
 .wheel-links > ul { margin-top: 8px; }
 .wheel.list-view .wheel-links { grid-column: 1 / -1; }
-.deep-hint { margin: 0; font-size: 1rem; font-style: italic; }
-.bgrid { display: grid; gap: 6px; }
-.bgrid-row { display: grid; gap: 4px 10px; grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr); align-items: baseline; padding: 4px 0 4px 10px; border-left: 4px solid var(--bc); }
-@media (max-width: 699px) { .bgrid-row { grid-template-columns: 1fr; } }
-.bgrid-who { font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1rem; }
-.bgrid-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
-.bchip { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--ink-soft); background: var(--parchment-2); color: var(--ink); text-decoration: none; font-size: 1rem; }
-.bchip:focus-visible { background: var(--parchment); border-color: var(--wax); }
-@media (hover: hover) { .bchip:hover { background: var(--parchment); border-color: var(--wax); } }
-.bchip.later { border-style: dashed; color: var(--ink); opacity: 0.8; }
+
+
+
+@media (max-width: 699px) {  }
+
+
+
+
+@media (hover: hover) {  }
+
 .bq-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .bq { padding: 5px 10px; border-left: 4px solid var(--bc); background: var(--parchment-2); border-radius: 0 6px 6px 0; }
 .bq.later { opacity: 0.8; }
@@ -352,7 +352,7 @@ html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) va
 .bclasses, .brules-row { display: grid; gap: 4px; }
 @media (min-width: 1000px) { .bclasses { grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); align-items: start; } .bclass[open] { grid-column: 1 / -1; } .brules-row { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; } .brules[open] { grid-column: 1 / -1; } }
 .bclass-names { display: block; flex-basis: 100%; font-size: 1rem; }
-@media (max-width: 699px) { .deep-hint { display: none; } }
+@media (max-width: 699px) {  }
 .wheel-svg > summary { display: none; }
 @media (max-width: 699px) { .wheel-svg > summary { display: list-item; cursor: pointer; min-height: 32px; padding: 4px 0; font-family: var(--font-sc); letter-spacing: 0.04em; } }
 .bclass, .brules { padding: 2px 8px; border-left: 4px solid var(--bc, var(--ink-soft)); background: var(--parchment-2); border-radius: 0 6px 6px 0; }
@@ -376,9 +376,9 @@ html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) va
 .bq-giver { display: grid; gap: 4px; margin-bottom: 6px; }
 .bq-giver h5 { margin: 0; font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1rem; font-weight: 600; color: var(--ink); border-bottom: 2px solid var(--bc); padding-bottom: 2px; }
 .deep-col h4 { margin: 0 0 6px; font-family: var(--font-sc); letter-spacing: 0.05em; font-size: 1.1rem; }
-.deep-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.deep-b { padding: 8px 10px; border-left: 4px solid var(--bc); background: var(--parchment-2); border-radius: 0 6px 6px 0; display: grid; gap: 2px; }
-.deep-b.later { opacity: 0.75; }
+
+
+
 .deep-val { font-weight: 600; }
 .deep-meta, .deep-src { font-size: 1rem; color: var(--ink); }
 .deep-src { font-style: italic; }
@@ -505,7 +505,7 @@ html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) va
 .viz-ring-num { fill: var(--parchment); font-family: var(--font-ui); font-weight: 700; font-size: 32px; }
 .viz-line { fill: none; stroke: var(--brass); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .viz-thin { fill: none; stroke-width: 1.4; opacity: 0.55; }
-.viz-city { fill: var(--brass); stroke: var(--oak-0); stroke-width: 3; }
+
 .wall-foot { font-size: var(--fs-small); color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; }
 .wall.settle .tile { animation: settle var(--t-move) var(--ease-spring) backwards; animation-delay: calc(var(--i, 0) * var(--stagger)); }
 @keyframes settle { from { opacity: 0; transform: translate(var(--sx, 0), calc(var(--sy, 0px) - 16px)) rotate(calc(var(--rot, 0deg) - 1.2deg)); } to { opacity: 1; transform: translate(var(--sx, 0), var(--sy, 0)) rotate(var(--rot, 0deg)); } }
@@ -573,6 +573,7 @@ html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) va
 .scene-layer.warming { opacity: 0.01; will-change: opacity; pointer-events: none; }
 .scene-layer .panel.warm { position: absolute; top: 20px; left: 18px; right: 18px; opacity: 0.01; will-change: opacity; pointer-events: none; }
 .scene-layer.warming .panel.warm { position: static; }
+.scene-layer .panel.warm-m { visibility: hidden; }
 /* V13c: inside an open frame the warmed panel is clipped to it, so the open scene's scroll box never grows for a moment */
 .scene-layer:not(.warming) .panel.warm { bottom: 0; overflow: hidden; }
 /* the wall's blur, drawn once on a small square in the same invisible layer, so the GPU program for it exists before the
@@ -714,7 +715,7 @@ html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); an
 /* V13a: the roads march on the map's SMIL clock (mapClock in js/board.js) */
 .map-text { fill: var(--ink); font-family: var(--font-ui); font-size: 17px; font-weight: 700; letter-spacing: 0.05em; }
 .map-text.small { fill: var(--ink-soft); font-size: 16px; font-weight: 500; }
-.map-city { fill: var(--wax); stroke: var(--parchment); stroke-width: 2; }
+
 /* owner-10: the zeppelin, painted: a brass-and-oak hull lit from above, a wax-red Horde pennant, a soft shadow on the map */
 .zep-shadow { fill: var(--ink); opacity: 0.18; }
 .zep-hull { fill: var(--brass-dim); stroke: var(--ink); stroke-width: 1.1; }
@@ -920,7 +921,7 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .wheel-node.has-crest circle { fill: var(--shade-mid); }
 .wheel-node.has-crest text { paint-order: stroke; stroke: var(--oak-0); stroke-width: 3px; }
 .beam { position: absolute; z-index: 0; top: -44px; left: -2%; width: 104%; height: clamp(52px, 7vw, 96px); object-fit: cover; object-position: center top; pointer-events: none; filter: drop-shadow(0 8px 10px var(--shadow)); }
-main.has-beam { margin-top: 44px; }
+main.has-beam, main.beam-soon { margin-top: 44px; }
 
 .tile-body { color: var(--cream); }
 .tile-line b, .viz-list b { color: var(--cream); }
@@ -1321,8 +1322,8 @@ svg.emb .ehl { stroke: var(--cream); stroke-width: 1.2; opacity: 0.7; }
 svg.emb .es { fill: var(--ea); opacity: 0; }
 svg.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; }
 .crest-mark { width: 1.45em; height: 1.45em; flex: none; display: inline-block; vertical-align: -0.38em; object-fit: contain; filter: drop-shadow(0 1px 1px var(--shadow)); }
-.crest-stack { display: inline-flex; vertical-align: middle; }
-.crest-stack .crest-mark + .crest-mark { margin-left: -0.55em; }
+
+
 
 /* the dates: one emblem per event, lit while open, wax-sealed once past, an ember on the next */
 .rail::before { background: linear-gradient(180deg, var(--brass) 0 var(--prog, 0%), var(--grain) var(--prog, 0%)); width: 3px; left: 15px; top: 18px; bottom: 18px; }
@@ -1411,7 +1412,7 @@ svg.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; 
 .su-keg svg { width: 100%; height: 44px; display: block; }
 .keg-pint { stroke: var(--oak-0); stroke-width: 1.4; }
 .keg-pint.in { fill: var(--ok); } .keg-pint.maybe { fill: var(--warn); } .keg-pint.out { fill: var(--wax); } .keg-pint.none { fill: var(--oak-3); }
-.keg-foam { fill: var(--cream); opacity: 0.9; }
+
 
 /* the peers in a claude.ai room, the pager, fallbacks: small shields and crests, not dots */
 .pager button .crest-mark { width: 22px; height: 22px; opacity: 0.45; transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
@@ -1514,7 +1515,7 @@ svg.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; 
 /* phone behaviour (spec 4): no blue tap box, no long-press callouts on controls, no text inflation on rotation */
 html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html.scene-open { overscroll-behavior: none; }
-.tile, .tab, .bb, .bchip, .flip, .tilt, .emblem-box img, .close, .lib-tool, .cat, .ex, .tonight-link, .clock, .pager button { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.tile, .tab, .bb, .flip, .tilt, .emblem-box img, .close, .lib-tool, .cat, .ex, .tonight-link, .clock, .pager button { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 input, select, textarea { font-size: max(16px, 1em); }
 /* fluid root type (layout 3): 16 px to about 2000 px wide, then up to 22 px on the widest screens */
 html { font-size: clamp(16px, 0.25vw + 12px, 22px); }
@@ -1568,13 +1569,13 @@ html.scene-open .tile-sheen { visibility: hidden; }
 @media (min-width: 1100px) and (max-height: 820px) {
   .wrap { padding-top: 8px; padding-bottom: 6px; gap: 8px; }
   .hero h1 { font-size: 2rem; }
-  main.has-beam { margin-top: 34px; }
+  main.has-beam, main.beam-soon { margin-top: 34px; }
   .beam { top: -34px; height: 46px; }
   .clock { padding-top: 2px; padding-bottom: 2px; }
   .wrap { gap: 4px; padding-top: 4px; }
   .wall { row-gap: 8px; }
   .hero h1 { font-size: 1.75rem; }
-  main.has-beam { margin-top: 28px; margin-bottom: 2px; }
+  main.has-beam, main.beam-soon { margin-top: 28px; margin-bottom: 2px; }
   .beam { top: -28px; height: 40px; }
 }
 /* layout 11: names in the five tile line up, one name per column */
@@ -1728,7 +1729,7 @@ html.scene-open .tile-sheen { visibility: hidden; }
   .mini-clock { padding-top: calc(4px + env(safe-area-inset-top, 0px)); padding-bottom: 4px; font-size: 0.875rem; }
   /* denser tiles, two to a row, icon first */
   main { margin: 4px 0 6px; }
-  main.has-beam { margin-top: 20px; }
+  main.has-beam, main.beam-soon { margin-top: 20px; }
   .beam { top: -20px; height: 30px; }
   .wall-plate { inset: -6px; }
   .wall { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; grid-auto-rows: auto; align-items: stretch; }
