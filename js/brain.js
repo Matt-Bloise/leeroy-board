@@ -6,6 +6,14 @@
    - V15 (2026-10-30, board/V15-LAUNCH-SPEC.md 5): the launch-night state (queue, in, done) goes the same way as a third kind;
      the Worker keeps it per key and mirrors it as `launch` rows in GET /api/state. Without a Worker, a key, or against the
      Worker deployed before this change (which answers 400), setLaunch reports local: the page keeps the state on the device.
+   - M0 (2026-10-30, notes/VISION-MOBILE.md section 3): sendProbe posts one capability report (js/probe.js) to POST /probe: a closed
+     list of yes/no answers, bounded numbers and three fixed words (engine family, platform family, the kind), nothing typed and no
+     user agent text. A known board key, when this browser has one, only picks the Worker's limit. Against a Worker without the
+     route (404), without a Worker, or offline, the report stays on this device and sendProbe says so (local: true).
+   - Party sheet Phase 0 (2026-10-30, notes/VISION-PARTY-SHEET.md 5.1 to 5.4): GET and POST /api/sheet (one field of the key's own
+     sheet per call; a value only from the lists the page hands sheetVocab(), built from the board's own data) and POST /api/dispatch
+     (the asker's answered asks and their yes). The mirror's party rows (what each person left visible) ride in GET /api/state. A
+     Worker without the routes answers 404: the sheet then stays on the device and a dispatch says it is not switched on.
    - The key arrives once in the address bar (#k=<key>&signups from "My board link" on the Sign-ups card); this file runs
      before the board and the gate, stores it as board-key and takes it out of the address bar at once.
    - Where it talks: relative /api on Discord's proxy (*.discordsays.com), the workers.dev URL on the public host, relative
@@ -15,8 +23,26 @@
 const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"]; /* V15: the launch-night state */
+/* M0: the same table as PROBE_SHAPE in cloudflare/worker/src/brain.js (cloudflare/test/probe.test.mjs fails when they differ).
+   "bool" is true or false, [lo, hi] a whole number in that range, a list of words a closed set. */
+const PROBE = {
+  kind: ["probe"], v: [1, 1],
+  engine: ["webkit", "blink", "gecko", "other"],
+  platform: ["ios", "android", "windows", "mac", "linux", "other"],
+  discordHost: "bool", discordUa: "bool", framed: "bool", standalone: "bool",
+  vibrateApi: "bool", vibrateRan: "bool", switchHaptic: "bool",
+  buzzRoute: [0, 3], buzzFelt: [0, 3],
+  orientationApi: "bool", motionApi: "bool", motionNeedsPermission: "bool", motionPermission: [0, 4],
+  orientationCount3s: [0, 5000], motionCount3s: [0, 5000],
+  touchPoints: [0, 32], coarsePointer: "bool", hoverNone: "bool", pointerEvents: "bool",
+  screenW: [0, 10000], screenH: [0, 10000], viewW: [0, 10000], viewH: [0, 10000], dpr100: [25, 1000], visualViewportApi: "bool",
+  safeTop: [0, 400], safeRight: [0, 400], safeBottom: [0, 400], safeLeft: [0, 400],
+  reducedMotion: "bool", saveData: "bool", hdrScreen: "bool", wideGamut: "bool", batteryApi: "bool", wakeLock: "bool",
+};
 const POLL_MS = 15000, PING_MS = 45000, WS_RETRY_MS = 120000, SLOW_MS = 30000;
-const B = { key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, subs: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, sent: 0, polls: 0, wsMsgs: 0, launch: [], lPend: null, launchRefused: false };
+/* Phase 0 (2026-10-30): the sheet's fields, the ones that hold a slug, and the slug grammar, as the Worker has them */
+const SHEET = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"], SLUGGED = ["race", "class", "spec_path", "spec_at_40", "plan_zone"], SLUG = /^[a-z0-9-]{1,32}$/, GOALS_MAX = 140, PROF_MAX = 2, DISPATCH_MAX = 3;
+const B = { vocab: null, sheet: null, party: [], sheetOff: false, key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, subs: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, sent: 0, polls: 0, wsMsgs: 0, launch: [], lPend: null, launchRefused: false };
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
@@ -47,8 +73,56 @@ function baseFor() {
 }
 B.base = baseFor();
 
-/* only these bodies ever leave the page: a kind, one answer word from that kind's fixed list, and the mirror version */
-function safe(body) {
+function probeOk(b) {
+  if (!b || typeof b !== "object" || Array.isArray(b)) return false;
+  const keys = Object.keys(PROBE);
+  if (Object.keys(b).length !== keys.length) return false;
+  return keys.every((k) => {
+    const spec = PROBE[k], v = b[k];
+    if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+    if (spec === "bool") return typeof v === "boolean";
+    if (typeof spec[0] === "string") return typeof v === "string" && spec.includes(v);
+    return Number.isInteger(v) && v >= spec[0] && v <= spec[1];
+  });
+}
+/* Phase 0: the lists a sheet value must come from, handed over by the page from its own data (party.json, decide.json,
+   client.json, signups.json); until they arrive no listed field can leave */
+function sheetVocab(v) {
+  const out = {};
+  for (const f of [...SLUGGED, "professions"]) { const l = v && v[f]; if (Array.isArray(l) && l.length <= 64 && l.every((x) => typeof x === "string" && SLUG.test(x))) out[f] = Object.freeze(l.slice()); }
+  out.levelMax = v && Number.isInteger(v.levelMax) && v.levelMax > 0 && v.levelMax <= 60 ? v.levelMax : 60;
+  B.vocab = Object.freeze(out);
+  return Object.keys(out).length > 1;
+}
+const listed = (f, x) => !!(B.vocab && Array.isArray(B.vocab[f]) && B.vocab[f].includes(x));
+function sheetValueOk(f, v) {
+  if (v === null) return true;
+  if (SLUGGED.includes(f)) return typeof v === "string" && SLUG.test(v) && listed(f, v);
+  if (f === "professions") return Array.isArray(v) && v.length <= PROF_MAX && new Set(v).size === v.length && v.every((x) => typeof x === "string" && listed("professions", x));
+  if (f === "level") return Number.isInteger(v) && v >= 1 && v <= (B.vocab ? B.vocab.levelMax : 60);
+  if (f === "launch_state") return LAUNCH.includes(v);
+  if (f === "goals") return typeof v === "string" && Array.from(v).length <= GOALS_MAX && !/[<>]|https?:|www\./i.test(v);
+  return false;
+}
+/* only these bodies ever leave the page: a kind, one answer word from that kind's fixed list, and the mirror version; a sheet
+   write (one field, a listed value, the party toggle); a dispatch (ask ids and the asker's yes) */
+function safe(body, route) {
+  if (route === "/sheet") {
+    const b = body, ok = b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).every((k) => k === "field" || k === "value" || k === "visible") && SHEET.includes(b.field)
+      && (b.visible === undefined || typeof b.visible === "boolean") && (b.value === undefined || sheetValueOk(b.field, b.value)) && (b.value !== undefined || b.visible !== undefined);
+    if (!ok || /\d{17,20}/.test(JSON.stringify(b))) throw new Error("refused: a sheet write carries one field, a value from the board's own lists and the party toggle");
+    return body;
+  }
+  if (body && body.kind === "probe") {
+    if (!probeOk(body)) throw new Error("refused: a capability report carries only its fixed yes/no answers and numbers");
+    return body;
+  }
+  if (route === "/dispatch") {
+    const b = body, ok = b && typeof b === "object" && Object.keys(b).length === 2 && b.yes === true && Array.isArray(b.ids) && b.ids.length >= 1 && b.ids.length <= DISPATCH_MAX
+      && b.ids.every((x) => Number.isInteger(x) && x > 0) && new Set(b.ids).size === b.ids.length;
+    if (!ok) throw new Error("refused: a dispatch carries the asker's ask ids and their yes, nothing else");
+    return body;
+  }
   if (body && body.kind === "ask") {
     const p = body.patch, okAsk = Object.keys(body).every((k) => k === "kind" || k === "patch") && p && typeof p === "object" && typeof p.text === "string" && p.text.length <= 1200
       && Object.keys(p).every((k) => k === "text" || (k === "share" && typeof p.share === "boolean"));
@@ -64,9 +138,9 @@ function safe(body) {
 }
 async function call(method, route, body) {
   const headers = {};
-  if (B.key && (route === "/me" || route === "/intent" || route === "/ask")) headers.Authorization = `Board ${B.key}`;
+  if (B.key && (route === "/me" || route === "/intent" || route === "/ask" || route === "/probe" || route === "/sheet" || route === "/dispatch")) headers.Authorization = `Board ${B.key}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const r = await fetch(`${B.base.http}${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(safe(body)), cache: "no-store", credentials: "omit" });
+  const r = await fetch(`${B.base.http}${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(safe(body, route)), cache: "no-store", credentials: "omit" });
   let data = null; try { data = await r.json(); } catch (e) {}
   return { status: r.status, data };
 }
@@ -93,9 +167,14 @@ function settleLaunch() {
   const p = B.lPend, r = mineLaunch(); if (!p || !r || p.state === "sending" || p.state === "failed" || p.state === "local" || p.state === "saved") return;
   if (r.state === p.value && (!p.at || !r.at || Date.parse(r.at) >= Date.parse(p.at) - 1000)) { p.state = "saved"; emit("launchPending", launchPending()); }
 }
+/* Phase 0: one person's row of the party view (only what they left visible); a name or field that carries an id is dropped */
+const partyRow = (r) => r && typeof r.slug === "string" && SLUG.test(r.slug) && typeof r.name === "string" && r.fields && typeof r.fields === "object" && !/\d{17,20}/.test(JSON.stringify(r));
+const sheetFields = (f) => { const out = {}; for (const k of SHEET) { const e = f && f[k]; if (e && typeof e === "object" && "value" in e) out[k] = { value: e.value, visible: e.visible !== false, source: typeof e.source === "string" ? e.source : "board", at: e.at || null }; } return out; };
+function takeParty(rows) { if (!Array.isArray(rows)) return; B.party = rows.filter(partyRow).map((r) => ({ slug: r.slug, name: r.name, fields: sheetFields(r.fields), updated: r.updated || null })); emit("party", B.party.slice()); }
 function onState(m) {
   if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups)) return false;
   B.ver = m.ver; B.at = m.at || null;
+  takeParty(m.party);
   if (Array.isArray(m.launch)) { B.launch = m.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null })); emit("launch", B.launch.slice()); settleLaunch(); }
   if (!m.signups) return false;
   B.signups = m.signups;
@@ -158,13 +237,63 @@ async function me() {
   settle(); journeyFromMirror(); settleLaunch();
   emit("pending", pending());
   emit("launchPending", launchPending());
-  if (B.me) askRead(); else askEmit();
+  if (B.me) { askRead(); sheetRead(); } else askEmit();
   return B.me;
+}
+/* Phase 0: the key's own sheet (every field with an event, hidden ones too) and the party view; a Worker without the route answers
+   404 and the sheet stays on the device for the visit */
+async function sheetRead() {
+  if (!B.base || !B.key || B.sheetOff) return null;
+  try {
+    const r = await call("GET", "/sheet");
+    if (r.status === 200 && r.data && r.data.sheet) { B.sheet = { fields: sheetFields(r.data.sheet.fields), updated: r.data.sheet.updated || null }; takeParty(r.data.party); emit("sheet", sheetCopy()); return sheetCopy(); }
+    if (r.status === 404 || r.status === 405) { B.sheetOff = true; emit("sheet", null); }
+    else if (r.status === 401) B.keyBad = true;
+  } catch (e) { B.errors++; }
+  return null;
+}
+const sheetCopy = () => (B.sheet ? { fields: JSON.parse(JSON.stringify(B.sheet.fields)), updated: B.sheet.updated } : null);
+/* one field per call: { ok, state: "saved" } once the Worker has the event; local: true when the page keeps it on this device
+   (no Worker, no key, a key the Worker does not know, a Worker without the route, or one that refused the value) */
+async function setSheet(field, value, visible) {
+  const body = { field }; if (value !== undefined) body.value = value; if (visible !== undefined) body.visible = visible;
+  try { safe(body, "/sheet"); } catch (e) { return { ok: false, state: "refused", why: "not on the board's lists" }; }
+  if (!B.base) return { ok: false, local: true, why: "nowhere to send" };
+  if (!B.key || B.keyBad) return { ok: false, local: true, why: B.key ? "key" : "no key" };
+  if (B.sheetOff) return { ok: false, local: true, why: "off" };
+  try {
+    const r = await call("POST", "/sheet", body); B.sent++;
+    if (r.status === 200 && r.data && r.data.ok) {
+      B.sheet = B.sheet || { fields: {}, updated: null };
+      B.sheet.fields[field] = { value: r.data.value === undefined ? null : r.data.value, visible: r.data.visible !== false, source: "board", at: r.data.at || new Date().toISOString() };
+      B.sheet.updated = B.sheet.fields[field].at; emit("sheet", sheetCopy());
+      return { ok: true, state: "saved", at: B.sheet.fields[field].at };
+    }
+    if (r.status === 404 || r.status === 405) { B.sheetOff = true; emit("status", status()); return { ok: false, local: true, why: "off" }; }
+    if (r.status === 401) { B.keyBad = true; return { ok: false, local: true, why: "key" }; }
+    return { ok: false, local: true, why: r.status === 400 ? "refused" : r.status === 429 ? "busy" : "failed" };
+  } catch (e) { B.errors++; return { ok: false, local: true, why: "offline" }; }
+}
+/* Phase 0: the asker's own answered asks go to the party, posted by Leeroy, only on this call (the asker's tap) */
+async function dispatch(ids) {
+  const body = { ids: Array.isArray(ids) ? ids.slice() : [], yes: true };
+  try { safe(body, "/dispatch"); } catch (e) { return { ok: false, why: "refused" }; }
+  if (!B.base) return { ok: false, why: "nowhere" };
+  if (!B.key || B.keyBad) return { ok: false, why: "no key" };
+  try {
+    const r = await call("POST", "/dispatch", body); B.sent++;
+    if (r.status === 200 && r.data && r.data.ok) return { ok: true, id: r.data.id, at: r.data.at };
+    if (r.status === 404 || r.status === 405) return { ok: false, why: "off" };
+    if (r.status === 409) return { ok: false, why: r.data && r.data.error === "already_dispatched" ? "already" : "unanswered" };
+    if (r.status === 429) return { ok: false, why: "limited", retryAfter: Math.max(1, Number(r.data && r.data.retryAfter) || 3600) };
+    if (r.status === 401) { B.keyBad = true; return { ok: false, why: "no key" }; }
+    return { ok: false, why: "failed" };
+  } catch (e) { B.errors++; return { ok: false, why: "offline" }; }
 }
 
 function pending() { const out = {}; for (const [f, p] of Object.entries(B.pend)) out[f] = { value: p.value, state: p.state, ...(p.other ? { other: p.other } : {}), ...(p.error ? { error: p.error } : {}) }; return out; }
 function launchPending() { const p = B.lPend; return p ? { value: p.value, state: p.state, ...(p.error ? { error: p.error } : {}) } : null; }
-function status() { return { via: B.via, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused, launch: B.launch.length, launchPending: launchPending(), launchRefused: B.launchRefused }; }
+function status() { return { via: B.via, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused, launch: B.launch.length, launchPending: launchPending(), launchRefused: B.launchRefused, sheetOff: B.sheetOff, party: B.party.length }; }
 
 async function setRsvp(v) {
   if (!B.base) return { ok: false, why: "nowhere to send" };
@@ -264,6 +393,18 @@ async function ask(text, share) {
   askEmit();
   return { ok: false, why: AK.st === "limited" ? "limited" : AK.err };
 }
+/* M0 (2026-10-30): one capability report. Resolves { ok: true } when the Worker took it, else { ok: false, local: true, why } and the
+   page keeps it on this device: why is "shape" (not the fixed shape), "nowhere" (no Worker on this host), "route" (a Worker without
+   POST /probe yet: 404), "busy" (429), "refused" (the Worker said no) or "offline". Never rejects. */
+async function sendProbe(report) {
+  if (!probeOk(report)) return { ok: false, local: true, why: "shape" };
+  if (!B.base) return { ok: false, local: true, why: "nowhere" };
+  try {
+    const r = await call("POST", "/probe", report); B.sent++;
+    if (r.status === 200) return { ok: true };
+    return { ok: false, local: true, why: r.status === 404 ? "route" : r.status === 429 ? "busy" : "refused", status: r.status };
+  } catch (e) { B.errors++; return { ok: false, local: true, why: "offline" }; }
+}
 function start(handlers) {
   B.h = handlers || {};
   if (B.started) return status();
@@ -279,6 +420,6 @@ function start(handlers) {
   if (typeof addEventListener === "function") addEventListener("focus", () => { if (B.via !== "ws") pollOnce(); });
   return status();
 }
-function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); }
-window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, _state: onState, _poll: pollOnce });
+function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); }
+window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
 })();

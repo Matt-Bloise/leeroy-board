@@ -80,7 +80,7 @@
 .lh-m-when { font-family: var(--font-sc); letter-spacing: 0.04em; color: var(--brass-hi); }
 .lh-m-note { color: var(--cream); }
 .lh-ask { grid-area: ask; margin: 0; padding-top: 8px; border-top: 1px solid var(--edge-hi); font-family: var(--font-body); font-size: var(--step-0); line-height: 1.45; color: var(--cream); }
-.lh-ask .emb { width: 1.3em; height: 1.3em; vertical-align: -0.3em; }
+.lh-ask .emb { width: 1.3em; height: 1.3em; object-fit: contain; vertical-align: -0.3em; }
 /* two columns from 1000 px: the clock and the facts on the left, the states, the list and the ask on the right */
 @media (min-width: 1000px) {
   .lh { --seal: 116px; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); grid-template-areas: "head head" "main side" "ask ask"; gap: 14px 28px; padding: 18px 26px 20px; align-items: start; }

@@ -5,6 +5,8 @@
 (() => {
   const K = window.__boardKit; if (!K) return;
   const $ = (q, r) => (r || document).querySelector(q);
+  const WAXC = { guided: "red", curious: "amber", everything: "green", in: "green", maybe: "amber", late: "amber", out: "red" };
+  const noArt = (e) => { e.target.style.display = "none"; if (e.target.parentNode) e.target.parentNode.classList.add("no-art"); };
   const h = (t, a, ...kids) => { const e = document.createElement(t); for (const [k, v] of Object.entries(a || {})) { if (v == null || v === false) continue; if (k === "text") e.textContent = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v); } for (const c of kids.flat()) if (c != null && c !== false) e.append(c); return e; };
   const mq = (q) => { try { return matchMedia(q); } catch (e) { return { matches: false, addEventListener() {} }; } };
   const reduceMQ = mq("(prefers-reduced-motion: reduce)"), coarse = mq("(hover: none)");
@@ -143,7 +145,7 @@
     if (!row) {
       row = h("div", { class: "tn-seals", id: "tn-seals", role: "group", "aria-label": "How do you want to explore?" }, h("p", { class: "tn-seals-q", text: "How do you want to explore? Press a seal into the page." }),
         h("div", { class: "wx-row" }, ...Object.entries(JR).map(([j, [name, ico, line]]) => h("button", { class: "wx", type: "button", "data-journey": j, "aria-pressed": "false", onclick: () => stamp(j) },
-          h("span", { class: "wx-wax" }, h("span", { class: "wx-ring" }), h("img", { class: "wx-ico", src: `img/icons/${ico}.png`, alt: "", width: 192, height: 192, decoding: "async" }), h("span", { class: "wx-lit" })),
+          h("span", { class: "wx-wax" }, h("img", { class: "wx-blob", src: `img/wax/${WAXC[j]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "wx-ring" }), h("img", { class: "wx-ico", src: `img/icons/${ico}.png`, alt: "", width: 192, height: 192, decoding: "async" }), h("span", { class: "wx-lit" })),
           h("b", { class: "wx-name", text: name }), h("span", { class: "wx-line", text: line })))));
       panel.append(row);
     }
@@ -342,7 +344,7 @@
     const list = (x) => (x[3] ? `${x[1]}: ${x[3].length ? x[3].join(", ") : "nobody yet"}.` : `${x[2]} of ${K.D.party.members.length} have not answered yet.`);
     const seals = items.map((x, i) => h("button", { class: `sh-seal${x[0] === "none" ? " none" : ""}${mine && mine.rsvp === x[0] ? " mine" : ""}${SH.prev[x[0]] != null && SH.prev[x[0]] !== x[2] ? " bump" : ""}`, type: "button", "data-k": x[0], "aria-pressed": "false", style: `--i:${i}`, "aria-label": `${x[1]}: ${x[2]}${mine && mine.rsvp === x[0] ? ", your answer" : ""}. Press to see who.`,
       onclick: (e) => { const me = e.currentTarget; shelfSeals().forEach((s) => s.setAttribute("aria-pressed", String(s === me && s.getAttribute("aria-pressed") !== "true"))); who.textContent = me.getAttribute("aria-pressed") === "true" ? list(x) : ""; snd("stamp"); hap("tap"); } },
-      h("span", { class: "sh-wax" }, x[0] === "none" ? null : h("img", { class: "sh-pint", src: `img/pints/${x[0]}.png`, alt: "", width: 36, height: 36, decoding: "async" }), h("span", { class: "sh-lit" })),
+      h("span", { class: "sh-wax" }, x[0] === "none" ? null : h("img", { class: "sh-blob", src: `img/wax/${WAXC[x[0]]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("img", { class: "sh-pint", src: `img/pints/${x[0]}.png`, srcset: `img/pints/${x[0]}.png 1x, img/pints/${x[0]}@2x.png 2x`, alt: "", width: 36, height: 36, loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "sh-lit" })),
       h("b", { class: "sh-n", text: String(x[2]) }), h("span", { class: "sh-l", text: x[1] })));
     items.forEach((x) => { SH.prev[x[0]] = x[2]; });
     const el = h("div", { class: "su-shelf", id: "su-shelf", role: "group", "aria-label": `Launch night so far: ${items.map((x) => `${x[1]} ${x[2]}`).join(", ")}` }, h("div", { class: "sh-row" }, seals), h("span", { class: "sh-plank", "aria-hidden": "true" }), who);

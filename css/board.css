@@ -904,7 +904,7 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .chip::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(100deg, transparent 35%, var(--slip-sheen) 50%, transparent 65%); transform: translateX(-120%); }
 @media (hover: hover) { .chip:hover::after, .rrow:hover .chip::after { transform: translateX(120%); transition: transform var(--t-hero) var(--ease-oak); } }
 .seal { display: inline-grid; place-items: center; width: 1.3em; height: 1.3em; margin-right: 8px; vertical-align: -0.3em; }
-.seal .emb { width: 100%; height: 100%; --ea: var(--wax); --eh: var(--hi-wax); }
+.seal .emb { width: 100%; height: 100%; }
 .seal.art { background: none; box-shadow: none; width: 1.6em; height: 1.6em; vertical-align: -0.45em; }
 .seal img { width: 100%; height: 100%; display: block; }
 .ledger.stamping .settled-li { animation: stamp var(--t-move) var(--ease-spring) both; animation-delay: calc(var(--di, 0) * var(--stagger)); }
@@ -1195,7 +1195,7 @@ main.has-beam { margin-top: 44px; }
 .page-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-family: var(--font-ui); font-size: var(--fs-small); letter-spacing: 0.05em; color: var(--l-dim); }
 .page-meta b { color: var(--cream); font-weight: 700; }
 .wax { display: inline-flex; align-items: center; gap: 8px; }
-.wax .emb { width: 26px; height: 26px; --ea: var(--sc, var(--wax)); --eh: var(--edge-hi); --el: var(--oak-0); filter: drop-shadow(0 1px 2px var(--shadow)); }
+.wax .emb { width: 26px; height: 26px; filter: drop-shadow(0 1px 2px var(--shadow)); }
 .page-head .copy { color: var(--cream); background: var(--glass); border-color: var(--brass-dim); }
 .page-head .lib-btn { color: var(--cream); background: var(--glass); border-color: var(--grain); }
 .blurb { font-size: var(--step-1); line-height: 1.45; color: var(--ink); max-width: 60ch; }
@@ -1226,7 +1226,7 @@ main.has-beam { margin-top: 44px; }
 .unknown { display: grid; gap: 8px; padding: 14px 18px; border-radius: 4px; border: 2px dashed var(--brass-dim); background: var(--parchment-2); }
 .unknown h4 { display: flex; align-items: center; gap: 10px; margin: 0; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); }
 .unknown ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink); }
-.emb.pend { width: 24px; height: 24px; --eb: var(--seal-pending); --el: var(--ink); filter: drop-shadow(0 1px 2px var(--shadow)); }
+.emb.pend { width: 24px; height: 24px; opacity: 0.8; filter: saturate(0.7) drop-shadow(0 1px 2px var(--shadow)); }
 .ptabs { display: flex; flex-wrap: wrap; gap: 6px; }
 .ptab { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 8px 14px 6px; border-radius: 8px 8px 2px 2px; color: var(--ink); text-decoration: none; font-family: var(--font-ui); letter-spacing: 0.04em; background: var(--parchment-2) url("../img/parchment-tile.jpg") center / 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 2px 6px var(--wear); border-bottom: 2px solid var(--ink-line); }
 @media (hover: hover) { .ptab:hover { color: var(--wax); } }
@@ -1305,21 +1305,21 @@ main.has-beam { margin-top: 44px; }
 .ttc-x { position: absolute; right: 8px; top: 8px; display: none; min-height: 32px; padding: 2px 10px; font: inherit; color: var(--tt-text); background: transparent; border: 1px solid var(--tt-edge); border-radius: 999px; cursor: pointer; }
 .ttc.sheetmode .ttc-x { display: inline-block; position: static; margin-top: 10px; min-height: 44px; width: 100%; }
 /* ---------- V11: drawn emblems, stamps, crests as marks, scene ornaments ---------- */
-.emb { width: 1.3em; height: 1.3em; flex: none; display: inline-block; vertical-align: -0.28em; overflow: visible; --eb: var(--brass); --ea: var(--wax); --el: var(--ink); --eh: var(--parchment); }
-.emb .eb { fill: var(--eb); stroke: var(--el); stroke-width: 1.1; stroke-linejoin: round; }
-.emb .ea { fill: var(--ea); stroke: var(--el); stroke-width: 0.9; stroke-linejoin: round; }
-.emb .ed { fill: var(--el); }
-.emb .ee { fill: var(--light-warm); opacity: 0; }
-.emb .eh { fill: var(--eh); stroke: var(--el); stroke-width: 0.8; stroke-linejoin: round; }
-.emb .el, .emb .ek, .emb .elb, .emb .edl, .emb .ehl { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-.emb .el { stroke: var(--el); stroke-width: 1.3; }
-.emb .ek { stroke: var(--el); stroke-width: 2.3; }
-.emb .elb { stroke: var(--brass-hi); stroke-width: 1.1; }
-.emb .edl { stroke: var(--el); stroke-width: 1.2; stroke-dasharray: 1.2 1.7; }
-.emb .ehl { stroke: var(--cream); stroke-width: 1.2; opacity: 0.7; }
-.emb .es { fill: var(--ea); opacity: 0; }
-.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; }
-.on-oak .emb, .emb.on-oak { --el: var(--oak-0); }
+.emb { width: 1.3em; height: 1.3em; flex: none; display: inline-block; vertical-align: -0.28em; object-fit: contain; overflow: visible; --eb: var(--brass); --ea: var(--wax); --el: var(--ink); --eh: var(--parchment); }
+/* the painted emblems are images; only the onerror fallback glyph (an inline svg) still reads the variables below */
+svg.emb .eb { fill: var(--eb); stroke: var(--el); stroke-width: 1.1; stroke-linejoin: round; }
+svg.emb .ea { fill: var(--ea); stroke: var(--el); stroke-width: 0.9; stroke-linejoin: round; }
+svg.emb .ed { fill: var(--el); }
+svg.emb .ee { fill: var(--light-warm); opacity: 0; }
+svg.emb .eh { fill: var(--eh); stroke: var(--el); stroke-width: 0.8; stroke-linejoin: round; }
+svg.emb .el, svg.emb .ek, svg.emb .elb, svg.emb .edl, svg.emb .ehl { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+svg.emb .el { stroke: var(--el); stroke-width: 1.3; }
+svg.emb .ek { stroke: var(--el); stroke-width: 2.3; }
+svg.emb .elb { stroke: var(--brass-hi); stroke-width: 1.1; }
+svg.emb .edl { stroke: var(--el); stroke-width: 1.2; stroke-dasharray: 1.2 1.7; }
+svg.emb .ehl { stroke: var(--cream); stroke-width: 1.2; opacity: 0.7; }
+svg.emb .es { fill: var(--ea); opacity: 0; }
+svg.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; }
 .crest-mark { width: 1.45em; height: 1.45em; flex: none; display: inline-block; vertical-align: -0.38em; object-fit: contain; filter: drop-shadow(0 1px 1px var(--shadow)); }
 .crest-stack { display: inline-flex; vertical-align: middle; }
 .crest-stack .crest-mark + .crest-mark { margin-left: -0.55em; }
@@ -1328,10 +1328,10 @@ main.has-beam { margin-top: 44px; }
 .rail::before { background: linear-gradient(180deg, var(--brass) 0 var(--prog, 0%), var(--grain) var(--prog, 0%)); width: 3px; left: 15px; top: 18px; bottom: 18px; }
 .stop { grid-template-columns: 34px minmax(0, 1fr); }
 .stop-mark { position: relative; z-index: 1; width: 34px; height: 34px; display: grid; place-items: center; margin-top: 0; }
-.stop-mark .emb { width: 34px; height: 34px; --eb: var(--parchment-2); --ea: var(--brass-dim); filter: drop-shadow(0 1px 0 var(--edge-hi)) drop-shadow(0 2px 2px var(--wear)); }
-.stop.next .stop-mark .emb, .stop.open .stop-mark .emb { --eb: var(--brass-hi); --ea: var(--wax); filter: drop-shadow(0 0 6px var(--candle)) drop-shadow(0 2px 2px var(--wear)); }
-.stop.past .stop-mark .emb { --eb: var(--parchment-2); --ea: var(--grain); opacity: 0.7; }
-.stop-seal { position: absolute; right: -6px; bottom: -4px; width: 17px; height: 17px; --ea: var(--wax); --el: var(--ink); --eh: var(--hi-wax); }
+.stop-mark .emb { width: 34px; height: 34px; filter: drop-shadow(0 1px 0 var(--edge-hi)) drop-shadow(0 2px 2px var(--wear)); }
+.stop.next .stop-mark .emb, .stop.open .stop-mark .emb { filter: drop-shadow(0 0 6px var(--candle)) drop-shadow(0 2px 2px var(--wear)); }
+.stop.past .stop-mark .emb { opacity: 0.7; filter: saturate(0.6) drop-shadow(0 1px 0 var(--edge-hi)) drop-shadow(0 2px 2px var(--wear)); }
+.stop-seal { position: absolute; right: -6px; bottom: -4px; width: 17px; height: 17px; }
 .stop-ember { position: absolute; left: 50%; top: 2px; width: 8px; height: 8px; margin-left: -4px; pointer-events: none; opacity: 0; background: radial-gradient(closest-side, var(--light-warm), var(--candle) 60%, transparent); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
 .stop .label.state { display: inline-flex; align-items: center; gap: 6px; }
 .stop.open .label.state { color: var(--ink); font-weight: 700; text-decoration: underline 2px var(--wax); text-underline-offset: 5px; }
@@ -1360,10 +1360,10 @@ main.has-beam { margin-top: 44px; }
 .chip.stamp .emb { width: 1.6em; height: 1.6em; margin: -0.35em 0 -0.35em -0.5em; filter: drop-shadow(0 1px 1px var(--shadow)); }
 .chip.stamp.board { border-color: var(--brass); }
 .chip.stamp.board .emb { --ea: var(--wax); --eh: var(--hi-wax); }
-.chip.stamp.chat .emb { --eb: var(--parchment); --el: var(--oak-0); --ea: var(--ink-soft); }
-.chip.stamp.declared .emb { --eb: var(--brass); --ea: var(--wax); --eh: var(--parchment); --el: var(--oak-0); }
+.chip.stamp.chat .emb { filter: grayscale(0.6) brightness(1.05) drop-shadow(0 1px 1px var(--shadow)); }
+.chip.stamp.declared .emb { filter: drop-shadow(0 1px 1px var(--shadow)); }
 .chip.stamp.open-lock { border-color: var(--warn); color: var(--warn); }
-.chip.stamp.open-lock .emb { --eb: var(--warn); --el: var(--oak-0); }
+.chip.stamp.open-lock .emb { filter: sepia(0.5) saturate(1.4) drop-shadow(0 1px 1px var(--shadow)); }
 .slip .chip.stamp.open-lock, .slip .chip.stamp.open-lock .emb { color: var(--ink); }
 .label.srctag { display: inline-flex; align-items: center; gap: 6px; justify-self: start; font-variant: small-caps; color: var(--ink-soft); }
 .label.srctag .emb { width: 1.45em; height: 1.45em; filter: drop-shadow(0 1px 0 var(--edge-hi)); }
@@ -1390,8 +1390,7 @@ main.has-beam { margin-top: 44px; }
 .seats { display: none; }
 @media (min-width: 1000px) and (min-height: 850px) { .seats { display: block; } }
 .seats svg { display: block; width: 100%; max-width: 640px; height: auto; margin: 0 auto; }
-.seat-table { fill: var(--oak-2); stroke: var(--oak-0); stroke-width: 3; }
-.seat-plank { fill: none; stroke: var(--grain); stroke-width: 1.5; }
+.seat-table-img { pointer-events: none; }
 .seat-name { fill: var(--ink); font-family: var(--font-ui); font-size: 15px; font-weight: 700; text-anchor: middle; }
 .seat-ans { fill: var(--ink-soft); font-family: var(--font-ui); font-size: 14px; text-anchor: middle; letter-spacing: 0.04em; }
 .seat-ans.in { fill: var(--seal-confirmed, var(--ink)); }
@@ -1413,37 +1412,27 @@ main.has-beam { margin-top: 44px; }
 .keg-pint { stroke: var(--oak-0); stroke-width: 1.4; }
 .keg-pint.in { fill: var(--ok); } .keg-pint.maybe { fill: var(--warn); } .keg-pint.out { fill: var(--wax); } .keg-pint.none { fill: var(--oak-3); }
 .keg-foam { fill: var(--cream); opacity: 0.9; }
-.keg-handle { fill: none; stroke: var(--brass-dim); stroke-width: 2.2; }
-.keg-pint.none { stroke: var(--brass-dim); }
 
 /* the peers in a claude.ai room, the pager, fallbacks: small shields and crests, not dots */
 .pager button .crest-mark { width: 22px; height: 22px; opacity: 0.45; transition: opacity var(--t-micro) var(--ease-oak), transform var(--t-micro) var(--ease-oak); }
 .pager button[aria-current="true"] .crest-mark { opacity: 1; transform: scale(1.2); }
 
 /* the library's shelves: an engraved icon per category */
-.cat-ico { width: 28px; height: 28px; --eb: var(--brass); --ea: var(--wax); --el: var(--ink); filter: drop-shadow(0 1px 0 var(--edge-hi)); }
-.cat[aria-pressed="true"] .cat-ico { --eb: var(--brass-hi); }
+.cat-ico { width: 28px; height: 28px; object-fit: contain; filter: drop-shadow(0 1px 0 var(--edge-hi)); }
+.cat[aria-pressed="true"] .cat-ico { filter: brightness(1.12) drop-shadow(0 1px 0 var(--edge-hi)); }
 
 /* buffs: each rule group a designed card with its own mark */
 .brules { border-left-width: 0; padding: 6px 10px 6px 8px; border: 1px solid var(--brass-dim); border-radius: 4px; background: var(--parchment); box-shadow: 0 1px 4px var(--wear); }
 .brules summary { display: flex; align-items: center; gap: 8px; }
 .brules summary .emb { width: 1.6em; height: 1.6em; }
 .brules.forever summary .emb { --ea: var(--wax); --eh: var(--hi-wax); }
-.brules.classic summary .emb { --eb: var(--parchment-2); --ea: var(--brass-dim); }
+.brules.classic summary .emb { filter: saturate(0.6) brightness(0.95); }
 .brules.unknown { border-style: solid; border-color: var(--wax); background: var(--parchment-2); }
-.brules.unknown summary .emb { --eb: var(--parchment); --el: var(--wax); }
+.brules.unknown summary .emb { opacity: 0.75; filter: saturate(0.7); }
 .brules > ul { margin: 6px 0 4px; }
 
 /* each scene's own ornament: its emblem drawn large in ink in the parchment's corner, with its own small motion */
-.sheet-orn { position: absolute; z-index: 2; right: 26px; bottom: 18px; width: clamp(150px, 19vw, 250px); height: auto; pointer-events: none; opacity: 0.13; mix-blend-mode: multiply; --eb: transparent; --ea: transparent; --eh: transparent; --el: var(--ink); }
-.sheet-orn .ek, .sheet-orn .el, .sheet-orn .elb, .sheet-orn .edl { stroke: var(--ink); }
-.sheet-orn .ed, .sheet-orn .ef, .sheet-orn .es, .sheet-orn .ee { fill: var(--ink); stroke: none; }
-/* V13a: the emblem svgs sit inside the ornament div now, so the ink-only colours are set on them as well (.emb sets its own) */
-.sheet-orn .emb { --eb: transparent; --ea: transparent; --eh: transparent; --el: var(--ink); }
-.sheet-orn .ef { opacity: 0.6; }
-.sheet-orn .el, .sheet-orn .elb, .sheet-orn .edl { stroke-width: 0.55; }
-.sheet-orn .ek { stroke-width: 1.1; }
-.sheet-orn .eb, .sheet-orn .ea, .sheet-orn .eh { stroke-width: 0.5; }
+.sheet-orn { position: absolute; z-index: 2; right: 26px; bottom: 18px; width: clamp(150px, 19vw, 250px); height: auto; pointer-events: none; opacity: 0.13; mix-blend-mode: multiply; }
 .rsvp-bar.su-keg { display: block; height: auto; background: none; box-shadow: none; border-radius: 0; overflow: visible; }
 .su-keg svg { width: auto; max-width: 100%; height: 40px; }
 .wall.settle .keg-fill { animation: pip var(--t-hero) var(--ease-oak) backwards; animation-delay: calc(var(--t-move) + var(--pi, 0) * var(--stagger) * 2); transform-box: fill-box; transform-origin: 50% 100%; }
@@ -1455,12 +1444,9 @@ main.has-beam { margin-top: 44px; }
 .stop.next .stop-ember + .stop-ember, .stop.open .stop-ember + .stop-ember { animation-delay: -1.4s; margin-left: 2px; }
 @keyframes ember { 0% { opacity: 0; transform: translate(0, 14px) scale(1); } 15% { opacity: 1; } 55% { opacity: 0.8; transform: translate(3px, -4px) scale(0.75); } 100% { opacity: 0; transform: translate(-2px, -16px) scale(0.3); } }
 /* V13a: */
-.glint { position: absolute; inset: 0; pointer-events: none; }
-.glint * { visibility: hidden; }
-.stop-mark .glint .es, .orn-timeline .glint .es { visibility: visible; opacity: 1; }
-.stop-mark .has-glint .es, .orn-timeline .has-glint .es { visibility: hidden; }
-.stop.next .stop-mark .glint, .stop.open .stop-mark .glint, .orn-timeline .glint { animation: sand 1.8s linear infinite; }
-@keyframes sand { 0%, 100% { opacity: 0; } 20%, 80% { opacity: 1; } }
+/* the lit hourglass: its painted sand glows on the one image (a soft drop-shadow and brightness pulse; reduced motion switches every animation off) */
+.stop.next .stop-mark .emb-hourglass, .stop.open .stop-mark .emb-hourglass { animation: sand 1.8s linear infinite; }
+@keyframes sand { 0%, 100% { filter: brightness(1) drop-shadow(0 0 4px var(--candle)) drop-shadow(0 2px 2px var(--wear)); } 50% { filter: brightness(1.18) drop-shadow(0 0 9px var(--light-warm)) drop-shadow(0 2px 2px var(--wear)); } }
 /* the open stop's candle glow: a warm halo whose opacity breathes, over the still drop shadow (was an animated filter) */
 .stop.open .stop-mark::before { content: ""; position: absolute; inset: -9px; border-radius: 50%; background: radial-gradient(closest-side, var(--light-warm), var(--candle) 45%, transparent); opacity: 0.2; pointer-events: none; animation: lit 3.2s linear infinite; }
 @keyframes lit { 0%, 100% { opacity: 0.12; } 50% { opacity: 0.55; } }
@@ -1478,26 +1464,19 @@ main.has-beam { margin-top: 44px; }
 /* V13a: the ornament is a div (.sheet-orn) holding a div that moves (.orn-in) and the emblem's svg; the motions run on the
    divs and on the glint copy, all composited */
 .sheet-orn .orn-in { position: relative; transform-origin: 50% 50%; }
-.sheet-orn .orn-art, .sheet-orn .glint { display: block; width: 100%; height: auto; }
+.sheet-orn .orn-art { display: block; width: 100%; height: auto; }
 .orn-five .orn-in { animation: sway 7s linear infinite; transform-origin: 25% 10%; }
 .orn-roads .orn-in { animation: needle 9s linear infinite; }
 .orn-ledger .orn-in { animation: scrawl 5s linear infinite; }
 .orn-signups .orn-in { animation: bob 4s linear infinite; }
 .orn-legacy .orn-in, .orn-buffs .orn-in { animation: breathe 6s linear infinite; }
-.orn-racials .glint .ee, .orn-librarian .glint .ef, .orn-tonight .glint .eh, .orn-library .glint .ea { visibility: visible; }
-.orn-racials .has-glint .ee, .orn-librarian .has-glint .ef, .orn-tonight .has-glint .eh, .orn-library .has-glint .ea { visibility: hidden; }
-.orn-racials .glint .ee { opacity: 1; }
-.orn-racials .glint { animation: eyes 4s linear infinite; }
-.orn-librarian .glint { animation: flicker 1.4s linear infinite; transform-origin: var(--gx, 50%) var(--gy, 100%); }
-.orn-tonight .glint, .orn-library .glint { animation: twinkle 3.6s linear infinite; }
+.orn-librarian .orn-art { animation: candle 1.4s linear infinite; }
 @keyframes sway { 0%, 100% { transform: rotate(-1.5deg) skewY(0); } 50% { transform: rotate(1.5deg) skewY(1deg); } }
 @keyframes needle { 0%, 100% { transform: rotate(-5deg); } 30% { transform: rotate(4deg); } 60% { transform: rotate(-2deg); } }
 @keyframes scrawl { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-4px, 2px); } 50% { transform: translate(2px, -1px); } 75% { transform: translate(-2px, 3px); } }
 @keyframes bob { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-4px) rotate(-1.5deg); } }
 @keyframes breathe { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.03); opacity: 0.8; } }
-@keyframes eyes { 0%, 60%, 100% { opacity: 0; } 75% { opacity: 1; } }
-@keyframes flicker { 0%, 100% { transform: scale(1, 1); } 25% { transform: scale(0.94, 1.08); } 50% { transform: scale(1.04, 0.95); } 75% { transform: scale(0.97, 1.05); } }
-@keyframes twinkle { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@keyframes candle { 0%, 100% { opacity: 1; filter: brightness(1); } 25% { opacity: 0.82; filter: brightness(0.92); } 50% { opacity: 1; filter: brightness(1.1); } 75% { opacity: 0.9; filter: brightness(0.96); } }
 .map-walker { pointer-events: none; }
 .map-caption a { color: var(--ink); font-weight: 700; text-decoration-color: var(--wax); text-decoration-thickness: 2px; }
 @media (hover: hover) { .map-caption a:hover { color: var(--ink); font-weight: 700; text-decoration-color: var(--wax); text-decoration-thickness: 2px; } }
@@ -1510,7 +1489,7 @@ main.has-beam { margin-top: 44px; }
 .tn-steps .emb { width: 1.2em; height: 1.2em; }
 .act { display: grid; gap: 6px; justify-items: start; }
 .act-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 18px 6px 12px; border-radius: 6px; background: var(--oak-2); color: var(--cream); font-family: var(--font-ui); font-weight: 700; letter-spacing: 0.04em; text-decoration: none; box-shadow: 0 2px 8px var(--wear), inset 1px 1px 0 var(--edge-hi); }
-.act-btn .emb { width: 1.5em; height: 1.5em; --eb: var(--parchment); --el: var(--oak-0); --ea: var(--brass); }
+.act-btn .emb { width: 1.5em; height: 1.5em; }
 @media (hover: hover) { .act-btn:hover { background: var(--oak-3); } }
 .act-how { margin: 0; color: var(--ink); max-width: 60ch; }
 .key-line { font-size: var(--fs-small); }

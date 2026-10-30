@@ -58,11 +58,31 @@ const EMB = {
   question: [["b", "M12 2.8l8.4 4.6v9.2L12 21.2l-8.4-4.6V7.4z"], ["d", "M12 5.4l6.2 3.4v6.4L12 18.6l-6.2-3.4V8.8z"], ["lb", "M9.8 10.2a2.2 2.2 0 1 1 3.4 1.8c-.8.5-1.2 1-1.2 1.9M12 15.8v.2"]],
 };
 const EMB_LABEL = { names_open: "scroll", sub_active: "hourglass", launch: "horn", raids: "skull" };
-/* emb(name, cls): a fresh inline SVG of one emblem; CSS reaches every part, so a scene can light, seal or animate it */
-function emb(name, cls, label) {
+/* emb(name, cls, label): the ChatGPT-painted emblem as an <img>. The inline SVG built from EMB stays as the onerror fallback only (emb.svg).
+   chips and library are 128 px sets, dates is 192 px; names with no painted file (moon, adventure, tankard, candle, banner, laurel, rune, gear) keep the SVG glyph. */
+const EMB_FILE = {};
+for (const k of ["pin", "voice", "clock", "seal", "quill", "speech", "lock", "ribbon", "question"]) EMB_FILE[k] = ["chips", 128];
+for (const k of ["ticket", "cal", "book", "classes", "dungeons", "leveling", "tradeskills", "pvp", "races", "skull", "systems", "ui"]) EMB_FILE[k] = ["library", 128];
+for (const k of ["hourglass", "scroll", "horn"]) EMB_FILE[k] = ["dates", 192];
+const EMB_DATES = new Set(["hourglass", "scroll", "horn", "skull", "seal"]);
+const EMB_IN_SVG = /(^|\s)(viz-gate|spark-quill)(\s|$)/; /* these sit inside a map or chart svg and get positioned by x/y, so they are an svg <image> */
+function embSvg(name, cls, label) {
   const parts = EMB[name] || EMB.seal;
   return s("svg", { class: `emb emb-${name}${cls ? ` ${cls}` : ""}`, viewBox: "0 0 24 24", ...(label ? { role: "img", "aria-label": label } : { "aria-hidden": "true", focusable: "false" }) }, ...parts.map(([c, d]) => s("path", { class: `e${c}`, d })));
 }
+function emb(name, cls, label, dates) {
+  let spec = EMB_FILE[name];
+  if (dates && EMB_DATES.has(name)) spec = ["dates", 192];
+  if (!spec || /(^|\s)map-mark(\s|$)/.test(cls || "")) return embSvg(name, cls, label);
+  const [set, px] = spec, src = `img/emblems/${set}/${name}.webp`, klass = `emb emb-${name}${cls ? ` ${cls}` : ""}`;
+  if (cls && EMB_IN_SVG.test(cls)) return s("image", { class: klass, href: src, width: px, height: px, ...(label ? { role: "img", "aria-label": label } : { "aria-hidden": "true" }) });
+  const img = h("img", { class: klass, src, width: px, height: px, alt: label || "", loading: "lazy", decoding: "async", ...(label ? {} : { "aria-hidden": "true" }) });
+  /* a painted file that fails to load falls back, once, to the drawn glyph */
+  img.addEventListener("error", () => { try { if (img.parentNode) img.parentNode.replaceChild(embSvg(name, cls, label), img); } catch (e) {} }, { once: true });
+  return img;
+}
+emb.svg = embSvg;
+emb.dates = (name, cls, label) => emb(name, cls, label, true);
 /* a person's mark: their class crest, sized to the text, with the name for screen readers when it stands alone */
 const crestMark = (m, cls = "crest-mark") => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, decoding: "async", title: m.name });
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -90,7 +110,7 @@ function startRoomLadder() {
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
   /* the tier module's first run blocked the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance: it starts after the entrance.
      2026-10-30: the room now draws in a Web Worker where the browser has OffscreenCanvas (room/tier.js), so that cost is off this thread; the page path is the fallback */
-  const bootRoom = () => import("../room/tier.js?v=79778955ae").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  const bootRoom = () => import("../room/tier.js?v=c660b5c191").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
@@ -220,13 +240,8 @@ function eventState(e, now, next) {
   const relText = e.epoch === null ? rel(Date.parse(`${e.date}T12:00:00Z`) / 1000) : rel(e.epoch);
   return next && e.key === next.key ? ["next", `Next on the board, ${relText}`] : ["", relText];
 }
-/* V13a: a lit hourglass runs its sand on a glint copy (CSS .glint), so the loop is an opacity the compositor moves */
-function stopEmblem(name, lit) {
-  const still = emb(name);
-  if (!lit || name !== "hourglass" || reduceMQ.matches) return [still];
-  const g = emb(name, "glint"); still.classList.add("has-glint");
-  return [still, g];
-}
+/* a lit hourglass glows in CSS (.stop.next/.open .emb-hourglass); the stop uses the 192 px dates set */
+function stopEmblem(name) { return [emb.dates(name)]; }
 function renderTimeline() {
   const t = D.timeline, tl = $("#rail"); tl.replaceChildren();
   const now = Date.now() / 1000;
@@ -240,7 +255,7 @@ function renderTimeline() {
     const [cls, label] = eventState(e, now, next);
     const lit = cls === "next" || cls === "open";
     tl.append(h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
-      h("span", { class: "stop-mark", "aria-hidden": "true" }, ...stopEmblem(EMB_LABEL[e.key] || "seal", lit), cls === "past" ? emb("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
+      h("span", { class: "stop-mark", "aria-hidden": "true" }, ...stopEmblem(EMB_LABEL[e.key] || "seal"), cls === "past" ? emb.dates("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
       h("div", { class: "stop-body" },
         h("div", { class: "when", text: eventWhen(e) }),
         h("h3", { text: e.label }),
@@ -483,8 +498,7 @@ function kegRow(states) {
   states.forEach((st, i) => {
     const x = i * 56 + 2;
     const g = s("g", { class: `keg ${st}`, style: `--pi: ${i}`, "data-land": `signups.${st}` });
-    if (st !== "none") g.append(s("image", { class: `keg-img ${st}`, href: `img/pints/${st}.png`, x, y: 0, width: 48, height: 48 }), s("rect", { class: `keg-pint ${st} keg-fill`, x: x + 8, y: 10, width: 28, height: 34, "fill-opacity": 0, style: "fill: none" }));
-    else g.append(s("rect", { class: "keg-pint none", x: x + 8, y: 10, width: 28, height: 34, rx: 3, "fill-opacity": 0, style: "fill: none" }), s("path", { class: "keg-handle", d: `M${x + 36} 18h5a4 4 0 0 1 4 4v8a4 4 0 0 1-4 4h-5` }));
+    g.append(s("image", { class: `keg-img ${st}`, href: `img/pints/${st}@2x.png`, x, y: 0, width: 48, height: 48 }), s("rect", { class: `keg-pint ${st} keg-fill`, x: x + 8, y: 10, width: 28, height: 34, "fill-opacity": 0, style: "fill: none" }));
     svg.append(g);
   });
   return svg;
@@ -1392,12 +1406,11 @@ function renderSeats(S) {
   const ans = (m) => (S.entries || []).find((e) => cleanName(e.name).toLowerCase() === m.name.toLowerCase()) || null;
   const WHEN = { "6pm": "6 PM ET", "8pm": "8 PM ET", later: "later" }, SAY = RSVP_SAY;
   const svg = s("svg", { viewBox: `0 0 ${W} 236`, role: "img", "aria-label": `Launch-night table: ${ms.map((m) => { const a = ans(m); return `${m.name} ${a && a.rsvp ? SAY[a.rsvp] || a.rsvp : "no answer yet"}`; }).join(", ")}` },
-    s("path", { class: "seat-table", d: `M40 78h${W - 80}q12 0 12 12v62q0 12-12 12H40q-12 0-12-12V90q0-12 12-12z` }),
-    s("path", { class: "seat-plank", d: `M30 109h${W - 60}M30 134h${W - 60}` }));
+    s("image", { class: "seat-table-img", href: "img/seats/table.webp", x: 0, y: 58, width: W, height: 135, preserveAspectRatio: "none" }));
   ms.forEach((m, i) => {
     const x = 40 + step * (i + 0.5), a = ans(m), state = a && a.rsvp ? a.rsvp : "none";
     /* V13c: the painted pint for the answer (full, half, late with its watch, empty); no answer is a faint outline */
-    const mug = state === "none" ? s("rect", { class: "seat-mug-none", x: x - 13, y: 84, width: 26, height: 28, rx: 3 }) : s("image", { class: `seat-mug ${state}`, href: `img/pints/${state}.png`, x: x - 18, y: 78, width: 36, height: 36 });
+    const mug = s("image", { class: `seat-mug ${state}`, href: `img/pints/${state}@2x.png`, x: x - 18, y: 78, width: 36, height: 36 });
     svg.append(s("image", { href: `img/crests/${m.class_key}.png`, x: x - 24, y: 14, width: 48, height: 48 }), mug,
       s("text", { class: "seat-name", x, y: 192, text: m.name }),
       s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : "no answer yet" }));
@@ -1680,8 +1693,11 @@ let countToken = 0;
 function countUp(box) {
   const els = [...box.querySelectorAll("b[data-n]")], tok = ++countToken;
   if (reduceMQ.matches || !els.length) return;
-  const t0 = performance.now();
-  const step = (t) => { if (tok !== countToken) return; const k = Math.min(1, Math.max(0, t - t0) / MOTION.count), e = 1 - Math.pow(1 - k, 3); for (const el of els) el.textContent = String(Math.round(Number(el.dataset.n) * e)); if (k < 1) requestAnimationFrame(step); };
+  /* 2026-10-30: the count's clock starts at the first frame it paints, not when it is called. An open that kept the thread busy for
+     50 ms after this call (a slow phone, a loaded machine) let the first frame land past the ease's steep start, so some tallies
+     showed their numbers at once instead of counting up from 0 (harness3 "tallies start at 0" failed on master and the branch alike) */
+  let t0 = null;
+  const step = (t) => { if (tok !== countToken) return; if (t0 === null) t0 = t; const k = Math.min(1, Math.max(0, t - t0) / MOTION.count), e = 1 - Math.pow(1 - k, 3); for (const el of els) el.textContent = String(Math.round(Number(el.dataset.n) * e)); if (k < 1) requestAnimationFrame(step); };
   for (const el of els) el.textContent = "0";
   sfx("tick");
   requestAnimationFrame(step);
@@ -1698,28 +1714,14 @@ const PLAYED = new Set();
 const ON_FIRST = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => ledgerStamps(), timeline: () => replay($("#rail"), "pressing"), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
 const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); KIT.emit("roads-open"); /* the Atlas hook opens on #atlas or ATLAS_DEFAULT */ requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ } };
 /* V11: every scene has its own ornament, its emblem engraved large in the parchment's corner with its own small motion */
-const ORN = { timeline: "hourglass", five: "banner", roads: "adventure", racials: "skull", legacy: "laurel", buffs: "rune", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon", decide: "scroll" };
+const ORN = { timeline: "hourglass", five: "banner", roads: "compass", racials: "skull", legacy: "laurel", buffs: "compass", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon", decide: "scroll" };
 function placeOrnament(key) {
   const sheet = document.querySelector("#scene .sheet"); if (!sheet) return;
   const old = $("#sheet-orn"); if (old && old.parentNode) old.parentNode.removeChild(old);
-  /* V13a: */
-  const art = () => s("svg", { class: "emb orn-art", viewBox: "-2 -2 28 28", "aria-hidden": "true", focusable: "false" }, ...emb(ORN[key] || "seal").childNodes);
-  const still = art(), move = h("div", { class: "orn-in" }, still);
-  const part = ORN_GLINT[key];
-  if (part && !reduceMQ.matches) { const g = art(); g.classList.add("glint"); still.classList.add("has-glint"); move.append(g); requestAnimationFrame(() => glintOrigin(g, part)); }
+  /* buffs shares the compass: ornaments/rune.webp reads as the letter R (see the regenerate note in img/emblems/ornaments/CREDITS.md) */
+  const still = h("img", { class: "orn-art", src: `img/emblems/ornaments/${ORN[key] || "book"}.webp`, width: 400, height: 400, alt: "", loading: "lazy" }), move = h("div", { class: "orn-in" }, still);
   const o = h("div", { id: "sheet-orn", class: `sheet-orn orn-${key}`, "aria-hidden": "true" }, move);
   sheet.append(o); replay(o, "drawing");
-}
-/* the moving parts of an ornament (V13a): sand, eyes, a flame, the stars */
-const ORN_GLINT = { timeline: ".es", racials: ".ee", librarian: ".ef", tonight: ".eh", library: ".ea" };
-/* a flame flickers about its own foot: the glint's transform origin is the parts' bottom centre, in the box's percent */
-function glintOrigin(g, part) {
-  try {
-    const ps = [...g.querySelectorAll(part)]; if (!ps.length) return;
-    let x0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const p of ps) { const b = p.getBBox(); if (!b.width && !b.height) return; x0 = Math.min(x0, b.x); x1 = Math.max(x1, b.x + b.width); y1 = Math.max(y1, b.y + b.height); }
-    g.style.setProperty("--gx", `${(((x0 + x1) / 2 + 2) / 28 * 100).toFixed(1)}%`); g.style.setProperty("--gy", `${((y1 + 2) / 28 * 100).toFixed(1)}%`);
-  } catch (e) {}
 }
 /* the wall's photograph decodes late and used to pop in on the first paint; the plate fades in once the image is decoded (a 1.8 s fallback shows it anyway) */
 (function wallFade() {
@@ -2614,10 +2616,12 @@ const copyChip = (label, text, done) => h("button", { class: "copy", type: "butt
 const linkChip = (v) => { const l = libLink(v); return copyChip(v.kind === "page" ? "Copy link to this page" : v.kind === "results" ? "Copy link to this search" : "Copy link", l.text, l.framed ? "Copied the link token: add it after the board's address." : "Link copied."); };
 const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.");
 
+/* the ranker module, loaded once (Phase 0, 2026-10-30: the Leeroy chamber's follow-ups rank the library index with it too) */
+function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=7f8514dc3a").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
 function libStart() {
   if (LIBS.state !== "idle") return;
   LIBS.state = "loading";
-  LIBS.coreP = import("../vendor/rank-core.js?v=7f8514dc3a").then((m) => (LIBS.core = m)).catch(() => null);
+  libCore();
   libTips();
   let w = null;
   try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=4430a39290", { type: "module" }); } catch (e) { w = null; }
@@ -2744,7 +2748,7 @@ function libRenderRail() {
   const counts = {};
   if (LIBS.view.kind === "results" && LIBS.res) for (const x of LIBS.res.hits) counts[x.category] = (counts[x.category] || 0) + 1;
   const res = LIBS.view.kind === "results" && LIBS.res;
-  const btn = (key, label, n) => h("button", { class: "cat", type: "button", "data-cat": key, "aria-pressed": String(LIBS.cat === key) }, emb(CAT_EMB[key] || "adventure", "cat-ico"), h("span", { text: label }), h("b", { text: nf.format(n) }));
+  const btn = (key, label, n) => h("button", { class: "cat", type: "button", "data-cat": key, "aria-pressed": String(LIBS.cat === key) }, emb(CAT_EMB[key] || "classes", "cat-ico"), h("span", { text: label }), h("b", { text: nf.format(n) }));
   const want = [["", "All", res ? LIBS.res.hits.length : ix.totals.pages], ...ix.categories.map((c) => [c.key, c.title, res ? counts[c.key] || 0 : c.pages])];
   /* V13a: the shelf buttons stay; a keystroke only rewrites their counts and pressed state */
   const have = [...rail.children];
@@ -3503,7 +3507,7 @@ function whenOffTonight(f) { if (SC.open !== "tonight" && SC.want !== "tonight")
 /* V13a warm-up. */
 const WARM = { queue: null, step: null, done: false, ms: 0, scenes: 0 };
 /* V13c: the baked paper is the sheet's paper now; the buff emblems and pints are decoded ahead too */
-const WARM_IMAGES = ["img/paper-baked.jpg", "img/parchment-tile.jpg", "img/board-wall.jpg", "img/map-parchment.jpg", "img/map/zeppelin.png", "img/map/town.png", ...["in", "maybe", "late", "out"].map((k) => `img/pints/${k}.png`), ...["allstats", "armor", "attackpower", "healing", "intellect", "mana", "resistance", "spirit", "stamina", "thorns"].map((k) => `img/buffs/${k}.png`)];
+const WARM_IMAGES = ["img/paper-baked.jpg", "img/parchment-tile.jpg", "img/board-wall.jpg", "img/map-parchment.jpg", "img/map/zeppelin.png", "img/map/town.png", ...["in", "maybe", "late", "out", "none"].map((k) => `img/pints/${k}@2x.png`), ...["scroll", "hourglass", "horn", "skull", "seal"].map((k) => `img/emblems/dates/${k}.webp`), "img/seats/table.webp", ...["allstats", "armor", "attackpower", "healing", "intellect", "mana", "resistance", "spirit", "stamina", "thorns"].map((k) => `img/buffs/${k}.png`)];
 /* the scene layer is wanted for real: the warm-up steps aside at once, and comes back to the scene it lost later */
 function warmStop() {
   WARM.calm = performance.now() + MOTION.move + 300; /* a scene moving in or out is left alone */
@@ -3627,7 +3631,7 @@ async function boot(mode, sdk) {
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 /* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
-Object.assign(KIT, { medalSet, medalLoad, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
+Object.assign(KIT, { medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 /* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image icon. */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

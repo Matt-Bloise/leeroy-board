@@ -48,22 +48,23 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .wx { --w1: #c8574a; --w2: #a8322a; --w3: #5a1712; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; row-gap: 4px; align-content: start; text-align: center; padding: 10px 8px 12px; font: inherit; color: var(--ink); background: none; border: 1px solid transparent; border-radius: 14px; cursor: pointer; min-height: 44px; }
 .wx[data-journey="curious"] { --w1: #d9a64e; --w2: #a8742a; --w3: #5a3a10; }
 .wx[data-journey="everything"] { --w1: #5f8f6a; --w2: #35603f; --w3: #17301e; }
-.wx-wax { position: relative; display: block; width: clamp(84px, 8vw, 136px); aspect-ratio: 1; border-radius: 52% 48% 55% 45% / 47% 55% 45% 53%; background: radial-gradient(circle at 34% 28%, var(--w1), var(--w2) 52%, var(--w3) 100%);
-  box-shadow: inset 0 3px 5px rgba(255, 255, 255, 0.32), inset 0 -6px 10px rgba(0, 0, 0, 0.42), 0 7px 12px rgba(40, 20, 10, 0.45), 0 1px 0 rgba(0, 0, 0, 0.3); transition: box-shadow 300ms var(--ease-oak), filter 300ms var(--ease-oak); }
+.wx-wax { position: relative; display: block; width: clamp(84px, 8vw, 136px); aspect-ratio: 1; border-radius: 50%; transition: transform 300ms var(--ease-oak); }
+.wx-blob { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 6px 6px rgba(40, 20, 10, 0.45)); transition: filter 300ms var(--ease-oak), transform 300ms var(--ease-oak); pointer-events: none; }
+.wx-wax.no-art, .sh-wax.no-art { background: var(--wax); }
 .wx-ico { position: absolute; inset: 17%; width: 66%; height: 66%; border-radius: 50%; object-fit: cover; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.28), 0 -1px 0 rgba(0, 0, 0, 0.4); filter: saturate(0.82) brightness(0.96); }
-.wx-lit { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.28), transparent 38%); }
+.wx-lit { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
 .wx-ring { position: absolute; inset: -4%; border-radius: inherit; border: 2px solid var(--w1); opacity: 0; pointer-events: none; }
 .wx-name { font-family: var(--font-display); font-size: var(--step-2, 1.4rem); margin-top: 6px; line-height: 1.1; }
 .wx-line { font-size: var(--step-0); line-height: 1.3; }
-.wx[aria-pressed="true"] .wx-wax { box-shadow: inset 0 6px 12px rgba(0, 0, 0, 0.55), inset 0 -2px 3px rgba(255, 255, 255, 0.16), 0 1px 0 rgba(255, 255, 255, 0.45); filter: brightness(0.9); }
+.wx[aria-pressed="true"] .wx-blob { filter: brightness(0.82) saturate(1.1) drop-shadow(0 2px 3px rgba(40, 20, 10, 0.5)); transform: scale(0.94); }
 .wx[aria-pressed="true"] { background: var(--cream); border-color: var(--brass); }
 .wx[aria-pressed="true"] .wx-name::after { content: " (chosen)"; font-family: var(--font-body); font-size: 0.55em; opacity: 0.7; }
 .wx:focus-visible { outline: 3px solid var(--wax); outline-offset: 3px; }
-@media (hover: hover) { .wx:not([aria-pressed="true"]):hover .wx-wax { box-shadow: inset 0 3px 5px rgba(255, 255, 255, 0.4), inset 0 -6px 10px rgba(0, 0, 0, 0.42), 0 11px 16px rgba(40, 20, 10, 0.5); } }
+@media (hover: hover) { .wx:not([aria-pressed="true"]):hover .wx-wax { transform: translateY(-2px); } }
 .wx:active .wx-wax { transform: scale(0.92); }
 @media (max-width: 720px) { .wx-row { gap: 6px; } .wx-wax { width: 64px; } .wx-line { display: none; } .wx { padding: 6px 2px; } .wx[aria-pressed="true"] .wx-name::after { display: none; } }
 #panel-tonight:has(.tn-seals) .jr-pick { display: none; }
-@media (prefers-reduced-motion: reduce) { .wx-wax { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .wx-wax, .wx-blob { transition: none; } }
 
 /* The five: class coins in lanes. A coin turns its card; drag it to try another formation. */
 .five-form { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: center; width: 100%; margin: 0 auto 10px; }
@@ -122,22 +123,23 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .su-shelf { --shw: clamp(52px, 6vw, 92px); position: relative; padding: 8px 0 0; margin: 4px auto 14px; max-width: 46rem; }
 .sh-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(6px, 2vw, 28px); justify-items: center; position: relative; z-index: 1; }
 .sh-seal { display: grid; justify-items: center; gap: 2px; min-height: 44px; padding: 2px 4px 6px; background: none; border: 0; color: var(--ink); font: inherit; cursor: pointer; }
-.sh-wax { --w1: var(--wax-hi); --w2: var(--wax); --w3: var(--wax-lo); position: relative; display: block; width: var(--shw); aspect-ratio: 1; border-radius: 52% 48% 55% 45% / 47% 55% 45% 53%; background: radial-gradient(circle at 34% 28%, var(--w1), var(--w2) 52%, var(--w3)); box-shadow: inset 0 3px 5px rgba(255, 255, 255, 0.28), inset 0 -5px 8px rgba(0, 0, 0, 0.4), 0 6px 8px rgba(40, 20, 10, 0.45); transition: transform 300ms var(--ease-oak), box-shadow 300ms var(--ease-oak); }
-.sh-seal[data-k="out"] .sh-wax { --w1: var(--wax); --w2: var(--wax-lo); --w3: var(--oak-0); }
-.sh-seal.none .sh-wax { background: none; box-shadow: inset 0 0 0 2px var(--ink-soft); border-radius: 50%; }
+.sh-wax { position: relative; display: block; width: var(--shw); aspect-ratio: 1; border-radius: 50%; transition: transform 300ms var(--ease-oak); }
+.sh-blob { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 5px 5px rgba(40, 20, 10, 0.45)); transition: filter 300ms var(--ease-oak); pointer-events: none; }
+.sh-seal.none .sh-pint { opacity: 0.55; }
 .sh-pint { position: absolute; inset: 14%; width: 72%; height: 72%; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5)); }
-.sh-lit { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.26), transparent 40%); }
+.sh-lit { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
 .sh-n { font-family: var(--font-display); font-size: var(--step-2, 1.4rem); line-height: 1; }
 .sh-l { font-size: 0.95rem; line-height: 1.2; text-align: center; }
 .sh-seal.mine .sh-l::after { content: " (you)"; font-weight: 700; }
-.sh-seal[aria-pressed="true"] .sh-wax { box-shadow: inset 0 6px 12px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.45); transform: scale(0.94); }
-.sh-seal.none[aria-pressed="true"] .sh-wax { box-shadow: inset 0 0 0 3px var(--ink); }
+.sh-seal[aria-pressed="true"] .sh-wax { transform: scale(0.94); }
+.sh-seal[aria-pressed="true"] .sh-blob { filter: brightness(0.82) saturate(1.1) drop-shadow(0 2px 3px rgba(40, 20, 10, 0.5)); }
+.sh-seal.none[aria-pressed="true"] .sh-pint { opacity: 0.9; }
 .sh-seal.bump .sh-wax { animation: sh-stamp 560ms var(--ease-oak) both; animation-delay: calc(var(--i) * 70ms); }
 @keyframes sh-stamp { 0% { transform: scale(1); } 28% { transform: scale(0.84); } 62% { transform: scale(1.06); } 100% { transform: scale(1); } }
 @media (hover: hover) { .sh-seal:hover .sh-wax { transform: translateY(-3px); } .sh-seal[aria-pressed="true"]:hover .sh-wax { transform: scale(0.94); } }
 .sh-plank { position: absolute; left: 0; right: 0; top: calc(8px + var(--shw) * 0.94); height: 10px; z-index: 0; border-radius: 3px; background: linear-gradient(180deg, rgba(110, 70, 30, 0.55), rgba(70, 42, 16, 0.75)); }
 .sh-who { min-height: 1.5em; margin: 4px 0 0; text-align: center; font-size: 1rem; color: var(--ink); }
-@media (prefers-reduced-motion: reduce) { .sh-wax { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sh-wax, .sh-blob { transition: none; } }
 
 /* Race skills: chips narrow the spin; the row the coin shows is ringed, rows outside the chip step back */
 .rc-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }

@@ -1,0 +1,769 @@
+{
+ "version": 1,
+ "updated": "2026-10-30",
+ "about": "Every action a friend can take, with its board path, its Discord path and the brain write it makes (the mobile plan, step M0). The parity test reads this file: a reference that no longer exists is a failure; an empty cell is a parity gap and is printed, never hidden. A cell is null (empty, a gap), or listed in byDesign with the reason it is meant to be empty. Board refs: scene (a board scene, wall, or device), control (the words for a person), file and proof (a literal that must be in that file under board/). Discord refs: kind slash (command, option), button (customId, source signups-card | outbox | share | launch), modal (customId), message-command (name), mention, card (module, export). Brain refs: route ('METHOD /api/path' in the Worker), kind (an intent kind) or field (a sheet field), client (a BoardBrain function).",
+ "actions": [
+  {
+   "id": "signup.rsvp",
+   "label": "Say whether you are in for launch night (and change it by tapping again)",
+   "group": "Sign-ups",
+   "board": [
+    {
+     "scene": "signups",
+     "control": "#dsu-act buttons with data-rsvp: in, maybe, late, out (needs your own board link)",
+     "file": "js/v13d.js",
+     "proof": "\"data-rsvp\": k"
+    }
+   ],
+   "discord": [
+    {
+     "kind": "button",
+     "customId": "signup:rsvp:in",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:rsvp:maybe",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:rsvp:late",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:rsvp:out",
+     "source": "signups-card"
+    },
+    {
+     "kind": "slash",
+     "command": "signup",
+     "option": "rsvp"
+    }
+   ],
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "signup",
+    "field": "rsvp",
+    "client": "setRsvp"
+   }
+  },
+  {
+   "id": "signup.pack",
+   "label": "Say whether you hold a pack",
+   "group": "Sign-ups",
+   "board": [
+    {
+     "scene": "signups",
+     "control": "#opts-pack radios pack-yes and pack-no (the On this page form: the Activity only, hidden on the open web)",
+     "file": "index.html",
+     "proof": "id=\"opts-pack\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "button",
+     "customId": "signup:pack:yes",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:pack:no",
+     "source": "signups-card"
+    },
+    {
+     "kind": "slash",
+     "command": "signup",
+     "option": "pack"
+    }
+   ],
+   "brain": null,
+   "gapNote": {
+    "brain": "The board's pack answer goes to the Activity's own store; js/brain.js safe() lets only rsvp, journey, launch and ask leave, though the Worker's /intent takes pack."
+   }
+  },
+  {
+   "id": "signup.meet",
+   "label": "Pick or write in a launch-night meeting point",
+   "group": "Sign-ups",
+   "board": [
+    {
+     "scene": "signups",
+     "control": "#opts-meet radios (Valley of Strength, the Crossroads, Write-in), Activity only",
+     "file": "index.html",
+     "proof": "id=\"opts-meet\""
+    },
+    {
+     "scene": "signups",
+     "control": "#meet-place write-in field, Activity only",
+     "file": "index.html",
+     "proof": "id=\"meet-place\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "button",
+     "customId": "signup:meet:vos",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:meet:xroads",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:meet:other",
+     "source": "signups-card"
+    },
+    {
+     "kind": "modal",
+     "customId": "signup:meetmodal"
+    },
+    {
+     "kind": "slash",
+     "command": "signup",
+     "option": "meet"
+    },
+    {
+     "kind": "slash",
+     "command": "signup",
+     "option": "place"
+    }
+   ],
+   "brain": null,
+   "gapNote": {
+    "brain": "Same as pack: the board's meeting point does not reach the brain; the Worker's /intent takes meet."
+   }
+  },
+  {
+   "id": "signup.when",
+   "label": "Say when you get on for launch night",
+   "group": "Sign-ups",
+   "board": null,
+   "discord": [
+    {
+     "kind": "button",
+     "customId": "signup:when:6pm",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:when:8pm",
+     "source": "signups-card"
+    },
+    {
+     "kind": "button",
+     "customId": "signup:when:later",
+     "source": "signups-card"
+    },
+    {
+     "kind": "slash",
+     "command": "signup",
+     "option": "when"
+    }
+   ],
+   "brain": null,
+   "gapNote": {
+    "board": "No control on the board asks when you get on; the Sign-ups scene only shows the answers from Discord.",
+    "brain": "Nothing on the board sends when; the Worker's /intent takes it."
+   }
+  },
+  {
+   "id": "signup.key",
+   "label": "Get your own board link",
+   "group": "Sign-ups",
+   "board": null,
+   "discord": [
+    {
+     "kind": "button",
+     "customId": "signup:key",
+     "source": "signups-card"
+    }
+   ],
+   "brain": {
+    "route": "PUT /api/keys"
+   },
+   "byDesign": {
+    "board": "The link is how the board learns who you are; the board is where it leads."
+   }
+  },
+  {
+   "id": "journey.depth",
+   "label": "Pick how deep to look: Guided, Curious or Everything",
+   "group": "Journey",
+   "board": [
+    {
+     "scene": "wall",
+     "control": "#journey buttons with data-journey: guided, curious, everything",
+     "file": "index.html",
+     "proof": "data-journey=\"guided\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "journey",
+     "option": "choice"
+    }
+   ],
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "journey",
+    "field": "journey",
+    "client": "setJourney"
+   }
+  },
+  {
+   "id": "launch.state",
+   "label": "Say where you are on launch night: in the queue, in the game, done",
+   "group": "Launch night",
+   "board": [
+    {
+     "scene": "wall",
+     "control": "#lh-st-row buttons with data-state: queue, in, done (the launch hero, 24 hours either side of launch)",
+     "file": "js/v15.js",
+     "proof": "\"data-state\": k"
+    }
+   ],
+   "discord": null,
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "launch",
+    "field": "state",
+    "client": "setLaunch"
+   },
+   "gapNote": {
+    "discord": "No slash command or card button sets the launch-night state; the bot only posts lines about it."
+   }
+  },
+  {
+   "id": "sheet.race",
+   "label": "Set your race on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "race"
+   },
+   "gapNote": {
+    "board": "The party sheet UI has not landed on master (M1 waits for it); BoardBrain has no sheet writer yet.",
+    "discord": "The Party card has no buttons and there is no sheet command; the bot's own writes are source discord, not a person's tap."
+   }
+  },
+  {
+   "id": "sheet.class",
+   "label": "Set your class on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "class"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed.",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "sheet.spec_path",
+   "label": "Set your spec on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "spec_path"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed.",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "sheet.spec_at_40",
+   "label": "Set your spec at 40 on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "spec_at_40"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed.",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "sheet.professions",
+   "label": "Set your professions on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "professions"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed.",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "sheet.level",
+   "label": "Set your level on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "level"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed.",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "sheet.plan_zone",
+   "label": "Set where you plan to be on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "plan_zone"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed (a sign-up's meeting point also writes plan_zone, server side).",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "sheet.goals",
+   "label": "Write your goals line on the party sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "goals"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed.",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "sheet.visibility",
+   "label": "Hide or show one line of your sheet",
+   "group": "Party sheet",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/sheet",
+    "field": "race",
+    "note": "visible true or false rides on any field's write"
+   },
+   "gapNote": {
+    "board": "Party sheet UI not landed.",
+    "discord": "No sheet command or card button."
+   }
+  },
+  {
+   "id": "ask.leeroy",
+   "label": "Ask Leeroy a question (and choose whether the answer is also shared)",
+   "group": "Leeroy",
+   "board": [
+    {
+     "scene": "librarian",
+     "control": "#ask-form with #ask-text, #ask-share and Send (needs your own board link)",
+     "file": "js/ask.js",
+     "proof": "id: \"ask-form\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "ask",
+     "option": "question"
+    },
+    {
+     "kind": "slash",
+     "command": "ask",
+     "option": "private"
+    },
+    {
+     "kind": "message-command",
+     "name": "Ask Leeroy"
+    },
+    {
+     "kind": "mention"
+    }
+   ],
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "ask",
+    "client": "ask"
+   }
+  },
+  {
+   "id": "dispatch.send",
+   "label": "Send your answered asks to the party as a Dispatch",
+   "group": "Leeroy",
+   "board": null,
+   "discord": null,
+   "brain": {
+    "route": "POST /api/dispatch"
+   },
+   "gapNote": {
+    "board": "The Dispatch UI has not landed on master; BoardBrain has no dispatch sender yet."
+   },
+   "byDesign": {
+    "discord": "The asker's yes is given on the board (the Dispatch plan); Discord shows the finished Dispatch card."
+   }
+  },
+  {
+   "id": "open.scene",
+   "label": "Open a board page (a scene) from where you are",
+   "group": "Open",
+   "board": [
+    {
+     "scene": "wall",
+     "control": "the wall tiles a.tile[data-scene] and the scene tabs",
+     "file": "index.html",
+     "proof": "data-scene=\"five\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "card",
+     "module": "deeplink.js",
+     "export": "boardButtonRow"
+    },
+    {
+     "kind": "button",
+     "customId": "leeroy:launch",
+     "source": "launch"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "brain": "Opening a page writes nothing."
+   }
+  },
+  {
+   "id": "open.library",
+   "label": "Open a library page or a game tooltip",
+   "group": "Open",
+   "board": [
+    {
+     "scene": "library",
+     "control": "#tile-q search on the wall and #lib-q inside the Library",
+     "file": "index.html",
+     "proof": "id=\"tile-q\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "page",
+     "option": "title"
+    },
+    {
+     "kind": "slash",
+     "command": "tooltip",
+     "option": "name"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "brain": "Reading the library writes nothing."
+   }
+  },
+  {
+   "id": "open.tonight",
+   "label": "Open your Tonight card",
+   "group": "Open",
+   "board": [
+    {
+     "scene": "tonight",
+     "control": "the Next steps tab #tab-tonight",
+     "file": "index.html",
+     "proof": "id=\"tab-tonight\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "tonight"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "brain": "Reading Tonight writes nothing."
+   }
+  },
+  {
+   "id": "open.dates",
+   "label": "See the countdown and every date",
+   "group": "Open",
+   "board": [
+    {
+     "scene": "timeline",
+     "control": "the Dates clock #clock",
+     "file": "index.html",
+     "proof": "id=\"clock\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "countdown"
+    },
+    {
+     "kind": "slash",
+     "command": "dates"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "brain": "Reading the dates writes nothing."
+   }
+  },
+  {
+   "id": "see.party",
+   "label": "See the Party card: who put what on their sheet",
+   "group": "Open",
+   "board": [
+    {
+     "scene": "five",
+     "control": "The five cards #cards",
+     "file": "index.html",
+     "proof": "id=\"cards\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "card",
+     "module": "party-card.js",
+     "export": "partyCardComponents"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "brain": "Reading the party writes nothing; the rows ride in GET /api/state."
+   }
+  },
+  {
+   "id": "see.signups",
+   "label": "See who is coming and where",
+   "group": "Open",
+   "board": [
+    {
+     "scene": "signups",
+     "control": "From Discord #dsu-body",
+     "file": "index.html",
+     "proof": "id=\"dsu-body\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "card",
+     "module": "signups.js",
+     "export": "cardComponents"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "brain": "Reading the sign-ups writes nothing; the rows ride in GET /api/state."
+   }
+  },
+  {
+   "id": "facts.fix",
+   "label": "Tell Leeroy a fact looks wrong",
+   "group": "Leeroy",
+   "board": null,
+   "discord": [
+    {
+     "kind": "message-command",
+     "name": "Fix this fact"
+    }
+   ],
+   "brain": null,
+   "gapNote": {
+    "board": "The board has no way to report a wrong fact."
+   },
+   "byDesign": {
+    "brain": "The bot files the report in its own inbox; the brain is not involved."
+   }
+  },
+  {
+   "id": "fun.quiz",
+   "label": "Pull a pop quiz question",
+   "group": "Chat toys",
+   "board": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "quiz",
+     "option": "reveal"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "board": "A chat game for the channel.",
+    "brain": "Writes nothing."
+   }
+  },
+  {
+   "id": "fun.didyouknow",
+   "label": "Pull a did-you-know fact",
+   "group": "Chat toys",
+   "board": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "didyouknow"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "board": "A chat toy for the channel.",
+    "brain": "Writes nothing."
+   }
+  },
+  {
+   "id": "fun.build",
+   "label": "Open someone's build thread",
+   "group": "Chat toys",
+   "board": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "build",
+     "option": "who"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "board": "The threads live in Discord.",
+    "brain": "Writes nothing."
+   }
+  },
+  {
+   "id": "fun.yell",
+   "label": "Hear the yell",
+   "group": "Chat toys",
+   "board": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "leeroy"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "board": "A chat toy for the channel.",
+    "brain": "Writes nothing."
+   }
+  },
+  {
+   "id": "fun.help",
+   "label": "See what Leeroy does",
+   "group": "Chat toys",
+   "board": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "help"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "board": "The board is its own help; the bot's help lists commands.",
+    "brain": "Writes nothing."
+   }
+  },
+  {
+   "id": "fun.library_threads",
+   "label": "See the reference threads",
+   "group": "Chat toys",
+   "board": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "library"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "board": "The threads live in Discord; the board's Library is the same material.",
+    "brain": "Writes nothing."
+   }
+  },
+  {
+   "id": "device.sensory",
+   "label": "Set sound, music and haptics for this device",
+   "group": "This device",
+   "board": [
+    {
+     "scene": "device",
+     "control": "the Sensory button #sense-btn and its panel",
+     "file": "js/sensory.js",
+     "proof": "id: \"sense-btn\""
+    }
+   ],
+   "discord": null,
+   "brain": null,
+   "byDesign": {
+    "discord": "A setting of the page on this device.",
+    "brain": "Stays on this device."
+   }
+  },
+  {
+   "id": "device.forget",
+   "label": "Clear what this browser remembers about you",
+   "group": "This device",
+   "board": [
+    {
+     "scene": "library",
+     "control": "#lib-forget (Clear my name)",
+     "file": "index.html",
+     "proof": "id=\"lib-forget\""
+    }
+   ],
+   "discord": null,
+   "brain": null,
+   "byDesign": {
+    "discord": "A setting of the page on this device.",
+    "brain": "Clears the local copy and forgets the board key; nothing is written to the brain."
+   }
+  },
+  {
+   "id": "device.probe",
+   "label": "Check what this phone can do and send the result",
+   "group": "This device",
+   "board": [
+    {
+     "scene": "device",
+     "control": "the #probe sheet: Check my phone, Send to Bloise",
+     "file": "js/probe.js",
+     "proof": "id: \"probe-sheet\""
+    }
+   ],
+   "discord": null,
+   "brain": {
+    "route": "POST /api/probe",
+    "client": "sendProbe"
+   },
+   "byDesign": {
+    "discord": "It measures the page on this device; a chat message cannot."
+   }
+  }
+ ]
+}

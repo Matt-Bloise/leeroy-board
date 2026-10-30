@@ -73,7 +73,8 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 .jr-path { margin: 0 0 16px; padding: 14px 18px; display: grid; gap: 8px; background: var(--cream-2); color: var(--ink); border: 1px solid var(--ink-line); border-left: 5px solid var(--wax); border-radius: 6px; box-shadow: 0 4px 14px var(--shadow-soft); }
 .jr-h { margin: 0; font-family: var(--font-display); font-size: var(--step-2); color: var(--ink); }
 .jr-dl { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 1.05rem; }
-.jr-dl-emb { width: 22px; height: 22px; --eb: var(--brass); --ea: var(--wax); --el: var(--ink); }
+.jr-dl-emb { width: 22px; height: 22px; object-fit: contain; vertical-align: -4px; }
+.jr-dl-emb:is(svg) { --eb: var(--brass); --ea: var(--wax); --el: var(--ink); }
 .jr-step { display: grid; gap: 6px; outline-offset: 4px; }
 .jr-n { font-family: var(--font-sc); font-size: 0.95rem; letter-spacing: 0.06em; color: var(--ink-soft); }
 .jr-say { margin: 0; font-size: var(--step-1); line-height: 1.35; max-width: var(--measure); }
@@ -125,7 +126,7 @@ button.cal-day.win { background: var(--hi-brass); }
 .cal-card { margin: 8px 0 0; font-size: 1rem; color: var(--ink); }
 .stop.open .label.state { text-decoration: none; color: var(--wax-lo); }
 .ics { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 40px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
-.ics .emb { width: 18px; height: 18px; --eb: var(--parchment); --ea: var(--wax); --el: var(--ink); --ed: var(--ink-soft); }
+.ics .emb { width: 18px; height: 18px; object-fit: contain; vertical-align: -3px; }
 /* frame leftovers (2026-10-30): from 900 px the calendar button stands at the end of the line before it ("in 6 days"), so Dates fits a 1366x768 frame (it ran 78 px over) */
 @media (min-width: 900px) { .stop-body:has(> .ics) { grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; align-items: center; } .stop-body:has(> .ics) > * { grid-column: 1 / -1; } .stop-body > .label.state:has(+ .ics), .stop-body > .label.state + .ics { grid-column: auto; } }
 @media (min-width: 900px) and (max-height: 820px) { #panel-timeline .rail { gap: 12px; } #panel-timeline .cal-day { min-height: 1.8rem; } #panel-timeline .cal-col { gap: 6px; } }
@@ -168,7 +169,7 @@ button.cal-day.win { background: var(--hi-brass); }
 
 /* ---------- new since you last looked (interaction 5) ---------- */
 .v-seal { display: inline-flex; vertical-align: middle; width: 22px; height: 22px; margin-right: 6px; transition: opacity var(--t-hero) var(--ease-oak), transform var(--t-hero) var(--ease-oak); }
-.v-seal .emb { width: 22px; height: 22px; --ea: var(--wax); --el: var(--ink); --eh: var(--hi-wax); filter: drop-shadow(0 1px 1px var(--wear)); }
+.v-seal .emb { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 1px 1px var(--wear)); }
 .v-seal.v-seen { opacity: 0; transform: scale(0.6); }
 .v-new { box-shadow: inset 3px 0 0 var(--wax); }
 
@@ -259,7 +260,7 @@ button.cal-day.win { background: var(--hi-brass); }
 #dsu-body .tally { column-gap: 11px; }
 #sheet-body #panel-signups .dsu { column-gap: 28px; }
 #dsu-body .tally > h4 { font-size: 1.12rem; gap: 6px; }
-#dsu-body .tally > h4 .emb { width: 1.4em; height: 1.4em; }
+#dsu-body .tally > h4 .emb { width: 1.4em; height: 1.4em; object-fit: contain; }
 #dsu-body .trow-who { gap: 2px 7px; }
 #dsu-body .tally { column-gap: 9px; }
 .dsu-top { column-gap: 10px; }
@@ -384,7 +385,7 @@ button.cal-day.win { background: var(--hi-brass); }
 .cal-wrap > .cal-sum { cursor: pointer; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); min-height: 44px; display: list-item; padding-block: 10px; }
 @media (min-width: 1100px) { .cal-wrap > .cal-sum { display: none; } }
 .cal-key .cal-later { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 4px 10px; font: inherit; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--brass-dim); border-radius: 4px; cursor: pointer; }
-.cal-key .cal-later .emb { position: static; width: 1.3em; height: 1.3em; transform: none; }
+.cal-key .cal-later .emb { position: static; width: 1.3em; height: 1.3em; transform: none; object-fit: contain; }
 .stop.lit .stop-body { background: var(--hi-brass); }
 .cal-day.lit { background: var(--hi-brass); color: var(--ink); }
 

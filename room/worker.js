@@ -4,7 +4,7 @@
 // motion, a tier change, a refresh, the fire's pops) as a message, and takes the room's light position, slow verdicts,
 // start cost, context loss and status back the same way. Nothing here touches the DOM.
 //   new Worker("./worker.js", { type: "module" })   then   { t: "init", canvas, tier, env, motion, launchEpoch, newSignup, timeOrigin }
-import { startRoom } from "./room.js?v=f28908cc4f";
+import { startRoom } from "./room.js?v=30df1642a8";
 
 /* the shared flicker (js/board.js flickBase): the same three octaves on the page's own clock, so the hearth and the card
    highlights flicker together; a crackle's pop comes over as a message with the page's time stamp */

@@ -164,7 +164,7 @@ export async function startTier(host) {
   const viaWorker = (cv, t) => new Promise((res) => {
     let w = null, timer = 0, settled = false, dead = false, mirror = null, info = null, drawn = false;
     const fail = (why) => { S.workerWhy = why; if (settled) return; settled = true; clearTimeout(timer); dead = true; try { if (w) w.terminate(); } catch (e) {} res(null); };
-    try { w = new Worker(new URL("./worker.js?v=8e9683e969", import.meta.url), { type: "module" }); } catch (e) { fail(`no module worker: ${e && e.message}`); return; }
+    try { w = new Worker(new URL("./worker.js?v=6c902d45f5", import.meta.url), { type: "module" }); } catch (e) { fail(`no module worker: ${e && e.message}`); return; }
     timer = setTimeout(() => fail(`the worker did not answer in ${WORKER_UP_MS / 1000} s`), WORKER_UP_MS);
     w.onerror = (e) => { if (!settled) fail(`worker error: ${(e && e.message) || "unknown"}`); else if (room === proxy) lost(); };
     const send = (m) => { if (!dead) w.postMessage(m); };
@@ -198,7 +198,7 @@ export async function startTier(host) {
   });
   /* the room on the page's own thread: the path every browser took before 2026-10-30, and the fallback */
   const viaPage = async (cv, t) => {
-    const { startRoom } = await import("./room.js?v=f28908cc4f");
+    const { startRoom } = await import("./room.js?v=30df1642a8");
     const r = await startRoom({ tier: t, canvas: cv, env: pageEnv(), motion: host.motion, launchEpoch: host.launchEpoch, newSignup: host.newSignup, aim: host.aim, signal: host.signal, onLight: host.onLight, onSlow: (why) => slow(why || "slow frames"), onStartCost: (ms) => { S.startCost = ms; }, onLost: lost });
     r.via = "page"; return r;
   };

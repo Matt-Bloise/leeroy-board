@@ -1,0 +1,77 @@
+/* The Leeroy audience chamber and the Dispatch card (js/chamber.js; notes/VISION-PARTY-SHEET.md 5.4; 2026-10-30). A dark oak stage
+   on the scene's paper: Leeroy top right, the asker bottom left, the talk between; footnotes as wax seals; follow-ups; the letter.
+   Phone first; 44 px targets; reduced motion: no slides, no typing, no bobbing dots. The art is the owner's painted files
+   (img/chamber, img/marks); nothing is drawn here (2026-10-30). */
+#panel-librarian.chamber-on > .act, #panel-librarian.chamber-on > .lede, #panel-librarian.chamber-on > #lib-box, #panel-librarian.chamber-on > #lib-sources, #panel-librarian.chamber-on #ask-out, #panel-librarian.chamber-on .ask-h { display: none; }
+.sheet:has(#panel-librarian.chamber-on:not([hidden])) .sheet-orn { display: none; }
+.ch-start { min-height: 44px; margin: 4px 0 8px; color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
+/* the owner's painted alcove behind the talk (img/chamber/chamber-backdrop.webp), its edges already falling to black */
+.chamber { position: relative; display: grid; gap: 10px; margin: 0 0 12px; padding: 12px; border-radius: 10px; background: linear-gradient(180deg, var(--wood-veil), var(--wood-veil-2)), url("../img/chamber/chamber-backdrop.webp") center 30% / cover no-repeat, var(--oak-0); border: 2px solid var(--brass-dim); box-shadow: inset 0 0 60px var(--black), 0 10px 26px var(--shadow); color: var(--parchment); }
+.ch-stage { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: ". lee" "log log" "you ."; gap: 8px 14px; align-items: end; }
+@media (min-width: 760px) { .ch-stage { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "you log lee"; align-items: stretch; } .ch-lee { align-self: start; } .ch-you { align-self: end; } }
+.ch-lee, .ch-you { margin: 0; display: grid; justify-items: center; gap: 4px; }
+.ch-lee { grid-area: lee; }
+.ch-you { grid-area: you; --cc: var(--c-none); }
+.ch-log { grid-area: log; display: grid; gap: 10px; align-content: center; min-width: 0; }
+/* the painted portraits in a brass ring (the asker's ring in their class colour); a picture that fails to load leaves its name plate alone */
+.ch-frame { position: relative; display: block; }
+.ch-art { display: none; border-radius: 50%; object-fit: cover; box-shadow: 0 8px 18px var(--black); }
+.ch-lee.has-art .ch-art-lee, .ch-you.has-art .ch-art-you { display: block; }
+.ch-art-lee { width: clamp(104px, 22vw, 200px); height: auto; aspect-ratio: 1; border: 3px solid var(--brass); }
+.ch-art-you { width: clamp(88px, 18vw, 168px); height: auto; aspect-ratio: 1; border: 3px solid var(--cc); box-shadow: 0 8px 18px var(--black), 0 0 18px var(--cc); }
+/* the brass name plate */
+.ch-plate { padding: 2px 12px; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.08em; color: var(--ink); background: linear-gradient(180deg, var(--brass-hi), var(--brass) 55%, var(--brass-dim)); border: 1px solid var(--oak-0); border-radius: 4px; box-shadow: 0 2px 4px var(--black), inset 0 1px 0 var(--cream); max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes ch-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+/* the talk */
+.ch-b { position: relative; padding: 10px 14px; border-radius: 10px; background: var(--parchment); color: var(--ink); box-shadow: 0 4px 12px var(--black); font-family: var(--font-body); font-size: 1.1rem; line-height: 1.45; max-width: 46rem; }
+.ch-b p { margin: 0; }
+.ch-b .ch-t + .ch-t { margin-top: 8px; }
+.ch-who { font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.08em; color: var(--ink-soft); margin-bottom: 2px !important; }
+.ch-q { justify-self: start; border-bottom-left-radius: 2px; border-left: 4px solid var(--cc, var(--brass-dim)); }
+.ch-a { justify-self: end; border-top-right-radius: 2px; border-right: 4px solid var(--brass); }
+.ch-dots { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.ch-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-soft); animation: ch-bob 1s ease-in-out infinite; }
+.ch-dots i:nth-child(2) { animation-delay: 0.15s; }
+.ch-dots i:nth-child(3) { animation-delay: 0.3s; }
+/* footnotes: wax seals */
+.ch-notes { list-style: none; margin: 10px 0 0; padding: 8px 0 0; border-top: 1px dotted var(--ink-soft); display: grid; gap: 6px; }
+.ch-note { display: flex; gap: 8px; align-items: center; font-size: 1rem; color: var(--ink-soft); }
+.ch-seal { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; font-family: var(--font-sc); font-size: 16px; font-weight: 700; line-height: 1; color: var(--parchment); background: radial-gradient(circle at 35% 30%, var(--wax-hi), var(--wax) 62%, var(--wax-lo)); box-shadow: 0 1px 2px var(--black), inset 0 0 0 1.4px var(--wax-hi); }
+.ch-skip { justify-self: end; min-height: 44px; color: var(--parchment); border-color: var(--brass); }
+/* follow-ups */
+.ch-next { display: grid; gap: 6px; }
+.ch-next-h { margin: 0; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.1em; color: var(--brass-hi); }
+.ch-next-l { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.ch-next-l li { display: inline-flex; align-items: center; gap: 8px; }
+.ch-ask { min-height: 44px; color: var(--parchment); border-color: var(--brass); }
+.ch-page { color: var(--brass-hi); }
+.ch-end { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.ch-bring { min-height: 44px; color: var(--ink); background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-color: var(--oak-0); font-weight: 600; }
+.ch-bring[aria-disabled="true"] { opacity: 0.7; cursor: default; }
+.ch-leave { min-height: 44px; color: var(--parchment); border-color: var(--brass-dim); }
+/* the Dispatch letter */
+.ch-letter { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: var(--oak-1); border: 1px solid var(--brass-dim); }
+.ch-letter-h { margin: 0; font-family: var(--font-sc); letter-spacing: 0.1em; color: var(--brass-hi); font-size: 1.05rem; }
+.ch-card { position: relative; padding: 16px 18px 14px 18px; border-radius: 4px; background: var(--cream-2); color: var(--ink); font-family: var(--font-body); font-size: 1.08rem; line-height: 1.45; box-shadow: 0 6px 16px var(--black), inset 0 0 40px var(--slip-burn); border-left: 6px solid var(--wax); }
+.ch-card p { margin: 0 0 6px; }
+.ch-card-from { font-family: var(--font-sc); letter-spacing: 0.05em; padding-right: 64px; }
+.ch-bigseal-box { position: absolute; top: -12px; right: 10px; width: 68px; height: 68px; }
+.ch-bigseal-img { width: 68px; height: 68px; display: block; filter: drop-shadow(0 3px 4px var(--black)); }
+.ch-card-src { font-size: 1rem; color: var(--ink-soft); }
+.ch-letter-note { margin: 0; font-size: 1rem; color: var(--l-dim); }
+.ch-letter-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ch-post { min-height: 44px; color: var(--parchment); background: var(--wax); border-color: var(--wax-lo); font-weight: 600; }
+.ch-post[aria-disabled="true"] { opacity: 0.75; }
+.ch-no { min-height: 44px; color: var(--parchment); border-color: var(--brass-dim); }
+.ch-letter-say { margin: 0; min-height: 1.4em; color: var(--parchment); }
+/* the entrance: Leeroy slides down from the top right, the asker rises from the bottom left */
+.chamber.ch-in .ch-lee { animation: ch-lee 620ms var(--ease-oak, cubic-bezier(.2,.75,.25,1)) both; }
+.chamber.ch-in .ch-you { animation: ch-you 620ms var(--ease-oak, cubic-bezier(.2,.75,.25,1)) 120ms both; }
+.chamber.ch-in .ch-log { animation: ch-fade 420ms ease 260ms both; }
+@keyframes ch-lee { from { transform: translate(40px, -60px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ch-you { from { transform: translate(-30px, 70px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ch-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .chamber.ch-in .ch-lee, .chamber.ch-in .ch-you, .chamber.ch-in .ch-log { animation: none; }
+  .ch-dots i { animation: none; }
+}

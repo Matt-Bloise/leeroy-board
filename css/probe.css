@@ -1,0 +1,30 @@
+/* M0 (2026-10-30): the capability probe sheet (js/probe.js, opened by #probe). A full-screen sheet over the board: real black
+   behind a parchment card, text at least 1rem, every control 44 px, no motion beyond a short fade (none under reduced motion). */
+.probe { position: fixed; inset: 0; z-index: 2000; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; background: var(--sheet-bg); color: var(--text);
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.probe[hidden] { display: none; }
+.probe-card { box-sizing: border-box; display: grid; gap: 14px; max-width: 46rem; margin: 0 auto; padding: 16px; border: 1px solid var(--brass-dim); border-radius: 6px; background: var(--parchment); color: var(--ink); }
+.probe-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.probe-title { margin: 0; font-family: var(--font-display); font-size: 1.6rem; line-height: 1.2; color: var(--ink); }
+.probe-lede, .probe-note { margin: 0; max-width: 62ch; font-size: 1rem; line-height: 1.5; color: var(--ink-soft); }
+.probe-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.probe-btn, .probe-x { box-sizing: border-box; min-height: 44px; min-width: 44px; padding: 6px 18px; border-radius: 6px; font-family: var(--font-ui); font-size: 1rem; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; }
+.probe-btn { color: var(--cream); background: var(--oak-2); border: 1px solid var(--oak-0); box-shadow: 0 2px 8px var(--wear), inset 1px 1px 0 var(--edge-hi); }
+.probe-btn.alt, .probe-x { color: var(--ink); background: var(--parchment-2); border: 1px solid var(--ink-soft); box-shadow: none; }
+.probe-btn[aria-pressed="true"] { color: var(--cream); background: var(--wax); border-color: var(--wax-lo); }
+.probe-btn[aria-disabled="true"] { opacity: 0.6; cursor: default; box-shadow: none; }
+.probe-btn:focus-visible, .probe-x:focus-visible, .probe-sent summary:focus-visible { outline: 2px solid var(--wax); outline-offset: 2px; }
+.probe-status { margin: 0; min-height: 1.5em; font-size: 1rem; color: var(--ink); }
+.probe-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.probe-list li { display: grid; gap: 2px 14px; padding: 10px 12px; border: 1px solid var(--ink-soft); border-left: 4px solid var(--brass-dim); border-radius: 6px; background: var(--cream); }
+.probe-list li[data-state="yes"] { border-left-color: var(--brass); }
+.probe-list li[data-state="no"] { border-left-color: var(--ink-soft); }
+.probe-k { font-family: var(--font-ui); font-size: 1rem; letter-spacing: 0.04em; color: var(--ink); }
+.probe-v { font-size: 1rem; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+.probe-feel { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--brass-dim); border-radius: 6px; background: var(--cream-2); }
+.probe-q { margin: 0; font-family: var(--font-ui); font-size: 1.1rem; font-weight: 700; color: var(--ink); }
+.probe-sent summary { min-height: 44px; display: flex; align-items: center; font-family: var(--font-ui); font-size: 1rem; font-weight: 700; color: var(--ink); cursor: pointer; }
+.probe-json { margin: 8px 0 0; padding: 10px 12px; max-height: 18rem; overflow: auto; border: 1px solid var(--ink-soft); border-radius: 6px; background: var(--cream); color: var(--ink); font: 1rem/1.4 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (min-width: 700px) { .probe-list li { grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr); } .probe-card { padding: 22px; } }
+@media (prefers-reduced-motion: no-preference) { .probe:not([hidden]) { animation: probe-in 180ms var(--ease-oak) both; } }
+@keyframes probe-in { from { opacity: 0; } to { opacity: 1; } }

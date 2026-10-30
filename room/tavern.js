@@ -1,6 +1,7 @@
 // The modelled tavern (V10): the room's scenery and renderer on the vendored three.js 0.170.0. It replaces the hand-written
 // WebGL2 backend (gl2.js) and its painted back wall. Everything is built here from primitives (boxes, cylinders, lathes,
-// tori) and canvas textures drawn in code: wood planks, field stone, lime plaster. No model or image downloads.
+// tori) and four painted tiling textures (oak planks, oak floor, field stone, lime plaster: img/room/*.webp, 1024 px, fetched
+// and decoded to ImageBitmaps, so the same code runs in the worker). No model downloads.
 //   const T = await createTavern(canvas, { shadows, power, yieldTask, timed, W, H })   shadows: 1 (512 maps) or 2 (1024); W, H: the viewport
 //   (2026-10-30: no window or document here, so the same code runs in the room's Web Worker on an OffscreenCanvas)
 //   T.renderer T.scene T.camera     three objects; room.js owns the loop and the camera motion
@@ -11,99 +12,27 @@
 //   T.memory()  T.dispose()
 import * as THREE from "../vendor/three.module.min.js?v=08fd7545d1";
 
-/* ---------- canvas textures, drawn in code ---------- */
+/* ---------- textures ---------- */
 const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-/* a texture canvas: an OffscreenCanvas inside the worker (2026-10-30), an element on the page */
+/* the glow sprite's canvas (a radial gradient, not art): an OffscreenCanvas inside the worker (2026-10-30), an element on the page */
 const cv = (w, h) => { const c = typeof document === "undefined" ? new OffscreenCanvas(w, h) : document.createElement("canvas"); c.width = w; c.height = h; return [c, c.getContext("2d")]; };
-const rgb = (c, k = 1, a = 1) => `rgba(${Math.round(c[0] * k)},${Math.round(c[1] * k)},${Math.round(c[2] * k)},${a})`;
 
-function woodCanvas(seed, base, planks = 4, S = 512) {
-  const r = rnd(seed), [c, g] = cv(S, S), pw = S / planks;
-  for (let i = 0; i < planks; i++) {
-    const x0 = i * pw, k = 0.78 + r() * 0.4;
-    g.fillStyle = rgb(base, k); g.fillRect(x0, 0, pw, S);
-    const sh = g.createLinearGradient(x0, 0, x0 + pw, 0); /* a plank is a little rounded: darker at both edges */
-    sh.addColorStop(0, "rgba(0,0,0,0.35)"); sh.addColorStop(0.12, "rgba(0,0,0,0)"); sh.addColorStop(0.88, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(0,0,0,0.4)");
-    g.fillStyle = sh; g.fillRect(x0, 0, pw, S);
-    for (let n = 0; n < 46; n++) { /* grain: long wavy lines down the plank */
-      const x = x0 + r() * pw, amp = 1 + r() * 4, f = 0.004 + r() * 0.01, ph = r() * 6;
-      g.strokeStyle = r() < 0.7 ? `rgba(20,10,4,${0.08 + r() * 0.18})` : `rgba(255,220,170,${0.03 + r() * 0.05})`;
-      g.lineWidth = 0.6 + r() * 1.8; g.beginPath();
-      for (let y = 0; y <= S; y += 16) g.lineTo(Math.min(x0 + pw - 2, Math.max(x0 + 2, x + Math.sin(y * f + ph) * amp)), y);
-      g.stroke();
-    }
-    for (let n = r() < 0.6 ? 1 : 0; n > 0; n--) { /* a knot */
-      const kx = x0 + pw * (0.3 + r() * 0.4), ky = r() * S, rg = g.createRadialGradient(kx, ky, 0, kx, ky, pw * 0.22);
-      rg.addColorStop(0, "rgba(15,7,2,0.85)"); rg.addColorStop(0.45, "rgba(30,15,6,0.4)"); rg.addColorStop(1, "rgba(30,15,6,0)");
-      g.fillStyle = rg; g.beginPath(); g.ellipse(kx, ky, pw * 0.22, pw * 0.4, 0, 0, 7); g.fill();
-    }
-    g.fillStyle = "rgba(8,4,2,0.9)"; g.fillRect(x0, 0, 2, S); /* the seam */
-    for (let y = r() * 200; y < S; y += 180 + r() * 260) { g.fillStyle = "rgba(10,5,2,0.7)"; g.fillRect(x0, y, pw, 2); } /* butt joints */
-  }
-  for (let n = 0; n < 1400; n++) { g.fillStyle = `rgba(${r() < 0.5 ? "0,0,0" : "255,230,190"},${r() * 0.06})`; g.fillRect(r() * S, r() * S, 1 + r() * 2, 2 + r() * 6); }
-  return c;
-}
-function stoneCanvas(seed, S = 512) {
-  const r = rnd(seed), [c, g] = cv(S, S);
-  g.fillStyle = "#2a221c"; g.fillRect(0, 0, S, S); /* lime mortar, gritty */
-  for (let n = 0; n < 2500; n++) { g.fillStyle = `rgba(${r() < 0.5 ? "0,0,0" : "200,180,150"},${r() * 0.18})`; g.fillRect(r() * S, r() * S, 1 + r() * 3, 1 + r() * 3); }
-  /* courses of rough-dressed stone: uneven heights that sum to the tile, joints staggered, every stone an irregular polygon,
-     drawn again one tile over where it crosses an edge, so the texture repeats with no seam */
-  const rows = 5, hs = Array.from({ length: rows }, () => 0.7 + r() * 0.6), sum = hs.reduce((a, b) => a + b, 0);
-  let y = 0;
-  for (const hr of hs) {
-    const h = (hr / sum) * S;
-    for (let x = r() * 40; x < S + 40;) {
-      const w = Math.min(70 + r() * 110, S + 40 - x), k = 0.7 + r() * 0.45, warm = r() * 18;
-      const tone = [118 * k + warm, 106 * k + warm * 0.5, 94 * k], gap = 3 + r() * 3, j = () => (r() - 0.5) * 9;
-      const pts = [[x + gap + j(), y + gap + j()], [x + w * 0.5 + j(), y + gap * 0.6 + j()], [x + w - gap + j(), y + gap + j()], [x + w - gap * 0.6 + j(), y + h * 0.5 + j()],
-        [x + w - gap + j(), y + h - gap + j()], [x + w * 0.5 + j(), y + h - gap * 0.6 + j()], [x + gap + j(), y + h - gap + j()], [x + gap * 0.6 + j(), y + h * 0.5 + j()]];
-      for (const ox of [0, -S]) {
-        if (ox && x + w < S) continue;
-        const path = () => { g.beginPath(); pts.forEach(([px, py], i) => (i ? g.lineTo(px + ox, py) : g.moveTo(px + ox, py))); g.closePath(); };
-        const gr = g.createLinearGradient(x + ox, y, x + ox + w * 0.4, y + h);
-        gr.addColorStop(0, rgb(tone, 1.12)); gr.addColorStop(1, rgb(tone, 0.8));
-        path(); g.fillStyle = gr; g.fill();
-        g.save(); path(); g.clip();
-        for (let n = 0; n < 26; n++) { g.fillStyle = `rgba(${r() < 0.55 ? "20,14,10" : "235,220,200"},${r() * 0.1})`; g.beginPath(); g.ellipse(x + ox + r() * w, y + r() * h, 3 + r() * 16, 2 + r() * 9, r() * 3, 0, 7); g.fill(); }
-        g.lineWidth = 5; g.strokeStyle = "rgba(14,10,7,0.3)"; path(); g.stroke(); /* the edge falls away into the joint */
-        g.restore();
-      }
-      x += w;
-    }
-    y += h;
-  }
-  return c;
-}
-function plasterCanvas(seed, S = 512) {
-  const r = rnd(seed), [c, g] = cv(S, S);
-  g.fillStyle = "#8a7660"; g.fillRect(0, 0, S, S);
-  for (let n = 0; n < 70; n++) { /* soft mottling, wrapped so the tile repeats without a seam */
-    const x = r() * S, y = r() * S, rad = 30 + r() * 110, dark = r() < 0.6;
-    for (const [ox, oy] of [[0, 0], [-S, 0], [S, 0], [0, -S], [0, S]]) {
-      const rg = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, rad);
-      rg.addColorStop(0, dark ? `rgba(40,26,14,${0.08 + r() * 0.12})` : `rgba(255,236,200,${0.05 + r() * 0.06})`); rg.addColorStop(1, "rgba(0,0,0,0)");
-      g.fillStyle = rg; g.fillRect(x + ox - rad, y + oy - rad, rad * 2, rad * 2);
-    }
-  }
-  g.strokeStyle = "rgba(30,20,12,0.35)"; g.lineWidth = 1;
-  for (let n = 0; n < 7; n++) { let x = r() * S, y = r() * S; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 9; k++) { x += (r() - 0.5) * 30; y += r() * 18; g.lineTo(x, y); } g.stroke(); }
-  for (let n = 0; n < 3000; n++) { g.fillStyle = `rgba(${r() < 0.5 ? "0,0,0" : "255,240,220"},${r() * 0.07})`; g.fillRect(r() * S, r() * S, 1 + r() * 2, 1 + r() * 2); }
-  return c;
-}
 function glowCanvas(S = 128) {
   const [c, g] = cv(S, S), rg = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
   rg.addColorStop(0, "rgba(255,255,255,1)"); rg.addColorStop(0.18, "rgba(255,255,255,0.55)"); rg.addColorStop(0.5, "rgba(255,255,255,0.12)"); rg.addColorStop(1, "rgba(255,255,255,0)");
   g.fillStyle = rg; g.fillRect(0, 0, S, S); return c;
 }
 
-/* box UVs in world units, the texture's grain (its v axis) along the box's longest side, so wood reads the same everywhere */
+/* box UVs in world units (unit = metres per tile), the painted grain (the texture's u axis, planks run along it) along the box's longest
+   side. Every box gets its own seeded offset, and the small ones (beams, rails, posts) a half-turn too, so neighbours never show the same knot. */
+let boxN = 0;
 function boxGeo(w, h, d, unit = 1) {
   const geo = new THREE.BoxGeometry(w, h, d), p = geo.attributes.position, n = geo.attributes.normal, uv = geo.attributes.uv, ext = [w, h, d];
+  const r = rnd(101 + 37 * boxN++), ou = r() * 4, ov = r() * 4, flip = Math.max(w, h, d) < 3 && r() < 0.5 ? -1 : 1;
   for (let i = 0; i < p.count; i++) {
     const ax = Math.abs(n.getX(i)) > 0.5 ? 0 : Math.abs(n.getY(i)) > 0.5 ? 1 : 2, pl = [0, 1, 2].filter((a) => a !== ax);
     const [a, b] = ext[pl[0]] >= ext[pl[1]] ? [pl[1], pl[0]] : [pl[0], pl[1]];
-    uv.setXY(i, (p.getComponent(i, a) + 7.3 * ax) / unit, (p.getComponent(i, b) + 3.1 * ax) / unit);
+    uv.setXY(i, flip * (p.getComponent(i, b) + 3.1 * ax) / unit + ou, flip * (p.getComponent(i, a) + 7.3 * ax) / unit + ov);
   }
   return geo;
 }
@@ -187,20 +116,56 @@ export async function createTavern(canvas, opt) {
     if (rep) t.repeat.set(rep, rep);
     timed(() => renderer.initTexture(t)); texBytes += c.width * c.height * 4 * 1.33; owned.tex.push(t); await yieldTask(); return t;
   };
-  /* textures: each drawn and uploaded in its own task */
-  const woodC = timed(() => woodCanvas(11, [96, 64, 40])); const tWood = await tex(woodC);
-  const darkC = timed(() => woodCanvas(29, [62, 42, 28], 5)); const tDark = await tex(darkC);
-  const stoneC = timed(() => stoneCanvas(7)); const tStone = await tex(stoneC);
-  const plasterC = timed(() => plasterCanvas(3)); const tPlaster = await tex(plasterC);
+  /* a painted tile from img/room: fetch, decode to an ImageBitmap (flipped here, so flipY stays false: ImageBitmaps ignore it), upload in its own
+     task. There is no document in the worker, so this is the one path on both threads. A failed fetch gives null: the material is flat. */
+  let warned = false; const loaded = [];
+  const fetchBitmap = async (name) => {
+    try {
+      const res = await fetch(new URL("../img/room/" + name + ".webp", import.meta.url));
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await createImageBitmap(await res.blob(), { imageOrientation: "flipY" });
+    } catch (e) { if (!warned) { warned = true; console.warn("room textures: " + name + " not loaded (" + ((e && e.message) || e) + "), flat colours instead"); } return null; }
+  };
+  const upload = async (name, bmp) => {
+    if (!bmp) return null;
+    const t = new THREE.Texture(bmp); t.flipY = false; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
+    timed(() => renderer.initTexture(t)); texBytes += 1024 * 1024 * 4 * 1.33; owned.tex.push(t); loaded.push(name); await yieldTask(); return t;
+  };
+  /* textures: the four fetches and decodes run together (off the thread), the uploads one per task */
+  const NAMES = ["oak-planks", "oak-floor", "stone", "plaster"], bitmaps = await Promise.all(NAMES.map(fetchBitmap));
+  const [tWood, tDark, tStone, tPlaster] = [await upload(NAMES[0], bitmaps[0]), await upload(NAMES[1], bitmaps[1]), await upload(NAMES[2], bitmaps[2]), await upload(NAMES[3], bitmaps[3])];
   const tGlow = await tex(glowCanvas());
-  const M = (o) => { const m = new THREE.MeshStandardMaterial(o); owned.mat.add(m); return m; };
+  /* the repeat breaker: the map is sampled twice, at the uv and at a turned, rescaled, shifted copy of it, and the two are mixed by a slow
+     noise (a floor mixes half and half everywhere, which also cancels its dark central band). Both samples are the same picture, so the average
+     brightness stays. uBlend is 0 on the low and medium tiers: one fetch, the same file, no extra cost. */
+  const blendU = { value: opt.tier === "medium" || opt.tier === "low" ? 0 : 1 };
+  const blendFix = (m, k) => {
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uBlend = blendU; sh.uniforms.uConst = { value: k };
+      sh.fragmentShader = "uniform float uBlend, uConst;\n" + NOISE + "\n" + sh.fragmentShader.replace("#include <map_fragment>", `
+#ifdef USE_MAP
+  vec4 sampledDiffuseColor = texture2D(map, vMapUv);
+  if (uBlend > 0.5) {
+    vec2 q = vMapUv * 0.37 + vec2(0.31, 0.57); float c2 = cos(0.6), s2 = sin(0.6);
+    vec4 other = texture2D(map, vec2(c2 * q.x - s2 * q.y, s2 * q.x + c2 * q.y));
+    float w = uConst >= 0.0 ? uConst : 0.5 * smoothstep(0.2, 0.8, n2(vMapUv * 0.6 + 3.7)) + 0.25;
+    sampledDiffuseColor = mix(sampledDiffuseColor, other, w);
+  }
+  diffuseColor *= sampledDiffuseColor;
+#endif`);
+    };
+    m.customProgramCacheKey = () => "texblend";
+  };
+  /* M: a lit material; with a painted map it gets the repeat breaker, without one (the fetch failed) it is a flat mid-tone */
+  const lowT = opt.tier === "medium" || opt.tier === "low"; /* medium: no bump map, one fewer sample per surface */
+  const M = (o, flat, k = -1) => { if (lowT) { o = { ...o, bumpMap: null }; } if (flat != null && !o.map) o = { ...o, color: flat, bumpMap: null }; const m = new THREE.MeshStandardMaterial(o); owned.mat.add(m); if (o.map) blendFix(m, k); return m; };
   const mat = {
-    wood: M({ map: tWood, bumpMap: tWood, bumpScale: 1.2, roughness: 0.78, color: 0xb9a48c }),
-    beam: M({ map: tDark, bumpMap: tDark, bumpScale: 1.6, roughness: 0.85, color: 0x8a7462 }),
-    floor: M({ map: tDark, bumpMap: tDark, bumpScale: 1.0, roughness: 0.7, color: 0x9a846e }),
-    stone: M({ map: tStone, bumpMap: tStone, bumpScale: 3, roughness: 0.92, color: 0xb0a090 }),
+    wood: M({ map: tWood, bumpMap: tWood, bumpScale: 1.2, roughness: 0.78, color: 0xb9a48c }, 0x6a4a2e),
+    beam: M({ map: tDark, bumpMap: tDark, bumpScale: 1.6, roughness: 0.85, color: 0x8a7462 }, 0x3e2a1c),
+    floor: M({ map: tDark, bumpMap: tDark, bumpScale: 1.0, roughness: 0.7, color: 0x9a846e }, 0x3e2a1c, 0.5),
+    stone: M({ map: tStone, bumpMap: tStone, bumpScale: 1.2, roughness: 0.92, color: 0xb0a090 }, 0x6e6254),
     soot: M({ color: 0x0c0806, roughness: 1 }),
-    plaster: M({ map: tPlaster, bumpMap: tPlaster, bumpScale: 0.8, roughness: 0.95, color: 0x8f7c66 }),
+    plaster: M({ map: tPlaster, bumpMap: tPlaster, bumpScale: 0.8, roughness: 0.95, color: 0x8f7c66 }, 0x8a7660),
     iron: M({ color: 0x2a2622, roughness: 0.48, metalness: 0.85 }),
     brass: M({ color: 0xb08a4a, roughness: 0.32, metalness: 1 }),
     pewter: M({ color: 0x9a968e, roughness: 0.3, metalness: 0.9 }),
@@ -209,7 +174,7 @@ export async function createTavern(canvas, opt) {
     glassB: M({ color: 0x5a3214, roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.85 }),
     glassC: M({ color: 0xc8c0a8, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.55 }),
     cork: M({ color: 0x6a4a2a, roughness: 0.9 }),
-    log: M({ map: tDark, color: 0x4a3426, roughness: 0.9, emissive: 0x4a1404, emissiveIntensity: 0.5 }),
+    log: M({ map: tDark, color: 0x4a3426, roughness: 0.9, emissive: 0x4a1404, emissiveIntensity: 0.5 }, 0x2a1c12),
     pane: M({ color: 0xffc070, roughness: 0.2, transparent: true, opacity: 0.35, emissive: 0xffa040, emissiveIntensity: 0.9 }),
   };
   const add = (geo, m, x, y, z, o = {}) => {
@@ -221,23 +186,23 @@ export async function createTavern(canvas, opt) {
 
   /* ---------- the shell: floor, ceiling planks, walls of plaster between oak framing over a plank wainscot ---------- */
   const shell = () => {
-    add(boxGeo(WX * 2, 0.1, FRONT - BACK, 1.6), mat.floor, 0, -0.05, (FRONT + BACK) / 2, { cast: false });
-    add(boxGeo(WX * 2, 0.08, FRONT - BACK, 1.2), mat.beam, 0, CEIL + 0.04, (FRONT + BACK) / 2, { cast: false });
-    add(boxGeo(WX * 2, CEIL, 0.1, 2.2), mat.plaster, 0, CEIL / 2, BACK - 0.05, { cast: false });
+    add(boxGeo(WX * 2, 0.1, FRONT - BACK, 3), mat.floor, 0, -0.05, (FRONT + BACK) / 2, { cast: false });
+    add(boxGeo(WX * 2, 0.08, FRONT - BACK, 3), mat.beam, 0, CEIL + 0.04, (FRONT + BACK) / 2, { cast: false });
+    add(boxGeo(WX * 2, CEIL, 0.1, 2.8), mat.plaster, 0, CEIL / 2, BACK - 0.05, { cast: false });
     for (const s of [-1, 1]) {
       const x = s * (WX + 0.05);
-      add(boxGeo(0.1, CEIL - 0.9, FRONT - BACK, 2.2), mat.plaster, x, 0.9 + (CEIL - 0.9) / 2, (FRONT + BACK) / 2, { cast: false });
-      add(boxGeo(0.06, 0.9, FRONT - BACK, 1.4), mat.wood, x - s * 0.05, 0.45, (FRONT + BACK) / 2, { cast: false }); /* wainscot */
-      add(boxGeo(0.1, 0.1, FRONT - BACK, 1), mat.beam, x - s * 0.08, 0.93, (FRONT + BACK) / 2); /* chair rail */
-      add(boxGeo(0.16, 0.2, FRONT - BACK, 1), mat.beam, x - s * 0.1, CEIL - 0.1, (FRONT + BACK) / 2); /* wall plate */
-      add(boxGeo(0.14, 0.18, FRONT - BACK, 1), mat.beam, x - s * 0.09, 2.15, (FRONT + BACK) / 2); /* mid rail */
-      for (let z = 0.2; z > BACK; z -= 1.9) add(boxGeo(0.16, CEIL, 0.22, 1), mat.beam, x - s * 0.1, CEIL / 2, z); /* posts */
+      add(boxGeo(0.1, CEIL - 0.9, FRONT - BACK, 2.8), mat.plaster, x, 0.9 + (CEIL - 0.9) / 2, (FRONT + BACK) / 2, { cast: false });
+      add(boxGeo(0.06, 0.9, FRONT - BACK, 2.8), mat.wood, x - s * 0.05, 0.45, (FRONT + BACK) / 2, { cast: false }); /* wainscot */
+      add(boxGeo(0.1, 0.1, FRONT - BACK, 2.8), mat.beam, x - s * 0.08, 0.93, (FRONT + BACK) / 2); /* chair rail */
+      add(boxGeo(0.16, 0.2, FRONT - BACK, 2.8), mat.beam, x - s * 0.1, CEIL - 0.1, (FRONT + BACK) / 2); /* wall plate */
+      add(boxGeo(0.14, 0.18, FRONT - BACK, 2.8), mat.beam, x - s * 0.09, 2.15, (FRONT + BACK) / 2); /* mid rail */
+      for (let z = 0.2; z > BACK; z -= 1.9) add(boxGeo(0.16, CEIL, 0.22, 2.8), mat.beam, x - s * 0.1, CEIL / 2, z); /* posts */
       for (let z = -0.75; z > BACK + 1; z -= 1.9) { /* braces from the posts up to the wall plate */
-        const b = add(boxGeo(0.1, 1.2, 0.14, 1), mat.beam, x - s * 0.1, 2.6, z - 0.45); b.rotation.x = 0.85;
+        const b = add(boxGeo(0.1, 1.2, 0.14, 2.8), mat.beam, x - s * 0.1, 2.6, z - 0.45); b.rotation.x = 0.85;
       }
     }
-    for (let z = -0.6; z > BACK; z -= 1.45) add(boxGeo(WX * 2, 0.3, 0.26, 1.2), mat.beam, 0, CEIL - 0.15, z); /* ceiling beams */
-    for (const x of [-1.6, 1.6]) add(boxGeo(0.12, 0.1, FRONT - BACK, 1), mat.beam, x, CEIL - 0.34, (FRONT + BACK) / 2, { cast: false }); /* purlins under the beams */
+    for (let z = -0.6; z > BACK; z -= 1.45) add(boxGeo(WX * 2, 0.3, 0.26, 2.8), mat.beam, 0, CEIL - 0.15, z); /* ceiling beams */
+    for (const x of [-1.6, 1.6]) add(boxGeo(0.12, 0.1, FRONT - BACK, 2.8), mat.beam, x, CEIL - 0.34, (FRONT + BACK) / 2, { cast: false }); /* purlins under the beams */
   };
   shell(); await yieldTask();
 
@@ -277,13 +242,13 @@ export async function createTavern(canvas, opt) {
   const hearth = new THREE.Group(); room.add(hearth);
   {
     const hx = -WX + 0.36, D = 0.72;
-    add(boxGeo(D, 0.95, 0.42, 1.5), mat.stone, hx, 0.475, 0.62, { parent: hearth }); /* jambs */
-    add(boxGeo(D, 0.95, 0.42, 1.5), mat.stone, hx, 0.475, -0.62, { parent: hearth });
-    add(boxGeo(D + 0.04, 0.34, 1.68, 1.5), mat.stone, hx + 0.02, 1.12, 0, { parent: hearth }); /* lintel */
-    add(boxGeo(D + 0.16, 0.1, 1.9, 0.7), mat.wood, hx + 0.08, 1.34, 0, { parent: hearth }); /* mantel */
-    add(boxGeo(D - 0.1, CEIL - 1.39, 1.4, 1.5), mat.stone, hx - 0.05, 1.39 + (CEIL - 1.39) / 2, 0, { parent: hearth }); /* chimney */
+    add(boxGeo(D, 0.95, 0.42, 2), mat.stone, hx, 0.475, 0.62, { parent: hearth }); /* jambs */
+    add(boxGeo(D, 0.95, 0.42, 2), mat.stone, hx, 0.475, -0.62, { parent: hearth });
+    add(boxGeo(D + 0.04, 0.34, 1.68, 2), mat.stone, hx + 0.02, 1.12, 0, { parent: hearth }); /* lintel */
+    add(boxGeo(D + 0.16, 0.1, 1.9, 2.8), mat.wood, hx + 0.08, 1.34, 0, { parent: hearth }); /* mantel */
+    add(boxGeo(D - 0.1, CEIL - 1.39, 1.4, 2), mat.stone, hx - 0.05, 1.39 + (CEIL - 1.39) / 2, 0, { parent: hearth }); /* chimney */
     add(boxGeo(0.1, 0.95, 0.84, 1), mat.soot, -WX + 0.05, 0.475, 0, { parent: hearth, cast: false }); /* the firebox back */
-    add(boxGeo(D + 0.3, 0.06, 1.9, 1.5), mat.stone, hx + 0.12, 0.03, 0, { parent: hearth, cast: false }); /* hearth stone */
+    add(boxGeo(D + 0.3, 0.06, 1.9, 2), mat.stone, hx + 0.12, 0.03, 0, { parent: hearth, cast: false }); /* hearth stone */
     const logG = new THREE.CylinderGeometry(0.06, 0.07, 0.62, 10);
     add(logG, mat.log, hx - 0.02, 0.1, 0.02, { parent: hearth, rx: Math.PI / 2, ry: 0.2 });
     add(logG, mat.log, hx + 0.08, 0.12, -0.05, { parent: hearth, rx: Math.PI / 2, ry: -0.35 });
@@ -299,10 +264,10 @@ export async function createTavern(canvas, opt) {
   const shelf = new THREE.Group(), lanternG = new THREE.Group(); room.add(shelf);
   {
     const sx = WX - 0.2;
-    add(boxGeo(0.04, 1.5, 1.6, 1.2), mat.wood, WX - 0.02, 1.55, 0, { parent: shelf, cast: false });
+    add(boxGeo(0.04, 1.5, 1.6, 2.8), mat.wood, WX - 0.02, 1.55, 0, { parent: shelf, cast: false });
     const ys = [0.95, 1.45, 1.95];
     ys.forEach((y, i) => {
-      add(boxGeo(0.34, 0.05, 1.7, 1), mat.beam, sx, y, 0, { parent: shelf });
+      add(boxGeo(0.34, 0.05, 1.7, 2.8), mat.beam, sx, y, 0, { parent: shelf });
       for (const z of [-0.78, 0.78]) add(boxGeo(0.06, 0.14, 0.05, 1), mat.iron, WX - 0.06, y - 0.08, z, { parent: shelf, cast: false });
       const r = rnd(5 + i * 13);
       for (let z = -0.68; z < 0.7;) {
@@ -441,6 +406,8 @@ export async function createTavern(canvas, opt) {
     renderer, scene, camera, info, layout, setLights, setKey, tick, pose,
     setAir: (n) => setAir(n),
     shadowsOn: () => renderer.shadowMap.enabled,
+    setBlend: (on) => { blendU.value = on ? 1 : 0; },
+    textures: () => loaded.slice(), canvasTextures: () => owned.tex.filter((t) => t.isCanvasTexture).length,
     memory: () => Math.round(texBytes + renderer.info.memory.geometries * 24e3),
     dispose() {
       if (lost) return; lost = true;

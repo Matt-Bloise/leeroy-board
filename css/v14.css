@@ -214,6 +214,7 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
 .su-st[disabled], .su-st[aria-disabled="true"] { opacity: 0.8; }
 .sheet-body, .tile-body { text-wrap: pretty; }
 @media (max-width: 359px) { .su-st { font-size: 0.9rem; gap: 4px; padding-right: 8px; } .su-st .su-pint { width: 26px; height: 26px; } }
+@media (max-width: 600px) { .su-st { min-height: 48px; } }
 /* V15: Before launch checklist and How things work strip on Next steps */
 .tn-before, .tn-how { padding: 16px 20px 18px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); border-top: 3px solid var(--brass-dim); }
 .tn-before h3, .tn-how h3 { margin: 0 0 6px; font-family: var(--font-sc); font-size: 1.05rem; letter-spacing: 0.1em; color: var(--ink-soft); }
@@ -226,7 +227,7 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
 .tnb-tick input { flex: none; width: 24px; height: 24px; margin: 10px; accent-color: var(--wax); cursor: pointer; }
 .tnb-item[data-on="1"] .tnb-tick span { color: var(--ink-soft); text-decoration: line-through; text-decoration-thickness: 1px; }
 .tnb-go { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 6px; font-family: var(--font-body); font-size: 1.05rem; }
-.tnb-go .emb { width: 1.2em; height: 1.2em; }
+.tnb-go .emb { width: 1.2em; height: 1.2em; object-fit: contain; }
 .tnb-more { grid-column: 1 / -1; margin: 0 0 6px 46px; font-family: var(--font-body); font-size: 1rem; line-height: 1.35; color: var(--ink-soft); overflow-wrap: anywhere; }
 .tnb-more code { font-size: 0.9em; }
 .tnh-grid { display: grid; gap: 12px; margin-top: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); }

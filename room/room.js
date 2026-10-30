@@ -13,7 +13,7 @@
 //        wide: { off, p3 } (the page's ?hdr=0 or html.hdr-off switch, and whether the display reports a P3 gamut) for tavern.js's drawing buffer
 //   room.setTier(t)  room.refresh(next)  room.stop()  room.status()
 //   room.resize(env)  room.scene(open)  room.visible(on)  room.motion(reduce)
-import { createTavern } from "./tavern.js?v=fdf948578e";
+import { createTavern } from "./tavern.js?v=27667f5e32";
 
 /* shadows are drawn once (the lights do not move), so they cost nothing per frame; ultra gets the sharper map.
    V13a: fps 0 draws on every display refresh (a 175 Hz panel gets 175 draws, not every third one); budget is the frame
@@ -56,7 +56,7 @@ export async function startRoom(ctx) {
   const canvas = ctx.canvas;
   /* the room times its own synchronous start-up steps (recorded by the ladder, never a demotion) */
   let startCost = 0; const timed = (f) => { const t0 = performance.now(); const v = f(); startCost = Math.max(startCost, Math.round(performance.now() - t0)); return v; };
-  const R = await createTavern(canvas, { shadows: tierName === "ultra" ? 2 : 1, power: tierName === "medium" ? "low-power" : "high-performance", yieldTask: ctx.yieldTask || yieldFrame, timed, W: E.W, H: E.H, wide: E.wide });
+  const R = await createTavern(canvas, { tier: tierName, shadows: tierName === "ultra" ? 2 : 1, power: tierName === "medium" ? "low-power" : "high-performance", yieldTask: ctx.yieldTask || yieldFrame, timed, W: E.W, H: E.H, wide: E.wide });
   const { renderer, scene, camera } = R;
 
   const lantern = () => (ctx.newSignup ? 1.8 : 1);
@@ -162,10 +162,10 @@ export async function startRoom(ctx) {
 
   return {
     info: { renderer: R.info.renderer, software: R.info.software, three: R.info.three, colorSpace: R.info.colorSpace, wideWhy: R.info.wideWhy },
-    setTier(t) { if (!TIERS[t]) return; T = TIERS[t]; tierName = t; applyTier(); size(); hush(); dirty = true; wake(); },
+    setTier(t) { if (!TIERS[t]) return; T = TIERS[t]; tierName = t; R.setBlend(t !== "medium" && t !== "low"); applyTier(); size(); hush(); dirty = true; wake(); },
     /* V13b (craft 22): a new sign-up's lantern and launch night's candles ease up over 1.5 s with a brief flare, never in one frame */
     refresh(next) { Object.assign(ctx, next); const to = levels(), from = { ...K }, t0 = performance.now(); Kmove = (now) => { const k = Math.min(1, (now - t0) / 1500), flare = Math.sin(Math.PI * k) * 0.25; for (const n of ["hearth", "candles", "lantern"]) K[n] = from[n] + (to[n] - from[n]) * ease(k) + (to[n] !== from[n] ? flare : 0); if (k >= 1) Kmove = null; }; dirty = true; wake(); },
-    status: () => ({ tier: tierName, fps: st.fps, drawCalls: st.drawCalls, triangles: st.triangles, memory: R.memory(), frames: st.frames, paused: st.paused, held: st.held, renderP95: st.renderP95, judged: st.windows, slowWindows: st.slowWindows, lost: st.lost, renderer: R.info.renderer, software: R.info.software, three: R.info.three, shadows: R.shadowsOn(), needsLibrary: NEEDS_LIBRARY }),
+    status: () => ({ tier: tierName, fps: st.fps, drawCalls: st.drawCalls, triangles: st.triangles, memory: R.memory(), frames: st.frames, paused: st.paused, held: st.held, renderP95: st.renderP95, judged: st.windows, slowWindows: st.slowWindows, lost: st.lost, renderer: R.info.renderer, software: R.info.software, three: R.info.three, shadows: R.shadowsOn(), textures: R.textures(), canvasTextures: R.canvasTextures(), needsLibrary: NEEDS_LIBRARY }),
     /* what the page pushes in (2026-10-30): its size and the board's rectangle, a scene opening or closing, the tab hiding or
        showing, and reduced motion turning on or off */
     resize(env) { Object.assign(E, env); onResize(); },

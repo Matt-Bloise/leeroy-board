@@ -44,6 +44,7 @@ function mount() {
 mount();
 
 const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/decide.json answered ${r.status}`); return r.json(); }).then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
+K.decideData = get; /* Phase 0 (2026-10-30): the party sheet (js/sheet.js) reads the same file through the same cache */
 const defaultWho = () => { const m = MEM.member(); return m && DV.data && DV.data.people.some((p) => p.class_key === m.class_key) ? m.class_key : "all"; };
 const who = () => DV.who || defaultWho();
 
