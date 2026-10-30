@@ -190,6 +190,7 @@
   }, true);
   document.addEventListener("click", (e) => {
     const b = e.target && e.target.closest && e.target.closest("button, a"); if (!b) return;
+    if (b.disabled || b.closest('[aria-disabled="true"]')) return; /* a disabled control (the sign-up answers with no board key) gives no confirm sound and no buzz (2026-10-30) */
     let h = "tap";
     if (b.matches("a.tile")) h = "open"; else if (b.matches("[data-tab]")) h = "tab";
     const tx = (b.textContent || "").trim().toLowerCase();
