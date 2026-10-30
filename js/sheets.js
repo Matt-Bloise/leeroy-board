@@ -1,4 +1,4 @@
-/* Bottom sheets (mobile contract section 3). Full note: board/MOBILE-NOTES.md, file notes. */
+/* Bottom sheets (mobile contract section 3). Full note: board/MOBILE-NOTES.md, file notes. Fix round B: notes/fix-round/NOTES-B.md. */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
@@ -8,7 +8,7 @@ const SPR = () => window.BoardSpring || null;
 const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
 const buzz = (n) => { try { if (window.BoardHaptics) window.BoardHaptics.fire(n); } catch (e) {} };
 const B = { cur: null, snap: null, y: 0, dragging: false, fullH: 0, peekH: 0, spring: null, track: null, token: 0 };
-let veil = null, sec = null, grip = null, titleEl = null, bodyEl = null, built = false;
+let veil = null, sec = null, grip = null, titleEl = null, bodyEl = null, built = false, shut = null;
 
 function build() {
   if (built) return;
@@ -16,12 +16,13 @@ function build() {
   grip = h("button", { class: "bsheet-grip", type: "button", "aria-label": "Resize the sheet: Enter opens it full or back to the peek, Escape closes it" });
   titleEl = h("h3", { class: "bsheet-h", id: "bsheet-h" });
   bodyEl = h("div", { class: "bsheet-body", id: "bsheet-body", tabindex: "-1" });
+  shut = h("button", { class: "lib-tool bsheet-x", type: "button", "aria-label": "Close" }, "Close");
   sec = h("section", { class: "bsheet", id: "bsheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "bsheet-h", "data-snap": "peek", hidden: true },
-    h("div", { class: "bsheet-handle" }, grip), titleEl, bodyEl);
+    h("div", { class: "bsheet-handle" }, grip, shut), titleEl, bodyEl);
   veil.addEventListener("click", () => close());
+  shut.addEventListener("click", () => close());
   grip.addEventListener("click", () => { if (B.cur) snapTo(B.snap === "full" ? "peek" : "full"); });
   sec.addEventListener("keydown", onKey);
-  /* a translated sheet sits partly outside the scene frame, which scrolls programmatically when focus lands there: put it back */
   sec.addEventListener("focusin", () => { const p = sec.parentNode; if (p && p !== doc.body && p.scrollTop) p.scrollTop = 0; });
   built = true;
 }
@@ -37,7 +38,6 @@ function onKey(e) {
   else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
 }
 
-/* where the sheet lives: inside the open scene's frame (so its focus trap sees it), else the page */
 function host() { const sc = K.SC && K.SC.open !== null ? $("#scene .sheet") : null; return sc || doc.body; }
 function place() {
   const p = host();
@@ -53,6 +53,7 @@ function measure(peek) {
   try { const r = sec.getBoundingClientRect(); if (r && r.height > 0) full = Math.round(r.height); } catch (e) {}
   B.fullH = Math.max(240, full);
   B.peekH = Math.min(B.fullH, Math.max(240, Math.round(peek * vh)));
+  sec.style.setProperty("--peek-h", B.peekH + "px");
 }
 const yFor = (snap) => (snap === "full" ? 0 : B.fullH - B.peekH);
 const setY = (y) => { B.y = y; sec.style.transform = "translateY(" + (Math.round(y * 100) / 100) + "px)"; };
@@ -84,6 +85,7 @@ function open(o) {
   const snaps = Array.isArray(o.snaps) && o.snaps.length ? o.snaps.filter((s) => s === "peek" || s === "full") : ["peek", "full"];
   const want = o.start === "full" || !snaps.includes("peek") ? "full" : "peek";
   B.cur = { id: o.id, snaps, onClose: o.onClose || null, returnTo: o.returnTo || prevFocus || null };
+  const sc = $("#scene .sheet"); if (sc && sc.getAttribute("aria-modal") === "true") { sc.removeAttribute("aria-modal"); B.cur.modal = sc; }
   titleEl.textContent = o.title || "";
   bodyEl.replaceChildren(); bodyEl.scrollTop = 0;
   if (typeof o.build === "function") o.build(bodyEl);
@@ -154,11 +156,11 @@ function dismiss() {
   const tok = B.cur;
   return glide("oak", B.fullH + 40).then(() => { if (B.cur === tok) finish(false); });
 }
-/* finish: hide the sheet and run the close side (instant = a second open replacing this one, no onClose) */
 function finish(instant, c0) {
   const c = c0 || B.cur; if (!c) return;
   if (B.cur === c) B.cur = null;
   if (B.closing === c) B.closing = null;
+  if (c.modal) c.modal.setAttribute("aria-modal", "true");
   B.dragging = false; B.token++; stopSpring(); detachTrack();
   veil.classList.remove("on");
   const hide = () => { if (B.cur) return; sec.hidden = true; veil.hidden = true; sec.classList.remove("out", "fade"); };
@@ -170,7 +172,6 @@ function finish(instant, c0) {
 }
 function close(id) {
   if (!B.cur || (id && id !== B.cur.id)) return Promise.resolve();
-  /* integrator (2026-10-30): the sheet counts as closed the moment a close starts (status().open is null), so a More row ... Full note: board/MOBILE-NOTES.md, file notes. */
   if (!reduced()) {
     const tok = B.cur; B.cur = null; B.closing = tok; B.dragging = false; detachTrack(); veil.classList.remove("on"); buzz("select");
     try { if (tok.returnTo && tok.returnTo.focus && tok.returnTo.isConnected !== false) { tok.returnTo.focus(); tok.focused = true; } } catch (e) {}

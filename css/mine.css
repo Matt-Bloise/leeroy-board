@@ -1,4 +1,4 @@
-/* M3 (2026-10-30): launch-night answers on Sign-ups and "Something here looks wrong?" on Library pages (js/mine.js). Tokens only. */
+/* M3 (2026-10-30): launch-night answers on Sign-ups and "Something here looks wrong?" on Library pages (js/mine.js). Tokens only. Fix round B: notes/fix-round/NOTES-B.md. */
 #mine-act { flex: 1 1 100%; display: grid; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--ink-line); }
 .mine-grp { display: grid; gap: 4px; min-width: 0; }
 .mine-k { margin: 0; font-family: var(--font-ui); font-size: 0.8125rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
@@ -6,6 +6,7 @@
 .mine-opt { min-height: 48px; box-sizing: border-box; }
 .mine-opt[aria-pressed="true"] { background: var(--oak-3); color: var(--cream); border-color: var(--brass); font-weight: 700; }
 .mine-opt[aria-disabled="true"] { opacity: 0.72; cursor: default; }
+.mine-why { margin: 0; color: var(--ink-soft); }
 .mine-place-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .mine-place, .mine-note { box-sizing: border-box; min-height: 48px; padding: 6px 10px; font: inherit; color: var(--ink); background: var(--cream); border: 1px solid var(--brass-dim); border-radius: 4px; }
 .mine-place { flex: 1 1 14rem; min-width: 0; max-width: 100%; }
@@ -28,7 +29,10 @@ html.phone-shell .mine-sheet { display: grid; gap: 4px; padding: 0 16px 8px; col
 html.phone-shell .mine-sheet .mine-k { color: var(--l-dim); font-size: 0.8125rem; }
 html.phone-shell .mine-sheet .mine-grp { padding: 6px 0; }
 html.phone-shell .mine-sheet .mine-opts { display: grid; gap: 6px; }
-html.phone-shell .mine-sheet .mine-opt { width: 100%; min-height: 56px; justify-content: flex-start; font-size: 1rem; }
+html.phone-shell .mine-sheet .mine-opt { width: 100%; min-height: 56px; justify-content: flex-start; font-size: 1rem; color: var(--cream); background: var(--oak-3); border: 1px solid var(--brass); }
+html.phone-shell .mine-sheet .mine-opt[aria-pressed="true"] { color: var(--ink); background: var(--parchment); }
+html.phone-shell .mine-sheet .mine-opt[aria-disabled="true"] { opacity: 1; border-style: dashed; }
+html.phone-shell .mine-sheet .mine-why { color: var(--l-dim); }
 html.phone-shell .mine-sheet .mine-place { min-height: 56px; font-size: 1rem; }
 html.phone-shell .mine-sheet .mine-place-row { display: grid; gap: 6px; }
 html.phone-shell .mine-sheet .mine-status { color: var(--l-text); }

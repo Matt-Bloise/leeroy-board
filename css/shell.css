@@ -1,14 +1,12 @@
-/* The phone shell (contract section 4; 2026-10-30). Full note: board/MOBILE-NOTES.md, file notes. */
+/* The phone shell (contract section 4; 2026-10-30). Full note: board/MOBILE-NOTES.md, file notes. Fix round B: notes/fix-round/NOTES-B.md. */
 html.phone-shell { --pl-h: 56px; }
 html.phone-shell .sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
-/* the head seal only (#seal; the coin presses it): .seal-free coins in a scene (the launch coin on Dates) stay */
 html.phone-shell #tabs, html.phone-shell .scene-hint, html.phone-shell .seal:not(.seal-free) { display: none !important; }
 html.phone-shell .sheet-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html.phone-shell #sheet-body { touch-action: pan-y; overflow-x: clip; }
 html.phone-shell #scene .sheet-head { touch-action: pan-x; }
 html.phone-shell { --step-0: 1rem; }
 
-/* the bar: five places and the coin */
 html.phone-shell .bottombar { display: flex; position: relative; overflow: visible; scroll-snap-type: none; align-items: stretch; border-top: 1px solid var(--grain); background: var(--oak-1); padding: 0 max(2px, env(safe-area-inset-right, 0px)) max(0px, env(safe-area-inset-bottom, 0px)) max(2px, env(safe-area-inset-left, 0px)); -webkit-mask-image: none; mask-image: none; touch-action: manipulation; }
 html.phone-shell .pl { flex: 1 1 0; min-height: 56px; min-width: 48px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; padding: 4px 2px 6px; font-family: var(--font-sc); font-size: 0.8125rem; letter-spacing: 0.04em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 html.phone-shell .pl-ico { display: block; width: 22px; height: 22px; opacity: 1; transition: opacity var(--t-micro) var(--ease-oak); }
@@ -19,7 +17,6 @@ html.phone-shell .pl[aria-current="true"] { color: var(--parchment); border-top-
 html.phone-shell .pl[aria-current="true"] .pl-ico { opacity: 0; }
 html.phone-shell .pl:focus-visible, html.phone-shell .bb-coin:focus-visible { outline: 2px solid var(--brass-hi, var(--brass)); outline-offset: -3px; }
 
-/* the coin rides above the lit place; its glide is the shell's spring, the spin is the CSS flip below */
 html.phone-shell .bb-coin { position: absolute; left: 0; top: -14px; width: 48px; height: 48px; margin: -6px 0 0 -6px; padding: 6px; display: block; background: none; border: 0; border-radius: 50%; cursor: pointer; z-index: 2; perspective: 240px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; will-change: transform; }
 html.phone-shell .bb-coin-img { display: block; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; box-shadow: 0 2px 6px var(--shadow); transform: rotateY(0deg); transform-origin: 50% 50%; }
 html.phone-shell .bb-coin.spin .bb-coin-img { animation: bb-spin var(--t-move) linear both; }
@@ -27,8 +24,10 @@ html.phone-shell .bb-coin.fade .bb-coin-img { animation: bb-fade 120ms linear bo
 @keyframes bb-spin { from { transform: rotateY(0deg); } to { transform: rotateY(360deg); } }
 @keyframes bb-fade { 0% { opacity: 0.2; } 100% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { html.phone-shell .bb-coin.spin .bb-coin-img { animation: none; } }
+html.phone-shell .bb-coin.off { visibility: hidden; }
+html.phone-shell .bottombar:has([data-place="more"][aria-current="true"]) .bb-coin { pointer-events: none; }
+@media (max-height: 500px) and (orientation: landscape) { html.phone-shell .bb-coin { top: 0; margin-top: 0; padding-top: 3px; } html.phone-shell .bb-coin-img { width: 26px; height: 26px; margin-inline: 5px; } }
 
-/* the More sheet's rows (the sheet itself is css/sheets.css) */
 html.phone-shell .bsheet-row { box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; min-width: 48px; padding: 8px 14px; text-align: left; font-family: var(--font-ui); font-size: 1rem; letter-spacing: 0.03em; color: var(--parchment); background: none; border: 0; border-bottom: 1px solid var(--grain); cursor: pointer; }
 html.phone-shell .bsheet-row.now { box-shadow: inset 3px 0 0 var(--brass); }
 html.phone-shell .bsheet-row:focus-visible { outline: 2px solid var(--brass-hi, var(--brass)); outline-offset: -3px; }
@@ -36,8 +35,8 @@ html.phone-shell .bsheet-row-txt { flex: 1 1 auto; min-width: 0; }
 html.phone-shell .more-medal { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
 html.phone-shell .new-dot { flex: 0 0 auto; font-family: var(--font-sc); font-size: 0.8125rem; letter-spacing: 0.06em; color: var(--brass); border: 1px solid var(--brass-dim); border-radius: 999px; padding: 1px 8px; }
 html.phone-shell .more-util { margin-top: 10px; border-top: 2px solid var(--brass-dim); }
+html.phone-shell .more-util .more-medal { object-fit: contain; border-radius: 0; }
 
-/* the head: a painted banner behind the title, swaying with the swipe and the tilt (--sway is degrees, written by ... Full note: board/MOBILE-NOTES.md, file notes. */
 html.phone-shell .sheet-head { --sway: 0; }
 html.phone-shell .sheet-name { position: relative; isolation: isolate; }
 html.phone-shell .sheet-name::before { content: ""; position: absolute; z-index: -1; left: 6px; right: 6px; top: -4px; height: 44px; pointer-events: none; border-style: solid; border-width: 0 6px; border-image-source: var(--banner, none); border-image-slice: 0 24 0 24 fill; border-image-width: 0 6px 0 6px; border-image-repeat: stretch; opacity: 0.92; transform-origin: 50% 0; transform: rotate(calc(var(--sway, 0) * 1deg + var(--tilt-x, 0) * 2deg)); transition: transform var(--t-micro) var(--ease-oak); }
@@ -56,13 +55,21 @@ html.phone-shell .sheet-head[data-pscene="library"] { --banner: url("../img/bann
 html.phone-shell .sheet-head[data-pscene="decide"] { --banner: url("../img/banners/olive.webp"); }
 html.phone-shell .sheet-head[data-pscene="tonight"] { --banner: url("../img/banners/teal.webp"); }
 
-/* targets: the head's own buttons at 48 px */
+html.phone-shell.scene-open #board { visibility: hidden; }
+html.phone-shell #scene .sheet-top { display: flex; justify-content: flex-start; gap: 4px; }
+html.phone-shell #scene .sheet-top > :is(.peek-btn, .close) { position: relative; inset: auto; margin: 0; flex: none; }
+html.phone-shell #scene-peek { order: -1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; width: 48px; padding: 0; font-size: 0; }
+html.phone-shell #scene-peek::before { content: ""; width: 18px; height: 12px; border: 2px solid; border-radius: 50% / 60%; box-sizing: border-box; background: radial-gradient(circle, currentColor 2.5px, transparent 3px); }
+html.phone-shell #scene-peek::after { content: "Room"; content: "Room" / ""; position: static; width: auto; height: auto; margin: 0; border-radius: 0; background: none; font-size: 0.6875rem; line-height: 1; letter-spacing: 0.04em; }
+html.phone-shell #scene .sheet-top > .close { order: 2; }
+html.phone-shell #scene .sheet-name { flex: 1 1 auto; min-width: 0; padding: 0; justify-content: center; }
+html.phone-shell.has-seal .sheet-titles { padding-left: 0; }
+html.phone-shell #scene #sheet-title { font-size: clamp(0.875rem, 4.2vw, 1.125rem); line-height: 1.1; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+
 html.phone-shell .close, html.phone-shell .peek-btn, html.phone-shell .sheet-emblem { min-width: 48px; min-height: 48px; }
 
-/* integrator (2026-10-30): the five formation (seals.css) ran 324 px in a 299 px body at 320 wide; smaller cards under 360 keep it inside */
-@media (max-width: 359px) { html.phone-shell .fc, html.phone-shell .fl { --fc: 48px; } html.phone-shell .fl-row { gap: 4px; } html.phone-shell .fl { padding-left: 3px; padding-right: 3px; } html.phone-shell .fl-tray { gap: 4px; } } /* 48 px cards (the phone floor) fit 288 px with the tighter trays */
+@media (max-width: 359px) { html.phone-shell .fc, html.phone-shell .fl { --fc: 48px; } html.phone-shell .fl-row { gap: 4px; } html.phone-shell .fl { padding-left: 3px; padding-right: 3px; } html.phone-shell .fl-tray { gap: 4px; } }
 
-/* landscape phone (verifier defect 10): the head took a third of 390; the empty rail wrap goes and the head packs to its 48 px row */
 html.phone-shell .tabs-wrap { display: none; }
-html.phone-shell.has-seal .sheet-head { min-height: 0; padding-left: 18px; } html.phone-shell.has-seal .sheet-top { min-height: 48px; } /* seals.css sizes the head for the seal, which the phone hides */
+html.phone-shell.has-seal .sheet-head { min-height: 0; padding-left: max(10px, env(safe-area-inset-left, 0px)); } html.phone-shell.has-seal .sheet-top { min-height: 48px; }
 @media (max-height: 500px) and (orientation: landscape) { html.phone-shell .sheet-top { min-height: 0; } html.phone-shell #scene .sheet-head { padding-top: 2px; padding-bottom: 2px; } }

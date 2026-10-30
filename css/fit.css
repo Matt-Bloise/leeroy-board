@@ -1,48 +1,38 @@
-/* The layout pass (companion contract 5.1, node N5, 2026-10-30). Loaded last; id-rooted selectors win at any load order. Values
-   scale with the window; no fixed height on a header. On phones only the wall's hero (the phone shell owns the scene head, the
-   rail and the bar). Targets and numbers: notes/companion/NOTES-N5.md */
+/* The layout pass (companion N5), loaded last. Why each rule: notes/companion/NOTES-N5.md, notes/fix-round/NOTES-B.md */
 
-/* the band above (and below) the frame: 4vh, 8 to 48 px */
 @media (min-width: 700px) and (min-height: 501px) {
   #scene { --fit-band: max(8px, min(4vh, 48px)); }
   #scene .sheet { height: calc(100vh - 2 * var(--fit-band)); height: calc(100svh - 2 * var(--fit-band)); }
 }
-/* from 2000 px: the frame at most 1700 px; visual scenes keep 85vw (a warming or leaving panel does not count) */
 @media (min-width: 2000px) {
   #scene .sheet { width: min(85vw, 1700px); }
   #scene .sheet:has(:is(#panel-roads, #panel-buffs, #panel-library, #panel-five):not([hidden], .warm, .leaving)) { width: 85vw; }
 }
 
-/* the scene head from 700 px: a title row and the banner rail beside a 72 px seal */
 @media (min-width: 700px) and (min-height: 501px) {
   #scene { --seal: clamp(72px, 6.5vh, 112px); }
   #scene .sheet-head { gap: 2px; padding-top: 4px; padding-right: 18px; padding-bottom: 0; min-height: 0; }
   html.has-seal #scene .sheet-head { padding-left: calc(var(--seal) + 30px); min-height: calc(var(--seal) + 12px); }
-  html.has-seal #scene #seal { left: 14px; top: 6px; } /* polish: the head seal only (the Ledger wax bullets, span.seal, moved 14 px onto their text) */
+  html.has-seal #scene #seal { left: 14px; top: 6px; }
   #scene .sheet-top { min-height: 48px; }
   #scene .sheet-name h2 { font-size: var(--step-1); }
-  /* cloth.css sizes each banner from --tab-h; the trim is recomputed (it was resolved on :root) */
   #scene #tabs { --tab-h: clamp(38px, 2vh + 18px, 44px); --cloth-trim: calc(var(--tab-h) * var(--cloth-slice) / 352); padding-top: 2px; padding-bottom: 4px; }
   #scene #tabs .tab { flex-direction: row; align-items: center; justify-content: center; gap: 5px; padding-bottom: calc(var(--tab-h) * 0.24); }
   #scene #tabs .tab .tab-ico { position: static; margin: 0; }
   #scene #tabs .tab[aria-selected="true"]::before { transform: translateY(3px); }
 }
-/* from 1200 px the subtitle shares the title's line, so every scene's head is one height */
 @media (min-width: 1200px) and (min-height: 501px) {
   #scene .sheet-titles { display: flex; align-items: baseline; justify-content: center; gap: 0 12px; min-width: 0; }
   #scene .sheet-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 }
 @media (min-width: 1500px) and (min-height: 501px) { #scene #tabs .tab { font-size: 0.875rem; } }
 @media (min-width: 700px) and (max-width: 1499px) and (min-height: 501px) and (max-height: 1199px) { #scene #tabs .tab:not([aria-selected="true"]) .tab-ico { display: none; } }
-/* tall screens: taller banners, the emblem over the name */
 @media (min-width: 700px) and (min-height: 1200px) {
   #scene #tabs { --tab-h: clamp(56px, 5vh, 92px); }
   #scene #tabs .tab { flex-direction: column; justify-content: flex-end; padding-bottom: calc(var(--tab-h) * 0.28); font-size: 0.9375rem; }
   #scene #tabs .tab .tab-ico { position: absolute; top: calc(var(--tab-h) * 0.18); }
 }
 
-/* the wall from 700 px: the band and the beam's room scale with the height; the countdown is the label, digits and date (the
-   launch line repeats the date) */
 @media (min-width: 700px) and (min-height: 501px) {
   #board { --fit-beam: clamp(18px, 2.5vh, 44px); padding-top: max(4px, min(0.6vh, 18px), env(safe-area-inset-top, 0px)); row-gap: max(4px, min(0.8vh, 16px)); }
   #main.has-beam, #main.beam-soon { margin-top: var(--fit-beam); }
@@ -66,33 +56,26 @@
   #top .clock-when { grid-area: when; }
   #top .clock-launch { display: none; }
 }
-/* tablets: the digits beside the label and the date */
 @media (min-width: 700px) and (max-width: 999px) and (min-height: 501px) {
   #top .clock { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "top digits" "when digits"; align-items: center; column-gap: 20px; }
 }
-/* from 1000 px: the title and its controls left, the countdown right */
 @media (min-width: 1000px) and (min-height: 501px) {
   #top.hero { grid-template-columns: minmax(0, 1fr) minmax(300px, 28%); align-items: center; }
   #top .clock { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "digits" "when"; justify-items: center; align-content: center; }
   #top .clock-when { text-align: center; }
 }
 @media (min-width: 1100px) and (max-width: 1499px) { #top #presence-text { max-width: 9em; text-wrap: balance; } }
-/* under 1100 px the controls take one row: no presence line (its dots stay), Sound as its icon, as on phones */
 @media (min-width: 700px) and (max-width: 1099px) {
   #top #presence-text { display: none; }
   #top :is(.journey, .depth) button { padding-inline: 7px; }
   #top #mode-btn { display: none; }
 }
-/* integrator (pass 2): the Play lantern (js/mode.js) joined the row and wrapped it (#main 187 px at 1366x768, 275 at 768x1024).
-   Up to 1999 px Sound is its icon, so the lantern fits the one row; under 1100 px there is no room at all: the wall's lantern
-   waits, the scene head's, the More sheet's row and P still switch */
 @media (min-width: 700px) and (max-width: 1999px) {
   #top #sound { width: 44px; padding: 0; font-size: 0; display: inline-grid; place-items: center; }
   #top #sound .spk { width: 20px; height: 20px; margin: 0; }
   #top #mode-btn { margin-inline-end: 0; }
 }
 
-/* phones: one title row, then Next steps beside the countdown, its date in place of the digits */
 @media (max-width: 699px) {
   #top.hero h1 { font-size: var(--step-2); }
   #top .presence { gap: 4px 8px; }
@@ -106,7 +89,6 @@
   #top .tonight-link { grid-column: 1; }
   #top .clock { grid-column: 2; align-content: center; }
 }
-/* a phone on its side: the title one line beside the controls, the countdown one line */
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   #board { padding-top: max(4px, env(safe-area-inset-top, 0px)); row-gap: 4px; }
   #top.hero { gap: 4px; }
@@ -119,25 +101,37 @@
   #top .clock-when { white-space: normal; }
 }
 
-/* warmNext sets left and right 18 px; with width: 100% the panel stood 18 px past the body */
 #sheet-body > .panel.warm { max-width: calc(100% - 36px); }
 
-/* Next steps: border-box (its padding overflowed at 768 px); the cards follow the panel's width */
 #panel-tonight { container-type: inline-size; box-sizing: border-box; }
 @container (min-width: 640px) { #panel-tonight > .tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (min-width: 1100px) { #panel-tonight:not(:has(.tn-pick)) > .tn-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } #panel-tonight:not(:has(.tn-pick)) > .tn-cards > :first-child { grid-column: auto; } }
 #nx-card { max-width: 720px; margin-inline: auto; }
-/* integrator pass 3: a scene title is one line beside its subtitle (What to decide wrapped to two at 1200 to 1366) */
 @media (min-width: 1200px) and (min-height: 501px) { #scene #sheet-title { white-space: nowrap; flex: none; } }
 @media (min-width: 1200px) and (max-width: 1279px) and (min-height: 501px) { #scene .sheet-sub { display: none; } }
-/* integrator pass 3: on wide frames the Sign-ups answers sit in a row across the frame (a 572 px column left half the frame empty) */
 @media (min-width: 1800px) { #dsu-act > #mine-act { grid-column: 1 / -1; justify-self: stretch; width: auto; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; column-gap: 28px; } }
-/* polish (2026-10-30): from 1200 to 1499 px the name block keeps the 11rem on its left for Look at the room and none on its right
-   (the plate stands there), so a subtitle fits beside its title (What to decide's was cut to "Still open, by Blizzard's ..." at 1280) */
 @media (min-width: 1200px) and (max-width: 1499px) and (min-height: 501px) { #scene .sheet-top:has(> .journey) > .sheet-name { padding-right: 12px; } }
-/* polish (2026-10-30): at 1280x720 (now measured) the wall ran 10 px past one screen; on laptop screens up to 740 px tall the tiles
-   start closer under the hero */
 @media (min-width: 1100px) and (max-height: 740px) {
   #board > #main:not(.has-beam):not(.beam-soon) { margin-top: 6px; }
   #board { padding-bottom: 3px; row-gap: 2px; } #board > #main { margin-bottom: 0; } #board > .wall-foot, #board > .wall-foot * { line-height: 1.1; }
+}
+/* B7: short screens keep 260 px of content: a phone on its side fills the screen; at 1000+ x 800- the library block is two rows */
+@media (max-height: 450px) {
+  html.phone-shell #scene .sheet { width: 100%; height: 100%; border: 0; border-radius: 0; }
+  html.phone-shell #lib-head .lib-stat.extra { display: none; }
+}
+@media (min-width: 1000px) and (max-height: 800px) {
+  #scene .lib-bar .lib-legend { display: none; }
+  #scene .lib-bar .lib-q { flex: 1 1 100%; }
+  #scene .lib-bar .lib-examples { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; }
+  #scene .lib-examples > * { flex: none; }
+  #scene #lib-head { column-gap: 18px; }
+  #lib-head .lib-stat { white-space: nowrap; }
+}
+/* B12: on its side every block starts on one edge; chip rows scroll, the pressed chip's mark whole */
+@media (max-height: 500px) and (orientation: landscape) {
+  html.phone-shell #sheet-body .panel:not(#panel-tonight) > :not(.lib-bar) { justify-self: start; }
+  html.phone-shell #dc-who { flex-wrap: nowrap; overflow-x: auto; padding-left: 2px; }
+  html.phone-shell #scene .lib-rail { margin-left: 0; padding-left: 2px; }
+  html.phone-shell .cat[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--wax); }
 }

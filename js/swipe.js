@@ -12,22 +12,21 @@
     const sh = window.BoardShell;
     return !sh || typeof sh.ownsSwipe !== "function" ? true : !!sh.ownsSwipe();
   };
-  const haptic = (name) => { try { const H = window.BoardHaptics; if (H && typeof H.fire === "function") H.fire(name); } catch (e) { /* silent where the platform gives nothing */ } };
-  /* the contract's rubber band; the same formula when BoardSpring is absent */
+  const haptic = (name) => { try { const H = window.BoardHaptics; if (H && typeof H.fire === "function") H.fire(name); } catch (e) { } };
   const resist = (d, dim) => {
     const S = SPRING();
     if (S && typeof S.resist === "function") return S.resist(d, dim);
     return d === 0 ? 0 : dim * (1 - 1 / ((0.55 * Math.abs(d)) / dim + 1)) * Math.sign(d);
   };
-  /* one spring glide (v in units per second); with no spring, or under reduced motion, the value jumps and rests at once */
+  /* a spring glide; without one, or reduced, it jumps */
   const glide = (preset, x0, v0, target, onFrame, onRest) => {
     const S = SPRING();
     if (!S || typeof S.spring !== "function" || reduced()) { onFrame(target); onRest(target); return null; }
     const h = S.spring({ preset, x: x0, v: v0, onFrame, onRest });
-    h.set(target); /* a spring starts on set(); it rests on its own and calls onRest once */
+    h.set(target);
     return h;
   };
-  const stopGlide = (g) => { try { if (g && typeof g.stop === "function") g.stop(); } catch (e) { /* the handle is spent */ } };
+  const stopGlide = (g) => { try { if (g && typeof g.stop === "function") g.stop(); } catch (e) { } };
   const tx = (n) => `translateX(${n.toFixed(2)}px)`;
   const head = () => $("#scene .sheet-head");
   const setSway = (dx) => { const hd = head(); if (hd) hd.style.setProperty("--sway", ((dx / Math.max(1, innerWidth)) * 3).toFixed(3)); };
@@ -41,13 +40,13 @@
     if (!owns() || K.SC.open === null) return false;
     const t = e && e.target;
     if (!t || typeof t.closest !== "function") return true;
-    if (t.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar, .bsheet, #map, .ch-sug")) return false; /* .ch-sug: the chat's chips scroll sideways (companion N6) */
-    /* the five's carousel keeps its own pan: a start inside it is refused unless the carousel is at one of its ends */
+    if (t.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar, .bsheet, #map, .ch-sug")) return false;
+    /* the five's carousel pans unless at an end */
     const car = carouselOf(t);
     return !(car && car.scrollLeft > 2 && car.scrollLeft < car.scrollWidth - car.clientWidth - 2);
   };
 
-  let pending = null; /* set at the start; becomes the live gesture on the first move that locks the axis */
+  let pending = null;
   let live = null;    /* { from, idx, car, sl, dir, nxt, tick } */
   let glideH = null, toKey = null;
   let flickDy = 0, flickLive = false;
@@ -121,7 +120,6 @@
       (x) => { if (!reduced()) paint(cur, nxt, x, dir); setSway(x); },
       () => {
         glideH = null;
-        /* the strip has carried on: the scene changes in this frame and the transforms clear with it */
         K.switchTab(to, false);
         clearPanels(cur, null);
         nxt.el.style.transform = "";
