@@ -216,6 +216,67 @@
    }
   },
   {
+   "id": "next.step",
+   "label": "Do the one next step the board shows you on Next steps",
+   "group": "Next steps",
+   "board": [
+    {
+     "scene": "tonight",
+     "control": "#nx-card primary button #nx-go",
+     "file": "js/next.js",
+     "proof": "id: \"nx-go\""
+    }
+   ],
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "tonight"
+    }
+   ],
+   "brain": null,
+   "byDesign": {
+    "brain": "The step writes through the action it names (rsvp, launch, pack, meet); the card itself reads."
+   }
+  },
+  {
+   "id": "next.snooze",
+   "label": "Put the next step off for a day (Not now)",
+   "group": "Next steps",
+   "board": [
+    {
+     "scene": "tonight",
+     "control": "#nx-alt Not now",
+     "file": "js/next.js",
+     "proof": "id: \"nx-alt\""
+    }
+   ],
+   "discord": null,
+   "brain": null,
+   "byDesign": {
+    "discord": "A device setting: Not now is kept on this device.",
+    "brain": "Stays on the device."
+   }
+  },
+  {
+   "id": "walk.first",
+   "label": "Take the first-open walk (four cards) or skip it",
+   "group": "Next steps",
+   "board": [
+    {
+     "scene": "tonight",
+     "control": "the first-open walk #walk",
+     "file": "scenes/walk.js",
+     "proof": "id: \"walk\""
+    }
+   ],
+   "discord": null,
+   "brain": null,
+   "byDesign": {
+    "discord": "The walk points at the board itself; Discord has its own help.",
+    "brain": "Writes nothing; the walk is remembered on this device."
+   }
+  },
+  {
    "id": "launch.state",
    "label": "Say where you are on launch night: in the queue, in the game, done",
    "group": "Launch night",
@@ -242,14 +303,20 @@
    "id": "sheet.race",
    "label": "Set your race on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "race"
    },
    "gapNote": {
-    "board": "The party sheet UI has not landed on master (M1 waits for it); BoardBrain has no sheet writer yet.",
     "discord": "The Party card has no buttons and there is no sheet command; the bot's own writes are source discord, not a person's tap."
    }
   },
@@ -257,14 +324,20 @@
    "id": "sheet.class",
    "label": "Set your class on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "class"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed.",
     "discord": "No sheet command or card button."
    }
   },
@@ -272,14 +345,20 @@
    "id": "sheet.spec_path",
    "label": "Set your spec on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "spec_path"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed.",
     "discord": "No sheet command or card button."
    }
   },
@@ -287,14 +366,20 @@
    "id": "sheet.spec_at_40",
    "label": "Set your spec at 40 on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "spec_at_40"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed.",
     "discord": "No sheet command or card button."
    }
   },
@@ -302,14 +387,20 @@
    "id": "sheet.professions",
    "label": "Set your professions on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "professions"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed.",
     "discord": "No sheet command or card button."
    }
   },
@@ -317,14 +408,20 @@
    "id": "sheet.level",
    "label": "Set your level on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "level"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed.",
     "discord": "No sheet command or card button."
    }
   },
@@ -332,29 +429,41 @@
    "id": "sheet.plan_zone",
    "label": "Set where you plan to be on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "plan_zone"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed (a sign-up's meeting point also writes plan_zone, server side).",
-    "discord": "No sheet command or card button."
+    "discord": "No sheet command or card button (a sign-up's meeting point also writes plan_zone, server side)."
    }
   },
   {
    "id": "sheet.goals",
    "label": "Write your goals line on the party sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet line editors (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
     "field": "goals"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed.",
     "discord": "No sheet command or card button."
    }
   },
@@ -362,7 +471,14 @@
    "id": "sheet.visibility",
    "label": "Hide or show one line of your sheet",
    "group": "Party sheet",
-   "board": null,
+   "board": [
+    {
+     "scene": "five",
+     "control": "#ps-sheet party switch on each line (My sheet)",
+     "file": "scenes/sheet.js",
+     "proof": "id: \"ps-sheet\""
+    }
+   ],
    "discord": null,
    "brain": {
     "route": "POST /api/sheet",
@@ -370,7 +486,6 @@
     "note": "visible true or false rides on any field's write"
    },
    "gapNote": {
-    "board": "Party sheet UI not landed.",
     "discord": "No sheet command or card button."
    }
   },
@@ -384,6 +499,12 @@
      "control": "#ask-form with #ask-text, #ask-share and Send (needs your own board link)",
      "file": "js/ask.js",
      "proof": "id: \"ask-form\""
+    },
+    {
+     "scene": "librarian",
+     "control": "#ch-form composer with #ch-text and Send",
+     "file": "scenes/chamber.js",
+     "proof": "id: \"ch-form\""
     }
    ],
    "discord": [
@@ -415,13 +536,18 @@
    "id": "dispatch.send",
    "label": "Send your answered asks to the party as a Dispatch",
    "group": "Leeroy",
-   "board": null,
+   "board": [
+    {
+     "scene": "librarian",
+     "control": "#ch-bring then #ch-post",
+     "file": "scenes/chamber.js",
+     "proof": "id: \"ch-post\""
+    }
+   ],
    "discord": null,
    "brain": {
-    "route": "POST /api/dispatch"
-   },
-   "gapNote": {
-    "board": "The Dispatch UI has not landed on master; BoardBrain has no dispatch sender yet."
+    "route": "POST /api/dispatch",
+    "client": "dispatch"
    },
    "byDesign": {
     "discord": "The asker's yes is given on the board (the Dispatch plan); Discord shows the finished Dispatch card."
@@ -483,6 +609,19 @@
    "brain": null,
    "byDesign": {
     "brain": "Reading the library writes nothing."
+   }
+  },
+  {
+   "id": "library.refresh",
+   "label": "Ask the pipeline to check Blizzard now and refresh the Library",
+   "group": "Open",
+   "board": null,
+   "discord": null,
+   "brain": null,
+   "gapNote": {
+    "board": "Lands in launch week (node L3): the refresh button in the Library head.",
+    "discord": "Lands in launch week (node L3); no command.",
+    "brain": "Lands in launch week (node L3): POST /api/refresh, once the Worker has the route."
    }
   },
   {
@@ -726,6 +865,25 @@
    }
   },
   {
+   "id": "device.mode",
+   "label": "Switch between Play mode (text only, nothing moves) and Lounge on this device",
+   "group": "This device",
+   "board": [
+    {
+     "scene": "device",
+     "control": "#mode-btn Play mode",
+     "file": "js/mode.js",
+     "proof": "id: \"mode-btn\""
+    }
+   ],
+   "discord": null,
+   "brain": null,
+   "byDesign": {
+    "discord": "A setting of the page on this device.",
+    "brain": "Stays on this device."
+   }
+  },
+  {
    "id": "device.forget",
    "label": "Clear what this browser remembers about you",
    "group": "This device",
@@ -752,7 +910,7 @@
     {
      "scene": "device",
      "control": "the #probe sheet: Check my phone, Send to Bloise",
-     "file": "js/probe.js",
+     "file": "scenes/probe.js",
      "proof": "id: \"probe-sheet\""
     }
    ],
