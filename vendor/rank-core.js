@@ -34,6 +34,11 @@ export function scoreFact(f, alias, words, expanded, idf) {
   if (f.key.split(".").some((k) => expanded.has(stem(k)))) score += 1.5;
   return Math.round(score * 10) / 10;
 }
+// Plain-role questions ("what does a priest do", "what is a paladin", "is a druid a healer", "what role does a mage play") ask
+// what a class is for. A page's `<class>.role` fact answers that, so it gets a bonus on such a question (and only there, and
+// only when the page already matched). The words of the question stay the only evidence of WHICH class.
+export const ROLE_INTENT = /\bwhat\s+(?:does|do)\s+(?:an?\s+|the\s+)?[a-z']+(?:\s+[a-z']+)?\s+do\b|\bwhat\s+(?:is|are|'s)\s+(?:an?|the)\s+[a-z']+(?:\s+[a-z']+)?\s*\??$|\bwhats\s+(?:an?\s+|the\s+)?[a-z']+\s*\??$|\bis\s+(?:an?|the)\s+[a-z']+\s+(?:an?\s+)?(?:healer|tank|dps|caster|support|damage dealer)\b|\bcan\s+(?:an?\s+|the\s+)?[a-z']+\s+(?:heal|tank)\b|\brole\b/i;
+export const roleIntent = (q) => ROLE_INTENT.test(String(q));
 // An Open bullet counts only at 2 or more, and is then shaded half a point below a fact with the same words.
 export function scoreOpen(text, expanded, idf) {
   const hay = String(text).toLowerCase();
@@ -41,7 +46,11 @@ export function scoreOpen(text, expanded, idf) {
   for (const w of expanded) if (hay.includes(w)) score += idf[w];
   return score >= 2 ? Math.round((score - 0.5) * 10) / 10 : 0;
 }
+// The bonus goes only to a role fact whose owner the question names: a word of the question other than "role" is in the fact's
+// key (mage.role) or in an alias of its page. Otherwise the word "role" alone would lift every class's role fact equally.
+const named = (f, p, alias, expanded) => [...expanded].some((w) => w !== "role" && (f.key.split(".").slice(0, -1).some((k) => stem(k) === w) || alias.includes(w)));
 export function rank(q, pages, { hays = factHays(pages), idf: known = null, stop = STOP, synonyms = SYNONYMS } = {}) {
+  const role = roleIntent(q);
   const words = questionWords(q, stop);
   const expanded = expandWords(words, synonyms);
   const idf = idfFor(expanded, hays, known);
@@ -49,7 +58,8 @@ export function rank(q, pages, { hays = factHays(pages), idf: known = null, stop
   for (const p of pages) {
     const alias = aliasText(p.aliases);
     for (const f of p.facts) {
-      const score = scoreFact(f, alias, words, expanded, idf);
+      let score = scoreFact(f, alias, words, expanded, idf);
+      if (score && role && /\.role$/.test(f.key) && named(f, p, alias, expanded)) score = Math.round((score + 3) * 10) / 10;
       if (score) hits.push({ score, page: p.id, key: f.key, value: f.value, open: false, p, f });
     }
     for (const text of p.open || []) {

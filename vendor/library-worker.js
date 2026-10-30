@@ -1,7 +1,7 @@
 // Living Board library search worker (V4-SPEC 3.3). A module worker: it loads every category file of data/library/ and
 // search.json off the page's thread, then answers { id, q, cap, full, cat, more } with the ranked hits, scored by rank-core.js (the wiki's
 // own ranker, copied by build-data.mjs), so typing never blocks a frame. Hits carry what a result row shows.
-import { rank, factHays } from "./rank-core.js?v=7f8514dc3a";
+import { rank, factHays } from "./rank-core.js?v=463f3fc4b2";
 let pages = [], hays = [], idf = null, ready = null;
 /* V11 cache stamps: index.json loads with "no-cache" and names every other file's stamp, which rides on its URL */
 let stamps = {};
