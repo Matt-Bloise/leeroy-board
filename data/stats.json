@@ -1,32 +1,14 @@
 {
- "generated": "2026-10-30T13:02:10.213Z",
- "answers": 99,
- "replies": 99,
+ "generated": "2026-10-30T14:17:05.051Z",
+ "answers": 102,
+ "replies": 102,
  "noreply": 0,
  "median_s": 42,
- "p95_s": 3909,
+ "p95_s": 3162,
  "max_s": 24765,
  "miss_threshold_s": 900,
  "misses": 9,
  "last7": [
-  {
-   "closed_utc": "2026-10-29T16:40:40.107Z",
-   "seconds": 17,
-   "kind": "/ask",
-   "how": "reply"
-  },
-  {
-   "closed_utc": "2026-10-29T16:42:30.842Z",
-   "seconds": 16,
-   "kind": "mention",
-   "how": "reply"
-  },
-  {
-   "closed_utc": "2026-10-29T16:44:41.166Z",
-   "seconds": 12,
-   "kind": "mention",
-   "how": "reply"
-  },
   {
    "closed_utc": "2026-10-29T16:46:21.189Z",
    "seconds": 16,
@@ -49,6 +31,24 @@
    "closed_utc": "2026-10-30T01:20:56.590Z",
    "seconds": 25,
    "kind": "/ask",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-30T13:39:40.210Z",
+   "seconds": 28,
+   "kind": "mention",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-30T13:41:30.378Z",
+   "seconds": 23,
+   "kind": "mention",
+   "how": "reply"
+  },
+  {
+   "closed_utc": "2026-10-30T13:42:31.183Z",
+   "seconds": 25,
+   "kind": "mention",
    "how": "reply"
   }
  ],
