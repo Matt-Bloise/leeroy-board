@@ -259,8 +259,11 @@ function renderCalendar(now) {
   const inWin = (d) => win && d.getTime() + 864e5 > local(win).getTime() && d.getTime() + 432e5 < win.until_epoch * 1000; /* the day counts when its noon falls in the window */
   const launch = t.events.find((e) => e.key === "launch") || t.events[0];
   const mid = local(launch), first = new Date(mid.getFullYear(), mid.getMonth(), 1), last = new Date(mid.getFullYear(), mid.getMonth() + 1, 0);
-  const start = new Date(first); start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
-  const end = new Date(last); end.setDate(last.getDate() + ((7 - last.getDay()) % 7));
+  /* weeks start on Sunday, as US calendars do (the owner, 2026-10-29); when today falls in the week before the month, the grid
+     starts on that week's Sunday so today stays on it (Nov 2026 begins on a Sunday, which would drop Oct 29 to 31) */
+  const nowD = new Date(now * 1000), from = nowD < first && first - nowD < 7 * 864e5 ? new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()) : first;
+  const start = new Date(from); start.setDate(from.getDate() - from.getDay());
+  const end = new Date(last); end.setDate(last.getDate() + (6 - last.getDay()));
   const today = dayKey(new Date(now * 1000));
   const cells = [];
   for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
@@ -279,7 +282,7 @@ function renderCalendar(now) {
   const fmtDay = (d) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d);
   box.replaceChildren(h("details", { class: "cal-wrap", ...(calOpen ? { open: "" } : {}) }, h("summary", { class: "cal-sum" }, "The month on a calendar"), h("div", { class: "cal", role: "group", "aria-label": `${month}, with the board's dates marked` },
     h("h4", { text: month }),
-    h("div", { class: "cal-grid" }, ...["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
+    h("div", { class: "cal-grid" }, ...["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
     h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}, the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
       ...later.map((e) => h("button", { type: "button", class: "cal-day cal-later", "data-ev": e.key, "data-day": dayKey(local(e)), "aria-label": `${fmtDay(local(e))}: ${e.label}` }, emb(EMB_LABEL[e.key] || "seal"), h("span", { text: `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}` }))))));
 }
