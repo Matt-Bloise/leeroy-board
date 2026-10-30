@@ -2,11 +2,11 @@
 // one Canvas 2D element inside the host the hook made. The draw loop runs only while something moves or changed; a hidden
 // page or a closed scene stops it. All maths sits in geo.js, view.js and routes.js; this file only decides what to draw.
 import * as geo from "./geo.js?v=eb6dd67b63";
-import { createView, createTiles, defaultLoader, createFrames } from "./view.js?v=d9db48b371";
-import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=07b860e12e";
+import { createView, createTiles, defaultLoader, createFrames } from "./view.js?v=e7678982c4";
+import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=dbe2934de6";
 import { bindGestures } from "./gestures.js?v=6bfa13bc52";
 import { buildGraph, makePlan, buildTimeline, timelineAt, slicePath, meetOf } from "./routes.js?v=1b698e7e6d";
-import { createCards } from "./cards.js?v=515588e15d";
+import { createCards } from "./cards.js?v=5a423a74d2";
 import * as T from "./tokens.js?v=c2a525a5c5";
 import { createFoley } from "./foley.js?v=b3098ff2d2";
 
@@ -50,7 +50,8 @@ export async function createAtlas(opts) {
   const art = (cell) => `${base}img/atlas/${artFile(cell)}.webp`;
   const orn = (cls, cell) => h("img", { class: `atlas-orn ${cls}`, src: art(cell), alt: "", "aria-hidden": "true", decoding: "async" });
   const shapesLine = world.shapes && world.shapes.source === "zmp" ? "shapes from the client's zone grid" : "zone plates; coasts to come";
-  const cartouche = h("div", { class: "atlas-cartouche" }, orn("orn-frame", "ornament-cartouche-frame"), h("div", { class: "atlas-title" }, h("strong", { text: "The Atlas" }), opts.shapesNote === false ? null : h("span", { text: shapesLine })));
+  // the frame holds the title only; the shapes line sits on its own label under it, where the scrollwork cannot clip it
+  const cartouche = h("div", { class: "atlas-cartouche" }, h("div", { class: "atlas-cart" }, orn("orn-frame", "ornament-cartouche-frame"), h("div", { class: "atlas-title" }, h("strong", { text: "The Atlas" }))), opts.shapesNote === false ? null : h("span", { class: "atlas-shapes", text: shapesLine }));
   const scaleBar = h("div", { class: "atlas-scale", "aria-hidden": "true" }, orn("orn-scale", "ornament-scale-bar"), h("i", { class: "atlas-bar" }), h("span", { class: "atlas-scale-t", text: "" }));
   const mkBtn = (cls, label, text, f) => { const b = h("button", { type: "button", class: `atlas-b ${cls}`, "aria-label": label, title: label, text }); b.addEventListener("click", f); return b; };
   const toast = h("div", { id: "atlas-toast", class: "atlas-toast", role: "status", "aria-live": "polite" });
@@ -118,22 +119,59 @@ export async function createAtlas(opts) {
     if (S.anim) stepAnim(now);
     if (S.oyAnim) { const o = S.oyAnim, t = clamp((now - o.t0) / 260, 0, 1); view.oy = o.f + (o.to - o.f) * ease(t); if (t >= 1) S.oyAnim = null; S.dirty = true; }
     if (S.playing) stepPlan();
+    const moving = !!(S.anim || S.oyAnim || (G && G.inertia)) || now - (S.lastMove || 0) < 140;
+    if (S.moving && !moving) S.dirty = true; // settle: one more frame with the dashes back
+    S.moving = moving;
     if (ctx && (S.dirty || animating())) draw();
     S.dirty = false;
     const sig = `${view.cx.toFixed(0)},${view.cy.toFixed(0)},${view.z.toFixed(2)}`;
     if (sig !== S.lastView) { S.lastView = sig; onViewChange(); }
-    if (animating() || S.dirty) S.raf = requestAnimationFrame(frame); else frames.idle();
+    if (animating() || S.dirty || S.moving) S.raf = requestAnimationFrame(frame); else frames.idle();
   }
   function draw() {
     const k = view.dpr;
     ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.fillStyle = S.colors.sea || FALLBACK.sea; ctx.fillRect(0, 0, view.w, view.h);
-    S.tilesLoaded = tiles.draw(ctx, view);
-    zepAt();
-    layers.draw(ctx, view, S);
+    // one bad layer never ends the loop: the frame keeps its tiles and the next change draws again
+    try { S.tilesLoaded = tiles.draw(ctx, view); zepAt(); layers.draw(ctx, view, S); } catch (e) { if (!S.drawErr) { S.drawErr = true; emit("error", { what: "draw", message: String((e && e.message) || e) }); } }
+    S.drawn = (S.drawn || 0) + 1;
   }
   const narrow = () => { try { return !!matchMedia("(max-width: 699px)").matches; } catch (e) { return false; } };
-  const sheetOy = () => (narrow() && (S.card || S.plan) ? Math.round(view.h * 0.22) : 0);
+  // panels in host pixels; null when hidden or not laid out (the fake DOM)
+  const relRect = (el) => {
+    if (!el || el.hidden || !el.getBoundingClientRect || !host.getBoundingClientRect) return null;
+    const hr = host.getBoundingClientRect(), r = el.getBoundingClientRect();
+    if (!hr || !r || !r.width || !r.height || !hr.width) return null;
+    return { l: r.left - hr.left, t: r.top - hr.top, r: r.right - hr.left, b: r.bottom - hr.top, w: r.width, h: r.height };
+  };
+  // on phones the card is a bottom sheet: the focus sits in the middle of the map left above it
+  const sheetOy = () => { if (!narrow() || !S.card) return 0; const c = relRect(cards.card); return Math.round(Math.min(c ? c.h : view.h * 0.46, view.h * 0.6) / 2); };
+  const oyT = () => (S.oyAnim ? S.oyAnim.to : view.oy);
+  // the free parts of the box: under the cartouche, beside or above the plan panel, beside or above the card
+  function freeBoxes() {
+    const base = { l: 0, t: 0, r: 0, b: 0 }, ca = relRect(cartouche);
+    if (ca && ca.b < view.h * 0.3) base.t = Math.max(0, ca.b + 4);
+    let out = [base];
+    const cut = (el) => {
+      const p = relRect(el); if (!p) return;
+      const next = [];
+      for (const b of out) {
+        if (narrow()) { next.push({ ...b, b: Math.max(b.b, view.h - p.t + 8) }); continue; }
+        // a side panel: either the strip beside it or the band above or below it stays free
+        if (p.l < view.w * 0.25) next.push({ ...b, l: Math.max(b.l, p.r + 8) }); else next.push({ ...b, r: Math.max(b.r, view.w - p.l + 8) });
+        if (p.t < view.h * 0.25) next.push({ ...b, t: Math.max(b.t, p.b + 8) }); else next.push({ ...b, b: Math.max(b.b, view.h - p.t + 8) });
+      }
+      out = next;
+    };
+    cut(cards.plan); cut(cards.card); if (narrow()) cut(ctl);
+    return out;
+  }
+  // the best fit of a rectangle over the free parts (the one that shows it largest)
+  function fitFree(r, pad, zcap) {
+    let best = null;
+    for (const I of freeBoxes()) { const f = view.fitIn(r, I, pad, zcap, oyT()); if (!best || f.z > best.z) best = f; }
+    return best;
+  }
   function syncSheet() { const want = sheetOy(); if (want === view.oy) return; if (reduced() || !ctx) { view.oy = want; invalidate(); } else S.oyAnim = { t0: performance.now(), f: view.oy, to: want }; invalidate(); }
   const stepAnim = (now) => {
     const a = S.anim, t = clamp((now - a.t0) / a.dur, 0, 1), e = ease(t);
@@ -145,7 +183,7 @@ export async function createAtlas(opts) {
     if (!S.subLoaded && view.z >= 3) loadSubzones();
     const list = layers.placesInView(view, S);
     cards.places(list, (p) => { S.focus = p.id; ensureVisible(p); invalidate(); });
-    updateScale(); updateFoley();
+    updateScale(); updateFoley(); placeAway();
     emit("view", { zoom: view.z, center: [view.cx, view.cy] });
   }
   async function loadSubzones() {
@@ -203,13 +241,86 @@ export async function createAtlas(opts) {
   function fitIds(ids, o) {
     const r = rectOf(ids); if (!r) return null;
     if (r[2] - r[0] < 400) { r[0] -= 600; r[2] += 600; } if (r[3] - r[1] < 400) { r[1] -= 400; r[3] += 400; }
-    const f = view.fit(r, 0.12, 4);
+    const f = fitFree(r, 0.12, 4);
     return moveTo(f.cx, f.cy, f.z, o);
+  }
+  // places of a plan grouped by continent: the meeting point's continent is home, the rest are away. Fitting all of them
+  // shows mostly sea (the five start on two continents), so the view fits home and points at the rest from the edge.
+  const contOf = (id) => { const p = placeById.get(id); return p ? p.map_id : null; };
+  function clustersOf(ids, meet) {
+    const g = new Map();
+    for (const id of ids) { const c = contOf(id); if (!g.has(c)) g.set(c, []); g.get(c).push(id); }
+    const mc = contOf(meet), out = [];
+    for (const [c, list] of g) out.push({ home: c === mc, ids: list });
+    return out.sort((a, b) => (b.home ? 1 : 0) - (a.home ? 1 : 0));
+  }
+  const homeIds = (ids, meet) => { const cl = clustersOf(ids, meet); return cl.length && cl[0].home ? cl[0].ids : ids; };
+  const NUM = ["no one", "one", "two", "three", "four", "five", "six"];
+  function setAway(ids, meet, who) {
+    const cl = clustersOf(ids, meet);
+    S.away = cl.length > 1 ? cl.map((c) => {
+      const starts = (who || []).filter((w) => c.ids.includes(w.from)), sp = starts.length ? placeById.get(starts[0].from) : null, z = sp ? zoneById.get(sp.zone) : null;
+      const label = c.home ? (placeById.get(meet) || {}).name || meet : z ? z.name : (placeById.get(c.ids[0]) || {}).name || c.ids[0];
+      const say = c.home ? `Show ${label}, the meeting point` : `Show ${label}, where ${NUM[starts.length] || starts.length} of the party start`;
+      return { ids: c.ids, label, say };
+    }) : [];
+    placeAway();
+  }
+  function fitPlan(o) {
+    const pl = S.plan; if (!pl) return null;
+    const ids = [...S.planPlaces], many = pl.who.length > 1;
+    setAway(many ? ids : [], pl.meet, pl.who);
+    return fitIds(many ? homeIds(ids, pl.meet) : ids, o);
+  }
+  // the edge pointers to the away clusters: one button each, on the line from the free centre toward the cluster
+  function placeAway() {
+    S.awayEls = S.awayEls || new Map();
+    const want = new Set((S.plan && S.away) || []);
+    for (const [c, b] of S.awayEls) if (!want.has(c)) { if (b.parentNode) b.parentNode.removeChild(b); S.awayEls.delete(c); }
+    if (!want.size) return;
+    const vr = view.rect(), m = 56, panels = [relRect(cards.plan), relRect(cards.card), relRect(ctl)].filter(Boolean);
+    // the pointer sits on the box's own edge toward the cluster; where a panel covers that spot, on the free part's edge
+    const edge = (I, sx, sy) => {
+      const x0 = I.l + m + 40, x1 = view.w - I.r - m - 40, y0 = I.t + m, y1 = view.h - I.b - m, fx = (I.l + view.w - I.r) / 2, fy = (I.t + view.h - I.b) / 2, dx = sx - fx, dy = sy - fy;
+      if (x1 <= x0 || y1 <= y0) return null;
+      let k = 1;
+      if (dx > 0) k = Math.min(k, (x1 - fx) / dx); if (dx < 0) k = Math.min(k, (x0 - fx) / dx);
+      if (dy > 0) k = Math.min(k, (y1 - fy) / dy); if (dy < 0) k = Math.min(k, (y0 - fy) / dy);
+      return [fx + dx * k, fy + dy * k, Math.atan2(dy, dx)];
+    };
+    const under = (q) => q && panels.some((p) => q[0] > p.l - 90 && q[0] < p.r + 90 && q[1] > p.t - 30 && q[1] < p.b + 30);
+    for (const c of want) {
+      let b = S.awayEls.get(c);
+      if (!b) {
+        b = h("button", { type: "button", class: "atlas-away", "aria-label": c.say, title: c.say }, h("span", { class: "atlas-away-arrow", "aria-hidden": "true", text: "→" }), h("span", { text: c.label }));
+        b.addEventListener("click", () => fitIds(c.ids, { animate: true }));
+        host.append(b); S.awayEls.set(c, b);
+      }
+      const r = rectOf(c.ids), seen = r && !(r[2] < vr[0] || r[0] > vr[2] || r[3] < vr[1] || r[1] > vr[3]);
+      const sp = r ? view.toScreen((r[0] + r[2]) / 2, (r[1] + r[3]) / 2) : null;
+      let q = sp && edge({ l: 0, t: 0, r: 0, b: 0 }, sp[0], sp[1]);
+      if (under(q)) q = edge(freeBoxes()[0], sp[0], sp[1]);
+      if (!r || seen || !q || (narrow() && S.card)) { b.hidden = true; continue; }
+      b.hidden = false;
+      b.style.left = `${Math.round(q[0])}px`; b.style.top = `${Math.round(q[1])}px`;
+      const arrow = b.firstChild; if (arrow && arrow.style) arrow.style.transform = `rotate(${Math.round((q[2] * 180) / Math.PI)}deg)`;
+    }
   }
   const ensureVisible = (p) => {
     const [x, y] = view.toScreen(p.a[0], p.a[1]), m = 40;
     if (x < m || y < m || x > view.w - m || y > view.h - m) moveTo(p.a[0], p.a[1], view.z, { animate: false });
   };
+  // after a pick opens a card: a place the card now covers moves to the free middle
+  function reveal(p, o) {
+    const s = view.scale(), x = view.w / 2 + (p.a[0] - view.cx) * s, y = view.h / 2 - oyT() + (p.a[1] - view.cy) * s, m = 28;
+    let hid = y < m || y > view.h - m || x < m || x > view.w - m;
+    const c = relRect(cards.card);
+    if (c && x > c.l - m && x < c.r + m && y > c.t - m && y < c.b + m) hid = true;
+    if (!hid) return false;
+    const f = fitFree([p.a[0], p.a[1], p.a[0], p.a[1]], 0, view.z);
+    moveTo(f.cx, f.cy, view.z, o);
+    return true;
+  }
 
   // ---------- cards and acts ----------
   const act = {
@@ -217,9 +328,10 @@ export async function createAtlas(opts) {
     openPlace: (id) => atlas.open(id, { card: true, animate: true }),
     plan: (id) => { atlas.showPlan(atlas.plan({ meet: id }), { animate: true, fit: true }); },
     planWho: (meet, ck) => { S.planWho = ck; atlas.showPlan(atlas.plan({ meet, who: ck }), { animate: true, fit: true }); },
+    folded: () => { placeAway(); invalidate(); },
     send: (meet) => copy(`/map plan:${meet}`, `Copied /map plan:${meet}. Paste it in Discord and the card is posted there when you tap Post to channel.`),
   };
-  const cards = createCards({ host, h, places, world, links, routes, party, journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
+  const cards = createCards({ host, h, places, world, links, routes, party, foldFirst: () => narrow() || (coarse() && view.w < 1000), /* phones and tablets: the plan opens as a title bar */ journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
   const toastSay = (txt) => { toast.textContent = txt; clearTimeout(S.toastT); S.toastT = setTimeout(() => { toast.textContent = ""; }, 2400); };
   function copy(text, say) {
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) { /* the toast still shows */ }
@@ -227,14 +339,14 @@ export async function createAtlas(opts) {
   }
   function closeCard() {
     const was = cards.hideCard(); S.pinned = null; S.card = null; S.focus = null; S.zoneHot = null; invalidate();
-    syncSheet();
+    syncSheet(); placeAway();
     if (was) emit("card", { id: null });
     return !!was;
   }
   function openCard(kind, id) {
     if (kind === "place") { cards.showPlace(placeById.get(id)); S.pinned = id; S.zoneHot = null; }
     else { cards.showZone(zoneById.get(id)); S.pinned = null; S.zoneHot = id; }
-    S.card = id; syncSheet(); invalidate(); emit("card", { id });
+    S.card = id; syncSheet(); placeAway(); invalidate(); emit("card", { id });
   }
 
   // ---------- plan ----------
@@ -301,18 +413,19 @@ export async function createAtlas(opts) {
       S.planPlaces = new Set(plan.who.flatMap((w) => w.route)); S.planPlaces.add(plan.meet);
       const m = meetOf(routes), meta = { status: plan.meet_status || m.status };
       cards.showPlan(plan, graph, meta);
-      if (o.fit) fitIds([...S.planPlaces], { animate: !!o.animate });
       if (reduced() || o.animate === false) {
         S.playing = false; setPlanEdges(Object.fromEntries([...S.edgeDir.keys()].map((id) => [id, 1])));
         for (const id of S.edgeDir.keys()) { S.fired.add(id); emit("route-drawn", { edge: id }); if (foley) foley.cue("quill"); }
         S.party = partyMarkers(startsOf);
       } else { S.playing = true; S.t0 = performance.now(); setPlanEdges(Object.fromEntries([...S.edgeDir.keys()].map((id) => [id, 0]))); }
-      syncSheet(); invalidate(); emit("plan", { plan });
+      syncSheet();
+      if (o.fit) fitPlan({ animate: !!o.animate }); else setAway(plan.who.length > 1 ? [...S.planPlaces] : [], plan.meet, plan.who);
+      invalidate(); emit("plan", { plan });
       return true;
     },
     clearPlan() {
       const was = cards.hidePlan();
-      S.plan = null; S.tl = null; S.playing = false; S.planEdges = []; S.planPlaces = new Set(); S.planWho = null; standing(); S.zep = null; syncSheet(); invalidate();
+      S.plan = null; S.tl = null; S.playing = false; S.planEdges = []; S.planPlaces = new Set(); S.planWho = null; S.away = []; placeAway(); standing(); S.zep = null; syncSheet(); invalidate();
       if (was) emit("plan", { plan: null });
       return was;
     },
@@ -327,12 +440,13 @@ export async function createAtlas(opts) {
     },
     openToken(token, o = {}) {
       const p = T.parse(token); if (!p) return false;
-      if (p.kind === "home") { const to = fitIds(dayOneIds(), o); closeCard(); S.base = { token: "atlas", v: to }; atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); S.base.plan = true; return true; }
+      if (p.kind === "home") { closeCard(); atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); const to = fitPlan(o) || fitIds(dayOneIds(), o); S.base = { token: "atlas", v: to, plan: true }; return true; }
       if (p.kind === "place") return placeById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "zone") return zoneById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "plan") {
         if (!placeById.has(p.meet)) return false;
-        const to = fitIds([...new Set([...dayOneIds(), p.meet])], o); atlas.showPlan(atlas.plan(p.who ? { meet: p.meet, who: p.who } : { meet: p.meet }), { animate: !!o.animate });
+        atlas.showPlan(atlas.plan(p.who ? { meet: p.meet, who: p.who } : { meet: p.meet }), { animate: !!o.animate });
+        const to = fitPlan(o) || fitIds([...new Set([...dayOneIds(), p.meet])], o);
         S.planWho = p.who || null; S.base = { token: T.make(p), v: to, plan: true }; return true;
       }
       if (p.kind === "view") { closeCard(); const to = moveTo(p.au, p.av, p.zoom, o); S.base = { token: T.make(p), v: to }; return true; }
@@ -346,11 +460,12 @@ export async function createAtlas(opts) {
     pause() { S.paused = true; if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; } frames.idle(); foley.stop(); },
     resume() { if (S.destroyed) return; S.paused = false; refreshColors(); resize(); foley.start(); invalidate(); },
     zoomBy(n) { animateZoom(n, view.w / 2, view.h / 2); },
-    dayOne() { const to = fitIds(dayOneIds(), { animate: true }); S.base = { token: "atlas", v: to }; return to; },
+    dayOne() { const to = (S.plan && fitPlan({ animate: true })) || fitIds(homeIds(dayOneIds(), meetOf(routes).place || openMeet()), { animate: true }); S.base = { token: "atlas", v: to, plan: !!S.plan }; return to; },
     debug: { tilesLog, state: S, graph, layers },
     destroy() {
       S.destroyed = true; if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; clearTimeout(S.toastT);
-      G.destroy(); foley.destroy(); tiles.clear(); cards.destroy();
+      G.destroy(); foley.destroy(); tiles.clear(); cards.destroy(); S.away = []; S.plan = null; placeAway();
+      if (canvas.removeEventListener) canvas.removeEventListener("contextrestored", onRestore);
       window.removeEventListener("resize", onResize); if (doc.removeEventListener) doc.removeEventListener("visibilitychange", onVis);
       if (ro) { try { ro.disconnect(); } catch (e) { /* ignore */ } }
       for (const e of chrome) if (e.parentNode) e.parentNode.removeChild(e);
@@ -383,24 +498,28 @@ export async function createAtlas(opts) {
   };
   const G = bindGestures({
     el: canvas, host, view, reduced, keys, animateZoom,
-    onChange: () => { S.anim = null; invalidate(); },
+    onChange: () => { S.anim = null; S.lastMove = performance.now(); invalidate(); },
     onDown: () => { S.anim = null; },
     onHover: hoverAt,
     onPick: (x, y, e) => {
       const hit = layers.hit(view, x, y, coarse() || (e && e.pointerType === "touch"), S);
-      if (hit && hit.place) { openCard("place", hit.place.id); emit("pick", { place: hit.place }); }
+      if (hit && hit.place) { openCard("place", hit.place.id); reveal(hit.place, { animate: !reduced() }); emit("pick", { place: hit.place }); }
       else if (hit && hit.zone) { openCard("zone", hit.zone.id); emit("pick", { zone: hit.zone }); }
       else { closeCard(); }
     },
   });
   const onResize = () => resize();
   const onVis = () => { if (!doc.hidden) invalidate(); else frames.idle(); };
+  // a 2D canvas whose context the browser dropped and gave back comes back blank: draw it again (likely cause of the one
+  // flat-sea first open the verifier saw; unconfirmed)
+  const onRestore = () => { S.dirty = true; invalidate(); };
+  if (canvas.addEventListener) canvas.addEventListener("contextrestored", onRestore);
   window.addEventListener("resize", onResize); if (doc.addEventListener) doc.addEventListener("visibilitychange", onVis);
   let ro = null;
   if (typeof ResizeObserver === "function") { try { ro = new ResizeObserver(() => resize()); ro.observe(host); } catch (e) { ro = null; } }
 
   refreshColors(); loadArt(); resize(); standing();
-  const home = fitIds(dayOneIds(), { animate: false }); S.base = { token: "atlas", v: home };
+  const home = fitIds(homeIds(dayOneIds(), meetOf(routes).place || openMeet()), { animate: false }); S.base = { token: "atlas", v: home };
   foley.start();
   if (ctx) draw();
   S.dirty = false; S.lastView = `${view.cx.toFixed(0)},${view.cy.toFixed(0)},${view.z.toFixed(2)}`; onViewChange();

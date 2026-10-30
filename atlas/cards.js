@@ -126,13 +126,24 @@ export function createCards(o) {
     });
     const send = h("button", { type: "button", class: "atlas-btn", text: "Send the plan card" });
     send.addEventListener("click", () => o.act.send(pl.meet));
+    // on a phone the panel opens folded to its title bar, so the map stays free for taps and pinches
+    const folded = typeof o.foldFirst === "function" ? !!o.foldFirst() : false;
+    const fold = h("button", { type: "button", class: "atlas-fold", "aria-expanded": folded ? "false" : "true", "aria-controls": "atlas-plan", text: folded ? "Show lines" : "Hide lines" });
+    fold.addEventListener("click", () => C.foldPlan(!plan.classList.contains("folded")));
+    plan.classList.toggle("folded", folded);
     plan.replaceChildren(
-      h("div", { class: "atlas-head" }, h("h2", { text: "Day-one plan" }), closeBtn(() => o.act.closePlan())),
+      h("div", { class: "atlas-head" }, h("h2", { text: "Day-one plan" }), h("span", { class: "atlas-head-b" }, fold, closeBtn(() => o.act.closePlan()))),
       h("p", { class: "atlas-sub", text: `Meeting point: ${mp ? mp.name : pl.meet} (${meetSay})` }),
       h("ul", { class: "atlas-lines" }, rows),
       h("p", { class: "atlas-fine", text: "Walking minutes come from yards at 7 a second (Classic run speed, likely). Roads are not in the client tables, so courses are straight lines, labelled." }),
       h("div", { class: "atlas-actions" }, send));
     plan.hidden = false; return plan;
+  };
+  C.foldPlan = (on) => {
+    plan.classList.toggle("folded", !!on);
+    const b = plan.querySelector(".atlas-fold"); if (b) { b.setAttribute("aria-expanded", on ? "false" : "true"); b.textContent = on ? "Show lines" : "Hide lines"; }
+    if (o.act.folded) o.act.folded(!!on);
+    return !!on;
   };
   C.hidePlan = () => { const was = C.planOpen; C.planOpen = false; plan.hidden = true; plan.replaceChildren(); return was; };
 

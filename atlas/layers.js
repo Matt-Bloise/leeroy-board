@@ -15,12 +15,17 @@ export const FALLBACK = { ink: "#2b1d10", inkSoft: "#46331f", parchment: "#eadfc
 
 const hasPath = typeof Path2D === "function";
 const lineTo = (c, ring, close) => { c.moveTo(ring[0][0], ring[0][1]); for (let i = 1; i < ring.length; i++) c.lineTo(ring[i][0], ring[i][1]); if (close) c.closePath(); };
+const bboxOf = (rings) => { const b = [Infinity, Infinity, -Infinity, -Infinity]; for (const r of rings) for (const q of r) { if (q[0] < b[0]) b[0] = q[0]; if (q[1] < b[1]) b[1] = q[1]; if (q[0] > b[2]) b[2] = q[0]; if (q[1] > b[3]) b[3] = q[1]; } return b; };
 function pathOf(rings, close) {
-  if (!hasPath) return { rings, close, p: null };
+  const bb = bboxOf(rings);
+  if (!hasPath) return { rings, close, p: null, bb };
   const p = new Path2D();
   for (const r of rings) if (r.length > 1) lineTo(p, r, close);
-  return { rings, close, p };
+  return { rings, close, p, bb };
 }
+// a stroke whose box misses the view is skipped. Dashes cost the GPU most of a frame (2026-10-30, the owner's pane at 2278 by
+// 845 px: pan p50 22.8 ms dashed, 11.5 ms solid), so while the view moves (S.moving) strokes go solid and settle dashed.
+const seen = (pp, r) => !!pp && !(pp.bb[2] < r[0] || pp.bb[0] > r[2] || pp.bb[3] < r[1] || pp.bb[1] > r[3]);
 function strokePath(ctx, pp) {
   if (pp.p) { ctx.stroke(pp.p); return; }
   ctx.beginPath(); for (const r of pp.rings) if (r.length > 1) lineTo(ctx, r, pp.close); ctx.stroke();
@@ -121,28 +126,28 @@ export function createLayers(data) {
         const a = zz.z.a_rect; if (a[2] < r[0] || a[0] > r[2] || a[3] < r[1] || a[1] > r[3]) continue;
         const hot = S.zoneHot === zz.z.id;
         ctx.globalAlpha = hot ? 0.2 : 0.08; ctx.fillStyle = factionColor(C, zz.z.faction); fillPath(ctx, zz.path);
-        ctx.globalAlpha = hot ? 0.9 : 0.55; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(hot ? 2 : 1.2); ctx.setLineDash([px(2), px(4)]); strokePath(ctx, zz.path); ctx.setLineDash([]);
+        ctx.globalAlpha = hot ? 0.9 : 0.55; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(hot ? 2 : 1.2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, zz.path); ctx.setLineDash([]);
       }
       ctx.globalAlpha = 1;
     }
     if (L.on.subzones && z >= 3) {
       ctx.strokeStyle = C.inkSoft; ctx.globalAlpha = 0.4; ctx.lineWidth = px(0.8);
-      for (const sz of L.subzones) strokePath(ctx, sz.path);
+      const sr = V.rect(); for (const sz of L.subzones) if (seen(sz.path, sr)) strokePath(ctx, sz.path);
       ctx.globalAlpha = 1;
     }
     // courses: walking edges dashed, flight paths softer, transports a long dash
-    const edges = (data.routes && data.routes.edges) || [];
+    const edges = (data.routes && data.routes.edges) || [], vr = V.rect();
     const drawEdges = (mode, on, dash, alpha, w) => {
       if (!on) return;
-      ctx.strokeStyle = C.inkSoft; ctx.globalAlpha = alpha; ctx.lineWidth = px(w); ctx.setLineDash(dash.map(px));
-      for (const e of edges) if (e.mode === mode) strokePath(ctx, L.edgePaths.get(e.id));
+      ctx.strokeStyle = C.inkSoft; ctx.globalAlpha = alpha; ctx.lineWidth = px(w); ctx.setLineDash(S.moving ? [] : dash.map(px));
+      for (const e of edges) if (e.mode === mode) { const pp = L.edgePaths.get(e.id); if (seen(pp, vr)) strokePath(ctx, pp); }
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     };
     drawEdges("course", L.on.courses, [6, 5], z < 1 ? 0.35 : 0.7, 1.6);
     drawEdges("flightpath", L.on.flights, [3, 6], 0.45, 1.2);
     if (L.on.zeppelins) {
-      ctx.strokeStyle = C.inkSoft; ctx.globalAlpha = 0.6; ctx.lineWidth = px(1.6); ctx.setLineDash([px(16), px(7)]);
-      for (const e of edges) if (e.mode === "zeppelin" || e.mode === "boat") strokePath(ctx, L.edgePaths.get(e.id));
+      ctx.strokeStyle = C.inkSoft; ctx.globalAlpha = 0.6; ctx.lineWidth = px(1.6); ctx.setLineDash(S.moving ? [] : [px(16), px(7)]);
+      for (const e of edges) if (e.mode === "zeppelin" || e.mode === "boat") { const pp = L.edgePaths.get(e.id); if (seen(pp, vr)) strokePath(ctx, pp); }
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
     // the plan: every drawn edge as ink under a warm line, partial edges cut at their progress

@@ -35,7 +35,15 @@ export function createView(o = {}) {
     const s = Math.min(V.w / (w * (1 + 2 * pad)), V.h / (h * (1 + 2 * pad)));
     return { cx: (r[0] + r[2]) / 2, cy: (r[1] + r[3]) / 2, z: clamp(Math.log2(s / BASE), V.minZoom(), zcap) };
   };
-  V.inView = (au, av, m = 0) => { const r = V.rect(), k = m / V.scale(); return au >= r[0] - k && au <= r[2] + k && av >= r[1] - k && av <= r[3] + k; };
+  // the same fit, into the part of the box the panels leave free (insets l, t, r, b in px), with the vertical offset oy the
+  // view will have when the move lands; the rectangle's centre lands on the free part's centre whatever oy is
+  V.fitIn = (r, I = {}, pad = 0.12, zcap = ZMAX, oy = V.oy) => {
+    const l = I.l || 0, t = I.t || 0, fw = Math.max(80, V.w - l - (I.r || 0)), fh = Math.max(80, V.h - t - (I.b || 0));
+    const w = Math.max(1, r[2] - r[0]), h = Math.max(1, r[3] - r[1]);
+    const z = clamp(Math.log2(Math.min(fw / (w * (1 + 2 * pad)), fh / (h * (1 + 2 * pad))) / BASE), V.minZoom(), zcap), s = V.scale(z);
+    return { cx: (r[0] + r[2]) / 2 - (l + fw / 2 - V.w / 2) / s, cy: (r[1] + r[3]) / 2 - (t + fh / 2 - V.h / 2 + oy) / s, z };
+  };
+  V.inView =(au, av, m = 0) => { const r = V.rect(), k = m / V.scale(); return au >= r[0] - k && au <= r[2] + k && av >= r[1] - k && av <= r[3] + k; };
   V.set(15000, 10000, 0);
   return V;
 }

@@ -11,7 +11,7 @@
   /* the engine */
   const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=b6d190f119");
+    const m = await import("../atlas/atlas.js?v=b6766e0ebb");
     return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {
@@ -26,7 +26,7 @@
     const map = $("#map"); if (!map) return;
     H.pending = token; H.on = true;
     if (!H.host || !H.host.isConnected) { if (H.A) { try { H.A.destroy(); } catch (e) { } } H.host = h("div", { id: "atlas", class: "atlas" }); map.append(H.host); H.A = null; H.loading = null; }
-    map.classList.add("atlas-on"); K.sfx("open");
+    map.classList.add("atlas-on"); K.sfx("open"); if (map.scrollIntoView) map.scrollIntoView({ block: "nearest" });
     if (o && o.push) { K.setHash(token, true); H.pushed = 1; }
     try {
       if (!H.A) { H.loading = H.loading || load(); H.A = await H.loading; }
@@ -109,5 +109,5 @@
   addEventListener("hashchange", fromHash); addEventListener("popstate", fromHash);
   control();
   if (TOK.test(hashTok())) H.pending = hashTok();
-  window.__atlas = { get api() { return H.A; }, status: () => Object.assign(H.A && H.A.status ? H.A.status() : {}, { on: H.on, pending: H.pending, loaded: !!H.A, marks: !!H.marks }), hook: H }; /* engine status + hook state */
+  window.__atlas = { get api() { return H.A; }, status: () => Object.assign(H.A && H.A.status ? H.A.status() : {}, { on: H.on, pending: H.pending, loaded: !!H.A, marks: !!H.marks }), hook: H };
 })();
