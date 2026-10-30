@@ -28,22 +28,33 @@
   }
 }
 
-/* 2. HDR highlights: the countdown, the seal and coin glints and the flame glow reach above SDR white where the browser
-   draws color(rec2100-hlg). Signal 0.9 in HLG is about 500 nits on a 1000-nit display; nothing here goes to the peak. */
+/* 2. HDR highlights (2026-10-30, board/qa/2026-10-30-hdr.md). Edge 156 on an HDR screen draws no color(rec2100-*) in CSS (the
+   2026-10-29 HLG layer never applied there) but does draw HDR images above SDR white. So the countdown digits, the seal glints,
+   the candle and the stop embers each carry one overlay of a PQ image (img/hdr/, made by tools/hdr/make-hdr.mjs: one colour,
+   only the alpha falls off, so an overlay only adds light). dynamic-range-limit holds the page at SDR white and frees just the
+   overlays. js/hdr.js sets html.hdr-img unless ?hdr=0, so with ?hdr=0 nothing is fetched or drawn even before the script runs,
+   and a browser fetches the images only when this block applies: an SDR screen and ?hdr=0 compute what they did. */
 @media (dynamic-range: high) {
-  @supports (color: color(rec2100-hlg 1 1 1)) {
-    :root:not(.hdr-off) {
-      --x-count: color(rec2100-hlg 0.9 0.76 0.44); --x-count-glow: color(rec2100-hlg 0.8 0.6 0.28 / 0.5);
-      --x-glint: color(rec2100-hlg 0.95 0.9 0.78 / 0.5); --x-glint-hi: color(rec2100-hlg 0.98 0.96 0.9 / 0.7);
-      --x-glint-soft: color(rec2100-hlg 0.9 0.8 0.6 / 0.34); --x-flame-50: color(rec2100-hlg 0.9 0.5 0.18 / 0.6);
-    }
-    :root:not(.hdr-off) .clock-unit b { color: var(--x-count); text-shadow: 0 0 22px var(--x-count-glow), 0 2px 0 var(--oak-0); }
-    :root:not(.hdr-off) .seal-sweep::before { background: linear-gradient(90deg, transparent, var(--x-glint-soft), var(--x-glint-hi), var(--x-glint-soft), transparent); }
-    :root:not(.hdr-off) .coin-shine::before { background: linear-gradient(90deg, transparent, var(--x-glint-soft), var(--x-glint-hi), var(--x-glint-soft), transparent); }
-    :root:not(.hdr-off) .seal-spec { background: radial-gradient(circle at var(--lx) var(--ly), var(--x-glint), var(--x-glint-soft) 26%, transparent 54%), radial-gradient(circle at 50% 50%, transparent 66%, rgba(0, 0, 0, 0.26) 100%); }
-    :root:not(.hdr-off) .seal[data-kind="active"] { filter: drop-shadow(var(--sx) var(--sy) calc(var(--seal) * 0.1) rgba(0, 0, 0, 0.62)) drop-shadow(0 0 calc(var(--seal) * 0.22) var(--x-flame-50)); }
-  }
+  :root.hdr-img:not(.hdr-off) { dynamic-range-limit: standard; }
+  :root.hdr-img:not(.hdr-off) .clock-unit b { position: relative; }
+  :root.hdr-img:not(.hdr-off) .clock-unit b::after, :root.hdr-img:not(.hdr-off) .seal-spec::after, :root.hdr-img:not(.hdr-off) .seal-sweep::after, :root.hdr-img:not(.hdr-off) .candle::after, :root.hdr-img:not(.hdr-off) .stop-ember::after {
+    content: ""; position: absolute; pointer-events: none; background: center / 100% 100% no-repeat; dynamic-range-limit: no-limit; }
+  /* the digits: where the light catches the top right of each number */
+  :root.hdr-img:not(.hdr-off) .clock-unit b::after { top: -0.16em; right: -0.2em; width: 0.56em; height: 0.56em; background-image: url("../img/hdr/glint.png"); }
+  /* the seal: a glint on the light's spot (seals.js moves --lx and --ly with the pointer, from -100% to 200%), clipped to the
+     coin as the SDR spot is, and one riding the sweep band */
+  :root.hdr-img:not(.hdr-off) .seal-spec { overflow: hidden; }
+  :root.hdr-img:not(.hdr-off) .seal-spec::after { left: var(--lx); top: var(--ly); width: 30%; height: 30%; translate: -50% -50%; background-image: url("../img/hdr/glint.png"); }
+  :root.hdr-img:not(.hdr-off) .seal-sweep::after { top: 35%; left: -45%; width: 30%; height: 30%; transform: skewX(-18deg); background-image: url("../img/hdr/glint.png"); animation: seal-sweep 9s ease-in-out 1.2s infinite; }
+  :root.hdr-img:not(.hdr-off) .seal.spinning .seal-sweep::after { animation-duration: 1.4s; animation-delay: 0s; }
+  /* the candle: its core on the candle light's own centre; v14's plus-lighter on .candle steps aside here, since a plus blend
+     is min(1, s + d) and can hold the core at SDR white */
+  :root.hdr-img:not(.hdr-off) .candle { mix-blend-mode: normal; }
+  :root.hdr-img:not(.hdr-off) .candle::after { left: 14%; top: 26%; width: 26%; height: 26%; translate: -50% -50%; background-image: url("../img/hdr/candle.png"); }
+  /* the stop embers: the spark inside the 8 px diamond that clips it, riding the ember animation */
+  :root.hdr-img:not(.hdr-off) .stop-ember::after { inset: 0; background-image: url("../img/hdr/ember.png"); }
 }
+@media (dynamic-range: high) and (prefers-reduced-motion: reduce) { :root.hdr-img:not(.hdr-off) .seal-sweep::after { animation: none; } }
 
 /* 3. OLED care (js/hdr.js sets html.oled-care when the display reports HDR and a dark scheme, or ?oled=1): a wider
    drift on the corner chrome and a deeper dim after 60 s of no input. */
