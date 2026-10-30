@@ -109,6 +109,15 @@ html.nx-on[data-journey="everything"] #tn-cards > .tn-card:first-child { display
    Everything the queue already lists the next date, so the Next up card goes too */
 @media (max-width: 699px) {
   html.nx-on #panel-tonight > #tn-actions { display: none; }
+}
+/* polish (2026-10-30): a short laptop screen (up to 760 px tall) does the same; the banner rail above holds every way the three buttons
+   go (Curious with a name read 2.51 screens at 1280x720 against 2.25) */
+@media (min-width: 700px) and (max-height: 760px) { html.nx-on #panel-tonight > #tn-actions { display: none; } }
+@media (max-width: 699px) {
   html.nx-on[data-journey="everything"] #tn-cards > .tn-card:nth-child(2) { display: none; }
 }
 @media (min-width: 1100px) { html.nx-on[data-journey="everything"] #panel-tonight > :is(#tn-cards, #tn-before, #tn-how) { justify-self: stretch; width: auto; max-width: none; } }
+/* polish (2026-10-30): How things work, folded, is one summary line; its card's padding was sized for the open list (91 px for a line) */
+#tn-how:has(> .tnh-det:not([open])) { padding-top: 8px; padding-bottom: 8px; }
+/* polish (2026-10-30): a trail chip under the pointer kept the page's link hover colour (parchment on parchment: its words vanished) */
+.nx-trail:hover, .nx-trail:focus-visible { color: var(--ink); border-color: var(--brass); text-decoration: underline; }

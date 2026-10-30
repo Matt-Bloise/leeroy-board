@@ -9,17 +9,21 @@ const HERE = (document.currentScript && document.currentScript.src) || null; /* 
    did not exist when the page was stamped (walk ships with node N7): that load resolves at once, with no request */
 const SCENES = {
   sheet: () => [new URL("../scenes/sheet.css?v=451af8a4a2", HERE), new URL("../scenes/sheet.js?v=87bcd5843e", HERE)],
-  chamber: () => [new URL("../scenes/chamber.css?v=c5d2f35573", HERE), new URL("../scenes/chamber.js?v=759587eeea", HERE)],
+  chamber: () => [new URL("../scenes/chamber.css?v=90db482e8d", HERE), new URL("../scenes/chamber.js?v=759587eeea", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=99fcaa246c", HERE), new URL("../scenes/decide.js?v=250667e6fa", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
-  walk: () => [new URL("../scenes/walk.css?v=6315203345", HERE), new URL("../scenes/walk.js?v=5ddeb96ef1", HERE)],
+  walk: () => [new URL("../scenes/walk.css?v=f782448ae6", HERE), new URL("../scenes/walk.js?v=bc1848adbc", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=b7547ad5f8", HERE)],
+  buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=2f4a786354", HERE)],
+  wide: () => [null, new URL("../scenes/wide.js?v=bed74f6338", HERE)],
 };
 const NEEDS = { sheet: ["decide"] }; /* the sheet reads decide.json through decide.js (K.decideData) */
 /* forget is listed for a later caller and never replayed: a module that loads after Clear my name has nothing of the old visit */
 const REPLAY = ["booted", "rendered", "scene", "tonight", "signups", "launch", "forget", "map"];
 /* the hover layer's stylesheet keeps its old slot (before css/ask.css) so the sheets after it still win as they did */
-const AT = { place: 'link[href*="css/ask.css"]' };
+/* polish (2026-10-30): the buffs effects layer's stylesheet keeps its old slot too (just before css/fit.css); the wide roads map has
+   no stylesheet of its own (css/wide.css stays in the page: its card pips serve every scene) */
+const AT = { place: 'link[href*="css/ask.css"]', buffs: 'link[href*="css/fit.css"]' };
 const P = Object.create(null), ok = [], bad = [], seen = {}, done = new WeakSet(), land = Object.create(null);
 let after = null;
 const ONCE = ["signups", "rendered", "booted", "launch", "map"]; /* the order boot emits them; replayed only once the page has, with its last arguments */
@@ -45,12 +49,12 @@ function load(name) {
   if (!Object.prototype.hasOwnProperty.call(SCENES, name)) { console.warn(`scenes: no scene named ${name}`); return (P[name] = Promise.resolve({ ok: false, why: "unknown" })); }
   let urls = null; try { urls = HERE && typeof URL === "function" ? SCENES[name]() : null; } catch (e) {}
   if (!urls) return (P[name] = Promise.resolve({ ok: false, why: "no base" }));
-  if (urls.some((u) => /[?&]v=0{10}$/.test(u.search))) return (P[name] = Promise.resolve({ ok: false, why: "not shipped" }));
+  if (urls.some((u) => u && /[?&]v=0{10}$/.test(u.search))) return (P[name] = Promise.resolve({ ok: false, why: "not shipped" }));
   const needs = (NEEDS[name] || []).map(load);
   const n0 = {}; for (const n of REPLAY) n0[n] = K.hooks[n] ? K.hooks[n].length : 0;
   const lander0 = K.lander, fail = (e) => { bad.push(name); console.warn(`scenes: ${name} did not load (${e && e.message})`); return { ok: false, why: "load" }; };
   let cssErr = null; /* a stylesheet that fails leaves the scene unstyled, not dead: the script's hooks are still replayed */
-  return (P[name] = Promise.all([...needs, tag(urls[0], true, AT[name]).catch((e) => { cssErr = e; }), tag(urls[1], false)]).then(() => {
+  return (P[name] = Promise.all([...needs, (urls[0] ? tag(urls[0], true, AT[name]) : Promise.resolve()).catch((e) => { cssErr = e; }), tag(urls[1], false)]).then(() => {
     ok.push(name);
     const fresh = (n) => (K.hooks[n] || []).slice(n0[n]), SC = K.SC, cap = land[name]; land[name] = null;
     for (const n of ONCE) if (seen[n]) for (const f of fresh(n)) call(n, f, seen[n]);
@@ -81,28 +85,40 @@ function load(name) {
     h("section", { class: "dc-party", id: "dc-party", "aria-label": "Party composition" })), tp && tp.parentNode === body ? tp : null);
 })();
 /* what opens a scene's code: its scene, Next steps with a name picked (the sheet's "Your sheet" link), #probe, a first visit (the walk) */
-const OF = { five: "sheet", librarian: "chamber", decide: "decide" };
+/* polish (2026-10-30, contract 10.4 pattern): Who buffs whom's effects layer (scenes/buffs.*, the scene name, so the harness runs it) and the wide roads map left the first download too */
+const OF = { five: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide" };
 K.on("scene", (k) => {
   const m = OF[k]; if (!m) return;
   const L = K.SC.land; if (!ok.includes(m)) land[m] = L && L.key === k ? { key: k, sub: L.sub, from: null } : null;
+  /* polish: Three roads opened before its wide layout code arrived drew the compact layout first and then jumped (a 0.35 layout
+     shift at 1366x768); the panel waits unseen for that code, one frame at most after it lands, and never longer than 3 s */
+  const wait = m === "wide" && !ok.includes(m) && innerWidth >= 700 && innerHeight >= 501 ? document.getElementById("panel-roads") : null;
+  if (wait) { wait.classList.add("wide-wait"); const go = () => wait.classList.remove("wide-wait"), t = setTimeout(go, 3000); load(m).then(() => requestAnimationFrame(() => { clearTimeout(t); go(); })); return; }
   load(m);
 });
 K.on("tonight", () => { const me = K.MEM && K.MEM.me(); if (me && me !== "just-looking") load("sheet"); });
 const probeHash = () => { try { return decodeURIComponent(String(location.hash || "").slice(1)) === "probe"; } catch (e) { return false; } };
 if (probeHash()) load("probe");
+/* a deep link into Three roads or the Atlas fetches the wide map's code at once, so the roads layout is there for the first open */
+try { if (/^(roads|atlas)(\.|$)/.test(decodeURIComponent(String(location.hash || "").slice(1)))) load("wide"); } catch (e) {}
 addEventListener("hashchange", () => { if (probeHash()) load("probe"); });
 K.on("booted", () => { let walked = null; try { walked = localStorage.getItem("board-walked"); } catch (e) {} if (!walked && !/[?&](render|brain)=/.test(location.search)) load("walk"); });
 /* Warm the scenes a friend opens next once the first screen is idle, so a first tap never paints an empty panel that then grows
    (verifier round 1: 1 to 4 blank frames, then a jump of up to 1,203 px on What to decide). A pointer over, a touch on or a focus on
    a scene's control warms that one at once. Only in a real browser (this file's URL known; Safari has no idle callback, so a short
    timer stands in); never under ?render= or ?brain=. */
-const WARM = ["chamber", "sheet", "decide"], PLACE = { five: "sheet", sheet: "sheet", librarian: "chamber", decide: "decide" };
+const WARM = ["chamber", "sheet", "decide", "wide"], PLACE = { five: "sheet", sheet: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide" };
+/* polish (2026-10-30): Play mode is for while the game runs, so nothing is fetched in idle time there (the warm-up and the hover
+   layer ran in the 10 s after a Play load: 0.135 s of main thread at 2560); a control's own pointer, touch or focus still warms its
+   scene, and leaving Play starts the idle warm-up then */
+const playing = () => { try { return document.documentElement.classList.contains("play"); } catch (e) { return false; } };
+const afterPlay = (f) => { if (!playing()) { f(); return; } const go = () => { if (playing()) return; removeEventListener("board-mode", go); f(); }; addEventListener("board-mode", go); };
 const warm = (m) => { if (m && !P[m]) load(m); };
 K.on("booted", () => {
   if (!HERE || /[?&](render|brain)=/.test(String(location.search || ""))) return;
   const idle = typeof requestIdleCallback === "function" ? (f) => requestIdleCallback(f, { timeout: 3000 }) : (f) => setTimeout(f, 250);
-  const next = () => { const m = WARM.find((x) => !P[x]); if (m) load(m).then(() => idle(next)); };
-  setTimeout(() => idle(next), 1200);
+  const next = () => { if (playing()) { afterPlay(next); return; } const m = WARM.find((x) => !P[x] && (x !== "wide" || innerWidth >= 700)); if (m) load(m).then(() => idle(next)); };
+  afterPlay(() => setTimeout(() => idle(next), 1200));
 });
 const intent = (e) => { const t = e && e.target; if (!t || typeof t.closest !== "function") return; const c = t.closest("[data-tab], [data-place]"); if (c) warm(PLACE[c.getAttribute("data-tab") || c.getAttribute("data-place")]); };
 if (typeof document.addEventListener === "function") for (const ev of ["pointerover", "focusin", "touchstart"]) document.addEventListener(ev, intent, { capture: true, passive: true });
@@ -116,6 +132,6 @@ if (typeof document.addEventListener === "function") {
   document.addEventListener("pointerover", hoverIn, { capture: true, passive: true });
   document.addEventListener("keydown", () => { if (!P.place) load("place"); }, { capture: true, passive: true });
 }
-K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) setTimeout(() => { if (!P.place) load("place"); }, 4000); });
+K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) afterPlay(() => setTimeout(() => afterPlay(() => { if (!P.place) load("place"); }), 4000)); });
 window.__scenes = Object.freeze({ load, loaded: (n) => ok.includes(n), status: () => ({ loaded: ok.slice(), failed: bad.slice(), base: HERE }) });
 })();

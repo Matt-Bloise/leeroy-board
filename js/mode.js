@@ -38,11 +38,18 @@
     const on = isPlay(), e = lantern(on), w = document.createElement("span");
     w.setAttribute("class", "mode-word"); w.textContent = on ? "Play mode: on" : "Play mode";
     b.setAttribute("aria-pressed", String(on));
-    b.setAttribute(b.hasAttribute("data-tip") ? "data-tip" : "title", on ? TIP.on : TIP.off);
+    /* polish (2026-10-30): on a phone the wall's lantern carries a short word under its icon ("Play") and no tip: a tip there stood
+       over two tiles for as long as it showed. The sentence is still read (aria-description) */
+    const bare = b.id === "mode-btn" && narrow();
+    if (bare) { b.removeAttribute("title"); b.removeAttribute("data-tip"); } else b.setAttribute(b.hasAttribute("data-tip") ? "data-tip" : "title", on ? TIP.on : TIP.off);
+    b.setAttribute("aria-description", on ? TIP.on : TIP.off);
     b.classList.toggle("mode-lit", !on); b.classList.toggle("mode-snuffed", on);
-    b.replaceChildren(...(e ? [e] : []), w);
+    const short = document.createElement("span"); short.setAttribute("class", "mode-short"); short.setAttribute("aria-hidden", "true"); short.textContent = "Play";
+    b.replaceChildren(...(e ? [e] : []), w, short);
   };
+  const narrow = () => { try { return matchMedia("(max-width: 599px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse)").matches; } catch (e) { return false; } };
   const sync = () => { for (const id of ["mode-btn", "mode-btn-scene"]) { const b = document.getElementById(id); if (b) paint(b); } };
+  let wasNarrow = narrow(); if (typeof addEventListener === "function") addEventListener("resize", () => { const n = narrow(); if (n !== wasNarrow) { wasNarrow = n; sync(); } });
   const make = (id, cls) => {
     const b = document.createElement("button");
     b.setAttribute("type", "button"); b.setAttribute("id", id); b.setAttribute("class", cls); b.setAttribute("title", TITLE);

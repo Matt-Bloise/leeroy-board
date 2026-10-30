@@ -125,3 +125,6 @@ html.phone-shell .ch-art-you { width: 72px; }
   .ch-sug { scroll-behavior: auto; }
 }
 .ch-row[hidden] { display: none; }
+/* polish (2026-10-30): on a phone the composer is the one way to ask on screen; its note names /ask and the tag, so the Discord how-to
+   line above it (index.html .act) waits (two ask surfaces stood one above the other) */
+html.phone-shell #panel-librarian:has(#ch-form) > .act { display: none; }

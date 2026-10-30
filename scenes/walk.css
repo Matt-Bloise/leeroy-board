@@ -11,8 +11,8 @@
 .walk-n { margin: 6px 0 0; font-size: var(--fs-small); color: var(--ink-soft); }
 .walk-act { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .walk-act .lib-btn { min-height: 48px; padding-inline: 20px; }
-/* scroll room at the end of the scene body while the walk is up, so a last target can rise clear of the card */
-.walk-room { height: 40vh; }
+/* polish (2026-10-30): the walk adds no scroll room (it was .walk-room, 40vh); a phone card over its target moves to the top */
+html.phone-shell .walk-card.walk-up { top: 8px; bottom: auto; }
 @media (prefers-reduced-motion: reduce) { .walk-veil { transition: none; } }
 html.phone-shell .walk-card { top: auto; left: 8px; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); width: auto; max-width: none; }
 html.phone-shell .walk-card:has(.walk-pic) { grid-template-columns: 88px minmax(0, 1fr); }

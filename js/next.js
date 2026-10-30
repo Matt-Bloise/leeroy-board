@@ -23,7 +23,7 @@ const btn = (cls, label, fn, a = {}) => h("button", { type: "button", class: cls
 const journey = () => (JOURNEYS.includes(root.dataset.journey) ? root.dataset.journey : "curious");
 const brain = () => window.BoardBrain || null;
 const keyed = (B) => !!(B && B.hasKey && B.hasKey());
-const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=bc8436c109").catch(() => null));
+const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=23f30ad6a7").catch(() => null));
 
 const meSlug = () => { const m = MEM.member(); return m ? MEM.slug(m.name) : null; };
 const ticksOf = (slug) => (slug && typeof K.beforeTicks === "function" ? K.beforeTicks(slug) : []); /* the integrator exports beforeTicks */
@@ -118,7 +118,7 @@ function trails(step, out) {
   const q = (out && out.queue) || [], rows = [], add = (href, label) => { if (href && label && rows.length < 3 && !rows.some((r) => r[0] === href)) rows.push([href, label]); };
   const learn = q.find((s) => s.id === "learn-role"), date = q.find((s) => s.id === "next-date");
   if (learn && learn.action) add(learn.action.href, `${String(learn.title).replace(/\.$/, "")}${learn.minutes ? `: ${learn.minutes} minutes` : ""}`);
-  if (date && date.action && step.id !== "next-date") add(date.action.href, date.title);
+  if (date && date.action && step.id !== "next-date") add(date.action.href, String(date.title).replace(/,\s*[A-Z][a-z]+ time\.?$/, "")); /* polish: the chip drops the zone (the queue row and the card keep it) */
   if (step.id === "meet" || step.place) add("#roads", "The roads to the meeting point");
   return rows.length ? h("div", { class: "nx-trails", id: "nx-trails", role: "group", "aria-labelledby": "nx-trails-h" }, h("p", { class: "nx-trails-h", id: "nx-trails-h", text: "Worth a look next" }),
     ...rows.map(([href, label]) => h("a", { class: "lib-tool nx-trail", href }, label))) : null;

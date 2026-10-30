@@ -1206,8 +1206,8 @@ function renderLibrarian() {
     s("text", { class: "spark-text", x: W - pad, y: ys(max) - 4, "text-anchor": "end", text: `${max} s` }));
   wrap.append(
     h("div", { class: "stack" },
-      h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("slowest 1 in 20", fmtSecs(st.p95_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
-      h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.${st.p95_s > st.miss_threshold_s ? " Those slow ones set the slowest 1 in 20." : ""}` })),
+      h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
+      h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.` })), /* polish: the "slowest 1 in 20" tile (52 m 42 s) meant nothing to a newcomer, so it went */
     h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark, h("p", { class: "spark-key", text: `The wax drop marks his newest answer. The line is seconds to answer over his last ${vals.length}; the quill draws it.` })));
 }
 
@@ -3480,7 +3480,7 @@ function renderBefore() {
     h("p", { class: "tnb-group", text: groupOpenLine(T, P) }),
     /* integrator pass 3: the list folds under its own summary (open, it ran Next steps to 3.2 laptop screens once a name was picked) */
     me ? h("details", { class: "tnb-fold" }, h("summary", { class: "tnb-sum" }, sum), h("ul", { class: "tnb-list", "aria-label": member ? `Before launch, ${member.name}` : "Before launch" }, items.map(row)), count) : h("p", { class: "tnb-hint", text: "With a name picked above, a short list of what the board knows about your side shows here." }),
-    me ? null : count);
+    ...(me ? [] : [count])); /* polish: replaceChildren writes a null argument as the text "null" (h() skips it; the DOM does not) */
   upd();
 }
 const HOW_Q = ["How do guilds work?", "Can I chat in game without a guild?", "How big is a dungeon group?", "How does loot rolling work?", "What does a pack do?", "Where does the group meet?"];

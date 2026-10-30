@@ -40,6 +40,10 @@
 .atlas-scale .orn-scale{position:absolute;left:0;bottom:14px;width:140px;opacity:.8}
 .atlas-bar{display:block;height:6px;margin-top:18px;border:2px solid var(--ink);border-top:0}
 .atlas-scale-t{color:var(--ink-soft)}
+/* polish (2026-10-30): from 700 px the scale stands clear of the 72 px corner flourish (its "thousand yards" ran under the scrollwork at
+   768x1024), and its words sit on a parchment slip so a painted tile under them never hides them */
+@media (min-width:700px){.atlas-scale{left:86px;bottom:16px}.atlas-scale .orn-scale{bottom:auto;top:-56px}}
+.atlas-scale-t{justify-self:start;padding:0 6px;border-radius:6px;background:var(--parchment);color:var(--ink)}
 .atlas-ctl{position:absolute;z-index:4;right:12px;bottom:12px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .atlas-b{min-width:44px;min-height:44px;display:grid;place-items:center;padding:0 12px;border-radius:22px;border:1px solid var(--brass-dim);background:linear-gradient(180deg,var(--oak-3),var(--oak-2));color:var(--parchment);font:inherit;font-size:1.15rem;cursor:pointer;box-shadow:inset 1px 1px 0 var(--edge-hi),0 3px 8px var(--shadow);transition:transform var(--t-micro) var(--ease-oak),color var(--t-micro) var(--ease-fade)}
 .atlas-b.a-back{font-size:.85rem;font-weight:600}

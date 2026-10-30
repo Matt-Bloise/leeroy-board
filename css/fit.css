@@ -18,7 +18,7 @@
   #scene { --seal: clamp(72px, 6.5vh, 112px); }
   #scene .sheet-head { gap: 2px; padding-top: 4px; padding-right: 18px; padding-bottom: 0; min-height: 0; }
   html.has-seal #scene .sheet-head { padding-left: calc(var(--seal) + 30px); min-height: calc(var(--seal) + 12px); }
-  html.has-seal #scene .seal { left: 14px; top: 6px; }
+  html.has-seal #scene #seal { left: 14px; top: 6px; } /* polish: the head seal only (the Ledger wax bullets, span.seal, moved 14 px onto their text) */
   #scene .sheet-top { min-height: 48px; }
   #scene .sheet-name h2 { font-size: var(--step-1); }
   /* cloth.css sizes each banner from --tab-h; the trim is recomputed (it was resolved on :root) */
@@ -132,3 +132,12 @@
 @media (min-width: 1200px) and (max-width: 1279px) and (min-height: 501px) { #scene .sheet-sub { display: none; } }
 /* integrator pass 3: on wide frames the Sign-ups answers sit in a row across the frame (a 572 px column left half the frame empty) */
 @media (min-width: 1800px) { #dsu-act > #mine-act { grid-column: 1 / -1; justify-self: stretch; width: auto; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; column-gap: 28px; } }
+/* polish (2026-10-30): from 1200 to 1499 px the name block keeps the 11rem on its left for Look at the room and none on its right
+   (the plate stands there), so a subtitle fits beside its title (What to decide's was cut to "Still open, by Blizzard's ..." at 1280) */
+@media (min-width: 1200px) and (max-width: 1499px) and (min-height: 501px) { #scene .sheet-top:has(> .journey) > .sheet-name { padding-right: 12px; } }
+/* polish (2026-10-30): at 1280x720 (now measured) the wall ran 10 px past one screen; on laptop screens up to 740 px tall the tiles
+   start closer under the hero */
+@media (min-width: 1100px) and (max-height: 740px) {
+  #board > #main:not(.has-beam):not(.beam-soon) { margin-top: 6px; }
+  #board { padding-bottom: 3px; row-gap: 2px; } #board > #main { margin-bottom: 0; } #board > .wall-foot, #board > .wall-foot * { line-height: 1.1; }
+}

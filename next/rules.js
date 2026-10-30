@@ -206,8 +206,11 @@ export function candidates(input, nowMs) {
   const nm = nextMoment(N.timeline, nowMs);
   if (nm) {
     const e = nm.e, label = shortLabel(e, T), t = arr(T && T.events).find((x) => obj(x) && x.key === e.key);
-    const when = nm.closing ? `closes ${str(e.until) || "soon"}, ${str(e.until_zone) || "Pacific"} time` : (t && str(t.when)) || null;
-    const why = (t && str(t.meaning)) || (str(e.detail) ? cap(str(e.detail)) : null);
+    /* polish (2026-10-30): a closing period says it runs to the end of its last day and when it opened (the bare "closes Nov 3" read
+       like a third date of its own); Blizzard's dates for pack holders: Oct 27 through Nov 3, Pacific time */
+    const when = nm.closing ? `closes at the end of ${str(e.until) || "its last day"}, ${str(e.until_zone) || "Pacific"} time` : (t && str(t.when)) || null;
+    const why0 = (t && str(t.meaning)) || (str(e.detail) ? cap(str(e.detail)) : null), since = nm.closing && t && str(t.when) ? `Open since ${str(t.when)}.` : null;
+    const why = [why0, since].filter(Boolean).join(" ") || null;
     add("next-date", "next-date", { kind: "date", title: when ? `${label}: ${when}` : `Next date: ${label}`, why, minutes: null, due: nm.t, label: "Show the dates", href: `#timeline.${e.key.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`, source: "blizzard" });
   }
 

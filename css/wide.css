@@ -72,3 +72,5 @@
   .bclass-names .bn { margin: 0; white-space: normal; }
   .bclass-names .bc { display: none; }
 }
+/* polish (2026-10-30): js/scenes.js holds Three roads unseen while its wide layout code is on the way */
+#panel-roads.wide-wait { visibility: hidden; }

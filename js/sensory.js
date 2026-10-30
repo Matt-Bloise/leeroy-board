@@ -278,7 +278,7 @@
   function invite() {
     try { if (sessionStorage.getItem("board-invite")) return; sessionStorage.setItem("board-invite", "1"); } catch (e) {}
     setTimeout(() => {
-      if (isOn() || !document.body || document.hidden) return;
+      if (isOn() || !document.body || document.hidden || document.documentElement.classList.contains("play")) return; /* polish: Play holds the sound, so no invitation to it */
       const t = el("div", { class: "sense-invite", role: "status" }), b = el("button", { type: "button", text: "Hear the tavern" }), x = el("button", { type: "button", class: "sense-x", "aria-label": "Dismiss", text: "×" });
       t.append(el("span", { text: "Sound is off." }), b, x); document.body.append(t);
       const gone = () => { t.classList.add("out"); setTimeout(() => t.remove(), 400); };

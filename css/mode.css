@@ -58,3 +58,10 @@ html.play.scene-open #board { filter: none !important; visibility: hidden; }
    wall, the tiles' painted medallions, the clock's medallion and the sign-up beam go; boxes keep their size, so nothing moves */
 html.play .hero-art img { display: none; }
 html.play #board .emblem-box .emblem-img, html.play .clock-emblem .emblem-img, html.play #board img.beam { visibility: hidden; }
+/* polish (2026-10-30): the short word under the wall's lantern, phones only (an icon alone said nothing to a newcomer) */
+#mode-btn .mode-short, #mode-btn-scene .mode-short { display: none; }
+@media (max-width: 599px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  #mode-btn { width: 48px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; }
+  #mode-btn .mode-short { display: block; font-size: 13px; line-height: 1; letter-spacing: 0.02em; }
+  #mode-btn .mode-art, #mode-btn .emblem { width: 20px; height: 20px; }
+}

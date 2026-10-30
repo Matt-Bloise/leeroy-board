@@ -6,8 +6,8 @@ if (!B || !B.onAsk || !box || !note || !out) return;
 const MAX = 280, MIN = 3;
 const el = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const k in attrs || {}) { const v = attrs[k]; if (v === null || v === undefined || v === false) continue; if (k === "text") e.textContent = v; else e.setAttribute(k, v === true ? "" : String(v)); } for (const c of kids) if (c) e.append(c); return e; };
 const NOTE = {
-  off: "Asking works from the shared board links. /ask in #wow-forever reaches the same Leeroy.",
-  none: "Asking from the board works with your own board link (My board link on the Sign-ups card). Without one, /ask in #wow-forever reaches the same Leeroy.",
+  off: "Asking here works from the shared board links. In Discord, /ask in #wow-forever or a tag on Leeroy Jenkins reaches the same Leeroy.",
+  none: "Asking from the board works with your own board link (My board link on the Sign-ups card). Without one, /ask in #wow-forever or a tag on Leeroy Jenkins reaches the same Leeroy.",
   bad: "This board link is not valid any more. My board link on the Sign-ups card makes a new one.",
 };
 const FAIL = { no_answer: "Leeroy did not get to that one in time.", held: "Leeroy held that answer back for a check.", error: "Leeroy could not finish that one." };

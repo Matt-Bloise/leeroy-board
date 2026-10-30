@@ -30,7 +30,6 @@ function begin(only) {
   Object.assign(W, { go: 1, on: 1, plan, scene: K.SC.open, back: a !== D.body && a, veil: h("div", { class: "walk-veil" }), card: h("section", { class: "walk-card" }) });
   W.el = h("div", { class: "walk", id: "walk", role: "dialog", "aria-modal": "true", "aria-labelledby": "walk-s" }, W.veil, W.card);
   W.el.addEventListener("keydown", onKey); sheet.appendChild(W.el);
-  $("#sheet-body").appendChild(W.room = h("div", { class: "walk-room" }));
   addEventListener("resize", queue); addEventListener("scroll", queue, true); setTimeout(queue, 600);
   show();
 }
@@ -48,7 +47,7 @@ function end(quiet) {
   W.on = 0; W.done = true;
   try { localStorage.setItem(KEY, "1"); } catch (e) {}
   removeEventListener("resize", queue); removeEventListener("scroll", queue, true);
-  const a = D.activeElement, had = W.el.contains(a); W.el.remove(); W.room.remove();
+  const a = D.activeElement, had = W.el.contains(a); W.el.remove();
   if (K.sfx) K.sfx("latch");
   if (!quiet && (had || !a || a === D.body)) focus(W.back && vis(W.back) ? W.back : $("#sheet-body"));
 }
@@ -64,7 +63,15 @@ function place() {
   const t = find(cur()), x = W.el.getBoundingClientRect(), r = t && t.getBoundingClientRect(), cs = W.card.style, m = 12;
   const ok = r && r.width && r.height, L = ok && r.left - x.left - 6, T = ok && r.top - x.top - 6, R = ok && r.right - x.left + 6, B = ok && r.bottom - x.top + 6;
   W.veil.style.clipPath = ok ? `polygon(0 0, 0 100%, ${L}px 100%, ${L}px ${T}px, ${R}px ${T}px, ${R}px ${B}px, ${L}px ${B}px, ${L}px 100%, 100% 100%, 100% 0)` : "";
-  if (phone()) { cs.top = cs.left = ""; return; }
+  /* polish (2026-10-30): no scroll room is added under the scene any more (it ran Curious with no name to 2.37 laptop screens while
+     the walk was up); on a phone the card goes to the top when the target sits where the bottom card would cover it */
+  if (phone()) {
+    cs.top = cs.left = "";
+    const ch = W.card.getBoundingClientRect().height || 0;
+    const dn = [x.bottom - 64 - ch - 8, x.bottom - 64], up = [x.top + 8, x.top + 8 + ch], hit = (z) => ok && r.bottom > z[0] && r.top < z[1];
+    W.card.classList.toggle("walk-up", hit(dn) && !hit(up));
+    return;
+  }
   const c = W.card.getBoundingClientRect(), ch = c.height || 0, H = x.height - m;
   cs.top = `${!ok ? m : B + m + ch <= H ? B + m : T - m - ch >= m ? T - m - ch : T > x.height - B ? m : Math.max(m, H - ch)}px`;
   cs.left = `${Math.max(m, Math.min(L || 0, x.width - (c.width || 0) - m))}px`;
@@ -73,7 +80,7 @@ function place() {
 function reveal(t) {
   const y = $("#sheet-body"); if (!t || !y || !y.contains(t)) return;
   const b = y.getBoundingClientRect(), r = t.getBoundingClientRect();
-  if (r.top < b.top || r.bottom > (phone() ? W.card.getBoundingClientRect().top : b.bottom)) y.scrollTop += r.top - b.top - 8;
+  if (r.top < b.top || r.bottom > (phone() && !W.card.classList.contains("walk-up") ? W.card.getBoundingClientRect().top : b.bottom)) y.scrollTop += r.top - b.top - 8;
 }
 
 const soon = (f) => requestAnimationFrame(() => setTimeout(f, 0));
