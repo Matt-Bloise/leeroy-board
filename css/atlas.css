@@ -17,8 +17,6 @@
 #map.atlas-on{min-height:min(68vh,620px)}
 @media (min-width:700px) and (min-height:501px){
 #panel-roads.wide-map>#map.atlas-on{min-height:0}
-#panel-roads.wide-map[data-lay="side2"]:has(#map.atlas-on){grid-template-columns:var(--side) minmax(0,1fr);grid-template-areas:"legend map" "lede map" "cap map"}
-#panel-roads.wide-map[data-lay="side2"]:has(#map.atlas-on) > .map-caption{max-height:100%;overflow-y:auto}
 }
 #map.atlas-on svg{visibility:hidden}
 #map.atlas-on ~ .map-ctl,#map.atlas-on ~ .atlas-open{display:none}
@@ -28,7 +26,7 @@
 .atlas-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 .atlas-fail{position:absolute;inset:0;display:grid;place-items:center;margin:0;color:var(--ink);font-weight:600;background:var(--parchment-2)}
 .atlas-orn{position:absolute;z-index:2;pointer-events:none;width:72px;height:auto}
-.atlas-orn.orn-compass{right:12px;top:12px;width:84px}
+.atlas-orn.orn-compass{right:16px;top:16px;width:84px}
 .orn-nw,.orn-ne{top:0}.orn-sw,.orn-se{bottom:0}.orn-nw,.orn-sw{left:0}.orn-ne,.orn-se{right:0}
 .atlas-cartouche{position:absolute;z-index:3;left:50%;top:10px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:2px;pointer-events:none}
 .atlas-cart{position:relative;min-width:220px;padding:16px 40px;text-align:center}

@@ -18,6 +18,31 @@ export const LOW_GAP = 6000, LOW_CLEAN = 4;
 /* the worker handshake: how long the page waits for the worker module to say it is up before it draws the room itself */
 export const WORKER_UP_MS = 15000;
 export function p95(a) { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * 0.95))] : 0; }
+/* fix E7 (2026-10-30): the long-frame rule. renderer.render() alone missed the owner's 27 fps tavern room (worst frame 429 ms): the cost
+   was GPU and compositor time, which the page's own frame intervals carry. Over the last LONG_WIN ms of intervals (quiet moments
+   left out, and only once the watch has run that long), more than LONG_SHARE of them over twice the tier's budget, or two over
+   HUGE_MS, is slow; a slow window asks for one step at most every LONG_GAP ms. stepFor() takes the step: one rung, never below low,
+   never over a menu choice. Pure, so check.mjs and fix-e.mjs feed them synthetic frames. */
+export const LONG_WIN = 3000, LONG_SHARE = 0.25, HUGE_MS = 250, LONG_GAP = 10000;
+export function longJudge() {
+  const q = []; let t0 = 0, long = 0, huge = 0, lastStep = -1e9;
+  const J = {
+    win: null,
+    push(now, dt, tier) {
+      const b = BUDGET[tier]; if (!b || !(dt > 0)) return null;
+      if (!t0) t0 = now - dt;
+      const L = dt > 2 * b ? 1 : 0, H = dt > HUGE_MS ? 1 : 0; q.push([now, L, H]); long += L; huge += H;
+      while (q.length && now - q[0][0] > LONG_WIN) { const o = q.shift(); long -= o[1]; huge -= o[2]; }
+      const n = q.length, slow = now - t0 >= LONG_WIN && (long / n > LONG_SHARE || huge >= 2);
+      J.win = { tier, n, long, huge, share: +(long / n).toFixed(3), over: +(2 * b).toFixed(1), slow, at: Math.round(now) };
+      if (!slow || now - lastStep < LONG_GAP) return null;
+      lastStep = now; const v = J.win; J.reset(now); return v;
+    },
+    reset(now) { q.length = 0; long = huge = 0; t0 = now || 0; },
+  };
+  return J;
+}
+export const stepFor = (tier, verdict, chosen) => (verdict && verdict.slow && !chosen && ORDER.indexOf(tier) > ORDER.indexOf("low") ? ORDER[ORDER.indexOf(tier) - 1] : tier);
 const KEY = "board-room", AUTO_KEY = "board-room-streak", RM = "(prefers-reduced-motion: reduce)";
 const get = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const put = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
@@ -136,6 +161,20 @@ export async function startTier(host) {
     };
     lowRaf = requestAnimationFrame(f);
   };
+  /* fix E7: the long-frame watch, while a 3D tier shows (a menu choice runs it too, so its window reaches the status; slow() keeps the choice) */
+  let longRaf = 0;
+  const watchLong = () => {
+    cancelAnimationFrame(longRaf);
+    const J = longJudge(); let last = 0;
+    const f = (now) => {
+      longRaf = 0; if (!BUDGET[S.tier] || !room) return;
+      if (document.hidden || quiet()) last = 0;
+      else { const v = last ? J.push(now, now - last, S.tier) : null; last = now; S.longWin = J.win;
+        if (v && stepFor(S.tier, v, false) !== S.tier) { S.longSteps = (S.longSteps || 0) + 1; slow(`${v.long} of ${v.n} frames over ${v.over} ms${v.huge ? `, ${v.huge} over ${HUGE_MS} ms` : ""} in ${LONG_WIN / 1000} s`); } }
+      longRaf = requestAnimationFrame(f);
+    };
+    longRaf = requestAnimationFrame(f);
+  };
   /* a tier the viewer picked in the menu is never demoted: the slow verdict is recorded and nothing changes */
   const slow = (why) => {
     if (get(KEY)) { S.slowKept = (S.slowKept || 0) + 1; S.slowWhy = `kept ${S.tier} (chosen in the menu): ${why}`; return; }
@@ -205,7 +244,7 @@ export async function startTier(host) {
   async function apply(t, why) {
     S.tier = t; S.why = why;
     if (t === "off" || t === "low") { stopRoom(); setClasses(t); if (t === "low") watchLow(); return; }
-    if (room) { room.setTier(t); setClasses(t); return; }
+    if (room) { room.setTier(t); setClasses(t); watchLong(); return; }
     canvas = mount();
     try {
       let r = canWorker() ? await viaWorker(canvas, t) : null;
@@ -216,6 +255,7 @@ export async function startTier(host) {
       room = r; S.via = r.via;
       S.renderer = r.info.renderer; S.software = r.info.software; S.colorSpace = r.info.colorSpace; S.wideWhy = r.info.wideWhy;
       if (r.via === "page") setClasses(S.tier); /* same frame as the page room's first draw; the worker's first frame sets the classes itself */
+      watchLong();
     } catch (e) { stopRoom(); S.tier = "low"; S.why = `room did not start: ${e.message}`; setClasses("low"); }
   }
   /* the 2 s probe: frame intervals while the room runs; p95 over the tier's budget demotes one tier. It runs only while the

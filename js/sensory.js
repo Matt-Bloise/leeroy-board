@@ -1,9 +1,5 @@
-/* Sensory layer (audio-sensory pass): layered generative tavern ambience, per-scene soundscapes, an original generative score,
-   companion UI/transition sounds, haptics wiring, the one-tap Sensory panel. Everything is synthesized (no files, no network).
-   It rides on js/sound.js (window.BoardSound: internals(), onState(), setCueHook(), setPanSource(), setSpatial()) and on the
-   page's own events (window.__boardKit.on("scene" | "closed")). It adds no code to js/board.js. Sound is off until the visitor
-   turns it on; nothing here plays before that. Every API is feature-detected and every call is guarded: a missing API means a
-   missing feature, never an error. */
+/* Sensory layer: generative tavern ambience, scene soundscapes and score, UI sounds, haptics, the Sensory panel. All synthesized, on
+   js/sound.js (window.BoardSound) and the kit's events. Off until the visitor turns sound on; every API is feature-detected. */
 (() => {
   if (typeof window === "undefined" || typeof navigator === "undefined" || typeof document === "undefined" || typeof addEventListener !== "function") return; /* a bare script host (a test harness) gets nothing */
   const BS = window.BoardSound, HP = window.BoardHaptics;
@@ -226,12 +222,12 @@
     const b = el("button", { type: "button", class: "sense-toggle", id, "aria-pressed": String(!!cfg[key]), text: label }); b.addEventListener("click", () => setCfg(key, !cfg[key])); return b;
   }
   function buildPanel() {
-    btn = el("button", { type: "button", id: "sense-btn", class: "sense-fab", "aria-label": "Sensory settings", "aria-expanded": "false", "aria-controls": "sense-panel", title: "Sensory settings (S)", text: "Sensory" });
+    btn = el("button", { type: "button", id: "sense-btn", class: "sense-fab", "aria-label": "Sensory settings", "aria-keyshortcuts": "S", "aria-expanded": "false", "aria-controls": "sense-panel", text: "Sensory" });
     panel = el("div", { id: "sense-panel", class: "sense-panel", role: "dialog", "aria-label": "Sensory settings", hidden: "" });
     const master = el("input", { type: "range", min: 0, max: 100, step: 5, id: "sense-master", "aria-label": "Master volume" }); master.value = String(Math.round(((window.__board && window.__board.audio().volume) || 0.7) * 100));
     master.addEventListener("input", () => setMaster(Number(master.value) / 100));
     const pre = el("div", { class: "sense-presets", role: "group", "aria-label": "Presets" });
-    for (const [k, n] of [["quiet", "Quiet"], ["tavern", "Tavern"], ["everything", "Everything"]]) { const b = el("button", { type: "button", "data-preset": k, "aria-pressed": "false", text: n }); b.addEventListener("click", () => { applyPreset(k); if (!isOn() && window.__board) window.__board.sound(true); sync(); }); pre.append(b); }
+    for (const [k, n] of [["quiet", "Quiet"], ["tavern", "Tavern"], ["everything", "Full"]] /* fix E8: Everything is a journey; the key stays */) { const b = el("button", { type: "button", "data-preset": k, "aria-pressed": "false", text: n }); b.addEventListener("click", () => { applyPreset(k); if (!isOn() && window.__board) window.__board.sound(true); sync(); }); pre.append(b); }
     const onb = el("button", { type: "button", id: "sense-power", class: "sense-toggle", "aria-pressed": "false", text: "Sound: off" }); onb.addEventListener("click", () => { if (window.__board) window.__board.sound(!isOn()); setTimeout(sync, 80); });
     const hs = HP ? HP.support() : { any: false }, note = el("p", { class: "sense-note", id: "sense-note" });
     note.textContent = "Saved on this device only. " + (hs.any ? "Haptics: " + [hs.vibrate && "vibration", hs.ios && "iPhone tick", "controller rumble when one is connected"].filter(Boolean).join(", ") + "." : "Haptics need a phone or a controller; none found here.");
@@ -244,6 +240,14 @@
     sync();
   }
   function openPanel(open) { panel.hidden = !open; btn.setAttribute("aria-expanded", String(open)); if (open) { sync(); const f = panel.querySelector("button"); if (f) f.focus({ preventScroll: true }); } }
+  /* fix E2 (2026-10-30): first in the wall's footer row, after the scene head's controls in a scene; a phone keeps its corner */
+  function dock() {
+    if (!btn) return;
+    const foot = $("#footer"), head = E.scene && ($("#mode-btn-scene") || $("#scene-peek"));
+    if (document.documentElement.classList.contains("phone-shell") || innerWidth < 700) { if (btn.parentNode !== document.body) document.body.insertBefore(btn, panel); }
+    else if (head) { if (btn.previousSibling !== head) head.parentNode.insertBefore(btn, head.nextSibling); }
+    else if (foot && foot.firstChild !== btn) foot.insertBefore(btn, foot.firstChild);
+  }
   function sync() {
     if (!panel) return; const on = isOn();
     const v = (id, x) => { const n = $("#" + id); if (n) n.value = String(Math.round(x * 100)); };
@@ -275,15 +279,18 @@
     try { if (sessionStorage.getItem("board-fanfare")) { E.fanfared = true; return; } } catch (e) {}
     if (fanfare()) { E.fanfared = true; try { sessionStorage.setItem("board-fanfare", "1"); } catch (e) {} }
   }
+  /* fix E8: beside the pill, never over a tile, never focused; gone after 8 s, a scroll or a press elsewhere */
   function invite() {
     try { if (sessionStorage.getItem("board-invite")) return; sessionStorage.setItem("board-invite", "1"); } catch (e) {}
     setTimeout(() => {
-      if (isOn() || !document.body || document.hidden || document.documentElement.classList.contains("play")) return; /* polish: Play holds the sound, so no invitation to it */
+      const foot = $("#footer");
+      if (isOn() || !btn || btn.parentNode !== foot || document.hidden || document.documentElement.classList.contains("play")) return; /* polish: Play holds the sound, so no invitation to it */
       const t = el("div", { class: "sense-invite", role: "status" }), b = el("button", { type: "button", text: "Hear the tavern" }), x = el("button", { type: "button", class: "sense-x", "aria-label": "Dismiss", text: "×" });
-      t.append(el("span", { text: "Sound is off." }), b, x); document.body.append(t);
-      const gone = () => { t.classList.add("out"); setTimeout(() => t.remove(), 400); };
-      b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); gone(); }); x.addEventListener("click", gone); setTimeout(gone, 6000); /* integrator pass 3: 6 s, and any press elsewhere sends it */
-      const away = (e) => { if (!t.contains(e.target)) { removeEventListener("pointerdown", away, true); gone(); } }; addEventListener("pointerdown", away, true);
+      t.append(el("span", { text: "Sound is off." }), b, x); foot.insertBefore(t, btn.nextSibling);
+      const gone = () => { removeEventListener("pointerdown", away, true); t.classList.add("out"); setTimeout(() => t.remove(), 400); };
+      const away = (e) => { if (!t.contains(e.target)) gone(); };
+      b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); gone(); }); x.addEventListener("click", gone); setTimeout(gone, 8000);
+      addEventListener("pointerdown", away, true); document.addEventListener("scroll", gone, { capture: true, passive: true, once: true });
     }, 7000);
   }
 
@@ -299,7 +306,8 @@
   BS.onState((on) => { if (on) setTimeout(start, 0); else stop(); setTimeout(sync, 150); });
   function kit() {
     const K = window.__boardKit; if (!K) return false;
-    K.on("scene", (key) => { E.scene = key; levels(); sync(); }); K.on("closed", () => { E.scene = null; levels(); });
+    K.on("scene", (key) => { E.scene = key; levels(); sync(); dock(); }); K.on("closed", () => { E.scene = null; levels(); dock(); });
+    K.on("rendered", dock); addEventListener("resize", dock); dock();
     return true;
   }
   function init() {

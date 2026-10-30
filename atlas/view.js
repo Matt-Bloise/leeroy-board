@@ -97,27 +97,32 @@ export function createTiles(o) {
     return out;
   };
 
-  // Draw in screen space; a missing tile shows its nearest loaded ancestor, then nothing (the sea shows through).
+  // Draw in screen space; a missing tile shows its nearest loaded ancestor. Fix E4 (2026-10-30): a cell the level leaves out of the
+  // index (open sea at levels 2 and 3) is painted from the nearest level that has it, asked for when it is not loaded yet; before,
+  // the bare host colour showed there, a pale empty box that read as a minimap behind the zoom buttons at 3440.
   T.draw = (ctx, V) => {
-    const vis = T.visible(V, T.index ? T.index.levels : 4), s = V.scale();
-    T.wanted = vis.length; let loaded = 0;
-    for (const [L, x, y] of vis) {
-      const span = 10000 / Math.pow(2, L), [sx, sy] = V.toScreen(x * span, y * span), sw = span * s;
-      const x0 = Math.floor(sx), y0 = Math.floor(sy), x1 = Math.ceil(sx + sw), y1 = Math.ceil(sy + sw);
-      let img = get(L, x, y), q = 512, ox = 0, oy = 0;
+    const levels = T.index ? T.index.levels : 4, L = levelFor(V.z, levels), span = 10000 / Math.pow(2, L), r = V.rect(), s = V.scale(), sw = span * s;
+    const x0 = Math.max(0, Math.floor(r[0] / span)), x1 = Math.min(3 * Math.pow(2, L) - 1, Math.floor(r[2] / span));
+    const y0 = Math.max(0, Math.floor(r[1] / span)), y1 = Math.min(2 * Math.pow(2, L) - 1, Math.floor(r[3] / span));
+    let wanted = 0, loaded = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const own = T.has(L, x, y), [sx, sy] = V.toScreen(x * span, y * span);
+      const ax = Math.floor(sx), ay = Math.floor(sy), bx = Math.ceil(sx + sw), by = Math.ceil(sy + sw);
+      let img = own ? get(L, x, y) : null, q = 512, ox = 0, oy = 0;
+      if (own) wanted++;
       if (img) loaded++;
       else {
-        want(L, x, y);
+        if (own) want(L, x, y);
         for (let l = L - 1; l >= 0 && !img; l--) {
           const d = L - l, px = x >> d, py = y >> d;
           if (!T.has(l, px, py)) continue;
           const b = get(l, px, py);
-          if (b) { img = b; q = 512 / Math.pow(2, d); ox = (x - (px << d)) * q; oy = (y - (py << d)) * q; }
+          if (b) { img = b; q = 512 / Math.pow(2, d); ox = (x - (px << d)) * q; oy = (y - (py << d)) * q; } else if (!own) { want(l, px, py); break; }
         }
       }
-      if (img) ctx.drawImage(img, ox, oy, q, q, x0, y0, x1 - x0, y1 - y0);
+      if (img) ctx.drawImage(img, ox, oy, q, q, ax, ay, bx - ax, by - ay);
     }
-    T.loaded = loaded;
+    T.wanted = wanted; T.loaded = loaded;
     return loaded;
   };
   T.stats = () => ({ wanted: T.wanted, loaded: T.loaded, failed: T.failed.size });

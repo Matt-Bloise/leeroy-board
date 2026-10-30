@@ -2,11 +2,11 @@
 // one Canvas 2D element inside the host the hook made. The draw loop runs only while something moves or changed; a hidden
 // page or a closed scene stops it. All maths sits in geo.js, view.js and routes.js; this file only decides what to draw.
 import * as geo from "./geo.js?v=eb6dd67b63";
-import { createView, createTiles, defaultLoader, createFrames } from "./view.js?v=e7678982c4";
-import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=915198498e";
+import { createView, createTiles, defaultLoader, createFrames } from "./view.js?v=da42dac2e1";
+import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=79f7268a65";
 import { bindGestures } from "./gestures.js?v=6bfa13bc52";
 import { buildGraph, makePlan, buildTimeline, timelineAt, slicePath, meetOf } from "./routes.js?v=1b698e7e6d";
-import { createCards } from "./cards.js?v=5a423a74d2";
+import { createCards } from "./cards.js?v=a6fa8e4340";
 import * as T from "./tokens.js?v=c2a525a5c5";
 import { createFoley } from "./foley.js?v=b3098ff2d2";
 import { buildShapes, smoothRing } from "./shape.js?v=f610284fc4";
@@ -50,7 +50,7 @@ export async function createAtlas(opts) {
   const artFile = (cell) => cell.replace(/^icons-/, "C-").replace(/^ornament-corner-flourish-/, "D-corner-").replace(/^ornament-/, "D-").replace(/^travellers-zeppelin-frame-/, "E-zeppelin-");
   const art = (cell) => `${base}img/atlas/${artFile(cell)}.webp`;
   const orn = (cls, cell) => h("img", { class: `atlas-orn ${cls}`, src: art(cell), alt: "", "aria-hidden": "true", decoding: "async" });
-  const shapesLine = world.shapes && world.shapes.source === "zmp" ? "shapes from the client's zone grid" : "zone plates; coasts to come";
+  const shapesLine = world.shapes && world.shapes.source === "zmp" ? "shapes drawn from the game's own zone list" : "zone plates; coasts to come";
   // the frame holds the title only; the shapes line sits on its own label under it, where the scrollwork cannot clip it
   const cartouche = h("div", { class: "atlas-cartouche" }, h("div", { class: "atlas-cart" }, orn("orn-frame", "ornament-cartouche-frame"), h("div", { class: "atlas-title" }, h("strong", { text: "The Atlas" }))), opts.shapesNote === false ? null : h("span", { class: "atlas-shapes", text: shapesLine }));
   const scaleBar = h("div", { class: "atlas-scale", "aria-hidden": "true" }, orn("orn-scale", "ornament-scale-bar"), h("i", { class: "atlas-bar" }), h("span", { class: "atlas-scale-t", text: "" }));
@@ -201,7 +201,7 @@ export async function createAtlas(opts) {
     for (const c of NICE) if (c / ypp <= 140) n = c;
     const bar = scaleBar.querySelector(".atlas-bar"), t = scaleBar.querySelector(".atlas-scale-t");
     if (bar) bar.style.width = `${Math.round(n / ypp)}px`;
-    if (t) { const txt = `${n >= 1000 ? `${n / 1000} thousand` : n} yards`; if (t.textContent !== txt) t.textContent = txt; }
+    if (t) { const txt = `${n.toLocaleString("en-US")} yards`; /* fix E4: 1,000 yards, not 1 thousand */ if (t.textContent !== txt) t.textContent = txt; }
   }
   let lastFoley = 0;
   function updateFoley() {
@@ -246,7 +246,7 @@ export async function createAtlas(opts) {
     const r = rectOf(ids); if (!r) return null;
     if (r[2] - r[0] < 400) { r[0] -= 600; r[2] += 600; } if (r[3] - r[1] < 400) { r[1] -= 400; r[3] += 400; }
     // a margin in pixels, so the pins above a start and the names under it stay inside whatever the zoom (fix round 2)
-    const f = fitFree(r, narrow() ? 0 : 0.03, 4, narrow() ? 34 : 44);
+    const f = fitFree(r, narrow() ? 0 : 0.08, 4, narrow() ? 34 : 44); /* fix E4: 8 percent each side at any aspect */
     return moveTo(f.cx, f.cy, f.z, o);
   }
   // places of a plan grouped by continent: the meeting point's continent is home, the rest are away. The day-one view fits all
@@ -336,11 +336,11 @@ export async function createAtlas(opts) {
     close: () => closeCard(), closePlan: () => atlas.clearPlan(),
     openPlace: (id) => atlas.open(id, { card: true, animate: true }),
     plan: (id) => { atlas.showPlan(atlas.plan({ meet: id }), { animate: true, fit: true }); },
-    planWho: (meet, ck) => { S.planWho = ck; atlas.showPlan(atlas.plan({ meet, who: ck }), { animate: true, fit: true }); },
+    planWho: (meet, ck) => { S.planWho = ck; S.unfold = !narrow(); atlas.showPlan(atlas.plan({ meet, who: ck }), { animate: true, fit: true }); S.unfold = false; S.base = { token: T.make({ kind: "plan", meet, who: ck }), v: null, plan: true }; },
     folded: () => { placeAway(); invalidate(); },
     send: (meet) => copy(`/map plan:${meet}`, `Copied /map plan:${meet}. Paste it in Discord and the card is posted there when you tap Post to channel.`),
   };
-  const cards = createCards({ host, h, places, world, links, routes, party, foldFirst: () => narrow() || view.w < 1000 || !!S.foldNext, /* integrator pass 3: the Atlas's first view opens the plan folded at every width (it covered the east third) */ /* phones, tablets and maps under 1000 px: the plan opens as a title bar docked at the foot */ journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
+  const cards = createCards({ host, h, places, world, links, routes, party, foldFirst: () => !S.unfold && (narrow() || view.w < 1000 || !!S.foldNext), /* integrator pass 3: the Atlas's first view opens the plan folded at every width (it covered the east third) */ /* phones, tablets and maps under 1000 px: the plan opens as a title bar docked at the foot */ journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
   const toastSay = (txt) => { toast.textContent = txt; clearTimeout(S.toastT); S.toastT = setTimeout(() => { toast.textContent = ""; }, 2400); };
   function copy(text, say) {
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) { /* the toast still shows */ }
@@ -445,20 +445,24 @@ export async function createAtlas(opts) {
     },
     token() {
       const b = S.base, here = { cx: view.cx, cy: view.cy, z: view.z };
+      if (b && !S.card && ((b.plan && S.plan) || (b.none && cards.planOpen))) return b.token;
       if (b && b.v && Math.abs(b.v.cx - here.cx) * view.scale() < 4 && Math.abs(b.v.cy - here.cy) * view.scale() < 4 && Math.abs(b.v.z - here.z) < 0.02 && baseValid(b)) return b.token;
       return T.make({ kind: "view", au: view.cx, av: view.cy, zoom: view.z });
     },
     openToken(token, o = {}) {
       const p = T.parse(token); if (!p) return false;
-      if (p.kind === "home") { closeCard(); const first = !S.plan; S.foldNext = first; atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); S.foldNext = false; let to = fitPlan(o) || fitIds(dayOneIds(), o);
-        /* integrator pass 3: the first view frames the meeting point's continent (both continents at once were mostly sea); the away
-           pointer setAway() placed flies to the other starts */
-        if (first && S.plan && S.away && S.away.length > 1) { const home = S.away.find((c) => c.ids.includes(S.plan.meet)) || S.away[0]; to = fitIds(home.ids, o) || to; placeAway(); } S.base = { token: "atlas", v: to, plan: true }; return true; }
+      if (p.kind === "home") { closeCard(); const first = !S.plan; S.foldNext = first; atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); S.foldNext = false; const to = fitPlan(o) || fitIds(dayOneIds(), o);
+        /* fix E4 (2026-10-30): the first view fits every start and the meeting point (integrator pass 3 framed the meeting point's continent
+           alone, which left Tirisfal off screen at 3440) */
+        S.base = { token: "atlas", v: to, plan: true }; return true; }
       if (p.kind === "place") return placeById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "zone") return zoneById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "plan") {
-        if (!placeById.has(p.meet)) return false;
-        atlas.showPlan(atlas.plan(p.who ? { meet: p.meet, who: p.who } : { meet: p.meet }), { animate: !!o.animate });
+        /* fix E4: a plan link keeps its hash; a place with no plan says so in the dock; a friend's plan opens with its steps showing */
+        S.unfold = !!p.who && !narrow();
+        const shown = placeById.has(p.meet) && atlas.showPlan(atlas.plan(p.who ? { meet: p.meet, who: p.who } : { meet: p.meet }), { animate: !!o.animate });
+        S.unfold = false;
+        if (!shown) { atlas.clearPlan(); closeCard(); cards.noPlan(); S.base = { token: T.make(p) || "atlas", v: fitIds(dayOneIds(), o), none: true }; return true; }
         const to = fitPlan(o) || fitIds([...new Set([...dayOneIds(), p.meet])], o);
         S.planWho = p.who || null; S.base = { token: T.make(p), v: to, plan: true }; return true;
       }
@@ -498,7 +502,7 @@ export async function createAtlas(opts) {
     mkBtn("a-in", "Zoom in", "+", () => atlas.zoomBy(1)),
     mkBtn("a-out", "Zoom out", "−", () => atlas.zoomBy(-1)),
     mkBtn("a-fit", "Show the day-one view", "0", () => atlas.dayOne()),
-    mkBtn("a-back", "Back to the sketch", "Back to the sketch", () => emit("close", {})));
+    mkBtn("a-back", "Back to the simple map", "Back to the simple map", () => emit("close", {})));
   const foley = createFoley({ sound: opts.sound, reduced, soundOn: () => { try { return !!(window.__board && window.__board.sound && window.__board.sound()); } catch (e) { return false; } } });
   const keys = {
     fit: () => atlas.dayOne(),

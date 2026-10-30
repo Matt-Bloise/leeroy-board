@@ -166,9 +166,18 @@ K.placePop = (pop, t) => {
 const pt = { x: -1, y: -1, t: 0 };
 /* a card opens on focus only for a keyboard user: script focus (a tab opening a scene) and a click's focus stay quiet */
 let keyMode = false;
-addEventListener("keydown", () => { keyMode = true; }, true);
+/* fix E3 (2026-10-30): the last thing the pointer came over stands in for ":hover"; a scene opening or closing quiets every card until the
+   pointer really moves (more than 4 px) or a key goes down, so nothing opens under a parked pointer or a script's focus */
+let over = null;
+const Q = { on: false, x: -1, y: -1 };
+const hov = (el) => !!(over && el && el.contains(over));
+const hush = () => { Q.on = true; Q.x = pt.t ? pt.x : -1; Q.y = pt.y; };
+document.addEventListener("pointerover", (e) => { if (e.pointerType !== "touch") over = e.target || null; }, true);
+document.addEventListener("pointerout", (e) => { if (!e.relatedTarget) over = null; }, true);
+K.on("scene", hush); K.on("closed", hush);
+addEventListener("keydown", () => { keyMode = true; Q.on = false; }, true);
 addEventListener("pointerdown", () => { keyMode = false; }, true);
-addEventListener("pointermove", (e) => { pt.x = e.clientX; pt.y = e.clientY; pt.t = Date.now(); }, { passive: true, capture: true });
+addEventListener("pointermove", (e) => { pt.x = e.clientX; pt.y = e.clientY; pt.t = Date.now(); if (Q.on) { if (Q.x < 0) { Q.x = pt.x; Q.y = pt.y; } else if (Math.abs(pt.x - Q.x) + Math.abs(pt.y - Q.y) > 4) Q.on = false; } }, { passive: true, capture: true });
 function hull(points) { /* convex hull, monotone chain */
   const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y), cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), lo = [], up = [];
   for (const q of p) { while (lo.length > 1 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
@@ -176,26 +185,27 @@ function hull(points) { /* convex hull, monotone chain */
   return lo.slice(0, -1).concat(up.slice(0, -1));
 }
 function inside(poly, q) { for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; if ((b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) < -6) return false; } return true; }
-/* hover({root, sel, open(t, via), close(), card(), pinned(), isOpen(), enter(t), leave(t)}) */
+/* hover({root, sel, open(t, via), close(), card(), pinned(), isOpen(), enter(t), leave(t), strict}); strict: a pointer landing outside the trigger closes at once */
 function hover(c) {
   let inT = 0, outT = 0, cur = null, left = null, pend = null;
   const cardEl = () => (c.card ? c.card() : null);
-  const finish = () => { outT = 0; if (c.pinned && c.pinned()) return; const el = cardEl(); if (el && !el.hidden) { if (el.matches(":hover")) return; if (left && Date.now() - left.t < 1400 && Date.now() - pt.t < 350 && cur && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt)) { arm(110); return; } } cur = null; c.leave && c.leave(null); c.close(); };
+  const finish = () => { outT = 0; if (c.pinned && c.pinned()) return; const el = cardEl(); if (el && !el.hidden) { if (hov(el)) return; if (left && Date.now() - left.t < 1400 && Date.now() - pt.t < 350 && cur && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt)) { arm(110); return; } } cur = null; c.leave && c.leave(null); c.close(); };
   const corners = (r) => [{ x: r.x, y: r.y }, { x: r.r, y: r.y }, { x: r.x, y: r.b }, { x: r.r, y: r.b }];
   const arm = (ms) => { clearTimeout(outT); outT = setTimeout(finish, ms); };
   c.root.addEventListener("pointerover", (e) => {
     if (e.pointerType === "touch") return;
+    if (c.strict && cur && !cur.contains(e.target)) { clearTimeout(outT); outT = 0; cur = null; c.close(); }
     const t = e.target.closest && e.target.closest(c.sel); if (!t) return;
     /* crossing to the open card: a trigger passed on the way does not take the card away; it counts only when the pointer rests on it */
     const el = cardEl(), open = c.isOpen && c.isOpen(), cross = open && cur && cur !== t && el && !el.hidden && left && Date.now() - left.t < 1400 && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt);
-    if (cross) { clearTimeout(inT); inT = setTimeout(() => { if (!t.isConnected || !t.matches(":hover")) return; clearTimeout(outT); outT = 0; left = null; if (c.enter) c.enter(t); cur = t; c.open(t, "hover"); }, 300); return; }
+    if (cross) { clearTimeout(inT); inT = setTimeout(() => { if (Q.on || !t.isConnected || !hov(t)) return; clearTimeout(outT); outT = 0; left = null; if (c.enter) c.enter(t); cur = t; c.open(t, "hover"); }, 300); return; }
     clearTimeout(outT); outT = 0; left = null;
     if (c.enter) c.enter(t);
     if (cur === t) { clearTimeout(inT); pend = null; return; }
     /* moving between the parts of one trigger does not start the wait again */
     if (pend === t) return;
     clearTimeout(inT); pend = t;
-    inT = setTimeout(() => { pend = null; if (!t.isConnected || !t.matches(":hover")) return; cur = t; c.open(t, "hover"); }, open ? SWITCH : IN);
+    inT = setTimeout(() => { pend = null; if (Q.on || !t.isConnected || !hov(t)) return; cur = t; c.open(t, "hover"); }, open ? SWITCH : IN);
   });
   c.root.addEventListener("pointerout", (e) => {
     if (e.pointerType === "touch") return;
@@ -203,7 +213,7 @@ function hover(c) {
     clearTimeout(inT); pend = null; left = { p: { x: e.clientX, y: e.clientY }, t: Date.now() };
     if (cur === t || (c.isOpen && c.isOpen())) arm(OUT); else if (c.leave) c.leave(t);
   });
-  c.root.addEventListener("focusin", (e) => { const t = e.target && e.target.closest && e.target.closest(c.sel); if (!t || !(keyMode || c.focusAlways)) return; clearTimeout(outT); clearTimeout(inT); if (c.enter) c.enter(t); cur = t; c.open(t, "focus"); });
+  c.root.addEventListener("focusin", (e) => { const t = e.target && e.target.closest && e.target.closest(c.sel); if (!t || Q.on || !(keyMode || c.focusAlways)) return; clearTimeout(outT); clearTimeout(inT); if (c.enter) c.enter(t); cur = t; c.open(t, "focus"); });
   c.root.addEventListener("focusout", (e) => { const t = e.target && e.target.closest && e.target.closest(c.sel); if (!t) return; const el = cardEl(); if (el && el.contains(e.relatedTarget)) return; left = null; if (!(c.pinned && c.pinned())) arm(OUT); });
   const el0 = () => { const el = cardEl(); if (el && !el.dataset.hb) { el.dataset.hb = "1"; el.addEventListener("pointerenter", () => { clearTimeout(outT); outT = 0; }); el.addEventListener("pointerleave", (e) => { if (e.pointerType === "touch") return; left = null; if (!(c.pinned && c.pinned())) arm(OUT); }); } };
   const o0 = c.open; c.open = (t, via) => { el0(); return o0(t, via); };
@@ -318,8 +328,10 @@ function roads(M) {
     card.classList.remove("flipin"); void card.offsetWidth; card.classList.add("flipin");
   };
   const hide = () => { cur = null; pinned = null; card.hidden = true; clearCtx(); panel.querySelectorAll("[aria-describedby=road-card]").forEach((e) => e.removeAttribute("aria-describedby")); };
-  hover({ root: panel, sel: SEL, card: () => card, open: show, close: () => { if (!pinned) hide(); }, pinned: () => !!pinned, isOpen: () => !card.hidden,
+  const ctl = hover({ root: panel, sel: SEL, card: () => card, open: show, close: () => { if (!pinned) hide(); }, pinned: () => !!pinned, isOpen: () => !card.hidden,
     enter: (t) => { const id = idOf(t); if (id.key) { cur = { t, id }; setCtx(id); } }, leave: () => { if (!pinned && card.hidden) clearCtx(); } });
+  /* fix E3: a scene change (another tab, or Three roads opening) never keeps or brings a road card; one comes from a click, Enter or a moved pointer */
+  K.on("scene", () => { ctl.cancel(); if (!card.hidden) hide(); });
   /* a tap or click pins the card; the same tap again, a tap elsewhere or Escape closes it (the legend rows keep their own pressed state) */
   panel.addEventListener("click", (e) => {
     const t = e.target.closest && e.target.closest(SEL); if (!t || e.target.closest("#road-card")) return;
@@ -410,15 +422,20 @@ function tips() {
   let cur = null;
   const open = (t) => {
     cur = t; card.replaceChildren(h("span", { text: t.getAttribute("data-tip") })); card.hidden = false; t.setAttribute("aria-describedby", "place-tip");
-    const B = box(8, 8, innerWidth - 16, innerHeight - 16), scope = $("#scene:not([hidden]) .sheet") || $("#board") || document.body;
+    const sc = $("#scene"), B = box(8, 8, innerWidth - 16, innerHeight - 16), scope = (sc && !sc.hidden && $("#scene .sheet")) || $("#board") || document.body;
     const pos = choose(card.offsetWidth, card.offsetHeight, R(t), { bounds: B, row: R(t), gap: 8, avoid: siblingsOf(t, "[data-tip], .tab, button, a[href]"), content: contentRects(scope, B, card) });
     card.style.left = `${Math.round(pos.x)}px`; card.style.top = `${Math.round(pos.y)}px`;
   };
   const close = () => { card.hidden = true; if (cur) cur.removeAttribute("aria-describedby"); cur = null; };
-  hover({ root: document.body, sel: "[data-tip]", card: () => card, open, close, isOpen: () => !card.hidden });
-  /* integrator (2026-10-30): the tip is a title stand-in; Escape hides it and the same press goes on to close the scene (it took two presses) */
-  addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) close(); }, true);
-  addEventListener("pointerdown", () => { if (!card.hidden) close(); }, true);
+  const ctl = hover({ strict: true, root: document.body, sel: "[data-tip]", card: () => card, open, close, isOpen: () => !card.hidden });
+  const shut = () => { ctl.cancel(); if (!card.hidden) close(); };
+  /* the tip is a title stand-in: Escape hides it and the same press goes on to close the scene; so do a press, a scroll anywhere, its
+     trigger losing focus and a scene opening or closing (fix E3: it stayed up with another tab's text over the new scene) */
+  addEventListener("keydown", (e) => { if (e.key === "Escape") shut(); }, true);
+  addEventListener("pointerdown", shut, true);
+  document.addEventListener("scroll", shut, { capture: true, passive: true });
+  document.addEventListener("focusout", (e) => { const t = e.target; if (cur && t && cur.contains(t)) shut(); });
+  K.on("scene", shut); K.on("closed", shut);
 }
 
 K.place = { choose, rowRect, contentRects, hover, dock, visibleBounds, IN, OUT };

@@ -13,9 +13,9 @@ const SCENES = {
   decide: () => [new URL("../scenes/decide.css?v=99fcaa246c", HERE), new URL("../scenes/decide.js?v=250667e6fa", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=f782448ae6", HERE), new URL("../scenes/walk.js?v=bc1848adbc", HERE)],
-  place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=b7547ad5f8", HERE)],
+  place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1b9e9b4574", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=2f4a786354", HERE)],
-  wide: () => [null, new URL("../scenes/wide.js?v=bed74f6338", HERE)],
+  wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
 };
 const NEEDS = { sheet: ["decide"] }; /* the sheet reads decide.json through decide.js (K.decideData) */
 /* forget is listed for a later caller and never replayed: a module that loads after Clear my name has nothing of the old visit */

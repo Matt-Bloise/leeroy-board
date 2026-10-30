@@ -212,10 +212,10 @@ export function createLayers(data) {
         if (sx < -80 || sy < -30 || sx > V.w + 80 || sy > V.h + 30) continue;
         const wpx = (zz.z.a_rect[2] - zz.z.a_rect[0]) * s;
         if (wpx < 46) continue;
-        cands.push({ t: zz.z.name.toUpperCase(), x: sx, y: sy, pr: PRIO.zone, size: Math.max(11, Math.min(20, 10 + z * 2)), kind: "zone", fit: wpx });
+        cands.push({ t: zz.z.name.toUpperCase(), x: sx, y: sy, pr: PRIO.zone, size: Math.max(12, Math.min(20, 10 + z * 2)), kind: "zone", fit: wpx });
       }
       const named = new Set(cands.map((c) => c.t)); /* a subzone that shares a place's name (The Crossroads) is named once, by the place */
-      if (z >= 3) for (const sz of L.subzones) { const lb = sz.s.label; if (!lb || z < (lb.min_zoom || 3) || named.has(sz.s.name)) continue; const [sx, sy] = V.toScreen(lb.a[0], lb.a[1]); cands.push({ t: sz.s.name || sz.s.id, x: sx, y: sy, pr: 0.5, size: 11, kind: "sub" }); }
+      if (z >= 3) for (const sz of L.subzones) { const lb = sz.s.label; if (!lb || z < (lb.min_zoom || 3) || named.has(sz.s.name)) continue; const [sx, sy] = V.toScreen(lb.a[0], lb.a[1]); cands.push({ t: sz.s.name || sz.s.id, x: sx, y: sy, pr: 0.5, size: 12, kind: "sub" }); }
       L.drawLabels(ctx, V, cands, C);
     }
     ctx.globalAlpha = 1;

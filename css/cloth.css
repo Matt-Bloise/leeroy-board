@@ -8,7 +8,7 @@
     position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px;
     height: var(--tab-h); min-height: var(--tab-h); margin: 0; padding: 0 calc(var(--cloth-trim) + 1px) 26px; box-sizing: border-box;
     border: 0; border-radius: 0; background: none; box-shadow: none; white-space: nowrap;
-    font-size: 0.8125rem; letter-spacing: 0.03em; line-height: 1.2; color: var(--cream, #f4e6c8); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 6px rgba(0, 0, 0, 0.55);
+    font-size: max(13px, 0.8125rem); letter-spacing: 0.03em; line-height: 1.2; color: var(--cream, #f4e6c8); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 6px rgba(0, 0, 0, 0.55);
   }
   #tabs .tab { transform: none; }
   #tabs .tab[aria-selected="true"] { color: #fff6e0; }
@@ -43,4 +43,6 @@
   #tab-cloth { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; display: none; }
   html.cloth-gl #tab-cloth { display: block; }
 }
+/* fix E5: banners grow on wide sheets */
+@media (min-width: 2200px) { html #scene #tabs .tab { min-width: clamp(110px, 6vw, 200px); font-size: clamp(13px, 0.8vw, 18px); } }
 @media (forced-colors: active) { #tabs .tab::before, #tab-cloth { display: none !important; } }

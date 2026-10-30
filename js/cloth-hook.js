@@ -21,25 +21,27 @@ const idle = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, 
 const loadImg = (name) => new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error(name)); im.src = `img/banners/${name}.webp`; });
 const decoded = (name) => loadImg(name).then((im) => (im.decode ? im.decode().catch(() => {}).then(() => im) : im));
 
+/* fix E6 (2026-10-30): the painted banners (html.cloth-paint) stay until the GL cloth has laid out; a scene opening lays it out again */
+const show = () => { const on = !!ctl && ctl.layout() !== false; root.classList.toggle("cloth-gl", on); root.classList.toggle("cloth-paint", !on); };
 function start() {
-  if (ctl || loading || !allowed()) return;
+  if (ctl || loading || !allowed()) { show(); return; }
   loading = true; const my = ++gen;
   if (!canvas) { canvas = document.createElement("canvas"); canvas.setAttribute("id", "tab-cloth"); canvas.setAttribute("aria-hidden", "true"); canvas.style.pointerEvents = "none"; rail.insertBefore(canvas, rail.firstChild); }
   const tabs = tabList(), names = Array.from(new Set(tabs.map((t) => t.colour)));
-  const mod = import("../cloth/cloth.js?v=a87244af88");
+  const mod = window.__clothModule ? Promise.resolve(window.__clothModule) : import("../cloth/cloth.js?v=a87244af88");
   Promise.all([mod, Promise.all(names.map(decoded))]).then(([m, ims]) => {
     loading = false; if (my !== gen || !allowed()) return;
     const byName = {}; names.forEach((n, i) => { byName[n] = ims[i]; });
     const images = {}; tabs.forEach((t) => { images[t.key] = byName[t.colour]; });
-    const c = m.createCloth({ canvas, rail, tabs, images, tokens: { warm: getComputedStyle(root).getPropertyValue("--light-warm") }, onLost: () => { ctl = null; root.classList.remove("cloth-gl"); } });
+    const c = m.createCloth({ canvas, rail, tabs, images, tokens: { warm: getComputedStyle(root).getPropertyValue("--light-warm") }, onLost: () => { ctl = null; show(); } });
     if (!c) throw new Error("no webgl");
-    ctl = c; root.classList.add("cloth-gl"); watch();
-  }).catch(() => { loading = false; ctl = null; root.classList.remove("cloth-gl"); });
+    ctl = c; show(); watch();
+  }).catch(() => { loading = false; ctl = null; show(); });
 }
-function stop() { gen++; loading = false; if (ctl) { try { ctl.destroy(); } catch (e) {} ctl = null; } root.classList.remove("cloth-gl"); if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; } }
+function stop() { gen++; loading = false; if (ctl) { try { ctl.destroy(); } catch (e) {} ctl = null; } show(); if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; } }
 
 let watching = false, relayRaf = 0;
-const relay = () => { if (relayRaf) return; relayRaf = requestAnimationFrame(() => { relayRaf = 0; if (ctl) ctl.layout(); }); };
+const relay = () => { if (relayRaf) return; relayRaf = requestAnimationFrame(() => { relayRaf = 0; if (ctl) show(); }); };
 function watch() {
   if (typeof ResizeObserver === "function" && !ro) { ro = new ResizeObserver(relay); ro.observe(rail); }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(relay);
@@ -53,11 +55,11 @@ function watch() {
   rail.addEventListener("pointerleave", () => { px = null; if (ctl) ctl.leave(); });
   rail.addEventListener("focusin", (e) => { const t = e.target; if (!ctl || !t || !t.closest) return; const tab = t.closest(".tab"); if (!tab) return; let vis = true; try { vis = tab.matches(":focus-visible"); } catch (x) {} ctl.focus(tab.getAttribute("data-tab"), vis); });
   rail.addEventListener("focusout", () => { if (ctl) ctl.blur(); });
-  K.on("scene", (key, prev) => { if (ctl) ctl.scene(key, prev); });
+  K.on("scene", (key, prev) => { if (ctl) { ctl.scene(key, prev); relay(); } });
 }
 const change = () => { if (allowed()) idle(start); else stop(); };
 for (const q of [reduceMQ, phoneMQ, forcedMQ]) { if (q.addEventListener) q.addEventListener("change", change); }
 addEventListener("board-mode", change); /* js/mode.js: Play on or off */
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !ctl) change(); });
-idle(start);
+show(); idle(start);
 })();

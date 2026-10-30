@@ -2,27 +2,24 @@
 .map-ctl { display: none; }
 /* Wide screens (owner, 2026-10-29): use the width. Loaded after v14.css. Phones and short landscape screens are untouched. */
 
-/* ---- Three roads: the map is the sheet. js/wide.js sets .wide-map, data-lay (side | side2 | below) and --mw on the panel ---- */
+/* ---- Three roads: the map is the sheet. scenes/wide.js sets .wide-map and data-lay (side | below) on the panel ---- */
 @media (min-width: 700px) and (min-height: 501px) {
   /* CLS (2026-10-30): the roads panel the warm-up un-hides inside an open scene is not the scene on show; it used to take the open sheet's body padding and stretch the open panel for about 90 ms (0.4 at 768 on Sign-ups, shifting out and back). In the warming layer it still sets the frame it will open in. */
   .scene-layer.warming .sheet:has(#panel-roads.wide-map:not([hidden])) .sheet-orn, .scene-layer:not(.warming) .sheet:has(#panel-roads.wide-map:not([hidden], .warm)) .sheet-orn { display: none; }
   .scene-layer.warming .sheet-body:has(#panel-roads.wide-map:not([hidden]):not(.leaving)), .scene-layer:not(.warming) .sheet-body:has(#panel-roads.wide-map:not([hidden], .leaving, .warm)) { padding: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); align-content: stretch; }
   #panel-roads.wide-map { --side: clamp(19rem, 25%, 31rem); width: 100%; min-height: 0; margin: 0; zoom: 1 !important; grid-template-columns: var(--side) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "lede map" "legend map" "cap map"; gap: 0; align-content: stretch; }
   #panel-roads.wide-map:not([hidden]) { display: grid; }
-  #panel-roads.wide-map[data-lay="side2"] { grid-template-columns: minmax(0, 1fr) var(--mw) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "legend map lede" "legend map cap" "legend map ."; }
   #panel-roads.wide-map[data-lay="below"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto auto; grid-template-areas: "map" "legend" "lede" "cap"; }
   #panel-roads.wide-map > * { margin: 0; max-width: none; width: auto; justify-self: stretch; min-width: 0; }
   #panel-roads.wide-map > #map-lede { grid-area: lede; padding: 20px 24px 6px; font-size: 1em; line-height: 1.45; }
   #panel-roads.wide-map > .roads-legend { grid-area: legend; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px 24px 14px; align-content: start; }
   #panel-roads.wide-map > .map-caption { grid-area: cap; padding: 6px 24px 24px; align-self: start; font-size: 1em; line-height: 1.5; }
-  #panel-roads.wide-map[data-lay="side2"] > .roads-legend { padding-top: 24px; }
   #panel-roads.wide-map[data-lay][data-lay] > .seal-clear { padding-top: max(10px, var(--seal-clear, 0px)); }
   #panel-roads.wide-map[data-lay="below"] > .roads-legend { grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); padding: 14px 24px 6px; }
   #panel-roads.wide-map[data-lay="below"] > #map-lede { padding: 6px 24px 0; }
   #panel-roads.wide-map[data-lay="below"] > .map-caption { padding: 4px 24px 18px; }
   #panel-roads.wide-map .road-btn b { font-size: 1.05em; }
   #panel-roads.wide-map .road-btn span { font-size: 0.95em; text-wrap: balance; }
-  #panel-roads.wide-map[data-lay="side2"] { font-size: clamp(1rem, 0.62vw, 1.4rem); }
   #panel-roads.wide-map[data-lay="below"] { font-size: clamp(1rem, 1.3vw, 1.4rem); }
   /* a short screen: the who-is-where line repeats the cards, so it stays for screen readers only and the cards and the note fit */
   @media (max-height: 900px) { #panel-roads.wide-map[data-lay="side"] > #map-lede { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; } #panel-roads.wide-map[data-lay="side"] > .roads-legend { padding-top: 20px; } }
@@ -30,7 +27,6 @@
   #panel-roads.wide-map[data-lay="side"] > .map-caption { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
   /* the map box is the viewport: no padding, no frame of its own, the parchment runs to the sheet's edges */
   #panel-roads.wide-map > .map-box { grid-area: map; height: 100%; padding: 0; border: 0; border-radius: 0; border-left: 2px solid var(--brass-dim); box-shadow: inset 0 0 70px var(--slip-burn); touch-action: none; cursor: grab; overflow: hidden; }
-  #panel-roads.wide-map[data-lay="side2"] > .map-box { border-right: 2px solid var(--brass-dim); }
   #panel-roads.wide-map[data-lay="below"] > .map-box { border-left: 0; border-bottom: 2px solid var(--brass-dim); }
   #panel-roads.wide-map > .map-box.dragging { cursor: grabbing; }
   #panel-roads.wide-map > .map-box svg { width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -72,5 +68,13 @@
   .bclass-names .bn { margin: 0; white-space: normal; }
   .bclass-names .bc { display: none; }
 }
+/* fix E5 (2026-10-30): from 2200 px, five shelf columns at most, Three roads as at 1920, wall rows share the frame, type grows */
+@media (min-width: 2200px) {
+  .shelf { grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); max-width: 120rem; margin-inline: auto; width: 100%; }
+  #panel-roads.wide-map { --side: clamp(19rem, 22%, 36rem); font-size: clamp(1rem, 0.5vw, 1.25rem); }
+  .tile-title { font-size: clamp(var(--step-1), 0.8vw, 2rem); }
+  .tile-body { font-size: clamp(0.95rem, 0.5vw, 1.3rem); }
+}
+@media (min-width: 2200px) and (min-height: 961px) { .wall { grid-auto-rows: 1fr; align-content: stretch; } }
 /* polish (2026-10-30): js/scenes.js holds Three roads unseen while its wide layout code is on the way */
 #panel-roads.wide-wait { visibility: hidden; }

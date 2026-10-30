@@ -132,18 +132,16 @@ function fitSide(W, H) {
   for (let i = 0; i < 6 && tall() > H && w + 8 < most; i++) { w = Math.min(most, w + 40); panel.style.setProperty("--side", `${w}px`); }
 }
 
-/* the layout the panel is in: the map with the cards beside it (one or both sides) or the map with the cards under it */
+/* the layout the panel is in: the map with the cards beside it, or the map with the cards under it. Fix E5 (2026-10-30): one wide
+   layout at every width; a 2560 or 3440 frame keeps the 1920 arrangement and the map takes the rest (a third layout, cards left,
+   prose right, map between, left 40 percent empty rails and put the lede beside the head's subtitle) */
 function lay() {
   if (!panel) return;
   const on = wideOn();
   panel.classList.toggle("wide-map", on);
   if (!on) { delete panel.dataset.lay; return; }
   const body = panel.parentElement, W = body.clientWidth, H = body.clientHeight; if (!W || !H) return;
-  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16, min = 19 * rem, full = Math.min(H * 1.5, W - min);
-  let l = "side";
-  if (W / H < 1.3) l = "below"; else if (W - H * 1.5 >= 2 * min + 24) l = "side2";
-  panel.dataset.lay = l;
-  panel.style.setProperty("--mw", `${Math.floor(l === "side2" ? H * 1.5 : full)}px`);
+  panel.dataset.lay = W / H < 1.3 ? "below" : "side";
   fitSide(W, H);
   clearSeal();
   if (box.querySelector("svg")) put(read(), true);
