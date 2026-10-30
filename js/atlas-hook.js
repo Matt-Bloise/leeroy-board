@@ -11,7 +11,7 @@
   /* the engine */
   const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=b6766e0ebb");
+    const m = await import("../atlas/atlas.js?v=8f6e620843");
     return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {
@@ -47,7 +47,7 @@
   }
   const fromHash = () => {
     const t = hashTok();
-    if (TOK.test(t)) { H.pending = t; if (K.SC && K.SC.open === "roads" && !H.on) openAtlas(t); else if (H.on && H.A) H.A.openToken(t, { animate: true }); }
+    if (TOK.test(t)) { H.pending = t; if (K.SC && K.SC.open === "roads" && !H.on) openAtlas(t); else if (H.on && H.A) { H.A.openToken(t, { animate: true }); H.pending = null; } }
     else if (H.on) closeAtlas(false);
   };
 

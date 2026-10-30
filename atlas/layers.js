@@ -46,14 +46,17 @@ const area = (r) => (r[2] - r[0]) * (r[3] - r[1]);
 const textW = (ctx, t, px) => { const m = typeof ctx.measureText === "function" ? ctx.measureText(t) : null; return m && m.width ? m.width : t.length * px * 0.58; };
 
 export function createLayers(data) {
-  const L = { data, on: {}, zones: [], places: [], subzones: [], land: [], edgePaths: new Map(), zoneRect: false, hidden: new Set() };
+  const L = { data, on: {}, zones: [], places: [], subzones: [], land: [], borders: null, edgePaths: new Map(), zoneRect: false, hidden: new Set() };
   for (const n of LAYERS) L.on[n] = true;
   const prep = () => {
-    const w = data.world, rects = !!(w.shapes && w.shapes.source === "rectangles");
+    const w = data.world, rects = !!(w.shapes && w.shapes.source === "rectangles"), sh = !rects && data.shapes;
     L.zoneRect = rects;
-    L.land = (w.continents || []).map((c) => ({ id: c.id, path: pathOf(c.land || [], true) }));
+    // the smoothed shapes (shape.js) where they were built: coasts, zone rings and the borders between zones, each drawn once
+    L.land = (w.continents || []).map((c) => ({ id: c.id, path: pathOf((sh && sh.land.get(c.id)) || c.land || [], true) }));
+    L.borders = sh && sh.borders.length ? pathOf(sh.borders, false) : null;
     L.zones = (w.zones || []).map((z) => {
-      const rings = !rects && z.rings && z.rings.length ? z.rings : [[[z.a_rect[0], z.a_rect[1]], [z.a_rect[2], z.a_rect[1]], [z.a_rect[2], z.a_rect[3]], [z.a_rect[0], z.a_rect[3]]]];
+      const own = sh && sh.zones.get(z.id);
+      const rings = own && own.length ? own : !rects && z.rings && z.rings.length ? z.rings : [[[z.a_rect[0], z.a_rect[1]], [z.a_rect[2], z.a_rect[1]], [z.a_rect[2], z.a_rect[3]], [z.a_rect[0], z.a_rect[3]]]];
       return { z, rings, path: pathOf(rings, true), area: area(z.a_rect) };
     });
     L.zonesByArea = L.zones.slice().sort((a, b) => a.area - b.area);
@@ -122,12 +125,16 @@ export function createLayers(data) {
     }
     if (L.on.zones) {
       const r = V.rect();
+      let hotZ = null;
       for (const zz of L.zones) {
         const a = zz.z.a_rect; if (a[2] < r[0] || a[0] > r[2] || a[3] < r[1] || a[1] > r[3]) continue;
-        const hot = S.zoneHot === zz.z.id;
+        const hot = S.zoneHot === zz.z.id; if (hot) hotZ = zz;
         ctx.globalAlpha = hot ? 0.2 : 0.08; ctx.fillStyle = factionColor(C, zz.z.faction); fillPath(ctx, zz.path);
-        ctx.globalAlpha = hot ? 0.9 : 0.55; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(hot ? 2 : 1.2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, zz.path); ctx.setLineDash([]);
+        if (!L.borders && !hot) { ctx.globalAlpha = 0.55; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(1.2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, zz.path); ctx.setLineDash([]); }
       }
+      // one dotted line per shared border (a border drawn by both its zones doubles its dots)
+      if (L.borders && seen(L.borders, r)) { ctx.globalAlpha = 0.55; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(1.2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, L.borders); ctx.setLineDash([]); }
+      if (hotZ) { ctx.globalAlpha = 0.9; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, hotZ.path); ctx.setLineDash([]); }
       ctx.globalAlpha = 1;
     }
     if (L.on.subzones && z >= 3) {
@@ -170,9 +177,10 @@ export function createLayers(data) {
     const drawn = [];
     for (const x of L.places) {
       if (!shownAt(x, z, S) || !V.inView(x.p.a[0], x.p.a[1], 60)) continue;
-      const [sx, sy] = V.toScreen(x.p.a[0], x.p.a[1]), img = x.icon && sprite(x.icon), isF = S.focus === x.p.id;
+      const [sx, sy] = V.toScreen(x.p.a[0], x.p.a[1]), img = x.icon && sprite(x.icon), isF = S.focus === x.p.id, end = !!(S.planEnds && S.planEnds.has(x.p.id));
       drawn.push(x.p);
-      const sz = isF ? size * 1.25 : size;
+      // a plan's starts and meeting point keep a readable icon and their names at any zoom (the day-one view on a phone is wide)
+      const sz = isF ? size * 1.25 : end ? Math.max(size, 28) : size;
       if (isF) { ctx.beginPath(); ctx.arc(sx, sy, sz * 0.72, 0, 6.2832); ctx.strokeStyle = C.brass; ctx.lineWidth = 3; ctx.stroke(); }
       if (img) ctx.drawImage(img, sx - sz / 2, sy - sz / 2, sz, sz);
       else { // art not here yet: a plain disc in the faction colour, not an icon
@@ -181,7 +189,7 @@ export function createLayers(data) {
       }
       if (S.pinned === x.p.id) { ctx.beginPath(); ctx.arc(sx, sy, sz * 0.55, 0, 6.2832); ctx.strokeStyle = C.plan; ctx.lineWidth = 3; ctx.stroke(); }
       const nz = NAME[x.p.kind] === undefined ? 3 : NAME[x.p.kind];
-      if (L.on.labels && (z >= nz || isF || S.hover === x.p.id)) cands.push({ t: x.p.name, x: sx, y: sy + sz * 0.62, pr: isF || S.hover === x.p.id ? 9 : PRIO[x.p.kind] || 1, size: 12, kind: "place" });
+      if (L.on.labels && (z >= nz || isF || end || S.hover === x.p.id)) cands.push({ t: x.p.name, x: sx, y: sy + sz * 0.62, pr: isF || S.hover === x.p.id ? 9 : end ? 8 : PRIO[x.p.kind] || 1, size: 12, kind: "place" });
     }
     L.lastDrawn = drawn;
     if (L.on.zeppelins && S.zep && sprite("zeppelin")) {
@@ -222,6 +230,8 @@ export function createLayers(data) {
       ctx.font = `${c.kind === "zone" ? 600 : 500} ${c.size}px ${C.font}`;
       const w = textW(ctx, c.t, c.size), h = c.size + 4;
       if (c.fit && w > c.fit * 1.05) continue;
+      // a place's name near the edge slides inward rather than being cut by it (its point is in view)
+      if (c.kind === "place") c.x = Math.max(w / 2 + 4, Math.min(V.w - w / 2 - 4, c.x));
       const x0 = Math.floor((c.x - w / 2) / cell), x1 = Math.floor((c.x + w / 2) / cell), y0 = Math.floor((c.y - h / 2) / cell), y1 = Math.floor((c.y + h / 2) / cell);
       let free = true;
       for (let gy = y0; gy <= y1 && free; gy++) for (let gx = x0; gx <= x1; gx++) if (occ.has(gy * cols + gx + 2)) { free = false; break; }
