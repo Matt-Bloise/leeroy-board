@@ -23,3 +23,7 @@
 @media (prefers-reduced-motion: reduce) { .sense-invite { animation: none; } .sense-wow body::after { animation: none; } .sense-fab { transition: none; } }
 @media (max-width: 700px) { .sense-fab { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } .sense-panel { bottom: calc(120px + env(safe-area-inset-bottom, 0px)); } .sense-invite { bottom: calc(124px + env(safe-area-inset-bottom, 0px)); } }
 @media (max-width: 700px) { .sense-invite { display: none; } }
+/* 2026-10-30 (integration review 6, 9): the Sensory button is 16 px text on a 44 px pill, and while the launch hero is up on a phone it leaves the screen's
+   corner and stands at the end of the page, so it never covers a line of the hero (heading, facts, checklist) as you scroll */
+.sense-fab { min-height: 44px; font-size: 16px; }
+@media (max-width: 699px) { html[data-launch] .sense-fab { position: static; display: block; margin: 12px 12px 96px; } }

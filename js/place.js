@@ -365,6 +365,23 @@ function context() {
   }
 }
 
+/* ---------------- the launch hero and What to decide (2026-10-30, integration review 11) ---------------- */
+/* a row of like things (state seals, fact rows, checklist rows, the schedule, the decide cards): the one pointed at or focused stays lit, its row steps back (hover.css).
+   One delegated listener, because the hero mounts late; never assumes event.target */
+function rows() {
+  const G = [[".lh-st-row", ".lh-st"], [".lh-facts", ".lh-fact"], [".lh-check-list", ".lh-ck"], [".lh-moments", ".lh-moment"], [".dc-cards", ".dc-card"]];
+  let lit = null;
+  const clear = () => { if (!lit) return; lit.it.classList.remove("ctx-on"); lit.box.classList.remove("ctx"); lit = null; };
+  const set = (t) => {
+    if (t && t.closest) for (const [b, i] of G) { const it = t.closest(i), box = it && it.closest(b); if (box) { if (lit && lit.it === it) return; clear(); it.classList.add("ctx-on"); box.classList.add("ctx"); lit = { it, box }; return; } }
+    clear();
+  };
+  document.addEventListener("pointerover", (e) => { if (e.pointerType !== "touch") set(e.target); });
+  document.addEventListener("focusin", (e) => set(e.target));
+  document.addEventListener("focusout", (e) => { if (!e.relatedTarget) clear(); });
+  document.addEventListener("pointerleave", clear);
+}
+
 /* ---------------- native titles become cards ---------------- */
 function tips() {
   let card = $("#place-tip"); if (!card) { card = h("div", { class: "place-card place-tip", id: "place-tip", role: "tooltip", hidden: "" }); document.body.append(card); }
@@ -404,6 +421,6 @@ function tips() {
 
 K.place = { choose, rowRect, contentRects, hover, dock, visibleBounds, IN, OUT };
 K.on("map", roads);
-const boot = () => { try { tooltips(); glossary(); context(); tips(); } catch (e) { console.error("place", e); } };
+const boot = () => { try { tooltips(); glossary(); context(); rows(); tips(); } catch (e) { console.error("place", e); } };
 if (K.booted) boot(); else K.on("booted", boot);
 })();

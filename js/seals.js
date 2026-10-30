@@ -58,6 +58,7 @@
   function spin(o) {
     o = o || {}; if (!S.disc) return Promise.resolve();
     S.spun++; const from = S.ang || 0, same = o.land ? (o.land === "back") === (from === 180) : true, dir = S.spun % 2 ? 1 : -1, to = from + dir * (same ? 720 : 540), keep = o.land ? (o.land === "back" ? 180 : 0) : from;
+    if (o.edge && !reduceMQ.matches && S.disc.animate) return edgeSpin(o, from, to, keep, same, dir);
     if (o.mid) setTimeout(o.mid, reduceMQ.matches ? 0 : 380);
     const fin = () => { S.ang = keep; S.disc.style.transform = `rotateY(${keep}deg)`; if (S.el) S.el.classList.remove("spinning"); };
     if (reduceMQ.matches || !S.disc.animate) { fin(); const a = S.el.animate && S.el.animate([{ filter: "brightness(1)" }, { filter: "brightness(1.5)" }, { filter: "brightness(1)" }], { duration: 260 }); return a ? a.finished.catch(() => {}) : Promise.resolve(); }
@@ -65,6 +66,20 @@
     const a = S.disc.animate([{ transform: `rotateY(${from}deg) translateZ(0)` }, { transform: `rotateY(${mid}deg) translateZ(18px)`, offset: 0.55 }, { transform: `rotateY(${to}deg) translateZ(0)` }], { duration: 900, easing: "cubic-bezier(.2,.75,.25,1)" });
     S.el.classList.add("spinning"); S.disc.style.transform = `rotateY(${keep}deg)`; S.ang = keep;
     return a.finished.then(fin, fin);
+  }
+  /* edge: the swap runs exactly when the coin is edge-on (both faces a sliver, so nothing visible changes), in two moves that meet there; the second waits for
+     o.ready (an image decoding) up to 400 ms. Tab change (2026-10-30): once or twice round, the face swapped on the edge. */
+  function edgeSpin(o, from, to, keep, same, dir) {
+    const e = from + dir * (same ? 450 : 270), t = (a, z) => `rotateY(${a}deg) translateZ(${z}px)`;
+    S.el.classList.add("spinning");
+    const fin = () => { S.ang = keep; S.disc.style.transform = `rotateY(${keep}deg)`; if (S.el) S.el.classList.remove("spinning"); };
+    const a1 = S.disc.animate([{ transform: t(from, 0) }, { transform: t(e, 18) }], { duration: 380, easing: "cubic-bezier(.45,0,.85,.7)", fill: "forwards" });
+    return a1.finished.then(() => Promise.race([o.ready || Promise.resolve(), new Promise((r) => setTimeout(r, 400))])).then(() => {
+      if (o.mid) o.mid();
+      const a2 = S.disc.animate([{ transform: t(e, 18) }, { transform: t(to, 0) }], { duration: 520, easing: "cubic-bezier(.2,.75,.25,1)" });
+      S.disc.style.transform = `rotateY(${keep}deg)`; S.ang = keep; a1.cancel();
+      return a2.finished.then(fin, fin);
+    }, fin);
   }
   function say(text) {
     const n = $(".seal-say", S.el); if (!n) return;
@@ -77,16 +92,38 @@
     else say(BACK[key] || "");
   }
 
-  function show(key) {
-    if (!BACK[key]) { document.documentElement.classList.remove("has-seal"); return; } /* a scene without a seal gets its emblem button back here, inside the open */
-    const el = S.el || build(); S.key = key; el.dataset.k = key;
-    const title = K.TITLES ? K.TITLES[key] : key, m = MECH[key];
+  /* the coin's face for a scene: image, back text, label; written on the edge of a tab-change spin, at once on an open */
+  function face(key) {
+    const el = S.el, title = K.TITLES ? K.TITLES[key] : key, m = MECH[key];
+    el.dataset.k = key;
     const img = $(".seal-img", el), src = `img/medal/${key}.webp`; if (img.getAttribute("src") !== src) img.setAttribute("src", src);
     $(".seal-b", el).textContent = title; $(".seal-i", el).textContent = BACK[key];
     S.btn.setAttribute("aria-label", `${title} seal. Press it ${m && m.hint ? m.hint : "to give it a spin and read what it holds"}.`);
+    $(".seal-say", el).classList.remove("on");
+  }
+  /* a tab change: the coin spins once or twice on its Y axis and swaps to the next tab's coin at the edge-on moment; the frame stays still.
+     Reduced motion: a 120 ms cross-fade of the coin. A change while it spins only retargets the swap. */
+  function tabSwap(key) {
+    S.key = key; S.want = key;
+    if (S.swapping) return;
+    S.swapping = true;
+    const done = () => { S.swapping = false; };
+    const swap = () => { S.ang = 0; face(S.want); };
+    if (reduceMQ.matches || !S.disc.animate) {
+      const a = S.el.animate ? S.el.animate([{ opacity: 1 }, { opacity: 0.25, offset: 0.5 }, { opacity: 1 }], { duration: 120 }) : null;
+      setTimeout(swap, a ? 60 : 0); if (a) a.finished.then(done, done); else done();
+      return;
+    }
+    const ready = typeof Image !== "function" ? Promise.resolve() : new Promise((r) => { const img = new Image(); img.onload = img.onerror = r; img.src = `img/medal/${key}.webp`; if (img.decode) img.decode().then(r, r); });
+    S.ang = S.ang || 0;
+    spin({ land: "front", edge: true, mid: swap, ready }).then(done, done);
+  }
+  function show(key, prev) {
+    if (!BACK[key]) { document.documentElement.classList.remove("has-seal"); return; } /* a scene without a seal gets its emblem button back here, inside the open */
+    if (prev && prev !== key && S.el && !S.el.hidden && BACK[prev] && S.disc) { tabSwap(key); return; }
+    const el = S.el || build(); S.key = key; S.want = key; face(key);
     S.ang = 0; S.disc.style.transform = ""; el.removeAttribute("data-kind");
     el.hidden = false; document.documentElement.classList.add("has-seal");
-    $(".seal-say", el).classList.remove("on");
     lightTo(innerWidth * 0.5, innerHeight * 0.1);
   }
   /* 2026-10-30: has-seal stays on while the sheet is away. Taking it off here brought the emblem button back and moved the

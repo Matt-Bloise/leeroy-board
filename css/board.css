@@ -860,7 +860,7 @@ kbd { font-family: var(--font-ui); font-size: var(--fs-chip); padding: 1px 7px; 
 .tabs { scroll-snap-type: x proximity; }
 .tab { scroll-snap-align: center; }
 @media (pointer: coarse) { .tabs { scrollbar-width: none; } .tabs::-webkit-scrollbar { display: none; } }
-.tab-ind { position: absolute; left: 0; bottom: 0; width: 1px; height: 2px; background: var(--brass); transform-origin: 0 0; transform: scaleX(0); transition: transform var(--t-move) var(--ease-oak); pointer-events: none; }
+.tab-ind { position: absolute; left: 0; bottom: 0; width: 1px; height: 3px; z-index: 1; background: var(--brass); transform-origin: 0 0; transform: scaleX(0); transition: transform var(--t-move) var(--ease-oak); pointer-events: none; }
 .panel:not(#panel-five) { touch-action: pan-y; }
 .bottombar, .more-menu { display: none; }
 @media (max-width: 699px) {
@@ -1067,12 +1067,10 @@ main.has-beam { margin-top: 44px; }
 .tab[aria-selected="true"] { margin-top: 4px; padding-bottom: 14px; color: var(--ink); background-image: url("../img/parchment-tile.jpg"); background-size: 320px auto; box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -3px 12px var(--wear); }
 /* eleven tabs since Tonight: they fit the sheet on a desktop, so the rail shows no scrollbar and clips no tab */
 @media (min-width: 1000px) { .tabs { gap: 2px; scrollbar-width: none; } .tabs::-webkit-scrollbar { display: none; } .tab { padding-left: 8px; padding-right: 8px; letter-spacing: 0.03em; } }
-.tab-ind { display: none; }
 .scene-hint { display: none; margin: 0; font-family: var(--font-body); font-style: italic; font-size: 0.9375rem; color: var(--l-dim); transition: opacity var(--t-move) var(--ease-oak); }
 .scene-hint.used { opacity: 0; }
 @media (max-width: 699px) {
-  .sheet-head .tabs { display: none; }
-  .sheet-head { gap: 2px; padding-bottom: 8px; }
+  .sheet-head { gap: 2px; padding-bottom: 0; }
   .scene-hint { display: block; }
   .sheet-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .scene-hint.used { display: none; }
@@ -1402,6 +1400,7 @@ main.has-beam { margin-top: 44px; }
 .spark-line { stroke-dasharray: 1; stroke-dashoffset: 0; }
 .spark-drop { fill: var(--wax); stroke: var(--ink); stroke-width: 1; }
 .spark-quill { overflow: visible; }
+.spark-key { margin: 6px 0 0; max-width: 34rem; font-size: var(--fs-small); line-height: 1.35; color: var(--ink-soft); } /* 2026-10-30: one line of key under the sparkline */
 
 /* wall tiles: crests and emblems instead of dots */
 .dots { display: inline-flex; align-items: center; }
@@ -1566,7 +1565,9 @@ html.scene-open .tile-sheen { visibility: hidden; }
 .tilt-note:empty { display: none; }
 .peers:empty { display: none; }
 /* mobile 17, phone-deep 2.7: the beam's overhang never makes the page scroll sideways; the search's clear cross reads on cream */
-main { overflow-x: clip; overflow-clip-margin: 60px; }
+@media (max-width: 599px) { .tile { --sx: 0px !important; } } /* 2026-10-30: on a phone the wall has a 10 px gutter; no sideways lean, so a leaning tile keeps its whole edge */
+/* 2026-10-30: the clip moved from main to .wrap. main's clip edge is the wall's own left edge, and overflow-clip-margin is not honoured for one axis, so a tilted tile (Three roads) lost its left edge and shadow at 1366 px and wider. .wrap is the full viewport width: the beam's overhang is still clipped, the wall's padding is room for every tilt */
+.wrap { overflow-x: clip; }
 .lib-q::-webkit-search-cancel-button { filter: brightness(0.35); }
 .kicker { text-wrap: balance; }
 .dg { overflow: clip; }
@@ -1712,7 +1713,8 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 
 /* ---------- 1.3 the phone version: same look, more per screen (under 600 px, and a phone on its side for the wall) ---------- */
 @media (max-width: 599px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  :root { --step-0: 0.97rem; --step--1: 0.8125rem; --fs-small: 0.8125rem; --fs-chip: 0.8125rem; --step-1: 1.12rem; --step-2: 1.32rem; --step-3: 1.6rem; --step-4: 1.75rem; }
+  /* 2026-10-30 (integration review 9): the phone base text is 16 px (was 15.52) */
+  :root { --step-0: 1rem; --step--1: 0.8125rem; --fs-small: 0.8125rem; --fs-chip: 0.8125rem; --step-1: 1.12rem; --step-2: 1.32rem; --step-3: 1.6rem; --step-4: 1.75rem; }
   body { line-height: 1.45; }
   .wrap { gap: 8px; padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: max(10px, env(safe-area-inset-bottom, 0px)); }
   /* collapsed header: one line of title, one row of controls */
@@ -1926,6 +1928,8 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 @media (min-width: 1500px), (min-width: 1100px) and (max-height: 960px) { .clock { grid-template-columns: auto auto auto; } }
 .clock-top { justify-content: center; }
 .wall-foot { justify-content: center; text-align: center; gap: 4px 28px; }
+/* 2026-10-30: on a laptop the two footer sentences take one line when they can, so the wall stays one screen at 1366x768 whatever the stamp's wording */
+@media (min-width: 1100px) and (max-height: 960px) { .wall-foot { gap: 0 18px; font-size: 0.875rem; line-height: 1.3; } }
 .tabs { justify-content: safe center; }
 .sheet-top { justify-content: center; position: relative; }
 .sheet-top .close { position: absolute; right: 0; top: 50%; margin-top: -22px; }
@@ -1954,13 +1958,8 @@ main { overflow-x: clip; overflow-clip-margin: 60px; }
 .lede-row, .tn-actions, .deep-ctl, .deep-who, .lib-row, .act { justify-content: center; justify-items: center; }
 .roads-legend, .ledger, .rail, .map-box, .ring-wrap, .signup-grid, .librarian, .tn { margin-inline: auto; }
 @media (min-width: 1300px) and (min-aspect-ratio: 4/3) { #panel-roads { justify-content: center; } #panel-roads > #map-lede { justify-self: center; } }
-/* owner-12b: */
-@media (min-width: 900px) and (min-height: 501px) {
-  #scene[data-kind="reading"] .sheet { width: min(85vw, max(1100px, min(60vw, 1700px))); height: auto; max-height: 85vh; max-height: 85svh; display: flex; flex-direction: column; }
-  #scene[data-kind="reading"] .sheet-head { flex: none; }
-  /* size containment would make a content-fitted frame collapse; layout and paint containment keep the V13a isolation */
-  #scene[data-kind="reading"] .sheet-body { flex: 0 1 auto; min-height: 0; contain: content; }
-}
+/* one frame (2026-10-30): every scene opens in the frame The five uses, at every viewport, so changing tabs never resizes the window.
+   The content-sized reading frame (owner-12b) is retired; a panel that is a little too tall is zoomed to fit by fitScene(), a long one scrolls inside the body. */
 @media (max-width: 899px) and (min-width: 600px) and (min-height: 501px) { .sheet { width: 94vw; height: 92vh; height: 92svh; } }
 .sheet, .scene-veil { transition: opacity var(--t-move) var(--ease-oak); }
 .scene-layer.peek .sheet { opacity: 0.15; }
@@ -2017,10 +2016,13 @@ html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
   #ledger-slip { justify-content: center; grid-template-columns: repeat(2, minmax(0, max-content)); }
   .dates-grid { justify-content: center; grid-template-columns: minmax(0, max-content) minmax(0, 23rem); }
 }
-/* retest-4: the tab rail wraps to a second row when the frame is narrower than all eleven tabs, so no tab is ever cut */
-/* (on laptops shorter than 900 px the rail stays one scrolling row, started at its first tab, so the scenes keep their height) */
-@media (max-height: 899px) and (min-width: 1000px) { .sheet-head .tabs { justify-content: flex-start; } }
-@media (min-width: 1000px) and (min-height: 900px) { .sheet-head .tabs { flex-wrap: wrap; overflow: visible; row-gap: 2px; justify-content: center; margin: 0; padding: 0; -webkit-mask-image: none; mask-image: none; } }
+/* tabs across the top (2026-10-30): the rail is one row in every open scene at every width (the old wrap to a second row on tall screens is gone,
+   so the head is the same height in every scene). Compact: below 1500 px only the selected tab keeps its icon. It scrolls sideways only when the
+   eleven tabs truly cannot fit (arrows from 700 px, touch below), and a rail that fits sits on the centre line. The sliding brass bar (.tab-ind) marks the selected tab. */
+.sheet-head .tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; justify-content: safe center; scrollbar-width: none; }
+.sheet-head .tabs::-webkit-scrollbar { display: none; }
+.sheet-head .tab[aria-selected="true"] { box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -3px 12px var(--wear), inset 0 3px 0 var(--brass); }
+@media (max-width: 1499px) { .sheet-head .tab:not([aria-selected="true"]) .tab-ico { display: none; } }
 .lede-row { width: max-content; max-width: 100%; margin-inline: auto; }
 .lede-row > .lede { width: auto; max-width: 70ch; } /* no percentage: the row's own width is measured from it */
 /* Next steps below 2200 px: the picker hugs its chips; the three cards stand as tall as the tallest, their words centred in them */

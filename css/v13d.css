@@ -385,7 +385,7 @@ button.cal-day.win { background: var(--hi-brass); }
 .stop.lit .stop-body { background: var(--hi-brass); }
 .cal-day.lit { background: var(--hi-brass); color: var(--ink); }
 
-@media (min-width: 700px) { #sheet-body #panel-five { padding-bottom: 14px; } }
+/* one margin system (2026-10-30): The five no longer takes a bottom pad of its own; every scene sits in the same body padding */
 
 /* V13e axe: the Bonuses legend lines are buttons now; they keep the line's look */
 .legend li:has(> .cat-line) { display: block; }
@@ -411,9 +411,6 @@ button.cal-day.win { background: var(--hi-brass); }
   .hero .clock-launch { display: none; } /* the same launch time is on the line above it */
 }
 
-@media (min-width: 1700px) and (min-height: 1100px) {
-  #scene[data-kind="reading"] .sheet { max-height: 92vh; max-height: 92svh; }
-}
 .jr-cards { grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); }
 .tn:not(:has(.tn-pick)) > .tn-me:has(.jr-pick) { width: min(100%, 760px) !important; }
 

@@ -1178,15 +1178,15 @@ function renderLibrarian() {
     s("polygon", { class: "spark-area", points: `${xs(0)},${H - pad} ${pts} ${xs(vals.length - 1)},${H - pad}` }),
     s("polyline", { class: "spark-line", points: pts, pathLength: 1 }),
     ...vals.slice(0, -1).map((v, i) => s("path", { class: "spark-dot", d: `M${xs(i)} ${ys(v) - 3}l3 3-3 3-3-3z` })),
-    s("path", { class: "spark-drop", d: `M${xs(vals.length - 1)} ${ys(vals[vals.length - 1]) - 8}c3 4 5 6.6 5 9.2a5 5 0 0 1-10 0c0-2.6 2-5.2 5-9.2z` }),
-    (() => { const q = emb("quill", "spark-quill"); for (const [k, v] of Object.entries({ x: xs(vals.length - 1) - 34, y: ys(vals[vals.length - 1]) - 2, width: 22, height: 22 })) q.setAttribute(k, v); return q; })(),
+    s("path", { class: "spark-drop", d: `M${xs(vals.length - 1)} ${ys(vals[vals.length - 1]) - 8}c3 4 5 6.6 5 9.2a5 5 0 0 1-10 0c0-2.6 2-5.2 5-9.2z` }, s("title", { text: `The red wax drop marks his newest answer: ${vals[vals.length - 1]} seconds` })),
+    (() => { const q = emb("quill", "spark-quill"); for (const [k, v] of Object.entries({ x: xs(vals.length - 1) - 34, y: ys(vals[vals.length - 1]) - 2, width: 22, height: 22 })) q.setAttribute(k, v); q.append(s("title", { text: "The quill draws the line, newest answer last" })); return q; })(),
     ...vals.map((v, i) => s("text", { class: "spark-text", x: xs(i), y: H + 10, "text-anchor": "middle", text: String(v) })),
     s("text", { class: "spark-text", x: W - pad, y: ys(max) - 4, "text-anchor": "end", text: `${max} s` }));
   wrap.append(
     h("div", { class: "stack" },
       h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("slowest 1 in 20", fmtSecs(st.p95_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
       h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.${st.p95_s > st.miss_threshold_s ? " Those slow ones set the slowest 1 in 20." : ""}` })),
-    h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark));
+    h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark, h("p", { class: "spark-key", text: `The wax drop marks his newest answer. The line is seconds to answer over his last ${vals.length}; the quill draws it.` })));
 }
 
 function renderFooter() {
@@ -1200,7 +1200,7 @@ function renderFooter() {
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
     h("p", { text: "Tavern paintings generated on 2026-10-26 for this board. Scene, buff, pint and map emblems generated with ChatGPT on 2026-10-28." }),
-    h("p", { text: "Spell numbers are the game's own values at the level cap and can move with Blizzard's hotfixes. A wax seal marks what is written on the Party Board; a speech mark, what was said in chat and noted down." }));
+    h("p", { text: "Spell numbers are the game's own values at the level cap and can move with Blizzard's hotfixes. A wax seal marks what is written on the Party Board; a quill, what the group has noted down; a speech bubble, what was said in chat." }));
 }
 
 const Q = {
@@ -1471,8 +1471,6 @@ const PAGE_TITLE = { base: "" };
 /* spec 7.4: the document title follows the open scene */
 function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
-/* owner-12b: the scenes where the picture is the point get the larger frame */
-const VISUAL = ["roads", "five", "buffs", "library"];
 const SC = { open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
@@ -1486,13 +1484,22 @@ function setHash(key, push) {
   try { if (push) history.pushState({ boardScene: key, pushed: true }, "", url); else history.replaceState(key ? { boardScene: key, pushed: !!(history.state && history.state.pushed) } : null, "", url); return true; } catch (e) { return false; }
 }
 function replay(el, cls) { if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
+/* one frame (2026-10-30): a panel on its way out leaves the layout where it stood (absolute in the body, which contains it), so the new one
+   lays out alone, centres and fits as it will stay, and the body never holds two panels one under the other during the cross-fade */
+function liftPanel(p) {
+  const b = $("#sheet-body"); if (!b || p.hidden || !b.getBoundingClientRect) return;
+  b.scrollTop = 0;
+  const r = p.getBoundingClientRect(), br = b.getBoundingClientRect(), z = parseFloat(p.style.zoom) || 1;
+  if (!r.width) return;
+  const st = p.style; st.position = "absolute"; st.margin = "0"; st.left = `${((r.left - br.left - (b.clientLeft || 0)) / z).toFixed(1)}px`; st.top = `${((r.top - br.top - (b.clientTop || 0)) / z).toFixed(1)}px`; st.width = `${(r.width / z).toFixed(1)}px`; st.height = `${(r.height / z).toFixed(1)}px`;
+}
+function dropPanel(p) { const st = p.style; if (st.position) { st.position = ""; st.margin = ""; st.left = ""; st.top = ""; st.width = ""; st.height = ""; } }
 function selectPanel(key, crossFade) {
   warmStop();
   MEM.set("depth", key === "tonight" ? "tonight" : key === "library" ? "library" : "wall");
   MEM.seen(key);
   markDepth();
   const prev = SC.open; SC.open = key;
-  $("#scene").dataset.kind = VISUAL.includes(key) ? "visual" : "reading"; /* owner-12b: the frame fits what it holds */
   $("#sheet-title").textContent = TITLES[key];
   setPageTitle(key);
   $("#sheet-sub").textContent = SUBTITLE[key] || "";
@@ -1502,7 +1509,7 @@ function selectPanel(key, crossFade) {
     const t = $(`#tab-${k}`), on = k === key;
     t.setAttribute("aria-selected", String(on)); t.tabIndex = on ? 0 : -1;
     const p = $(`#panel-${k}`);
-    if (k !== key && k !== prev) { p.hidden = true; p.classList.remove("entering", "leaving"); }
+    if (k !== key && k !== prev) { p.hidden = true; p.classList.remove("entering", "leaving"); dropPanel(p); }
   }
   if (key === "timeline" && D.timeline) renderTimeline();
   const next = $(`#panel-${key}`);
@@ -1513,15 +1520,15 @@ function selectPanel(key, crossFade) {
     const old = $(`#panel-${prev}`);
     old.style.setProperty("--dir", String(dir)); old.style.transform = ""; old.classList.remove("spring");
     if (crossFade) {
+      liftPanel(old);
       old.classList.remove("entering", "again"); old.classList.add("leaving"); /* "again" (the short fade of a later open) is declared after .leaving and would keep the old panel at full opacity until it is hidden */
       clearTimeout(SC.fadeTimer);
-      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); }, (parseFloat(cssVar("--t-leave")) || 220) + 30); /* the CSS fade runs --t-leave; hiding the panel earlier cut it short in one frame */
-    } else { old.hidden = true; old.classList.remove("entering", "leaving"); }
+      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); dropPanel(old); }, (parseFloat(cssVar("--t-leave")) || 220) + 30); /* the CSS fade runs --t-leave; hiding the panel earlier cut it short in one frame */
+    } else { old.hidden = true; old.classList.remove("entering", "leaving"); dropPanel(old); }
   }
-  next.hidden = false; next.classList.remove("leaving");
+  dropPanel(next); next.hidden = false; next.classList.remove("leaving");
   if (crossFade) { replay(next, "entering"); sfx("tab"); }
   $("#sheet-body").scrollTop = 0;
-  fitScene();
   /* V13c (craft 21): a scene's entrance choreography plays in full on its first open of the visit; later opens are a short fade.
      2026-10-30: only on a tab change. An open already fades the whole sheet (the view transition, the FLIP, the rise, the
      reduced-motion fade); a second fade on the panel under it put the bright paper on screen before its cards, a 22 luma hump
@@ -1535,30 +1542,59 @@ function selectPanel(key, crossFade) {
   if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
   moveInd(); markBar(key);
   KIT.emit("scene", key, prev);
+  /* one frame (2026-10-30): the fit is measured after the scene event (the coin's class sets the head's height, a panel may fill its rows) and
+     checked again once the frame has painted and the fonts are in */
+  fitScene();
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(() => { if (SC.open === key) fitScene(); }));
 }
 /* V13c (spec 2, retest-10): */
 const FIT_SKIP = ["roads", "library"];
+const FIT_MIN_W = 900, FIT_MIN = 0.86, FIT_OVER = 0.15; /* 2026-10-30: from 900 px up; a panel up to 15 percent too tall zooms down to fit, never under 0.86 */
 const FIT = {};
 const fitKey = (key) => `${key}:${innerWidth}x${innerHeight}`;
+/* one frame (2026-10-30): the room a panel has is the body's own height inside its padding, whatever the frame is at this size */
+/* the panel's height as it shows: offsetHeight is in the panel's own (zoomed) units and ignores the transforms the open and close
+   animations put on the sheet, which getBoundingClientRect() would count */
+const fitTall = (p) => p.offsetHeight * (parseFloat(p.style.zoom) || 1);
+function fitRoom(body) { const cs = getComputedStyle(body); return body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 4; }
 function fitScene(want) {
   const key = want || SC.open, p = key && $(`#panel-${key}`), body = $("#sheet-body"), sheet = $(".sheet");
   if (!p || !body || !sheet) return;
   const k = fitKey(key);
-  if (!want && FIT[k] !== undefined) { p.style.zoom = FIT[k]; return; }
+  /* a remembered zoom is checked against the panel as it is now (2026-10-30): the warm-up can measure before the fonts and rows
+     land, and a zoom that no longer fits is measured again, never trusted */
+  if (!want && FIT[k] !== undefined) {
+    p.style.zoom = FIT[k];
+    const room = fitRoom(body);
+    if (room < 120 || FIT_SKIP.includes(key) || innerWidth < FIT_MIN_W) return;
+    const tall = fitTall(p);
+    if (tall <= room + 1 || (FIT[k] === "" && tall > room * (1 + FIT_OVER))) return;
+  }
   const done = (z) => { if (D.party) FIT[k] = z; p.style.zoom = z; };
   p.style.zoom = "";
-  if (FIT_SKIP.includes(key) || innerWidth < 1100 || typeof CSS === "undefined" || !CSS.supports || !CSS.supports("zoom", "1.2")) return;
-  const cs = getComputedStyle(body), padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom), padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-  const head = $(".sheet-head").getBoundingClientRect().height, maxH = innerHeight * 0.85 - head - padY - 4;
+  if (FIT_SKIP.includes(key) || innerWidth < FIT_MIN_W || typeof CSS === "undefined" || !CSS.supports || !CSS.supports("zoom", "1.2")) return;
+  const cs = getComputedStyle(body), padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), maxH = fitRoom(body);
+  if (maxH < 120) return;
   /* a zoomed panel lays out in a narrower width, so its text wraps more: step the zoom down until the content fits */
   /* at most three layouts: the natural height, a first guess, one correction (a zoom costs a layout of the whole panel) */
-  const wide = Math.min(1.45, (body.clientWidth - padX) / 1150);
+  const wide = innerWidth < 1100 ? 1 : Math.min(1.45, (body.clientWidth - padX) / 1150);
+  const tall0 = fitTall(p);
+  /* a panel that overflows the frame by up to FIT_OVER is zoomed down to fit, never under FIT_MIN; a longer one scrolls in the body */
+  if (tall0 > maxH && tall0 <= maxH * (1 + FIT_OVER)) {
+    let z = Math.max(FIT_MIN, Math.min(1, (maxH * 0.99) / tall0));
+    for (let i = 0; i < 3; i++) {
+      p.style.zoom = z.toFixed(3);
+      const tall = fitTall(p);
+      if (tall <= maxH || z <= FIT_MIN) break;
+      z = Math.max(FIT_MIN, z * (maxH * 0.99) / tall);
+    }
+    done(p.style.zoom); return;
+  }
   if (wide < 1.04) { done(""); return; }
-  const tall0 = p.getBoundingClientRect().height;
   let z = Math.min(wide, (maxH * 0.95) / Math.max(1, tall0));
   for (let i = 0; i < 2 && z >= 1.04; i++) {
     p.style.zoom = z.toFixed(3);
-    const tall = p.getBoundingClientRect().height;
+    const tall = fitTall(p);
     if (tall <= maxH * 0.98) { done(z.toFixed(3)); return; }
     z = z * Math.pow((maxH * 0.94) / tall, 1.6); /* narrower columns wrap more: step down harder than the ratio */
   }
@@ -1788,7 +1824,14 @@ function landing(k) {
   return KIT.lander ? KIT.lander(k, L.sub) || null : null;
 }
 /* The library tile is a div holding a link and a search field; focus returns to its link. */
-const tileFocus = (t) => { const f = t.matches("a, button, main") ? t : t.querySelector("a[href]"); if (f) f.focus({ preventScroll: true }); };
+/* 2026-10-30 (integration review 7): a scene opened by a link at load (Next steps, What to decide) has no tile to go back to, or its tile is hidden
+   (display none, so the focus call is dropped and the document body keeps focus): the wall itself takes it */
+const tileFocus = (t) => {
+  let f = t.matches("a, button, main") ? t : t.querySelector("a[href]");
+  if (f && f.getClientRects && !f.getClientRects().length) f = $("#main");
+  if (!f) f = $("#main");
+  if (f) f.focus({ preventScroll: true });
+};
 function hideScene() {
   warmStop();
   if (SC.want) { SC.want = null; return; }
@@ -3459,9 +3502,9 @@ function warmNext() {
   const panel = $(`#panel-${key}`); if (!panel) { warmLater(); return; }
   const t0 = performance.now();
   const step = { key, panel, layer: SC.open === null, raf: 0, timer: 0 };
-  /* V13c: the warm-up draws a scene in the frame it will open in (reading or visual), so its first raster at that size is
+  /* V13c: the warm-up draws a scene in the frame it will open in, so its first raster at that size is
      done while idle */
-  if (step.layer) { L.inert = true; L.classList.add("warming"); L.dataset.kind = VISUAL.includes(key) ? "visual" : "reading"; L.hidden = false; }
+  if (step.layer) { L.inert = true; L.classList.add("warming"); L.hidden = false; }
   if (!WARM.fx) { WARM.fx = true; step.fx = h("div", { class: "warm-fx", "aria-hidden": "true" }); L.append(step.fx); }
   panel.classList.add("warm"); panel.inert = true; panel.hidden = false;
   WARM.step = step;

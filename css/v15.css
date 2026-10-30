@@ -114,3 +114,11 @@
 .lh.is-live #clock-left { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip: auto; white-space: normal; font-family: var(--font-body); font-size: max(16px, var(--step-0)); color: var(--cream); }
 @media (min-width: 1000px) and (max-height: 820px) { .lh-ck-tick { min-height: 44px; } }
 .lh .clock-unit > span, .lh .clock-kicker, .lh .clock-top .word { font-size: max(16px, 0.8rem); }
+/* 2026-10-30 (integration review 8): in the one-column hero (under 1000 px) the three state buttons come right after the countdown, before the fact rows:
+   the two columns dissolve into the hero's grid and each part takes its place by order */
+@media (max-width: 999px) {
+  .lh { grid-template-areas: none; }
+  .lh-main, .lh-side { display: contents; }
+  .lh-head, .lh-ask { grid-area: auto; }
+  .lh-head { order: 0; } .lh-count { order: 1; } .lh-states { order: 2; } .lh-facts { order: 3; } .lh-check { order: 4; } .lh-sched { order: 5; } .lh-ask { order: 6; }
+}
