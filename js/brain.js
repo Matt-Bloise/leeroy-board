@@ -234,7 +234,7 @@ function openWs() {
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
   ws.onopen = () => { if (B.ws !== ws) return; opened = true; B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
-  ws.onmessage = (e) => { const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return; let m; try { m = JSON.parse(d); } catch (er) { return; } B.wsMsgs++; if (m && m.type === "state") onState(m); };
+  ws.onmessage = (e) => { const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return; let m; try { m = JSON.parse(d); } catch (er) { return; } B.wsMsgs++; if (m && m.type === "state") onState(m); if (m && m.type === "ask" && B.me && m.slug === B.me.slug) askRead(); };
   const down = () => {
     if (B.ws !== ws) return;
     B.ws = null; clearInterval(B.pingT); B.via = "poll";

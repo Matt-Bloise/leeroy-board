@@ -1,0 +1,121 @@
+/* The Leeroy audience chamber and the Dispatch card (scenes/chamber.js; notes/VISION-PARTY-SHEET.md 5.4; 2026-10-30). A dark oak stage
+   on the scene's paper: Leeroy top left, the asker bottom right, the talk between (the asker's turns right, Leeroy's left, each
+   beside its speaker); footnotes as wax seals; follow-ups; the pick list and the letter; the composer at the panel's bottom
+   (companion N6, notes/companion/COMPANION-CONTRACT.md 6.1). Phone first; 44 px targets (48 under the phone shell); reduced motion:
+   no slides, no typing, no bobbing dots. The art is the owner's painted files (img/chamber, img/marks); nothing is drawn here. */
+#panel-librarian.chamber-on > .act, #panel-librarian.chamber-on > .lede, #panel-librarian.chamber-on > #lib-box, #panel-librarian.chamber-on > #lib-sources, #panel-librarian.chamber-on #ask-out, #panel-librarian.chamber-on .ask-h { display: none; }
+/* the chat's composer asks for the ask box (the same BoardBrain.ask, the same sentence when there is no key) and the log shows its answer */
+#panel-librarian.ch-chat #ask-form, #panel-librarian.ch-chat #ask-note, #panel-librarian.ch-chat #ask-out { display: none; }
+.sheet:has(#panel-librarian.chamber-on:not([hidden])) .sheet-orn { display: none; }
+.ch-start { min-height: 44px; margin: 4px 0 8px; color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
+/* the owner's painted alcove behind the talk (img/chamber/chamber-backdrop.webp), its edges already falling to black */
+.chamber { position: relative; display: grid; gap: 10px; margin: 0 0 12px; padding: 12px; border-radius: 10px; background: linear-gradient(180deg, var(--wood-veil), var(--wood-veil-2)), url("../img/chamber/chamber-backdrop.webp") center 30% / cover no-repeat, var(--oak-0); border: 2px solid var(--brass-dim); box-shadow: inset 0 0 60px var(--black), 0 10px 26px var(--shadow); color: var(--parchment); }
+.ch-stage { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "lee ." "log log" ". you"; gap: 8px 14px; align-items: end; }
+@media (min-width: 760px) { .ch-stage { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "lee log you"; align-items: stretch; } .ch-lee { align-self: start; } .ch-you { align-self: end; } }
+.ch-lee, .ch-you { margin: 0; display: grid; justify-items: center; gap: 4px; }
+.ch-lee { grid-area: lee; }
+.ch-you { grid-area: you; justify-self: end; --cc: var(--c-none); }
+.ch-log { grid-area: log; display: grid; gap: 10px; align-content: start; min-width: 0; }
+/* the painted portraits in a brass ring (the asker's ring in their class colour); a picture that fails to load leaves its name plate alone */
+.ch-frame { position: relative; display: block; }
+.ch-art { display: none; border-radius: 50%; object-fit: cover; box-shadow: 0 8px 18px var(--black); }
+.ch-lee.has-art .ch-art-lee, .ch-you.has-art .ch-art-you { display: block; }
+.ch-art-lee { width: clamp(104px, 22vw, 200px); height: auto; aspect-ratio: 1; border: 3px solid var(--brass); }
+.ch-art-you { width: clamp(88px, 18vw, 168px); height: auto; aspect-ratio: 1; border: 3px solid var(--cc); box-shadow: 0 8px 18px var(--black), 0 0 18px var(--cc); }
+/* the brass name plate */
+.ch-plate { padding: 2px 12px; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.08em; color: var(--ink); background: linear-gradient(180deg, var(--brass-hi), var(--brass) 55%, var(--brass-dim)); border: 1px solid var(--oak-0); border-radius: 4px; box-shadow: 0 2px 4px var(--black), inset 0 1px 0 var(--cream); max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes ch-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+/* the talk: the asker's turns on the right in their class colour, Leeroy's on the left in brass */
+.ch-b { position: relative; padding: 10px 14px; border-radius: 10px; background: var(--parchment); color: var(--ink); box-shadow: 0 4px 12px var(--black); font-family: var(--font-body); font-size: 1.1rem; line-height: 1.45; max-width: 46rem; }
+.ch-b p { margin: 0; }
+.ch-b .ch-t + .ch-t { margin-top: 8px; }
+.ch-who { font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.08em; color: var(--ink-soft); margin-bottom: 2px !important; }
+.ch-q { justify-self: end; border-bottom-right-radius: 2px; border-right: 4px solid var(--cc, var(--brass-dim)); }
+.ch-a { justify-self: start; border-top-left-radius: 2px; border-left: 4px solid var(--brass); }
+.ch-gone .ch-t, .ch-eta { color: var(--ink-soft); }
+.ch-eta { margin-top: 6px !important; font-size: 1rem; font-style: italic; }
+.ch-sent { margin-top: 8px !important; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.06em; color: var(--ink-soft); }
+.ch-dots { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.ch-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-soft); animation: ch-bob 1s ease-in-out infinite; }
+.ch-dots i:nth-child(2) { animation-delay: 0.15s; }
+.ch-dots i:nth-child(3) { animation-delay: 0.3s; }
+/* footnotes: wax seals */
+.ch-notes { list-style: none; margin: 10px 0 0; padding: 8px 0 0; border-top: 1px dotted var(--ink-soft); display: grid; gap: 6px; }
+.ch-note { display: flex; gap: 8px; align-items: center; font-size: 1rem; color: var(--ink-soft); }
+.ch-seal { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; font-family: var(--font-sc); font-size: 16px; font-weight: 700; line-height: 1; color: var(--parchment); background: radial-gradient(circle at 35% 30%, var(--wax-hi), var(--wax) 62%, var(--wax-lo)); box-shadow: 0 1px 2px var(--black), inset 0 0 0 1.4px var(--wax-hi); }
+.ch-skip { justify-self: end; min-height: 44px; color: var(--parchment); border-color: var(--brass); }
+/* follow-ups */
+.ch-next { display: grid; gap: 6px; }
+.ch-next-h { margin: 0; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.1em; color: var(--brass-hi); }
+.ch-next-l { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.ch-next-l li { display: inline-flex; align-items: center; gap: 8px; }
+.ch-ask { min-height: 44px; color: var(--parchment); border-color: var(--brass); }
+.ch-page { color: var(--brass-hi); }
+.ch-end { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+.ch-bring { min-height: 44px; color: var(--ink); background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-color: var(--oak-0); font-weight: 600; }
+.ch-bring[aria-disabled="true"] { opacity: 0.7; cursor: default; }
+.ch-leave { min-height: 44px; color: var(--parchment); border-color: var(--brass-dim); }
+/* the Dispatch letter: which answers go on it (three at most), then the card */
+.ch-letter { display: grid; gap: 8px; padding: 12px; border-radius: 8px; background: var(--oak-1); border: 1px solid var(--brass-dim); }
+.ch-letter-h { margin: 0; font-family: var(--font-sc); letter-spacing: 0.1em; color: var(--brass-hi); font-size: 1.05rem; }
+.ch-pick { margin: 0; padding: 6px 10px 8px; display: grid; gap: 2px; min-width: 0; border: 1px solid var(--brass-dim); border-radius: 6px; }
+.ch-pick-h { padding: 0 4px; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.06em; color: var(--brass-hi); }
+.ch-pick-row { display: flex; gap: 10px; align-items: center; min-height: 44px; min-width: 0; font-size: 1rem; color: var(--parchment); cursor: pointer; }
+.ch-pick-box { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--wax); }
+.ch-pick-q { min-width: 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ch-card { position: relative; padding: 16px 18px 14px 18px; border-radius: 4px; background: var(--cream-2); color: var(--ink); font-family: var(--font-body); font-size: 1.08rem; line-height: 1.45; box-shadow: 0 6px 16px var(--black), inset 0 0 40px var(--slip-burn); border-left: 6px solid var(--wax); }
+.ch-card p { margin: 0 0 6px; }
+.ch-card-from { font-family: var(--font-sc); letter-spacing: 0.05em; padding-right: 64px; }
+.ch-card-turn + .ch-card-turn { margin-top: 10px; padding-top: 10px; border-top: 1px dotted var(--ink-soft); }
+.ch-bigseal-box { position: absolute; top: -12px; right: 10px; width: 68px; height: 68px; }
+.ch-bigseal-img { width: 68px; height: 68px; display: block; filter: drop-shadow(0 3px 4px var(--black)); }
+.ch-card-src, .ch-card-none { font-size: 1rem; color: var(--ink-soft); }
+.ch-letter-note { margin: 0; font-size: 1rem; color: var(--l-dim); }
+.ch-letter-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.ch-post { min-height: 44px; color: var(--parchment); background: var(--wax); border-color: var(--wax-lo); font-weight: 600; }
+.ch-post[aria-disabled="true"] { opacity: 0.75; }
+.ch-no { min-height: 44px; color: var(--parchment); border-color: var(--brass-dim); }
+.ch-letter-say { margin: 0; min-height: 1.4em; color: var(--parchment); }
+/* the composer: a sticky bar at the bottom of the panel (the scene's scroll box), suggestions above the box, the share tick below */
+/* the second shadow is a solid apron under the bar: a sticky box stops at the scroll box's bottom padding (20 to 32 px), and the apron
+   covers that strip so no line of the panel shows through under the bar (a shadow adds no scroll length, a pseudo-element would) */
+.ch-form { position: sticky; bottom: 0; z-index: 4; display: grid; gap: 8px; margin: 14px 0 0; padding: 10px 12px 12px; border: 2px solid var(--brass-dim); border-bottom-width: 0; border-radius: 10px 10px 0 0; background: var(--oak-1); box-shadow: 0 -10px 22px var(--shadow), 0 40px 0 0 var(--oak-1); color: var(--parchment); }
+.ch-sugrow { display: flex; gap: 8px 12px; align-items: center; min-width: 0; }
+.ch-sugrow:has(> .ch-sug[hidden]):has(> .ch-left[hidden]) { display: none; }
+.ch-sug { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.ch-chip { min-height: 44px; padding: 6px 14px; font-family: var(--font-body); font-size: 1rem; letter-spacing: 0; text-align: left; color: var(--parchment); background: var(--oak-2); border-color: var(--brass-dim); }
+.ch-left { flex: none; margin-left: auto; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.05em; color: var(--brass-hi); }
+.ch-row { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.ch-text { box-sizing: border-box; flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; font-family: var(--font-body); font-size: 1rem; color: var(--ink); background: var(--parchment); border: 1px solid var(--brass-dim); border-radius: 8px; }
+.ch-text:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
+.ch-text:disabled { opacity: 0.6; cursor: not-allowed; }
+.ch-send { flex: none; min-height: 44px; min-width: 88px; font-weight: 600; color: var(--ink); background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-color: var(--oak-0); }
+.ch-send:disabled { opacity: 0.55; cursor: default; }
+.ch-row2 { flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.ch-share { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 1rem; color: var(--parchment); cursor: pointer; }
+.ch-share input { width: 20px; height: 20px; margin: 0; accent-color: var(--brass); }
+.ch-say { flex: 1 1 14rem; margin: 0; font-size: 1rem; color: var(--parchment); }
+.ch-say:empty { display: none; }
+.ch-nokey { margin: 0; font-size: 1rem; color: var(--parchment); }
+/* the entrance: Leeroy slides down from the top left, the asker rises from the bottom right */
+.chamber.ch-in .ch-lee { animation: ch-lee 620ms var(--ease-oak, cubic-bezier(.2,.75,.25,1)) both; }
+.chamber.ch-in .ch-you { animation: ch-you 620ms var(--ease-oak, cubic-bezier(.2,.75,.25,1)) 120ms both; }
+.chamber.ch-in .ch-log { animation: ch-fade 420ms ease 260ms both; }
+@keyframes ch-lee { from { transform: translate(-40px, -60px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ch-you { from { transform: translate(30px, 70px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ch-fade { from { opacity: 0; } to { opacity: 1; } }
+/* phones (the mobile shell): the composer stays the sticky bar right above the shell's bar (that bar is the sheet's third grid row,
+   outside the scroll box, so bottom 0 already clears it and its safe-area padding); chips scroll sideways; 48 px targets; 16 px text;
+   smaller portraits so the talk has the room */
+html.phone-shell .ch-form { bottom: 0; padding: 8px max(10px, env(safe-area-inset-right, 0px)) 10px max(10px, env(safe-area-inset-left, 0px)); }
+html.phone-shell .ch-sug { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; touch-action: pan-x; scrollbar-width: none; }
+html.phone-shell .ch-chip { flex: none; white-space: nowrap; scroll-snap-align: start; }
+html.phone-shell :is(.ch-chip, .ch-send, .ch-text, .ch-share, .ch-pick-row, .ch-start, .ch-skip, .ch-bring, .ch-leave, .ch-post, .ch-no, .ch-ask) { min-height: 48px; }
+html.phone-shell :is(.ch-b, .ch-card, .ch-text, .ch-say, .ch-nokey, .ch-chip, .ch-share, .ch-pick-row, .ch-eta, .ch-note, .ch-letter-note) { font-size: 1rem; }
+html.phone-shell .ch-art-lee { width: 84px; }
+html.phone-shell .ch-art-you { width: 72px; }
+@media (prefers-reduced-motion: reduce) {
+  .chamber.ch-in .ch-lee, .chamber.ch-in .ch-you, .chamber.ch-in .ch-log { animation: none; }
+  .ch-dots i { animation: none; }
+  .ch-sug { scroll-behavior: auto; }
+}
