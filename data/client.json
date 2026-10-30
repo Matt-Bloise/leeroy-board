@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-30T21:14:28.927Z",
+ "generated": "2026-10-30T21:32:17.311Z",
  "build": "1.60.1.70532",
  "level": 60,
  "formula": "wiki/scripts/db2-lib.mjs scaleEffect at level 60 (min/max = base x (1 -/+ variance/2) + per_level x levels past base, capped at the rank's max level); totals = per-tick x floor(duration / period)",
@@ -1797,7 +1797,7 @@
   "earned_now": 0,
   "earned_note": "nobody can earn a point before launch",
   "gloss": {
-   "challenge": "One of 65 account-wide goals, such as reaching level 25 with a class or 150 skill in a crafting profession; each one earns one legacy point.",
+   "challenge": "One of 65 account-wide goals, each worth one legacy point, such as reaching level 25 with a class or 150 skill in a crafting profession.",
    "tabard": "A cloth worn over armor that shows a design.",
    "legacy points": "Account-wide points earned by finishing challenges, spent on rewards for any character."
   },

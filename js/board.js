@@ -2644,14 +2644,14 @@ const linkChip = (v) => { const l = libLink(v); return copyChip(v.kind === "page
 const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.");
 
 /* the ranker module, loaded once (Phase 0, 2026-10-30: the Leeroy chamber's follow-ups rank the library index with it too) */
-function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=463f3fc4b2").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
+function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=16d8a1283e").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
 function libStart() {
   if (LIBS.state !== "idle") return;
   LIBS.state = "loading";
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=b019a74786", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=7a8883dd5a", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);

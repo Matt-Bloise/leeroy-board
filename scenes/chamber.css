@@ -3,7 +3,7 @@
    beside its speaker); footnotes as wax seals; follow-ups; the pick list and the letter; the composer at the panel's bottom
    (companion N6, notes/companion/COMPANION-CONTRACT.md 6.1). Phone first; 44 px targets (48 under the phone shell); reduced motion:
    no slides, no typing, no bobbing dots. The art is the owner's painted files (img/chamber, img/marks); nothing is drawn here. */
-#panel-librarian.chamber-on > .act, #panel-librarian.chamber-on > .lede, #panel-librarian.chamber-on > #lib-box, #panel-librarian.chamber-on > #lib-sources, #panel-librarian.chamber-on #ask-out, #panel-librarian.chamber-on .ask-h { display: none; }
+#panel-librarian.chamber-on > .act, #panel-librarian.chamber-on > .ch-intro, #panel-librarian.chamber-on > .lede, #panel-librarian.chamber-on > #lib-box, #panel-librarian.chamber-on > #lib-sources, #panel-librarian.chamber-on #ask-out, #panel-librarian.chamber-on .ask-h { display: none; }
 /* the chat's composer asks for the ask box (the same BoardBrain.ask, the same sentence when there is no key) and the log shows its answer */
 #panel-librarian.ch-chat #ask-form, #panel-librarian.ch-chat #ask-note, #panel-librarian.ch-chat #ask-out { display: none; }
 .sheet:has(#panel-librarian.chamber-on:not([hidden])) .sheet-orn { display: none; }
@@ -93,9 +93,14 @@
 .ch-row { display: flex; gap: 8px; align-items: stretch; min-width: 0; }
 .ch-text { box-sizing: border-box; flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 8px 12px; font-family: var(--font-body); font-size: 1rem; color: var(--ink); background: var(--parchment); border: 1px solid var(--brass-dim); border-radius: 8px; }
 .ch-text:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
-.ch-text:disabled { opacity: 0.6; cursor: not-allowed; }
+.ch-text:disabled { opacity: 1; color: var(--ink); -webkit-text-fill-color: var(--ink); cursor: not-allowed; }
+.ch-text::placeholder { color: var(--ink-soft); opacity: 1; }
 .ch-send { flex: none; min-height: 44px; min-width: 88px; font-weight: 600; color: var(--ink); background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-color: var(--oak-0); }
-.ch-send:disabled { opacity: 0.55; cursor: default; }
+.ch-send:disabled, .ch-send[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; color: var(--parchment); background: var(--oak-2); border-color: var(--brass-dim); }
+/* fix round D1: no board link: the box takes the whole line, then the muted Send with the reason beside it */
+.ch-off .ch-row { flex-wrap: wrap; align-items: center; }
+.ch-off .ch-text { flex-basis: 100%; }
+.ch-row .ch-nokey { flex: 1 1 14rem; align-self: center; }
 .ch-row2 { flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
 .ch-share { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 1rem; color: var(--parchment); cursor: pointer; }
 .ch-share input { width: 20px; height: 20px; margin: 0; accent-color: var(--brass); }
@@ -128,3 +133,13 @@ html.phone-shell .ch-art-you { width: 72px; }
 /* polish (2026-10-30): on a phone the composer is the one way to ask on screen; its note names /ask and the tag, so the Discord how-to
    line above it (index.html .act) waits (two ask surfaces stood one above the other) */
 html.phone-shell #panel-librarian:has(#ch-form) > .act { display: none; }
+/* fix round D1 and D5: the opening sentence stands for index.html's how-to line; one centred column, one left edge for every block
+   (board.css centres each panel child at its own width), prose lines kept to 72ch by the right padding, the ask card one column
+   so the box fills it, the stats note right under its numbers */
+.ch-intro { margin: 0; font-size: 1.05rem; color: var(--ink); }
+.ch-intro a { color: var(--ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+#panel-librarian:has(> .ch-intro) > .act { display: none; }
+#panel-librarian > * { justify-self: center; width: 100%; max-width: min(100%, 64rem); box-sizing: border-box; }
+#panel-librarian > :is(.ch-intro, .act, .lede, .sources) { padding-inline-end: max(0px, calc(100% - 72ch)); }
+#panel-librarian.ch-chat .ask { grid-template-columns: minmax(0, 1fr); }
+#panel-librarian .stack { grid-template-rows: auto auto; align-content: start; }

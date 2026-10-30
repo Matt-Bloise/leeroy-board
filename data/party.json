@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-30T21:14:28.894Z",
+ "generated": "2026-10-30T21:32:17.275Z",
  "party": "Dungeons and Drinking",
  "faction": "Horde",
  "ruleset": "Normal",
@@ -268,7 +268,7 @@
     "challenge",
     "challenges"
    ],
-   "def": "One of 65 account-wide goals, such as reaching level 25 with a class or 150 skill in a crafting profession; each one earns one legacy point."
+   "def": "One of 65 account-wide goals, each worth one legacy point, such as reaching level 25 with a class or 150 skill in a crafting profession."
   },
   {
    "term": "tabard",
@@ -331,6 +331,80 @@
     "ruleset"
    ],
    "def": "A server type where players only fight each other if they choose to."
+  },
+  {
+   "term": "class",
+   "forms": [
+    "class",
+    "classes"
+   ],
+   "def": "A character's job, such as Mage, Priest or Warlock; it sets the spells, the armor and whether it can tank, heal or deal damage. Forever has nine."
+  },
+  {
+   "term": "race",
+   "forms": [
+    "race",
+    "races"
+   ],
+   "def": "A character's people, such as Undead, Troll or Tauren; it sets the look, a few special abilities and which classes are open."
+  },
+  {
+   "term": "faction",
+   "forms": [
+    "faction",
+    "factions"
+   ],
+   "def": "One of the two sides, Horde or Alliance; players of different sides cannot group together, and each race belongs to one side."
+  },
+  {
+   "term": "guild",
+   "forms": [
+    "guild",
+    "guilds"
+   ],
+   "def": "A named club of players who chat and play together; in Forever its members need the same ruleset and the same side to group."
+  },
+  {
+   "term": "gold",
+   "forms": [
+    "gold",
+    "silver",
+    "copper",
+    "money"
+   ],
+   "def": "The game's money, counted in gold, silver and copper; it pays for spells from trainers, riding, repairs and items other players sell."
+  },
+  {
+   "term": "Names open",
+   "forms": [
+    "Names open",
+    "name reservation",
+    "Early Name Reservation"
+   ],
+   "def": "The name reservation window: pack holders can make up to three characters and keep their names, from Oct 27 until the end of Nov 3 Pacific (3 AM ET Nov 4)."
+  },
+  {
+   "term": "Fellowship",
+   "forms": [
+    "Fellowship"
+   ],
+   "def": "The name of the group's voice channel on its Discord server."
+  },
+  {
+   "term": "Classic habit",
+   "forms": [
+    "Classic habit",
+    "Classic habits"
+   ],
+   "def": "What players usually did in World of Warcraft Classic, the older version of the game; a habit, not a Forever rule."
+  },
+  {
+   "term": "rank cap",
+   "forms": [
+    "rank cap",
+    "rank caps"
+   ],
+   "def": "The level where one rank of a spell stops getting stronger; past it, only the next rank, learned from a trainer, hits harder."
   }
  ]
 }

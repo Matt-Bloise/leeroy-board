@@ -112,9 +112,11 @@ const sheet = h("section", { class: "ch-letter", id: "ch-letter", hidden: true, 
 const room = h("section", { class: "chamber", id: "chamber", hidden: true, "aria-label": "Talking with Leeroy", "data-state": "idle" },
   h("div", { class: "ch-stage" }, lee, log, you), skip, live, next, h("div", { class: "ch-end" }, bring, leave), sheet);
 panel.insertBefore(room, box);
+/* fix round D1: what Leeroy is, first, for a friend with no board link (index.html's .act line waits while this shows) */
+panel.insertBefore(h("p", { class: "ch-intro", id: "ch-intro" }, "Leeroy is the group's Discord bot; he answers from this library. /ask in #wow-forever reaches him, and ", h("a", { href: "#library", text: "the Library" }), " here holds the same answers."), panel.firstChild);
 /* the composer: at the panel's bottom, sticky, outside the chamber so it also asks while the chamber is shut */
 const input = h("input", { type: "text", id: "ch-text", class: "ch-text", maxlength: MAX, enterkeyhint: "send", autocomplete: "off", spellcheck: "true", "aria-describedby": "ch-say ch-note" });
-const sendBtn = h("button", { type: "submit", class: "lib-tool ch-send", id: "ch-send" }, "Send");
+const sendBtn = h("button", { type: "submit", class: "lib-tool ch-send", id: "ch-send", "aria-describedby": "ch-note" }, "Send");
 const shareBox = h("input", { type: "checkbox", id: "ch-share-box" });
 const sug = h("div", { class: "ch-sug", id: "ch-sug", role: "group", "aria-label": "Questions to start from", hidden: true });
 const left = h("span", { class: "ch-left", id: "ch-left", hidden: true });
@@ -123,9 +125,8 @@ const note = h("p", { class: "ch-nokey", id: "ch-note", hidden: true });
 const form = h("form", { class: "ch-form", id: "ch-form", novalidate: true, "aria-label": "Ask Leeroy" },
   h("div", { class: "ch-sugrow" }, sug, left),
   h("label", { class: "sr-only", for: "ch-text", text: "Your question for Leeroy" }),
-  h("div", { class: "ch-row" }, input, sendBtn),
-  h("div", { class: "ch-row ch-row2" }, h("label", { class: "ch-share", id: "ch-share", for: "ch-share-box" }, shareBox, h("span", { text: " also share in Discord" })), sayEl),
-  note);
+  h("div", { class: "ch-row" }, input, sendBtn, note),
+  h("div", { class: "ch-row ch-row2" }, h("label", { class: "ch-share", id: "ch-share", for: "ch-share-box" }, shareBox, h("span", { text: " also share in Discord" })), sayEl));
 /* integrator pass 3: the composer lives in the ask box under "Ask Leeroy from here", in the page's flow: the sticky dock took a third
    of a phone and 205 px of a laptop, covered the answer, the stats and the letter, and the heading above it was an inert bar */
 box.append(form);
@@ -258,7 +259,7 @@ function bringPaint() {
 
 /* ---------- the composer ---------- */
 const ERR = { offline: "The board could not reach Leeroy just now. Your question is still in the box.", busy: "The brain is busy right now. Your question is still in the box.", refused: `That could not be sent. After links and odd characters are removed it needs ${MIN} to ${MAX} characters.` };
-const noteText = () => { const n = $("#ask-note"); return (n && n.textContent.replace(/\s+/g, " ").trim()) || "Asking from the board works with your own board link (My board link on the Sign-ups card). Without one, /ask in #wow-forever reaches the same Leeroy."; };
+const noteText = () => { const n = $("#ask-note"); return (n && n.textContent.replace(/\s+/g, " ").trim()) || "Asking from here needs your own board link; it is on the Sign-ups card in Discord."; };
 const minutes = (s) => { const m = Math.max(1, Math.ceil((Number(s) || 3600) / 60)); return `${m} minute${m === 1 ? "" : "s"}`; };
 function refusal(r, st) {
   const why = r && r.why;
@@ -273,8 +274,9 @@ function say(t) { if (sayEl.textContent !== t) sayEl.textContent = t; }
 function compose(st) {
   const live0 = liveOk(st), busy = busyOk(st);
   note.hidden = live0; if (!live0) note.textContent = noteText();
-  input.disabled = !live0 || busy; sendBtn.disabled = !live0 || busy; shareBox.disabled = !live0 || busy;
-  const ph = !live0 ? "Asking here needs your own board link (below)" : busy ? "Leeroy is on your last question" : "Ask Leeroy about Forever";
+  input.disabled = !live0 || busy; sendBtn.disabled = live0 && busy; shareBox.disabled = !live0 || busy;
+  sendBtn.setAttribute("aria-disabled", String(!live0 || busy)); form.classList.toggle("ch-off", !live0);
+  const ph = !live0 ? "Ask in Discord or the Library" : busy ? "Leeroy is on your last question" : "Ask Leeroy about Forever";
   if (input.getAttribute("placeholder") !== ph) input.setAttribute("placeholder", ph);
   const shareRow = form.querySelector(".ch-row2"); if (shareRow) shareRow.hidden = !live0 && !sayEl.textContent; /* no tick to offer without a key */
   sendBtn.textContent = st.state === "sending" ? "Sending" : "Send";

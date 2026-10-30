@@ -9,7 +9,7 @@ const HERE = (document.currentScript && document.currentScript.src) || null; /* 
    did not exist when the page was stamped (walk ships with node N7): that load resolves at once, with no request */
 const SCENES = {
   sheet: () => [new URL("../scenes/sheet.css?v=451af8a4a2", HERE), new URL("../scenes/sheet.js?v=87bcd5843e", HERE)],
-  chamber: () => [new URL("../scenes/chamber.css?v=90db482e8d", HERE), new URL("../scenes/chamber.js?v=759587eeea", HERE)],
+  chamber: () => [new URL("../scenes/chamber.css?v=9feee0b93b", HERE), new URL("../scenes/chamber.js?v=57749dcbb7", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=99fcaa246c", HERE), new URL("../scenes/decide.js?v=250667e6fa", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=f782448ae6", HERE), new URL("../scenes/walk.js?v=bc1848adbc", HERE)],

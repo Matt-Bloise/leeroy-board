@@ -157,12 +157,17 @@ function safe(body, route) {
   if (!ok || /\d{17,20}/.test(JSON.stringify(body))) throw new Error("refused: only an answer word may leave the board");
   return body;
 }
+/* fix round D6: one try around the fetch and its JSON. A network or CORS failure (WebKit logs "Fetch API cannot load") marks the
+   brain offline (status() reads via "off", as with no Worker; the poll and the socket wait longer) and every caller answers
+   { ok: false, why: "offline" }; nothing logs */
 async function call(method, route, body) {
   const headers = {};
   if (B.key && (route === "/me" || route === "/intent" || route === "/ask" || route === "/probe" || route === "/sheet" || route === "/dispatch")) headers.Authorization = `Board ${B.key}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const r = await fetch(`${B.base.http}${route}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(safe(body, route)), cache: "no-store", credentials: "omit" });
-  let data = null; try { data = await r.json(); } catch (e) {}
+  const payload = body === undefined ? undefined : JSON.stringify(safe(body, route));
+  let r, data = null;
+  try { r = await fetch(`${B.base.http}${route}`, { method, headers, body: payload, cache: "no-store", credentials: "omit" }); try { data = await r.json(); } catch (e) {} } catch (e) { B.offline = true; throw new Error("offline"); }
+  B.offline = false;
   return { status: r.status, data };
 }
 
@@ -226,11 +231,12 @@ async function pollOnce() {
     if (r.status === 200) { onState(r.data); B.errors = 0; } else B.errors++;
   } catch (e) { B.errors++; }
   emit("status", status());
-  if (B.via !== "ws") schedulePoll(POLL_MS);
+  if (B.via !== "ws") schedulePoll(B.offline ? WS_RETRY_MS : POLL_MS);
 }
 function openWs() {
   clearTimeout(B.wsT);
   if (!B.base || !B.key || typeof WebSocket !== "function" || B.ws) return false;
+  if (B.offline) { B.wsT = setTimeout(openWs, WS_RETRY_MS); return false; }
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
   ws.onopen = () => { if (B.ws !== ws) return; opened = true; B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
@@ -315,7 +321,7 @@ async function dispatch(ids) {
 
 function pending() { const out = {}; for (const [f, p] of Object.entries(B.pend)) out[f] = { value: p.value, state: p.state, ...(p.other ? { other: p.other } : {}), ...(p.error ? { error: p.error } : {}) }; return out; }
 function launchPending() { const p = B.lPend; return p ? { value: p.value, state: p.state, ...(p.error ? { error: p.error } : {}) } : null; }
-function status() { return { via: B.via, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused, launch: B.launch.length, launchPending: launchPending(), launchRefused: B.launchRefused, sheetOff: B.sheetOff, party: B.party.length }; }
+function status() { return { via: B.offline && B.via !== "ws" ? "off" : B.via, offline: !!B.offline, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused, launch: B.launch.length, launchPending: launchPending(), launchRefused: B.launchRefused, sheetOff: B.sheetOff, party: B.party.length }; }
 
 async function setRsvp(v) {
   if (!B.base) return { ok: false, why: "nowhere to send" };

@@ -6,9 +6,9 @@ if (!B || !B.onAsk || !box || !note || !out) return;
 const MAX = 280, MIN = 3;
 const el = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const k in attrs || {}) { const v = attrs[k]; if (v === null || v === undefined || v === false) continue; if (k === "text") e.textContent = v; else e.setAttribute(k, v === true ? "" : String(v)); } for (const c of kids) if (c) e.append(c); return e; };
 const NOTE = {
-  off: "Asking here works from the shared board links. In Discord, /ask in #wow-forever or a tag on Leeroy Jenkins reaches the same Leeroy.",
-  none: "Asking from the board works with your own board link (My board link on the Sign-ups card). Without one, /ask in #wow-forever or a tag on Leeroy Jenkins reaches the same Leeroy.",
-  bad: "This board link is not valid any more. My board link on the Sign-ups card makes a new one.",
+  off: "Asking from this copy of the board is off; the board link in Discord has it.",
+  none: "Asking from here needs your own board link; it is on the Sign-ups card in Discord.",
+  bad: "This board link is not valid any more. The Sign-ups card in Discord makes a new one.",
 };
 const FAIL = { no_answer: "Leeroy did not get to that one in time.", held: "Leeroy held that answer back for a check.", error: "Leeroy could not finish that one." };
 const ERR = { offline: "The board could not reach Leeroy just now. Your question is still in the box.", busy: "The brain is busy right now. Your question is still in the box.", refused: `That could not be sent. After links and odd characters are removed it needs ${MIN} to ${MAX} characters.`, key: NOTE.bad };
