@@ -1400,7 +1400,7 @@ main.has-beam { margin-top: 44px; }
 .spark-line { stroke-dasharray: 1; stroke-dashoffset: 0; }
 .spark-drop { fill: var(--wax); stroke: var(--ink); stroke-width: 1; }
 .spark-quill { overflow: visible; }
-.spark-key { margin: 6px 0 0; max-width: 34rem; font-size: var(--fs-small); line-height: 1.35; color: var(--ink-soft); } /* 2026-10-30: one line of key under the sparkline */
+.spark-key { margin: 6px 0 0; font-size: var(--fs-small); line-height: 1.35; color: var(--cream); text-wrap: balance; } /* 2026-10-30: one line of key under the sparkline */
 
 /* wall tiles: crests and emblems instead of dots */
 .dots { display: inline-flex; align-items: center; }
@@ -2023,6 +2023,7 @@ html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
 .sheet-head .tabs::-webkit-scrollbar { display: none; }
 .sheet-head .tab[aria-selected="true"] { box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -3px 12px var(--wear), inset 0 3px 0 var(--brass); }
 @media (max-width: 1499px) { .sheet-head .tab:not([aria-selected="true"]) .tab-ico { display: none; } }
+@media (min-width: 1000px) { .sheet-head .tabs { margin-inline: 0; padding-inline: 2px; } } /* the rail's 18 px side pads made a rail that fits overflow by a few px (and show an arrow) */
 .lede-row { width: max-content; max-width: 100%; margin-inline: auto; }
 .lede-row > .lede { width: auto; max-width: 70ch; } /* no percentage: the row's own width is measured from it */
 /* Next steps below 2200 px: the picker hugs its chips; the three cards stand as tall as the tallest, their words centred in them */

@@ -1545,7 +1545,9 @@ function selectPanel(key, crossFade) {
   /* one frame (2026-10-30): the fit is measured after the scene event (the coin's class sets the head's height, a panel may fill its rows) and
      checked again once the frame has painted and the fonts are in */
   fitScene();
-  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(() => { if (SC.open === key) fitScene(); }));
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(() => { if (SC.open === key) { fitScene(); moveInd(); } }));
+  /* the rail's bar is measured again once the fonts are in (a first open at load measured the tabs in the fallback font) */
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (SC.open !== key) return; moveInd(); const t = $("#tabs"); if (t && typeof Event === "function") t.dispatchEvent(new Event("scroll")); /* the rail arrows look again */ }).catch(() => {});
 }
 /* V13c (spec 2, retest-10): */
 const FIT_SKIP = ["roads", "library"];
