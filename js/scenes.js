@@ -12,7 +12,7 @@ const SCENES = {
   chamber: () => [new URL("../scenes/chamber.css?v=9feee0b93b", HERE), new URL("../scenes/chamber.js?v=57749dcbb7", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=99fcaa246c", HERE), new URL("../scenes/decide.js?v=250667e6fa", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
-  walk: () => [new URL("../scenes/walk.css?v=f782448ae6", HERE), new URL("../scenes/walk.js?v=bc1848adbc", HERE)],
+  walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=430616c521", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1b9e9b4574", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=2f4a786354", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],

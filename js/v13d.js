@@ -13,7 +13,7 @@ const reduced = () => K.reduceMQ.matches;
 const rm = (el) => { if (el && el.parentNode) el.parentNode.removeChild(el); };
 const kid = (el, cls) => [...el.children].find((c) => c.classList.contains(cls)) || null;
 const FIRST = !get("board-seen") && !get("board-glowed");
-const V = { picked: JOURNEYS.includes(get("board-journey")), path: {}, zoom: null, map: null, dial: null, glow: false };
+const V = { picked: JOURNEYS.includes(get("board-journey")), zoom: null, map: null, dial: null, glow: false };
 /* V13e retest-3: the page names its own icon (a brass tankard drawn inline), so no browser asks the host for /favicon.ico */
 if (!document.querySelector('link[rel="icon"]')) { const ic = document.createElement("link"); ic.rel = "icon"; ic.type = "image/svg+xml"; ic.href = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#2a1a10"/><path d="M8 9h13v16a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2z" fill="#c9952e"/><path d="M21 12h3a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-3" fill="none" stroke="#c9952e" stroke-width="2.4"/><path d="M7 9a3 3 0 0 1 3-3h1a3 3 0 0 1 5 0h1a3 3 0 0 1 3 3z" fill="#f3e6c8"/></svg>'); (document.head || document.documentElement).appendChild(ic); }
 
@@ -22,7 +22,8 @@ const journey = () => (JOURNEYS.includes(root.dataset.journey) ? root.dataset.jo
 root.dataset.journey = JOURNEYS.includes(get("board-journey")) ? get("board-journey") : "curious";
 function markJourney() {
   const j = journey();
-  document.querySelectorAll(".journey [data-journey], #more-menu [data-journey]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.journey === j)));
+  /* fix round A3: before any pick nothing is pressed (the default depth is shown, not chosen) */
+  document.querySelectorAll(".journey [data-journey], #more-menu [data-journey]").forEach((b) => b.setAttribute("aria-pressed", String(V.picked && b.dataset.journey === j)));
 }
 /* one switch, effects at once, nothing lost: the open scene and its scroll stay; every renderer draws the new depth */
 function setJourney(j, how) {
@@ -72,103 +73,63 @@ function startJourneySwitch() {
   /* V13e perf: two plates, never moved. The wall keeps #journey in its header; the scene head has its own copy
      (#journey-scene), so opening or closing a scene changes no layout outside the sheet (moving one plate in and out of the
      scene head cost a reflow of both heads on every open and close, worst on phones). */
-  const sceneNav = h("nav", { class: "journey journey-scene", "aria-label": nav.getAttribute("aria-label") || "How do you want to explore?" }, JOURNEYS.map((j) => h("button", { type: "button", "data-journey": j, "aria-pressed": String(j === journey()) }, j.charAt(0).toUpperCase() + j.slice(1)))); sceneNav.setAttribute("id", "journey-scene");
+  const sceneNav = h("nav", { class: "journey journey-scene", "aria-label": nav.getAttribute("aria-label") || "How do you want to explore?" }, JOURNEYS.map((j) => h("button", { type: "button", "data-journey": j, "aria-pressed": String(V.picked && j === journey()) }, j.charAt(0).toUpperCase() + j.slice(1)))); sceneNav.setAttribute("id", "journey-scene");
   const top = $(".sheet-top"), peek = $("#scene-peek"); if (top) top.insertBefore(sceneNav, peek && peek.parentNode === top ? peek : null);
   const plates = [nav, sceneNav];
   /* on a phone the head has room for one plate: it shows the journey, a tap opens the three */
-  const onClick = (pl) => (e) => { const b = e.target.closest("[data-journey]"); if (!b) return; if (phone.matches && !pl.classList.contains("open") && b.getAttribute("aria-pressed") === "true") { pl.classList.add("open"); b.setAttribute("aria-expanded", "true"); return; } pl.classList.remove("open"); pl.querySelectorAll("[aria-expanded]").forEach((x) => x.removeAttribute("aria-expanded")); setJourney(b.dataset.journey); };
+  const onClick = (pl) => (e) => { const b = e.target.closest("[data-journey]"); if (!b) return; if (phone.matches && !pl.classList.contains("open") && (b.getAttribute("aria-pressed") === "true" || !V.picked)) { pl.classList.add("open"); b.setAttribute("aria-expanded", "true"); return; } pl.classList.remove("open"); pl.querySelectorAll("[aria-expanded]").forEach((x) => x.removeAttribute("aria-expanded")); setJourney(b.dataset.journey); };
   for (const pl of plates) pl.addEventListener("click", onClick(pl));
   document.addEventListener("pointerdown", (e) => { for (const pl of plates) if (pl.classList.contains("open") && !pl.contains(e.target)) pl.classList.remove("open"); }, true);
   markJourney();
   K.sceneHooks.push((open) => { if (!open) { V.confirm = null; for (const pl of plates) pl.classList.remove("open"); } });
 }
 
-// ---------------- Guided: a day-one path on every scene, one step at a time ----------------
+// ---------------- Guided: one line for you on every scene (fix round A2: the five-step tour repeated the dates and ignored who you are) ----------------
+/* Next steps' date line: an open window's last day where Blizzard set it, with its instant in ET from the same epoch */
 function nextDeadline() {
   const now = Date.now() / 1000, out = [];
   for (const e of (D.timeline && D.timeline.events) || []) {
-    if (e.until_epoch && e.epoch <= now && now < e.until_epoch) out.push({ t: e.until_epoch, text: `${e.label.split(":")[0]} closes at the end of ${e.until}, ${e.until_zone || "Pacific"} time` });
+    const et = e.until_epoch ? /^\w+, (\w+ \d+), (.+) ET$/.exec(K.fmtWhen(e.until_epoch, { tz: "America/New_York" })) : null;
+    if (e.until_epoch && e.epoch <= now && now < e.until_epoch) out.push({ t: e.until_epoch, text: `${e.key === "names_open" ? "Pack holders" : e.label.split(":")[0]}: until the end of ${e.until} ${e.until_zone || "Pacific"}${et ? ` (${et[2]} ET ${et[1]})` : ""}` });
     else if (e.epoch && e.epoch > now) out.push({ t: e.epoch, text: `${e.label.split(":")[0]}: ${K.fmtWhen(e.epoch, { rel: true })}` });
   }
   for (const q of (D.party && D.party.polls) || []) if (q.closes_epoch && q.closes_epoch > now) out.push({ t: q.closes_epoch, text: `The ${q.title.toLowerCase()} poll closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` });
   return out.sort((a, b) => a.t - b.t)[0] || null;
 }
-const land = (tok, label) => h("button", { type: "button", class: "lib-tool jr-go", onclick: () => { const k = tok.split(".")[0]; SC.land = { key: k, sub: tok.slice(k.length + 1), from: null }; if (SC.open === k) { K.setHash(tok, false); landOn(k, SC.land.sub); SC.land = null; } else K.goScene(k); } }, label);
-function steps(key) {
-  const P = D.party, C = D.client, T = D.timeline, me = MEM.member(), now = Date.now() / 1000;
-  if (!P || !C || !T) return [];
-  const launch = T.events.find((e) => e.key === "launch");
-  const sayOf = (k) => K.RSVP_SAY[k] || k;
-  const mineSU = () => { const S = D.signups; return me && S && S.entries ? S.entries.find((e) => K.cleanName(e.name).toLowerCase() === me.name.toLowerCase()) : null; };
+/* one fact about this scene for the picked person, or null (the band then points back to the Next steps card) */
+function band(key) {
+  const P = D.party, C = D.client, me = MEM.member(); if (!me || !P || !C) return null;
+  const how = ({ "Tirisfal Glades": "the Undercity zeppelin", Mulgore: "the road past the Crossroads", Durotar: "the Durotar road" })[me.start_zone] || "the road";
+  const later = /^(\w+) until (\d+), (\w+) from level/i.exec(me.role_detail || "");
   switch (key) {
-    case "tonight": {
-      const ev = T.events.find((e) => (e.until_epoch && e.epoch <= now && now < e.until_epoch) || (e.epoch && e.epoch > now));
-      const person = me && D.tonight ? D.tonight.people.find((x) => x.member === P.members.indexOf(me)) : null, su = mineSU();
-      return [
-        /* V13e retest-2: launch day and time are in step 1, never three taps away */
-        [`${launch ? `Launch: ${K.fmtWhen(launch.epoch, { rel: true })}. ` : ""}${me ? `You are ${me.name}, ${me.race} ${me.class}.` : "First, pick your name above, or Just looking."}`],
-        ev ? [`${ev.label.split(":")[0]}: ${ev.until_epoch && ev.epoch <= now ? `open now, until the end of ${ev.until}, ${ev.until_zone || "Pacific"} time` : K.fmtWhen(ev.epoch, { rel: true })}.`] : null,
-        person && person.step ? [`Your one step: ${person.step}`] : [su ? `Your launch-night answer: ${sayOf(su.rsvp)}.` : "Your one step: answer the Sign-ups card in Discord."],
-        ["A pack is the pre-order that lets you make characters early."],
-      ].filter(Boolean);
-    }
-    case "timeline": return T.events.filter((e) => (e.until_epoch ? e.until_epoch : e.epoch) > now).slice(0, 3).map((e) => [`${e.label.split(":")[0]}: ${e.epoch ? K.fmtWhen(e.epoch, { rel: true, time: e.format !== "D" }) : e.date}. ${e.detail ? `${e.detail.charAt(0).toUpperCase()}${e.detail.slice(1)}.` : ""}`, land(`timeline.${e.key}`, "Show it on the rail")]);
-    case "five": return P.members.map((m) => [`${m.name}: ${m.race} ${m.class}, ${m.role}${m.spec_status && m.spec_status.status === "open" ? ", still choosing a play style" : ""}.`, land(`five.${MEM.slug(m.name)}`, `Meet ${m.name}`)]);
-    case "roads": {
-      const zones = [...new Set(P.members.map((m) => m.start_zone))].filter(Boolean).sort((a, b) => (me && b === me.start_zone) - (me && a === me.start_zone));
-      return zones.map((z) => { const ms = P.members.filter((m) => m.start_zone === z); const how = ({ "Tirisfal Glades": "the Undercity zeppelin", Mulgore: "the road past the Crossroads", Durotar: "the Durotar road" })[z] || "the road"; return [`${z}: ${K.andList(ms.map((m) => m.name))} wake${ms.length === 1 ? "s" : ""} here, then take ${how} to Orgrimmar.`, land(`roads.${MEM.slug(z)}`, `Zoom to ${z}`)]; });
-    }
-    case "racials": {
-      const list = Object.entries(C.racials).sort(([a], [b]) => (me && b === me.race) - (me && a === me.race));
-      return list.map(([race, rs]) => { const a = rs.find((r) => r.kind === "active") || rs[0]; const line = String(a.wiki || "").replace(/^(active|passive),\s*/, "").split(/;\s*/)[0].replace(/\s*\([^)]*\)/g, ""); return [`${race}: ${a.name}, ${line}.`, land(`racials.${MEM.slug(race)}`, `${race} skills`)]; });
-    }
-    case "legacy": { const L = C.legacy; return [[`Your whole account earns legacy points from challenges: ${L.total} in all, one point each.`], [`Earned so far: ${L.earned_now}, because ${L.earned_note}.`], ...L.thresholds.map((t) => [`At ${t.n} points: ${t.reward}.`])]; }
-    case "buffs": {
-      if (!me || !C.buffs) return [["Pick who you are below to see what you give and what you get."]];
-      const give = C.buffs.list.filter((b) => !b.sixth && b.class === me.class_key).map((b) => b.name);
-      const getN = C.buffs.list.filter((b) => !b.sixth && b.class !== me.class_key && P.members.some((m) => m.class_key === b.class)).length;
-      return [[`You give the others: ${give.length ? K.andList(give) : "no group buffs"}.`], [`The others bring ${getN} buffs between them; the list below shows which reach you.`], ["Slide the level to see the numbers at any level."]];
-    }
-    case "ledger": {
-      const open = P.open.filter((o) => !P.polls.some((q) => q.title === o.title));
-      return [...P.polls.map((q) => [`Poll: ${q.title}${q.closes_epoch ? `, closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` : ""}.`]), ...open.map((o, i) => [`Still open: ${o.title}.`, land(`ledger.open-${i}`, "Show it")])];
-    }
-    case "signups": { const su = mineSU(); return [["A pack is the pre-order that lets you make characters early."], ["Answer on the Sign-ups card in Discord: I'm in, Tentative, Running late or Out."], su ? [`Your answer now: ${sayOf(su.rsvp)}.`] : null].filter(Boolean); }
-    case "librarian": return [["Leeroy answers questions about Forever from the group's own library."], ["His numbers below show how many he has answered and how fast."]]; /* integrator pass 3: the /ask line is said once, by the scene */
-    case "decide": { /* V16 (2026-10-30): what the records leave open for you, then the two dates Blizzard has given */
-      const raids = T.events.find((e) => e.key === "raids"), profOpen = me && (me.professions || []).some((p) => p.status === "undecided");
-      return [
-        [me ? `${me.name}: ${profOpen ? "a profession pair is still open on the Party Board" : "nothing is still open on the Party Board"}; the spec reads ${me.spec}.` : "With a name picked on Next steps, this page opens on what is still open for you."],
-        [`${launch ? `Launch: ${K.fmtWhen(launch.epoch, { rel: true })}. ` : ""}Levels, professions and talents all start then; nothing locks before.`],
-        raids && raids.epoch ? [`Raids open ${K.fmtWhen(raids.epoch, { time: false })}: the only later date Blizzard has given.`] : null,
-        ["Each card below is facts with a status and a source: Forever, Classic baseline or Unknown."],
-      ].filter(Boolean);
-    }
-    case "library": return [["Type a question in the search box, for example onyxia open."], ["Underlined words open a game tooltip; dotted words a plain definition."]];
-    default: return [];
+    case "five": return `${me.name}: ${me.race} ${me.class}, ${later ? `${later[1]} to ${later[2]}, then ${later[3]}` : me.role}.`;
+    case "roads": return me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${how} to Orgrimmar.` : null;
+    case "racials": { const rs = C.racials[me.race] || [], a = rs.find((r) => r.kind === "active") || rs[0]; return a ? `${me.name}: ${me.race}, with ${a.name} among its race skills.` : null; }
+    case "buffs": { const give = C.buffs ? C.buffs.list.filter((b) => !b.sixth && b.class === me.class_key).map((b) => b.name) : []; return C.buffs ? `${me.name} gives the others ${!give.length ? "no group buffs" : give.length > 2 ? `${give[0]}, ${give[1]} and ${give.length - 2} more` : K.andList(give)}.` : null; }
+    case "signups": { const S = D.signups, su = S && S.entries ? S.entries.find((e) => K.cleanName(e.name).toLowerCase() === me.name.toLowerCase()) : null; return `${me.name}: ${su && su.rsvp ? `${K.RSVP_SAY[su.rsvp] || su.rsvp} for launch night` : "no launch-night answer yet"}.`; }
+    case "decide": return `${me.name}: ${(me.professions || []).some((p) => p.status === "undecided") ? "a profession pair is still open" : "nothing is still open"} on the Party Board.`;
+    case "library": return [`${me.name}: the ${me.class} page is on the Classes shelf.`, `#library.classes.${MEM.slug(me.class_key)}`];
+    default: return null;
   }
 }
-/* drawn only on the Guided journey (the cards are hidden on the others), and only the scene whose data moved */
+/* drawn only on the Guided journey (the band is hidden on the others), and only the scene whose data moved. Next steps keeps its
+   date and cost line (Guided folds it under the card); every other scene gets one line, at most two sentences, no counter */
 function paths(only) {
   if (!D.party || !D.timeline || journey() !== "guided") return;
   for (const key of only ? [only] : K.SCENES) {
     const panel = $(`#panel-${key}`); if (!panel) continue;
     let box = kid(panel, "jr-path");
-    if (!box) { box = h("section", { class: "jr-path", "data-j": "g", "aria-label": "Your path" }); const after = key === "tonight" ? $("#tn-cards") : null; panel.insertBefore(box, after || panel.firstChild); }
-    const list = steps(key), dl = nextDeadline(), launchEv = D.timeline && D.timeline.events.find((e) => e.key === "launch" && e.epoch > Date.now() / 1000);
-    const i = Math.max(0, Math.min(list.length - 1, V.path[key] || 0)); V.path[key] = i;
-    const step = list[i];
-    const go = (d) => { V.path[key] = i + d; sfx("page"); paths(key); const b = panel.querySelector(`.jr-path .jr-${d > 0 ? "next" : "back"}`); if (b && !b.disabled) b.focus({ preventScroll: true }); else { const o = panel.querySelector(".jr-path .jr-step"); if (o) o.focus({ preventScroll: true }); } };
-    box.replaceChildren(...[
-      h("h3", { class: "jr-h", text: "Your path" }),
-      /* V13e retest-2 and 12: launch is the date most friends need, so it sits beside the next date on every Guided path */
-      dl || launchEv ? h("p", { class: "jr-dates" },
-        dl ? h("span", { class: "jr-dl" }, emb("hourglass", "jr-dl-emb"), h("b", { text: "Next date: " }), dl.text, ".") : null,
+    if (!box) { box = h("section", { class: "jr-path", "data-j": "g", "aria-label": "For you" }); const after = key === "tonight" ? $("#tn-cards") : null; panel.insertBefore(box, after || panel.firstChild); }
+    if (key === "tonight") {
+      const dl = nextDeadline(), launchEv = D.timeline.events.find((e) => e.key === "launch" && e.epoch > Date.now() / 1000);
+      box.replaceChildren(...[dl || launchEv ? h("p", { class: "jr-dates" },
+        dl ? h("span", { class: "jr-dl" }, emb("hourglass", "jr-dl-emb"), dl.text, ".") : null, dl && launchEv && dl.t !== launchEv.epoch ? " " : null,
         launchEv && (!dl || dl.t !== launchEv.epoch) ? h("span", { class: "jr-dl jr-launch" }, emb("moon", "jr-dl-emb"), h("b", { text: "Launch: " }), K.fmtWhen(launchEv.epoch, { rel: true }), ".") : null) : null,
-      /* the cost is never a step away: on Next steps and Sign-ups the play line stays in view */
-      ["tonight", "signups"].includes(key) && D.tonight && D.tonight.play ? h("p", { class: "jr-dl jr-cost" }, emb("ticket", "jr-dl-emb"), h("b", { text: "Cost: " }), D.tonight.play) : null,
-      step ? h("div", { class: "jr-step", tabindex: "-1" }, h("span", { class: "jr-n", text: `Step ${i + 1} of ${list.length}` }), h("p", { class: "jr-say", text: step[0] }), step[1] || null) : null,
-      list.length > 1 ? h("div", { class: "jr-nav" }, h("button", { type: "button", class: "lib-tool jr-back", disabled: i === 0 ? "" : null, onclick: () => go(-1) }, "Back"), h("span", { class: "jr-dots", "aria-hidden": "true" }, list.map((_, k) => h("i", { class: k === i ? "on" : null }))), h("button", { type: "button", class: "lib-tool jr-next", disabled: i === list.length - 1 ? "" : null, onclick: () => go(1) }, "Next")) : null].filter(Boolean));
+        D.tonight && D.tonight.play ? h("p", { class: "jr-dl jr-cost" }, emb("ticket", "jr-dl-emb"), h("b", { text: "Cost: " }), D.tonight.play) : null].filter(Boolean));
+      continue;
+    }
+    const b = band(key), one = Array.isArray(b) ? b : null;
+    box.replaceChildren(h("span", { class: "jr-k", text: "For you" }), " ", b && !one ? h("p", { class: "jr-say", text: b }) : h("a", { class: "jr-say jr-to", href: one ? one[1] : "#tonight" }, one ? one[0] : "Your next step is on the Next steps card."));
   }
 }
 
@@ -306,8 +267,9 @@ function lightDay(ev, on) {
 function todayLine() {
   const T = D.timeline, now = Date.now() / 1000; if (!T) return "";
   const open = T.events.find((e) => e.until_epoch && e.epoch <= now && now < e.until_epoch), l = T.events.find((e) => e.key === "launch");
-  const days = l && l.epoch ? Math.max(0, Math.ceil((l.epoch - now) / 86400)) : null;
-  return `Today: ${open ? `${open.label.split(":")[0]}, until the end of ${open.until}` : "nothing on the board"}${days !== null && l.epoch > now ? `, ${days} ${days === 1 ? "day" : "days"} to launch` : ""}.`;
+  /* fix round A8: whole days, as the clock counts them (relWhen); under one day it is launch today, never "0 days" */
+  const days = l && l.epoch ? Math.max(0, Math.floor((l.epoch - now) / 86400)) : null;
+  return `Today: ${open ? `${open.label.split(":")[0]}, until the end of ${open.until}` : "nothing on the board"}${days !== null && l.epoch > now ? `, ${days ? `${days} ${days === 1 ? "day" : "days"} to launch` : "launch today"}` : ""}.`;
 }
 function icsFor(e) {
   const z = (t) => new Date(t * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -572,6 +534,7 @@ function suControls() {
   const btns = K.RSVP_KEYS.map((k) => h("button", { type: "button", class: `su-st${p && p.value === k ? ` ${p.state}` : ""}`, "data-rsvp": k, "aria-pressed": String(!!((p && p.value === k && p.state !== "failed" && p.state !== "newer") || (!p && mine && mine.rsvp === k))), "aria-disabled": live ? null : "true", onclick: (e) => { if (!live) { /* V13e retest-11: a tap without a key says why, in the status line */ const pl = e.currentTarget.closest(".su-states"), pn = pl && pl.querySelector(".su-pend"), as = pl && pl.querySelector(".su-as"); if (pn && as) { pn.textContent = ""; requestAnimationFrame(() => { pn.textContent = as.textContent; }); as.classList.remove("nudge"); void as.offsetWidth; as.classList.add("nudge"); } sfx("chip"); return; } if (B) B.setRsvp(k); sfx("latch"); } }, h("img", { class: "su-pint", src: `img/pints/${k}.png`, srcset: `img/pints/${k}.png 1x, img/pints/${k}@2x.png 2x`, alt: "", width: 32, height: 32, decoding: "async" }), K.RSVP_SAY[k]));
   const say = !st.base ? "Answers from this view go through Discord: the Sign-ups card." : !st.key ? "To answer here, tap My board link on the Sign-ups card in Discord. It opens this board as you." : st.keyBad ? "This board link is no longer valid. Tap My board link on the Sign-ups card again." : !BR.me ? "Checking who this board link belongs to." : `Answering as ${BR.me.name}.`;
   act.append(h("div", { class: `su-states${live ? "" : " off"}`, role: "group", "aria-label": "Your answer for launch night, from the board" }, h("p", { class: "su-as", text: say }), h("div", { class: "su-row" }, btns), h("p", { class: "su-pend", role: "status", "aria-live": "polite", text: p ? `${K.RSVP_SAY[p.value]}: ${PEND_SAY[p.state] || ""}${p.state === "newer" && p.other ? ` (${K.RSVP_SAY[p.other] || p.other})` : ""}.` : "" })));
+  if (window.BoardSeals && BoardSeals.ready) BoardSeals.ready(act.querySelector(".su-row"), "pints"); /* fix round A13: the bar waits for the mugs */
 }
 K.on("signups", () => { suControls(); });
 function mirrorIn(sig) {
@@ -595,7 +558,7 @@ function startBrain() {
     journey: (j) => { if (j !== journey()) setJourney(j, "mirror"); },
   });
 }
-K.on("forget", () => { if (window.BoardBrain) window.BoardBrain.forget(); put("board-sigs", null); setJourney("curious", "quiet"); V.picked = false; });
+K.on("forget", () => { if (window.BoardBrain) window.BoardBrain.forget(); put("board-sigs", null); setJourney("curious", "quiet"); put("board-journey", null); V.picked = false; markJourney(); }); /* fix round A3: forgotten, no journey is stored, so the seals come back */
 
 // ---------------- the tab rail's arrows on tablets (retest-16) ----------------
 function startRailArrows() {
@@ -606,6 +569,10 @@ function startRailArrows() {
   const upd = () => { const over = tabs.scrollWidth > tabs.clientWidth + 4; prev.hidden = !over || tabs.scrollLeft < 4; next.hidden = !over || tabs.scrollLeft > tabs.scrollWidth - tabs.clientWidth - 4; };
   tabs.addEventListener("scroll", upd, { passive: true }); addEventListener("resize", upd, { passive: true });
   K.on("scene", () => { if (innerWidth >= 700) setTimeout(upd, K.motionMs("move") + 120); }); /* after the opening has moved, never inside its frames */
+  /* fix round A12: a 768 load had no event after the rail's first layout; measure after first paint, on a size or content change */
+  requestAnimationFrame(() => setTimeout(upd, 0));
+  if (typeof ResizeObserver === "function") new ResizeObserver(upd).observe(tabs);
+  if (typeof MutationObserver === "function") new MutationObserver(upd).observe(tabs, { childList: true, subtree: true });
   upd();
 }
 
@@ -631,5 +598,5 @@ K.on("scene", (key) => { applyDepth(); looked(key); sealRows(key); });
 K.on("closed", (k) => { if (k === "tonight") setTimeout(glow, K.motionMs("move") + 900); });
 K.on("legacy", () => sealRows("legacy"));
 for (const f of ["races", "cards"]) { const orig = K.render[f]; K.render[f] = () => { orig(); applyDepth(); sealRows(f === "races" ? "racials" : "five"); }; }
-window.__v13d = Object.freeze({ journey, setJourney, landOn, zoomTo, zoomOut, steps, nextDeadline, preview, status: () => ({ journey: journey(), picked: V.picked, zoom: V.zoom, dial: V.dial ? V.dial.v : null, glow: V.glow, isNew: JSON.parse(JSON.stringify(NEW)), brain: window.BoardBrain ? window.BoardBrain.status() : null }) });
+window.__v13d = Object.freeze({ journey, setJourney, landOn, zoomTo, zoomOut, band, nextDeadline, preview, status: () => ({ journey: journey(), picked: V.picked, zoom: V.zoom, dial: V.dial ? V.dial.v : null, glow: V.glow, isNew: JSON.parse(JSON.stringify(NEW)), brain: window.BoardBrain ? window.BoardBrain.status() : null }) });
 })();

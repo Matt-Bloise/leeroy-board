@@ -86,9 +86,12 @@
       return a2.finished.then(fin, fin);
     }, fin);
   }
-  function say(text) {
+  /* ms (fix round A6): a short line that also clears on the first pointerdown or scroll, so it never sits over the tab strip */
+  function say(text, ms) {
     const n = $(".seal-say", S.el); if (!n) return;
-    clearTimeout(S.sayT); n.textContent = text; n.classList.add("on"); S.sayT = setTimeout(() => { n.classList.remove("on"); }, 5200);
+    const t0 = Date.now(), off = (e) => { if (e && e.type === "scroll" && Date.now() - t0 < 400) return; clearTimeout(S.sayT); n.classList.remove("on"); for (const k of ["pointerdown", "scroll"]) removeEventListener(k, off, true); };
+    clearTimeout(S.sayT); n.textContent = text; n.classList.add("on"); S.sayT = setTimeout(off, ms || 5200);
+    if (ms) for (const k of ["pointerdown", "scroll"]) addEventListener(k, off, true);
   }
   function press() {
     const key = S.key, m = MECH[key]; snd("stamp"); hap("tap");
@@ -140,16 +143,19 @@
   if (K.SC && K.SC.open) show(K.SC.open);
 
   /* ---------- Next steps: three wax seals, pressed into the page, choose the journey ---------- */
-  const JR = { guided: ["Guided", "roads", "A few hours a week, never played: walk me through it"], curious: ["Curious", "library", "I'll click around"], everything: ["Everything", "legacy", "Show me every number"] };
+  /* fix round A4: one line of meaning under each seal, at every size */
+  const JR = { guided: ["Guided", "roads", "One thing at a time, for you."], curious: ["Curious", "library", "The whole picture, in plain words."], everything: ["Everything", "legacy", "Every number, date and source."] };
   const jnow = () => (window.__v13d ? window.__v13d.journey() : document.documentElement.dataset.journey || "curious");
   function waxRow() {
     const panel = $("#tn-me"); if (!panel || !window.__v13d) return;
     let row = $("#tn-seals", panel);
     if (!row) {
-      row = h("div", { class: "tn-seals", id: "tn-seals", role: "group", "aria-label": "How do you want to explore?" }, h("p", { class: "tn-seals-q", text: "How do you want to explore? Press a seal into the page." }),
+      /* fix round A3: a question that reads as a choice still to make, and a quiet way to the wall that stores no journey */
+      row = h("div", { class: "tn-seals", id: "tn-seals", role: "group", "aria-label": "How much the board shows you" }, h("p", { class: "tn-seals-q", text: "Pick how much the board shows you." }),
         h("div", { class: "wx-row" }, ...Object.entries(JR).map(([j, [name, ico, line]]) => h("button", { class: "wx", type: "button", "data-journey": j, "aria-pressed": "false", onclick: () => stamp(j) },
           h("span", { class: "wx-wax" }, h("img", { class: "wx-blob", src: `img/wax/${WAXC[j]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "wx-ring" }), h("img", { class: "wx-ico", src: `img/icons/${ico}.png`, alt: "", width: 192, height: 192, decoding: "async" }), h("span", { class: "wx-lit" })),
-          h("b", { class: "wx-name", text: name }), h("span", { class: "wx-line", text: line })))));
+          h("b", { class: "wx-name", text: name }), h("span", { class: "wx-line", text: line })))),
+        h("button", { class: "lib-tool tn-wall", id: "tn-wall", type: "button", onclick: () => { if (window.__next && window.__next.wall) window.__next.wall(); K.requestClose(); } }, "Just look at the wall for now"));
       panel.append(row);
     }
     /* integrator pass 3: no seal is pressed until one is chosen (a first visit showed Curious lit and "(chosen)") */
@@ -161,10 +167,10 @@
     else snd("latch");
     waxRow();
     if (!reduceMQ.matches && b.animate) { const w = $(".wx-wax", b); w.animate([{ transform: "scale(1)" }, { transform: "scale(0.82)", offset: 0.28 }, { transform: "scale(1.05)", offset: 0.62 }, { transform: "scale(1)" }], { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)" }); $(".wx-ring", b).animate([{ opacity: 0.9, transform: "scale(0.8)" }, { opacity: 0, transform: "scale(1.5)" }], { duration: 620, easing: "ease-out" }); }
-    const s = $("#seal"); if (s && window.BoardSeals) say(`Exploring: ${JR[j][0]}. Change it any time at the top or here.`);
+    const s = $("#seal"); if (s && window.BoardSeals) say(`Exploring: ${JR[j][0]}. Change it any time at the top or here.`, 3000);
   }
   K.on("tonight", waxRow);
-  MECH.tonight = { hint: "to choose how you explore", press: ({ say: sy }) => { sy(`Exploring: ${JR[jnow()][0]}. Press a wax seal below to change it.`); const b = $("#tn-seals .wx[aria-pressed=\"true\"]") || $("#tn-seals .wx"); if (b) b.focus({ preventScroll: false }); } };
+  MECH.tonight = { hint: "to choose how you explore", press: ({ say: sy }) => { sy(`Exploring: ${JR[jnow()][0]}. Press a wax seal below to change it.`, 3000); const b = $("#tn-seals .wx[aria-pressed=\"true\"]") || $("#tn-seals .wx"); if (b) b.focus({ preventScroll: false }); } };
   waxRow();
 
   /* ---------- The five: class coins that turn the card over, and a formation to arrange ---------- */
@@ -172,11 +178,16 @@
   const F = { lane: {}, built: false };
   const members = () => (K.D && K.D.party ? K.D.party.members : []);
   const cardOf = (m) => $(`#cards .card[data-slug="${K.MEM.slug(m.name)}"]`);
+  /* fix round A7: seated by the role played now (role_detail "damage until 40, healer from level 40" plays damage at launch); lane C's
+     role_now and role_from win once the data carries them */
+  const roleNow = (m) => m.role_now || (/^damage until \d+/i.test(m.role_detail || "") ? "damage" : m.role);
+  const roleFrom = (m) => m.role_from || ((/healer from level (\d+)/i.exec(m.role_detail || "") || [])[1] ? "healer" : null);
   function fiveSum() {
     const ms = members(), n = Object.fromEntries(LANES.map(([r]) => [r, 0])), diff = [];
-    ms.forEach((m) => { const r = F.lane[m.name]; n[r]++; if (r !== m.role) diff.push(`${m.name} on ${r}, the cards say ${m.role}`); });
+    ms.forEach((m) => { const r = F.lane[m.name], now = roleNow(m); n[r]++; if (r !== now) diff.push(`${m.name} on ${r}, the cards say ${now}`); });
     const out = $("#five-sum"); if (!out) return;
-    out.textContent = `Your arrangement: ${LANES.map(([r, l]) => `${n[r]} ${r}`).join(", ")}. ` + (diff.length ? `Different from the cards: ${diff.join("; ")}.` : "Same as the cards.");
+    const later = ms.filter(roleFrom).map((m) => { const r = roleFrom(m), lv = (/from level (\d+)/i.exec(m.role_detail || "") || [])[1]; return `A ${["first", "second", "third", "fourth"][n[r]] || "further"} ${r}${lv ? ` from level ${lv}` : " later"}. `; }).join("");
+    out.textContent = `Your arrangement: ${LANES.map(([r]) => (r === "damage" ? `${n[r]} damage` : plural(n[r], r))).join(", ")}. ${later}` + (diff.length ? `Different from the cards: ${diff.join("; ")}.` : "Same as the cards.");
     $("#five-reset").hidden = !diff.length;
   }
   function placeCoin(btn, role, silent) {
@@ -189,13 +200,13 @@
     if ($("#five-form")) return;
     const form = h("div", { class: "five-form", id: "five-form", title: "Press a coin to turn its card over. Drag it between lanes to try another formation." },
       h("div", { class: "fl-row", role: "group", "aria-label": "Party formation" }, ...LANES.map(([r, l]) => h("div", { class: "fl", "data-role": r }, h("span", { class: "fl-name", text: l }), h("div", { class: "fl-tray" })))),
-      h("p", { class: "fv-sum", id: "five-sum", role: "status" }), h("button", { class: "lib-tool", id: "five-reset", type: "button", hidden: true, text: "Back to the cards' roles", onclick: () => { ms.forEach((m) => placeCoin($(`#five-form .fc[data-name="${m.name}"]`), m.role, true)); snd("latch"); } }),
+      h("p", { class: "fv-sum", id: "five-sum", role: "status" }), h("button", { class: "lib-tool", id: "five-reset", type: "button", hidden: true, text: "Back to the cards' roles", onclick: () => { ms.forEach((m) => placeCoin($(`#five-form .fc[data-name="${m.name}"]`), roleNow(m), true)); snd("latch"); } }),
       h("p", { class: "sr-only", text: "Press a coin to turn its card over. Drag a coin between lanes to try a different formation; arrow keys move the focused coin." }));
     lede.parentNode.insertBefore(form, lede.nextSibling);
     ms.forEach((m) => {
       const b = h("button", { class: "fc", type: "button", "data-name": m.name, "data-k": m.class_key, "aria-pressed": "false", style: `--cc: ${K.classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.class}. Turn the card over. Arrow keys move between lanes.` },
         h("span", { class: "fc-in" }, h("span", { class: "fc-face fc-f" }, h("img", { src: `img/crests/${m.class_key}.png`, alt: "", width: 320, height: 320, decoding: "async" }), h("span", { class: "fc-nm", text: m.name })), h("span", { class: "fc-face fc-b" }, h("b", { text: m.class }), h("i", { text: "spells" }))));
-      coinInput(b, m); F.lane[m.name] = m.role; $(`.fl[data-role="${m.role}"] .fl-tray`, form).append(b);
+      coinInput(b, m); F.lane[m.name] = roleNow(m); $(`.fl[data-role="${roleNow(m)}"] .fl-tray`, form).append(b);
     });
     fiveSum();
     const cards = $("#cards"); if (cards && window.MutationObserver) new MutationObserver(syncFive).observe(cards, { subtree: true, attributes: true, attributeFilter: ["class"], childList: true });
@@ -241,15 +252,15 @@
   const rowOf = (race, x) => $(`#races .race[data-race="${K.MEM.slug(race)}"] .rrow[data-key="${K.MEM.slug(x.name)}"]`);
   function faceRacial(l) {
     const [race, x] = l[R.i], el = $("#seal"), back = $(".seal-back-in", el), n = l.filter(passF), at = n.findIndex(([r, y]) => r === race && y === x);
-    $(".seal-b", el).textContent = x.name; $(".seal-i", el).textContent = `${race} · ${x.kind || "racial"}`;
+    $(".seal-b", el).textContent = x.name; $(".seal-i", el).textContent = `${race} · ${x.kind || "race skill"}`;
     let chip = $(".seal-chip", back), num = $(".seal-n", back);
     if (!chip) { chip = h("span", { class: "seal-chip" }); num = h("small", { class: "seal-n" }); back.append(chip, num); }
     chip.textContent = chDate(x) ? `changed ${chDate(x)}` : ""; chip.hidden = !chDate(x); num.textContent = at >= 0 ? `${at + 1} of ${n.length}` : "";
     el.dataset.kind = x.kind || "";
-    S.btn.setAttribute("aria-label", `Race skills seal, showing ${x.name}, ${race}, ${x.kind || "racial"}${chDate(x) ? `, changed ${chDate(x)}` : ""}. Press for the next racial; arrow keys go either way.`);
+    S.btn.setAttribute("aria-label", `Race skills seal, showing ${x.name}, ${race}, ${x.kind || "race skill"}${chDate(x) ? `, changed ${chDate(x)}` : ""}. Press for the next race skill; arrow keys go either way.`);
     document.querySelectorAll("#races .rr-now").forEach((r) => r.classList.remove("rr-now"));
     const row = rowOf(race, x); if (row) { const d = row.closest("details"); if (d) d.open = true; row.classList.add("rr-now"); if (row.scrollIntoView && !reduceMQ.matches) row.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
-    return `${race}, ${x.name} (${x.kind || "racial"}${chDate(x) ? `, changed ${chDate(x)}` : ""}): ${clause(x)}.`;
+    return `${race}, ${x.name} (${x.kind || "race skill"}${chDate(x) ? `, changed ${chDate(x)}` : ""}): ${clause(x)}.`;
   }
   function raceTo(i) {
     const l = racialList(); if (!l[i]) return; R.i = i; let msg = "";
@@ -266,13 +277,13 @@
     const old = $("#race-chips"); if (old && old.parentNode) old.parentNode.removeChild(old);
     const dates = [...new Set(l.map(([, x]) => chDate(x)).filter(Boolean))].sort(), cnt = (f) => { const o = R.f; R.f = f; const n = l.filter(passF).length; R.f = o; return n; };
     const chips = [["all", "All"], ["active", "Active"], ["passive", "Passive"], ...dates.map((d) => [`ch:${d}`, `Changed ${d}`])];
-    const bar = h("div", { class: "rc-bar", id: "race-chips", role: "group", "aria-label": "Narrow the racials the coin spins through" }, ...chips.map(([f, label]) => h("button", { class: "lib-tool rc-chip", type: "button", "data-f": f, "aria-pressed": String(R.f === f),
-      onclick: () => { R.f = R.f === f ? "all" : f; syncChips(); applyRaceFilter(); snd("chip"); hap("tick"); const n = racialList().filter(passF).length; say(`${n} racial${n === 1 ? "" : "s"} in the spin${R.f === "all" ? "" : `: ${label}`}.`); } }, `${label} `, h("b", { text: String(cnt(f)) }))));
+    const bar = h("div", { class: "rc-bar", id: "race-chips", role: "group", "aria-label": "Narrow the race skills the coin spins through" }, ...chips.map(([f, label]) => h("button", { class: "lib-tool rc-chip", type: "button", "data-f": f, "aria-pressed": String(R.f === f),
+      onclick: () => { R.f = R.f === f ? "all" : f; syncChips(); applyRaceFilter(); snd("chip"); hap("tick"); const n = racialList().filter(passF).length; say(`${n} race skill${n === 1 ? "" : "s"} in the spin${R.f === "all" ? "" : `: ${label}`}.`); } }, `${label} `, h("span", { class: "chip-n", text: String(cnt(f)) })))); /* fix round A9: the count in its own ruled box ("Oct 262") */
     host.parentNode.insertBefore(bar, host);
   }
   const syncChips = () => document.querySelectorAll("#race-chips .rc-chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.f === R.f)));
   function applyRaceFilter() { racialList().forEach(([race, x]) => { const row = rowOf(race, x); if (row) row.classList.toggle("rr-off", !passF([race, x])); }); }
-  MECH.racials = { hint: "to spin the coin to the next racial", spin: false, press: () => raceStep(1) };
+  MECH.racials = { hint: "to spin the coin to the next race skill", spin: false, press: () => raceStep(1) };
   document.addEventListener("click", (e) => { const t = e.target, row = t && t.closest && t.closest("#races .rrow"); if (!row || !S.el || S.el.hidden || S.key !== "racials") return; const k = racialList().findIndex(([race, x]) => K.MEM.slug(x.name) === row.dataset.key && row.closest(`.race[data-race="${K.MEM.slug(race)}"]`)); if (k >= 0 && k !== R.i) raceTo(k); });
   KS.racials = raceStep;
   K.on("scene", (k) => { if (k === "racials") { R.i = -1; raceChips(); applyRaceFilter(); } });
@@ -353,7 +364,16 @@
     items.forEach((x) => { SH.prev[x[0]] = x[2]; });
     const el = h("div", { class: "su-shelf", id: "su-shelf", role: "group", "aria-label": `Launch night so far: ${items.map((x) => `${x[1]} ${x[2]}`).join(", ")}` }, h("div", { class: "sh-row" }, seals), h("span", { class: "sh-plank", "aria-hidden": "true" }), who);
     body.parentNode.insertBefore(el, body);
+    ready(el, "shelf");
     setTimeout(() => el.querySelectorAll(".bump").forEach((x) => x.classList.remove("bump")), 900);
+  }
+  /* fix round A13: a bar (the shelf plank, the mugs' counter) shows once its art has decoded (at most 900 ms), never as a bare oak
+     strip under empty places; once decoded, later redraws show it at once */
+  const READY = {};
+  function ready(el, k) {
+    const on = () => { READY[k] = 1; el.classList.add("ready"); };
+    if (READY[k]) { on(); return; }
+    Promise.race([Promise.all([...el.querySelectorAll("img")].map((i) => (i.decode ? i.decode().catch(() => {}) : 0))), new Promise((r) => setTimeout(r, 900))]).then(on);
   }
   const shelfSeals = () => [...document.querySelectorAll("#su-shelf .sh-seal")];
   K.on("signups", shelf);
@@ -437,5 +457,5 @@
     btn.addEventListener("click", () => { snd("stamp"); hap("tap"); if (typeof o.press === "function") { try { o.press({ el, btn, turn, face, say }); } catch (e) { console.error("coin", key, e); } } else turn(); });
     return { el, btn, turn, face, say, side: () => (C.ang === 180 ? "back" : "front") };
   }
-  window.BoardSeals = Object.freeze({ MECH, press, spin, say, snd, hap, h, $, mq, reduceMQ, clamp, coin, status: () => ({ key: S.key, hidden: S.el ? S.el.hidden : true, spun: S.spun }) });
+  window.BoardSeals = Object.freeze({ MECH, press, spin, say, snd, hap, h, $, mq, reduceMQ, clamp, coin, ready, status: () => ({ key: S.key, hidden: S.el ? S.el.hidden : true, spun: S.spun }) });
 })();

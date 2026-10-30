@@ -17,7 +17,8 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
   .journey { position: relative; flex: none; overflow: visible; }
   .journey button { min-height: 44px; padding: 4px 10px; font-size: 0.95rem; }
   .journey:not(.open) button:not([aria-pressed="true"]) { display: none; }
-  .journey:not(.open) button[aria-pressed="true"]::after { content: " \25BE"; }
+  .journey:not(.open) button[aria-pressed="true"]::after, .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"]::after { content: " \25BE"; }
+  .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"] { display: inline-block; } /* fix round A3: nothing picked yet: the depth shown, unpressed */
   .journey.open { position: absolute; z-index: 40; right: 0; flex-direction: column; }
   .journey.open button + button { border-left: 0; border-top: 1px solid var(--brass-dim); }
       .sheet-top:has(> .journey) { justify-content: flex-start; gap: 3px; }
@@ -69,22 +70,17 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 .jr-skip { color: var(--ink); background: transparent; border-color: var(--ink-soft); }
 .jr-done { margin: 0; font-size: 1.05rem; }
 
-/* Guided: the path card on top of every scene */
-.jr-path { margin: 0 0 16px; padding: 14px 18px; display: grid; gap: 8px; background: var(--cream-2); color: var(--ink); border: 1px solid var(--ink-line); border-left: 5px solid var(--wax); border-radius: 6px; box-shadow: 0 4px 14px var(--shadow-soft); }
-.jr-h { margin: 0; font-family: var(--font-display); font-size: var(--step-2); color: var(--ink); }
+/* Guided (fix round A2): one line for you on every scene, label then sentence in one flow (two lines at 375 stay under 72 px); on
+   Next steps the date and cost line */
+.jr-path { margin: 0 0 16px; padding: 12px; font-size: 1rem; line-height: 1.35; background: var(--cream-2); color: var(--ink); border: 1px solid var(--ink-line); border-left: 5px solid var(--wax); border-radius: 6px; box-shadow: 0 4px 14px var(--shadow-soft); }
+.jr-k { font-family: var(--font-sc); font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+.jr-say { display: inline; margin: 0; }
+a.jr-say { color: var(--ink); text-decoration-color: var(--brass); text-underline-offset: 3px; }
 .jr-dl { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 1.05rem; }
+.jr-cost { margin-top: 6px; }
 .jr-dl-emb { width: 22px; height: 22px; object-fit: contain; vertical-align: -4px; }
 .jr-dl-emb:is(svg) { --eb: var(--brass); --ea: var(--wax); --el: var(--ink); }
-.jr-step { display: grid; gap: 6px; outline-offset: 4px; }
-.jr-n { font-family: var(--font-sc); font-size: 0.95rem; letter-spacing: 0.06em; color: var(--ink-soft); }
-.jr-say { margin: 0; font-size: var(--step-1); line-height: 1.35; max-width: var(--measure); }
-.jr-go { justify-self: start; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); min-height: 44px; }
-.jr-nav { display: flex; align-items: center; gap: 12px; }
-.jr-nav .lib-tool { min-height: 44px; min-width: 5rem; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
-.jr-nav .lib-tool[disabled] { opacity: 0.45; cursor: default; }
-.jr-dots { display: inline-flex; gap: 6px; }
-.jr-dots i { width: 9px; height: 9px; transform: rotate(45deg); background: var(--ink-wash); border: 1px solid var(--ink-soft); }
-.jr-dots i.on { background: var(--wax); border-color: var(--wax-lo); }
+@media (min-width: 700px) { #sheet-body .panel > .jr-path { width: max-content; max-width: 100%; justify-self: center; box-sizing: border-box; } }
 html[data-journey="guided"] .tn-cards { display: none; }
 
 .rrow.open > .rplain { display: none; }
@@ -235,27 +231,8 @@ button.cal-day.win { background: var(--hi-brass); }
 }
 .jr-dates { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 22px; font-size: 1.05rem; }
 .jr-dates .jr-dl { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
-@media (min-width: 700px) {
-  #sheet-body .panel > .jr-path { width: max-content; max-width: 100%; justify-self: center; grid-template-columns: minmax(0, max-content) minmax(0, max-content); gap: 6px 30px; align-items: center; padding: 10px 16px; }
-  #sheet-body .jr-path > .jr-dates { grid-area: 1 / 1 / 3 / 2; }
-  #sheet-body .jr-path > .jr-cost { grid-area: 3 / 1; }
-  #sheet-body .jr-path > .jr-h { grid-area: 1 / 2; }
-  #sheet-body .jr-path > .jr-step { grid-area: 2 / 2; }
-  #sheet-body .jr-path > .jr-nav { grid-area: 3 / 2; }
-  #sheet-body .jr-path .jr-n { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  #sheet-body .jr-path .jr-say { max-width: 34ch; }
-  #sheet-body .jr-path > .jr-dates .jr-dl { white-space: nowrap; }
-}
-@media (min-width: 1100px) {
-  #sheet-body .panel > .jr-path { grid-template-columns: minmax(0, 30ch) minmax(0, 28ch) minmax(0, max-content); }
-  #sheet-body .jr-path > .jr-dates { grid-area: 1 / 1 / 4 / 2; flex-direction: column; align-items: flex-start; gap: 6px; }
-  #sheet-body .jr-path > .jr-dates .jr-dl { white-space: normal; display: block; }
-  #sheet-body .jr-path > .jr-cost { grid-area: 1 / 2 / 4 / 3; display: block; }
-  #sheet-body .jr-path > .jr-h { grid-area: 1 / 3; }
-  #sheet-body .jr-path > .jr-step { grid-area: 2 / 3; }
-  #sheet-body .jr-path > .jr-nav { grid-area: 3 / 3; }
-  #sheet-body .jr-path .jr-say { max-width: 28ch; }
-}
+
+
 #dsu-body .trow-n { min-width: 0; gap: 5px; }
 #dsu-body .tally { column-gap: 11px; }
 #sheet-body #panel-signups .dsu { column-gap: 28px; }
@@ -268,26 +245,11 @@ button.cal-day.win { background: var(--hi-brass); }
   #sheet-body #dsu-act { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; justify-content: center; column-gap: 18px; width: max-content; max-width: 100%; justify-self: center; }
   #sheet-body #dsu-act .su-states { grid-column: 1 / -1; justify-content: center; }
 }
-@media (min-width: 1100px) {
-  #sheet-body .panel > .jr-path { column-gap: 16px; row-gap: 2px; padding: 8px 14px; grid-template-columns: minmax(0, 27ch) minmax(0, 26ch) minmax(0, max-content); }
-  #sheet-body .jr-path > .jr-dates { gap: 2px; }
-  #sheet-body .jr-path .jr-say { max-width: 26ch; }
-}
+
 @media (min-width: 1100px) {
   #sheet-body .dsu-top .picker-note { font-size: 0.86rem; }
 }
-@media (min-width: 1100px) {
-  #sheet-body .panel > .jr-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; width: auto; }
-  #sheet-body .jr-path > .jr-dates, #sheet-body .jr-path > .jr-step { display: contents; }
-  #sheet-body .jr-path .jr-dl, #sheet-body .jr-path > .jr-cost { display: inline-flex; white-space: nowrap; flex-wrap: nowrap; }
-  #sheet-body .jr-path > .jr-h { order: 0; }
-  #sheet-body .jr-path > .jr-nav { order: 1; }
-  #sheet-body .jr-path > .jr-dates > .jr-dl { order: 2; }
-  #sheet-body .jr-path > .jr-dates > .jr-launch { order: 3; }
-  #sheet-body .jr-path > .jr-cost { order: 4; }
-  #sheet-body .jr-path .jr-say { order: 5; max-width: none; }
-  #sheet-body .jr-path .jr-step > :not(.jr-n):not(.jr-say) { order: 6; }
-}#dsu-body .trow { flex: 0 1 auto; min-width: 0; }
+#dsu-body .trow { flex: 0 1 auto; min-width: 0; }
 @media (min-width: 600px) and (max-width: 1099px) {
   #sheet-body #dsu-act .su-states { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; padding: 8px 0 0; border-left: 0; border-top: 1px dashed var(--ink-line); }
   #sheet-body #dsu-act .act-how { max-width: none; text-align: left; }
@@ -312,34 +274,13 @@ button.cal-day.win { background: var(--hi-brass); }
   #sheet-body #panel-signups .dsu { row-gap: 2px; }
   #discord-signups .dsu-top { margin-bottom: 0; }
   #discord-signups.slip { row-gap: 8px; }
-}@media (max-width: 1099px) {
-  #sheet-body .panel > .jr-path { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; width: auto; padding: 8px 12px; }
-  #sheet-body .jr-path > .jr-dates, #sheet-body .jr-path > .jr-step { display: contents; }
-  #sheet-body .jr-path .jr-dl, #sheet-body .jr-path > .jr-cost { display: block; }
-  #sheet-body .jr-path .jr-n { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  #sheet-body .jr-path > .jr-h { order: 0; }
-  #sheet-body .jr-path > .jr-nav { order: 1; }
-  #sheet-body .jr-path > .jr-dates > .jr-dl { order: 2; }
-  #sheet-body .jr-path > .jr-dates > .jr-launch { order: 3; }
-  #sheet-body .jr-path > .jr-cost { order: 4; }
-  #sheet-body .jr-path .jr-say { order: 5; max-width: none; }
-  #sheet-body .jr-path .jr-step > :not(.jr-n):not(.jr-say) { order: 6; }
 }@media (min-width: 600px) and (max-width: 1099px) {
   #sheet-body #panel-signups .dsu { display: block; line-height: 1.6; }
   #dsu-body .tally { display: inline; margin-right: 18px; }
-}@media (max-width: 1099px) {
-  #sheet-body .panel > .jr-path { display: block; line-height: 1.55; }
-  #sheet-body .jr-path > .jr-h { display: inline; margin-right: 12px; vertical-align: baseline; }
-  #sheet-body .jr-path > .jr-dates, #sheet-body .jr-path > .jr-step { display: inline; }
-  #sheet-body .jr-path .jr-dl, #sheet-body .jr-path > .jr-cost, #sheet-body .jr-path .jr-say { display: inline; margin-right: 12px; }
-  #sheet-body .jr-path .jr-dl-emb { vertical-align: -4px; margin-right: 4px; }
-  #sheet-body .jr-path .jr-say { font-size: 1.1rem; }
-  #sheet-body .jr-path > .jr-nav { display: inline-flex; vertical-align: middle; margin-top: 4px; }
 }@media (min-width: 600px) and (max-width: 1099px) {
   #sheet-body #dsu-act { width: 100%; }
   #sheet-body #dsu-act .su-states { display: grid; justify-content: stretch; }
   #sheet-body #dsu-act .su-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  #sheet-body .jr-path > .jr-h { font-size: 1.5rem; }
 }#sheet-body #dsu-act .su-pend:empty { display: none; }
 @media (min-width: 600px) and (max-width: 1099px) {
   #sheet-body #dsu-act .su-states { justify-self: stretch; width: 100%; box-sizing: border-box; margin: 0; padding-left: 0; padding-right: 0; }

@@ -49,10 +49,10 @@ html.nx-on[data-journey="guided"] #tn-me .tn-pick { box-sizing: border-box; widt
 .nx-act .lib-btn[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brass); }
 .nx-say:empty { display: none; }
 .nx-say { font-weight: 600; }
-.nx-more { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 8px 18px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+.nx-more, .nx-who { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 8px 18px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
 .nx-line { padding-top: var(--g1); border-top: 1px solid var(--ink-wash); font-weight: 600; }
 .nx-trails { display: flex; flex-wrap: wrap; align-items: center; gap: var(--g1); margin-top: var(--g2); }
-.nx-trails-h { margin: 0; font-family: var(--font-sc); letter-spacing: 0.08em; color: var(--ink-soft); }
+.nx-trails-h { margin: 0; font-family: var(--font-sc); font-size: inherit; font-weight: 400; letter-spacing: 0.08em; color: var(--ink-soft); }
 .nx-trail { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); text-decoration: none; }
 .nx-queue { box-sizing: border-box; width: 100%; max-width: 720px; margin: 0 auto var(--g2); padding: var(--g2) var(--g3) var(--g2) calc(var(--g3) + 1.4em); background: var(--parchment); color: var(--ink); border-radius: 8px; box-shadow: 0 6px 18px var(--shadow); font-family: var(--font-body); }
 .nx-q { margin: 6px 0 0; line-height: 1.35; }
@@ -62,7 +62,7 @@ html.nx-on[data-journey="guided"] #tn-me .tn-pick { box-sizing: border-box; widt
   .nx { padding: var(--g2); border-radius: 6px; }
   #nx-t { font-size: var(--step-2); }
   .nx-act { flex-direction: column; }
-  .nx-act .lib-btn, .nx-act .nx-more { flex: none; width: 100%; }
+  .nx-act .lib-btn, .nx-act .lib-tool { flex: none; width: 100%; }
   .nx-why, .nx-min, .nx-line, .nx-say, .nx-source, .nx-q { font-size: 1rem; }
 }
 /* ultrawide: the type scales up with the frame, so the card widens with it (at 3440x1440 the Curious card ran past the frame) */
@@ -121,3 +121,21 @@ html.nx-on[data-journey="everything"] #tn-cards > .tn-card:first-child { display
 #tn-how:has(> .tnh-det:not([open])) { padding-top: 8px; padding-bottom: 8px; }
 /* polish (2026-10-30): a trail chip under the pointer kept the page's link hover colour (parchment on parchment: its words vanished) */
 .nx-trail:hover, .nx-trail:focus-visible { color: var(--ink); border-color: var(--brass); text-decoration: underline; }
+/* fix round A3: the first visit's seals start 24 px under the scene head on an opaque sheet (the wall had ghosted through), with a
+   quiet way to the wall that stores no journey. A5: on phones the Guided card starts at the top too (the bottom bar is in the sheet's
+   flow, so it covers nothing; next.js brings the trails into view when Show me more opens) */
+html.nx-tn.nx-first #sheet-body, html.phone-shell.nx-tn #sheet-body { align-content: start; }
+html.nx-tn.nx-first #sheet-body { padding-top: 24px; }
+html.nx-tn.nx-first #panel-tonight { padding-top: 0; }
+html.nx-tn.nx-first #scene .sheet { background: var(--parchment); }
+html.nx-tn.nx-first #scene-veil { background: var(--oak-0); }
+.tn-wall { justify-self: center; color: var(--ink); background: transparent; border-color: transparent; text-decoration: underline; text-decoration-color: var(--brass); text-underline-offset: 3px; }
+/* fix round A11: from 1600 px two column lines (the card's and the queue's: #tn-cards had three tracks for two cards), prose to 72ch,
+   one label size for every section heading (1.125rem: lane C's --fs-label token, once board.css has it) */
+@media (min-width: 1600px) {
+  #panel-tonight { max-width: 1600px; margin-inline: auto; }
+  html.nx-on[data-journey="everything"] #panel-tonight > #tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--g3, 18px); }
+  html.nx-on[data-journey="everything"] #panel-tonight > #tn-actions { justify-self: stretch; width: auto; max-width: none; margin-inline: 0; }
+  #panel-tonight :is(p, li, summary) { max-width: 72ch; }
+  #panel-tonight :is(.tn-card > h3, #tnb-h, #tnh-h, .nx-k, .nx-trails-h) { font-size: 1.125rem; }
+}

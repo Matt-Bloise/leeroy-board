@@ -62,7 +62,7 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .wx:focus-visible { outline: 3px solid var(--wax); outline-offset: 3px; }
 @media (hover: hover) { .wx:not([aria-pressed="true"]):hover .wx-wax { transform: translateY(-2px); } }
 .wx:active .wx-wax { transform: scale(0.92); }
-@media (max-width: 720px) { .wx-row { gap: 6px; } .wx-wax { width: 64px; } .wx-line { display: none; } .wx { padding: 6px 2px; } .wx[aria-pressed="true"] .wx-name::after { display: none; } }
+@media (max-width: 720px) { .wx-row { gap: 6px; } .wx-wax { width: 64px; } .wx-line { font-size: 0.8125rem; } .wx { padding: 6px 2px; } .wx[aria-pressed="true"] .wx-name::after { display: none; } }
 #panel-tonight:has(.tn-seals) .jr-pick { display: none; }
 @media (prefers-reduced-motion: reduce) { .wx-wax, .wx-blob { transition: none; } }
 
@@ -81,7 +81,8 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .fc-face { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 .fc-f { background: radial-gradient(circle at 34% 28%, #6a4a24, #2a1a0c 78%); box-shadow: inset 0 0 0 3px #c79a45, inset 0 0 0 5px #5d3f14, 0 6px 10px rgba(30, 16, 6, 0.5); }
 .fc-f img { width: 78%; height: 78%; object-fit: contain; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)); pointer-events: none; -webkit-user-drag: none; }
-.fc-nm { position: absolute; bottom: 4%; left: 50%; transform: translateX(-50%); padding: 0 8px; border-radius: 999px; background: rgba(20, 12, 6, 0.86); color: #f4e3bd; font-size: 0.78rem; line-height: 1.5; letter-spacing: 0.04em; }
+.fc-nm { position: absolute; top: calc(100% + 4px); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(var(--fc) + 6px); padding: 0 4px; border-radius: 8px; background: rgba(20, 12, 6, 0.86); color: #f4e3bd; font-family: var(--font-ui); font-size: clamp(11px, 2.8vw, 13px); line-height: 1.2; letter-spacing: 0.02em; text-align: center; white-space: normal; overflow-wrap: anywhere; }
+.fl-tray { padding-bottom: 2.6em; }
 .fc-b { transform: rotateY(180deg); background: radial-gradient(circle at 34% 28%, var(--cc, #c79a45), #2a1a0c 92%); box-shadow: inset 0 0 0 3px #c79a45, inset 0 0 0 5px #5d3f14, 0 6px 10px rgba(30, 16, 6, 0.5); color: #fff4dc; text-align: center; align-content: center; }
 .fc-b b { font-family: var(--font-display); font-size: calc(var(--fc) * 0.2); line-height: 1.1; }
 .fc-b i { font-size: calc(var(--fc) * 0.14); opacity: 0.85; }
@@ -89,7 +90,9 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .fc:focus-visible { outline: 3px solid var(--wax); outline-offset: 4px; }
 .fv-sum { margin: 0; font-size: var(--step-0); max-width: 34ch; }
 
-@media (max-width: 899px) { .five-form { margin-bottom: 8px; } .fl-row { gap: 6px; } .fl { padding: 6px 6px 8px; min-width: 0; } .fc, .fl { --fc: 52px; } .fc-nm { font-size: 0.62rem; padding: 0 4px; }  }
+/* phones: the name stays a pill on its coin (under it the lanes ran 64 px taller), wrapped inside its seat; the lanes pay for the
+   arrangement line's second sentence */
+@media (max-width: 899px) { .five-form { margin-bottom: 4px; } .fl-row { gap: 6px; } .fl { gap: 2px; padding: 4px 6px 6px; min-width: 0; } .fc, .fl { --fc: 52px; } .fc-nm { top: auto; bottom: 2%; } .fl-tray { padding-bottom: 0; } .fv-sum { line-height: 1.35; } }
 @media (prefers-reduced-motion: reduce) { .fc-in { transition: none; } .fc { transition: none; } }
 /* Race skills: active racials glow amber, passive ones teal */
 .seal[data-kind="active"] { filter: drop-shadow(var(--sx) var(--sy) calc(var(--seal) * 0.1) rgba(0, 0, 0, 0.62)) drop-shadow(0 0 calc(var(--seal) * 0.22) rgba(255, 168, 60, 0.5)); }
@@ -137,13 +140,17 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .sh-seal.bump .sh-wax { animation: sh-stamp 560ms var(--ease-oak) both; animation-delay: calc(var(--i) * 70ms); }
 @keyframes sh-stamp { 0% { transform: scale(1); } 28% { transform: scale(0.84); } 62% { transform: scale(1.06); } 100% { transform: scale(1); } }
 @media (hover: hover) { .sh-seal:hover .sh-wax { transform: translateY(-3px); } .sh-seal[aria-pressed="true"]:hover .sh-wax { transform: scale(0.94); } }
-.sh-plank { position: absolute; left: 0; right: 0; top: calc(8px + var(--shw) * 0.94); height: 10px; z-index: 0; border-radius: 3px; background: linear-gradient(180deg, rgba(110, 70, 30, 0.55), rgba(70, 42, 16, 0.75)); }
+.sh-plank { position: absolute; left: 0; right: 0; top: calc(8px + var(--shw) * 0.94); height: 10px; z-index: 0; border-radius: 3px; background: linear-gradient(180deg, rgba(110, 70, 30, 0.55), rgba(70, 42, 16, 0.75)); opacity: 0; transition: opacity 240ms var(--ease-oak); }
+/* fix round A13: the plank and the mugs' bar show once the art has decoded (seals.js ready()), never as a bare strip */
+.su-shelf.ready .sh-plank { opacity: 1; }
+.su-row:not(.ready) { background: none; }
 .sh-who { min-height: 1.5em; margin: 4px 0 0; text-align: center; font-size: 1rem; color: var(--ink); }
-@media (prefers-reduced-motion: reduce) { .sh-wax, .sh-blob { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sh-wax, .sh-blob, .sh-plank { transition: none; } }
 
 /* Race skills: chips narrow the spin; the row the coin shows is ringed, rows outside the chip step back */
 .rc-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
-.rc-chip b { margin-left: 2px; }
+.rc-chip { display: inline-flex; align-items: center; column-gap: 4px; padding-inline: 9px; }
+.rc-chip .chip-n { padding-left: 4px; border-left: 1px solid currentColor; font-weight: 700; }
 .rc-chip[aria-pressed="true"] { background: var(--wax); color: var(--parchment); border-color: var(--wax-lo); }
 .rrow { transition: opacity var(--t-move) var(--ease-oak), box-shadow var(--t-move) var(--ease-oak); border-radius: 6px; }
 .rrow.rr-now { box-shadow: 0 0 0 2px var(--brass), 0 0 14px rgba(209, 168, 90, 0.5); }
@@ -172,10 +179,3 @@ span.seal { position: relative; left: auto; top: auto; z-index: auto; perspectiv
 .lb-face { transition: transform 640ms var(--ease-card), opacity 0s linear 320ms; }
 .lb-coin:not(.turned) .lb-back, .lb-coin.turned .lb-front { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .fc-f, .fc-b, .lb-face { transition-delay: 0s; } }
-
-/* The five, wide screens (2026-10-30): the seat name sits under its coin, not over the bottom of the art (a two-line display name such as
-   "Handsome Squidward" covered a fifth of the coin at 1920). The lane tray takes the two lines of room; phones keep the pill on the coin. */
-@media (min-width: 900px) {
-  .fc-nm { bottom: auto; top: calc(100% + 4px); width: max-content; max-width: calc(var(--fc) + 16px); padding: 0 8px; border-radius: 10px; text-align: center; line-height: 1.25; }
-  .fl-tray { padding-bottom: 2.35em; }
-}

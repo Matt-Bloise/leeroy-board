@@ -7,6 +7,9 @@
 /* a painting, once landed, is a small vignette beside the sentence, so the card stays short and the target stays in the clear */
 .walk-card:has(.walk-pic) { grid-template-columns: 112px minmax(0, 1fr); }
 .walk-pic { grid-row: span 2; display: block; width: 112px; height: auto; aspect-ratio: 1024 / 640; object-fit: cover; border-radius: 4px; }
+/* fix round A6: a card narrowed to the room beside a wide target drops its painting */
+.walk-card.walk-slim { grid-template-columns: minmax(0, 1fr); }
+.walk-slim .walk-pic { display: none; }
 .walk-s { margin: 0; font-size: var(--step-1); line-height: 1.35; }
 .walk-n { margin: 6px 0 0; font-size: var(--fs-small); color: var(--ink-soft); }
 .walk-act { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

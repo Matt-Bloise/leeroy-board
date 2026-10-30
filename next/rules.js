@@ -118,11 +118,14 @@ export function candidates(input, nowMs) {
   const N = norm(input, nowMs), out = [];
   const voice = N.journey === "guided" ? "coach" : "library";
   const snoozed = (id) => { const until = num(N.snoozed[id]); return until !== null && nowMs < until && until <= nowMs + DAY; };
-  const add = (id, base, s) => out.push({
+  /* fix round A1 (2026-10-30): title is the Guided coach's imperative; fact is the same step in library voice for Curious and
+     Everything (js/next.js shows title only on Guided), a date or a count, never an instruction. fact is not enumerable, so the step's
+     shape, its JSON and the bot's frozen contract (bot/test-next-step.mjs: these ten keys) are unchanged */
+  const add = (id, base, s) => out.push(Object.defineProperty({
     id, kind: s.kind, title: fit(s.title, 60), why: s.why == null ? null : fit(s.why, 110), minutes: s.minutes === undefined ? (MINUTES[base] ?? null) : s.minutes, due: num(s.due),
     action: { label: s.label == null ? null : fitLabel(s.label), href: s.href || null, write: s.write || null, alt: s.alt || null },
     source: s.source, voice, weight: id !== "pick-name" && snoozed(id) ? WEIGHTS.snoozed : s.weight ?? WEIGHTS[base],
-  });
+  }, "fact", { value: fit(s.fact || s.title, 110) }));
   const P = N.party, T = N.tonight, me = whoAmI(N), entries = entriesOf(N);
   const lw = launchWindow(N.timeline, nowMs), nw = namesWindow(N.timeline, nowMs);
   const launchE = eventOf(N.timeline, "launch"), launchEpoch = launchE ? num(launchE.epoch) : null;
@@ -130,24 +133,24 @@ export function candidates(input, nowMs) {
   const mine = me ? entries.find((e) => isPerson(e, me.names, me.slugs, N.clean)) || null : null;
   const member = me && me.member;
 
-  if (!me) add("pick-name", "pick-name", { kind: "do", title: "Tell the board who you are", why: "Each of the five has their own next step; pick your name below, or Just looking.", label: "Pick your name", href: "#tn-me", source: "board" });
+  if (!me) add("pick-name", "pick-name", { kind: "do", title: "Tell the board who you are", fact: "No name is picked on this device yet", why: "Each of the five has their own next step, shown once a name is picked here or Just looking.", label: "Pick your name", href: "#tn-me", source: "board" });
 
   if (lw.live) {
     const row = me ? N.launch.find((r) => isPerson(r, me.names, me.slugs, N.clean)) || N.partyRows.find((r) => isPerson(r, me.names, me.slugs, N.clean) && obj(r.fields) && r.fields.launch_state) : null;
     const state = row ? (LAUNCH_STATES.includes(row.state) ? row.state : row.fields && LAUNCH_STATES.includes(row.fields.launch_state) ? row.fields.launch_state : null) : null;
-    add("launch-state", "launch-state", { kind: "party", title: "Launch night: say where you are", why: `${state ? `Now: ${LAUNCH_SAY[state]}. ` : ""}The five see who is in the queue, in the game or done.`, due: lw.epoch, label: "Where I am", write: { client: "setLaunch", value: LAUNCH_STATES.slice() }, source: "board" });
+    add("launch-state", "launch-state", { kind: "party", title: "Launch night: say where you are", fact: "Launch night: each of the five marks where they are", why: `${state ? `Now: ${LAUNCH_SAY[state]}. ` : ""}The five see who is in the queue, in the game or done.`, due: lw.epoch, label: "Where I am", write: { client: "setLaunch", value: LAUNCH_STATES.slice() }, source: "board" });
   }
 
   if (me) {
     const pack = mine && (mine.pack === "yes" || mine.pack === "no") ? mine.pack : null;
     const until = nw.until ? `, until the end of ${nw.until}, ${nw.zone || "Pacific"} time` : "";
     if (nw.open && !afterLaunchDay && pack === "yes" && !N.ticks.includes("names"))
-      add("make-character", "make-character", { kind: "do", title: "Make your character before names close", why: `Pack holders can make characters now${until}.`, due: nw.untilEpoch, label: "I made mine", alt: "Not now", source: "blizzard" });
+      add("make-character", "make-character", { kind: "do", title: "Make your character before names close", fact: "You hold a pack; no character is marked made on this device", why: `Pack holders can make characters now${until}.`, due: nw.untilEpoch, label: "I made mine", alt: "Not now", source: "blizzard" });
     if (nw.open && !afterLaunchDay && pack === null)
-      add("say-pack", "say-pack", { kind: "do", title: "Say whether you hold a pack", why: "It decides whether you can make your character early.", due: nw.untilEpoch, label: "Pack: yes or no", href: "#signups", write: { client: "setPack", value: ["yes", "no"] }, source: "discord" });
+      add("say-pack", "say-pack", { kind: "do", title: "Say whether you hold a pack", fact: "Pack: no answer from you on the Sign-ups card yet", why: "It decides whether you can make your character early.", due: nw.untilEpoch, label: "Pack: yes or no", href: "#signups", write: { client: "setPack", value: ["yes", "no"] }, source: "discord" });
     /* rsvp and meet are about launch night: they end with it, like the names and pack steps */
     if (!afterLaunchDay && !(mine && RSVPS.includes(mine.rsvp)))
-      add("rsvp", "rsvp", { kind: "party", title: "Say if you are in for launch night", why: "The meeting point and the first dungeon run count on who is coming.", due: launchEpoch, label: "I'm in", href: "#signups", write: { client: "setRsvp", value: "in" }, alt: "Not now", source: "discord" });
+      add("rsvp", "rsvp", { kind: "party", title: "Say if you are in for launch night", fact: `Launch-night answers: ${entries.filter((e) => RSVPS.includes(e.rsvp)).length} of ${arr(P.members).length} so far`, why: "The meeting point and the first dungeon run count on who is coming.", due: launchEpoch, label: "I'm in", href: "#signups", write: { client: "setRsvp", value: "in" }, alt: "Not now", source: "discord" });
     const meetItem = arr(P.open).find((o) => obj(o) && /meeting point/i.test(str(o.title)));
     if (!afterLaunchDay && meetItem && unchosen(meetItem) && !(mine && str(mine.meet))) {
       const places = arr(N.signups && obj(N.signups.options) && N.signups.options.meet).filter((x) => typeof x === "string" && x);
@@ -156,7 +159,7 @@ export function candidates(input, nowMs) {
       const orList = (l) => (l.length < 2 ? l.join("") : `${l.slice(0, -1).join(", ")} or ${l[l.length - 1]}`);
       const named = places.length ? `On the table: ${orList(places)}` : "", from = zones ? `; the party walks there from ${numberWord(zones)} start zone${zones === 1 ? "" : "s"}` : "";
       const why = named && `${named}${from}.`.length < 110 ? `${named}${from}.` : named ? `${named}.` : "Nothing is chosen on the board yet.";
-      add("meet", "meet", { kind: "party", title: "Pick where to meet on launch night", why, due: launchEpoch, label: "Pick a place", href: "#signups", write: { client: "setMeet", value: places.length ? places : null }, source: "discord" });
+      add("meet", "meet", { kind: "party", title: "Pick where to meet on launch night", fact: "Meeting point: not picked yet", why, due: launchEpoch, label: "Pick a place", href: "#signups", write: { client: "setMeet", value: places.length ? places : null }, source: "discord" });
     }
 
     /* decide-<slug>: the data's own words only (tonight.json's step, decide.json's open decisions, an open spec) */
@@ -172,7 +175,7 @@ export function candidates(input, nowMs) {
     const addDecide = (key, title, d) => {
       if (!key || seen.has(key)) return; seen.add(key);
       const why = gap && new RegExp(`\\b${gap}\\b`).test(title) ? `The party has no ${gap} yet.` : "The party has a gap or your sheet is empty here.";
-      add(`decide-${key}`, "decide", { kind: "decide", title, why, due: dueOf(d), label: "Choose", href: "#decide", alt: "Not now", source: "board" });
+      add(`decide-${key}`, "decide", { kind: "decide", title, fact: `Still open for you: ${title.replace(/^choose\s+/i, "").replace(/\.$/, "")}`, why, due: dueOf(d), label: "Choose", href: "#decide", alt: "Not now", source: "board" });
     };
     const optionIn = (d, text) => arr(d.options).some((o) => obj(o) && str(o.name) && text.includes(o.name));
     if (person && str(person.step)) {
@@ -195,12 +198,13 @@ export function candidates(input, nowMs) {
     const closes = num(p.closes_epoch), title = str(p.title);
     if (!title || closes === null || closes * 1000 <= nowMs) continue;
     const when = pollWhen(p), url = /^https:\/\//.test(str(p.url)) ? p.url : linkOf(T, "poll");
-    add(`poll-${slug(title)}`, "poll", { kind: "party", title: `Vote: ${title}`, why: when ? `Closes ${when}.` : "Open in Discord until it closes.", due: closes, label: "Vote", href: /^https:\/\//.test(str(url)) ? url : null, alt: "Not now", source: "discord" });
+    add(`poll-${slug(title)}`, "poll", { kind: "party", title: `Vote: ${title}`, fact: `Poll open: ${title}`, why: when ? `Closes ${when}.` : "Open in Discord until it closes.", due: closes, label: "Vote", href: /^https:\/\//.test(str(url)) ? url : null, alt: "Not now", source: "discord" });
   }
 
   if (me && me.class_key && libraryHas(N.library, `classes/${me.class_key}`)) {
     const cls = (member && str(member.class)) || cap(me.class_key), role = member && (member.role === "tank" || member.role === "healer") ? ` ${member.role}` : "";
-    add("learn-role", "learn-role", { kind: "learn", title: `What ${/^[AEIOU]/.test(cls) ? "an" : "a"} ${cls}${role} does in a group`, why: "Three minutes of reading before the first dungeon.", label: "Read it", href: `#library.classes.${slug(me.class_key)}`, source: "library", weight: N.journey === "guided" ? WEIGHTS["learn-role-guided"] : WEIGHTS["learn-role"] });
+    const what = `${/^[AEIOU]/.test(cls) ? "an" : "a"} ${cls}${role} does in a group`;
+    add("learn-role", "learn-role", { kind: "learn", title: `What ${what}`, fact: `The library has a page on what ${what}`, why: "Three minutes of reading before the first dungeon.", label: "Read it", href: `#library.classes.${slug(me.class_key)}`, source: "library", weight: N.journey === "guided" ? WEIGHTS["learn-role-guided"] : WEIGHTS["learn-role"] });
   }
 
   const nm = nextMoment(N.timeline, nowMs);

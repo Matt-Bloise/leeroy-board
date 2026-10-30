@@ -12,7 +12,7 @@ const NO_BASE = "Answers from this view go through Discord: the Sign-ups card.";
 const NOT_YET = "Not switched on yet; your answer stays on this device.";
 const SENT = "Sent. Waiting for Discord.", FAILED = "Not sent.";
 const LAUNCH = [["queue", "In the queue"], ["in", "In the game"], ["done", "Done for tonight"]]; /* sheet.js's labels */
-const SOURCE = { board: "From the board's records", blizzard: "From Blizzard", library: "From the library", discord: "From the group's Discord" };
+const SOURCE = { board: "From the board's records.", blizzard: "From Blizzard.", library: "From the library.", discord: "From the group's Discord." };
 /* Guided folds these (next.css; hidden for the fake DOM and assistive tech) */
 const FOLD = ["#tn-cards", "#tn-before", "#tn-how", "#tn-actions", "#tn-left", ".jr-path"];
 const sfx = (n) => { try { K.sfx(n); } catch (e) {} };
@@ -23,7 +23,7 @@ const btn = (cls, label, fn, a = {}) => h("button", { type: "button", class: cls
 const journey = () => (JOURNEYS.includes(root.dataset.journey) ? root.dataset.journey : "curious");
 const brain = () => window.BoardBrain || null;
 const keyed = (B) => !!(B && B.hasKey && B.hasKey());
-const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=23f30ad6a7").catch(() => null));
+const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=2f4b35b3d0").catch(() => null));
 
 const meSlug = () => { const m = MEM.member(); return m ? MEM.slug(m.name) : null; };
 const ticksOf = (slug) => (slug && typeof K.beforeTicks === "function" ? K.beforeTicks(slug) : []); /* the integrator exports beforeTicks */
@@ -57,12 +57,13 @@ function setHidden(el, on) {
 function markSet() {
   const set = JOURNEYS.includes(MEM.get("journey"));
   root.classList.toggle("jr-set", set);
-  root.classList.toggle("nx-first", !set && !!$("#tn-seals"));
+  /* fix round A3: "Just look at the wall for now" (NX.wall) clears the chooser for this visit and stores no journey */
+  root.classList.toggle("nx-first", !set && !NX.wall && !!$("#tn-seals"));
   root.classList.toggle("nx-solo", set && journey() === "guided" && !NX.open && NX.solo !== false);
 }
 function fold(panel, j, on) {
   const g = on && j === "guided", seals = $("#tn-seals"), meBox = $("#tn-me");
-  if (seals) setHidden(seals, root.classList.contains("jr-set"));
+  if (seals) setHidden(seals, root.classList.contains("jr-set") || !!NX.wall);
   for (const q of FOLD) for (const el of panel.querySelectorAll(q)) setHidden(el, g && !(NX.open && q === "#tn-cards"));
   for (const el of panel.querySelectorAll("#tn-me .ps-mine")) setHidden(el, g && !NX.open);
   for (const el of panel.querySelectorAll("#tn-me .tn-why, #tn-me .tn-pick .tn-who")) setHidden(el, on); /* the card says it (every journey since integrator pass 3) */
@@ -77,8 +78,11 @@ function tonightLine(t, short) {
   const when = Number.isFinite(t.epoch) ? K.fmtWhen(t.epoch, { rel: true }) : t.open && t.untilEpoch ? `open until ${K.fmtWhen(t.untilEpoch, { rel: true })}` : "";
   let s = `${String(t.label).split(":")[0].trim()}${when ? `: ${when}` : ""}.`;
   if (!short) {
-    const c = t.coming || {}, parts = [[c.in, "in"], [c.maybe, "tentative"], [c.late, "running late"]].filter(([n]) => n > 0).map(([n, w]) => `${n} ${w}`);
-    s += parts.length ? ` Answers so far: ${parts.join(", ")}.` : c.out > 0 ? " Nobody has said they are in yet." : " Nobody has answered yet.";
+    /* fix round A10: the count out of the five, then the rest only when there is any */
+    const c = t.coming || {}, n = c.in || 0, rest = [[c.maybe, "tentative"], [c.late, "running late"], [c.out, "out"]].filter(([k]) => k > 0), none = ((D.party && D.party.members.length) || 5) - n - rest.reduce((x, [k]) => x + k, 0);
+    s += n ? ` ${n} of the five ${n === 1 ? "has" : "have"} said they're in for launch night.` : " Nobody has said they're in for launch night yet.";
+    if (rest.length) s += ` ${K.andList(rest.map(([k, w]) => `${k} ${w}`))}.`;
+    if (none > 0) s += ` ${none} ${none === 1 ? "has" : "have"} not answered yet.`;
   }
   return h("p", { class: "nx-line", id: "nx-tonight", text: s });
 }
@@ -95,6 +99,8 @@ const launchNow = () => { try { return window.__v15.status().state; } catch (e) 
 /* a write with no personal key cannot land from this view: the primary opens the Sign-ups card in Discord instead (a link, so the
    Activity's openExternalLink handler takes it), and the status line says how to answer here next time */
 const signupHref = () => { const L = (D.tonight && D.tonight.links) || {}; return /^https:\/\/discord\.com\//.test(String(L.signup || "")) ? L.signup : null; };
+/* fix round A5: Guided folded hides the chip's Change person (nx-solo), so the card carries its own, before Show me more */
+const more = (box, g) => { if (g && !NX.open && MEM.me()) box.append(btn("lib-tool nx-who", "Change person", () => { const c = $("#tn-change"); if (c) c.click(); }, { id: "nx-who" })); if (g) box.append(btn("lib-tool nx-more", NX.open ? "Show less" : "Show me more", () => expand(), { id: "nx-more", "aria-expanded": String(NX.open) })); };
 function actions(step, g) {
   const a = step.action || {}, box = h("div", { class: "nx-act", role: "group", "aria-label": "Your next step" });
   if (step.id === "launch-state") {
@@ -102,15 +108,16 @@ function actions(step, g) {
        more; the other answers come with the rest */
     const cur = launchNow(), fold = g && !NX.open, nxt = { queue: "in", in: "done", done: "in" }[cur] || "queue";
     for (const [k, label] of LAUNCH) if (!fold || k === nxt) box.append(btn(`lib-btn${(fold ? k === nxt : cur === k) ? " strong" : ""}`, label, () => launchSet(k), { "data-state": k, "aria-pressed": String(cur === k) }));
-    if (g) box.append(btn("lib-tool nx-more", NX.open ? "Show less" : "Show me more", () => expand(), { id: "nx-more", "aria-expanded": String(NX.open) }));
+    more(box, g);
     return box;
   }
-  /* Guided with nobody picked: the name picker under the card is the answer, so the card adds no button of its own */
-  const pickHere = g && step.id === "pick-name";
-  if (!pickHere && a.label && (a.href || a.write || step.id === "pick-name")) box.append(h("button", { type: "button", class: "lib-btn strong", id: "nx-go", onclick: () => run(step, a) }, a.label));
+  /* nobody picked: the name picker under the card is the answer, so the card adds no button of its own (every journey since fix
+     round A14: Curious and Everything had shown "Pick your name" over the picker's own row) */
+  const pickHere = step.id === "pick-name";
+  if (!pickHere && a.label && (a.href || a.write)) box.append(h("button", { type: "button", class: "lib-btn strong", id: "nx-go", onclick: () => run(step, a) }, a.label));
   /* Guided folded: two buttons at most, the step and Show me more; Not now comes with the rest */
   if (a.alt && (!g || NX.open)) box.append(h("button", { type: "button", class: "lib-btn", id: "nx-alt", onclick: () => snooze(step.id) }, a.alt));
-  if (g && !pickHere) box.append(btn("lib-tool nx-more", NX.open ? "Show less" : "Show me more", () => expand(), { id: "nx-more", "aria-expanded": String(NX.open) }));
+  if (!pickHere) more(box, g);
   return box.childNodes.length ? box : null;
 }
 /* "Worth a look next": the class page, the next date, the roads for a place */
@@ -120,18 +127,19 @@ function trails(step, out) {
   if (learn && learn.action) add(learn.action.href, `${String(learn.title).replace(/\.$/, "")}${learn.minutes ? `: ${learn.minutes} minutes` : ""}`);
   if (date && date.action && step.id !== "next-date") add(date.action.href, String(date.title).replace(/,\s*[A-Z][a-z]+ time\.?$/, "")); /* polish: the chip drops the zone (the queue row and the card keep it) */
   if (step.id === "meet" || step.place) add("#roads", "The roads to the meeting point");
-  return rows.length ? h("div", { class: "nx-trails", id: "nx-trails", role: "group", "aria-labelledby": "nx-trails-h" }, h("p", { class: "nx-trails-h", id: "nx-trails-h", text: "Worth a look next" }),
+  return rows.length ? h("div", { class: "nx-trails", id: "nx-trails", role: "group", "aria-labelledby": "nx-trails-h" }, h("h4", { class: "nx-trails-h", id: "nx-trails-h", text: "Worth a look next" }),
     ...rows.map(([href, label]) => h("a", { class: "lib-tool nx-trail", href }, label))) : null;
 }
+/* Everything's queue (fix round A1): each step as a fact with its source and minutes, no weights */
 const queueEl = (out) => h("ol", { class: "nx-queue", id: "nx-queue", "aria-label": "Every next step, in order" }, ...((out && out.queue) || []).map((s) => h("li", { class: "nx-q", "data-step": s.id },
-  s.action && /^#[a-z]/.test(String(s.action.href || "")) ? h("a", { class: "nx-q-go", href: s.action.href }, h("b", { text: s.title })) : h("b", { text: s.title }), s.why ? ` ${s.why}` : null, h("small", { text: ` ${SOURCE[s.source] || SOURCE.board}. ${minutes(s.minutes)} Weight ${s.weight}.` }))));
+  s.action && /^#[a-z]/.test(String(s.action.href || "")) ? h("a", { class: "nx-q-go", href: s.action.href }, h("b", { text: s.fact })) : h("b", { text: s.fact }), s.why ? ` ${s.why}` : null, h("small", { text: ` ${SOURCE[s.source] || SOURCE.board} ${minutes(s.minutes)}` }))));
 function draw(out) {
   const panel = $("#panel-tonight"), meBox = $("#tn-me"); if (!panel || !meBox) return;
   const j = journey(), step = out && out.step, g = j === "guided";
   markSet();
   /* no journey stored yet: the seals are the one decision on screen, and the card comes once one is picked (integrator, 2026-10-30:
      the card under the seals ran a first visit's Next steps to 2.9 phone screens, over the 2.5 budget) */
-  if (!step || !root.classList.contains("jr-set")) { NX.solo = !!step; markSet(); root.classList.remove("nx-on"); rm(NX.card); rm(NX.queue); fold(panel, j, false); NX.buttons = 0; return; }
+  if (!step || !(root.classList.contains("jr-set") || NX.wall)) { NX.solo = !!step; markSet(); root.classList.remove("nx-on"); rm(NX.card); rm(NX.queue); fold(panel, j, false); NX.buttons = 0; return; }
   NX.solo = true; markSet();
   root.classList.add("nx-on");
   if (NX.sayFor !== step.id) { NX.say = ""; NX.sayFor = step.id; }
@@ -144,15 +152,15 @@ function draw(out) {
   card.setAttribute("data-voice", g && step.voice === "coach" ? "coach" : "library");
   /* the minutes and, at depth, the source share one line (the Curious card fits a 1366x768 laptop) */
   const meta = [minutes(step.minutes), deep ? SOURCE[step.source] || SOURCE.board : ""].filter(Boolean).join(" "), all = j === "everything";
-  /* Everything (integrator pass 2): the facts behind the step on the card itself (its rank and weight in the queue, its date), and
-     the whole queue straight under the card in place of Curious's three trails, so the first screen holds more than Curious's */
-  const n = ((out && out.queue) || []).length, facts = all ? [`First of ${n || 1} by weight ${step.weight}.`, Number.isFinite(step.due) ? `Due ${K.fmtWhen(step.due, { rel: true })}.` : ""].filter(Boolean).join(" ") : "";
-  card.replaceChildren(...[h("p", { class: "nx-k" }, seal(step), "Next"), h("h3", { id: "nx-t", text: step.title }),
+  /* Everything (integrator pass 2): the step's date on the card itself, and the whole queue straight under the card in place of
+     Curious's three trails. Fix round A1: no rank or weight; Curious and Everything read the step's fact, only Guided its title */
+  const facts = all && Number.isFinite(step.due) && step.kind !== "date" ? `Open until ${K.fmtWhen(step.due, { rel: true })}.` : "";
+  card.replaceChildren(...[h("div", { class: "nx-k" }, seal(step), "Next"), h("h3", { id: "nx-t", text: g ? step.title : step.fact || step.title }),
     step.why ? h("p", { class: "nx-why", text: step.why }) : null, meta ? h("p", { class: deep ? "nx-min nx-source" : "nx-min", text: meta }) : null, facts ? h("p", { class: "nx-min nx-facts", id: "nx-facts", text: facts }) : null, actions(step, g),
     h("p", { class: "nx-say", id: "nx-say", role: "status", "aria-live": "polite", text: NX.say }),
     /* integrator pass 3: with no board key the step's own button stays on the board; once tapped, the Sign-ups card in Discord is
        offered as a link under the status line (the Activity's openExternalLink handler takes it) */
-    NX.extFor === step.id && NX.say === NO_KEY && signupHref() ? h("p", { class: "nx-ext" }, h("a", { class: "tn-link", id: "nx-ext", href: signupHref(), target: "_blank", rel: "noopener" }, "Open the Sign-ups card in Discord")) : null,
+    NX.extFor === step.id && NX.say === NO_KEY && signupHref() ? h("div", { class: "nx-ext" }, h("a", { class: "tn-link", id: "nx-ext", href: signupHref(), target: "_blank", rel: "noopener" }, "Open the Sign-ups card in Discord")) : null,
     deep && !all ? trails(step, out) : null, tonightLine(out.tonight, false)].filter(Boolean));
   /* Everything: the card, then the queue under it (contract 3.3), so the card itself fits the first screen */
   if (j === "everything") { const q = queueEl(out); rm(NX.queue); panel.insertBefore(q, card.nextSibling || null); NX.queue = q; }
@@ -185,7 +193,6 @@ function go(tok) {
 }
 function run(step, a) {
   NX.extFor = a.write && a.write.client && a.write.client !== "tick" && !keyed(brain()) ? step.id : null;
-  if (step.id === "pick-name") { sfx("chip"); const b = $("#tn-me .tn-name"); try { if (b) b.focus(); else $("#tn-change").click(); } catch (e) {} return; }
   if (a.write && a.write.client) { write(a.write); return; }
   const href = String(a.href || ""); if (!href) return;
   sfx("page");
@@ -215,7 +222,7 @@ function launchSet(k) {
   Promise.resolve(sent).then((r) => { if (r && (r.ok || r.state === "waiting")) hap("confirm"); else if (r && r.local) say("Saved on this device."); render(); }, render);
 }
 function snooze(id) { const o = snoozeMap(); o[id] = Date.now() + DAY; MEM.set("snooze", JSON.stringify(o)); NX.say = ""; sfx("page"); return render(); }
-function expand(on) { NX.open = on === undefined ? !NX.open : !!on; sfx("page"); markSet(); draw(NX.out); return NX.open; }
+function expand(on) { NX.open = on === undefined ? !NX.open : !!on; sfx("page"); markSet(); draw(NX.out); try { if (NX.open) $("#nx-trails").scrollIntoView({ block: "nearest" }); } catch (e) {} return NX.open; } /* fix round A5: a 375x667 phone opened the trails under the fold */
 
 /* after every Tonight render, on the brain's rows, on a journey switch */
 markSet();
@@ -238,6 +245,6 @@ if (typeof MutationObserver === "function") {
   let was = journey();
   new MutationObserver(() => { const j = journey(); if (j === was) return; was = j; if (j !== "guided") NX.open = false; render(); }).observe(root, { attributes: true, attributeFilter: ["data-journey"] });
 }
-window.__next = Object.freeze({ render, expand, input: buildInput,
+window.__next = Object.freeze({ render, expand, input: buildInput, wall: () => { NX.wall = true; markSet(); },
   status: () => ({ journey: journey(), stepId: NX.out && NX.out.step ? NX.out.step.id : null, words: panelWords(), buttons: NX.buttons, open: NX.open, engine: NX.engine, snoozed: Object.keys(snoozeMap()) }) });
 })();
