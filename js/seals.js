@@ -140,7 +140,7 @@
   if (K.SC && K.SC.open) show(K.SC.open);
 
   /* ---------- Next steps: three wax seals, pressed into the page, choose the journey ---------- */
-  const JR = { guided: ["Guided", "roads", "Two hours a week: walk me through it"], curious: ["Curious", "library", "I'll click around"], everything: ["Everything", "legacy", "Show me every number"] };
+  const JR = { guided: ["Guided", "roads", "A few hours a week, never played: walk me through it"], curious: ["Curious", "library", "I'll click around"], everything: ["Everything", "legacy", "Show me every number"] };
   const jnow = () => (window.__v13d ? window.__v13d.journey() : document.documentElement.dataset.journey || "curious");
   function waxRow() {
     const panel = $("#tn-me"); if (!panel || !window.__v13d) return;
@@ -152,7 +152,8 @@
           h("b", { class: "wx-name", text: name }), h("span", { class: "wx-line", text: line })))));
       panel.append(row);
     }
-    const j = jnow(); row.querySelectorAll(".wx").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.journey === j)));
+    /* integrator pass 3: no seal is pressed until one is chosen (a first visit showed Curious lit and "(chosen)") */
+    const j = jnow(), picked = !!(window.__v13d.status && window.__v13d.status().picked); row.querySelectorAll(".wx").forEach((b) => b.setAttribute("aria-pressed", String(picked && b.dataset.journey === j)));
   }
   function stamp(j) {
     const b = $(`#tn-seals .wx[data-journey="${j}"]`); if (!b) return;

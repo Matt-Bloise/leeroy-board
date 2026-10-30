@@ -126,7 +126,9 @@ const form = h("form", { class: "ch-form", id: "ch-form", novalidate: true, "ari
   h("div", { class: "ch-row" }, input, sendBtn),
   h("div", { class: "ch-row ch-row2" }, h("label", { class: "ch-share", id: "ch-share", for: "ch-share-box" }, shareBox, h("span", { text: " also share in Discord" })), sayEl),
   note);
-panel.append(form);
+/* integrator pass 3: the composer lives in the ask box under "Ask Leeroy from here", in the page's flow: the sticky dock took a third
+   of a phone and 205 px of a laptop, covered the answer, the stats and the letter, and the heading above it was an inert bar */
+box.append(form);
 panel.classList.add("ch-chat");
 
 /* ---------- moods ---------- */
@@ -272,6 +274,9 @@ function compose(st) {
   const live0 = liveOk(st), busy = busyOk(st);
   note.hidden = live0; if (!live0) note.textContent = noteText();
   input.disabled = !live0 || busy; sendBtn.disabled = !live0 || busy; shareBox.disabled = !live0 || busy;
+  const ph = !live0 ? "Asking here needs your own board link (below)" : busy ? "Leeroy is on your last question" : "Ask Leeroy about Forever";
+  if (input.getAttribute("placeholder") !== ph) input.setAttribute("placeholder", ph);
+  const shareRow = form.querySelector(".ch-row2"); if (shareRow) shareRow.hidden = !live0 && !sayEl.textContent; /* no tick to offer without a key */
   sendBtn.textContent = st.state === "sending" ? "Sending" : "Send";
   form.setAttribute("aria-busy", String(busy));
   const n = typeof st.left === "number" ? st.left : null;
@@ -312,11 +317,19 @@ function engineOut() {
   } catch (e) {}
   return null;
 }
+/* integrator pass 3: each step as a question a friend would ask (the old template nested the imperative title: "What do I do about
+   say if you are in for launch night?") */
+const STEP_Q = { rsvp: () => "How do I say I'm in for launch night?", meet: () => "Where could the party meet on launch night?", "say-pack": () => "What is a pack, and do I need one?",
+  "make-character": () => "How do I make my character before names close?", "launch-state": () => "What happens on launch night?",
+  decide: (t) => `What helps me ${lowerFirst(t).replace(/\byour\b/g, "my")}?`, poll: (t) => `What is the vote on ${t.replace(/^Vote:\s*/i, "")} about?`,
+  "next-date": (t) => `What does ${t.split(":")[0]} mean for me?` };
 function stepQ(out) {
-  let title = out && out.step && !/^(rest|pick-name)$/.test(out.step.id) ? out.step.title : "";
-  if (!title && !out) { let id = null; try { id = window.__next && window.__next.status ? window.__next.status().stepId : null; } catch (e) { id = null; } const t = $("#nx-t"); if (t && !/^(rest|pick-name)$/.test(String(id))) title = t.textContent; }
+  let id = out && out.step ? out.step.id : null, title = out && out.step ? out.step.title : "";
+  if (!out) { try { id = window.__next && window.__next.status ? window.__next.status().stepId : null; } catch (e) { id = null; } const t = $("#nx-t"); title = t ? t.textContent : ""; }
   title = plain(title).replace(/[.!?:]+$/, "");
-  return title ? `What do I do about ${lowerFirst(title)}?` : "";
+  if (!title || !id || /^(rest|pick-name|learn-role)$/.test(id)) return "";
+  const f = STEP_Q[id] || STEP_Q[String(id).split("-")[0]];
+  return f ? f(title) : "";
 }
 function trailQ(out) {
   const learn = out && out.queue ? out.queue.find((s) => s.id === "learn-role") : null, a = $("#nx-trails a");
@@ -403,7 +416,7 @@ function letter(user) {
     h("div", { class: "ch-letter-row" }, LT.post, no),
     h("p", { class: "ch-letter-say", id: "ch-letter-say", role: "status", "aria-live": "polite" }));
   drawCard();
-  sheet.hidden = false; CH.letter = true; snd("unfurl");
+  sheet.hidden = false; CH.letter = true; panel.classList.add("ch-lettering"); snd("unfurl"); /* the composer waits while the letter is open */
   if (user) { try { LT.post.focus(); } catch (e) {} }
 }
 /* a fourth tick is refused; the card redraws from the ticked turns, oldest first */
@@ -426,7 +439,7 @@ function drawCard() {
       t.sources.length ? h("p", { class: "ch-card-src" }, h("b", { text: "Sources: " }), t.sources.join("; ")) : null)) : [h("p", { class: "ch-card-none", text: "Nothing is ticked yet." })]));
   if (LT.post && LT.post.textContent !== "Posted") LT.post.setAttribute("aria-disabled", String(!turns.length));
 }
-function closeLetter() { sheet.hidden = true; CH.letter = false; }
+function closeLetter() { sheet.hidden = true; CH.letter = false; panel.classList.remove("ch-lettering"); }
 function lsay(t) { const n = $("#ch-letter-say"); if (n) n.textContent = t; else live.textContent = t; }
 async function send() {
   const ids = CH.turns.filter((t) => t.answer && !t.dispatched && CH.picked.includes(t.id)).map((t) => t.id);

@@ -59,6 +59,12 @@
      "control": "#opts-pack radios pack-yes and pack-no (the On this page form: the Activity only, hidden on the open web)",
      "file": "index.html",
      "proof": "id=\"opts-pack\""
+    },
+    {
+     "scene": "signups",
+     "control": "#mine-pack buttons data-pack: yes, no (needs your own board link; the phone opens them in the Your launch night sheet)",
+     "file": "js/mine.js",
+     "proof": "\"data-pack\": k"
     }
    ],
    "discord": [
@@ -78,9 +84,11 @@
      "option": "pack"
     }
    ],
-   "brain": null,
-   "gapNote": {
-    "brain": "The board's pack answer goes to the Activity's own store; js/brain.js safe() lets only rsvp, journey, launch and ask leave, though the Worker's /intent takes pack."
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "signup",
+    "field": "pack",
+    "client": "setPack"
    }
   },
   {
@@ -99,6 +107,12 @@
      "control": "#meet-place write-in field, Activity only",
      "file": "index.html",
      "proof": "id=\"meet-place\""
+    },
+    {
+     "scene": "signups",
+     "control": "#mine-meet buttons data-meet: vos, xroads, other, with a 40-character place field (needs your own board link)",
+     "file": "js/mine.js",
+     "proof": "\"data-meet\": k"
     }
    ],
    "discord": [
@@ -132,16 +146,25 @@
      "option": "place"
     }
    ],
-   "brain": null,
-   "gapNote": {
-    "brain": "Same as pack: the board's meeting point does not reach the brain; the Worker's /intent takes meet."
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "signup",
+    "field": "meet",
+    "client": "setMeet"
    }
   },
   {
    "id": "signup.when",
    "label": "Say when you get on for launch night",
    "group": "Sign-ups",
-   "board": null,
+   "board": [
+    {
+     "scene": "signups",
+     "control": "#mine-when buttons data-when: 6pm, 8pm, later (needs your own board link)",
+     "file": "js/mine.js",
+     "proof": "\"data-when\": k"
+    }
+   ],
    "discord": [
     {
      "kind": "button",
@@ -164,10 +187,11 @@
      "option": "when"
     }
    ],
-   "brain": null,
-   "gapNote": {
-    "board": "No control on the board asks when you get on; the Sign-ups scene only shows the answers from Discord.",
-    "brain": "Nothing on the board sends when; the Worker's /intent takes it."
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "signup",
+    "field": "when",
+    "client": "setWhen"
    }
   },
   {
@@ -259,12 +283,12 @@
   },
   {
    "id": "walk.first",
-   "label": "Take the first-open walk (four cards) or skip it",
+   "label": "Take the first-open walk: four cards that show where things are",
    "group": "Next steps",
    "board": [
     {
      "scene": "tonight",
-     "control": "the first-open walk #walk",
+     "control": "the first-open walk #walk (Next, Skip, Done)",
      "file": "scenes/walk.js",
      "proof": "id: \"walk\""
     }
@@ -272,8 +296,8 @@
    "discord": null,
    "brain": null,
    "byDesign": {
-    "discord": "The walk points at the board itself; Discord has its own help.",
-    "brain": "Writes nothing; the walk is remembered on this device."
+    "discord": "It shows where things are on the board; Discord has its own help.",
+    "brain": "Seen or not is kept on this device (board-walked)."
    }
   },
   {
@@ -288,15 +312,18 @@
      "proof": "\"data-state\": k"
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "launch",
+     "option": "state"
+    }
+   ],
    "brain": {
     "route": "POST /api/intent",
     "kind": "launch",
     "field": "state",
     "client": "setLaunch"
-   },
-   "gapNote": {
-    "discord": "No slash command or card button sets the launch-night state; the bot only posts lines about it."
    }
   },
   {
@@ -311,13 +338,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "race"
-   },
-   "gapNote": {
-    "discord": "The Party card has no buttons and there is no sheet command; the bot's own writes are source discord, not a person's tap."
+    "field": "race",
+    "client": "setSheet"
    }
   },
   {
@@ -332,13 +363,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "class"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button."
+    "field": "class",
+    "client": "setSheet"
    }
   },
   {
@@ -353,13 +388,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "spec_path"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button."
+    "field": "spec_path",
+    "client": "setSheet"
    }
   },
   {
@@ -374,13 +413,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "spec_at_40"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button."
+    "field": "spec_at_40",
+    "client": "setSheet"
    }
   },
   {
@@ -395,13 +438,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "professions"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button."
+    "field": "professions",
+    "client": "setSheet"
    }
   },
   {
@@ -416,13 +463,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "level"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button."
+    "field": "level",
+    "client": "setSheet"
    }
   },
   {
@@ -437,13 +488,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "plan_zone"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button (a sign-up's meeting point also writes plan_zone, server side)."
+    "field": "plan_zone",
+    "client": "setSheet"
    }
   },
   {
@@ -458,13 +513,17 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "line"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
-    "field": "goals"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button."
+    "field": "goals",
+    "client": "setSheet"
    }
   },
   {
@@ -479,14 +538,18 @@
      "proof": "id: \"ps-sheet\""
     }
    ],
-   "discord": null,
+   "discord": [
+    {
+     "kind": "slash",
+     "command": "sheet",
+     "option": "show"
+    }
+   ],
    "brain": {
     "route": "POST /api/sheet",
     "field": "race",
-    "note": "visible true or false rides on any field's write"
-   },
-   "gapNote": {
-    "discord": "No sheet command or card button."
+    "note": "visible true or false rides on any field's write",
+    "client": "setSheet"
    }
   },
   {
@@ -496,15 +559,15 @@
    "board": [
     {
      "scene": "librarian",
-     "control": "#ask-form with #ask-text, #ask-share and Send (needs your own board link)",
-     "file": "js/ask.js",
-     "proof": "id: \"ask-form\""
+     "control": "#ch-form composer with #ch-text, #ch-share and Send (needs your own board link)",
+     "file": "scenes/chamber.js",
+     "proof": "id: \"ch-form\""
     },
     {
      "scene": "librarian",
-     "control": "#ch-form composer with #ch-text and Send",
-     "file": "scenes/chamber.js",
-     "proof": "id: \"ch-form\""
+     "control": "#ask-form with #ask-text, #ask-share and Send (needs your own board link)",
+     "file": "js/ask.js",
+     "proof": "id: \"ask-form\""
     }
    ],
    "discord": [
@@ -612,19 +675,6 @@
    }
   },
   {
-   "id": "library.refresh",
-   "label": "Ask the pipeline to check Blizzard now and refresh the Library",
-   "group": "Open",
-   "board": null,
-   "discord": null,
-   "brain": null,
-   "gapNote": {
-    "board": "Lands in launch week (node L3): the refresh button in the Library head.",
-    "discord": "Lands in launch week (node L3); no command.",
-    "brain": "Lands in launch week (node L3): POST /api/refresh, once the Worker has the route."
-   }
-  },
-  {
    "id": "open.tonight",
    "label": "Open your Tonight card",
    "group": "Open",
@@ -726,19 +776,24 @@
    "id": "facts.fix",
    "label": "Tell Leeroy a fact looks wrong",
    "group": "Leeroy",
-   "board": null,
+   "board": [
+    {
+     "scene": "library",
+     "control": "#mine-fix Something here looks wrong? (at the foot of a library page)",
+     "file": "js/mine.js",
+     "proof": "id: \"mine-fix\""
+    }
+   ],
    "discord": [
     {
      "kind": "message-command",
      "name": "Fix this fact"
     }
    ],
-   "brain": null,
-   "gapNote": {
-    "board": "The board has no way to report a wrong fact."
-   },
-   "byDesign": {
-    "brain": "The bot files the report in its own inbox; the brain is not involved."
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "fix",
+    "client": "reportFact"
    }
   },
   {
@@ -866,21 +921,21 @@
   },
   {
    "id": "device.mode",
-   "label": "Switch between Play mode (text only, nothing moves) and Lounge on this device",
+   "label": "Switch Play mode (text only, nothing moves) or Lounge (the room lit) on this device",
    "group": "This device",
    "board": [
     {
      "scene": "device",
-     "control": "#mode-btn Play mode",
+     "control": "the lantern #mode-btn on the wall, #mode-btn-scene in the scene head, the More sheet's Play mode row, P",
      "file": "js/mode.js",
-     "proof": "id: \"mode-btn\""
+     "proof": "make(\"mode-btn\""
     }
    ],
    "discord": null,
    "brain": null,
    "byDesign": {
-    "discord": "A setting of the page on this device.",
-    "brain": "Stays on this device."
+    "discord": "A setting of the page on this device; a browser cannot tell the game is running.",
+    "brain": "Stays on this device (board-mode)."
    }
   },
   {

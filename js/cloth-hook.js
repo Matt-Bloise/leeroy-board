@@ -15,7 +15,7 @@ let ctl = null, canvas = null, loading = false, gen = 0, ro = null, px = null;
 const stub = { status: () => ({ on: false, gl: null, textures: 0, running: false, frame: { last: 0, p95: 0 }, kicks: 0, banners: [] }), kick() {}, destroy() { stop(); } };
 window.__cloth = { status: () => (ctl || stub).status(), kick: (k, p, d) => (ctl || stub).kick(k, p, d), destroy: () => (ctl ? ctl.destroy() : stop()) };
 
-const allowed = () => !reduceMQ.matches && !phoneMQ.matches && !forcedMQ.matches && document.hidden !== true;
+const allowed = () => !reduceMQ.matches && !phoneMQ.matches && !forcedMQ.matches && document.hidden !== true && !root.classList.contains("play"); /* companion N4: Play mode, the still banners */
 const tabList = () => Array.from(rail.querySelectorAll(".tab")).map((el, i) => { const key = el.getAttribute("data-tab") || String(i); return { key, el, colour: CLOTH_COLOURS[key] || SPARE[i % SPARE.length] }; });
 const idle = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 2500 }) : setTimeout(f, 300));
 const loadImg = (name) => new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error(name)); im.src = `img/banners/${name}.webp`; });
@@ -57,6 +57,7 @@ function watch() {
 }
 const change = () => { if (allowed()) idle(start); else stop(); };
 for (const q of [reduceMQ, phoneMQ, forcedMQ]) { if (q.addEventListener) q.addEventListener("change", change); }
+addEventListener("board-mode", change); /* js/mode.js: Play on or off */
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !ctl) change(); });
 idle(start);
 })();

@@ -110,7 +110,7 @@ function startRoomLadder() {
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
   /* the tier module's first run blocked the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance: it starts after the entrance.
      2026-10-30: the room now draws in a Web Worker where the browser has OffscreenCanvas (room/tier.js), so that cost is off this thread; the page path is the fallback */
-  const bootRoom = () => import("../room/tier.js?v=c660b5c191").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  const bootRoom = () => import("../room/tier.js?v=c458b2b929").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
@@ -199,7 +199,7 @@ function launchLine() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open for each of us, by Blizzard's dates" };
+const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" }; /* integrator pass 3: short enough for one line at 1280 (it read "Still open for each of us, by Bli...") */
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -316,7 +316,7 @@ function setDigits(b, str) {
     const [now, was] = d.children;
     was.textContent = old[i]; now.textContent = str[i];
     clockTick();
-    if (reduceMQ.matches || typeof now.animate !== "function") return;
+    if (reduceMQ.matches || roomHas("play") || typeof now.animate !== "function") return; /* companion N4: Play mode rolls no digit */
     /* V13c (craft 30): the old half falls first (0 to 120 ms, accelerating, darkening to 70% edge-on), then the new half
        settles (120 to 240 ms) with a small overshoot */
     const half = MOTION.digit / 2;
@@ -335,7 +335,9 @@ function tick() {
   const digits = $("#clock-digits");
   if (!next) { setClockLabel("Every date on the board has passed", ""); digits.replaceChildren(); $("#clock-when").textContent = "Open the dates for the whole rail."; return; }
   const left = Math.max(0, Math.floor(next.epoch - now));
-  const parts = next.format === "D" ? [["days", localDay(next.epoch * 1000) - localDay(now * 1000)]] : [["days", Math.floor(left / 86400)], ["hours", Math.floor((left % 86400) / 3600)], ["minutes", Math.floor((left % 3600) / 60)], ["seconds", left % 60]];
+  /* integrator pass 3: Play drops the seconds (the wall idled at 0.35 to 0.5 s of main thread per 10 s repainting one glowing digit) */
+  const play = roomHas("play"), parts = next.format === "D" ? [["days", localDay(next.epoch * 1000) - localDay(now * 1000)]] : [["days", Math.floor(left / 86400)], ["hours", Math.floor((left % 86400) / 3600)], ["minutes", Math.floor((left % 3600) / 60)], ...(play ? [] : [["seconds", left % 60]])];
+  const sig = `${next.key}|${parts.map((x) => x.join(":")).join(",")}`; if (play && sig === CT.sig) return; CT.sig = sig;
   setClockLabel("Until", next.label);
   if (digits.childElementCount !== parts.length) digits.replaceChildren(...parts.map(([u]) => h("span", { class: "clock-unit" }, h("b", { "data-u": u }), h("span", { text: u }))));
   for (const [u, v] of parts) setDigits(digits.querySelector(`[data-u="${u}"]`), String(v).padStart(u === "days" ? 1 : 2, "0"));
@@ -663,6 +665,7 @@ function mapVisibility() {
   if (!mapVis) {
     mapVis = true;
     document.addEventListener("visibilitychange", mapClock);
+    addEventListener("board-mode", mapClock); addEventListener("board-atlas", mapClock);
     window.matchMedia("(max-width: 699px)").addEventListener("change", () => { if (D.party) renderMap(); });
     sceneHooks.push(() => mapClock());
     if (typeof IntersectionObserver === "function") new IntersectionObserver((es) => { for (const en of es) MC.onScreen = en.isIntersecting; mapClock(); }).observe($("#map"));
@@ -671,7 +674,8 @@ function mapVisibility() {
 }
 /* V13a: */
 const MAP_FPS = 30, MC = { timer: 0, raf: 0, last: 0, t: 0, onScreen: true };
-const mapLive = () => SC.open === "roads" && !document.hidden && !reduceMQ.matches && MC.onScreen;
+/* integrator pass 3: the sketch stands still in Play and under the Atlas (it ran 30 frames a second behind the open Atlas) */
+const mapLive = () => SC.open === "roads" && !document.hidden && !reduceMQ.matches && MC.onScreen && !roomHas("play") && !document.querySelector("#map.atlas-on");
 function mapClock() {
   const svg = $("#map svg");
   if (!svg || typeof svg.pauseAnimations !== "function") return;
@@ -850,6 +854,7 @@ function renderMap() {
   if (SC.open === "roads") requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); /* drawn again while open (a resize): measured again */
   const panel = h("div", { class: "road-panel", "aria-hidden": "true" });
   box.append(svg, panel);
+  mapClock(); /* integrator pass 3: the new drawing is paused here too (mapVisibility above ran before it was in the page, so its marching roads ran 60 frames a second behind a closed scene and in Play) */
   const legend = $("#roads-legend"); legend.replaceChildren();
   let sticky = null;
   const btns = [];
@@ -1927,7 +1932,7 @@ function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
     /* the ten digits open the ten scenes before What to decide (V16: D) and Next steps (T) */
-    const rows = [...SCENES.filter((k) => k !== "tonight" && k !== "decide").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["D", "open What to decide"], ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["?", "show or hide this list"]];
+    const rows = [...SCENES.filter((k) => k !== "tonight" && k !== "decide").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["D", "open What to decide"], ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["P", "Play mode: text only, nothing moves"], ["?", "show or hide this list"]];
     $("#keys-list").replaceChildren(...rows.flatMap(([k, what]) => [h("dt", {}, h("kbd", { text: k })), h("dd", { text: what })]));
   }
   box.hidden = !on;
@@ -2209,6 +2214,8 @@ function lightCore(cv, o, say) {
   return api;
 }
 function startLight() {
+  /* companion N4 (integrator): Play mode makes no WebGL context; the plate stays its painted still until Lounge */
+  if (roomHas("play")) { const later = () => { if (roomHas("play")) return; removeEventListener("board-mode", later); startLight(); }; addEventListener("board-mode", later); return; }
   const cv = $("#light"), plate = cv && cv.parentNode;
   if (!cv || typeof cv.getContext !== "function") return;
   const S = { core: null, worker: null, iw: 1, ih: 1, W: 0, H: 0, raf: 0, onScreen: true, scene: SC.open !== null /* V13a: a scene open before the light starts (Tonight at a first visit) already covers it */, lx: 0, ly: 0, tx: null, ty: null, px: 0, py: 0, last: 0 };
@@ -2242,7 +2249,7 @@ function startLight() {
   };
   /* V13b: */
   const frame = (t) => { S.raf = 0; if (LS.state !== "lit") return; if (t - S.last >= 1000 / 30 - 3) { S.last = t; draw(t); } if (live()) S.raf = requestAnimationFrame(frame); };
-  const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene && !roomHas("room-on");
+  const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene && !roomHas("room-on") && !roomHas("play");
   addEventListener("board-room", () => (live() ? run() : stop()));
   const run = () => { if (!S.raf && live()) S.raf = requestAnimationFrame(frame); };
   function stop() { if (S.raf) cancelAnimationFrame(S.raf); S.raf = 0; }
@@ -2357,7 +2364,7 @@ function startSheen() {
   LB.x = innerWidth * LIGHT_REST[0]; LB.y = innerHeight * LIGHT_REST[1];
   const measure = () => { for (const it of SHEEN.items) { const r = it.t.getBoundingClientRect(); it.x = r.left + pageX(); it.y = r.top + pageY(); it.w = r.width; it.h = r.height; } };
   let mq = 0; const remeasure = () => { if (!mq) mq = requestAnimationFrame(() => { mq = 0; measure(); paint(performance.now(), true); }); };
-  const live = () => !reduceMQ.matches && !document.hidden && !SHEEN.scene && SHEEN.onScreen && SHEEN.items.length;
+  const live = () => !reduceMQ.matches && !document.hidden && !SHEEN.scene && SHEEN.onScreen && SHEEN.items.length && !roomHas("play");
   const paint = (t, force) => {
     const calm = reduceMQ.matches, s = t / 1000, n = calm ? 0 : flickAt(s);
     const roomLit = roomHas("room-on") && t - LB.roomAt < 400;
@@ -2467,7 +2474,7 @@ function startWisps() {
     WS.frames++; WS.near = near;
     if (live()) raf = requestAnimationFrame(frame);
   };
-  const live = () => !reduceMQ.matches && !document.hidden && !covered && !roomHas("room-wisps") && !roomHas("room-off");
+  const live = () => !reduceMQ.matches && !document.hidden && !covered && !roomHas("room-wisps") && !roomHas("room-off") && !roomHas("play"); /* companion N4: Play stops them before the ladder starts */
   addEventListener("board-room", () => { if (live()) run(); else { stop(); ctx.clearRect(0, 0, W, H); } });
   const run = () => { WS.running = live(); if (!raf && WS.running) raf = requestAnimationFrame(frame); };
   const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; WS.running = false; };
@@ -2810,7 +2817,7 @@ function libRenderShelf(main) {
     h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
     h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
       h("b", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")} · ${nf.format(c.facts)} facts` })))),
-    h("details", { class: "allshelf" }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
+    h("details", { class: "allshelf", open: innerWidth >= 1800 && innerHeight >= 1200 ? "" : null /* integrator pass 3: a wide, tall frame shows every shelf (the front page left 40 percent of it empty) */ }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
     h("details", { class: "allshelf", ...(wideLib() ? { open: "" } : {}) }, h("summary", { text: "The front page: what changed, what nobody knows, what Blizzard said" }), libFront(wideLib() ? 2 : 8)));
   main.replaceChildren(...kids.filter(Boolean));
 }
@@ -3352,7 +3359,7 @@ function launchToken(raw) {
   return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) || /^buffs\.[a-z_-]{1,40}$/.test(t) || LAND_RE.test(t) ? t : null;
 }
 /* Memory (V6-SPEC 3.1): browser only, never sent. Depth, the picked person, last-seen stamps, where you left off, expert. */
-const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak", "board-journey", "board-key", "board-glowed"];
+const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak", "board-journey", "board-key", "board-glowed", "board-snooze", "board-mode", "board-mode-sound", "board-chat", "board-walked"]; /* companion N3: Not now on the next step; N4: Play mode and the sound it held; N6: the chat log on this device; N7: the first-open walk was seen */
 const MEM = {
   get: (k) => { try { return localStorage.getItem(`board-${k}`); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(`board-${k}`); else localStorage.setItem(`board-${k}`, v); } catch (e) {} },
@@ -3463,15 +3470,17 @@ function renderBefore() {
   const items = me ? beforeItems(T, P, member, mine) : [], ticks = new Set(beforeTicks(slug));
   const ext = (u) => u && /^https?:/.test(u);
   const count = h("p", { class: "tnb-count", "aria-live": "polite" });
-  const upd = () => { const n = items.filter((i) => ticks.has(i.id)).length; count.textContent = items.length ? `${n} of ${items.length} ticked on this device${member ? ` for ${member.name}` : ""}.` : ""; };
+  const sum = h("span", { class: "tnb-sum-t" });
+  const upd = () => { const n = items.filter((i) => ticks.has(i.id)).length; sum.textContent = `Your list: ${items.length} thing${items.length === 1 ? "" : "s"} the board knows about your side, ${n} ticked`; count.textContent = items.length ? `${n} of ${items.length} ticked on this device${member ? ` for ${member.name}` : ""}.` : ""; };
   const row = (i) => h("li", { class: "tnb-item", "data-on": ticks.has(i.id) ? "1" : "0" },
     h("label", { class: "tnb-tick" }, h("input", { type: "checkbox", checked: ticks.has(i.id), onchange: (ev) => { const li = ev.target.closest("li"); if (ev.target.checked) ticks.add(i.id); else ticks.delete(i.id); li.dataset.on = ev.target.checked ? "1" : "0"; MEM.set(`before-${slug}`, ticks.size ? JSON.stringify([...ticks]) : null); upd(); } }), h("span", { text: i.text })),
     i.href ? h("a", { class: "tn-link tnb-go", href: i.href, ...(ext(i.href) ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `Open in Discord: ${i.text}` } : { "aria-label": `Open in the library: ${i.text}` }) }, ext(i.href) ? emb("speech") : null, "Open") : null,
     i.more || i.stamp ? h("p", { class: "tnb-more", "data-j": "c e" }, i.more || "", i.stamp ? [" ", h("code", { "data-j": "e", text: `<t:${i.stamp}:F>`, title: "Discord timestamp: pasted into chat, it shows each reader their own local time" })] : null) : null);
   box.replaceChildren(h("h3", { id: "tnb-h", text: "Before launch" }),
     h("p", { class: "tnb-group", text: groupOpenLine(T, P) }),
-    me ? h("ul", { class: "tnb-list", "aria-label": member ? `Before launch, ${member.name}` : "Before launch" }, items.map(row)) : h("p", { class: "tnb-hint", text: "With a name picked above, a short list of what the board knows about your side shows here." }),
-    count);
+    /* integrator pass 3: the list folds under its own summary (open, it ran Next steps to 3.2 laptop screens once a name was picked) */
+    me ? h("details", { class: "tnb-fold" }, h("summary", { class: "tnb-sum" }, sum), h("ul", { class: "tnb-list", "aria-label": member ? `Before launch, ${member.name}` : "Before launch" }, items.map(row)), count) : h("p", { class: "tnb-hint", text: "With a name picked above, a short list of what the board knows about your side shows here." }),
+    me ? null : count);
   upd();
 }
 const HOW_Q = ["How do guilds work?", "Can I chat in game without a guild?", "How big is a dungeon group?", "How does loot rolling work?", "What does a pack do?", "Where does the group meet?"];
@@ -3544,6 +3553,7 @@ function warmRestore(s) {
 }
 function warmNext() {
   if (WARM.done || WARM.step) return;
+  if (roomHas("play")) { WARM.held = true; return; } /* integrator pass 3: Play warms nothing (it was 33 of the wall's 35 frames in 10 s); Lounge picks it up again */
   if (document.hidden) { warmLater(); return; }
   if (!WARM.queue) {
     WARM.queue = SCENES.filter((k) => k !== "library").sort((a, b) => (a === "tonight") - (b === "tonight"));
@@ -3570,6 +3580,7 @@ function warmNext() {
   let n = 0; const tick = () => { if (WARM.step !== step) return; if (n === 0 && key === "roads") { try { mapFit(); } catch (e) {} } if (n === 1 && step.layer && !FIT_SKIP.includes(key)) { try { fitScene(key); } catch (e) {} } if (n === 1) panel.classList.remove("warm-m"); if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
   step.raf = requestAnimationFrame(tick);
 }
+addEventListener("board-mode", () => { CT.sig = ""; try { if (D.timeline) tick(); } catch (e) {} if (!roomHas("play") && WARM.held) { WARM.held = false; warmLater(); } });
 function warmLater() { if (WARM.done) return; (window.requestIdleCallback || ((f) => setTimeout(f, 200)))(warmNext, { timeout: 1500 }); }
 /* "New" since the last look: the sign-ups (their own change stamp) and the library (its newest change). */
 function markNew() {
@@ -3652,7 +3663,7 @@ async function boot(mode, sdk) {
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 /* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
-Object.assign(KIT, { medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
+Object.assign(KIT, { medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 /* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image icon. */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

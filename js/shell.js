@@ -128,7 +128,10 @@ function toTop() {
 }
 function openMySheet() {
   const m = K.MEM.member();
-  if (m && window.__sheet) { window.__sheet.openSheet(K.MEM.slug(m.name), true); return; }
+  /* the sheet's code is a lazy scene (companion N1): load it first, then open; a load that fails still shows The five */
+  const open = () => { if (!window.__sheet) return false; window.__sheet.openSheet(K.MEM.slug(m.name), true); return true; };
+  if (m && open()) return;
+  if (m && window.__scenes) { window.__scenes.load("sheet").then(() => { if (!open()) K.goScene("five"); }); return; }
   K.goScene("tonight");
   say("Pick who you are on Tonight and this place opens your sheet.");
   setTimeout(() => { const f = $("#tn-me .tn-name") || $("#tn-me"); if (f && f.focus) f.focus({ preventScroll: true }); }, moveMs() / 2);
@@ -170,6 +173,7 @@ function openMore() {
       util.append(
         row("The wall", () => K.requestClose()),
         row(`Sound: ${soundOn() ? "on" : "off"}`, () => { try { window.__board.sound(!soundOn()); } catch (e) {} }),
+        row(`Play mode: ${document.documentElement.classList.contains("play") ? "on" : "off"}`, () => { const r = $("#mode-btn"); if (r) r.click(); }), /* companion N4 */
         row(roomTxt(), () => { const r = $("#more-room"); if (r) r.click(); }),
         row("Sound and feel", () => { const r = $("#sense-btn"); if (r) r.click(); }),
         row("What this phone can do", () => { location.hash = "#probe"; }),

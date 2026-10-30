@@ -282,7 +282,8 @@
       const t = el("div", { class: "sense-invite", role: "status" }), b = el("button", { type: "button", text: "Hear the tavern" }), x = el("button", { type: "button", class: "sense-x", "aria-label": "Dismiss", text: "×" });
       t.append(el("span", { text: "Sound is off." }), b, x); document.body.append(t);
       const gone = () => { t.classList.add("out"); setTimeout(() => t.remove(), 400); };
-      b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); gone(); }); x.addEventListener("click", gone); setTimeout(gone, 11000);
+      b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); gone(); }); x.addEventListener("click", gone); setTimeout(gone, 6000); /* integrator pass 3: 6 s, and any press elsewhere sends it */
+      const away = (e) => { if (!t.contains(e.target)) { removeEventListener("pointerdown", away, true); gone(); } }; addEventListener("pointerdown", away, true);
     }, 7000);
   }
 

@@ -340,7 +340,7 @@ export async function createAtlas(opts) {
     folded: () => { placeAway(); invalidate(); },
     send: (meet) => copy(`/map plan:${meet}`, `Copied /map plan:${meet}. Paste it in Discord and the card is posted there when you tap Post to channel.`),
   };
-  const cards = createCards({ host, h, places, world, links, routes, party, foldFirst: () => narrow() || view.w < 1000, /* phones, tablets and maps under 1000 px: the plan opens as a title bar docked at the foot */ journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
+  const cards = createCards({ host, h, places, world, links, routes, party, foldFirst: () => narrow() || view.w < 1000 || !!S.foldNext, /* integrator pass 3: the Atlas's first view opens the plan folded at every width (it covered the east third) */ /* phones, tablets and maps under 1000 px: the plan opens as a title bar docked at the foot */ journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
   const toastSay = (txt) => { toast.textContent = txt; clearTimeout(S.toastT); S.toastT = setTimeout(() => { toast.textContent = ""; }, 2400); };
   function copy(text, say) {
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) { /* the toast still shows */ }
@@ -450,7 +450,10 @@ export async function createAtlas(opts) {
     },
     openToken(token, o = {}) {
       const p = T.parse(token); if (!p) return false;
-      if (p.kind === "home") { closeCard(); atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); const to = fitPlan(o) || fitIds(dayOneIds(), o); S.base = { token: "atlas", v: to, plan: true }; return true; }
+      if (p.kind === "home") { closeCard(); const first = !S.plan; S.foldNext = first; atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); S.foldNext = false; let to = fitPlan(o) || fitIds(dayOneIds(), o);
+        /* integrator pass 3: the first view frames the meeting point's continent (both continents at once were mostly sea); the away
+           pointer setAway() placed flies to the other starts */
+        if (first && S.plan && S.away && S.away.length > 1) { const home = S.away.find((c) => c.ids.includes(S.plan.meet)) || S.away[0]; to = fitIds(home.ids, o) || to; placeAway(); } S.base = { token: "atlas", v: to, plan: true }; return true; }
       if (p.kind === "place") return placeById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "zone") return zoneById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "plan") {

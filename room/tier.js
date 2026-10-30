@@ -82,7 +82,7 @@ export async function startTier(host) {
      three.js room passed a fresh blind panel (four critics, room on 87 against off 85; board/V10-NOTES.md). A viewer can
      still pick "off" in the menu, and that choice is remembered. On a phone auto means low: the painted page. */
   const DEFAULT_CHOICE = "auto";
-  const pref = () => get(KEY) || DEFAULT_CHOICE;
+  const pref = () => (html().classList.contains("play") ? "off" : get(KEY) || DEFAULT_CHOICE);
   const setClasses = (t) => {
     html().classList.toggle("room-off", t === "off");
     html().classList.toggle("room-on", t === "medium" || t === "high" || t === "ultra");
@@ -232,6 +232,7 @@ export async function startTier(host) {
   const calm = async () => { while (quiet()) await new Promise((r) => setTimeout(r, Math.max(50, quietUntil - performance.now()))); };
   async function choose() {
     cancelAnimationFrame(probeT);
+    if (html().classList.contains("play")) { S.choice = "off"; await apply("off", "Play mode"); return; } /* no GPU probe in Play: no WebGL context at all */
     const d = detect(); S.gpu = d.gpu || ""; S.detected = d.tier; S.detectWhy = d.why;
     const p = pref(); S.choice = p;
     if (d.tier === "off") { await apply("off", d.why.join(", ")); return; }
@@ -251,7 +252,7 @@ export async function startTier(host) {
         judged = true;
       }
     }
-    if (!judged) return; /* no visible verdict: the streak record is left as it was */
+    if (!judged || pref() !== p) return; /* no visible verdict, or Play mode or a menu choice came in during the probe: the streak record is left as it was */
     const next = recordAfter(record, S.gpu, d.tier, S.tier);
     put(AUTO_KEY, next ? JSON.stringify(next) : null); S.record = next;
   }
@@ -262,6 +263,7 @@ export async function startTier(host) {
   if (host.select) host.select.addEventListener("change", () => setPref(host.select.value));
   if (host.moreButton) host.moreButton.addEventListener("click", () => { const opts = ["auto", "off", "low", "medium", "high", "ultra"]; setPref(opts[(opts.indexOf(pref()) + 1) % opts.length]); });
   matchMedia(RM).addEventListener("change", (e) => { if (room) room.motion(e.matches); choose(); });
+  addEventListener("board-mode", () => choose()); /* js/mode.js: html.play on or off, pref() reads it */
   put("board-room-auto", null); /* the first build's ratcheting record, if a browser still has it */
   sync();
   S.status = () => (room ? room.status() : null);

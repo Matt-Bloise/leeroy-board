@@ -1,0 +1,60 @@
+/* Play mode (companion contract 4, node N4): html.play, from js/mode.js. Text only, nothing moves but a 120 ms fade when a
+   scene or tab opens or closes. Every rule is under html.play but the lantern button's own look. Tokens only. */
+:root { --t-play: 120ms; }
+html.play { --t-leave: var(--t-play); --t-enter: var(--t-play); } /* js/board.js times a tab change from --t-leave */
+/* removed, not paused (a paused entrance holds its first frame, opacity 0): reduced motion's own rule; .nx-fade keeps its fade */
+html.play *:not(.nx-fade), html.play *::before, html.play *::after { animation: none !important; }
+@media (prefers-reduced-motion: no-preference) {
+  html.play *, html.play *::before, html.play *::after { transition-property: opacity !important; transition-duration: var(--t-play) !important; transition-delay: 0s !important; }
+  html.play .scene-layer.rise .sheet, html.play .scene-layer.rise .scene-veil, html.play .panel.entering { animation: nx-fade var(--t-play) linear both !important; }
+  html.play .scene-layer.closing .sheet, html.play .scene-layer.closing .scene-veil, html.play .panel.leaving { animation: nx-fade-out var(--t-play) linear both !important; }
+  html.play::view-transition-group(*) { animation-duration: 0s !important; } /* a View Transition: no flight, a cross-fade */
+  html.play::view-transition-old(*), html.play::view-transition-new(*) { animation-duration: var(--t-play) !important; animation-delay: 0s !important; }
+}
+@keyframes nx-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes nx-fade-out { from { opacity: 1; } to { opacity: 0; } }
+/* still: the burn-in drift (v14, hdr.css OLED care); gone: the candle loop, the wisps, the seal light, the HDR glints */
+html.play .hero-title, html.play .mini-clock, html.play .sheet-head .sheet-top, html.play .tabs,
+html.play.oled-care .sense-fab, html.play.oled-care .bottombar, html.play.oled-care .seal { translate: none !important; }
+html.play .wall-plate::after, html.play .candle { animation: none !important; }
+html.play #wisps, html.play .seal-spec, html.play .seal-sweep,
+html.play .clock-unit b::after, html.play .candle::after, html.play .stop-ember::after { display: none !important; }
+/* under an open scene the wall is not drawn (as with room-on): a blurred wall rastered on each clock tick (NOTES-N4.md) */
+html.play.scene-open #board { filter: none !important; visibility: hidden; }
+
+/* the lantern: #mode-btn on the wall after Sound, #mode-btn-scene in the scene head after Look at the room */
+#mode-btn .emblem, #mode-btn-scene .emblem { width: 18px; height: 18px; margin-right: 6px; vertical-align: -0.2em; }
+.mode-lit .emblem { color: var(--brass-hi); }
+.mode-snuffed .emblem { color: var(--l-dim); opacity: .7; }
+.mode-snuffed .emblem .ef { fill: none; stroke: currentColor; }
+/* the wall's is an icon (the word is read, the tip card explains); from 600 px it takes no width in the presence row (its
+   40 px and the 12 px gap given back), so the row wraps as before and the hero keeps its height (check.mjs's wall budget) */
+#mode-btn { width: 40px; padding-inline: 0; }
+#mode-btn .emblem { margin: 0; }
+#mode-btn .mode-word { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (min-width: 600px) { #mode-btn { margin-inline-end: -52px; } }
+/* the head's: a flex item, not .peek-btn's corner, no eye */
+#mode-btn-scene { position: relative; left: auto; top: auto; margin: 0; flex: none; white-space: nowrap; }
+#mode-btn-scene::before, #mode-btn-scene::after { content: none; }
+@media (max-width: 859px) { #mode-btn-scene .emblem { width: 20px; height: 20px; margin: 0; } } /* the head's icon widths */
+/* phones: a 44 px icon like Sound; the head has no free slot (the seal is there): the wall's and the More row */
+@media (max-width: 599px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { #mode-btn { width: 44px; margin-inline-end: 0; } #mode-btn .emblem { width: 20px; height: 20px; } }
+@media (max-width: 599px) { #mode-btn-scene { display: none; } }
+/* the painted pair (integrator pass 2): full strength, a little larger than the emblem */
+#mode-btn .mode-art, #mode-btn-scene .mode-art { width: 24px; height: 24px; object-fit: contain; opacity: 1; }
+/* integrator pass 3 (the outside walks): the head's lantern sat under the close at 1280 to 1366 (the close is absolute from 1200 px and
+   only the plate kept clear of it); it now comes last before the close, keeps the close's 56 px itself, and below 1500 px it is the
+   icon with its name read, not shown, so the title and subtitle keep their line. The pressed state is drawn (aria-pressed). */
+#scene .sheet-top > #mode-btn-scene { order: 1; }
+@media (min-width: 700px) { .sheet-top:has(> #mode-btn-scene) > .journey { margin-right: 0; } #scene .sheet-top > #mode-btn-scene { margin-right: 56px; } }
+@media (min-width: 700px) and (max-width: 1199px) { #scene .sheet-top > #mode-btn-scene { margin-right: 0; } }
+@media (max-width: 1499px) {
+  #mode-btn-scene { width: 44px; min-width: 44px; padding-inline: 0; justify-content: center; }
+  #mode-btn-scene .emblem, #mode-btn-scene .mode-art { margin: 0; }
+  #mode-btn-scene .mode-word { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+#mode-btn[aria-pressed="true"], #mode-btn-scene[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--brass-hi); }
+/* integrator pass 3: Play reads as text only on the wall too (it had looked the same as the Lounge): the tavern painting behind the
+   wall, the tiles' painted medallions, the clock's medallion and the sign-up beam go; boxes keep their size, so nothing moves */
+html.play .hero-art img { display: none; }
+html.play #board .emblem-box .emblem-img, html.play .clock-emblem .emblem-img, html.play #board img.beam { visibility: hidden; }

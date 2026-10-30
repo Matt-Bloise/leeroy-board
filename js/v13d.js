@@ -6,7 +6,7 @@ const K = window.__boardKit; if (!K) return;
 const { $, h, s, emb, D, MEM, SC, sfx } = K;
 const root = document.documentElement;
 const JOURNEYS = ["guided", "curious", "everything"];
-const J_LINE = { guided: "Two hours a week: walk me through it", curious: "I'll click around", everything: "Show me every number" };
+const J_LINE = { guided: "A few hours a week, never played: walk me through it", curious: "I'll click around", everything: "Show me every number" };
 const get = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const put = (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} };
 const reduced = () => K.reduceMQ.matches;
@@ -42,7 +42,8 @@ function setJourney(j, how) {
 /* Everything expands: every fold in the scenes opens (the library keeps its own) */
 function applyDepth() {
   if (journey() !== "everything") return;
-  document.querySelectorAll("#sheet-body details").forEach((d) => { if (!d.closest("#panel-library")) d.open = true; });
+  /* integrator pass 3: Next steps keeps its folds (its card and queue already show every step; open, it ran to 3.6 laptop screens) */
+  document.querySelectorAll("#sheet-body details").forEach((d) => { if (!d.closest("#panel-library") && !d.closest("#panel-tonight")) d.open = true; });
 }
 /* the launch date at each depth: the same epoch through the board's one formatter */
 function preview(j) {
@@ -133,7 +134,7 @@ function steps(key) {
       return [...P.polls.map((q) => [`Poll: ${q.title}${q.closes_epoch ? `, closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` : ""}.`]), ...open.map((o, i) => [`Still open: ${o.title}.`, land(`ledger.open-${i}`, "Show it")])];
     }
     case "signups": { const su = mineSU(); return [["A pack is the pre-order that lets you make characters early."], ["Answer on the Sign-ups card in Discord: I'm in, Tentative, Running late or Out."], su ? [`Your answer now: ${sayOf(su.rsvp)}.`] : null].filter(Boolean); }
-    case "librarian": return [["In any Discord channel here, type /ask and your question."], ["Leeroy answers from the same library this board searches."]];
+    case "librarian": return [["Leeroy answers questions about Forever from the group's own library."], ["His numbers below show how many he has answered and how fast."]]; /* integrator pass 3: the /ask line is said once, by the scene */
     case "decide": { /* V16 (2026-10-30): what the records leave open for you, then the two dates Blizzard has given */
       const raids = T.events.find((e) => e.key === "raids"), profOpen = me && (me.professions || []).some((p) => p.status === "undecided");
       return [

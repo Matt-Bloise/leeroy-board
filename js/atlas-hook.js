@@ -6,12 +6,14 @@
   const $ = (q, r) => (r || document).querySelector(q), h = K.h, TOK = /^atlas(?:\.|$)/;
   const H = { on: false, pending: null, A: null, host: null, loading: null, marks: null, zones: null, t: 0, failT: 0, mo: false };
   const hashTok = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch (e) { return ""; } };
+  /* integrator pass 3: board.js stops the sketch's clock while the Atlas covers it */
+  const fire = () => { try { dispatchEvent(new Event("board-atlas")); } catch (e) {} };
   const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 600));
 
   /* the engine */
-  const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : K[k]]));
+  const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : k === "reduceMQ" ? { get matches() { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } } : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=8f6e620843");
+    const m = await import("../atlas/atlas.js?v=55102d2675");
     return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {
@@ -26,7 +28,7 @@
     const map = $("#map"); if (!map) return;
     H.pending = token; H.on = true;
     if (!H.host || !H.host.isConnected) { if (H.A) { try { H.A.destroy(); } catch (e) { } } H.host = h("div", { id: "atlas", class: "atlas" }); map.append(H.host); H.A = null; H.loading = null; }
-    map.classList.add("atlas-on"); K.sfx("open"); if (map.scrollIntoView) map.scrollIntoView({ block: "nearest" });
+    map.classList.add("atlas-on"); fire(); K.sfx("open"); if (map.scrollIntoView) map.scrollIntoView({ block: "nearest" });
     if (o && o.push) { K.setHash(token, true); H.pushed = 1; }
     try {
       if (!H.A) { H.loading = H.loading || load(); H.A = await H.loading; }
@@ -40,7 +42,7 @@
     clearTimeout(H.failT);
     if (!H.on) return;
     H.on = false; H.pending = null;
-    const map = $("#map"); if (map) map.classList.remove("atlas-on");
+    const map = $("#map"); if (map) map.classList.remove("atlas-on"); fire();
     if (H.A) H.A.pause();
     if (fixHash && TOK.test(hashTok())) { if (H.pushed) history.back(); else K.setHash("roads", false); }
     H.pushed = 0;
@@ -84,8 +86,23 @@
       if (el.getAttribute("data-atlas") || el.closest("a") || el.querySelector("li, p") || el.closest("#panel-library, #panel-roads, #atlas")) continue;
       const txt = (el.textContent || "").replace(/https?:\/\/\S+/g, " "), ids = [];
       for (const m of txt.matchAll(H.re)) { const id = M.aliases[m[1].toLowerCase()]; if (id && !ids.includes(id)) ids.push(id); }
-      if (ids.length) addMarks(el, ids);
+      if (!ids.length) continue;
+      /* integrator pass 3: the marks go in line, right after the text that names the place (appended to a list row they made rows of
+         their own: empty lines of waymarks under the Ledger's and the Bonuses' entries) */
+      const t = textAt(el);
+      if (!t || el.getAttribute("data-atlas")) { addMarks(el, ids); continue; }
+      el.setAttribute("data-atlas", "1");
+      const par = t.parentNode, kids = Array.prototype.slice.call(par.childNodes), ref = kids[kids.indexOf(t) + 1] || null;
+      for (const id of ids.slice(0, 3)) { if (par === el) par.insertBefore(mark(id), ref); else par.appendChild(mark(id)); } /* the end of the text's own line where it has one */
     }
+  };
+  /* the first text node under el that names a place, outside links and source tags */
+  const textAt = (el) => {
+    for (const c of Array.prototype.slice.call(el.childNodes || [])) {
+      if (c.nodeType === 3) { H.re.lastIndex = 0; const txt = String(c.textContent || "").replace(/https?:\/\/\S+/g, " "); if (H.re.test(txt)) { H.re.lastIndex = 0; return c; } }
+      else if (c.nodeType === 1 && c.localName !== "a" && !(c.classList && c.classList.contains("label"))) { const f = textAt(c); if (f) return f; }
+    }
+    return null;
   };
   const later = () => { clearTimeout(H.pt); H.pt = setTimeout(pass, 160); };
   const loadMarks = async () => {

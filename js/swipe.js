@@ -41,7 +41,7 @@
     if (!owns() || K.SC.open === null) return false;
     const t = e && e.target;
     if (!t || typeof t.closest !== "function") return true;
-    if (t.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar, .bsheet, #map")) return false;
+    if (t.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar, .bsheet, #map, .ch-sug")) return false; /* .ch-sug: the chat's chips scroll sideways (companion N6) */
     /* the five's carousel keeps its own pan: a start inside it is refused unless the carousel is at one of its ends */
     const car = carouselOf(t);
     return !(car && car.scrollLeft > 2 && car.scrollLeft < car.scrollWidth - car.clientWidth - 2);

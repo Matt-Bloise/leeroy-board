@@ -9,26 +9,31 @@ const HERE = (document.currentScript && document.currentScript.src) || null; /* 
    did not exist when the page was stamped (walk ships with node N7): that load resolves at once, with no request */
 const SCENES = {
   sheet: () => [new URL("../scenes/sheet.css?v=451af8a4a2", HERE), new URL("../scenes/sheet.js?v=87bcd5843e", HERE)],
-  chamber: () => [new URL("../scenes/chamber.css?v=a09c2581cf", HERE), new URL("../scenes/chamber.js?v=6ff3f3ec3b", HERE)],
+  chamber: () => [new URL("../scenes/chamber.css?v=c5d2f35573", HERE), new URL("../scenes/chamber.js?v=759587eeea", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=99fcaa246c", HERE), new URL("../scenes/decide.js?v=250667e6fa", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
-  walk: () => [new URL("../scenes/walk.css?v=0000000000", HERE), new URL("../scenes/walk.js?v=0000000000", HERE)],
+  walk: () => [new URL("../scenes/walk.css?v=6315203345", HERE), new URL("../scenes/walk.js?v=5ddeb96ef1", HERE)],
+  place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=b7547ad5f8", HERE)],
 };
 const NEEDS = { sheet: ["decide"] }; /* the sheet reads decide.json through decide.js (K.decideData) */
 /* forget is listed for a later caller and never replayed: a module that loads after Clear my name has nothing of the old visit */
-const REPLAY = ["booted", "rendered", "scene", "tonight", "signups", "launch", "forget"];
+const REPLAY = ["booted", "rendered", "scene", "tonight", "signups", "launch", "forget", "map"];
+/* the hover layer's stylesheet keeps its old slot (before css/ask.css) so the sheets after it still win as they did */
+const AT = { place: 'link[href*="css/ask.css"]' };
 const P = Object.create(null), ok = [], bad = [], seen = {}, done = new WeakSet(), land = Object.create(null);
 let after = null;
-const ONCE = ["signups", "rendered", "booted", "launch"]; /* the order boot emits them; replayed only once the page has, with its arguments */
+const ONCE = ["signups", "rendered", "booted", "launch", "map"]; /* the order boot emits them; replayed only once the page has, with its last arguments */
 for (const n of ONCE) K.on(n, (...a) => { seen[n] = a; });
 const call = (n, f, a) => { if (done.has(f)) return; done.add(f); try { f(...a); } catch (e) { console.error(n, e); } };
-function tag(u, css) {
+function tag(u, css, before) {
   return new Promise((res, rej) => {
     const el = document.createElement(css ? "link" : "script");
     el.addEventListener("load", () => res()); el.addEventListener("error", () => rej(new Error(`${u.pathname} did not load`)));
     const head = document.head || document.documentElement;
     if (css) {
       el.setAttribute("rel", "stylesheet"); el.setAttribute("href", u.href);
+      let b4 = null; if (before) { try { b4 = document.querySelector(before); } catch (e) {} }
+      if (b4 && b4.parentNode) { b4.parentNode.insertBefore(el, b4); return; }
       let at = after; if (!at) { try { at = document.querySelector('link[href*="css/v15.css"]'); } catch (e) {} }
       if (at && at.parentNode) at.parentNode.insertBefore(el, at.nextSibling); else head.appendChild(el);
       after = el;
@@ -45,7 +50,7 @@ function load(name) {
   const n0 = {}; for (const n of REPLAY) n0[n] = K.hooks[n] ? K.hooks[n].length : 0;
   const lander0 = K.lander, fail = (e) => { bad.push(name); console.warn(`scenes: ${name} did not load (${e && e.message})`); return { ok: false, why: "load" }; };
   let cssErr = null; /* a stylesheet that fails leaves the scene unstyled, not dead: the script's hooks are still replayed */
-  return (P[name] = Promise.all([...needs, tag(urls[0], true).catch((e) => { cssErr = e; }), tag(urls[1], false)]).then(() => {
+  return (P[name] = Promise.all([...needs, tag(urls[0], true, AT[name]).catch((e) => { cssErr = e; }), tag(urls[1], false)]).then(() => {
     ok.push(name);
     const fresh = (n) => (K.hooks[n] || []).slice(n0[n]), SC = K.SC, cap = land[name]; land[name] = null;
     for (const n of ONCE) if (seen[n]) for (const f of fresh(n)) call(n, f, seen[n]);
@@ -87,5 +92,30 @@ const probeHash = () => { try { return decodeURIComponent(String(location.hash |
 if (probeHash()) load("probe");
 addEventListener("hashchange", () => { if (probeHash()) load("probe"); });
 K.on("booted", () => { let walked = null; try { walked = localStorage.getItem("board-walked"); } catch (e) {} if (!walked && !/[?&](render|brain)=/.test(location.search)) load("walk"); });
+/* Warm the scenes a friend opens next once the first screen is idle, so a first tap never paints an empty panel that then grows
+   (verifier round 1: 1 to 4 blank frames, then a jump of up to 1,203 px on What to decide). A pointer over, a touch on or a focus on
+   a scene's control warms that one at once. Only in a real browser (this file's URL known; Safari has no idle callback, so a short
+   timer stands in); never under ?render= or ?brain=. */
+const WARM = ["chamber", "sheet", "decide"], PLACE = { five: "sheet", sheet: "sheet", librarian: "chamber", decide: "decide" };
+const warm = (m) => { if (m && !P[m]) load(m); };
+K.on("booted", () => {
+  if (!HERE || /[?&](render|brain)=/.test(String(location.search || ""))) return;
+  const idle = typeof requestIdleCallback === "function" ? (f) => requestIdleCallback(f, { timeout: 3000 }) : (f) => setTimeout(f, 250);
+  const next = () => { const m = WARM.find((x) => !P[x]); if (m) load(m).then(() => idle(next)); };
+  setTimeout(() => idle(next), 1200);
+});
+const intent = (e) => { const t = e && e.target; if (!t || typeof t.closest !== "function") return; const c = t.closest("[data-tab], [data-place]"); if (c) warm(PLACE[c.getAttribute("data-tab") || c.getAttribute("data-place")]); };
+if (typeof document.addEventListener === "function") for (const ev of ["pointerover", "focusin", "touchstart"]) document.addEventListener(ev, intent, { capture: true, passive: true });
+/* contract 10.4: the hover layer (scenes/place.*: hover cards, tips, the glossary's placing) is a desktop feature, so it left the
+   first download. It loads on the first hover with a fine pointer, the first key press (keyboard focus does what hover does), and in
+   idle time on a fine-pointer device once the scenes above are warm. A touch-only phone never fetches it; board.js and v13d.js place
+   their cards themselves until K.placeCard exists. */
+const fine = () => { try { return matchMedia("(hover: hover) and (pointer: fine)").matches; } catch (e) { return false; } };
+const hoverIn = (e) => { if (P.place) return; const t = e && e.pointerType; if (t === "mouse" || t === "pen" || (!t && fine())) load("place"); };
+if (typeof document.addEventListener === "function") {
+  document.addEventListener("pointerover", hoverIn, { capture: true, passive: true });
+  document.addEventListener("keydown", () => { if (!P.place) load("place"); }, { capture: true, passive: true });
+}
+K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) setTimeout(() => { if (!P.place) load("place"); }, 4000); });
 window.__scenes = Object.freeze({ load, loaded: (n) => ok.includes(n), status: () => ({ loaded: ok.slice(), failed: bad.slice(), base: HERE }) });
 })();
