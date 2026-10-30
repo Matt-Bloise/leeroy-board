@@ -1,0 +1,40 @@
+/* M3 (2026-10-30): launch-night answers on Sign-ups and "Something here looks wrong?" on Library pages (js/mine.js). Tokens only. */
+#mine-act { flex: 1 1 100%; display: grid; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--ink-line); }
+.mine-grp { display: grid; gap: 4px; min-width: 0; }
+.mine-k { margin: 0; font-family: var(--font-ui); font-size: 0.8125rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); }
+.mine-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.mine-opt { min-height: 48px; box-sizing: border-box; }
+.mine-opt[aria-pressed="true"] { background: var(--oak-3); color: var(--cream); border-color: var(--brass); font-weight: 700; }
+.mine-opt[aria-disabled="true"] { opacity: 0.72; cursor: default; }
+.mine-place-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mine-place, .mine-note { box-sizing: border-box; min-height: 48px; padding: 6px 10px; font: inherit; color: var(--ink); background: var(--cream); border: 1px solid var(--brass-dim); border-radius: 4px; }
+.mine-place { flex: 1 1 14rem; min-width: 0; max-width: 100%; }
+.mine-note { width: 100%; resize: vertical; margin: 8px 0; }
+.mine-status { margin: 0; min-height: 1.4em; color: var(--ink); overflow-wrap: anywhere; }
+.mine-status:empty { display: none; }
+.mine-foot { margin-top: 18px; }
+.mine-card { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--brass-dim); border-radius: 6px; background: var(--parchment-2); color: var(--ink); max-width: 100%; box-sizing: border-box; }
+.mine-facts { display: grid; gap: 4px; margin: 6px 0; }
+.mine-fact { display: flex; gap: 10px; align-items: center; min-height: 48px; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+.mine-fact input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--brass-dim); }
+.mine-fact span { display: grid; min-width: 0; }
+.mine-fact b { text-transform: capitalize; }
+.mine-fact small { font-size: 0.8125rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+.mine-fact.on { background: var(--hi-brass); }
+html.phone-shell .mine-opt, html.phone-shell .mine-night { min-height: 48px; min-width: 48px; }
+html.phone-shell .mine-night { width: 100%; justify-content: center; }
+html.phone-shell #mine-act { gap: 8px; }
+html.phone-shell .mine-sheet { display: grid; gap: 4px; padding: 0 16px 8px; color: var(--l-text); }
+html.phone-shell .mine-sheet .mine-k { color: var(--l-dim); font-size: 0.8125rem; }
+html.phone-shell .mine-sheet .mine-grp { padding: 6px 0; }
+html.phone-shell .mine-sheet .mine-opts { display: grid; gap: 6px; }
+html.phone-shell .mine-sheet .mine-opt { width: 100%; min-height: 56px; justify-content: flex-start; font-size: 1rem; }
+html.phone-shell .mine-sheet .mine-place { min-height: 56px; font-size: 1rem; }
+html.phone-shell .mine-sheet .mine-place-row { display: grid; gap: 6px; }
+html.phone-shell .mine-sheet .mine-status { color: var(--l-text); }
+html.phone-shell .mine-sheet .mine-facts { gap: 6px; }
+html.phone-shell .mine-sheet .mine-fact { min-height: 56px; color: var(--l-text); }
+html.phone-shell .mine-sheet .mine-fact small { color: var(--l-dim); }
+html.phone-shell .mine-sheet .mine-note { color: var(--ink); font-size: 1rem; }
+html.phone-shell .mine-sheet .mine-send { width: 100%; min-height: 56px; justify-content: center; }
+html.phone-shell .mine-k, html.phone-shell .mine-fact small { font-size: 1rem; }

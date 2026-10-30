@@ -22,6 +22,7 @@
 "use strict";
 const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
+const WHEN = ["6pm", "8pm", "later"], PACK = ["yes", "no"], MEET = ["vos", "xroads", "other"], FIX_PAGE = /^[a-z0-9/_.-]{1,80}$/, FIX_KEY = /^[a-z0-9_.-]{1,80}$/, PLACE_MAX = 40, FIX_NOTE_MAX = 200;
 const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"]; /* V15: the launch-night state */
 /* M0: the same table as PROBE_SHAPE in cloudflare/worker/src/brain.js (cloudflare/test/probe.test.mjs fails when they differ).
    "bool" is true or false, [lo, hi] a whole number in that range, a list of words a closed set. */
@@ -106,6 +107,22 @@ function sheetValueOk(f, v) {
 }
 /* only these bodies ever leave the page: a kind, one answer word from that kind's fixed list, and the mirror version; a sheet
    write (one field, a listed value, the party toggle); a dispatch (ask ids and the asker's yes) */
+/* M3 (2026-10-30, notes MOBILE-CONTRACT 9.1): the same cleaning the bot gives a typed meeting place (signups.js cleanPlace), 40 characters */
+function cleanPlace(raw) {
+  const t = String(raw == null ? "" : raw).replace(/<[^>]*>/g, " ").replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").replace(/[<>*_~`|#\[\]@]/g, "").replace(/\s+/g, " ").trim();
+  return Array.from(t).slice(0, PLACE_MAX).join("").trim();
+}
+const noteOk = (n) => typeof n === "string" && Array.from(n).length <= FIX_NOTE_MAX && !/[<>]|https?:|www\./i.test(n);
+function mineOk(b) {
+  if (!b || typeof b !== "object" || Array.isArray(b)) return false;
+  if (b.kind === "fix") return Object.keys(b).every((k) => k === "kind" || k === "page" || k === "key" || k === "note") && typeof b.page === "string" && FIX_PAGE.test(b.page) && typeof b.key === "string" && FIX_KEY.test(b.key) && (b.note === undefined || noteOk(b.note));
+  if (b.kind !== "signup" || !Object.keys(b).every((k) => k === "kind" || k === "field" || k === "value" || k === "place" || k === "ver")) return false;
+  if (b.ver !== undefined && !(Number.isInteger(b.ver) && b.ver >= 0)) return false;
+  if (b.field === "when") return WHEN.includes(b.value) && b.place === undefined;
+  if (b.field === "pack") return PACK.includes(b.value) && b.place === undefined;
+  if (b.field === "meet") return MEET.includes(b.value) && (b.place === undefined || (b.value === "other" && typeof b.place === "string" && b.place.length > 0 && b.place === cleanPlace(b.place)));
+  return false;
+}
 function safe(body, route) {
   if (route === "/sheet") {
     const b = body, ok = b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).every((k) => k === "field" || k === "value" || k === "visible") && SHEET.includes(b.field)
@@ -127,6 +144,10 @@ function safe(body, route) {
     const p = body.patch, okAsk = Object.keys(body).every((k) => k === "kind" || k === "patch") && p && typeof p === "object" && typeof p.text === "string" && p.text.length <= 1200
       && Object.keys(p).every((k) => k === "text" || (k === "share" && typeof p.share === "boolean"));
     if (!okAsk || /\d{17,20}/.test(p ? p.text : "")) throw new Error("refused: an ask carries only its text and the share tick");
+    return body;
+  }
+  if (body && (body.kind === "fix" || (body.kind === "signup" && body.field !== undefined))) {
+    if (!mineOk(body) || /\d{17,20}/.test(JSON.stringify(body))) throw new Error("refused: a launch-night answer or a fact report carries only its fixed words, a short place or note");
     return body;
   }
   const p = body && body.patch, one = p && typeof p === "object" && Object.keys(p).length === 1;
@@ -179,6 +200,7 @@ function onState(m) {
   if (!m.signups) return false;
   B.signups = m.signups;
   emit("state", m.signups, m.ver);
+  setTimeout(mineFlush, 0);
   settle();
   journeyFromMirror();
   return true;
@@ -347,6 +369,45 @@ async function setLaunch(v) {
   emit("launchPending", launchPending());
   return { ok: p.state === "waiting" || p.state === "saved", local: p.state === "local", state: p.state };
 }
+/* M3: launch-night answers (when, pack, meeting point) and "Something here looks wrong?" reports. 4xx from a Worker that does not
+   know the field or kind yet resolves { ok: false, why: "not-yet" }; the answer stays on this device (localStorage board-mine) and
+   goes out again on the next state pull that lands. */
+const MINE_KEY = "board-mine";
+function mineRead() { try { const j = JSON.parse(localStorage.getItem(MINE_KEY) || "{}"); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch (e) { return {}; } }
+function mineWrite(o) { try { if (Object.keys(o).length) localStorage.setItem(MINE_KEY, JSON.stringify(o)); else localStorage.removeItem(MINE_KEY); } catch (e) {} }
+function mineKeep(slot, body) { const o = mineRead(); if (slot === "fix") { o.fix = (Array.isArray(o.fix) ? o.fix : []).filter((x) => !(x.page === body.page && x.key === body.key)).concat([body]).slice(-5); } else o[slot] = body; mineWrite(o); }
+function mineDrop(slot, body) { const o = mineRead(); if (slot === "fix") { o.fix = (o.fix || []).filter((x) => !(x.page === body.page && x.key === body.key)); if (!o.fix.length) delete o.fix; } else delete o[slot]; mineWrite(o); }
+let MINE_NOT_YET = false; /* the Worker answered 404/405/501 this session: kept answers are not resent on every poll */
+async function mineSend(slot, body) {
+  if (!B.base) return { ok: false, why: "nowhere to send" };
+  if (!B.key) return { ok: false, why: "no key" };
+  try { safe(body, "/intent"); } catch (e) { return { ok: false, why: "not an answer" }; }
+  try {
+    const r = await call("POST", "/intent", { ...body, ...(slot !== "fix" && B.ver ? { ver: B.ver } : {}) }); B.sent++;
+    if (r.status === 200) { mineDrop(slot, body); return { ok: true, state: "waiting" }; }
+    if (r.status === 401) { B.keyBad = true; return { ok: false, why: "key" }; }
+    if (r.status === 429) return { ok: false, why: "busy" };
+    /* integrator (2026-10-30): a Worker deployed before this build answers 400 "kind must be ..." or "unknown field ..." (or an
+       "unknown kind" from the fake): that is a kind it does not know yet, not a refused answer */
+    const notYet = r.status === 400 && r.data && typeof r.data.error === "string" && /kind must be|unknown kind|unknown field/i.test(r.data.error);
+    if (r.status === 404 || r.status === 405 || r.status === 501 || notYet) { mineKeep(slot, body); MINE_NOT_YET = true; return { ok: false, why: "not-yet" }; }
+    if (r.status >= 400 && r.status < 500) { mineDrop(slot, body); return { ok: false, why: "refused" }; }
+    return { ok: false, why: "failed" };
+  } catch (e) { B.errors++; return { ok: false, why: "offline" }; }
+}
+const setWhen = (k) => mineSend("when", { kind: "signup", field: "when", value: k });
+const setPack = (k) => mineSend("pack", { kind: "signup", field: "pack", value: k });
+function setMeet(k, place) {
+  const clean = k === "other" && place !== undefined ? cleanPlace(place) : undefined;
+  return mineSend("meet", { kind: "signup", field: "meet", value: k, ...(clean ? { place: clean } : {}) });
+}
+const reportFact = (o) => mineSend("fix", { kind: "fix", page: o && o.page, key: o && o.key, ...(o && o.note ? { note: String(o.note) } : {}) });
+let mineFlushing = false;
+async function mineFlush() {
+  if (mineFlushing || MINE_NOT_YET || !B.base || !B.key) return; const o = mineRead(); if (!Object.keys(o).length) return;
+  mineFlushing = true;
+  try { for (const s of ["when", "pack", "meet"]) if (o[s]) { const r = await mineSend(s, o[s]); if (!r.ok) break; } for (const f of (o.fix || [])) { const r = await mineSend("fix", f); if (!r.ok) break; } } finally { mineFlushing = false; }
+}
 /* Ask Leeroy (2026-10-29): one ask at a time via the "ask" intent, the answer read back with GET /ask. States: idle sending queued answered failed error limited. */
 const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
 const askStatus = () => ({ state: AK.st, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
@@ -421,5 +482,5 @@ function start(handlers) {
   return status();
 }
 function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); }
-window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
+window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
 })();

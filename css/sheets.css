@@ -1,0 +1,20 @@
+/* Bottom sheets (mobile contract section 3). Colours are tokens only. */
+.bsheet-veil { position: fixed; inset: 0; z-index: 24; background: var(--shadow); opacity: 0; pointer-events: none; touch-action: none; }
+.bsheet-veil.on { opacity: 1; pointer-events: auto; }
+.bsheet-veil[hidden], .bsheet[hidden] { display: none; }
+.bsheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; box-sizing: border-box; display: flex; flex-direction: column; max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 24px);
+  border-radius: 14px 14px 0 0; background: var(--sheet-bg); color: var(--cream); border: 1px solid var(--grain); border-bottom: 0; box-shadow: 0 -12px 30px var(--shadow);
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); overscroll-behavior: contain; }
+.bsheet.fade { transition: opacity 120ms linear; }
+.bsheet.fade.out { opacity: 0; }
+.bsheet-handle { flex: none; display: flex; align-items: center; justify-content: center; height: 48px; touch-action: none; }
+.bsheet-grip { position: relative; box-sizing: border-box; min-width: 48px; min-height: 48px; width: 100%; padding: 0; border: 0; background: transparent; cursor: grab; touch-action: none; }
+.bsheet-grip::after { content: ""; position: absolute; left: 50%; top: 50%; width: 40px; height: 5px; margin: -2px 0 0 -20px; border-radius: 999px; background: var(--brass-dim); }
+.bsheet-grip:focus-visible { outline: 2px solid var(--brass); outline-offset: -4px; }
+.bsheet-h { flex: none; margin: 0; padding: 0 18px 10px; font-family: var(--font-ui); font-size: 1.15rem; letter-spacing: 0.04em; color: var(--parchment); touch-action: none; }
+.bsheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 18px; touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.bsheet-body:focus { outline: none; }
+.bsheet-row { box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; min-width: 48px; padding: 6px 4px; font: inherit; color: inherit; text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--grain); cursor: pointer; }
+.bsheet-row:focus-visible { outline: 2px solid var(--brass); outline-offset: -2px; }
+html.phone-shell .bsheet-grip, html.phone-shell .bsheet-row { min-height: 48px; min-width: 48px; }
+@media (forced-colors: active) { .bsheet { border: 1px solid CanvasText; } .bsheet-grip::after { background: CanvasText; } }

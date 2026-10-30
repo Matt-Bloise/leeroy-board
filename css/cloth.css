@@ -1,0 +1,46 @@
+/* Cloth banners for the tab rail (mobile contract section 8, node N7). Full note: board/MOBILE-NOTES.md, file notes. */
+:root { --tab-h: 92px; --cloth-slice: 52; --cloth-trim: calc(var(--tab-h) * var(--cloth-slice) / 352); }
+
+@media (min-width: 700px) {
+  /* the rail: room under the rod for the hang (6 px) and wave (about 3 px), a little above for the hover lift */
+  #tabs { align-items: flex-start; padding-top: 3px; padding-bottom: 10px; gap: 2px; }
+  #tabs .tab, #tabs .tab[aria-selected="true"] {
+    position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px;
+    height: var(--tab-h); min-height: var(--tab-h); margin: 0; padding: 0 calc(var(--cloth-trim) + 1px) 26px; box-sizing: border-box;
+    border: 0; border-radius: 0; background: none; box-shadow: none; white-space: nowrap;
+    font-size: 0.8125rem; letter-spacing: 0.03em; line-height: 1.2; color: var(--cream, #f4e6c8); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 6px rgba(0, 0, 0, 0.55);
+  }
+  #tabs .tab { transform: none; }
+  #tabs .tab[aria-selected="true"] { color: #fff6e0; }
+  #tabs .tab:not([aria-selected="true"]) { color: var(--cream, #f4e6c8); }
+  /* the emblem sits under the rod; it stays on every banner (board.css hides it on unselected tabs under 1500 px) */
+  #tabs .tab .tab-ico, .sheet-head #tabs .tab:not([aria-selected="true"]) .tab-ico { display: grid; place-items: center; position: absolute; left: 50%; top: 17px; width: 18px; height: 18px; margin: 0 0 0 -9px; }
+  #tabs .tab .tab-ico .emblem { width: 18px; height: 18px; }
+  /* the painted cloth, the same on every path until js/cloth-hook.js has the GL cloth up (html.cloth-gl) */
+  #tabs .tab::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; transition: transform var(--t-micro, 160ms) var(--ease-oak, ease-out);
+    border-style: solid; border-width: 0; border-image: var(--banner) 0 var(--cloth-slice) 0 var(--cloth-slice) fill / 0 var(--cloth-trim) 0 var(--cloth-trim) stretch;
+  }
+.tab[data-tab="timeline"]::before { --banner: url("../img/banners/indigo.webp"); }
+.tab[data-tab="five"]::before { --banner: url("../img/banners/royal.webp"); }
+.tab[data-tab="roads"]::before { --banner: url("../img/banners/burnt-orange.webp"); }
+.tab[data-tab="racials"]::before { --banner: url("../img/banners/crimson.webp"); }
+.tab[data-tab="legacy"]::before { --banner: url("../img/banners/copper.webp"); }
+.tab[data-tab="buffs"]::before { --banner: url("../img/banners/plum.webp"); }
+.tab[data-tab="ledger"]::before { --banner: url("../img/banners/wine.webp"); }
+.tab[data-tab="signups"]::before { --banner: url("../img/banners/forest.webp"); }
+.tab[data-tab="decide"]::before { --banner: url("../img/banners/olive.webp"); }
+.tab[data-tab="library"]::before { --banner: url("../img/banners/ochre.webp"); }
+.tab[data-tab="librarian"]::before { --banner: url("../img/banners/slate.webp"); }
+.tab[data-tab="tonight"]::before { --banner: url("../img/banners/teal.webp"); }
+  #tabs .tab[aria-selected="true"]::before { transform: translateY(6px); }
+  @media (hover: hover) { #tabs .tab:hover::before { transform: translateY(-2px); } #tabs .tab[aria-selected="true"]:hover::before { transform: translateY(4px); } }
+  #tabs .tab:focus-visible::before { transform: translateY(-2px); }
+  #tabs .tab[aria-selected="true"]:focus-visible::before { transform: translateY(4px); }
+  #tabs .tab:hover:not(:focus-visible) { outline: none; }
+  #tabs .tab:focus-visible { outline: 2px solid var(--brass-hi, #f0cf84); outline-offset: -6px; }
+  html.cloth-gl #tabs .tab::before { display: none; }
+  #tab-cloth { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; display: none; }
+  html.cloth-gl #tab-cloth { display: block; }
+}
+@media (forced-colors: active) { #tabs .tab::before, #tab-cloth { display: none !important; } }

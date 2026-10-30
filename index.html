@@ -33,11 +33,12 @@
 <link rel="stylesheet" href="css/board.css?v=89b4954a43">
 <link rel="stylesheet" href="css/v13d.css?v=ef01c37191">
 <link rel="stylesheet" href="css/v14.css?v=d65c95ee9e">
-<link rel="stylesheet" href="css/wide.css?v=26537e69e0"><link rel="stylesheet" href="css/atlas.css?v=f652722778"><link rel="stylesheet" href="css/seals.css?v=bd9e2f36f4"><link rel="stylesheet" href="css/sensory.css?v=3f46a56bfc"><!-- HOOK audio-sensory 1/3 -->
+<link rel="stylesheet" href="css/wide.css?v=26537e69e0"><link rel="stylesheet" href="css/atlas.css?v=f652722778"><link rel="stylesheet" href="css/cloth.css?v=fe6078586f"><!-- mobile build: cloth rail --><link rel="stylesheet" href="css/seals.css?v=bd9e2f36f4"><link rel="stylesheet" href="css/sensory.css?v=3f46a56bfc"><!-- HOOK audio-sensory 1/3 -->
 <link rel="stylesheet" href="css/hover.css?v=cefcab0b01"><link rel="stylesheet" href="css/ask.css?v=30d442a74d"><!-- HOOK hover 1/2 -->
 <link rel="stylesheet" href="css/hdr.css?v=60aa63039e">
 <link rel="stylesheet" href="css/v15.css?v=9971c3e89f">
 <link rel="stylesheet" href="css/decide.css?v=99fcaa246c"><!-- V16 What to decide --><link rel="stylesheet" href="css/sheet.css?v=451af8a4a2"><!-- Phase 0 party sheet --><link rel="stylesheet" href="css/chamber.css?v=4604a00c9a"><!-- Phase 0 Leeroy chamber -->
+<link rel="stylesheet" href="css/sheets.css?v=f7425d82f1"><link rel="stylesheet" href="css/shell.css?v=7c4959a6d9"><link rel="stylesheet" href="css/floor.css?v=6b94cf0213"><link rel="stylesheet" href="css/tilt.css?v=310f50eea8"><link rel="stylesheet" href="css/mine.css?v=cd363b39b6"><!-- mobile build: sheets, phone shell, the phone floor, tilt, mine -->
 <link rel="stylesheet" href="css/buffs-fx.css?v=631d584d63"><!-- buffs effects layer -->
 <link rel="stylesheet" href="css/probe.css?v=c41750fabe"><!-- M0 capability probe (#probe) -->
 
@@ -62,7 +63,7 @@
       <div class="presence" id="presence">
         <span id="presence-text"></span>
         <div class="peers" id="peers"></div>
-        <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Light follows your phone</button>
+        <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Let the tavern lean with your phone</button>
         <nav class="journey" id="journey" aria-label="How do you want to explore?"><button type="button" data-journey="guided" aria-pressed="false">Guided</button><button type="button" data-journey="curious" aria-pressed="true">Curious</button><button type="button" data-journey="everything" aria-pressed="false">Everything</button></nav>
         <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Next steps</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
         <span class="sound-box" id="sound-box"><button class="tilt" id="sound" type="button" aria-pressed="false" title="Sound (M)">Sound</button><input class="vol" id="vol" type="range" min="0" max="100" step="5" aria-label="Volume"><select class="room-pick" id="room-pick" aria-label="Room behind the board"><option value="auto">Room: auto</option><option value="off">Room: off</option><option value="low">Room: low</option><option value="medium">Room: medium</option><option value="high">Room: high</option><option value="ultra">Room: ultra</option></select></span>
@@ -285,15 +286,16 @@
 </aside>
 
 <script src="js/sound.js?v=1aa8e7ce8a"></script>
-<script src="js/brain.js?v=cd5d5dda94"></script>
-<script src="js/board.js?v=41be1b9f60"></script>
-<script src="js/v13d.js?v=6599f6f8c9"></script><script src="js/wide.js?v=bed74f6338"></script><script src="js/atlas-hook.js?v=3a176bf5a7"></script><script src="js/seals.js?v=69c50f7a4d"></script>
-<script src="js/ask.js?v=608f56337d"></script><script src="js/place.js?v=eecc86a2a9"></script><!-- HOOK hover 2/2 -->
+<script src="js/brain.js?v=7d220080b2"></script>
+<script src="js/board.js?v=4d7f2c5384"></script><script src="js/spring.js?v=3a06d42fb5"></script><!-- mobile build: spring family -->
+<script src="js/v13d.js?v=6599f6f8c9"></script><script src="js/wide.js?v=bed74f6338"></script><script src="js/atlas-hook.js?v=3a176bf5a7"></script><script src="js/cloth-hook.js?v=380b5ee052"></script><!-- mobile build: cloth hook --><script src="js/seals.js?v=69c50f7a4d"></script>
+<script src="js/ask.js?v=608f56337d"></script><script src="js/place.js?v=b7547ad5f8"></script><!-- HOOK hover 2/2 -->
 <script src="js/buffs-fx.js?v=2f4a786354"></script><!-- buffs effects layer -->
 <script src="js/decide.js?v=250667e6fa"></script><!-- V16 What to decide --><script src="js/sheet.js?v=87bcd5843e"></script><!-- Phase 0 party sheet --><script src="js/chamber.js?v=2b8c198ff6"></script><!-- Phase 0 Leeroy chamber -->
-<script src="js/haptics.js?v=cb815ad255"></script><script src="js/sensory.js?v=54bd6b6bb8"></script><!-- HOOK audio-sensory 2/3, 3/3 -->
+<script src="js/sheets.js?v=b4d9756d5d"></script><script src="js/shell.js?v=7128add3a4"></script><script src="js/swipe.js?v=615e7b22bd"></script><!-- mobile build: sheets, phone shell, swipe -->
+<script src="js/haptics.js?v=39338edc51"></script><script src="js/tilt.js?v=a0f3ccd3b0"></script><!-- mobile build: tilt --><script src="js/sensory.js?v=54bd6b6bb8"></script><!-- HOOK audio-sensory 2/3, 3/3 -->
 <script src="js/hdr.js?v=8087f6a27b"></script>
-<script src="js/v15.js?v=56856f1f70"></script>
+<script src="js/v15.js?v=56856f1f70"></script><script src="js/mine.js?v=d762124fb1"></script><!-- mobile build: launch-night answers, Looks wrong -->
 <script src="js/probe.js?v=5d73e2299f"></script><!-- M0 capability probe (#probe) -->
 <script type="module">
 /* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:

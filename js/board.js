@@ -739,7 +739,7 @@ function renderMap() {
      names 14 px, so the pins carry the map. The sizes are in map units for the map's drawn width; the map draws again when
      that width changes by more than a sixth (mapFit). */
   /* a larger map carries larger names (up to 1.8 times at 1400 px and more), so they stay readable at arm's length */
-  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = (tiny ? 11 : 12.5) * u * bump, BIG = (tiny ? 12 : 14.5) * u * bump, SMALL = (tiny ? 11 : 13) * u * bump, CH = 0.6;
+  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = 13 * u * bump, BIG = (tiny ? 13 : 14.5) * u * bump, SMALL = 13 * u * bump /* mobile build (2026-10-30): 13 px on screen at least, the phone floor for labels (was 12.5, 11 on a tiny map) */, CH = 0.6;
   MAPW.drawn = mw;
   svg.style.setProperty("--fs", `${FS.toFixed(2)}px`); svg.style.setProperty("--fb", `${BIG.toFixed(2)}px`); svg.style.setProperty("--fsm", `${SMALL.toFixed(2)}px`);
   const boxes = [];
@@ -1650,7 +1650,13 @@ function startLibBar() {
   let on = false, raf = 0;
   body.addEventListener("scroll", () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; const st = SC.open === "library" && body.scrollTop > 48; if (st !== on) { on = st; bar.classList.toggle("stuck", st); } }); }, { passive: true });
 }
+let swipeBound = false;
 function startSwipe() {
+  /* mobile build: the phone shell's swipe.js owns scene swipes on a phone. The listeners always bind and every pointerdown asks
+     shellOwns() (BoardShell.phone()), so the two engines never both move a panel and a page whose shell switches off at run time
+     (widened past 700, or shell.js missing) keeps this swipe; a return here at boot left that page with no swipe at all */
+  if (swipeBound) return; swipeBound = true;
+  const shellOwns = () => !!(window.BoardShell && window.BoardShell.phone());
   try { if (localStorage.getItem("board-swiped") === "1") { const hint = $("#scene-hint"); if (hint) hint.classList.add("used"); } } catch (e) {}
   const body = $("#sheet-body"); let s = null;
   const panel = () => (SC.open ? $(`#panel-${SC.open}`) : null);
@@ -1663,7 +1669,7 @@ function startSwipe() {
   for (const t of ["pointerup", "pointercancel"]) body.addEventListener(t, (e) => { if (e.pointerType === "touch") fingers = Math.max(0, fingers - 1); }, true);
   body.addEventListener("pointerdown", (e) => {
     s = null;
-    if (e.pointerType === "mouse" || SC.open === null) return;
+    if (e.pointerType === "mouse" || SC.open === null || shellOwns()) return;
     if (fingers > 1 || (e.target.closest && e.target.closest("#map"))) return;
     if (e.clientX < SWIPE_EDGE || e.clientX > innerWidth - SWIPE_EDGE) return;
     if (e.target.closest && e.target.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar")) return;
@@ -1890,7 +1896,7 @@ function requestClose() {
   if (history.state && history.state.pushed) { history.back(); return; } /* opened from the wall: back pops it */
   setHash(null, false); hideScene();
 }
-function switchTab(key) { if (key === SC.open) return; setHash(key, false); selectPanel(key, true); swiped(); }
+function switchTab(key, crossFade = true) { if (key === SC.open) return; setHash(key, false); selectPanel(key, crossFade); swiped(); }
 /* Phones have no tab rail (v4 stage 9): focus goes to the panel when the tab is not rendered. */
 function focusScene(k) { const t = $(`#tab-${k}`); if (t && t.getClientRects().length) t.focus({ preventScroll: true }); else { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
 function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); focusScene(k); }
@@ -2285,8 +2291,8 @@ function startAim() {
   document.documentElement.addEventListener("pointerleave", () => { if (!LB.tilt) { LB.tx = LB.ty = null; } });
 }
 /* V13b tilt (phone-deep T2 to T8): */
-const TILT = { b0: null, g0: null, got: 0, dog: 0 };
-function tiltLabel(on) { const t = $("#tilt"); if (!t) return; t.setAttribute("aria-pressed", String(on)); t.replaceChildren(s("svg", { class: "tilt-ico", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M12 3c2.6 3 4 5.3 4 7.6a4 4 0 0 1-8 0C8 8.3 9.4 6 12 3z" }), s("path", { d: "M10 14.5h4v6h-4zM8 20.5h8" })), on ? "Light follows your phone: on" : "Light follows your phone: off"); }
+const TILT = { b0: null, g0: null, got: 0, dog: 0, linked: false };
+function tiltLabel(on) { const t = $("#tilt"); if (!t) return; t.setAttribute("aria-pressed", String(on)); t.replaceChildren(s("svg", { class: "tilt-ico", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M12 3c2.6 3 4 5.3 4 7.6a4 4 0 0 1-8 0C8 8.3 9.4 6 12 3z" }), s("path", { d: "M10 14.5h4v6h-4zM8 20.5h8" })), on ? "The tavern leans with your phone" : "Let the tavern lean with your phone"); }
 function tiltSay(msg) {
   let n = $("#tilt-note");
   if (!n) { const t = $("#tilt"); if (!t) return; n = h("span", { class: "tilt-note", id: "tilt-note", role: "status" }); t.parentNode.insertBefore(n, t.nextSibling); }
@@ -2316,7 +2322,21 @@ function tiltReady() {
   tiltLabel(false);
   reduceMQ.addEventListener("change", () => { tilt.hidden = reduceMQ.matches; if (reduceMQ.matches && LB.tilt) tiltOff(); });
   if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) window.screen.orientation.addEventListener("change", () => { TILT.b0 = TILT.g0 = null; });
+  /* mobile build: js/tilt.js (window.BoardTilt) is the one orientation source when it is on the page. The button toggles it and the
+     light aim subscribes to it; the deviceorientation listener and the watchdog below stay only for a page without tilt.js. */
+  const linkTilt = () => {
+    const BT = window.BoardTilt; if (!BT || TILT.linked) return; TILT.linked = true;
+    BT.on(({ x, y }) => { LB.tilt = !!BT.status().on; if (LB.tilt) aimAt(innerWidth * (0.5 + 0.5 * x), innerHeight * (0.5 + 0.5 * y)); });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", linkTilt); else linkTilt();
   tilt.addEventListener("click", async () => {
+    const BT = window.BoardTilt;
+    if (BT) {
+      linkTilt(); await BT.toggle(); const st = BT.status(); LB.tilt = !!st.on; if (!st.on) LB.tx = LB.ty = null; tiltLabel(!!st.on);
+      tiltSay(st.on ? "" : st.permission === "denied" ? "Motion access was declined; reload the page to be asked again." : st.why === "no motion" ? "Your browser is not sharing motion here." : "");
+      if (st.on) setTimeout(() => { const s2 = BT.status(); if (!s2.on) { LB.tilt = false; LB.tx = LB.ty = null; tiltLabel(false); if (s2.why === "no motion") tiltSay("Your browser is not sharing motion here."); } }, 1700);
+      return;
+    }
     if (LB.tilt) { tiltOff(); tiltSay(""); return; }
     try { if (typeof DeviceOrientationEvent.requestPermission === "function" && (await DeviceOrientationEvent.requestPermission()) !== "granted") { tiltOff("Motion access was declined; reload the page to be asked again."); return; } }
     catch (e) { tiltOff("Motion access was declined; reload the page to be asked again."); return; }
@@ -3632,7 +3652,7 @@ async function boot(mode, sdk) {
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 /* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
-Object.assign(KIT, { medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
+Object.assign(KIT, { medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 /* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image icon. */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

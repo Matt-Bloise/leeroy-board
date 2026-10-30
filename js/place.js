@@ -328,7 +328,8 @@ function roads(M) {
     pinned = t; show(t, "tap");
   });
   addEventListener("pointerdown", (e) => { if (!card.hidden && pinned && !e.target.closest("#road-card") && !e.target.closest(SEL)) hide(); }, true);
-  addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { hide(); e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  /* integrator (2026-10-30): a card only shown by focus or hover goes with the same Escape that closes the scene (one press); a pinned card takes the first */
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { const was = pinned; hide(); if (was) { e.preventDefault(); e.stopImmediatePropagation(); } } }, true);
   K.sceneHooks.push((on) => { if (!on) hide(); });
   const bodyEl = $("#sheet-body"); if (bodyEl) bodyEl.addEventListener("scroll", () => { if (!card.hidden && !coarse()) hide(); }, { passive: true });
 }
@@ -415,7 +416,8 @@ function tips() {
   };
   const close = () => { card.hidden = true; if (cur) cur.removeAttribute("aria-describedby"); cur = null; };
   hover({ root: document.body, sel: "[data-tip]", card: () => card, open, close, isOpen: () => !card.hidden });
-  addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { close(); e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  /* integrator (2026-10-30): the tip is a title stand-in; Escape hides it and the same press goes on to close the scene (it took two presses) */
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) close(); }, true);
   addEventListener("pointerdown", () => { if (!card.hidden) close(); }, true);
 }
 
