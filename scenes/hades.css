@@ -1,5 +1,5 @@
 /* The Hades room (scenes/hades.js, notes/companion/HADES-ROOM.md): counter at the stage bottom, bust right, card left, one parchment text box between. Motion under no-preference and html:not(.play) only. */
-#chamber.hades { --hd-h: 520px; --hd-lee: 300px; --hd-you: 200px; --hd-box: 46rem; --hd-cnt: clamp(56px, calc(var(--hd-h) * 0.18), 150px); --hd-sink: calc(var(--hd-cnt) * 0.9); --hd-lw: calc(var(--hd-lee) * 0.72); --hd-yw: calc(var(--hd-you) * 0.75); width: 100%; max-width: min(100%, 100rem); justify-self: center; padding: 8px; }
+#chamber.hades { --hd-h: clamp(360px, calc(100dvh - 340px), 520px); --hd-lee: 300px; --hd-you: 200px; --hd-box: 46rem; --hd-cnt: clamp(56px, calc(var(--hd-h) * 0.18), 150px); --hd-sink: calc(var(--hd-cnt) * 0.9); --hd-lw: calc(var(--hd-lee) * 0.72); --hd-yw: calc(var(--hd-you) * 0.75); width: 100%; max-width: min(100%, 100rem); justify-self: center; padding: 8px; }
 .hades .ch-stage { position: relative; display: block; height: var(--hd-h); overflow: hidden; border-radius: 8px; }
 .hades .hd-counter { position: absolute; left: 0; right: 0; bottom: 0; height: var(--hd-cnt); z-index: 3; pointer-events: none; border-top: 3px solid var(--brass-dim); background: linear-gradient(180deg, var(--oak-3), var(--oak-1) 55%, var(--oak-0)); box-shadow: 0 -8px 18px var(--shadow); }
 .hades .hd-counter.is-art { border-top: 0; box-shadow: none; background-color: transparent; background-size: cover; background-position: center bottom; background-repeat: no-repeat; }
@@ -17,12 +17,12 @@
 .hades .ch-you .ch-art-you { width: var(--hd-yw); height: var(--hd-you); aspect-ratio: auto; border: 0; border-radius: 0; object-fit: cover; box-shadow: none; }
 .hades .ch-plate { position: absolute; top: calc(100% + 6px); left: 0; right: 0; margin-inline: auto; width: max-content; z-index: 4; }
 .hades .ch-plate-you { border-bottom: 3px solid var(--cc, var(--brass-dim)); }
-.hades .ch-log { position: absolute; z-index: 4; left: calc(var(--hd-yw) + 3% + 16px); right: calc(var(--hd-lw) + 3% + 16px); bottom: calc(var(--hd-cnt) * 0.45); margin-inline: auto; max-width: var(--hd-box); max-height: calc(100% - 20px); overflow-y: auto; padding: 6px; gap: 4px; align-content: end; border-radius: 10px; background: var(--parchment); color: var(--ink); box-shadow: 0 6px 16px var(--black); }
+.hades .ch-log { position: absolute; z-index: 4; left: calc(var(--hd-yw) + 3% + 16px); right: calc(var(--hd-lw) + 3% + 16px); bottom: calc(var(--hd-cnt) * 0.45); margin-inline: auto; max-width: var(--hd-box); max-height: calc(100% - 20px); overflow-y: auto; padding: 6px; gap: 4px; align-content: start; border-radius: 10px; background: var(--parchment); color: var(--ink); box-shadow: 0 6px 16px var(--black); }
 .hades .ch-b { max-width: none; justify-self: stretch; padding: 6px 10px; border-radius: 6px; background: transparent; box-shadow: none; }
 .hades .ch-a { border-right: 0; border-left: 4px solid var(--brass); }
 .hades .ch-b + .ch-b { border-top: 1px dotted var(--ink-soft); }
-@media (max-width: 1100px) { #chamber.hades { --hd-h: 560px; --hd-lee: 240px; --hd-you: 170px; --hd-box: 40rem; } }
-@media (min-width: 1700px) { #chamber.hades { --hd-h: min(72vh, 820px); --hd-lee: 380px; --hd-you: 260px; --hd-box: 56rem; } }
+@media (max-width: 1100px) { #chamber.hades { --hd-h: clamp(360px, calc(100dvh - 340px), 560px); --hd-lee: 240px; --hd-you: 170px; --hd-box: 40rem; } }
+@media (min-width: 1700px) { #chamber.hades { --hd-h: clamp(420px, min(72vh, calc(100dvh - 330px)), 820px); --hd-lee: 380px; --hd-you: 260px; --hd-box: 56rem; } }
 @media (min-width: 2200px) { #chamber.hades { --hd-lee: 440px; --hd-you: 300px; } }
 @media (max-width: 699px) {
   #chamber.hades { --hd-h: 420px; --hd-lee: 150px; --hd-you: 110px; padding: 6px; }
@@ -39,6 +39,15 @@
   #panel-librarian.chamber-on .ch-form { padding: 6px 8px; gap: 4px; }
   #panel-librarian.chamber-on :is(.ch-sugrow, .ch-row2) { display: none; }
 }
+/* the composer docks at the bottom of the scene's scroll box while the room is open (hades.js sets hd-dock and --hd-pb, that box's bottom padding) */
+#panel-librarian.hd-dock.chamber-on:not(.ch-lettering) #ask-box { position: sticky; bottom: calc(-1 * var(--hd-pb, 32px)); z-index: 6; border-radius: 10px; background: var(--oak-1); box-shadow: 0 -10px 16px var(--shadow), 0 var(--hd-pb, 32px) 0 var(--oak-1); }
+/* scroll cues on the text box's top and bottom edges (hades.js) */
+.hades .hd-more { position: absolute; z-index: 5; width: 44px; height: 44px; padding: 0; margin: 0; border: 0; background: none; transform: translate(-50%, -50%); cursor: pointer; }
+.hades .hd-more[hidden] { display: none; }
+.hades .hd-more::before { content: ""; position: absolute; inset: 8px; border-radius: 50%; background: var(--oak-2); border: 2px solid var(--brass); box-shadow: 0 2px 6px var(--black); }
+.hades .hd-more::after { content: ""; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-right: 2px solid var(--brass-hi); border-bottom: 2px solid var(--brass-hi); transform: translate(-50%, -70%) rotate(45deg); }
+.hades .hd-up::after { transform: translate(-50%, -30%) rotate(225deg); }
+.hades .hd-more:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: -4px; border-radius: 50%; }
 @media (prefers-reduced-motion: no-preference) {
   html:not(.play) .hades.ch-in .ch-stage { animation: hd-fade 300ms ease both; }
   html:not(.play) .hades.ch-in .ch-lee .ch-frame { animation: hd-rise 620ms var(--ease-oak, ease-out) 80ms both; }

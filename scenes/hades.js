@@ -10,7 +10,8 @@ const room = K.$("#chamber"); if (!room) return;
 const stage = room.querySelector(".ch-stage"), lee = room.querySelector(".ch-lee"), you = room.querySelector(".ch-you");
 const frame = lee && lee.querySelector(".ch-frame"); if (!stage || !frame || !you) return;
 const ALT = { smug: "Leeroy at the bar, pleased with himself", delighted: "Leeroy at the bar, laughing out loud", sheepish: "Leeroy at the bar, wincing with a crooked smile", thinking: "Leeroy at the bar, looking down at the counter" };
-const H = { on: false, dead: false, front: 0, seq: 0, busy: false, scr: null, thunk: null, nod: null, bob: null };
+const logEl = room.querySelector(".ch-log"), panel = room.parentNode;
+const H = { on: false, hold: false, grow: null, dead: false, front: 0, seq: 0, busy: false, scr: null, thunk: null, nod: null, bob: null };
 const calm = () => { try { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } catch (e) { return false; } };
 const snd = (n, o) => { try { const S = window.BoardSound; if (!calm() && S && (!S.status || S.status().on)) return S.play(n, o); } catch (e) {} return false; };
 
@@ -18,6 +19,47 @@ const snd = (n, o) => { try { const S = window.BoardSound; if (!calm() && S && (
 const counter = K.h("div", { class: "hd-counter", "aria-hidden": "true" });
 const imgs = [0, 1].map(() => { const i = K.h("img", { class: "hd-img", alt: "", width: 1024, height: 1536, decoding: "async" }); return i; });
 const bust = K.h("div", { class: "hd-bust" }, ...imgs), pose = K.h("div", { class: "hd-pose" }, bust);
+
+/* scroll cues on the text box: a chevron on its bottom edge while more lies below, one on its top edge while earlier talk lies above */
+const down = K.h("button", { type: "button", class: "hd-more hd-down", hidden: true, "aria-label": "More below in the talk", onclick: () => nudge(1) });
+const up = K.h("button", { type: "button", class: "hd-more hd-up", hidden: true, "aria-label": "Earlier in the talk", onclick: () => nudge(-1) });
+function nudge(dir) {
+  if (!logEl) return;
+  H.hold = false;
+  const d = Math.max(60, (logEl.clientHeight || 100) * 0.8) * dir;
+  try { if (typeof logEl.scrollBy === "function") logEl.scrollBy({ top: d, behavior: calm() ? "auto" : "smooth" }); else logEl.scrollTop = (logEl.scrollTop || 0) + d; } catch (e) {}
+}
+/* the newest question stays at the top of the box while its answer types in, until the asker scrolls the box themselves */
+function hold() {
+  if (!H.hold || !logEl || !H.on) return;
+  try {
+    const qs = logEl.querySelectorAll(".ch-q"), q = qs[qs.length - 1]; if (!q) return;
+    const top = Math.max(0, q.getBoundingClientRect().top - logEl.getBoundingClientRect().top + (logEl.scrollTop || 0) - 6);
+    if (Math.abs((logEl.scrollTop || 0) - top) > 1) logEl.scrollTop = top;
+  } catch (e) {}
+}
+function cue() {
+  if (!logEl || !H.on) return;
+  try {
+    const t = logEl.scrollTop || 0, ch = logEl.clientHeight || 0, sh = logEl.scrollHeight || 0;
+    down.hidden = !(sh > ch + 4 && t + ch < sh - 4); up.hidden = !(t > 4);
+    const x = (logEl.offsetLeft || 0) + (logEl.offsetWidth || 0) / 2, y0 = logEl.offsetTop || 0, y1 = y0 + (logEl.offsetHeight || 0);
+    down.setAttribute("style", `left: ${x}px; top: ${y1}px`); up.setAttribute("style", `left: ${x}px; top: ${y0}px`);
+  } catch (e) {}
+}
+const grew = () => { hold(); later(); };
+const later = () => { try { if (typeof requestAnimationFrame === "function") requestAnimationFrame(cue); else cue(); } catch (e) {} };
+/* the composer docks to the bottom of the scene's scroll box while the room is open, so sending never needs a scroll; --hd-pb is that box's bottom padding */
+function dock(on) {
+  try {
+    if (!panel || !panel.classList) return;
+    panel.classList.toggle("hd-dock", !!on);
+    if (!on) return;
+    let e = panel; while (e && !(e.classList && e.classList.contains("sheet-body"))) e = e.parentNode;
+    const pb = e && window.getComputedStyle ? parseFloat(window.getComputedStyle(e).paddingBottom) : 0;
+    if (panel.style && panel.style.setProperty) panel.style.setProperty("--hd-pb", `${Number.isFinite(pb) ? pb : 32}px`);
+  } catch (e) {}
+}
 
 const seen = {};
 function probe(url) {
@@ -64,6 +106,8 @@ function stagePut() {
   H.on = true;
   if (counter.parentNode !== stage) stage.appendChild(counter);
   if (pose.parentNode !== frame) frame.appendChild(pose);
+  if (down.parentNode !== stage) { stage.appendChild(up); stage.appendChild(down); }
+  dock(true); later();
   you.classList.add("hd-card");
   room.classList.add("hades");
   swap(room.dataset.mood || "smug");
@@ -74,15 +118,23 @@ function stagePut() {
 function unstage() {
   H.on = false; H.seq++; H.busy = false;
   for (const k of ["scr", "thunk", "nod", "bob"]) { clearTimeout(H[k]); H[k] = null; }
+  clearInterval(H.grow); H.grow = null;
   room.classList.remove("hades", "is-thinking", "is-typing", "bob");
   you.classList.remove("hd-card", "hd-nod");
+  dock(false); down.hidden = true; up.hidden = true;
 }
 
 K.on("chamber", (on) => { if (on) stagePut(); else unstage(); });
 K.on("chamber-mood", (m) => { if (H.on) swap(m); });
 K.on("chamber-state", (st) => state(st));
 K.on("chamber-typing", (v) => { room.classList.toggle("is-typing", !!v && H.on); });
-K.on("chamber-line", () => { if (H.on) pulse(room, "bob", "bob", 220); });
+K.on("chamber-line", () => { if (H.on) pulse(room, "bob", "bob", 220); later(); });
+/* the answer grows a few characters a frame with no event of its own: while it types, the hold and the cues are re-checked a few times a second */
+K.on("chamber-state", grew);
+K.on("chamber-typing", (v) => { clearInterval(H.grow); H.grow = null; if (v && H.on) H.grow = setInterval(grew, 120); grew(); });
+K.on("chamber-latest", () => { H.hold = true; hold(); later(); });
+if (logEl) { logEl.addEventListener("scroll", cue); for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) logEl.addEventListener(ev, () => { H.hold = false; }); }
+try { window.addEventListener("resize", () => { if (H.on) { dock(true); later(); } }); } catch (e) {}
 K.on("chamber-send", () => { if (H.on) pulse(you, "hd-nod", "nod", 240); });
 window.__hades = Object.freeze({ status: () => ({ on: H.on, dead: H.dead, head: bust.classList.contains("is-head") }) });
 if (C.status().on) stagePut(); /* the room was already open when this file arrived */

@@ -193,6 +193,18 @@ function paint(st) {
   if (busyOk(st)) closeLetter();
   draw(st);
 }
+/* the bar room (hades): the newest question stands at the top of the text box with its answer under it, so the box never opens on the middle of
+   a question; only the box scrolls (scrollIntoView would also move the whole panel). Returns false when it is not the bar room. */
+function showLatest(kids) {
+  try {
+    if (!room.classList.contains("hades")) return false;
+    let q = null; for (let i = kids.length - 1; i >= 0; i--) { if (kids[i].classList && kids[i].classList.contains("ch-q")) { q = kids[i]; break; } }
+    if (!q) return false;
+    log.scrollTop = Math.max(0, q.getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop - 6);
+    tell("chamber-latest"); /* the room keeps it there while the answer grows, until the asker scrolls the box themselves */
+    return true;
+  } catch (e) { return false; }
+}
 /* the log: every turn oldest first, the live ask's wait or failure on its own turn, a refusal as the last word */
 function draw(st) {
   const a = st.ask, liveId = a && Number.isInteger(a.id) ? a.id : null;
@@ -216,7 +228,7 @@ function draw(st) {
   next.hidden = true;
   /* the newest word comes into view only when the talk grew (not on a redraw for a dispatch mark, which would hide the letter) */
   const grew = kids.length > (CH.kids || 0); CH.kids = kids.length;
-  if (CH.on && grew && kids.length > 1) { try { kids[kids.length - 1].scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" }); } catch (e) {} }
+  if (CH.on && grew && kids.length > 1 && !showLatest(kids)) { try { kids[kids.length - 1].scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" }); } catch (e) {} }
   if (fresh0) {
     live.textContent = `Leeroy answered: ${fresh0[0].answer}`;
     if (!CH.on) { bringPaint(); return; } /* it types out when the chamber opens */
@@ -518,7 +530,7 @@ function resume() {
 const stage = room.querySelector(".ch-stage");
 if (stage) stage.addEventListener("click", () => { if (CH.typing) finishTyping(); });
 room.setAttribute("tabindex", "-1");
-room.addEventListener("keydown", (ev) => { const t = ev ? ev.target : null; if (!CH.typing || !ev || (ev.key !== " " && ev.key !== "Enter") || /^(a|input|textarea|select)$/.test((t && t.localName) || "")) return; if (ev.preventDefault) ev.preventDefault(); finishTyping(); });
+room.addEventListener("keydown", (ev) => { const t = ev ? ev.target : null; if (!CH.typing || !ev || (ev.key !== " " && ev.key !== "Enter") || /^(a|input|textarea|select|button)$/.test((t && t.localName) || "")) return; if (ev.preventDefault) ev.preventDefault(); finishTyping(); });
 const askForm = $("#ask-form"); if (askForm) askForm.addEventListener("submit", () => { CH.autoOpen = true; });
 B.onAsk(paint);
 K.on("closed", (k) => { if (k === "librarian") close(false); });
