@@ -1,0 +1,128 @@
+[
+ {
+  "id": "tile-five",
+  "file": "index.html",
+  "old": "Turn their cards",
+  "new": "Open the five",
+  "flavour": "Turn their cards"
+ },
+ {
+  "id": "tile-signups",
+  "file": "index.html",
+  "old": "Who is coming",
+  "new": "See who is coming",
+  "flavour": "Who is coming"
+ },
+ {
+  "id": "tile-library",
+  "file": "index.html",
+  "old": "Search the shelves",
+  "new": "Search the library",
+  "flavour": "Search the shelves"
+ },
+ {
+  "id": "tile-roads",
+  "file": "index.html",
+  "old": "Trace the roads",
+  "new": "Open the map",
+  "flavour": "Trace the roads"
+ },
+ {
+  "id": "tile-racials",
+  "file": "index.html",
+  "old": "See what changed",
+  "new": "See race skills",
+  "flavour": "See what changed"
+ },
+ {
+  "id": "tile-legacy",
+  "file": "index.html",
+  "old": "Fill the ring",
+  "new": "See the points",
+  "flavour": "Fill the ring"
+ },
+ {
+  "id": "tile-buffs",
+  "file": "index.html",
+  "old": "Spin the wheel",
+  "new": "See who buffs whom",
+  "flavour": "Spin the wheel"
+ },
+ {
+  "id": "tile-ledger",
+  "file": "index.html",
+  "old": "Read the decisions",
+  "new": "Read the decisions list",
+  "flavour": "Read the decisions"
+ },
+ {
+  "id": "tile-librarian",
+  "file": "index.html",
+  "old": "Ask Leeroy",
+  "new": "Ask Leeroy a question",
+  "flavour": "Ask Leeroy"
+ },
+ {
+  "id": "tile-clock",
+  "file": "index.html",
+  "old": "Dates",
+  "new": "See the dates",
+  "flavour": "Dates"
+ },
+ {
+  "id": "next-pick-name-title",
+  "file": "next/rules.js",
+  "old": "Tell the board who you are",
+  "new": "Pick your name",
+  "flavour": "Tell the board who you are"
+ },
+ {
+  "id": "next-pick-name-label",
+  "file": "next/rules.js",
+  "old": "Pick your name",
+  "new": "Pick your name from the five",
+  "flavour": "Pick your name"
+ },
+ {
+  "id": "next-learn-role",
+  "file": "next/rules.js",
+  "old": "Read it",
+  "new": "Read the role page",
+  "flavour": "Read it"
+ },
+ {
+  "id": "next-dates",
+  "file": "next/rules.js",
+  "old": "Show the dates",
+  "new": "Open the dates",
+  "flavour": "Show the dates"
+ },
+ {
+  "id": "next-vote",
+  "file": "next/rules.js",
+  "old": "Vote",
+  "new": "Vote on the Party Board",
+  "flavour": "Vote"
+ },
+ {
+  "id": "wall-look",
+  "file": "js/next.js and js/seals.js",
+  "old": "Just look at the wall for now",
+  "new": "Skip this and see the wall",
+  "flavour": "Just look at the wall for now"
+ },
+ {
+  "id": "skip",
+  "file": "scenes/walk.js",
+  "old": "Skip",
+  "new": "Skip the tour",
+  "flavour": "Skip"
+ },
+ {
+  "id": "whoami-scope",
+  "file": "js/board.js line 1112",
+  "old": "Who are you? Pick a name to see what you get",
+  "new": "Only changes what this page shows you",
+  "flavour": "Who are you? Pick a name to see what you get"
+ }
+]

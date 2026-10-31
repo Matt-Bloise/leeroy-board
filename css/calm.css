@@ -1,0 +1,9 @@
+:is(html.calm, html.still) :is(*, ::before, ::after) { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
+html.calm .sense-invite { display: none !important; }
+html.calm.phone-shell.scene-open .sense-fab { visibility: visible; }
+html.calm.oled-care :is(.sense-fab, .bottombar, .seal) { translate: none !important; }
+
+.set-open { flex: none; font: inherit; font-size: var(--fs-chip); letter-spacing: 0.08em; color: var(--text-dim); background: none; border: 0; border-bottom: 1px solid var(--grain); padding: 0 2px; cursor: pointer; }
+.set-open:hover, .set-open:focus-visible { color: var(--parchment); }
+@media (max-width: 699px) { .set-open { min-height: 44px; padding: 0 10px; } }
+@media (min-width: 700px) { #top .clock-top { gap: 8px; } #top .clock .tile-go { letter-spacing: 0.04em; gap: 2px; } }

@@ -33,13 +33,13 @@
 <link rel="stylesheet" href="css/board.css?v=d792c89351">
 <link rel="stylesheet" href="css/v13d.css?v=43c7dcc5f7">
 <link rel="stylesheet" href="css/v14.css?v=7f8573d44a">
-<link rel="stylesheet" href="css/wide.css?v=6e1bd909cc"><link rel="stylesheet" href="css/atlas.css?v=325d942e2b"><link rel="stylesheet" href="css/cloth.css?v=1a56e99c96"><!-- mobile build: cloth rail --><link rel="stylesheet" href="css/seals.css?v=258cc6c507"><link rel="stylesheet" href="css/sensory.css?v=2a1d324f42"><!-- HOOK audio-sensory 1/3 -->
+<link rel="stylesheet" href="css/wide.css?v=6e1bd909cc"><link rel="stylesheet" href="css/atlas.css?v=325d942e2b"><link rel="stylesheet" href="css/cloth.css?v=1a56e99c96"><!-- mobile build: cloth rail --><link rel="stylesheet" href="css/seals.css?v=258cc6c507"><link rel="stylesheet" href="css/sensory.css?v=2a1d324f42"><!-- HOOK audio-sensory 1/3 --><link rel="stylesheet" href="css/calm.css?v=5bceb19fda">
 <link rel="stylesheet" href="css/ask.css?v=30d442a74d"><!-- the hover layer stylesheet loads with its script (js/scenes.js, place) -->
 <link rel="stylesheet" href="css/hdr.css?v=60aa63039e">
 <link rel="stylesheet" href="css/v15.css?v=04b8470c90">
 <!-- What to decide, the party sheet, the Leeroy chamber and the capability probe: their stylesheets load here with their scene (js/scenes.js) -->
 <link rel="stylesheet" href="css/next.css?v=6f3bb38b1f"><!-- companion N3: the next-step card --><link rel="stylesheet" href="css/mode.css?v=301d84eb02"><!-- companion N4: Play mode -->
-<link rel="stylesheet" href="css/sheets.css?v=69dd0ad1ac"><link rel="stylesheet" href="css/shell.css?v=97da18ae33"><link rel="stylesheet" href="css/floor.css?v=49b0bc0609"><link rel="stylesheet" href="css/tilt.css?v=310f50eea8"><link rel="stylesheet" href="css/mine.css?v=92c12476e7"><!-- mobile build: sheets, phone shell, the phone floor, tilt, mine -->
+<link rel="stylesheet" href="css/sheets.css?v=69dd0ad1ac"><link rel="stylesheet" href="css/shell.css?v=97da18ae33"><link rel="stylesheet" href="css/floor.css?v=845fdf44e2"><link rel="stylesheet" href="css/tilt.css?v=310f50eea8"><link rel="stylesheet" href="css/mine.css?v=92c12476e7"><!-- mobile build: sheets, phone shell, the phone floor, tilt, mine -->
 <!-- the Who buffs whom effects layer loads with its scene through js/scenes.js -->
 <link rel="stylesheet" href="css/fit.css?v=c8369032e7"><!-- companion N5: the layout pass, loaded last --><link rel="stylesheet" href="css/kit.css?v=a6caa0dc7c">
 
@@ -64,6 +64,7 @@
       <div class="presence" id="presence">
         <span id="presence-text"></span>
         <div class="peers" id="peers"></div>
+        <button class="set-open" id="open-settings" type="button" data-open-settings>Settings</button>
         <button class="tilt" id="tilt" type="button" aria-pressed="false" hidden>Let the tavern lean with your phone</button>
         <nav class="journey" id="journey" aria-label="How do you want to explore?"><button type="button" data-journey="guided" aria-pressed="false">Guided</button><button type="button" data-journey="curious" aria-pressed="true">Curious</button><button type="button" data-journey="everything" aria-pressed="false">Everything</button></nav>
         <nav class="depth" id="depth" aria-label="How deep to look"><button type="button" data-depth="tonight" aria-pressed="false">Next steps</button><button type="button" data-depth="wall" aria-pressed="true">Wall</button><button type="button" data-depth="library" aria-pressed="false">Library</button></nav>
@@ -75,7 +76,7 @@
       <span class="clock-top">
         <span class="clock-emblem emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9"/></svg></span>
         <span class="clock-live" id="clock-label" aria-live="polite"><span class="clock-kicker" id="clock-kicker">Reading the board</span><span class="clock-event" id="clock-event"></span></span>
-        <span class="tile-go" aria-hidden="true"><span class="word">Dates</span> <i>&rarr;</i></span>
+        <span class="tile-go" aria-hidden="true"><span class="word">See the dates</span> <i>&rarr;</i></span>
       </span>
       <span class="clock-digits" id="clock-digits" aria-hidden="true"></span>
       <span class="sr-only" id="clock-left"></span>
@@ -89,41 +90,41 @@
     <div class="wall-plate" aria-hidden="true"><canvas class="light" id="light"></canvas></div>
     <ul class="wall" id="wall">
       <li class="t-five hot"><a class="tile" href="#five" data-scene="five" style="--i:0;--acc:var(--c-mage);--acc-glow:var(--hi-mage)">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-five">The five</span><span class="tile-go" aria-hidden="true"><span class="word">Turn their cards</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-five">The five</span><span class="tile-go" aria-hidden="true"><span class="word">Open the five</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><path d="M6 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="4.5" cy="9.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M1.5 18c0-2.2 1.3-4 3-4.4M22.5 18c0-2.2-1.3-4-3-4.4"/></svg></span></span>
         <span class="tile-body" id="ts-five"><span class="loading">Pinning up the cards.</span></span>
       </a></li>
       <li class="t-signups hot"><a class="tile" href="#signups" data-scene="signups" style="--i:1;--acc:var(--ok);--acc-glow:var(--hi-ok)">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-signups">Sign-ups</span><span class="tile-go" aria-hidden="true"><span class="word">Who is coming</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-signups">Sign-ups</span><span class="tile-go" aria-hidden="true"><span class="word">See who is coming</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12.5l3 3 5-6.5"/></svg></span></span>
         <span class="tile-body" id="ts-signups"><span class="loading">Reading the sign-up card.</span></span>
       </a></li>
       <li class="t-library hot"><div class="tile lib-tile" data-scene="library" style="--i:2;--acc:var(--brass-hi);--acc-glow:var(--hi-brass)">
-        <a class="tile-band" href="#library"><span class="tile-name"><span class="tile-title" id="tt-library">Library</span><span class="tile-go" aria-hidden="true"><span class="word">Search the shelves</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3 20.5h18"/><path d="M4.5 20.5V6h3v14.5M7.5 20.5V8.5h3v12"/><path d="M11.5 9.2l2.9-.8 3.6 11.6-2.9.8z"/><path d="M5.5 9h1M8.5 11.5h1"/></svg></span></a>
+        <a class="tile-band" href="#library"><span class="tile-name"><span class="tile-title" id="tt-library">Library</span><span class="tile-go" aria-hidden="true"><span class="word">Search the library</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3 20.5h18"/><path d="M4.5 20.5V6h3v14.5M7.5 20.5V8.5h3v12"/><path d="M11.5 9.2l2.9-.8 3.6 11.6-2.9.8z"/><path d="M5.5 9h1M8.5 11.5h1"/></svg></span></a>
         <span class="tile-body" id="ts-library"><span class="loading">Opening the stacks.</span></span>
         <form class="tile-search" id="tile-search" role="search" aria-label="Search the library"><input class="tile-q" id="tile-q" type="search" autocomplete="off" spellcheck="false" enterkeyhint="search" placeholder="Search every page" aria-label="Search every page of the library"><button class="tile-q-go" type="submit">Search</button></form>
         <span class="tile-line lib-new" id="ts-library-new"></span>
       </div></li>
       <li class="t-roads"><a class="tile" href="#roads" data-scene="roads" style="--i:3;--acc:var(--c-druid);--acc-glow:var(--hi-druid)">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-roads">Three roads</span><span class="tile-go" aria-hidden="true"><span class="word">Trace the roads</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-roads">Three roads</span><span class="tile-go" aria-hidden="true"><span class="word">Open the map</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></svg></span></span>
         <span class="tile-body" id="ts-roads"><span class="loading">Unrolling the map.</span></span>
       </a></li>
       <li class="t-racials"><a class="tile" href="#racials" data-scene="racials" style="--i:4;--acc:var(--wax);--acc-glow:var(--hi-wax)">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Race skills</span><span class="tile-go" aria-hidden="true"><span class="word">See what changed</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-racials">Race skills</span><span class="tile-go" aria-hidden="true"><span class="word">See race skills</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M12 3c3 4.5 5 7.3 5 10a5 5 0 0 1-10 0c0-2.7 2-5.5 5-10z"/><path d="M10 14.5a2 2 0 0 0 2 2"/></svg></span></span>
         <span class="tile-body" id="ts-racials"><span class="loading">Reading the race skills.</span></span>
       </a></li>
       <li class="t-legacy"><div class="tile gl-tile" data-scene="legacy" style="--i:5;--acc:var(--brass);--acc-glow:var(--hi-brass)">
-        <a class="tile-band" href="#legacy"><span class="tile-name"><span class="tile-title" id="tt-legacy">Bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">Fill the ring</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></a>
+        <a class="tile-band" href="#legacy"><span class="tile-name"><span class="tile-title" id="tt-legacy">Bonuses</span><span class="tile-go" aria-hidden="true"><span class="word">See the points</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5"/><path d="M8.5 3l3.5 4.5L15.5 3"/><path d="M12 11l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z"/></svg></span></a>
         <span class="tile-body" id="ts-legacy"><span class="loading">Counting points.</span></span>
       </div></li>
       <li class="t-buffs"><a class="tile" href="#buffs" data-scene="buffs" style="--i:6;--acc:var(--c-warlock);--acc-glow:var(--hi-warlock)">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-buffs">Who buffs whom</span><span class="tile-go" aria-hidden="true"><span class="word">Spin the wheel</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-buffs">Who buffs whom</span><span class="tile-go" aria-hidden="true"><span class="word">See who buffs whom</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 3.5v6.3M12 14.2v6.3M3.5 12h6.3M14.2 12h6.3"/></svg></span></span>
         <span class="tile-body" id="ts-buffs"><span class="loading">Drawing the wheel.</span></span>
       </a></li>
       <li class="t-ledger"><a class="tile" href="#ledger" data-scene="ledger" style="--i:7;--acc:var(--c-paladin);--acc-glow:var(--hi-paladin)">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">Ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Read the decisions</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-ledger">Ledger</span><span class="tile-go" aria-hidden="true"><span class="word">Read the decisions list</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M6 4h10a2 2 0 0 1 2 2v13a1 1 0 0 1-1 1H8a2 2 0 0 1-2-2z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span></span>
         <span class="tile-body" id="ts-ledger"><span class="loading">Opening the ledger.</span></span>
       </a></li>
       <li class="t-librarian"><a class="tile" href="#librarian" data-scene="librarian" style="--i:8;--acc:var(--c-priest);--acc-glow:var(--hi-priest)">
-        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">Leeroy</span><span class="tile-go" aria-hidden="true"><span class="word">Ask Leeroy</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
+        <span class="tile-band"><span class="tile-name"><span class="tile-title" id="tt-librarian">Leeroy</span><span class="tile-go" aria-hidden="true"><span class="word">Ask Leeroy a question</span> <i>&rarr;</i></span></span><span class="emblem-box emblem-slot" aria-hidden="true"><svg class="emblem" viewBox="0 0 24 24"><path d="M3.5 5.5c3-1 6-1 8.5 1 2.5-2 5.5-2 8.5-1v13.5c-3-1-6-1-8.5 1-2.5-2-5.5-2-8.5-1z"/><path d="M12 6.5v13.5"/></svg></span></span>
         <span class="tile-body" id="ts-librarian"><span class="loading">Asking the librarian.</span></span>
       </a></li>
     </ul>
@@ -139,6 +140,7 @@
     <div class="sheet-head">
       <div class="sheet-top">
         <div class="sheet-name"><button class="sheet-emblem" id="sheet-emblem" type="button" aria-label="Show this scene's medallion large"></button><div class="sheet-titles"><h2 id="sheet-title">The five</h2><p class="sheet-sub" id="sheet-sub"></p></div></div>
+        <button class="peek-btn" id="scene-settings" type="button" data-open-settings aria-label="Open settings: calm, sound, density">Settings</button>
         <button class="peek-btn" id="scene-peek" type="button" aria-pressed="false" title="Hold to see the tavern behind the scene">Look at the room</button>
         <button class="close" id="scene-close" type="button" aria-label="Close and go back to the wall"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
@@ -289,14 +291,14 @@
 
 <script src="js/sound.js?v=913b7185ce"></script>
 <script src="js/brain.js?v=d65b13d9ef"></script>
-<script src="js/board.js?v=d94a32319a"></script><script src="js/spring.js?v=3a06d42fb5"></script><!-- mobile build: spring family -->
-<script src="js/v13d.js?v=78d3a75b14"></script><script src="js/scenes.js?v=e78b732e17"></script><!-- lazy scenes: decide, sheet, chamber, probe --><script src="js/atlas-hook.js?v=fa1b0cfd68"></script><script src="js/cloth-hook.js?v=ac7dfa213b"></script><!-- mobile build: cloth hook --><script src="js/seals.js?v=30a5a74f2f"></script>
+<script src="js/board.js?v=158196c72c"></script><script src="js/spring.js?v=3a06d42fb5"></script><!-- mobile build: spring family -->
+<script src="js/v13d.js?v=78d3a75b14"></script><script src="js/scenes.js?v=d5205bb04a"></script><!-- lazy scenes: decide, sheet, chamber, probe --><script src="js/atlas-hook.js?v=fa1b0cfd68"></script><script src="js/cloth-hook.js?v=ac7dfa213b"></script><!-- mobile build: cloth hook --><script src="js/seals.js?v=c108179268"></script>
 <script src="js/ask.js?v=2945716baf"></script><!-- the hover layer loads on the first fine-pointer hover or key press (js/scenes.js, place) -->
 <!-- the wide roads map loads with Three roads through js/scenes.js -->
 <script src="js/sheets.js?v=8b529be0f8"></script><script src="js/shell.js?v=e614f05d19"></script><script src="js/swipe.js?v=c613369ff3"></script><!-- mobile build: sheets, phone shell, swipe -->
-<script src="js/haptics.js?v=39338edc51"></script><script src="js/tilt.js?v=a0f3ccd3b0"></script><!-- mobile build: tilt --><script src="js/sensory.js?v=08983e1d7a"></script><script src="js/mode.js?v=04cf2aebca"></script><!-- companion N4: Play and Lounge --><!-- HOOK audio-sensory 2/3, 3/3 -->
-<script src="js/hdr.js?v=846ca71ede"></script>
-<script src="js/v15.js?v=48599a98cf"></script><script src="js/next.js?v=5f85ee2e05"></script><!-- companion N3: the next step, per journey --><script src="js/mine.js?v=abb0a19be3"></script><!-- mobile build: launch-night answers, Looks wrong -->
+<script src="js/haptics.js?v=39338edc51"></script><script src="js/tilt.js?v=a0f3ccd3b0"></script><!-- mobile build: tilt --><script src="js/sensory.js?v=5a5514c7ab"></script><script src="js/mode.js?v=67ce64ba9f"></script><!-- companion N4: Play and Lounge --><!-- HOOK audio-sensory 2/3, 3/3 -->
+<script src="js/hdr.js?v=cbff2c6547"></script>
+<script src="js/v15.js?v=48599a98cf"></script><script src="js/next.js?v=2e9a88bed5"></script><!-- companion N3: the next step, per journey --><script src="js/mine.js?v=abb0a19be3"></script><!-- mobile build: launch-night answers, Looks wrong -->
 <script type="module">
 /* Gate: the board renders inside Discord (vendored SDK, relative import; outside Discord the gate stays). Two previews skip it:
    #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is

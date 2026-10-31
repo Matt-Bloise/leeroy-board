@@ -1029,7 +1029,7 @@ function renderBuffsDeep() {
   box.replaceChildren(...[
     h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
     me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${me.race} ${me.class}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
-      : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
+      : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), h("span", { class: "deep-scope", text: "Only changes what this page shows you" }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
     h("p", { class: "deep-key", text: "Stamina adds health, Intellect adds mana, Spirit refills health and mana faster." }),
     answer,
@@ -3499,11 +3499,12 @@ document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagNa
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();
 (function burnIn() {
   const root = document.documentElement; let n = 0, idle = 0, veil = null;
+  const care = () => !root.classList.contains("calm") && !root.classList.contains("still") && localStorage.getItem("board-screencare") === "1";
   setInterval(() => { if (document.hidden) return; n += 1; root.style.setProperty("--drift-x", `${Math.round(Math.cos(n * 1.7) * 3)}px`); root.style.setProperty("--drift-y", `${Math.round(Math.sin(n * 1.3) * 3)}px`); }, 45000);
   const wake = () => { idle = Date.now(); if (root.classList.contains("idle-dim")) root.classList.remove("idle-dim"); };
   ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"].forEach((ev) => addEventListener(ev, wake, { passive: true, capture: true }));
   idle = Date.now();
-  setInterval(() => { if (document.hidden) return; if (!veil) { veil = document.createElement("div"); veil.setAttribute("class", "idle-veil"); veil.setAttribute("aria-hidden", "true"); document.body.appendChild(veil); } if (Date.now() - idle > 120000) root.classList.add("idle-dim"); }, 10000);
+  setInterval(() => { if (document.hidden || !care()) return; if (!veil) { veil = document.createElement("div"); veil.setAttribute("class", "idle-veil"); veil.setAttribute("aria-hidden", "true"); document.body.appendChild(veil); } if (Date.now() - idle > 120000) root.classList.add("idle-dim"); }, 10000);
 })();
 KIT.on("booted", () => {
   if (typeof document.querySelectorAll !== "function") return;

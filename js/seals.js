@@ -133,7 +133,7 @@
         h("div", { class: "wx-row" }, ...Object.entries(JR).map(([j, [name, ico, line]]) => h("button", { class: "wx", type: "button", "data-journey": j, "aria-pressed": "false", onclick: () => stamp(j) },
           h("span", { class: "wx-wax" }, h("img", { class: "wx-blob", src: `img/wax/${WAXC[j]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "wx-ring" }), h("img", { class: "wx-ico", src: `img/icons/${ico}.png`, alt: "", width: 192, height: 192, decoding: "async" }), h("span", { class: "wx-lit" })),
           h("b", { class: "wx-name", text: name }), h("span", { class: "wx-line", text: line })))),
-        h("button", { class: "lib-tool tn-wall", id: "tn-wall", type: "button", onclick: () => { if (window.__next && window.__next.wall) window.__next.wall(); K.requestClose(); } }, "Just look at the wall for now"));
+        h("button", { class: "lib-tool tn-wall", id: "tn-wall", type: "button", onclick: () => { if (window.__next && window.__next.wall) window.__next.wall(); K.requestClose(); } }, "Skip this and see the wall"));
       panel.append(row);
     }
     const j = jnow(), picked = !!(window.__v13d.status && window.__v13d.status().picked); row.querySelectorAll(".wx").forEach((b) => b.setAttribute("aria-pressed", String(picked && b.dataset.journey === j)));

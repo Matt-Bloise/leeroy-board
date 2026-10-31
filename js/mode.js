@@ -1,3 +1,4 @@
+try { if (localStorage.getItem("board-calm") === "1") document.documentElement.classList.add("calm"); if (localStorage.getItem("board-still") === "1") document.documentElement.classList.add("still"); } catch (e) {}
 (() => {
   "use strict";
   if (typeof window === "undefined" || typeof document === "undefined") return;
@@ -13,7 +14,7 @@
   const hold = () => { if (sound()) { put(HELD, "1"); sound(false); } };
   const give = () => { if (get(HELD) === "1") { put(HELD, null); sound(true); } };
 
-  const TIP = { off: "Turn on Play mode: text only, nothing moves, for while the game runs.", on: "Play mode is on. Press to light the tavern room again." };
+  const TIP = { off: "Turn on Play mode: text only, nothing moves, sound held. Also the calm view.", on: "Play mode is on. Press to light the tavern room again." };
   const TITLE = TIP.off;
   const ART = { lit: "img/companion/lantern-lit.webp", snuffed: "img/companion/lantern-snuffed.webp" };
   let art = false;

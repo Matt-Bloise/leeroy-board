@@ -114,7 +114,7 @@ export function candidates(input, nowMs) {
   const mine = me ? entries.find((e) => isPerson(e, me.names, me.slugs, N.clean)) || null : null;
   const member = me && me.member;
 
-  if (!me) add("pick-name", "pick-name", { kind: "do", title: "Tell the board who you are", fact: "No name is picked on this device yet", why: "Each of the five has their own next step, shown once a name is picked here or Just looking.", label: "Pick your name", href: "#tn-me", source: "board" });
+  if (!me) add("pick-name", "pick-name", { kind: "do", title: "Pick your name", fact: "No name is picked on this device yet", why: "Each of the five has their own next step, shown once a name is picked here or Just looking.", label: "Pick your name from the five", href: "#tn-me", source: "board" });
 
   if (lw.live) {
     const row = me ? N.launch.find((r) => isPerson(r, me.names, me.slugs, N.clean)) || N.partyRows.find((r) => isPerson(r, me.names, me.slugs, N.clean) && obj(r.fields) && r.fields.launch_state) : null;
@@ -175,7 +175,7 @@ export function candidates(input, nowMs) {
     const closes = num(p.closes_epoch), title = str(p.title);
     if (!title || closes === null || closes * 1000 <= nowMs) continue;
     const when = pollWhen(p), url = /^https:\/\//.test(str(p.url)) ? p.url : linkOf(T, "poll");
-    add(`poll-${slug(title)}`, "poll", { kind: "party", title: `Vote: ${title}`, fact: `Poll open: ${title}`, why: when ? `Closes ${when}.` : "Open in Discord until it closes.", due: closes, label: "Vote", href: /^https:\/\//.test(str(url)) ? url : null, alt: "Not now", source: "discord" });
+    add(`poll-${slug(title)}`, "poll", { kind: "party", title: `Vote: ${title}`, fact: `Poll open: ${title}`, why: when ? `Closes ${when}.` : "Open in Discord until it closes.", due: closes, label: "Vote on the Party Board", href: /^https:\/\//.test(str(url)) ? url : null, alt: "Not now", source: "discord" });
   }
 
   const wk = obj(N.tonight && N.tonight.week_one), line = (v) => (typeof v === "string" && v.trim() ? fit(v, 110) : null);
@@ -190,7 +190,7 @@ export function candidates(input, nowMs) {
   if (me && me.class_key && libraryHas(N.library, `classes/${me.class_key}`)) {
     const cls = (member && str(member.class)) || cap(me.class_key), role = member && (member.role === "tank" || member.role === "healer") ? ` ${member.role}` : "";
     const what = `${/^[AEIOU]/.test(cls) ? "an" : "a"} ${cls}${role} does in a group`;
-    add("learn-role", "learn-role", { kind: "learn", title: `What ${what}`, fact: `The library has a page on what ${what}`, why: "Three minutes of reading before the first dungeon.", label: "Read it", href: `#library.classes.${slug(me.class_key)}`, source: "library", weight: N.journey === "guided" ? WEIGHTS["learn-role-guided"] : WEIGHTS["learn-role"] });
+    add("learn-role", "learn-role", { kind: "learn", title: `What ${what}`, fact: `The library has a page on what ${what}`, why: "Three minutes of reading before the first dungeon.", label: "Read the role page", href: `#library.classes.${slug(me.class_key)}`, source: "library", weight: N.journey === "guided" ? WEIGHTS["learn-role-guided"] : WEIGHTS["learn-role"] });
   }
 
   const nm = nextMoment(N.timeline, nowMs);
@@ -199,7 +199,7 @@ export function candidates(input, nowMs) {
     const when = nm.closing ? `closes at the end of ${str(e.until) || "its last day"}, ${str(e.until_zone) || "Pacific"} time` : (t && str(t.when)) || null;
     const why0 = (t && str(t.meaning)) || (str(e.detail) ? cap(str(e.detail)) : null), since = nm.closing && t && str(t.when) ? `Open since ${str(t.when)}.` : null;
     const why = [why0, since].filter(Boolean).join(" ") || null;
-    add("next-date", "next-date", { kind: "date", title: when ? `${label}: ${when}` : `Next date: ${label}`, why, minutes: null, due: nm.t, label: "Show the dates", href: `#timeline.${e.key.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`, source: "blizzard" });
+    add("next-date", "next-date", { kind: "date", title: when ? `${label}: ${when}` : `Next date: ${label}`, why, minutes: null, due: nm.t, label: "Open the dates", href: `#timeline.${e.key.toLowerCase().replace(/[^a-z0-9_-]/g, "-")}`, source: "blizzard" });
   }
 
   if (!out.length) {

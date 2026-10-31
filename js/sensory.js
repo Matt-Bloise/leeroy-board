@@ -285,10 +285,8 @@
     INV.away = (e) => { if (!t.contains(e.target)) inviteEnd(true); };
     INV.gone = (e) => { if (!e || !e.target || e.target === document || e.target === document.documentElement || e.target === document.scrollingElement) inviteEnd(true); };
     b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); inviteEnd(true); }); x.addEventListener("click", () => inviteEnd(true));
-    INV.life = setTimeout(() => inviteEnd(true), 8000);
-    addEventListener("pointerdown", INV.away, true); addEventListener("scroll", INV.gone, { capture: true, passive: true });
   }
-  function invite() { if (!INV.done) setTimeout(inviteTry, 3500); }
+  function invite() {}
 
   function start() {
     const I = BS.internals(); if (!I || E.run) return; E.run = true; E.I = I; E.t0 = performance.now();
@@ -301,7 +299,7 @@
   BS.onState((on) => { if (on) setTimeout(start, 0); else stop(); setTimeout(sync, 150); });
   function kit() {
     const K = window.__boardKit; if (!K) return false;
-    K.on("scene", (key) => { E.scene = key; levels(); sync(); dock(); if (INV.el) inviteEnd(false); }); K.on("closed", () => { E.scene = null; levels(); dock(); if (!INV.done) setTimeout(inviteTry, 600); });
+    K.on("scene", (key) => { E.scene = key; levels(); sync(); dock(); if (INV.el) inviteEnd(false); }); K.on("closed", () => { E.scene = null; levels(); dock(); });
     K.on("rendered", dock); addEventListener("resize", dock); if (K.SC && K.SC.open) E.scene = K.SC.open; dock();
     return true;
   }

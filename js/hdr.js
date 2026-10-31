@@ -11,12 +11,13 @@
   let on = false, n = 0, idle = Date.now(), veil = null;
   const auto = () => mq("(dynamic-range: high)") && mq("(prefers-color-scheme: dark)");
   const apply = () => {
-    on = forced === "1" || (forced !== "0" && auto());
+    on = (forced === "1" || (forced !== "0" && auto())) && localStorage.getItem("board-screencare") === "1" && !root.classList.contains("calm");
     root.classList.toggle("oled-care", on);
     if (!on) { root.classList.remove("oled-dim"); return; }
     if (!veil && document.body) { veil = document.createElement("div"); veil.setAttribute("class", "oled-veil"); veil.setAttribute("aria-hidden", "true"); document.body.appendChild(veil); }
   };
   apply();
+  addEventListener("board-screencare", apply); addEventListener("board-calm", apply);
   for (const q of ["(dynamic-range: high)", "(prefers-color-scheme: dark)"]) { try { const m = matchMedia(q); if (m.addEventListener) m.addEventListener("change", apply); } catch (e) {} }
   setInterval(() => {
     if (!on || document.hidden) return; n += 1;

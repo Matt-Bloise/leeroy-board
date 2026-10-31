@@ -32,7 +32,7 @@ function show() {
   const n = W.plan.length; if (W.i >= n) return end();
   const c = cur(), b = (id, t, f) => h("button", { type: "button", class: id === "walk-next" ? "lib-btn strong" : "lib-btn", id, "aria-describedby": n > 1 ? "walk-s walk-n" : "walk-s", onclick: f }, t);
   W.card.replaceChildren(...[ART[c[2]] && h("img", { class: "walk-pic", src: src(c[2]), alt: "" }), h("p", { class: "walk-s", id: "walk-s", text: c[0] }),
-    n > 1 && h("p", { class: "walk-n", id: "walk-n", text: `${W.i + 1} of ${n}` }), h("div", { class: "walk-act" }, b("walk-next", W.i < n - 1 ? "Next" : "Done", next), b("walk-skip", "Skip", () => end()))].filter(Boolean));
+    n > 1 && h("p", { class: "walk-n", id: "walk-n", text: `${W.i + 1} of ${n}` }), h("div", { class: "walk-act" }, b("walk-next", W.i < n - 1 ? "Next" : "Done", next), b("walk-skip", "Skip the tour", () => end()))].filter(Boolean));
   place(); reveal(find(c)); focus($("#walk-next"));
 }
 function next() { if (!W.on) return; try { BoardHaptics.fire("select"); } catch (e) {} if (W.i >= W.plan.length - 1) return end(); W.i++; show(); }

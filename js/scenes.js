@@ -7,11 +7,12 @@ const SCENES = {
   chamber: () => [new URL("../scenes/chamber.css?v=5951072482", HERE), new URL("../scenes/chamber.js?v=134acfc3b1", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=8d874e23ef", HERE), new URL("../scenes/decide.js?v=907d901b50", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
-  walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=95d283c0e2", HERE)],
+  walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=9a7fa09c43", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1280b387e0", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
   hades: () => [new URL("../scenes/hades.css?v=8eb34e6d88", HERE), new URL("../scenes/hades.js?v=f432c92235", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
+  settings: () => [new URL("../scenes/settings.css?v=69b6158bbc", HERE), new URL("../scenes/settings.js?v=f44aed99e7", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],
   guided: () => [new URL("../scenes/guided-atlas.css?v=6cd88a7eed", HERE), new URL("../scenes/guided-atlas.js?v=51a8daed4d", HERE)],
   foley: () => [null, new URL("../scenes/foley.js?v=54054813b9", HERE)],
@@ -92,6 +93,9 @@ try { const g = localStorage.getItem("board-journey"); if ((!g || g === "guided"
 document.addEventListener("click", (e) => { const t = e.target; if (t && t.closest && t.closest('[data-journey="guided"]')) load("guided"); }, true);
 try { if (/^(roads|atlas)(\.|$)/.test(decodeURIComponent(String(location.hash || "").slice(1)))) load("wide"); } catch (e) {}
 addEventListener("hashchange", () => { if (probeHash()) load("probe"); });
+try { if (decodeURIComponent(String(location.hash || "").slice(1)) === "settings") load("settings"); } catch (e) {}
+addEventListener("hashchange", () => { if (location.hash === "#settings") load("settings"); });
+document.addEventListener("click", (e) => { const tg = e.composedPath ? e.composedPath()[0] : null; const t = tg && tg.closest ? tg.closest("[data-open-settings]") : null; if (t && !P.settings) { e.preventDefault(); load("settings").then(() => { if (window.BoardSettings) window.BoardSettings.open(t); }); } });
 K.on("booted", () => { let walked = null; try { walked = localStorage.getItem("board-walked"); } catch (e) {} if (!walked && !/[?&](render|brain)=/.test(location.search)) load("walk"); });
 const WARM = ["chamber", "sheet", "decide", "wide"], PLACE = { five: "sheet", sheet: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide", library: "refresh" };
 const playing = () => { try { return document.documentElement.classList.contains("play"); } catch (e) { return false; } };
