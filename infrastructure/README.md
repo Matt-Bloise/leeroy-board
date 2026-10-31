@@ -81,13 +81,27 @@ on:
       - master
 ```
 
-### Step 1: Create a Cloudflare API Token
+### Step 1a: Create a Cloudflare API Token
 1. Log into the [Cloudflare Dashboard](https://dash.cloudflare.com/) -> **My Profile** -> **API Tokens** -> **Create Token**.
 2. Start from the **Edit Cloudflare Workers** template and ensure the following permissions are included:
    - **Account** -> **Workers Scripts**: `Edit`
    - **Account** -> **D1**: `Edit`
    - **Account** -> **Cloudflare Pages**: `Edit`
 3. Copy your **API Token** and your **Account ID** (visible on the right sidebar of the Workers & Pages overview page).
+
+### Step 1b: Create a Free-Tier Google Gemini API Key (`GEMINI_API_KEY`)
+Google AI Studio provides a **100% Free Tier** for `gemini-2.5-flash` (15 requests/minute, 1,000,000 tokens/minute, 1,500 requests/day) and `gemini-2.5-pro` with **no credit card or billing account required**:
+1. Sign into [Google AI Studio — API Keys (`https://aistudio.google.com/apikey`)](https://aistudio.google.com/apikey) with your Google account.
+2. Click **Create API key** in the top-right corner.
+3. Choose **Create API key in new project** (or select an existing Google Cloud project that does **not** have Cloud Billing enabled so the key remains strictly locked to the **$0 Free Tier** and can never incur charges).
+4. Confirm that the **Plan** column next to your new key says **Free of charge**.
+5. Copy the generated key (starts with `AIzaSy...`) and save it as the `GEMINI_API_KEY` secret in your GitHub repository (Step 2 below).
+6. *(Optional smoke test from your terminal)*:
+   ```bash
+   curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"contents":[{"parts":[{"text":"Say Leeroy Jenkins in one sentence."}]}]}'
+   ```
 
 ### Step 2: Configure GitHub Repository Secrets
 In your GitHub repository (`Matt-Bloise/leeroy-board`), navigate to **Settings -> Secrets and variables -> Actions -> New repository secret** and add:
@@ -97,7 +111,7 @@ In your GitHub repository (`Matt-Bloise/leeroy-board`), navigate to **Settings -
 | `CLOUDFLARE_API_TOKEN` | **Yes** | Cloudflare API token with `Workers Scripts: Edit`, `D1: Edit`, and `Cloudflare Pages: Edit` permissions. |
 | `CLOUDFLARE_ACCOUNT_ID` | **Yes** | Your 32-character Cloudflare Account ID. |
 | `ANTHROPIC_API_KEY` | One or Both | Site's Claude API key (`sk-ant-...`) used when `provider = "claude"`. |
-| `GEMINI_API_KEY` | One or Both | Google AI Studio Free-Tier API key (`AIza...` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) used when `provider = "gemini"`. |
+| `GEMINI_API_KEY` | One or Both | Google AI Studio Free-Tier API key (`AIzaSy...` created in Step 1b) used when `provider = "gemini"`. |
 | `BOARD_ADMIN_TOKEN` | Optional | Shared secret key matched against `#k=<token>` in the browser URL or `Authorization: Bearer <token>` from the Discord bot for write intents (`/api/intent`, `/api/sheet`, `/api/signups`). |
 | `DISCORD_WEBHOOK_URL` | Optional | Discord channel webhook URL for `#wow-forever` to mirror Leeroy's answers into Discord chat. |
 | `DISCORD_PUBLIC_KEY` | Optional | Public key (`General Information -> Public Key`) from the Discord Developer Portal if using `POST /api/discord` as a serverless Discord Interactions Endpoint. |
