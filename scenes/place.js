@@ -1,12 +1,3 @@
-/* One hover language for the whole board (owner, 2026-10-29: cards must never cover what you are pointing at).
-   Runs after js/board.js and js/v13d.js through window.__boardKit. Everything a pointer, a finger or the keyboard can reveal goes through here:
-   1. focus plus context: the item you point at stays fully lit and lifts, its siblings dim a little, connected items light together (hover.css)
-   2. details open after a short intent delay (120 ms in, 200 ms out), in a spot chosen from candidates (right, left, below, above, corners, then
-      the emptiest free spot) that never meets the trigger, its row or its neighbours, and prefers empty space over text and buttons
-   3. keyboard focus does what hover does; a tap pins the card, a second tap, a tap elsewhere or Escape closes it
-   4. the pointer may travel from the trigger to its card (a safe hull between them keeps the card open)
-   5. prefers-reduced-motion: the cards fade, nothing slides (hover.css)
-   Spec and audit: board/tools/harness/hover-audit.mjs */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
@@ -15,7 +6,6 @@ const IN = 120, OUT = 200, SWITCH = 80;
 const reduced = () => K.reduceMQ.matches;
 const coarse = () => innerWidth < 700 || matchMedia("(pointer: coarse)").matches;
 
-/* ---------------- geometry ---------------- */
 const box = (x, y, w, ht) => ({ x, y, w, h: ht, r: x + w, b: y + ht });
 const R = (el) => { const r = el.getBoundingClientRect(); return box(r.left, r.top, r.width, r.height); };
 const grow = (a, p) => box(a.x - p, a.y - p, a.w + 2 * p, a.h + 2 * p);
@@ -23,7 +13,6 @@ const lap = (a, b) => { const ox = Math.min(a.r, b.r) - Math.max(a.x, b.x), oy =
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, Math.max(lo, hi)));
 const isShown = (el) => el.isConnected && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
 
-/* the trigger's row: the whole line of text a word sits in, else the list row, else the trigger itself */
 function rowRect(t) {
   const r = R(t);
   if (typeof SVGElement !== "undefined" && t instanceof SVGElement) return r;
@@ -36,7 +25,6 @@ function rowRect(t) {
   return r;
 }
 
-/* what a reader may want to see under a card: text blocks, buttons, links, cards, the map. Leaves only, so nothing counts twice. */
 const CONTENT = "p, li, h1, h2, h3, h4, h5, summary, label, input, select, textarea, button, a[href], .tt, .gl, .sp-tt, .card, figure, img, td, dt, dd, svg, canvas";
 function contentRects(scope, bounds, skip) {
   const all = [...scope.querySelectorAll(CONTENT)], parent = new Set();
@@ -53,9 +41,6 @@ function contentRects(scope, bounds, skip) {
 }
 
 const SIDES = ["right", "left", "below", "above", "below-right", "below-left", "above-right", "above-left"];
-/* choose(w, h, trigger rect, opts): the best x, y for a card of w by h in viewport coordinates.
-   opts: bounds (rect the card must stay in), row (trigger's row), avoid (rects that must stay clear), anchors (extra rects to place around),
-   content (rects to cover as little as possible), gap, margin */
 function choose(w, ht, tr, o) {
   const B = o.bounds, g = o.gap == null ? 10 : o.gap, row = o.row || tr;
   const hard = [grow(tr, 4), grow(row, 2), ...(o.avoid || []).map((a) => grow(a, 2))];
@@ -81,7 +66,6 @@ function choose(w, ht, tr, o) {
     if (!best || k.total < best.total) best = { x, y, side: t.side, ...k };
   };
   tries.forEach(consider);
-  /* nothing clean next to it: scan the bounds for the emptiest spot nearest the trigger */
   if (!best || best.hardLap > 0 || best.soft > 900) {
     const step = Math.max(8, Math.round(Math.min(B.w, B.h) / 64));
     for (let y = B.y; y <= B.b - ht + 0.5; y += step) for (let x = B.x; x <= B.r - w + 0.5; x += step) consider({ side: "free", x, y, pri: 6 });
@@ -89,12 +73,10 @@ function choose(w, ht, tr, o) {
   return best || { x: B.x, y: B.y, side: "none", hardLap: 0, soft: 0 };
 }
 
-/* the card sits in .sheet (absolute) or on the page (fixed); put it where choose() says, in the host's own coordinates */
 function setPos(card, x, y) {
   const host = getComputedStyle(card).position === "fixed" ? { x: 0, y: 0 } : (card.offsetParent ? R(card.offsetParent) : { x: 0, y: 0 });
   card.style.left = `${Math.round(x - host.x)}px`; card.style.top = `${Math.round(y - host.y)}px`;
 }
-/* the siblings a card must also stay off: other triggers of the same family in the same list or map */
 function siblingsOf(t, sel) {
   const c = t.closest("ul, ol, .spells, .map-box, .roads-legend, .wheel, .cal-col, .races, .tn-cards, .bclass, .tabs, .cal, .chips, .seg, [role=tablist], [role=group]") || t.parentElement;
   return c ? [...c.querySelectorAll(sel)].filter((e) => e !== t && !e.contains(t) && !t.contains(e) && isShown(e)).map(R) : [];
@@ -109,7 +91,6 @@ function visibleBounds(pad = 8) {
   return box(x, y, r - x, bt - y);
 }
 
-/* a bottom (or top) dock for small screens and touch: the side that leaves the trigger and its neighbours clear, scrolling the list when it must */
 function dock(card, t, avoid) {
   const body = $("#sheet-body"), sh = $(".sheet");
   if (!body || !sh) return;
@@ -117,14 +98,12 @@ function dock(card, t, avoid) {
   card.classList.add("sheetmode"); card.style.left = ""; card.style.right = "";
   const bottomBox = box(bb.x, shb.b - ch, bb.w, ch), topBox = box(bb.x, dockTop, bb.w, ch), avoidR = avoid || [];
   const maxScroll = Math.max(0, body.scrollHeight - body.clientHeight);
-  /* for each side: how far the list must scroll to keep the trigger in sight on the open side, and what the card then still touches (the neighbours move with the scroll) */
   const plan = (up) => {
     const room = up ? { lo: dockTop + ch + 10, hi: bb.b - 10 } : { lo: bb.y + 10, hi: shb.b - ch - 10 };
     let dy = 0; if (tr.b > room.hi) dy = tr.b - room.hi; else if (tr.y < room.lo) dy = tr.y - room.lo;
     dy = clamp(body.scrollTop + dy, 0, maxScroll) - body.scrollTop;
     const cb = up ? topBox : bottomBox, all = [grow(tr, 6), ...avoidR];
     const mv = (r, d) => box(r.x, r.y - d, r.w, r.h), hits = (d) => all.reduce((n, a) => n + lap(mv(a, d), cb), 0);
-    /* the neighbours the card still touches: scroll on so the whole cluster clears it, while the trigger stays in the room */
     if (hits(dy)) {
       const need = all.filter((a) => lap(mv(a, dy), cb) > 0).reduce((m, a) => Math.max(m, up ? cb.b + 6 - mv(a, dy).y : mv(a, dy).b - (cb.y - 6)), 0);
       const d2 = clamp(body.scrollTop + dy + (up ? -need : need), 0, maxScroll) - body.scrollTop, t2 = mv(tr, d2);
@@ -138,8 +117,6 @@ function dock(card, t, avoid) {
   if (pick.dy) body.scrollTo({ top: body.scrollTop + pick.dy, behavior: "auto" });
 }
 
-/* ---------------- the cards the board already has ---------------- */
-/* #ttc: the spell, item and glossary card of the library and the five */
 function placeCard(card, t) {
   const sheet = $(".sheet");
   card.classList.toggle("sheetmode", coarse());
@@ -154,7 +131,6 @@ function placeCard(card, t) {
 }
 K.placeCard = placeCard;
 
-/* #glpop: the plain-word card outside the library */
 K.placePop = (pop, t) => {
   const B = visibleBounds(10), w = pop.offsetWidth, ht = pop.offsetHeight;
   const scope = $("#scene .sheet") || document.body;
@@ -162,12 +138,8 @@ K.placePop = (pop, t) => {
   pop.style.left = `${Math.round(pos.x)}px`; pop.style.top = `${Math.round(pos.y)}px`;
 };
 
-/* ---------------- intent controller ---------------- */
 const pt = { x: -1, y: -1, t: 0 };
-/* a card opens on focus only for a keyboard user: script focus (a tab opening a scene) and a click's focus stay quiet */
 let keyMode = false;
-/* fix E3 (2026-10-30): the last thing the pointer came over stands in for ":hover"; a scene opening or closing quiets every card until the
-   pointer really moves (more than 4 px) or a key goes down, so nothing opens under a parked pointer or a script's focus */
 let over = null;
 const Q = { on: false, x: -1, y: -1 };
 const hov = (el) => !!(over && el && el.contains(over));
@@ -178,14 +150,13 @@ K.on("scene", hush); K.on("closed", hush);
 addEventListener("keydown", () => { keyMode = true; Q.on = false; }, true);
 addEventListener("pointerdown", () => { keyMode = false; }, true);
 addEventListener("pointermove", (e) => { pt.x = e.clientX; pt.y = e.clientY; pt.t = Date.now(); if (Q.on) { if (Q.x < 0) { Q.x = pt.x; Q.y = pt.y; } else if (Math.abs(pt.x - Q.x) + Math.abs(pt.y - Q.y) > 4) Q.on = false; } }, { passive: true, capture: true });
-function hull(points) { /* convex hull, monotone chain */
+function hull(points) {
   const p = [...points].sort((a, b) => a.x - b.x || a.y - b.y), cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x), lo = [], up = [];
   for (const q of p) { while (lo.length > 1 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
   for (const q of [...p].reverse()) { while (up.length > 1 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
   return lo.slice(0, -1).concat(up.slice(0, -1));
 }
 function inside(poly, q) { for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; if ((b.x - a.x) * (q.y - a.y) - (b.y - a.y) * (q.x - a.x) < -6) return false; } return true; }
-/* hover({root, sel, open(t, via), close(), card(), pinned(), isOpen(), enter(t), leave(t), strict}); strict: a pointer landing outside the trigger closes at once */
 function hover(c) {
   let inT = 0, outT = 0, cur = null, left = null, pend = null;
   const cardEl = () => (c.card ? c.card() : null);
@@ -196,13 +167,11 @@ function hover(c) {
     if (e.pointerType === "touch") return;
     if (c.strict && cur && !cur.contains(e.target)) { clearTimeout(outT); outT = 0; cur = null; c.close(); }
     const t = e.target.closest && e.target.closest(c.sel); if (!t) return;
-    /* crossing to the open card: a trigger passed on the way does not take the card away; it counts only when the pointer rests on it */
     const el = cardEl(), open = c.isOpen && c.isOpen(), cross = open && cur && cur !== t && el && !el.hidden && left && Date.now() - left.t < 1400 && inside(hull([left.p, ...corners(R(cur)), ...corners(R(el))]), pt);
     if (cross) { clearTimeout(inT); inT = setTimeout(() => { if (Q.on || !t.isConnected || !hov(t)) return; clearTimeout(outT); outT = 0; left = null; if (c.enter) c.enter(t); cur = t; c.open(t, "hover"); }, 300); return; }
     clearTimeout(outT); outT = 0; left = null;
     if (c.enter) c.enter(t);
     if (cur === t) { clearTimeout(inT); pend = null; return; }
-    /* moving between the parts of one trigger does not start the wait again */
     if (pend === t) return;
     clearTimeout(inT); pend = t;
     inT = setTimeout(() => { pend = null; if (Q.on || !t.isConnected || !hov(t)) return; cur = t; c.open(t, "hover"); }, open ? SWITCH : IN);
@@ -220,49 +189,37 @@ function hover(c) {
   return { cancel() { clearTimeout(inT); clearTimeout(outT); cur = null; pend = null; } };
 }
 
-/* ---------------- spell, item and glossary cards (library, the five) ---------------- */
 function tooltips() {
   const lib = $("#panel-library"), five = $("#panel-five"), ttc = $("#ttc"); if (!ttc) return;
   const TT = K.TT;
-  /* the old mouseover/out handlers are replaced by this controller: stop them before they run */
   for (const p of [lib, five].filter(Boolean)) for (const ev of ["mouseover", "mouseout"]) p.addEventListener(ev, (e) => { if (e.target.closest && e.target.closest(".tt, .gl, .sp-tt")) e.stopImmediatePropagation(); }, true);
-  /* a tap or a click focuses the word before its click arrives; a card opening (and docking, and scrolling) at that moment moves the word out from under the finger and the click lands elsewhere. Only the keyboard opens a card by focus. */
   for (const p of [lib, five].filter(Boolean)) p.addEventListener("focusin", (e) => { if (!keyMode && e.target.closest && e.target.closest(".tt, .gl, .sp-tt")) e.stopImmediatePropagation(); }, true);
   if (lib) hover({ focusAlways: true, root: lib, sel: ".tt, .gl", card: () => ttc, open: (t, via) => { if (K.ttShow) K.ttShow(t, false); }, close: () => { if (!TT.pinned) K.ttClose(); }, pinned: () => TT.pinned, isOpen: () => TT.open });
   if (five && K.spellShow) hover({ focusAlways: true, root: five, sel: ".sp-tt", card: () => ttc, open: (t) => K.spellShow(t, false), close: () => { if (!TT.pinned) K.ttClose(); }, pinned: () => TT.pinned, isOpen: () => TT.open });
 }
 
-/* the plain-word card outside the library (#glpop): hover and focus open it, a click pins it */
 function glossary() {
   const pop = $("#glpop"); if (!pop || !K.glShow || !K.GL) return;
   let pinned = false, viaHover = false;
   const sel = ".gl[data-term]";
   const scope = document.body;
   hover({ root: scope, sel, card: () => pop, open: (t, via) => { if (K.GL.open !== t) { pinned = false; K.glShow(t); } viaHover = true; }, close: () => { if (!pinned) { viaHover = false; K.glClose(); } }, pinned: () => pinned, isOpen: () => !pop.hidden });
-  /* a click on a word its hover already opened pins it instead of closing it */
   addEventListener("click", (e) => { const b = e.target && e.target.closest && e.target.closest(sel); if (!b || pop.hidden) return; if (K.GL.open === b && !pinned && viaHover) { pinned = true; viaHover = false; e.stopImmediatePropagation(); e.preventDefault(); return; } pinned = false; viaHover = false; }, true);
-  /* a finger never hovers: its first tap opens, its second closes */
   addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") viaHover = false; }, true);
   K.sceneHooks.push(() => { pinned = false; });
 }
 
-/* ---------------- Three roads ---------------- */
-/* renderMap draws again on a resize; the listeners are set once and read the current map from RM */
 const RM = { M: null, wired: false };
 function roads(M) {
   const svg = M.svg, panel = $("#panel-roads"), legend = $("#roads-legend"), sheet = $(".sheet"); if (!panel || !legend || !sheet) return;
   RM.M = M;
-  /* no native tooltips on the pins: the card below says it, and a title tooltip lands wherever the browser likes */
   svg.querySelectorAll(".map-pin").forEach((p) => { const t = Array.from(p.children).find((c) => c.tagName.toLowerCase() === "title"); if (t) { p.setAttribute("data-who", t.textContent); (t.parentNode && t.parentNode.removeChild(t)); } });
-  /* Orgrimmar, the Crossroads and the zeppelin take pointers too (they sat under the pins as plain pictures) */
   svg.querySelectorAll(".map-town, .map-mark, .map-zep-g, .route-plate").forEach((e) => {
     e.style.pointerEvents = "all"; e.classList.add("place-target");
     if (e.matches(".map-mark") && Number(e.getAttribute("x")) === 382) e.classList.add("map-cross");
-    /* reachable from the keyboard and named for a screen reader */
     if (!e.hasAttribute("tabindex")) e.setAttribute("tabindex", "0");
     if (!e.hasAttribute("aria-label")) e.setAttribute("aria-label", e.matches(".map-town") ? "Orgrimmar, where all three roads end" : e.matches(".map-zep-g, .route-plate") ? "The Undercity zeppelin" : "The Crossroads");
   });
-  /* the pins are reached from the keyboard through their zone (a focusable group); the group lists the names for a screen reader */
   svg.querySelectorAll(".road-g").forEach((g) => { const pins = [...g.querySelectorAll(".map-pin")].map((p) => p.getAttribute("data-who")).filter(Boolean); if (pins.length) g.setAttribute("aria-description", pins.join("; ")); });
   let card = $("#road-card");
   if (!card) { card = h("div", { class: "place-card road-card", id: "road-card", role: "tooltip", hidden: "" }); sheet.append(card); }
@@ -297,7 +254,6 @@ function roads(M) {
     M.groups.concat(M.lines || []).forEach((g) => g.classList.toggle("on", all || g.dataset.road === k));
     panel.dataset.ctx = "road";
     legend.querySelectorAll(".road-btn").forEach((b) => { const on = all || b.dataset.road === k; b.parentElement.classList.toggle("ctx-on", on); b.parentElement.classList.toggle("ctx-dim", !on); });
-    /* a pin you point at glows; pointing at a road (its legend row or its land) makes all of that road's pins glow with its row */
     RM.M.svg.querySelectorAll(".map-pin").forEach((p) => { const g = p.closest(".road-g"); p.classList.toggle("ctx-on", id.kind === "pin" ? !!cur && cur.t === p : !all && !!g && g.dataset.road === k); });
   };
   const clearCtx = () => {
@@ -314,7 +270,6 @@ function roads(M) {
     if (coarse()) { card.classList.add("sheetmode"); dock(card, t, [...svg.querySelectorAll(".map-pin")].map(R).concat([...legend.querySelectorAll(".road-btn")].map(R))); return; }
     card.classList.remove("sheetmode", "dock-top"); card.style.bottom = "";
     const B = visibleBounds(10), w = card.offsetWidth, ht = card.offsetHeight, mb = R($("#map") || svg);
-    /* the other roads' lands count as neighbours too: a card for one road never lies across another */
     const avoid = [...svg.querySelectorAll(".map-pin, .pin-banner, .map-town, .map-zep-g, .map-mark")].map(R).concat([...legend.querySelectorAll(".road-btn")].map(R), [...svg.querySelectorAll(".road-g")].filter((g) => !g.contains(t) && !t.contains(g)).map(R));
     const pos = choose(w, ht, R(t), { bounds: B, row: rowRect(t), avoid, anchors: [mb], content: contentRects(panel, B, card).map((q) => (lap(q, mb) > 0 && q.w > mb.w * 0.8 ? { ...q, wt: 0.5 } : q)) });
     setPos(card, pos.x, pos.y); card.dataset.side = pos.side;
@@ -330,9 +285,7 @@ function roads(M) {
   const hide = () => { cur = null; pinned = null; card.hidden = true; clearCtx(); panel.querySelectorAll("[aria-describedby=road-card]").forEach((e) => e.removeAttribute("aria-describedby")); };
   const ctl = hover({ root: panel, sel: SEL, card: () => card, open: show, close: () => { if (!pinned) hide(); }, pinned: () => !!pinned, isOpen: () => !card.hidden,
     enter: (t) => { const id = idOf(t); if (id.key) { cur = { t, id }; setCtx(id); } }, leave: () => { if (!pinned && card.hidden) clearCtx(); } });
-  /* fix E3: a scene change (another tab, or Three roads opening) never keeps or brings a road card; one comes from a click, Enter or a moved pointer */
   K.on("scene", () => { ctl.cancel(); if (!card.hidden) hide(); });
-  /* a tap or click pins the card; the same tap again, a tap elsewhere or Escape closes it (the legend rows keep their own pressed state) */
   panel.addEventListener("click", (e) => {
     const t = e.target.closest && e.target.closest(SEL); if (!t || e.target.closest("#road-card")) return;
     if (t.matches(".road-btn")) { if (t.getAttribute("aria-pressed") === "true") { pinned = t; show(t, "tap"); } else hide(); return; }
@@ -340,15 +293,12 @@ function roads(M) {
     pinned = t; show(t, "tap");
   });
   addEventListener("pointerdown", (e) => { if (!card.hidden && pinned && !e.target.closest("#road-card") && !e.target.closest(SEL)) hide(); }, true);
-  /* integrator (2026-10-30): a card only shown by focus or hover goes with the same Escape that closes the scene (one press); a pinned card takes the first */
   addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { const was = pinned; hide(); if (was) { e.preventDefault(); e.stopImmediatePropagation(); } } }, true);
   K.sceneHooks.push((on) => { if (!on) hide(); });
   const bodyEl = $("#sheet-body"); if (bodyEl) bodyEl.addEventListener("scroll", () => { if (!card.hidden && !coarse()) hide(); }, { passive: true });
 }
 
-/* ---------------- Who buffs whom, the tiles on the wall ---------------- */
 function context() {
-  /* a hovered or focused buff row stays lit; its siblings and the wheel's other threads dim (hover.css); nothing opens over the row */
   const deep = $("#buffs-deep");
   const mark = (on, row) => { const box = row && row.closest(".bq-list, .bclass, .deep-cols"); document.querySelectorAll("#buffs-deep .ctx-on").forEach((e) => e.classList.remove("ctx-on")); const d = $("#buffs-deep"); if (d) d.classList.toggle("ctx", on); if (on && row) row.classList.add("ctx-on"); };
   if (deep) {
@@ -357,7 +307,6 @@ function context() {
     deep.addEventListener("focusin", (e) => { const r = e.target && e.target.closest && e.target.closest("li.bq"); if (r) mark(true, r); });
     deep.addEventListener("focusout", () => mark(false));
   }
-  /* a thread on the wheel: pointing at it (or focusing it) lights the whole link, its giver's threads and the rows that describe it */
   const wheel = $("#wheel");
   if (wheel) {
     const lit = (t) => { wheel.querySelectorAll(".wheel-edge.on, .wheel-tip.on").forEach((e) => e.classList.remove("on")); document.querySelectorAll("#wheel-links .ctx-on").forEach((e) => e.classList.remove("ctx-on")); if (!t) return; wheel.querySelectorAll(`.wheel-edge[data-b="${t.dataset.b}"], .wheel-tip[data-b="${t.dataset.b}"]`).forEach((e) => e.classList.add("on")); document.querySelectorAll(`#wheel-links li.buff[data-from="${t.dataset.from}"]`).forEach((e) => e.classList.add("ctx-on")); };
@@ -378,9 +327,6 @@ function context() {
   }
 }
 
-/* ---------------- the launch hero and What to decide (2026-10-30, integration review 11) ---------------- */
-/* a row of like things (state seals, fact rows, checklist rows, the schedule, the decide cards): the one pointed at or focused stays lit, its row steps back (hover.css).
-   One delegated listener, because the hero mounts late; never assumes event.target */
 function rows() {
   const G = [[".lh-st-row", ".lh-st"], [".lh-facts", ".lh-fact"], [".lh-check-list", ".lh-ck"], [".lh-moments", ".lh-moment"], [".dc-cards", ".dc-card"]];
   let lit = null;
@@ -395,10 +341,8 @@ function rows() {
   document.addEventListener("pointerleave", clear);
 }
 
-/* ---------------- native titles become cards ---------------- */
 function tips() {
   let card = $("#place-tip"); if (!card) { card = h("div", { class: "place-card place-tip", id: "place-tip", role: "tooltip", hidden: "" }); document.body.append(card); }
-  /* a title attribute opens a native tooltip wherever the browser likes; the text moves to data-tip and shows in a card of ours */
   const strip = (root) => {
     const list = root.nodeType === 1 ? [root, ...root.querySelectorAll("[title]")] : [];
     for (const e of list) {
@@ -409,9 +353,8 @@ function tips() {
       if (!(e.textContent || "").trim() && !e.getAttribute("aria-label") && !e.getAttribute("aria-labelledby")) e.setAttribute("aria-label", t);
     }
     if (root.nodeType === 1) root.querySelectorAll("svg title").forEach((x) => { const p = x.parentElement; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", x.textContent); x.remove(); });
-    /* whatever has a tip is reachable from the keyboard too (a chip, a badge, a drawn thing), and a screen reader hears the tip */
     if (root.nodeType === 1) for (const p of [root, ...root.querySelectorAll("[data-tip]")]) {
-      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip") || (p.closest && p.closest('[aria-hidden="true"]'))) continue; /* wave 2 R6: a tip inside an aria-hidden branch is not a stop */
+      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip") || (p.closest && p.closest('[aria-hidden="true"]'))) continue;
       p.setAttribute("tabindex", "0");
       if (!p.getAttribute("aria-label") && !p.getAttribute("aria-labelledby") && !(p.textContent || "").trim()) p.setAttribute("aria-label", p.getAttribute("data-tip"));
       else if (!p.getAttribute("aria-description")) p.setAttribute("aria-description", p.getAttribute("data-tip"));
@@ -429,8 +372,6 @@ function tips() {
   const close = () => { card.hidden = true; if (cur) cur.removeAttribute("aria-describedby"); cur = null; };
   const ctl = hover({ strict: true, root: document.body, sel: "[data-tip]", card: () => card, open, close, isOpen: () => !card.hidden });
   const shut = () => { ctl.cancel(); if (!card.hidden) close(); };
-  /* the tip is a title stand-in: Escape hides it and the same press goes on to close the scene; so do a press, a scroll anywhere, its
-     trigger losing focus and a scene opening or closing (fix E3: it stayed up with another tab's text over the new scene) */
   addEventListener("keydown", (e) => { if (e.key === "Escape") shut(); }, true);
   addEventListener("pointerdown", shut, true);
   document.addEventListener("scroll", shut, { capture: true, passive: true });

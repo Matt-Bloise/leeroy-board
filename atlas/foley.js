@@ -1,6 +1,3 @@
-// The Atlas's sounds (contract 3.6), synthesized on BoardSound's buses. Nothing is built before the visitor turns sound on
-// (internals() is null until then); every call is guarded. wind and surf are slow noise beds that fade out within 2 s of
-// the Atlas closing; horn is two low brass notes on a crossing; quill is the board's own cue on a drawn course.
 const DB = (d) => Math.pow(10, d / 20);
 export function createFoley(o) {
   const F = { on: false, built: false, nodes: null, destroyed: false, active: false, listening: false, stopT: 0, played: [] };
@@ -26,9 +23,8 @@ export function createFoley(o) {
     } catch (e) { F.built = false; }
     return F.built;
   }
-  const ramp = (g, v, t) => { try { g.gain.setTargetAtTime(v, F.nodes.c.currentTime, t); } catch (e) { /* ignore */ } };
+  const ramp = (g, v, t) => { try { g.gain.setTargetAtTime(v, F.nodes.c.currentTime, t); } catch (e) {  } };
 
-  // vars: { wind: 0..1 (louder over The Barrens and Durotar, 0 over sea), surf: 0..1 (near the coast ring) }
   F.update = (v) => {
     if (!F.active || !F.on || reduced() || !F.built) return;
     ramp(F.nodes.wind, DB(-44) * Math.max(0, Math.min(1, v.wind)), 0.8);
@@ -43,7 +39,7 @@ export function createFoley(o) {
     if (!F.built) return;
     ramp(F.nodes.wind, 0, 0.4); ramp(F.nodes.surf, 0, 0.4);
     clearTimeout(F.stopT);
-    F.stopT = setTimeout(() => { if (!F.active && F.nodes) for (const s of F.nodes.srcs) { try { s.stop(); } catch (e) { /* ignore */ } } if (!F.active) { F.nodes = null; F.built = false; } }, 2000);
+    F.stopT = setTimeout(() => { if (!F.active && F.nodes) for (const s of F.nodes.srcs) { try { s.stop(); } catch (e) {  } } if (!F.active) { F.nodes = null; F.built = false; } }, 2000);
   };
   F.cue = (type) => {
     if (F.destroyed || !F.on) return false;
@@ -62,9 +58,8 @@ export function createFoley(o) {
       F.played.push("horn"); return true;
     } catch (e) { return false; }
   };
-  F.destroy = () => { F.destroyed = true; F.active = false; clearTimeout(F.stopT); if (F.nodes) for (const s of F.nodes.srcs) { try { s.stop(); } catch (e) { /* ignore */ } } F.nodes = null; F.built = false; };
+  F.destroy = () => { F.destroyed = true; F.active = false; clearTimeout(F.stopT); if (F.nodes) for (const s of F.nodes.srcs) { try { s.stop(); } catch (e) {  } } F.nodes = null; F.built = false; };
 
-  // follow the board's sound switch; the listener cannot be removed, so it checks the destroyed flag
   try { F.on = !!(o.soundOn && o.soundOn()); } catch (e) { F.on = false; }
   if (sound && sound.onState && !F.listening) { F.listening = true; sound.onState((on) => { if (F.destroyed) return; F.on = !!on; if (on && F.active && !reduced()) build(); if (!on && F.built) F.stop(); }); }
   return F;

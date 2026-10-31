@@ -1,6 +1,3 @@
-// Pointer, pinch, wheel, double-tap, inertia and keyboard (contract 3.3). Every listener on the canvas stops the event so
-// js/wide.js (on #map) and js/v13d.js never see the Atlas's input. Handlers work from the element they were bound to
-// and the numbers on the event.
 export function bindGestures(o) {
   const { el, host, view } = o, G = { pointers: new Map(), moved: false, drag: null, last: null, inertia: null, tapAt: 0, tapX: 0, tapY: 0, zoomAt: 0, raf: 0, bound: [] };
   const stop = (e) => { if (e && e.stopPropagation) e.stopPropagation(); };
@@ -27,7 +24,7 @@ export function bindGestures(o) {
     if (e.button && e.button !== 0) return;
     const [x, y] = rel(e);
     G.pointers.set(e.pointerId === undefined ? 1 : e.pointerId, { x, y });
-    try { if (el.setPointerCapture && e.pointerId !== undefined) el.setPointerCapture(e.pointerId); } catch (x2) { /* ignore */ }
+    try { if (el.setPointerCapture && e.pointerId !== undefined) el.setPointerCapture(e.pointerId); } catch (x2) {  }
     stopInertia();
     if (G.pointers.size === 1) { G.moved = false; G.drag = { x0: x, y0: y, x, y }; G.last = []; G.pinch = 0; }
     else { G.moved = true; G.pinch = dist(); G.pinchMid = mid(); }
@@ -60,7 +57,7 @@ export function bindGestures(o) {
     if (!G.pointers.has(id)) return;
     const [x, y] = rel(e), was = G.pointers.size;
     G.pointers.delete(id);
-    try { if (el.releasePointerCapture && e.pointerId !== undefined) el.releasePointerCapture(e.pointerId); } catch (x2) { /* ignore */ }
+    try { if (el.releasePointerCapture && e.pointerId !== undefined) el.releasePointerCapture(e.pointerId); } catch (x2) {  }
     if (was !== 1) { if (G.pointers.size === 1) { const r = [...G.pointers.values()][0]; G.drag = { x0: r.x, y0: r.y, x: r.x, y: r.y }; G.last = []; } return; }
     const drag = G.drag; G.drag = null;
     if (!G.moved && e.type !== "pointercancel") {
@@ -104,7 +101,6 @@ export function bindGestures(o) {
     else used = false;
     if (used) { prevent(e); stop(e); }
   });
-  // cards, controls and the places list sit inside #map too: their pointer and wheel events stop here, so the sketch's pan never starts
   for (const ev of ["pointerdown", "pointermove", "pointerup", "pointercancel", "wheel"]) on(host, ev, stop, { passive: true });
   G.destroy = () => { for (const [t, ev, f, opt] of G.bound) t.removeEventListener(ev, f, opt); G.bound = []; if (G.raf) cancelAnimationFrame(G.raf); G.inertia = null; G.pointers.clear(); };
   return G;

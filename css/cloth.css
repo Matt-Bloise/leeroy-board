@@ -1,4 +1,3 @@
-/* Cloth banners for the tab rail. Notes: board/MOBILE-NOTES.md, notes/polish-round/NOTES-A.md. */
 :root { --tab-h: 92px; --cloth-slice: 52; --cloth-trim: calc(var(--tab-h) * var(--cloth-slice) / 352); }
 
 @media (min-width: 700px) {
@@ -40,17 +39,15 @@
   #tab-cloth { position: absolute; left: 0; top: 0; z-index: 2; pointer-events: none; display: none; }
   html.cloth-gl #tab-cloth { display: block; }
 }
-/* rest holds the crest and two lines at the cap height */
 #scene { --ribbon-rest: 111px; --ribbon-rod: 18px; --ribbon-cap: 11px; --ribbon-k: 2.2; }
 @media (min-width: 1920px) { #scene { --ribbon-rest: 134px; --ribbon-rod: 22px; --ribbon-cap: 13px; } }
 @media (min-width: 2560px) { #scene { --ribbon-rest: 162px; --ribbon-rod: 26px; --ribbon-cap: 15px; } }
 @media (min-width: 3440px) { #scene { --ribbon-rest: 180px; --ribbon-rod: 30px; --ribbon-cap: 17px; } }
-@media (max-height: 800px) { #scene { --ribbon-rest: 64px; --ribbon-rod: 16px; } } /* the laptop scroll budget (check.mjs): lettering only, the crest drops */
+@media (max-height: 800px) { #scene { --ribbon-rest: 64px; --ribbon-rod: 16px; } }
 @media (min-width: 700px) {
   .ribbons-on #scene #tabs { z-index: 3; padding-bottom: 0; margin-bottom: -10px; }
   .ribbons-on #scene #tabs .tab { flex: 0 0 auto; flex-direction: column; justify-content: start; white-space: normal; text-align: center; line-height: 1.15; width: max(72px, calc((100% - 22px) / 12)); min-width: 0; height: calc(var(--ribbon-rod) + var(--ribbon-rest)); padding: calc(var(--ribbon-rod) + var(--ribbon-rest) * .5 - .6em) 6px 0; color: transparent; text-shadow: none; }
   .ribbons-on #scene #tabs .tab .tab-ico { display: none; }
-  /* the stills: tools/ribbons/render-stills.mjs */
   .ribbons-on #scene #tabs .tab::before { inset: 0 -10% auto; height: calc(var(--ribbon-rod) + var(--ribbon-rest) + 2px); transform: none; border-image: none; background: var(--still) 0 0 / 100% 100% no-repeat; transition: background-image var(--t-micro, 160ms); }
   .ribbons-on #scene #tabs .tab[aria-selected="true"] { z-index: 2; }
   .ribbons-on #scene #tabs .tab[aria-selected="true"]::before { height: calc(var(--ribbon-rod) + var(--ribbon-rest) + 14px); background-image: var(--still-on); }

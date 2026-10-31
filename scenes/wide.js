@@ -1,6 +1,3 @@
-/* Wide screens (owner, 2026-10-29): the Three roads map takes the sheet, and pans and zooms (wheel, drag, pinch, + - 0 and the
-   arrow keys, three buttons). Runs after js/v13d.js through the page's own hooks. Phones and short landscape screens keep the
-   compact layout and the tap-to-zoom-a-zone map of v13d: nothing here is active under 700 px wide or 501 px tall. */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
@@ -10,7 +7,6 @@ const MAXZ = 3.5, MAP = [600, 400];
 let box = null, panel = null, st = null, raf = 0, dragged = false;
 const num = (a) => a.map(Number);
 const size = () => { const r = box.getBoundingClientRect(); return [r.width || 1, r.height || 1]; };
-/* the view in map units: centre and zoom, where 1 is the whole map in the box (what "meet" draws) */
 function read() {
   const sv = box.querySelector("svg"), [x, y, w, hh] = num((sv.getAttribute("viewBox") || "0 0 600 400").split(/\s+/)), [bw, bh] = size(), a = bw / bh;
   const wf = Math.max(MAP[0], MAP[1] * a), we = Math.max(w, hh * a);
@@ -37,7 +33,6 @@ function glide(to) {
     put({ z, cx: from.cx + (t.cx - from.cx) * e, cy: from.cy + (t.cy - from.cy) * e }, true); if (k < 1) raf = requestAnimationFrame(step); };
   raf = requestAnimationFrame(step);
 }
-/* the point of the map under a screen position, and the view that keeps it there at a new zoom */
 function zoomAt(px, py, factor) {
   const v = read(), [bw, bh] = size(), r = box.getBoundingClientRect(), fx = (px - r.left) / bw, fy = (py - r.top) / bh, [x, y, w, hh] = boxOf(v);
   const mx = x + fx * w, my = y + fy * hh, z = Math.max(1, Math.min(MAXZ, v.z * factor)), nw = w * v.z / z, nh = hh * v.z / z;
@@ -53,7 +48,6 @@ const ICON = {
 };
 const ctlBtn = (cls, label, path) => h("button", { type: "button", class: `m-btn ${cls}`, "aria-label": label, title: label }, s("svg", { viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" }, s("path", { d: path })));
 
-/* one place for pointers: a finger or mouse drags the map, two fingers pinch it */
 function bindInput() {
   const pts = new Map(); let g = null;
   box.addEventListener("pointerdown", (e) => {
@@ -82,7 +76,6 @@ function bindInput() {
   });
   const up = (e) => { pts.delete(e.pointerId); if (!pts.size) { box.classList.remove("dragging"); g = null; } };
   box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
-  /* a drag is not a tap: the zone zoom of v13d never sees the click that ends one */
   box.addEventListener("click", (e) => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } }, true);
   box.addEventListener("wheel", (e) => {
     if (!wideOn() || (e.target.closest && e.target.closest(".zone-card"))) return;
@@ -102,14 +95,11 @@ function bindInput() {
   });
 }
 
-/* the seal hangs from the sheet head into the body; whatever stands in the first row at its side (the cards, or the note) starts below it */
 function clearSeal() {
   const sl = $("#seal"), lg = panel.querySelector(".roads-legend"), ld = $("#map-lede");
   panel.style.removeProperty("--seal-clear");
   for (const e of [lg, ld]) if (e) e.classList.remove("seal-clear");
   if (!sl || sl.hidden || !lg || panel.dataset.lay === "below") return;
-  /* frame leftovers (2026-10-30): measured in layout pixels, so an opening sheet's scale or the coin's own move never changes the
-     answer; the checks at the next frame and at 400 ms find the same clearance and nothing moves after the first paint */
   const k = panel.offsetHeight ? panel.getBoundingClientRect().height / panel.offsetHeight || 1 : 1;
   const s = sl.getBoundingClientRect(); if (!s.width) return;
   const first = [lg, ld].filter((e) => e && e.getClientRects().length && e.getBoundingClientRect().left < s.right && e.getBoundingClientRect().top < s.bottom + 12)
@@ -119,9 +109,6 @@ function clearSeal() {
   panel.style.setProperty("--seal-clear", `${Math.ceil((s.bottom - r.top) / k + 14)}px`);
   first.classList.add("seal-clear");
 }
-/* frame leftovers (2026-10-30): the cards and the meeting note beside the map fit the frame's height (they ran 32 to 57 px past it at
-   1366x768). The side column widens, so its text wraps into fewer lines, as far as the map keeps its full height; past that the note
-   scrolls by itself (wide.css), never the frame */
 function fitSide(W, H) {
   panel.style.removeProperty("--side");
   if (panel.dataset.lay !== "side") return;
@@ -132,9 +119,6 @@ function fitSide(W, H) {
   for (let i = 0; i < 6 && tall() > H && w + 8 < most; i++) { w = Math.min(most, w + 40); panel.style.setProperty("--side", `${w}px`); }
 }
 
-/* the layout the panel is in: the map with the cards beside it, or the map with the cards under it. Fix E5 (2026-10-30): one wide
-   layout at every width; a 2560 or 3440 frame keeps the 1920 arrangement and the map takes the rest (a third layout, cards left,
-   prose right, map between, left 40 percent empty rails and put the lede beside the head's subtitle) */
 function lay() {
   if (!panel) return;
   const on = wideOn();
@@ -158,11 +142,8 @@ K.on("map", (M) => {
     if (typeof ResizeObserver === "function") new ResizeObserver(() => lay()).observe(panel.parentElement);
   }
   lay();
-  if (st && st.z > 1.02 && wideOn()) put(st, true); /* the map redrew (a resize): the same view again */
+  if (st && st.z > 1.02 && wideOn()) put(st, true);
 });
-/* frame leftovers (2026-10-30): the layout is set before the first paint (a microtask runs once the open's own script is done, after the
-   seal is placed and before the browser draws); before, data-lay waited a frame, so the first paint showed the lede and the cards
-   where the layout does not keep them and they jumped (a 0.37 layout shift opening Three roads in the owner's Edge) */
 K.on("scene", (k) => { if (k === "roads") { (typeof queueMicrotask === "function" ? queueMicrotask : (f) => Promise.resolve().then(f))(lay); requestAnimationFrame(lay); setTimeout(lay, 400); } });
 K.on("closed", (k) => { if (k === "roads") { st = null; if (box && box.querySelector("svg") && wideOn()) put({ z: 1, cx: 300, cy: 200 }, true); } });
 addEventListener("resize", () => lay());

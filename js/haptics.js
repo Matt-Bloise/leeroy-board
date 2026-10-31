@@ -1,6 +1,5 @@
-/* Haptics: one grammar, one switch, one pulse per gesture (mobile build, section 6, 2026-10-30). Full note: board/MOBILE-NOTES.md, file notes. */
 (() => {
-  if (typeof window === "undefined" || typeof navigator === "undefined" || typeof document === "undefined" || typeof addEventListener !== "function") return; /* a bare script host (a test harness) gets nothing */
+  if (typeof window === "undefined" || typeof navigator === "undefined" || typeof document === "undefined" || typeof addEventListener !== "function") return;
   const freeze = (a) => Object.freeze(a);
   const CANON = freeze({
     select: freeze([8]),
@@ -19,7 +18,6 @@
     freeze({ name: "refusal", meaning: "a write refused, a control that needs a board link, a save that failed", pattern: CANON.refusal, aliases: freeze(["error"]) }),
     freeze({ name: "fanfare", meaning: "the launch moment, once", pattern: CANON.fanfare, aliases: freeze([]) }),
   ]);
-  /* PAT: the six, every alias, and hover (silent). Frozen so no call site can change a pattern. */
   const PAT = {};
   for (const k of Object.keys(CANON)) PAT[k] = CANON[k];
   for (const a of Object.keys(ALIAS)) PAT[a] = CANON[ALIAS[a]];
@@ -44,13 +42,10 @@
   try {
     addEventListener("pointerdown", (e) => { if (e.isTrusted) { begin(disabled(e.target)); G.down = true; } }, { capture: true, passive: true });
     addEventListener("keydown", (e) => { if (e.isTrusted) begin(disabled(e.target)); }, { capture: true, passive: true });
-    /* a press held past 1 s is still one gesture: its release restarts the clock, so the click after it stays in */
     addEventListener("pointerup", (e) => { if (e.isTrusted && G.down) { G.down = false; G.at = now(); } }, { capture: true, passive: true });
     addEventListener("pointercancel", (e) => { if (!e.isTrusted) return; G.down = false; if (!G.sent) G.dead = true; }, { capture: true, passive: true });
-    /* the click that ends a tap or a key press stays in its gesture; a click with no input before it starts one */
     addEventListener("click", (e) => { if (!e.isTrusted) return; if (now() - G.at < SPENT) { G.at = now(); if (disabled(e.target)) G.dead = true; } else begin(disabled(e.target)); }, { capture: true, passive: true });
   } catch (e) {}
-  /* low power: read at start and on every change; the web cannot see battery saver, so this is the level and charging state only */
   const readBattery = (b) => { low = !!b && typeof b.level === "number" && b.level <= 0.2 && !b.charging; };
   try {
     if (typeof navigator.getBattery === "function") navigator.getBattery().then((b) => {
@@ -60,7 +55,7 @@
   } catch (e) {}
   const cssSwitch = () => { try { return !!(window.CSS && typeof CSS.supports === "function" && CSS.supports("appearance", "switch")); } catch (e) { return false; } };
   const vibrateOK = () => typeof navigator.vibrate === "function";
-  const ios = /iP(hone|ad|od)/.test(navigator.userAgent || "") && !vibrateOK() && cssSwitch(); /* iOS 18 and later: the switch appearance exists; earlier iOS stays silent */
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent || "") && !vibrateOK() && cssSwitch();
   const route = () => (vibrateOK() ? "vibrate" : ios ? "ios-switch" : "none");
   let sw = null, pads = new Map();
   try {
@@ -88,15 +83,14 @@
     G.timer = 0; if (G.sent || !G.best) return; G.sent = true;
     try { if (G.dead || !H.on || document.hidden || low) return; H.last = G.name; const via = pulse(G.best); if (via !== "none") { H.fired++; H.via = via; } } catch (e) {}
   }
-  /* true when the call joined this gesture's pulse (or opened it); false when silent, off, low power or the gesture is spent */
   function fire(name) {
     try {
       if (!H.on || document.hidden || low || (reduce() && !H.explicit)) return false;
       const key = canon(String(name || "select"));
       const p = Object.prototype.hasOwnProperty.call(CANON, key) ? CANON[key] : (PAT[name] !== undefined ? PAT[name] : CANON.select);
-      if (!p.length) return false; /* hover: silent */
+      if (!p.length) return false;
       const t = now();
-      if (t - G.at >= SPENT) begin(false); /* no input for a second: this call opens its own window */
+      if (t - G.at >= SPENT) begin(false);
       if (G.dead || G.sent || (G.best && t - G.first > WIN)) { H.dropped++; return false; }
       if (!G.best) { G.best = p; G.name = key; G.first = t; G.timer = setTimeout(flush, WIN); }
       else { H.dropped++; if (strength(p) > strength(G.best)) { G.best = p; G.name = key; } }

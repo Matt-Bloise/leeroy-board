@@ -1,4 +1,3 @@
-/* The phone floor: 48 px targets, 16 / 13 px text (board/MOBILE-NOTES.md) */
 :root { --mask-fade: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
 html.phone-shell #journey-scene { margin-right: 16px; }
 html.phone-shell :is(.lib-examples, .lib-rail, #dc-who) { -webkit-mask-image: var(--mask-fade); mask-image: var(--mask-fade); scroll-padding-inline: 16px; }

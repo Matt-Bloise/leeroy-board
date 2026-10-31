@@ -1,4 +1,3 @@
-/* The Hades room (scenes/hades.js, notes/companion/HADES-ROOM.md): counter at the stage bottom, bust right, card left, one parchment text box between. Motion under no-preference and html:not(.play) only. */
 #chamber.hades { --hd-h0: clamp(360px, calc(100dvh - 340px), 520px); --hd-lee0: 360px; --hd-you0: 200px; --hd-k: 0.86; --hd-ky: 0.5; --hd-h: min(var(--hd-h0), var(--hd-fit, 9999px)); --hd-lee: min(var(--hd-lee0), calc(var(--hd-h) * var(--hd-k))); --hd-you: min(var(--hd-you0), calc(var(--hd-h) * var(--hd-ky))); --hd-box: 46rem; --hd-cnt: calc(var(--hd-lee) * 0.2); --hd-sink: calc(var(--hd-cnt) * 0.9); --hd-lw: calc(var(--hd-lee) * 0.72); --hd-yw: calc(var(--hd-you) * 0.75); width: 100%; max-width: min(100%, 100rem); justify-self: center; padding: 8px; }
 .hades .ch-stage { container-type: inline-size; position: relative; display: block; height: var(--hd-h); overflow: hidden; border-radius: 8px; }
 .hades .hd-counter { position: absolute; left: 0; right: 0; bottom: 0; height: var(--hd-cnt); z-index: 3; pointer-events: none; border-top: 3px solid var(--brass-dim); background: linear-gradient(180deg, var(--oak-3), var(--oak-1) 55%, var(--oak-0)); box-shadow: 0 -8px 18px var(--shadow); }
@@ -30,7 +29,7 @@
   .hades .ch-lee { right: 12px; }
   .hades .ch-you { left: 12px; }
   .hades .ch-log { left: 8px; right: 8px; bottom: calc(var(--hd-lee) + 40px); max-height: min(40vh, calc(var(--hd-h) - var(--hd-lee) - 52px)); font-size: 1rem; }
-  .hades.is-typing .ch-log { padding-right: 72px; } /* Skip floats top right while typing: keep the words clear of it (2026-10-30) */
+  .hades.is-typing .ch-log { padding-right: 72px; }
 }
 @media (max-width: 699px) and (min-height: 800px) { #chamber.hades { --hd-h0: 500px; --hd-lee0: 250px; --hd-you0: 120px; } }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
@@ -41,8 +40,6 @@
   #panel-librarian.chamber-on .ch-form { padding: 6px 8px; gap: 4px; }
   #panel-librarian.chamber-on :is(.ch-sugrow, .ch-row2) { display: none; }
 }
-/* round 4: the rows under the stage are one row (the follow-ups left, Bring and End the talk right) and Skip floats over the stage, so the stage can take the
-   height the scroll box has left (hades.js fit sets --hd-fit); nothing sticks over anything and every control is in view in every state */
 #chamber.hades { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
 #chamber.hades > .ch-stage, #chamber.hades > .ch-letter { grid-column: 1 / -1; }
 #chamber.hades > .ch-next { grid-column: 1; align-content: end; }
@@ -56,14 +53,12 @@
   #chamber.hades .ch-next-l { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
   #chamber.hades .ch-next-l li { flex: none; }
 }
-/* scroll cues on the text box's top and bottom edges (hades.js) */
 .hades .hd-more { position: absolute; z-index: 5; width: 44px; height: 44px; padding: 0; margin: 0; border: 0; background: none; transform: translate(-50%, -50%); cursor: pointer; }
 .hades .hd-more[hidden] { display: none; }
 .hades .hd-more::before { content: ""; position: absolute; inset: 8px; border-radius: 50%; background: var(--oak-2); border: 2px solid var(--brass); box-shadow: 0 2px 6px var(--black); }
 .hades .hd-more::after { content: ""; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-right: 2px solid var(--brass-hi); border-bottom: 2px solid var(--brass-hi); transform: translate(-50%, -70%) rotate(45deg); }
 .hades .hd-up::after { transform: translate(-50%, -30%) rotate(225deg); }
 .hades .hd-more:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: -4px; border-radius: 50%; }
-/* wave 2 R2: while hades.js decodes the busts, the counter and the card the stage keeps its place and is not drawn, and the entrance rules below wait (they need :not(.hd-wait)) */
 .hades.hd-wait .ch-stage { visibility: hidden; }
 .hades.hd-wait .hd-img { transition: none !important; }
 @media (prefers-reduced-motion: no-preference) {

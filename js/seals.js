@@ -1,7 +1,3 @@
-/* Seals (notes/VISION-SEALS.md): each scene's emblem is a physical coin, large and lit, that can be pressed and spun. It rides on
-   the page's own events (window.__boardKit.on("scene" | "closed")), reads the scene medallion img/medal/<key>.webp at its native
-   640 px, and adds no code to js/board.js. Scene mechanics register in MECH below. Sound and haptics go through the sensory
-   events when present and are skipped when not. Reduced motion swaps every move for a short brightening. */
 (() => {
   const K = window.__boardKit; if (!K) return;
   const $ = (q, r) => (r || document).querySelector(q);
@@ -13,14 +9,11 @@
   const snd = (n) => { try { if (window.BoardSound) window.BoardSound.play(n); } catch (e) {} };
   const hap = (n) => { try { if (window.BoardHaptics) window.BoardHaptics.fire(n); } catch (e) {} };
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes." /* V16: the mechanic lives in js/decide.js */ };
-  /* MECH[key] = { hint, press(api) }: hint finishes "Press the seal to ..." */
+  const BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes."  };
   const MECH = {};
-  /* WebKit (2026-10-30): backface-visibility alone left the back showing mirrored (Playwright WebKit 27.2 ignores it, even in a bare two-div test) */
   const side = (el, ang) => { if (el) el.setAttribute("data-side", ((ang % 360) + 360) % 360 === 180 ? "back" : "front"); };
   const S = { ang: 0, el: null, btn: null, disc: null, key: null, light: { x: 0.3, y: 0.2 }, raf: 0, spun: 0 };
 
-  /* the coin itself: seven brass edges between a medallion front and a lettered back (shared with */
   const makeDisc = () => h("span", { class: "seal-disc" },
     ...Array.from({ length: 7 }, (_, i) => h("span", { class: "seal-edge", style: `--i:${i}` })),
     h("span", { class: "seal-face seal-front" }, h("img", { class: "seal-img", alt: "", width: 640, height: 640, decoding: "async" }), h("span", { class: "seal-spec" }), h("span", { class: "seal-sweep" })),
@@ -45,7 +38,6 @@
     const r = S.btn.getBoundingClientRect(), nx = (e.clientX - r.left) / r.width - 0.5, ny = (e.clientY - r.top) / r.height - 0.5;
     S.el.style.setProperty("--rx", `${(-ny * 16).toFixed(1)}deg`); S.el.style.setProperty("--ry", `${(nx * 16).toFixed(1)}deg`);
   }
-  /* one light for the page: the pointer (or a slow drift on touch) moves where the seal is lit */
   function lightTo(x, y) {
     S.light.x = x; S.light.y = y;
     if (S.raf || !S.el) return;
@@ -58,7 +50,6 @@
   }
   addEventListener("pointermove", (e) => { if (S.el && !S.el.hidden && e.pointerType !== "touch") lightTo(e.clientX, e.clientY); }, { passive: true });
 
-  /* land: "back" or "front" ends the spin on that face and keeps it */
   function spin(o) {
     o = o || {}; if (!S.disc) return Promise.resolve();
     S.spun++; const from = S.ang || 0, same = o.land ? (o.land === "back") === (from === 180) : true, dir = S.spun % 2 ? 1 : -1, to = from + dir * (same ? 720 : 540), keep = o.land ? (o.land === "back" ? 180 : 0) : from;
@@ -71,8 +62,6 @@
     S.el.classList.add("spinning"); S.disc.style.transform = `rotateY(${keep}deg)`; S.ang = keep; if (keep !== from) setTimeout(() => side(S.el, keep), 300);
     return a.finished.then(fin, fin);
   }
-  /* edge: the swap runs exactly when the coin is edge-on (both faces a sliver, so nothing visible changes), in two moves that meet there; the second waits for
-     o.ready (an image decoding) up to 400 ms. Tab change (2026-10-30): once or twice round, the face swapped on the edge. */
   function edgeSpin(o, from, to, keep, same, dir) {
     const e = from + dir * (same ? 450 : 270), t = (a, z) => `rotateY(${a}deg) translateZ(${z}px)`;
     S.el.classList.add("spinning");
@@ -86,7 +75,6 @@
       return a2.finished.then(fin, fin);
     }, fin);
   }
-  /* ms (fix round A6): a short line that also clears on the first pointerdown or scroll, so it never */
   function say(text, ms) {
     const n = $(".seal-say", S.el); if (!n) return;
     const t0 = Date.now(), off = (e) => { if (e && e.type === "scroll" && Date.now() - t0 < 400) return; clearTimeout(S.sayT); n.classList.remove("on"); for (const k of ["pointerdown", "scroll"]) removeEventListener(k, off, true); };
@@ -100,18 +88,14 @@
     else say(BACK[key] || "");
   }
 
-  /* the coin's face for a scene: image, back text, label */
   function face(key) {
     const el = S.el, title = K.TITLES ? K.TITLES[key] : key, m = MECH[key];
     el.dataset.k = key;
-    /* frame leftovers (2026-10-30): the face takes its medal once decoded (board.js preloads every medal */
     const img = $(".seal-img", el), src = `img/medal/${key}.webp`; if (K.medalSet) K.medalSet(img, key); else if (img.getAttribute("src") !== src) img.setAttribute("src", src);
     $(".seal-b", el).textContent = title; $(".seal-i", el).textContent = BACK[key];
     S.btn.setAttribute("aria-label", `${title} seal. Press it ${m && m.hint ? m.hint : "to give it a spin and read what it holds"}.`);
     $(".seal-say", el).classList.remove("on");
   }
-  /* a tab change: the coin spins once or twice on its Y axis and swaps to the next tab's coin at the edge-on moment; the frame stays still.
-     Reduced motion: a 120 ms cross-fade of the coin. A change while it spins only retargets the swap. */
   function tabSwap(key) {
     S.key = key; S.want = key;
     if (S.swapping) return;
@@ -128,29 +112,23 @@
     spin({ land: "front", edge: true, mid: swap, ready }).then(done, done);
   }
   function show(key, prev) {
-    if (!BACK[key]) { document.documentElement.classList.remove("has-seal"); return; } /* a scene without a seal gets its emblem button back here, inside the open */
+    if (!BACK[key]) { document.documentElement.classList.remove("has-seal"); return; }
     if (prev && prev !== key && S.el && !S.el.hidden && BACK[prev] && S.disc) { tabSwap(key); return; }
     const el = S.el || build(); S.key = key; S.want = key; face(key);
     S.ang = 0; S.disc.style.transform = ""; side(el, 0); el.removeAttribute("data-kind");
     el.hidden = false; document.documentElement.classList.add("has-seal");
     lightTo(innerWidth * 0.5, innerHeight * 0.1);
   }
-  /* 2026-10-30: has-seal stays on while the sheet is away. Taking it off here brought the emblem button back and moved the
-     tabs a few pixels in the frame the close transition captured (a 0.076 layout shift at every close); the next open
-     settles it inside its own update, where nothing is on screen yet */
   function hide() { if (S.el) S.el.hidden = true; }
   K.on("scene", show); K.on("closed", hide);
   if (K.SC && K.SC.open) show(K.SC.open);
 
-  /* ---------- Next steps: three wax seals, pressed into the page, choose the journey ---------- */
-  /* fix round A4: one line of meaning under each seal, at every size */
   const JR = { guided: ["Guided", "roads", "One thing at a time, for you."], curious: ["Curious", "library", "The whole picture, in plain words."], everything: ["Everything", "legacy", "Every number, date and source."] };
   const jnow = () => (window.__v13d ? window.__v13d.journey() : document.documentElement.dataset.journey || "curious");
   function waxRow() {
     const panel = $("#tn-me"); if (!panel || !window.__v13d) return;
     let row = $("#tn-seals", panel);
     if (!row) {
-      /* fix round A3: a question that reads as a choice still to make, and a quiet way to the wall that */
       row = h("div", { class: "tn-seals", id: "tn-seals", role: "group", "aria-label": "How much the board shows you" }, h("p", { class: "tn-seals-q", text: "Pick how much the board shows you." }),
         h("div", { class: "wx-row" }, ...Object.entries(JR).map(([j, [name, ico, line]]) => h("button", { class: "wx", type: "button", "data-journey": j, "aria-pressed": "false", onclick: () => stamp(j) },
           h("span", { class: "wx-wax" }, h("img", { class: "wx-blob", src: `img/wax/${WAXC[j]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "wx-ring" }), h("img", { class: "wx-ico", src: `img/icons/${ico}.png`, alt: "", width: 192, height: 192, decoding: "async" }), h("span", { class: "wx-lit" })),
@@ -158,7 +136,6 @@
         h("button", { class: "lib-tool tn-wall", id: "tn-wall", type: "button", onclick: () => { if (window.__next && window.__next.wall) window.__next.wall(); K.requestClose(); } }, "Just look at the wall for now"));
       panel.append(row);
     }
-    /* integrator pass 3: no seal is pressed until one is chosen (a first visit showed Curious lit and */
     const j = jnow(), picked = !!(window.__v13d.status && window.__v13d.status().picked); row.querySelectorAll(".wx").forEach((b) => b.setAttribute("aria-pressed", String(picked && b.dataset.journey === j)));
   }
   function stamp(j) {
@@ -169,7 +146,6 @@
     K.hold = null;
     if (!reduceMQ.matches && b.animate) {
       const w = $(".wx-wax", b), press = w.animate([{ transform: "scale(1)" }, { transform: "scale(0.82)", offset: 0.28 }, { transform: "scale(1.05)", offset: 0.62 }, { transform: "scale(1)" }], { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)" }); $(".wx-ring", b).animate([{ opacity: 0.9, transform: "scale(0.8)" }, { opacity: 0, transform: "scale(1.5)" }], { duration: 620, easing: "ease-out" });
-      /* Unfold: after the press the seal flies onto the card's corner (it shrinks in place when the card has no slot yet) */
       if (K.unfold && press.finished) K.hold = press.finished.then(() => K.unfold(w, $("#nx-card .nx-seal") || w, null, { fly: true, sound: null, haptic: null })).catch(() => {});
     }
     const s = $("#seal"); if (s && window.BoardSeals) say(`Exploring: ${JR[j][0]}. Change it any time at the top or here.`, 3000);
@@ -178,15 +154,12 @@
   MECH.tonight = { hint: "to choose how you explore", press: ({ say: sy }) => { sy(`Exploring: ${JR[jnow()][0]}. Press a wax seal below to change it.`, 3000); const b = $("#tn-seals .wx[aria-pressed=\"true\"]") || $("#tn-seals .wx"); if (b) b.focus({ preventScroll: false }); } };
   waxRow();
 
-  /* ---------- The five: class coins that turn the card over, and a formation to arrange */
   const LANES = [["tank", "Tank"], ["healer", "Healer"], ["damage", "Damage"]];
   const F = { lane: {}, built: false };
   const members = () => (K.D && K.D.party ? K.D.party.members : []);
   const cardOf = (m) => $(`#cards .card[data-slug="${K.MEM.slug(m.name)}"]`);
-  /* fix round A7: seated by the role played now (role_detail "damage until 40, healer from level 40" plays damage at launch); lane C's
-     role_now and role_from win once the data carries them */
   const roleNow = (m) => m.role_now || (/^damage until \d+/i.test(m.role_detail || "") ? "damage" : m.role);
-  const roleFrom = (m) => (m.role_from && (m.role_from.role || (typeof m.role_from === "string" && m.role_from))) || ((/healer from level (\d+)/i.exec(m.role_detail || "") || [])[1] ? "healer" : null); /* lane C sends { role, level } */
+  const roleFrom = (m) => (m.role_from && (m.role_from.role || (typeof m.role_from === "string" && m.role_from))) || ((/healer from level (\d+)/i.exec(m.role_detail || "") || [])[1] ? "healer" : null);
   function fiveSum() {
     const ms = members(), n = Object.fromEntries(LANES.map(([r]) => [r, 0])), diff = [];
     ms.forEach((m) => { const r = F.lane[m.name], now = roleNow(m); n[r]++; if (r !== now) diff.push(`${m.name} on ${r}, the cards say ${now}`); });
@@ -247,7 +220,6 @@
     sy(all ? "All five cards are back on their fronts." : "All five cards are turned to their spells.");
   } };
 
-  /* ---------- Race skills: the coin's back shows one racial at a time */
   const R = { i: -1, f: "all" }, KS = {};
   document.addEventListener("keydown", (e) => { const t = e.target, f = KS[S.key]; if (!f || !S.btn || t !== S.btn || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return; e.preventDefault(); f(e.key === "ArrowRight" ? 1 : -1); });
   const racialList = () => { const r = K.D && K.D.client ? K.D.client.racials : null; return r ? Object.entries(r).flatMap(([race, l]) => l.map((x) => [race, x])) : []; };
@@ -283,7 +255,7 @@
     const dates = [...new Set(l.map(([, x]) => chDate(x)).filter(Boolean))].sort(), cnt = (f) => { const o = R.f; R.f = f; const n = l.filter(passF).length; R.f = o; return n; };
     const chips = [["all", "All"], ["active", "Active"], ["passive", "Passive"], ...dates.map((d) => [`ch:${d}`, `Changed ${d}`])];
     const bar = h("div", { class: "rc-bar", id: "race-chips", role: "group", "aria-label": "Narrow the race skills the coin spins through" }, ...chips.map(([f, label]) => h("button", { class: "lib-tool rc-chip", type: "button", "data-f": f, "aria-pressed": String(R.f === f),
-      onclick: () => { R.f = R.f === f ? "all" : f; syncChips(); applyRaceFilter(); snd("chip"); hap("tick"); const n = racialList().filter(passF).length; say(`${n} race skill${n === 1 ? "" : "s"} in the spin${R.f === "all" ? "" : `: ${label}`}.`); } }, `${label} `, h("span", { class: "chip-n", text: String(cnt(f)) })))); /* fix round A9: the count in its own ruled box ("Oct 262") */
+      onclick: () => { R.f = R.f === f ? "all" : f; syncChips(); applyRaceFilter(); snd("chip"); hap("tick"); const n = racialList().filter(passF).length; say(`${n} race skill${n === 1 ? "" : "s"} in the spin${R.f === "all" ? "" : `: ${label}`}.`); } }, `${label} `, h("span", { class: "chip-n", text: String(cnt(f)) }))));
     host.parentNode.insertBefore(bar, host);
   }
   const syncChips = () => document.querySelectorAll("#race-chips .rc-chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.f === R.f)));
@@ -294,7 +266,6 @@
   K.on("scene", (k) => { if (k === "racials") { R.i = -1; raceChips(); applyRaceFilter(); } });
   if (K.SC && K.SC.open === "racials") { raceChips(); applyRaceFilter(); }
 
-  /* ---------- Bonuses: the what-if dial is the coin's rim */
   const tween = (from, to, ms, step) => new Promise((done) => {
     if (reduceMQ.matches || from === to) { step(to); done(); return; }
     const t0 = performance.now(), ease = (x) => 1 - Math.pow(1 - x, 3);
@@ -309,7 +280,6 @@
     const head = v === lgNow() && !names.length ? `Where the group is now: ${v} of ${L.total} points.` : `${v} of ${L.total} points${names.length ? ` if all the ${names.join(" and ")} challenges get done` : ""}.`;
     out.textContent = `${head} ${got.length ? `That reaches ${got.map((t) => t.reward).join(", ")}.` : "No reward on the track yet."} ${next ? `${next.n - v} more for ${next.reward}.` : "That is the whole track."}${v > L.solo_cap ? ` One character can earn ${L.solo_cap} alone, so this one needs more than one.` : ""}`;
   }
-  /* one eased move of the dial to v; a newer move cancels the one in flight, so quick taps never */
   function lgTo(v, ms) {
     const d = K.dial; if (!d) return Promise.resolve(); const id = ++LG.run, from = d.get();
     return tween(from, v, ms || 700, (x) => { if (id === LG.run) d.set(x, false, true); }).then(() => { if (id === LG.run) d.set(v, false); });
@@ -342,8 +312,6 @@
     sy(t ? `${n} points: ${t.reward}, ${t.kind === "toy" ? "a fun item with no stats" : t.kind === "pet" ? "a pet that follows you" : t.kind === "tabard" ? "a cloth crest worn over armor" : "a mount to ride"}.${t.alt ? ` One guide says ${t.alt} for the first.` : ""}` : `Back to where the group is now: ${n} of ${L.total}.`);
   } };
 
-  /* ---------- Sign-ups: raising a mug answers through the page's own RSVP buttons (v13d suControls) */
-  /* a live answer lifts the mug and tips its neighbour toward it for the clink */
   document.addEventListener("click", (e) => {
     const t = e.target, b = t && t.closest && t.closest(".su-st"); if (!b || b.getAttribute("aria-disabled") === "true" || reduceMQ.matches) return;
     const row = b.parentNode, bs = row ? [...row.children].filter((x) => x.classList && x.classList.contains("su-st")) : [], i = bs.indexOf(b), nb = bs[i + 1] || bs[i - 1];
@@ -372,8 +340,6 @@
     ready(el, "shelf");
     setTimeout(() => el.querySelectorAll(".bump").forEach((x) => x.classList.remove("bump")), 900);
   }
-  /* fix round A13: a bar (the shelf plank, the mugs' counter) shows once its art has decoded (at most 900 ms), never as a bare oak
-     strip under empty places; once decoded, later redraws show it at once */
   const READY = {};
   function ready(el, k) {
     const on = () => { READY[k] = 1; el.classList.add("ready"); };
@@ -389,10 +355,9 @@
     const b = $("#dsu-act .su-st[aria-pressed=\"true\"]") || $("#dsu-act .su-st"); if (b) b.focus({ preventScroll: true });
   } };
 
-  /* ---------- the scenes that replay their own motion, and the ones whose coin shows facts on its back */
   const replayOn = (sel, cls) => { const el = $(sel); if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); };
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-  MECH.roads = { hint: "to draw the roads again", press: ({ say: sy }) => { const at = window.__atlas && window.__atlas.api, m = $("#map"); if (at && m && m.classList.contains("atlas-on")) { at.showPlan(at.plan({}), { animate: true }); sy("The courses draw again on the Atlas from where each character starts."); return; } /* the Atlas (2026-10-30) */ replayOn("#map", "drawing"); sy("The roads draw again from where each character starts."); } };
+  MECH.roads = { hint: "to draw the roads again", press: ({ say: sy }) => { const at = window.__atlas && window.__atlas.api, m = $("#map"); if (at && m && m.classList.contains("atlas-on")) { at.showPlan(at.plan({}), { animate: true }); sy("The courses draw again on the Atlas from where each character starts."); return; }  replayOn("#map", "drawing"); sy("The roads draw again from where each character starts."); } };
   MECH.buffs = { hint: "to light the wheel again", press: ({ say: sy }) => { replayOn("#wheel", "lighting"); sy("The wheel lights each link between the five."); } };
   MECH.ledger = { hint: "to stamp the ledger again", press: ({ say: sy }) => {
     replayOn("#ledger-slip", "stamping");
@@ -400,7 +365,6 @@
     const settled = p.settled.length + (p.settled_extra || []).length + (p.play ? 1 : 0), open = p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).length;
     sy(`${plural(settled, "thing")} settled, ${open} still open${p.polls.length ? `, ${plural(p.polls.length, "poll")} taking votes` : ""}.`);
   } };
-  /* Dates: the coin's back counts down to each upcoming date in turn */
   const DT = { i: -1 };
   const upcoming = () => { const t = K.D && K.D.timeline, now = Date.now() / 1000; return t ? t.events.filter((e) => K.eventTs(e) > now).sort((a, b) => K.eventTs(a) - K.eventTs(b)) : []; };
   MECH.timeline = { hint: "to spin the coin to the next date", spin: false, press: () => {
@@ -409,12 +373,10 @@
     spin({ land: "back", mid: () => { $(".seal-b", el).textContent = e.label.split(":")[0]; $(".seal-i", el).textContent = K.relWhen(ep); } }).then(() => say(`${e.label}: ${K.fmtWhen(ep, { rel: true })}.${e.detail ? ` ${e.detail[0].toUpperCase()}${e.detail.slice(1)}.` : ""}`));
   } };
   K.on("scene", (k) => { if (k === "timeline") DT.i = -1; });
-  /* Library: a surprise search, one of the page's own example queries; Leeroy: where to ask */
   MECH.library = { hint: "to try one of the example searches", press: ({ say: sy }) => {
     const ex = [...document.querySelectorAll("#lib-examples button")]; if (!ex.length) { const q = $("#lib-q"); if (q) q.focus(); return; }
     const b = ex[Math.floor(Math.random() * ex.length)]; sy(`Trying: ${b.textContent.trim()}`); b.click();
   } };
-  /* Leeroy: the seal reads his last answers one at a time and moves a marker along the chart */
   const LR = { i: -1 };
   const lrVals = () => (K.D && K.D.stats && K.D.stats.last7 ? K.D.stats.last7 : []);
   function lrStep(by) {
@@ -430,10 +392,6 @@
   KS.librarian = lrStep;
   K.on("scene", (k) => { if (k === "librarian") LR.i = -1; });
   MECH.librarian = { hint: "to read his last answers one by one, then ask him in #wow-forever", spin: false, press: () => lrStep(1) };
-  /* ---------- V15 (2026-10-30): a free-standing coin of the same make for the wall's Launch night hero (board/V15-LAUNCH-SPEC.md 3.1) ----------
-     o = { key (medallion, default timeline), title, back (the two lines on the back), label (aria), press({ turn, face, say }) }.
-     Not the scene seal: its own element and angle, no light tracking, no has-seal class; the page positions it (.seal-free).
-     A press without a mechanic turns it over; reduced motion brightens instead of spinning. say() goes to o.say when given. */
   function coin(o) {
     o = o || {};
     const key = o.key || "timeline", d = makeDisc(), el = h("div", { class: "seal seal-free", "data-k": key });
@@ -444,7 +402,6 @@
     const face = (title, line) => { $(".seal-b", el).textContent = title || ""; $(".seal-i", el).textContent = line || ""; };
     face(o.title, o.back);
     const say = (t) => { if (typeof o.say === "function") { try { o.say(t); } catch (e) {} } };
-    /* land: "back" or "front" keeps that face; nothing flips to the other one */
     const turn = (land, mid) => {
       C.n++; const from = C.ang, keep = land === "back" ? 180 : land === "front" ? 0 : from === 180 ? 0 : 180, dir = C.n % 2 ? 1 : -1, to = from + dir * (keep === from ? 720 : 540);
       if (mid) setTimeout(mid, reduceMQ.matches ? 0 : 380);

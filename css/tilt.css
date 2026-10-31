@@ -1,17 +1,13 @@
-/* Tilt (section 7): js/tilt.js writes --tilt-x and --tilt-y (-1 to 1) on html and sets html.tilting while on. Full note: board/MOBILE-NOTES.md, file notes. */
 html { --tilt-x: 0; --tilt-y: 0; }
 
-/* depth by order (--i is the child index minus one, v14.css): hot tiles 3, the rest alternate 1 and 2; the tiles' ... Full note: board/MOBILE-NOTES.md, file notes. */
 .wall > li { --depth: 1; }
 .wall > li:nth-child(even) { --depth: 2; }
 .wall > li.hot { --depth: 3; }
 html.tilting .wall > li { transform: translate(calc(var(--tilt-x) * var(--depth) * 2px), calc(var(--tilt-y) * var(--depth) * 2px)); }
 
-/* the coin's glint and the seal's specular follow the phone's lean (seals.css reads --lx and --ly) */
 html.tilting .seal-spec,
 html.tilting .bb-coin-img { --lx: calc(50% + var(--tilt-x) * 22%); --ly: calc(50% + var(--tilt-y) * 22%); }
 
-/* the head banner's sway: tilt adds --tilt-x times 2 degrees through the rotate property, which composes with the ... Full note: board/MOBILE-NOTES.md, file notes. */
 html.tilting.phone-shell .sheet-name::before { rotate: calc(var(--tilt-x) * 2deg); transition: rotate var(--t-micro) var(--ease-oak); }
 
 @media (prefers-reduced-motion: reduce) {

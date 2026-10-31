@@ -1,9 +1,8 @@
-/* BoardSpring (contract section 2): one spring family and one pointer tracker. Frozen; no window, no-op. */
 (function () {
   if (typeof window === "undefined" || !window) return;
   var win = window;
   var PRESETS = { oak: { k: 180, c: 24, m: 1 }, firm: { k: 300, c: 34, m: 1 }, cloth: { k: 40, c: 6, m: 1 } };
-  var H = 1 / 120, MAX_FRAME = 0.25, /* was 0.05: slow frames ran springs in slow motion */ REST_X = 0.1, REST_V = 0.5, VEL_WINDOW = 80;
+  var H = 1 / 120, MAX_FRAME = 0.25,  REST_X = 0.1, REST_V = 0.5, VEL_WINDOW = 80;
   var liveSprings = 0, liveTracks = 0;
   var NONE = { closest: function () { return null; }, node: null };
 
@@ -20,7 +19,6 @@
   function accel(x, v, p, target) { return (-p.k * (x - target) - p.c * v) / p.m; }
   function atRest(x, v, target) { return Math.abs(x - target) < REST_X && Math.abs(v) < REST_V; }
 
-  /* pure: samples at 1/60 s over ms; raw output */
   function sim(name, x0, v0, target, ms) {
     var p = PRESETS[name] || PRESETS.oak;
     var x = num(x0, 0), v = num(v0, 0), tg = num(target, 0);
@@ -33,14 +31,12 @@
     return out;
   }
 
-  /* pure: edge resistance */
   function resist(d, dim) {
     var w = num(dim, 0), dd = num(d, 0);
     if (!w) return 0;
     return w * (1 - 1 / ((0.55 * Math.abs(dd)) / w + 1)) * Math.sign(dd);
   }
 
-  /* live spring: one rAF while moving */
   function spring(o) {
     o = o || {};
     var p = PRESETS[o.preset] || PRESETS.oak;
@@ -71,7 +67,6 @@
       last = clock(); acc = 0;
       frameId = requestFrame(frame);
     }
-    /* made away from its target: starts at once */
     if (!atRest(x, v, target)) start();
     return {
       set: function (t) {
@@ -95,7 +90,6 @@
     };
   }
 
-  /* px per ms: mean slope over the last 80 ms */
   function velocity(list, now) {
     var pts = [], sx = 0, sy = 0, n = 0, i;
     for (i = 0; i < list.length; i++) if (now - list[i].t <= VEL_WINDOW) pts.push(list[i]);
@@ -106,7 +100,6 @@
     return n ? { vx: sx / n, vy: sy / n } : { vx: 0, vy: 0 };
   }
 
-  /* tracker: Pointer Events only; axis lock; a second pointer cancels */
   function track(el, opts) {
     opts = opts || {};
     var axis = opts.axis || "any";
@@ -146,7 +139,7 @@
         target: (!t || !t.closest || typeof t.closest !== "function") ? NONE : t
       };
       if (capture && typeof el.setPointerCapture === "function") {
-        try { el.setPointerCapture(e.pointerId); } catch (err) { /* host refused capture */ }
+        try { el.setPointerCapture(e.pointerId); } catch (err) {  }
       }
     }
     function onMove(e) {
@@ -160,7 +153,7 @@
         var lock = ax >= ratio * ay ? "x" : ay >= ratio * ax ? "y" : null;
         if (!lock) return;
         g.axis = lock;
-        if (axis !== "any" && lock !== axis) { g.handed = true; return; } /* native scroll keeps it */
+        if (axis !== "any" && lock !== axis) { g.handed = true; return; }
         g.started = true;
         fire("onStart", view(g));
       }

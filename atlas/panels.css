@@ -1,4 +1,3 @@
-/* The Atlas engine's own panels and controls: loaded by atlas.js when it mounts (board/css/atlas.css holds what the page needs before) */
 .atlas-b{border:1px solid var(--brass-dim);background:linear-gradient(180deg,var(--oak-3),var(--oak-2));color:var(--parchment);font:inherit;cursor:pointer;box-shadow:inset 1px 1px 0 var(--edge-hi),0 3px 8px var(--shadow);transition:transform var(--t-micro) var(--ease-oak),color var(--t-micro) var(--ease-fade)}
 .atlas-b:hover{transform:translateY(-2px);color:var(--brass-hi)}
 .atlas-orn{position:absolute;z-index:2;pointer-events:none;width:72px;height:auto}

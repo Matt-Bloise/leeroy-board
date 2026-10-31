@@ -1,11 +1,7 @@
-// The Atlas viewport and tile cache (contract 2.2, 3.5). The view is a centre in A-units and a zoom; every conversion lives
-// here and in geo.js, so layers and gestures only ask. No logic that needs a real canvas to be right: the tile choice and the
-// culling are plain arithmetic over arrays.
 export const FRAME = { w: 30000, h: 20000 };
 export const BASE = 1536 / 30000; // CSS px per A-unit at zoom 0 (level 0 is 1536 px wide)
 export const ZMAX = 3; // a level-3 tile (the last painted) is 512 css px at zoom 3: 1.0 texel on a 1x screen
 export const BACKING_MAX = 8e6; // device pixels in the canvas backing
-// the device pixel ratio the canvas draws at: the screen's, up to 3, lowered (never the css size) to keep the backing under BACKING_MAX
 export const backingDpr = (dpr, w, h) => { const d = Math.min(dpr || 1, 3), px = Math.max(1, w * h); return px * d * d > BACKING_MAX ? Math.max(1, Math.sqrt(BACKING_MAX / px)) : d; };
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
@@ -17,7 +13,6 @@ export function createView(o = {}) {
     V.zmin = V.minZoom();
     V.z = clamp(Number.isFinite(z) ? z : V.z, V.zmin, ZMAX);
     const s = V.scale(), hw = V.w / 2 / s, hh = V.h / 2 / s;
-    // keep the centre on the frame; when the whole frame fits, centre it
     V.cx = FRAME.w <= 2 * hw ? FRAME.w / 2 : clamp(cx, hw, FRAME.w - hw);
     V.cy = FRAME.h <= 2 * hh ? FRAME.h / 2 : clamp(cy, hh, FRAME.h - hh);
     V.clamped = (FRAME.w > 2 * hw && Math.abs(V.cx - cx) * s > 1) || (FRAME.h > 2 * hh && Math.abs(V.cy - cy) * s > 1); // a pan asked for more than the frame has
@@ -28,19 +23,15 @@ export function createView(o = {}) {
   V.toA = (x, y) => { const s = V.scale(); return [V.cx + (x - V.w / 2) / s, V.cy + (y - V.h / 2 + V.oy) / s]; };
   V.rect = () => { const s = V.scale(); return [V.cx - V.w / 2 / s, V.cy - (V.h / 2 - V.oy) / s, V.cx + V.w / 2 / s, V.cy + (V.h / 2 + V.oy) / s]; };
   V.panPx = (dx, dy) => { const s = V.scale(); return V.set(V.cx - dx / s, V.cy - dy / s, V.z); };
-  // zoom by dz levels keeping the point under (x, y) still
   V.zoomAbout = (dz, x, y) => {
     const [au, av] = V.toA(x, y), z = clamp(V.z + dz, V.minZoom(), ZMAX), s = V.scale(z);
     return V.set(au - (x - V.w / 2) / s, av - (y - V.h / 2 + V.oy) / s, z);
   };
-  // a view that shows the rectangle [au0, av0, au1, av1] with pad (0.12 = 12 percent) on every side
   V.fit = (r, pad = 0.12, zcap = ZMAX) => {
     const w = Math.max(1, r[2] - r[0]), h = Math.max(1, r[3] - r[1]);
     const s = Math.min(V.w / (w * (1 + 2 * pad)), V.h / (h * (1 + 2 * pad)));
     return { cx: (r[0] + r[2]) / 2, cy: (r[1] + r[3]) / 2, z: clamp(Math.log2(s / BASE), V.minZoom(), Math.min(zcap, ZMAX)) };
   };
-  // the same fit, into the part of the box the panels leave free (insets l, t, r, b in px), with the vertical offset oy the
-  // view will have when the move lands; the rectangle's centre lands on the free part's centre whatever oy is
   V.fitIn = (r, I = {}, pad = 0.12, zcap = ZMAX, oy = V.oy) => {
     const l = I.l || 0, t = I.t || 0, fw = Math.max(80, V.w - l - (I.r || 0)), fh = Math.max(80, V.h - t - (I.b || 0));
     const w = Math.max(1, r[2] - r[0]), h = Math.max(1, r[3] - r[1]);
@@ -52,7 +43,6 @@ export function createView(o = {}) {
   return V;
 }
 
-// Which pyramid level a zoom wants: tiles are drawn up to 1.35 times their size, never smaller than half.
 export const levelFor = (z, levels = 4) => clamp(Math.ceil(z - 0.35), 0, levels - 1);
 
 export function createTiles(o) {
@@ -82,7 +72,7 @@ export function createTiles(o) {
     while (T.cache.size > T.max) {
       const k = T.cache.keys().next().value, b = T.cache.get(k);
       T.cache.delete(k);
-      try { if (b && typeof b.close === "function") b.close(); } catch (e) { /* ignore */ }
+      try { if (b && typeof b.close === "function") b.close(); } catch (e) {  }
     }
   };
   const want = (L, x, y) => {
@@ -92,7 +82,6 @@ export function createTiles(o) {
   };
   const get = (L, x, y) => { const k = `${L}/${x}_${y}`, b = T.cache.get(k); if (b) { T.cache.delete(k); T.cache.set(k, b); } return b || null; };
 
-  // The tiles the view needs at its level, in the index only.
   T.visible = (V, levels = 4) => {
     const L = levelFor(V.z, levels), span = 10000 / Math.pow(2, L), r = V.rect(), out = [];
     const x0 = Math.max(0, Math.floor(r[0] / span)), x1 = Math.min(3 * Math.pow(2, L) - 1, Math.floor(r[2] / span));
@@ -101,9 +90,6 @@ export function createTiles(o) {
     return out;
   };
 
-  // Draw in screen space; a missing tile shows its nearest loaded ancestor. Fix E4 (2026-10-30): a cell the level leaves out of the
-  // index (open sea at levels 2 and 3) is painted from the nearest level that has it, asked for when it is not loaded yet; before,
-  // the bare host colour showed there, a pale empty box that read as a minimap behind the zoom buttons at 3440.
   T.draw = (ctx, V) => {
     const levels = T.index ? T.index.levels : 4, L = levelFor(V.z, levels), span = 10000 / Math.pow(2, L), r = V.rect(), s = V.scale(), sw = span * s;
     const x0 = Math.max(0, Math.floor(r[0] / span)), x1 = Math.min(3 * Math.pow(2, L) - 1, Math.floor(r[2] / span));
@@ -130,11 +116,10 @@ export function createTiles(o) {
     return loaded;
   };
   T.stats = () => ({ wanted: T.wanted, loaded: T.loaded, failed: T.failed.size });
-  T.clear = () => { for (const b of T.cache.values()) { try { if (b && typeof b.close === "function") b.close(); } catch (e) { /* ignore */ } } T.cache.clear(); T.pending.clear(); T.queue.length = 0; };
+  T.clear = () => { for (const b of T.cache.values()) { try { if (b && typeof b.close === "function") b.close(); } catch (e) {  } } T.cache.clear(); T.pending.clear(); T.queue.length = 0; };
   return T;
 }
 
-// Default image loader: createImageBitmap from a fetched blob where the browser has it, else an Image element.
 export function defaultLoader() {
   return (url) => {
     if (typeof fetch === "function" && typeof createImageBitmap === "function") {
@@ -142,7 +127,6 @@ export function defaultLoader() {
     }
     return new Promise((res, rej) => {
       const im = new Image();
-      // the fake DOM sets naturalWidth after a tick and never fires onload: poll briefly
       let n = 0, t = 0;
       im.onload = () => { clearInterval(t); res(im); }; im.onerror = () => { clearInterval(t); rej(new Error("image")); }; im.src = url;
       t = setInterval(() => { if (im.naturalWidth) { clearInterval(t); res(im); } else if (++n > 40) { clearInterval(t); rej(new Error("timeout")); } }, 25);
@@ -150,7 +134,6 @@ export function defaultLoader() {
   };
 }
 
-// Frame timing: a ring of the last 120 frame times, p95 on demand.
 export function createFrames() {
   const ring = []; let last = 0;
   return {

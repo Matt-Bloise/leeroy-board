@@ -1,33 +1,23 @@
-/* Woven ribbons for the tab rail, v3 (polish round 2026-10-31, lane A: notes/polish-round/LANE-A.md, numbers in NOTES-A.md). Raw WebGL2, no
-   dependency. One canvas over the sheet's head and the top of the page. Each ribbon is one draw of a 9 by 65 grid whose cloth is computed per
-   device pixel (weave.glsl.js: a 2/1 warp-faced twill, the scene name in raised satin stitch from a signed distance field, the scene crest
-   woven in as weft satin floats with its own relief); one more draw for the chosen ribbon's shadow and one instanced draw for the twelve rods.
-   Motion: a length spring (k 180, c 22) and a sway spring per ribbon. A scene change unrolls the chosen ribbon down the page like a scroll,
-   holds, then settles it at rest + 12 px while the others tuck to 0.55 of rest and come back. At rest nothing is scheduled: the last frame
-   stays. Textures reach the GPU one per frame. Imported on demand by js/cloth-hook.js. Relative imports only. */
 import { VS, FS, RVS, RFS } from "./weave.glsl.js?v=05273c8840";
 import { createBaker, fontReady } from "./ribbon-bake.js?v=0130fc4966";
 
 const COLS = 8, ROWS = 64, STEP = 1 / 120, MAX_AMP = 14;
-const KC = 40, CC = 6, KL = 180, CL = 22; /* sway: BoardSpring cloth (k 40, c 6); length: zeta 0.82, about 1 percent overshoot, 420 ms */
+const KC = 40, CC = 6, KL = 180, CL = 22;
 const REST_AMP = 0.5, REST_AMP_V = 3, SWEEP_S = 0.42, HOLD_MS = 280, STAGGER = 18, TUCK = 0.55, PLUS = 12;
-const CREST_K = 0.52, CREST_MIN = 44, CREST_MAX = 100, CLEAR = 6, LS = 4; /* crest 0.52 of the width, 6 px under the rod; label field 4 texels per css px */
-const DPR_MAX = 3, HEAT = 8e6, MAX_W = 8192, ANISO = 8; /* backing css x DPR up to 3; the 8 Mpx heat cap and the width cap lower the DPR, never the css size */
-/* the warp colour per dye: the mean of each old -w fabric tile, measured once (2026-10-31); the weft is 0.68 of it */
+const CREST_K = 0.52, CREST_MIN = 44, CREST_MAX = 100, CLEAR = 6, LS = 4;
+const DPR_MAX = 3, HEAT = 8e6, MAX_W = 8192, ANISO = 8;
 const DYES = { indigo: [0.078, 0.152, 0.278], royal: [0.061, 0.187, 0.488], "burnt-orange": [0.655, 0.207, 0.05], crimson: [0.541, 0.046, 0.074], copper: [0.412, 0.186, 0.092], plum: [0.232, 0.115, 0.213], wine: [0.362, 0.066, 0.086], forest: [0.147, 0.241, 0.131], olive: [0.317, 0.299, 0.106], ochre: [0.645, 0.388, 0.06], slate: [0.221, 0.297, 0.368], teal: [0.024, 0.188, 0.215] };
 const GOLD = [1, 0.84, 0.5];
-const INK = {}; /* thread and ground halo per dye; default gold with a 22 percent darkening (the rendered ochre is dark too: NOTES-A.md, A2) */
+const INK = {};
 const IMG = (n) => new URL(`../img/ribbons/${n}.webp`, import.meta.url).href;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
-function art(name, pre) { /* a decoded picture off the main thread where the browser can (createImageBitmap) */
+function art(name, pre) {
   return fetch(IMG(name)).then((r) => { if (!r.ok) throw new Error(name); return r.blob(); })
     .then((b) => (typeof createImageBitmap === "function" ? createImageBitmap(b, { premultiplyAlpha: pre ? "premultiply" : "none" }) : new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = URL.createObjectURL(b); })));
 }
 
 export function createCloth(o) {
   const { canvas, rail, sheet = rail, tabs, onLost, onReady } = o;
-  /* getContext is a synchronous call into the GPU process: in the board's first seconds it waited 0.9 to 1 s there (NOTES-A.md, A6), so the
-     context waits for eight smooth frames in a row (or 240 frames), then an idle slice (calm()); shaders link in parallel where the driver can */
   const born = {}; let sized = false, waiting = false, pend = null, gl = null, pcx = null, anx = null, aniso = 0, prog = null, rprog = null;
   const shaders = [];
   const mk = (v, f) => { const p = gl.createProgram(); for (const [t, s] of [[gl.VERTEX_SHADER, v], [gl.FRAGMENT_SHADER, f]]) { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); gl.attachShader(p, x); shaders.push(x); } gl.linkProgram(p); return p; };
@@ -75,7 +65,6 @@ export function createCloth(o) {
     for (const [n, pre] of [["p-loop", true], ["p-fringe", true]]) art(n, pre).then((im) => queue(() => { shared[n] = put(n === "p-loop" ? 3 : 2, null, n, () => img(im, pre)); }), () => {});
   }
 
-  /* ---- textures: mipmapped, anisotropic, clamped; one upload per frame ---- */
   let textures = 0, uploadMs = 0, uploadMax = 0, ups = 0;
   const bytes = new Map(), shared = {};
   const img = (src, pre) => { gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, pre); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src); return (src.width || src.naturalWidth) * (src.height || src.naturalHeight) * 4; };
@@ -98,12 +87,11 @@ export function createCloth(o) {
     if (work.length) pumpRaf = requestAnimationFrame(pump);
   }
 
-  /* ---- ribbons ---- */
   const B = tabs.map((t) => ({ key: t.key, el: t.el, text: t.label || "", dye: DYES[t.colour] || [0.3, 0.25, 0.25], ink: INK[t.colour] || [GOLD, -0.22], x: 0, y: 0, w: 0, h: 0, len: 0, lv: 0, lt: 0, go: false, mode: "rest", sw: -1, swept: false, ax: 0, av: 0, phase: 0, dir: 1, sel: false, lift: false, fv: false, lbl: null, li: null, want: "", wid: "", cr: null, crN: 0, last: -1e9 }));
   const G = { rod: 22, rest: 88, open: 194, fringe: 16, drop: 10, cap: 13 };
   let W = 0, CH = 1, dprEff = 1, dprAsk = 1, ready = false, destroyed = false, raf = 0, last = 0, acc = 0, t = 0, kicks = 0, baked = 0, bakeMs = 0, hover = -1, closed = true, hid = true, railL = 0, railR = 0, calls = 0, hold = null, seq = 0, lkey = "";
-  const dbg = { ink: 1, solo: null }; /* measuring and the stills: the ink off (exact-mask APCA), one ribbon alone (render-stills.mjs) */
-  let pending = []; /* timed actions: { at, i, px, dir } a kick, { at, i, go } a ribbon's drop, { at, i, m } a mode change */
+  const dbg = { ink: 1, solo: null };
+  let pending = [];
   const ring = new Float32Array(120); let rn = 0, lastCost = 0;
   const frameApi = () => { const n = Math.min(rn, 120), a = Array.from(ring.subarray(0, n)).sort((x, y) => x - y); return { last: +lastCost.toFixed(3), p95: n ? +a[Math.min(n - 1, Math.ceil(n * 0.95) - 1)].toFixed(3) : 0 }; };
   const baker = createBaker((r) => {
@@ -116,15 +104,14 @@ export function createCloth(o) {
     const px = (n, d) => { const v = cs ? parseFloat(cs.getPropertyValue(n)) : NaN; return v > 0 ? v : d; };
     G.rest = px("--ribbon-rest", 88); G.rod = px("--ribbon-rod", G.rest * 0.25); G.open = G.rest * px("--ribbon-k", 2.2); G.fringe = Math.min(18, G.rest / 5.4); G.drop = G.rest / 9; G.cap = px("--ribbon-cap", 13);
   }
-  /* the crest and the label in body space (css px below the rod): the crest keeps room for two lines of lettering, the label centres in what is left */
   function plan(b) {
-    const room = G.rest - G.fringe - CLEAR - 11 - G.cap * 2.62, c = room < 32 ? 0 : Math.min(clamp(CREST_K * b.w, CREST_MIN, CREST_MAX), room), top = CLEAR + c + 4; /* a short screen keeps the lettering and drops the crest */
+    const room = G.rest - G.fringe - CLEAR - 11 - G.cap * 2.62, c = room < 32 ? 0 : Math.min(clamp(CREST_K * b.w, CREST_MIN, CREST_MAX), room), top = CLEAR + c + 4;
     return { c, mid: (top + G.rest - G.fringe - 4) / 2 };
   }
-  function feed(b, i) { /* ask for the lettering and the crest this ribbon needs at its size */
+  function feed(b, i) {
     const w = fontReady(), want = `${b.text}|${Math.round(b.w / 4)}|${G.cap}|${baker.mode() === "idle" && w}`;
     if (want !== b.want) { b.want = want; b.wid = `${i}:${++seq}`; baker.bake({ id: b.wid, text: b.text, widthCss: b.w, capCss: G.cap, pad: 5 }); }
-    const n = plan(b).c * dprAsk > 120 ? 256 : 128; /* the twin only while it still gives a texel per device px */
+    const n = plan(b).c * dprAsk > 120 ? 256 : 128;
     if (plan(b).c && n > b.crN) { b.crN = n; art(`crests/${b.key}${n === 256 ? "" : "-128"}`, false).then((im) => queue(() => { b.cr = put(1, b.cr, `c${b.key}`, () => img(im, false)); b.crT = n; }), () => {}); }
   }
 
@@ -143,7 +130,6 @@ export function createCloth(o) {
       dprAsk = Math.min(window.devicePixelRatio || 1, DPR_MAX); const eff = Math.min(dprAsk, MAX_W / nw, Math.sqrt(HEAT / (nw * nh)));
       const bw = Math.round(nw * eff), bh = Math.round(nh * eff);
       if (canvas.width !== bw || canvas.height !== bh) {
-        /* the first backing allocation is a synchronous GPU call too (94 to 620 ms on a first visit): it waits for calm frames, the stills show meanwhile */
         if (!sized) { pend = [bw, bh]; if (!waiting) { waiting = true; calm(() => { waiting = false; if (destroyed || !pend) return; canvas.width = pend[0]; canvas.height = pend[1]; sized = true; if (onReady) onReady(); }); } lkey = ""; ready = false; hid = true; return false; }
         canvas.width = bw; canvas.height = bh;
       }
@@ -152,7 +138,7 @@ export function createCloth(o) {
       B.forEach((b, i) => { if (b.w) feed(b, i); });
     }
     ready = true;
-    if (closed && hid) intro(); /* the sheet opened: the ribbons drop from the rod, one every 25 ms from the left */
+    if (closed && hid) intro();
     hid = false;
     retarget(); draw();
     return true;
@@ -167,14 +153,13 @@ export function createCloth(o) {
   function retarget() { for (const b of B) b.lt = targetOf(b); wake(); }
   const moving = (b) => b.ax !== 0 || b.av !== 0 || b.len !== b.lt || b.lv !== 0 || b.sw >= 0;
   const anyMoving = () => pending.length > 0 || !!hold || B.some(moving);
-  const ampK = () => G.rest / 50; /* the kick values (px) were set for a 38 px banner */
+  const ampK = () => G.rest / 50;
 
   function kickAt(i, px, dir) { const b = B[i]; if (!b || destroyed) return; if (!b.ax && !b.av) b.phase = 0; b.ax = clamp(b.ax + px, -MAX_AMP, MAX_AMP); b.dir = dir < 0 ? -1 : 1; kicks++; wake(); }
   function kick(key, px, dir) { const i = B.findIndex((b) => b.key === key); if (i >= 0) kickAt(i, px, dir); }
   function kickWave(i, px, dir, now) { kickAt(i, px, dir); for (const j of [i - 1, i + 1]) if (B[j]) pending.push({ at: now + 60, i: j, px: px * 0.4, dir }); }
   const setLift = (b, on) => { if (on && !b.lift && !b.sel) b.sw = 0; b.lift = on; };
 
-  /* the pointer path in canvas space (the sheet): x0 to x, at y; vx in px per second */
   function pointer(x, y, vx, x0) {
     if (destroyed || !ready) return;
     const now = performance.now(), lo = Math.min(x, x0 == null ? x : x0), hi = Math.max(x, x0 == null ? x : x0);
@@ -191,12 +176,9 @@ export function createCloth(o) {
   function focus(key, visible) { for (const b of B) if (b.key === key) { if (!b.fv) kick(key, 6, 1); b.fv = !!visible; } else b.fv = false; syncLift(); }
   function blur() { for (const b of B) b.fv = false; syncLift(); }
   function syncLift() { B.forEach((b, i) => setLift(b, i === hover || !!b.fv)); retarget(); }
-  /* choose (first open), switch (key and prev), close (key null). A switch: the chosen ribbon unrolls to the open length, the previous one rolls
-     up at once, the others tuck 18 ms apart outward from the chosen; once the chosen is open it holds 280 ms, then everything settles back.
-     A second switch retargets every spring from where it is. */
   function scene(key, prev) {
     const now = performance.now(); pending = pending.filter((p) => p.m == null); hold = null;
-    if (key == null) { for (const b of B) { b.sel = false; b.mode = "rest"; } closed = true; hid = true; retarget(); return; } /* closing: the next open drops the ribbons again */
+    if (key == null) { for (const b of B) { b.sel = false; b.mode = "rest"; } closed = true; hid = true; retarget(); return; }
     if (closed && !hid) closed = false;
     const ci = B.findIndex((b) => b.key === key);
     B.forEach((b, i) => { b.sel = i === ci; });
@@ -214,7 +196,6 @@ export function createCloth(o) {
     B.forEach((b, i) => { if (i === ci) b.mode = "chosen"; else pending.push({ at: now + STAGGER * Math.abs(i - ci), i, m: "rest" }); });
   }
 
-  /* ---- the loop ---- */
   function step(dt, now) {
     if (hold) { const c = B[hold.i]; if (!hold.at && c.len >= 0.98 * G.open) hold.at = now + HOLD_MS; if (hold.at && now >= hold.at) settle(now); }
     for (const b of B) if (b.mode === "open" && !b.swept && b.len >= G.rest + 0.6 * (G.open - G.rest)) { b.swept = true; b.sw = 0; }
@@ -270,7 +251,7 @@ export function createCloth(o) {
   function draw() {
     if (!ready || destroyed || linked < 1 || gl.isContextLost()) return;
     gl.disable(gl.SCISSOR_TEST); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.enable(gl.SCISSOR_TEST); /* a scrolling rail clips its ribbons at the rail's edges, a little loosely for the sway */
+    gl.enable(gl.SCISSOR_TEST);
     const sx = Math.max(0, Math.floor((railL - 16) * dprEff)), ex = Math.min(canvas.width, Math.ceil((railR + 16) * dprEff));
     gl.scissor(sx, 0, Math.max(0, ex - sx), canvas.height);
     calls = 0; anySel = B.some((b) => b.sel);
@@ -292,7 +273,7 @@ export function createCloth(o) {
   function clothFrame(now) {
     raf = 0;
     if (destroyed || document.hidden) return;
-    const dt = last ? Math.min(0.5, (now - last) / 1000) : 1 / 60; last = now; /* capped at 0.5 s: the fixed 1/120 s substeps keep it stable */
+    const dt = last ? Math.min(0.5, (now - last) / 1000) : 1 / 60; last = now;
     const c0 = performance.now(), waved = B.some((b) => b.ax || b.av);
     step(dt, now);
     if (waved) t += dt;
@@ -303,7 +284,7 @@ export function createCloth(o) {
   }
   function wake() { if (!raf && !destroyed && !document.hidden && ready) { last = 0; raf = requestAnimationFrame(clothFrame); } }
 
-  function onVis() { /* hidden: nothing runs; shown again: one static frame at the end state, then nothing until the next input */
+  function onVis() {
     if (document.hidden) { if (raf) { cancelAnimationFrame(raf); raf = 0; } return; }
     hold = null; pending = [];
     for (const b of B) { b.go = true; b.mode = b.sel ? "chosen" : "rest"; b.ax = b.av = 0; b.len = b.lt = targetOf(b); b.lv = 0; b.sw = -1; } t = 0; last = 0; acc = 0;
@@ -323,7 +304,6 @@ export function createCloth(o) {
     try { const x = gl && gl.getExtension("WEBGL_lose_context"); if (x) x.loseContext(); } catch (e) {}
   }
 
-  /* the first selection; the context waits for calm frames, the first layout for the link (polled at idle) */
   for (const b of B) b.sel = b.el.getAttribute("aria-selected") === "true";
   const idle = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 2500 }) : setTimeout(f, 50));
   const poll = () => { if (destroyed) return; if (checkLink()) { if (onReady) onReady(); } else if (!linked) setTimeout(() => idle(poll), 16); };

@@ -1,4 +1,3 @@
-/* The phone shell (board/MOBILE-NOTES.md) */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K || typeof document === "undefined") return;

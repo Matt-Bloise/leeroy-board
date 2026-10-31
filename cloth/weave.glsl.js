@@ -1,9 +1,4 @@
-/* Ribbon v3 shaders (polish round lane A, notes/polish-round/LANE-A.md A1 to A4). GLSL ES 3.00, WebGL2 only. Everything is computed per device
-   pixel in ribbon space (css px from the ribbon's top edge), so the weave, the lettering and the crest bend with the cloth and stay sharp at
-   any DPR. Prototype: board/tools/ribbons/v3-proto.src.html. Imported by cloth.js; no imports. */
 
-/* the body and its shadow: a 9 by 65 grid per ribbon. u_rect x, y, width (with the side pad), arc length; u_g rod, roll radius, wave length,
-   side pad. The tail wraps a cylinder of radius R toward the viewer (half a turn), so the roll shows the cloth's back. */
 export const VS = `#version 300 es
 in vec2 a_uv;
 uniform vec2 u_view; uniform vec4 u_rect; uniform vec4 u_w; uniform vec4 u_g; uniform vec2 u_off; uniform float u_t;
@@ -18,8 +13,6 @@ void main() {
   v_p = vec2(a_uv.x * u_rect.z - u_g.w, s); v_sl = cos(ph) * env * u_w.x / 14.0; v_cos = c;
 }`;
 
-/* u_wh body width, arc length, shadow alpha, mode (1 shadow); u_ft fringe height, roll fade, label on, crest on; u_lr label rect and u_cb crest
-   box in body space (below the rod); u_k lit, halo (minus darkens, plus lightens), ink (0 for the exact-mask measure), sheen sweep 0..1 or -1 */
 export const FS = `#version 300 es
 precision highp float;
 uniform sampler2D u_lbl; uniform sampler2D u_cr; uniform sampler2D u_fr;
@@ -98,7 +91,6 @@ void main() {
   o = vec4(c * a, a);
 }`;
 
-/* the twelve rods in one instanced draw: i_r the rod rect, i_d the dye and the light */
 export const RVS = `#version 300 es
 in vec2 a_uv; in vec4 i_r; in vec4 i_d;
 uniform vec2 u_view; out vec2 v_uv; out vec4 v_d;

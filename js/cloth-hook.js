@@ -1,4 +1,3 @@
-/* Cloth banners for the tab rail (notes/polish-round/NOTES-A.md). */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
@@ -35,7 +34,6 @@ function start() {
 }
 function stop() { gen++; loading = false; if (ctl) { try { ctl.destroy(); } catch (e) {} ctl = null; } show(); if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; } }
 
-/* one relay per frame, after its layout; never on a closing sheet */
 let watching = false, relayRaf = 0;
 const relay = () => { if (relayRaf) return; relayRaf = requestAnimationFrame(() => setTimeout(() => { relayRaf = 0; if (ctl && !shut()) show(); })); };
 function watch() {

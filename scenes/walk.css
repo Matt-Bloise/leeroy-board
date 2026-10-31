@@ -1,20 +1,15 @@
-/* Companion N7: the first-open walk (scenes/walk.js). Tokens only. Above the phone bar (25), under .keys (40) and #toast (60);
-   the walk box lets the pointer through, so the cutout reaches the thing it names */
 .walk { position: absolute; inset: 0; z-index: 30; pointer-events: none; }
 .walk-veil { position: absolute; inset: 0; background: var(--veil); pointer-events: auto; transition: clip-path var(--t-move) var(--ease-oak); }
 .walk-card { position: absolute; top: 12px; left: 12px; box-sizing: border-box; width: calc(100% - 24px); max-width: 420px; padding: 14px 16px; background: var(--parchment); color: var(--ink); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); pointer-events: auto;
   display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 12px; align-items: start; }
-/* a painting, once landed, is a small vignette beside the sentence, so the card stays short and the target stays in the clear */
 .walk-card:has(.walk-pic) { grid-template-columns: 112px minmax(0, 1fr); }
 .walk-pic { grid-row: span 2; display: block; width: 112px; height: auto; aspect-ratio: 1024 / 640; object-fit: cover; border-radius: 4px; }
-/* fix round A6: a card narrowed to the room beside a wide target drops its painting */
 .walk-card.walk-slim { grid-template-columns: minmax(0, 1fr); }
 .walk-slim .walk-pic { display: none; }
 .walk-s { margin: 0; font-size: var(--step-1); line-height: 1.35; }
 .walk-n { margin: 6px 0 0; font-size: var(--fs-small); color: var(--ink-soft); }
 .walk-act { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .walk-act .lib-btn { min-height: 48px; padding-inline: 20px; }
-/* polish (2026-10-30): the walk adds no scroll room (it was .walk-room, 40vh); a phone card over its target moves to the top */
 html.phone-shell .walk-card.walk-up { top: 8px; bottom: auto; }
 @media (prefers-reduced-motion: reduce) { .walk-veil { transition: none; } }
 html.phone-shell .walk-card { top: auto; left: 8px; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); width: auto; max-width: none; }

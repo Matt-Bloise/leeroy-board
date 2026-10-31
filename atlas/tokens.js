@@ -1,5 +1,3 @@
-// Atlas deep-link tokens (contract 3.4). Pure: no DOM. Grammar uses only letters, digits, . _ ~ - so a token is hash-safe.
-//   atlas | atlas.<place> | atlas.z.<zone> | atlas.plan.<meet> | atlas.plan.<meet>~<class> | atlas.v.<au>.<av>.<zoom x10>
 const ID = "[a-z0-9][a-z0-9-]{0,59}";
 const RES = {
   home: /^atlas$/,

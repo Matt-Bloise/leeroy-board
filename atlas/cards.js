@@ -1,10 +1,6 @@
-// The place card, the zone card, the plan panel and the keyboard's places list (contract 3.3, 4.2). DOM only, built with the
-// board's own h(). Library voice throughout: it says what is known and how sure the board is, and never tells anyone what
-// to do. Names come from party.json at run time (the publish step maps them to display names).
 export const KIND = { zone: "zone", subzone: "area", city: "city", hub: "town", flight: "flight point", zeppelin: "zeppelin tower", dungeon: "dungeon", raid: "raid", start: "starting place", meet: "meeting point" };
 const LEVEL_SAY = { confirmed: "confirmed", likely: "likely", speculative: "speculative" };
 const title = (s) => s.replace(/-/g, " ").replace(/\b[a-z]/g, (c) => c.toUpperCase());
-// "the Undercity", "the Crossroads", "Orgrimmar": the way a sentence names a place
 export const spoken = (name) => (/^the /i.test(name) ? `the ${name.slice(4)}` : name === "Undercity" ? "the Undercity" : name);
 export const pageHref = (page) => `#library.${page.replace("/", ".")}`;
 export const pageName = (page) => { const p = page.split("/"); return `${title(p[1] || p[0])} (${title(p[0])})`; };
@@ -26,7 +22,6 @@ export function createCards(o) {
   const closeBtn = (f) => { const b = h("button", { type: "button", class: "atlas-x", "aria-label": "Close", text: "Close" }); b.addEventListener("click", f); return b; };
   const sec = (label, body) => (body ? h("div", { class: "atlas-sec" }, h("h3", { text: label }), body) : null);
 
-  // library pages and asked questions that name an id
   const pagesFor = (id, extra) => {
     const out = new Set(extra || []);
     for (const [pg, ids] of Object.entries((o.links && o.links.pages) || {})) if (ids.includes(id)) out.add(pg);
@@ -86,7 +81,6 @@ export function createCards(o) {
   };
   C.hideCard = () => { const was = C.open; C.open = null; card.hidden = true; card.removeAttribute("data-card"); card.replaceChildren(); return was; };
 
-  // ---------- the plan panel ----------
   const placeOf = (id) => C.byId.get(id);
   const stepsText = (w, graph) => {
     const out = [];
@@ -126,7 +120,6 @@ export function createCards(o) {
     });
     const send = h("button", { type: "button", class: "atlas-btn", text: "Send the plan card" });
     send.addEventListener("click", () => o.act.send(pl.meet));
-    // on a phone the panel opens folded to its title bar, so the map stays free for taps and pinches
     const folded = typeof o.foldFirst === "function" ? !!o.foldFirst() : false;
     const fold = h("button", { type: "button", class: "atlas-fold", "aria-expanded": folded ? "false" : "true", "aria-controls": "atlas-plan", text: folded ? "Show routes" : "Hide routes" });
     fold.addEventListener("click", () => C.foldPlan(!plan.classList.contains("folded")));
@@ -145,11 +138,9 @@ export function createCards(o) {
     if (o.act.folded) o.act.folded(!!on);
     return !!on;
   };
-  /* fix E4: a plan link for a place with no plan keeps its hash and says so here */
   C.noPlan = () => { C.planOpen = true; plan.classList.remove("folded"); plan.replaceChildren(h("div", { class: "atlas-head" }, h("h2", { text: "Day-one plan" }), h("span", { class: "atlas-head-b" }, closeBtn(() => o.act.closePlan()))), h("p", { class: "atlas-sub", role: "status", text: "No plan for that place yet." })); plan.hidden = false; return plan; };
   C.hidePlan = () => { const was = C.planOpen; C.planOpen = false; plan.hidden = true; plan.replaceChildren(); return was; };
 
-  // ---------- the keyboard's list: one real button per place in view ----------
   let sig = "";
   C.places = (items, onFocus) => {
     const s = items.map((p) => p.id).join(",");

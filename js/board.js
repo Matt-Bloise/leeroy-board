@@ -3,7 +3,7 @@
 "use strict";
 const LT = [];
 try { new PerformanceObserver((l) => { for (const e of l.getEntries()) LT.push({ start: Math.round(e.startTime), ms: Math.round(e.duration) }); }).observe({ type: "longtask", buffered: true }); } catch (e) {}
-const ID1 = new Map(); /* an #id found once is found again without a walk while it stays in the */
+const ID1 = new Map();
 const $ = (s, r = document) => { if (r !== document || !/^#[\w-]+$/.test(s)) return r.querySelector(s); let e = ID1.get(s); if (e && e.isConnected) return e; e = r.querySelector(s); if (e) ID1.set(s, e); return e; };
 const SVGNS = "http://www.w3.org/2000/svg";
 function h(tag, attrs, ...kids) {
@@ -20,7 +20,6 @@ function h(tag, attrs, ...kids) {
   return n;
 }
 const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
-/* V11 emblems: */
 const ring = (cx, cy, r) => `M${cx} ${cy - r}a${r} ${r} 0 1 1-.01 0z`;
 const scallop = (cx, cy, r, n, amp) => { let d = ""; for (let i = 0; i <= n * 2; i++) { const a = (i * Math.PI) / n - Math.PI / 2, rr = i % 2 ? r - amp : r; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
 const gear = (cx, cy, r1, r2, n) => { let d = ""; for (let i = 0; i < n * 4; i++) { const a = (i * Math.PI * 2) / (n * 4), rr = (i % 4) < 2 ? r2 : r1; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
@@ -59,13 +58,12 @@ const EMB = {
   question: [["b", "M12 2.8l8.4 4.6v9.2L12 21.2l-8.4-4.6V7.4z"], ["d", "M12 5.4l6.2 3.4v6.4L12 18.6l-6.2-3.4V8.8z"], ["lb", "M9.8 10.2a2.2 2.2 0 1 1 3.4 1.8c-.8.5-1.2 1-1.2 1.9M12 15.8v.2"]],
 };
 const EMB_LABEL = { names_open: "scroll", sub_active: "hourglass", launch: "horn", raids: "skull" };
-/* emb(name, cls, label). */
 const EMB_FILE = {};
 for (const k of ["pin", "voice", "clock", "seal", "quill", "speech", "lock", "ribbon", "question"]) EMB_FILE[k] = ["chips", 128];
 for (const k of ["ticket", "cal", "book", "classes", "dungeons", "leveling", "tradeskills", "pvp", "races", "skull", "systems", "ui"]) EMB_FILE[k] = ["library", 128];
 for (const k of ["hourglass", "scroll", "horn"]) EMB_FILE[k] = ["dates", 192];
 const EMB_DATES = new Set(["hourglass", "scroll", "horn", "skull", "seal"]);
-const EMB_IN_SVG = /(^|\s)(viz-gate|spark-quill)(\s|$)/; /* these sit inside a map or chart svg and get positioned by x/y, so they are an svg */
+const EMB_IN_SVG = /(^|\s)(viz-gate|spark-quill)(\s|$)/;
 function embSvg(name, cls, label) {
   const parts = EMB[name] || EMB.seal;
   return s("svg", { class: `emb emb-${name}${cls ? ` ${cls}` : ""}`, viewBox: "0 0 24 24", ...(label ? { role: "img", "aria-label": label } : { "aria-hidden": "true", focusable: "false" }) }, ...parts.map(([c, d]) => s("path", { class: `e${c}`, d })));
@@ -77,19 +75,15 @@ function emb(name, cls, label, dates) {
   const [set, px] = spec, src = `img/emblems/${set}/${name}.webp`, klass = `emb emb-${name}${cls ? ` ${cls}` : ""}`;
   if (cls && EMB_IN_SVG.test(cls)) return s("image", { class: klass, href: src, width: px, height: px, ...(label ? { role: "img", "aria-label": label } : { "aria-hidden": "true" }) });
   const img = h("img", { class: klass, src, width: px, height: px, alt: label || "", loading: "lazy", decoding: "async", ...(label ? {} : { "aria-hidden": "true" }) });
-  /* a painted file that fails to load falls back, once, to the drawn */
   img.addEventListener("error", () => { try { if (img.parentNode) img.parentNode.replaceChild(embSvg(name, cls, label), img); } catch (e) {} }, { once: true });
   return img;
 }
 emb.svg = embSvg;
 emb.dates = (name, cls, label) => emb(name, cls, label, true);
-/* a person's mark: their class crest, sized to the text, with the name for screen readers when */
-const crestMark = (m, cls = "crest-mark", title = m.name) => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, decoding: "async", title }); /* fix C10: a decorative crest passes title null (js/place.js makes a titled thing a Tab */
+const crestMark = (m, cls = "crest-mark", title = m.name) => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, decoding: "async", title });
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 const roomHas = (c) => document.documentElement.classList.contains(c);
-/* V7: the room's state, read by window.__board.room() and written by */
 const RS = { tier: "low", why: "not started" };
-/* a new sign-up since the last look: the lantern's door latch and a murmur swelling */
 const ROOM_CUES = { signup: false, launch: false, played: false };
 function roomCues() {
   if (ROOM_CUES.played || !AU.on || !(ROOM_CUES.signup || ROOM_CUES.launch)) return;
@@ -102,12 +96,9 @@ function startRoomLadder() {
   const launch = D.timeline && D.timeline.events.find((e) => e.key === "launch");
   const seen = MEM.seenMap(), S = D.signups;
   const host = { state: RS, motion: MOTION, launchEpoch: launch ? launch.epoch : null, newSignup: !!(S && S.updated && seen.signups && Date.parse(S.updated) > seen.signups), select: $("#room-pick"), moreButton: $("#more-room"),
-    /* V13b: the room's key light and the page's card highlights are one light */
     aim: () => LB, signal: flickAt, tiltOn: () => LB.tilt,
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
-  /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  /* the tier module's first run blocked the main thread for about 0.8 s (long-frame trace), which */
   const bootRoom = () => import("../room/tier.js?v=11b18a8ff5").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
@@ -136,13 +127,11 @@ function fmtVal(v, durMs) {
 function fmtCost(c) {
   if (!c) return null;
   if (c.pct) return `${c.pct}% base mana`;
-  if (c.type === "rage") return `${nf.format(c.amount / 10)} rage`; /* rage costs are stored in tenths */
+  if (c.type === "rage") return `${nf.format(c.amount / 10)} rage`;
   return `${nf.format(c.amount)} ${c.type}`;
 }
-/* fix C7: dates read one way, "Wed, Nov 4, 6 PM ET" */
 const fmtDay = (epoch) => fmtWhen(epoch, { time: false });
 const MON = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
-/* card text ("Oct 27 4 PM ET", "until Nov 3 (Pacific)") in the same short */
 function cardDates(t) {
   const w = D.timeline && D.timeline.events.find((e) => e.until_epoch), y = new Date().getFullYear();
   return String(t).replace(/\b(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),? )?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}),? (\d{1,2}(?::\d\d)? ?[AP]M) ET\b/g, (m, mo, d, hr) => `${fmtDay(Date.UTC(y, MON.indexOf(mo), +d, 12) / 1000)}, ${hr.replace(/(\d)([AP])/, "$1 $2")} ET`)
@@ -155,7 +144,6 @@ function rel(epoch) {
   if (a < 172800) return rtf.format(Math.round(d / 3600), "hour");
   return rtf.format(Math.round(d / 86400), "day");
 }
-/* V13c (spec 7.2): */
 const ET_ZONE = "America/New_York";
 const viewerZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ET_ZONE; } catch (e) { return ET_ZONE; } };
 const rtfEn = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
@@ -164,14 +152,14 @@ function relWhen(epoch, now) {
   if (a < 60) return "now";
   if (a < 3600) return rtfEn.format(Math.round(d / 60), "minute");
   if (a < 86400 * 2) return rtfEn.format(Math.round(d / 3600), "hour");
-  return rtfEn.format(Math.trunc(d / 86400), "day"); /* whole days, as the countdown counts them */
+  return rtfEn.format(Math.trunc(d / 86400), "day");
 }
 function fmtWhen(epoch, o = {}) {
   if (!Number.isFinite(epoch)) return "";
-  const d = new Date(epoch * 1000), tz = o.tz || (o.mine ? viewerZone() : ET_ZONE), time = o.time !== false; /* fix C7: the viewer's own time only where asked (the clock) */
+  const d = new Date(epoch * 1000), tz = o.tz || (o.mine ? viewerZone() : ET_ZONE), time = o.time !== false;
   const one = (zone) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short", month: "short", day: "numeric", ...(time ? { hour: "numeric", minute: "2-digit" } : {}) }).formatToParts(d).map((x) => [x.type, x.value])); return `${p.weekday}, ${p.month} ${p.day}${time ? `, ${p.hour}${p.minute !== "00" ? `:${p.minute}` : ""} ${p.dayPeriod}` : ""}`; };
   const et = one(ET_ZONE), mine = one(tz);
-  const z = time ? " ET" : "", s = mine === et ? `${et}${z}` : `${mine} your time (${et}${z})`; /* fix C7: a day alone carries no zone */
+  const z = time ? " ET" : "", s = mine === et ? `${et}${z}` : `${mine} your time (${et}${z})`;
   return o.rel ? `${s}, ${relWhen(epoch, o.now)}` : s;
 }
 function eventWhen(e) {
@@ -180,10 +168,8 @@ function eventWhen(e) {
 }
 
 const D = {};
-/* V13d: */
 const KIT = { hooks: {}, on(n, f) { (this.hooks[n] ||= []).push(f); }, emit(n, ...a) { for (const f of this.hooks[n] || []) { try { f(...a); } catch (e) { console.error(n, e); } } }, lander: null };
 const JR = () => document.documentElement.dataset.journey || "curious";
-/* The data files start loading as soon as this script runs, while the rest of the page parses and */
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
 const dataGet = (n) => fetch(`data/${n}.json`, { cache: "no-store" });
 const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })), opt: ["signups", "tonight"].map((n) => dataGet(n).then((r) => (r.ok ? r.json() : null)).catch(() => null)) };
@@ -196,14 +182,13 @@ const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M
 const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role }, s("path", { d: GLYPH[role] || GLYPH.damage }));
 
 let clockTimer = null;
-/* The launch date is always on the wall (V5 Track A): a second line from timeline.json, in Eastern */
 function launchLine() {
   const e = D.timeline && D.timeline.events.find((x) => x.key === "launch");
   if (!e || !e.epoch) return "";
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "What is settled, what is open", signups: "Answers for launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" }; /* integrator pass 3: short enough for one line at 1280 (it read "Still open for each of us, by */
+const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "What is settled, what is open", signups: "Answers for launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" };
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -235,7 +220,6 @@ function renderHero() {
 function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
 const eventTs = (e) => (e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch);
 let shownNext;
-/* V11: */
 function eventState(e, now, next) {
   const ts = eventTs(e);
   if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, ${cardDates(`until ${e.until} (${e.until_zone || "Pacific"})`)}`];
@@ -244,7 +228,6 @@ function eventState(e, now, next) {
   const relText = e.epoch === null ? rel(Date.parse(`${e.date}T12:00:00Z`) / 1000) : rel(e.epoch);
   return next && e.key === next.key ? ["next", `Next on the board, ${relText}`] : ["", relText];
 }
-/* a lit hourglass glows in CSS (.stop.next/.open .emb-hourglass) */
 function stopEmblem(name) { return [emb.dates(name)]; }
 function renderTimeline() {
   const t = D.timeline, tl = $("#rail"); tl.replaceChildren();
@@ -272,15 +255,13 @@ function renderTimeline() {
 function renderCalendar(now) {
   const box = $("#cal-col"); if (!box) return;
   const t = D.timeline, dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  /* fix C7: the grid is Eastern days in every zone (a date never shifts a */
   const zday = (ts, tz = ET_ZONE) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value])); return new Date(+p.year, p.month - 1, +p.day, 12); };
   const local = (e) => zday(e.epoch === null ? Date.parse(`${e.date}T12:00:00Z`) / 1000 : e.epoch);
   const marks = {}; for (const e of t.events) marks[dayKey(local(e))] = e;
   const win = t.events.find((e) => e.until_epoch), wEnd = win && zday(win.until_epoch - 1, win.until_zone === "Pacific" ? "America/Los_Angeles" : ET_ZONE);
-  const inWin = (d) => win && d.getTime() + 432e5 >= local(win).getTime() && d.getTime() + 432e5 <= wEnd.getTime(); /* the day counts when its noon falls in the window */
+  const inWin = (d) => win && d.getTime() + 432e5 >= local(win).getTime() && d.getTime() + 432e5 <= wEnd.getTime();
   const launch = t.events.find((e) => e.key === "launch") || t.events[0];
   const mid = local(launch), first = new Date(mid.getFullYear(), mid.getMonth(), 1), last = new Date(mid.getFullYear(), mid.getMonth() + 1, 0);
-  /* weeks start on Sunday, as US calendars do (the owner, 2026-10-29). */
   const nowD = zday(now), from = nowD < first && first - nowD < 7 * 864e5 ? new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()) : first;
   const start = new Date(from); start.setDate(from.getDate() - from.getDay());
   const end = new Date(last); end.setDate(last.getDate() + (6 - last.getDay()));
@@ -289,14 +270,12 @@ function renderCalendar(now) {
   for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const e = marks[dayKey(d)], w = inWin(d);
     const prev = new Date(d); prev.setDate(d.getDate() - 1);
-    /* V13d (interaction 6): a day with a date on it is a button that lights its stop on the */
     const isToday = dayKey(d) === today;
     cells.push(h(e || isToday ? "button" : "div", { class: `cal-day${d.getMonth() !== mid.getMonth() ? " out" : ""}${w ? " win" : ""}${w && !inWin(prev) ? " first" : ""}${isToday ? " today" : ""}${e ? " has-emb" : ""}`, ...(e || isToday ? { type: "button", "data-ev": e ? e.key : "today", "data-day": dayKey(d), "aria-label": `${new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d)}${e ? `: ${e.label}` : ", today"}` } : { "data-day": dayKey(d) }), title: e ? e.label : null },
       e ? emb(EMB_LABEL[e.key] || "seal") : null, h("span", { text: String(d.getDate()) })));
   }
   const month = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(mid);
   const later = t.events.filter((e) => local(e) > end);
-  /* V13e retest-10: */
   const wideCal = matchMedia("(min-width: 1100px)").matches, wasOpen = box.querySelector("details.cal-wrap");
   const calOpen = wideCal || !!(wasOpen && wasOpen.open);
   const fmtDay = (d) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d);
@@ -321,14 +300,12 @@ function setDigits(b, str) {
     const [now, was] = d.children;
     was.textContent = old[i]; now.textContent = str[i];
     clockTick();
-    if (reduceMQ.matches || roomHas("play") || typeof now.animate !== "function") return; /* companion N4: Play mode rolls no digit */
-    /* V13c (craft 30): the old half falls first (0 to 120 ms, accelerating, darkening to 70% */
+    if (reduceMQ.matches || roomHas("play") || typeof now.animate !== "function") return;
     const half = MOTION.digit / 2;
     was.animate([{ transform: "none", opacity: 1, filter: "brightness(1)" }, { transform: "rotateX(90deg)", opacity: 0.6, filter: "brightness(0.7)" }], { duration: half, easing: "cubic-bezier(.55, 0, 1, .45)", fill: "forwards" });
     now.animate([{ transform: "rotateX(-90deg)", filter: "brightness(0.7)" }, { transform: "rotateX(9deg)", offset: 0.7 }, { transform: "none", filter: "brightness(1)" }], { duration: half, delay: half, easing: MOTION.oak, fill: "backwards" });
   });
 }
-/* V13c (craft 29): the clock's sound is one tick or tock a second, never one per changed digit */
 const CT = { last: 0, k: 0 };
 function clockTick() { const n = performance.now(); if (n - CT.last < 500 || SC.open !== null) return; CT.last = n; CT.k ^= 1; sfx(CT.k ? "tick" : "tock"); }
 function tick() {
@@ -336,22 +313,19 @@ function tick() {
   const now = Date.now() / 1000;
   const next = nextEvent(now);
   if ((next ? next.key : null) !== shownNext) renderTimeline();
-  if (D.party && D.party.polls.some((q) => q.closes_epoch <= now) && splitPolls()) { try { renderLedger(); renderTiles(); } catch (e) {} } /* fix C1: a poll closing while the page is open */
+  if (D.party && D.party.polls.some((q) => q.closes_epoch <= now) && splitPolls()) { try { renderLedger(); renderTiles(); } catch (e) {} }
   const digits = $("#clock-digits");
   if (!next) { setClockLabel("Every date on the board has passed", ""); digits.replaceChildren(); $("#clock-when").textContent = "Open the dates for the whole rail."; return; }
   const left = Math.max(0, Math.floor(next.epoch - now));
-  /* integrator pass 3: Play drops the seconds (the wall idled at 0.35 to 0.5 s of main thread per 10 */
   const play = roomHas("play"), parts = next.format === "D" ? [["days", localDay(next.epoch * 1000) - localDay(now * 1000)]] : [["days", Math.floor(left / 86400)], ["hours", Math.floor((left % 86400) / 3600)], ["minutes", Math.floor((left % 3600) / 60)], ...(play ? [] : [["seconds", left % 60]])];
   const sig = `${next.key}|${parts.map((x) => x.join(":")).join(",")}`; if (play && sig === CT.sig) return; CT.sig = sig;
   setClockLabel("Until", next.label);
   if (digits.childElementCount !== parts.length) digits.replaceChildren(...parts.map(([u]) => h("span", { class: "clock-unit" }, h("b", { "data-u": u }), h("span", { text: u }))));
   for (const [u, v] of parts) setDigits(digits.querySelector(`[data-u="${u}"]`), String(v).padStart(u === "days" ? 1 : 2, "0"));
-  /* Screen readers get the countdown as words, once a minute, not digit by */
   const leftText = parts.filter(([u]) => u !== "seconds").map(([u, v]) => `${v} ${v === 1 ? u.replace(/s$/, "") : u}`).join(", ") + " left";
   const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").removeAttribute("aria-label"); }
-  $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { mine: true }); /* V13c (consistency 10): the one formatter */
+  $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { mine: true });
   const mc = $("#mini-clock");
-  /* V12: the phone bar fits 375 px: the countdown, then the launch in the viewer's own time, short */
   if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
 }
 
@@ -363,10 +337,8 @@ function renderTiles() {
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
   const count = (role) => p.members.filter((m) => (m.role_now || m.role) === role).length, later = p.members.filter((m) => m.role_from);
   fill("five",
-    /* V12: phones show race and class under each name too, as the laptop medallions */
     h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
     h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
-    /* fix C3: counted on role_now (damage until 40 is damage at launch) */
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many], i) => [i ? ", " : "", h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`)]),
       later.length ? ` (${andList(later.map((m) => `${count(m.role_from.role) === 1 ? "a second" : "a"} ${m.role_from.role} from ${m.role_from.level}`))}).` : ".", " ",
       h("span", { class: "strip-2" }, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : "All five have picked a spec."; })())));
@@ -384,33 +356,27 @@ function renderTiles() {
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], "."]), wallGloss(L.gloss || {}, ["They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."], "tl-more"),
     h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
-    /* consistency 5: the count the scene shows (every buff the five bring), not the wheel's */
     minis([[p.members.length, "players"], [c.buffs ? c.buffs.list.filter((b) => !b.sixth).length : c.synergy.length, "buffs"]]),
     h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: "Buff links between the five" }));
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
-    /* V13e retest-14: the "still open" count lands on the first open line, so the landing works where */
     (() => { const mm = minis([[stillOpen.length, "still open"], ...(p.polls.length ? [[p.polls.length, p.polls.length === 1 ? "poll taking votes" : "polls taking votes"]] : [])]); if (stillOpen.length && mm.firstChild) mm.firstChild.setAttribute("data-land", "ledger.open-0"); return mm; })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
     const when = T.when ? h("span", { class: "tile-line su-when" }, [["6pm", "6 PM ET"], ["8pm", "8 PM ET"], ["later", "Later"]].filter(([k]) => T.when[k]).map(([k, l]) => h("span", { class: "su-slot" }, h("b", { text: l }), ` ${T.when[k].names.length ? T.when[k].names.map(cleanName).join(", ") : "nobody yet"}`))) : null;
     const cnt = (k) => (T.rsvp[k] ? T.rsvp[k].count : 0), none = Math.max(0, p.members.length - RSVP_KEYS.reduce((n, k) => n + cnt(k), 0));
-    /* V13c (retest-3): a state shows only when someone holds it */
     const nums = [...RSVP_KEYS.filter((k) => k === "in" || cnt(k)).map((k) => [cnt(k), RSVP_SAY[k], k]), [none, "No answer", "none"]];
     fill("signups", h("span", { class: "su-nums" }, nums.map(([v, l, k]) => h("span", { class: "su-num", "data-land": `signups.${k}` }, h("b", { text: String(v) }), h("small", { text: l })))),
       h("span", { class: "rsvp-bar su-keg", "aria-hidden": "true" }, kegRow([...RSVP_KEYS.flatMap((k) => Array(cnt(k)).fill(k)), ...Array(none).fill("none")])), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
-  /* fix C5: one sentence on the tile and in the scene (index.html */
   fill("librarian", h("span", { class: "tile-line", text: "Leeroy answers questions in Discord." }), h("span", { class: "tile-line", text: LEEROY_HOW }), h("span", { class: "tile-line tl-more", text: "It reads the same library this board searches." }));
 }
-/* A wall line with dotted glossary words. */
 function wallGloss(G, parts, cls) {
   return h("span", { class: `tile-line${cls ? ` ${cls}` : ""}` }, ...parts.map((x) => (Array.isArray(x) ? dotBtn(x[0], x[1]) : x)));
 }
-/* V12: */
 const GL = { open: null, re: null };
 function glDef(term) { const G = (D.party && D.party.glossary) || [], k = String(term).toLowerCase(); return G.find((g) => g.forms.some((f) => f.toLowerCase() === k)) || null; }
 function dotBtn(word, term) { const g = glDef(term || word); return g ? h("button", { type: "button", class: "gl", "data-term": g.term, "aria-expanded": "false", "aria-controls": "glpop", text: word }) : word; }
@@ -424,13 +390,11 @@ function glShow(b) {
   pop.classList.remove("in"); void pop.offsetWidth; pop.classList.add("in");
   sfx("card");
 }
-/* the card follows its word while the page or a scene scrolls */
 function glPlace() {
   const pop = $("#glpop"), b = GL.open; if (!pop || !b || pop.hidden) return;
-  if (KIT.placePop && b.isConnected) { const q = b.getBoundingClientRect(); if (q.bottom < 0 || q.top > innerHeight) { glClose(); return; } return KIT.placePop(pop, b); } /* js/place.js */
+  if (KIT.placePop && b.isConnected) { const q = b.getBoundingClientRect(); if (q.bottom < 0 || q.top > innerHeight) { glClose(); return; } return KIT.placePop(pop, b); }
   const r = b.getBoundingClientRect(), m = 16, w = pop.offsetWidth, ht = pop.offsetHeight;
   if (!b.isConnected || r.bottom < 0 || r.top > innerHeight) { glClose(); return; }
-  /* V14: */
   const own = b.closest(".card, li, .race, .tile") || b.parentElement;
   const hit = [...document.querySelectorAll("#scene .sheet .card, #scene .sheet button, #scene .sheet a[href], #scene .sheet .spell, #scene .sheet li")].filter((el) => el !== b && !pop.contains(el) && !b.contains(el) && el.offsetParent !== null);
   const rects = hit.map((el) => [el, el.getBoundingClientRect()]).filter(([, q]) => q.width > 0 && q.bottom > 0 && q.top < innerHeight);
@@ -438,7 +402,7 @@ function glPlace() {
   const cands = [[clampX(r.left), clampY(r.bottom + 8)], [clampX(r.left), clampY(r.top - ht - 8)], [clampX(r.right + 10), clampY(r.top - 4)], [clampX(r.left - w - 10), clampY(r.top - 4)]];
   let best = null;
   for (const [x, y] of cands) {
-    if (x < r.right && x + w > r.left && y < r.bottom && y + ht > r.top) continue; /* never on top of its own word */
+    if (x < r.right && x + w > r.left && y < r.bottom && y + ht > r.top) continue;
     let cost = 0; for (const [el, q] of rects) { const ox = Math.min(x + w, q.right) - Math.max(x, q.left), oy = Math.min(y + ht, q.bottom) - Math.max(y, q.top); if (ox > 0 && oy > 0) cost += ox * oy * (own && own.contains(el) ? 0.25 : 1); }
     if (!best || cost < best.cost - 400) best = { x, y, cost };
   }
@@ -458,12 +422,10 @@ function dotPanel(root) {
   const have = new Set([...root.querySelectorAll(".gl[data-term]")].map((b) => b.dataset.term));
   const skip = "a, button, label, input, select, textarea, summary, svg, h1, h2, h3, h4, .gl, .tt, .ttc, [aria-hidden=\"true\"], .lib, .tn-pick, .tn-chip, .tilt-note";
   const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), todo = [];
-  /* text a reader cannot see yet (a shut details) waits until it opens, so the first dot is always */
   for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.parentElement && !n.parentElement.closest(skip) && !n.parentElement.closest("details:not([open]), [inert]")) todo.push(n);
   for (let node of todo) {
     for (;;) {
       const text = node.nodeValue; GL.re.lastIndex = 0; let m, hit = null;
-      /* a name, not the word: "Leader of the Pack" */
       while ((m = GL.re.exec(text))) { const g = glDef(m[1]); if (g && !have.has(g.term) && !/\bof the\s$/i.test(text.slice(0, m.index))) { hit = [m, g]; break; } }
       if (!hit) break;
       have.add(hit[1].term);
@@ -485,11 +447,9 @@ function startGloss() {
   const sc = $("#scene"); if (!sc || typeof MutationObserver !== "function") return;
   let queued = false;
   const run = () => { queued = false; for (const p of sc.querySelectorAll(".panel:not([hidden]):not(#panel-library)")) { try { dotPanel(p); } catch (e) {} } };
-  /* a re-render, a tab switch (a panel's hidden flips) or a details */
   new MutationObserver(() => { if (!queued) { queued = true; setTimeout(run, 40); } }).observe(sc, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "open", "inert"] });
   sceneHooks.push((on) => { if (on) setTimeout(run, 40); });
 }
-/* Tile text never stops mid-sentence: whole sentences up to max, else whole clauses with an */
 function wholeClause(t, max) {
   const text = String(t || "").trim();
   if (text.length <= max) return text;
@@ -500,8 +460,6 @@ function wholeClause(t, max) {
   if (comma > max * 0.4) return `${text.slice(0, comma)}…`;
   return `${cut.slice(0, cut.lastIndexOf(" "))}…`;
 }
-/* the sign-ups tile: one tankard per answer, poured full for in, half for maybe, a wax band for */
-/* V13c (craft 15, spec 8): */
 function kegRow(states) {
   const svg = s("svg", { viewBox: `0 0 ${states.length * 56} 48`, preserveAspectRatio: "xMinYMid meet" });
   states.forEach((st, i) => {
@@ -512,7 +470,6 @@ function kegRow(states) {
   });
   return svg;
 }
-/* V13b (spec 1.4): */
 function miniRoads() {
   const svg = s("svg", { class: "mini-map", viewBox: "0 -10 600 420", "aria-hidden": "true", preserveAspectRatio: "xMidYMid meet" });
   svg.append(
@@ -585,7 +542,7 @@ function renderCards() {
       h("div", { class: "what", text: `${m.race} ${m.class}` }),
       h("div", { class: "spec", text: m.spec }),
       h("dl", { "data-j": "g c e" },
-        h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: roleWords(m) }))), /* fix C3 */
+        h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: roleWords(m) }))),
         h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), m.spec)))),
         h("div", {}, h("dt", { text: "Starts in" }), h("dd", { text: m.start_zone || "unknown" })),
         h("div", { "data-j": "c e" }, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
@@ -596,7 +553,6 @@ function renderCards() {
         sp.duration_ms && !sp.values.some((v) => v.mode === "total") ? `lasts ${fmtMs(sp.duration_ms)}` : null, sp.learned ? `learned at ${sp.learned}` : null].filter(Boolean).join(" · ");
       return h("li", { class: "spell" }, h("div", { class: "spell-name" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null), vals ? h("div", { class: "spell-vals", text: vals }) : null, h("div", { class: "spell-meta", text: meta }));
     }));
-    /* V13d (interaction 8). */
     list.setAttribute("data-j", "e");
     const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class} spells at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class, "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
     const back = h("div", { class: "face back" },
@@ -626,12 +582,9 @@ const ROADS = [
   { key: "mulgore", zone: "Mulgore", cls: "map-road", d: "M268 318 C 290 290, 330 250, 392 222 C 430 200, 455 160, 468 128", how: "the road past the Crossroads" },
   { key: "durotar", zone: "Durotar", cls: "map-road", d: "M508 238 C 520 210, 512 170, 478 130", how: "the Durotar road" },
 ];
-/* SMIL on the map pauses while the page is hidden */
-/* V13b: */
 const MAPW = { drawn: 0 };
 function mapWidth() {
   const b = $("#map"), w = b && b.clientWidth;
-  /* the wide layout (js/wide.js): the box is the map's viewport and the map is what fits in it, no */
   if (w > 40) return Math.max(200, b.closest(".wide-map") ? Math.min(w, b.clientHeight * 1.5) : w - 20);
   if (innerWidth >= 700 && innerHeight >= 501) {
     const sw = innerWidth * (innerWidth >= 1100 && innerHeight <= 960 ? 0.9 : 0.85), bh = innerHeight * (innerWidth >= 1100 && innerHeight <= 960 ? 0.88 : 0.85) - 140, rm = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
@@ -642,11 +595,8 @@ function mapWidth() {
   const H = innerHeight * 0.85, tall = side ? (H - 300 - 3 * rem + 20) * 1.5 : innerWidth >= 1300 ? (H - 470 - 6 * rem + 20) * 1.5 : 960;
   return Math.max(200, Math.min(side ? tall : Math.max(960, tall), sheet - 36 - (side ? 26 * rem + 28 : 0)) - 20);
 }
-/* V13b (owner-8): */
-/* fix C19: the road lines are obstacles for every label, sampled along each curve past its */
 const roadBoxes = () => ROADS.flatMap((r) => { const n = r.d.match(/-?[\d.]+/g).map(Number), out = []; for (let i = 0; i + 7 < n.length; i += 6) for (let t = i ? 0 : 0.12; t <= 1; t += 0.06) { const u = 1 - t, f = (k) => u * u * u * n[i + k] + 3 * u * u * t * n[i + 2 + k] + 3 * u * t * t * n[i + 4 + k] + t * t * t * n[i + 6 + k]; out.push({ x: f(0) - 3, y: f(1) - 3, w: 6, h: 6 }); } return out; });
 function mapUntangle() {
-  /* in map units, from the drawing's own attributes and getBBox, so the pins' and plates' */
   const sv = $("#map svg"); if (!sv) return;
   MC.untangled = (MC.untangled || 0) + 1;
   const pad = 1.5, num = (e, a) => Number(e.getAttribute(a)) || 0;
@@ -661,14 +611,12 @@ function mapUntangle() {
     if (!r.w) continue;
     const ok = (b) => b.x >= 2 && b.y >= 2 && b.x + b.w <= 598 && b.y + b.h <= 398 && !fixed.some((o) => hits(b, o)) && !placed.some((o) => hits(b, o));
     let best = ok(r) ? [0, 0] : null;
-    /* the nearest clear spot anywhere on the map (a scan in 3-unit steps */
     if (!best) { let d0 = Infinity; for (let y = 2; y + r.h <= 398; y += 3) for (let x = 2; x + r.w <= 598; x += 3) { const d = (x - r.x) ** 2 + (y - r.y) ** 2; if (d < d0 && ok({ ...r, x, y })) { d0 = d; best = [x - r.x, y - r.y]; } } }
     if (best && (best[0] || best[1])) { MC.moved = (MC.moved || 0) + 1; t.setAttribute("x", (num(t, "x") + best[0]).toFixed(1)); t.setAttribute("y", (num(t, "y") + best[1]).toFixed(1)); }
     placed.push(best ? { ...r, x: r.x + best[0], y: r.y + best[1] } : r);
   }
 }
 function mapFit() { if (!D.party || !MAPW.drawn) return; const w = mapWidth(); if (Math.abs(w - MAPW.drawn) / MAPW.drawn > 0.16) renderMap(); }
-/* a banner whose name runs longer than its cloth (a wide display name) is squeezed to fit, never */
 function fitBanners() { document.querySelectorAll("#map .banner-text").forEach((t) => { const max = Number(t.dataset.fit); t.querySelectorAll("tspan").forEach((l) => { try { if (l.getComputedTextLength() > max) { l.setAttribute("textLength", max); l.setAttribute("lengthAdjust", "spacingAndGlyphs"); } } catch (e) {} }); }); }
 let mapVis = false;
 function mapVisibility() {
@@ -682,9 +630,7 @@ function mapVisibility() {
   }
   mapClock();
 }
-/* V13a: */
 const MAP_FPS = 30, MC = { timer: 0, raf: 0, last: 0, t: 0, onScreen: true };
-/* integrator pass 3: the sketch stands still in Play and under the Atlas (it ran 30 frames a */
 const mapLive = () => SC.open === "roads" && !document.hidden && !reduceMQ.matches && MC.onScreen && !roomHas("play") && !document.querySelector("#map.atlas-on");
 function mapClock() {
   const svg = $("#map svg");
@@ -702,13 +648,10 @@ function mapStep(now) {
   try { svg.setCurrentTime(MC.t / 1000); } catch (e) {}
   MC.timer = setTimeout(() => { MC.timer = 0; MC.raf = requestAnimationFrame(mapStep); }, Math.max(0, 1000 / MAP_FPS - 8));
 }
-/* an eight-point compass star, centre (x, y), long and short radii */
 function STAR8(x, y, r1, r2) { let d = ""; for (let i = 0; i < 16; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 8, r = i % 2 ? r2 : i % 4 ? r1 * 0.7 : r1; d += `${i ? "L" : "M"}${(x + Math.cos(a) * r).toFixed(1)} ${(y + Math.sin(a) * r).toFixed(1)}`; } return `${d}Z`; }
-/* V13b (owner-10): */
 function zeppelin(am) {
   const g = s("g", { class: "map-zep-g", ...(am ? {} : { transform: "translate(292 52)" }) },
     s("ellipse", { class: "zep-shadow", cx: 3, cy: 20, rx: 17, ry: 4.2 }));
-  /* V13c: the painted top-down zeppelin (generated art), nose along its */
   if (ART.zep) { g.append(s("image", { class: "zep-img", href: "img/map/zeppelin.png", x: -20, y: -20, width: 40, height: 40, transform: "rotate(90)" })); if (am) g.append(am); return g; }
   g.append(
     s("path", { class: "zep-fin", d: "M-14 -1l-8-7h5l6 4zM-14 1l-8 7h5l6-4z" }),
@@ -734,25 +677,20 @@ function renderMap() {
     s("path", { class: "map-land", d: "M330 40 C400 30 470 50 540 80 C580 120 570 200 560 260 C540 320 470 360 390 380 C300 395 210 380 180 330 C170 280 220 230 260 200 C300 160 300 90 330 40 Z" }));
   const byZone = {};
   for (const m of D.party.members) (byZone[m.start_zone] ||= []).push(m);
-  /* paint order is document order. */
   const lines = ROADS.map((r) => {
     const g = s("g", { class: "road-line", "data-road": r.key });
-    /* V13a: the march is SMIL on the map's own clock (mapClock), not a CSS animation that repainted */
     const dur = r.cls === "map-air" ? "3.2s" : "2.4s", march = () => (reduceMQ.matches ? null : s("animate", { attributeName: "stroke-dashoffset", from: "0", to: "-36", dur, repeatCount: "indefinite" }));
     g.append(s("path", { class: `map-road-halo ${r.cls}`, d: r.d, mask: `url(#mask-${r.key})` }, march()),
       s("path", { id: `path-${r.key}`, class: r.cls, d: r.d, mask: `url(#mask-${r.key})` }, march()));
     svg.append(g); return g;
   });
   const groups = [];
-  /* V11: each of the five is a pin carrying their class crest, with a name */
-  /* V13b (spec 1.5): a name is a small label (12.5 px on screen at any map size) on a quiet */
-  /* a larger map carries larger names (up to 1.8 times at 1400 px and more), so they stay readable */
-  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = Math.max(12, 13 * u * bump), BIG = Math.max(12, (tiny ? 13 : 14.5) * u * bump), SMALL = Math.max(12, 13 * u * bump) /* mobile build (2026-10-30): 13 px on screen at least, the phone floor for labels (was 12.5, 11 on */, CH = 0.6; /* fix round 2: the SVG font size is never under 12 user units (computed 11.24 px at a 694 px */
+  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = Math.max(12, 13 * u * bump), BIG = Math.max(12, (tiny ? 13 : 14.5) * u * bump), SMALL = Math.max(12, 13 * u * bump) , CH = 0.6;
   MAPW.drawn = mw;
   svg.style.setProperty("--fs", `${FS.toFixed(2)}px`); svg.style.setProperty("--fb", `${BIG.toFixed(2)}px`); svg.style.setProperty("--fsm", `${SMALL.toFixed(2)}px`);
   const boxes = [];
   const hit = (b) => b.x < 4 || b.y < 4 || b.x + b.w > 596 || b.y + b.h > 396 || boxes.some((o) => b.x < o.x + o.w && o.x < b.x + b.w && b.y < o.y + o.h && o.y < b.y + b.h);
-  const textBox = (x, y, txt, fs, anchor) => { const w = txt.length * fs * 0.95 + fs * 0.6; /* small caps with tracking run wider than the banners */ return { x: (anchor === "middle" ? x - w / 2 : x) - fs * 0.15, y: y - fs * 0.98, w, h: fs * 1.3 }; };
+  const textBox = (x, y, txt, fs, anchor) => { const w = txt.length * fs * 0.95 + fs * 0.6;  return { x: (anchor === "middle" ? x - w / 2 : x) - fs * 0.15, y: y - fs * 0.98, w, h: fs * 1.3 }; };
   const fixedText = (x, y, txt, cls, fs, anchor = "middle") => { boxes.push(textBox(x, y, txt, fs, anchor)); return s("text", { class: cls, x, y, "text-anchor": anchor, text: txt }); };
   svg.append(
     emb("dungeons", "map-mark"),
@@ -772,10 +710,8 @@ function renderMap() {
     const z = ZONES[zone]; if (!z) continue;
     const road = ROADS.find((r) => r.zone === zone);
     const g = road ? groups[ROADS.indexOf(road)] : svg;
-    /* a starting zone flares once as the map opens: a drawn compass star, not a plain ring */
     g.append(s("path", { class: "zone-ring", d: STAR8(z.x, z.y, 20, 7), style: `--di: ${zi++}` }));
     zoneNames.push({ g, zone, x: z.label[0], y: z.label[1] + (phone ? 6 : 0) });
-    /* V13b (owner-8): */
     const plates = ms.map((m) => { const nm = m.name, sp = nm.length > 12 ? [...nm.matchAll(/ /g)].map((x) => x.index).sort((p, q) => Math.abs(p - nm.length / 2) - Math.abs(q - nm.length / 2))[0] : undefined; const lines = sp === undefined ? [nm] : [nm.slice(0, sp), nm.slice(sp + 1)]; return { lines, w: Math.max(...lines.map((l) => l.length)) * FS * CH + FS * 1.2, h: lines.length * FS * 1.05 + FS * 0.75 }; });
     const maxw = Math.max(...plates.map((p) => p.w)), stagger = ms.length > 2 && ms.length * (maxw + 6) > 210;
     const step = Math.max(36, stagger ? (maxw + 8) / 2 : maxw + 8), span = step * (ms.length - 1);
@@ -792,8 +728,7 @@ function renderMap() {
     });
   }
   boxes.push(...roadBoxes());
-  /* the plates last, so they keep clear of every pin and place name: */
-  const labels = s("g", { class: "map-labels" }); /* drawn last, over the roads and the walkers */
+  const labels = s("g", { class: "map-labels" });
   const clear = (b) => b.x >= 3 && b.y >= 3 && b.x + b.w <= 597 && b.y + b.h <= 397 && !boxes.some((o) => b.x < o.x + o.w + 2 && o.x < b.x + b.w + 2 && b.y < o.y + o.h + 2 && o.y < b.y + b.h + 2);
   for (const b of banners) {
     const { lines, w, h: hh } = b.plate;
@@ -801,10 +736,8 @@ function renderMap() {
     let at = null;
     for (let k = b.row; k < b.row + 8 && !at; k++) { const box = { x, y: b.ty + 4 + k * (hh + 3), w, h: hh }; if (clear(box)) at = box; }
     for (let k = 0; k < 6 && !at; k++) { const box = { x, y: b.ty - 46 - hh - k * (hh + 3), w, h: hh }; if (clear(box)) at = box; }
-    /* still nothing: the nearest clear spot on a grid around the pin, rows below and above, steps */
     for (let k = 0; k < 10 && !at; k++) for (const dy of [k, -k - 1]) for (const dx of [0, 0.55, -0.55, 1.1, -1.1, 1.65, -1.65, 2.2, -2.2]) {
       if (at) break; const y = dy >= 0 ? b.ty + 4 + dy * (hh + 3) : b.ty - 46 - hh + (dy + 1) * (hh + 3); const box = { x: Math.max(4, Math.min(596 - w, x + dx * w)), y, w, h: hh }; if (clear(box)) at = box; }
-    /* last: the nearest clear spot anywhere on the map, so a plate never lands on */
     if (!at) { let d0 = Infinity; for (let y = 4; y + hh <= 396; y += 3) for (let x2 = 4; x2 + w <= 596; x2 += 3) { const d = (x2 - x) ** 2 + (y - b.ty) ** 2; if (d < d0 && clear({ x: x2, y, w, h: hh })) { d0 = d; at = { x: x2, y, w, h: hh }; } } }
     if (!at) at = { x, y: Math.min(396 - hh, b.ty + 4), w, h: hh };
     boxes.push(at);
@@ -812,17 +745,14 @@ function renderMap() {
     if (at.y > b.ty + 8 || at.y + hh < b.ty - 40 || Math.abs(mid - b.tx) > w / 2) labels.append(s("path", { class: "pin-lead", d: `M${b.tx} ${at.y > b.ty ? b.ty + 1 : b.ty - 42}L${Math.max(at.x + 4, Math.min(at.x + w - 4, b.tx))} ${at.y > b.ty ? at.y : at.y + hh}` }));
     b.box = at; plateAt(at, lines, `--cc: ${classVar(b.m.class_key)}`);
   }
-  /* the zone names, then the zeppelin's route card, each at its own spot if clear, else the */
   const spotFor = (bx) => { for (let k = 0; k < 40; k++) for (const [dx, dy] of [[0, k], [0, -k], [k, 0], [-k, 0], [k, k], [-k, k], [k, -k], [-k, -k]]) { const b2 = { ...bx, x: Math.max(3, Math.min(597 - bx.w, bx.x + dx * 6)), y: Math.max(3, Math.min(397 - bx.h, bx.y + dy * 6)) }; if (clear(b2)) return b2; } let best = null, d0 = Infinity; for (let y = 3; y + bx.h <= 397; y += 3) for (let x = 3; x + bx.w <= 597; x += 3) { const d = (x - bx.x) ** 2 + (y - bx.y) ** 2; if (d < d0 && clear({ ...bx, x, y })) { d0 = d; best = { ...bx, x, y }; } } return best || bx; };
   for (const zn of zoneNames) {
-    /* a zone's name sits under its pins' plates, centred on them, unless that is */
     const mine = banners.filter((b) => b.m.start_zone === zn.zone).map((b) => b.box).filter(Boolean);
     const tb0 = textBox(zn.x, zn.y, zn.zone, BIG, "start");
     const tb = mine.length ? { ...tb0, x: (Math.min(...mine.map((b) => b.x)) + Math.max(...mine.map((b) => b.x + b.w))) / 2 - tb0.w / 2, y: Math.max(...mine.map((b) => b.y + b.h)) + 4 } : tb0;
     const at = spotFor(tb); boxes.push(at);
     zn.g.append(s("text", { class: "map-text", x: zn.x + (at.x - tb0.x), y: zn.y + (at.y - tb0.y), "text-anchor": "start", text: zn.zone }));
   }
-  /* the zeppelin's card: its full name, else "Zeppelin", else none on a map too small to hold it */
   for (const name of ["Undercity zeppelin", "Zeppelin"]) {
     const lines = [name], w = name.length * FS * CH + FS * 1.2, hh = FS * 1.8, want = { x: 290 - w / 2, y: 6, w, h: hh }, at = spotFor(want);
     if (at === want && !clear(want)) continue;
@@ -836,7 +766,6 @@ function renderMap() {
       s("text", { class: "banner-text", x: mid, y: at.y + FS * 0.42 + FS * 0.86, "text-anchor": "middle", "data-fit": Math.round(w - FS * 0.8) }, lines.map((l, li) => s("tspan", { x: mid, dy: li ? FS * 1.05 : 0, text: l })))));
   }
   if (!reduceMQ.matches) {
-    /* a walking trail: the traveller's crest walks each road, leaving prints that fade at */
     const walk = (g, r, k, dur, begin) => {
       const ms = byZone[r.zone] || []; if (!ms.length) return;
       defs.append(s("mask", { id: `walk-${r.key}`, class: "draw-mask", maskUnits: "userSpaceOnUse", x: 0, y: 0, width: 600, height: 400 },
@@ -851,15 +780,14 @@ function renderMap() {
     lines[0].append(zeppelin(am));
     walk(groups[1], ROADS[1], 0, "8s", "0s");
     walk(groups[2], ROADS[2], 0, "6s", "1s");
-    /* nothing moves on a hidden page */
   }
-  if (reduceMQ.matches) lines[0].append(zeppelin(null)); /* reduced motion: the zeppelin holds still at the top of its route */
+  if (reduceMQ.matches) lines[0].append(zeppelin(null));
   svg.append(labels);
   mapVisibility();
-  if (SC.open === "roads") requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); /* drawn again while open (a resize): measured again */
+  if (SC.open === "roads") requestAnimationFrame(() => { fitBanners(); mapUntangle(); });
   const panel = h("div", { class: "road-panel", "aria-hidden": "true" });
   box.append(svg, panel);
-  mapClock(); /* integrator pass 3 */
+  mapClock();
   const legend = $("#roads-legend"); legend.replaceChildren();
   let sticky = null;
   const btns = [];
@@ -884,9 +812,7 @@ function renderMap() {
     btns.push(b); legend.append(h("li", {}, b));
   }
   groups.concat(lines).forEach((g) => { g.addEventListener("pointerenter", () => light(g.dataset.road)); g.addEventListener("pointerleave", () => light(null)); });
-  /* a tap on a road line (under the pins now) does what a tap on its zone does: the zone group takes */
   lines.forEach((l, i) => l.addEventListener("click", (e) => { e.stopPropagation(); if (typeof groups[i].click === "function") groups[i].click(); }));
-  /* V13d (interaction 4): zones are buttons; a click or Enter zooms the map to the zone */
   KIT.emit("map", { svg, groups, lines, byZone, roads: ROADS, zones: ZONES, pick: (key) => { sticky = key; light(null); } });
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
   const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
@@ -894,12 +820,11 @@ function renderMap() {
   $("#map-caption").replaceChildren(...(meet ? meetLine(meet) : []));
 }
 
-/* V11: a meeting point nobody chose reads as a step with the Sign-ups card */
 const unchosen = (o) => /nothing chosen|not chosen/i.test(o.status || "");
 function meetLine(meet) {
   const url = D.party.signup_url;
   if (!unchosen(meet)) return [`${meet.title}: ${meet.status}. ${meet.detail || ""}`];
-  return [h("b", { text: `${meet.title}: ` }), "Not chosen yet. ", meet.detail || "", " ", h("a", { class: "tn-link", href: `${location.pathname}${location.search}#signups`, text: "Sign-ups" }), " has the answers so far."]; /* fix C8: facts, no imperative */
+  return [h("b", { text: `${meet.title}: ` }), "Not chosen yet. ", meet.detail || "", " ", h("a", { class: "tn-link", href: `${location.pathname}${location.search}#signups`, text: "Sign-ups" }), " has the answers so far."];
 }
 function splitNotes(text) {
   const notes = [];
@@ -912,7 +837,6 @@ function raceRow(r, i) {
   const client = (r.client.values.length || r.client.cooldown_ms) ? `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` : null;
   const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: `changed ${r.changed_on || "Oct 26"}` }) : null];
   const li = h("li", { class: "rrow", style: `--di: ${i}`, "data-key": MEM.slug(r.name), ...(r.changed_oct26 ? { "data-changed": r.changed_on || "Oct 26" } : {}) });
-  /* V13d (interaction 3). */
   const plain = wholeClause(now.split(/;\s*/)[0].replace(/\s*\([^)]*\)/g, ""), 90);
   const open = JR() === "everything";
   if (!notes.length && !client && plain === now) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
@@ -1015,13 +939,10 @@ function renderWheel() {
   const wide = !window.matchMedia || window.matchMedia("(min-width: 700px)").matches;
   wrap.append(h("details", { class: "wheel-svg", ...(wide ? { open: "" } : {}) }, h("summary", { text: "The wheel between the five" }), svg), h("details", { class: "wheel-links", id: "wheel-links" }, h("summary", { text: `The wheel's ${D.client.synergy.length} links, with sources` }), h("ul", { class: "buffs" }, items)));
 }
-/* V8: */
 const BUFF_STATUS = { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
-/* V13c (owner-6, spec 6): every buff carries a painted emblem of what it */
 const BUFF_CAT = { arcane_intellect: "intellect", conjure: "mana", fortitude: "stamina", shadow_protection: "resistance", divine_spirit: "spirit", pw_shield: "armor", kings: "allstats", might: "attackpower", wisdom: "mana", salvation: "spirit", devotion: "armor", retribution: "thorns", concentration: "intellect", mark: "allstats", thorns: "thorns", innervate: "mana", rebirth: "healing", leader: "attackpower", soulstone: "healing", healthstone: "healing", summoning: "spirit", blood_pact: "stamina", strength_earth: "attackpower", grace_air: "attackpower", windfury: "attackpower", mana_spring: "mana", healing_stream: "healing" };
 const buffCat = (b) => BUFF_CAT[b.key] || (/intellect/i.test(b.name) ? "intellect" : /stamina|fortitude/i.test(b.name) ? "stamina" : /mana/i.test(b.name) ? "mana" : /heal/i.test(b.name) ? "healing" : "allstats");
 const buffEmb = (b) => h("img", { class: "bq-emb", src: `img/buffs/${buffCat(b)}.png`, alt: "", width: 96, height: 96, loading: "lazy", decoding: "async" });
-/* the animated link: pointing at a buff (or focusing it) draws a moving thread from its giver to */
 function wheelFlow(b) {
   const edges = document.querySelectorAll("#wheel .wheel-edge");
   edges.forEach((e) => { const s = D.client.synergy[Number(e.dataset.b)]; e.classList.toggle("flow", !!b && !!s && (s.what === b.name || (s.from === b.class && !D.client.synergy.some((x) => x.what === b.name)))); });
@@ -1029,7 +950,7 @@ function wheelFlow(b) {
 }
 const BD = { level: 60, sixth: false };
 const buffTok = (key) => `buffs.${key.replace(/_/g, "-")}`;
-function buffWho(b, m) { /* does member m receive buff b */
+function buffWho(b, m) {
   if (b.lands === "tank") return m.role === "tank";
   if (b.lands === "healer") return m.role === "healer";
   if (b.lands === "melee") return m.class_key === "druid" || m.class_key === "paladin";
@@ -1043,7 +964,6 @@ function renderBuffsDeep() {
   const fmtN = (v) => `${nf.format(Math.round(v.n))}${v.max !== undefined ? ` to ${nf.format(Math.round(v.max))}` : ""}${/^%/.test(v.label) ? "" : " "}${v.label}`;
   const first = (b) => (b.ranks.length ? Math.min(...b.ranks.map((r) => r.learned)) : null);
   const ranksAt = (b) => { const a = b.at[L - 1]; return a ? a.r.filter((i) => i >= 0).map((i) => b.ranks[i]) : []; };
-  /* the short answer: the value at this level, or when it arrives */
   const short = (b) => {
     const a = b.at[L - 1];
     if (!b.ranks.length) return b.classic ? "numbers not out yet" : "no numbers yet";
@@ -1065,13 +985,11 @@ function renderBuffsDeep() {
       b.ranks.length ? h("div", { class: "deep-src", text: `Client table ${B.build.split(".").pop()}, spell ${rk.length ? rk.map((r) => r.spell).join(", ") : b.ranks[0].spell}` }) : null,
       notes.length ? h("ul", { class: "deep-notes" }, notes) : null);
   };
-  /* one buff on one line: name, value at this level, giver */
-  const row = (b, own, noFrom) => { /* own: the giver group copy carries the id, so ids stay unique */
+  const row = (b, own, noFrom) => {
     const giver = giverOf(b.class), later = !b.at[L - 1];
     return h("li", { class: `bq${later ? " later" : ""}`, style: `--bc: ${classVar(b.class === "shaman" ? null : b.class)}`, "data-key": b.key, ...(own === true ? { id: `buff-${b.key}` } : {}) },
       sources(b)([buffEmb(b), h("b", { text: b.name }), h("span", { class: "bq-val", text: short(b) }), noFrom ? null : h("span", { class: "bq-from", text: giver ? giver.name : b.class === "shaman" ? "a shaman" : "" })]));
   };
-  /* the group rules that name this buff, its group version, or (for Blessings and auras) its */
   function rulesFor(b) {
     const words = [b.name, b.group, /^Blessing/.test(b.name) ? "Blessing" : null, b.aura ? "aura" : null].filter(Boolean);
     return B.rules.filter((r) => words.some((w) => r.text.includes(w)));
@@ -1093,7 +1011,7 @@ function renderBuffsDeep() {
             h("h5", { text: g ? `From ${g.name}, ${g.class}` : "From a sixth player, Shaman" }), h("ul", { class: "bq-list" }, l.map((b) => row(b, false, true))));
         })),
       h("div", { class: "deep-col" }, h("h4", { text: `You give, ${me.name}` }), h("ul", { class: "bq-list" }, give.map((b) => row(b, false, true)))));
-  } else answer = null; /* who gives what: the giver groups below, each naming its buffs, one tap from the */
+  } else answer = null;
   const groups = classes.map((cls) => {
     const g = giverOf(cls), list = shown.filter((b) => b.class === cls);
     return h("details", { class: "bclass", "data-class": cls, style: `--bc: ${classVar(cls === "shaman" ? null : cls)}` },
@@ -1107,11 +1025,9 @@ function renderBuffsDeep() {
   });
   box.replaceChildren(...[
     h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
-    /* V12: with a name picked, a plain "Change person" control brings the picker */
     me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${me.race} ${me.class}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
       : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
-    /* V12: the stat words the buffs use, in plain words */
     h("p", { class: "deep-key", text: "Stamina adds health, Intellect adds mana, Spirit refills health and mana faster." }),
     answer,
     me ? h("h4", { class: "bgroup-h", text: `Every buff, by giver (${shown.length})` }) : null, h("div", { class: "bclasses" }, groups),
@@ -1120,7 +1036,6 @@ function renderBuffsDeep() {
   slider.addEventListener("input", () => set(Number(slider.value)));
   marks.querySelectorAll("button").forEach((b, i) => b.addEventListener("click", () => { set(B.marks[i]); const x = $("#buffs-deep .deep-marks button[aria-pressed=\"true\"]"); if (x) x.focus(); }));
   six.querySelector("input").addEventListener("change", (e) => { sfx("latch"); BD.sixth = e.target.checked; renderBuffsDeep(); const x = $("#deep-sixth"); if (x) x.focus(); });
-  /* V13c: the level slider clicks into its detents at the marks */
   slider.addEventListener("input", () => { if (B.marks.includes(Number(slider.value))) sfx("detent"); });
   const rowOf = (e) => { const li = e.target.closest && e.target.closest("li.bq[data-key]"); return li ? B.list.find((x) => x.key === li.dataset.key) : null; };
   box.addEventListener("pointerover", (e) => wheelFlow(rowOf(e)));
@@ -1128,7 +1043,6 @@ function renderBuffsDeep() {
   box.addEventListener("focusin", (e) => wheelFlow(rowOf(e)));
   box.addEventListener("focusout", () => wheelFlow(null));
 }
-/* #buffs.<key>: open that buff's giver group and its sources, and light */
 function focusBuff(tokKey) {
   const key = String(tokKey).replace(/-/g, "_"), B = D.client && D.client.buffs;
   const b = B && B.list.find((x) => x.key === key); if (!b) return false;
@@ -1151,17 +1065,14 @@ function setBuffView(v) {
 
 const ART = { crest: {}, seal: false, beam: false, zep: false, town: false };
 const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : emb("seal"));
-/* where a ledger line was written: the Party Board under a wax seal, the group notes under a */
 const srcTag = (src) => h("span", { class: `label srctag ${src === "board" ? "board" : "notes"}` }, emb(src === "board" ? "seal" : "quill"), SRC_WORD[src] || src);
 const SRC_WORD = { board: "on the Party Board", chat: "said in chat", "group notes": "in the group notes" };
-/* fix C1: D.party.polls holds only the polls still taking votes, polls_closed the rest (lane A reads */
 function splitPolls() {
   const p = D.party; if (!p) return false;
   const now = Date.now() / 1000, all = [...(p.polls || []), ...(p.polls_closed || [])], n = (p.polls || []).length;
   p.polls = all.filter((q) => !(q.closes_epoch <= now)); p.polls_closed = all.filter((q) => q.closes_epoch <= now);
   return p.polls.length !== n;
 }
-/* fix C3: Street Rat is damage until 40; role_now and role_from (lane A reads both */
 function roles() {
   for (const m of (D.party && D.party.members) || []) {
     const d = m.role_detail || "", f = /(\w+) from level (\d+)/i.exec(d);
@@ -1169,7 +1080,6 @@ function roles() {
     m.role_from = f ? { role: f[1].toLowerCase(), level: +f[2] } : null;
   }
 }
-/* fix C8: a Still open line is a statement per kind of item, not the card's link */
 function openLine(o, link) {
   const cq = (D.party.polls_closed || []).find((q) => q.title === o.title), l = (o.links || [])[0], gap = /Gap: ([A-Za-z ]+?)\./.exec(o.text || "");
   if (cq) return [`The poll closed ${fmtWhen(cq.closes_epoch)}${cq.result ? `: ${cq.result}` : /name/i.test(o.title) ? " with no name chosen yet" : ", no result on the board yet"}.`];
@@ -1188,7 +1098,6 @@ function renderLedger() {
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(h("div", { class: "ledger-col" },
     h("h3", { "data-j": "c e", text: "Settled" }),
-    /* V12: the Party Board's "Next up" line on what it takes to play closes the Settled */
     h("ul", { "data-j": "c e" }, [...p.settled, ...p.settled_extra].map((x, i, all) => h("li", { class: "settled-li", style: `--di: ${i}`, ...(i === all.length - 1 ? { "data-land-to": "settled" } : {}) }, h("span", {}, seal(), x.text), srcTag(x.source))),
       p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), p.play.text), srcTag(p.play.source)) : null),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
@@ -1197,7 +1106,6 @@ function renderLedger() {
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}`, "data-land-to": `open-${i}`, "data-title": o.title },
       h("strong", { text: o.title }),
       h("span", { "data-j": "c e" }, ...openLine(o, link),
-        /* V16: the professions item opens the decision view, where each option's facts */
         /profession/i.test(o.title) ? [" ", h("a", { class: "tn-link ledger-decide", href: "#decide", text: "The options, by person." })] : null),
       srcTag(o.source))))));
   KIT.emit("ledger");
@@ -1234,16 +1142,15 @@ function renderLibrarian() {
   wrap.append(
     h("div", { class: "stack" },
       h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
-      h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.` })), /* polish: the "slowest 1 in 20" tile (52 m 42 s) meant nothing to a newcomer, so it went */
+      h("p", { class: "lib-note", text: `Reply time runs from a question being filed to Leeroy's answer. ${st.misses} of ${st.answers} took longer than ${fmtSecs(st.miss_threshold_s)}.` })),
     h("div", { class: "spark" }, h("div", { class: "label", text: `Last ${vals.length} answers, seconds` }), spark, h("p", { class: "spark-key", text: `The wax drop marks his newest answer. The line is seconds to answer over his last ${vals.length}; the quill draws it.` })));
 }
 
 function renderFooter() {
   const stamp = ["party", "timeline", "client", "stats", "signups"].filter((k) => D[k]).map((k) => D[k].generated).sort().pop();
-  const when = fmtWhen(Date.parse(stamp) / 1000); /* V13c (consistency 10): the one formatter, not a UTC stamp */
+  const when = fmtWhen(Date.parse(stamp) / 1000);
   $("#footer").replaceChildren(
     h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
-    /* V12: touch wording on touch screens; keys only where there is a keyboard and */
     h("span", { text: window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click a tile to open it. Escape returns to the wall. Press ? for keys." : "Tap a tile to open it. The X at the top, or your phone's back gesture, returns to the wall." }));
   $("#lib-sources").replaceChildren(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
@@ -1266,7 +1173,7 @@ function buildSignupControls() {
   const sel = $("#as");
   sel.replaceChildren(h("option", { value: "", text: "Not saying" }), ...D.party.members.map((m) => h("option", { value: m.name, text: `${m.name}, ${m.class}` })));
   sel.addEventListener("change", () => { RT.mine.as = sel.value || null; try { localStorage.setItem("board-as", sel.value); } catch (e) {} save("as"); pushPresence(); });
-  const other = $("#meet-place"); /* not "meet-other": that id belongs to the Write-in radio */
+  const other = $("#meet-place");
   let pause = 0;
   const commit = (typing) => {
     clearTimeout(pause); pause = 0;
@@ -1302,10 +1209,8 @@ function save(field) {
   const patch = { updated: Date.now() };
   for (const k of [].concat(field)) patch[k] = k === "meet_other" ? (RT.mine.meet_other || "") : (RT.mine[k] || null);
   const ref = RT.db.doc(`signups/${RT.myId}`);
-  /* Merge: update only the fields this click changed */
   const full = () => ({ pack: RT.mine.pack || null, meet: RT.mine.meet || null, meet_other: RT.mine.meet_other || "", rsvp: RT.mine.rsvp || null, as: RT.mine.as || null, updated: patch.updated });
   const create = () => ref.set(full()).then(() => { RT.created = true; });
-  /* update rejects invalid_argument when the document is gone (deleted elsewhere) */
   const attempt = () => (RT.signups.has(RT.myId) || RT.created ? ref.update(patch).catch((err) => { if (err && err.code === "invalid_argument") return create(); throw err; }) : create());
   RT.pending = (RT.pending || 0) + 1;
   writeChain = writeChain.then(() => attempt().catch((err) => {
@@ -1324,7 +1229,6 @@ async function renderTallies() {
   const token = ++tallyToken;
   const ids = [...RT.signups.keys()];
   if (token !== tallyToken) return;
-  /* Display rule: a person shows only as the party member they picked, otherwise "a */
   const nameOf = (id) => { const d = RT.signups.get(id) || {}; const base = (typeof d.as === "string" && memberByName(d.as) && d.as) || "a guest"; return id === RT.myId ? `${base} (you)` : base; };
   for (const [q, opts] of Object.entries(Q)) {
     const box = $(`#tally-${q}`);
@@ -1357,7 +1261,6 @@ async function renderPresence() {
   $("#presence-text").replaceChildren(peers.length === 1 ? "At the board now: just you" : `At the board now: ${peers.length}`, me ? h("span", { class: "peer-you", text: " · ringed dot is you" }) : "");
 }
 
-/* SDK 2.5.0: */
 let discordPoll = 0;
 function startDiscordPresence(sdk) {
   const warned = new Set();
@@ -1421,13 +1324,9 @@ function startDiscordPresence(sdk) {
   });
 }
 
-/* V13c (spec 8): the four answers in the bot's calendar words */
 const RSVP_KEYS = ["in", "maybe", "late", "out"];
 const RSVP_SAY = { in: "I'm in", maybe: "Tentative", late: "Running late", out: "Out" };
-/* Discord display names sometimes carry decoration ("=Name=") */
 const cleanName = (n) => String(n).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "") || String(n);
-/* the launch-night table: one seat per member with their crest, a tankard full when they are in */
-/* V11: one clear way to answer: the Sign-ups card in Discord */
 function actRow() {
   const url = D.party && D.party.signup_url; if (!url) return;
   $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "The Sign-ups card in Discord"), h("p", { class: "act-how", text: "The card in #wow-forever takes I'm in, Tentative, Running late or Out." }));
@@ -1441,7 +1340,6 @@ function renderSeats(S) {
     s("image", { class: "seat-table-img", href: "img/seats/table.webp", x: 0, y: 58, width: W, height: 135, preserveAspectRatio: "none" }));
   ms.forEach((m, i) => {
     const x = 40 + step * (i + 0.5), a = ans(m), state = a && a.rsvp ? a.rsvp : "none";
-    /* V13c: the painted pint for the answer (full, half, late with its watch */
     const mug = s("image", { class: `seat-mug ${state}`, href: `img/pints/${state}@2x.png`, x: x - 18, y: 78, width: 36, height: 36 });
     svg.append(s("image", { href: `img/crests/${m.class_key}.png`, x: x - 24, y: 14, width: 48, height: 48 }), mug,
       s("text", { class: "seat-name", x, y: 192, text: m.name }),
@@ -1455,7 +1353,6 @@ function renderDiscordSignups() {
   const T = S.tallies;
   const meName = (MEM.member() || {}).name;
   const mineFirst = (names) => names.map(cleanName).sort((a, b) => (b.toLowerCase() === String(meName).toLowerCase()) - (a.toLowerCase() === String(meName).toLowerCase()));
-  /* V11: a name carries its crest when it is one of the five */
   const who = (n) => { const m = memberByName(cleanName(n)); return h("span", { class: "who" }, m ? crestMark(m) : emb("speech"), cleanName(n)); };
   let ri = 0;
   const row = (slot, label, extra, key) => h("div", { class: `trow${slot.count ? "" : " zero"}`, style: `--ri: ${ri++}`, ...(key ? { "data-land-to": key } : {}) },
@@ -1467,18 +1364,16 @@ function renderDiscordSignups() {
     ["Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
     ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
-  /* V13e: each question is one ledger line (label, the answers with names, then the empty answers */
   body.replaceChildren(...groups.map(([title, icon, rows], gi) => h("div", { class: "tally", "data-q": ["pack", "meet", "rsvp", "when"][gi] }, h("h4", {}, emb(icon), title), ...rows)));
   renderSeats(S); actRow();
   $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${fmtWhen(Date.parse(S.updated) / 1000, { rel: true })}.` : "Nobody has clicked the card yet.";
   KIT.emit("signups");
 }
 
-/* V11: the board opens in any browser from the web link */
-const PRESENCE_WEB = ""; /* fix C22: the header carries no stray note (the intro says it opens in any */
+const PRESENCE_WEB = "";
 async function startRuntime() {
   const c = window.claude;
-  if (!c || typeof c.use !== "function") { setStatus(D.signups && D.signups.updated ? `Sign-ups as of ${fmtWhen(Date.parse(D.signups.updated) / 1000)}.` : ""); return; } /* fix C17: never a stuck "Loading" */
+  if (!c || typeof c.use !== "function") { setStatus(D.signups && D.signups.updated ? `Sign-ups as of ${fmtWhen(Date.parse(D.signups.updated) / 1000)}.` : ""); return; }
   const use = (n) => Promise.resolve().then(() => c.use(n)).catch(() => null);
   const [db, user, room] = await Promise.all([use("db"), use("user"), use("room")]);
   RT.db = db; RT.user = user; RT.room = room; RT.tried = true;
@@ -1510,28 +1405,22 @@ async function startRuntime() {
   }, (err) => { RT.readOnly = true; RT.blocked = true; setEnabled(false); setStatus(err && err.code === "revoked" ? "Sign-ups are read-only now." : "Sign-ups stopped updating. Reload the board to see the latest."); });
 }
 
-/* V16 (2026-10-30): "decide" (What to decide) sits before Next steps, which stays */
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "decide", "tonight"];
-/* V13c (spec 7.1, NORTH-STAR "One vocabulary"). */
 const TITLES = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const PAGE_TITLE = { base: "" };
-/* spec 7.4: the document title follows the open scene */
 function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
 const SC = { how: null, open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
-/* V13d (interaction 1): "<scene>.<thing>" lands on that thing inside the scene */
 const LAND_RE = /^(timeline|five|roads|racials|legacy|ledger|signups|librarian|decide)\.([a-z0-9][a-z0-9_-]{0,40})$/;
 const sceneFromHash = () => { const k = decodeURIComponent(location.hash.replace(/^#/, "")); return SCENES.includes(k) ? k : /^atlas(?:\.|$)/.test(k) ? "roads" : /^library\./.test(k) ? "library" : /^tonight\./.test(k) ? "tonight" : /^buffs\.[a-z_-]{1,40}$/.test(k) ? "buffs" : LAND_RE.test(k) ? k.split(".")[0] : null; };
 function setHash(key, push) {
   const url = location.pathname + location.search + (key ? `#${key === "library" ? LIBUI.token() : key}` : "");
-  /* pushed marks an entry over the wall's own, the only kind back may */
   try { if (push) history.pushState({ boardScene: key, pushed: true }, "", url); else history.replaceState(key ? { boardScene: key, pushed: !!(history.state && history.state.pushed) } : null, "", url); return true; } catch (e) { return false; }
 }
 function replay(el, cls) { if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
-/* one frame (2026-10-30). */
 function liftPanel(p) {
   const b = $("#sheet-body"); if (!b || p.hidden || !b.getBoundingClientRect) return;
   b.scrollTop = 0;
@@ -1540,16 +1429,12 @@ function liftPanel(p) {
   const st = p.style; st.position = "absolute"; st.margin = "0"; st.left = `${((r.left - br.left - (b.clientLeft || 0)) / z).toFixed(1)}px`; st.top = `${((r.top - br.top - (b.clientTop || 0)) / z).toFixed(1)}px`; st.width = `${(r.width / z).toFixed(1)}px`; st.height = `${(r.height / z).toFixed(1)}px`;
 }
 function dropPanel(p) { const st = p.style; if (st.position) { st.position = ""; st.margin = ""; st.left = ""; st.top = ""; st.width = ""; st.height = ""; } }
-/* deferred scene work: after the first paint, then idle */
 function later(f, ms = 200) { KIT.deferred = (KIT.deferred || 0) + 1; const idle = () => (typeof requestIdleCallback === "function" ? requestIdleCallback(f, { timeout: ms }) : setTimeout(f, 0)); if (typeof requestAnimationFrame === "function") requestAnimationFrame(idle); else idle(); }
-/* a pulse only for a finger's own gesture: a deep link, a key or a timer makes */
 let TOUCHED = -1e9; addEventListener("pointerdown", (e) => { if (e.isTrusted) TOUCHED = performance.now(); }, { capture: true, passive: true });
 const hap = (n) => { try { if (window.BoardHaptics && performance.now() - TOUCHED < 1500) window.BoardHaptics.fire(n); } catch (e) {} };
 const TILES = new Map(), tileOf = (key) => { let t = TILES.get(key); if (!t || !t.isConnected) { t = document.querySelector(`#board [data-scene="${key}"]`); if (t) TILES.set(key, t); } return t; };
 const PREPPED = new Set(), byId = (id) => $(`#${id}`);
-/* renders a panel without showing it; idempotent (the swipe's neighbours are prepared at */
 function prepare(key) { if (PREPPED.has(key) || !$(`#panel-${key}`)) return; PREPPED.add(key); if (key === "timeline" && D.timeline) renderTimeline(); }
-/* on a phone the two scenes a swipe can reach are built at idle, so the swipe only flips them */
 function neighbours(key) {
   const sw = window.BoardSwipe; if (!sw || !document.documentElement.classList.contains("phone-shell")) return;
   const i = sw.order.indexOf(key); if (i < 0) return;
@@ -1573,8 +1458,7 @@ function selectPanel(key, crossFade) {
     if (k !== key && k !== prev) { if (!p.hidden) { p.hidden = true; p.classList.remove("entering", "leaving"); dropPanel(p); } }
   }
   const next = $(`#panel-${key}`);
-  if (!PREPPED.has(key)) next.classList.add("panel-pending"); /* the head and the parchment are the first frame */
-  /* V13b (craft 20): a tab change slides a little in its direction of travel (the shorter way round */
+  if (!PREPPED.has(key)) next.classList.add("panel-pending");
   const di = prev ? (SCENES.indexOf(key) - SCENES.indexOf(prev) + SCENES.length) % SCENES.length : 0, dir = !di ? 0 : di <= SCENES.length / 2 ? 1 : -1;
   next.style.setProperty("--dir", String(dir)); next.style.transform = "";
   if (prev && prev !== key) {
@@ -1582,17 +1466,16 @@ function selectPanel(key, crossFade) {
     old.style.setProperty("--dir", String(dir)); old.style.transform = ""; old.classList.remove("spring");
     if (crossFade) {
       liftPanel(old);
-      old.classList.remove("entering", "again"); old.classList.add("leaving"); /* "again" (the short fade of a later open) is declared after .leaving and would keep the old panel */
+      old.classList.remove("entering", "again"); old.classList.add("leaving");
       clearTimeout(SC.fadeTimer);
-      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); dropPanel(old); }, (parseFloat(cssVar("--t-leave")) || 220) + 30); /* the CSS fade runs --t-leave; hiding the panel earlier cut it short in one */
+      SC.fadeTimer = setTimeout(() => { if (SC.open !== prev) old.hidden = true; old.classList.remove("leaving"); dropPanel(old); }, (parseFloat(cssVar("--t-leave")) || 220) + 30);
     } else { old.hidden = true; old.classList.remove("entering", "leaving"); dropPanel(old); }
   }
   dropPanel(next); next.hidden = false; next.classList.remove("leaving");
   if (crossFade) { replay(next, "entering"); sfx("tab"); }
   $("#sheet-body").scrollTop = 0;
-  /* V13c (craft 21): a scene's entrance choreography plays in full on its first open of the */
   const first = !PLAYED.has(key); PLAYED.add(key);
-  if (first && key === "signups") ON_FIRST.signups(); /* the tallies read 0 in the first frame, not their totals */
+  if (first && key === "signups") ON_FIRST.signups();
   later(() => {
     prepare(key); next.classList.remove("panel-pending");
     if (first) { if (PLAY[key]) replay($(PLAY[key][0]), PLAY[key][1]); if (ON_FIRST[key] && key !== "signups") ON_FIRST[key](); }
@@ -1603,26 +1486,21 @@ function selectPanel(key, crossFade) {
   if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
   moveInd(); markBar(key);
   KIT.emit("scene", key, prev);
-  if (FIT[fitKey(key)] !== undefined) fitScene(); /* a new size is measured after the first paint */
+  if (FIT[fitKey(key)] !== undefined) fitScene();
   KIT.lastOpenMs = +(performance.now() - t0).toFixed(1);
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(() => { if (SC.open === key) { fitScene(); moveInd(); } }));
-  /* the rail's bar is measured again once the fonts are in (a first open at load measured the tabs */
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (SC.open !== key) return; moveInd(); const t = $("#tabs"); if (t && typeof Event === "function") t.dispatchEvent(new Event("scroll")); /* the rail arrows look again */ }).catch(() => {});
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (SC.open !== key) return; moveInd(); const t = $("#tabs"); if (t && typeof Event === "function") t.dispatchEvent(new Event("scroll"));  }).catch(() => {});
 }
-/* V13c (spec 2, retest-10): */
 const FIT_SKIP = ["roads", "library"];
-const FIT_MIN_W = 900, FIT_MIN = 0.86, FIT_OVER = 0.15; /* 2026-10-30: from 900 px up; a panel up to 15 percent too tall zooms down to fit, never under */
+const FIT_MIN_W = 900, FIT_MIN = 0.86, FIT_OVER = 0.15;
 const FIT = {};
 const fitKey = (key) => `${key}:${innerWidth}x${innerHeight}`;
-/* one frame (2026-10-30): the room a panel has is the body's own height inside its padding */
-/* the panel's height as it shows. */
 const fitTall = (p) => p.offsetHeight * (parseFloat(p.style.zoom) || 1);
 function fitRoom(body) { const cs = getComputedStyle(body); return body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 4; }
 function fitScene(want) {
   const key = want || SC.open, p = key && $(`#panel-${key}`), body = $("#sheet-body"), sheet = $(".sheet");
   if (!p || !body || !sheet) return;
   const k = fitKey(key);
-  /* a remembered zoom is checked against the panel as it is now */
   if (!want && FIT[k] !== undefined) {
     p.style.zoom = FIT[k];
     const room = fitRoom(body);
@@ -1635,11 +1513,8 @@ function fitScene(want) {
   if (FIT_SKIP.includes(key) || innerWidth < FIT_MIN_W || typeof CSS === "undefined" || !CSS.supports || !CSS.supports("zoom", "1.2")) return;
   const cs = getComputedStyle(body), padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), maxH = fitRoom(body);
   if (maxH < 120) return;
-  /* a zoomed panel lays out in a narrower width, so its text wraps more: step the zoom down until */
-  /* at most three layouts: the natural height, a first guess, one correction (a zoom costs a layout */
   const wide = innerWidth < 1100 ? 1 : Math.min(1.45, (body.clientWidth - padX) / 1150);
   const tall0 = fitTall(p);
-  /* a panel that overflows the frame by up to FIT_OVER is zoomed down to fit, never under */
   if (tall0 > maxH && tall0 <= maxH * (1 + FIT_OVER)) {
     let z = Math.max(FIT_MIN, Math.min(1, (maxH * 0.99) / tall0));
     for (let i = 0; i < 3; i++) {
@@ -1656,7 +1531,7 @@ function fitScene(want) {
     p.style.zoom = z.toFixed(3);
     const tall = fitTall(p);
     if (tall <= maxH * 0.98) { done(z.toFixed(3)); return; }
-    z = z * Math.pow((maxH * 0.94) / tall, 1.6); /* narrower columns wrap more: step down harder than the ratio */
+    z = z * Math.pow((maxH * 0.94) / tall, 1.6);
   }
   done("");
 }
@@ -1676,16 +1551,13 @@ function startBar() {
     const k = b.dataset.go;
     if (k === "more") { setMore(menu.hidden); if (!menu.hidden) menu.querySelector("button").focus(); return; }
     setMore(false);
-    if (k === "room") return; /* room/tier.js cycles it */
+    if (k === "room") return;
     if (k === "sound") setSound(!AU.on); else if (k === "wall") requestClose(); else if (k === "search") LIBUI.focusSearch(); else { switchTab(k); b.focus(); }
   };
   bar.addEventListener("click", go); menu.addEventListener("click", go);
-  /* V13b (mobile 13): a tap anywhere outside the menu and its button closes */
   document.addEventListener("pointerdown", (e) => { if (!menu.hidden && !menu.contains(e.target) && !more.contains(e.target)) setMore(false); }, true);
 }
-/* The swipe hint fades after the first swipe and stays gone (localStorage, inside */
 function swiped() { const hint = $("#scene-hint"); if (hint) hint.classList.add("used"); try { localStorage.setItem("board-swiped", "1"); } catch (e) {} }
-/* V13b: */
 const SWIPE_EDGE = 20;
 function startLibBar() {
   const body = $("#sheet-body"), bar = document.querySelector(".lib-bar"); if (!body || !bar) return;
@@ -1694,7 +1566,6 @@ function startLibBar() {
 }
 let swipeBound = false;
 function startSwipe() {
-  /* mobile build: the phone shell's swipe.js owns scene swipes on a */
   if (swipeBound) return; swipeBound = true;
   const shellOwns = () => !!(window.BoardShell && window.BoardShell.phone());
   try { if (localStorage.getItem("board-swiped") === "1") { const hint = $("#scene-hint"); if (hint) hint.classList.add("used"); } } catch (e) {}
@@ -1703,7 +1574,6 @@ function startSwipe() {
   const give = (dx) => { const a = Math.abs(dx), d = a <= 80 ? a : 80 + (a - 80) * 0.35; return Math.sign(dx) * d * 0.85; };
   const back = (p) => { if (!p) return; if (reduceMQ.matches) { p.style.transform = ""; return; } p.classList.add("spring"); p.style.transform = ""; setTimeout(() => p.classList.remove("spring"), MOTION.micro + 40); };
   const atEnd = (c, dx) => (dx > 0 ? c.scrollLeft <= 2 : c.scrollLeft >= c.scrollWidth - c.clientWidth - 2);
-  /* V13e touch pass: a second finger (a pinch on the map) is never a */
   let fingers = 0;
   body.addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") fingers++; }, true);
   for (const t of ["pointerup", "pointercancel"]) body.addEventListener(t, (e) => { if (e.pointerType === "touch") fingers = Math.max(0, fingers - 1); }, true);
@@ -1727,26 +1597,23 @@ function startSwipe() {
   const release = (x, y, ts, id) => {
     if (!s || (id !== undefined && id !== s.id)) return;
     const dx = x - s.x, dy = y - s.y, v = Math.abs(dx) / Math.max(1, ts - s.t), st = s; s = null;
-    if (st.car && !(st.car.scrollLeft === st.sl && atEnd(st.car, dx))) return; /* the carousel moved: its own swipe */
+    if (st.car && !(st.car.scrollLeft === st.sl && atEnd(st.car, dx))) return;
     if (Math.abs(dx) < Math.abs(dy) * 1.5 || !(Math.abs(dx) >= 40 || (v > 0.5 && Math.abs(dx) >= 20))) { if (st.live) back(panel()); return; }
     stepTab(dx < 0 ? 1 : -1); swiped();
   };
   body.addEventListener("pointerup", (e) => release(e.clientX, e.clientY, e.timeStamp, e.pointerId));
-  /* a carousel's own pan cancels the pointer */
   body.addEventListener("touchend", (e) => { if (!s || !s.car || !e.changedTouches || !e.changedTouches[0]) return; const t = e.changedTouches[0]; release(t.clientX, t.clientY, e.timeStamp); }, { passive: true });
 }
 let countToken = 0;
 function countUp(box) {
   const els = [...box.querySelectorAll("b[data-n]")], tok = ++countToken;
   if (reduceMQ.matches || !els.length) return;
-  /* 2026-10-30: the count's clock starts at the first frame it paints, not when it is */
   let t0 = null;
   const step = (t) => { if (tok !== countToken) return; if (t0 === null) t0 = t; const k = Math.min(1, Math.max(0, t - t0) / MOTION.count), e = 1 - Math.pow(1 - k, 3); for (const el of els) el.textContent = String(Math.round(Number(el.dataset.n) * e)); if (k < 1) requestAnimationFrame(step); };
   for (const el of els) el.textContent = "0";
   sfx("tick");
   requestAnimationFrame(step);
 }
-/* V13c (craft 6): one soft stamp per seal as it lands (its press animation runs 320 */
 function ledgerStamps() {
   const box = $("#ledger-slip") || $("#panel-ledger"); if (!box) return;
   const seals = [...box.querySelectorAll(".label.srctag .emb")].slice(0, 6), t0 = performance.now();
@@ -1756,18 +1623,15 @@ function ledgerStamps() {
 }
 const PLAYED = new Set();
 const ON_FIRST = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => ledgerStamps(), timeline: () => replay($("#rail"), "pressing"), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
-const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); KIT.emit("roads-open"); /* the Atlas hook opens on #atlas or ATLAS_DEFAULT */ requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); })); /* the map's small caps may land after the first measure */ } };
-/* V11: every scene has its own ornament, its emblem engraved large in the parchment's corner with */
+const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); KIT.emit("roads-open");  requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); }));  } };
 const ORN = { timeline: "hourglass", five: "banner", roads: "compass", racials: "skull", legacy: "laurel", buffs: "compass", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon", decide: "scroll" };
 function placeOrnament(key) {
   const sheet = document.querySelector("#scene .sheet"); if (!sheet) return;
   const old = $("#sheet-orn"); if (old && old.parentNode) old.parentNode.removeChild(old);
-  /* buffs shares the compass: ornaments/rune.webp reads as the letter R (see the regenerate note */
   const still = h("img", { class: "orn-art", src: `img/emblems/ornaments/${ORN[key] || "book"}.webp`, width: 400, height: 400, alt: "", loading: "lazy" }), move = h("div", { class: "orn-in" }, still);
   const o = h("div", { id: "sheet-orn", class: `sheet-orn orn-${key}`, "aria-hidden": "true" }, move);
   sheet.append(o); replay(o, "drawing");
 }
-/* the wall's photograph decodes late and used to pop in on the first */
 (function wallFade() {
   const mark = (el, src) => {
     if (!el) return;
@@ -1778,7 +1642,6 @@ function placeOrnament(key) {
   mark(document.querySelector(".wall-plate"), "img/board-wall.jpg");
   mark(document.querySelector(".hero-art img"), "img/tavern-hero.jpg");
 })();
-/* V13e: */
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
 const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;
 const canFlip = () => typeof $(".sheet").animate === "function";
@@ -1787,22 +1650,19 @@ function morphBand(key) {
   const t = tileOf(key);
   if (!t) return null;
   const seen = () => { const r = t.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
-  if (!seen() && hasVT() && t.scrollIntoView) { try { t.scrollIntoView({ block: "nearest" }); } catch (e) {} } /* Chromium: bring the tile to the morph (C7) */
+  if (!seen() && hasVT() && t.scrollIntoView) { try { t.scrollIntoView({ block: "nearest" }); } catch (e) {} }
   return seen() ? t : null;
 }
-/* V13b (craft 11, 12): */
-/* V13d: the marks that fly with a morph (a crest from its tile to its card) are named here */
 const VTX = [];
 function viewMorph(from, to, update, closing, from2, to2) {
   const layer = $("#scene"), root = document.documentElement;
   const nm = (a, b, v) => { if (a) a.style.viewTransitionName = v; if (b) b.style.viewTransitionName = v; };
   const clear = () => { nm(from, to, ""); nm(from2, to2, ""); VTX.splice(0).forEach((e) => { e.style.viewTransitionName = ""; }); layer.classList.remove("morph"); root.classList.remove("vt-close"); };
   layer.classList.add("morph"); root.classList.toggle("vt-close", !!closing);
-  from.style.viewTransitionName = "scene-band"; if (from2) from2.style.viewTransitionName = "scene-head"; /* the parchment and the title are two pairs */
+  from.style.viewTransitionName = "scene-band"; if (from2) from2.style.viewTransitionName = "scene-head";
   try {
     const vt = document.startViewTransition(() => { nm(from, null, ""); nm(from2, null, ""); if (update()) { nm(null, to, "scene-band"); nm(null, to2, "scene-head"); } });
     vt.finished.then(clear, clear);
-    /* a newer transition skips this one: its ready and update promises reject, which surfaced as */
     if (vt.ready && vt.ready.catch) vt.ready.catch(() => {});
     if (vt.updateCallbackDone && vt.updateCallbackDone.catch) vt.updateCallbackDone.catch(() => {});
   } catch (e) { clear(); update(); }
@@ -1821,7 +1681,6 @@ function flipSheet(band, opening, done) {
   try {
     const dur = opening ? MOTION.move : MOTION.close, fill = opening ? "backwards" : "forwards";
     an = sheet.animate(opening ? kf : kf.reverse(), { duration: dur, easing: opening ? MOTION.oak : MOTION.shut, fill });
-    /* the opacity rides its own symmetric ease: on the move's ease a bright sheet reached most of */
     SC.anim2 = sheet.animate(opening ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 1 }, { opacity: 0 }], { duration: dur, easing: MOTION.fade, fill });
   }
   catch (e) { layer.classList.remove("flip"); return false; }
@@ -1830,17 +1689,15 @@ function flipSheet(band, opening, done) {
   SC.flipTimer = setTimeout(end, (opening ? MOTION.move : MOTION.close) + 120);
   return true;
 }
-/* a FLIP between a box and an element at translateY(y): put(q), q 1 = on the box, 0 = at rest */
 function flipPut(el, f, y) {
-  if (f && f.getBoundingClientRect) f = f.getBoundingClientRect(); /* a control, a box, or nothing: the bar's centre */
+  if (f && f.getBoundingClientRect) f = f.getBoundingClientRect();
   else if (!f) { const b = $("#bottombar"), c = b && b.getBoundingClientRect(); if (c && c.width > 0) f = { left: c.left + c.width / 2 - 24, top: c.top + c.height / 2 - 24, width: 48, height: 48 }; }
   const r = el.getBoundingClientRect(); if (!(r.width > 0 && r.height > 0 && f && f.width > 0)) return null;
   const dx = f.left - r.left, dy = f.top - (r.top - y), sx = f.width / r.width, sy = f.height / r.height;
   el.style.transformOrigin = "0 0";
   return (q) => { el.style.transform = `translate(${(dx * q).toFixed(1)}px, ${(y + (dy - y) * q).toFixed(1)}px) scale(${(1 + (sx - 1) * q).toFixed(4)}, ${(1 + (sy - 1) * q).toFixed(4)})`; };
 }
-const flickPut = (sh, y) => { const t = SC.open && tileOf(SC.open), r = t && t.getBoundingClientRect(); return r && r.bottom > 0 && r.top < innerHeight ? flipPut(sh, r, y) : null; }; /* the head flick returns the sheet to its tile when the tile is on screen */
-/* Unfold: `to` grows from `from`'s box (the sketch into the Atlas) */
+const flickPut = (sh, y) => { const t = SC.open && tileOf(SC.open), r = t && t.getBoundingClientRect(); return r && r.bottom > 0 && r.top < innerHeight ? flipPut(sh, r, y) : null; };
 function unfold(from, to, done, o = {}) {
   let fin = false;
   const end = (res) => { if (!fin) { fin = true; if (o.haptic !== null) hap(o.haptic || "select"); if (done) done(); } res(); };
@@ -1865,7 +1722,7 @@ function showScene(key) {
   const t0 = performance.now(), lap = () => { KIT.lastOpenMs = +(performance.now() - t0).toFixed(1); };
   warmStop();
   const layer = $("#scene");
-  if (SC.want) { SC.want = key; return; } /* a morph is in flight; it opens whatever was asked for last */
+  if (SC.want) { SC.want = key; return; }
   clearTimeout(SC.closeTimer); SC.token++;
   const wasOpen = !layer.hidden && !layer.classList.contains("closing") && SC.open !== null;
   if (SC.anim) { stopFlip(); layer.classList.remove("flip"); }
@@ -1880,16 +1737,14 @@ function showScene(key) {
     document.documentElement.classList.add("scene-open");
     selectPanel(k, false);
     focusScene(k);
-    /* V13e: WebKit drops a focus set while the page is still loading (a deep */
     const refocus = () => { if (SC.open === k && (!document.activeElement || document.activeElement === document.body)) focusScene(k); };
     requestAnimationFrame(() => setTimeout(refocus, 60)); if (document.readyState !== "complete") addEventListener("load", () => setTimeout(refocus, 30), { once: true });
     sceneState(true);
-    sfx("open", { delay: motionMs("move") * 0.7 }); hap("select"); /* Pick up: open, select, and the key lifts */
+    sfx("open", { delay: motionMs("move") * 0.7 }); hap("select");
     if (!reduceMQ.matches) { layer.classList.add("lift"); setTimeout(() => layer.classList.remove("lift"), 320); }
     return landing(k);
   };
   const band = layer.hidden ? morphBand(key) : null;
-  /* V13d: the clicked mark (a crest, a pin) flies to the thing it names, as a second shared element */
   const fl = !reduceMQ.matches && SC.land && SC.land.key === key && SC.land.from && document.contains(SC.land.from) ? SC.land.from : null;
   if (band && hasVT()) {
     SC.want = key;
@@ -1898,19 +1753,16 @@ function showScene(key) {
     return;
   }
   if (band && canFlip()) { const got = open(key, ""); if (!flipSheet(band, true)) layer.classList.add("rise"); if (got && fl) KIT.emit("fly", fl, got); lap(); return; }
-  const got = open(key, reduceMQ.matches ? "fade" : "rise"); /* reduced motion: a short cross-fade, no move */
+  const got = open(key, reduceMQ.matches ? "fade" : "rise");
   if (got && fl) KIT.emit("fly", fl, got);
   lap();
 }
-/* V13d: the thing a deep link names, found, scrolled to and lit by js/v13d.js */
 function landing(k) {
   const L = SC.land; if (!L || L.key !== k) return null;
   SC.land = null;
   if (k === "buffs" && focusBuff(L.sub)) return document.querySelector("#buffs-deep li.lit");
   return KIT.lander ? KIT.lander(k, L.sub) || null : null;
 }
-/* The library tile is a div holding a link and a search field */
-/* 2026-10-30 (integration review 7). */
 const tileFocus = (t) => {
   let f = t.matches("a, button, main") ? t : t.querySelector("a[href]");
   if (f && f.getClientRects && !f.getClientRects().length) f = $("#main");
@@ -1918,7 +1770,7 @@ const tileFocus = (t) => {
   if (f) f.focus({ preventScroll: true });
 };
 function hideScene(o) {
-  o = o || SC.how; SC.how = null; const glided = !!(o && o.glided); /* the head flick already carried the sheet away: one Return, no morph */
+  o = o || SC.how; SC.how = null; const glided = !!(o && o.glided);
   warmStop();
   if (SC.want) { SC.want = null; return; }
   if (SC.open === null) return;
@@ -1927,7 +1779,7 @@ function hideScene(o) {
   SC.open = null;
   setPageTitle(null);
   KIT.emit("closed", key);
-  const tile = tileOf(key) || document.querySelector(`#board a[href="#${key}"]`) || $("#main"); /* V16: a scene with no tile (What to decide) hands focus to the wall */
+  const tile = tileOf(key) || document.querySelector(`#board a[href="#${key}"]`) || $("#main");
   const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close", { delay: glided ? 0 : motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
@@ -1936,7 +1788,7 @@ function hideScene(o) {
     for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
   };
   if (glided) { unlock(); finish(); if (tile) tileFocus(tile); return; }
-  if (!(o && o.key)) hap("select"); /* Return on touch */
+  if (!(o && o.key)) hap("select");
   const band = morphBand(key);
   if (band && hasVT()) {
     viewMorph($(".sheet"), band, () => { if (token !== SC.token) return false; unlock(); finish(); if (tile) tileFocus(tile); return true; }, true, $(".sheet-head"), band.querySelector(".tile-band"));
@@ -1946,19 +1798,17 @@ function hideScene(o) {
   layer.classList.remove("rise");
   layer.classList.add("closing");
   clearTimeout(SC.closeTimer);
-  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, reduceMQ.matches ? MOTION.micro : motionMs("close")); /* reduced motion: the same short fade as the open, not a cut */
+  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, reduceMQ.matches ? MOTION.micro : motionMs("close"));
   if (tile) tileFocus(tile);
 }
-/* V13b (craft 31): a card turned over in The five is face up again the next time the scene */
 function unflip() { document.querySelectorAll("#cards .card.flipped").forEach((c) => { c.classList.remove("flipped"); c.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", "false")); const f = c.querySelector(".front"), b = c.querySelector(".back"); if (f) f.inert = false; if (b) b.inert = true; }); }
-/* owner-12b: */
 function startPeek() {
   const btn = $("#scene-peek"), layer = $("#scene"), sheet = $(".sheet"); if (!btn || !sheet) return;
   let held = false, timer = 0;
   const on = () => { if (held || SC.open === null) return; held = true; layer.classList.add("peek"); btn.setAttribute("aria-pressed", "true"); };
   const off = () => { clearTimeout(timer); if (!held) return; held = false; layer.classList.remove("peek"); btn.setAttribute("aria-pressed", "false"); };
   btn.addEventListener("pointerdown", (e) => { e.preventDefault(); on(); });
-  btn.addEventListener("click", (e) => { if (e.detail === 0) { held ? off() : on(); } }); /* a keyboard click (Enter) toggles */
+  btn.addEventListener("click", (e) => { if (e.detail === 0) { held ? off() : on(); } });
   btn.addEventListener("keydown", (e) => { if (e.key === " " && !e.repeat) { e.preventDefault(); on(); } });
   btn.addEventListener("keyup", (e) => { if (e.key === " ") off(); });
   sheet.addEventListener("pointerdown", (e) => { if (e.target === btn) return; const r = sheet.getBoundingClientRect(), edge = 18; if (e.clientX - r.left < edge || r.right - e.clientX < edge || e.clientY - r.top < edge || r.bottom - e.clientY < edge) timer = setTimeout(on, 380); });
@@ -1969,32 +1819,28 @@ function startPeek() {
 function requestClose(o) {
   if (SC.open === null) return;
   const opt = o && (o.glided || o.key) ? o : null;
-  if (history.state && history.state.pushed) { SC.how = opt; history.back(); return; } /* opened from the wall: back pops it */
+  if (history.state && history.state.pushed) { SC.how = opt; history.back(); return; }
   setHash(null, false); hideScene(opt);
 }
 function switchTab(key, crossFade = true) {
   const o = crossFade && typeof crossFade === "object" ? crossFade : {}; if (typeof crossFade === "object") crossFade = o.crossFade !== false;
   if (key === SC.open) return; setHash(key, false); selectPanel(key, crossFade); swiped();
-  if (!o.quiet) hap("select"); /* Turn: one pulse (lane E's bar passes quiet:true once it fires its */
+  if (!o.quiet) hap("select");
 }
-/* Phones have no tab rail (v4 stage 9): focus goes to the panel when the tab is not */
 function focusScene(k) { const t = $(`#tab-${k}`); if (t && t.getClientRects().length) t.focus({ preventScroll: true }); else { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
-function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); focusScene(k); if (document.activeElement === document.body) { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } } /* fix C10: focus never falls to the body */
+function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); focusScene(k); if (document.activeElement === document.body) { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
 function goScene(k) {
   if (SC.open !== null) { switchTab(k); focusScene(k); return; }
   setHash(k, true); showScene(k);
 }
 
-/* V16 (2026-10-30): a details' summary is focusable on its own, so Tab from one stays in the */
 const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
 function shown(el) {
   for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden || n.inert) return false;
   return !el.getClientRects || el.getClientRects().length > 0;
 }
 const focusables = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && el.getAttribute("tabindex") !== "-1" && shown(el));
-/* the Sensory button and its panel sit outside the scene layer: they join the scene's Tab loop so */
 const senseBox = () => ["#sense-btn", "#sense-panel"].map((q) => $(q)).filter(Boolean);
-/* fix C10 */
 const LEAD = ["scene-close", "scene-peek", "mode-btn-scene"];
 const sceneFocus = () => { const l = focusables($("#scene")).filter((el, i, a) => !(el.type === "radio" && !el.checked && a.some((x) => x.type === "radio" && x.name === el.name && (x.checked || a.indexOf(x) < i)))); return l.map((el, i) => [el.getAttribute("role") === "tab" ? 0 : LEAD.includes(el.id) ? 1 + LEAD.indexOf(el.id) : el.closest(".journey-scene") ? 4 : 5, i, el]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((x) => x[2]); };
 function trapFocus(e) {
@@ -2007,7 +1853,6 @@ function trapFocus(e) {
 function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
-    /* the ten digits open the ten scenes before What to decide (V16 */
     const rows = [...SCENES.filter((k) => k !== "tonight" && k !== "decide").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["D", "open What to decide"], ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["P", "Play mode: text only, nothing moves"], ["S", "the Sensory panel"], ["?", "show or hide this list"]];
     $("#keys-list").replaceChildren(...rows.flatMap(([k, what]) => [h("dt", {}, h("kbd", { text: k })), h("dd", { text: what })]));
   }
@@ -2016,7 +1861,7 @@ function showKeys(on) {
 function onKey(e) {
   if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === "Escape") {
-    if (senseBox().some((n) => n.id === "sense-panel" && !n.hidden)) return; /* the Sensory panel's own Escape closes it first */
+    if (senseBox().some((n) => n.id === "sense-panel" && !n.hidden)) return;
     if (glClose(true)) { e.preventDefault(); sfx("esc"); return; }
     if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); sfx("esc"); return; }
     if (closeMore()) { e.preventDefault(); sfx("esc"); return; }
@@ -2030,7 +1875,7 @@ function onKey(e) {
   if (e.key === "?") { e.preventDefault(); showKeys($("#keys").hidden); return; }
   if (e.key === "m" || e.key === "M") { e.preventDefault(); setSound(!AU.on); return; }
   if (e.key === "t" || e.key === "T") { e.preventDefault(); goScene("tonight"); return; }
-  if (e.key === "d" || e.key === "D") { e.preventDefault(); goScene("decide"); return; } /* V16 */
+  if (e.key === "d" || e.key === "D") { e.preventDefault(); goScene("decide"); return; }
   if (e.key === "/") { e.preventDefault(); LIBUI.focusSearch(); return; }
   if (/^[0-9]$/.test(e.key)) { const k = SCENES[(Number(e.key) + 9) % 10]; if (k) { e.preventDefault(); goScene(k); } return; }
   if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && SC.open !== null && !(t.closest && t.closest("#tabs, .cards, .opts"))) { e.preventDefault(); stepTab(e.key === "ArrowRight" ? 1 : -1); }
@@ -2038,15 +1883,11 @@ function onKey(e) {
 let closeMore = () => false;
 function route() {
   const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
-  /* V13e retest-6: #dates (the scene's name everywhere) is the Dates scene, whose key is */
   if (/^dates(?:\.|$)/.test(raw)) { try { history.replaceState(history.state, "", `${location.pathname}${location.search}#${raw.replace(/^dates/, "timeline")}`); } catch (e) { return; } return route(); }
   const tm = raw.match(/^tonight\.([a-z0-9-]{1,40})$/); if (tm && MEM.setMe(tm[1]) && D.party) { renderTonight(); markMe(); }
-  /* #wall: the wall at its top (the token names the <ul id="wall">, so the browser would scroll to */
   if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
   const key = sceneFromHash();
-  /* V13b (mobile 5): */
   if (key && !(history.state && history.state.pushed)) { const url = location.pathname + location.search + location.hash; try { history.replaceState(null, "", location.pathname + location.search); history.pushState({ boardScene: key, pushed: true }, "", url); } catch (e) {} }
-  /* V13d: a "<scene>.<thing>" hash lands on the thing (the wall's own clicks set SC.land with the */
   const lm = key && key !== "library" && key !== "tonight" && !/^atlas(?:\.|$)/.test(raw) ? raw.match(/^([a-z]+)\.([a-z0-9_-]{1,40})$/) : null;
   if (lm && !(SC.land && SC.land.key === key && SC.land.sub === lm[2])) SC.land = { key, sub: lm[2], from: null };
   if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
@@ -2057,7 +1898,6 @@ function startScenes() {
     const a = e.target.closest && e.target.closest("[data-scene]");
     if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
-    /* V13d (interaction 1): a crest, a pin, a pint or a line inside a tile lands on that very thing */
     const land = e.target.closest("[data-land]"), tok = land && land.getAttribute("data-land"), lk = tok && tok.split(".")[0];
     if (tok && a.contains(land) && lk === a.dataset.scene) {
       SC.land = { key: lk, sub: tok.slice(lk.length + 1), from: land };
@@ -2099,22 +1939,19 @@ function startScenes() {
 
 const ICONS = {}, GLYPHS = {};
 const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 192, height: 192, decoding: "async" });
-/* V13c: tabs show a 48 px coin cut to the emblem's motif and sharpened, not the 192 px */
 const tabImg = (key) => h("img", { class: "emblem-img tab-img", src: `img/icons/tab-${key}.png`, alt: "", width: 48, height: 48, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
 function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); placeSideMedal(key); }
-/* V14: */
 const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes." };
 const medalImg = (key, cls) => h("img", { class: cls || "medal-img", src: `img/medal/${key}.webp`, alt: "", width: 640, height: 640, decoding: "async", loading: "lazy" });
-/* frame leftovers (2026-10-30). */
 const MEDALS = {};
 function medalLoad(key) {
   let m = MEDALS[key]; if (m) return m;
   m = MEDALS[key] = { ok: false, p: null, im: null };
   if (typeof Image !== "function") { m.ok = true; m.p = Promise.resolve(); return m; }
   const im = new Image(); m.im = im; im.decoding = "async";
-  const dec = typeof im.decode === "function", loaded = dec ? null : new Promise((r, j) => { im.onload = r; im.onerror = j; }); /* fix C23: no load promise nobody handles (WebKit's "Unhandled Promise Rejection: [object */
+  const dec = typeof im.decode === "function", loaded = dec ? null : new Promise((r, j) => { im.onload = r; im.onerror = j; });
   im.src = `img/medal/${key}.webp`;
   m.p = (dec ? im.decode() : loaded).then(() => { m.ok = true; }, () => { m.ok = true; m.failed = true; });
   return m;
@@ -2127,7 +1964,7 @@ function medalSet(img, key) {
   if (m.ok) put(); else m.p.then(put);
 }
 function medalsIdle() {
-  if (typeof navigator !== "undefined" && navigator.connection && navigator.connection.saveData) return; /* data saver: each medal loads on its first open instead */
+  if (typeof navigator !== "undefined" && navigator.connection && navigator.connection.saveData) return;
   const idle = window.requestIdleCallback || ((f) => setTimeout(f, 300)), keys = Object.keys(MEDAL);
   const step = () => { const k = keys.shift(); if (k) medalLoad(k).p.then(() => idle(step, { timeout: 2000 })); };
   idle(step, { timeout: 2000 });
@@ -2187,7 +2024,6 @@ function pinTiles() {
   const LEAN = { roads: ["-1.4deg", "-6px", "4px"], legacy: ["1.2deg", "8px", "-3px"], ledger: ["-1.5deg", "-5px", "6px"] };
   document.querySelectorAll("#wall .tile").forEach((t) => {
     const l = LEAN[t.dataset.scene];
-    /* V13b (craft 32): the lean and the grain are seeded by the tile's own key, so the wall hangs */
     const k = t.dataset.scene || "", r = (i) => { let x = 7 + i; for (const c of k) x = (x * 31 + c.charCodeAt(0)) % 2147483647; const v = Math.sin(x) * 43758.5453; return v - Math.floor(v); };
     t.style.setProperty("--rot", l ? l[0] : `${(Math.round((r(1) * 1.2 - 0.6) * 10) / 10).toFixed(1)}deg`);
     if (l) { t.style.setProperty("--sx", l[1]); t.style.setProperty("--sy", l[2]); }
@@ -2225,17 +2061,14 @@ gl_FragColor=vec4(mix(col,shade,a),1.);}`;
 const LIGHT = { bump: 2.5, ease: 0.08, candle: [0.06, 0.1], flicker: 0.1, jitter: 6 };
 const hexVec = (v, d) => { const m = /^#?([0-9a-f]{6})$/i.exec(v || ""); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255) : d; };
 const LS = { state: "off", draws: 0, why: "", n: 0 };
-/* V13b: */
 const flickHash = (i) => { const v = Math.sin(i * 127.1 + 311.7 * 7.31) * 43758.5453; return (v - Math.floor(v)) * 2 - 1; };
 const flickOct = (x) => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return flickHash(i) * (1 - u) + flickHash(i + 1) * u; };
 const flickBase = (s) => 1.25 * (0.55 * flickOct(s * 1.9) + 0.3 * flickOct(s * 4.3 + 17) + 0.15 * flickOct(s * 9.7 + 41));
-/* V13c: a fire crackle heard in the sound (js/sound.js) adds a short pop, so the light jumps with */
 const FLICK_POP = { t: -1, amp: 0, ms: 75 };
 const flickPop = (s) => { if (FLICK_POP.t < 0) return 0; const d = s * 1000 - FLICK_POP.t; return d < 0 || d > FLICK_POP.ms ? 0 : FLICK_POP.amp * (1 - d / FLICK_POP.ms); };
 const flickAt = (s) => Math.max(-1, Math.min(1, flickBase(s) + flickPop(s)));
-/* V13b: */
 const LB = { tx: null, ty: null, x: 0, y: 0, rn: 0, roomAt: 0, tilt: false, frames: 0, running: false };
-const LIGHT_REST = [0.08, 0.16]; /* the candle's corner of the viewport, as a share of its width and */
+const LIGHT_REST = [0.08, 0.16];
 const pageX = () => window.scrollX || 0, pageY = () => window.scrollY || 0;
 function aimAt(x, y) { LB.tx = x; LB.ty = y; if (LB.wake) LB.wake(); }
 function lightCore(cv, o, say) {
@@ -2288,11 +2121,10 @@ function lightCore(cv, o, say) {
   return api;
 }
 function startLight() {
-  /* companion N4 (integrator): Play mode makes no WebGL context */
   if (roomHas("play")) { const later = () => { if (roomHas("play")) return; removeEventListener("board-mode", later); startLight(); }; addEventListener("board-mode", later); return; }
   const cv = $("#light"), plate = cv && cv.parentNode;
   if (!cv || typeof cv.getContext !== "function") return;
-  const S = { core: null, worker: null, iw: 1, ih: 1, W: 0, H: 0, raf: 0, onScreen: true, scene: SC.open !== null /* V13a: a scene open before the light starts (Tonight at a first visit) already covers */, lx: 0, ly: 0, tx: null, ty: null, px: 0, py: 0, last: 0 };
+  const S = { core: null, worker: null, iw: 1, ih: 1, W: 0, H: 0, raf: 0, onScreen: true, scene: SC.open !== null , lx: 0, ly: 0, tx: null, ty: null, px: 0, py: 0, last: 0 };
   const opts = { VS: LIGHT_VS, FS: LIGHT_FS, bump: LIGHT.bump, warm: hexVec(cssVar("--light-warm"), [1, 0.82, 0.55]), cool: hexVec(cssVar("--light-cool"), [0.18, 0.2, 0.28]), shade: hexVec(cssVar("--oak-0"), [0.07, 0.05, 0.03]) };
   const call = (k, ...a) => { if (S.worker) S.worker.postMessage({ k, a }); else if (S.core) S.core[k](...a); };
   const say = (state, why) => {
@@ -2301,7 +2133,7 @@ function startLight() {
   };
   const size = () => {
     const r = plate.getBoundingClientRect();
-    S.px = r.left + pageX(); S.py = r.top + pageY(); /* the plate in page pixels: the shared aim is turned into plate pixels per frame without a layout */
+    S.px = r.left + pageX(); S.py = r.top + pageY();
     S.W = Math.max(1, Math.round(r.width)); S.H = Math.max(1, Math.round(r.height));
     const k = Math.max(0.5, Math.min(2, window.devicePixelRatio || 1, S.iw / S.W));
     call("size", S.W, S.H, Math.round(S.W * k), Math.round(S.H * k));
@@ -2309,10 +2141,8 @@ function startLight() {
   };
   const draw = (t) => {
     const calm = reduceMQ.matches, s = t / 1000;
-    /* the shared aim (viewport pixels) in plate pixels */
     S.tx = LB.tx === null ? null : LB.tx - (S.px - pageX()); S.ty = LB.ty === null ? null : LB.ty - (S.py - pageY());
     const tx = S.tx === null ? S.W * LIGHT.candle[0] : S.tx, ty = S.ty === null ? S.H * LIGHT.candle[1] : S.ty;
-    /* V13b: eased by elapsed time, so the 30 fps cap moves the light as fast as the old 60 fps loop */
     const e = 1 - Math.pow(1 - LIGHT.ease, Math.min(6, Math.max(1, (t - (S.drawn || t - 16.7)) / 16.7))); S.drawn = t;
     if (calm) { S.lx = tx; S.ly = ty; } else { S.lx += (tx - S.lx) * e; S.ly += (ty - S.ly) * e; }
     const n = LS.n = calm ? 0 : flickAt(s);
@@ -2321,7 +2151,6 @@ function startLight() {
     call("draw", S.lx + jx, S.ly + jy, 1 - LIGHT.flicker / 2 + (LIGHT.flicker / 2) * n);
     LS.draws++;
   };
-  /* V13b: */
   const frame = (t) => { S.raf = 0; if (LS.state !== "lit") return; if (t - S.last >= 1000 / 30 - 3) { S.last = t; draw(t); } if (live()) S.raf = requestAnimationFrame(frame); };
   const live = () => LS.state === "lit" && !reduceMQ.matches && !document.hidden && S.onScreen && !S.scene && !roomHas("room-on") && !roomHas("play");
   addEventListener("board-room", () => (live() ? run() : stop()));
@@ -2361,17 +2190,14 @@ function startLight() {
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
   reduceMQ.addEventListener("change", () => { stop(); still(); run(); });
   sceneHooks.push((on) => { S.scene = on; if (on) stop(); else run(); });
-  /* the aim moved (pointer, touch, tilt): a light that is not looping draws once toward */
   const prevWake = LB.wake; LB.wake = () => { if (prevWake) prevWake(); if (live()) run(); };
   tiltReady();
 }
-/* V13b: the pointer and a touch aim the shared light (LB) */
 function startAim() {
   addEventListener("pointermove", (e) => { if (LB.tilt) return; if (e.pointerType === "mouse" || e.buttons) aimAt(e.clientX, e.clientY); }, { passive: true });
   addEventListener("pointerdown", (e) => { if (!LB.tilt && e.pointerType !== "mouse") aimAt(e.clientX, e.clientY); }, { passive: true });
   document.documentElement.addEventListener("pointerleave", () => { if (!LB.tilt) { LB.tx = LB.ty = null; } });
 }
-/* V13b tilt (phone-deep T2 to T8): */
 const TILT = { b0: null, g0: null, got: 0, dog: 0, linked: false };
 function tiltLabel(on) { const t = $("#tilt"); if (!t) return; t.setAttribute("aria-pressed", String(on)); t.replaceChildren(s("svg", { class: "tilt-ico", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M12 3c2.6 3 4 5.3 4 7.6a4 4 0 0 1-8 0C8 8.3 9.4 6 12 3z" }), s("path", { d: "M10 14.5h4v6h-4zM8 20.5h8" })), on ? "The tavern leans with your phone" : "Let the tavern lean with your phone"); }
 function tiltSay(msg) {
@@ -2383,7 +2209,7 @@ function onTilt(e) {
   if (e.gamma == null || e.beta == null) return;
   TILT.got++;
   const so = window.screen && window.screen.orientation, a = so && typeof so.angle === "number" ? so.angle : (window.orientation || 0);
-  let x = e.gamma, y = e.beta; /* portrait */
+  let x = e.gamma, y = e.beta;
   if (a === 90) { x = e.beta; y = -e.gamma; } else if (a === 270 || a === -90) { x = -e.beta; y = e.gamma; } else if (a === 180) { x = -e.gamma; y = -e.beta; }
   if (TILT.b0 === null) { TILT.b0 = y; TILT.g0 = x; }
   const nx = Math.max(-1, Math.min(1, (x - TILT.g0) / 25)), ny = Math.max(-1, Math.min(1, (y - TILT.b0) / 20));
@@ -2397,13 +2223,11 @@ let tiltBound = false;
 function tiltReady() {
   const tilt = $("#tilt");
   if (!tilt || typeof DeviceOrientationEvent === "undefined" || !window.matchMedia("(pointer: coarse)").matches) return;
-  /* nothing to move under reduced motion: the light holds still there */
   tilt.hidden = reduceMQ.matches;
   if (tiltBound) return; tiltBound = true;
   tiltLabel(false);
   reduceMQ.addEventListener("change", () => { tilt.hidden = reduceMQ.matches; if (reduceMQ.matches && LB.tilt) tiltOff(); });
   if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) window.screen.orientation.addEventListener("change", () => { TILT.b0 = TILT.g0 = null; });
-  /* mobile build: js/tilt.js (window.BoardTilt) is the one orientation source when it is on the */
   const linkTilt = () => {
     const BT = window.BoardTilt; if (!BT || TILT.linked) return; TILT.linked = true;
     BT.on(({ x, y }) => { LB.tilt = !!BT.status().on; if (LB.tilt) aimAt(innerWidth * (0.5 + 0.5 * x), innerHeight * (0.5 + 0.5 * y)); });
@@ -2421,19 +2245,17 @@ function tiltReady() {
     try { if (typeof DeviceOrientationEvent.requestPermission === "function" && (await DeviceOrientationEvent.requestPermission()) !== "granted") { tiltOff("Motion access was declined; reload the page to be asked again."); return; } }
     catch (e) { tiltOff("Motion access was declined; reload the page to be asked again."); return; }
     LB.tilt = true; TILT.b0 = TILT.g0 = null; TILT.got = 0; addEventListener("deviceorientation", onTilt); tiltLabel(true); tiltSay("");
-    /* a browser that shares no motion (a blocked site setting, an app view) sends nothing: say so */
     clearTimeout(TILT.dog); TILT.dog = setTimeout(() => { if (LB.tilt && !TILT.got) { tiltOff("Your browser is not sharing motion here."); tilt.hidden = true; } }, 1500);
   });
 }
 
-/* V13b: */
 const SHEEN = { items: [], raf: 0, last: 0, scene: false, onScreen: true, dirs: 0 };
 function startSheen() {
-  if (WEBKIT_ENGINE) return; /* likely (C8): WebKit keeps the CSS candle loops, the JS sheen loop is what idled the wall at 1 fps */
+  if (WEBKIT_ENGINE) return;
   const els = [...document.querySelectorAll("#wall .tile, #clock")];
   SHEEN.items = els.map((t) => { const i = h("i"); t.append(h("span", { class: "tile-sheen", "aria-hidden": "true" }, i)); return { t, i, x: 0, y: 0, w: 0, h: 0, dx: 9, dy: 9 }; });
   const candle = document.querySelector(".candle");
-  document.documentElement.classList.add("flick-js"); /* the CSS candle loops step aside: the shared signal drives them */
+  document.documentElement.classList.add("flick-js");
   SHEEN.scene = SC.open !== null;
   LB.x = innerWidth * LIGHT_REST[0]; LB.y = innerHeight * LIGHT_REST[1];
   const measure = () => { for (const it of SHEEN.items) { const r = it.t.getBoundingClientRect(); it.x = r.left + pageX(); it.y = r.top + pageY(); it.w = r.width; it.h = r.height; } };
@@ -2453,7 +2275,7 @@ function startSheen() {
     if (turn) SHEEN.dirs = t;
     for (const it of SHEEN.items) {
       const left = it.x - sx, top = it.y - sy;
-      if (!force && (top > innerHeight + 40 || top + it.h < -40)) continue; /* off screen: nothing to light */
+      if (!force && (top > innerHeight + 40 || top + it.h < -40)) continue;
       const lx = Math.max(-80, Math.min(it.w + 80, LB.x - left)), ly = Math.max(-80, Math.min(it.h + 80, LB.y - top));
       const cx = left + it.w / 2, cy = top + it.h / 2, d = Math.hypot(LB.x - cx, LB.y - cy), near = 1 / (1 + Math.pow(d / (0.55 * diag), 2));
       it.i.style.transform = `translate(${lx.toFixed(1)}px, ${ly.toFixed(1)}px)`;
@@ -2472,7 +2294,6 @@ function startSheen() {
   measure(); paint(performance.now(), true);
   addEventListener("resize", remeasure, { passive: true });
   if (typeof ResizeObserver === "function") new ResizeObserver(remeasure).observe($("#wall"));
-  /* the wall settles in (tiles drop into place), the fonts land: measure again once it */
   setTimeout(remeasure, MOTION.stagger * 8 + MOTION.move * 2 + 50);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(remeasure).catch(() => {});
   if (typeof IntersectionObserver === "function") new IntersectionObserver((es) => { for (const en of es) SHEEN.onScreen = en.isIntersecting; SHEEN.onScreen ? run() : stop(); }).observe($("#main"));
@@ -2491,7 +2312,7 @@ function startWisps() {
   const GX = 32, GY = 18, REBUILD = 2000, REPEL = 120;
   const LAYERS = [{ r: 1.1, a: 0.3, v: 0.32 }, { r: 1.8, a: 0.48, v: 0.55 }, { r: 2.8, a: 0.72, v: 0.9 }];
   const COLORS = ["--c-mage", "--c-warlock", "--c-mage", "--c-warlock", "--c-mage", "--c-warlock", "--c-mage", "--brass"].map(cssVar);
-  let W = 0, H = 0, dpr = 1, raf = 0, parts = [], trail = [], covered = SC.open !== null && innerWidth < 700 /* V13a: a landing scene already covers the phone */, fA = null, fB = null, built = -1e9, gen = 0;
+  let W = 0, H = 0, dpr = 1, raf = 0, parts = [], trail = [], covered = SC.open !== null && innerWidth < 700 , fA = null, fB = null, built = -1e9, gen = 0;
   const seed = Math.random() * 1000, pointer = { x: -1e4, y: -1e4 };
   const hash = (x, y, s) => { const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return v - Math.floor(v); };
   const noise = (x, y, s) => {
@@ -2548,8 +2369,8 @@ function startWisps() {
     WS.frames++; WS.near = near;
     if (live()) raf = requestAnimationFrame(frame);
   };
-  const live = () => !reduceMQ.matches && !document.hidden && !covered && !roomHas("room-wisps") && !roomHas("room-off") && !roomHas("play"); /* companion N4: Play stops them before the ladder starts */
-  addEventListener("board-room", () => { if (live()) run(); else { stop(); setTimeout(() => { if (!live()) ctx.clearRect(0, 0, W, H); }, roomHas("play") ? motionMs("move") : 0); } }); /* fix C18: Play fades the still frame first */
+  const live = () => !reduceMQ.matches && !document.hidden && !covered && !roomHas("room-wisps") && !roomHas("room-off") && !roomHas("play");
+  addEventListener("board-room", () => { if (live()) run(); else { stop(); setTimeout(() => { if (!live()) ctx.clearRect(0, 0, W, H); }, roomHas("play") ? motionMs("move") : 0); } });
   const run = () => { WS.running = live(); if (!raf && WS.running) raf = requestAnimationFrame(frame); };
   const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; WS.running = false; };
   size();
@@ -2590,16 +2411,13 @@ function startArt() {
     ART.beam = true;
     $("#main").classList.add("has-beam"); $("#main").classList.remove("beam-soon");
     $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", alt: "", "aria-hidden": "true", decoding: "async" }));
-  }, () => {}); /* fix C12 */
+  }, () => {});
 }
 
-/* Sound (V13c): */
 const SND = () => window.BoardSound || null;
 const AU = { on: false, vol: 0.7 };
 try { AU.on = localStorage.getItem("board-sound") === "1"; const v = localStorage.getItem("board-vol"); if (v !== null && Number(v) >= 0 && Number(v) <= 1) AU.vol = Number(v); } catch (e) {}
-/* the fire's crackle pops the shared flicker (FLICK_POP) for 60 to 90 ms: the wall light, the */
 function sfx(name, opt) { const S = SND(); return S ? S.play(name, opt) : false; }
-/* wait: the toggle says on, the browser has not let the sound start yet (no gesture since */
 function soundWaiting() { const S = SND(); return AU.on && !(S && S.running()); }
 function soundLabel(on) {
   const wait = on && soundWaiting();
@@ -2610,7 +2428,7 @@ function setSound(on) {
   AU.on = on;
   try { localStorage.setItem("board-sound", on ? "1" : "0"); } catch (e) {}
   const S = SND();
-  if (S) { S.setVol(AU.vol); if (!S.setOn(on)) AU.on = false; if (AU.on) { S.setFlick(flickAt); S.onCrackle(() => { if (!reduceMQ.matches) { FLICK_POP.t = performance.now(); FLICK_POP.amp = 0.35 + Math.random() * 0.3; if (RS.pop) RS.pop(FLICK_POP.t, FLICK_POP.amp, FLICK_POP.ms); /* the room's worker hears the same pop (room/tier.js) */ } }); S.setScene(SC.open !== null); } }
+  if (S) { S.setVol(AU.vol); if (!S.setOn(on)) AU.on = false; if (AU.on) { S.setFlick(flickAt); S.onCrackle(() => { if (!reduceMQ.matches) { FLICK_POP.t = performance.now(); FLICK_POP.amp = 0.35 + Math.random() * 0.3; if (RS.pop) RS.pop(FLICK_POP.t, FLICK_POP.amp, FLICK_POP.ms);  } }); S.setScene(SC.open !== null); } }
   else AU.on = false;
   soundButtons();
   setTimeout(() => { soundButtons(); roomCues(); }, 300);
@@ -2625,11 +2443,9 @@ function startSound() {
   btn.addEventListener("pointerup", () => clearTimeout(press));
   btn.addEventListener("click", () => { if (held) { held = false; return; } setSound(soundWaiting() ? true : !AU.on); });
   vol.addEventListener("input", () => { AU.vol = Number(vol.value) / 100; try { localStorage.setItem("board-vol", String(AU.vol)); } catch (e) {} const S = SND(); if (S) S.setVol(AU.vol); });
-  /* V13c (phone-deep 2.1): */
   const gesture = () => { if (!AU.on) return; const S = SND(); if (!S || S.running()) return; if (S.status().state === "none") setSound(true); else S.gesture(); setTimeout(soundButtons, 60); };
   for (const t of ["click", "touchend", "keydown"]) addEventListener(t, gesture, true);
   sceneHooks.push((on) => { const S = SND(); if (S && AU.on) S.setScene(on); });
-  /* V13c (craft 27): */
   document.addEventListener("toggle", (e) => { if (e.target && e.target.tagName === "DETAILS" && e.target.closest("#scene")) sfx("paper", { gain: e.target.open ? 1 : 0.7 }); }, true);
   document.addEventListener("click", (e) => {
     const t = e.target.closest && e.target.closest("button, a"); if (!t || !AU.on) return;
@@ -2644,18 +2460,14 @@ function startSound() {
 }
 function audioStatus() { const S = SND(); const st = S ? S.status() : { on: false, state: "none" }; return { ...st, on: AU.on, volume: AU.vol, measure: (ms) => (S ? S.measure(ms) : Promise.resolve(null)) }; }
 
-/* The library (V4-SPEC 3.3): */
 const LIBD = { index: null, indexP: null, head: {}, full: {}, catP: {}, tips: null, tipsP: null, tipRe: null, open: null, openP: null, news: null, newsP: null };
 const LIBS = { state: "idle", via: "none", why: "", worker: null, core: null, coreP: null, ready: false, view: { kind: "shelf" }, cat: "", q: "", req: 0, res: null, shown: 60, ms: null, timer: 0, all: null, hays: null, back: null, searches: 0, rows: 0, token: 0, toastT: 0 };
 const LIB_CAP = 60;
-/* V13a: a search runs once typing pauses this long (Enter runs it at once) */
 const LIB_TYPE_MS = 120;
-/* V13a: result rows drawn in the first frame, then per later frame */
 const LIB_FIRST_WIDE = 12, LIB_SLICE = 16;
-const libFirst = () => (innerWidth < 700 ? 6 : LIB_FIRST_WIDE); /* a phone shows about six rows */
+const libFirst = () => (innerWidth < 700 ? 6 : LIB_FIRST_WIDE);
 const dtShort = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const libDay = (d) => (d ? dtShort.format(new Date(`${d}T12:00:00Z`)) : "undated");
-/* V11 cache stamps: index.json names each library file's stamp, so every other file loads */
 const libStamped = (url) => { const v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[url.replace(/^data\/library\//, "")]; return v ? `${url}?v=${v}` : url; };
 const libGet = (url) => libIndex().catch(() => null).then(() => fetch(libStamped(url))).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
 const libTitle = (id) => (LIBD.head[id] ? LIBD.head[id].title : id);
@@ -2676,7 +2488,6 @@ function renderLibTile() {
   const ix = LIBD.index; if (!ix) return;
   const T = ix.totals, c = ix.changes[0], box = $("#ts-library-new");
   fill("library", minis([[nf.format(T.pages), "pages"], [nf.format(T.facts), "facts"], [nf.format(T.blizzard), "from Blizzard"], [nf.format(T.open), "open questions"]]));
-  /* The date is the History line's own leading date (c.date), never a date inside the */
   if (box) box.replaceChildren(...(c && ix.changes.length >= 3 ? [h("small", { text: `Newest change, ${libDay(c.date)}` }), h("span", { text: wholeClause(`${libTitle(c.page)}: ${c.text}`, 64) })] : [h("small", { text: "Changes" }), h("span", { class: "clamp", text: libQuiet(ix) })]));
 }
 const libQuiet = (ix) => `No numbers have changed since ${libDay(ix.changes_since)}; ${plural(ix.rechecks, "recheck", "rechecks")} confirmed them.`;
@@ -2703,7 +2514,7 @@ function libLink(v) {
 function libToast(msg, sel) {
   const t = $("#toast"); if (!t) return;
   clearTimeout(LIBS.toastT);
-  t.replaceChildren(h("span", { text: msg }), ...(sel ? [h("input", { value: sel, readonly: true, "aria-label": "Text to copy" })] : [])); /* fix C2: a null child is the text "null" */
+  t.replaceChildren(h("span", { text: msg }), ...(sel ? [h("input", { value: sel, readonly: true, "aria-label": "Text to copy" })] : []));
   t.hidden = false;
   if (sel) { const i = t.querySelector("input"); try { i.focus({ preventScroll: true }); i.select(); } catch (e) {} }
   LIBS.toastT = setTimeout(() => { t.hidden = true; }, sel ? 9000 : 2600);
@@ -2717,7 +2528,6 @@ const copyChip = (label, text, done) => h("button", { class: "copy", type: "butt
 const linkChip = (v) => { const l = libLink(v); return copyChip(v.kind === "page" ? "Copy link to this page" : v.kind === "results" ? "Copy link to this search" : "Copy link", l.text, l.framed ? "Copied the link token: add it after the board's address." : "Link copied."); };
 const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.");
 
-/* the ranker module, loaded once (Phase 0, 2026-10-30: the Leeroy chamber's follow-ups rank */
 function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=16d8a1283e").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
 function libStart() {
   if (LIBS.state !== "idle") return;
@@ -2768,18 +2578,15 @@ function libSearch(q, keepView) {
 }
 function libResults(m) {
   if (m.id !== LIBS.req) return;
-  const more = !!m.more && !!LIBS.res && LIBS.res.q === m.q; /* the same search with more rows filled in keeps "Show more" */
+  const more = !!m.more && !!LIBS.res && LIBS.res.q === m.q;
   LIBS.res = m; if (!more) { LIBS.shown = LIB_CAP; LIBS.searches++; } LIBS.ms = m.ms;
   if (LIBS.view.kind === "results") libRenderSoon();
 }
-/* V13a: results render once per frame at most, with whatever answer is newest by */
 function libRenderSoon() {
   if (LIBS.raf) return;
   LIBS.raf = requestAnimationFrame(() => { LIBS.raf = 0; if (LIBS.view.kind === "results") libRender(); });
 }
-/* V13a: the worker sends text only for the rows the page can show */
 function libFill() {
-  /* only for the answer on screen with nothing newer asked: a search typed meanwhile */
   if (LIBS.via !== "worker" || !LIBS.worker || !LIBS.res || LIBS.req !== LIBS.res.id || LIBS.filling === `${LIBS.res.q}|${LIBS.cat}|${LIBS.shown}`) return;
   LIBS.filling = `${LIBS.res.q}|${LIBS.cat}|${LIBS.shown}`;
   LIBS.worker.postMessage({ id: ++LIBS.req, q: LIBS.res.q, cap: 400, full: LIBS.shown, cat: LIBS.cat, more: true });
@@ -2799,14 +2606,13 @@ function libGo(v, from) {
 const libSrc = (r) => h("a", { class: `src t${r.tier}`, href: r.url, target: "_blank", rel: "noopener noreferrer", title: `${r.label}, ${r.host}` }, h("span", { class: "src-l", text: r.label }), h("span", { "aria-hidden": "true", text: "·" }), h("span", { class: "src-h", text: r.host }));
 const TIER_WORD = ["client table", "Blizzard", "guide or wiki", "forum or datamine"];
 const dtRead = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-const libExpert = () => MEM.get("expert") === "1" || JR() === "everything"; /* V13d: the Everything journey reads the library as an expert */
+const libExpert = () => MEM.get("expert") === "1" || JR() === "everything";
 const libXp = (refs) => h("span", { class: "xp" }, refs.map((r) => {
   const b = (String(r.url).match(/build=[\d.]*?(\d{5,})/) || [])[1];
   return h("span", {}, h("b", { text: `${r.id} ${r.host}` }), `: ${TIER_WORD[r.tier] || "source"} (tier ${r.tier})`, b ? `, build ${b}` : "", r.accessed ? `, read ${dtRead.format(new Date(`${r.accessed}T12:00:00Z`))} ` : " ", h("a", { href: r.url, target: "_blank", rel: "noopener noreferrer", "aria-label": `Verify at ${r.host}` }, "Verify"));
 }));
 let DIFF = null;
 const libDiff = () => DIFF || (DIFF = libGet("data/library/diff.json").catch(() => null));
-/* owners: null for the shelf (every owner), or the page: a class page takes its class, a race */
 function libRibbon(page) {
   const box = h("div", { class: "ribbon-slot" });
   libDiff().then((d) => {
@@ -2829,7 +2635,6 @@ function libRibbon(page) {
   return box;
 }
 const libRead = (refs) => { const d = refs.map((r) => r.accessed).filter(Boolean).sort().pop(); return d ? h("span", { class: "read", text: `read ${libDay(d)}` }) : null; };
-/* fix C14: a fact key read as words, with spell names (the tooltip table), places, months and classes */
 const PROPER = /^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|paris|dalaran|orgrimmar|undercity|durotar|mulgore|tirisfal|crossroads|onyxia|hyjal|blizzard|discord|horde|alliance|forever|fellowship|mage|warlock|priest|paladin|druid|shaman|hunter|rogue|warrior|undead|troll|tauren|orc)$/i;
 function libWords(t) {
   const T = LIBD.tips, w = String(t).replace(/[_.]/g, " ").replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(\d{1,2})\b/gi, "$1 $2").split(/\s+/).filter(Boolean), out = [];
@@ -2850,7 +2655,7 @@ function libRenderHead() {
   const stat = (v, l) => h("div", { class: "lib-stat" }, h("b", { text: v }), h("span", { text: l }));
   const extra = (el) => { el.classList.add("extra"); return el; };
   box.replaceChildren(stat(nf.format(T.pages), "pages"), stat(nf.format(T.facts), "facts"), stat(nf.format(T.blizzard), "from Blizzard"), stat(nf.format(T.open), "open questions"), extra(stat(nf.format(T.gaps), "researched gaps")),
-    ...(st ? [extra(stat(String(st.answers), "answers by Leeroy")), extra(stat(fmtSecs(st.median_s), "median reply"))] : []), /* fix C2 */
+    ...(st ? [extra(stat(String(st.answers), "answers by Leeroy")), extra(stat(fmtSecs(st.median_s), "median reply"))] : []),
     extra(stat(libDay(ix.generated.slice(0, 10)), "as of")));
 }
 const CAT_EMB = { classes: "classes", dungeons: "dungeons", events: "cal", history: "book", leveling: "leveling", professions: "tradeskills", pvp: "pvp", races: "races", raids: "skull", systems: "systems", ui: "ui" };
@@ -2861,7 +2666,6 @@ function libRenderRail() {
   const res = LIBS.view.kind === "results" && LIBS.res;
   const btn = (key, label, n) => h("button", { class: "cat", type: "button", "data-cat": key, "aria-pressed": String(LIBS.cat === key) }, emb(CAT_EMB[key] || "classes", "cat-ico"), h("span", { text: label }), h("b", { text: nf.format(n) }));
   const want = [["", "All", res ? LIBS.res.hits.length : ix.totals.pages], ...ix.categories.map((c) => [c.key, c.title, res ? counts[c.key] || 0 : c.pages])];
-  /* V13a: the shelf buttons stay; a keystroke only rewrites their counts and pressed */
   const have = [...rail.children];
   if (have.length === want.length && want.every(([k], i) => have[i].dataset.cat === k)) {
     want.forEach(([k, , n], i) => { const b = have[i], v = nf.format(n), p = String(LIBS.cat === k), c = b.querySelector("b"); if (c && c.textContent !== v) c.textContent = v; if (b.getAttribute("aria-pressed") !== p) b.setAttribute("aria-pressed", p); });
@@ -2895,9 +2699,7 @@ function libRenderShelf(main) {
   const seen = MEM.seenMap(), isNewPage = (p) => { const t = seen[`page:${p.id}`], d = p.checked || p.as_of; return !!t && !!d && Date.parse(`${d}T23:59:59Z`) > t; };
   const kids = [];
   if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids); return; }
-  /* V9: */
   if (libExpert()) kids.push(libRibbon(null));
-  /* fix C13 */
   kids.push(wideLib() ? null : h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
     wideLib() ? null : h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
       h("b", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")} · ${nf.format(c.facts)} facts` })))),
@@ -2916,14 +2718,13 @@ function libRenderResults(main) {
   const hits = LIBS.res.hits.filter((x) => !LIBS.cat || x.category === LIBS.cat);
   const pages = new Map();
   for (const x of hits) { if (!pages.has(x.page)) pages.set(x.page, { id: x.page, title: x.title, category: x.category, hits: [] }); pages.get(x.page).hits.push(x); }
-  if (count) count.textContent = hits.length ? (hits.length > 1 ? `Best answer first, then ${plural(hits.length - 1, "more line", "more lines")} from ${plural(pages.size, "page", "pages")}.` : "One answer.") : "No match"; /* fix C15 */
+  if (count) count.textContent = hits.length ? (hits.length > 1 ? `Best answer first, then ${plural(hits.length - 1, "more line", "more lines")} from ${plural(pages.size, "page", "pages")}.` : "One answer.") : "No match";
   $("#panel-library").dataset.view = hits.length ? "results" : "zero";
   if (LIBS.lastQ !== v.q) { LIBS.lastQ = v.q; const sb = $("#sheet-body"); if (sb) sb.scrollTop = 0; }
   if (!hits.length) { main.replaceChildren(libZero(v.q)); return; }
   const max = hits[0].score || 1;
   let left = LIBS.shown, rows = 0;
   const groups = [];
-  /* V13a: */
   { let need = LIBS.shown; for (const g of pages.values()) { for (const x of g.hits) { if (need-- <= 0) break; if (x.key === undefined) { libFill(); return; } } if (need <= 0) break; } }
   const plan = [];
   for (const g of pages.values()) {
@@ -2935,7 +2736,6 @@ function libRenderResults(main) {
       h("div", { class: "group-head" }, pageLink(g.id, "", g.title), h("span", { class: "lib-sub", text: libCatTitle(g.category) })),
       h("ul", { class: "hits" }, list.map((x) => {
         const go = (() => { const a = pageLink(g.id, `hit-go${x.open ? " open-q" : ""}`, x.open ? "nobody knows yet" : libKey(x.key), x.open ? null : x.key); a.setAttribute("aria-label", x.open ? `Nobody knows yet, on ${g.title}: open the page` : `${libKey(x.key)}, on ${g.title}: open the page`); return a; })();
-        /* V12: the plain sentence first; ids, builds and source sites wait behind Sources (Expert keeps */
         if (libExpert()) return h("li", { class: "hit" }, go, h("span", { class: "hit-val" }, ...libValue(x.value)), x.refs.length ? h("span", { class: "hit-meta" }, x.refs.map(libSrc), libRead(x.refs)) : null);
         const P = libPlain(x);
         return h("li", { class: "hit" }, h("span", { class: "hit-val hit-lead" }, ...P.lead), go, libSources(P.prov, x.refs));
@@ -2947,7 +2747,6 @@ function libRenderResults(main) {
     main.replaceChildren(libAnswer(v.q, hits[0]), h("button", { class: "lib-btn", type: "button", onclick: () => { LIBS.allFor = v.q; libRender(); } }, `Show ${plural(hits.length, "match", "matches")} in the game's own words`), h("div", { class: "lib-row" }, linkChip(v), askChip(v.q, "Ask Leeroy this")));
     return;
   }
-  /* V13a: */
   const answer = libAnswer(v.q, hits[0]);
   const first = []; let n = 0;
   const firstN = libFirst();
@@ -2967,7 +2766,6 @@ function libRenderResults(main) {
   };
   if (plan.length) requestAnimationFrame(() => setTimeout(slice, 0));
 }
-/* The best answer leads the results: the game's own tooltip when the question names a spell or */
 function libAnswer(q, best) {
   const T = LIBD.tips, key = String(q).trim().toLowerCase();
   const ti = T && !TT_SKIP.has(key) ? T.names[key] : undefined;
@@ -2987,7 +2785,6 @@ function libAnswer(q, best) {
     h("p", { class: "answer-v answer-lead" }, ...P.lead),
     libSources(P.prov, best.refs));
 }
-/* V12 (first-visitor test): */
 const PROV_RE = /\s*\((?=[^()]*\b(?:client|build|spell \d|datamine|notes|deep dive|hotfix|forum|Wowhead|wiki|tier|source|cache|S\d+)\b)[^()]*\)/gi;
 function libPlain(x) {
   const raw = String(x.value == null ? "" : x.value).trim(), prov = [];
@@ -3003,7 +2800,6 @@ function libSources(prov, refs) {
     prov.length ? h("span", { class: "srcs-note", text: `Where the numbers come from: ${prov.join("; ")}.` }) : null,
     refs.length ? h("span", { class: "hit-meta" }, refs.map(libSrc), libRead(refs)) : null);
 }
-/* a tooltip answer leads with who learns it and when, in words */
 function libTipLead(i) {
   const t = LIBD.tips.tooltips[i], L = t.lines || [];
   const cls = (L.find((l) => /^(?:Requires|Classes:) [A-Z]/.test(l) && !/level/i.test(l)) || "").replace(/^(?:Requires|Classes:)\s*/, "");
@@ -3011,7 +2807,6 @@ function libTipLead(i) {
   const what = t.kind === "item" ? "an item" : `a${cls ? ` ${cls}` : ""} spell`;
   return h("p", { class: "answer-v answer-lead" }, `${t.name} is ${what}${lvl ? `, from level ${lvl}` : ""}. Here is what the game's own tooltip says.`);
 }
-/* "what does the priest give a mage", "what buff does a priest give my class": the board's own buff */
 const LIB_CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
 function libBuffAnswer(key) {
   const B = D.client && D.client.buffs; if (!B || !/\bgives?\b|\bbuffs?\b/.test(key)) return null;
@@ -3034,10 +2829,8 @@ function libBuffAnswer(key) {
     h("p", { class: "answer-v answer-lead", text: said }),
     h("button", { type: "button", class: "lib-btn", onclick: () => goScene("buffs") }, "See every level in Who buffs whom"));
 }
-/* "what is a racial", "racials", "define cooldown": the glossary term the question asks about, if */
 function libGlossFor(key) {
   if (!LIBD.gloss || !LIBD.glossForm) return null;
-  /* fix C13: "what does a tank do", "what is a healer for", "how does a cooldown work", "healers" */
   const k = key.replace(/[?.!]+$/, "").trim().replace(/^(?:what(?:'s| is| are| does| do)|whats|define|meaning of|how (?:does|do))\s+(?:an?\s+|the\s+)?/, "").replace(/\s+(?:used for|do|work|for|mean)$/, "").trim();
   for (const x of [k, k.replace(/s$/, ""), k.replace(/es$/, "")]) if (LIBD.glossForm[x] !== undefined) return LIBD.gloss[LIBD.glossForm[x]];
   return null;
@@ -3056,7 +2849,7 @@ function libNearest(q, n = 5) {
 function libZero(q) {
   const near = libNearest(q);
   const card = h("div", { class: "lib-empty" },
-    h("h3", { class: "lib-title", text: `Nothing on the shelves for "${q.length > 60 ? `${q.slice(0, 57).trim()}...` : q}"` }), /* fix C15: a long query is cut */
+    h("h3", { class: "lib-title", text: `Nothing on the shelves for "${q.length > 60 ? `${q.slice(0, 57).trim()}...` : q}"` }),
     near.length ? h("p", { text: "Pages with a similar name:" }) : null,
     near.length ? h("ul", { class: "hits" }, near.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: libCatTitle(p.category) })])))) : null,
     h("p", { text: "Leeroy can look it up. The button copies the question as a Discord command." }),
@@ -3154,7 +2947,6 @@ const LIBUI = {
   },
   status: () => ({ state: LIBS.state, via: LIBS.via, why: LIBS.why, ready: LIBS.ready, view: LIBS.view.kind, cat: LIBS.cat, searches: LIBS.searches, ms: LIBS.ms, renderMs: LIBS.renderMs, rows: LIBS.rows, index: !!LIBD.index, tooltips: LIBD.tips ? LIBD.tips.tooltips.length : 0 }),
 };
-/* Tooltips (V4-SPEC 3.3): */
 const TT = { open: false, pinned: false, i: -1, trigger: null, hideT: 0 };
 const TT_SKIP = new Set(["blizzard"]);
 function libTips() {
@@ -3175,7 +2967,6 @@ function tipFor(name, after, before) {
   if (m) { const j = T.tooltips.findIndex((t) => t.name === name && t.rank === `Rank ${m[1]}`); if (j >= 0) return j; }
   return base;
 }
-/* Glossary (V5 Track A): the first use of a term in a view gets a dotted underline and a plain */
 function libGloss() {
   LIBD.glossP ||= libGet("data/library/glossary.json").then((j) => {
     LIBD.gloss = j.terms;
@@ -3242,7 +3033,7 @@ function ttCard(i) {
     h("div", { class: "ttc-src" }, h("a", { href: t.url, target: "_blank", rel: "noopener noreferrer", text: "Wowhead Forever" }), ` read ${libDay(T.captured)}`));
 }
 function ttPlace(card, trig) {
-  if (KIT.placeCard) return KIT.placeCard(card, trig); /* js/place.js: one placing for every card */
+  if (KIT.placeCard) return KIT.placeCard(card, trig);
   const sheet = $(".sheet"), sr = sheet.getBoundingClientRect();
   const sheetMode = innerWidth < 700 || window.matchMedia("(pointer: coarse)").matches;
   card.classList.toggle("sheetmode", sheetMode);
@@ -3285,7 +3076,6 @@ function startTooltips() {
   const panel = $("#panel-library"), card = $("#ttc"), body = $("#sheet-body");
   if (!panel || !card) return;
   const hover = window.matchMedia("(hover: hover) and (pointer: fine)");
-  /* hover intent: a card opens only when the pointer rests on a term for a moment, so sweeping across */
   panel.addEventListener("mouseover", (e) => { const t = e.target.closest && e.target.closest(".tt, .gl"); if (t && hover.matches) { clearTimeout(TT.intentT); TT.intentT = setTimeout(() => { if (t.isConnected && t.matches(":hover")) ttShow(t, false); }, TT.open ? 120 : 420); } });
   panel.addEventListener("mouseout", (e) => { const t = e.target.closest && e.target.closest(".tt, .gl"); if (t) clearTimeout(TT.intentT); if (t && !TT.pinned) TT.hideT = setTimeout(() => { if (!TT.pinned) ttClose(); }, 160); });
   card.addEventListener("mouseenter", () => clearTimeout(TT.hideT));
@@ -3306,7 +3096,6 @@ function startTooltips() {
   sceneHooks.push((on) => { if (!on) ttClose(); });
 }
 
-/* The shelf front: what changed, nobody knows yet, Blizzard said. */
 const NEWS_LABEL = { "forum-tracker": "Blizzard forums", "forum-search": "Blizzard forums", "wowhead-blue": "Blizzard, via Wowhead", "wowhead-news": "Wowhead", icyveins: "Icy Veins", warcrafttavern: "Warcraft Tavern" };
 const newsLabel = (s) => NEWS_LABEL[String(s).split("/")[1]] || String(s).split("/").pop();
 function libAux() {
@@ -3317,7 +3106,6 @@ function libOpenList() {
   LIBD.openP ||= libGet("data/library/open.json").then((j) => { LIBD.open = j; if (LIBS.view.kind === "open") libRender(false); return j; }).catch(() => null);
   return LIBD.openP;
 }
-/* A day's changes on one page fold into one row ("Mage spellbook */
 function changeGroups(list) {
   const out = [];
   for (const c of list) { const g = out[out.length - 1]; if (g && g.date === c.date && g.page === c.page) g.items.push(c); else out.push({ date: c.date, page: c.page, items: [c] }); }
@@ -3344,12 +3132,10 @@ function libDoors() {
     door(libTok({ kind: "changes" }), "What changed", `${plural(ix.changes.length, "number moved", "numbers moved")} since ${libDay(ix.changes_since)}`),
     door(libTok({ kind: "open" }), "Nobody knows yet", `${plural(T.open, "open question", "open questions")}, ${plural(T.gaps, "researched", "researched")}`));
 }
-/* at 900 px and up the category rail is a sidebar, so the shelf rows would repeat it: the front */
 function wideLib() { return !!window.matchMedia && window.matchMedia("(min-width: 900px)").matches; }
 function libFront(n = 8) {
   const ix = LIBD.index, T = ix.totals;
   libAux();
-  /* the learn loop's applied edits (news.json updates, from wiki/CHANGELOG.md) lead the shelf */
   const updates = LIBD.news && Array.isArray(LIBD.news.updates) ? LIBD.news.updates.slice(0, n < 8 ? 1 : 2) : [];
   const said = LIBD.news ? LIBD.news.items.filter((x) => /^BLIZZARD/i.test(x.source)).slice(0, Math.max(1, (n < 8 ? 2 : 6) - updates.length)) : null;
   const updateLi = (u) => h("li", { class: "updated" }, pageLink(u.page, "", `Library updated: ${u.what}`, u.key), h("small", { text: `${u.source}, ${libDay(u.date)}` }), h("a", { class: "upd-src", href: u.url, target: "_blank", rel: "noopener noreferrer", text: u.posted ? `Blizzard's post of ${libDay(u.posted)}` : "Blizzard's post" }));
@@ -3380,7 +3166,6 @@ function libRenderOpen(main, tok) {
       h("div", { class: "group-head" }, pageLink(id, "", libTitle(id)), h("span", { class: "lib-sub", text: LIBD.head[id] ? libCatTitle(LIBD.head[id].category) : "" })),
       h("ul", { class: "hits" }, list.map((t) => h("li", { class: "hit" }, h("span", { class: "hit-val" }, emb("question", "pend"), " ", ...richText(t)))))))),
     h("section", { class: "group", "aria-label": "Researched questions" }, h("div", { class: "group-head" }, h("span", { class: "lib-title", text: "Researched questions" })),
-      /* V12: the question and its plain answer; the research log's own words stay out */
       O.gaps.map((g) => h("div", { class: "gap" }, h("h4", {}, g.question), h("span", { class: "lib-sub", text: `${g.status}, ${libDay(g.date)}` }),
         h("ul", {}, (g.answer || []).map((f) => h("li", {}, h("span", {}, ...richText(f))))),
         g.links.length ? h("details", { class: "srcs" }, h("summary", { text: "Sources" }), h("span", { class: "hit-meta" }, g.links.map((u) => h("a", { class: "src", href: u, target: "_blank", rel: "noopener noreferrer", text: (() => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return "link"; } })() })))) : null))));
@@ -3392,7 +3177,6 @@ function libRenderChanges(main) {
     h("p", { class: "lib-sub", text: `Numbers that moved since ${libDay(ix.changes_since)}. ${plural(ix.rechecks, "other recheck", "other rechecks")} confirmed the rest.` }),
     ix.changes.length ? h("ol", { class: "ribbon" }, changeGroups(ix.changes.filter((c) => !LIBS.cat || (LIBD.head[c.page] && LIBD.head[c.page].category === LIBS.cat))).flatMap(changeGroupLi)) : h("p", { text: libQuiet(ix) }));
 }
-/* Phones: the category chips scroll sideways */
 function libRailHint() {
   const hint = $("#rail-hint"), rail = $("#lib-rail"); if (!hint || !rail) return;
   let seen = false; try { seen = localStorage.getItem("board-railhint") === "1"; } catch (e) {}
@@ -3400,7 +3184,7 @@ function libRailHint() {
   hint.hidden = false;
   rail.addEventListener("scroll", () => { hint.hidden = true; try { localStorage.setItem("board-railhint", "1"); } catch (e) {} }, { once: true, passive: true });
 }
-const LIB_EXAMPLES = ["What is Forever?", "When is launch?", "What does a tank do?", "Do I need to pay?"]; /* fix C13: a newcomer's way in */
+const LIB_EXAMPLES = ["What is Forever?", "When is launch?", "What does a tank do?", "Do I need to pay?"];
 function libExamples() {
   const box = $("#lib-examples"); if (!box || box.childElementCount) return;
   box.replaceChildren(...LIB_EXAMPLES.map((q) => h("button", { class: "ex", type: "button", onclick: () => { const i = $("#lib-q"); i.value = q; libSearch(q); } }, q)));
@@ -3435,15 +3219,13 @@ function startLibrary() {
     list[Math.max(0, Math.min(list.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))].focus();
   });
 }
-/* Discord launch parameter (activities link ?custom_id=<token>, read by the SDK as */
 const LAUNCH_LIB = /^library(?:\.(?:q\.[a-z0-9][a-z0-9.-]{0,90}|open|changes|c\.[a-z]+|[a-z]+\.[a-z0-9-]+(?:~[a-z0-9_.]+)?))?$/;
 function launchToken(raw) {
-  const t = (typeof raw === "string" ? raw.trim() : "").replace(/^dates(?=\.|$)/, "timeline"); /* V13e: the Dates alias */
+  const t = (typeof raw === "string" ? raw.trim() : "").replace(/^dates(?=\.|$)/, "timeline");
   if (!t || t.length > 100 || !/^[A-Za-z0-9._~-]+$/.test(t)) return null;
   return SCENES.includes(t) || LAUNCH_LIB.test(t) || /^tonight\.[a-z0-9-]{1,40}$/.test(t) || /^buffs\.[a-z_-]{1,40}$/.test(t) || LAND_RE.test(t) ? t : null;
 }
-/* Memory (V6-SPEC 3.1): browser only, never sent */
-const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak", "board-journey", "board-key", "board-glowed", "board-snooze", "board-mode", "board-mode-sound", "board-chat", "board-walked"]; /* companion N3: Not now on the next step; N4 */
+const MEM_KEYS = ["board-depth", "board-me", "board-seen", "board-left", "board-expert", "board-room", "board-room-streak", "board-journey", "board-key", "board-glowed", "board-snooze", "board-mode", "board-mode-sound", "board-chat", "board-walked"];
 const MEM = {
   get: (k) => { try { return localStorage.getItem(`board-${k}`); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(`board-${k}`); else localStorage.setItem(`board-${k}`, v); } catch (e) {} },
@@ -3451,13 +3233,11 @@ const MEM = {
   me: () => MEM.get("me"),
   member: () => { const m = MEM.me(); return m && m !== "just-looking" && D.party ? D.party.members.find((x) => MEM.slug(x.name) === m) || null : null; },
   setMe: (slug) => { const ok = slug === "just-looking" || (D.party ? D.party.members.some((x) => MEM.slug(x.name) === slug) : /^[a-z0-9-]{1,40}$/.test(slug)); if (ok) MEM.set("me", slug); return ok; },
-  seenMap: () => { try { const m = JSON.parse(MEM.get("seen") || "{}"); return m && typeof m === "object" && !Array.isArray(m) ? m : {}; } catch (e) { return {}; } }, /* a stored value that is not an object (a number, a list) is treated as empty, never thrown */
+  seenMap: () => { try { const m = JSON.parse(MEM.get("seen") || "{}"); return m && typeof m === "object" && !Array.isArray(m) ? m : {}; } catch (e) { return {}; } },
   seen: (k) => { const m = MEM.seenMap(); m[k] = Date.now(); MEM.set("seen", JSON.stringify(m)); },
   forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } try { Object.keys(localStorage).filter((k) => k.startsWith("board-before-")).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
 };
-/* V11: an event with a window (names) is "Next up" while it is open, and reads "Open now, until */
 function tonightNext(T) { const now = Date.now() / 1000; const ts = (e) => (e.epoch !== null ? e.epoch : Date.parse(`${e.date}T23:59:59Z`) / 1000); const open = T.events.find((e) => e.until_epoch && e.epoch <= now && now < e.until_epoch); if (open) return { ...open, when: open.open_when || open.when, open: true }; return T.events.find((e) => ts(e) > now) || T.events[T.events.length - 1]; }
-/* the meeting point on Next steps: chosen, or the Sign-ups card to choose */
 function meetP() {
   const m = D.party && D.party.open.find((o) => /meeting point/i.test(o.title));
   if (!m) return null;
@@ -3470,20 +3250,17 @@ function yourTime(T) {
   const mine = f(), et = f("America/New_York");
   return mine === et ? "" : ` (${mine} your time)`;
 }
-/* V13c: "Launch: Wed, Nov 4, 6 PM ET, in 7 days" in the viewer's zone, from the launch event's */
 function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `Launch: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
   const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
   const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
-  /* V13b (mobile 8): one name chip everywhere. */
   if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, crestMark(m), m.name)), h("button", { type: "button", class: "lib-tool tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
   else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
   const S = D.signups, entries = S && S.entries ? S.entries : [];
   const mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
-  /* V11: every step says where to act. An open poll is on everyone's list until it */
   const L = T.links || {}, nowS = Date.now() / 1000;
   const pollOpen = !!L.poll && (!T.poll_closes || nowS < T.poll_closes);
   const steps = [];
@@ -3495,7 +3272,6 @@ function renderTonight() {
   }
   if (!steps.length) steps.push([pollOpen && T.steps.poll ? T.steps.poll : T.steps.none, pollOpen ? L.poll : null]);
   const ext = (href) => href && /^https?:/.test(href);
-  /* V12: the vote step carries its deadline in the viewer's own time */
   const stepEl = ([t0, href]) => { const t = t0 === T.steps.poll && T.poll_closes ? `${t0.replace(/\.$/, "")}, by ${fmtWhen(T.poll_closes)}.` : t0; return stepLi(t, href); };
   const stepLi = (t, href) => h("li", { class: "tn-big" }, href ? h("a", { class: "tn-link", href, ...(ext(href) ? { target: "_blank", rel: "noopener noreferrer", "aria-label": `${t} Opens Discord.` } : {}) }, ext(href) ? emb("speech") : null, t) : t);
   const who = (k) => entries.filter((e) => e.rsvp === k && e !== mine).map((e) => cleanName(e.name));
@@ -3506,17 +3282,14 @@ function renderTonight() {
     card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl))),
     card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
     card(T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
-  /* V9: with a name, one tap from Tonight to what the others give you at a level (outside the */
   const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
-  /* V16: the decision view is one tap away (a link, so the two action buttons stay */
   act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]), h("a", { class: "lib-btn tn-decide", href: "#decide", text: TITLES.decide })].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
   try { renderBefore(); startHow(); } catch (e) { console.error("before", e); }
   $("#tn-left").replaceChildren(...(left ? ["Last time you read ", h("a", { href: `#${left.tok}`, text: left.title }), " in the library."] : []));
   KIT.emit("tonight");
 }
-/* V15: "Before launch" checklist (per person, ticks in this browser only) and "How things work" */
 function beforeTicks(slug) { try { const a = JSON.parse(MEM.get(`before-${slug}`) || "[]"); return Array.isArray(a) ? a.filter((x) => typeof x === "string") : []; } catch (e) { return []; } }
 function beforeItems(T, P, member, mine) {
   const open = (rx) => P.open.find((o) => rx.test(o.title)), nowS = Date.now() / 1000, L = T.links || {};
@@ -3560,9 +3333,8 @@ function renderBefore() {
     i.more || i.stamp ? h("p", { class: "tnb-more", "data-j": "c e" }, i.more || "", i.stamp ? [" ", h("code", { "data-j": "e", text: `<t:${i.stamp}:F>`, title: "Discord timestamp: pasted into chat, it shows each reader their own local time" })] : null) : null);
   box.replaceChildren(h("h3", { id: "tnb-h", text: "Before launch" }),
     h("p", { class: "tnb-group", text: groupOpenLine(T, P) }),
-    /* integrator pass 3: the list folds under its own summary (open, it ran Next steps to 3.2 */
     me ? h("details", { class: "tnb-fold" }, h("summary", { class: "tnb-sum" }, sum), h("ul", { class: "tnb-list", "aria-label": member ? `Before launch, ${member.name}` : "Before launch" }, items.map(row)), count) : h("p", { class: "tnb-hint", text: "With a name picked above, a short list of what the board knows about your side shows here." }),
-    ...(me ? [] : [count])); /* polish: replaceChildren writes a null argument as the text "null" (h() skips it */
+    ...(me ? [] : [count]));
   upd();
 }
 const HOW_Q = ["How do guilds work?", "Can I chat in game without a guild?", "How big is a dungeon group?", "How does loot rolling work?", "What does a pack do?", "Where does the group meet?"];
@@ -3597,7 +3369,6 @@ function startHow() {
   if (!howWatch && typeof MutationObserver === "function") { howWatch = true; new MutationObserver(go).observe(panel, { attributes: true, attributeFilter: ["hidden"] }); }
   go();
 }
-/* The picked person's tile and medallion stand out. */
 function markMe() {
   const m = MEM.member();
   document.querySelectorAll("#ts-five .med").forEach((x) => x.classList.toggle("me", !!m && x.dataset.k === m.class_key));
@@ -3613,15 +3384,11 @@ function startDepth() {
   markDepth();
   nav.addEventListener("click", (e) => { const b = e.target.closest("[data-depth]"); if (!b) return; const d = b.dataset.depth; if (d === "wall") { MEM.set("depth", "wall"); requestClose(); markDepth(); } else goScene(d); });
 }
-/* V13a: work deferred past Tonight starts after the close has finished moving, not inside its */
 function whenOffTonight(f) { if (SC.open !== "tonight" && SC.want !== "tonight") { f(); return; } let done = false; sceneHooks.push(() => setTimeout(() => { if (!done && SC.open !== "tonight") { done = true; f(); } }, motionMs("move") + 160)); }
-/* V13a warm-up. */
 const WARM = { queue: null, step: null, done: false, ms: 0, scenes: 0 };
-/* V13c: the baked paper is the sheet's paper now */
 const WARM_IMAGES = ["img/paper-baked.jpg", "img/parchment-tile.jpg", "img/board-wall.jpg", "img/map-parchment.jpg", "img/map/zeppelin.png", "img/map/town.png", ...["in", "maybe", "late", "out", "none"].map((k) => `img/pints/${k}@2x.png`), ...["scroll", "hourglass", "horn", "skull", "seal"].map((k) => `img/emblems/dates/${k}.webp`), "img/seats/table.webp", ...["allstats", "armor", "attackpower", "healing", "intellect", "mana", "resistance", "spirit", "stamina", "thorns"].map((k) => `img/buffs/${k}.png`)];
-/* the scene layer is wanted for real: the warm-up steps aside at once, and comes back to the scene */
 function warmStop() {
-  WARM.calm = performance.now() + MOTION.move + 300; /* a scene moving in or out is left alone */
+  WARM.calm = performance.now() + MOTION.move + 300;
   const s = WARM.step; if (!s) return;
   if (WARM.queue) WARM.queue.push(s.key);
   warmRestore(s);
@@ -3635,14 +3402,13 @@ function warmRestore(s) {
 }
 function warmNext() {
   if (WARM.done || WARM.step) return;
-  if (roomHas("play")) { WARM.held = true; return; } /* integrator pass 3: Play warms nothing (it was 33 of the wall's 35 frames in 10 */
+  if (roomHas("play")) { WARM.held = true; return; }
   if (document.hidden) { warmLater(); return; }
   if (!WARM.queue) {
     WARM.queue = SCENES.filter((k) => k !== "library").sort((a, b) => (a === "tonight") - (b === "tonight"));
     for (const u of WARM_IMAGES) { const im = new Image(); im.decoding = "async"; im.src = u; if (im.decode) im.decode().catch(() => {}); WARM.keep = (WARM.keep || []).concat(im); }
   }
   const L = $("#scene");
-  /* never while a scene is moving in or out, and never the scene on */
   if (SC.want || L.classList.contains("closing") || performance.now() < (WARM.calm || 0)) { warmLater(); return; }
   let key = WARM.queue.shift();
   while (key && key === SC.open) key = WARM.queue.shift();
@@ -3650,21 +3416,15 @@ function warmNext() {
   const panel = $(`#panel-${key}`); if (!panel) { warmLater(); return; }
   const t0 = performance.now();
   const step = { key, panel, layer: SC.open === null, raf: 0, timer: 0 };
-  /* V13c: the warm-up draws a scene in the frame it will open in, so its first raster at that size is
-     done while idle */
   if (step.layer) { L.inert = true; L.classList.add("warming"); L.hidden = false; }
   if (!WARM.fx) { WARM.fx = true; step.fx = h("div", { class: "warm-fx", "aria-hidden": "true" }); L.append(step.fx); }
-  /* CLS (2026-10-30): laid out and fitted while hidden (.warm-m), then shown for the raster */
   panel.classList.add("warm", "warm-m"); panel.inert = true; panel.hidden = false;
   WARM.step = step;
-  /* three frames: the commit, the raster, the draw */
-  /* V13b: the Roads map is drawn again once at its real width while it warms, so its first */
   let n = 0; const tick = () => { if (WARM.step !== step) return; if (n === 0 && key === "roads") { try { mapFit(); } catch (e) {} } if (n === 1 && step.layer && !FIT_SKIP.includes(key)) { try { fitScene(key); } catch (e) {} } if (n === 1) panel.classList.remove("warm-m"); if (++n < 3) { step.raf = requestAnimationFrame(tick); return; } WARM.ms += performance.now() - t0; WARM.scenes++; warmRestore(step); warmLater(); };
   step.raf = requestAnimationFrame(tick);
 }
 addEventListener("board-mode", () => { CT.sig = ""; try { if (D.timeline) tick(); } catch (e) {} if (!roomHas("play") && WARM.held) { WARM.held = false; warmLater(); } });
 function warmLater() { if (WARM.done) return; (window.requestIdleCallback || ((f) => setTimeout(f, 200)))(warmNext, { timeout: 1500 }); }
-/* "New" since the last look: the sign-ups (their own change stamp) and the library (its newest */
 function markNew() {
   const seen = MEM.seenMap();
   const badge = (k, stamp) => { const t = document.querySelector(`#board [data-scene="${k}"] .tile-title`); if (!t || !seen[k] || !stamp || Date.parse(stamp) <= seen[k] || t.parentNode.querySelector(".new-badge")) return; t.parentNode.insertBefore(h("span", { class: "new-badge", text: "New" }), t.nextSibling); };
@@ -3705,44 +3465,33 @@ async function boot(mode, sdk) {
     return;
   }
   if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }
-  /* No hash: open at the depth the person left at */
-  /* V14: */
-  /* fix C11 */
   if (!location.hash || location.hash === "#") {
-    const d = (KIT.openDepth ? KIT.openDepth() : null) || MEM.get("depth"); /* V15 (2026-10-30): launch night opens on the wall's hero (js/v15.js), the memory */
+    const d = (KIT.openDepth ? KIT.openDepth() : null) || MEM.get("depth");
     if (!d) { if (!MEM.get("journey")) setHash("tonight", true);
     } else if (d === "tonight" || d === "library") setHash(d, false);
   }
-  /* Tonight paints first (V6-SPEC 3.3: under 1.0 s on the 4x throttle): its cards and the scene */
   const early = sceneFromHash() === "tonight";
   for (const step of [renderTonight, markMe]) { try { step(); } catch (e) { console.error(step.name, e); } }
   if (early) { route(); await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
   const steps = [markMe, renderHero, renderTiles, renderCards, renderMap, renderRaces, renderLegacy, renderWheel, renderBuffsDeep, renderLedger, renderLibrarian, renderFooter, renderDiscordSignups, buildSignupControls];
   for (const step of steps) { try { step(); } catch (e) { console.error(step.name, e); } }
-  /* V12: an early scene (Tonight) painted before party.json's glossary was in hand: dot it */
   if (SC.open && SC.open !== "library") { try { dotPanel($(`#panel-${SC.open}`)); } catch (e) {} }
   try { startArt(); } catch (e) { console.error(e); }
   try { startSheen(); } catch (e) { console.error(e); }
-  /* The library's files wait until the person leaves Tonight */
   whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
   KIT.emit("rendered");
   if (!early) route();
   markNew(); startDepth();
   KIT.emit("booted", mode);
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = PRESENCE_WEB;
-  /* the room starts after first paint, when the main thread is idle (V7-SPEC */
   (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(startRoomLadder, { timeout: 2500 });
-  /* V13a: the scenes are drawn once, invisibly, while the page is idle (only where the browser has */
   if (typeof window.requestIdleCallback === "function") warmLater();
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-/* V13d: what js/v13d.js reads and calls (it runs after this file, before */
 Object.assign(KIT, { prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
-/* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
-/* V14: burn-in care. Persistent chrome drifts a few pixels every 45 s */
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();
 (function burnIn() {
   const root = document.documentElement; let n = 0, idle = 0, veil = null;
@@ -3752,7 +3501,6 @@ document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagNa
   idle = Date.now();
   setInterval(() => { if (document.hidden) return; if (!veil) { veil = document.createElement("div"); veil.setAttribute("class", "idle-veil"); veil.setAttribute("aria-hidden", "true"); document.body.appendChild(veil); } if (Date.now() - idle > 120000) root.classList.add("idle-dim"); }, 10000);
 })();
-/* V14: */
 KIT.on("booted", () => {
   if (typeof document.querySelectorAll !== "function") return;
   const stampOf = (txt) => { const m = /js\/board\.js\?v=([0-9a-f]{10})/.exec(txt || ""); return m ? m[1] : ""; };

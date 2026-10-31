@@ -1,6 +1,3 @@
-/* Lettering bake for the ribbons (polish round lane A, A2). The scene name becomes a signed distance field (sdf-worker.js) in a module Worker,
-   so the 7 to 19 ms of a bake never lands on the main thread; where module workers or OffscreenCanvas are missing, one label per idle slice
-   (50 ms timeout) with the page's own font. cloth.js uploads each field as an R8 texture with mipmaps and the shader stitches it. */
 import { sdfLabel } from "./sdf-worker.js?v=07781af8ec";
 
 const FONT_URL = new URL("../fonts/alegreya-sans-sc-700-latin.woff2", import.meta.url).href;
@@ -8,7 +5,6 @@ export function fontReady() { try { return !document.fonts || document.fonts.che
 const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 const idle = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 50 }) : setTimeout(f, 16));
 
-/* done(result) gets { id, w, h, data, lines, cap, inkTop, inkBot, ms, font } */
 export function createBaker(done) {
   let w = null, dead = false, q = [], busy = 0;
   const sent = new Map();

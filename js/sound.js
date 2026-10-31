@@ -1,20 +1,6 @@
-/* The board's sound (V13c, spec 3; craft 3 to 7, 22, 24 to 29; phone-deep 2.1, 2.2). Everything is synthesized here, no files.
-
-   The mix: two buses into one master and a limiter.
-     ambience bus  fire bed, crackles, a low murmur, the odd glass clink -> low-pass (18 kHz, 2.5 kHz under an open scene)
-                   -> duck gain (7 dB down for 250 ms around every UI cue) -> master
-     UI bus        every touch's cue, mixed above the ambience -> master
-     master        volume (off by default) -> DynamicsCompressor limiter (-12 dB threshold, ratio 8) -> speakers
-   Variation: each cue has four takes built from fresh noise and slightly moved pitches; plays go round robin without an
-   immediate repeat, with gain +-1.5 dB and a low-pass cutoff +-10% per play. Impacts carry their energy at 400 to 900 Hz with
-   a 150 to 250 Hz body, so they are heard on laptop and phone speakers; a sub is only a sweetener.
-   The page gives the sound one shared flicker (flick) and asks to hear each crackle (onCrackle), so the fire's light pops
-   with the sound it makes. */
 (() => {
   const CUE_DB = { open: -14, close: -16, tab: -18, flip: -18, stamp: -17, tick: -30, tock: -31, chip: -24, latch: -24, paper: -18, pin: -24, quill: -24, page: -21, detent: -27, copy: -24, menu: -24, card: -24, esc: -22, swell: -22, cheer: -20,
-    /* sensory pass (audio-sensory): UI, transition and room-event cues */
     hover: -34, whoosh: -24, unfurl: -24, cork: -22, thunk: -22, tipc: -32 };
-  /* room events and the fanfare: built after every UI cue, so the UI is ready first */
   const EVT_DB = { coin: -26, good: -24, bad: -24, fanfare: -22, creak: -34, door: -26, laugh: -36, babble: -40, gull: -42, thunder: -24, hoof: -34, shimmer: -36, purr: -42, drip: -42, pour: -36 };
   const LIMIT = { threshold: -12, knee: 6, ratio: 8, attack: 0.003, release: 0.15 };
   const DUCK_DB = -7, DUCK_MS = 250, TAKES = 4;
@@ -25,7 +11,7 @@
   function build() {
     const C = window.AudioContext || window.webkitAudioContext;
     if (!C) return false;
-    let c0; try { c0 = new C({ sampleRate: 48000, latencyHint: "playback" }); } catch (e) { c0 = new C(); } /* 48 kHz where the browser allows; the device rate otherwise */
+    let c0; try { c0 = new C({ sampleRate: 48000, latencyHint: "playback" }); } catch (e) { c0 = new C(); }
     const c = S.ctx = c0, R = c.sampleRate, TAU = 2 * Math.PI;
     const G = (v, to) => { const g = c.createGain(); g.gain.value = v; if (to) g.connect(to); return g; };
     const F = (type, f, q, to) => { const x = c.createBiquadFilter(); x.type = type; x.frequency.value = f; x.Q.value = q; if (to) x.connect(to); return x; };
@@ -35,21 +21,18 @@
     const m = S.master = G(0, lim);
     S.ui = G(1, m);
     S.duck = G(1, m);
-    S.ambLvl = G(1, S.duck); /* sensory: ambience level, after the scene low-pass */
+    S.ambLvl = G(1, S.duck);
     S.lp = F("lowpass", 18000, 0.5, S.ambLvl);
-    S.mus = G(0, S.duck); /* sensory: the score's bus */
-    /* a generated room impulse (1.7 s, stereo, darkening tail) feeds a quiet parallel reverb from the UI */
+    S.mus = G(0, S.duck);
     const verb = () => { try { const n = Math.round(1.4 * R), ir = c.createBuffer(2, n, R), dk = Math.exp(-3.4 / R), kk = Math.exp(-3 / R); for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let lp = 0, e = 1, k = 0.95; for (let i = 0; i < n; i++) { lp += (Math.random() * 2 - 1 - lp) * (0.25 + k * 0.7 / 0.95 * 0.95); e *= dk; k *= kk; d[i] = lp * e * (i < 90 ? i / 90 : 1); } } const cv = c.createConvolver(); cv.buffer = ir; S.verbIn = G(1, cv); cv.connect(G(0.7, S.duck)); S.ui.connect(G(dbToGain(-17), S.verbIn)); S.mus.connect(G(dbToGain(-10), S.verbIn)); } catch (e) {} };
-    setTimeout(verb, 40); /* built right after the first frame, not inside the first tap */
+    setTimeout(verb, 40);
     S.amb = G(1, S.lp);
-    /* buffers: mk(seconds, fn(t, rand, take)) with a noise source per take, so no two takes share a sample */
     const mk = (sec, fn, take, lo) => { const r = lo ? R / 2 : R, b = c.createBuffer(1, Math.max(1, Math.round(sec * r)), r), d = b.getChannelData(0); const st = { a: 0, b: 0, c: 0, take, R: r }; for (let i = 0; i < d.length; i++) d[i] = fn(i / r, Math.random() * 2 - 1, st); let pk = 0; for (const v of d) pk = Math.max(pk, Math.abs(v)); if (pk > 0) for (let i = 0; i < d.length; i++) d[i] /= pk; return b; };
-    /* one-pole band: two smoothed copies of the noise, subtracted */
     const band = (st, w, lo, hi) => { const Rr = st.R || R; st.a += (w - st.a) * (1 - Math.exp(-TAU * hi / Rr)); st.b += (w - st.b) * (1 - Math.exp(-TAU * lo / Rr)); return st.a - st.b; };
-    const sub = (st) => st.s || (st.s = { a: 0, b: 0, take: st.take, R: st.R }); /* a second filter state for a second layer */
-    const LO = new Set(["thunder", "purr", "hoof", "door", "babble", "laugh", "gull", "shimmer", "pour", "creak", "fanfare", "swell", "cheer", "unfurl", "whoosh"]); /* band-limited sounds are built at half the rate (half the cost); the browser resamples on play */
-    const FAN = [[293.7, 0, 0.55], [440, 0.45, 0.55], [587.3, 0.9, 0.5], [293.7, 1.4, 1.4], [440, 1.4, 1.4], [740, 1.4, 1.4]], GOOD = [1046.5, 1318.5, 1568], HOOF = [0, 0.17, 0.31, 0.52, 0.68], SHIM = [1568, 2093, 2637, 3136, 3951]; /* constants hoisted: no array per sample */
-    const at = (st, i) => (st.m || (st.m = []))[i] || (st.m[i] = { a: 0, b: 0, take: st.take, R: st.R }); /* an own filter state per layer or per hit */
+    const sub = (st) => st.s || (st.s = { a: 0, b: 0, take: st.take, R: st.R });
+    const LO = new Set(["thunder", "purr", "hoof", "door", "babble", "laugh", "gull", "shimmer", "pour", "creak", "fanfare", "swell", "cheer", "unfurl", "whoosh"]);
+    const FAN = [[293.7, 0, 0.55], [440, 0.45, 0.55], [587.3, 0.9, 0.5], [293.7, 1.4, 1.4], [440, 1.4, 1.4], [740, 1.4, 1.4]], GOOD = [1046.5, 1318.5, 1568], HOOF = [0, 0.17, 0.31, 0.52, 0.68], SHIM = [1568, 2093, 2637, 3136, 3951];
+    const at = (st, i) => (st.m || (st.m = []))[i] || (st.m[i] = { a: 0, b: 0, take: st.take, R: st.R });
     const env = (t, atk, dec) => (t < atk ? t / atk : Math.exp(-(t - atk) / dec));
     const wood = (f0, nf, dec, sub) => (t, w, st) => { const j = 1 + (st.take - 1.5) * 0.03; return 0.9 * band(st, w, nf * 0.6 * j, nf * 1.4 * j) * env(t, 0.001, dec) + 0.6 * Math.sin(TAU * f0 * j * t) * env(t, 0.002, dec * 1.3) + sub * Math.sin(TAU * 70 * t) * env(t, 0.002, dec * 0.8); };
     const rustle = (dur, lo, hi) => (t, w, st) => { const k = Math.min(1, t / dur), e = Math.sin(Math.PI * k); const j = 1 + (st.take - 1.5) * 0.05; return band(st, w, lo * j, (lo + (hi - lo) * k) * j) * e * e; };
@@ -98,13 +81,10 @@
       drip: [0.12, (t) => Math.sin(TAU * (1000 + (t < 0.05 ? 900 * t / 0.05 : 900)) * t) * env(t, 0.001, 0.02)],
       pour: [1.2, (t, w, st) => band(st, w, 1200, 3500) * (0.55 + 0.45 * Math.sin(TAU * 9 * t)) * Math.sin(Math.PI * Math.min(1, t / 1.2))],
     };
-    /* the takes are built a few at a time so building never holds a frame */
-    /* UI cues are built a few at a time right after the first tap */
     const jobs = Object.keys(defs).filter((n) => EVT_DB[n] == null).flatMap((n) => Array.from({ length: defs[n][2] || TAKES }, (_, k) => [n, k])); let i = 0, busy = false;
     const step = () => { busy = true; const t0 = performance.now(); while (i < jobs.length && performance.now() - t0 < 6) { const [n, k] = jobs[i++], [sec, fn] = defs[n]; const q0 = performance.now(); (S.takes[n] ||= []).push(mk(sec, fn, k, LO.has(n))); S.buildMs[n] = (S.buildMs[n] || 0) + performance.now() - q0; } if (i < jobs.length) setTimeout(step, 0); else busy = false; };
     S.ensure = (n) => { if (!defs[n] || S.queued[n]) return; S.queued[n] = 1; for (let k = 0; k < 2; k++) jobs.push([n, k]); if (!busy) setTimeout(step, 0); };
     setTimeout(step, 0);
-    /* the bed: brown-ish noise through a band at 400 Hz (the fire), a 110 Hz rumble and a murmur band */
     let p1 = 0, p2 = 0;
     const noise = c.createBuffer(1, Math.round(1.5 * R), R), nd = noise.getChannelData(0);
     for (let k = 0; k < nd.length; k++) { const w = Math.random() * 2 - 1; p1 += (w - p1) * 0.08; p2 += (p1 - p2) * 0.3; nd[k] = p2 * 3 + w * 0.08; }
@@ -117,13 +97,12 @@
     S.next = c.currentTime + 5; S.crack = c.currentTime + 0.5;
     S.timer = setInterval(tickAmb, 100);
     document.addEventListener("visibilitychange", () => { try { if (document.hidden) c.suspend(); else if (S.on) c.resume(); } catch (e) {} });
-    if (typeof navigator !== "undefined" && navigator.audioSession) { try { navigator.audioSession.type = "playback"; } catch (e) {} } /* iPhone: play with the ring switch on silent */
+    if (typeof navigator !== "undefined" && navigator.audioSession) { try { navigator.audioSession.type = "playback"; } catch (e) {} }
     return true;
   }
-  /* one take, gain +-1.5 dB, cutoff +-10%, through the UI bus (or the ambience bus), with the ambience */
   function play(name, opt) {
     const c = S.ctx, list = S.takes[name];
-    if (!list && S.ensure && EVT_DB[name] != null) S.ensure(name); /* first ask builds the cue; it sounds from the next ask */
+    if (!list && S.ensure && EVT_DB[name] != null) S.ensure(name);
     if (!S.on || !c || c.state !== "running" || document.hidden || !list) return false;
     const o = opt || {}, at = c.currentTime + Math.max(0, (o.delay || 0) / 1000);
     let k = (Math.random() * list.length) | 0; if (list.length > 1 && k === S.last[name]) k = (k + 1 + ((Math.random() * (list.length - 1)) | 0)) % list.length;
@@ -133,7 +112,6 @@
       const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = (o.amb ? 6000 : 9000) * rnd(0.9, 1.1);
       const g = c.createGain(); g.gain.value = dbToGain((o.db != null ? o.db : CUE_DB[name] != null ? CUE_DB[name] : EVT_DB[name] != null ? EVT_DB[name] : -24) + rnd(-1.5, 1.5)) * (o.gain || 1);
       b.connect(f); f.connect(g);
-      /* spatial: a StereoPanner from o.pan, or (UI cues) from the pointer's side of the screen via setPanSource */
       let out = g, pn = null;
       const pv = o.pan != null ? o.pan : (!o.amb && S.getPan ? S.getPan() : 0);
       if (S.spatial && pv && c.createStereoPanner) { pn = c.createStereoPanner(); pn.pan.value = Math.max(-0.85, Math.min(0.85, pv)); g.connect(pn); out = pn; }
@@ -141,7 +119,7 @@
       S.live++; b.onended = () => { S.live--; try { g.disconnect(); if (pn) pn.disconnect(); } catch (e) {} };
       b.start(at); S.plays++; S.lastCue[name] = performance.now();
       if (!o.amb) duck(at);
-      if (S.cueHook && !o.noHook) { try { S.cueHook(name, o); } catch (e) {} } /* sensory: companion layers */
+      if (S.cueHook && !o.noHook) { try { S.cueHook(name, o); } catch (e) {} }
       return true;
     } catch (e) { return false; }
   }
@@ -149,8 +127,6 @@
     const g = S.duck.gain, low = dbToGain(DUCK_DB);
     g.cancelScheduledValues(at); g.setTargetAtTime(low, at, 0.01); g.setTargetAtTime(1, at + DUCK_MS / 1000, 0.08);
   }
-  /* the ambience, every 100 ms: the bed follows the shared flicker; crackles are short noise transients at uneven gaps, each
-     one a pop in the page's light; every 8 to 20 s a glass or tankard clink somewhere in the room */
   function tickAmb() {
     const c = S.ctx; if (!S.on || !c || c.state !== "running") return;
     try {
@@ -160,7 +136,7 @@
         const t = Math.max(now, S.crack);
         play("crackle", { amb: true, db: rnd(-30, -24), delay: (t - now) * 1000 });
         if (S.onCrackle) { const ms = (t - now) * 1000; setTimeout(() => { try { S.onCrackle(); } catch (e) {} }, ms); }
-        S.crack = t + Math.exp(rnd(Math.log(0.12), Math.log(1.4))); /* log-spaced gaps */
+        S.crack = t + Math.exp(rnd(Math.log(0.12), Math.log(1.4)));
       }
       if (S.next < now + 0.1) { play("clink", { amb: true, db: rnd(-36, -31) }); S.next = Math.max(now, S.next) + rnd(8, 20); }
     } catch (e) {}
@@ -174,19 +150,16 @@
     try {
       if (on) c.resume();
       g.cancelScheduledValues(t); g.setValueAtTime(Math.max(0.0001, g.value), t);
-      /* exponential approach: up in about 0.6 s, down in about 0.3 s */
       g.setTargetAtTime(on ? S.vol * 0.6 : 0, t, on ? 0.2 : 0.1);
       if (!on) S.sus = setTimeout(() => { try { if (!S.on) c.suspend(); } catch (e) {} }, 700);
     } catch (e) {}
     return true;
   }
   function setVol(v) { S.vol = v; try { if (S.on && S.ctx) S.master.gain.setTargetAtTime(v * 0.6, S.ctx.currentTime, 0.05); } catch (e) {} }
-  /* a scene open muffles the room: the ambience low-pass sweeps to 2.5 kHz and the bed drops 6 dB */
   function setScene(on) {
     S.scene = on; const c = S.ctx; if (!c) return;
     try { S.lp.frequency.setTargetAtTime(on ? 2500 : 18000, c.currentTime, 0.32 / 3); S.amb.gain.setTargetAtTime(on ? 0.5 : 1, c.currentTime, 0.1); } catch (e) {}
   }
-  /* a gesture: resume a context the browser left suspended (a touch's pointerdown is no activation */
   function gesture() { const c = S.ctx; if (S.on && c && c.state !== "running") { try { c.resume(); } catch (e) {} } return running(); }
   const running = () => !!(S.ctx && S.ctx.state === "running");
   function measure(ms = 500) {
@@ -203,7 +176,6 @@
     CUE_DB, EVT_DB, LIMIT, DUCK_DB, DUCK_MS, TAKES,
     setOn, setVol, setScene, play, gesture, running, measure,
     setFlick: (f) => { S.flick = f; },
-    /* sensory-pass API: internals for js/sensory.js, state listeners, spatial switch and pointer pan source */
     internals: () => (S.ctx ? { ctx: S.ctx, ui: S.ui, amb: S.amb, ambLvl: S.ambLvl, mus: S.mus, duck: S.duck, master: S.master, limiter: S.limiter, verbIn: S.verbIn } : null),
     setCueHook: (f) => { S.cueHook = f; }, onState: (f) => { S.listeners.push(f); }, setSpatial: (v) => { S.spatial = !!v; }, setPanSource: (f) => { S.getPan = f; }, ensure: (n) => { if (S.ensure) S.ensure(n); }, hasTake: (n) => !!(S.takes[n] && S.takes[n].length), onCrackle: (f) => { S.onCrackle = f; },
     status: () => ({ buildMs: Object.fromEntries(Object.entries(S.buildMs).map(([k, v]) => [k, Math.round(v)])), on: S.on, state: S.ctx ? S.ctx.state : "none", live: S.live, plays: S.plays, takes: Object.fromEntries(Object.entries(S.takes).map(([k, v]) => [k, v.length])), master: S.master ? +S.master.gain.value.toFixed(3) : 0, ambience: S.amb ? +S.amb.gain.value.toFixed(3) : 0, lowpass: S.lp ? Math.round(S.lp.frequency.value) : 0, limiter: S.limiter ? { threshold: S.limiter.threshold.value, ratio: S.limiter.ratio.value } : null, volume: S.vol, lastCue: { ...S.lastCue } }),

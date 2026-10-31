@@ -1,39 +1,20 @@
-/* The Leeroy audience chamber and Dispatch (notes/VISION-PARTY-SHEET.md 5.4; 2026-10-30). On the Leeroy scene, starting a talk
-   spins the coin and turns the panel into a chamber: Leeroy's portrait slides down from the top left, the asker's portrait rises
-   from the bottom right (their race and class, ringed in their class colour, their display name on a brass plate), his answer
-   types out with a Skip, sources end it as numbered footnotes, and two or three follow-ups come from the library's own ranking
-   (vendor/rank-core.js over the library index). His moods: thinking while an ask waits on him (he is checking a live source),
-   sheepish when it failed or his answer corrects itself, delighted at a long question or an answer with two or more sources,
-   smug otherwise. Sound only when it is on; reduced motion: no slides, no typing.
-   Companion N6 (notes/companion/COMPANION-CONTRACT.md 6): the chamber is a conversation that remembers. Every turn (the asker's
-   question, Leeroy's answer) is kept on this device only, per board key (localStorage board-chat: { key: 16 hex of the key's
-   sha-256, turns: the last 20, 7 days }), cleared by Clear my name or a different key. The composer (#ch-form) sits at the
-   panel's bottom with suggested questions from the next step, its trails and the library's examples; it asks through the same
-   BoardBrain.ask as the ask box (one open ask at a time, six an hour), and an answer arrives pushed over the socket. "Bring this
-   to the party" picks up to three answered turns for one Dispatch card, posted only on the asker's tap (BoardBrain.dispatch,
-   POST /api/dispatch); a Worker without the route says the owner has not switched it on. Nothing else here ever posts.
-   The owner's painted art (img/chamber, img/marks; board/img/chamber/CREDITS.md, original, no game assets) is the whole look of it:
-   Leeroy's four moods, the five's race and class, a hooded visitor, the tavern alcove behind, the Dispatch seal. The images load
-   only when the chamber opens, and a mood swaps only once its image is decoded; a picture that does not load leaves its brass
-   name plate standing alone. Fake-DOM safe. */
 (() => {
 "use strict";
-const K = window.__boardKit, B = window.BoardBrain; if (!K || !B || !B.onAsk || window.__chamber) return; /* built once, however often it runs */
+const K = window.__boardKit, B = window.BoardBrain; if (!K || !B || !B.onAsk || window.__chamber) return;
 const { $, h, D, MEM } = K;
 const panel = $("#panel-librarian"), box = $("#ask-box"); if (!panel || !box) return;
 const CH = { on: false, typed: {}, seen: {}, typing: null, mood: "smug", letter: false, follow: {}, cur: null, turns: [], kh: null, picked: [], pending: null, autoOpen: false, ended: false, refocus: false, sig: null, chips: "" };
 const MAX = 280, MIN = 3, KEEP = 20, WEEK = 7 * 864e5, DISPATCH_MAX = 3, STORE = "board-chat";
 const playing = () => { try { return document.documentElement.classList.contains("play"); } catch (e) { return false; } };
-const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches) || playing(); /* Play mode shows the talk whole, like reduced motion */
-const snd = (n, o) => { try { const S = window.BoardSound; if (!playing() && S && (!S.status || S.status().on)) return S.play(n, o); } catch (e) {} return false; }; /* nothing is asked of the sound layer while it is off */
-const tell = (n, ...a) => { try { K.emit(n, ...a); } catch (e) {} }; /* the room (scenes/hades.js) listens */
-let hd = false; /* the bar room loads once, fire and forget: a failure leaves this chamber as it was */
+const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches) || playing();
+const snd = (n, o) => { try { const S = window.BoardSound; if (!playing() && S && (!S.status || S.status().on)) return S.play(n, o); } catch (e) {} return false; };
+const tell = (n, ...a) => { try { K.emit(n, ...a); } catch (e) {} };
+let hd = false;
 const bar = () => { if (hd) return; hd = true; try { const S = window.__scenes; if (S && S.load) Promise.resolve(S.load("hades")).catch(() => {}); } catch (e) {} };
 const buzz = (n) => { try { if (window.BoardHaptics && window.BoardHaptics.fire) window.BoardHaptics.fire(n); } catch (e) {} };
 const coarse = () => { try { return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); } catch (e) { return false; } };
 const liveOk = (st) => !!(st && st.base && st.key && !st.keyBad);
 const busyOk = (st) => !!st && (st.state === "sending" || st.state === "queued");
-/* the painted portraits that exist: Leeroy's moods and the five's race and class (anyone else is the hooded visitor) */
 const MOODS = ["smug", "delighted", "sheepish", "thinking"], ASK_ART = ["undead-mage", "undead-paladin", "undead-priest", "troll-warlock", "tauren-druid"];
 const ART = {};
 function artLoad(url) {
@@ -45,9 +26,7 @@ function artLoad(url) {
   return (ART[url] = (typeof im.decode === "function" ? im.decode() : loaded).then(() => true, () => false));
 }
 const moodUrl = (m) => `img/chamber/leeroy-${m}.webp`;
-/* what each of Leeroy's four faces looks like, for a screen reader (the brass plate under it already says whose face it is) */
 const MOOD_ALT = { smug: "Leeroy, a grinning paladin in battered plate, pleased with himself", delighted: "Leeroy laughing out loud", sheepish: "Leeroy wincing with a crooked smile, a little sheepish", thinking: "Leeroy with a gauntlet to his chin, thinking it over" };
-/* a painted portrait in its round frame; the picture is the only art, so one that does not load leaves the plate alone */
 function artImg(cls, url, alt) {
   const i = h("img", { class: cls, alt: alt || "", width: 240, height: 240, loading: "lazy", decoding: "async" });
   i.addEventListener("error", () => { const f = i.closest ? i.closest("figure") : null; if (f) f.classList.remove("has-art"); });
@@ -55,16 +34,13 @@ function artImg(cls, url, alt) {
   return i;
 }
 
-/* ---------- who is asking ---------- */
 function asker() {
   const st = B.status(), me = st && st.me, ms = D.party ? D.party.members : [];
   const m = (me && ms.find((x) => K.cleanName(x.name).toLowerCase() === K.cleanName(me.name).toLowerCase())) || MEM.member();
   return { m: m || null, name: me && me.name ? K.cleanName(me.name) : m ? m.name : "You" };
 }
 
-/* ---------- the talk, kept on this device per board key (never sent anywhere) ---------- */
 const file = { get: () => { try { return localStorage.getItem(STORE); } catch (e) { return null; } }, set: (v) => { try { if (v === null) localStorage.removeItem(STORE); else localStorage.setItem(STORE, v); } catch (e) {} } };
-/* 16 hex of the sha-256 of this board's key, "none" without one; where crypto.subtle is absent (the fake DOM) "fake" */
 function keyHash() {
   let k = null; try { k = B.hasKey && B.hasKey() ? localStorage.getItem("board-key") : null; } catch (e) { k = null; }
   if (!k) return Promise.resolve("none");
@@ -80,7 +56,6 @@ function save() {
   CH.turns = CH.turns.slice(-KEEP);
   file.set(CH.turns.length ? JSON.stringify({ key: CH.kh, turns: CH.turns }) : null);
 }
-/* the file for this key (a different key's turns are dropped), merged with anything this page already holds */
 function adopt(kh) {
   CH.kh = kh;
   let f = null; try { f = JSON.parse(file.get() || "null"); } catch (e) { f = null; }
@@ -89,18 +64,16 @@ function adopt(kh) {
   CH.turns.sort(byTime);
   if (f || CH.turns.length) save();
 }
-/* the one live ask (BoardBrain.askStatus().ask) joins the log: the same id updates its turn, a new id is a new turn */
 function merge(st) {
   const a = st && st.ask; if (!a || !Number.isInteger(a.id) || !fresh(a.at)) return;
   let t = CH.turns.find((x) => x.id === a.id), changed = false;
   if (!t) { t = turnOf({ id: a.id, text: a.text || "", at: a.at }); CH.turns.push(t); CH.turns.sort(byTime); changed = true; }
-  if (a.status === "queued") CH.seen[a.id] = true; /* seen waiting on this page: its answer types out when it lands */
+  if (a.status === "queued") CH.seen[a.id] = true;
   if (a.status === "answered" && a.answer && t.answer !== a.answer) { t.answer = a.answer; t.sources = (a.sources || []).map(String); t.answeredAt = a.answeredAt || null; changed = true; }
   if (a.dispatchedAt && !t.dispatched) { t.dispatched = String(a.dispatchedAt); changed = true; }
   if (changed) save();
 }
 
-/* ---------- the chamber's markup, built once ---------- */
 const start = h("button", { type: "button", class: "lib-tool ch-start", id: "ch-start", hidden: true, onclick: () => open(true) }, "Sit down with Leeroy");
 const head = box.querySelector(".ask-h"); box.insertBefore(start, head ? head.nextSibling : box.firstChild);
 const leeImg = artImg("ch-art ch-art-lee", null, MOOD_ALT.smug);
@@ -115,16 +88,13 @@ const leave = h("button", { type: "button", class: "lib-tool ch-leave", onclick:
 const sheet = h("section", { class: "ch-letter", id: "ch-letter", hidden: true, "aria-labelledby": "ch-letter-h" });
 const room = h("section", { class: "chamber", id: "chamber", hidden: true, "aria-label": "Talking with Leeroy", "data-state": "idle" },
   h("div", { class: "ch-stage" }, lee, log, you), skip, live, next, h("div", { class: "ch-end" }, bring, leave), sheet);
-/* no board link: the room never opens; a still of the bar with Leeroy seated stands above the disabled composer (nothing moves, nothing sounds) */
 const stillImg = h("img", { class: "ch-still-img", alt: MOOD_ALT.smug, width: 480, height: 720, loading: "lazy", decoding: "async" });
-const BAR = "img/chamber/leeroy-bar-smug.webp"; /* the bar painting when it exists, else the round head shot */
+const BAR = "img/chamber/leeroy-bar-smug.webp";
 artLoad(BAR).then((good) => { if (!good) stillImg.classList.add("is-head"); stillImg.setAttribute("src", good ? BAR : moodUrl("smug")); });
 const still = h("section", { class: "hades is-still", id: "ch-still", hidden: true, "aria-label": "Leeroy at the bar" },
   h("div", { class: "ch-still-stage" }, h("div", { class: "ch-still-bust" }, stillImg), h("div", { class: "ch-still-counter", "aria-hidden": "true" }), h("p", { class: "ch-still-line" })));
 panel.insertBefore(room, box); panel.insertBefore(still, box);
-/* fix round D1: what Leeroy is, first, for a friend with no board link (index.html's .act line waits while this shows) */
 panel.insertBefore(h("p", { class: "ch-intro", id: "ch-intro" }, "Leeroy is the group's Discord bot; he answers from this library. /ask in #wow-forever reaches him, and ", h("a", { href: "#library", text: "the Library" }), " here holds the same answers."), panel.firstChild);
-/* the composer: at the panel's bottom, sticky, outside the chamber so it also asks while the chamber is shut */
 const input = h("input", { type: "text", id: "ch-text", class: "ch-text", maxlength: MAX, enterkeyhint: "send", autocomplete: "off", spellcheck: "true", "aria-describedby": "ch-say ch-note" });
 const sendBtn = h("button", { type: "submit", class: "lib-tool ch-send", id: "ch-send", "aria-describedby": "ch-note" }, "Send");
 const shareBox = h("input", { type: "checkbox", id: "ch-share-box" });
@@ -137,12 +107,9 @@ const form = h("form", { class: "ch-form", id: "ch-form", novalidate: true, "ari
   h("label", { class: "sr-only", for: "ch-text", text: "Your question for Leeroy" }),
   h("div", { class: "ch-row" }, input, sendBtn, note),
   h("div", { class: "ch-row ch-row2" }, h("label", { class: "ch-share", id: "ch-share", for: "ch-share-box" }, shareBox, h("span", { text: " also share in Discord" })), sayEl));
-/* integrator pass 3: the composer lives in the ask box under "Ask Leeroy from here", in the page's flow: the sticky dock took a third
-   of a phone and 205 px of a laptop, covered the answer, the stats and the letter, and the heading above it was an inert bar */
 box.append(form);
 panel.classList.add("ch-chat");
 
-/* ---------- moods ---------- */
 const CORRECTED = /\b(correction|i was wrong|my mistake|scratch that|to correct (that|myself)|i had that wrong)\b/i;
 function moodFor(st) {
   const a = st.ask;
@@ -154,7 +121,6 @@ function moodFor(st) {
   }
   return "smug";
 }
-/* the painted face changes with the mood once its image is decoded; its alt text says which face it is */
 function setMood(m) {
   if (!(CH.mood === m && lee.dataset.mood === m)) { CH.mood = m; lee.dataset.mood = m; room.dataset.mood = m; }
   tell("chamber-mood", m);
@@ -162,7 +128,6 @@ function setMood(m) {
   artLoad(url).then((good) => { if (good && CH.mood === m) { leeImg.setAttribute("src", url); leeImg.setAttribute("alt", MOOD_ALT[m] || ""); } });
 }
 
-/* ---------- the talk ---------- */
 const bubble = (who, cls, ...kids) => h("div", { class: `ch-b ${cls}` }, h("p", { class: "ch-who", text: who }), ...kids);
 const line = (t) => h("p", { class: "ch-t", text: t });
 const LINES = {
@@ -193,19 +158,16 @@ function paint(st) {
   if (busyOk(st)) closeLetter();
   draw(st);
 }
-/* the bar room (hades): the newest question stands at the top of the text box with its answer under it, so the box never opens on the middle of
-   a question; only the box scrolls (scrollIntoView would also move the whole panel). Returns false when it is not the bar room. */
 function showLatest(kids) {
   try {
     if (!room.classList.contains("hades")) return false;
     let q = null; for (let i = kids.length - 1; i >= 0; i--) { if (kids[i].classList && kids[i].classList.contains("ch-q")) { q = kids[i]; break; } }
     if (!q) return false;
     log.scrollTop = Math.max(0, q.getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop - 6);
-    tell("chamber-latest"); /* the room keeps it there while the answer grows, until the asker scrolls the box themselves */
+    tell("chamber-latest");
     return true;
   } catch (e) { return false; }
 }
-/* the log: every turn oldest first, the live ask's wait or failure on its own turn, a refusal as the last word */
 function draw(st) {
   const a = st.ask, liveId = a && Number.isInteger(a.id) ? a.id : null;
   const sig = [CH.turns.map((t) => `${t.id}.${t.answer ? 1 : 0}.${t.dispatched ? 1 : 0}`).join(","), st.state, liveId, a ? a.status : "", CH.pending || "", K.JR ? K.JR() : "", CH.on].join("|");
@@ -226,12 +188,11 @@ function draw(st) {
   if (!kids.length) kids.push(bubble("Leeroy", "ch-a", line(K.JR && K.JR() === "guided" ? LINES.guided : LINES.idle)));
   log.replaceChildren(...kids);
   next.hidden = true;
-  /* the newest word comes into view only when the talk grew (not on a redraw for a dispatch mark, which would hide the letter) */
   const grew = kids.length > (CH.kids || 0); CH.kids = kids.length;
   if (CH.on && grew && kids.length > 1 && !showLatest(kids)) { try { kids[kids.length - 1].scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" }); } catch (e) {} }
   if (fresh0) {
     live.textContent = `Leeroy answered: ${fresh0[0].answer}`;
-    if (!CH.on) { bringPaint(); return; } /* it types out when the chamber opens */
+    if (!CH.on) { bringPaint(); return; }
     if (!reduced()) { typeOut(fresh0[0], fresh0[1]); bringPaint(); return; }
     CH.typed[fresh0[0].id] = true;
   } else live.textContent = busyOk(st) ? WAIT : "";
@@ -240,17 +201,15 @@ function draw(st) {
 function answerEl(t) {
   const paras = String(t.answer).split(/\n+/).map((x) => x.trim()).filter(Boolean);
   const notes = t.sources.length ? h("ol", { class: "ch-notes", "aria-label": "Sources" }, t.sources.map((src, i) => h("li", { class: "ch-note" }, h("span", { class: "ch-seal", "aria-hidden": "true", text: String(i + 1) }), h("span", { text: src })))) : null;
-  /* the whole answer for a screen reader from the start; shown to it only while the visible words are still typing */
   const full = h("div", { class: "sr-only ch-full", hidden: true }, paras.map((p) => h("p", { text: p })));
   return bubble("Leeroy", "ch-a ch-done", full, h("div", { class: "ch-paras" }, paras.map((p) => h("p", { class: "ch-t", "data-full": p, text: p }))), notes, t.dispatched ? h("p", { class: "ch-sent", text: "Sent to the party" }) : null);
 }
-/* the answer types out, a few characters a frame; Skip, a new state or reduced motion shows it whole */
 function typeOut(t, el) {
   const ps = [...el.querySelectorAll(".ch-t")], notes = el.querySelector(".ch-notes"), paras = el.querySelector(".ch-paras");
   if (!ps.length) { CH.typed[t.id] = true; settle(); return; }
   for (const p of ps) p.textContent = "";
   if (notes) notes.hidden = true;
-  if (paras) paras.setAttribute("aria-hidden", "true"); /* #ch-live already said it whole */
+  if (paras) paras.setAttribute("aria-hidden", "true");
   const fullEl = el.querySelector(".ch-full"); if (fullEl) fullEl.hidden = false;
   skip.hidden = false; tell("chamber-typing", true);
   let i = 0, n = 0; const T = { turn: t, el, stop: false };
@@ -274,7 +233,6 @@ function finishTyping() {
   const fullEl = T.el.querySelector(".ch-full"); if (fullEl) fullEl.hidden = true;
   tell("chamber-typing", false); skip.hidden = true; CH.typed[T.turn.id] = true; settle();
 }
-/* once nothing is typing: Bring this to the party, and follow-ups for the last answer */
 function settle() {
   bringPaint();
   const ans = CH.turns.filter((t) => t.answer);
@@ -287,7 +245,6 @@ function bringPaint() {
   bring.setAttribute("aria-disabled", String(!open0.length));
 }
 
-/* ---------- the composer ---------- */
 const ERR = { offline: "The board could not reach Leeroy just now. Your question is still in the box.", busy: "The brain is busy right now. Your question is still in the box.", refused: `That could not be sent. After links and odd characters are removed it needs ${MIN} to ${MAX} characters.` };
 const noteText = () => { const n = $("#ask-note"); return (n && n.textContent.replace(/\s+/g, " ").trim()) || "Asking from here needs your own board link; it is on the Sign-ups card in Discord."; };
 const minutes = (s) => { const m = Math.max(1, Math.ceil((Number(s) || 3600) / 60)); return `${m} minute${m === 1 ? "" : "s"}`; };
@@ -308,14 +265,13 @@ function compose(st) {
   sendBtn.setAttribute("aria-disabled", String(!live0 || busy)); form.classList.toggle("ch-off", !live0);
   const ph = !live0 ? "Ask in Discord or the Library" : busy ? "Leeroy is on your last question" : "Ask Leeroy about Forever";
   if (input.getAttribute("placeholder") !== ph) input.setAttribute("placeholder", ph);
-  const shareRow = form.querySelector(".ch-row2"); if (shareRow) shareRow.hidden = !live0 && !sayEl.textContent; /* no tick to offer without a key */
+  const shareRow = form.querySelector(".ch-row2"); if (shareRow) shareRow.hidden = !live0 && !sayEl.textContent;
   sendBtn.textContent = st.state === "sending" ? "Sending" : "Send";
   form.setAttribute("aria-busy", String(busy));
   const n = typeof st.left === "number" ? st.left : null;
   left.hidden = !(live0 && n !== null && n < 3); left.textContent = n === null ? "" : `${n} left this hour`;
   chipsPaint(live0 && !busy);
   if (!live0 && sayEl.textContent) say("");
-  /* back to the box once the answer is in, where a focus opens no on-screen keyboard over the answer (fine pointers only) */
   if (CH.refocus && !input.disabled) { CH.refocus = false; if (!coarse()) { try { input.focus({ preventScroll: true }); } catch (e) {} } }
 }
 async function ask(e) {
@@ -333,13 +289,9 @@ async function ask(e) {
   return r;
 }
 form.addEventListener("submit", ask);
-/* a press on Send, a chip or the share tick keeps the focus in the box (and a phone's keyboard up): on phones a blur brings the shell's
-   bar back (board.css hides it while a field has focus), which moves the composer between press and release, and the tap would land
-   on the form instead of the button (measured: Send 52 px higher at mouseup, no submit) */
 const keepFocus = (el) => el.addEventListener("mousedown", (e) => { if (e && e.preventDefault && document.activeElement === input) e.preventDefault(); });
 for (const el of [sendBtn, sug, form.querySelector(".ch-share")]) if (el) keepFocus(el);
 
-/* ---------- suggested questions: the next step, a trail from it, a library example ---------- */
 const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const plain = (s) => String(s || "").replace(/\s+/g, " ").trim();
 function engineOut() {
@@ -349,8 +301,6 @@ function engineOut() {
   } catch (e) {}
   return null;
 }
-/* integrator pass 3: each step as a question a friend would ask (the old template nested the imperative title: "What do I do about
-   say if you are in for launch night?") */
 const STEP_Q = { rsvp: () => "How do I say I'm in for launch night?", meet: () => "Where could the party meet on launch night?", "say-pack": () => "What is a pack, and do I need one?",
   "make-character": () => "How do I make my character before names close?", "launch-state": () => "What happens on launch night?",
   decide: (t) => `What helps me ${lowerFirst(t).replace(/\byour\b/g, "my")}?`, poll: (t) => `What is the vote on ${t.replace(/^Vote:\s*/i, "")} about?`,
@@ -389,7 +339,6 @@ function chipsPaint(on) {
   sug.replaceChildren(...list.map((q) => h("button", { type: "button", class: "lib-tool ch-chip", onclick: () => { input.value = q; try { input.dispatchEvent(new Event("input")); } catch (e) {} try { input.focus(); } catch (e) {} snd("chip"); } }, q)));
 }
 
-/* ---------- follow-ups from the library's own ranking ---------- */
 async function follow(t) {
   const key = `${t.id}`;
   if (!CH.follow[key]) CH.follow[key] = (async () => {
@@ -411,7 +360,6 @@ async function follow(t) {
   next.hidden = false;
 }
 
-/* ---------- Dispatch: pick up to three answered turns, preview the card, post only on the asker's tap ---------- */
 const DSAY = {
   ok: "Sent. Leeroy posts it in #wow-forever as one card. He delivers it within a minute; the rest of this talk stays here.",
   off: "The owner has not switched Dispatch on yet, so nothing was posted. The answer stays here.",
@@ -448,10 +396,9 @@ function letter(user) {
     h("div", { class: "ch-letter-row" }, LT.post, no),
     h("p", { class: "ch-letter-say", id: "ch-letter-say", role: "status", "aria-live": "polite" }));
   drawCard();
-  sheet.hidden = false; CH.letter = true; panel.classList.add("ch-lettering"); snd("unfurl"); /* the composer waits while the letter is open */
+  sheet.hidden = false; CH.letter = true; panel.classList.add("ch-lettering"); snd("unfurl");
   if (user) { try { LT.post.focus(); } catch (e) {} }
 }
-/* a fourth tick is refused; the card redraws from the ticked turns, oldest first */
 function tick(id, cb) {
   if (cb.checked && !CH.picked.includes(id)) {
     if (CH.picked.length >= DISPATCH_MAX) { cb.checked = false; lsay(DSAY.three); return; }
@@ -491,7 +438,6 @@ async function send() {
   return r;
 }
 
-/* ---------- open and close ---------- */
 function open(user) {
   if (CH.on) return;
   CH.on = true; CH.sig = null;
@@ -502,7 +448,7 @@ function open(user) {
   you.querySelector(".ch-silbox").replaceChildren(artImg("ch-art ch-art-you", `img/chamber/${ASK_ART.includes(art) ? art : "visitor"}.webp`, ""));
   you.querySelector(".ch-plate-you").textContent = who.name;
   you.style.setProperty("--cc", who.m ? K.classVar(who.m.class_key) : "var(--c-none)");
-  log.style.setProperty("--cc", who.m ? K.classVar(who.m.class_key) : "var(--c-none)"); /* the asker's turns edged in the same colour */
+  log.style.setProperty("--cc", who.m ? K.classVar(who.m.class_key) : "var(--c-none)");
   room.hidden = false; panel.classList.add("chamber-on"); start.hidden = true;
   room.classList.remove("ch-in"); if (!reduced()) { void room.offsetWidth; room.classList.add("ch-in"); }
   if (window.BoardSeals && window.BoardSeals.spin && window.BoardSeals.status && window.BoardSeals.status().key === "librarian") { try { window.BoardSeals.spin({ land: "front" }); } catch (e) {} }
@@ -520,13 +466,10 @@ function close(user) {
   if (user) { snd("close"); try { start.focus(); } catch (e) {} }
   K.emit("chamber", false);
 }
-/* a talk with history picks up where it was when the Leeroy scene opens (until End the talk on this page) */
 function resume() {
   const st = B.askStatus();
   if (!CH.on && !CH.ended && CH.turns.length && liveOk(st) && K.SC && K.SC.open === "librarian") open(false); else paint(st);
 }
-/* a question sent from the old ask box opens the chamber on its own too */
-/* Skip also on a tap of the stage and on Space or Enter while the room holds the focus */
 const stage = room.querySelector(".ch-stage");
 if (stage) stage.addEventListener("click", () => { if (CH.typing) finishTyping(); });
 room.setAttribute("tabindex", "-1");

@@ -1,10 +1,6 @@
-/* Signed distance fields for the ribbon lettering (polish round lane A, A2). One file, two uses: a module Worker that ribbon-bake.js starts
-   (it loads the board's Alegreya Sans SC 700 itself and draws on an OffscreenCanvas), and an import for ribbon-bake.js's main-thread fallback
-   (one label per idle slice). The field is 4 texels per css px, 6 css px either side of the glyph edge, positive inside. No imports. */
 export const S = 4, SPREAD = 6;
 const font = (px) => `700 ${px}px "Alegreya Sans SC", "Alegreya Sans", Georgia, serif`;
 
-/* Felzenszwalb and Huttenlocher's exact squared distance transform, rows then columns, in place */
 function edt(grid, w, h) {
   const n = Math.max(w, h), f = new Float64Array(n), d = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
   const pass = (len) => {
@@ -16,8 +12,6 @@ function edt(grid, w, h) {
   for (let y = 0; y < h; y++) { for (let x = 0; x < w; x++) f[x] = grid[y * w + x]; pass(w); for (let x = 0; x < w; x++) grid[y * w + x] = Math.sqrt(d[x]); }
 }
 
-/* job: text, widthCss (the ribbon), capCss (the cap height asked), pad (css px clear of each selvedge). mk(w, h) makes a canvas.
-   At most two lines, broken at the space that balances them; the font shrinks only when the longer line is wider than the room. */
 export function sdfLabel(job, mk) {
   const t0 = performance.now(), text = String(job.text || "");
   let c = mk(8, 8), x = c.getContext("2d");

@@ -1,6 +1,3 @@
-// The Atlas engine (contract 3). createAtlas(opts) wires geo, view, layers, gestures, routes, cards, tokens and foley around
-// one Canvas 2D element inside the host the hook made. The draw loop runs only while something moves or changed; a hidden
-// page or a closed scene stops it. All maths sits in geo.js, view.js and routes.js; this file only decides what to draw.
 import * as geo from "./geo.js?v=eb6dd67b63";
 import { createView, createTiles, defaultLoader, createFrames, backingDpr } from "./view.js?v=7879e18ed8";
 import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=1949211efd";
@@ -16,13 +13,12 @@ const ease = (t) => 1 - Math.pow(1 - t, 3);
 
 export async function createAtlas(opts) {
   const K = opts.kit || {}, h = K.h, host = opts.host, base = opts.base || "", doc = host.ownerDocument;
-  const emit = (type, detail) => { try { if (opts.on) opts.on(type, detail); } catch (e) { /* the hook's handler never breaks the engine */ } };
+  const emit = (type, detail) => { try { if (opts.on) opts.on(type, detail); } catch (e) {  } };
   const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
-  const hap = (n) => { try { const H = opts.haptics; if (H) H.fire(H.PAT && H.PAT[n] ? n : n === "select" ? "tab" : n); } catch (e) { /* a missing buzz never matters */ } };
+  const hap = (n) => { try { const H = opts.haptics; if (H) H.fire(H.PAT && H.PAT[n] ? n : n === "select" ? "tab" : n); } catch (e) {  } };
   const motion = (k) => (typeof K.motionMs === "function" ? K.motionMs(k) : reduced() ? 0 : 520);
   const coarse = () => { try { return !!matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } };
   const dataUrl = (n) => base + (opts.dataDir || "data/atlas/") + n;
-  // the first open used to parse five files in one task (110 ms on a phone): each file now parses in a frame of its own
   const tick = () => new Promise((res) => { let d = 0; const go = () => { if (!d) { d = 1; res(); } }; if (typeof requestAnimationFrame === "function") requestAnimationFrame(go); setTimeout(go, 48); });
   let parsing = Promise.resolve();
   const parse = (txt) => (parsing = parsing.then(tick).then(() => JSON.parse(txt)));
@@ -33,7 +29,6 @@ export async function createAtlas(opts) {
       return typeof r.text === "function" ? await parse(await r.text()) : await r.json();
     } catch (e) { if (required) throw e; return null; }
   };
-  // the panels' stylesheet is the engine's own (board/css/atlas.css keeps only what the page needs before it): linked once, awaited with the data
   let cssReady = null;
   if (doc.head && !doc.querySelector("#atlas-panels-css")) {
     const link = doc.createElement("link"); link.setAttribute("rel", "stylesheet"); link.setAttribute("id", "atlas-panels-css"); link.setAttribute("href", `${base}atlas/panels.css`);
@@ -52,19 +47,16 @@ export async function createAtlas(opts) {
   const party = (opts.data && opts.data.party) || { members: [] }, signups = (opts.data && opts.data.signups) || {};
   const graph = buildGraph(routes);
 
-  // ---------- DOM: the canvas, the controls, the ornament ----------
   const prior = { tabindex: host.getAttribute("tabindex"), role: host.getAttribute("role"), label: host.getAttribute("aria-label") };
   host.classList.add("atlas-root");
   host.setAttribute("tabindex", "0"); host.setAttribute("role", "group");
   host.setAttribute("aria-label", "The Atlas. Plus and minus zoom, arrow keys move, zero shows the whole world, Tab walks the places in view, Escape closes.");
   const canvas = doc.createElement("canvas"); canvas.setAttribute("class", "atlas-canvas"); canvas.setAttribute("aria-hidden", "true");
   const ctx = canvas.getContext ? canvas.getContext("2d") : null;
-  // sheet-cell names (icons-, ornament-, travellers-) to the cropped files node A shipped (img/atlas/CREDITS.md: C-, D-, E-)
   const artFile = (cell) => cell.replace(/^icons-/, "C-").replace(/^ornament-corner-flourish-/, "D-corner-").replace(/^ornament-/, "D-").replace(/^travellers-zeppelin-frame-/, "E-zeppelin-");
   const art = (cell) => `${base}img/atlas/${artFile(cell)}.webp`;
   const orn = (cls, cell) => h("img", { class: `atlas-orn ${cls}`, src: art(cell), alt: "", "aria-hidden": "true", decoding: "async" });
   const shapesLine = world.shapes && world.shapes.source === "zmp" ? "shapes drawn from the game's own zone list" : "zone plates; coasts to come";
-  // the frame holds the title only; the shapes line sits on its own label under it, where the scrollwork cannot clip it
   const cartouche = h("div", { class: "atlas-cartouche" }, h("div", { class: "atlas-cart" }, h("div", { class: "atlas-title" }, h("strong", { text: "The Atlas" }))), opts.shapesNote === false ? null : h("span", { class: "atlas-shapes", text: shapesLine }));
   const scaleBar = h("div", { class: "atlas-scale", "aria-hidden": "true" }, orn("orn-scale", "ornament-scale-bar"), h("i", { class: "atlas-bar" }), h("span", { class: "atlas-scale-t", text: "" }));
   const mkBtn = (cls, label, text, f) => { const b = h("button", { type: "button", class: `atlas-b ${cls}`, "aria-label": label, title: label, text }); b.addEventListener("click", f); return b; };
@@ -74,13 +66,11 @@ export async function createAtlas(opts) {
   const chrome = [canvas, you, orn("orn-compass", "ornament-compass-rose"), orn("orn-nw", "ornament-corner-flourish-nw"), orn("orn-ne", "ornament-corner-flourish-ne"), orn("orn-sw", "ornament-corner-flourish-sw"), orn("orn-se", "ornament-corner-flourish-se"), cartouche, scaleBar, ctl, toast];
   host.append(...chrome);
 
-  // ---------- state ----------
   const view = createView({ w: 600, h: 400, dpr: 1 });
   const frames = createFrames();
   const tilesLog = [];
   const tiles = createTiles({ dir: opts.tilesDir || `${base}atlas/tiles/`, loadImage: opts.loadImage || defaultLoader(), log: tilesLog, onTile: () => invalidate() });
   tiles.setIndex(tidx);
-  // smoothed coasts and zone edges, built from the zone grid's rings (fix round 2); without them the rings draw as they are
   let shapes = null;
   try { shapes = buildShapes(world); } catch (e) { emit("error", { what: "shapes", message: String((e && e.message) || e) }); }
   const layers = createLayers({ world, places, routes, shapes });
@@ -88,7 +78,6 @@ export async function createAtlas(opts) {
   const placeById = new Map(places.places.map((p) => [p.id, p]));
   const zoneById = new Map(world.zones.map((z) => [z.id, z]));
 
-  // ---------- colours and sprites ----------
   const cssVar = (n) => { try { return (getComputedStyle(doc.documentElement).getPropertyValue(n) || "").trim(); } catch (e) { return ""; } };
   const refreshColors = () => {
     const pick = (n, f) => cssVar(n) || f;
@@ -101,7 +90,6 @@ export async function createAtlas(opts) {
     im.onload = () => { S.sprites[key] = im; invalidate(); };
     im.onerror = () => { if (fallback) loadSprite(key, fallback); };
     im.src = url;
-    // the fake DOM never fires onload: its Image fills naturalWidth after a tick
     if (im.naturalWidth === 0 && opts.pollSprites) { let n = 0; const t = setInterval(() => { if (im.naturalWidth) { clearInterval(t); S.sprites[key] = im; invalidate(); } else if (++n > 20) clearInterval(t); }, 25); }
   };
   const loadArt = () => {
@@ -112,7 +100,6 @@ export async function createAtlas(opts) {
     for (const m of party.members || []) loadSprite(`crest-${m.class_key}`, `${base}img/crests/${m.class_key}.png`);
   };
 
-  // ---------- sizing ----------
   const dprNow = (w, hh) => backingDpr(window.devicePixelRatio, w, hh); // the screen's, up to 3 (polish E3: phones were capped at 2, 0.67 texel)
   const resize = () => {
     const r = host.getBoundingClientRect ? host.getBoundingClientRect() : { width: 0, height: 0 };
@@ -123,7 +110,6 @@ export async function createAtlas(opts) {
     invalidate();
   };
 
-  // ---------- the loop ----------
   function invalidate() {
     S.dirty = true;
     if (S.destroyed || S.paused || S.raf || doc.hidden) return;
@@ -151,12 +137,9 @@ export async function createAtlas(opts) {
     const k = view.dpr;
     ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.fillStyle = S.colors.sea || FALLBACK.sea; ctx.fillRect(0, 0, view.w, view.h);
-    // one bad layer never ends the loop: the frame keeps its tiles and the next change draws again
     try { S.tilesLoaded = tiles.draw(ctx, view); if (view.z > 2) paintGrain(); zepAt(); layers.draw(ctx, view, S); placeYou(); } catch (e) { if (!S.drawErr) { S.drawErr = true; emit("error", { what: "draw", message: String((e && e.message) || e) }); } }
     S.drawn = (S.drawn || 0) + 1;
   }
-  // above zoom 2 the painted tiles are drawn larger than their pixels (level 3 is the last): a paper grain at device resolution, a
-  // multiply layer that moves with the map, hides the soft edge; the vector layers on top stay sharp at every zoom (polish E3)
   function paintGrain() {
     const g = S.sprites.grain; if (!g || typeof ctx.createPattern !== "function") return;
     const k = view.dpr, s = view.scale(), pw = g.naturalWidth || g.width || 1024, ph = g.naturalHeight || g.height || pw;
@@ -166,7 +149,6 @@ export async function createAtlas(opts) {
     ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = clamp(view.z - 2, 0, 1) * 0.35; ctx.fillStyle = S.grainPat; ctx.fillRect(-ox, -oy, canvas.width, canvas.height);
     ctx.restore();
   }
-  // the you-are-here ring sits on the asker's own pin; its pulse is css (compositor only), static in Play and under reduced motion
   function placeYou() {
     const m = S.mine && S.party.find((x) => x.class_key === S.mine); if (!m) { if (!you.hidden) you.hidden = true; return; }
     const [sx, sy] = view.toScreen(m.pos[0], m.pos[1]), x = sx + (m.dx || 0), y = sy - 18.6;
@@ -174,17 +156,14 @@ export async function createAtlas(opts) {
     you.hidden = out; if (!out) you.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
   }
   const narrow = () => { try { return !!matchMedia("(max-width: 699px)").matches; } catch (e) { return false; } };
-  // panels in host pixels; null when hidden or not laid out (the fake DOM)
   const relRect = (el) => {
     if (!el || el.hidden || !el.getBoundingClientRect || !host.getBoundingClientRect) return null;
     const hr = host.getBoundingClientRect(), r = el.getBoundingClientRect();
     if (!hr || !r || !r.width || !r.height || !hr.width) return null;
     return { l: r.left - hr.left, t: r.top - hr.top, r: r.right - hr.left, b: r.bottom - hr.top, w: r.width, h: r.height };
   };
-  // on phones the card is a bottom sheet: the focus sits in the middle of the map left above it
   const sheetOy = () => { if (!narrow() || !S.card) return 0; const c = relRect(cards.card); return Math.round(Math.min(c ? c.h : view.h * 0.46, view.h * 0.6) / 2); };
   const oyT = () => (S.oyAnim ? S.oyAnim.to : view.oy);
-  // the free parts of the box: under the cartouche, beside or above the plan panel, beside or above the card
   function freeBoxes() {
     const base = { l: 0, t: 0, r: 0, b: 0 }, ca = relRect(cartouche);
     if (ca && ca.b < view.h * 0.3) base.t = Math.max(0, ca.b + 4);
@@ -194,7 +173,6 @@ export async function createAtlas(opts) {
       const next = [];
       for (const b of out) {
         if (narrow()) { next.push({ ...b, b: Math.max(b.b, view.h - p.t + 8) }); continue; }
-        // a side panel: either the strip beside it or the band above or below it stays free
         if (p.l < view.w * 0.25) next.push({ ...b, l: Math.max(b.l, p.r + 8) }); else next.push({ ...b, r: Math.max(b.r, view.w - p.l + 8) });
         if (p.t < view.h * 0.25) next.push({ ...b, t: Math.max(b.t, p.b + 8) }); else next.push({ ...b, b: Math.max(b.b, view.h - p.t + 8) });
       }
@@ -203,7 +181,6 @@ export async function createAtlas(opts) {
     cut(cards.plan); cut(cards.card); if (narrow()) cut(ctl);
     return out;
   }
-  // the best fit of a rectangle over the free parts (the one that shows it largest), m px kept clear inside each part
   function fitFree(r, pad, zcap, m = 0) {
     let best = null;
     for (const I of freeBoxes()) { const f = view.fitIn(r, { l: I.l + m, t: I.t + m, r: I.r + m, b: I.b + m }, pad, zcap, oyT()); if (!best || f.z > best.z) best = f; }
@@ -234,7 +211,7 @@ export async function createAtlas(opts) {
     for (const c of NICE) if (c / ypp <= 140) n = c;
     const bar = scaleBar.querySelector(".atlas-bar"), t = scaleBar.querySelector(".atlas-scale-t");
     if (bar) bar.style.width = `${Math.round(n / ypp)}px`;
-    if (t) { const txt = `${n.toLocaleString("en-US")} yards`; /* fix E4: 1,000 yards, not 1 thousand */ if (t.textContent !== txt) t.textContent = txt; }
+    if (t) { const txt = `${n.toLocaleString("en-US")} yards`;  if (t.textContent !== txt) t.textContent = txt; }
   }
   let lastFoley = 0;
   function updateFoley() {
@@ -251,7 +228,6 @@ export async function createAtlas(opts) {
     return clamp(1 - (best * 1.496) / 1500, 0, 1);
   }
 
-  // ---------- view moves ----------
   const target = (cx, cy, z) => { const s = { cx: view.cx, cy: view.cy, z: view.z }; view.set(cx, cy, z); const to = { cx: view.cx, cy: view.cy, z: view.z }; view.set(s.cx, s.cy, s.z); return to; };
   function moveTo(cx, cy, z, o) {
     const to = target(cx, cy, z), dur = motion("move");
@@ -275,9 +251,7 @@ export async function createAtlas(opts) {
     ids.add(m.place || openMeet()); return [...ids];
   };
   const jr = () => { try { return (K.JR || K.journey || (() => "curious"))(); } catch (e) { return "curious"; } };
-  // the asker: a stored name whose class has a day-one start (polish E4)
   const me = () => { try { const m = typeof opts.member === "function" ? opts.member() : null; return m && startsOf(m.class_key) ? m : null; } catch (e) { return null; } };
-  // where the party might meet, as place ids: the agreed place, else the sheet's choice for this asker, else the sheet's options
   function meetIds(m) {
     const byName = new Map(places.places.map((p) => [String(p.name).toLowerCase(), p.id])), id = (n) => byName.get(String(n || "").toLowerCase());
     const agreed = meetOf(routes).place; if (agreed && placeById.has(agreed)) return [agreed];
@@ -289,13 +263,9 @@ export async function createAtlas(opts) {
   function fitIds(ids, o) {
     const r = rectOf(ids); if (!r) return null;
     if (r[2] - r[0] < 400) { r[0] -= 600; r[2] += 600; } if (r[3] - r[1] < 400) { r[1] -= 400; r[3] += 400; }
-    // a margin in pixels, so the pins above a start and the names under it stay inside whatever the zoom (fix round 2)
-    const f = fitFree(r, narrow() ? 0 : 0.08, 4, narrow() ? 34 : 44); /* fix E4: 8 percent each side at any aspect */
+    const f = fitFree(r, narrow() ? 0 : 0.08, 4, narrow() ? 34 : 44);
     return moveTo(f.cx, f.cy, f.z, o);
   }
-  // places of a plan grouped by continent: the meeting point's continent is home, the rest are away. The day-one view fits all
-  // of them (fix round 2: every start and the meeting point with a margin); a cluster the view leaves after a pan or a zoom
-  // gets a pointer at the edge that flies back to it.
   const contOf = (id) => { const p = placeById.get(id); return p ? p.map_id : null; };
   function clustersOf(ids, meet) {
     const g = new Map();
@@ -319,19 +289,14 @@ export async function createAtlas(opts) {
     const pl = S.plan; if (!pl) return null;
     const ids = [...S.planPlaces], many = pl.who.length > 1;
     setAway(many ? ids : [], pl.meet, pl.who);
-    // the party's plan frames where everyone starts and where they meet; one friend's plan frames that friend's whole route
-    // integration 1, item 4 (2026-10-30): one friend's plan frames the whole route and also every start (the day-one starts and the meeting
-    // point), so no start pin sits outside the view at any size (1920x1080 #atlas.plan.orgrimmar~mage framed the route and left Red Cloud Mesa at x=-85)
     return fitIds(many ? [...S.planEnds] : [...new Set([...ids, ...dayOneIds()])], o);
   }
-  // the edge pointers to the away clusters: one button each, on the line from the free centre toward the cluster
   function placeAway() {
     S.awayEls = S.awayEls || new Map();
     const want = new Set((S.plan && S.away) || []);
     for (const [c, b] of S.awayEls) if (!want.has(c)) { if (b.parentNode) b.parentNode.removeChild(b); S.awayEls.delete(c); }
     if (!want.size) return;
     const vr = view.rect(), m = 56, panels = [relRect(cards.plan), relRect(cards.card), relRect(ctl)].filter(Boolean);
-    // the pointer sits on the box's own edge toward the cluster; where a panel covers that spot, on the free part's edge
     const edge = (I, sx, sy) => {
       const x0 = I.l + m + 40, x1 = view.w - I.r - m - 40, y0 = I.t + m, y1 = view.h - I.b - m, fx = (I.l + view.w - I.r) / 2, fy = (I.t + view.h - I.b) / 2, dx = sx - fx, dy = sy - fy;
       if (x1 <= x0 || y1 <= y0) return null;
@@ -354,7 +319,6 @@ export async function createAtlas(opts) {
       if (under(q)) q = edge(freeBoxes()[0], sp[0], sp[1]);
       if (!r || seen || !q || (narrow() && S.card)) { b.hidden = true; continue; }
       b.hidden = false;
-      // never over the centre of the map (fix round 2): a pointer that would cover it slides along the edge toward its cluster
       const bw = b.offsetWidth || 170, bh = b.offsetHeight || 44, kx = bw / 2 + 24, ky = bh / 2 + 24;
       if (Math.abs(q[0] - view.w / 2) < kx && Math.abs(q[1] - view.h / 2) < ky) q = [q[0], view.h / 2 + (Math.sin(q[2]) < 0 ? -ky : ky), q[2]];
       b.style.left = `${Math.round(q[0])}px`; b.style.top = `${Math.round(q[1])}px`;
@@ -365,7 +329,6 @@ export async function createAtlas(opts) {
     const [x, y] = view.toScreen(p.a[0], p.a[1]), m = 40;
     if (x < m || y < m || x > view.w - m || y > view.h - m) moveTo(p.a[0], p.a[1], view.z, { animate: false });
   };
-  // after a pick opens a card: a place the card now covers moves to the free middle
   function reveal(p, o) {
     const s = view.scale(), x = view.w / 2 + (p.a[0] - view.cx) * s, y = view.h / 2 - oyT() + (p.a[1] - view.cy) * s, m = 28;
     let hid = y < m || y > view.h - m || x < m || x > view.w - m;
@@ -377,7 +340,6 @@ export async function createAtlas(opts) {
     return true;
   }
 
-  // ---------- cards and acts ----------
   const act = {
     close: () => closeCard(), closePlan: () => atlas.clearPlan(),
     openPlace: (id) => atlas.open(id, { card: true, animate: true }),
@@ -386,10 +348,10 @@ export async function createAtlas(opts) {
     folded: () => { placeAway(); invalidate(); },
     send: (meet) => copy(`/map plan:${meet}`, `Copied /map plan:${meet}. Paste it in Discord and the card is posted there when you tap Post to channel.`),
   };
-  const cards = createCards({ host, h, places, world, links, routes, party, foldFirst: () => !S.unfold && (narrow() || view.w < 1000 || !!S.foldNext), /* integrator pass 3: the Atlas's first view opens the plan folded at every width (it covered the east third) */ /* phones, tablets and maps under 1000 px: the plan opens as a title bar docked at the foot */ journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
+  const cards = createCards({ host, h, places, world, links, routes, party, foldFirst: () => !S.unfold && (narrow() || view.w < 1000 || !!S.foldNext),   journey: () => (K.JR || K.journey || (() => "curious"))(), copy: (t) => copy(t), act });
   const toastSay = (txt) => { toast.textContent = txt; clearTimeout(S.toastT); S.toastT = setTimeout(() => { toast.textContent = ""; }, 2400); };
   function copy(text, say) {
-    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) { /* the toast still shows */ }
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).catch(() => {}); } catch (e) {  }
     toastSay(say || `Copied ${text}`); emit("copy", { text });
   }
   function closeCard() {
@@ -404,7 +366,6 @@ export async function createAtlas(opts) {
     S.card = id; syncSheet(); placeAway(); invalidate(); emit("card", { id });
   }
 
-  // ---------- plan ----------
   function partyMarkers(placeIdFor) {
     const out = [], byPlace = {};
     for (const m of party.members || []) {
@@ -447,7 +408,6 @@ export async function createAtlas(opts) {
   }
   function zepAt() { if (!S.zep && !S.playing) S.zep = dayZep(); }
 
-  // ---------- the public surface ----------
   const lay = { set: (n, on) => { if (LAYERS.includes(n)) { layers.on[n] = !!on; invalidate(); } }, get: (n) => !!layers.on[n], list: () => LAYERS.slice() };
   const atlas = {
     ready: null, layers: lay, view,
@@ -497,7 +457,7 @@ export async function createAtlas(opts) {
     },
     openToken(token, o = {}) {
       const p = T.parse(token); if (!p) return false;
-      if (p.kind === "home" && me()) { /* polish E4: your own day-one view, your plan open under Guided, your pin ringed */
+      if (p.kind === "home" && me()) {
         const m = me(), guided = jr() === "guided";
         closeCard(); if (o.animate) hap("select");
         S.unfold = guided; S.foldNext = !guided;
@@ -507,13 +467,10 @@ export async function createAtlas(opts) {
         S.base = { token: "atlas", v: to, plan: true }; return true;
       }
       if (p.kind === "home") { S.mine = null; closeCard(); if (o.animate) hap("select"); const first = !S.plan; S.foldNext = first; atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); S.foldNext = false; const to = fitPlan(o) || fitIds(dayOneIds(), o);
-        /* fix E4 (2026-10-30): the first view fits every start and the meeting point (integrator pass 3 framed the meeting point's continent
-           alone, which left Tirisfal off screen at 3440) */
         S.base = { token: "atlas", v: to, plan: true }; return true; }
       if (p.kind === "place") return placeById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "zone") return zoneById.has(p.id) ? atlas.open(p.id, o) : false;
       if (p.kind === "plan") {
-        /* fix E4: a plan link keeps its hash; a place with no plan says so in the dock; a friend's plan opens with its steps showing */
         S.unfold = !!p.who && !narrow();
         const shown = placeById.has(p.meet) && atlas.showPlan(atlas.plan(p.who ? { meet: p.meet, who: p.who } : { meet: p.meet }), { animate: !!o.animate });
         S.unfold = false;
@@ -539,7 +496,7 @@ export async function createAtlas(opts) {
       G.destroy(); foley.destroy(); tiles.clear(); cards.destroy(); S.away = []; S.plan = null; placeAway();
       if (canvas.removeEventListener) canvas.removeEventListener("contextrestored", onRestore);
       window.removeEventListener("resize", onResize); if (doc.removeEventListener) doc.removeEventListener("visibilitychange", onVis);
-      if (ro) { try { ro.disconnect(); } catch (e) { /* ignore */ } }
+      if (ro) { try { ro.disconnect(); } catch (e) {  } }
       for (const e of chrome) if (e.parentNode) e.parentNode.removeChild(e);
       host.classList.remove("atlas-root");
       for (const [k, v] of [["tabindex", prior.tabindex], ["role", prior.role], ["aria-label", prior.label]]) { if (v == null) host.removeAttribute(k); else host.setAttribute(k, v); }
@@ -552,7 +509,6 @@ export async function createAtlas(opts) {
     return b.token.startsWith("atlas.v.") || S.card === b.token.slice(6);
   };
 
-  // ---------- controls, input, lifecycle ----------
   ctl.append(
     mkBtn("a-in", "Zoom in", "+", () => atlas.zoomBy(1)),
     mkBtn("a-out", "Zoom out", "−", () => atlas.zoomBy(-1)),
@@ -582,8 +538,6 @@ export async function createAtlas(opts) {
   });
   const onResize = () => resize();
   const onVis = () => { if (!doc.hidden) invalidate(); else frames.idle(); };
-  // a 2D canvas whose context the browser dropped and gave back comes back blank: draw it again (likely cause of the one
-  // flat-sea first open the verifier saw; unconfirmed)
   const onRestore = () => { S.dirty = true; invalidate(); };
   if (canvas.addEventListener) canvas.addEventListener("contextrestored", onRestore);
   window.addEventListener("resize", onResize); if (doc.addEventListener) doc.addEventListener("visibilitychange", onVis);

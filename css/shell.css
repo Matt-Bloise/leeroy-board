@@ -1,4 +1,3 @@
-/* The phone shell */
 :root { --dye-timeline: #2b2a6e; --dye-five: #1f3f9a; --dye-roads: #b5501c; --dye-racials: #8e1b24; --dye-legacy: #9a4a1e; --dye-buffs: #5c2a6a; --dye-ledger: #6e1e38; --dye-signups: #1f5a35; --dye-librarian: #3a4a66; --dye-library: #b48a24; --dye-decide: #5a6a2a; --dye-tonight: #1f6a6a; }
 html.phone-shell { --pl-h: 56px; }
 html.phone-shell .sheet { grid-template-rows: auto minmax(0, 1fr) auto; }

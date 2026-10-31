@@ -1,4 +1,3 @@
-/* The Atlas hook (board/ATLAS-NOTES.md) */
 (() => {
   "use strict";
   const ATLAS_DEFAULT = false;

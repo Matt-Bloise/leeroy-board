@@ -1,6 +1,3 @@
-/* Seals: the scene's coin, large on wide screens (hangs from the sheet head, tabs and title sit to its right), compact on phones.
-   A flat shadow and rim light sit outside the 3D stack; the stack is a real thickness of brass edges between two faces, so the
-   spin shows an edge. Nothing here uses blend modes or filters inside the 3D stack, which is what keeps frames from flickering. */
 :root { --seal: clamp(116px, min(11vw, 17vh), 236px); }
 @media (min-width: 600px) and (max-width: 999px) { :root { --seal: 92px; } }
 @media (max-width: 599px) { :root { --seal: 40px; } }
@@ -27,7 +24,6 @@
 .seal-say.on { opacity: 1; transform: none; }
 @keyframes seal-sweep { 0%, 62% { transform: translateX(0) skewX(-18deg); } 100% { transform: translateX(520%) skewX(-18deg); } }
 
-/* the coin replaces the small emblem and the side medal; the head makes room for it */
 html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !important; }
 @media (min-width: 600px) { html.has-seal .sheet-head { padding-left: calc(var(--seal) + 40px); } html.has-seal .sheet-top { min-height: 52px; } }
 @media (max-width: 599px) {
@@ -41,7 +37,6 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 @media (prefers-reduced-motion: reduce) { .seal-sweep::before { animation: none; } .seal-btn, .seal-say { transition: none; } }
 @media (forced-colors: active) { .seal-btn:focus-visible { outline-color: Highlight; } }
 
-/* Next steps: three wax seals; the chosen one is pressed into the page, the others stand proud */
 .tn-seals { display: grid; gap: var(--g2, 12px); padding: var(--g2, 12px) var(--g3, 18px); background: var(--parchment); color: var(--ink); border-radius: 8px; box-shadow: 0 6px 18px var(--shadow); }
 .tn-seals-q { margin: 0; font-size: var(--step-1); font-weight: 700; }
 .wx-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--g3, 18px); }
@@ -66,7 +61,6 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 #panel-tonight:has(.tn-seals) .jr-pick { display: none; }
 @media (prefers-reduced-motion: reduce) { .wx-wax, .wx-blob { transition: none; } }
 
-/* The five: class coins in lanes. A coin turns its card; drag it to try another formation. */
 .five-form { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: center; width: 100%; margin: 0 auto 10px; }
 .fl-row { flex: none; display: grid; grid-template-columns: auto auto auto; gap: clamp(10px, 2.4vw, 40px); align-items: stretch; justify-content: center; }
 .fl { display: grid; gap: 6px; justify-items: center; padding: 4px 10px 8px; min-width: calc(var(--fc) + 20px); border-radius: 12px; background: rgba(40, 24, 10, 0.1); box-shadow: inset 0 2px 6px rgba(40, 24, 10, 0.35), 0 1px 0 rgba(255, 245, 220, 0.5); transition: background 200ms var(--ease-oak), box-shadow 200ms var(--ease-oak); }
@@ -90,11 +84,8 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .fc:focus-visible { outline: 3px solid var(--wax); outline-offset: 4px; }
 .fv-sum { margin: 0; font-size: var(--step-0); max-width: 34ch; }
 
-/* phones: the name stays a pill on its coin (under it the lanes ran 64 px taller), wrapped inside its seat; the lanes pay for the
-   arrangement line's second sentence */
 @media (max-width: 899px) { .five-form { margin-bottom: 4px; } .fl-row { gap: 6px; } .fl { gap: 2px; padding: 4px 6px 6px; min-width: 0; } .fc, .fl { --fc: 52px; } .fc-nm { top: auto; bottom: 2%; } .fl-tray { padding-bottom: 0; } .fv-sum { line-height: 1.35; } }
 @media (prefers-reduced-motion: reduce) { .fc-in { transition: none; } .fc { transition: none; } }
-/* Race skills: active racials glow amber, passive ones teal */
 .seal[data-kind="active"] { filter: drop-shadow(var(--sx) var(--sy) calc(var(--seal) * 0.1) rgba(0, 0, 0, 0.62)) drop-shadow(0 0 calc(var(--seal) * 0.22) rgba(255, 168, 60, 0.5)); }
 .seal[data-kind="passive"] { filter: drop-shadow(var(--sx) var(--sy) calc(var(--seal) * 0.1) rgba(0, 0, 0, 0.62)) drop-shadow(0 0 calc(var(--seal) * 0.22) rgba(90, 200, 190, 0.45)); }
 .seal-chip { justify-self: center; padding: 1px 8px; border-radius: 999px; border: 1px solid #e4b0a6; color: #ffd8cf; font-size: calc(var(--seal) * 0.056); line-height: 1.3; }
@@ -103,7 +94,6 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .seal[data-kind="active"] .seal-back::before { border-style: dashed; border-color: #ffc46b; }
 .seal[data-kind="passive"] .seal-back { background: radial-gradient(circle at var(--lx) var(--ly), #3f6f6a, #17302e 66%, #0c1a19); }
 
-/* Sign-ups: the answers are mugs on a bar; the chosen one is raised */
 .su-row { gap: clamp(10px, 2vw, 28px); padding: 6px 12px 12px; align-items: flex-end; justify-content: center; background: linear-gradient(180deg, transparent calc(100% - 14px), rgba(110, 70, 30, 0.55) calc(100% - 14px), rgba(70, 42, 16, 0.75)); border-radius: 4px; }
 .su-st { flex-direction: column; gap: 2px; min-height: 0; padding: 4px 8px 6px; background: none; border-color: transparent; box-shadow: none; text-align: center; }
 .su-st .su-pint { width: 72px; height: 72px; transition: transform 460ms var(--ease-spring), filter 300ms var(--ease-oak); filter: drop-shadow(0 6px 5px rgba(40, 20, 8, 0.5)); transform-origin: 50% 90%; }
@@ -117,12 +107,10 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 @keyframes su-lift { 0% { transform: translateY(0); } 40% { transform: translateY(-26px) rotate(-12deg); } 100% { transform: translateY(-16px) rotate(-7deg) scale(1.06); } }
 @media (prefers-reduced-motion: reduce) { .su-st .su-pint { transition: none; } .su-st.lift .su-pint, .su-st.clinked .su-pint { animation: none; } .sh-seal.bump .sh-wax { animation: none; } }
 
-/* The crest or coin already says whose it is: the repeated thin left-edge bars go from the spell rows and the name pills */
 .sp-tt { border-left: 1px solid var(--grain); }
 .tn-name, .tn-pick .tn-name, .deep-who .lib-tool { border-left: 1px solid var(--ink-soft); }
 .wi-read { margin: 6px auto 0; max-width: 34em; text-align: center; font-size: 1rem; line-height: 1.4; color: var(--ink); min-height: 4.2em; }
 
-/* Sign-ups: the counts as wax seals on a shelf; a seal that changed settles with a short stamp */
 .su-shelf { --shw: clamp(52px, 6vw, 92px); position: relative; padding: 8px 0 0; margin: 4px auto 14px; max-width: 46rem; }
 .sh-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: clamp(6px, 2vw, 28px); justify-items: center; position: relative; z-index: 1; }
 .sh-seal { display: grid; justify-items: center; gap: 2px; min-height: 44px; padding: 2px 4px 6px; background: none; border: 0; color: var(--ink); font: inherit; cursor: pointer; }
@@ -141,13 +129,11 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 @keyframes sh-stamp { 0% { transform: scale(1); } 28% { transform: scale(0.84); } 62% { transform: scale(1.06); } 100% { transform: scale(1); } }
 @media (hover: hover) { .sh-seal:hover .sh-wax { transform: translateY(-3px); } .sh-seal[aria-pressed="true"]:hover .sh-wax { transform: scale(0.94); } }
 .sh-plank { position: absolute; left: 0; right: 0; top: calc(8px + var(--shw) * 0.94); height: 10px; z-index: 0; border-radius: 3px; background: linear-gradient(180deg, rgba(110, 70, 30, 0.55), rgba(70, 42, 16, 0.75)); opacity: 0; transition: opacity 240ms var(--ease-oak); }
-/* fix round A13: the plank and the mugs' bar show once the art has decoded (seals.js ready()), never as a bare strip */
 .su-shelf.ready .sh-plank { opacity: 1; }
 .su-row:not(.ready) { background: none; }
 .sh-who { min-height: 1.5em; margin: 4px 0 0; text-align: center; font-size: 1rem; color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { .sh-wax, .sh-blob, .sh-plank { transition: none; } }
 
-/* Race skills: chips narrow the spin; the row the coin shows is ringed, rows outside the chip step back */
 .rc-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 .rc-chip { display: inline-flex; align-items: center; column-gap: 4px; padding-inline: 9px; }
 .rc-chip .chip-n { padding-left: 4px; border-left: 1px solid currentColor; font-weight: 700; }
@@ -157,20 +143,13 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .rrow.rr-off { opacity: 0.38; }
 @media (prefers-reduced-motion: reduce) { .rrow { transition: none; } }
 
-/* Leeroy: the marker that follows the seal along his answer chart */
 .spark-cur { fill: none; stroke: var(--wax); stroke-width: 2.5; transition: transform var(--t-move) var(--ease-oak); transform: translate(-20px, -20px); }
 .spark-text.on { font-weight: 700; fill: var(--brass-hi); }
 @media (prefers-reduced-motion: reduce) { .spark-cur { transition: none; } }
 @media (min-width: 600px) { html.has-seal .sheet-head { min-height: calc(var(--seal) + 22px); } }
 
-/* the scene seal is a DIV; the small wax-seal bullets (span.seal.art from seal() in board.js) share the class name and must stay inline */
 span.seal { position: relative; left: auto; top: auto; z-index: auto; perspective: none; display: inline-block; }
 
-/* WebKit two-face fix (2026-10-30): Playwright WebKit 27.2 paints a face's back in a bare two-div test even with backface-visibility: hidden
-   and -webkit-backface-visibility on both faces, so the turned-away face showed mirrored (header seal, class coins, class cards). The face
-   that is turned away is also hidden outright, the swap timed to the half-way point of the turn (--t-flip / 2, or the coin's own half), so the
-   turn itself is unchanged and every engine shows the front at rest and the right face after a flip. opacity, not visibility, so the face
-   that is about to show stays focusable the moment the flip button is pressed. */
 .seal:not([data-side="back"]) .seal-back, .seal[data-side="back"] .seal-front { visibility: hidden; }
 .card .front, .card .back { transition: opacity 0s linear calc(var(--t-flip) / 2); }
 .card:not(.flipped) .back, .card.flipped .front { opacity: 0; pointer-events: none; }

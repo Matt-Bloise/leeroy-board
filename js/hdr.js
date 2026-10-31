@@ -1,8 +1,3 @@
-/* HDR and OLED care (2026-10-29, board/qa/2026-10-29-hdr.md). Classes and two tokens only; every look lives in css/hdr.css.
-   ?hdr=0 puts html.hdr-off on the page (CSS highlights and the room's wide buffer step aside). ?oled=1 / ?oled=0 forces the
-   OLED care on or off and is remembered in this browser; with no choice it is on only when the display reports HDR and a dark scheme.
-   Without ?hdr=0 it puts html.hdr-img on the page, which the HDR image highlights in css/hdr.css need; __hdr.state() says whether
-   they apply and which img/hdr files loaded (2026-10-30, board/qa/2026-10-30-hdr.md). */
 (function hdr() {
   const root = document.documentElement; if (!root) return;
   const mq = (q) => { try { return !!(window.matchMedia && matchMedia(q).matches); } catch (e) { return false; } };
@@ -11,7 +6,7 @@
   const get = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
   const put = (v) => { try { localStorage.setItem(KEY, v); } catch (e) {} };
   const off = param("hdr") === "0";
-  if (off) root.classList.add("hdr-off"); else root.classList.add("hdr-img"); /* the HDR images opt in here, so ?hdr=0 never fetches one (2026-10-30) */
+  if (off) root.classList.add("hdr-off"); else root.classList.add("hdr-img");
   let forced = param("oled"); if (forced !== null) put(forced); else forced = get();
   let on = false, n = 0, idle = Date.now(), veil = null;
   const auto = () => mq("(dynamic-range: high)") && mq("(prefers-color-scheme: dark)");
@@ -23,7 +18,6 @@
   };
   apply();
   for (const q of ["(dynamic-range: high)", "(prefers-color-scheme: dark)"]) { try { const m = matchMedia(q); if (m.addEventListener) m.addEventListener("change", apply); } catch (e) {} }
-  /* the drift: a few pixels every 60 s, out of step with v14's 45 s drift; the page only moves when nobody is looking */
   setInterval(() => {
     if (!on || document.hidden) return; n += 1;
     root.style.setProperty("--x-oled-x", Math.round(Math.cos(n * 2.1) * 5) + "px"); root.style.setProperty("--x-oled-y", Math.round(Math.sin(n * 1.7) * 5) + "px");
@@ -32,8 +26,6 @@
   for (const ev of ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"]) addEventListener(ev, wake, { passive: true, capture: true });
   setInterval(() => { if (on && !document.hidden && Date.now() - idle > 60000) root.classList.add("oled-dim"); }, 5000);
   window.__hdr = {
-    /* images: the HDR image highlights of css/hdr.css apply (2026-10-30); limit: this engine knows dynamic-range-limit, so the page
-       stays at SDR white outside them; loaded: the img/hdr files this page has fetched */
     state: () => ({ off, oled: on, forced, gamutP3: mq("(color-gamut: p3)"), rangeHigh: mq("(dynamic-range: high)"), dark: mq("(prefers-color-scheme: dark)"), drift: n,
       images: !off && root.classList.contains("hdr-img") && mq("(dynamic-range: high)"), limit: (() => { try { return CSS.supports("dynamic-range-limit", "no-limit"); } catch (e) { return false; } })(),
       loaded: (() => { try { return performance.getEntriesByType("resource").map((r) => r.name).filter((u) => /img\/hdr\//.test(u)).map((u) => u.replace(/^.*img\/hdr\//, "")); } catch (e) { return []; } })() }),

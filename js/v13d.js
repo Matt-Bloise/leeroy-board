@@ -12,18 +12,14 @@ const rm = (el) => { if (el && el.parentNode) el.parentNode.removeChild(el); };
 const kid = (el, cls) => [...el.children].find((c) => c.classList.contains(cls)) || null;
 const FIRST = !get("board-seen") && !get("board-glowed");
 const V = { picked: JOURNEYS.includes(get("board-journey")), zoom: null, map: null, dial: null, glow: false };
-/* V13e retest-3: the page names its own icon (a */
 if (!document.querySelector('link[rel="icon"]')) { const ic = document.createElement("link"); ic.rel = "icon"; ic.type = "image/svg+xml"; ic.href = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#2a1a10"/><path d="M8 9h13v16a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2z" fill="#c9952e"/><path d="M21 12h3a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-3" fill="none" stroke="#c9952e" stroke-width="2.4"/><path d="M7 9a3 3 0 0 1 3-3h1a3 3 0 0 1 5 0h1a3 3 0 0 1 3 3z" fill="#f3e6c8"/></svg>'); (document.head || document.documentElement).appendChild(ic); }
 
-// ---------------- 1. Journeys ----------------
 const journey = () => (JOURNEYS.includes(root.dataset.journey) ? root.dataset.journey : "guided");
-root.dataset.journey = JOURNEYS.includes(get("board-journey")) ? get("board-journey") : "guided"; /* D1: nothing stored is Guided; V.picked stays */
+root.dataset.journey = JOURNEYS.includes(get("board-journey")) ? get("board-journey") : "guided";
 function markJourney() {
   const j = journey();
-  /* fix round A3: before any pick nothing is pressed */
   document.querySelectorAll(".journey [data-journey], #more-menu [data-journey]").forEach((b) => b.setAttribute("aria-pressed", String(V.picked && b.dataset.journey === j)));
 }
-/* one switch, effects at once, nothing lost: */
 function setJourney(j, how) {
   if (!JOURNEYS.includes(j)) return false;
   const was = journey(); V.picked = true; put("board-journey", j);
@@ -38,11 +34,10 @@ function setJourney(j, how) {
   if (how !== "mirror" && how !== "quiet") { sfx("latch"); if (window.BoardBrain) window.BoardBrain.setJourney(j); }
   return true;
 }
-/* D6: Everything shows the deep facts and keeps */
 function applyDepth() {
   if (journey() !== "everything") for (const d of document.querySelectorAll("#sheet-body .jr-all")) rm(d);
 }
-K.on("tonight", () => core()); /* a name picked anywhere redraws every scene's core */
+K.on("tonight", () => core());
 function startJourneySwitch() {
   const nav = $("#journey");
   const phone = window.matchMedia("(max-width: 699px)");
@@ -51,7 +46,6 @@ function startJourneySwitch() {
   const sceneNav = h("nav", { class: "journey journey-scene", "aria-label": nav.getAttribute("aria-label") || "How do you want to explore?" }, JOURNEYS.map((j) => h("button", { type: "button", "data-journey": j, "aria-pressed": String(V.picked && j === journey()) }, j.charAt(0).toUpperCase() + j.slice(1)))); sceneNav.setAttribute("id", "journey-scene");
   const top = $(".sheet-top"), peek = $("#scene-peek"); if (top) top.insertBefore(sceneNav, peek && peek.parentNode === top ? peek : null);
   const plates = [nav, sceneNav];
-  /* on a phone the head has room for one plate: */
   const onClick = (pl) => (e) => { const b = e.target.closest("[data-journey]"); if (!b) return; if (phone.matches && !pl.classList.contains("open") && (b.getAttribute("aria-pressed") === "true" || !V.picked)) { pl.classList.add("open"); b.setAttribute("aria-expanded", "true"); return; } pl.classList.remove("open"); pl.querySelectorAll("[aria-expanded]").forEach((x) => x.removeAttribute("aria-expanded")); setJourney(b.dataset.journey); };
   for (const pl of plates) pl.addEventListener("click", onClick(pl));
   document.addEventListener("pointerdown", (e) => { for (const pl of plates) if (pl.classList.contains("open") && !pl.contains(e.target)) pl.classList.remove("open"); }, true);
@@ -59,7 +53,6 @@ function startJourneySwitch() {
   K.sceneHooks.push((open) => { if (!open) { for (const pl of plates) pl.classList.remove("open"); } });
 }
 
-/* Next steps' date line: */
 function nextDeadline() {
   const now = Date.now() / 1000, out = [];
   for (const e of (D.timeline && D.timeline.events) || []) {
@@ -70,7 +63,6 @@ function nextDeadline() {
   for (const q of (D.party && D.party.polls) || []) if (q.closes_epoch && q.closes_epoch > now) out.push({ t: q.closes_epoch, text: `The ${q.title.toLowerCase()} poll closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` });
   return out.sort((a, b) => a.t - b.t)[0] || null;
 }
-/* D3: under Guided every scene opens on a core: one */
 const Q = { timeline: "When is launch, and what comes after?", five: "Who plays what?", roads: "Where do I wake up, and where do we meet?", racials: "What does my race give me?", legacy: "What are bonus points, and when do they start?", buffs: "What do I give, and what do I get?", ledger: "What is still open, and which one is mine?", signups: "Am I in for launch night?", librarian: "How do I ask Leeroy?", library: "What should I read first?", decide: "What do I still decide, and by when?" };
 const cut = (t, n = 38) => { const w = String(t).split(/\s+/); return w.length > n ? `${w.slice(0, n).join(" ").replace(/[,;:]$/, "")}.` : String(t); };
 const few = (l, n = 3) => (l.length > n ? `${l.slice(0, n).join(", ")} and ${l.length - n} more` : K.andList(l));
@@ -124,13 +116,11 @@ const CORE = {
     return { a: x ? `${x.title}: ${x.state_text}. ${x.by && x.by.text ? x.by.text : ""}` : me ? "Nothing of yours is open." : "Pick your name to see your own choices.", go: ["Open that decision", () => unfold("decide")] };
   },
 };
-/* Everything: the data's own provenance, one line per scene */
 const deepLine = (key) => { const C = D.client; return ["racials", "legacy", "buffs"].includes(key) && C ? `Numbers here are from the game client's tables, build ${C.build}.` : key === "timeline" ? `Launch: ${(evOf("launch") || {}).epoch}, raids: ${(evOf("raids") || {}).epoch} (seconds since 1970, UTC).` : `Built from the board's own records on ${String((D.party || {}).generated || "").slice(0, 10)}.`; };
 function fold(panel) {
-  /* a deep link (#five.sheet-x), a sheet or a started */
   const deepLink = location.hash.indexOf(`#${panel.id.slice(6)}.`) === 0 || panel.dataset.view === "sheet" || panel.classList.contains("chamber-on");
   const on = journey() === "guided" && panel.id !== "panel-tonight" && !!kid(panel, "jr-core") && !panel.classList.contains("jr-open") && !deepLink;
-  for (const c of panel.children) if (!c.classList.contains("jr-core")) c.classList.toggle("jr-fold", on && c.id !== "ask-box" && !c.querySelector("#ask-box")); /* the composer is the librarian's action: it stays */
+  for (const c of panel.children) if (!c.classList.contains("jr-core")) c.classList.toggle("jr-fold", on && c.id !== "ask-box" && !c.querySelector("#ask-box"));
 }
 function core(only) {
   if (!D.party || !D.timeline) return;
@@ -146,7 +136,6 @@ function core(only) {
       panel.insertBefore(fresh, box || panel.firstChild); rm(box);
       fold(panel);
     }
-    /* D6: Everything's two additions; the folds stay as drawn */
     rm(kid(panel, "jr-deep")); rm(kid(panel, "jr-all"));
     if (all) {
       panel.append(h("p", { class: "jr-deep", "data-j": "e", text: deepLine(key) }));
@@ -154,16 +143,14 @@ function core(only) {
     }
   }
 }
-/* D2: the library's own "Show the rest" (board.js */
 function libRest() {
   const panel = $("#panel-library"), facts = panel && panel.querySelector(".lib-page dl.facts"); if (!panel || !facts || journey() === "everything" || !panel.querySelector("[data-depth]") || panel.querySelector(".jr-rest")) return;
   facts.parentNode.insertBefore(h("button", { type: "button", class: "lib-tool jr-rest", "aria-pressed": "false", onclick: (e) => { const on = panel.classList.toggle("lib-rest"); e.currentTarget.setAttribute("aria-pressed", String(on)); e.currentTarget.textContent = on ? "Show less" : "Show the rest"; } }, "Show the rest"), facts);
 }
-// ---------------- 2. Landing on the thing (interaction 1) ----------------
 let landT = 0;
 function lit(panel, el) {
   if (!panel || !el) return el;
-  if (panel.classList.contains("jr-open") === false && kid(panel, "jr-core")) openPanel(panel); /* a landing inside a folded Guided panel opens it */
+  if (panel.classList.contains("jr-open") === false && kid(panel, "jr-core")) openPanel(panel);
   panel.querySelectorAll(".landed").forEach((x) => x.classList.remove("landed"));
   panel.classList.add("landing"); el.classList.add("landed");
   try { el.scrollIntoView({ block: "center", inline: "center", behavior: "auto" }); } catch (e) {}
@@ -188,7 +175,6 @@ function landOn(key, sub) {
 }
 K.lander = landOn;
 K.on("tap", () => sfx("pin"));
-/* where View Transitions are missing: */
 K.on("fly", (from, to) => {
   if (reduced() || !from || !to || typeof to.animate !== "function") return;
   const a = from.getBoundingClientRect(), b = to.getBoundingClientRect(); if (!a.width || !b.width) return;
@@ -201,10 +187,8 @@ K.on("fly", (from, to) => {
 });
 K.on("closed", () => { document.querySelectorAll(".panel.landing").forEach((p) => p.classList.remove("landing")); document.querySelectorAll(".landed").forEach((x) => x.classList.remove("landed")); });
 
-// ---------------- 3. Roads: two zoom levels (interaction 4) ----------------
 const FULL = [0, 0, 600, 400];
 function zoneBox(z) { const w = innerWidth >= 700 && innerHeight >= 501 ? 340 : 250, hh = w / 1.5, y = Math.max(0, Math.min(400 - hh, z.y - hh / 2 + 10)); let x = Math.max(0, Math.min(600 - w, z.x - w / 2 + 20));
-  /* V13e retest-5: a box edge never cuts the */
   if (y < 256 && y + hh > 236) { if (x > 326 && x < 424) x = 326; else if (x + w > 336 && x + w < 434) x = Math.min(600 - w, 434 - w); }
   return [x, y, w, hh]; }
 function animateBox(svg, to) {
@@ -250,12 +234,11 @@ function zoomOut(focus) {
 }
 K.on("map", (M) => {
   V.map = M;
-  M.svg.setAttribute("role", "group"); /* V13e axe: the zones inside are buttons, so the */
+  M.svg.setAttribute("role", "group");
   const zoneOf = (g) => M.roads.find((r) => r.key === g.dataset.road).zone;
   for (const g of M.groups) {
     const zone = zoneOf(g);
     g.setAttribute("tabindex", "0"); g.setAttribute("role", "button"); g.setAttribute("data-zone", MEM.slug(zone)); g.setAttribute("aria-label", `Zoom to ${zone}`);
-    /* V13e retest-4: the zone's own land and name take */
     const zz = M.zones[zone]; if (zz && !(g.querySelector(".zone-hit") || (M.lines || []).some((l) => l.dataset.road === g.dataset.road && l.querySelector(".zone-hit")))) { const lx = zz.label ? zz.label[0] : zz.x, ly = zz.label ? zz.label[1] : zz.y; const x0 = Math.min(zz.x, lx) - 70, y0 = Math.min(zz.y, ly) - 60, x1 = Math.max(zz.x, lx) + 70, y1 = Math.max(zz.y, ly) + 22; const hh = (M.lines && M.lines.find((l) => l.dataset.road === g.dataset.road)) || g; hh.insertBefore(K.s("rect", { class: "zone-hit", x: Math.max(0, x0), y: Math.max(0, y0), width: Math.min(600, x1) - Math.max(0, x0), height: Math.min(400, y1) - Math.max(0, y0) }), hh.firstChild); }
     g.addEventListener("click", (e) => { e.stopPropagation(); if (V.zoom === zone) zoomOut(); else zoomTo(MEM.slug(zone)); });
     g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (V.zoom === zone) zoomOut(); else zoomTo(MEM.slug(zone)); } });
@@ -263,19 +246,16 @@ K.on("map", (M) => {
   M.svg.addEventListener("click", (e) => {
     if (e.target.closest && e.target.closest(".road-g")) return;
     if (V.zoom) { zoomOut(); return; }
-    /* V13e retest-4: a tap anywhere on a zone's land, */
     const r = M.svg.getBoundingClientRect(), vb = (M.svg.getAttribute("viewBox") || "0 0 600 400").split(/\s+/).map(Number);
     const x = vb[0] + (e.clientX - r.left) / r.width * vb[2], y = vb[1] + (e.clientY - r.top) / r.height * vb[3];
     const near = Object.entries(M.zones).map(([z, p]) => [z, Math.min(Math.hypot(p.x - x, p.y - y), p.label ? Math.hypot(p.label[0] - x, p.label[1] - y) : 1e9)]).sort((a, b) => a[1] - b[1])[0];
     if (near && near[1] < 95) zoomTo(MEM.slug(near[0]));
   });
-  /* a pinch on the map zooms the map, never the page: */
   const pts = new Map(); let d0 = 0;
-  /* V13e: the pinch is read on the whole map box, so */
   const PZ = M.svg.closest("#map") || M.svg;
   PZ.addEventListener("pointerdown", (e) => { if (e.pointerType !== "touch") return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
   PZ.addEventListener("pointermove", (e) => {
-    if (!pts.has(e.pointerId) || (PZ.dataset.pan && innerWidth >= 700 && innerHeight >= 501)) return; /* js/wide.js pinches the wide map itself */ pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size !== 2 || !d0) return;
+    if (!pts.has(e.pointerId) || (PZ.dataset.pan && innerWidth >= 700 && innerHeight >= 501)) return;  pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size !== 2 || !d0) return;
     const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
     if (d / d0 > 1.18 && !V.zoom) { const r = M.svg.getBoundingClientRect(), mx = ((a[0] + b[0]) / 2 - r.left) / r.width * 600, my = ((a[1] + b[1]) / 2 - r.top) / r.height * 400; const z = Object.entries(M.zones).sort(([, p], [, q]) => Math.hypot(p.x - mx, p.y - my) - Math.hypot(q.x - mx, q.y - my))[0]; if (z) zoomTo(MEM.slug(z[0])); d0 = 0; }
     else if (d / d0 < 0.85 && V.zoom) { zoomOut(); d0 = 0; }
@@ -285,7 +265,6 @@ K.on("map", (M) => {
 });
 K.on("closed", (k) => { if (k === "roads" && V.zoom) { V.zoom = null; if (V.map) { V.map.svg.setAttribute("viewBox", FULL.join(" ")); V.map.svg.classList.remove("zoomed"); V.map.pick(null); } const box = $("#map"); if (box) { box.classList.remove("zoomed"); rm(box.querySelector(".zone-card")); } } });
 
-// ---------------- 4. Dates: the calendar and the rail light each other (interaction 6), and .ics links (prior art 6) ----------------
 function lightDay(ev, on) {
   document.querySelectorAll("#cal-col .cal-day.lit, #rail .stop.lit").forEach((x) => x.classList.remove("lit"));
   if (!on || !ev) return;
@@ -294,7 +273,6 @@ function lightDay(ev, on) {
 function todayLine() {
   const T = D.timeline, now = Date.now() / 1000; if (!T) return "";
   const open = T.events.find((e) => e.until_epoch && e.epoch <= now && now < e.until_epoch), l = T.events.find((e) => e.key === "launch");
-  /* fix round A8: whole days, as the clock counts */
   const days = l && l.epoch ? Math.max(0, Math.floor((l.epoch - now) / 86400)) : null;
   return `Today: ${open ? `${open.label.split(":")[0]}, until the end of ${open.until}` : "nothing on the board"}${days !== null && l.epoch > now ? `, ${days ? `${days} ${days === 1 ? "day" : "days"} to launch` : "launch today"}` : ""}.`;
 }
@@ -324,7 +302,6 @@ K.on("timeline", () => {
     rail.addEventListener("pointerout", (e) => { const st = stop(e); if (st) lightDay(null, false); });
   }
   const c = cal.querySelector(".cal"); if (c && !c.querySelector(".cal-card")) c.append(h("p", { class: "cal-card", "aria-live": "polite", text: todayLine() }));
-  /* the launch and the raids carry an "Add to my */
   for (const st of rail.querySelectorAll(".stop[data-ev]")) {
     const e = D.timeline.events.find((x) => x.key === st.dataset.ev);
     if (!e || !e.epoch || !["launch", "raids"].includes(e.key) || st.querySelector(".ics")) continue;
@@ -333,7 +310,6 @@ K.on("timeline", () => {
   }
 });
 
-// ---------------- 5. Bonuses: the ring is a what-if dial (interaction 7) ----------------
 K.on("legacy", ({ svg, r, C, L, rewards, legend }) => {
   const total = L.total, now = L.earned_now;
   const D0 = V.dial && V.dial.total === total ? V.dial.v : now;
@@ -369,25 +345,21 @@ K.on("legacy", ({ svg, r, C, L, rewards, legend }) => {
   dial.addEventListener("pointermove", (e) => { if (drag) set(fromPoint(e), true); });
   for (const t of ["pointerup", "pointercancel"]) dial.addEventListener(t, () => { drag = false; });
   dial.addEventListener("keydown", (e) => { const d = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1, PageUp: 5, PageDown: -5 }[e.key]; if (d) { e.preventDefault(); e.stopPropagation(); set(V.dial.v + d, true); } else if (e.key === "Home") { e.preventDefault(); set(0, true); } else if (e.key === "End") { e.preventDefault(); set(total, true); } });
-  /* a category lights its share of the ring, and a */
   const cat = (k) => { svg.querySelectorAll(".ring-seg").forEach((x) => x.classList.toggle("dim", !!k && x.dataset.cat !== k)); legend.querySelectorAll("li[data-cat]").forEach((x) => x.classList.toggle("lit", x.dataset.cat === k)); };
-  /* V13e axe: a list item cannot be a button, so each */
   legend.querySelectorAll("li[data-cat]").forEach((li) => { const b = h("button", { type: "button", class: "cat-line", "aria-pressed": "false" }, ...li.childNodes); li.replaceChildren(b); b.addEventListener("click", () => { const on = !li.classList.contains("lit"); cat(on ? li.dataset.cat : null); legend.querySelectorAll(".cat-line").forEach((x) => x.setAttribute("aria-pressed", String(x.parentNode.classList.contains("lit")))); if (on) sfx("chip"); }); });
-  svg.setAttribute("role", "group"); /* V13e axe: it holds the dial (a slider), so it is */
+  svg.setAttribute("role", "group");
   svg.querySelectorAll(".ring-seg").forEach((seg) => seg.addEventListener("click", () => cat(seg.dataset.cat)));
 });
 
-// ---------------- 6. The five: spell names open a game-style card (interaction 8) ----------------
 const GLR = { re: null };
 function glossRe() {
   const G = (D.party && D.party.glossary) || []; if (!G.length) return null;
   if (!GLR.re) { const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); GLR.re = new RegExp(`(?<![A-Za-z0-9'])(${G.flatMap((g) => g.forms).sort((a, b) => b.length - a.length).map(esc).join("|")})(?![A-Za-z0-9'])`, "gi"); }
   return GLR.re;
 }
-/* text with the board's glossary words dotted as a */
 function dotted(text, self) {
   const re = glossRe(); if (!re) return [text];
-  const out = []; let last = 0; const seen = new Set([].concat(self).filter(Boolean)); /* V13e retest-7: self may list the parent too */
+  const out = []; let last = 0; const seen = new Set([].concat(self).filter(Boolean));
   re.lastIndex = 0;
   for (const m of String(text).matchAll(re)) { const g = K.glDef(m[1]); if (!g || seen.has(g.term)) continue; seen.add(g.term); out.push(text.slice(last, m.index), h("button", { type: "button", class: "gl2", "data-term": g.term, "aria-expanded": "false" }, m[1])); last = m.index + m[1].length; }
   out.push(text.slice(last));
@@ -416,11 +388,9 @@ function spellShow(btn, pinned) {
   card.replaceChildren(spellCard(sp), h("button", { class: "ttc-x", type: "button", "aria-label": "Close the card", text: "Close" }));
   card.hidden = false; btn.setAttribute("aria-expanded", "true");
   K.ttPlace(card, btn);
-  /* beside the five's card, never over the name that */
   if (!K.placeCard && !card.classList.contains("sheetmode")) {
     const sr = $(".sheet").getBoundingClientRect(), cr = (btn.closest(".card") || btn).getBoundingClientRect(), br = btn.getBoundingClientRect(), w = card.offsetWidth, ht = card.offsetHeight;
     let x = cr.right - sr.left + 10; if (x + w > sr.width - 10) x = cr.left - sr.left - w - 10; if (x < 10) x = Math.max(10, Math.min(sr.width - w - 10, br.left - sr.left));
-    /* V13e retest-9: never over the neighbouring card's */
     const nameBand = cr.top - sr.top + 110;
     const y = Math.max(10, nameBand, Math.min(sr.height - ht - 10, br.top - sr.top - 12));
     card.style.left = `${Math.round(x)}px`; card.style.top = `${Math.round(y)}px`;
@@ -428,7 +398,7 @@ function spellShow(btn, pinned) {
   card.classList.remove("flipin"); void card.offsetWidth; card.classList.add("flipin");
   if (pinned) sfx("card");
 }
-K.spellShow = spellShow; /* js/place.js opens it on its own hover intent */
+K.spellShow = spellShow;
 function startSpells() {
   const panel = $("#panel-five"), card = $("#ttc"); if (!panel || !card) return;
   const hover = window.matchMedia("(hover: hover) and (pointer: fine)");
@@ -437,11 +407,9 @@ function startSpells() {
   panel.addEventListener("mouseover", (e) => { const t = trig(e); if (t && hover.matches) spellShow(t, false); });
   panel.addEventListener("mouseout", (e) => { const t = trig(e); if (t && !K.TT.pinned) K.TT.hideT = setTimeout(() => { if (!K.TT.pinned) K.ttClose(); }, 160); });
   panel.addEventListener("focusin", (e) => { const t = trig(e); if (t) spellShow(t, false); });
-  /* V13e retest-9: a turned card can be taller than */
   panel.addEventListener("click", (e) => { const f = e.target.closest && e.target.closest(".flip"); if (!f) return; const card = f.closest(".card"); setTimeout(() => { if (!card || !card.classList.contains("flipped")) return; const back = card.querySelector(".back .flip"); if (back) { try { back.scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" }); } catch (er) {} } }, (K.MOTION && K.MOTION.hero) || 500); });
 }
 
-// ---------------- 7. Nested definitions, two deep (interaction 9) ----------------
 let pop2 = null;
 function pop2El() { if (!pop2) { pop2 = h("div", { class: "gl-pop gl-pop2", id: "glpop2", role: "tooltip", hidden: "" }); document.body.append(pop2); } return pop2; }
 function pop2Close() { if (!pop2 || pop2.hidden) return false; pop2.hidden = true; if (V.pop2From) V.pop2From.setAttribute("aria-expanded", "false"); V.pop2From = null; return true; }
@@ -454,7 +422,6 @@ function pop2Show(btn) {
   const back = parentCard ? (parentCard.querySelector(".ttc-name, b") || {}).textContent || "" : "";
   el.replaceChildren(h("button", { type: "button", class: "gl-back", "aria-label": `Back to ${back}`, onclick: () => pop2Close() }, "‹ ", back), h("b", { text: g.term.charAt(0).toUpperCase() + g.term.slice(1) }), h("span", {}, ...dotted(g.def, [g.term, (K.glDef(back.trim()) || {}).term])));
   el.hidden = false;
-  /* beside the first card: */
   const r = (parentCard || btn).getBoundingClientRect(), w = Math.min(320, innerWidth - 24), m = 12;
   el.style.width = `${w}px`;
   let x = r.right + 10, y = r.top; if (x + w > innerWidth - m) { x = Math.max(m, Math.min(r.left, innerWidth - w - m)); y = r.bottom + 8; }
@@ -463,7 +430,6 @@ function pop2Show(btn) {
   el.classList.remove("in"); void el.offsetWidth; el.classList.add("in");
   sfx("card");
 }
-/* the board's own card gets its words dotted once */
 function dotGlpop() {
   const pop = $("#glpop"); if (!pop || pop.hidden) return;
   const sp = pop.querySelector("span"); const term = (pop.querySelector("b") || {}).textContent || "";
@@ -489,7 +455,6 @@ function startNested() {
   if (ttc && typeof MutationObserver === "function") new MutationObserver(() => { if (ttc.hidden) pop2Close(); }).observe(ttc, { attributes: true, attributeFilter: ["hidden"] });
 }
 
-// ---------------- 8. New since you last looked (interaction 5) ----------------
 const ROWS = {
   racials: [".rrow", (el) => el.dataset.key, (el) => el.textContent],
   ledger: ["#ledger-slip li, #ledger-slip .poll", (el, i) => (el.querySelector("strong") || {}).textContent || `i${i}`, (el) => el.textContent],
@@ -534,11 +499,10 @@ function looked(key) {
 }
 for (const [ev, key] of [["ledger", "ledger"], ["signups", "signups"], ["timeline", "timeline"]]) K.on(ev, () => sealRows(key));
 
-// ---------------- 9. One first-visit glow on the five crests (interaction 10) ----------------
 function glow() {
   if (V.glow || !FIRST || get("board-glowed")) return;
   const tile = document.querySelector("#board .t-five"); if (!tile) return;
-  V.glow = true; /* V13e retest-13: remembered when the glow ends */
+  V.glow = true;
   const plate = h("span", { class: "glow-plate", "aria-hidden": "true", text: "Tap a face to meet them." });
   const body = tile.querySelector(".tile-body"); if (body) body.append(plate);
   tile.classList.add("glow-five");
@@ -546,11 +510,9 @@ function glow() {
   const stop = (e) => { if (!on) return; on = false; tile.classList.remove("glow-five"); rm(plate); if (e !== "timer" || document.visibilityState === "visible") put("board-glowed", "1"); };
   setTimeout(() => stop("timer"), 8000);
   document.addEventListener("pointerdown", stop, true); document.addEventListener("keydown", stop, true);
-  /* V13e perf: a scene opening ends it too (under a */
   K.sceneHooks.push((open) => { if (open) stop(); });
 }
 
-// ---------------- 10. Sign-ups from the board (the shared brain, stage 3) ----------------
 const BR = { me: null, pend: {}, status: null };
 const PEND_SAY = { sending: "Sending", waiting: "Waiting for Discord", stored: "Saved. Discord catches up when Leeroy is back.", saved: "Saved", newer: "Discord has a newer answer", failed: "Not sent" };
 function suControls() {
@@ -559,10 +521,10 @@ function suControls() {
   const B = window.BoardBrain, st = B ? B.status() : { base: null, key: false };
   const live = !!(st.base && st.key && BR.me);
   const mine = B && B.mine ? B.mine() : null, p = BR.pend.rsvp;
-  const btns = K.RSVP_KEYS.map((k) => h("button", { type: "button", class: `su-st${p && p.value === k ? ` ${p.state}` : ""}`, "data-rsvp": k, "aria-pressed": String(!!((p && p.value === k && p.state !== "failed" && p.state !== "newer") || (!p && mine && mine.rsvp === k))), "aria-disabled": live ? null : "true", onclick: (e) => { if (!live) { /* V13e retest-11: a tap without a key says why, in */ const pl = e.currentTarget.closest(".su-states"), pn = pl && pl.querySelector(".su-pend"), as = pl && pl.querySelector(".su-as"); if (pn && as) { pn.textContent = ""; requestAnimationFrame(() => { pn.textContent = as.textContent; }); as.classList.remove("nudge"); void as.offsetWidth; as.classList.add("nudge"); } sfx("chip"); return; } if (B) B.setRsvp(k); sfx("latch"); } }, h("img", { class: "su-pint", src: `img/pints/${k}.png`, srcset: `img/pints/${k}.png 1x, img/pints/${k}@2x.png 2x`, alt: "", width: 32, height: 32, decoding: "async" }), K.RSVP_SAY[k]));
+  const btns = K.RSVP_KEYS.map((k) => h("button", { type: "button", class: `su-st${p && p.value === k ? ` ${p.state}` : ""}`, "data-rsvp": k, "aria-pressed": String(!!((p && p.value === k && p.state !== "failed" && p.state !== "newer") || (!p && mine && mine.rsvp === k))), "aria-disabled": live ? null : "true", onclick: (e) => { if (!live) {  const pl = e.currentTarget.closest(".su-states"), pn = pl && pl.querySelector(".su-pend"), as = pl && pl.querySelector(".su-as"); if (pn && as) { pn.textContent = ""; requestAnimationFrame(() => { pn.textContent = as.textContent; }); as.classList.remove("nudge"); void as.offsetWidth; as.classList.add("nudge"); } sfx("chip"); return; } if (B) B.setRsvp(k); sfx("latch"); } }, h("img", { class: "su-pint", src: `img/pints/${k}.png`, srcset: `img/pints/${k}.png 1x, img/pints/${k}@2x.png 2x`, alt: "", width: 32, height: 32, decoding: "async" }), K.RSVP_SAY[k]));
   const say = !st.base ? "Answers from this view go through Discord: the Sign-ups card." : !st.key ? "To answer here, tap My board link on the Sign-ups card in Discord. It opens this board as you." : st.keyBad ? "This board link is no longer valid. Tap My board link on the Sign-ups card again." : !BR.me ? "Checking who this board link belongs to." : `Answering as ${BR.me.name}.`;
   act.append(h("div", { class: `su-states${live ? "" : " off"}`, role: "group", "aria-label": "Your answer for launch night, from the board" }, h("p", { class: "su-as", text: say }), h("div", { class: "su-row" }, btns), h("p", { class: "su-pend", role: "status", "aria-live": "polite", text: p ? `${K.RSVP_SAY[p.value]}: ${PEND_SAY[p.state] || ""}${p.state === "newer" && p.other ? ` (${K.RSVP_SAY[p.other] || p.other})` : ""}.` : "" })));
-  if (window.BoardSeals && BoardSeals.ready) BoardSeals.ready(act.querySelector(".su-row"), "pints"); /* fix round A13: the bar waits for the mugs */
+  if (window.BoardSeals && BoardSeals.ready) BoardSeals.ready(act.querySelector(".su-row"), "pints");
 }
 K.on("signups", () => { suControls(); });
 function mirrorIn(sig) {
@@ -577,7 +539,6 @@ function startBrain() {
     state: (sig) => mirrorIn(sig),
     me: (me) => {
       BR.me = me;
-      /* the I-am picker is preset to the key's person */
       if (me && !MEM.me() && D.party) { const m = D.party.members.find((x) => K.cleanName(x.name).toLowerCase() === K.cleanName(me.name).toLowerCase()); if (m && MEM.setMe(MEM.slug(m.name))) { try { K.render.tonight(); } catch (e) {} } }
       suControls();
     },
@@ -586,7 +547,7 @@ function startBrain() {
     journey: (j) => { if (j !== journey()) setJourney(j, "mirror"); },
   });
 }
-K.on("forget", () => { if (window.BoardBrain) window.BoardBrain.forget(); put("board-sigs", null); setJourney("curious", "quiet"); put("board-journey", null); V.picked = false; markJourney(); }); /* fix round A3: forgotten, no journey is stored, so */
+K.on("forget", () => { if (window.BoardBrain) window.BoardBrain.forget(); put("board-sigs", null); setJourney("curious", "quiet"); put("board-journey", null); V.picked = false; markJourney(); });
 
 function startRailArrows() {
   const tabs = $("#tabs"); if (!tabs || $(".tabs-arrow")) return;
@@ -595,15 +556,13 @@ function startRailArrows() {
   tabs.parentNode.insertBefore(wrap, tabs); wrap.append(prev, tabs, next);
   const upd = () => { const over = tabs.scrollWidth > tabs.clientWidth + 4; prev.hidden = !over || tabs.scrollLeft < 4; next.hidden = !over || tabs.scrollLeft > tabs.scrollWidth - tabs.clientWidth - 4; };
   tabs.addEventListener("scroll", upd, { passive: true }); addEventListener("resize", upd, { passive: true });
-  K.on("scene", () => { if (innerWidth >= 700) setTimeout(upd, K.motionMs("move") + 120); }); /* after the opening has moved, never inside its frames */
-  /* fix round A12: a 768 load had no event after the */
+  K.on("scene", () => { if (innerWidth >= 700) setTimeout(upd, K.motionMs("move") + 120); });
   requestAnimationFrame(() => setTimeout(upd, 0));
   if (typeof ResizeObserver === "function") new ResizeObserver(upd).observe(tabs);
   if (typeof MutationObserver === "function") new MutationObserver(upd).observe(tabs, { childList: true, subtree: true });
   upd();
 }
 
-// ---------------- keys: Esc steps back out of a zoom, a card, a second card before it closes a scene ----------------
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.defaultPrevented) return;
   if (pop2Close()) { e.preventDefault(); sfx("esc"); return; }
@@ -611,20 +570,17 @@ document.addEventListener("keydown", (e) => {
   if (SC.open === "five" && K.TT.open) { e.preventDefault(); K.ttClose("focus"); sfx("esc"); }
 });
 
-// ---------------- wiring ----------------
-startNested(); /* before the board's own glossary handlers, so a */
+startNested();
 K.on("rendered", () => { applyDepth(); core(); findNew(); for (const k of Object.keys(ROWS)) sealRows(k); });
 K.on("booted", () => {
   startJourneySwitch(); startSpells(); startRailArrows(); tileSeals();
   startBrain();
-  /* the Guided path follows the person and the data */
   for (const ev of ["ledger", "timeline", "signups"]) K.on(ev, () => core(ev));
   K.on("scene", (k) => { if (k === "library") libRest(); });
 });
 addEventListener("hashchange", () => { const p = SC.open && $(`#panel-${SC.open}`); if (p) fold(p); });
 K.on("chamber", (on) => { if (on) unfold("librarian"); });
-K.on("scene", (key) => { applyDepth(); looked(key); sealRows(key); const p = $(`#panel-${key}`); if (p && journey() === "guided") for (const t of [0, 150]) setTimeout(() => core(key), t); }); /* a scene that mounts late (Leeroy's room, the wide */
-/* V13e perf: the glow waits until the wall has */
+K.on("scene", (key) => { applyDepth(); looked(key); sealRows(key); const p = $(`#panel-${key}`); if (p && journey() === "guided") for (const t of [0, 150]) setTimeout(() => core(key), t); });
 K.on("closed", (k) => { if (k === "tonight") setTimeout(glow, K.motionMs("move") + 900); });
 K.on("legacy", () => sealRows("legacy"));
 for (const f of ["races", "cards"]) { const orig = K.render[f]; K.render[f] = () => { orig(); applyDepth(); sealRows(f === "races" ? "racials" : "five"); }; }

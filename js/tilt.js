@@ -1,4 +1,3 @@
-/* Tilt: the one orientation source; writes --tilt-x, --tilt-y on html. */
 (() => {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   const root = document.documentElement, KEY = "board-tilt";
@@ -93,7 +92,6 @@
       ST.permission = "none";
       const no = () => { ST.permission = "denied"; disable("denied"); };
       reflect();
-      /* the ask answers later: a promise of the status after it, so board.js labels the button right */
       return Promise.resolve(p).then((r) => { if (r !== "granted") return no(); ST.permission = "granted"; if (!gate()) start(); else reflect(); }, no).then(status);
     }
     return start();
@@ -109,7 +107,6 @@
   }
 
   try { if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) window.screen.orientation.addEventListener("change", () => { if (ST.listening) recalibrate(); }); } catch (e) {}
-  /* hidden: unsubscribe; an automatic start resumes on show, an explicit enable() waits for enable() */
   try { document.addEventListener("visibilitychange", () => {
     if (document.hidden) { if (ST.on) { resume = auto; disable("hidden page"); } return; }
     if (resume) { resume = false; if (!ST.on && memGet() !== "off" && !gate()) start(true); }

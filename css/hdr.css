@@ -1,7 +1,3 @@
-/* Wide gamut, HDR highlights and OLED care (2026-10-29, board/qa/2026-10-29-hdr.md).
-   Rules: new --x-* tokens only (board.js reads --t-leave, --light-warm and --oak-0 through cssVar, none is touched here);
-   every rule that changes a look sits inside a media query and @supports, so an SDR screen computes what it did before;
-   `?hdr=0` puts html.hdr-off on the page and every rule below steps aside. Body text, parchment and ink are never touched. */
 :root {
   --x-brass: #d1a85a; --x-gold: #eecd8c; --x-flame: #ffa852; --x-flame-50: rgba(255, 168, 60, 0.5);
   --x-candle: rgba(255, 168, 82, 0.22); --x-candle-soft: rgba(255, 150, 60, 0.12); --x-glow: rgba(209, 168, 90, 0.34);
@@ -9,7 +5,6 @@
   --x-count: #eecd8c; --x-count-glow: rgba(209, 168, 90, 0.34); --x-oled-x: 0px; --x-oled-y: 0px;
 }
 
-/* 1. Wide gamut: the brass, gold, flame and candle accents in Display P3, same hue, a little more chroma. */
 @supports (color: color(display-p3 1 0 0)) {
   @media (color-gamut: p3) {
     :root:not(.hdr-off) {
@@ -28,36 +23,22 @@
   }
 }
 
-/* 2. HDR highlights (2026-10-30, board/qa/2026-10-30-hdr.md). Edge 156 on an HDR screen draws no color(rec2100-*) in CSS (the
-   2026-10-29 HLG layer never applied there) but does draw HDR images above SDR white. So the countdown digits, the seal glints,
-   the candle and the stop embers each carry one overlay of a PQ image (img/hdr/, made by tools/hdr/make-hdr.mjs: one colour,
-   only the alpha falls off, so an overlay only adds light). dynamic-range-limit holds the page at SDR white and frees just the
-   overlays. js/hdr.js sets html.hdr-img unless ?hdr=0, so with ?hdr=0 nothing is fetched or drawn even before the script runs,
-   and a browser fetches the images only when this block applies: an SDR screen and ?hdr=0 compute what they did. */
 @media (dynamic-range: high) {
   :root.hdr-img:not(.hdr-off) { dynamic-range-limit: standard; }
   :root.hdr-img:not(.hdr-off) .clock-unit b { position: relative; }
   :root.hdr-img:not(.hdr-off) .clock-unit b::after, :root.hdr-img:not(.hdr-off) .seal-spec::after, :root.hdr-img:not(.hdr-off) .seal-sweep::after, :root.hdr-img:not(.hdr-off) .candle::after, :root.hdr-img:not(.hdr-off) .stop-ember::after {
     content: ""; position: absolute; pointer-events: none; background: center / 100% 100% no-repeat; dynamic-range-limit: no-limit; }
-  /* the digits: where the light catches the top right of each number */
   :root.hdr-img:not(.hdr-off) .clock-unit b::after { top: -0.16em; right: -0.2em; width: 0.56em; height: 0.56em; background-image: url("../img/hdr/glint.png"); }
-  /* the seal: a glint on the light's spot (seals.js moves --lx and --ly with the pointer, from -100% to 200%), clipped to the
-     coin as the SDR spot is, and one riding the sweep band */
   :root.hdr-img:not(.hdr-off) .seal-spec { overflow: hidden; }
   :root.hdr-img:not(.hdr-off) .seal-spec::after { left: var(--lx); top: var(--ly); width: 30%; height: 30%; translate: -50% -50%; background-image: url("../img/hdr/glint.png"); }
   :root.hdr-img:not(.hdr-off) .seal-sweep::after { top: 35%; left: -45%; width: 30%; height: 30%; transform: skewX(-18deg); background-image: url("../img/hdr/glint.png"); animation: seal-sweep 9s ease-in-out 1.2s infinite; }
   :root.hdr-img:not(.hdr-off) .seal.spinning .seal-sweep::after { animation-duration: 1.4s; animation-delay: 0s; }
-  /* the candle: its core on the candle light's own centre; v14's plus-lighter on .candle steps aside here, since a plus blend
-     is min(1, s + d) and can hold the core at SDR white */
   :root.hdr-img:not(.hdr-off) .candle { mix-blend-mode: normal; }
   :root.hdr-img:not(.hdr-off) .candle::after { left: 14%; top: 26%; width: 26%; height: 26%; translate: -50% -50%; background-image: url("../img/hdr/candle.png"); }
-  /* the stop embers: the spark inside the 8 px diamond that clips it, riding the ember animation */
   :root.hdr-img:not(.hdr-off) .stop-ember::after { inset: 0; background-image: url("../img/hdr/ember.png"); }
 }
 @media (dynamic-range: high) and (prefers-reduced-motion: reduce) { :root.hdr-img:not(.hdr-off) .seal-sweep::after { animation: none; } }
 
-/* 3. OLED care (js/hdr.js sets html.oled-care when the display reports HDR and a dark scheme, or ?oled=1): a wider
-   drift on the corner chrome and a deeper dim after 60 s of no input. */
 :root.oled-care .sense-fab, :root.oled-care .bottombar, :root.oled-care .seal { translate: var(--x-oled-x) var(--x-oled-y); transition: translate 30s linear; }
 .oled-veil { position: fixed; inset: 0; z-index: 2147482998; background: #000; opacity: 0; pointer-events: none; transition: opacity 6s ease; }
 :root.oled-care.oled-dim .oled-veil { opacity: 0.7; }

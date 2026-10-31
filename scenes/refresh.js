@@ -1,19 +1,15 @@
-/* Next round lane C (NOTES-C.md): the Library head's "Checked {when}" line, the count of lines since board-lib-seen (written on
-   close) and, with your own board link, the button that asks for a check. The head is rebuilt on every open: draw after that
-   render and keep the line with a MutationObserver. */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
 const { $, h } = K, BB = () => window.BoardBrain;
 const SEEN = "board-lib-seen", FILE = "data/library/refresh.json", NEWS = "data/library/news.json", LABEL = "Ask Leeroy's pipeline to check Blizzard now";
-const POLL_MS = 20000, MAX_POLLS = 36; /* every 20 s, for 12 minutes */
+const POLL_MS = 20000, MAX_POLLS = 36;
 const SAY = { none: "Not available yet.", key: "Your own board link lets you ask for a check.", bad: "This board link is no longer valid.", 409: "A check is already running.", run: "Asked.", late: "No answer from the pipeline yet.", play: "Asked. Reopen the Library to see the result." };
 const R = { seen: null, busy: false, msg: "", polls: 0, timer: 0 };
 const keyed = () => { const b = BB(); return !!(b && b.hasKey()); };
 const getJson = (url, cache) => Promise.resolve().then(() => fetch(url, { cache })).then((r) => (r && r.ok ? r.json() : null)).catch(() => null);
 const okFile = (j) => !!j && typeof j.checked === "string" && Number.isFinite(Date.parse(j.checked));
 const when = (iso) => K.fmtWhen(Math.min(Date.parse(iso) / 1000, Date.now() / 1000), { rel: true }).replace(/, now$/, ", just now");
-/* a dated line sits at noon UTC, as everywhere on the board: it counts when that noon is after the last look */
 function count() {
   const ups = R.news && R.news.updates; if (!Array.isArray(ups)) return "";
   const n = ups.filter((u) => u && /^\d{4}-\d\d-\d\d$/.test(u.date) && (R.seen == null || Date.parse(`${u.date}T12:00:00Z`) > R.seen)).length;
@@ -48,7 +44,6 @@ function draw() {
     R.mo = new MutationObserver(() => { const b = $("#lib-head"); if (R.inLib && b && R.el.parentNode !== b && text()) b.append(R.el); }); R.mo.observe(box, { childList: true });
   }
 }
-/* Running until refresh.json's checked moves (12 minutes at most); no polling in Play mode */
 async function press() {
   if (R.busy || !keyed()) return;
   R.busy = true; R.msg = ""; R.base = R.file && R.file.checked; paint();
@@ -76,7 +71,6 @@ async function tick() {
   else { R.timer = setTimeout(tick, POLL_MS); return; }
   paint();
 }
-/* the Library renders its head from this same promise first, so the line is drawn from a later reaction */
 function open() {
   R.inLib = true; R.seen = null;
   try { R.seen = Date.parse(localStorage.getItem(SEEN)) || null; } catch (e) {}

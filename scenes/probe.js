@@ -1,24 +1,12 @@
-/* M0 (2026-10-30): the capability probe (notes/VISION-MOBILE.md section 3). #probe opens a full-screen sheet over the board, not a
-   scene tab. It tells a friend in plain words what their device and app support, and every measurement runs live, only after the
-   tap on "Check my phone": the vibration call and a test buzz, the iPhone switch tick (iOS 18 and later), the motion sensors
-   (the permission step on iPhone is asked from that same tap, then 3 seconds of events are counted), touch, screen and page area,
-   safe-area insets, pixel ratio, reduced motion, data saver, battery status, the engine, and whether the page runs inside Discord.
-   "Send to Bloise" posts one closed-shape report (yes/no answers, bounded numbers, the engine and platform family, nothing
-   typed, no name, no id, no user agent text) through js/brain.js sendProbe; against a brain without the route it says "saved on
-   this device" and keeps the result in localStorage (board-probe). The shape table lives in js/brain.js (BoardBrain._probeShape),
-   so this file has no copy of it: every report is coerced through that table before it is shown or sent.
-   Informs, never instructs. Sound off, no autoplay of anything, keyboard reachable, 44 px targets, 16 px text. Fake-DOM safe: no
-   :scope, no child combinators, no Element.after, no MutationObserver, handlers never read event.target. */
 (() => {
 "use strict";
-if (typeof window === "undefined" || typeof document === "undefined" || typeof navigator === "undefined" || typeof addEventListener !== "function") return; /* a bare script host (a test harness) gets nothing */
+if (typeof window === "undefined" || typeof document === "undefined" || typeof navigator === "undefined" || typeof addEventListener !== "function") return;
 const B = window.BoardBrain;
 const SHAPE = B && B._probeShape;
-if (!SHAPE) return; /* the shape lives in js/brain.js; without it there is nothing safe to build or send */
+if (!SHAPE) return;
 const SAVE_KEY = "board-probe";
 const CFG = { windowMs: 3000 };
 
-/* ---------- small helpers ---------- */
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
@@ -34,9 +22,6 @@ const el = (tag, attrs, ...kids) => {
 const $ = (id) => document.getElementById(id);
 const yn = (b) => (b ? "yes" : "no");
 
-/* ---------- what the report holds: coerced through the brain's table ---------- */
-/* Any object in, an object of exactly the fixed shape out: a flag is true only when it was true, a number is rounded and clamped
-   into its range, a word is kept only when it is on its list (else the list's last word: "other" for engine and platform). */
 function coerce(raw) {
   const r = raw && typeof raw === "object" ? raw : {}, out = {};
   for (const k of Object.keys(SHAPE)) {
@@ -48,7 +33,6 @@ function coerce(raw) {
   return out;
 }
 const ua = () => { try { return String(navigator.userAgent || ""); } catch (e) { return ""; } };
-/* iPadOS 13 and later says Macintosh and is told apart by its touch points */
 function platformOf(u, touch) {
   if (/iP(hone|ad|od)/.test(u) || (/Macintosh/.test(u) && touch > 1)) return "ios";
   if (/Android/.test(u)) return "android";
@@ -57,7 +41,6 @@ function platformOf(u, touch) {
   if (/Linux|X11|CrOS/.test(u)) return "linux";
   return "other";
 }
-/* every browser on iPhone is WebKit underneath; Firefox on iPhone says FxiOS, so "Firefox/" means Gecko */
 function engineOf(u, platform) {
   if (platform === "ios") return "webkit";
   if (/Firefox\//.test(u)) return "gecko";
@@ -71,7 +54,6 @@ const permissionOwner = () => {
   return O && typeof O.requestPermission === "function" ? O : M && typeof M.requestPermission === "function" ? M : null;
 };
 const px = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
-/* env(safe-area-inset-*) read through a padded probe element; a host without computed padding reads zeros */
 function insets() {
   const out = { top: 0, right: 0, bottom: 0, left: 0 };
   try {
@@ -85,7 +67,6 @@ function insets() {
   } catch (e) {}
   return out;
 }
-/* what can be read without asking anything of the person: no sensor starts, nothing buzzes */
 function facts() {
   const touch = clampInt(navigator.maxTouchPoints || 0, 0, 32), u = ua(), host = String(location.hostname || "");
   const platform = platformOf(u, touch), engine = engineOf(u, platform), vv = window.visualViewport, ins = insets();
@@ -104,7 +85,6 @@ function facts() {
   };
 }
 
-/* ---------- the test buzz: runs inside the tap, on the routes this phone has ---------- */
 let sw = null;
 function tickSwitch() {
   if (!sw) {
@@ -113,21 +93,16 @@ function tickSwitch() {
   }
   sw.click();
 }
-/* -> { route: 0 none, 1 vibration call, 2 switch control, 3 both, ran: the vibration call answered true } */
 function buzz() {
   let route = 0, ran = false;
   try { if (typeof navigator.vibrate === "function" && navigator.vibrate([40])) { route |= 1; ran = true; } } catch (e) {}
-  /* the switch is clicked wherever it is supported and on every iPhone and iPad, so a support test that is wrong on one OS version
-     still gets its answer from the person: switchHaptic reports the test, the felt answer reports the truth */
   try { if (switchSupport() || platformOf(ua(), clampInt(navigator.maxTouchPoints || 0, 0, 32)) === "ios") { tickSwitch(); route |= 2; } } catch (e) {}
   return { route, ran };
 }
-/* the permission step (iPhone): the call is made inside the tap; 1 granted, 2 declined, 4 failed. null when this browser has no such step */
 function askPermission() {
   const owner = permissionOwner(); if (!owner) return null;
   try { return Promise.resolve(owner.requestPermission()).then((r) => (r === "granted" ? 1 : 2), () => 4); } catch (e) { return Promise.resolve(4); }
 }
-/* counts the events that carry real readings (a desktop browser may fire one with every value null) */
 const has = (v) => v !== null && v !== undefined && Number.isFinite(Number(v));
 function listen(ms) {
   return new Promise((resolve) => {
@@ -142,7 +117,6 @@ function listen(ms) {
   });
 }
 
-/* ---------- state ---------- */
 const S = { open: false, ui: null, report: null, at: null, sent: false, running: false, sending: false, back: null, say: "", sayIt: "", phase: "" };
 function load() {
   try {
@@ -152,7 +126,6 @@ function load() {
 }
 const save = () => { if (S.report) store.set(SAVE_KEY, JSON.stringify({ at: S.at, report: S.report, sent: S.sent })); };
 
-/* ---------- the rows: every line is read from the report that would be sent ---------- */
 const PLAT = { ios: "iPhone or iPad", android: "Android", windows: "Windows", mac: "Mac", linux: "Linux or ChromeOS", other: "A platform the board does not name" };
 const ENG = { webkit: "WebKit engine (the Safari family)", blink: "Blink engine (the Chrome family)", gecko: "Gecko engine (Firefox)", other: "an engine the board does not name" };
 const VIA = ["", "the vibration call", "the switch control", "both the vibration call and the switch control"];
@@ -191,7 +164,6 @@ const SEND_SAY = {
   shape: "Saved on this device. The report did not match its fixed shape.",
 };
 
-/* ---------- the sheet ---------- */
 function build() {
   const ui = {};
   ui.root = el("div", { id: "probe-sheet", class: "probe", role: "dialog", "aria-modal": "true", "aria-labelledby": "probe-title", hidden: true });
@@ -248,13 +220,12 @@ function render() {
 }
 function stamp() { try { return new Date().toISOString(); } catch (e) { return null; } }
 
-/* "Check my phone": the buzz and the permission call happen first, inside the tap; the rest is read or timed after */
 function check() {
   if (S.running) return;
   S.running = true; S.sayIt = ""; S.sent = false;
   const f = facts();
   const b = buzz();
-  const permP = askPermission(); /* called now, in the tap: iPhone only accepts the request from a gesture */
+  const permP = askPermission();
   S.report = coerce({ ...f, vibrateRan: b.ran, buzzRoute: b.route, buzzFelt: 0, motionPermission: f.motionNeedsPermission ? 0 : 3 });
   S.say = ""; S.phase = permP ? "permission" : ""; render();
   (async () => {
@@ -287,7 +258,6 @@ function forget() {
   store.set(SAVE_KEY, null); S.report = null; S.at = null; S.sent = false; S.say = ""; S.sayIt = "The saved result on this device is gone."; render();
 }
 
-/* ---------- open, close, the hash ---------- */
 const focusables = () => {
   const root = S.ui && S.ui.root; if (!root) return [];
   const shown = (n) => { for (let x = n; x && x !== root; x = x.parentNode) if (x.hidden) return false; return true; };
@@ -323,7 +293,6 @@ document.addEventListener("keydown", (e) => {
     if (e.shiftKey && (a === first || !inside)) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && (a === last || !inside)) { e.preventDefault(); first.focus(); }
     return;
   }
-  /* a typed letter, digit or ? / must not reach the board's shortcuts behind the sheet (T opens Next steps, S the Sensory panel) */
   if (e.key && e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); e.stopPropagation(); }
 }, true);
 addEventListener("hashchange", sync);

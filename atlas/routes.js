@@ -1,6 +1,3 @@
-// The planner (contract 3.2, 4.2). Pure: no DOM, runs in node. Dijkstra over routes.json, plan objects, and the
-// course-draw timeline the canvas replays. Walking minutes come from the edges (yards / 7 / 60); a transport adds a
-// small routing penalty so a zeppelin is only taken when it saves time, but its wait is never counted in the minutes.
 export const RANK = { confirmed: 0, likely: 1, speculative: 2 };
 const worst = (a, b) => (RANK[b] > RANK[a] ? b : a);
 const TRANSIT = new Set(["zeppelin", "boat"]);
@@ -24,8 +21,6 @@ export function buildGraph(routes) {
 
 const weight = (e) => (e.minutes || 0) + (TRANSIT.has(e.mode) ? WAIT_PENALTY : 0) + 0.01;
 
-// Shortest usable course between two place ids; day-one edges only unless opts.all. Plain arrays, a linear scan queue
-// (the graph holds tens of nodes).
 export function shortest(graph, from, to, opts = {}) {
   if (!graph.nodes.has(from) || !graph.nodes.has(to)) return null;
   const dist = new Map([[from, 0]]), prev = new Map(), done = new Set();
@@ -54,13 +49,11 @@ export function shortest(graph, from, to, opts = {}) {
   return { route, edges: eids, yards: Math.round(yards), minutes: Math.round(minutes * 10) / 10, status, transports };
 }
 
-// The meeting point the plan aims at: the routes file's own, else the sheet's opening choice.
 export function meetOf(routes) {
   const m = routes.day_one && routes.day_one.meet;
   return { place: (m && m.place) || null, status: (m && m.status) || "open" };
 }
 
-// plan({ meet, who }): who is a class key, a list of class keys, or omitted for the five.
 export function makePlan(graph, o = {}) {
   const day = graph.routes.day_one || {}, starts = day.starts || {};
   const m = meetOf(graph.routes), meet = o.meet || m.place || "valley-of-strength";
@@ -77,7 +70,6 @@ export function makePlan(graph, o = {}) {
   return { meet, meet_status: o.meet && o.meet !== m.place ? "chosen" : m.status, who, crossings };
 }
 
-// ---------- geometry on A-unit polylines ----------
 export function pathLength(p) { let s = 0; for (let i = 1; i < p.length; i++) s += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); return s; }
 export function pointAt(p, f) {
   if (!p.length) return null;
@@ -103,8 +95,6 @@ export function slicePath(p, f) {
   return out;
 }
 
-// ---------- the course-draw timeline ----------
-// Each friend's edges draw one after another; the five run side by side; an edge two friends share draws once.
 export const edgeMs = (e) => Math.round(260 + Math.min(520, (e.yards || 0) / 18));
 export function buildTimeline(graph, plan) {
   const drawnAt = new Map(), chains = [];
@@ -124,7 +114,6 @@ export function buildTimeline(graph, plan) {
   return { chains, total, drawnAt };
 }
 
-// State of the timeline at time t (ms): drawn fraction per edge and each marker's position.
 export function timelineAt(graph, plan, tl, t) {
   const prog = {}, marks = {};
   for (const c of tl.chains) {

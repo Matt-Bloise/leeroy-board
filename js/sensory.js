@@ -1,7 +1,5 @@
-/* Sensory layer: generative tavern ambience, scene soundscapes and score, UI sounds, haptics, the Sensory panel. All synthesized, on
-   js/sound.js (window.BoardSound) and the kit's events. Off until the visitor turns sound on; every API is feature-detected. */
 (() => {
-  if (typeof window === "undefined" || typeof navigator === "undefined" || typeof document === "undefined" || typeof addEventListener !== "function") return; /* a bare script host (a test harness) gets nothing */
+  if (typeof window === "undefined" || typeof navigator === "undefined" || typeof document === "undefined" || typeof addEventListener !== "function") return;
   const BS = window.BoardSound, HP = window.BoardHaptics;
   if (!BS) return;
   const $ = (q) => document.querySelector(q);
@@ -18,8 +16,6 @@
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) {} };
   const E = { run: false, I: null, scene: null, next: {}, timer: 0, t0: 0, plays: 0, notes: 0, live: 0, bars: 0, mode: "", rainLvl: 0, weather: 0, fanfared: false, voices: 0 };
 
-  /* ---------- streams: every sound the room makes on its own ---------- */
-  /* cue, gap [min, max] seconds, level [min, max] dB, base = part of the room anywhere; a scene profile rescales gaps (0 = off) */
   const STREAMS = {
     babble: { cue: "babble", gap: [4, 11], db: [-43, -38], base: 1, crowd: 1 }, laugh: { cue: "laugh", gap: [28, 75], db: [-41, -35], base: 1, crowd: 1 },
     creak: { cue: "creak", gap: [45, 130], db: [-39, -34], base: 1 }, door: { cue: "door", gap: [100, 260], db: [-32, -27], base: 1, crowd: 1 },
@@ -44,12 +40,10 @@
     if (st.calm && E.weather > 0.5) return 0;
     return sc;
   }
-  /* slow weather and the room's mood across a session: two incommensurate waves, never a loop the ear can find */
   const WP = [rnd(0, 6.28), rnd(0, 6.28), rnd(0, 6.28)];
   const weatherAt = (s) => clamp(0.5 + 0.34 * Math.sin(6.283 * s / 600 + WP[0]) + 0.2 * Math.sin(6.283 * s / 230 + WP[1]), 0, 1);
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
-  /* ---------- beds: rain, wind, zeppelin hum ---------- */
   function buildBeds(I) {
     const c = I.ctx, R = c.sampleRate, nb = c.createBuffer(1, R * 4, R), d = nb.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -64,14 +58,12 @@
       const l = c.createOscillator(), g = G(0.0004, E.zep.gain); l.frequency.value = 0.2; l.connect(g); l.start(); }
   }
 
-  /* ---------- the score: an original generative tavern tune ---------- */
   const MODES = { dorian: [0, 2, 3, 5, 7, 9, 10], mixolydian: [0, 2, 4, 5, 7, 9, 10], aeolian: [0, 2, 3, 5, 7, 8, 10] };
   const PROG = { dorian: [[0, 6, 0, 3], [0, 3, 6, 0], [0, 4, 3, 0]], mixolydian: [[0, 6, 3, 0], [0, 3, 0, 4], [0, 6, 0, 3]], aeolian: [[0, 5, 6, 0], [0, 3, 6, 4], [0, 6, 5, 4]] };
   const EIGHTH = 0.42, BAR = 6 * EIGHTH;
   const M = { t: 0, bar: 0, key: 50, mode: "dorian", prog: PROG.dorian[0], md: 9, phrase: 0, voice: "fiddle", cache: new Map(), on: false };
   const note = (deg) => { const m = MODES[M.mode], i = ((deg % 7) + 7) % 7; return M.key + m[i] + 12 * Math.floor(deg / 7); };
   const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
-  /* Karplus-Strong pluck, rendered once per pitch: a plucked-string (lute) voice without a sample */
   function pluck(c, m) {
     let b = M.cache.get(m); if (b) return b;
     const R = c.sampleRate, f = hz(m), N = Math.max(2, Math.round(R / f)), len = Math.round(R * 1.9), buf = c.createBuffer(1, len, R), d = buf.getChannelData(0), ring = new Float32Array(N);
@@ -114,7 +106,7 @@
     const l = c.createOscillator(), lg = c.createGain(); l.frequency.value = 0.06; lg.gain.value = 0.03; l.connect(lg); lg.connect(E.drone.gain); l.start();
   }
   function bar(I, t) {
-    if (M.bar % 16 === 0 && M.bar) { /* every 16 bars the tune may move: a new mode, a new home note */
+    if (M.bar % 16 === 0 && M.bar) {
       const ms = Object.keys(MODES); M.mode = Math.random() < 0.55 ? M.mode : ms[(Math.random() * ms.length) | 0]; M.key = [50, 55, 48, 53, 52][(Math.random() * 5) | 0];
       for (const [o, off] of E.droneO) o.frequency.setTargetAtTime(hz(M.key + off), t, 0.8);
     }
@@ -138,7 +130,6 @@
     M.bar++; E.bars++; E.mode = M.mode + " " + M.key;
   }
 
-  /* ---------- levels, scheduler ---------- */
   function levels() {
     const I = E.I; if (!I) return; const c = I.ctx, t = c.currentTime;
     I.ambLvl.gain.setTargetAtTime(cfg.amb, t, 0.15); I.ui.gain.setTargetAtTime(cfg.fx, t, 0.1);
@@ -168,7 +159,6 @@
     } else M.on = false;
   }
 
-  /* ---------- companions: extra layers under the page's own cues, pointer pan, hover, RSVP ---------- */
   const COMPANION = { open: [["whoosh", 0, -26], ["unfurl", 70, -30]], close: [["whoosh", 0, -32, 0.8]], flip: [["coin", 110, -30]], good: [], stamp: [["thunk", 0, -34]] };
   function cueHook(name) {
     if (!cfg.fx) return; const l = COMPANION[name]; if (!l) return;
@@ -186,7 +176,7 @@
   }, true);
   document.addEventListener("click", (e) => {
     const b = e.target && e.target.closest && e.target.closest("button, a"); if (!b) return;
-    if (b.disabled || b.closest('[aria-disabled="true"]')) return; /* a disabled control (the sign-up answers with no board key) gives no confirm sound and no buzz (2026-10-30) */
+    if (b.disabled || b.closest('[aria-disabled="true"]')) return;
     let h = "tap";
     if (b.matches("a.tile")) h = "open"; else if (b.matches("[data-tab]")) h = "tab";
     const tx = (b.textContent || "").trim().toLowerCase();
@@ -201,7 +191,6 @@
     hap(h);
   }, true);
 
-  /* ---------- the Sensory panel ---------- */
   const el = (tag, attrs, ...kids) => { const n = document.createElement(tag); for (const [k, v] of Object.entries(attrs || {})) { if (k === "text") n.textContent = v; else n.setAttribute(k, v); } for (const x of kids) if (x) n.append(x); return n; };
   const isOn = () => { try { return !!(window.__board && window.__board.sound() ); } catch (e) { return false; } };
   const setMaster = (v) => { const r = $("#vol"); if (r) { r.value = String(Math.round(v * 100)); r.dispatchEvent(new Event("input", { bubbles: true })); } };
@@ -227,7 +216,7 @@
     const master = el("input", { type: "range", min: 0, max: 100, step: 5, id: "sense-master", "aria-label": "Master volume" }); master.value = String(Math.round(((window.__board && window.__board.audio().volume) || 0.7) * 100));
     master.addEventListener("input", () => setMaster(Number(master.value) / 100));
     const pre = el("div", { class: "sense-presets", role: "group", "aria-label": "Presets" });
-    for (const [k, n] of [["quiet", "Quiet"], ["tavern", "Tavern"], ["everything", "Full"]] /* fix E8: Everything is a journey; the key stays */) { const b = el("button", { type: "button", "data-preset": k, "aria-pressed": "false", text: n }); b.addEventListener("click", () => { applyPreset(k); if (!isOn() && window.__board) window.__board.sound(true); sync(); }); pre.append(b); }
+    for (const [k, n] of [["quiet", "Quiet"], ["tavern", "Tavern"], ["everything", "Full"]] ) { const b = el("button", { type: "button", "data-preset": k, "aria-pressed": "false", text: n }); b.addEventListener("click", () => { applyPreset(k); if (!isOn() && window.__board) window.__board.sound(true); sync(); }); pre.append(b); }
     const onb = el("button", { type: "button", id: "sense-power", class: "sense-toggle", "aria-pressed": "false", text: "Sound: off" }); onb.addEventListener("click", () => { if (window.__board) window.__board.sound(!isOn()); setTimeout(sync, 80); });
     const hs = HP ? HP.support() : { any: false }, note = el("p", { class: "sense-note", id: "sense-note" });
     note.textContent = "Saved on this device only. " + (hs.any ? "Haptics: " + [hs.vibrate && "vibration", hs.ios && "iPhone tick", "controller rumble when one is connected"].filter(Boolean).join(", ") + "." : "Haptics need a phone or a controller; none found here.");
@@ -240,11 +229,10 @@
     sync();
   }
   function openPanel(open) { panel.hidden = !open; btn.setAttribute("aria-expanded", String(open)); if (open) { sync(); const f = panel.querySelector("button"); if (f) f.focus({ preventScroll: true }); } }
-  /* fix E2 (2026-10-30): first in the wall's footer row, after the scene head's controls in a scene; a phone keeps its corner */
   function dock() {
     if (!btn) return;
     const foot = $("#footer"), head = E.scene && ($("#mode-btn-scene") || $("#scene-peek"));
-    if (document.documentElement.classList.contains("phone-shell") || innerWidth < 700 || (E.scene && innerWidth < 1024)) { /* integration 1: under 1024 px the scene head has no room for the pill (768: the title ran under it), so it keeps its corner */ if (btn.parentNode !== document.body) document.body.insertBefore(btn, panel); }
+    if (document.documentElement.classList.contains("phone-shell") || innerWidth < 700 || (E.scene && innerWidth < 1024)) {  if (btn.parentNode !== document.body) document.body.insertBefore(btn, panel); }
     else if (head) { if (btn.previousSibling !== head) head.parentNode.insertBefore(btn, head.nextSibling); }
     else if (foot && foot.firstChild !== btn) foot.insertBefore(btn, foot.firstChild);
   }
@@ -258,7 +246,6 @@
     const p = $("#sense-power"); if (p) { p.setAttribute("aria-pressed", String(on)); p.textContent = on ? "Sound: on" : "Sound: off"; }
   }
 
-  /* ---------- wake lock, media session, invitation, launch fanfare ---------- */
   let lock = null;
   async function wake(on) {
     try { if (!on) { if (lock) { await lock.release(); lock = null; } return; } if (navigator.wakeLock && !document.hidden) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => { lock = null; }); } } catch (e) { lock = null; }
@@ -279,12 +266,6 @@
     try { if (sessionStorage.getItem("board-fanfare")) { E.fanfared = true; return; } } catch (e) {}
     if (fanfare()) { E.fanfared = true; try { sessionStorage.setItem("board-fanfare", "1"); } catch (e) {} }
   }
-  /* fix E8: beside the pill, never over a tile, never focused; gone after 8 s, a document scroll or a press elsewhere.
-     Integration 1 (2026-10-30), items 2 and 3: a first visit with no remembered depth auto-opens Next steps after 7.5 s (board.js firstBeat), which
-     moves the pill into the scene head and scrolls the tab rail. The old code (a) took that scroll of #tabs for the visitor's and ended the invitation
-     after 1 s in Chromium, and (b) in Firefox, where the scene opens before the 7 s timer fires, never showed it at all (the pill was no longer in the
-     footer). Now: it first shows 3.5 s in, only the document's own scroll ends it, a scene opening hides it without using it up, and it comes back
-     (a full 8 s) when the wall does. Only a press, a dismissal or its 8 s on the wall mark it done for the session. */
   const INV = { el: null, life: 0, done: false, timer: 0, away: null, gone: null };
   try { INV.done = !!sessionStorage.getItem("board-invite"); } catch (e) {}
   function inviteEnd(used) {
@@ -298,18 +279,17 @@
   function inviteTry() {
     if (INV.done || INV.el) return;
     const foot = $("#footer");
-    if (isOn() || !btn || !foot || btn.parentNode !== foot || document.hidden || document.documentElement.classList.contains("play")) return; /* polish: Play holds the sound, so no invitation to it */
+    if (isOn() || !btn || !foot || btn.parentNode !== foot || document.hidden || document.documentElement.classList.contains("play")) return;
     const t = el("div", { class: "sense-invite", role: "status" }), b = el("button", { type: "button", text: "Hear the tavern" }), x = el("button", { type: "button", class: "sense-x", "aria-label": "Dismiss", text: "×" });
     t.append(el("span", { text: "Sound is off." }), b, x); foot.insertBefore(t, btn.nextSibling); INV.el = t;
     INV.away = (e) => { if (!t.contains(e.target)) inviteEnd(true); };
-    INV.gone = (e) => { if (!e || !e.target || e.target === document || e.target === document.documentElement || e.target === document.scrollingElement) inviteEnd(true); }; /* a scroll of #tabs or a panel is not the visitor leaving */
+    INV.gone = (e) => { if (!e || !e.target || e.target === document || e.target === document.documentElement || e.target === document.scrollingElement) inviteEnd(true); };
     b.addEventListener("click", () => { if (window.__board) window.__board.sound(true); inviteEnd(true); }); x.addEventListener("click", () => inviteEnd(true));
     INV.life = setTimeout(() => inviteEnd(true), 8000);
     addEventListener("pointerdown", INV.away, true); addEventListener("scroll", INV.gone, { capture: true, passive: true });
   }
   function invite() { if (!INV.done) setTimeout(inviteTry, 3500); }
 
-  /* ---------- lifecycle ---------- */
   function start() {
     const I = BS.internals(); if (!I || E.run) return; E.run = true; E.I = I; E.t0 = performance.now();
     try { buildBeds(I); drone(I); } catch (e) { E.run = false; return; }

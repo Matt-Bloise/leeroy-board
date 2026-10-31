@@ -1,11 +1,10 @@
-/* Bottom sheets (mobile contract section 3; board/MOBILE-NOTES.md). */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
 const { $, h } = K;
 const doc = document;
 const SPR = () => window.BoardSpring || null;
-const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches) || doc.documentElement.classList.contains("play"); /* Play moves nothing (a 120 ms fade) */
+const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches) || doc.documentElement.classList.contains("play");
 const buzz = (n) => { try { if (window.BoardHaptics) window.BoardHaptics.fire(n); } catch (e) {} };
 const B = { cur: null, snap: null, y: 0, dragging: false, fullH: 0, peekH: 0, spring: null, track: null, token: 0 };
 let veil = null, sec = null, grip = null, titleEl = null, bodyEl = null, built = false, shut = null;
@@ -100,16 +99,15 @@ function open(o) {
   const rm = reduced();
   sec.classList.toggle("fade", rm); sec.classList.remove("out");
   veil.classList.add("on");
-  K.sfx("paper"); buzz("select"); /* Unfold: paper, select */
+  K.sfx("paper"); buzz("select");
   if (rm) setY(yFor(start)); else setY(B.fullH + 40);
   try { bodyEl.focus({ preventScroll: true }); } catch (e) { try { bodyEl.focus(); } catch (e2) {} }
   return rm ? glide("firm", yFor(start)) : grow(o.from, yFor(start));
 }
-/* Unfold: the sheet grows from the control's box to its place */
 function grow(f, yEnd) {
   const S = SPR(); setY(yEnd);
   const put = S && K.flipPut(sec, f, yEnd);
-  if (!put) { setY(B.fullH + 40); return glide("firm", yEnd); } /* no control or bar to grow from: rise from below as before */
+  if (!put) { setY(B.fullH + 40); return glide("firm", yEnd); }
   put(1); stopSpring(); const tok = ++B.token;
   return new Promise((res) => {
     B.spring = S.spring({ preset: "firm", x: 100, target: 0, onFrame: (x) => { if (tok === B.token) put(x / 100); },
@@ -192,7 +190,6 @@ function close(id) {
   finish(false); return Promise.resolve();
 }
 
-/* rotation or resize re-seats the open sheet on its snap (2026-10-30) */
 let rsT = 0;
 function reseat() {
   if (!B.cur || B.closing) return;

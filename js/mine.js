@@ -1,4 +1,3 @@
-/* M3 (2026-10-30, MOBILE-CONTRACT 9.1): the board side of Discord parity. Full note: board/MOBILE-NOTES.md, file notes. Fix round B: notes/fix-round/NOTES-B.md. */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;

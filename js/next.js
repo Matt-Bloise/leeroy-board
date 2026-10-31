@@ -5,14 +5,12 @@ const K = window.__boardKit; if (!K) return;
 const { $, h, D, MEM } = K;
 const root = document.documentElement, JOURNEYS = ["guided", "curious", "everything"], DAY = 86400000, CAP = 60;
 const NX = { engine: "none", out: null, open: false, seq: 0, say: "", buttons: 0 };
-/* what the sign-up buttons say today (v13d.js suControls, mine.js), verbatim */
 const NO_KEY = "To answer here, tap My board link on the Sign-ups card in Discord. It opens this board as you.";
 const NO_BASE = "Answers from this view go through Discord: the Sign-ups card.";
 const NOT_YET = "Not switched on yet; your answer stays on this device.";
 const SENT = "Sent. Waiting for Discord.", FAILED = "Not sent.";
-const LAUNCH = [["queue", "In the queue"], ["in", "In the game"], ["done", "Done for tonight"]]; /* sheet.js's labels */
+const LAUNCH = [["queue", "In the queue"], ["in", "In the game"], ["done", "Done for tonight"]];
 const SOURCE = { board: "From the board's records.", blizzard: "From Blizzard.", library: "From the library.", discord: "From the group's Discord." };
-/* Guided folds these (next.css; hidden for the fake DOM and assistive tech) */
 const FOLD = ["#tn-cards", "#tn-before", "#tn-how", "#tn-actions", "#tn-left", ".jr-path"];
 const sfx = (n) => { try { K.sfx(n); } catch (e) {} };
 const hap = (n) => { try { if (window.BoardHaptics) window.BoardHaptics.fire(n); } catch (e) {} };
@@ -20,14 +18,14 @@ const rm = (el) => { if (el && el.parentNode) el.parentNode.removeChild(el); };
 const focus = (el) => { try { if (el) el.focus({ preventScroll: true }); } catch (e) {} };
 const btn = (cls, label, fn, a = {}) => h("button", { type: "button", class: cls, ...a, onclick: fn }, label);
 const journey = () => (JOURNEYS.includes(root.dataset.journey) ? root.dataset.journey : "guided");
-const WAX = { guided: "red", curious: "amber", everything: "green" }; /* seals.js's colours, so the corner seal is the one pressed */
+const WAX = { guided: "red", curious: "amber", everything: "green" };
 const WEEK = ["train-10", "first-dungeon", "meet-again"];
 const brain = () => window.BoardBrain || null;
 const keyed = (B) => !!(B && B.hasKey && B.hasKey());
 const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=0fd7465535").catch(() => null));
 
 const meSlug = () => { const m = MEM.member(); return m ? MEM.slug(m.name) : null; };
-const ticksOf = (slug) => (slug && typeof K.beforeTicks === "function" ? K.beforeTicks(slug) : []); /* the integrator exports beforeTicks */
+const ticksOf = (slug) => (slug && typeof K.beforeTicks === "function" ? K.beforeTicks(slug) : []);
 function snoozeMap() {
   const out = {}; try { for (const [k, v] of Object.entries(JSON.parse(MEM.get("snooze") || "{}") || {})) if (typeof v === "number" && v > Date.now()) out[k] = v; } catch (e) {} return out;
 }
@@ -37,7 +35,6 @@ function buildInput() {
     launch: B && B.launch ? B.launch() : [], partyRows: B && B.party ? B.party() : [], me, journey: journey(), key: keyed(B), ticks: ticksOf(me && me.slug), snoozed: snoozeMap(), cleanName: K.cleanName };
 }
 
-/* visible words: not hidden, in the journey's depth, laid out */
 function words(box, layout) {
   const L = journey().charAt(0), dj = (el) => (el.getAttribute("data-j") || L).split(" ").includes(L); let n = 0;
   const walk = (el) => { for (const c of el.childNodes) { if (c.nodeType !== 1) n += c.nodeType === 3 || c.nodeType === undefined ? String(c.textContent).split(/\s+/).filter(Boolean).length : 0; else if (!c.hidden && dj(c) && !/^(script|style)$/.test(c.localName) && (!layout || c.getClientRects().length)) walk(c); } };
@@ -46,14 +43,10 @@ function words(box, layout) {
 }
 const panelWords = () => { const p = $("#panel-tonight"); return p && !p.hidden ? words(p, p.getClientRects().length > 0) : 0; };
 
-/* folding: only what this file hid is shown again */
 function setHidden(el, on) {
   if (on) { if (!el.hasAttribute("hidden")) { el.setAttribute("hidden", ""); el.setAttribute("data-nx-hid", ""); } }
   else if (el.hasAttribute("data-nx-hid")) { el.removeAttribute("hidden"); el.removeAttribute("data-nx-hid"); }
 }
-/* html classes (next.css): jr-set = a journey is stored (the card's corner seal); nx-solo = Guided with the card folded, the card's two
-   buttons are the one decision (D1: the chrome stays, only the other cards fold; Escape and the close still work); nx-tn = the Next steps
-   scene is open */
 function markSet() {
   root.classList.toggle("jr-set", JOURNEYS.includes(MEM.get("journey")));
   root.classList.toggle("nx-solo", journey() === "guided" && !NX.open && NX.solo !== false);
@@ -62,14 +55,11 @@ function fold(panel, j, on) {
   const g = on && j === "guided", meBox = $("#tn-me");
   for (const q of FOLD) for (const el of panel.querySelectorAll(q)) setHidden(el, g && !(NX.open && q === "#tn-cards"));
   for (const el of panel.querySelectorAll("#tn-me .ps-mine")) setHidden(el, g && !NX.open);
-  for (const el of panel.querySelectorAll("#tn-me .tn-why, #tn-me .tn-pick .tn-who")) setHidden(el, on); /* the card says it (every journey since integrator pass 3) */
+  for (const el of panel.querySelectorAll("#tn-me .tn-why, #tn-me .tn-pick .tn-who")) setHidden(el, on);
   if (meBox) meBox.classList.toggle("nx-compact", g && !!MEM.me());
   panel.classList.toggle("nx-open", g && NX.open);
 }
 
-/* Curious and Everything keep the card, the name chip, the trails and the seals on the first screen; the other blocks (Curious: the
-   launch cards too) wait in one details, "Show me more" (the scroll budget; nothing is removed, the renderers find every id still).
-   Guided has its own fold above, so the blocks go back to the panel there. */
 const REST = { curious: ["#tn-cards", "#tn-before", "#tn-how"], everything: ["#tn-before", "#tn-how"] };
 function restFold(panel, j) {
   let d = $("#nx-rest"); const ids = REST[j] || [];
@@ -80,17 +70,15 @@ function restFold(panel, j) {
   for (const el of all) if (!els.includes(el) && d.contains(el)) panel.insertBefore(el, d);
   if (!d.parentNode) panel.insertBefore(d, $("#tn-me") || els[0]);
   for (const el of els) if (el.parentNode !== d) d.appendChild(el);
-  for (const el of els) d.appendChild(el); /* keep the document order (cards, before, how) */
+  for (const el of els) d.appendChild(el);
 }
 
 const minutes = (n) => (!(n > 0) ? "" : n <= 1 ? "About a minute." : `About ${Math.round(n)} minutes.`);
 function tonightLine(t, short) {
   if (!t || !t.label) return null;
-  /* integrator pass 3: the event's own date, as the wall shows it (the names window's close read "Launch: open until Nov 4, 3 AM ET") */
   const when = Number.isFinite(t.epoch) ? K.fmtWhen(t.epoch, { rel: true }) : t.open && t.untilEpoch ? `open until ${K.fmtWhen(t.untilEpoch, { rel: true })}` : "";
   let s = `${String(t.label).split(":")[0].trim()}${when ? `: ${when}` : ""}.`;
   if (!short) {
-    /* fix round A10: the count out of the five, then the rest only when there is any */
     const c = t.coming || {}, n = c.in || 0, rest = [[c.maybe, "tentative"], [c.late, "running late"], [c.out, "out"]].filter(([k]) => k > 0), none = ((D.party && D.party.members.length) || 5) - n - rest.reduce((x, [k]) => x + k, 0);
     s += n ? ` ${n} of the five ${n === 1 ? "has" : "have"} said they're in for launch night.` : " Nobody has said they're in for launch night yet.";
     if (rest.length) s += ` ${K.andList(rest.map(([k, w]) => `${k} ${w}`))}.`;
@@ -107,17 +95,12 @@ function seal(step) {
   return im;
 }
 const launchNow = () => { try { return window.__v15.status().state; } catch (e) { return null; } };
-/* a write with no personal key cannot land from this view: the primary opens the Sign-ups card in Discord instead (a link, so the
-   Activity's openExternalLink handler takes it), and the status line says how to answer here next time */
 const signupHref = () => { const L = (D.tonight && D.tonight.links) || {}; return /^https:\/\/discord\.com\//.test(String(L.signup || "")) ? L.signup : null; };
-/* D4: Change person and Show me more are text links under the buttons (48 px tap boxes), so the card holds the step and Not now only */
 const link = (id, label, fn, a = {}) => h("a", { class: "nx-link", id, href: "#tonight", ...a, onclick: (e) => { e.preventDefault(); fn(); } }, label);
 const links = (g) => (g ? h("p", { class: "nx-links" }, MEM.me() ? link("nx-who", "Change person", () => { const c = $("#tn-change"); if (c) c.click(); }) : null, link("nx-more", NX.open ? "Show less" : "Show me more", () => expand(), { class: "nx-link jr-more", "aria-expanded": String(NX.open) })) : null);
 function actions(step, g) {
   const a = step.action || {}, box = h("div", { class: "nx-act", role: "group", "aria-label": "Your next step" });
   if (step.id === "launch-state") {
-    /* Guided folded (integrator pass 2): two buttons, the answer that comes next (none, then the queue, the game, done) and Show me
-       more; the other answers come with the rest */
     const cur = launchNow(), fold = g && !NX.open, nxt = { queue: "in", in: "done", done: "in" }[cur] || "queue";
     for (const [k, label] of LAUNCH) if (!fold || k === nxt) box.append(btn(`lib-btn${(fold ? k === nxt : cur === k) ? " strong" : ""}`, label, () => launchSet(k), { "data-state": k, "aria-pressed": String(cur === k) }));
     return box;
@@ -125,25 +108,21 @@ function actions(step, g) {
 
   const pickHere = step.id === "pick-name";
   if (!pickHere && a.label && (a.href || a.write)) box.append(h("button", { type: "button", class: "lib-btn strong jr-go", id: "nx-go", onclick: () => run(step, a) }, a.label));
-  /* D4: two buttons at most, the step and Not now */
   const alt = a.alt || (!pickHere && g && step.id !== "rest" ? "Not now" : null);
   if (alt) box.append(h("button", { type: "button", class: "lib-btn", id: "nx-alt", onclick: () => snooze(step.id) }, alt));
   return box.childNodes.length ? box : null;
 }
-/* "Worth a look next": the class page, the next date, the roads for a place */
 function trails(step, out) {
   const q = (out && out.queue) || [], rows = [], add = (href, label) => { if (href && label && rows.length < 3 && !rows.some((r) => r[0] === href)) rows.push([href, label]); };
   const learn = q.find((s) => s.id === "learn-role"), date = q.find((s) => s.id === "next-date");
   if (learn && learn.action) add(learn.action.href, `${String(learn.title).replace(/\.$/, "")}${learn.minutes ? `: ${learn.minutes} minutes` : ""}`);
-  if (date && date.action && step.id !== "next-date") add(date.action.href, String(date.title).replace(/,\s*[A-Z][a-z]+ time\.?$/, "")); /* polish: the chip drops the zone (the queue row and the card keep it) */
+  if (date && date.action && step.id !== "next-date") add(date.action.href, String(date.title).replace(/,\s*[A-Z][a-z]+ time\.?$/, ""));
   if (step.id === "meet" || step.place) add("#roads", "The roads to the meeting point");
   return rows.length ? h("div", { class: "nx-trails", id: "nx-trails", role: "group", "aria-labelledby": "nx-trails-h" }, h("h4", { class: "nx-trails-h", id: "nx-trails-h", text: "Worth a look next" }),
     ...rows.map(([href, label]) => h("a", { class: "lib-tool nx-trail", href }, label))) : null;
 }
-/* Everything's queue (fix round A1): each step as a fact with its source and minutes, no weights */
 const queueEl = (out) => h("ol", { class: "nx-queue", id: "nx-queue", "aria-label": "Every next step, in order" }, ...((out && out.queue) || []).map((s) => h("li", { class: "nx-q", "data-step": s.id },
   s.action && /^#[a-z]/.test(String(s.action.href || "")) ? h("a", { class: "nx-q-go", href: s.action.href }, h("b", { text: s.fact })) : h("b", { text: s.fact }), s.why ? ` ${s.why}` : null, h("small", { text: ` ${SOURCE[s.source] || SOURCE.board} ${minutes(s.minutes)}` }))));
-/* D7: "Your first week": the three steps after launch night with where each stands (Guided, behind Show me more) */
 function weekEl(out, step) {
   const rows = ((out && out.queue) || []).filter((x) => WEEK.includes(x.id));
   return rows.length ? h("div", { class: "nx-week" }, h("h4", { class: "nx-week-h", text: "Your first week" }), h("ol", {}, ...rows.map((x) => h("li", { "data-step": x.id }, h("b", { text: x.fact }), h("small", { text: x.id === step.id ? " Next." : " After that." }))))) : null;
@@ -152,19 +131,16 @@ function draw(out) {
   const panel = $("#panel-tonight"), meBox = $("#tn-me"); if (!panel || !meBox) return;
   const j = journey(), step = out && out.step, g = j === "guided";
   markSet();
-  /* D1: the card draws on the first visit too (Guided is the default); the seals sit under it as a compact row */
   if (!step) { NX.solo = false; markSet(); root.classList.remove("nx-on"); rm(NX.card); rm(NX.queue); rm(NX.lead); fold(panel, j, false); NX.buttons = 0; return; }
   NX.solo = true; markSet();
   root.classList.add("nx-on");
   if (NX.sayFor !== step.id) { NX.say = ""; NX.sayFor = step.id; }
   const card = NX.card || (NX.card = h("section", { class: "nx", id: "nx-card", "aria-labelledby": "nx-t" }));
-  /* D4: the launch line, then the card, then the name chip and the seals; on a phone the panel's bottom-aligned grid puts the card low */
   if (card.parentNode !== panel || (card.nextSibling !== meBox && card.nextSibling !== $("#nx-rest") && card.nextSibling !== NX.queue)) panel.insertBefore(card, meBox);
   const had = card.contains(document.activeElement) ? document.activeElement.id : null, deep = !g || NX.open;
   card.classList.toggle("nx-open", g && NX.open);
-  card.classList.toggle("jr-core", g); /* D3: under Guided the card is the Next steps core (one primary, one more) */
+  card.classList.toggle("jr-core", g);
   card.setAttribute("data-voice", g && step.voice === "coach" ? "coach" : "library");
-  /* the minutes and, at depth, the source share one line (the Curious card fits a 1366x768 laptop) */
   const meta = [g && !NX.open ? "" : minutes(step.minutes), deep ? SOURCE[step.source] || SOURCE.board : ""].filter(Boolean).join(" "), all = j === "everything";
 
   const facts = all && Number.isFinite(step.due) && step.kind !== "date" ? `Open until ${K.fmtWhen(step.due, { rel: true })}.` : "";
@@ -175,16 +151,12 @@ function draw(out) {
 
     NX.extFor === step.id && NX.say === NO_KEY && signupHref() ? h("div", { class: "nx-ext" }, h("a", { class: "tn-link", id: "nx-ext", href: signupHref(), target: "_blank", rel: "noopener" }, "Open the Sign-ups card in Discord")) : null,
     links(g), week, deep && !all ? trails(step, out) : null, g ? null : tonightLine(out.tonight, false)].filter(Boolean));
-  /* D4: Guided keeps the short launch line above the card */
   rm(NX.lead); NX.lead = null;
   if (g) { NX.lead = tonightLine(out.tonight, true); if (NX.lead) panel.insertBefore(NX.lead, card); }
-  /* Everything: the card, then the queue under it (contract 3.3), so the card itself fits the first screen */
   if (j === "everything") { const q = queueEl(out); rm(NX.queue); panel.insertBefore(q, card.nextSibling || null); NX.queue = q; }
   else { rm(NX.queue); NX.queue = null; }
   fold(panel, j, true); restFold(panel, j);
-  /* Guided: under 60 words in all (the chip and the seals add 14); the launch line goes first when the card and it pass 44 */
   if (g && !NX.open && NX.lead && words(card, false) + words(NX.lead, false) >= 44) { rm(NX.lead); NX.lead = null; }
-  /* D1: the seals (seals.js) are the one chooser, a compact row under the card: one line of words each */
   const sq = $("#tn-seals .tn-seals-q"); if (sq) sq.textContent = "Change how much the board shows you.";
   for (const x of document.querySelectorAll("#tn-seals .wx-line, #tn-seals .tn-wall")) x.hidden = true;
   if (had) focus(document.getElementById(had));
@@ -206,7 +178,6 @@ function go(tok) {
   const k = tok.split(".")[0], sub = tok.slice(k.length + 1);
   if (!K.SCENES.includes(k) || k === "library") { location.hash = `#${tok}`; return; }
   const open = () => { if (sub) K.SC.land = { key: k, sub, from: null }; if (K.SC.open === k) { if (sub) K.setHash(tok, false); } else K.goScene(k); };
-  /* lazy once js/scenes.js lands (10.2) */
   if (k === "decide" && window.__scenes && typeof window.__scenes.load === "function") window.__scenes.load("decide").then(open, open); else open();
 }
 function run(step, a) {
@@ -223,12 +194,12 @@ function settled(r) {
 }
 function write(w) {
   const B = brain(), slug = meSlug();
-  if (w.client === "tick") { /* a Before-launch tick on this device ("I made mine") */
+  if (w.client === "tick") {
     if (!slug) return;
     let t = []; try { t = JSON.parse(MEM.get(`before-${slug}`) || "[]"); } catch (e) {}
     MEM.set(`before-${slug}`, JSON.stringify([...new Set([].concat(t, String(w.value)))])); hap("confirm"); sfx("latch"); render(); return;
   }
-  if (!keyed(B)) { say(NO_KEY); sfx("chip"); if (!signupHref()) go("signups"); else draw(NX.out); return; } /* never a dead end: no card link, the Sign-ups scene */
+  if (!keyed(B)) { say(NO_KEY); sfx("chip"); if (!signupHref()) go("signups"); else draw(NX.out); return; }
   if (typeof B[w.client] !== "function") { go("signups"); return; }
   sfx("latch");
   Promise.resolve(B[w.client](w.value)).then(settled, () => say(FAILED));
@@ -240,20 +211,16 @@ function launchSet(k) {
   Promise.resolve(sent).then((r) => { if (r && (r.ok || r.state === "waiting")) hap("confirm"); else if (r && r.local) say("Saved on this device."); render(); }, render);
 }
 function snooze(id) { const o = snoozeMap(); o[id] = Date.now() + DAY; MEM.set("snooze", JSON.stringify(o)); NX.say = ""; sfx("page"); return render(); }
-function expand(on) { NX.open = on === undefined ? !NX.open : !!on; sfx("page"); markSet(); draw(NX.out); try { if (NX.open) $("#nx-trails").scrollIntoView({ block: "nearest" }); } catch (e) {} return NX.open; } /* fix round A5: a 375x667 phone opened the trails under the fold */
+function expand(on) { NX.open = on === undefined ? !NX.open : !!on; sfx("page"); markSet(); draw(NX.out); try { if (NX.open) $("#nx-trails").scrollIntoView({ block: "nearest" }); } catch (e) {} return NX.open; }
 
-/* after every Next steps render, on the brain's rows, on a journey switch */
 markSet();
 const tnOpen = (k) => root.classList.toggle("nx-tn", k === "tonight");
 tnOpen(K.SC && K.SC.open);
 K.on("scene", (k) => tnOpen(k));
 K.on("closed", () => tnOpen(null));
-/* a panel focused by a pointer (WebKit focuses the nearest focusable ancestor of a pressed button, here the whole panel) draws no
-   ring; a key press brings the keyboard rings back */
 document.addEventListener("pointerdown", () => root.classList.add("nx-ptr"), true);
 document.addEventListener("keydown", () => root.classList.remove("nx-ptr"), true);
 K.on("tonight", () => { render(); });
-/* picking the journey the page already shows changes no attribute (v13d setJourney only stores it): redraw after any journey button */
 document.addEventListener("click", (e) => { const t = e && e.target; if (!t || typeof t.closest !== "function" || !t.closest("[data-journey]")) return; setTimeout(() => { if (root.classList.contains("jr-set") !== JOURNEYS.includes(MEM.get("journey"))) render(); }, 0); }, true);
 K.on("signups", () => { render(); });
 K.on("forget", () => { MEM.set("snooze", null); NX.open = false; markSet(); });

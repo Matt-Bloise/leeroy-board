@@ -1,20 +1,6 @@
-// The modelled tavern (V10): the room's scenery and renderer on the vendored three.js 0.170.0. It replaces the hand-written
-// WebGL2 backend (gl2.js) and its painted back wall. Everything is built here from primitives (boxes, cylinders, lathes,
-// tori) and four painted tiling textures (oak planks, oak floor, field stone, lime plaster: img/room/*.webp, 1024 px, fetched
-// and decoded to ImageBitmaps, so the same code runs in the worker). No model downloads.
-//   const T = await createTavern(canvas, { shadows, power, yieldTask, timed, W, H })   shadows: 1 (512 maps) or 2 (1024); W, H: the viewport
-//   (2026-10-30: no window or document here, so the same code runs in the room's Web Worker on an OffscreenCanvas)
-//   T.renderer T.scene T.camera     three objects; room.js owns the loop and the camera motion
-//   T.layout(W, H, rect)            places the hearth and the shelves in the side gutters beside the board's rectangle
-//   T.setLights(k, s, flicker, n)   light levels (k: { hearth, candles, lantern, key }) and the flicker at time s (n: shared signal)
-//   T.setKey(nx, ny)                moves the key light with the pointer or the tilt (-1 to 1)
-//   T.setAir(n, s)                  dust and embers (n 0 removes), animated on the GPU at time s
-//   T.memory()  T.dispose()
 import * as THREE from "../vendor/three.module.min.js?v=08fd7545d1";
 
-/* ---------- textures ---------- */
 const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-/* the glow sprite's canvas (a radial gradient, not art): an OffscreenCanvas inside the worker (2026-10-30), an element on the page */
 const cv = (w, h) => { const c = typeof document === "undefined" ? new OffscreenCanvas(w, h) : document.createElement("canvas"); c.width = w; c.height = h; return [c, c.getContext("2d")]; };
 
 function glowCanvas(S = 128) {
@@ -23,8 +9,6 @@ function glowCanvas(S = 128) {
   g.fillStyle = rg; g.fillRect(0, 0, S, S); return c;
 }
 
-/* box UVs in world units (unit = metres per tile), the painted grain (the texture's u axis, planks run along it) along the box's longest
-   side. Every box gets its own seeded offset, and the small ones (beams, rails, posts) a half-turn too, so neighbours never show the same knot. */
 let boxN = 0;
 function boxGeo(w, h, d, unit = 1) {
   const geo = new THREE.BoxGeometry(w, h, d), p = geo.attributes.position, n = geo.attributes.normal, uv = geo.attributes.uv, ext = [w, h, d];
@@ -40,7 +24,6 @@ function boxGeo(w, h, d, unit = 1) {
 const FLAME_VS = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const NOISE = `float h1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h1(i), h1(i + vec2(1, 0)), f.x), mix(h1(i + vec2(0, 1)), h1(i + vec2(1, 1)), f.x), f.y); }`;
-/* a candle flame: a teardrop that sways, white-gold core, orange skirt, a blue root */
 const CANDLE_FS = `uniform float uTime, uSeed, uGain; varying vec2 vUv; ${NOISE}
 void main() {
   float y = vUv.y, t = uTime + uSeed * 10.0;
@@ -51,7 +34,6 @@ void main() {
   vec3 col = vec3(1.0, 0.42, 0.08) * body + vec3(1.0, 0.86, 0.6) * core + vec3(0.1, 0.18, 0.6) * smoothstep(0.25, 0.0, y) * smoothstep(1.0, 0.3, d) * 0.6;
   gl_FragColor = vec4(col * uGain, 1.0);
 }`;
-/* the hearth fire: turbulent tongues across a wide plane */
 const FIRE_FS = `uniform float uTime, uSeed, uGain; varying vec2 vUv; ${NOISE}
 void main() {
   float y = vUv.y, t = uTime * 1.4 + uSeed * 7.0;
@@ -61,7 +43,6 @@ void main() {
   vec3 col = mix(vec3(0.9, 0.18, 0.02), vec3(1.0, 0.78, 0.38), flame) * flame + vec3(0.35, 0.07, 0.0) * shape * shape;
   gl_FragColor = vec4(col * uGain, 1.0);
 }`;
-/* dust in the light and embers off the fire: points that drift on the GPU; dust shows only near a light */
 const AIR_VS = `attribute vec3 aSeed; uniform float uTime, uSize, uRise, uPR; uniform vec3 uMin, uMax, uL0, uL1, uL2; uniform float uLit;
 varying float vA;
 void main() {
@@ -81,8 +62,6 @@ export async function createTavern(canvas, opt) {
   const yieldTask = opt.yieldTask, timed = opt.timed;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: opt.power || "high-performance", stencil: false });
   if (!renderer.getContext()) throw new Error("WebGL did not start");
-  /* V13e: a context lost while the room starts (WebKit at 2120x909 lost it during the shader compile) must end as a failed start,
-     never an uncaught error: three's shader log check reads a null log on a lost context, so it is off, and the loss is caught */
   renderer.debug.checkShaderErrors = false;
   let lostEarly = false; const onEarlyLoss = (e) => { e.preventDefault(); lostEarly = true; };
   canvas.addEventListener("webglcontextlost", onEarlyLoss);
@@ -90,13 +69,8 @@ export async function createTavern(canvas, opt) {
   renderer.shadowMap.enabled = !!opt.shadows; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.shadowMap.autoUpdate = false;
   const gl = renderer.getContext(), dbg = gl.getExtension("WEBGL_debug_renderer_info");
   const info = { renderer: String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)), vendor: String(gl.getParameter(gl.VENDOR)), three: THREE.REVISION };
-  /* 2026-10-29 wide gamut: a Display P3 drawing buffer only where all of it is there: a P3 display, a context that accepts the
-     colour space, this three.js build knowing "display-p3" as an output space (the vendored 0.170.0 min build does not export
-     DisplayP3ColorSpace, so today this stays sRGB and says why), and no ?hdr=0 or html.hdr-off. HDR (extended range) is not
-     attempted: Chromium's WebGL takes only srgb and display-p3 (probe: board/tools/oracle/hdr-probe.mjs). Tiers are untouched. */
   info.colorSpace = "srgb"; info.wideWhy = "not a P3 display";
   try {
-    /* 2026-10-30: the switch and the gamut come from the page (room/tier.js pageEnv, opt.wide), since this runs inside the worker */
     const wide = opt.wide || { off: false, p3: false };
     if (wide.off) info.wideWhy = "hdr=0";
     else if (wide.p3) {
@@ -107,7 +81,7 @@ export async function createTavern(canvas, opt) {
   } catch (e) { info.colorSpace = "srgb"; info.wideWhy = "error: " + (e && e.message); }
   info.software = /swiftshader|llvmpipe|software|basic render|warp/i.test(info.renderer);
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(52, 1, 0.05, 40);
-  scene.background = new THREE.Color(0x000000); scene.fog = new THREE.FogExp2(0x000000, 0.075); /* V14: true black at the far edge (OLED), no lifted brown; 2026-10-30: the fog itself is black, so the far wall ends at 0, not 1 */
+  scene.background = new THREE.Color(0x000000); scene.fog = new THREE.FogExp2(0x000000, 0.075);
   const room = new THREE.Group(); scene.add(room);
   const owned = { tex: [], geo: new Set(), mat: new Set() }; let texBytes = 0;
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -116,8 +90,6 @@ export async function createTavern(canvas, opt) {
     if (rep) t.repeat.set(rep, rep);
     timed(() => renderer.initTexture(t)); texBytes += c.width * c.height * 4 * 1.33; owned.tex.push(t); await yieldTask(); return t;
   };
-  /* a painted tile from img/room: fetch, decode to an ImageBitmap (flipped here, so flipY stays false: ImageBitmaps ignore it), upload in its own
-     task. There is no document in the worker, so this is the one path on both threads. A failed fetch gives null: the material is flat. */
   let warned = false; const loaded = [];
   const fetchBitmap = async (name) => {
     try {
@@ -131,13 +103,9 @@ export async function createTavern(canvas, opt) {
     const t = new THREE.Texture(bmp); t.flipY = false; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = aniso; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
     timed(() => renderer.initTexture(t)); texBytes += 1024 * 1024 * 4 * 1.33; owned.tex.push(t); loaded.push(name); await yieldTask(); return t;
   };
-  /* textures: the four fetches and decodes run together (off the thread), the uploads one per task */
   const NAMES = ["oak-planks", "oak-floor", "stone", "plaster"], bitmaps = await Promise.all(NAMES.map(fetchBitmap));
   const [tWood, tDark, tStone, tPlaster] = [await upload(NAMES[0], bitmaps[0]), await upload(NAMES[1], bitmaps[1]), await upload(NAMES[2], bitmaps[2]), await upload(NAMES[3], bitmaps[3])];
   const tGlow = await tex(glowCanvas());
-  /* the repeat breaker: the map is sampled twice, at the uv and at a turned, rescaled, shifted copy of it, and the two are mixed by a slow
-     noise (a floor mixes half and half everywhere, which also cancels its dark central band). Both samples are the same picture, so the average
-     brightness stays. uBlend is 0 on the low and medium tiers: one fetch, the same file, no extra cost. */
   const blendU = { value: opt.tier === "medium" || opt.tier === "low" ? 0 : 1 };
   const blendFix = (m, k) => {
     m.onBeforeCompile = (sh) => {
@@ -156,8 +124,7 @@ export async function createTavern(canvas, opt) {
     };
     m.customProgramCacheKey = () => "texblend";
   };
-  /* M: a lit material; with a painted map it gets the repeat breaker, without one (the fetch failed) it is a flat mid-tone */
-  const lowT = opt.tier === "medium" || opt.tier === "low"; /* medium: no bump map, one fewer sample per surface */
+  const lowT = opt.tier === "medium" || opt.tier === "low";
   const M = (o, flat, k = -1) => { if (lowT) { o = { ...o, bumpMap: null }; } if (flat != null && !o.map) o = { ...o, color: flat, bumpMap: null }; const m = new THREE.MeshStandardMaterial(o); owned.mat.add(m); if (o.map) blendFix(m, k); return m; };
   const mat = {
     wood: M({ map: tWood, bumpMap: tWood, bumpScale: 1.2, roughness: 0.78, color: 0xb9a48c }, 0x6a4a2e),
@@ -169,7 +136,7 @@ export async function createTavern(canvas, opt) {
     iron: M({ color: 0x2a2622, roughness: 0.48, metalness: 0.85 }),
     brass: M({ color: 0xb08a4a, roughness: 0.32, metalness: 1 }),
     pewter: M({ color: 0x9a968e, roughness: 0.3, metalness: 0.9 }),
-    wax: M({ color: 0xe8dcc0, roughness: 0.55, emissive: 0xa86a3a, emissiveIntensity: 0.9 }), /* wax glows near its flame */
+    wax: M({ color: 0xe8dcc0, roughness: 0.55, emissive: 0xa86a3a, emissiveIntensity: 0.9 }),
     glassG: M({ color: 0x2f5a2a, roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.82 }),
     glassB: M({ color: 0x5a3214, roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.85 }),
     glassC: M({ color: 0xc8c0a8, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.55 }),
@@ -184,7 +151,6 @@ export async function createTavern(canvas, opt) {
   };
   const WX = 4.2, CEIL = 3.1, BACK = -8.5, FRONT = 1;
 
-  /* ---------- the shell: floor, ceiling planks, walls of plaster between oak framing over a plank wainscot ---------- */
   const shell = () => {
     add(boxGeo(WX * 2, 0.1, FRONT - BACK, 3), mat.floor, 0, -0.05, (FRONT + BACK) / 2, { cast: false });
     add(boxGeo(WX * 2, 0.08, FRONT - BACK, 3), mat.beam, 0, CEIL + 0.04, (FRONT + BACK) / 2, { cast: false });
@@ -192,21 +158,20 @@ export async function createTavern(canvas, opt) {
     for (const s of [-1, 1]) {
       const x = s * (WX + 0.05);
       add(boxGeo(0.1, CEIL - 0.9, FRONT - BACK, 2.8), mat.plaster, x, 0.9 + (CEIL - 0.9) / 2, (FRONT + BACK) / 2, { cast: false });
-      add(boxGeo(0.06, 0.9, FRONT - BACK, 2.8), mat.wood, x - s * 0.05, 0.45, (FRONT + BACK) / 2, { cast: false }); /* wainscot */
-      add(boxGeo(0.1, 0.1, FRONT - BACK, 2.8), mat.beam, x - s * 0.08, 0.93, (FRONT + BACK) / 2); /* chair rail */
-      add(boxGeo(0.16, 0.2, FRONT - BACK, 2.8), mat.beam, x - s * 0.1, CEIL - 0.1, (FRONT + BACK) / 2); /* wall plate */
-      add(boxGeo(0.14, 0.18, FRONT - BACK, 2.8), mat.beam, x - s * 0.09, 2.15, (FRONT + BACK) / 2); /* mid rail */
-      for (let z = 0.2; z > BACK; z -= 1.9) add(boxGeo(0.16, CEIL, 0.22, 2.8), mat.beam, x - s * 0.1, CEIL / 2, z); /* posts */
-      for (let z = -0.75; z > BACK + 1; z -= 1.9) { /* braces from the posts up to the wall plate */
+      add(boxGeo(0.06, 0.9, FRONT - BACK, 2.8), mat.wood, x - s * 0.05, 0.45, (FRONT + BACK) / 2, { cast: false });
+      add(boxGeo(0.1, 0.1, FRONT - BACK, 2.8), mat.beam, x - s * 0.08, 0.93, (FRONT + BACK) / 2);
+      add(boxGeo(0.16, 0.2, FRONT - BACK, 2.8), mat.beam, x - s * 0.1, CEIL - 0.1, (FRONT + BACK) / 2);
+      add(boxGeo(0.14, 0.18, FRONT - BACK, 2.8), mat.beam, x - s * 0.09, 2.15, (FRONT + BACK) / 2);
+      for (let z = 0.2; z > BACK; z -= 1.9) add(boxGeo(0.16, CEIL, 0.22, 2.8), mat.beam, x - s * 0.1, CEIL / 2, z);
+      for (let z = -0.75; z > BACK + 1; z -= 1.9) {
         const b = add(boxGeo(0.1, 1.2, 0.14, 2.8), mat.beam, x - s * 0.1, 2.6, z - 0.45); b.rotation.x = 0.85;
       }
     }
-    for (let z = -0.6; z > BACK; z -= 1.45) add(boxGeo(WX * 2, 0.3, 0.26, 2.8), mat.beam, 0, CEIL - 0.15, z); /* ceiling beams */
-    for (const x of [-1.6, 1.6]) add(boxGeo(0.12, 0.1, FRONT - BACK, 2.8), mat.beam, x, CEIL - 0.34, (FRONT + BACK) / 2, { cast: false }); /* purlins under the beams */
+    for (let z = -0.6; z > BACK; z -= 1.45) add(boxGeo(WX * 2, 0.3, 0.26, 2.8), mat.beam, 0, CEIL - 0.15, z);
+    for (const x of [-1.6, 1.6]) add(boxGeo(0.12, 0.1, FRONT - BACK, 2.8), mat.beam, x, CEIL - 0.34, (FRONT + BACK) / 2, { cast: false });
   };
   shell(); await yieldTask();
 
-  /* ---------- props ---------- */
   const lathe = (pts, seg = 18) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
   const BOTTLES = [
     lathe([[0, 0], [0.07, 0], [0.074, 0.02], [0.074, 0.2], [0.062, 0.245], [0.024, 0.28], [0.021, 0.34], [0.027, 0.35], [0, 0.352]]),
@@ -238,17 +203,16 @@ export async function createTavern(canvas, opt) {
     flame(p, x, y + h + 0.004, z, 0.05, 0.11); glow(p, x, y + h + 0.05, z, 0.6, 0xffb060, 0.6);
   };
 
-  /* the hearth on the left wall: a stone chimney breast, an oak mantel, a fire on logs; placed in the left gutter by layout() */
   const hearth = new THREE.Group(); room.add(hearth);
   {
     const hx = -WX + 0.36, D = 0.72;
-    add(boxGeo(D, 0.95, 0.42, 2), mat.stone, hx, 0.475, 0.62, { parent: hearth }); /* jambs */
+    add(boxGeo(D, 0.95, 0.42, 2), mat.stone, hx, 0.475, 0.62, { parent: hearth });
     add(boxGeo(D, 0.95, 0.42, 2), mat.stone, hx, 0.475, -0.62, { parent: hearth });
-    add(boxGeo(D + 0.04, 0.34, 1.68, 2), mat.stone, hx + 0.02, 1.12, 0, { parent: hearth }); /* lintel */
-    add(boxGeo(D + 0.16, 0.1, 1.9, 2.8), mat.wood, hx + 0.08, 1.34, 0, { parent: hearth }); /* mantel */
-    add(boxGeo(D - 0.1, CEIL - 1.39, 1.4, 2), mat.stone, hx - 0.05, 1.39 + (CEIL - 1.39) / 2, 0, { parent: hearth }); /* chimney */
-    add(boxGeo(0.1, 0.95, 0.84, 1), mat.soot, -WX + 0.05, 0.475, 0, { parent: hearth, cast: false }); /* the firebox back */
-    add(boxGeo(D + 0.3, 0.06, 1.9, 2), mat.stone, hx + 0.12, 0.03, 0, { parent: hearth, cast: false }); /* hearth stone */
+    add(boxGeo(D + 0.04, 0.34, 1.68, 2), mat.stone, hx + 0.02, 1.12, 0, { parent: hearth });
+    add(boxGeo(D + 0.16, 0.1, 1.9, 2.8), mat.wood, hx + 0.08, 1.34, 0, { parent: hearth });
+    add(boxGeo(D - 0.1, CEIL - 1.39, 1.4, 2), mat.stone, hx - 0.05, 1.39 + (CEIL - 1.39) / 2, 0, { parent: hearth });
+    add(boxGeo(0.1, 0.95, 0.84, 1), mat.soot, -WX + 0.05, 0.475, 0, { parent: hearth, cast: false });
+    add(boxGeo(D + 0.3, 0.06, 1.9, 2), mat.stone, hx + 0.12, 0.03, 0, { parent: hearth, cast: false });
     const logG = new THREE.CylinderGeometry(0.06, 0.07, 0.62, 10);
     add(logG, mat.log, hx - 0.02, 0.1, 0.02, { parent: hearth, rx: Math.PI / 2, ry: 0.2 });
     add(logG, mat.log, hx + 0.08, 0.12, -0.05, { parent: hearth, rx: Math.PI / 2, ry: -0.35 });
@@ -256,11 +220,10 @@ export async function createTavern(canvas, opt) {
     for (const [z, w, h, s] of [[-0.12, 0.42, 0.62, 0], [0.12, 0.38, 0.55, 3], [0, 0.55, 0.72, 6]]) {
       const f = flame(hearth, hx + 0.05, 0.12, z, w, h, FIRE_FS, 1.3); f.material.uniforms.uSeed.value = s;
     }
-    glow(hearth, hx + 0.2, 0.42, 0, 1.6, 0xff7a2a, 0.3); /* soft: at full strength it glared beside the first tile (critic panel 2) */
+    glow(hearth, hx + 0.2, 0.42, 0, 1.6, 0xff7a2a, 0.3);
     mug(hearth, hx + 0.12, 1.39, 0.62, 0.4); mug(hearth, hx + 0.16, 1.39, 0.45, -0.3, mat.pewter);
     bottle(hearth, hx + 0.1, 1.39, -0.58, 0, mat.glassG); candle(hearth, hx + 0.16, 1.39, -0.32, 0.2);
   }
-  /* the shelves on the right wall: three oak boards of bottles and tankards, a barrel, a lantern on a bracket */
   const shelf = new THREE.Group(), lanternG = new THREE.Group(); room.add(shelf);
   {
     const sx = WX - 0.2;
@@ -280,9 +243,8 @@ export async function createTavern(canvas, opt) {
     const barrel = lathe([[0, 0], [0.22, 0], [0.25, 0.1], [0.27, 0.28], [0.25, 0.46], [0.22, 0.56], [0, 0.56]], 22);
     add(barrel, mat.wood, sx - 0.15, 0, 0.45, { parent: shelf });
     for (const [by, br] of [[0.08, 0.243], [0.47, 0.243], [0.28, 0.272]]) add(new THREE.TorusGeometry(br, 0.008, 6, 28), mat.iron, sx - 0.15, by, 0.45, { parent: shelf, rx: Math.PI / 2, cast: false });
-    /* the lantern by the door */
     const L = lanternG; L.position.set(WX - 0.3, 2.42, 0.25); shelf.add(L);
-    add(new THREE.BoxGeometry(0.3, 0.02, 0.02), mat.iron, 0.12, 0.2, 0, { parent: L, cast: false }); /* bracket */
+    add(new THREE.BoxGeometry(0.3, 0.02, 0.02), mat.iron, 0.12, 0.2, 0, { parent: L, cast: false });
     add(new THREE.CylinderGeometry(0.004, 0.004, 0.12, 4), mat.iron, 0, 0.13, 0, { parent: L, cast: false });
     add(new THREE.CylinderGeometry(0.02, 0.09, 0.08, 4, 1).rotateY(Math.PI / 4), mat.iron, 0, 0.05, 0, { parent: L });
     add(new THREE.BoxGeometry(0.12, 0.18, 0.12), mat.pane, 0, -0.08, 0, { parent: L, cast: false });
@@ -290,8 +252,6 @@ export async function createTavern(canvas, opt) {
     add(new THREE.BoxGeometry(0.14, 0.02, 0.14), mat.iron, 0, -0.18, 0, { parent: L, cast: false });
     flame(L, 0, -0.15, 0, 0.04, 0.09); glow(L, 0, -0.08, 0, 0.9, 0xffb868, 0.6);
   }
-  /* the iron chandelier: a ring of six candles, hung behind the board (layout), where it is never
-     seen; its light washes the beams and the dust */
   const chand = new THREE.Group(); room.add(chand);
   {
     add(new THREE.TorusGeometry(0.24, 0.013, 8, 40), mat.iron, 0, 0, 0, { parent: chand, rx: Math.PI / 2 });
@@ -304,7 +264,6 @@ export async function createTavern(canvas, opt) {
   }
   await yieldTask();
 
-  /* ---------- lights ---------- */
   const fireL = new THREE.PointLight(0xff8a3a, 16, 0, 2), chandL = new THREE.PointLight(0xffc070, 7, 0, 2), lantL = new THREE.PointLight(0xffd28a, 5, 0, 2), fillL = new THREE.PointLight(0xffd18c, 7, 0, 2);
   hearth.add(fireL); fireL.position.set(-WX + 0.9, 0.55, 0);
   chand.add(chandL); chandL.position.set(0, 0.12, 0);
@@ -315,7 +274,6 @@ export async function createTavern(canvas, opt) {
   for (const l of shadowLights) { l.castShadow = true; l.shadow.mapSize.set(opt.shadows > 1 ? 1024 : 512, opt.shadows > 1 ? 1024 : 512); l.shadow.radius = 4; l.shadow.bias = -0.004; l.shadow.camera.near = 0.1; l.shadow.camera.far = 12; }
   const base = { fire: fireL.intensity, chand: chandL.intensity, lant: lantL.intensity, fill: fillL.intensity };
 
-  /* ---------- air: dust in the light, embers over the fire ---------- */
   const air = [];
   const makePoints = (n, min, max, o) => {
     const g = new THREE.BufferGeometry(), seed = new Float32Array(n * 3);
@@ -325,7 +283,6 @@ export async function createTavern(canvas, opt) {
     const m = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 }, uSize: { value: o.size }, uRise: { value: o.rise }, uPR: { value: 1 }, uMin: { value: new THREE.Vector3(...min) }, uMax: { value: new THREE.Vector3(...max) }, uColor: { value: new THREE.Color(o.color) }, uLit: { value: o.lit ? 1 : 0 }, uL0: { value: new THREE.Vector3() }, uL1: { value: new THREE.Vector3() }, uL2: { value: new THREE.Vector3() } }, vertexShader: AIR_VS, fragmentShader: AIR_FS, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
     const p = new THREE.Points(g, m); p.frustumCulled = false; scene.add(p); return p;
   };
-  /* built once at the largest count and compiled with the rest; a tier change only moves the draw range, so it never compiles */
   const AIR_MAX = 600;
   air.push(makePoints(AIR_MAX, [-3.6, 0.3, -6.5], [3.6, 2.9, -1.2], { size: 9, rise: 0.025, color: 0xffd7a0, lit: true }));
   air.push(makePoints(AIR_MAX / 8, [-3.7, 0.3, -0.35], [-3.0, 2.4, 0.35], { size: 7, rise: 0.35, color: 0xff7a28 }));
@@ -340,14 +297,12 @@ export async function createTavern(canvas, opt) {
   const tick = (s) => {
     for (const f of flames) { f.quaternion.copy(camera.quaternion); f.material.uniforms.uTime.value = s; }
     for (const p of air) {
-      const u = p.material.uniforms; u.uTime.value = s; u.uPR.value = renderer.domElement.height / 900; /* point size follows the drawing buffer's height */
+      const u = p.material.uniforms; u.uTime.value = s; u.uPR.value = renderer.domElement.height / 900;
       if (p.userData.follow) p.position.copy(p.userData.follow.position);
       else { u.uL0.value.copy(fireL.getWorldPosition(v)); u.uL1.value.copy(chandL.getWorldPosition(v)); u.uL2.value.copy(lantL.getWorldPosition(v)); }
     }
   };
   const flick = (s, ph) => 0.5 * Math.sin(s * 7.1 + ph) + 0.3 * Math.sin(s * 13.7 + ph * 2.3) + 0.2 * Math.sin(s * 23.1 + ph * 0.7);
-  /* V13b: n is the page's shared flicker signal (-1 to 1, the same one the wall light and the card highlights read); the
-     hearth follows it, the candles and the lantern keep a little of their own flutter on top */
   const setLights = (k, s, flicker, n) => {
     const own = (ph) => (n == null ? flick(s, ph) : 0.7 * n + 0.3 * flick(s, ph));
     const fl = (ph, amt) => (flicker ? 1 + amt * own(ph) * flicker : 1);
@@ -355,22 +310,16 @@ export async function createTavern(canvas, opt) {
     fillL.intensity = base.fill * (k.key == null ? 1 : k.key) * fl(2.9, 0.12);
     for (const g of glows) g.s.material.opacity = g.base * (g.s.parent === hearth ? k.hearth * fl(0.3, 0.15) : g.s.parent === chand ? k.candles : g.s.parent === lanternG ? k.lantern : k.candles);
   };
-  /* V13b: the key light is the warm fill over the room's middle; the pointer (or the phone's tilt) moves it, nx and ny from
-     -1 to 1, the same light position the card highlights on the page use. It casts no shadow, so moving it costs nothing. */
   const setKey = (nx, ny) => { fillL.position.set(nx * 2.4, 2.35 - ny * 0.75, -2.3 - Math.abs(nx) * 0.6); };
 
-  /* no environment reflections: three's PMREM capture compiles its blur shaders in one task (1.1 s on ANGLE D3D11, measured),
-     which the room's start must never cost; the glass and metal get their glints from the point lights instead */
 
-  /* the side features sit in the gutters beside the board, wherever the board's edges fall on this screen; a tall screen
-     shows almost no gutter, so there the camera turns to face the hearth wall and the beams run away from it */
   const pose = { pos: new THREE.Vector3(0, 1.6, 0), yaw: 0, pitch: 0 };
   let fireK = 1;
   const layout = (W, H, rect) => {
-    fireK = W < H ? 0.55 : 0.8; /* a phone sees the fire only as a band of light between the cards: kept low */
+    fireK = W < H ? 0.55 : 0.8;
     if (W < H) {
       hearth.position.z = -2.78; shelf.position.z = -4.6; chand.visible = false;
-      pose.pos.set(-1.15, 1.32, -2.78); pose.yaw = Math.PI / 2; pose.pitch = (9 * Math.PI) / 180; /* the fire sits behind the cards: a phone gets the chimney and the beams, calm behind the heading */
+      pose.pos.set(-1.15, 1.32, -2.78); pose.yaw = Math.PI / 2; pose.pitch = (9 * Math.PI) / 180;
       if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
       return;
     }
@@ -379,20 +328,15 @@ export async function createTavern(canvas, opt) {
     const ndc = (px) => (px / W) * 2 - 1;
     const gl0 = rect ? (ndc(0) + ndc(Math.max(rect.left, 1))) / 2 : -0.92, gr0 = rect ? (ndc(W) + ndc(Math.min(rect.right, W - 1))) / 2 : 0.92;
     const place = (g, frontX, ndcX, zMin, zMax) => { const d = Math.abs(frontX) / (tanH * Math.max(0.3, Math.abs(ndcX))); g.position.z = -Math.min(zMax, Math.max(zMin, d)); };
-    place(hearth, WX - 0.3, gl0 - 0.02, 2.2, 6.5); /* the near jamb hides the near half of the opening */ place(shelf, WX - 0.25, gr0, 2.4, 6.5); /* by the fire and the bottles, not the front faces */
-    /* a gutter under 70 px would show only a clipped sliver of the prop: it moves beside the camera, out of the frame (its
-       light stays in the scene, so the light count and the compiled shaders never change) */
+    place(hearth, WX - 0.3, gl0 - 0.02, 2.2, 6.5);  place(shelf, WX - 0.25, gr0, 2.4, 6.5);
     if (rect && rect.left < 70) hearth.position.z = -1.2;
     if (rect && W - rect.right < 70) shelf.position.z = -1.2;
-    /* the chandelier hangs behind the board: its light warms the beams, its iron never crowds the heading (critic panel 1) */
-    chand.visible = true; chand.position.set(0, 2.2, -5.6); /* no chains: a chain would cross the gap between the clock and the board */
+    chand.visible = true; chand.position.set(0, 2.2, -5.6);
     if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   };
 
   await yieldTask();
-  setAir(AIR_MAX); tick(0); layout(opt.W || 1, opt.H || 1, null); /* everything visible while it compiles */
-  /* shaders compile in parallel where the browser can (KHR_parallel_shader_compile), so no long task; without it (software
-     GPUs, which auto never gives a 3D tier) they compile in one step, timed, and the ladder judges the frames after */
+  setAir(AIR_MAX); tick(0); layout(opt.W || 1, opt.H || 1, null);
   try { if (gl.getExtension("KHR_parallel_shader_compile")) await renderer.compileAsync(scene, camera); else timed(() => renderer.compile(scene, camera)); }
   catch (er) { if (!(lostEarly || gl.isContextLost())) throw er; }
   canvas.removeEventListener("webglcontextlost", onEarlyLoss);
@@ -400,7 +344,6 @@ export async function createTavern(canvas, opt) {
   setAir(0);
   if (renderer.shadowMap.enabled) renderer.shadowMap.needsUpdate = true;
   let lost = false;
-  /* V14: ordered dithering on every lit material: dark fog and wall gradients band on 8-bit OLED panels without it */
   scene.traverse((o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) { if (m && m.isMeshStandardMaterial) m.dithering = true; } });
   return {
     renderer, scene, camera, info, layout, setLights, setKey, tick, pose,

@@ -1,10 +1,6 @@
-/* release gate 2026-10-29: the zoom buttons only exist in the wide map layout; on phones and short windows they showed unstyled in the page flow */
 .map-ctl { display: none; }
-/* Wide screens (owner, 2026-10-29): use the width. Loaded after v14.css. Phones and short landscape screens are untouched. */
 
-/* ---- Three roads: the map is the sheet. scenes/wide.js sets .wide-map and data-lay (side | below) on the panel ---- */
 @media (min-width: 700px) and (min-height: 501px) {
-  /* CLS (2026-10-30): the roads panel the warm-up un-hides inside an open scene is not the scene on show; it used to take the open sheet's body padding and stretch the open panel for about 90 ms (0.4 at 768 on Sign-ups, shifting out and back). In the warming layer it still sets the frame it will open in. */
   .scene-layer.warming .sheet:has(#panel-roads.wide-map:not([hidden])) .sheet-orn, .scene-layer:not(.warming) .sheet:has(#panel-roads.wide-map:not([hidden], .warm)) .sheet-orn { display: none; }
   .scene-layer.warming .sheet-body:has(#panel-roads.wide-map:not([hidden]):not(.leaving)), .scene-layer:not(.warming) .sheet-body:has(#panel-roads.wide-map:not([hidden], .leaving, .warm)) { padding: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); align-content: stretch; }
   #panel-roads.wide-map { --side: clamp(19rem, 25%, 31rem); width: 100%; min-height: 0; margin: 0; zoom: 1 !important; grid-template-columns: var(--side) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "lede map" "legend map" "cap map"; gap: 0; align-content: stretch; }
@@ -21,18 +17,14 @@
   #panel-roads.wide-map .road-btn b { font-size: 1.05em; }
   #panel-roads.wide-map .road-btn span { font-size: 0.95em; text-wrap: balance; }
   #panel-roads.wide-map[data-lay="below"] { font-size: clamp(1rem, 1.3vw, 1.4rem); }
-  /* a short screen: the who-is-where line repeats the cards, so it stays for screen readers only and the cards and the note fit */
   @media (max-height: 900px) { #panel-roads.wide-map[data-lay="side"] > #map-lede { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; } #panel-roads.wide-map[data-lay="side"] > .roads-legend { padding-top: 20px; } }
-  /* frame leftovers (2026-10-30): js/wide.js widens the column first; a note still too long for its row scrolls by itself, never the frame */
   #panel-roads.wide-map[data-lay="side"] > .map-caption { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
-  /* the map box is the viewport: no padding, no frame of its own, the parchment runs to the sheet's edges */
   #panel-roads.wide-map > .map-box { grid-area: map; height: 100%; padding: 0; border: 0; border-radius: 0; border-left: 2px solid var(--brass-dim); box-shadow: inset 0 0 70px var(--slip-burn); touch-action: none; cursor: grab; overflow: hidden; }
   #panel-roads.wide-map[data-lay="below"] > .map-box { border-left: 0; border-bottom: 2px solid var(--brass-dim); }
   #panel-roads.wide-map > .map-box.dragging { cursor: grabbing; }
   #panel-roads.wide-map > .map-box svg { width: 100%; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none; }
   #panel-roads.wide-map > .map-box:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: -3px; }
   #panel-roads.wide-map > .map-box :is(.road-g, .road-line) { cursor: pointer; }
-  /* zoom buttons: the map's bottom right corner, over the parchment (top right when the cards are under the map) */
   #panel-roads.wide-map > .map-ctl { grid-area: map; z-index: 3; align-self: end; justify-self: end; margin: 14px; display: flex; gap: 6px; }
   #panel-roads.wide-map[data-lay="below"] > .map-ctl { align-self: start; }
   #panel-roads:not(.wide-map) .map-ctl { display: none; }
@@ -41,11 +33,9 @@
   .m-btn:disabled { opacity: 0.4; cursor: default; }
   @media (hover: hover) { .m-btn:not(:disabled):hover { transform: translateY(-2px); color: var(--brass-hi); } }
   .m-btn:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
-  /* a zone's card sits on the map's top left corner, clear of the cards beside it */
   #map .zone-card { left: 14px; top: 14px; }
 }
 
-/* ---- cards carry a wax pip pressed into the top left corner, in the card's own colour, in place of a bar down the left edge ---- */
 :is(.tile-band, .road-btn, .bq, .buff, .deep-b, .ribbon, .ribbon-quiet, .answer, .said, .jr-path) { position: relative; border-left-width: 0; }
 .tile-band { --pip: var(--acc); box-shadow: inset 1px 1px 0 var(--slip-sheen), inset 0 -1px 0 var(--ink-line), 0 2px 10px var(--wear); }
 .road-btn { --pip: var(--rc); }
@@ -58,7 +48,6 @@
   background: radial-gradient(circle at 33% 27%, color-mix(in srgb, var(--pip) 45%, var(--cream)) 0 12%, transparent 40%), radial-gradient(circle, color-mix(in srgb, var(--pip) 78%, var(--oak-0)) 0 30%, var(--pip) 32% 64%, color-mix(in srgb, var(--pip) 62%, var(--oak-0)) 100%);
   box-shadow: 0 1px 2px var(--shadow), inset 0 -1px 1px var(--wear), inset 0 1px 0 var(--edge-hi); }
 
-/* ---- 1366 px and wider: type measures follow the frame, headings balance, lists sit one to a line ---- */
 @media (min-width: 1366px) {
   .lede, .panel > p { max-width: min(100%, 120ch); }
   :is(h2, h3, h4, .tile-title, .tn-card h3) { text-wrap: balance; }
@@ -68,7 +57,6 @@
   .bclass-names .bn { margin: 0; white-space: normal; }
   .bclass-names .bc { display: none; }
 }
-/* fix E5 (2026-10-30): from 2200 px, five shelf columns at most, Three roads as at 1920, wall rows share the frame, type grows */
 @media (min-width: 2200px) {
   .shelf { grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); max-width: 120rem; margin-inline: auto; width: 100%; }
   #panel-roads.wide-map { --side: clamp(19rem, 22%, 36rem); font-size: clamp(1rem, 0.5vw, 1.25rem); }
@@ -76,5 +64,4 @@
   .tile-body { font-size: clamp(0.95rem, 0.5vw, 1.3rem); }
 }
 @media (min-width: 2200px) and (min-height: 961px) { .wall { grid-auto-rows: 1fr; align-content: stretch; } }
-/* polish (2026-10-30): js/scenes.js holds Three roads unseen while its wide layout code is on the way */
 #panel-roads.wide-wait { visibility: hidden; }

@@ -1,28 +1,9 @@
-/* V13d: the board side of the shared brain (notes/SHARED-BRAIN-DESIGN.md section 3, stage 3; cloudflare/STAGE12-NOTES.md).
-   window.BoardBrain reads the bot's mirror from the leeroy-brain Worker (GET /api/state, then the /api/live WebSocket, with a
-   15 s poll when the socket is not there; V13e: the socket only with a key, keyless boards poll) and, with a personal board key, sends one person's sign-up state and journey
-   (POST /api/intent). It never sends a name, an id or anything but the fixed answer words, plus (Ask Leeroy, 2026-10-29) the
-   one question a person types into the ask box and its share tick; the answer comes back with GET /api/ask.
-   - V15 (2026-10-30, board/V15-LAUNCH-SPEC.md 5): the launch-night state (queue, in, done) is a third kind, mirrored as `launch`
-     rows in GET /api/state; with no Worker, no key or an older Worker (400), setLaunch reports local: true.
-   - M0 (2026-10-30, notes/VISION-MOBILE.md section 3): sendProbe posts one capability report (js/probe.js) to POST /probe: yes/no
-     answers, bounded numbers and three fixed words, nothing typed. Without the route, a Worker or a connection it stays here (local: true).
-   - Party sheet Phase 0 (2026-10-30, notes/VISION-PARTY-SHEET.md 5.1 to 5.4): GET and POST /api/sheet (one field of the key's own
-     sheet per call; a value only from the lists the page hands sheetVocab(), built from the board's own data) and POST /api/dispatch
-     (the asker's answered asks and their yes). The mirror's party rows (what each person left visible) ride in GET /api/state. A
-     Worker without the routes answers 404: the sheet then stays on the device and a dispatch says it is not switched on.
-   - The key arrives once in the address bar (#k=<key>&signups from "My board link" on the Sign-ups card); this file runs
-     before the board and the gate, stores it as board-key and takes it out of the address bar at once.
-   - Where it talks: relative /api on Discord's proxy (*.discordsays.com), the workers.dev URL on the public host, relative
-     /api on 127.0.0.1 only with ?brain=local (the local fake for the tests). Anywhere else it makes no request. */
 (() => {
 "use strict";
 const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const WHEN = ["6pm", "8pm", "later"], PACK = ["yes", "no"], MEET = ["vos", "xroads", "other"], FIX_PAGE = /^[a-z0-9/_.-]{1,80}$/, FIX_KEY = /^[a-z0-9_.-]{1,80}$/, PLACE_MAX = 40, FIX_NOTE_MAX = 200;
-const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"]; /* V15: the launch-night state */
-/* M0: the same table as PROBE_SHAPE in cloudflare/worker/src/brain.js (cloudflare/test/probe.test.mjs fails when they differ).
-   "bool" is true or false, [lo, hi] a whole number in that range, a list of words a closed set. */
+const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"];
 const PROBE = {
   kind: ["probe"], v: [1, 1],
   engine: ["webkit", "blink", "gecko", "other"],
@@ -38,18 +19,15 @@ const PROBE = {
   reducedMotion: "bool", saveData: "bool", hdrScreen: "bool", wideGamut: "bool", batteryApi: "bool", wakeLock: "bool",
 };
 const POLL_MS = 15000, PING_MS = 45000, WS_RETRY_MS = 120000, SLOW_MS = 30000;
-/* Phase 0 (2026-10-30): the sheet's fields, the ones that hold a slug, and the slug grammar, as the Worker has them */
 const SHEET = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"], SLUGGED = ["race", "class", "spec_path", "spec_at_40", "plan_zone"], SLUG = /^[a-z0-9-]{1,32}$/, GOALS_MAX = 140, PROF_MAX = 2, DISPATCH_MAX = 3;
 const B = { vocab: null, sheet: null, party: [], sheetOff: false, key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, subs: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, sent: 0, polls: 0, wsMsgs: 0, launch: [], lPend: null, launchRefused: false };
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
 };
-/* the board's own handlers (start) and any later listener (on, V15: js/v15.js hears the launch rows without owning start) */
 const emit = (n, ...a) => { for (const f of [B.h[n], ...(B.subs[n] || [])]) if (typeof f === "function") { try { f(...a); } catch (e) { console.error("brain", n, e); } } };
 function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
 
-/* the key: read from the address bar once, kept in this browser, never shown or logged */
 (function capture() {
   const saved = store.get("board-key");
   B.key = saved && KEY_RE.test(saved) ? saved : null;
@@ -83,8 +61,6 @@ function probeOk(b) {
     return Number.isInteger(v) && v >= spec[0] && v <= spec[1];
   });
 }
-/* Phase 0: the lists a sheet value must come from, handed over by the page from its own data (party.json, decide.json,
-   client.json, signups.json); until they arrive no listed field can leave */
 function sheetVocab(v) {
   const out = {};
   for (const f of [...SLUGGED, "professions"]) { const l = v && v[f]; if (Array.isArray(l) && l.length <= 64 && l.every((x) => typeof x === "string" && SLUG.test(x))) out[f] = Object.freeze(l.slice()); }
@@ -102,9 +78,6 @@ function sheetValueOk(f, v) {
   if (f === "goals") return typeof v === "string" && Array.from(v).length <= GOALS_MAX && !/[<>]|https?:|www\./i.test(v);
   return false;
 }
-/* only these bodies ever leave the page: a kind, one answer word from that kind's fixed list, and the mirror version; a sheet
-   write (one field, a listed value, the party toggle); a dispatch (ask ids and the asker's yes) */
-/* M3 (2026-10-30, notes MOBILE-CONTRACT 9.1): the same cleaning the bot gives a typed meeting place (signups.js cleanPlace), 40 characters */
 function cleanPlace(raw) {
   const t = String(raw == null ? "" : raw).replace(/<[^>]*>/g, " ").replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").replace(/[<>*_~`|#\[\]@]/g, "").replace(/\s+/g, " ").trim();
   return Array.from(t).slice(0, PLACE_MAX).join("").trim();
@@ -155,9 +128,6 @@ function safe(body, route) {
   if (!ok || /\d{17,20}/.test(JSON.stringify(body))) throw new Error("refused: only an answer word may leave the board");
   return body;
 }
-/* fix round D6: one try around the fetch and its JSON. A network or CORS failure (WebKit logs "Fetch API cannot load") marks the
-   brain offline (status() reads via "off", as with no Worker; the poll and the socket wait longer) and every caller answers
-   { ok: false, why: "offline" }; nothing logs */
 async function call(method, route, body) {
   const headers = {};
   if (B.key && (route === "/me" || route === "/intent" || route === "/ask" || route === "/probe" || route === "/sheet" || route === "/dispatch")) headers.Authorization = `Board ${B.key}`;
@@ -169,7 +139,6 @@ async function call(method, route, body) {
   return { status: r.status, data };
 }
 
-/* the mirror: a newer version replaces what the page shows; a pending answer settles against it */
 const nameOf = (n) => String(n || "").replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase();
 function mine() {
   const S = B.signups, me = B.me; if (!S || !me || !Array.isArray(S.entries)) return null;
@@ -184,14 +153,12 @@ function settle() {
   }
   if (moved) emit("pending", pending());
 }
-/* V15: the Worker's own launch-night rows ride beside the bot's snapshot; an older Worker sends none and the list stays empty */
 const launchRow = (r) => r && typeof r.slug === "string" && typeof r.name === "string" && LAUNCH.includes(r.state) && !/\d{17,20}/.test(`${r.slug} ${r.name}`);
 function mineLaunch() { const me = B.me; return me ? B.launch.find((r) => r.slug === me.slug) || null : null; }
 function settleLaunch() {
   const p = B.lPend, r = mineLaunch(); if (!p || !r || p.state === "sending" || p.state === "failed" || p.state === "local" || p.state === "saved") return;
   if (r.state === p.value && (!p.at || !r.at || Date.parse(r.at) >= Date.parse(p.at) - 1000)) { p.state = "saved"; emit("launchPending", launchPending()); }
 }
-/* Phase 0: one person's row of the party view (only what they left visible); a name or field that carries an id is dropped */
 const partyRow = (r) => r && typeof r.slug === "string" && SLUG.test(r.slug) && typeof r.name === "string" && r.fields && typeof r.fields === "object" && !/\d{17,20}/.test(JSON.stringify(r));
 const sheetFields = (f) => { const out = {}; for (const k of SHEET) { const e = f && f[k]; if (e && typeof e === "object" && "value" in e) out[k] = { value: e.value, visible: e.visible !== false, source: typeof e.source === "string" ? e.source : "board", at: e.at || null }; } return out; };
 function takeParty(rows) { if (!Array.isArray(rows)) return; B.party = rows.filter(partyRow).map((r) => ({ slug: r.slug, name: r.name, fields: sheetFields(r.fields), updated: r.updated || null })); emit("party", B.party.slice()); }
@@ -212,12 +179,10 @@ function journeyFromMirror() {
   const me = B.me, J = B.signups && B.signups.journeys; if (!me || !Array.isArray(J)) return;
   const row = J.find((j) => j.slug && j.slug === me.slug) || J.find((j) => nameOf(j.name) === nameOf(me.name));
   const v = row && JOURNEYS.includes(row.journey) ? row.journey : null;
-  /* while this board's own pick is on its way, an older mirror row must not flip the page back (V13e) */
   if (B.jWant) { if (v === B.jWant || Date.now() - B.jWantAt > 60000) B.jWant = null; else return; }
   if (v && v !== B.mirrorJ) { B.mirrorJ = v; emit("journey", v); }
 }
 
-/* reading: one GET at start, then the socket; the poll only while there is no socket and the tab is visible */
 const hidden = () => typeof document !== "undefined" && (document.hidden || document.visibilityState === "hidden");
 function schedulePoll(ms) { clearTimeout(B.pollT); B.pollT = setTimeout(pollOnce, ms); }
 async function pollOnce() {
@@ -255,7 +220,6 @@ async function me() {
     const r = await call("GET", "/me");
     if (r.status === 200 && r.data && r.data.slug) {
       B.me = { slug: r.data.slug, name: r.data.name }; B.keyBad = false;
-      /* waiting changes from an earlier visit show as waiting again */
       for (const p of r.data.pending || []) for (const [f, v] of Object.entries(p.patch || {})) { if (f === "rsvp") B.pend.rsvp = { value: v, at: p.at, state: "waiting", seq: p.seq }; if (p.kind === "launch" && f === "state" && LAUNCH.includes(v)) B.lPend = { value: v, at: p.at, state: "waiting", seq: p.seq }; }
     } else if (r.status === 401) { B.me = null; B.keyBad = true; }
   } catch (e) { B.errors++; }
@@ -266,8 +230,6 @@ async function me() {
   if (B.me) { askRead(); sheetRead(); } else askEmit();
   return B.me;
 }
-/* Phase 0: the key's own sheet (every field with an event, hidden ones too) and the party view; a Worker without the route answers
-   404 and the sheet stays on the device for the visit */
 async function sheetRead() {
   if (!B.base || !B.key || B.sheetOff) return null;
   try {
@@ -279,8 +241,6 @@ async function sheetRead() {
   return null;
 }
 const sheetCopy = () => (B.sheet ? { fields: JSON.parse(JSON.stringify(B.sheet.fields)), updated: B.sheet.updated } : null);
-/* one field per call: { ok, state: "saved" } once the Worker has the event; local: true when the page keeps it on this device
-   (no Worker, no key, a key the Worker does not know, a Worker without the route, or one that refused the value) */
 async function setSheet(field, value, visible) {
   const body = { field }; if (value !== undefined) body.value = value; if (visible !== undefined) body.visible = visible;
   try { safe(body, "/sheet"); } catch (e) { return { ok: false, state: "refused", why: "not on the board's lists" }; }
@@ -300,7 +260,6 @@ async function setSheet(field, value, visible) {
     return { ok: false, local: true, why: r.status === 400 ? "refused" : r.status === 429 ? "busy" : "failed" };
   } catch (e) { B.errors++; return { ok: false, local: true, why: "offline" }; }
 }
-/* Phase 0: the asker's own answered asks go to the party, posted by Leeroy, only on this call (the asker's tap) */
 async function dispatch(ids) {
   const body = { ids: Array.isArray(ids) ? ids.slice() : [], yes: true };
   try { safe(body, "/dispatch"); } catch (e) { return { ok: false, why: "refused" }; }
@@ -339,8 +298,6 @@ async function setRsvp(v) {
   emit("pending", pending());
   return { ok: p.state !== "failed", state: p.state };
 }
-/* the journey goes the same way (V13e: the Worker takes { kind: "journey" }, last one per key wins, and the bot stores it in
-   journeys.json and mirrors it); an older Worker answers 400, which is remembered for the visit, and the choice stays local */
 async function setJourney(j) {
   if (!B.base || !B.key || !JOURNEYS.includes(j) || B.journeyRefused) return { ok: false, refused: B.journeyRefused };
   try {
@@ -351,8 +308,6 @@ async function setJourney(j) {
     return { ok: r.status === 200 };
   } catch (e) { B.errors++; return { ok: false }; }
 }
-/* V15: the launch-night state. local: true means the page keeps it on this device only (no Worker, no key, or a Worker that
-   does not know the kind yet); waiting means the Worker has it and the mirror will confirm; saved once a launch row carries it */
 async function setLaunch(v) {
   if (!LAUNCH.includes(v)) return { ok: false, why: "not a state" };
   if (!B.base) return { ok: false, local: true, why: "nowhere to send" };
@@ -373,14 +328,12 @@ async function setLaunch(v) {
   emit("launchPending", launchPending());
   return { ok: p.state === "waiting" || p.state === "saved", local: p.state === "local", state: p.state };
 }
-/* M3: launch-night answers and "Something here looks wrong?" reports. A 4xx from a Worker that lacks the field or kind resolves
-   { ok: false, why: "not-yet" }; the answer waits in localStorage board-mine and goes out on the next state pull. */
 const MINE_KEY = "board-mine";
 function mineRead() { try { const j = JSON.parse(localStorage.getItem(MINE_KEY) || "{}"); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch (e) { return {}; } }
 function mineWrite(o) { try { if (Object.keys(o).length) localStorage.setItem(MINE_KEY, JSON.stringify(o)); else localStorage.removeItem(MINE_KEY); } catch (e) {} }
 function mineKeep(slot, body) { const o = mineRead(); if (slot === "fix") { o.fix = (Array.isArray(o.fix) ? o.fix : []).filter((x) => !(x.page === body.page && x.key === body.key)).concat([body]).slice(-5); } else o[slot] = body; mineWrite(o); }
 function mineDrop(slot, body) { const o = mineRead(); if (slot === "fix") { o.fix = (o.fix || []).filter((x) => !(x.page === body.page && x.key === body.key)); if (!o.fix.length) delete o.fix; } else delete o[slot]; mineWrite(o); }
-let MINE_NOT_YET = false; /* the Worker answered 404/405/501 this session: kept answers are not resent on every poll */
+let MINE_NOT_YET = false;
 async function mineSend(slot, body) {
   if (!B.base) return { ok: false, why: "nowhere to send" };
   if (!B.key) return { ok: false, why: "no key" };
@@ -390,7 +343,6 @@ async function mineSend(slot, body) {
     if (r.status === 200) { mineDrop(slot, body); return { ok: true, state: "waiting" }; }
     if (r.status === 401) { B.keyBad = true; return { ok: false, why: "key" }; }
     if (r.status === 429) return { ok: false, why: "busy" };
-    /* an older Worker answers 400 "kind must be ...", "unknown field ..." (the fake: "unknown kind"): not yet, not refused */
     const notYet = r.status === 400 && r.data && typeof r.data.error === "string" && /kind must be|unknown kind|unknown field/i.test(r.data.error);
     if (r.status === 404 || r.status === 405 || r.status === 501 || notYet) { mineKeep(slot, body); MINE_NOT_YET = true; return { ok: false, why: "not-yet" }; }
     if (r.status >= 400 && r.status < 500) { mineDrop(slot, body); return { ok: false, why: "refused" }; }
@@ -404,7 +356,6 @@ function setMeet(k, place) {
   return mineSend("meet", { kind: "signup", field: "meet", value: k, ...(clean ? { place: clean } : {}) });
 }
 const reportFact = (o) => mineSend("fix", { kind: "fix", page: o && o.page, key: o && o.key, ...(o && o.note ? { note: String(o.note) } : {}) });
-/* Library refresh: no body; resolves the status and JSON so the caller can read retryAfterMs (mineSend would drop both) */
 async function refreshLibrary() {
   if (!B.base || !B.key) return { ok: false, why: B.key ? "nowhere to send" : "no key" };
   try { const r = await call("POST", "/intent", { kind: "refresh" }); B.sent++; if (r.status === 401) B.keyBad = true; return { ok: r.status === 200, status: r.status, data: r.data }; } catch (e) { B.errors++; return { ok: false, why: "offline" }; }
@@ -415,7 +366,6 @@ async function mineFlush() {
   mineFlushing = true;
   try { for (const s of ["when", "pack", "meet"]) if (o[s]) { const r = await mineSend(s, o[s]); if (!r.ok) break; } for (const f of (o.fix || [])) { const r = await mineSend("fix", f); if (!r.ok) break; } } finally { mineFlushing = false; }
 }
-/* Ask Leeroy (2026-10-29): one ask at a time via the "ask" intent, the answer read back with GET /ask. States: idle sending queued answered failed error limited. */
 const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
 const askStatus = () => ({ state: AK.st, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
 const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };
@@ -461,9 +411,6 @@ async function ask(text, share) {
   askEmit();
   return { ok: false, why: AK.st === "limited" ? "limited" : AK.err };
 }
-/* M0 (2026-10-30): one capability report. Resolves { ok: true } when the Worker took it, else { ok: false, local: true, why } and the
-   page keeps it on this device: why is "shape" (not the fixed shape), "nowhere" (no Worker on this host), "route" (a Worker without
-   POST /probe yet: 404), "busy" (429), "refused" (the Worker said no) or "offline". Never rejects. */
 async function sendProbe(report) {
   if (!probeOk(report)) return { ok: false, local: true, why: "shape" };
   if (!B.base) return { ok: false, local: true, why: "nowhere" };
@@ -480,7 +427,6 @@ function start(handlers) {
   if (!B.base) { B.via = "off"; emit("status", status()); return status(); }
   B.via = "poll";
   pollOnce();
-  /* V13e: only a board with a key opens the socket; a keyless viewer polls (15 s, while visible), so /api/live never logs a 503 */
   if (B.key) openWs();
   if (B.key) me(); else emit("me", null);
   if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", () => { if (!hidden() && B.via !== "ws") pollOnce(); });

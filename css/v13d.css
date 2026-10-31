@@ -1,11 +1,9 @@
 
-/* ---------- journeys: one data source, three depths ---------- */
 html[data-journey="guided"] [data-j]:not([data-j~="g"]),
 html[data-journey="curious"] [data-j]:not([data-j~="c"]),
 html[data-journey="everything"] [data-j]:not([data-j~="e"]) { display: none !important; }
 html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { display: none !important; }
 
-/* the header switch and the pills beside it are brass plates (craft 18) */
 .journey { display: inline-flex; }
 .journey, .depth { border: 1px solid var(--brass-dim); border-radius: 4px; overflow: hidden; background: linear-gradient(180deg, var(--oak-3), var(--oak-1)); box-shadow: inset 0 1px 0 var(--edge-hi), 0 2px 6px var(--wear); }
 .journey button, .depth button { font-family: var(--font-sc); font-size: var(--fs-chip); letter-spacing: 0.06em; color: var(--l-dim); background: transparent; border: 0; padding: 4px 12px; min-height: 36px; cursor: pointer; }
@@ -18,12 +16,12 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
   .journey button { min-height: 44px; padding: 4px 10px; font-size: 0.95rem; }
   .journey:not(.open) button:not([aria-pressed="true"]) { display: none; }
   .journey:not(.open) button[aria-pressed="true"]::after, .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"]::after { content: " \25BE"; }
-  .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"] { display: inline-block; } /* fix round A3: nothing picked yet: the depth shown, unpressed */
+  .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"] { display: inline-block; }
   .journey.open { position: absolute; z-index: 40; right: 0; flex-direction: column; }
   .journey.open button + button { border-left: 0; border-top: 1px solid var(--brass-dim); }
       .sheet-top:has(> .journey) { justify-content: flex-start; gap: 3px; }
   .sheet-top:has(> .journey) > .peek-btn, .sheet-top:has(> .journey) > .close { position: static; margin: 0; flex: none; }
-  .sheet-top:has(> .journey) > .peek-btn { order: -1; position: relative; top: auto; left: auto; } /* relative, so the eye's pupil (::after) stays on the button */
+  .sheet-top:has(> .journey) > .peek-btn { order: -1; position: relative; top: auto; left: auto; }
   .sheet-top:has(> .journey) > .close { order: 2; }
   .sheet-top:has(> .journey) > .sheet-name { flex: 1 1 auto; min-width: 0; justify-content: center; padding: 0; }
   .sheet-top:has(> .journey) .sheet-emblem { display: none; }
@@ -34,7 +32,6 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
   .sheet-top > .journey button { padding: 4px 7px; }
   .sheet-top > .journey.open { position: absolute; top: 100%; right: 50px; z-index: 40; flex-direction: column; }
 }
-/* V13e: from 700 px the plate sits left of the close button, never under it */
 @media (min-width: 700px) { .sheet-top > .journey { margin-right: 56px; } }
 @media (min-width: 600px) and (max-width: 859px) {
   .peek-btn { font-size: 0; width: 44px; padding: 0; }
@@ -54,7 +51,6 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 }
 .sheet-top > .journey-scene { flex: none; }
 
-/* D3: the Guided core, one question, one answer, one action per scene */
 .jr-core { margin: 0 0 16px; padding: 12px; font-size: 1rem; line-height: 1.35; background: var(--mat-paper, var(--cream-2)); color: var(--ink); border: 1px solid var(--ink-line); border-left: 5px solid var(--wax); border-radius: 6px; box-shadow: 0 4px 14px var(--shadow-soft); }
 .jr-q { margin: 0; font-family: var(--font-display); font-size: var(--step-1); line-height: 1.2; color: var(--ink); }
 .jr-a { margin: 6px 0 0; font-size: 1rem; line-height: 1.4; max-width: 62ch; }
@@ -63,9 +59,7 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 .jr-core .jr-more { min-height: 48px; color: var(--ink); }
 .jr-all { margin: 0 0 var(--g1, 8px); min-height: 44px; }
 .jr-deep { margin: 12px 0 0; font-size: 0.9375rem; color: var(--ink-soft); }
-/* D6: v13d.js marks the panel's other children .jr-fold under Guided until Show me more */
 html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):has(> .jr-core) > :not(.jr-core) { display: none !important; }
-/* D2: tiers. board.js writes data-depth on a library fact row; Guided shows must, Curious adds good, Everything adds deep; "Show the rest" (.lib-rest) shows them in place */
 html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="good"], html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="deep"], html[data-journey="curious"] #panel-library:not(.lib-rest) [data-depth="deep"] { display: none; }
 @media (min-width: 700px) { #sheet-body .panel > .jr-core { width: max-content; max-width: min(100%, 72ch); justify-self: center; box-sizing: border-box; } }
 html[data-journey="guided"] .tn-cards { display: none; }
@@ -74,11 +68,9 @@ html[data-journey="guided"] .tn-cards { display: none; }
 .rplain { color: var(--ink-soft); font-size: 1rem; }
 .rfull { margin: 0 0 6px; }
 
-/* Everything: nothing folds, nothing scrolls inside a card */
 html[data-journey="everything"] .card .back { overflow: visible; }
 html[data-journey="everything"] .cards { align-items: start; }
 
-/* ---------- landing on the thing (interaction 1) ---------- */
 #board [data-land] { cursor: pointer; }
 @media (hover: hover) { #board .med[data-land]:hover, #board .fm[data-land]:hover, #board .su-num[data-land]:hover, #board .tile-line[data-land]:hover, #board .viz-list li[data-land]:hover { outline: 2px solid var(--brass); outline-offset: 2px; border-radius: 4px; } #board svg [data-land]:hover { filter: drop-shadow(0 0 4px var(--brass-hi)); } }
 .panel.landing .card:not(.landed), .panel.landing .race:not(.landed), .panel.landing .stop:not(.landed), .panel.landing .open-li:not(.landed), .panel.landing .trow:not(.landed) { opacity: 0.85; transition: opacity var(--t-move) var(--ease-oak); }
@@ -88,7 +80,6 @@ html[data-journey="everything"] .cards { align-items: start; }
 .fly-ghost { position: fixed; z-index: 90; pointer-events: none; border-radius: 50%; }
 .fly-ghost img { width: 100%; height: 100%; object-fit: contain; }
 
-/* ---------- Roads: two zoom levels (interaction 4) ---------- */
 #map { position: relative; }
 #map .map-svg { touch-action: pan-x pan-y; }
 #map .road-g, #map .road-line { cursor: zoom-in; }
@@ -101,7 +92,6 @@ html[data-journey="everything"] .cards { align-items: start; }
 .zone-whole { justify-self: start; min-height: 44px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
 @media (max-width: 699px) { .zone-card { position: static; max-width: none; margin-top: 10px; } }
 
-/* ---------- Dates: the calendar and the rail light each other (interaction 6) ---------- */
 button.cal-day { font: inherit; color: var(--ink); background: transparent; border: 0; padding: 0; cursor: pointer; }
 button.cal-day.win { background: var(--hi-brass); }
 .cal-day.lit, button.cal-day:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 1px; box-shadow: 0 0 12px var(--candle); z-index: 1; }
@@ -110,11 +100,9 @@ button.cal-day.win { background: var(--hi-brass); }
 .stop.open .label.state { text-decoration: none; color: var(--wax-lo); }
 .ics { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 40px; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
 .ics .emb { width: 18px; height: 18px; object-fit: contain; vertical-align: -3px; }
-/* frame leftovers (2026-10-30): from 900 px the calendar button stands at the end of the line before it ("in 6 days"), so Dates fits a 1366x768 frame (it ran 78 px over) */
 @media (min-width: 900px) { .stop-body:has(> .ics) { grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; align-items: center; } .stop-body:has(> .ics) > * { grid-column: 1 / -1; } .stop-body > .label.state:has(+ .ics), .stop-body > .label.state + .ics { grid-column: auto; } }
 @media (min-width: 900px) and (max-height: 820px) { #panel-timeline .rail { gap: 12px; } #panel-timeline .cal-day { min-height: 1.8rem; } #panel-timeline .cal-col { gap: 6px; } }
 
-/* ---------- Bonuses: the what-if dial (interaction 7) ---------- */
 .dial { cursor: grab; outline: none; }
 .dial:active { cursor: grabbing; }
 .dial-hit { stroke: transparent; stroke-width: 34; pointer-events: stroke; }
@@ -137,26 +125,22 @@ button.cal-day.win { background: var(--hi-brass); }
 .legend li[data-cat] { cursor: pointer; border-radius: 4px; }
 .legend li.lit { background: var(--hi-brass); box-shadow: inset 4px 0 0 var(--sw, var(--brass)); }
 
-/* ---------- The five: spell names, game-style cards (interaction 8) ---------- */
 .sp-names { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .sp-tt { width: 100%; min-height: 40px; text-align: left; padding: 6px 10px; font-family: var(--font-body); font-size: 1.05rem; color: var(--l-text); background: var(--buff-bg); border: 1px solid var(--grain); border-left: 3px solid var(--cc, var(--brass)); border-radius: 4px; cursor: help; }
 .sp-tt small { color: var(--l-dim); font-size: 0.95rem; }
 .sp-tt[aria-expanded="true"], .sp-tt:focus-visible { border-color: var(--brass); background: var(--oak-3); }
 @media (hover: hover) { .sp-tt:hover { background: var(--oak-3); } }
 
-/* ---------- nested definitions, two deep (interaction 9) ---------- */
 .gl2 { display: inline; padding: 0; margin: 0; font: inherit; color: inherit; background: none; border: 0; cursor: help; text-decoration: underline dotted currentColor; text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .gl2[aria-expanded="true"] { color: var(--tt-gold); }
 .gl-pop2 { z-index: 71; border-color: var(--brass); }
 .gl-back { display: block; margin: -2px 0 6px; padding: 2px 0; min-height: 28px; font: inherit; font-size: 0.95rem; color: var(--tt-dim); background: none; border: 0; cursor: pointer; }
 
-/* ---------- new since you last looked (interaction 5) ---------- */
 .v-seal { display: inline-flex; vertical-align: middle; width: 22px; height: 22px; margin-right: 6px; transition: opacity var(--t-hero) var(--ease-oak), transform var(--t-hero) var(--ease-oak); }
 .v-seal .emb { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; filter: drop-shadow(0 1px 1px var(--wear)); }
 .v-seal.v-seen { opacity: 0; transform: scale(0.6); }
 .v-new { box-shadow: inset 3px 0 0 var(--wax); }
 
-/* ---------- the one first-visit glow on the five crests (interaction 10) ---------- */
 .glow-five .med-ico, .glow-five .fm { position: relative; border-radius: 50%; }
 .glow-five .med-ico::after, .glow-five .fm::after { content: ""; position: absolute; inset: -3px; border-radius: inherit; pointer-events: none; box-shadow: 0 0 0 3px var(--brass-hi), 0 0 24px var(--candle); opacity: 0.35; animation: crest-glow-o 2.4s linear infinite; will-change: opacity; }
 @keyframes crest-glow-o { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
@@ -165,7 +149,6 @@ button.cal-day.win { background: var(--hi-brass); }
 .glow-plate { display: block; justify-self: center; margin-top: 6px; padding: 2px 12px; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.05em; color: var(--oak-0); background: linear-gradient(180deg, var(--brass-hi), var(--brass)); border-radius: 3px; box-shadow: 0 2px 6px var(--wear); }
 @media (prefers-reduced-motion: reduce) { .glow-five .med-ico::after, .glow-five .fm::after { animation: none; opacity: 1; } }
 
-/* ---------- Sign-ups from the board (shared brain stage 3) ---------- */
 .su-states { flex-basis: 100%; display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--ink-line); }
 .su-as { margin: 0; font-size: 1.05rem; color: var(--ink); }
 .su-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -178,7 +161,6 @@ button.cal-day.win { background: var(--hi-brass); }
 .su-pend { margin: 0; min-height: 1.4em; font-size: 1rem; color: var(--ink-soft); }
 @media (min-width: 1100px) { #dsu-act .su-states { flex: 1 1 26rem; margin-top: 0; padding: 0 0 0 18px; border-top: 0; border-left: 1px dashed var(--ink-line); } #dsu-act .su-pend:empty { display: none; } }
 
-/* ---------- the tab rail's arrows (retest-16) ---------- */
 .tabs-wrap { position: relative; }
 .tabs-arrow { position: absolute; top: 50%; z-index: 2; transform: translateY(-50%); width: 32px; height: 40px; font-size: 1.6rem; line-height: 1; color: var(--parchment); background: linear-gradient(180deg, var(--oak-3), var(--oak-1)); border: 1px solid var(--brass-dim); border-radius: 4px; cursor: pointer; }
 .tabs-arrow.prev { left: -14px; }
@@ -271,12 +253,11 @@ button.cal-day.win { background: var(--hi-brass); }
 }@media (max-width: 1099px) {
   #discord-signups .dsu-top { display: block; }
   #discord-signups .dsu-top > * { display: inline; margin-right: 10px; }
-}/* V13e retest-4 and 5: a zone's land takes the tap; while zoomed the road list beside the map steps back */
+}
 .zone-hit { fill: transparent; pointer-events: all; cursor: zoom-in; }
 #map .map-svg.zoomed .zone-hit { cursor: zoom-out; }
 #panel-roads:has(#map.zoomed) .roads-legend { opacity: 0.4; pointer-events: none; }
 
-/* V13e retest-11: a keyless tap flashes the explanation */
 .su-as.nudge { animation: su-nudge 0.6s var(--ease-oak, ease) 1; }
 @keyframes su-nudge { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @media (prefers-reduced-motion: reduce) { .su-as.nudge { animation: none; text-decoration: underline; } }
@@ -286,7 +267,7 @@ button.cal-day.win { background: var(--hi-brass); }
   .gl, .gl2, .sheet-body .panel p a, .sheet-body .panel li > a, .sheet-body .panel .tn-link, .lib-main a { position: relative; }
   .gl::after, .gl2::after, .sheet-body .panel p a::after, .sheet-body .panel li > a::after, .sheet-body .panel .tn-link::after, .lib-main a::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100% + 4px, 44px); height: max(100%, 44px); margin: 0; transform: translate(-50%, -50%); }
   .rhead, .skip, .sheet-body .lib-tool, .lib-examples .ex { min-height: 44px; box-sizing: border-box; }
-    .tile-band::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: max(100%, 44px); } /* grows upward, never over the tile body's own words */
+    .tile-band::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: max(100%, 44px); }
   .rhead { align-items: center; }
   .sheet-body summary { min-height: 44px; box-sizing: border-box; padding-block: 10px; }
   .sheet-body .lib-tool, .chg-more, .lib-examples .ex { min-width: 44px; }
@@ -314,9 +295,7 @@ button.cal-day.win { background: var(--hi-brass); }
 .stop.lit .stop-body { background: var(--hi-brass); }
 .cal-day.lit { background: var(--hi-brass); color: var(--ink); }
 
-/* one margin system (2026-10-30): The five no longer takes a bottom pad of its own; every scene sits in the same body padding */
 
-/* V13e axe: the Bonuses legend lines are buttons now; they keep the line's look */
 .legend li:has(> .cat-line) { display: block; }
 .legend li > .cat-line { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 1.6rem auto 1fr; gap: 8px; align-items: center; width: 100%; min-height: 44px; cursor: pointer; }
 .legend li > .cat-line:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
@@ -326,7 +305,6 @@ button.cal-day.win { background: var(--hi-brass); }
 @media (max-width: 699px), (pointer: coarse) { #sheet-body .cal { padding-left: 6px; padding-right: 6px; } #sheet-body .cal-grid { gap: 1px; } #sheet-body .cal-day { min-height: 44px; } }
 .road-panel:not(.open) { visibility: hidden; transition: transform var(--t-move) var(--ease-oak), visibility 0s linear var(--t-move); }
 .road-panel.open { visibility: visible; transition: transform var(--t-move) var(--ease-oak), visibility 0s; }
-/* V13e sweep: at 320 px the title keeps 100 px and more (the plate drops its arrow and some padding) */
 @media (max-width: 359px) {
   .sheet-top > .journey button { padding: 4px 4px; }
   .sheet-top > .journey:not(.open) button[aria-pressed="true"]::after { content: none; }
@@ -337,8 +315,7 @@ button.cal-day.win { background: var(--hi-brass); }
   .hero h1 { font-size: 2.05rem; line-height: 1.05; }
   .hero .kicker { font-size: 0.7rem; }
   .hero .clock { padding: 10px 14px; }
-  .hero .clock-launch { display: none; } /* the same launch time is on the line above it */
+  .hero .clock-launch { display: none; }
 }
 
-/* "no answer yet" seat: an empty-mug outline instead of the default black fill */
 

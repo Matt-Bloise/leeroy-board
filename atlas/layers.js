@@ -1,13 +1,8 @@
-// The vector layers and label culling (contract 2.1). Paths are kept in A-units and drawn under one transform, so a zoom
-// never rebuilds them; line widths are written in screen pixels and divided by the scale. Culling is plain arrays and a
-// cell grid, never pairwise. Colours arrive from the page's tokens through S.colors; the literals below are fallbacks only.
 export const LAYERS = ["coasts", "zones", "subzones", "courses", "flights", "zeppelins", "dungeons", "hubs", "flightpoints", "party", "labels"];
 
-// the sprite cell each kind of place uses on the icon sheet (img/atlas/icons-<cell>.webp)
 export const ICON = { city: "horde-city", hub: "town", start: "start-star", meet: "meeting-banner", flight: "flight-point", zeppelin: "zeppelin-tower", dungeon: "dungeon-gate", raid: "raid-gate", subzone: "meeting-banner" };
 export const iconOf = (p) => (p.kind === "city" && p.faction === "alliance" ? "alliance-city" : ICON[p.kind] || null);
 export const layerOfPlace = (p) => (p.kind === "dungeon" || p.kind === "raid" ? "dungeons" : p.kind === "flight" ? "flightpoints" : p.kind === "zeppelin" ? "zeppelins" : "hubs");
-// the zoom each kind appears at, and the one its name appears at (labels are also culled by collision)
 const SHOW = { city: -9, raid: 1, meet: 1, hub: 1.5, dungeon: 1.5, zeppelin: 1.5, start: 2, flight: 2, subzone: 2.5 };
 const NAME = { city: 1, raid: 2.5, meet: 2, hub: 2.5, dungeon: 3, zeppelin: 3, start: 3, flight: 3, subzone: 3 };
 const PRIO = { zone: 6, city: 5, meet: 4.5, hub: 4, raid: 3.5, dungeon: 3, start: 2.5, zeppelin: 2, flight: 1, subzone: 1 };
@@ -23,8 +18,6 @@ function pathOf(rings, close) {
   for (const r of rings) if (r.length > 1) lineTo(p, r, close);
   return { rings, close, p, bb };
 }
-// a stroke whose box misses the view is skipped. Dashes cost the GPU most of a frame (2026-10-30, the owner's pane at 2278 by
-// 845 px: pan p50 22.8 ms dashed, 11.5 ms solid), so while the view moves (S.moving) strokes go solid and settle dashed.
 const seen = (pp, r) => !!pp && !(pp.bb[2] < r[0] || pp.bb[0] > r[2] || pp.bb[3] < r[1] || pp.bb[1] > r[3]);
 function strokePath(ctx, pp) {
   if (pp.p) { ctx.stroke(pp.p); return; }
@@ -43,8 +36,6 @@ export function inRing(ring, x, y) {
   return in_;
 }
 const area = (r) => (r[2] - r[0]) * (r[3] - r[1]);
-// A label whose box crosses the canvas edge slides inward by the overflow plus pad; null when it cannot fit, or when the slide would put
-// it over its own place dot (c.dot: x, y, r in canvas px; c.y the label's middle, h its height).
 export const nudgeLabel = (c, w, h, vw, pad = 8) => {
   const l = c.x - w / 2, r = c.x + w / 2; let dx = 0;
   if (l < 0) dx = pad - l; else if (r > vw) dx = vw - pad - r;
@@ -62,7 +53,6 @@ export function createLayers(data) {
   const prep = () => {
     const w = data.world, rects = !!(w.shapes && w.shapes.source === "rectangles"), sh = !rects && data.shapes;
     L.zoneRect = rects;
-    // the smoothed shapes (shape.js) where they were built: coasts, zone rings and the borders between zones, each drawn once
     L.land = (w.continents || []).map((c) => ({ id: c.id, path: pathOf((sh && sh.land.get(c.id)) || c.land || [], true) }));
     L.borders = sh && sh.borders.length ? pathOf(sh.borders, false) : null;
     L.zones = (w.zones || []).map((z) => {
@@ -117,11 +107,9 @@ export function createLayers(data) {
   const colors = (S) => Object.assign({}, FALLBACK, S.colors || {});
   const factionColor = (C, f) => (f === "horde" ? C.horde : f === "alliance" ? C.alliance : C.contested);
 
-  // ---------- the draw: A-unit layers under one transform, then screen-space sprites and labels ----------
   L.draw = (ctx, V, S) => {
     const C = colors(S), s = V.scale(), k = V.dpr, z = V.z, noTiles = !S.tilesLoaded;
     ctx.setTransform(k, 0, 0, k, 0, 0); ctx.globalAlpha = 1;
-    // land shows as parchment where no painted tile has arrived yet
     ctx.setTransform(k * s, 0, 0, k * s, k * (V.w / 2 - V.cx * s), k * (V.h / 2 - V.oy - V.cy * s));
     ctx.lineJoin = "round"; ctx.lineCap = "round";
     const px = (n) => n / s;
@@ -143,7 +131,6 @@ export function createLayers(data) {
         ctx.globalAlpha = hot ? 0.2 : 0.08; ctx.fillStyle = factionColor(C, zz.z.faction); fillPath(ctx, zz.path);
         if (!L.borders && !hot) { ctx.globalAlpha = 0.55; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(1.2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, zz.path); ctx.setLineDash([]); }
       }
-      // one dotted line per shared border (a border drawn by both its zones doubles its dots)
       if (L.borders && seen(L.borders, r)) { ctx.globalAlpha = 0.55; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(1.2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, L.borders); ctx.setLineDash([]); }
       if (hotZ) { ctx.globalAlpha = 0.9; ctx.strokeStyle = C.inkSoft; ctx.lineWidth = px(2); ctx.setLineDash(S.moving ? [] : [px(2), px(4)]); strokePath(ctx, hotZ.path); ctx.setLineDash([]); }
       ctx.globalAlpha = 1;
@@ -153,7 +140,6 @@ export function createLayers(data) {
       const sr = V.rect(); for (const sz of L.subzones) if (seen(sz.path, sr)) strokePath(ctx, sz.path);
       ctx.globalAlpha = 1;
     }
-    // courses: walking edges dashed, flight paths softer, transports a long dash
     const edges = (data.routes && data.routes.edges) || [], vr = V.rect();
     const drawEdges = (mode, on, dash, alpha, w) => {
       if (!on) return;
@@ -168,7 +154,6 @@ export function createLayers(data) {
       for (const e of edges) if (e.mode === "zeppelin" || e.mode === "boat") { const pp = L.edgePaths.get(e.id); if (seen(pp, vr)) strokePath(ctx, pp); }
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
-    // the plan: every drawn edge as ink under a warm line, partial edges cut at their progress
     if (S.planEdges && S.planEdges.length) {
       for (const pass of [0, 1]) {
         ctx.strokeStyle = pass ? C.plan : C.ink; ctx.lineWidth = px(pass ? 3.4 : 5.6); ctx.globalAlpha = pass ? 0.95 : 0.55; ctx.setLineDash([]);
@@ -181,7 +166,6 @@ export function createLayers(data) {
       ctx.globalAlpha = 1;
     }
 
-    // ---------- screen space ----------
     ctx.setTransform(k, 0, 0, k, 0, 0);
     const size = iconPx(z), cands = [];
     const sprite = (name) => (S.sprites && S.sprites[name]) || null;
@@ -190,7 +174,6 @@ export function createLayers(data) {
       if (!shownAt(x, z, S) || !V.inView(x.p.a[0], x.p.a[1], 60)) continue;
       const [sx, sy] = V.toScreen(x.p.a[0], x.p.a[1]), img = x.icon && sprite(x.icon), isF = S.focus === x.p.id, end = !!(S.planEnds && S.planEnds.has(x.p.id));
       drawn.push(x.p);
-      // a plan's starts and meeting point keep a readable icon and their names at any zoom (the day-one view on a phone is wide)
       const sz = isF ? size * 1.25 : end ? Math.max(size, 28) : size;
       if (isF) { ctx.beginPath(); ctx.arc(sx, sy, sz * 0.72, 0, 6.2832); ctx.strokeStyle = C.brass; ctx.lineWidth = 3; ctx.stroke(); }
       if (img) ctx.drawImage(img, sx - sz / 2, sy - sz / 2, sz, sz);
@@ -225,24 +208,22 @@ export function createLayers(data) {
         if (wpx < 46) continue;
         cands.push({ t: zz.z.name.toUpperCase(), x: sx, y: sy, pr: PRIO.zone, size: Math.max(12, Math.min(20, 10 + z * 2)), kind: "zone", fit: wpx });
       }
-      const named = new Set(cands.map((c) => c.t)); /* a subzone that shares a place's name (The Crossroads) is named once, by the place */
+      const named = new Set(cands.map((c) => c.t));
       if (z >= 3) for (const sz of L.subzones) { const lb = sz.s.label; if (!lb || z < (lb.min_zoom || 3) || named.has(sz.s.name)) continue; const [sx, sy] = V.toScreen(lb.a[0], lb.a[1]); cands.push({ t: sz.s.name || sz.s.id, x: sx, y: sy, pr: 0.5, size: 12, kind: "sub" }); }
       L.drawLabels(ctx, V, cands, C);
     }
     ctx.globalAlpha = 1;
   };
 
-  // priority first, a cell grid for collisions; the drawn count is kept for the tests
   L.drawLabels = (ctx, V, cands, C) => {
     cands.sort((a, b) => b.pr - a.pr);
     const cell = 40, occ = new Set(), cols = Math.ceil(V.w / cell) + 4; let n = 0;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     for (const c of cands) {
       ctx.font = `${c.kind === "zone" ? 600 : 500} ${c.size}px ${C.font}`;
-      if ("letterSpacing" in ctx) ctx.letterSpacing = c.kind === "zone" ? "1.5px" : "0px"; /* measured as it is drawn */
+      if ("letterSpacing" in ctx) ctx.letterSpacing = c.kind === "zone" ? "1.5px" : "0px";
       const w = textW(ctx, c.t, c.size), h = c.size + 4;
       if (c.fit && w > c.fit * 1.05) continue;
-      /* a name near the edge slides inward rather than being cut by it (fix E5, polish round) */
       const nx = nudgeLabel(c, w, h, V.w); if (nx === null) continue; c.x = nx;
       const x0 = Math.floor((c.x - w / 2) / cell), x1 = Math.floor((c.x + w / 2) / cell), y0 = Math.floor((c.y - h / 2) / cell), y1 = Math.floor((c.y + h / 2) / cell);
       let free = true;

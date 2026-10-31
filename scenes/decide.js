@@ -1,10 +1,3 @@
-/* V16 (board/V16-DECIDE-SPEC.md): What to decide. Per friend, what the party records leave open (professions, the spec at 40,
-   the first talents, what is locked), by Blizzard's dates only, and what each option changes, every line with its status and
-   source, from data/decide.json (built from the records, the timeline, the client table and the wiki). Plus the party's
-   composition: roles by level, who gives which buff to whom, what nobody at the table plays, has or gives. Runs after
-   js/seals.js through the page's own hooks (window.__boardKit): it adds its tab and panel itself (so a merge never has to
-   reconcile index.html), reads the picked person from the board's memory, and gives the seal a mechanic: pressing it turns the
-   coin to the next friend's choices. Facts and options only; it never recommends. (2026-10-30) */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
@@ -15,18 +8,15 @@ const STATE = { open: "Still open", declared: "On the Party Board", chat: "Said 
 const members = () => (D.party ? D.party.members : []);
 const byKey = (k) => members().find((m) => m.class_key === k) || null;
 const nameOf = (k) => { const m = byKey(k); return m ? m.name : k; };
-/* "{class_key}" in a data line is a name slot: the page fills it from party.json, so the data file never carries a name */
 const slot = (t) => String(t).replace(/\{([a-z]+)\}/g, (_, k) => nameOf(k));
 const snd = (n) => { try { if (window.BoardSound) window.BoardSound.play(n); } catch (e) {} };
 const hap = (n) => { try { if (window.BoardHaptics) window.BoardHaptics.fire(n); } catch (e) {} };
 const dayOf = (iso) => { try { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${iso}T12:00:00Z`)); } catch (e) { return iso; } };
 const labels = () => (DV.data && DV.data.labels) || { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
 const slugOf = (k) => { const m = byKey(k); return m ? MEM.slug(m.name) : null; };
-/* a crest beside a name that is already text: no title, so the hover hook neither tips it nor makes it a second tab stop */
 const crest = (m) => { const i = K.crestMark(m); i.removeAttribute("title"); return i; };
 const byslug = (slug) => members().find((m) => MEM.slug(m.name) === slug) || null;
 
-/* the tab and the panel, placed before Next steps (the last scene) at script load; board.js reads them at boot */
 function mount() {
   const tabs = $("#tabs"), body = $("#sheet-body"), tonightTab = $("#tab-tonight"), tonightPanel = $("#panel-tonight");
   if (!tabs || !body || $("#tab-decide")) return;
@@ -44,11 +34,10 @@ function mount() {
 mount();
 
 const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/decide.json answered ${r.status}`); return r.json(); }).then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
-K.decideData = get; /* Phase 0 (2026-10-30): the party sheet (js/sheet.js) reads the same file through the same cache */
+K.decideData = get;
 const defaultWho = () => { const m = MEM.member(); return m && DV.data && DV.data.people.some((p) => p.class_key === m.class_key) ? m.class_key : "all"; };
 const who = () => DV.who || defaultWho();
 
-/* fix C9: a person's line leads with what is open, in plain words; nothing open is one line */
 function summary(p) {
   const open = p.decisions.filter((x) => x.state === "open"), chat = p.decisions.filter((x) => x.state === "chat");
   const bits = open.map((x) => { const two = /([A-Z][a-z]+) or ([A-Z][a-z]+)/.exec(x.state_text || ""); return `${x.title}: still choosing${two ? ` between ${two[1]} and ${two[2]}` : ""}.`; });
@@ -56,10 +45,8 @@ function summary(p) {
   for (const x of chat) bits.push(`${x.title}: ${K.andList(x.options.map((o) => o.name))}, said in chat.`);
   return bits.join(" ");
 }
-/* fix C7: "until the end of Nov 3 Pacific (3 AM ET Nov 4)" */
 const until = (e) => (K.cardDates ? K.cardDates(`until ${e.until} (${e.until_zone})`) : `until the end of ${e.until}, ${e.until_zone} time`);
 const day = (e) => (K.fmtDay ? K.fmtDay(e.epoch) : K.fmtWhen(e.epoch, { time: false }));
-/* fix C9: a source names its page and read date, never a page id, key or tier */
 const pageName = (id) => { const [c, n] = String(id).split("/"); const t = (n === "overview" ? `${c} ${n}` : n || c).replace(/-/g, " "); return t.charAt(0).toUpperCase() + t.slice(1); };
 function eventWhen(d, key) {
   const e = d.dates[key]; if (!e) return "";
@@ -87,7 +74,6 @@ function srcEl(src) {
   if (src.kind === "timeline") return h("span", { class: "dc-src", text: "Blizzard's calendar" });
   return h("span", { class: "dc-src", text: "the library" });
 }
-/* fix C9, C7: a line reads as its fact: the research log after "Searched", client ids and ISO days stay in the library */
 const clean = (t) => slot(t).replace(/\s*Searched \d{4}-\d\d-\d\d:.*$/, "").replace(/,?\s*\b(?:item|spell|talent)s? \d+(?:(?:, | and )\d+)*/g, "").replace(/client table build \d+/g, "the game client's own table").replace(/\(\s*,\s*/g, "(").replace(/\b\d{4}-\d\d-\d\d\b/g, (m) => day({ epoch: Date.parse(`${m}T12:00:00Z`) / 1000 }));
 function lineEl(l) {
   return h("li", { class: "dc-line", "data-status": l.status }, h("span", { class: `st st-${l.status}`, text: labels()[l.status] || l.status }), " ", h("b", { class: "dc-l", text: `${l.label}: ` }), h("span", { class: "dc-t", text: clean(l.text) }), srcEl(l.src));
@@ -120,7 +106,7 @@ function allView(d) {
       h("span", { class: "dc-rowt", text: `${m.race} ${m.class}. ${summary(p)}` }));
   })));
 }
-const tick = () => [s("svg", { class: "dc-tick", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M5 12.5l4.5 4.5L19 7" })), h("span", { class: "sr-only", text: "yes" })]; /* fix C9: the word is text, the mark is not read */
+const tick = () => [s("svg", { class: "dc-tick", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M5 12.5l4.5 4.5L19 7" })), h("span", { class: "sr-only", text: "yes" })];
 function partyView(d) {
   const P = d.party, ms = members(), names = (ks) => (ks.length ? K.andList(ks.map(nameOf)) : "nobody");
   const roles = h("div", { class: "dc-sect" }, h("h4", { class: "dc-h4", text: "Roles by level" }),
@@ -167,23 +153,17 @@ function pick(w, quiet) {
 function fail(e) {
   const main = $("#dc-main"); if (main && !DV.data) main.replaceChildren(h("p", { class: "dc-sum", text: `The decision data did not load (${e && e.message ? e.message : "no file"}). A refresh may help.` }));
 }
-/* what the panel shows now; a render happens only when that differs from what it should show, so open cards stay open across
-   a tab switch and the idle prefetch never snaps a fold shut under the reader */
 const shown = () => { const p = $("#dc-main .dc-person"); return p ? p.dataset.who : null; };
-/* opening the scene: the landing hash (#decide.<slug>) picks the person, then the data renders */
 K.on("scene", (k) => {
   if (k !== KEY) return;
   const L = SC.land; let want = null;
   if (L && L.key === KEY && L.sub) { const m = byslug(L.sub); want = m ? m.class_key : L.sub === "all" ? "all" : null; }
   get().then(() => { if (want) { DV.who = want; render(); } else if (shown() !== who()) render(); }, fail);
 });
-/* the board's picked person (Next steps, Buffs) is this scene's default until a pill says otherwise */
 K.on("tonight", () => { if (DV.data && SC.open === KEY && shown() !== who()) render(); });
-/* the data is small and local: it is read on the first idle moment after boot, so the first open draws at once */
 K.on("booted", () => { (window.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => { get().then(() => { if (SC.open === KEY && shown() !== who()) render(); }, () => {}); }, { timeout: 4000 }); });
 K.on("forget", () => { DV.who = null; });
 
-/* ---------- the seal: press it to turn to the next friend's choices; arrow keys go either way ---------- */
 function stepWho(by) {
   const d = DV.data; if (!d) { get().then(() => stepWho(by), fail); return; }
   const cur = who(), i = DV.order.indexOf(cur), next = DV.order[(i + by + DV.order.length) % DV.order.length];

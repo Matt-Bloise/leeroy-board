@@ -1,36 +1,25 @@
-// board/next/rules.js: the next-step engine of the companion build (notes/companion/COMPANION-CONTRACT.md section 2, node N2,
-// 2026-10-30). One pure ES module shared by the board (js/next.js imports it at the first Next steps open), the bot
-// (bot/next-step.js) and the suites. It reads the party's records and returns the one next step for a friend, the full queue,
-// a tonight summary and one line per party member. Pure: no DOM, no network, no storage and no clock (nowMs is an argument);
-// it never formats a date either: every epoch goes back to the caller, who formats it. Names reach the output only in
-// tonight.names and party[].name, as input.cleanName copies of the data's own names; no step string ever carries one.
-// The rule table and how to add a step: board/next/README.md.
 
 export const VERSION = 1;
 export const WEIGHTS = Object.freeze({ "pick-name": 100, "launch-state": 95, "make-character": 90, rsvp: 85, meet: 70, decide: 65, "say-pack": 60, poll: 60, "learn-role": 40, "learn-role-guided": 10, "next-date": 20, rest: 1, snoozed: 5 });
-/* lane D7: the first-week steps sit under every launch-night step and over the class page; kept apart from WEIGHTS, which bot/test-next-step.mjs freezes */
 const WEEK_WEIGHTS = Object.freeze({ "train-10": 48, "first-dungeon": 46, "meet-again": 44 });
 export const MINUTES = Object.freeze({ "pick-name": 1, "launch-state": 1, "make-character": 10, rsvp: 1, meet: 1, decide: 5, "say-pack": 1, poll: 1, "learn-role": 3 });
 
 const DAY = 24 * 3600 * 1000;
-/* the contract's table order: ties in weight go to the earlier row, then to the data's own order */
 const ORDER = ["pick-name", "launch-state", "make-character", "say-pack", "rsvp", "meet", "decide", "poll", "train-10", "first-dungeon", "meet-again", "learn-role", "next-date", "rest"];
 const JOURNEYS = ["guided", "curious", "everything"];
 const RSVPS = ["in", "maybe", "late", "out"];
 const RSVP_LINE = { in: "in", maybe: "tentative", late: "running late", out: "out" };
 const LAUNCH_STATES = ["queue", "in", "done"];
 const LAUNCH_SAY = { queue: "in the queue", in: "in the game", done: "done for tonight" };
-const STEPS = { spec: "Choose your spec.", choose: "Choose {x}." }; /* tonight.json's own words today, used when it is absent */
+const STEPS = { spec: "Choose your spec.", choose: "Choose {x}." };
 const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
 const str = (v) => (typeof v === "string" ? v : "");
 const arr = (v) => (Array.isArray(v) ? v : []);
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const obj = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
-/* board.js MEM.slug: lower case, every run of anything else one dash, no dash at either end */
 const slug = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const sentence = (s) => { const t = String(s ?? "").trim(); return !t ? "" : /[.!?]$/.test(t) ? t : `${t}.`; };
-/* one sentence under max characters, cut at a word when the data runs long */
 const fit = (s, max) => {
   const t = sentence(s); if (t.length < max) return t;
   const cut = t.slice(0, max - 1), at = cut.lastIndexOf(" ");
@@ -40,7 +29,7 @@ const fitLabel = (s) => (s.length < 16 ? s : s.slice(0, 15).trim());
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const numberWord = (n) => NUM[n] || String(n);
-const unchosen = (o) => /nothing chosen|not chosen/i.test(str(o && o.status)); /* board.js unchosen() */
+const unchosen = (o) => /nothing chosen|not chosen/i.test(str(o && o.status));
 
 function events(timeline) {
   return arr(timeline && timeline.events).filter((e) => obj(e) && typeof e.key === "string")
@@ -48,12 +37,10 @@ function events(timeline) {
 }
 const eventOf = (timeline, key) => events(timeline).find((e) => e.key === key) || null;
 
-/* launch epoch minus 24 h to plus 24 h */
 export function launchWindow(timeline, nowMs) {
   const e = eventOf(timeline, "launch"), epoch = e ? num(e.epoch) : null;
   return { live: epoch !== null && nowMs >= epoch * 1000 - DAY && nowMs <= epoch * 1000 + DAY, epoch };
 }
-/* names_open: open from its epoch until until_epoch (both seconds); an unknown end is never open */
 export function namesWindow(timeline, nowMs) {
   const e = eventOf(timeline, "names_open");
   if (!e) return { open: false, untilEpoch: null, until: null, zone: null };
@@ -61,14 +48,11 @@ export function namesWindow(timeline, nowMs) {
   return { open: until !== null && nowMs < until * 1000 && (start === null || nowMs >= start * 1000), untilEpoch: until, until: str(e.until) || null, zone: str(e.until_zone) || null };
 }
 
-/* the short label (tonight.json's, else the timeline's up to its first colon) */
 function shortLabel(e, tonight) {
   const t = arr(tonight && tonight.events).find((x) => obj(x) && x.key === e.key);
   return (t && str(t.label)) || str(e.label).split(":")[0].trim() || e.key;
 }
-/* tonight's event: the first that started less than a day ago or starts later (launch stays "tonight" on launch night) */
 function tonightEvent(timeline, nowMs) { return events(timeline).find((e) => num(e.epoch) !== null && nowMs < e.epoch * 1000 + DAY) || null; }
-/* the next date on the calendar: an open period's close, or an event's start, whichever comes first */
 function nextMoment(timeline, nowMs) {
   const out = [];
   for (const e of events(timeline)) {
@@ -92,7 +76,6 @@ function norm(input, nowMs) {
   };
 }
 const sameName = (a, b, clean) => a != null && b != null && clean(a).toLowerCase() === clean(b).toLowerCase();
-/* a sign-up entry (or a launch or party row) is this person's when the cleaned names agree or the slugs do */
 function isPerson(row, names, slugs, clean) {
   if (!row) return false;
   if (typeof row.slug === "string" && row.slug && slugs.includes(row.slug)) return true;
@@ -108,21 +91,17 @@ function whoAmI(N) {
 }
 const entriesOf = (N) => arr(N.signups && N.signups.entries).filter(obj);
 const libraryHas = (lib, id) => {
-  if (lib == null) return true; /* no library list given: every party class has a page today (wiki/pages/classes) */
+  if (lib == null) return true;
   const ids = Array.isArray(lib) ? lib : arr(obj(lib) && lib.pages).map((p) => (obj(p) ? p.id : p));
   return ids.includes(id);
 };
 function pollWhen(p) { const m = str(p.text).match(/closes (?:on )?([^.]+?)\.(?:\s|$)/); return m ? m[1].trim() : null; }
-function linkOf(tonight, key) { const L = obj(tonight && tonight.links); return L && typeof L[key] === "string" ? L[key] : null; } /* links may be a list of keys: no URL then */
+function linkOf(tonight, key) { const L = obj(tonight && tonight.links); return L && typeof L[key] === "string" ? L[key] : null; }
 
-/* every candidate with its weight, unsorted */
 export function candidates(input, nowMs) {
   const N = norm(input, nowMs), out = [];
   const voice = N.journey === "guided" ? "coach" : "library";
   const snoozed = (id) => { const until = num(N.snoozed[id]); return until !== null && nowMs < until && until <= nowMs + DAY; };
-  /* fix round A1 (2026-10-30): title is the Guided coach's imperative; fact is the same step in library voice for Curious and
-     Everything (js/next.js shows title only on Guided), a date or a count, never an instruction. fact is not enumerable, so the step's
-     shape, its JSON and the bot's frozen contract (bot/test-next-step.mjs: these ten keys) are unchanged */
   const add = (id, base, s) => out.push(Object.defineProperty({
     id, kind: s.kind, title: fit(s.title, 60), why: s.why == null ? null : fit(s.why, 110), minutes: s.minutes === undefined ? (MINUTES[base] ?? null) : s.minutes, due: num(s.due),
     action: { label: s.label == null ? null : fitLabel(s.label), href: s.href || null, write: s.write || null, alt: s.alt || null },
@@ -150,21 +129,18 @@ export function candidates(input, nowMs) {
       add("make-character", "make-character", { kind: "do", title: "Make your character before names close", fact: "You hold a pack; no character is marked made on this device", why: `Pack holders can make characters now${until}.`, due: nw.untilEpoch, label: "I made mine", alt: "Not now", source: "blizzard" });
     if (nw.open && !afterLaunchDay && pack === null)
       add("say-pack", "say-pack", { kind: "do", title: "Say whether you hold a pack", fact: "Pack: no answer from you on the Sign-ups card yet", why: "It decides whether you can make your character early.", due: nw.untilEpoch, label: "Pack: yes or no", href: "#signups", write: { client: "setPack", value: ["yes", "no"] }, source: "discord" });
-    /* rsvp and meet are about launch night: they end with it, like the names and pack steps */
     if (!afterLaunchDay && !(mine && RSVPS.includes(mine.rsvp)))
       add("rsvp", "rsvp", { kind: "party", title: "Say if you are in for launch night", fact: `Launch-night answers: ${entries.filter((e) => RSVPS.includes(e.rsvp)).length} of ${arr(P.members).length} so far`, why: "The meeting point and the first dungeon run count on who is coming.", due: launchEpoch, label: "I'm in", href: "#signups", write: { client: "setRsvp", value: "in" }, alt: "Not now", source: "discord" });
     const meetItem = arr(P.open).find((o) => obj(o) && /meeting point/i.test(str(o.title)));
     if (!afterLaunchDay && meetItem && unchosen(meetItem) && !(mine && str(mine.meet))) {
       const places = arr(N.signups && obj(N.signups.options) && N.signups.options.meet).filter((x) => typeof x === "string" && x);
       const zones = new Set(arr(P.members).map((m) => obj(m) && str(m.start_zone)).filter(Boolean)).size;
-      /* integrator pass 3: the places by name (the card had said "Two places are on the table" and never named them) */
       const orList = (l) => (l.length < 2 ? l.join("") : `${l.slice(0, -1).join(", ")} or ${l[l.length - 1]}`);
       const named = places.length ? `On the table: ${orList(places)}` : "", from = zones ? `; the party walks there from ${numberWord(zones)} start zone${zones === 1 ? "" : "s"}` : "";
       const why = named && `${named}${from}.`.length < 110 ? `${named}${from}.` : named ? `${named}.` : "Nothing is chosen on the board yet.";
       add("meet", "meet", { kind: "party", title: "Pick where to meet on launch night", fact: "Meeting point: not picked yet", why, due: launchEpoch, label: "Pick a place", href: "#signups", write: { client: "setMeet", value: places.length ? places : null }, source: "discord" });
     }
 
-    /* decide-<slug>: the data's own words only (tonight.json's step, decide.json's open decisions, an open spec) */
     const steps = { ...STEPS, ...(obj(T && T.steps) || {}) };
     const person = arr(T && T.people).find((x) => obj(x) && x.class_key === me.class_key);
     const mineDecide = arr(N.decide && N.decide.people).find((p) => obj(p) && p.class_key === me.class_key);
@@ -183,7 +159,7 @@ export function candidates(input, nowMs) {
     if (person && str(person.step)) {
       const t = person.step;
       if (t === steps.spec) addDecide("spec", t, null);
-      else { /* the same id with or without decide.json, so a snooze survives either way */
+      else {
         const d = openOnes.find((x) => optionIn(x, t)) || decisions.find((x) => optionIn(x, t));
         addDecide(d ? slug(d.title) : prof && str(prof.name) && t.includes(prof.name) ? "professions" : slug(t.replace(/^choose\s+/i, "")), t, d);
       }
@@ -195,7 +171,6 @@ export function candidates(input, nowMs) {
     if (member && obj(member.spec_status) && member.spec_status.status === "open") addDecide("spec", steps.spec, null);
   }
 
-  /* poll-<slug>: every party poll that closes later */
   for (const p of arr(P.polls).filter(obj)) {
     const closes = num(p.closes_epoch), title = str(p.title);
     if (!title || closes === null || closes * 1000 <= nowMs) continue;
@@ -203,7 +178,6 @@ export function candidates(input, nowMs) {
     add(`poll-${slug(title)}`, "poll", { kind: "party", title: `Vote: ${title}`, fact: `Poll open: ${title}`, why: when ? `Closes ${when}.` : "Open in Discord until it closes.", due: closes, label: "Vote", href: /^https:\/\//.test(str(url)) ? url : null, alt: "Not now", source: "discord" });
   }
 
-  /* lane D7: the first week, from launch on. Each reads tonight.week_one (build-data.mjs, filled from wiki facts); a null value is no step */
   const wk = obj(N.tonight && N.tonight.week_one), line = (v) => (typeof v === "string" && v.trim() ? fit(v, 110) : null);
   if (launchEpoch !== null && nowMs >= launchEpoch * 1000) {
     const place = me && me.class_key ? line(obj(wk && wk.trainers) && wk.trainers[me.class_key]) : null, dungeon = line(wk && wk.first_dungeon);
@@ -222,8 +196,6 @@ export function candidates(input, nowMs) {
   const nm = nextMoment(N.timeline, nowMs);
   if (nm) {
     const e = nm.e, label = shortLabel(e, T), t = arr(T && T.events).find((x) => obj(x) && x.key === e.key);
-    /* polish (2026-10-30): a closing period says it runs to the end of its last day and when it opened (the bare "closes Nov 3" read
-       like a third date of its own); Blizzard's dates for pack holders: Oct 27 through Nov 3, Pacific time */
     const when = nm.closing ? `closes at the end of ${str(e.until) || "its last day"}, ${str(e.until_zone) || "Pacific"} time` : (t && str(t.when)) || null;
     const why0 = (t && str(t.meaning)) || (str(e.detail) ? cap(str(e.detail)) : null), since = nm.closing && t && str(t.when) ? `Open since ${str(t.when)}.` : null;
     const why = [why0, since].filter(Boolean).join(" ") || null;
@@ -237,7 +209,6 @@ export function candidates(input, nowMs) {
   return out;
 }
 
-/* pick-name first; during the launch period launch-state next (unless snoozed); then weight, table order, data order */
 const baseOf = (id) => (id.startsWith("decide-") ? "decide" : id.startsWith("poll-") ? "poll" : id);
 const tier = (s) => (s.id === "pick-name" ? 0 : s.id === "launch-state" && s.weight === WEIGHTS["launch-state"] ? 1 : 2);
 function sorted(list) {

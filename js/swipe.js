@@ -1,4 +1,3 @@
-/* Swipe between scenes and the head flick (mobile contract section 5; board/MOBILE-NOTES.md). */
 (() => {
   "use strict";
   const K = window.__boardKit;
@@ -18,7 +17,6 @@
     if (S && typeof S.resist === "function") return S.resist(d, dim);
     return d === 0 ? 0 : dim * (1 - 1 / ((0.55 * Math.abs(d)) / dim + 1)) * Math.sign(d);
   };
-  /* a spring glide; without one, or reduced, it jumps */
   const glide = (preset, x0, v0, target, onFrame, onRest) => {
     const S = SPRING();
     if (!S || typeof S.spring !== "function" || reduced()) { onFrame(target); onRest(target); return null; }
@@ -31,7 +29,6 @@
   const head = () => $("#scene .sheet-head");
   const setSway = (dx) => { const hd = head(); if (hd) hd.style.setProperty("--sway", ((dx / Math.max(1, innerWidth)) * 3).toFixed(3)); };
 
-  /* ---------- scene swipe ---------- */
   const carouselOf = (t) => {
     const car = t && typeof t.closest === "function" ? t.closest(".cards") : null;
     return car && car.scrollWidth > car.clientWidth + 2 ? car : null;
@@ -41,13 +38,12 @@
     const t = e && e.target;
     if (!t || typeof t.closest !== "function") return true;
     if (t.closest("input, select, textarea, .lib-rail, .lib-examples, .lib-tools, .bottombar, .bsheet, #map, .ch-sug")) return false;
-    /* the five's carousel pans unless at an end */
     const car = carouselOf(t);
     return !(car && car.scrollLeft > 2 && car.scrollLeft < car.scrollWidth - car.clientWidth - 2);
   };
 
   let pending = null;
-  let live = null;    /* { from, idx, car, sl, dir, nxt, tick } */
+  let live = null;
   let glideH = null, toKey = null;
   let flickDy = 0, flickLive = false;
 
@@ -106,7 +102,6 @@
     if (!live) { pending = null; return; }
     const { from, nxt, dir, car, sl } = live;
     const W = innerWidth, dx = s.dx, vx = Number(s.vx) || 0;
-    /* a carousel that moved took the gesture as its own pan */
     if (car && car.scrollLeft !== sl) { giveBack(); return; }
     const far = Math.abs(dx) >= W * 0.28;
     const flick = Math.abs(vx) > 0.5 && Math.abs(dx) >= 20 && Math.sign(vx) === Math.sign(dx);
@@ -116,7 +111,6 @@
     live = null; pending = null;
     toKey = to;
     stopGlide(glideH);
-    /* the scene is built before the glide starts (C2): the last spring frame only clears and */
     K.switchTab(to, { crossFade: false, quiet: true });
     cur.hidden = false; paint(cur, nxt, x0, dir);
     K.sfx("tab"); haptic("select");
@@ -133,7 +127,6 @@
   };
   const onSwipeCancel = () => { pending = null; if (live) giveBack(); };
 
-  /* ---------- wall flick: a downward drag on the scene head closes the scene ---------- */
   const flickCanStart = (e) => {
     if (!owns() || K.SC.open === null) return false;
     const t = e && e.target;
@@ -151,16 +144,15 @@
     flickLive = false; flickDy = 0;
     const close = dy > 80 || (vy > 0.6 && dy >= 40);
     if (!close) { glide("oak", resist(dy, innerHeight), 0, 0, placeSheet, () => placeSheet(0)); return; }
-    haptic("select"); /* the flick's commit is the Return's one pulse */
+    haptic("select");
     if (reduced()) { K.requestClose(); return; }
-    const y0 = resist(dy, innerHeight), sh = sheetEl(), put = sh && K.flickPut(sh, y0); /* the sheet returns to its tile in one glide */
+    const y0 = resist(dy, innerHeight), sh = sheetEl(), put = sh && K.flickPut(sh, y0);
     const end = () => { K.requestClose({ glided: true }); if (sh) { sh.style.opacity = ""; sh.style.transformOrigin = ""; } placeSheet(0); };
     if (!put) glide("oak", y0, 0, innerHeight, placeSheet, end);
     else glide("oak", 0, 0, 100, (p) => { put(p / 100); sh.style.opacity = String(Math.max(0, 1 - Math.max(0, p / 100 - 0.6) / 0.4)); }, end);
   };
   const onFlickCancel = () => { flickLive = false; flickDy = 0; placeSheet(0); };
 
-  /* ---------- attach ---------- */
   let attached = false;
   const attach = () => {
     if (attached) return;

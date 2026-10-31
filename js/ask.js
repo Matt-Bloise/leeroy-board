@@ -1,4 +1,3 @@
-/* Ask Leeroy box (Leeroy scene); fake-DOM safe plain DOM. */
 (() => {
 "use strict";
 const B = window.BoardBrain, box = document.getElementById("ask-box"), note = document.getElementById("ask-note"), out = document.getElementById("ask-out");
