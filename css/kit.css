@@ -33,11 +33,11 @@ html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset){background:image-set(url("../img
 html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):active{background-image:image-set(url("../img/kit/rb-ring-p-2x.webp") 2x,url("../img/kit/rb-ring-p-3x.webp") 3x)}
 html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-ring-d-2x.webp") 2x,url("../img/kit/rb-ring-d-3x.webp") 3x)}
 html:not(#k) :is(.close svg,.m-btn svg){opacity:0}
-html:not(#k) :is(.ch-text,.mine-place){border-image:url("../img/kit/in-text-n.webp") 18 fill/11px/0 stretch}
+html:not(#k) :is(.ch-text,.mine-place,.lib-q,.tile-q){border-image:url("../img/kit/in-text-n.webp") 18 fill/11px/0 stretch;border-radius:0}
 html:not(#k) :is(.mine-note){border-image:url("../img/kit/in-multi-n.webp") 20 fill/11px/0 stretch}
-html:not(#k) :is(.ch-text,.mine-place):focus{border-image-source:url("../img/kit/in-text-f.webp")}
+html:not(#k) :is(.ch-text,.mine-place,.lib-q,.tile-q):focus{border-image-source:url("../img/kit/in-text-f.webp")}
 html:not(#k) :is(.mine-note):focus{border-image-source:url("../img/kit/in-multi-f.webp")}
-html:not(#k) :is(.ch-text,.mine-place,.mine-note):disabled{border-image-source:url("../img/kit/in-text-d.webp")}
+html:not(#k) :is(.ch-text,.mine-place,.mine-note,.lib-q,.tile-q):disabled{border-image-source:url("../img/kit/in-text-d.webp")}
 html:not(#k) :is(.sense-panel,.bsheet){border-image:url("../img/kit/oak-a.webp") 40 fill/16px/0 stretch}
 html:not(#k) :is(.tn-card,.tnh-card,.dc-card,.cal-card,.mine-card){border-image:url("../img/kit/par-a.webp") 40 fill/14px/0 stretch}
 html:not(#k) :is(.ttc,.seal-say){border-image:url("../img/kit/tt-dark.webp") 34 fill/12px/0 stretch}
