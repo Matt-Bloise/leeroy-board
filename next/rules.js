@@ -183,7 +183,7 @@ export function candidates(input, nowMs) {
     const place = me && me.class_key ? line(obj(wk && wk.trainers) && wk.trainers[me.class_key]) : null, dungeon = line(wk && wk.first_dungeon);
     const meetItem = arr(P.open).find((o) => obj(o) && /meeting point/i.test(str(o.title))), meetSet = meetItem && !unchosen(meetItem) && str(meetItem.status) ? meetItem.status : null;
     if (place) add("train-10", "train-10", { kind: "learn", title: `Visit your first trainer: ${place.replace(/\.$/, "")}`, fact: `Your first trainer: ${place.replace(/\.$/, "")}`, why: "The trainer is where new spells come from.", label: "Open my class page", href: me.class_key ? `#library.classes.${slug(me.class_key)}` : null, source: "library", weight: WEEK_WEIGHTS["train-10"] });
-    if (dungeon) add("first-dungeon", "first-dungeon", { kind: "learn", title: `Plan the first dungeon run: ${dungeon.replace(/\.$/, "")}`, fact: `The first dungeon run: ${dungeon.replace(/\.$/, "")}`, why: null, label: "Read it", href: "#library.dungeons", source: "library", weight: WEEK_WEIGHTS["first-dungeon"] });
+    if (dungeon) add("first-dungeon", "first-dungeon", { kind: "learn", title: `Plan the first dungeon run: ${dungeon.replace(/\.$/, "")}`, fact: `The first dungeon run: ${dungeon.replace(/\.$/, "")}`, why: null, label: "Read it", href: "#library.dungeons.overview", source: "library", weight: WEEK_WEIGHTS["first-dungeon"] });
     if (meetSet) add("meet-again", "meet-again", { kind: "party", title: "Meet the other four at the meeting point", fact: `Where the five meet after day one: ${meetSet}`, why: null, label: "Open the roads", href: "#roads", source: "discord", weight: WEEK_WEIGHTS["meet-again"] });
   }
 
