@@ -39,21 +39,23 @@ html.phone-shell .more-util .more-medal { object-fit: contain; border-radius: 0;
 
 html.phone-shell .sheet-head { --sway: 0; }
 html.phone-shell .sheet-name { position: relative; isolation: isolate; }
-html.phone-shell .sheet-name::before { content: ""; position: absolute; z-index: -1; left: 6px; right: 6px; top: -4px; height: 44px; pointer-events: none; border-style: solid; border-width: 0 6px; border-image-source: var(--banner, none); border-image-slice: 0 24 0 24 fill; border-image-width: 0 6px 0 6px; border-image-repeat: stretch; opacity: 0.92; transform-origin: 50% 0; transform: rotate(calc(var(--sway, 0) * 1deg + var(--tilt-x, 0) * 2deg)); transition: transform var(--t-micro) var(--ease-oak); }
-@media (prefers-reduced-motion: reduce) { html.phone-shell .sheet-name::before { transform: none; transition: none; } }
+html.phone-shell .sheet-name::before { content: ""; position: absolute; z-index: -1; left: 4px; right: 4px; top: -6px; height: 44px; pointer-events: none; background: linear-gradient(90deg, #0008, #0000 9%, #0000 91%, #0008), linear-gradient(180deg, #000a, #0000 22%, #0000 80%, #0006), var(--banner, none) 0 0 / 128px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 9px), 0 100%); opacity: 0.94; transform-origin: 50% 0; transform: rotate(calc(var(--sway, 0) * 1deg + var(--tilt-x, 0) * 2deg)); transition: transform var(--t-micro) var(--ease-oak); }
+html.phone-shell .sheet-name.unroll::before { animation: ribbon-unroll 560ms cubic-bezier(.3, 1.35, .5, 1) both; }
+@keyframes ribbon-unroll { from { scale: 1 .12; } }
+@media (prefers-reduced-motion: reduce) { html.phone-shell .sheet-name::before { transform: none; transition: none; animation: none; } }
 @media (forced-colors: active) { html.phone-shell .sheet-name::before { display: none; } }
-html.phone-shell .sheet-head[data-pscene="timeline"] { --banner: url("../img/banners/indigo.webp"); }
-html.phone-shell .sheet-head[data-pscene="five"] { --banner: url("../img/banners/royal.webp"); }
-html.phone-shell .sheet-head[data-pscene="roads"] { --banner: url("../img/banners/burnt-orange.webp"); }
-html.phone-shell .sheet-head[data-pscene="racials"] { --banner: url("../img/banners/crimson.webp"); }
-html.phone-shell .sheet-head[data-pscene="legacy"] { --banner: url("../img/banners/copper.webp"); }
-html.phone-shell .sheet-head[data-pscene="buffs"] { --banner: url("../img/banners/plum.webp"); }
-html.phone-shell .sheet-head[data-pscene="ledger"] { --banner: url("../img/banners/wine.webp"); }
-html.phone-shell .sheet-head[data-pscene="signups"] { --banner: url("../img/banners/forest.webp"); }
-html.phone-shell .sheet-head[data-pscene="librarian"] { --banner: url("../img/banners/slate.webp"); }
-html.phone-shell .sheet-head[data-pscene="library"] { --banner: url("../img/banners/ochre.webp"); }
-html.phone-shell .sheet-head[data-pscene="decide"] { --banner: url("../img/banners/olive.webp"); }
-html.phone-shell .sheet-head[data-pscene="tonight"] { --banner: url("../img/banners/teal.webp"); }
+html.phone-shell .sheet-head[data-pscene="timeline"] { --banner: url("../img/ribbons/indigo-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="five"] { --banner: url("../img/ribbons/royal-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="roads"] { --banner: url("../img/ribbons/burnt-orange-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="racials"] { --banner: url("../img/ribbons/crimson-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="legacy"] { --banner: url("../img/ribbons/copper-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="buffs"] { --banner: url("../img/ribbons/plum-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="ledger"] { --banner: url("../img/ribbons/wine-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="signups"] { --banner: url("../img/ribbons/forest-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="librarian"] { --banner: url("../img/ribbons/slate-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="library"] { --banner: url("../img/ribbons/ochre-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="decide"] { --banner: url("../img/ribbons/olive-w.webp"); }
+html.phone-shell .sheet-head[data-pscene="tonight"] { --banner: url("../img/ribbons/teal-w.webp"); }
 
 html.phone-shell.scene-open #board { visibility: hidden; }
 html.phone-shell #scene .sheet-top { display: flex; justify-content: flex-start; gap: 4px; }

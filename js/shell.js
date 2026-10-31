@@ -117,6 +117,7 @@ function headFor(key) {
   const head = $(".sheet-head"); if (!head || !S.phone) return;
   head.setAttribute("data-pscene", BANNER[key] ? key : "tonight");
   head.style.setProperty("--sway", "0");
+  const nm = $(".sheet-name"); if (nm) { nm.classList.remove("unroll"); void nm.offsetWidth; nm.classList.add("unroll"); }
 }
 
 function toTop() {

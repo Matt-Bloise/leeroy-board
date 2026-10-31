@@ -4,36 +4,35 @@
 const K = window.__boardKit; if (!K) return;
 const rail = document.getElementById("tabs"); if (!rail) return;
 const PHONE_MQ = "(max-width: 699px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse))";
-/* scene to banner colour (mirrored in css/cloth.css) */
 const CLOTH_COLOURS = { timeline: "indigo", five: "royal", roads: "burnt-orange", racials: "crimson", legacy: "copper", buffs: "plum", ledger: "wine", signups: "forest", decide: "olive", library: "ochre", librarian: "slate", tonight: "teal" };
 const SPARE = Object.values(CLOTH_COLOURS);
 const mq = (q) => { try { return window.matchMedia(q); } catch (e) { return { matches: false, addEventListener() {} }; } };
 const reduceMQ = mq("(prefers-reduced-motion: reduce)"), phoneMQ = mq(PHONE_MQ), forcedMQ = mq("(forced-colors: active)");
 const root = document.documentElement;
 let ctl = null, canvas = null, loading = false, gen = 0, ro = null, px = null;
+const sheet = rail.closest(".sheet");
 
 const stub = { status: () => ({ on: false, gl: null, textures: 0, running: false, frame: { last: 0, p95: 0 }, kicks: 0, banners: [] }), kick() {}, destroy() { stop(); } };
 window.__cloth = { status: () => (ctl || stub).status(), kick: (k, p, d) => (ctl || stub).kick(k, p, d), destroy: () => (ctl ? ctl.destroy() : stop()) };
 
-const allowed = () => !reduceMQ.matches && !phoneMQ.matches && !forcedMQ.matches && document.hidden !== true && !root.classList.contains("play"); /* companion N4: Play mode, the still banners */
-const tabList = () => Array.from(rail.querySelectorAll(".tab")).map((el, i) => { const key = el.getAttribute("data-tab") || String(i); return { key, el, colour: CLOTH_COLOURS[key] || SPARE[i % SPARE.length] }; });
+const allowed = () => !reduceMQ.matches && !phoneMQ.matches && !forcedMQ.matches && document.hidden !== true && !root.classList.contains("play");
+const tabList = () => Array.from(rail.querySelectorAll(".tab")).map((el, i) => { const key = el.getAttribute("data-tab") || String(i); return { key, el, label: el.textContent.trim(), colour: CLOTH_COLOURS[key] || SPARE[i % SPARE.length] }; });
 const idle = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 2500 }) : setTimeout(f, 300));
-const loadImg = (name) => new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error(name)); im.src = `img/banners/${name}.webp`; });
+const loadImg = (name) => new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = () => no(new Error(name)); im.src = `img/ribbons/${name}.webp`; });
 const decoded = (name) => loadImg(name).then((im) => (im.decode ? im.decode().catch(() => {}).then(() => im) : im));
 
-/* fix E6 (2026-10-30): the painted banners (html.cloth-paint) stay until the GL cloth has laid out; a scene opening lays it out again */
-const show = () => { const on = !!ctl && ctl.layout() !== false; root.classList.toggle("cloth-gl", on); root.classList.toggle("cloth-paint", !on); };
+const show = () => { const on = !!ctl && ctl.layout() !== false; root.classList.toggle("cloth-gl", on); root.classList.toggle("cloth-paint", !on); root.classList.toggle("ribbons-on", !phoneMQ.matches && !forcedMQ.matches); };
 function start() {
   if (ctl || loading || !allowed()) { show(); return; }
   loading = true; const my = ++gen;
-  if (!canvas) { canvas = document.createElement("canvas"); canvas.setAttribute("id", "tab-cloth"); canvas.setAttribute("aria-hidden", "true"); canvas.style.pointerEvents = "none"; rail.insertBefore(canvas, rail.firstChild); }
-  const tabs = tabList(), names = Array.from(new Set(tabs.map((t) => t.colour)));
-  const mod = window.__clothModule ? Promise.resolve(window.__clothModule) : import("../cloth/cloth.js?v=a87244af88");
-  Promise.all([mod, Promise.all(names.map(decoded))]).then(([m, ims]) => {
+  if (!canvas) { canvas = document.createElement("canvas"); canvas.setAttribute("id", "tab-cloth"); canvas.setAttribute("aria-hidden", "true"); canvas.style.pointerEvents = "none"; sheet.appendChild(canvas); }
+  const tabs = tabList(), names = Array.from(new Set(tabs.map((t) => t.colour + "-w")));
+  const mod = window.__clothModule ? Promise.resolve(window.__clothModule) : import("../cloth/cloth.js?v=ba8a932a0b");
+  Promise.all([mod, Promise.all(names.map(decoded)), Promise.all(["p-loop", "p-fringe", "p-gold"].map(decoded))]).then(([m, ims, pr]) => {
     loading = false; if (my !== gen || !allowed()) return;
     const byName = {}; names.forEach((n, i) => { byName[n] = ims[i]; });
-    const images = {}; tabs.forEach((t) => { images[t.key] = byName[t.colour]; });
-    const c = m.createCloth({ canvas, rail, tabs, images, tokens: { warm: getComputedStyle(root).getPropertyValue("--light-warm") }, onLost: () => { ctl = null; show(); } });
+    const images = {}; tabs.forEach((t) => { images[t.key] = byName[t.colour + "-w"]; });
+    const c = m.createCloth({ canvas, rail, sheet, tabs, images, parts: { loop: pr[0], fringe: pr[1], gold: pr[2] }, tokens: { warm: getComputedStyle(root).getPropertyValue("--light-warm") }, onLost: () => { ctl = null; show(); } });
     if (!c) throw new Error("no webgl");
     ctl = c; show(); watch();
   }).catch(() => { loading = false; ctl = null; show(); });
@@ -49,17 +48,20 @@ function watch() {
   window.addEventListener("resize", relay);
   rail.addEventListener("pointermove", (e) => {
     if (!ctl || e.pointerType === "touch") return;
-    const r = rail.getBoundingClientRect(), x = e.clientX - r.left + rail.scrollLeft, y = e.clientY - r.top, n = performance.now();
+    const r = sheet.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, n = performance.now();
     let vx = 0; if (px) { vx = ((x - px.x) / Math.max(8, n - px.n)) * 1000; } ctl.pointer(x, y, vx, px ? px.x : null); px = { x, n };
   });
   rail.addEventListener("pointerleave", () => { px = null; if (ctl) ctl.leave(); });
   rail.addEventListener("focusin", (e) => { const t = e.target; if (!ctl || !t || !t.closest) return; const tab = t.closest(".tab"); if (!tab) return; let vis = true; try { vis = tab.matches(":focus-visible"); } catch (x) {} ctl.focus(tab.getAttribute("data-tab"), vis); });
   rail.addEventListener("focusout", () => { if (ctl) ctl.blur(); });
+  rail.addEventListener("scroll", relay);
   K.on("scene", (key, prev) => { if (ctl) { ctl.scene(key, prev); relay(); } });
+  const lay = document.getElementById("scene");
+  if (typeof MutationObserver === "function") new MutationObserver(() => { if (ctl && (lay.hidden || lay.classList.contains("closing"))) ctl.scene(null); }).observe(lay, { attributes: true, attributeFilter: ["class", "hidden"] });
 }
 const change = () => { if (allowed()) idle(start); else stop(); };
 for (const q of [reduceMQ, phoneMQ, forcedMQ]) { if (q.addEventListener) q.addEventListener("change", change); }
-addEventListener("board-mode", change); /* js/mode.js: Play on or off */
+addEventListener("board-mode", change);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !ctl) change(); });
 show(); idle(start);
 })();
