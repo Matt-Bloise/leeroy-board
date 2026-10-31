@@ -26,8 +26,8 @@ function begin(only) {
   const sheet = $("#scene .sheet"), a = D.activeElement;
   /* never over the seals: the walk starts once a journey is chosen */
   if (W.go || get() || !sheet || !K.SC.open || D.documentElement.classList.contains("nx-first")) return;
-  /* fix round A6: a stored name skips card 1; a card whose target is hidden shows uncut, so every size counts alike */
-  const plan = [0, 1, 2, 3].filter((i) => (!only || only.includes(i)) && !(i === 0 && K.MEM.me())); if (!plan.some((i) => find(CARDS[i]))) return;
+  /* a stored name skips card 1 */
+  const plan = [0, 1, 2, 3].filter((i) => (!only || only.includes(i)) && !(i === 0 && K.MEM.me()) && find(CARDS[i])); if (!plan.length) return; /* a step whose target has no box is skipped and the count follows */
   Object.assign(W, { go: 1, on: 1, plan, scene: K.SC.open, back: a !== D.body && a, veil: h("div", { class: "walk-veil" }), card: h("section", { class: "walk-card" }) });
   W.el = h("div", { class: "walk", id: "walk", role: "dialog", "aria-modal": "true", "aria-labelledby": "walk-s" }, W.veil, W.card);
   W.el.addEventListener("keydown", onKey); sheet.appendChild(W.el);
@@ -88,7 +88,7 @@ function reveal(t) {
   if (r.top < b.top || r.bottom > (phone() && !W.card.classList.contains("walk-up") ? W.card.getBoundingClientRect().top : b.bottom)) y.scrollTop += r.top - b.top - 8;
 }
 
-const soon = (f) => requestAnimationFrame(() => setTimeout(f, 0));
+const soon = (f) => requestAnimationFrame(() => setTimeout(() => (K.hold ? K.hold.then(f, f) : f()), 0)); /* a seal still flying to its card (K.hold) finishes first */
 /* a deep link: no Next steps 2 s after boot, so cards 2 and 4 */
 K.on("booted", () => setTimeout(() => { W.late = 1; const k = K.SC.open; if (k && k !== "tonight") begin([1, 3]); }, 2000));
 /* a scene change ends the walk */

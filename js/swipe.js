@@ -1,4 +1,4 @@
-/* Swipe between scenes and the wall flick (contract section 5, 2026-10-30). Full note: board/MOBILE-NOTES.md, file notes. */
+/* Swipe between scenes and the head flick (mobile contract section 5; board/MOBILE-NOTES.md). */
 (() => {
   "use strict";
   const K = window.__boardKit;
@@ -116,12 +116,15 @@
     live = null; pending = null;
     toKey = to;
     stopGlide(glideH);
+    /* the scene is built before the glide starts (C2): the last spring frame only clears and */
+    K.switchTab(to, { crossFade: false, quiet: true });
+    cur.hidden = false; paint(cur, nxt, x0, dir);
+    K.sfx("tab"); haptic("select");
     glideH = glide("oak", x0, vx * 1000, -dir * W,
       (x) => { if (!reduced()) paint(cur, nxt, x, dir); setSway(x); },
       () => {
         glideH = null;
-        K.switchTab(to, false);
-        clearPanels(cur, null);
+        cur.hidden = true; clearPanels(cur, null);
         nxt.el.style.transform = "";
         setSway(0);
         toKey = null;
@@ -148,8 +151,12 @@
     flickLive = false; flickDy = 0;
     const close = dy > 80 || (vy > 0.6 && dy >= 40);
     if (!close) { glide("oak", resist(dy, innerHeight), 0, 0, placeSheet, () => placeSheet(0)); return; }
+    haptic("select"); /* the flick's commit is the Return's one pulse */
     if (reduced()) { K.requestClose(); return; }
-    glide("oak", resist(dy, innerHeight), 0, innerHeight, placeSheet, () => { K.requestClose(); placeSheet(0); });
+    const y0 = resist(dy, innerHeight), sh = sheetEl(), put = sh && K.flickPut(sh, y0); /* the sheet returns to its tile in one glide */
+    const end = () => { K.requestClose({ glided: true }); if (sh) { sh.style.opacity = ""; sh.style.transformOrigin = ""; } placeSheet(0); };
+    if (!put) glide("oak", y0, 0, innerHeight, placeSheet, end);
+    else glide("oak", 0, 0, 100, (p) => { put(p / 100); sh.style.opacity = String(Math.max(0, 1 - Math.max(0, p / 100 - 0.6) / 0.4)); }, end);
   };
   const onFlickCancel = () => { flickLive = false; flickDy = 0; placeSheet(0); };
 

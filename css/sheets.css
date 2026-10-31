@@ -7,6 +7,8 @@
   border-radius: 14px 14px 0 0; background: var(--bsheet-bg); color: var(--bsheet-ink); border: 1px solid var(--brass-dim); border-bottom: 0; box-shadow: 0 -12px 30px var(--shadow);
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)); overscroll-behavior: contain; }
 .bsheet.fade { transition: opacity 120ms linear; }
+/* the veil dims the scene over the move; reduced motion and Play keep it a cut (mode.css fades it in */
+@media (prefers-reduced-motion: no-preference) { html:not(.play) .bsheet-veil { transition: opacity var(--t-move) var(--ease-fade); } }
 .bsheet.fade.out { opacity: 0; }
 .bsheet-handle { position: relative; flex: none; display: flex; align-items: center; justify-content: center; height: 48px; touch-action: none; }
 .bsheet-x { position: absolute; top: 4px; right: 10px; min-width: 48px; min-height: 48px; }

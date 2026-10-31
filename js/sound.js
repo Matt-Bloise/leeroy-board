@@ -11,7 +11,7 @@
    The page gives the sound one shared flicker (flick) and asks to hear each crackle (onCrackle), so the fire's light pops
    with the sound it makes. */
 (() => {
-  const CUE_DB = { open: -14, close: -16, tab: -20, flip: -18, stamp: -17, tick: -30, tock: -31, chip: -24, latch: -24, paper: -24, pin: -24, quill: -24, page: -21, detent: -27, copy: -24, menu: -24, card: -24, esc: -22, swell: -22, cheer: -20,
+  const CUE_DB = { open: -14, close: -16, tab: -18, flip: -18, stamp: -17, tick: -30, tock: -31, chip: -24, latch: -24, paper: -18, pin: -24, quill: -24, page: -21, detent: -27, copy: -24, menu: -24, card: -24, esc: -22, swell: -22, cheer: -20,
     /* sensory pass (audio-sensory): UI, transition and room-event cues */
     hover: -34, whoosh: -24, unfurl: -24, cork: -22, thunk: -22, tipc: -32 };
   /* room events and the fanfare: built after every UI cue, so the UI is ready first */
@@ -38,7 +38,7 @@
     S.ambLvl = G(1, S.duck); /* sensory: ambience level, after the scene low-pass */
     S.lp = F("lowpass", 18000, 0.5, S.ambLvl);
     S.mus = G(0, S.duck); /* sensory: the score's bus */
-    /* a generated room impulse (1.7 s, stereo, darkening tail) feeds a quiet parallel reverb from the UI cues and the score */
+    /* a generated room impulse (1.7 s, stereo, darkening tail) feeds a quiet parallel reverb from the UI */
     const verb = () => { try { const n = Math.round(1.4 * R), ir = c.createBuffer(2, n, R), dk = Math.exp(-3.4 / R), kk = Math.exp(-3 / R); for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let lp = 0, e = 1, k = 0.95; for (let i = 0; i < n; i++) { lp += (Math.random() * 2 - 1 - lp) * (0.25 + k * 0.7 / 0.95 * 0.95); e *= dk; k *= kk; d[i] = lp * e * (i < 90 ? i / 90 : 1); } } const cv = c.createConvolver(); cv.buffer = ir; S.verbIn = G(1, cv); cv.connect(G(0.7, S.duck)); S.ui.connect(G(dbToGain(-17), S.verbIn)); S.mus.connect(G(dbToGain(-10), S.verbIn)); } catch (e) {} };
     setTimeout(verb, 40); /* built right after the first frame, not inside the first tap */
     S.amb = G(1, S.lp);
@@ -99,12 +99,12 @@
       pour: [1.2, (t, w, st) => band(st, w, 1200, 3500) * (0.55 + 0.45 * Math.sin(TAU * 9 * t)) * Math.sin(Math.PI * Math.min(1, t / 1.2))],
     };
     /* the takes are built a few at a time so building never holds a frame */
-    /* UI cues are built a few at a time right after the first tap; room-event cues (EVT_DB) only when first asked for (ensure), one at a time */
+    /* UI cues are built a few at a time right after the first tap */
     const jobs = Object.keys(defs).filter((n) => EVT_DB[n] == null).flatMap((n) => Array.from({ length: defs[n][2] || TAKES }, (_, k) => [n, k])); let i = 0, busy = false;
     const step = () => { busy = true; const t0 = performance.now(); while (i < jobs.length && performance.now() - t0 < 6) { const [n, k] = jobs[i++], [sec, fn] = defs[n]; const q0 = performance.now(); (S.takes[n] ||= []).push(mk(sec, fn, k, LO.has(n))); S.buildMs[n] = (S.buildMs[n] || 0) + performance.now() - q0; } if (i < jobs.length) setTimeout(step, 0); else busy = false; };
     S.ensure = (n) => { if (!defs[n] || S.queued[n]) return; S.queued[n] = 1; for (let k = 0; k < 2; k++) jobs.push([n, k]); if (!busy) setTimeout(step, 0); };
     setTimeout(step, 0);
-    /* the bed: brown-ish noise through a band at 400 Hz (the fire), a 110 Hz rumble and a murmur band breathing slowly */
+    /* the bed: brown-ish noise through a band at 400 Hz (the fire), a 110 Hz rumble and a murmur band */
     let p1 = 0, p2 = 0;
     const noise = c.createBuffer(1, Math.round(1.5 * R), R), nd = noise.getChannelData(0);
     for (let k = 0; k < nd.length; k++) { const w = Math.random() * 2 - 1; p1 += (w - p1) * 0.08; p2 += (p1 - p2) * 0.3; nd[k] = p2 * 3 + w * 0.08; }
@@ -120,7 +120,7 @@
     if (typeof navigator !== "undefined" && navigator.audioSession) { try { navigator.audioSession.type = "playback"; } catch (e) {} } /* iPhone: play with the ring switch on silent */
     return true;
   }
-  /* one take, gain +-1.5 dB, cutoff +-10%, through the UI bus (or the ambience bus), with the ambience ducked around it */
+  /* one take, gain +-1.5 dB, cutoff +-10%, through the UI bus (or the ambience bus), with the ambience */
   function play(name, opt) {
     const c = S.ctx, list = S.takes[name];
     if (!list && S.ensure && EVT_DB[name] != null) S.ensure(name); /* first ask builds the cue; it sounds from the next ask */
@@ -133,7 +133,7 @@
       const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = (o.amb ? 6000 : 9000) * rnd(0.9, 1.1);
       const g = c.createGain(); g.gain.value = dbToGain((o.db != null ? o.db : CUE_DB[name] != null ? CUE_DB[name] : EVT_DB[name] != null ? EVT_DB[name] : -24) + rnd(-1.5, 1.5)) * (o.gain || 1);
       b.connect(f); f.connect(g);
-      /* spatial: a StereoPanner from o.pan, or (UI cues) from the pointer's side of the screen via setPanSource; off = centre */
+      /* spatial: a StereoPanner from o.pan, or (UI cues) from the pointer's side of the screen via setPanSource */
       let out = g, pn = null;
       const pv = o.pan != null ? o.pan : (!o.amb && S.getPan ? S.getPan() : 0);
       if (S.spatial && pv && c.createStereoPanner) { pn = c.createStereoPanner(); pn.pan.value = Math.max(-0.85, Math.min(0.85, pv)); g.connect(pn); out = pn; }
@@ -181,12 +181,12 @@
     return true;
   }
   function setVol(v) { S.vol = v; try { if (S.on && S.ctx) S.master.gain.setTargetAtTime(v * 0.6, S.ctx.currentTime, 0.05); } catch (e) {} }
-  /* a scene open muffles the room: the ambience low-pass sweeps to 2.5 kHz and the bed drops 6 dB; closing sweeps back */
+  /* a scene open muffles the room: the ambience low-pass sweeps to 2.5 kHz and the bed drops 6 dB */
   function setScene(on) {
     S.scene = on; const c = S.ctx; if (!c) return;
     try { S.lp.frequency.setTargetAtTime(on ? 2500 : 18000, c.currentTime, 0.32 / 3); S.amb.gain.setTargetAtTime(on ? 0.5 : 1, c.currentTime, 0.1); } catch (e) {}
   }
-  /* a gesture: resume a context the browser left suspended (a touch's pointerdown is no activation; click and touchend are) */
+  /* a gesture: resume a context the browser left suspended (a touch's pointerdown is no activation */
   function gesture() { const c = S.ctx; if (S.on && c && c.state !== "running") { try { c.resume(); } catch (e) {} } return running(); }
   const running = () => !!(S.ctx && S.ctx.state === "running");
   function measure(ms = 500) {

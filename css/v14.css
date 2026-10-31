@@ -1,4 +1,19 @@
 
+/* THE MOTION GRAMMAR (polish round C): six transitions, no others. Each: action, motion, sound, haptic, light.
+   Pick up   tap a tile, a bar place, a deep link: the tile becomes the sheet (View Transition pairs scene-band + scene-head, FLIP on WebKit); open, select, --key-lift 300 ms; --t-move --ease-oak
+   Turn      a tab, a swipe, a bar place while open: a 16 px slide, finger-locked on a swipe; tab, select (not keys); --t-leave + --t-enter
+   Unfold    More, launch night, Looks wrong, the Atlas, a seal: the control grows into the thing (FLIP from its box); paper / open / stamp, select / confirm; --t-move --ease-oak
+   Return    close, Escape, back, the head flick: the sheet goes back to its tile; close, select on touch; --t-close --ease-shut
+   Stamp     a choice lands: the control presses, the mark stays (520 ms); stamp / latch, confirm
+   Snuff     Play on or off: the lantern's light cross-fades (--t-fade), nothing moves; select, sound held
+   Play and reduced motion: a 120 ms fade between the same states (Snuff still fades). Each is interruptible: a new one retargets. */
+:root { --key-lift: 1.06; }
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes v14-lift { from { filter: brightness(var(--key-lift)); } to { filter: none; } }
+  html:not(.play) .scene-layer.lift .sheet-head { animation: v14-lift 300ms var(--ease-fade) both; }
+}
+.panel-pending { min-height: 40vh; } /* a panel not yet filled holds its place for the first frame */
+
 :root { --g1: 0.618rem; --g2: 1rem; --g3: 1.618rem; --g4: 2.618rem; --g5: 4.236rem; --drift-x: 0px; --drift-y: 0px; }
 
 :root { --oak-0: #000; --room-fog: #000; --shade-deep: rgba(0, 0, 0, 0.94); --shade-mid: rgba(0, 0, 0, 0.62); --shade-light: rgba(0, 0, 0, 0.22); --shade-none: rgba(0, 0, 0, 0); --veil: rgba(0, 0, 0, 0.74); --veil-room: rgba(0, 0, 0, 0.5); --veil-strong: rgba(0, 0, 0, 0.92); color-scheme: dark; }
@@ -10,17 +25,17 @@ body { background-image: repeating-linear-gradient(92deg, var(--grain-line) 0 2p
 @keyframes v14-rise { from { opacity: 0; translate: 0 14px; scale: 0.985; } to { opacity: 1; translate: 0 0; scale: 1; } }
 #wall > .tile, #wall > li { animation: v14-rise 720ms var(--ease-oak) both; animation-delay: calc(450ms + var(--i, 0) * 75ms); }
 #wall > :nth-child(1) { --i: 0; } #wall > :nth-child(2) { --i: 1; } #wall > :nth-child(3) { --i: 2; } #wall > :nth-child(4) { --i: 3; } #wall > :nth-child(5) { --i: 4; } #wall > :nth-child(6) { --i: 5; } #wall > :nth-child(7) { --i: 6; } #wall > :nth-child(8) { --i: 7; }
-/* the sheet unfolds from its top edge, so a first-visit Next steps reads as a page opening, not a slam */
-/* the unfold moves on the oak ease; the opacity has its own symmetric ease (a front-loaded opacity put a bright sheet on a dark wall in two frames) */
+/* the sheet unfolds from its top edge, so a first-visit Next steps reads as a page opening, not a */
+/* the unfold moves on the oak ease; the opacity has its own symmetric ease (a front-loaded opacity */
 @keyframes v14-unfold { from { transform: perspective(1400px) rotateX(-9deg) translateY(18px); transform-origin: 50% 0; } to { transform: none; transform-origin: 50% 0; } }
 .scene-layer.rise .sheet { animation: v14-unfold var(--t-move) var(--ease-oak) both, fade-in var(--t-move) var(--ease-fade) both; }
 @keyframes v14-fade { from { opacity: 0; } to { opacity: 1; } }
 .hero-art, #room { animation: v14-fade 1200ms ease-out both; }
-/* fix C12: the header, the clock and the foot paint at the first paint (they faded in from 250 ms, a dark void at 1920) */
+/* fix C12: the header, the clock and the foot paint at the first paint (they faded in from 250 ms, a */
 /* a tab change cross-fades: the old panel eases out, the new one eases in, no flash between */
 /* (the leave and enter timing now lives in board.css as --t-leave and --t-enter) */
 
-/* 3. Scene medallions: the painted 640 px coin (1254 px originals), lit, with a slow light sweep. */
+/* 3. Scene medallions: the painted 640 px coin (1254 px originals), lit, with a slow light */
 .sheet-emblem { padding: 0; border: 0; background: none; cursor: zoom-in; width: 44px; height: 44px; border-radius: 50%; position: relative; }
 .sheet-emblem .emblem-img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7)); transition: transform 420ms var(--ease-spring); }
 @media (hover: hover) { .sheet-emblem:hover .emblem-img { transform: rotateY(180deg) scale(1.08); } }
@@ -89,7 +104,7 @@ body { background-image: repeating-linear-gradient(92deg, var(--grain-line) 0 2p
 .sheet-body { padding-inline: clamp(14px, 3.2vw, var(--g4)); }
 .sheet-body p, .sheet-body li { text-wrap: pretty; }
 .sheet-body :where(h2, h3) { text-wrap: balance; }
-/* one button family: the same radius, height and press on every control that is a button, in every scene */
+/* one button family: the same radius, height and press on every control that is a button, in every */
 :where(.lib-tool, .lib-btn, .tn-name, .jr-card, .jr-skip, .jr-go, .flip, .bb, .tilt, .pager button) { box-sizing: border-box; min-height: 44px; border-radius: 999px; transition: transform var(--t-micro) var(--ease-oak), background var(--t-micro) var(--ease-oak), box-shadow var(--t-micro) var(--ease-oak); }
 :where(.jr-card) { border-radius: 10px; }
 :where(.lib-tool, .lib-btn, .tn-name, .jr-skip, .jr-go, .tilt, .pager button):active { transform: translateY(1px) scale(0.985); }
@@ -119,7 +134,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offs
 img:not([src]), img[src=""] { visibility: hidden; }
 img.img-missing { visibility: hidden; }
 
-/* 8. Wide gamut and HDR. sRGB values above stay as the fallback; P3 only where the display reports it; html.hdr-off (?hdr=0, js/hdr.js) turns the block off. */
+/* 8. Wide gamut and HDR. sRGB values above stay as the fallback */
 @supports (color: color(display-p3 1 1 1)) {
   @media (color-gamut: p3) {
         :root:not(.hdr-off) .jr-start, :root:not(.hdr-off) .tn-link, :root:not(.hdr-off) .tn-card h3 + .tn-big { color: color(display-p3 0.72 0.13 0.09); }
@@ -154,7 +169,7 @@ html.idle-dim .idle-veil { opacity: 0.45; }
 html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(root) { animation-duration: var(--t-close); }
 @media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; } }
 
-/* 11. Reduced motion: no sweep, no bob, no unfold; the coin still shows and still turns instantly. */
+/* 11. Reduced motion: no sweep, no bob, no unfold */
 @media (prefers-reduced-motion: reduce) {
   .hero-art, #room { animation: none !important; }
   .coin, .coin-in, .coin-shine::before, #wall > .tile, #wall > li, .scene-layer.rise .sheet { animation: none !important; }
@@ -184,7 +199,7 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
   html.scene-open .sense-fab { opacity: 0; pointer-events: none; }
 }
 @media (max-width: 359px) { .sheet-name h2 { white-space: normal; font-size: 1rem; line-height: 1.1; } }
-/* ledger: the seal hangs in the margin so a wrapped line and its source tag line up under the text */
+/* ledger: the seal hangs in the margin so a wrapped line and its source tag line up under the */
 .ledger .settled-li > span:not(.label) { display: block; padding-left: calc(1.6em + 8px); }
 .ledger .settled-li > span:not(.label) > .seal { margin-left: calc(-1.6em - 8px); }
 .ledger .settled-li .label { margin: 2px 0 0 calc(1.6em + 8px); display: flex; justify-content: flex-start; }
@@ -197,10 +212,10 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
 @media (min-width: 1000px) { .bclasses { align-items: stretch; } }
 /* wall tiles: a long title takes two lines instead of an ellipsis */
 .tile-title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
-/* a long step (the group-name vote with its time) wraps instead of running past the sheet at 200% zoom */
+/* a long step (the group-name vote with its time) wraps instead of running past the sheet at 200% */
 .tn-steps .tn-link { white-space: normal; }
 
-/* forced colors (Windows High Contrast): a pressed or selected control is underlined (colour is gone), and the focus ring is a system color */
+/* forced colors (Windows High Contrast): a pressed or selected control is underlined (colour is */
 @media (forced-colors: active) {
   button[aria-pressed="true"], .tab[aria-selected="true"], [role="tab"][aria-selected="true"] { text-decoration: underline 2px; text-underline-offset: 3px; }
   :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
@@ -249,4 +264,4 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
    the rail holds its row height before the shelf buttons are in. */
 .sheet-body:has(> #panel-library:not([hidden], .warm)) { align-content: safe start; }
 @media (max-width: 899px) { .lib-rail { min-height: 60px; } }
-.lib-stat.sk { visibility: hidden; } /* CLS (2026-10-30): index.html holds the stat row's cells until libRenderHead writes the real ones, so the row has its height from the first paint */
+.lib-stat.sk { visibility: hidden; } /* CLS (2026-10-30): index.html holds the stat row's cells until libRenderHead writes the real ones */

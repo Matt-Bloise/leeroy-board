@@ -27,7 +27,7 @@
      what a press does (the word had flipped between Lounge and Play mode, naming the state, not the action) */
   const TIP = { off: "Turn on Play mode: text only, nothing moves, for while the game runs.", on: "Play mode is on. Press to light the tavern room again." }; /* fix C20 */
   const TITLE = TIP.off;
-  /* the painted lantern pair (img/companion, contract 13 sheet 1) once it has loaded; until then, or if it never does, the candle emblem */
+  /* the painted lantern pair (img/companion, contract 13 sheet 1) once it has loaded */
   const ART = { lit: "img/companion/lantern-lit.webp", snuffed: "img/companion/lantern-snuffed.webp" };
   let art = false;
   const lantern = (on) => {
@@ -70,9 +70,10 @@
   function set(on) {
     on = !!on;
     if (on === isPlay()) { sync(); return on; }
+    html.classList.add("snuff"); setTimeout(() => html.classList.remove("snuff"), 160); /* Snuff: the light cross-fades, nothing moves */
     html.classList.toggle("play", on); put(KEY, on ? "play" : null);
     sync();
-    /* tier.js chooses again; the wall's light, sheen and wisps re-check their live() on board-room */
+    /* tier.js chooses again; the wall's light, sheen and wisps re-check their live() on */
     fire("board-mode"); fire("board-room");
     if (on) hold(); else give();
     if (K) K.emit("mode", on ? "play" : "lounge");
@@ -98,7 +99,7 @@
   });
 
   if (isPlay()) hold(); /* a page that opens in Play opens quiet */
-  /* both paintings decoded before the first swap, so a switch never shows a half-loaded lantern */
+  /* both paintings decoded before the first swap, so a switch never shows a half-loaded */
   if (typeof Image === "function") { let n = 0; for (const u of [ART.lit, ART.snuffed]) { const im = new Image(); im.onload = () => { if (++n === 2) { art = true; sync(); } }; im.src = u; } }
   place();
   if (K) K.on("booted", place);

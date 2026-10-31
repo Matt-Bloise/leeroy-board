@@ -2,7 +2,7 @@
    scene or tab opens or closes. Every rule is under html.play but the lantern button's own look. Tokens only. */
 :root { --t-play: 120ms; }
 html.play { --t-leave: var(--t-play); --t-enter: var(--t-play); } /* js/board.js times a tab change from --t-leave */
-/* removed, not paused (a paused entrance holds its first frame, opacity 0): reduced motion's own rule; .nx-fade keeps its fade */
+/* removed, not paused (a paused entrance holds its first frame, opacity 0): reduced motion's own rule */
 html.play *:not(.nx-fade), html.play *::before, html.play *::after { animation: none !important; }
 @media (prefers-reduced-motion: no-preference) {
   html.play *, html.play *::before, html.play *::after { transition-property: opacity !important; transition-duration: var(--t-play) !important; transition-delay: 0s !important; }
@@ -11,19 +11,23 @@ html.play *:not(.nx-fade), html.play *::before, html.play *::after { animation: 
   html.play::view-transition-group(*) { animation-duration: 0s !important; } /* a View Transition: no flight, a cross-fade */
   html.play::view-transition-old(*), html.play::view-transition-new(*) { animation-duration: var(--t-play) !important; animation-delay: 0s !important; }
 }
+/* Snuff (160 ms, js/mode.js set): the lantern's light cross-fades, nothing else moves */
+@media (prefers-reduced-motion: no-preference) {
+  html.snuff #light, html.snuff #wisps, html.snuff #room, html.snuff .candle { transition: opacity var(--t-fade, 160ms) linear; }
+}
 @keyframes nx-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes nx-fade-out { from { opacity: 1; } to { opacity: 0; } }
-/* still: the burn-in drift (v14, hdr.css OLED care); gone: the candle loop, the wisps, the seal light, the HDR glints */
+/* still: the burn-in drift (v14, hdr.css OLED care) */
 html.play .hero-title, html.play .mini-clock, html.play .sheet-head .sheet-top, html.play .tabs,
 html.play.oled-care .sense-fab, html.play.oled-care .bottombar, html.play.oled-care .seal { translate: none !important; }
 html.play .wall-plate::after, html.play .candle { animation: none !important; }
 html.play #wisps { opacity: 0; } /* fix C18: the last frame fades out, then board.js clears it */
 html.play .seal-spec, html.play .seal-sweep,
 html.play .clock-unit b::after, html.play .candle::after, html.play .stop-ember::after { display: none !important; }
-/* under an open scene the wall is not drawn (as with room-on): a blurred wall rastered on each clock tick (NOTES-N4.md) */
+/* under an open scene the wall is not drawn (as with room-on): a blurred wall rastered on each clock */
 html.play.scene-open #board { filter: none !important; visibility: hidden; }
 
-/* the lantern: #mode-btn on the wall after Sound, #mode-btn-scene in the scene head after Look at the room */
+/* the lantern: #mode-btn on the wall after Sound, #mode-btn-scene in the scene head after Look at the */
 #mode-btn .emblem, #mode-btn-scene .emblem { width: 18px; height: 18px; margin-right: 6px; vertical-align: -0.2em; }
 .mode-lit .emblem { color: var(--brass-hi); }
 .mode-snuffed .emblem { color: var(--l-dim); opacity: .7; }
@@ -38,7 +42,7 @@ html.play.scene-open #board { filter: none !important; visibility: hidden; }
 #mode-btn-scene { position: relative; left: auto; top: auto; margin: 0; flex: none; white-space: nowrap; }
 #mode-btn-scene::before, #mode-btn-scene::after { content: none; }
 @media (max-width: 859px) { #mode-btn-scene .emblem { width: 20px; height: 20px; margin: 0; } } /* the head's icon widths */
-/* phones: a 44 px icon like Sound; the head has no free slot (the seal is there): the wall's and the More row */
+/* phones: a 44 px icon like Sound; the head has no free slot (the seal is there): the wall's and the */
 @media (max-width: 599px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) { #mode-btn { width: 44px; margin-inline-end: 0; } #mode-btn .emblem { width: 20px; height: 20px; } }
 @media (max-width: 599px) { #mode-btn-scene { display: none; } }
 /* the painted pair (integrator pass 2): full strength, a little larger than the emblem */
@@ -59,7 +63,7 @@ html.play.scene-open #board { filter: none !important; visibility: hidden; }
    wall, the tiles' painted medallions, the clock's medallion and the sign-up beam go; boxes keep their size, so nothing moves */
 html.play .hero-art img { display: none; }
 html.play #board .emblem-box .emblem-img, html.play .clock-emblem .emblem-img, html.play #board img.beam { visibility: hidden; }
-/* polish (2026-10-30): the short word under the wall's lantern, phones only (an icon alone said nothing to a newcomer) */
+/* polish (2026-10-30): the short word under the wall's lantern, phones only (an icon alone said */
 #mode-btn .mode-short, #mode-btn-scene .mode-short { display: none; }
 @media (max-width: 599px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   #mode-btn { width: 48px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; }

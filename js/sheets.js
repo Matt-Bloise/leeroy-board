@@ -1,11 +1,11 @@
-/* Bottom sheets (mobile contract section 3). Full note: board/MOBILE-NOTES.md, file notes. Fix round B: notes/fix-round/NOTES-B.md. */
+/* Bottom sheets (mobile contract section 3; board/MOBILE-NOTES.md). */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K) return;
 const { $, h } = K;
 const doc = document;
 const SPR = () => window.BoardSpring || null;
-const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
+const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches) || doc.documentElement.classList.contains("play"); /* Play moves nothing (a 120 ms fade) */
 const buzz = (n) => { try { if (window.BoardHaptics) window.BoardHaptics.fire(n); } catch (e) {} };
 const B = { cur: null, snap: null, y: 0, dragging: false, fullH: 0, peekH: 0, spring: null, track: null, token: 0 };
 let veil = null, sec = null, grip = null, titleEl = null, bodyEl = null, built = false, shut = null;
@@ -100,9 +100,21 @@ function open(o) {
   const rm = reduced();
   sec.classList.toggle("fade", rm); sec.classList.remove("out");
   veil.classList.add("on");
+  K.sfx("paper"); buzz("select"); /* Unfold: paper, select */
   if (rm) setY(yFor(start)); else setY(B.fullH + 40);
   try { bodyEl.focus({ preventScroll: true }); } catch (e) { try { bodyEl.focus(); } catch (e2) {} }
-  return glide("firm", yFor(start));
+  return rm ? glide("firm", yFor(start)) : grow(o.from, yFor(start));
+}
+/* Unfold: the sheet grows from the control's box to its place */
+function grow(f, yEnd) {
+  const S = SPR(); setY(yEnd);
+  const put = S && K.flipPut(sec, f, yEnd);
+  if (!put) { setY(B.fullH + 40); return glide("firm", yEnd); } /* no control or bar to grow from: rise from below as before */
+  put(1); stopSpring(); const tok = ++B.token;
+  return new Promise((res) => {
+    B.spring = S.spring({ preset: "firm", x: 100, target: 0, onFrame: (x) => { if (tok === B.token) put(x / 100); },
+      onRest: () => { if (tok === B.token) { sec.style.transformOrigin = ""; setY(yEnd); B.spring = null; } res(); } });
+  });
 }
 
 function attachTrack() {
@@ -122,7 +134,7 @@ function attachTrack() {
       const t = s.target, onHandle = t && t.closest && t.closest(".bsheet-handle, .bsheet-h");
       ignore = !onHandle && (bodyEl.scrollTop > 0 || s.dy < 0);
       if (ignore) return;
-      stopSpring(); B.token++; B.dragging = true; boundaryFired = false; base = B.y;
+      stopSpring(); B.token++; B.dragging = true; boundaryFired = false; base = B.y; sec.style.transformOrigin = "";
     },
     onMove(s) {
       if (ignore || !B.dragging) return;
@@ -161,7 +173,7 @@ function finish(instant, c0) {
   if (B.cur === c) B.cur = null;
   if (B.closing === c) B.closing = null;
   if (c.modal) c.modal.setAttribute("aria-modal", "true");
-  B.dragging = false; B.token++; stopSpring(); detachTrack();
+  B.dragging = false; B.token++; stopSpring(); detachTrack(); sec.style.transformOrigin = "";
   veil.classList.remove("on");
   const hide = () => { if (B.cur) return; sec.hidden = true; veil.hidden = true; sec.classList.remove("out", "fade"); };
   if (instant) { sec.hidden = true; veil.hidden = true; sec.classList.remove("out", "fade"); }
