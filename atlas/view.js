@@ -3,7 +3,10 @@
 // culling are plain arithmetic over arrays.
 export const FRAME = { w: 30000, h: 20000 };
 export const BASE = 1536 / 30000; // CSS px per A-unit at zoom 0 (level 0 is 1536 px wide)
-export const ZMAX = 5;
+export const ZMAX = 3; // a level-3 tile (the last painted) is 512 css px at zoom 3: 1.0 texel on a 1x screen
+export const BACKING_MAX = 8e6; // device pixels in the canvas backing
+// the device pixel ratio the canvas draws at: the screen's, up to 3, lowered (never the css size) to keep the backing under BACKING_MAX
+export const backingDpr = (dpr, w, h) => { const d = Math.min(dpr || 1, 3), px = Math.max(1, w * h); return px * d * d > BACKING_MAX ? Math.max(1, Math.sqrt(BACKING_MAX / px)) : d; };
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
 export function createView(o = {}) {
@@ -17,6 +20,7 @@ export function createView(o = {}) {
     // keep the centre on the frame; when the whole frame fits, centre it
     V.cx = FRAME.w <= 2 * hw ? FRAME.w / 2 : clamp(cx, hw, FRAME.w - hw);
     V.cy = FRAME.h <= 2 * hh ? FRAME.h / 2 : clamp(cy, hh, FRAME.h - hh);
+    V.clamped = (FRAME.w > 2 * hw && Math.abs(V.cx - cx) * s > 1) || (FRAME.h > 2 * hh && Math.abs(V.cy - cy) * s > 1); // a pan asked for more than the frame has
     return V;
   };
   V.resize = (w, h, dpr) => { V.w = Math.max(1, w); V.h = Math.max(1, h); V.dpr = dpr || V.dpr; V.set(V.cx, V.cy, V.z); return V; };
@@ -33,14 +37,14 @@ export function createView(o = {}) {
   V.fit = (r, pad = 0.12, zcap = ZMAX) => {
     const w = Math.max(1, r[2] - r[0]), h = Math.max(1, r[3] - r[1]);
     const s = Math.min(V.w / (w * (1 + 2 * pad)), V.h / (h * (1 + 2 * pad)));
-    return { cx: (r[0] + r[2]) / 2, cy: (r[1] + r[3]) / 2, z: clamp(Math.log2(s / BASE), V.minZoom(), zcap) };
+    return { cx: (r[0] + r[2]) / 2, cy: (r[1] + r[3]) / 2, z: clamp(Math.log2(s / BASE), V.minZoom(), Math.min(zcap, ZMAX)) };
   };
   // the same fit, into the part of the box the panels leave free (insets l, t, r, b in px), with the vertical offset oy the
   // view will have when the move lands; the rectangle's centre lands on the free part's centre whatever oy is
   V.fitIn = (r, I = {}, pad = 0.12, zcap = ZMAX, oy = V.oy) => {
     const l = I.l || 0, t = I.t || 0, fw = Math.max(80, V.w - l - (I.r || 0)), fh = Math.max(80, V.h - t - (I.b || 0));
     const w = Math.max(1, r[2] - r[0]), h = Math.max(1, r[3] - r[1]);
-    const z = clamp(Math.log2(Math.min(fw / (w * (1 + 2 * pad)), fh / (h * (1 + 2 * pad))) / BASE), V.minZoom(), zcap), s = V.scale(z);
+    const z = clamp(Math.log2(Math.min(fw / (w * (1 + 2 * pad)), fh / (h * (1 + 2 * pad))) / BASE), V.minZoom(), Math.min(zcap, ZMAX)), s = V.scale(z);
     return { cx: (r[0] + r[2]) / 2 - (l + fw / 2 - V.w / 2) / s, cy: (r[1] + r[3]) / 2 - (t + fh / 2 - V.h / 2 + oy) / s, z };
   };
   V.inView =(au, av, m = 0) => { const r = V.rect(), k = m / V.scale(); return au >= r[0] - k && au <= r[2] + k && av >= r[1] - k && av <= r[3] + k; };

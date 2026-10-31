@@ -1,24 +1,23 @@
 /* The Atlas hook (board/ATLAS-NOTES.md) */
 (() => {
   "use strict";
-  const ATLAS_DEFAULT = false; /* true: the Atlas first (the owner's call) */
+  const ATLAS_DEFAULT = false;
   const K = window.__boardKit; if (!K || typeof document === "undefined") return;
   const $ = (q, r) => (r || document).querySelector(q), h = K.h, TOK = /^atlas(?:\.|$)/;
   const H = { on: false, pending: null };
   const hashTok = () => { try { return decodeURIComponent(location.hash.slice(1)); } catch (e) { return ""; } };
-  /* board.js stops the sketch's clock under the Atlas */
   const fire = () => { try { dispatchEvent(new Event("board-atlas")); } catch (e) {} };
   const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 3000 }) : setTimeout(f, 600));
 
   const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : k === "reduceMQ" ? { get matches() { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } } : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=b096d4ddbd");
-    return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
+    const m = await import("../atlas/atlas.js?v=89702f4ee6");
+    return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, member: () => (K.MEM && K.MEM.member ? K.MEM.member() : null), sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {
     K.emit("atlas", type, d);
     if (type === "close") closeAtlas(true);
-    else if (H.user && (type === "view" || type === "card" || type === "plan")) { /* fix E4: only a gesture moves the hash */ clearTimeout(H.t); H.t = setTimeout(() => { if (H.on && H.A) K.setHash(H.A.token(), false); }, 400); }
+    else if (H.user && (type === "view" || type === "card" || type === "plan")) { clearTimeout(H.t); H.t = setTimeout(() => { if (H.on && H.A) K.setHash(H.A.token(), false); }, 400); }
   };
   const fail = () => { H.host.replaceChildren(h("p", { class: "atlas-fail", role: "status", text: "The Atlas did not load." })); H.failT = setTimeout(() => closeAtlas(true), 1500); };
 
@@ -27,7 +26,9 @@
     H.pending = token; H.on = true;
     H.user = false;
     if (!H.host || !H.host.isConnected) { if (H.A) { try { H.A.destroy(); } catch (e) { } } H.host = h("div", { id: "atlas", class: "atlas" }); for (const t of ["pointerdown", "wheel", "keydown"]) H.host.addEventListener(t, () => { H.user = true; }, { capture: true, passive: true }); map.append(H.host); H.A = null; H.loading = null; }
-    map.classList.add("atlas-on"); fire(); K.sfx("open"); if (map.scrollIntoView) map.scrollIntoView({ block: "nearest" });
+    const on = () => map.classList.add("atlas-on"), sk = $("svg", map);
+    if (typeof K.unfold === "function" && sk && !map.classList.contains("atlas-on")) K.unfold(sk, H.host, on); else on();
+    fire(); K.sfx("open"); if (map.scrollIntoView) map.scrollIntoView({ block: "nearest" });
     if (o && o.push) { K.setHash(token, true); H.pushed = 1; }
     try {
       if (!H.A) { H.loading = H.loading || load(); H.A = await H.loading; }
@@ -52,7 +53,6 @@
     else if (H.on) closeAtlas(false);
   };
 
-  /* the control (next round D2: under the sketch on a phone) and the wheel past the sketch */
   const control = () => {
     const panel = $("#panel-roads"); if (!panel) return;
     const b = $(".atlas-open", panel) || h("button", { type: "button", class: "atlas-open", text: "Open the Atlas", title: "The roads on a map drawn from the game's own coordinates", onclick: () => openAtlas("atlas", { push: true }) });
@@ -85,15 +85,13 @@
       const txt = (el.textContent || "").replace(/https?:\/\/\S+/g, " "), ids = [];
       for (const m of txt.matchAll(H.re)) { const id = M.aliases[m[1].toLowerCase()]; if (id && !ids.includes(id)) ids.push(id); }
       if (!ids.length) continue;
-      /* in line after the place's name (at a list row's end they made empty rows) */
       const t = textAt(el);
       if (!t || el.getAttribute("data-atlas")) { addMarks(el, ids); continue; }
       el.setAttribute("data-atlas", "1");
       const par = t.parentNode, kids = Array.prototype.slice.call(par.childNodes), ref = kids[kids.indexOf(t) + 1] || null;
-      for (const id of ids.slice(0, 3)) { if (par === el) par.insertBefore(mark(id), ref); else par.appendChild(mark(id)); } /* else at the end of its own line */
+      for (const id of ids.slice(0, 3)) { if (par === el) par.insertBefore(mark(id), ref); else par.appendChild(mark(id)); }
     }
   };
-  /* the first text node naming a place, outside links and source tags */
   const textAt = (el) => {
     for (const c of Array.prototype.slice.call(el.childNodes || [])) {
       if (c.nodeType === 3) { H.re.lastIndex = 0; const txt = String(c.textContent || "").replace(/https?:\/\/\S+/g, " "); if (H.re.test(txt)) { H.re.lastIndex = 0; return c; } }
@@ -113,7 +111,7 @@
   K.on("map", (M) => { H.zones = M && M.zones; control(); const map = $("#map"); if (map) map.addEventListener("wheel", wheel, { capture: true, passive: false });
     if (map && !H.zm && typeof MutationObserver === "function") { H.zm = 1; new MutationObserver(() => { const c = $(".zone-card", map), n = c && $("h3", c); if (!n || c.getAttribute("data-atlas")) return; c.setAttribute("data-atlas", "1"); c.append(h("a", { class: "atlas-zone", href: `#atlas.z.${zoneSlug(n.textContent)}`, text: "Open on the Atlas" })); }).observe(map, { childList: true }); } if (H.on && H.host && !H.host.isConnected && map) map.append(H.host); });
   K.on("scene", (k) => {
-    if (k === "roads") { control(); const t = hashTok(); if (TOK.test(t)) openAtlas(t); else if (H.on && H.A) H.A.resume(); else if (ATLAS_DEFAULT && !H.on) openAtlas("atlas"); }
+    if (k === "roads") { control(); const t = hashTok(); if (TOK.test(t)) openAtlas(t); else if (H.want) { H.want = 0; openAtlas("atlas", { push: true }); } else if (H.on && H.A) H.A.resume(); else if (ATLAS_DEFAULT && !H.on) openAtlas("atlas"); }
     if (k === "library" || k === "roads") idle(loadMarks);
     later();
   });
@@ -122,5 +120,6 @@
   addEventListener("hashchange", fromHash); addEventListener("popstate", fromHash); addEventListener("resize", () => setTimeout(control, 0));
   control();
   if (TOK.test(hashTok())) H.pending = hashTok();
+  window.BoardAtlas = Object.freeze({ open: () => { if (K.SC && K.SC.open === "roads") openAtlas("atlas", { push: true }); else { H.want = 1; K.goScene("roads"); } } });
   window.__atlas = { get api() { return H.A; }, status: () => Object.assign(H.A && H.A.status ? H.A.status() : {}, { on: H.on, pending: H.pending, loaded: !!H.A, marks: !!H.marks }), hook: H };
 })();

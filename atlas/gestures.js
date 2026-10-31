@@ -50,6 +50,7 @@ export function bindGestures(o) {
     if (!G.moved && Math.hypot(x - G.drag.x0, y - G.drag.y0) < 5) return;
     G.moved = true;
     view.panPx(dx, dy);
+    if (view.clamped) { if (!G.edged && o.hap) o.hap("boundary"); G.edged = true; } else G.edged = false;
     const now = performance.now(); G.last.push([now, dx, dy]); while (G.last.length && now - G.last[0][0] > 100) G.last.shift();
     o.onChange("drag");
   });

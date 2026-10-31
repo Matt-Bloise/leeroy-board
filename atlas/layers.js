@@ -43,6 +43,17 @@ export function inRing(ring, x, y) {
   return in_;
 }
 const area = (r) => (r[2] - r[0]) * (r[3] - r[1]);
+// A label whose box crosses the canvas edge slides inward by the overflow plus pad; null when it cannot fit, or when the slide would put
+// it over its own place dot (c.dot: x, y, r in canvas px; c.y the label's middle, h its height).
+export const nudgeLabel = (c, w, h, vw, pad = 8) => {
+  const l = c.x - w / 2, r = c.x + w / 2; let dx = 0;
+  if (l < 0) dx = pad - l; else if (r > vw) dx = vw - pad - r;
+  if (!dx) return c.x;
+  if (w > vw - 2 * pad) return null;
+  const nx = c.x + dx, d = c.dot;
+  if (d) { const qx = Math.max(nx - w / 2, Math.min(d.x, nx + w / 2)), qy = Math.max(c.y - h / 2, Math.min(d.y, c.y + h / 2)); if (Math.hypot(qx - d.x, qy - d.y) < d.r) return null; }
+  return nx;
+};
 const textW = (ctx, t, px) => { const m = typeof ctx.measureText === "function" ? ctx.measureText(t) : null; return m && m.width ? m.width : t.length * px * 0.58; };
 
 export function createLayers(data) {
@@ -189,7 +200,7 @@ export function createLayers(data) {
       }
       if (S.pinned === x.p.id) { ctx.beginPath(); ctx.arc(sx, sy, sz * 0.55, 0, 6.2832); ctx.strokeStyle = C.plan; ctx.lineWidth = 3; ctx.stroke(); }
       const nz = NAME[x.p.kind] === undefined ? 3 : NAME[x.p.kind];
-      if (L.on.labels && (z >= nz || isF || end || S.hover === x.p.id)) cands.push({ t: x.p.name, x: sx, y: sy + sz * 0.62, pr: isF || S.hover === x.p.id ? 9 : end ? 8 : PRIO[x.p.kind] || 1, size: 12, kind: "place" });
+      if (L.on.labels && (z >= nz || isF || end || S.hover === x.p.id)) cands.push({ t: x.p.name, x: sx, y: sy + sz * 0.62, pr: isF || S.hover === x.p.id ? 9 : end ? 8 : PRIO[x.p.kind] || 1, size: 12, kind: "place", dot: { x: sx, y: sy, r: sz * 0.25 } });
     }
     L.lastDrawn = drawn;
     if (L.on.zeppelins && S.zep && sprite("zeppelin")) {
@@ -228,16 +239,16 @@ export function createLayers(data) {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     for (const c of cands) {
       ctx.font = `${c.kind === "zone" ? 600 : 500} ${c.size}px ${C.font}`;
+      if ("letterSpacing" in ctx) ctx.letterSpacing = c.kind === "zone" ? "1.5px" : "0px"; /* measured as it is drawn */
       const w = textW(ctx, c.t, c.size), h = c.size + 4;
       if (c.fit && w > c.fit * 1.05) continue;
-      // a place's name near the edge slides inward rather than being cut by it (its point is in view)
-      if (c.kind === "place") c.x = Math.max(w / 2 + 4, Math.min(V.w - w / 2 - 4, c.x));
+      /* a name near the edge slides inward rather than being cut by it (fix E5, polish round) */
+      const nx = nudgeLabel(c, w, h, V.w); if (nx === null) continue; c.x = nx;
       const x0 = Math.floor((c.x - w / 2) / cell), x1 = Math.floor((c.x + w / 2) / cell), y0 = Math.floor((c.y - h / 2) / cell), y1 = Math.floor((c.y + h / 2) / cell);
       let free = true;
       for (let gy = y0; gy <= y1 && free; gy++) for (let gx = x0; gx <= x1; gx++) if (occ.has(gy * cols + gx + 2)) { free = false; break; }
       if (!free) continue;
       for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) occ.add(gy * cols + gx + 2);
-      if ("letterSpacing" in ctx) ctx.letterSpacing = c.kind === "zone" ? "1.5px" : "0px";
       ctx.lineWidth = 3; ctx.strokeStyle = C.parchment; ctx.globalAlpha = 0.85; ctx.lineJoin = "round"; ctx.strokeText(c.t, c.x, c.y);
       ctx.globalAlpha = 1; ctx.fillStyle = c.kind === "zone" ? C.ink : C.inkSoft; ctx.fillText(c.t, c.x, c.y);
       n++;

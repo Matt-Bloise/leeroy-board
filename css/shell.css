@@ -1,4 +1,5 @@
 /* The phone shell */
+:root { --dye-timeline: #2b2a6e; --dye-five: #1f3f9a; --dye-roads: #b5501c; --dye-racials: #8e1b24; --dye-legacy: #9a4a1e; --dye-buffs: #5c2a6a; --dye-ledger: #6e1e38; --dye-signups: #1f5a35; --dye-librarian: #3a4a66; --dye-library: #b48a24; --dye-decide: #5a6a2a; --dye-tonight: #1f6a6a; }
 html.phone-shell { --pl-h: 56px; }
 html.phone-shell .sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
 html.phone-shell #tabs, html.phone-shell .scene-hint, html.phone-shell .seal:not(.seal-free) { display: none !important; }
@@ -9,15 +10,14 @@ html.phone-shell { --step-0: 1rem; }
 
 html.phone-shell .bottombar { display: flex; position: relative; overflow: visible; scroll-snap-type: none; align-items: stretch; border-top: 1px solid var(--grain); background: var(--oak-1); padding: 0 max(2px, env(safe-area-inset-right, 0px)) max(0px, env(safe-area-inset-bottom, 0px)) max(2px, env(safe-area-inset-left, 0px)); -webkit-mask-image: none; mask-image: none; touch-action: manipulation; }
 html.phone-shell .pl { flex: 1 1 0; min-height: 56px; min-width: 48px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; padding: 4px 2px 6px; font-family: var(--font-sc); font-size: 0.8125rem; letter-spacing: 0.04em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-html.phone-shell .pl-ico { display: block; width: 22px; height: 22px; opacity: 1; transition: opacity var(--t-micro) var(--ease-oak); }
+html.phone-shell .pl-ico { display: block; width: 22px; height: 22px; }
 .pl-ico img { display: block; width: 22px; height: 22px; object-fit: contain; }
 .pl-crest { border-radius: 50%; }
 html.phone-shell .pl-txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html.phone-shell .pl[aria-current="true"] { color: var(--parchment); border-top-color: var(--brass); }
-html.phone-shell .pl[aria-current="true"] .pl-ico { opacity: 0; }
 html.phone-shell .pl:focus-visible, html.phone-shell .bb-coin:focus-visible { outline: 2px solid var(--brass-hi, var(--brass)); outline-offset: -3px; }
 
-html.phone-shell .bb-coin { position: absolute; left: 0; top: -14px; width: 48px; height: 48px; margin: -6px 0 0 -6px; padding: 6px; display: block; background: none; border: 0; border-radius: 50%; cursor: pointer; z-index: 2; perspective: 240px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; will-change: transform; }
+html.phone-shell .bb-coin { position: absolute; left: 0; top: -62px; width: 48px; height: 48px; margin: 0 0 0 -6px; padding: 6px; display: block; background: none; border: 0; border-radius: 50%; cursor: pointer; z-index: 2; perspective: 240px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; will-change: transform; }
 html.phone-shell .bb-coin-img { display: block; width: 36px; height: 36px; border-radius: 50%; object-fit: cover; box-shadow: 0 2px 6px var(--shadow); transform: rotateY(0deg); transform-origin: 50% 50%; }
 html.phone-shell .bb-coin.spin .bb-coin-img { animation: bb-spin var(--t-move) linear both; }
 html.phone-shell .bb-coin.fade .bb-coin-img { animation: bb-fade 120ms linear both; }
@@ -26,7 +26,7 @@ html.phone-shell .bb-coin.fade .bb-coin-img { animation: bb-fade 120ms linear bo
 @media (prefers-reduced-motion: reduce) { html.phone-shell .bb-coin.spin .bb-coin-img { animation: none; } }
 html.phone-shell .bb-coin.off { visibility: hidden; }
 html.phone-shell .bottombar:has([data-place="more"][aria-current="true"]) .bb-coin { pointer-events: none; }
-@media (max-height: 500px) and (orientation: landscape) { html.phone-shell .bb-coin { top: 0; margin-top: 0; padding-top: 3px; } html.phone-shell .bb-coin-img { width: 26px; height: 26px; margin-inline: 5px; } }
+@media (max-height: 500px) and (orientation: landscape) { html.phone-shell .bb-coin { top: -46px; height: 32px; padding: 3px 6px; } html.phone-shell .bb-coin-img { width: 26px; height: 26px; margin-inline: 5px; } }
 
 html.phone-shell .bsheet-row { box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; min-width: 48px; padding: 8px 14px; text-align: left; font-family: var(--font-ui); font-size: 1rem; letter-spacing: 0.03em; color: var(--parchment); background: none; border: 0; border-bottom: 1px solid var(--grain); cursor: pointer; }
 html.phone-shell .bsheet-row.now { box-shadow: inset 3px 0 0 var(--brass); }
@@ -38,24 +38,12 @@ html.phone-shell .more-util { margin-top: 10px; border-top: 2px solid var(--bras
 html.phone-shell .more-util .more-medal { object-fit: contain; border-radius: 0; }
 
 html.phone-shell .sheet-head { --sway: 0; }
-html.phone-shell .sheet-name { position: relative; isolation: isolate; }
-html.phone-shell .sheet-name::before { content: ""; position: absolute; z-index: -1; left: 4px; right: 4px; top: -6px; height: 44px; pointer-events: none; background: linear-gradient(90deg, #0008, #0000 9%, #0000 91%, #0008), linear-gradient(180deg, #000a, #0000 22%, #0000 80%, #0006), var(--banner, none) 0 0 / 128px; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 9px), 0 100%); opacity: 0.94; transform-origin: 50% 0; transform: rotate(calc(var(--sway, 0) * 1deg + var(--tilt-x, 0) * 2deg)); transition: transform var(--t-micro) var(--ease-oak); }
-html.phone-shell .sheet-name.unroll::before { animation: ribbon-unroll 560ms cubic-bezier(.3, 1.35, .5, 1) both; }
+html.phone-shell .sheet-name { position: relative; isolation: isolate; padding-right: 48px; }
+html.phone-shell .sheet-name::before { content: ""; position: absolute; z-index: -1; right: 0; top: -6px; width: 36px; height: 56px; pointer-events: none; background: var(--crest, none) 50% 10px / 32px 32px no-repeat, linear-gradient(180deg, var(--shadow), transparent 24%, transparent 80%, var(--shadow)), var(--dye, var(--oak-3)); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 8px), 0 100%); transform-origin: 50% 0; transform: rotate(calc(var(--sway, 0) * 1deg + var(--tilt-x, 0) * 2deg)); transition: transform var(--t-micro) var(--ease-oak); }
+html.phone-shell .sheet-name.unroll::before { animation: ribbon-unroll 260ms var(--ease-oak) both; }
 @keyframes ribbon-unroll { from { scale: 1 .12; } }
 @media (prefers-reduced-motion: reduce) { html.phone-shell .sheet-name::before { transform: none; transition: none; animation: none; } }
 @media (forced-colors: active) { html.phone-shell .sheet-name::before { display: none; } }
-html.phone-shell .sheet-head[data-pscene="timeline"] { --banner: url("../img/ribbons/indigo-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="five"] { --banner: url("../img/ribbons/royal-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="roads"] { --banner: url("../img/ribbons/burnt-orange-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="racials"] { --banner: url("../img/ribbons/crimson-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="legacy"] { --banner: url("../img/ribbons/copper-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="buffs"] { --banner: url("../img/ribbons/plum-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="ledger"] { --banner: url("../img/ribbons/wine-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="signups"] { --banner: url("../img/ribbons/forest-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="librarian"] { --banner: url("../img/ribbons/slate-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="library"] { --banner: url("../img/ribbons/ochre-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="decide"] { --banner: url("../img/ribbons/olive-w.webp"); }
-html.phone-shell .sheet-head[data-pscene="tonight"] { --banner: url("../img/ribbons/teal-w.webp"); }
 [data-pscene=timeline] { --banner: url("../img/banners/indigo.webp"); }
 [data-pscene=five] { --banner: url("../img/banners/royal.webp"); }
 [data-pscene=roads] { --banner: url("../img/banners/burnt-orange.webp"); }

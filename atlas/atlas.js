@@ -2,9 +2,9 @@
 // one Canvas 2D element inside the host the hook made. The draw loop runs only while something moves or changed; a hidden
 // page or a closed scene stops it. All maths sits in geo.js, view.js and routes.js; this file only decides what to draw.
 import * as geo from "./geo.js?v=eb6dd67b63";
-import { createView, createTiles, defaultLoader, createFrames } from "./view.js?v=da42dac2e1";
-import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=79f7268a65";
-import { bindGestures } from "./gestures.js?v=6bfa13bc52";
+import { createView, createTiles, defaultLoader, createFrames, backingDpr } from "./view.js?v=7879e18ed8";
+import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=1949211efd";
+import { bindGestures } from "./gestures.js?v=b5b1af167f";
 import { buildGraph, makePlan, buildTimeline, timelineAt, slicePath, meetOf } from "./routes.js?v=1b698e7e6d";
 import { createCards } from "./cards.js?v=a6fa8e4340";
 import * as T from "./tokens.js?v=c2a525a5c5";
@@ -18,21 +18,34 @@ export async function createAtlas(opts) {
   const K = opts.kit || {}, h = K.h, host = opts.host, base = opts.base || "", doc = host.ownerDocument;
   const emit = (type, detail) => { try { if (opts.on) opts.on(type, detail); } catch (e) { /* the hook's handler never breaks the engine */ } };
   const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
+  const hap = (n) => { try { const H = opts.haptics; if (H) H.fire(H.PAT && H.PAT[n] ? n : n === "select" ? "tab" : n); } catch (e) { /* a missing buzz never matters */ } };
   const motion = (k) => (typeof K.motionMs === "function" ? K.motionMs(k) : reduced() ? 0 : 520);
   const coarse = () => { try { return !!matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } };
   const dataUrl = (n) => base + (opts.dataDir || "data/atlas/") + n;
+  // the first open used to parse five files in one task (110 ms on a phone): each file now parses in a frame of its own
+  const tick = () => new Promise((res) => { let d = 0; const go = () => { if (!d) { d = 1; res(); } }; if (typeof requestAnimationFrame === "function") requestAnimationFrame(go); setTimeout(go, 48); });
+  let parsing = Promise.resolve();
+  const parse = (txt) => (parsing = parsing.then(tick).then(() => JSON.parse(txt)));
   const getJSON = async (n, required) => {
     try {
       const r = await fetch(dataUrl(n), { cache: "no-store" });
       if (!r.ok) throw new Error(`${n} ${r.status}`);
-      return await r.json();
+      return typeof r.text === "function" ? await parse(await r.text()) : await r.json();
     } catch (e) { if (required) throw e; return null; }
   };
+  // the panels' stylesheet is the engine's own (board/css/atlas.css keeps only what the page needs before it): linked once, awaited with the data
+  let cssReady = null;
+  if (doc.head && !doc.querySelector("#atlas-panels-css")) {
+    const link = doc.createElement("link"); link.setAttribute("rel", "stylesheet"); link.setAttribute("id", "atlas-panels-css"); link.setAttribute("href", `${base}atlas/panels.css`);
+    if ("sheet" in link) cssReady = new Promise((res) => { link.onload = link.onerror = res; setTimeout(res, 400); });
+    doc.head.appendChild(link);
+  }
   let world, places, routes, links, tidx;
   try {
     [world, places, routes, links, tidx] = await Promise.all([
       getJSON("world.json", true), getJSON("places.json", true), getJSON("routes.json", true), getJSON("links.json", false),
       (async () => { try { const r = await fetch(opts.tilesIndex || `${base}atlas/tiles/index.json`, { cache: "no-store" }); return r.ok ? await r.json() : null; } catch (e) { return null; } })(),
+      cssReady,
     ]);
   } catch (e) { emit("error", { what: "data", message: String((e && e.message) || e) }); throw e; }
   if (typeof geo.setWorld === "function") geo.setWorld(world); // node D's geo.js may read world.json its own way
@@ -52,12 +65,13 @@ export async function createAtlas(opts) {
   const orn = (cls, cell) => h("img", { class: `atlas-orn ${cls}`, src: art(cell), alt: "", "aria-hidden": "true", decoding: "async" });
   const shapesLine = world.shapes && world.shapes.source === "zmp" ? "shapes drawn from the game's own zone list" : "zone plates; coasts to come";
   // the frame holds the title only; the shapes line sits on its own label under it, where the scrollwork cannot clip it
-  const cartouche = h("div", { class: "atlas-cartouche" }, h("div", { class: "atlas-cart" }, orn("orn-frame", "ornament-cartouche-frame"), h("div", { class: "atlas-title" }, h("strong", { text: "The Atlas" }))), opts.shapesNote === false ? null : h("span", { class: "atlas-shapes", text: shapesLine }));
+  const cartouche = h("div", { class: "atlas-cartouche" }, h("div", { class: "atlas-cart" }, h("div", { class: "atlas-title" }, h("strong", { text: "The Atlas" }))), opts.shapesNote === false ? null : h("span", { class: "atlas-shapes", text: shapesLine }));
   const scaleBar = h("div", { class: "atlas-scale", "aria-hidden": "true" }, orn("orn-scale", "ornament-scale-bar"), h("i", { class: "atlas-bar" }), h("span", { class: "atlas-scale-t", text: "" }));
   const mkBtn = (cls, label, text, f) => { const b = h("button", { type: "button", class: `atlas-b ${cls}`, "aria-label": label, title: label, text }); b.addEventListener("click", f); return b; };
   const toast = h("div", { id: "atlas-toast", class: "atlas-toast", role: "status", "aria-live": "polite" });
   const ctl = h("div", { id: "atlas-ctl", class: "atlas-ctl", role: "group", "aria-label": "Atlas controls" });
-  const chrome = [canvas, orn("orn-compass", "ornament-compass-rose"), orn("orn-nw", "ornament-corner-flourish-nw"), orn("orn-ne", "ornament-corner-flourish-ne"), orn("orn-sw", "ornament-corner-flourish-sw"), orn("orn-se", "ornament-corner-flourish-se"), cartouche, scaleBar, ctl, toast];
+  const you = h("i", { class: "atlas-you", "aria-hidden": "true", hidden: true });
+  const chrome = [canvas, you, orn("orn-compass", "ornament-compass-rose"), orn("orn-nw", "ornament-corner-flourish-nw"), orn("orn-ne", "ornament-corner-flourish-ne"), orn("orn-sw", "ornament-corner-flourish-sw"), orn("orn-se", "ornament-corner-flourish-se"), cartouche, scaleBar, ctl, toast];
   host.append(...chrome);
 
   // ---------- state ----------
@@ -93,15 +107,16 @@ export async function createAtlas(opts) {
   const loadArt = () => {
     for (const cell of new Set([...Object.values(ICON), "alliance-city"])) loadSprite(cell, art(`icons-${cell}`));
     loadSprite("pin", `${base}img/map/pin-blank.webp`);
+    loadSprite("grain", `${base}img/paper-baked.jpg`);
     loadSprite("zeppelin", art("travellers-zeppelin-frame-1"), `${base}img/map/zeppelin.png`);
     for (const m of party.members || []) loadSprite(`crest-${m.class_key}`, `${base}img/crests/${m.class_key}.png`);
   };
 
   // ---------- sizing ----------
-  const dprNow = () => Math.min(window.devicePixelRatio || 1, coarse() ? 2 : 3);
+  const dprNow = (w, hh) => backingDpr(window.devicePixelRatio, w, hh); // the screen's, up to 3 (polish E3: phones were capped at 2, 0.67 texel)
   const resize = () => {
     const r = host.getBoundingClientRect ? host.getBoundingClientRect() : { width: 0, height: 0 };
-    const w = Math.round(r.width || host.clientWidth || 600), hh = Math.round(r.height || host.clientHeight || 400), dpr = dprNow();
+    const w = Math.round(r.width || host.clientWidth || 600), hh = Math.round(r.height || host.clientHeight || 400), dpr = dprNow(w, hh);
     if (w === view.w && hh === view.h && dpr === view.dpr && canvas.width) return;
     view.resize(w, hh, dpr);
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(hh * dpr);
@@ -137,8 +152,26 @@ export async function createAtlas(opts) {
     ctx.setTransform(k, 0, 0, k, 0, 0);
     ctx.fillStyle = S.colors.sea || FALLBACK.sea; ctx.fillRect(0, 0, view.w, view.h);
     // one bad layer never ends the loop: the frame keeps its tiles and the next change draws again
-    try { S.tilesLoaded = tiles.draw(ctx, view); zepAt(); layers.draw(ctx, view, S); } catch (e) { if (!S.drawErr) { S.drawErr = true; emit("error", { what: "draw", message: String((e && e.message) || e) }); } }
+    try { S.tilesLoaded = tiles.draw(ctx, view); if (view.z > 2) paintGrain(); zepAt(); layers.draw(ctx, view, S); placeYou(); } catch (e) { if (!S.drawErr) { S.drawErr = true; emit("error", { what: "draw", message: String((e && e.message) || e) }); } }
     S.drawn = (S.drawn || 0) + 1;
+  }
+  // above zoom 2 the painted tiles are drawn larger than their pixels (level 3 is the last): a paper grain at device resolution, a
+  // multiply layer that moves with the map, hides the soft edge; the vector layers on top stay sharp at every zoom (polish E3)
+  function paintGrain() {
+    const g = S.sprites.grain; if (!g || typeof ctx.createPattern !== "function") return;
+    const k = view.dpr, s = view.scale(), pw = g.naturalWidth || g.width || 1024, ph = g.naturalHeight || g.height || pw;
+    const ox = (((view.w / 2 - view.cx * s) * k) % pw + pw) % pw, oy = (((view.h / 2 - view.oy - view.cy * s) * k) % ph + ph) % ph;
+    S.grainPat = S.grainPat || ctx.createPattern(g, "repeat"); if (!S.grainPat) return;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, ox, oy);
+    ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = clamp(view.z - 2, 0, 1) * 0.35; ctx.fillStyle = S.grainPat; ctx.fillRect(-ox, -oy, canvas.width, canvas.height);
+    ctx.restore();
+  }
+  // the you-are-here ring sits on the asker's own pin; its pulse is css (compositor only), static in Play and under reduced motion
+  function placeYou() {
+    const m = S.mine && S.party.find((x) => x.class_key === S.mine); if (!m) { if (!you.hidden) you.hidden = true; return; }
+    const [sx, sy] = view.toScreen(m.pos[0], m.pos[1]), x = sx + (m.dx || 0), y = sy - 18.6;
+    const out = x < -20 || y < -20 || x > view.w + 20 || y > view.h + 20;
+    you.hidden = out; if (!out) you.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
   }
   const narrow = () => { try { return !!matchMedia("(max-width: 699px)").matches; } catch (e) { return false; } };
   // panels in host pixels; null when hidden or not laid out (the fake DOM)
@@ -241,6 +274,17 @@ export async function createAtlas(opts) {
     const starts = (routes.day_one && routes.day_one.starts) || {}, m = meetOf(routes), ids = new Set(Object.values(starts));
     ids.add(m.place || openMeet()); return [...ids];
   };
+  const jr = () => { try { return (K.JR || K.journey || (() => "curious"))(); } catch (e) { return "curious"; } };
+  // the asker: a stored name whose class has a day-one start (polish E4)
+  const me = () => { try { const m = typeof opts.member === "function" ? opts.member() : null; return m && startsOf(m.class_key) ? m : null; } catch (e) { return null; } };
+  // where the party might meet, as place ids: the agreed place, else the sheet's choice for this asker, else the sheet's options
+  function meetIds(m) {
+    const byName = new Map(places.places.map((p) => [String(p.name).toLowerCase(), p.id])), id = (n) => byName.get(String(n || "").toLowerCase());
+    const agreed = meetOf(routes).place; if (agreed && placeById.has(agreed)) return [agreed];
+    const mine = ((signups.entries || []).find((e) => e.name === m.name) || {}).meet, one = id(mine); if (one) return [one];
+    const all = ((signups.options || {}).meet || []).map(id).filter(Boolean);
+    return all.length ? all : [openMeet()];
+  }
   const openMeet = () => (placeById.has("valley-of-strength") ? "valley-of-strength" : (routes.nodes || [])[0]);
   function fitIds(ids, o) {
     const r = rectOf(ids); if (!r) return null;
@@ -453,7 +497,16 @@ export async function createAtlas(opts) {
     },
     openToken(token, o = {}) {
       const p = T.parse(token); if (!p) return false;
-      if (p.kind === "home") { closeCard(); const first = !S.plan; S.foldNext = first; atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); S.foldNext = false; const to = fitPlan(o) || fitIds(dayOneIds(), o);
+      if (p.kind === "home" && me()) { /* polish E4: your own day-one view, your plan open under Guided, your pin ringed */
+        const m = me(), guided = jr() === "guided";
+        closeCard(); if (o.animate) hap("select");
+        S.unfold = guided; S.foldNext = !guided;
+        atlas.showPlan(atlas.plan({ who: m.class_key }), { animate: !!o.animate });
+        S.unfold = false; S.foldNext = false; S.planWho = m.class_key; S.mine = m.class_key;
+        const to = fitIds([startsOf(m.class_key), ...meetIds(m)], o);
+        S.base = { token: "atlas", v: to, plan: true }; return true;
+      }
+      if (p.kind === "home") { S.mine = null; closeCard(); if (o.animate) hap("select"); const first = !S.plan; S.foldNext = first; atlas.showPlan(atlas.plan({}), { animate: o.animate !== false && !!o.animate }); S.foldNext = false; const to = fitPlan(o) || fitIds(dayOneIds(), o);
         /* fix E4 (2026-10-30): the first view fits every start and the meeting point (integrator pass 3 framed the meeting point's continent
            alone, which left Tirisfal off screen at 3440) */
         S.base = { token: "atlas", v: to, plan: true }; return true; }
@@ -516,13 +569,13 @@ export async function createAtlas(opts) {
     if (id !== S.hover || (S.card === null && zid !== S.zoneHot)) { S.hover = id; if (!S.card) S.zoneHot = zid; canvas.style.cursor = id || zid ? "pointer" : ""; invalidate(); }
   };
   const G = bindGestures({
-    el: canvas, host, view, reduced, keys, animateZoom,
+    el: canvas, host, view, reduced, keys, animateZoom, hap,
     onChange: () => { S.anim = null; S.lastMove = performance.now(); invalidate(); },
     onDown: () => { S.anim = null; },
     onHover: hoverAt,
     onPick: (x, y, e) => {
       const hit = layers.hit(view, x, y, coarse() || (e && e.pointerType === "touch"), S);
-      if (hit && hit.place) { openCard("place", hit.place.id); reveal(hit.place, { animate: !reduced() }); emit("pick", { place: hit.place }); }
+      if (hit && hit.place) { hap("select"); openCard("place", hit.place.id); reveal(hit.place, { animate: !reduced() }); emit("pick", { place: hit.place }); }
       else if (hit && hit.zone) { openCard("zone", hit.zone.id); emit("pick", { zone: hit.zone }); }
       else { closeCard(); }
     },

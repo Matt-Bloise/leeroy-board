@@ -1,4 +1,8 @@
-/* The phone floor (integrator 2026-10-30, contract section 1): 48 px targets, 16 / 13 px text, under html.phone-shell. Why: board/MOBILE-NOTES.md Fix round B: notes/fix-round/NOTES-B.md. */
+/* The phone floor: 48 px targets, 16 / 13 px text (board/MOBILE-NOTES.md) */
+:root { --mask-fade: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
+html.phone-shell #journey-scene { margin-right: 16px; }
+html.phone-shell :is(.lib-examples, .lib-rail, #dc-who) { -webkit-mask-image: var(--mask-fade); mask-image: var(--mask-fade); scroll-padding-inline: 16px; }
+html.phone-shell :is(.deep-who, .tn-pick, .deep-marks, #dc-who, .lib-tools, .lib-rail, .lib-examples) { gap: 8px; }
 html.phone-shell :is(button, summary, select, [role=button], input:not([type=hidden], [type=checkbox], [type=radio])):not(.gl, .gl2, .sp-tt, .cal-day) { min-height: 48px !important; min-width: 48px !important; }
 html.phone-shell :is(.skip, .tonight-link, .tile-band, .lib-btn, .act-btn, .plink, .catrow, .cal-sum) { min-height: 48px !important; box-sizing: border-box; }
 html.phone-shell :is(.tile-band) { display: flex; flex-direction: column; justify-content: center; }
@@ -13,7 +17,8 @@ html.phone-shell .wall .tile-search input { min-height: 48px !important; }
 html.phone-shell :is(p, li, dd, td, .lede):not(.tn-who, .tn-why, .su-as, .dc-date),
 html.phone-shell :is(p, li, dd, td, .lede) :is(span, small, b, i, em, strong, a, button, div, p, label, code, time, abbr, dt, dd):not(.tn-who, .tn-why, .su-as, .dc-date, .sp-tt, .mini b, .su-num b, svg *) { font-size: max(1rem, 1em) !important; }
 html.phone-shell :is(.kicker, .build-stamp, .fc-nm) { font-size: 0.8125rem !important; }
-html.phone-shell .fc-nm { padding: 0 3px; letter-spacing: 0; white-space: normal; max-width: calc(var(--fc) + 8px); line-height: 1.1; overflow-wrap: anywhere; }
+html.phone-shell .fc-nm { top: calc(100% + 2px); bottom: auto; padding: 0 3px; letter-spacing: 0; white-space: normal; max-width: calc(var(--fc) + 8px); line-height: 1.1; overflow-wrap: anywhere; }
+html.phone-shell .fc { margin-bottom: 30px; }
 html.phone-shell .fc-b b, html.phone-shell .fc-b i { font-size: 0.8125rem; line-height: 1.05; letter-spacing: 0; }
 html.phone-shell .ps-crestbtn { min-width: 56px; min-height: 64px; padding: 2px 2px 3px; gap: 2px; }
 html.phone-shell .ps-crestbtn .crest { width: 40px; height: 40px; }

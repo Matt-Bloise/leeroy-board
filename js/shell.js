@@ -3,7 +3,7 @@
 "use strict";
 const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const { $, h } = K;
-const PHONE_MQ = "(max-width: 699px), ((max-height: 500px) and (orientation: landscape) and (pointer: coarse))";
+const MQS = ["(max-width: 699px)", "(max-height: 500px) and (orientation: landscape) and (pointer: coarse)"], PHONE_MQ = `${MQS[0]}, (${MQS[1]})`;
 const PLACES = ["tonight", "five", "sheet", "librarian", "more"];
 const LABEL = { tonight: "Next", five: "The five", sheet: "My sheet", librarian: "Leeroy", more: "More" };
 const PHONE_ORDER = ["tonight", "five", "signups", "librarian", "timeline", "roads", "racials", "legacy", "buffs", "ledger", "decide", "library"];
@@ -15,7 +15,7 @@ const S = { phone: false, built: false, saved: null, place: null, coinKey: null,
 const mm = (q) => { try { return matchMedia(q); } catch (e) { return { matches: false }; } };
 const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
 const coarse = () => mm("(pointer: coarse)").matches;
-const isPhone = () => mm("(max-width: 699px)").matches || mm("(max-height: 500px) and (orientation: landscape) and (pointer: coarse)").matches;
+const isPhone = () => MQS.some((q) => mm(q).matches);
 const hap = (n) => { try { const H = window.BoardHaptics; if (H) H.fire(H.PAT && H.PAT[n] ? n : n === "select" ? "tab" : n); } catch (e) {} };
 const bar = () => $("#bottombar");
 const placeBtn = (p) => { const b = bar(); return b ? b.querySelector(`[data-place="${p}"]`) : null; };
@@ -70,7 +70,7 @@ function teardown() {
     for (const x of b.querySelectorAll("[data-go]")) x.setAttribute("aria-current", String(x.dataset.go === K.SC.open));
   }
   S.built = false; S.saved = null; S.place = null; S.coinKey = null;
-  const head = $(".sheet-head"); if (head) { head.style.removeProperty("--sway"); head.removeAttribute("data-pscene"); }
+  const head = $(".sheet-head"); if (head) { for (const v of ["--sway", "--dye", "--crest"]) head.style.removeProperty(v); head.removeAttribute("data-pscene"); }
 }
 
 function coinImg() { const c = $("#bb-coin"); return c ? c.querySelector("img") : null; }
@@ -113,8 +113,8 @@ function pressCoin() {
 
 function headFor(key) {
   const head = $(".sheet-head"); if (!head || !S.phone) return;
-  head.setAttribute("data-pscene", PHONE_ORDER.includes(key) ? key : "tonight");
-  head.style.setProperty("--sway", "0");
+  const k = PHONE_ORDER.includes(key) ? key : "tonight"; head.setAttribute("data-pscene", k);
+  head.style.setProperty("--sway", "0"); head.style.setProperty("--dye", `var(--dye-${k})`); head.style.setProperty("--crest", "url" + "(" + String(location.href).replace(/[#?].*$/, "").replace(/[^/]*$/, "") + "img/icons/tab-" + k + ".png)");
   const nm = $(".sheet-name"); if (nm) { nm.classList.remove("unroll"); void nm.offsetWidth; nm.classList.add("unroll"); }
 }
 
@@ -134,7 +134,6 @@ function openMySheet() {
   pickSheet();
 }
 function pickSheet() {
-  /* no name yet: pick in a bottom sheet, in place (2026-10-30) */
   const B = window.BoardSheets, P = K.D && K.D.party; if (!B || !P) { K.goScene("five"); return; }
   const mb = placeBtn("sheet") || S.mine;
   const pick = (m) => { K.MEM.setMe(K.MEM.slug(m.name)); unpick(); try { K.render.tonight(); } catch (e) {} openMySheet(); };
@@ -153,13 +152,14 @@ function unpick() {
   const B = window.BoardSheets; if (B && B.status().open === "pick") B.close("pick");
   if (S.pick) { S.pick = false; markPlaces(); }
 }
+const quietTab = () => typeof K.switchTab === "function" && /quiet/.test(String(K.switchTab));
 function go(place) {
   hap("select");
   if (place !== "sheet") unpick();
   if (place === "more") { openMore(); return; }
   const current = S.place === place && K.SC.open !== null;
   if (current) { toTop(); return; }
-  if (place === "sheet") openMySheet(); else K.goScene(place);
+  if (place === "sheet") openMySheet(); else if (K.SC.open !== null && quietTab()) K.switchTab(place, { quiet: true }); else K.goScene(place);
 }
 
 function closeMore() {
@@ -185,6 +185,7 @@ function openMore() {
         const img = h("img", { class: "more-medal", alt: "", width: 36, height: 36, decoding: "async" }); K.medalSet(img, k);
         list.append(row(K.TITLES[k] || k, () => K.goScene(k), img, K.SC.open === k ? "now" : ""));
         if (newDot(k)) list.lastChild.append(h("span", { class: "new-dot", text: "New" }));
+        if (k === "roads" && window.BoardAtlas) list.append(row("Atlas", () => window.BoardAtlas.open(), "ornaments/compass"));
       }
       const util = h("div", { class: "more-list more-util", role: "group", "aria-label": "This board" });
       util.append(
@@ -243,7 +244,7 @@ const b0 = bar();
 if (b0) { b0.addEventListener("click", onClick); b0.addEventListener("keydown", onKey); }
 for (const ev of ["resize", "orientationchange"]) addEventListener(ev, () => { apply(); dockMine(); if (S.phone) { placeCoin(); markPlaces(); raf(placeCoin); } });
 addEventListener("hashchange", () => { if (S.phone) markPlaces(); });
-for (const q of ["(max-width: 699px)", "(max-height: 500px) and (orientation: landscape) and (pointer: coarse)"]) { const m = mm(q); if (m && m.addEventListener) m.addEventListener("change", apply); }
+for (const q of MQS) { const m = mm(q); if (m && m.addEventListener) m.addEventListener("change", apply); }
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (S.phone) placeCoin(); }, () => {});
 apply();
 
