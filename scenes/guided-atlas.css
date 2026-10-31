@@ -11,7 +11,7 @@ html.ga-on { overflow: hidden; }
 .ga-h small { display: block; font-size: 0.8125rem; font-weight: 400; color: var(--l-dim); }
 .ga-team, .ga-btn, .ga-back { box-sizing: border-box; min-height: 48px; padding: 0 18px; border: 1px solid var(--brass-dim); border-radius: 999px; font: inherit; font-weight: 700; cursor: pointer; background: var(--parchment); color: var(--ink); }
 .ga-btn.strong { background: var(--oak-2); color: var(--parchment); border-color: var(--oak-0); }
-:is(.ga-team, .ga-btn, .ga-back, .ga-link, .ga-step):focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; box-shadow: 0 0 0 5px var(--oak-0); }
+:is(.ga-team, .ga-btn, .ga-back, .ga-link, .ga-step, .ga-stopbtn):focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; box-shadow: 0 0 0 5px var(--oak-0); }
 .ga-body { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); min-height: 0; }
 .ga-rail { grid-column: 1; grid-row: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 14px 14px 64px; background: var(--parchment-2); color: var(--ink); }
 .ga-map { grid-column: 2; grid-row: 1; position: relative; min-width: 0; min-height: 0; background: var(--atlas-sea); }
@@ -20,7 +20,7 @@ html.ga-on { overflow: hidden; }
 .ga-card { border: 1px solid var(--brass-dim); border-left: 4px solid var(--atlas-horde); border-radius: 8px; padding: 12px 14px; background: var(--cream); }
 .ga-k { margin: 0 0 2px; font-size: 0.8125rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
 .ga-t { margin: 0 0 6px; font-size: 1.25rem; line-height: 1.25; }
-.ga-why, .ga-say, .ga-meta, .ga-legend dd, .ga-step small { margin: 0 0 10px; font-size: 1rem; line-height: 1.45; }
+.ga-why, .ga-say, .ga-meta, .ga-legend dd, .ga-step small, .ga-stopbtn small { margin: 0 0 10px; font-size: 1rem; line-height: 1.45; }
 .ga-say { font-weight: 600; }
 .ga-act { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; }
 .ga-link { display: inline-flex; align-items: center; box-sizing: border-box; min-height: 48px; padding: 0 2px; margin: 0; border: 0; background: none; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
@@ -30,16 +30,16 @@ html.ga-on { overflow: hidden; }
 .ga-more[hidden] { display: none; }
 .ga-sub { margin: 14px 0 6px; font-size: 1rem; }
 .ga-steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
-.ga-step { display: flex; align-items: flex-start; gap: 10px; box-sizing: border-box; width: 100%; min-height: 48px; padding: 8px 10px; border: 1px solid var(--brass-dim); border-radius: 8px; background: var(--cream-2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-.ga-step img { flex: none; margin-top: 2px; }
+.ga-step, .ga-stopbtn { display: flex; align-items: flex-start; gap: 10px; box-sizing: border-box; width: 100%; min-height: 48px; padding: 8px 10px; border: 1px solid var(--brass-dim); border-radius: 8px; background: var(--cream-2); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.ga-step img, .ga-stopbtn img { flex: none; margin-top: 2px; }
 .ga-step-t b { display: block; font-size: 1rem; }
-.ga-step small { display: block; margin: 2px 0 0; }
+.ga-step small, .ga-stopbtn small { display: block; margin: 2px 0 0; }
 .ga-legend { margin: 0; }
 .ga-legend dt { font-weight: 700; margin-top: 6px; }
 .ga-legend dd { margin: 2px 0 6px; }
 .ga-back { position: fixed; z-index: 17; right: max(12px, env(safe-area-inset-right, 0px)); top: max(12px, env(safe-area-inset-top, 0px)); box-shadow: 0 3px 10px var(--shadow); }
 .ga-back[hidden] { display: none; }
-@media (hover: hover) { .ga-team:hover, .ga-btn:hover, .ga-step:hover { color: var(--ink); filter: brightness(1.06); } .ga-btn.strong:hover { color: var(--parchment); } }
+@media (hover: hover) { .ga-team:hover, .ga-btn:hover, .ga-step:hover, .ga-stopbtn:hover { color: var(--ink); filter: brightness(1.06); } .ga-btn.strong:hover { color: var(--parchment); } }
 @media (max-width: 699px) {
   .ga-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr); }
   .ga-rail { grid-column: 1; grid-row: 2; padding-bottom: 56px; border-top: 3px solid var(--brass-dim); }
@@ -77,3 +77,11 @@ html.ga-on { overflow: hidden; }
 .ga-mb:focus-visible, .ga-pin:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
 @media (hover: hover) { .ga-mb:hover, .ga-pin:hover { filter: brightness(1.06); } }
 @media (max-width: 699px) { .ga-lab { max-width: 11rem; } }
+.ga-nolab[hidden] { display: none; }
+.ga-nolab .ga-k { margin-bottom: 6px; }
+.ga-stop-n { flex: none; box-sizing: border-box; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border: 2px solid var(--oak-0); border-radius: 50%; background: var(--parchment); color: var(--ink); font-size: 0.9375rem; font-weight: 800; line-height: 1; }
+.ga-subrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 6px; }
+.ga-subrow .ga-sub { margin: 0; }
+.ga-stopsbtn { min-height: 44px; margin: -12px 0; font-weight: 700; }
+.ga-stopsd { margin: 0 0 6px; }
+.ga-stopsd[hidden] { display: none; }
