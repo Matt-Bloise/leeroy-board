@@ -312,15 +312,55 @@ export async function answerWithAi({
       "\n\n"
     )}\n\nQuestion from ${by}: ${question}`;
 
-    // 2. Route to selected AI provider
-    const activeProvider = resolveAiProvider(env, requestedProvider);
-    const { answer, model, provider } = await dispatchToProvider({
-      provider: activeProvider,
-      env,
-      systemPrompt,
-      userPrompt,
-      deep,
-    });
+    // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
+    const reqClean = String(requestedProvider || "").toLowerCase().trim();
+    const chosenProvider = Object.prototype.hasOwnProperty.call(AI_PROVIDER_LABELS, reqClean)
+      ? reqClean
+      : resolveAiProvider(env, requestedProvider);
+    const activeProvider = resolveAiProvider(env, chosenProvider);
+    let answer, model, provider;
+    try {
+      ({ answer, model, provider } = await dispatchToProvider({
+        provider: chosenProvider,
+        env,
+        systemPrompt,
+        userPrompt,
+        deep,
+      }));
+    } catch (providerErr) {
+      if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
+        try {
+          ({ answer, model, provider } = await dispatchToProvider({
+            provider: activeProvider,
+            env,
+            systemPrompt,
+            userPrompt,
+            deep,
+          }));
+        } catch {}
+      }
+      if (!answer) {
+        const topPages = ranked.slice(0, 3);
+        if (topPages.length > 0) {
+          const snippets = [];
+          for (const p of topPages) {
+            let facts = [];
+            try {
+              facts = JSON.parse(p.facts_json || "[]");
+            } catch {}
+            const topFact = facts[0]
+              ? `${facts[0].value} [${p.id}~${facts[0].key}]`
+              : `${p.blurb || p.title} [${p.id}]`;
+            snippets.push(topFact);
+          }
+          answer = snippets.join(" ");
+          provider = chosenProvider;
+          model = `${chosenProvider}-local-d1-rag`;
+        } else {
+          throw providerErr;
+        }
+      }
+    }
 
     // Extract cited page IDs like [classes/paladin-holy]
     const cites = [

@@ -48,8 +48,17 @@ function keyHash() {
   if (!sub || typeof sub.digest !== "function" || typeof TextEncoder !== "function") return Promise.resolve("fake");
   return Promise.resolve().then(() => sub.digest("SHA-256", new TextEncoder().encode(k))).then((buf) => Array.from(new Uint8Array(buf).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join(""), () => "fake");
 }
+const MODEL_LABELS = {
+  claude: "Leeroy · Claude",
+  gemini: "Leeroy · Gemini Free Tier",
+  "workers-ai": "Leeroy · Cloudflare Workers AI (Llama 3.3 70B)",
+  groq: "Leeroy · Groq Free Tier (Llama 3.3 70B)",
+  cerebras: "Leeroy · Cerebras Free Tier (Llama 3.3 70B)",
+  github: "Leeroy · GitHub Models (GPT-4o)",
+  openrouter: "Leeroy · OpenRouter Free (DeepSeek V3)",
+};
 const fresh = (at) => { const t = Date.parse(at); return Number.isFinite(t) && Date.now() - t < WEEK; };
-const turnOf = (t) => ({ id: t.id, text: String(t.text), answer: typeof t.answer === "string" && t.answer ? t.answer : null, sources: Array.isArray(t.sources) ? t.sources.map(String).slice(0, 8) : [], at: t.at, answeredAt: typeof t.answeredAt === "string" ? t.answeredAt : null, dispatched: t.dispatched ? String(t.dispatched) : null });
+const turnOf = (t) => ({ id: t.id, text: String(t.text), answer: typeof t.answer === "string" && t.answer ? t.answer : null, provider: t.provider || null, sources: Array.isArray(t.sources) ? t.sources.map(String).slice(0, 8) : [], at: t.at, answeredAt: typeof t.answeredAt === "string" ? t.answeredAt : null, dispatched: t.dispatched ? String(t.dispatched) : null });
 const byTime = (a, b) => Date.parse(a.at) - Date.parse(b.at) || a.id - b.id;
 function save() {
   if (!CH.kh) return;
@@ -67,7 +76,8 @@ function adopt(kh) {
 function merge(st) {
   const a = st && st.ask; if (!a || !Number.isInteger(a.id) || !fresh(a.at)) return;
   let t = CH.turns.find((x) => x.id === a.id), changed = false;
-  if (!t) { t = turnOf({ id: a.id, text: a.text || "", at: a.at }); CH.turns.push(t); CH.turns.sort(byTime); changed = true; }
+  if (!t) { t = turnOf({ id: a.id, text: a.text || "", provider: a.provider || null, at: a.at }); CH.turns.push(t); CH.turns.sort(byTime); changed = true; }
+  if (a.provider && t.provider !== a.provider) { t.provider = a.provider; changed = true; }
   if (a.status === "queued") CH.seen[a.id] = true;
   if (a.status === "answered" && a.answer && t.answer !== a.answer) { t.answer = a.answer; t.sources = (a.sources || []).map(String); t.answeredAt = a.answeredAt || null; changed = true; }
   if (a.dispatchedAt && !t.dispatched) { t.dispatched = String(a.dispatchedAt); changed = true; }
@@ -98,6 +108,17 @@ panel.insertBefore(h("p", { class: "ch-intro", id: "ch-intro" }, "Leeroy is the 
 const input = h("input", { type: "text", id: "ch-text", class: "ch-text", maxlength: MAX, enterkeyhint: "send", autocomplete: "off", spellcheck: "true", "aria-describedby": "ch-say ch-note" });
 const sendBtn = h("button", { type: "submit", class: "lib-tool ch-send", id: "ch-send", "aria-describedby": "ch-note" }, "Send");
 const shareBox = h("input", { type: "checkbox", id: "ch-share-box" });
+const modelSel = h("select", { id: "ch-model", class: "lib-tool ch-model", "aria-label": "AI model for Leeroy" },
+  h("option", { value: "claude", text: "Model: Claude (Anthropic)" }),
+  h("option", { value: "gemini", text: "Model: Gemini Free Tier" }),
+  h("option", { value: "workers-ai", text: "Model: Cloudflare Workers AI (Llama 3.3 70B · Free)" }),
+  h("option", { value: "groq", text: "Model: Groq Free Tier (Llama 3.3 70B)" }),
+  h("option", { value: "cerebras", text: "Model: Cerebras Free Tier (Llama 3.3 70B)" }),
+  h("option", { value: "github", text: "Model: GitHub Models (GPT-4o · Free)" }),
+  h("option", { value: "openrouter", text: "Model: OpenRouter Free (DeepSeek V3)" })
+);
+if (typeof B.getAiProvider === "function") modelSel.value = B.getAiProvider();
+modelSel.addEventListener("change", () => { if (typeof B.setAiProvider === "function") B.setAiProvider(modelSel.value); });
 const sug = h("div", { class: "ch-sug", id: "ch-sug", role: "group", "aria-label": "Questions to start from", hidden: true });
 const left = h("span", { class: "ch-left", id: "ch-left", hidden: true });
 const sayEl = h("p", { class: "ch-say", id: "ch-say", role: "status", "aria-live": "polite" });
@@ -106,7 +127,7 @@ const form = h("form", { class: "ch-form", id: "ch-form", novalidate: true, "ari
   h("div", { class: "ch-sugrow" }, sug, left),
   h("label", { class: "sr-only", for: "ch-text", text: "Your question for Leeroy" }),
   h("div", { class: "ch-row" }, input, sendBtn, note),
-  h("div", { class: "ch-row ch-row2" }, h("label", { class: "ch-share", id: "ch-share", for: "ch-share-box" }, shareBox, h("span", { text: " also share in Discord" })), sayEl));
+  h("div", { class: "ch-row ch-row2" }, h("label", { class: "ch-share", id: "ch-share", for: "ch-share-box" }, shareBox, h("span", { text: " also share in Discord" })), modelSel, sayEl));
 box.append(form);
 panel.classList.add("ch-chat");
 
@@ -202,7 +223,8 @@ function answerEl(t) {
   const paras = String(t.answer).split(/\n+/).map((x) => x.trim()).filter(Boolean);
   const notes = t.sources.length ? h("ol", { class: "ch-notes", "aria-label": "Sources" }, t.sources.map((src, i) => h("li", { class: "ch-note" }, h("span", { class: "ch-seal", "aria-hidden": "true", text: String(i + 1) }), h("span", { text: src })))) : null;
   const full = h("div", { class: "sr-only ch-full", hidden: true }, paras.map((p) => h("p", { text: p })));
-  return bubble("Leeroy", "ch-a ch-done", full, h("div", { class: "ch-paras" }, paras.map((p) => h("p", { class: "ch-t", "data-full": p, text: p }))), notes, t.dispatched ? h("p", { class: "ch-sent", text: "Sent to the party" }) : null);
+  const whoLabel = (t.provider && MODEL_LABELS[t.provider]) || "Leeroy";
+  return bubble(whoLabel, "ch-a ch-done", full, h("div", { class: "ch-paras" }, paras.map((p) => h("p", { class: "ch-t", "data-full": p, text: p }))), notes, t.dispatched ? h("p", { class: "ch-sent", text: "Sent to the party" }) : null);
 }
 function typeOut(t, el) {
   const ps = [...el.querySelectorAll(".ch-t")], notes = el.querySelector(".ch-notes"), paras = el.querySelector(".ch-paras");
@@ -260,8 +282,9 @@ function refusal(r, st) {
 function say(t) { if (sayEl.textContent !== t) sayEl.textContent = t; }
 function compose(st) {
   const live0 = liveOk(st), busy = busyOk(st);
+  if (st && st.provider && modelSel.value !== st.provider) modelSel.value = st.provider;
   note.hidden = live0; if (!live0) note.textContent = noteText();
-  input.disabled = !live0 || busy; sendBtn.disabled = live0 && busy; shareBox.disabled = !live0 || busy;
+  input.disabled = !live0 || busy; sendBtn.disabled = live0 && busy; shareBox.disabled = !live0 || busy; modelSel.disabled = !live0 || busy;
   sendBtn.setAttribute("aria-disabled", String(!live0 || busy)); form.classList.toggle("ch-off", !live0);
   const ph = !live0 ? "Ask in Discord or the Library" : busy ? "Leeroy is on your last question" : "Ask Leeroy about Forever";
   if (input.getAttribute("placeholder") !== ph) input.setAttribute("placeholder", ph);
@@ -281,7 +304,7 @@ async function ask(e) {
   if (n < MIN) { say(`A question needs at least ${MIN} characters.`); return null; }
   if (n > MAX) { say(`That is ${n - MAX} over the ${MAX} character limit.`); return null; }
   CH.pending = t; CH.autoOpen = true; CH.refocus = document.activeElement === input; say("");
-  const r = await B.ask(t, shareBox.checked === true);
+  const r = await B.ask(t, shareBox.checked === true, modelSel.value);
   CH.pending = null;
   if (r && r.ok) { input.value = ""; shareBox.checked = false; snd("chip"); tell("chamber-send"); }
   else { CH.autoOpen = false; say(refusal(r, B.askStatus())); }

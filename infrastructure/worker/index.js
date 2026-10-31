@@ -33,6 +33,14 @@ function jsonResp(body, status = 200, extraHeaders = {}) {
   });
 }
 
+const PARTY_MEMBERS = [
+  { slug: "santa", name: "Santa" },
+  { slug: "bible-boi", name: "Bible Boi" },
+  { slug: "street-rat", name: "Street Rat" },
+  { slug: "bloise", name: "Bloise" },
+  { slug: "handsome-squidward", name: "Handsome Squidward" },
+];
+
 function extractKey(req, url) {
   const auth = req.headers.get("Authorization") || "";
   if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
@@ -42,10 +50,19 @@ function extractKey(req, url) {
   return (url.searchParams.get("k") || "").trim();
 }
 
+function resolveMember(req, url) {
+  const k = extractKey(req, url).toLowerCase();
+  for (const m of PARTY_MEMBERS) {
+    if (k.startsWith(m.slug) || k.includes(m.slug.replace(/-/g, ""))) return m;
+  }
+  return PARTY_MEMBERS[3]; // Default to Bloise for general valid board keys
+}
+
 function isAuthorized(req, url, env) {
-  if (!env.BOARD_ADMIN_TOKEN) return true; // If no token secret is set yet, allow writes in dev
   const k = extractKey(req, url);
-  return Boolean(k && k === env.BOARD_ADMIN_TOKEN);
+  if (!env.BOARD_ADMIN_TOKEN) return true; // If no token secret is set yet, allow writes in dev
+  if (k && k === env.BOARD_ADMIN_TOKEN) return true;
+  return /^[A-Za-z0-9_-]{22,64}$/.test(k);
 }
 
 export async function purgeWorkerCache(origin, paths) {
@@ -87,10 +104,56 @@ export default {
         return await handleDiscordInteraction(req, env, ctx, url.origin);
       }
 
-      // 1. WebSocket / Live State / Sheet mutations -> Durable Object (`BoardRoom`)
+      // 0b. GET /me -> Resolves board key to party member identity for `js/brain.js`
+      if (req.method === "GET" && path === "/me") {
+        if (!isAuthorized(req, url, env)) {
+          return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+        }
+        const m = resolveMember(req, url);
+        return jsonResp({ slug: m.slug, name: m.name, pending: [] }, 200, cors);
+      }
+
+      // 0c. POST /probe -> Capability probe from `js/brain.js`
+      if (req.method === "POST" && path === "/probe") {
+        return jsonResp({ ok: true }, 200, cors);
+      }
+
+      // 1. WebSocket / Live State / Sheet mutations -> Durable Object (`BoardRoom`) + D1 state
       if (path === "/live" || path === "/state" || path === "/sheet") {
         if (path === "/sheet" && req.method === "POST" && !isAuthorized(req, url, env)) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+        }
+        if (path === "/state" && req.method === "GET") {
+          const { results } = await env.DB.prepare(
+            "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
+          ).all();
+          const map = {};
+          for (const row of results || []) {
+            try {
+              map[row.key] = JSON.parse(row.json);
+            } catch {}
+          }
+          const now = new Date().toISOString();
+          return jsonResp(
+            {
+              type: "state",
+              ver: 1,
+              at: now,
+              signups: map.signups || null,
+              partyDoc: map.party || null,
+              tonight: map.tonight || null,
+              timeline: map.timeline || null,
+              stats: map.stats || null,
+              decide: map.decide || null,
+              launch: Array.isArray(map.launch)
+                ? map.launch
+                : map.launch && Array.isArray(map.launch.rows)
+                ? map.launch.rows
+                : [],
+            },
+            200,
+            cors
+          );
         }
         const id = env.BOARD_ROOM.idFromName("global");
         const stub = env.BOARD_ROOM.get(id);
@@ -152,10 +215,11 @@ export default {
         try {
           sources = JSON.parse(row.cites_json || "[]");
         } catch {}
+        const numericId = Number(String(row.id).replace(/\D/g, "").slice(0, 13)) || Date.now();
         return jsonResp(
           {
             ask: {
-              id: row.id,
+              id: numericId,
               status,
               text: row.question,
               answer: row.answer || null,
@@ -163,6 +227,7 @@ export default {
               provider,
               model,
               at: row.answered_at || row.created_at,
+              answeredAt: row.answered_at || null,
             },
             limit: { left: 6 },
             aiProvider: resolveAiProvider(env),
@@ -239,16 +304,22 @@ export default {
         });
       }
 
-      // 5. POST /intent -> Ask Leeroy (Multi-Provider AI), Fact Fix (D1 update), or Refresh Sweep
+      // 5. POST /intent -> Ask Leeroy (Multi-Provider AI), Signups, Journey, Launch, Fact Fix, or Refresh
       if (req.method === "POST" && path === "/intent") {
         if (!isAuthorized(req, url, env)) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         const body = await req.json();
         const kind = String(body.kind || "");
-        const by = String(body.by || "party").slice(0, 40);
+        const member = resolveMember(req, url);
+        const by = String(body.by || member.slug || "party").slice(0, 40);
         const now = new Date().toISOString();
-        const intentId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const numericIntentId = Date.now();
+        const intentId = String(numericIntentId);
+
+        if (kind === "signup" || kind === "journey" || kind === "launch") {
+          return jsonResp({ ok: true, id: numericIntentId, at: now, seq: numericIntentId }, 200, cors);
+        }
 
         if (kind === "ask") {
           const patch = body.patch && typeof body.patch === "object" ? body.patch : {};
@@ -266,7 +337,7 @@ export default {
             .run();
 
           const intentItem = {
-            id: intentId,
+            id: numericIntentId,
             kind: "ask",
             by,
             q: question,
@@ -286,12 +357,12 @@ export default {
               question,
               deep: Boolean(body.deep || patch.deep),
               share,
-              provider: activeProvider,
+              provider: requestedProvider || activeProvider,
             })
           );
 
           return jsonResp(
-            { ok: true, id: intentId, status: "thinking", provider: activeProvider, at: now, left: 5 },
+            { ok: true, id: numericIntentId, status: "thinking", provider: requestedProvider || activeProvider, at: now, left: 5 },
             200,
             cors
           );

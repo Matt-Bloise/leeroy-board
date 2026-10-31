@@ -32,6 +32,17 @@ function sha8(str) {
   return crypto.createHash("sha256").update(str).digest("hex").slice(0, 8);
 }
 
+const CHUNK_SIZE = 50000;
+
+function splitChunks(str, size = CHUNK_SIZE) {
+  if (!str || str.length <= size) return [str || ""];
+  const chunks = [];
+  for (let i = 0; i < str.length; i += size) {
+    chunks.push(str.slice(i, i + size));
+  }
+  return chunks;
+}
+
 const statements = [];
 
 // 1. Seed `kv_state` from `data/*.json` and `data/atlas/{marks,links}.json`
@@ -49,10 +60,16 @@ const kvFiles = [
 
 for (const [key, filePath] of kvFiles) {
   if (!fs.existsSync(filePath)) continue;
-  const raw = fs.readFileSync(filePath, "utf8").trim();
+  const raw = JSON.stringify(JSON.parse(fs.readFileSync(filePath, "utf8")));
+  const chunks = splitChunks(raw);
   statements.push(
-    `INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (${sqlStr(key)}, ${sqlStr(raw)}, ${sqlStr(now)});`
+    `INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (${sqlStr(key)}, ${sqlStr(chunks[0])}, ${sqlStr(now)});`
   );
+  for (let i = 1; i < chunks.length; i++) {
+    statements.push(
+      `UPDATE kv_state SET json = json || ${sqlStr(chunks[i])} WHERE key = ${sqlStr(key)};`
+    );
+  }
 }
 
 // 2. Seed `lib_blobs`, `lib_pages`, and `lib_sources` from `data/library/*.json`
@@ -62,12 +79,18 @@ if (fs.existsSync(LIB_DIR)) {
 
   for (const file of libFiles) {
     const fullPath = path.join(LIB_DIR, file);
-    const raw = fs.readFileSync(fullPath, "utf8").trim();
+    const raw = JSON.stringify(JSON.parse(fs.readFileSync(fullPath, "utf8")));
     const stamp = sha8(raw);
+    const chunks = splitChunks(raw);
 
     statements.push(
-      `INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES (${sqlStr(file)}, ${sqlStr(stamp)}, ${sqlStr(raw)}, ${sqlStr(now)});`
+      `INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES (${sqlStr(file)}, ${sqlStr(stamp)}, ${sqlStr(chunks[0])}, ${sqlStr(now)});`
     );
+    for (let i = 1; i < chunks.length; i++) {
+      statements.push(
+        `UPDATE lib_blobs SET json = json || ${sqlStr(chunks[i])} WHERE name = ${sqlStr(file)};`
+      );
+    }
 
     try {
       const parsed = JSON.parse(raw);
@@ -104,26 +127,35 @@ if (fs.existsSync(LIB_DIR)) {
   }
 }
 
-const outSqlPath = path.join(INFRA_DIR, ".seed-bundle.sql");
-fs.writeFileSync(outSqlPath, statements.join("\n"), "utf8");
-console.log(`Generated ${statements.length} SQL statements -> ${outSqlPath}`);
-
 if (dryRun) {
+  const outSqlPath = path.join(INFRA_DIR, ".seed-bundle.sql");
+  fs.writeFileSync(outSqlPath, statements.join("\n"), "utf8");
+  console.log(`Generated ${statements.length} SQL statements -> ${outSqlPath}`);
   console.log("Dry-run complete. Skipping wrangler d1 execute.");
   process.exit(0);
 }
 
-try {
-  const args = [
-    "wrangler",
-    "d1",
-    "execute",
-    dbName,
-    isRemote ? "--remote" : "--local",
-    `--file=${outSqlPath}`,
-  ];
-  console.log(`Executing: npx ${args.join(" ")}`);
-  execFileSync("npx", args, { cwd: INFRA_DIR, stdio: "inherit", shell: true });
-} finally {
-  if (fs.existsSync(outSqlPath)) fs.unlinkSync(outSqlPath);
+// Execute in batches of 20 statements to stay well below workerd's prepared-statement cache limit
+const BATCH_SIZE = 20;
+const totalBatches = Math.ceil(statements.length / BATCH_SIZE);
+console.log(`Generated ${statements.length} SQL statements across ${totalBatches} batch(es).`);
+
+for (let b = 0; b < totalBatches; b++) {
+  const batch = statements.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
+  const outSqlPath = path.join(INFRA_DIR, `.seed-bundle-${b}.sql`);
+  fs.writeFileSync(outSqlPath, batch.join("\n"), "utf8");
+  try {
+    const args = [
+      "wrangler",
+      "d1",
+      "execute",
+      dbName,
+      isRemote ? "--remote" : "--local",
+      `--file=${outSqlPath}`,
+    ];
+    console.log(`[Batch ${b + 1}/${totalBatches}] Executing ${batch.length} statements...`);
+    execFileSync("npx", args, { cwd: INFRA_DIR, stdio: "inherit", shell: true });
+  } finally {
+    if (fs.existsSync(outSqlPath)) fs.unlinkSync(outSqlPath);
+  }
 }
