@@ -312,23 +312,23 @@ let pass = null;
 try { pass = sessionStorage.getItem("board-pass"); } catch (e) { pass = null; }
 const remembered = pass === "review" || (pass === "preview" && previewHost);
 /* Open web (the owner's call, 2026-10-27: friends must not have to do anything): an unapproved Activity opens only for the app team and
-   invited testers, so the bot links to the board on the web. Opened top-level on the public host or Discord's proxy, the
-   board renders without the gate; inside Discord it is framed and takes the SDK path below. The data is the public repo's. */
+   invited testers, so the bot links to the board on the web. Top-level on the public host or Discord's proxy it skips the gate. */
 const openWeb = window.top === window && (/\.github\.io$/.test(host) || host.endsWith(".discordsays.com"));
 if (reviewFlag || (previewHost && previewFlag) || remembered || openWeb) {
   try { if (reviewFlag) sessionStorage.setItem("board-pass", "review"); else if (previewHost && previewFlag) sessionStorage.setItem("board-pass", "preview"); } catch (e) {}
   if (reviewFlag || hash === "#preview") { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
   window.__board.start("preview");
 } else {
-  /* V13b (mobile 6): the gate card shows only when the Discord check fails, or has not passed in 4 s, so a board that opens
-     never flashes it first */
+  /* V13b: the gate card shows only when the Discord check fails or takes over 4 s */
   const gate = () => { if (document.getElementById("board").hidden) document.getElementById("gate").hidden = false; };
-  const slow = setTimeout(gate, 4000);
+  /* D12: no READY in 4 s starts the no-SDK mode */
+  const slow = setTimeout(() => { if (document.getElementById("board").hidden) window.__board.start("preview"); }, 4000);
   try {
-    const { DiscordSDK } = await import("./vendor/embedded-app-sdk.mjs?v=b681569ce2");
+    const { DiscordSDK } = await import("./vendor/embedded-app-sdk.mjs?v=4e7ce3845f");
     const sdk = new DiscordSDK(CLIENT_ID);
     await sdk.ready();
     clearTimeout(slow);
+    window.__sdk = sdk;
     window.__board.start("discord", sdk);
   } catch (e) {
     clearTimeout(slow); gate();
