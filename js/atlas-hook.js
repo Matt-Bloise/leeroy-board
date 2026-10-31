@@ -101,7 +101,15 @@
   const later = () => { clearTimeout(H.pt); H.pt = setTimeout(pass, 160); };
   const loadMarks = async () => {
     if (H.marks || H.mLoading) return; H.mLoading = true;
-    try { const r = await fetch("data/atlas/marks.json", { cache: "no-store" }); if (r.ok) H.marks = await r.json(); } catch (e) { }
+    try {
+      const b = window.BoardBrain && window.BoardBrain.bootstrap ? await window.BoardBrain.bootstrap() : null;
+      if (b && b.marks && typeof b.marks === "object") H.marks = b.marks;
+      else {
+        const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/atlas/marks.json")) || "data/atlas/marks.json";
+        const r = await fetch(u, { cache: "no-cache" }).then((res) => (res.ok ? res : fetch("data/atlas/marks.json", { cache: "no-store" }))).catch(() => fetch("data/atlas/marks.json", { cache: "no-store" }));
+        if (r.ok) H.marks = await r.json();
+      }
+    } catch (e) { }
     if (!H.marks) return;
     pass();
     if (typeof MutationObserver === "function" && !H.mo) { H.mo = true; for (const q of ["#lib-main", "#ask-out"]) { const t = $(q); if (t) new MutationObserver(later).observe(t, { childList: true, subtree: true }); } }

@@ -2,12 +2,15 @@
 "use strict";
 const K = window.__boardKit; if (!K) return;
 const { $, h } = K, BB = () => window.BoardBrain;
-const SEEN = "board-lib-seen", FILE = "data/library/refresh.json", NEWS = "data/library/news.json", LABEL = "Ask Leeroy's pipeline to check Blizzard now";
+const SEEN = "board-lib-seen", LABEL = "Ask Leeroy's pipeline to check Blizzard now";
+const apiUrl = (p, fb) => (BB() && BB().url && BB().url(p)) || fb;
+const FILE = () => apiUrl("/library/refresh.json", "data/library/refresh.json");
+const NEWS = () => apiUrl("/library/news.json", "data/library/news.json");
 const POLL_MS = 20000, MAX_POLLS = 36;
 const SAY = { none: "Not available yet.", key: "Your own board link lets you ask for a check.", bad: "This board link is no longer valid.", 409: "A check is already running.", run: "Asked.", late: "No answer from the pipeline yet.", play: "Asked. Reopen the Library to see the result." };
 const R = { seen: null, busy: false, msg: "", polls: 0, timer: 0 };
 const keyed = () => { const b = BB(); return !!(b && b.hasKey()); };
-const getJson = (url, cache) => Promise.resolve().then(() => fetch(url, { cache })).then((r) => (r && r.ok ? r.json() : null)).catch(() => null);
+const getJson = (url, cache, fb) => Promise.resolve().then(() => fetch(url, { cache })).then((r) => (r && r.ok ? r : fb && fb !== url ? fetch(fb, { cache }) : r)).then((r) => (r && r.ok ? r.json() : null)).catch(() => null);
 const okFile = (j) => !!j && typeof j.checked === "string" && Number.isFinite(Date.parse(j.checked));
 const when = (iso) => K.fmtWhen(Math.min(Date.parse(iso) / 1000, Date.now() / 1000), { rel: true }).replace(/, now$/, ", just now");
 function count() {
@@ -61,11 +64,11 @@ async function tick() {
   clearTimeout(R.timer); R.timer = 0;
   if (!R.busy) return;
   R.polls++;
-  const j = await getJson(`${FILE}?t=${Date.now()}`, "no-store");
+  const j = await getJson(`${FILE()}?t=${Date.now()}`, "no-store", `data/library/refresh.json?t=${Date.now()}`);
   if (!R.busy) return;
   if (okFile(j) && j.checked !== R.base) {
     R.file = j; R.busy = false; R.msg = "";
-    const n = await getJson(`${NEWS}?t=${Date.now()}`, "no-cache");
+    const n = await getJson(`${NEWS()}?t=${Date.now()}`, "no-cache", `data/library/news.json?t=${Date.now()}`);
     if (n && Array.isArray(n.updates)) R.news = n;
   } else if (R.polls >= MAX_POLLS) { R.busy = false; R.msg = SAY.late; }
   else { R.timer = setTimeout(tick, POLL_MS); return; }
@@ -78,7 +81,8 @@ function open() {
     if (!i) return;
     if (R.news || R.file) draw();
     const v = i.stamps && i.stamps["news.json"];
-    return Promise.all([getJson(v ? `${NEWS}?v=${v}` : NEWS), getJson(FILE, "no-cache")]).then(([n, f]) => {
+    const newsUrl = v ? `${NEWS()}?v=${v}` : NEWS(), newsFb = v ? `data/library/news.json?v=${v}` : "data/library/news.json";
+    return Promise.all([getJson(newsUrl, "default", newsFb), getJson(FILE(), "no-cache", "data/library/refresh.json")]).then(([n, f]) => {
       if (n && typeof n === "object") R.news = n;
       if (okFile(f)) R.file = f;
       if (R.inLib) draw();
@@ -89,6 +93,13 @@ function leave() {
   if (!R.inLib) return;
   R.inLib = false;
   try { localStorage.setItem(SEEN, new Date().toISOString()); } catch (e) {}
+}
+const b = BB();
+if (b && b.on) {
+  b.on("library", (m) => {
+    if (m && m.checked) { R.file = { ...(R.file || {}), checked: m.checked }; R.busy = false; R.msg = ""; clearTimeout(R.timer); R.timer = 0; }
+    if (R.inLib) open();
+  });
 }
 K.on("scene", (key, prev) => { if (key === "library") open(); else if (prev === "library") leave(); });
 K.on("closed", (key) => { if (key === "library") leave(); });

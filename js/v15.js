@@ -219,7 +219,17 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
     clearInterval(L.timer); L.timer = setInterval(refresh, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   }
-  const launchP = (async () => { try { const r = await fetch("data/launch.json", { cache: "no-store" }); if (!r.ok) return null; const j = await r.json(); return j && typeof j === "object" && !j.error ? j : null; } catch (e) { return null; } })();
+  const launchP = (async () => {
+    try {
+      const b = window.BoardBrain && window.BoardBrain.bootstrap ? await window.BoardBrain.bootstrap() : null;
+      if (b && b.launchDoc && typeof b.launchDoc === "object" && !b.launchDoc.error) return b.launchDoc;
+      const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/launch.json")) || "data/launch.json";
+      const r = await fetch(u, { cache: "no-cache" }).then((res) => (res.ok ? res : fetch("data/launch.json", { cache: "no-store" }))).catch(() => fetch("data/launch.json", { cache: "no-store" }));
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j && typeof j === "object" && !j.error ? j : null;
+    } catch (e) { return null; }
+  })();
   K.on("rendered", () => { launchP.then((j) => { if (j) K.D.launch = j; start(); }); });
   K.on("signups", () => { if (L.built) { renderFacts(); renderCheck(); } });
   K.on("tonight", () => { if (L.built) { renderStates(); renderCheck(); } });

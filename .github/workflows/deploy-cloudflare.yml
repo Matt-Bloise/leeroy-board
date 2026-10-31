@@ -1,0 +1,117 @@
+name: Deploy Cloudflare Serverless Stack (Workers + D1 + Durable Objects)
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - feat/cloudflare-serverless-migration
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/deploy-cloudflare.yml"
+  workflow_dispatch:
+    inputs:
+      seed_d1:
+        description: "Force re-seed D1 from static data/*.json files"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  group: cloudflare-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  provision-and-deploy:
+    name: Provision D1, Migrate Schema, Seed & Deploy Worker
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE_NAME: leeroy-board-db
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Wrangler CLI
+        run: npm install --no-audit --no-fund
+
+      - name: Ensure D1 Database Exists & Patch wrangler.toml
+        id: d1
+        run: |
+          set -e
+          echo "Checking for existing D1 database '$D1_DATABASE_NAME'..."
+          LIST_JSON=$(npx wrangler d1 list --json)
+          DB_ID=$(node -e '
+            const list = JSON.parse(process.argv[1] || "[]");
+            const found = list.find(d => d.name === process.env.D1_DATABASE_NAME);
+            if (found) process.stdout.write(found.uuid);
+          ' "$LIST_JSON")
+
+          if [ -z "$DB_ID" ]; then
+            echo "Creating D1 database '$D1_DATABASE_NAME'..."
+            CREATE_OUT=$(npx wrangler d1 create "$D1_DATABASE_NAME")
+            echo "$CREATE_OUT"
+            DB_ID=$(echo "$CREATE_OUT" | grep -oE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' | head -n 1)
+          fi
+
+          if [ -z "$DB_ID" ]; then
+            echo "ERROR: Could not resolve D1 database_id"
+            exit 1
+          fi
+
+          echo "Resolved D1 database_id: $DB_ID"
+          sed -i "s/00000000-0000-0000-0000-000000000000/$DB_ID/g" wrangler.toml
+          echo "db_id=$DB_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Apply Idempotent D1 Schema (`schema.sql`)
+        run: npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --file=./schema.sql
+
+      - name: Seed Initial Board & Library Data into D1 (if empty or forced)
+        run: |
+          set -e
+          COUNT_JSON=$(npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --command="SELECT COUNT(*) AS n FROM kv_state;" --json)
+          ROW_COUNT=$(node -e '
+            const res = JSON.parse(process.argv[1] || "[]");
+            const n = res?.[0]?.results?.[0]?.n ?? 0;
+            process.stdout.write(String(n));
+          ' "$COUNT_JSON")
+
+          echo "Current kv_state row count in D1: $ROW_COUNT"
+          if [ "$ROW_COUNT" = "0" ] || [ "${{ inputs.seed_d1 }}" = "true" ]; then
+            echo "Seeding D1 from repository data/*.json and data/library/*.json..."
+            node ./scripts/seed-d1.mjs --remote
+          else
+            echo "D1 already contains live state ($ROW_COUNT rows). Skipping seed to preserve live edits."
+          fi
+
+      - name: Deploy Cloudflare Worker + Durable Object + Cron Trigger
+        run: npx wrangler deploy
+
+      - name: Sync Worker Secrets (`ANTHROPIC_API_KEY`, `BOARD_ADMIN_TOKEN`, `DISCORD_WEBHOOK_URL`)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            printf "%s" "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY
+          fi
+          if [ -n "$BOARD_ADMIN_TOKEN" ]; then
+            printf "%s" "$BOARD_ADMIN_TOKEN" | npx wrangler secret put BOARD_ADMIN_TOKEN
+          fi
+          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
+            printf "%s" "$DISCORD_WEBHOOK_URL" | npx wrangler secret put DISCORD_WEBHOOK_URL
+          fi

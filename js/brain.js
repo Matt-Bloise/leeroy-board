@@ -43,11 +43,29 @@ function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
 function baseFor() {
   const host = location.hostname || "";
   if (/\.discordsays\.com$/.test(host)) return { http: "/api", ws: `wss://${host}/api/live` };
-  if (host === "matt-bloise.github.io") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
+  if (host === "matt-bloise.github.io" || /\.pages\.dev$/.test(host)) return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   if ((host === "127.0.0.1" || host === "localhost") && /(^|[?&])brain=local(&|$)/.test(location.search || "")) return { http: "/api", ws: `ws://${location.host || host}/api/live` };
+  if (location.protocol === "http:" || location.protocol === "https:") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   return null;
 }
 B.base = baseFor();
+const apiUrl = (path) => (B.base && path ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
+let BOOT_P = null;
+function bootstrap() {
+  if (!B.base) return Promise.resolve(null);
+  return (BOOT_P ||= fetch(`${B.base.http}/bootstrap`, { cache: "no-cache", credentials: "omit" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      if (j && typeof j === "object" && !j.error) {
+        if (typeof j.ver === "number" && j.ver > B.ver) B.ver = j.ver;
+        if (Array.isArray(j.launch)) B.launch = j.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null }));
+        if (j.signups) B.signups = j.signups;
+        return j;
+      }
+      return null;
+    })
+    .catch(() => null));
+}
 
 function probeOk(b) {
   if (!b || typeof b !== "object" || Array.isArray(b)) return false;
@@ -166,6 +184,9 @@ function onState(m) {
   if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups)) return false;
   B.ver = m.ver; B.at = m.at || null;
   takeParty(m.party);
+  if (m.partyDoc || m.tonight || m.timeline || m.stats) emit("data", { party: m.partyDoc, tonight: m.tonight, timeline: m.timeline, stats: m.stats, ver: m.ver });
+  if (m.stamps) emit("library", { stamps: m.stamps, checked: m.checked || m.at || null });
+  if (m.decide) emit("decide", m.decide);
   if (Array.isArray(m.launch)) { B.launch = m.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null })); emit("launch", B.launch.slice()); settleLaunch(); }
   if (!m.signups) return false;
   B.signups = m.signups;
@@ -198,18 +219,27 @@ async function pollOnce() {
 }
 function openWs() {
   clearTimeout(B.wsT);
-  if (!B.base || !B.key || typeof WebSocket !== "function" || B.ws) return false;
+  if (!B.base || typeof WebSocket !== "function" || B.ws) return false;
   if (B.offline) { B.wsT = setTimeout(openWs, WS_RETRY_MS); return false; }
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
   ws.onopen = () => { if (B.ws !== ws) return; opened = true; B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
-  ws.onmessage = (e) => { const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return; let m; try { m = JSON.parse(d); } catch (er) { return; } B.wsMsgs++; if (m && m.type === "state") onState(m); if (m && m.type === "ask" && B.me && m.slug === B.me.slug) askRead(); };
+  ws.onmessage = (e) => {
+    const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return;
+    let m; try { m = JSON.parse(d); } catch (er) { return; }
+    B.wsMsgs++;
+    if (m && m.type === "state") onState(m);
+    if (m && m.type === "library") emit("library", m);
+    if (m && m.type === "decide") emit("decide", m);
+    if (m && m.type === "data") emit("data", m);
+    if (m && m.type === "ask" && B.me && m.slug === B.me.slug) askRead();
+  };
   const down = () => {
     if (B.ws !== ws) return;
     B.ws = null; clearInterval(B.pingT); B.via = "poll";
     emit("status", status());
     schedulePoll(opened ? 0 : POLL_MS);
-    if (B.key) B.wsT = setTimeout(openWs, WS_RETRY_MS);
+    B.wsT = setTimeout(openWs, WS_RETRY_MS);
   };
   ws.onclose = down; ws.onerror = () => { down(); try { ws.close(); } catch (e) {} };
   return true;
@@ -427,12 +457,12 @@ function start(handlers) {
   if (!B.base) { B.via = "off"; emit("status", status()); return status(); }
   B.via = "poll";
   pollOnce();
-  if (B.key) openWs();
+  openWs();
   if (B.key) me(); else emit("me", null);
   if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", () => { if (!hidden() && B.via !== "ws") pollOnce(); });
   if (typeof addEventListener === "function") addEventListener("focus", () => { if (B.via !== "ws") pollOnce(); });
   return status();
 }
-function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); }
-window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
+function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); openWs(); }
+window.BoardBrain = Object.freeze({ start, on, status, url: apiUrl, bootstrap, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
 })();

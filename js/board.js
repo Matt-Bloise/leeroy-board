@@ -171,8 +171,14 @@ const D = {};
 const KIT = { hooks: {}, on(n, f) { (this.hooks[n] ||= []).push(f); }, emit(n, ...a) { for (const f of this.hooks[n] || []) { try { f(...a); } catch (e) { console.error(n, e); } } }, lander: null };
 const JR = () => document.documentElement.dataset.journey || "curious";
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
-const dataGet = (n) => fetch(`data/${n}.json`, { cache: "no-store" });
-const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })), opt: ["signups", "tonight"].map((n) => dataGet(n).then((r) => (r.ok ? r.json() : null)).catch(() => null)) };
+const dataGet = (n) => {
+  const fallback = () => fetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); });
+  if (n === "client") return fallback();
+  const b = window.BoardBrain;
+  if (b && typeof b.bootstrap === "function") return b.bootstrap().then((boot) => (boot && boot[n] != null ? boot[n] : fallback())).catch(fallback);
+  return fallback();
+};
+const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n)), opt: ["signups", "tonight"].map((n) => dataGet(n).catch(() => null)) };
 DATA_P.need.forEach((p) => p.catch(() => {}));
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
@@ -2472,12 +2478,18 @@ const LIB_FIRST_WIDE = 12, LIB_SLICE = 16;
 const libFirst = () => (innerWidth < 700 ? 6 : LIB_FIRST_WIDE);
 const dtShort = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const libDay = (d) => (d ? dtShort.format(new Date(`${d}T12:00:00Z`)) : "undated");
-const libStamped = (url) => { const v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[url.replace(/^data\/library\//, "")]; return v ? `${url}?v=${v}` : url; };
-const libGet = (url) => libIndex().catch(() => null).then(() => fetch(libStamped(url))).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
+const libFile = (url) => String(url || "").replace(/^(?:.*\/)?(?:data\/)?library\//, "");
+const libStamped = (url) => { const f = libFile(url), v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[f]; return v ? `${url}?v=${v}` : url; };
+const libFetch = (url, init) => {
+  const f = libFile(url), b = window.BoardBrain, api = b && typeof b.url === "function" ? b.url(`/library/${f}`) : "";
+  const fallback = () => fetch(libStamped(`data/library/${f}`), init).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
+  return api ? fetch(libStamped(api), init).then((r) => (r.ok ? r.json() : fallback())).catch(fallback) : fallback();
+};
+const libGet = (url) => libIndex().catch(() => null).then(() => libFetch(url));
 const libTitle = (id) => (LIBD.head[id] ? LIBD.head[id].title : id);
 const libCatTitle = (key) => { const c = LIBD.index && LIBD.index.categories.find((x) => x.key === key); return c ? c.title : key; };
 function libIndex() {
-  LIBD.indexP ||= fetch("data/library/index.json", { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(`the library index answered ${r.status}`); return r.json(); }).then((j) => {
+  LIBD.indexP ||= libFetch("data/library/index.json", { cache: "no-cache" }).then((j) => {
     LIBD.index = j; for (const p of j.pages) LIBD.head[p.id] = p;
     try { renderLibTile(); } catch (e) { console.error(e); }
     return j;
@@ -2550,7 +2562,7 @@ function libStart() {
     libResults(m);
   };
   w.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); clearTimeout(timer); libFallback("worker error"); };
-  w.postMessage({});
+  w.postMessage({ apiBase: window.BoardBrain && typeof window.BoardBrain.url === "function" ? window.BoardBrain.url("/library") : "" });
 }
 async function libFallback(why) {
   if (LIBS.via === "page") return;
@@ -3522,6 +3534,30 @@ KIT.on("booted", () => {
     } catch (e) {}
   };
   setTimeout(check, 20000); setInterval(check, 300000); document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(check, 1500); });
+  if (window.BoardBrain && typeof window.BoardBrain.on === "function") {
+    window.BoardBrain.on("library", (ev) => {
+      LIBD.indexP = null; LIBD.openP = null; LIBD.newsP = null;
+      const cats = ev && Array.isArray(ev.categories) ? ev.categories : Object.keys(LIBD.catP);
+      for (const c of cats) delete LIBD.catP[c];
+      if (ev && ev.page && LIBD.full[ev.page]) delete LIBD.full[ev.page];
+      libIndex().then(() => {
+        if (LIBS.worker) LIBS.worker.postMessage({ reload: true, apiBase: window.BoardBrain.url("/library") });
+        if (SC.open === "library") { libRenderHead(); libRender(false); }
+      }).catch(() => {});
+    });
+    window.BoardBrain.on("data", (ev) => {
+      if (!ev || !ev.key) return;
+      dataGet(ev.key).then((val) => {
+        if (!val) return;
+        D[ev.key] = val;
+        if (ev.key === "party") { splitPolls(); roles(); renderHero(); renderTiles(); renderCards(); renderLedger(); renderTonight(); }
+        else if (ev.key === "timeline") { renderHero(); renderTiles(); renderTimeline(); renderTonight(); }
+        else if (ev.key === "stats") { renderTiles(); renderLibrarian(); if (SC.open === "library") libRenderHead(); }
+        else if (ev.key === "signups") { renderTiles(); renderDiscordSignups(); renderTonight(); }
+        else if (ev.key === "tonight") { renderTonight(); }
+      }).catch(() => {});
+    });
+  }
 });
 window.__boardKit = KIT;
 startWisps();

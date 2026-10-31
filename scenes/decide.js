@@ -33,7 +33,14 @@ function mount() {
 }
 mount();
 
-const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/decide.json answered ${r.status}`); return r.json(); }).then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
+const decideUrl = () => (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/decide.json")) || "data/decide.json";
+const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= fetch(decideUrl(), { cache: "no-cache" }).then((r) => (r.ok ? r : fetch("data/decide.json", { cache: "no-store" }))).catch(() => fetch("data/decide.json", { cache: "no-store" })).then((r) => { if (!r.ok) throw new Error(`data/decide.json answered ${r.status}`); return r.json(); }).then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
+if (window.BoardBrain && window.BoardBrain.on) {
+  window.BoardBrain.on("decide", (d) => {
+    if (d && typeof d === "object" && Array.isArray(d.people)) { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; if (SC.open === KEY) render(); }
+    else { DV.data = null; DV.p = null; if (SC.open === KEY) get().then(render, () => {}); }
+  });
+}
 K.decideData = get;
 const defaultWho = () => { const m = MEM.member(); return m && DV.data && DV.data.people.some((p) => p.class_key === m.class_key) ? m.class_key : "all"; };
 const who = () => DV.who || defaultWho();

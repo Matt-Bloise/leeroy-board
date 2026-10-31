@@ -1,0 +1,29 @@
+name = "leeroy-brain"
+main = "worker/index.js"
+compatibility_date = "2025-02-01"
+workers_dev = true
+
+# 15-minute autonomous source sweep (Blizzard news, Wowhead, Raidplan, Wiki)
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Cloudflare D1 Serverless SQLite Database (Free Tier: 5 GB storage, 5M reads/day, 100k writes/day)
+[[d1_databases]]
+binding = "DB"
+database_name = "leeroy-board-db"
+database_id = "00000000-0000-0000-0000-000000000000" # Replaced automatically in CI or via `wrangler d1 create`
+
+# Hibernatable WebSocket Durable Object (Free Tier: SQLite-backed, 100k req/day)
+[durable_objects]
+bindings = [
+  { name = "BOARD_ROOM", class_name = "BoardRoom" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BoardRoom"]
+
+[vars]
+CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"
+CLAUDE_MODEL_DEEP = "claude-sonnet-4-5-20250929"
+ALLOWED_ORIGINS = "*"
