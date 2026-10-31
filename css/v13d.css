@@ -59,7 +59,7 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 .jr-core .jr-more { min-height: 48px; color: var(--ink); }
 .jr-all { margin: 0 0 var(--g1, 8px); min-height: 44px; }
 .jr-deep { margin: 12px 0 0; font-size: 0.9375rem; color: var(--ink-soft); }
-html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):has(> .jr-core) > :not(.jr-core) { display: none !important; }
+html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(:has(#ask-box)) { display: none !important; }
 html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="good"], html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="deep"], html[data-journey="curious"] #panel-library:not(.lib-rest) [data-depth="deep"] { display: none; }
 @media (min-width: 700px) { #sheet-body .panel > .jr-core { width: max-content; max-width: min(100%, 72ch); justify-self: center; box-sizing: border-box; } }
 html[data-journey="guided"] .tn-cards { display: none; }
