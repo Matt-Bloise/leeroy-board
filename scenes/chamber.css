@@ -147,9 +147,11 @@ html.phone-shell #panel-librarian:has(#ch-form) > .act { display: none; }
 /* the bar room (scenes/hades.*) replaces the slides with its own entrance */
 .chamber.hades.ch-in .ch-lee, .chamber.hades.ch-in .ch-you, .chamber.hades.ch-in .ch-log { animation: none; }
 /* no board link: a still of the bar with Leeroy seated, no motion (the room itself never opens without a key) */
-.ch-still-stage { position: relative; display: grid; align-items: end; justify-items: center; min-height: 260px; overflow: hidden; border-radius: 10px; border: 2px solid var(--brass-dim); background: linear-gradient(180deg, var(--wood-veil), var(--wood-veil-2)), url("../img/chamber/chamber-backdrop.webp") center 30% / cover no-repeat, var(--oak-0); box-shadow: inset 0 0 60px var(--black); color: var(--parchment); }
-.ch-still-bust { grid-area: 1 / 1; align-self: end; margin-bottom: 36px; height: 220px; aspect-ratio: 2 / 3; }
+.ch-still-stage { --sl: clamp(250px, 22vw, 420px); container-type: inline-size; position: relative; display: grid; align-items: end; justify-items: end; height: calc(var(--sl) + 20px); overflow: hidden; border-radius: 10px; border: 2px solid var(--brass-dim); background: linear-gradient(180deg, var(--wood-veil), var(--wood-veil-2)), url("../img/chamber/chamber-backdrop.webp") center 30% / cover no-repeat, var(--oak-0); box-shadow: inset 0 0 60px var(--black); color: var(--parchment); }
+/* the painting's own edges fade (baked into the webp), the full-width counter in front takes over below his hands: one bar across the room */
+.ch-still-bust { grid-area: 1 / 1; align-self: end; margin-right: 3%; height: var(--sl); aspect-ratio: 2 / 3; }
 .ch-still-img { width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; }
 .ch-still-img.is-head { border-radius: 50%; border: 3px solid var(--brass); object-fit: cover; aspect-ratio: 1; height: auto; }
-.ch-still-counter { grid-area: 1 / 1; align-self: end; width: 100%; height: 56px; border-top: 3px solid var(--brass-dim); background: linear-gradient(180deg, var(--oak-3), var(--oak-1)); }
-.ch-still-line { grid-area: 1 / 1; align-self: end; justify-self: center; margin: 0 12px 10px; max-width: 40rem; padding: 4px 12px; border-radius: 6px; font-size: 1rem; line-height: 1.4; color: var(--ink); background: var(--parchment); }
+.ch-still-counter { grid-area: 1 / 1; align-self: end; justify-self: stretch; z-index: 1; height: calc(var(--sl) * 0.2); background: var(--oak-0) url("../img/chamber/bar-counter.webp") 50% -15.7cqw / 100% auto no-repeat; }
+.ch-still-line { grid-area: 1 / 1; z-index: 2; align-self: start; justify-self: start; margin: 14px; max-width: min(46%, 34rem); padding: 6px 12px; border-radius: 6px; font-size: 1rem; line-height: 1.4; color: var(--ink); background: var(--parchment); box-shadow: 0 4px 12px var(--black); }
+@media (max-width: 699px) { .ch-still-line { max-width: calc(100% - 28px); } .ch-still-stage { height: calc(var(--sl) + 120px); } }

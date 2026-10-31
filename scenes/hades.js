@@ -47,17 +47,27 @@ function cue() {
     down.setAttribute("style", `left: ${x}px; top: ${y1}px`); up.setAttribute("style", `left: ${x}px; top: ${y0}px`);
   } catch (e) {}
 }
-const grew = () => { hold(); later(); };
-const later = () => { try { if (typeof requestAnimationFrame === "function") requestAnimationFrame(cue); else cue(); } catch (e) {} };
-/* the composer docks to the bottom of the scene's scroll box while the room is open, so sending never needs a scroll; --hd-pb is that box's bottom padding */
-function dock(on) {
+const grew = () => { hold(); later(); if (H.on) fit(true); };
+const tick = () => { if (H.on) fit(true); cue(); };
+const later = () => { try { if (typeof requestAnimationFrame === "function") requestAnimationFrame(tick); else tick(); } catch (e) {} };
+try { if (typeof ResizeObserver === "function") { const ro = new ResizeObserver(() => { if (H.on) later(); }); for (const id of ["ch-next", "ch-form"]) { const e = document.getElementById(id); if (e) ro.observe(e); } } } catch (e) {}
+/* round 4: the stage height is what is left of the scene's scroll box once the rows under it and the composer are counted, so the answer, the
+   follow-ups, End the talk and the composer are all in view with no scroll and nothing sticks over anything (--hd-fit; the CSS takes the smaller
+   of it and the nominal height, and never goes under 240 px) */
+function fit(on) {
   try {
     if (!panel || !panel.classList) return;
-    panel.classList.toggle("hd-dock", !!on);
-    if (!on) return;
-    let e = panel; while (e && !(e.classList && e.classList.contains("sheet-body"))) e = e.parentNode;
-    const pb = e && window.getComputedStyle ? parseFloat(window.getComputedStyle(e).paddingBottom) : 0;
-    if (panel.style && panel.style.setProperty) panel.style.setProperty("--hd-pb", `${Number.isFinite(pb) ? pb : 32}px`);
+    panel.classList.toggle("hd-fit", !!on);
+    if (!on) { if (room && room.style && room.style.removeProperty) room.style.removeProperty("--hd-fit"); return; }
+    let body = panel; while (body && !(body.classList && body.classList.contains("sheet-body"))) body = body.parentNode;
+    if (!body || !window.getComputedStyle || !stage || !stage.getBoundingClientRect) return;
+    const pr = panel.getBoundingClientRect(), br = body.getBoundingClientRect(), sr = stage.getBoundingClientRect();
+    const pb = parseFloat(window.getComputedStyle(body).paddingBottom) || 0;
+    const above = pr.top - br.top + (body.scrollTop || 0), others = pr.height - sr.height;
+    const avail = Math.floor(body.clientHeight - above - pb - others - 2);
+    if (!Number.isFinite(avail) || body.clientHeight <= 0) return;
+    const v = Math.max((window.innerWidth || 1000) < 700 ? 300 : 200, avail), cur = parseFloat(room.style.getPropertyValue("--hd-fit"));
+    if (!(Math.abs(v - cur) < 2)) room.style.setProperty("--hd-fit", `${v}px`);
   } catch (e) {}
 }
 
@@ -107,7 +117,7 @@ function stagePut() {
   if (counter.parentNode !== stage) stage.appendChild(counter);
   if (pose.parentNode !== frame) frame.appendChild(pose);
   if (down.parentNode !== stage) { stage.appendChild(up); stage.appendChild(down); }
-  dock(true); later();
+  fit(true); later();
   you.classList.add("hd-card");
   room.classList.add("hades");
   swap(room.dataset.mood || "smug");
@@ -121,7 +131,7 @@ function unstage() {
   clearInterval(H.grow); H.grow = null;
   room.classList.remove("hades", "is-thinking", "is-typing", "bob");
   you.classList.remove("hd-card", "hd-nod");
-  dock(false); down.hidden = true; up.hidden = true;
+  fit(false); down.hidden = true; up.hidden = true;
 }
 
 K.on("chamber", (on) => { if (on) stagePut(); else unstage(); });
@@ -134,7 +144,7 @@ K.on("chamber-state", grew);
 K.on("chamber-typing", (v) => { clearInterval(H.grow); H.grow = null; if (v && H.on) H.grow = setInterval(grew, 120); grew(); });
 K.on("chamber-latest", () => { H.hold = true; hold(); later(); });
 if (logEl) { logEl.addEventListener("scroll", cue); for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) logEl.addEventListener(ev, () => { H.hold = false; }); }
-try { window.addEventListener("resize", () => { if (H.on) { dock(true); later(); } }); } catch (e) {}
+try { window.addEventListener("resize", () => { if (H.on) { fit(true); later(); } }); } catch (e) {}
 K.on("chamber-send", () => { if (H.on) pulse(you, "hd-nod", "nod", 240); });
 window.__hades = Object.freeze({ status: () => ({ on: H.on, dead: H.dead, head: bust.classList.contains("is-head") }) });
 if (C.status().on) stagePut(); /* the room was already open when this file arrived */

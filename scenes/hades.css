@@ -1,10 +1,10 @@
 /* The Hades room (scenes/hades.js, notes/companion/HADES-ROOM.md): counter at the stage bottom, bust right, card left, one parchment text box between. Motion under no-preference and html:not(.play) only. */
-#chamber.hades { --hd-h: clamp(360px, calc(100dvh - 340px), 520px); --hd-lee: 300px; --hd-you: 200px; --hd-box: 46rem; --hd-cnt: clamp(56px, calc(var(--hd-h) * 0.18), 150px); --hd-sink: calc(var(--hd-cnt) * 0.9); --hd-lw: calc(var(--hd-lee) * 0.72); --hd-yw: calc(var(--hd-you) * 0.75); width: 100%; max-width: min(100%, 100rem); justify-self: center; padding: 8px; }
-.hades .ch-stage { position: relative; display: block; height: var(--hd-h); overflow: hidden; border-radius: 8px; }
+#chamber.hades { --hd-h0: clamp(360px, calc(100dvh - 340px), 520px); --hd-lee0: 360px; --hd-you0: 200px; --hd-k: 0.86; --hd-ky: 0.5; --hd-h: min(var(--hd-h0), var(--hd-fit, 9999px)); --hd-lee: min(var(--hd-lee0), calc(var(--hd-h) * var(--hd-k))); --hd-you: min(var(--hd-you0), calc(var(--hd-h) * var(--hd-ky))); --hd-box: 46rem; --hd-cnt: calc(var(--hd-lee) * 0.2); --hd-sink: calc(var(--hd-cnt) * 0.9); --hd-lw: calc(var(--hd-lee) * 0.72); --hd-yw: calc(var(--hd-you) * 0.75); width: 100%; max-width: min(100%, 100rem); justify-self: center; padding: 8px; }
+.hades .ch-stage { container-type: inline-size; position: relative; display: block; height: var(--hd-h); overflow: hidden; border-radius: 8px; }
 .hades .hd-counter { position: absolute; left: 0; right: 0; bottom: 0; height: var(--hd-cnt); z-index: 3; pointer-events: none; border-top: 3px solid var(--brass-dim); background: linear-gradient(180deg, var(--oak-3), var(--oak-1) 55%, var(--oak-0)); box-shadow: 0 -8px 18px var(--shadow); }
-.hades .hd-counter.is-art { border-top: 0; box-shadow: none; background-color: transparent; background-size: cover; background-position: center bottom; background-repeat: no-repeat; }
+.hades .hd-counter.is-art { border-top: 0; box-shadow: none; background-color: var(--oak-0); background-size: 100% auto; background-position: 50% -15.7cqw; background-repeat: no-repeat; }
 .hades .ch-lee, .hades .ch-you { position: absolute; bottom: var(--hd-sink); margin: 0; display: block; }
-.hades .ch-lee { right: 3%; }
+.hades .ch-lee { right: 3%; bottom: 0; }
 .hades .ch-you { left: 3%; }
 .hades .ch-frame, .hades .hd-pose { display: block; }
 .hades .ch-lee.has-art .ch-art-lee { display: none; }
@@ -16,31 +16,46 @@
 .hades .ch-you .ch-frame { border: 6px solid var(--oak-2); outline: 2px solid var(--brass-dim); background: var(--oak-0); box-shadow: 0 8px 18px var(--black); }
 .hades .ch-you .ch-art-you { width: var(--hd-yw); height: var(--hd-you); aspect-ratio: auto; border: 0; border-radius: 0; object-fit: cover; box-shadow: none; }
 .hades .ch-plate { position: absolute; top: calc(100% + 6px); left: 0; right: 0; margin-inline: auto; width: max-content; z-index: 4; }
+.hades .ch-lee .ch-plate { top: auto; bottom: calc(var(--hd-cnt) * 0.3); }
 .hades .ch-plate-you { border-bottom: 3px solid var(--cc, var(--brass-dim)); }
-.hades .ch-log { position: absolute; z-index: 4; left: calc(var(--hd-yw) + 3% + 16px); right: calc(var(--hd-lw) + 3% + 16px); bottom: calc(var(--hd-cnt) * 0.45); margin-inline: auto; max-width: var(--hd-box); max-height: calc(100% - 20px); overflow-y: auto; padding: 6px; gap: 4px; align-content: start; border-radius: 10px; background: var(--parchment); color: var(--ink); box-shadow: 0 6px 16px var(--black); }
+.hades .ch-log { position: absolute; z-index: 4; left: calc(var(--hd-yw) + 3% + 16px); right: calc(var(--hd-lw) + 3% + 16px); bottom: calc(var(--hd-cnt) + 8px); margin-inline: auto; max-width: var(--hd-box); max-height: calc(100% - var(--hd-cnt) - 24px); overflow-y: auto; padding: 6px; gap: 4px; align-content: start; border-radius: 10px; background: var(--parchment); color: var(--ink); box-shadow: 0 6px 16px var(--black); }
 .hades .ch-b { max-width: none; justify-self: stretch; padding: 6px 10px; border-radius: 6px; background: transparent; box-shadow: none; }
 .hades .ch-a { border-right: 0; border-left: 4px solid var(--brass); }
 .hades .ch-b + .ch-b { border-top: 1px dotted var(--ink-soft); }
-@media (max-width: 1100px) { #chamber.hades { --hd-h: clamp(360px, calc(100dvh - 340px), 560px); --hd-lee: 240px; --hd-you: 170px; --hd-box: 40rem; } }
-@media (min-width: 1700px) { #chamber.hades { --hd-h: clamp(420px, min(72vh, calc(100dvh - 330px)), 820px); --hd-lee: 380px; --hd-you: 260px; --hd-box: 56rem; } }
-@media (min-width: 2200px) { #chamber.hades { --hd-lee: 440px; --hd-you: 300px; } }
+@media (max-width: 1100px) { #chamber.hades { --hd-h0: clamp(360px, calc(100dvh - 340px), 560px); --hd-lee0: 300px; --hd-you0: 170px; --hd-box: 40rem; } }
+@media (min-width: 1700px) { #chamber.hades { --hd-h0: clamp(420px, min(72vh, calc(100dvh - 330px)), 820px); --hd-lee0: 460px; --hd-you0: 260px; --hd-box: 56rem; } }
+@media (min-width: 2200px) { #chamber.hades { --hd-lee0: 520px; --hd-you0: 300px; } }
 @media (max-width: 699px) {
-  #chamber.hades { --hd-h: 420px; --hd-lee: 150px; --hd-you: 110px; padding: 6px; }
+  #chamber.hades { --hd-h0: 440px; --hd-lee0: 230px; --hd-you0: 110px; padding: 6px; }
   .hades .ch-lee { right: 12px; }
   .hades .ch-you { left: 12px; }
-  .hades .ch-log { left: 8px; right: 8px; bottom: calc(var(--hd-sink) + var(--hd-lee) + 30px); max-height: min(40vh, calc(var(--hd-h) - var(--hd-sink) - var(--hd-lee) - 44px)); font-size: 1rem; }
+  .hades .ch-log { left: 8px; right: 8px; bottom: calc(var(--hd-lee) + 40px); max-height: min(40vh, calc(var(--hd-h) - var(--hd-lee) - 52px)); font-size: 1rem; }
+  .hades.is-typing .ch-log { padding-right: 72px; } /* Skip floats top right while typing: keep the words clear of it (2026-10-30) */
 }
-@media (max-width: 699px) and (min-height: 800px) { #chamber.hades { --hd-h: 480px; --hd-lee: 170px; --hd-you: 120px; } }
+@media (max-width: 699px) and (min-height: 800px) { #chamber.hades { --hd-h0: 500px; --hd-lee0: 250px; --hd-you0: 120px; } }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  #chamber.hades { --hd-h: max(200px, calc(100dvh - 190px)); --hd-lee: var(--hd-h); --hd-you: calc(var(--hd-h) * 0.7); --hd-box: 56%; }
+  #chamber.hades { --hd-h0: max(200px, calc(100dvh - 190px)); --hd-lee0: var(--hd-h0); --hd-you0: calc(var(--hd-h0) * 0.7); --hd-k: 1; --hd-ky: 0.7; --hd-box: 56%; }
   .hades .ch-lee { right: 2%; }
   .hades .ch-you { left: 2%; }
-  .hades .ch-log { left: calc(var(--hd-yw) + 2% + 12px); right: calc(var(--hd-lw) + 2% + 12px); bottom: calc(var(--hd-cnt) * 0.45); max-height: 60%; }
+  .hades .ch-log { left: calc(var(--hd-yw) + 2% + 12px); right: calc(var(--hd-lw) + 2% + 12px); bottom: calc(var(--hd-cnt) + 8px); max-height: calc(100% - var(--hd-cnt) - 24px); }
   #panel-librarian.chamber-on .ch-form { padding: 6px 8px; gap: 4px; }
   #panel-librarian.chamber-on :is(.ch-sugrow, .ch-row2) { display: none; }
 }
-/* the composer docks at the bottom of the scene's scroll box while the room is open (hades.js sets hd-dock and --hd-pb, that box's bottom padding) */
-#panel-librarian.hd-dock.chamber-on:not(.ch-lettering) #ask-box { position: sticky; bottom: calc(-1 * var(--hd-pb, 32px)); z-index: 6; border-radius: 10px; background: var(--oak-1); box-shadow: 0 -10px 16px var(--shadow), 0 var(--hd-pb, 32px) 0 var(--oak-1); }
+/* round 4: the rows under the stage are one row (the follow-ups left, Bring and End the talk right) and Skip floats over the stage, so the stage can take the
+   height the scroll box has left (hades.js fit sets --hd-fit); nothing sticks over anything and every control is in view in every state */
+#chamber.hades { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+#chamber.hades > .ch-stage, #chamber.hades > .ch-letter { grid-column: 1 / -1; }
+#chamber.hades > .ch-next { grid-column: 1; align-content: end; }
+#chamber.hades > .ch-end { grid-column: 2; align-self: end; flex-wrap: nowrap; min-height: 76px; align-items: flex-end; }
+#chamber.hades > .ch-skip { position: absolute; z-index: 6; top: 18px; right: 18px; }
+@media (max-width: 699px) {
+  #chamber.hades { grid-template-columns: minmax(0, 1fr); gap: 6px; --hd-k: 0.5; --hd-ky: 0.3; }
+  #chamber.hades > .ch-end { grid-column: 1; min-height: 0; align-items: stretch; }
+  #chamber.hades > .ch-end > * { flex: 1 1 0; }
+  #chamber.hades .ch-next-h { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #chamber.hades .ch-next-l { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
+  #chamber.hades .ch-next-l li { flex: none; }
+}
 /* scroll cues on the text box's top and bottom edges (hades.js) */
 .hades .hd-more { position: absolute; z-index: 5; width: 44px; height: 44px; padding: 0; margin: 0; border: 0; background: none; transform: translate(-50%, -50%); cursor: pointer; }
 .hades .hd-more[hidden] { display: none; }
