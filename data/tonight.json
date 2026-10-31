@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-31T10:09:07.655Z",
+ "generated": "2026-10-31T10:13:30.313Z",
  "cards": [
   "Next up",
   "Your steps",
@@ -35,7 +35,7 @@
    "epoch": 1793131200,
    "date": null,
    "label": "Names open",
-   "when": "October 27, 4 PM ET",
+   "when": "Tue, Oct 27, 4 PM ET",
    "meaning": "Pack owners make characters.",
    "until_epoch": 1793779200,
    "open_when": "Open now, until the end of Nov 3, Pacific time"
@@ -45,7 +45,7 @@
    "epoch": 1793833200,
    "date": null,
    "label": "Launch",
-   "when": "November 4, 6 PM ET",
+   "when": "Wed, Nov 4, 6 PM ET",
    "meaning": "The game opens for everyone."
   },
   {
@@ -53,11 +53,11 @@
    "epoch": 1796857200,
    "date": null,
    "label": "Raids open",
-   "when": "December 9",
+   "when": "Wed, Dec 9",
    "meaning": "Raids open for big groups."
   }
  ],
- "launch": "Launch: November 4, 6 PM ET",
+ "launch": "Launch: Wed, Nov 4, 6 PM ET",
  "people": [
   {
    "member": 0,
