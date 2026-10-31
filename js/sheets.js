@@ -84,7 +84,7 @@ function open(o) {
   if (B.cur) finish(true);
   const snaps = Array.isArray(o.snaps) && o.snaps.length ? o.snaps.filter((s) => s === "peek" || s === "full") : ["peek", "full"];
   const want = o.start === "full" || !snaps.includes("peek") ? "full" : "peek";
-  B.cur = { id: o.id, snaps, onClose: o.onClose || null, returnTo: o.returnTo || prevFocus || null };
+  B.cur = { id: o.id, peek: typeof o.peek === "number" ? o.peek : 0.42, snaps, onClose: o.onClose || null, returnTo: o.returnTo || prevFocus || null };
   const sc = $("#scene .sheet"); if (sc && sc.getAttribute("aria-modal") === "true") { sc.removeAttribute("aria-modal"); B.cur.modal = sc; }
   titleEl.textContent = o.title || "";
   bodyEl.replaceChildren(); bodyEl.scrollTop = 0;
@@ -179,6 +179,14 @@ function close(id) {
   }
   finish(false); return Promise.resolve();
 }
+
+/* rotation or resize re-seats the open sheet on its snap (2026-10-30) */
+let rsT = 0;
+function reseat() {
+  if (!B.cur || B.closing) return;
+  place(); measure(B.cur.peek); B.token++; stopSpring(); B.dragging = false; setY(yFor(B.snap));
+}
+for (const [e, d] of [["resize", 80], ["orientationchange", 300]]) window.addEventListener(e, () => { clearTimeout(rsT); rsT = setTimeout(reseat, d); });
 
 K.on("closed", () => { if (B.closing) finish(false, B.closing); if (B.cur) finish(false); });
 

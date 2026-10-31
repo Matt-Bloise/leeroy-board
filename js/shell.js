@@ -135,8 +135,7 @@ function openMySheet() {
   pickSheet();
 }
 function pickSheet() {
-  /* integration 1, item 6 (2026-10-30): with no name picked, My sheet asks in place. A bottom sheet over whatever scene is open carries the
-     same buttons (.tn-pick, .tn-name) the Next scene uses; picking a name closes it and opens that sheet. No jump to The five. */
+  /* no name yet: pick in a bottom sheet, in place (2026-10-30) */
   const B = window.BoardSheets, P = K.D && K.D.party; if (!B || !P) { K.goScene("five"); return; }
   const mb = placeBtn("sheet");
   const pick = (m) => { K.MEM.setMe(K.MEM.slug(m.name)); unpick(); try { K.render.tonight(); } catch (e) {} openMySheet(); };

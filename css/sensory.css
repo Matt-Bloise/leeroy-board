@@ -43,3 +43,5 @@
   #scene .sheet-top > .sheet-name { flex: 0 0 auto; }
   .sheet-head .sense-fab { padding: 0 8px; }
 }
+/* integration 1, review round 2 (2026-10-30): in a scene between 700 and 1023 px the pill keeps its corner; it sits flush to the bottom edge and one text line high so it clears the last lines of a scene (5x4 px of a label at 900x800 before) */
+@media (min-width: 700px) and (max-width: 1023.98px) { html.scene-open .sense-fab { bottom: calc(3px + env(safe-area-inset-bottom, 0px)); min-height: 32px; height: 32px; padding-top: 0; padding-bottom: 0; } }
