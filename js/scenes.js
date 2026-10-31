@@ -13,6 +13,8 @@ const SCENES = {
   hades: () => [new URL("../scenes/hades.css?v=8eb34e6d88", HERE), new URL("../scenes/hades.js?v=f432c92235", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],
+  foley: () => [null, new URL("../scenes/foley.js?v=54054813b9", HERE)],
+  foleyfx: () => [null, new URL("../scenes/foley-fx.js?v=ef6c4c1e09", HERE)],
 };
 const NEEDS = { sheet: ["decide"] };
 NEEDS.hades = ["chamber"];
@@ -107,5 +109,6 @@ if (typeof document.addEventListener === "function") {
   document.addEventListener("keydown", () => { if (!P.place) load("place"); }, { capture: true, passive: true });
 }
 K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) afterPlay(() => setTimeout(() => afterPlay(() => { if (!P.place) load("place"); }), 4000)); });
+if (window.BoardSound && BoardSound.onState) BoardSound.onState((on) => { if (on) load("foley"); });
 window.__scenes = Object.freeze({ load, loaded: (n) => ok.includes(n), status: () => ({ loaded: ok.slice(), failed: bad.slice(), base: HERE }) });
 })();
