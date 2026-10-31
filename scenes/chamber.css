@@ -10,11 +10,11 @@
 .ch-start { min-height: 44px; margin: 4px 0 8px; color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
 /* the owner's painted alcove behind the talk (img/chamber/chamber-backdrop.webp), its edges already falling to black */
 .chamber { position: relative; display: grid; gap: 10px; margin: 0 0 12px; padding: 12px; border-radius: 10px; background: linear-gradient(180deg, var(--wood-veil), var(--wood-veil-2)), url("../img/chamber/chamber-backdrop.webp") center 30% / cover no-repeat, var(--oak-0); border: 2px solid var(--brass-dim); box-shadow: inset 0 0 60px var(--black), 0 10px 26px var(--shadow); color: var(--parchment); }
-.ch-stage { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "lee ." "log log" ". you"; gap: 8px 14px; align-items: end; }
-@media (min-width: 760px) { .ch-stage { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "lee log you"; align-items: stretch; } .ch-lee { align-self: start; } .ch-you { align-self: end; } }
+.ch-stage { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: ". lee" "log log" "you ."; gap: 8px 14px; align-items: end; }
+@media (min-width: 760px) { .ch-stage { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "you log lee"; align-items: stretch; } .ch-lee { align-self: start; } .ch-you { align-self: end; } }
 .ch-lee, .ch-you { margin: 0; display: grid; justify-items: center; gap: 4px; }
-.ch-lee { grid-area: lee; }
-.ch-you { grid-area: you; justify-self: end; --cc: var(--c-none); }
+.ch-lee { grid-area: lee; justify-self: end; }
+.ch-you { grid-area: you; justify-self: start; --cc: var(--c-none); }
 .ch-log { grid-area: log; display: grid; gap: 10px; align-content: start; min-width: 0; }
 /* the painted portraits in a brass ring (the asker's ring in their class colour); a picture that fails to load leaves its name plate alone */
 .ch-frame { position: relative; display: block; }
@@ -30,8 +30,8 @@
 .ch-b p { margin: 0; }
 .ch-b .ch-t + .ch-t { margin-top: 8px; }
 .ch-who { font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.08em; color: var(--ink-soft); margin-bottom: 2px !important; }
-.ch-q { justify-self: end; border-bottom-right-radius: 2px; border-right: 4px solid var(--cc, var(--brass-dim)); }
-.ch-a { justify-self: start; border-top-left-radius: 2px; border-left: 4px solid var(--brass); }
+.ch-q { justify-self: start; border-bottom-left-radius: 2px; border-left: 4px solid var(--cc, var(--brass-dim)); }
+.ch-a { justify-self: end; border-top-right-radius: 2px; border-right: 4px solid var(--brass); }
 .ch-gone .ch-t, .ch-eta { color: var(--ink-soft); }
 .ch-eta { margin-top: 6px !important; font-size: 1rem; font-style: italic; }
 .ch-sent { margin-top: 8px !important; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.06em; color: var(--ink-soft); }
@@ -143,3 +143,13 @@ html.phone-shell #panel-librarian:has(#ch-form) > .act { display: none; }
 #panel-librarian > :is(.ch-intro, .act, .lede, .sources) { padding-inline-end: max(0px, calc(100% - 72ch)); }
 #panel-librarian.ch-chat .ask { grid-template-columns: minmax(0, 1fr); }
 #panel-librarian .stack { grid-template-rows: auto auto; align-content: start; }
+
+/* the bar room (scenes/hades.*) replaces the slides with its own entrance */
+.chamber.hades.ch-in .ch-lee, .chamber.hades.ch-in .ch-you, .chamber.hades.ch-in .ch-log { animation: none; }
+/* no board link: a still of the bar with Leeroy seated, no motion (the room itself never opens without a key) */
+.ch-still-stage { position: relative; display: grid; align-items: end; justify-items: center; min-height: 260px; overflow: hidden; border-radius: 10px; border: 2px solid var(--brass-dim); background: linear-gradient(180deg, var(--wood-veil), var(--wood-veil-2)), url("../img/chamber/chamber-backdrop.webp") center 30% / cover no-repeat, var(--oak-0); box-shadow: inset 0 0 60px var(--black); color: var(--parchment); }
+.ch-still-bust { grid-area: 1 / 1; align-self: end; margin-bottom: 36px; height: 220px; aspect-ratio: 2 / 3; }
+.ch-still-img { width: 100%; height: 100%; object-fit: contain; object-position: 50% 100%; }
+.ch-still-img.is-head { border-radius: 50%; border: 3px solid var(--brass); object-fit: cover; aspect-ratio: 1; height: auto; }
+.ch-still-counter { grid-area: 1 / 1; align-self: end; width: 100%; height: 56px; border-top: 3px solid var(--brass-dim); background: linear-gradient(180deg, var(--oak-3), var(--oak-1)); }
+.ch-still-line { grid-area: 1 / 1; align-self: end; justify-self: center; margin: 0 12px 10px; max-width: 40rem; padding: 4px 12px; border-radius: 6px; font-size: 1rem; line-height: 1.4; color: var(--ink); background: var(--parchment); }

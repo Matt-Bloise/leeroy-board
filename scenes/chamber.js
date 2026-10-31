@@ -23,8 +23,12 @@ const { $, h, D, MEM } = K;
 const panel = $("#panel-librarian"), box = $("#ask-box"); if (!panel || !box) return;
 const CH = { on: false, typed: {}, seen: {}, typing: null, mood: "smug", letter: false, follow: {}, cur: null, turns: [], kh: null, picked: [], pending: null, autoOpen: false, ended: false, refocus: false, sig: null, chips: "" };
 const MAX = 280, MIN = 3, KEEP = 20, WEEK = 7 * 864e5, DISPATCH_MAX = 3, STORE = "board-chat";
-const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
-const snd = (n, o) => { try { if (window.BoardSound) return window.BoardSound.play(n, o); } catch (e) {} return false; };
+const playing = () => { try { return document.documentElement.classList.contains("play"); } catch (e) { return false; } };
+const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches) || playing(); /* Play mode shows the talk whole, like reduced motion */
+const snd = (n, o) => { try { const S = window.BoardSound; if (!playing() && S && (!S.status || S.status().on)) return S.play(n, o); } catch (e) {} return false; }; /* nothing is asked of the sound layer while it is off */
+const tell = (n, ...a) => { try { K.emit(n, ...a); } catch (e) {} }; /* the room (scenes/hades.js) listens */
+let hd = false; /* the bar room loads once, fire and forget: a failure leaves this chamber as it was */
+const bar = () => { if (hd) return; hd = true; try { const S = window.__scenes; if (S && S.load) Promise.resolve(S.load("hades")).catch(() => {}); } catch (e) {} };
 const buzz = (n) => { try { if (window.BoardHaptics && window.BoardHaptics.fire) window.BoardHaptics.fire(n); } catch (e) {} };
 const coarse = () => { try { return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); } catch (e) { return false; } };
 const liveOk = (st) => !!(st && st.base && st.key && !st.keyBad);
@@ -102,7 +106,7 @@ const head = box.querySelector(".ask-h"); box.insertBefore(start, head ? head.ne
 const leeImg = artImg("ch-art ch-art-lee", null, MOOD_ALT.smug);
 const lee = h("figure", { class: "ch-lee has-art", "data-mood": "smug" }, h("span", { class: "ch-frame" }, leeImg), h("figcaption", { class: "ch-plate", text: "Leeroy" }));
 const you = h("figure", { class: "ch-you has-art" }, h("span", { class: "ch-frame ch-silbox" }), h("figcaption", { class: "ch-plate ch-plate-you" }));
-const log = h("div", { class: "ch-log", id: "ch-log" });
+const log = h("div", { class: "ch-log", id: "ch-log", role: "region", "aria-label": "The talk" });
 const live = h("p", { class: "sr-only", id: "ch-live", role: "status", "aria-live": "polite" });
 const skip = h("button", { type: "button", class: "lib-tool ch-skip", hidden: true, onclick: () => finishTyping() }, "Skip");
 const next = h("div", { class: "ch-next", id: "ch-next", hidden: true });
@@ -111,7 +115,13 @@ const leave = h("button", { type: "button", class: "lib-tool ch-leave", onclick:
 const sheet = h("section", { class: "ch-letter", id: "ch-letter", hidden: true, "aria-labelledby": "ch-letter-h" });
 const room = h("section", { class: "chamber", id: "chamber", hidden: true, "aria-label": "Talking with Leeroy", "data-state": "idle" },
   h("div", { class: "ch-stage" }, lee, log, you), skip, live, next, h("div", { class: "ch-end" }, bring, leave), sheet);
-panel.insertBefore(room, box);
+/* no board link: the room never opens; a still of the bar with Leeroy seated stands above the disabled composer (nothing moves, nothing sounds) */
+const stillImg = h("img", { class: "ch-still-img", alt: MOOD_ALT.smug, width: 480, height: 720, loading: "lazy", decoding: "async" });
+const BAR = "img/chamber/leeroy-bar-smug.webp"; /* the bar painting when it exists, else the round head shot */
+artLoad(BAR).then((good) => { if (!good) stillImg.classList.add("is-head"); stillImg.setAttribute("src", good ? BAR : moodUrl("smug")); });
+const still = h("section", { class: "hades is-still", id: "ch-still", hidden: true, "aria-label": "Leeroy at the bar" },
+  h("div", { class: "ch-still-stage" }, h("div", { class: "ch-still-bust" }, stillImg), h("div", { class: "ch-still-counter", "aria-hidden": "true" }), h("p", { class: "ch-still-line" })));
+panel.insertBefore(room, box); panel.insertBefore(still, box);
 /* fix round D1: what Leeroy is, first, for a friend with no board link (index.html's .act line waits while this shows) */
 panel.insertBefore(h("p", { class: "ch-intro", id: "ch-intro" }, "Leeroy is the group's Discord bot; he answers from this library. /ask in #wow-forever reaches him, and ", h("a", { href: "#library", text: "the Library" }), " here holds the same answers."), panel.firstChild);
 /* the composer: at the panel's bottom, sticky, outside the chamber so it also asks while the chamber is shut */
@@ -147,6 +157,7 @@ function moodFor(st) {
 /* the painted face changes with the mood once its image is decoded; its alt text says which face it is */
 function setMood(m) {
   if (!(CH.mood === m && lee.dataset.mood === m)) { CH.mood = m; lee.dataset.mood = m; room.dataset.mood = m; }
+  tell("chamber-mood", m);
   const url = moodUrl(m); if (leeImg.getAttribute("src") === url) return;
   artLoad(url).then((good) => { if (good && CH.mood === m) { leeImg.setAttribute("src", url); leeImg.setAttribute("alt", MOOD_ALT[m] || ""); } });
 }
@@ -163,6 +174,7 @@ const LINES = {
   error: "I cannot hear the board just now. Your question is still in the box.",
   limited: "That is six questions in the last hour. I open up again soon.",
 };
+still.querySelector(".ch-still-line").textContent = LINES.idle;
 const WAIT = "Leeroy is checking the library (about 20 to 40 seconds).";
 const waitEl = () => bubble("Leeroy", "ch-a ch-wait", line(LINES.queued), h("p", { class: "ch-eta", text: WAIT }), h("span", { class: "ch-dots", "aria-hidden": "true" }, h("i"), h("i"), h("i")));
 const askEl = (who, text) => bubble(who.name, "ch-q", line(text));
@@ -172,10 +184,12 @@ function paint(st) {
   merge(st);
   compose(st);
   start.hidden = !live0 || CH.on;
+  still.hidden = live0;
   if (!live0 && CH.on) close(false);
   if (!CH.on && live0 && (st.state === "sending" || (st.state === "queued" && CH.autoOpen))) { open(false); return; }
   room.dataset.state = st.state;
   if (CH.on) setMood(moodFor(st));
+  tell("chamber-state", st.state);
   if (busyOk(st)) closeLetter();
   draw(st);
 }
@@ -185,7 +199,7 @@ function draw(st) {
   const sig = [CH.turns.map((t) => `${t.id}.${t.answer ? 1 : 0}.${t.dispatched ? 1 : 0}`).join(","), st.state, liveId, a ? a.status : "", CH.pending || "", K.JR ? K.JR() : "", CH.on].join("|");
   if (sig === CH.sig) { bringPaint(); return; }
   CH.sig = sig;
-  if (CH.typing) { const T = CH.typing; T.stop = true; clearTimeout(T.tm); CH.typing = null; CH.typed[T.turn.id] = true; skip.hidden = true; }
+  if (CH.typing) { const T = CH.typing; T.stop = true; clearTimeout(T.tm); CH.typing = null; CH.typed[T.turn.id] = true; skip.hidden = true; tell("chamber-typing", false); }
   const who = asker(), kids = [];
   let fresh0 = null;
   for (const t of CH.turns) {
@@ -214,7 +228,9 @@ function draw(st) {
 function answerEl(t) {
   const paras = String(t.answer).split(/\n+/).map((x) => x.trim()).filter(Boolean);
   const notes = t.sources.length ? h("ol", { class: "ch-notes", "aria-label": "Sources" }, t.sources.map((src, i) => h("li", { class: "ch-note" }, h("span", { class: "ch-seal", "aria-hidden": "true", text: String(i + 1) }), h("span", { text: src })))) : null;
-  return bubble("Leeroy", "ch-a ch-done", h("div", { class: "ch-paras" }, paras.map((p) => h("p", { class: "ch-t", "data-full": p, text: p }))), notes, t.dispatched ? h("p", { class: "ch-sent", text: "Sent to the party" }) : null);
+  /* the whole answer for a screen reader from the start; shown to it only while the visible words are still typing */
+  const full = h("div", { class: "sr-only ch-full", hidden: true }, paras.map((p) => h("p", { text: p })));
+  return bubble("Leeroy", "ch-a ch-done", full, h("div", { class: "ch-paras" }, paras.map((p) => h("p", { class: "ch-t", "data-full": p, text: p }))), notes, t.dispatched ? h("p", { class: "ch-sent", text: "Sent to the party" }) : null);
 }
 /* the answer types out, a few characters a frame; Skip, a new state or reduced motion shows it whole */
 function typeOut(t, el) {
@@ -223,16 +239,17 @@ function typeOut(t, el) {
   for (const p of ps) p.textContent = "";
   if (notes) notes.hidden = true;
   if (paras) paras.setAttribute("aria-hidden", "true"); /* #ch-live already said it whole */
-  skip.hidden = false;
+  const fullEl = el.querySelector(".ch-full"); if (fullEl) fullEl.hidden = false;
+  skip.hidden = false; tell("chamber-typing", true);
   let i = 0, n = 0; const T = { turn: t, el, stop: false };
   CH.typing = T;
   snd("quill", { rate: 1.6, db: -32 });
   const step = () => {
     if (T.stop || CH.typing !== T) return;
-    const p = ps[i], full = p.dataset.full; n = Math.min(full.length, n + 3); p.textContent = full.slice(0, n);
-    if (n >= full.length) { i++; n = 0; if (i < ps.length) snd("quill", { rate: 1.4 + Math.random() * 0.4, db: -32 }); }
+    const p = ps[i], full = p.dataset.full; n = Math.min(full.length, n + 2); p.textContent = full.slice(0, n);
+    if (n >= full.length) { tell("chamber-line", i); i++; n = 0; if (i < ps.length) snd("quill", { rate: 1.4 + Math.random() * 0.4, db: -32 }); }
     if (i >= ps.length) { finishTyping(); return; }
-    T.tm = setTimeout(step, 18);
+    T.tm = setTimeout(step, 24);
   };
   T.tm = setTimeout(step, 120);
 }
@@ -242,7 +259,8 @@ function finishTyping() {
   for (const p of T.el.querySelectorAll(".ch-t")) if (p.dataset.full) p.textContent = p.dataset.full;
   const notes = T.el.querySelector(".ch-notes"); if (notes) notes.hidden = false;
   const paras = T.el.querySelector(".ch-paras"); if (paras) paras.removeAttribute("aria-hidden");
-  skip.hidden = true; CH.typed[T.turn.id] = true; settle();
+  const fullEl = T.el.querySelector(".ch-full"); if (fullEl) fullEl.hidden = true;
+  tell("chamber-typing", false); skip.hidden = true; CH.typed[T.turn.id] = true; settle();
 }
 /* once nothing is typing: Bring this to the party, and follow-ups for the last answer */
 function settle() {
@@ -297,7 +315,7 @@ async function ask(e) {
   CH.pending = t; CH.autoOpen = true; CH.refocus = document.activeElement === input; say("");
   const r = await B.ask(t, shareBox.checked === true);
   CH.pending = null;
-  if (r && r.ok) { input.value = ""; shareBox.checked = false; snd("chip"); }
+  if (r && r.ok) { input.value = ""; shareBox.checked = false; snd("chip"); tell("chamber-send"); }
   else { CH.autoOpen = false; say(refusal(r, B.askStatus())); }
   draw(B.askStatus());
   return r;
@@ -476,7 +494,7 @@ function open(user) {
   room.hidden = false; panel.classList.add("chamber-on"); start.hidden = true;
   room.classList.remove("ch-in"); if (!reduced()) { void room.offsetWidth; room.classList.add("ch-in"); }
   if (window.BoardSeals && window.BoardSeals.spin && window.BoardSeals.status && window.BoardSeals.status().key === "librarian") { try { window.BoardSeals.spin({ land: "front" }); } catch (e) {} }
-  snd("whoosh");
+  snd("whoosh"); bar();
   paint(B.askStatus());
   if (user) { const ta = input.disabled ? null : input; if (ta) { try { ta.focus({ preventScroll: true }); } catch (e) {} } }
   K.emit("chamber", true);
@@ -496,6 +514,11 @@ function resume() {
   if (!CH.on && !CH.ended && CH.turns.length && liveOk(st) && K.SC && K.SC.open === "librarian") open(false); else paint(st);
 }
 /* a question sent from the old ask box opens the chamber on its own too */
+/* Skip also on a tap of the stage and on Space or Enter while the room holds the focus */
+const stage = room.querySelector(".ch-stage");
+if (stage) stage.addEventListener("click", () => { if (CH.typing) finishTyping(); });
+room.setAttribute("tabindex", "-1");
+room.addEventListener("keydown", (ev) => { const t = ev ? ev.target : null; if (!CH.typing || !ev || (ev.key !== " " && ev.key !== "Enter") || /^(a|input|textarea|select)$/.test((t && t.localName) || "")) return; if (ev.preventDefault) ev.preventDefault(); finishTyping(); });
 const askForm = $("#ask-form"); if (askForm) askForm.addEventListener("submit", () => { CH.autoOpen = true; });
 B.onAsk(paint);
 K.on("closed", (k) => { if (k === "librarian") close(false); });
