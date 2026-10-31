@@ -107,6 +107,26 @@ function fieldsFor(m) {
   return out;
 }
 
+/* ---------- spells learned on the way to 20 (wave 2 R7) ----------
+   D.client.by_level = { <Class>: [[level, "Spell"], ...] }: each ability's first rank, levels 2 to 20, from the same client table. The field is not in
+   client.json yet (notes/polish-round/NOTES-R.md has the build-data.mjs text); until it is, lvData() is null and nothing here draws. */
+const LV_MAX = 20;
+const lvData = (cls) => { const t = D.client && D.client.by_level, l = t && t[cls]; return Array.isArray(l) && l.length ? l : null; };
+const lvNames = (l, a, b) => l.filter((x) => x[0] >= a && x[0] <= b).map((x) => x[1]);
+/* under the 60 list on a card's back */
+function lvBack(card, m) {
+  const back = card.querySelector(".back"), l = lvData(m.class); if (!back || !l || back.querySelector(".ps-lv")) return;
+  const row = (t, a, b) => { const n = lvNames(l, a, b); return n.length ? h("p", { class: "ps-lv-r" }, h("b", { text: `${t}: ` }), `${K.andList(n)}.`) : null; };
+  const rows = [row("Levels 2 to 10", 2, 10), row("Levels 11 to 20", 11, 20)].filter(Boolean); if (!rows.length) return;
+  back.insertBefore(h("section", { class: "ps-lv", "aria-label": `${m.class} spells learned on the way to ${LV_MAX}` }, h("h4", { class: "ps-lv-h", text: "Learned on the way" }), ...rows, h("p", { class: "ps-lv-n", text: "First ranks, from the client table." })), back.querySelector(".flip"));
+}
+/* on the sheet's Level line once a level is set */
+function lvNow(m, n, mine) {
+  const l = lvData(m.class); if (!l || !Number.isInteger(n) || n < 2) return null;
+  const to = Math.min(n, LV_MAX), names = lvNames(l, 2, to); if (!names.length) return null;
+  return h("details", { class: "ps-lvnow" }, h("summary", { text: `${mine ? "Your" : `${m.name}'s`} spells at level ${n}` }), h("p", { text: `First ranks learned from level 2 to ${to}: ${K.andList(names)}.${n > LV_MAX ? ` The list stops at level ${LV_MAX}.` : ""}` }));
+}
+
 /* ---------- the source seal and the parity bar ---------- */
 /* the owner's painted wax marks (img/marks/source-<board|discord|game|leeroy>.webp; board/img/chamber/CREDITS.md). Nothing is drawn here
    (2026-10-30): the mark is decorative (the line's source is said in words next to it), loads only when a sheet is on screen, and
@@ -168,7 +188,8 @@ function lineEl(m, f, x, mine) {
   return h("li", { class: "ps-line", "data-field": f, "data-from": x.from, ...(empty ? { "data-empty": "1" } : {}), ...(x.visible === false ? { "data-hidden": "1" } : {}) },
     h("span", { class: "ps-k" }, LABEL[f], x.src && !empty ? seal(x.src, x.from) : null, x.locked ? h("span", { class: "ps-lock", text: "locked in" }) : null),
     val, mine ? h("span", { class: "ps-ctl" }, sw, ch) : null,
-    edit ? h("div", { id: `ps-ed-${f}`, class: "ps-ed-box" }, editor(m, f, x)) : null);
+    edit ? h("div", { id: `ps-ed-${f}`, class: "ps-ed-box" }, editor(m, f, x)) : null,
+    f === "level" && !empty ? lvNow(m, x.value, mine) : null);
 }
 
 /* ---------- writes: one field per call, the device first ---------- */
@@ -273,6 +294,7 @@ function mount() {
 mount();
 function crests() {
   for (const card of document.querySelectorAll("#cards .card")) {
+    const m0 = members().find((x) => x.class_key === card.dataset.k); if (m0) lvBack(card, m0);
     if (card.querySelector(".ps-crestbtn")) continue;
     const m = members().find((x) => x.class_key === card.dataset.k), front = card.querySelector(".front"); if (!m || !front) continue;
     /* the crest lands once its art is probed (board.js placeCrest); a card without one keeps its plain face */
@@ -317,7 +339,7 @@ function show(v, who, user) {
     K.emit("sheetview", v, who || null);
   });
 }
-function openSheet(sl, user) { if (!bySlug(sl)) return false; if (SC.open !== "five" && K.goScene) { K.goScene("five"); } show("sheet", sl, user); return true; }
+function openSheet(sl, user) { if (!bySlug(sl)) return false; const away = SC.open !== "five"; if (away && K.goScene) { K.goScene("five"); } show("sheet", sl, user); if (away) { try { K.setHash(`five.sheet-${sl}`, false); } catch (e) {} } /* wave 2 R5: from the wall the scene opens a frame later, after show() would have written the hash */ return true; }
 /* #five.sheet-<slug> opens a sheet, #five.party the table; any other #five.<slug> still lands on that card (js/v13d.js) */
 const lander0 = K.lander;
 K.lander = (k, sub) => {

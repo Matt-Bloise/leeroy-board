@@ -11,7 +11,8 @@ const stage = room.querySelector(".ch-stage"), lee = room.querySelector(".ch-lee
 const frame = lee && lee.querySelector(".ch-frame"); if (!stage || !frame || !you) return;
 const ALT = { smug: "Leeroy at the bar, pleased with himself", delighted: "Leeroy at the bar, laughing out loud", sheepish: "Leeroy at the bar, wincing with a crooked smile", thinking: "Leeroy at the bar, looking down at the counter" };
 const logEl = room.querySelector(".ch-log"), panel = room.parentNode;
-const H = { on: false, hold: false, grow: null, dead: false, front: 0, seq: 0, busy: false, scr: null, thunk: null, nod: null, bob: null };
+const H = { on: false, hold: false, grow: null, dead: false, front: 0, seq: 0, ent: 0, busy: false, scr: null, thunk: null, nod: null, bob: null };
+const WAIT_MS = 1200; /* the entrance never waits longer than this for the paint */
 const calm = () => { try { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } catch (e) { return false; } };
 const snd = (n, o) => { try { const S = window.BoardSound; if (!calm() && S && (!S.status || S.status().on)) return S.play(n, o); } catch (e) {} return false; };
 
@@ -72,13 +73,22 @@ function fit(on) {
 }
 
 const seen = {};
+/* one load per url, decoded where the browser can (a decode that fails still counts as loaded), so the first paint of it asks for no more work */
 function probe(url) {
   if (seen[url]) return seen[url];
   return (seen[url] = new Promise((res) => {
     if (typeof Image !== "function") { res(true); return; }
-    const im = new Image(); im.onload = () => res(true); im.onerror = () => res(false); im.src = url;
+    const im = new Image();
+    im.onload = () => { if (typeof im.decode === "function") { try { im.decode().then(() => res(true), () => res(true)); return; } catch (e) {} } res(true); };
+    im.onerror = () => res(false); im.src = url;
   }));
 }
+/* the picture inside an element, decoded; resolves at once where there is nothing to wait for */
+const decoded = (el) => new Promise((res) => {
+  const im = el && el.querySelector ? el.querySelector("img") : null;
+  if (!im || !im.getAttribute("src") || typeof im.decode !== "function") { res(); return; }
+  try { im.decode().then(res, res); } catch (e) { res(); }
+});
 /* the face for a mood: the bar painting when it exists, else the round head shot; neither gives the chamber back its own portraits */
 async function swap(m) {
   const my = ++H.seq; let url = `img/chamber/leeroy-bar-${m}.webp`, head = false;
@@ -86,6 +96,8 @@ async function swap(m) {
   if (my !== H.seq || !H.on) return;
   const back = imgs[1 - H.front], was = imgs[H.front];
   back.setAttribute("src", url); back.setAttribute("alt", ALT[m] || ""); bust.classList.toggle("is-head", head);
+  /* decoded before it fades in, so it never paints blank (at most 400 ms) */
+  if (typeof back.decode === "function") { try { await Promise.race([back.decode(), new Promise((r) => setTimeout(r, 400))]); } catch (e) {} if (my !== H.seq || !H.on) return; }
   back.classList.add("on"); was.classList.remove("on"); was.setAttribute("alt", ""); H.front = 1 - H.front;
 }
 
@@ -120,16 +132,24 @@ function stagePut() {
   fit(true); later();
   you.classList.add("hd-card");
   room.classList.add("hades");
-  swap(room.dataset.mood || "smug");
+  /* the stage keeps its place but is not drawn, and no entrance rule applies, until the bust, the bar counter and the asker's card are decoded (WAIT_MS
+     at most); then the fade and the rise start together on a painted stage, and the thunk lands with the rise. Warm, that is a frame or two. */
+  const my = ++H.ent; room.classList.add("hd-wait");
+  const first = swap(room.dataset.mood || "smug");
   state(room.dataset.state || "idle");
-  probe("img/chamber/bar-counter.webp").then((good) => { if (good) counter.setAttribute("style", "background-image: url(img/chamber/bar-counter.webp)"); counter.classList.toggle("is-art", !!good); });
-  if (!calm()) { clearTimeout(H.thunk); H.thunk = setTimeout(() => snd("thunk"), 700); }
+  const art = probe("img/chamber/bar-counter.webp").then((good) => { if (good) counter.setAttribute("style", "background-image: url(img/chamber/bar-counter.webp)"); counter.classList.toggle("is-art", !!good); });
+  Promise.race([Promise.all([first, art, decoded(you)]), new Promise((r) => setTimeout(r, WAIT_MS))]).then(() => {
+    if (my !== H.ent || !H.on) return;
+    void room.offsetWidth; /* settle the bust at full opacity while hd-wait still holds its transition off */
+    room.classList.remove("hd-wait");
+    if (!calm()) { clearTimeout(H.thunk); H.thunk = setTimeout(() => snd("thunk"), 700); }
+  });
 }
 function unstage() {
-  H.on = false; H.seq++; H.busy = false;
+  H.on = false; H.seq++; H.ent++; H.busy = false;
   for (const k of ["scr", "thunk", "nod", "bob"]) { clearTimeout(H[k]); H[k] = null; }
   clearInterval(H.grow); H.grow = null;
-  room.classList.remove("hades", "is-thinking", "is-typing", "bob");
+  room.classList.remove("hades", "hd-wait", "is-thinking", "is-typing", "bob");
   you.classList.remove("hd-card", "hd-nod");
   fit(false); down.hidden = true; up.hidden = true;
 }

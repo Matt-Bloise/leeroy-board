@@ -66,7 +66,7 @@ function groups(inSheet) {
     g("mine-when", "When you get on", h("div", { class: "mine-opts" }, WHEN.map(([k, t]) => opt({ "data-when": k }, t, M.when === k, () => onWhen(k), inSheet)))),
     g("mine-pack", "A pack", h("div", { class: "mine-opts" }, PACK.map(([k, t]) => opt({ "data-pack": k }, t, M.pack === k, () => onPack(k), inSheet)))),
     g("mine-meet", "Meeting point", h("div", { class: "mine-opts" }, MEET.map(([k, t]) => opt({ "data-meet": k }, t, M.meet === k, () => onMeet(k), inSheet)))),
-    g("mine-else", "Somewhere else", placeRow(inSheet)),
+    g("mine-else", "Your answer", placeRow(inSheet)),
   ];
 }
 function openSheet() {

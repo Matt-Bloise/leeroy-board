@@ -63,11 +63,14 @@
 .hades .hd-more::after { content: ""; position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-right: 2px solid var(--brass-hi); border-bottom: 2px solid var(--brass-hi); transform: translate(-50%, -70%) rotate(45deg); }
 .hades .hd-up::after { transform: translate(-50%, -30%) rotate(225deg); }
 .hades .hd-more:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: -4px; border-radius: 50%; }
+/* wave 2 R2: while hades.js decodes the busts, the counter and the card the stage keeps its place and is not drawn, and the entrance rules below wait (they need :not(.hd-wait)) */
+.hades.hd-wait .ch-stage { visibility: hidden; }
+.hades.hd-wait .hd-img { transition: none !important; }
 @media (prefers-reduced-motion: no-preference) {
-  html:not(.play) .hades.ch-in .ch-stage { animation: hd-fade 300ms ease both; }
-  html:not(.play) .hades.ch-in .ch-lee .ch-frame { animation: hd-rise 620ms var(--ease-oak, ease-out) 80ms both; }
-  html:not(.play) .hades.ch-in .ch-you .ch-frame { animation: hd-slide 560ms var(--ease-oak, ease-out) 280ms both; }
-  html:not(.play) .hades.ch-in .ch-log { animation: hd-fade 320ms ease 420ms both; }
+  html:not(.play) .hades.ch-in:not(.hd-wait) .ch-stage { animation: hd-fade 300ms ease both; }
+  html:not(.play) .hades.ch-in:not(.hd-wait) .ch-lee .ch-frame { animation: hd-rise 620ms var(--ease-oak, ease-out) 80ms both; }
+  html:not(.play) .hades.ch-in:not(.hd-wait) .ch-you .ch-frame { animation: hd-slide 560ms var(--ease-oak, ease-out) 280ms both; }
+  html:not(.play) .hades.ch-in:not(.hd-wait) .ch-log { animation: hd-fade 320ms ease 420ms both; }
   html:not(.play) .hades .hd-img { transition: opacity 160ms linear; }
   html:not(.play) .hades .hd-bust { animation: hd-breathe 4.2s ease-in-out infinite; }
   html:not(.play) .hades.is-thinking .hd-bust { animation: hd-nod 1.6s ease-in-out infinite; }

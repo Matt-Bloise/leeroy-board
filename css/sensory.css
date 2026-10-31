@@ -23,25 +23,21 @@
 @keyframes sense-breath { 50% { opacity: .075; } }
 @media (prefers-reduced-motion: reduce) { .sense-invite { animation: none; } .sense-wow body::after { animation: none; } .sense-fab { transition: none; } }
 @media (max-width: 700px) { .sense-fab { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } .sense-panel { bottom: calc(120px + env(safe-area-inset-bottom, 0px)); } }
-/* 2026-10-30 (integration review 6, 9): the Sensory button is 16 px text on a 44 px pill, and while the launch hero is up on a phone it leaves the screen's
-   corner and stands at the end of the page, so it never covers a line of the hero (heading, facts, checklist) as you scroll */
+/* 16 px text on a 44 px pill; while the launch hero is up on a phone it stands at the page end so it never covers a hero line */
 .sense-fab { min-height: 44px; font-size: 16px; }
 @media (max-width: 699px) { html[data-launch] .sense-fab { position: static; display: block; margin: 12px 12px 96px; } }
-/* fix E2 (2026-10-30): docked, the pill stands first in the wall's footer row, one text line high (border drawn inside), or after the scene
-   head's controls, the panel under the head */
+/* docked: first in the wall footer row, or after the scene head controls; the panel opens under the head */
 #footer { align-items: center; }
-#footer .sense-fab, .sheet-head .sense-fab { position: static; padding: 0 10px; font-size: 13px; opacity: .8; flex: none; }
+#footer .sense-fab, .sheet-head .sense-fab { position: static; padding: 0 10px; font-size: 16px; opacity: .8; flex: none; }
 .sheet-head .sense-fab { min-height: 30px; }
-#footer .sense-fab { min-height: 0; line-height: 1.1; border: 0; box-shadow: inset 0 0 0 1px currentColor; align-self: flex-start; position: relative; top: -2px; }
+#footer .sense-fab { min-height: 0; line-height: 1.1; border: 0; box-shadow: inset 0 0 0 1px currentColor; align-self: flex-start; position: relative; top: 0; margin-block: -1.1px; }
 @media (min-width: 700px) { html.scene-open .sense-panel { top: 76px; bottom: auto; left: auto; right: 24px; } }
 @media (pointer: coarse) { #footer .sense-fab, .sheet-head .sense-fab, .sense-invite button { min-height: 44px; } }
-/* integration 1, item 1 (2026-10-30): at 1024 to 1199 px the scene head is full (under 1024 the pill keeps its corner, see dock()) (peek, title, journey, pill, Play, close). The title box was
-   squeezed to 116 px, so a long title ("Who buffs whom", 131 px at 1024) ran under the pill. The title now keeps its own width, the gaps
-   tighten and the pill drops 2 px of side padding; the title can never reach the pill at any width this row is used at */
+/* 1024 to 1199 px: the scene head is full, so the title keeps its own width and the pill drops 2 px of side padding (no overlap at any width this row is used at) */
 @media (min-width: 1024px) and (max-width: 1199px) {
   #scene .sheet-top { gap: 5px; }
   #scene .sheet-top > .sheet-name { flex: 0 0 auto; }
   .sheet-head .sense-fab { padding: 0 8px; }
 }
-/* integration 1, review round 2 (2026-10-30): in a scene between 700 and 1023 px the pill keeps its corner; it sits flush to the bottom edge and one text line high so it clears the last lines of a scene (5x4 px of a label at 900x800 before) */
+/* 700 to 1023 px in a scene the pill keeps its corner, flush to the bottom edge and one line high so it clears the last lines of a scene */
 @media (min-width: 700px) and (max-width: 1023.98px) { html.scene-open .sense-fab { bottom: calc(3px + env(safe-area-inset-bottom, 0px)); min-height: 32px; height: 32px; padding-top: 0; padding-bottom: 0; } }

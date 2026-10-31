@@ -51,6 +51,16 @@
 .ps-note { font-size: 1rem; color: var(--ink-soft); }
 .ps-lock { font-family: var(--font-body); font-style: italic; font-size: 1rem; letter-spacing: 0; color: var(--ink-soft); }
 .ps-line[data-hidden] .ps-v { opacity: 0.72; }
+/* spells learned on the way to 20 (R7): under the 60 list on a card's back, and on the Level line of a sheet */
+.ps-lv { display: grid; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.ps-lv-h { margin: 0; font-family: var(--font-sc); font-size: var(--fs-label); letter-spacing: 0.08em; color: var(--cc); }
+.ps-lv-r { margin: 0; font-size: 1rem; line-height: 1.4; color: var(--l-text); }
+.ps-lv-r b { font-family: var(--font-sc); letter-spacing: 0.04em; color: var(--cc); }
+.ps-lv-n { margin: 0; font-size: var(--fs-small); color: var(--l-dim); }
+.ps-lvnow { grid-column: 1 / -1; }
+.ps-lvnow summary { display: list-item; list-style-position: inside; box-sizing: border-box; padding: 10px 0; min-height: 44px; cursor: pointer; font-family: var(--font-body); font-size: 1.05rem; color: var(--ink); }
+.ps-lvnow p { margin: 0 0 4px; font-size: 1.05rem; line-height: 1.4; color: var(--ink); }
+@media (min-width: 900px) { .ps-lvnow { grid-column: 2 / -1; } }
 /* the source seal: a small wax disc with the source's mark */
 .ps-src { display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; border-radius: 50%; }
 .ps-src .ps-mark { width: 28px; height: 28px; display: block; filter: drop-shadow(0 1px 1px var(--wear)); }

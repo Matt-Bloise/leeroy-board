@@ -8,14 +8,14 @@ const HERE = (document.currentScript && document.currentScript.src) || null; /* 
 /* new URL("../scenes/x?v=...", HERE): board/stamp.mjs stamps these against this file's folder. A stamp of ten zeros means the file
    did not exist when the page was stamped (walk ships with node N7): that load resolves at once, with no request */
 const SCENES = {
-  sheet: () => [new URL("../scenes/sheet.css?v=5c01f7a8cd", HERE), new URL("../scenes/sheet.js?v=0b1488886e", HERE)],
+  sheet: () => [new URL("../scenes/sheet.css?v=7a8d1c52e5", HERE), new URL("../scenes/sheet.js?v=5b5a1785d3", HERE)],
   chamber: () => [new URL("../scenes/chamber.css?v=5951072482", HERE), new URL("../scenes/chamber.js?v=134acfc3b1", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=8d874e23ef", HERE), new URL("../scenes/decide.js?v=907d901b50", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=dd5f153119", HERE)],
-  place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1b9e9b4574", HERE)],
+  place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1280b387e0", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
-  hades: () => [new URL("../scenes/hades.css?v=91cb70f5b9", HERE), new URL("../scenes/hades.js?v=6b923d0256", HERE)],
+  hades: () => [new URL("../scenes/hades.css?v=8eb34e6d88", HERE), new URL("../scenes/hades.js?v=f432c92235", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],
 };

@@ -411,7 +411,7 @@ function tips() {
     if (root.nodeType === 1) root.querySelectorAll("svg title").forEach((x) => { const p = x.parentElement; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", x.textContent); x.remove(); });
     /* whatever has a tip is reachable from the keyboard too (a chip, a badge, a drawn thing), and a screen reader hears the tip */
     if (root.nodeType === 1) for (const p of [root, ...root.querySelectorAll("[data-tip]")]) {
-      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip")) continue;
+      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip") || (p.closest && p.closest('[aria-hidden="true"]'))) continue; /* wave 2 R6: a tip inside an aria-hidden branch is not a stop */
       p.setAttribute("tabindex", "0");
       if (!p.getAttribute("aria-label") && !p.getAttribute("aria-labelledby") && !(p.textContent || "").trim()) p.setAttribute("aria-label", p.getAttribute("data-tip"));
       else if (!p.getAttribute("aria-description")) p.setAttribute("aria-description", p.getAttribute("data-tip"));

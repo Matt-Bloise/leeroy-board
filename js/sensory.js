@@ -322,7 +322,7 @@
   function kit() {
     const K = window.__boardKit; if (!K) return false;
     K.on("scene", (key) => { E.scene = key; levels(); sync(); dock(); if (INV.el) inviteEnd(false); }); K.on("closed", () => { E.scene = null; levels(); dock(); if (!INV.done) setTimeout(inviteTry, 600); });
-    K.on("rendered", dock); addEventListener("resize", dock); dock();
+    K.on("rendered", dock); addEventListener("resize", dock); if (K.SC && K.SC.open) E.scene = K.SC.open; dock();
     return true;
   }
   function init() {
