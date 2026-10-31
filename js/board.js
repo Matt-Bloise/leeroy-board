@@ -2412,7 +2412,7 @@ function startArt() {
   probe("img/beam.png", () => {
     ART.beam = true;
     $("#main").classList.add("has-beam"); $("#main").classList.remove("beam-soon");
-    $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", alt: "", "aria-hidden": "true", decoding: "async" }));
+    $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", srcset: "img/beam.png 1920w, img/beam-2172.webp 2172w", sizes: "104vw", alt: "", "aria-hidden": "true", decoding: "async" }));
   }, () => {});
 }
 

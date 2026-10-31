@@ -14,7 +14,7 @@ const S = { phone: false, built: false, saved: null, place: null, coinKey: null,
 const mm = (q) => { try { return matchMedia(q); } catch (e) { return { matches: false }; } };
 const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
 const coarse = () => mm("(pointer: coarse)").matches;
-const isPhone = () => MQS.some((q) => mm(q).matches);
+const isPhone = () => MQS.some((q) => mm(q).matches), TAB_MQ = "(pointer: coarse) and (min-width: 700px) and (max-width: 1400px)";
 const hap = (n) => { try { const H = window.BoardHaptics; if (H) H.fire(H.PAT && H.PAT[n] ? n : n === "select" ? "tab" : n); } catch (e) {} };
 const bar = () => $("#bottombar");
 const placeBtn = (p) => { const b = bar(); return b ? b.querySelector(`[data-place="${p}"]`) : null; };
@@ -210,6 +210,8 @@ function dockMine() {
 }
 function apply() {
   const on = isPhone();
+  const tab = !on && mm(TAB_MQ).matches; HTML.classList.toggle("tablet", tab);
+  if (tab && window.__scenes) window.__scenes.load("tablet");
   if (on === S.phone) { if (on) placeCoin(); return; }
   S.phone = on;
   HTML.classList.toggle("phone-shell", on);
@@ -243,7 +245,7 @@ const b0 = bar();
 if (b0) { b0.addEventListener("click", onClick); b0.addEventListener("keydown", onKey); }
 for (const ev of ["resize", "orientationchange"]) addEventListener(ev, () => { apply(); dockMine(); if (S.phone) { placeCoin(); markPlaces(); raf(placeCoin); } });
 addEventListener("hashchange", () => { if (S.phone) markPlaces(); });
-for (const q of MQS) { const m = mm(q); if (m && m.addEventListener) m.addEventListener("change", apply); }
+for (const q of [...MQS, TAB_MQ]) { const m = mm(q); if (m && m.addEventListener) m.addEventListener("change", apply); }
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (S.phone) placeCoin(); }, () => {});
 apply();
 
