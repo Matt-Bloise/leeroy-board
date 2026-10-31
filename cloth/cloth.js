@@ -1,11 +1,11 @@
-import { VS, FS, RVS, RFS } from "./weave.glsl.js?v=05273c8840";
+import { VS, FS, RVS, RFS } from "./weave.glsl.js?v=10b15ba961";
 import { createBaker, fontReady } from "./ribbon-bake.js?v=0130fc4966";
 
 const COLS = 8, ROWS = 64, STEP = 1 / 120, MAX_AMP = 14;
 const KC = 40, CC = 6, KL = 180, CL = 22;
 const REST_AMP = 0.5, REST_AMP_V = 3, SWEEP_S = 0.42, HOLD_MS = 280, STAGGER = 18, TUCK = 0.55, PLUS = 12;
 const CREST_K = 0.52, CREST_MIN = 44, CREST_MAX = 100, CLEAR = 6, LS = 4;
-const DPR_MAX = 3, HEAT = 8e6, MAX_W = 8192, ANISO = 8;
+const PAD = 8, TPW = 60, DPR_MAX = 3, HEAT = 8e6, MAX_W = 8192, ANISO = 8;
 const DYES = { indigo: [0.078, 0.152, 0.278], royal: [0.061, 0.187, 0.488], "burnt-orange": [0.655, 0.207, 0.05], crimson: [0.541, 0.046, 0.074], copper: [0.412, 0.186, 0.092], plum: [0.232, 0.115, 0.213], wine: [0.362, 0.066, 0.086], forest: [0.147, 0.241, 0.131], olive: [0.317, 0.299, 0.106], ochre: [0.645, 0.388, 0.06], slate: [0.221, 0.297, 0.368], teal: [0.024, 0.188, 0.215] };
 const GOLD = [1, 0.84, 0.5];
 const INK = {};
@@ -41,7 +41,7 @@ export function createCloth(o) {
     linked = 1; setup(); return true;
   }
   function setup() {
-    for (const n of ["u_view", "u_rect", "u_w", "u_g", "u_off", "u_t", "u_lbl", "u_cr", "u_fr", "u_wh", "u_ft", "u_lr", "u_cb", "u_dye", "u_thr", "u_k"]) U[n] = gl.getUniformLocation(prog, n);
+    for (const n of ["u_view", "u_rect", "u_w", "u_g", "u_off", "u_t", "u_lbl", "u_cr", "u_fr", "u_wh", "u_ft", "u_lr", "u_cb", "u_dye", "u_thr", "u_k", "u_sk", "u_wv"]) U[n] = gl.getUniformLocation(prog, n);
     for (const n of ["u_view", "u_loop"]) RU[n] = gl.getUniformLocation(rprog, n);
     const pos = new Float32Array((COLS + 1) * (ROWS + 1) * 2), ix = new Uint16Array(COLS * ROWS * 6);
     let p = 0, q = 0;
@@ -59,20 +59,21 @@ export function createCloth(o) {
     gl.bindVertexArray(null);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); gl.clearColor(0, 0, 0, 0);
     gl.useProgram(rprog); gl.uniform1i(RU.u_loop, 3);
-    gl.useProgram(prog); gl.uniform1i(U.u_lbl, 0); gl.uniform1i(U.u_cr, 1); gl.uniform1i(U.u_fr, 2);
-    blank = gl.createTexture(); for (let u = 0; u < 4; u++) { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, blank); }
+    gl.useProgram(prog); gl.uniform1i(U.u_lbl, 0); gl.uniform1i(U.u_cr, 1); gl.uniform1i(U.u_fr, 2); gl.uniform1i(U.u_sk, 4);
+    blank = gl.createTexture(); for (let u = 0; u < 5; u++) { gl.activeTexture(gl.TEXTURE0 + u); gl.bindTexture(gl.TEXTURE_2D, blank); }
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    art("silk", false).then((im) => queue(() => { shared.silk = put(4, null, "silk", () => img(im, false), 1); silkOn = 1; }), () => {});
     for (const [n, pre] of [["p-loop", true], ["p-fringe", true]]) art(n, pre).then((im) => queue(() => { shared[n] = put(n === "p-loop" ? 3 : 2, null, n, () => img(im, pre)); }), () => {});
   }
 
-  let textures = 0, uploadMs = 0, uploadMax = 0, ups = 0;
+  let silkOn = 0, textures = 0, uploadMs = 0, uploadMax = 0, ups = 0;
   const bytes = new Map(), shared = {};
   const img = (src, pre) => { gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, pre); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, src); return (src.width || src.naturalWidth) * (src.height || src.naturalHeight) * 4; };
-  function put(unit, old, tag, fill) {
+  function put(unit, old, tag, fill, rep) {
     const t = old || gl.createTexture(); if (!old) textures++;
     gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
     const n = fill();
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const wr = rep ? gl.REPEAT : gl.CLAMP_TO_EDGE; gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wr); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wr);
     gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     if (aniso) gl.texParameterf(gl.TEXTURE_2D, anx.TEXTURE_MAX_ANISOTROPY_EXT, aniso);
     gl.bindTexture(gl.TEXTURE_2D, blank);
@@ -230,7 +231,7 @@ export function createCloth(o) {
   function drawOne(b, shadow) {
     const len = b.len; if (len < 1 || !b.w) return;
     const R = Math.min(clamp(Math.abs(b.lt - len) / 12, 0, 1) * (4 + 0.03 * Math.max(0, G.open - len)), len * 0.3), A = G.rod + len + (Math.PI - 1) * R;
-    const ws = widthScale(b), bw = b.w * ws, bx = b.x + (b.w - bw) / 2, E = shadow ? 6 : 1, AA = A + (shadow ? 6 : 0);
+    const ws = widthScale(b), bw = b.w * ws, bx = b.x + (b.w - bw) / 2, E = shadow ? 6 : PAD, AA = A + (shadow ? 6 : 0);
     gl.uniform4f(U.u_rect, bx - E, b.y, bw + 2 * E, AA);
     gl.uniform4f(U.u_w, b.ax * ampK(), b.phase, b.dir, 0);
     gl.uniform4f(U.u_g, G.rod, R, Math.max(30, G.rest), shadow ? 0 : E);
@@ -243,6 +244,9 @@ export function createCloth(o) {
       if (li) { const lw = li.w / LS, lh = li.h / LS; gl.uniform4f(U.u_lr, (bw - lw) / 2, p.mid - (li.inkTop + li.inkBot) / 2, lw, lh); }
       gl.uniform3f(U.u_dye, b.dye[0], b.dye[1], b.dye[2]); gl.uniform3f(U.u_thr, b.ink[0][0], b.ink[0][1], b.ink[0][2]);
       gl.uniform4f(U.u_k, litOf(b), b.ink[1], dbg.ink, b.sw);
+      const pd = clamp((bw * dprEff) / TPW, 2, 4);
+      gl.uniform4f(U.u_wv, dprEff / pd, pd, silkOn, 0);
+      gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, shared.silk || blank);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, b.lbl || blank);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b.cr || blank);
     }
