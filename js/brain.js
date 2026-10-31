@@ -42,6 +42,16 @@ function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
 
 function baseFor() {
   const host = location.hostname || "";
+  const q = new URLSearchParams(location.search || "").get("brain");
+  if (q && /^https?:\/\//i.test(q)) {
+    const clean = q.replace(/\/+$/, "").replace(/\/api$/, "");
+    return { http: `${clean}/api`, ws: `${clean.replace(/^http/i, "ws")}/api/live` };
+  }
+  const pr = host.match(/^pr-(\d+)\.leeroy-board\.pages\.dev$/i);
+  if (pr) {
+    const prWorker = `https://leeroy-brain-pr-${pr[1]}.jmattbloise.workers.dev`;
+    return { http: `${prWorker}/api`, ws: `${prWorker.replace(/^https:/, "wss:")}/api/live` };
+  }
   if (/\.discordsays\.com$/.test(host)) return { http: "/api", ws: `wss://${host}/api/live` };
   if (host === "matt-bloise.github.io" || /\.pages\.dev$/.test(host)) return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   if ((host === "127.0.0.1" || host === "localhost") && /(^|[?&])brain=local(&|$)/.test(location.search || "")) return { http: "/api", ws: `ws://${location.host || host}/api/live` };
