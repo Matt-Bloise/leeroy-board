@@ -83,8 +83,17 @@ jobs:
           fi
 
       - name: Deploy Cloudflare Worker + Durable Object + Cron Trigger
+        id: worker
         working-directory: infrastructure
-        run: npx wrangler deploy
+        run: |
+          set -e
+          DEPLOY_OUT=$(npx wrangler deploy 2>&1)
+          echo "$DEPLOY_OUT"
+          WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://leeroy-brain\.[a-z0-9-]+\.workers\.dev" | head -n 1)
+          if [ -z "$WORKER_URL" ]; then
+            WORKER_URL="https://leeroy-brain.jmattbloise.workers.dev"
+          fi
+          echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
       - name: Sync Worker Secrets (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `BOARD_ADMIN_TOKEN`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`)
         working-directory: infrastructure
@@ -120,6 +129,14 @@ jobs:
               cp -R "$item" .cloudflare-dist/
             fi
           done
+
+          # Stamp the resolved production Worker URL into .cloudflare-dist/js/brain.js
+          node -e '
+            const fs = require("fs");
+            const p = ".cloudflare-dist/js/brain.js";
+            const s = fs.readFileSync(p, "utf8");
+            fs.writeFileSync(p, s.replace(/const WORKER = "[^"]+";/, `const WORKER = "${process.argv[1]}";`), "utf8");
+          ' "${{ steps.worker.outputs.worker_url }}"
 
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true

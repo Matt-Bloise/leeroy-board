@@ -1,4 +1,4 @@
-# Cloudflare 100% Serverless Infrastructure & GitHub Actions CI/CD Proposal
+# Cloudflare 100% Serverless Infrastructure & GitHub Actions CI/CD Runbook
 
 This directory (`infrastructure/`) contains the complete Infrastructure-as-Code (IaC), Cloudflare Worker runtime, D1 SQLite schema, and automated seed tooling to run the **Dungeons & Drinking Living Board** (`leeroy-board` + `leeroy-brain`) at **$0/month** on Cloudflare's Free Tier, with dual-provider AI support for both **Anthropic Claude** (`ANTHROPIC_API_KEY`) and **Google Gemini's Free Tier** (`GEMINI_API_KEY`), paired with the live GitHub Actions workflows in [`.github/workflows/`](../.github/workflows/).
 
@@ -70,9 +70,87 @@ flowchart LR
 
 ---
 
-## 3. Spinning Up & Deploying to Production via GitHub Actions (`master` Only)
+## 3. Complete One-Time Setup Checklist (Required for Both PR & Production Environments)
 
-The production workflow at [`.github/workflows/deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml) runs **exclusively on new commits pushed to `master`**:
+Follow these **5 one-time steps** in order so both the **`master` Production Environment** and **Ephemeral PR Preview Environments** work out of the box.
+
+### Step 1: Claim Your `*.workers.dev` Subdomain in Cloudflare (One-Time)
+If your Cloudflare account has never deployed a Worker before, `wrangler deploy` requires a `*.workers.dev` subdomain to be registered once:
+1. Log into the [Cloudflare Dashboard](https://dash.cloudflare.com/).
+2. In the left sidebar, click **Workers & Pages -> Overview**.
+3. Copy your **Account ID** from the right-hand sidebar (you will save this as `CLOUDFLARE_ACCOUNT_ID`).
+4. Under **Subdomain** on the right-hand sidebar, click **Set up a subdomain** (or verify one is already active, e.g., `jmattbloise.workers.dev`).
+   - *Note*: Both the production and PR GitHub Actions workflows automatically detect your account's `*.workers.dev` URL from `npx wrangler deploy` output and stamp it into the deployed static site's `js/brain.js`.
+
+### Step 2: Create a Cloudflare API Token (`CLOUDFLARE_API_TOKEN`)
+1. In the Cloudflare Dashboard, go to **My Profile (top-right avatar) -> API Tokens -> Create Token**.
+2. Click **Use template** next to **Edit Cloudflare Workers**.
+3. Under **Permissions**, ensure the token has these **4 permissions** (add D1 and Cloudflare Pages using **+ Add more**):
+   - **Account** -> **Workers Scripts** -> `Edit` *(deploys & deletes production/PR Workers, Durable Objects, and Cron Triggers)*
+   - **Account** -> **D1** -> `Edit` *(creates, migrates, seeds, and deletes production/PR D1 databases)*
+   - **Account** -> **Cloudflare Pages** -> `Edit` *(creates the `leeroy-board` Pages project, deploys production & PR previews, and deletes closed PR preview deployments)*
+   - **Account** -> **Account Settings** -> `Read` *(allows Wrangler CLI to resolve account metadata in CI)*
+4. Under **Account Resources**, select **Include -> All accounts** (or your specific account).
+5. Click **Continue to summary -> Create Token**, and copy the token value.
+
+### Step 3: Create AI API Key(s) (`ANTHROPIC_API_KEY` and/or `GEMINI_API_KEY`)
+
+#### Option A: Free-Tier Google Gemini API Key (`GEMINI_API_KEY` — $0 Cost)
+Google AI Studio provides a **100% Free Tier** for `gemini-2.5-flash` (15 requests/minute, 1,000,000 tokens/minute, 1,500 requests/day) and `gemini-2.5-pro` with **no credit card or billing account required**:
+1. Sign into [Google AI Studio — API Keys (`https://aistudio.google.com/apikey`)](https://aistudio.google.com/apikey) with your Google account.
+2. Click **Create API key** in the top-right corner.
+3. Choose **Create API key in new project** (or select an existing Google Cloud project that does **not** have Cloud Billing enabled so the key remains strictly locked to the **$0 Free Tier** and can never incur charges).
+4. Confirm that the **Plan** column next to your new key says **Free of charge**.
+5. Copy the generated key (starts with `AIzaSy...`).
+6. *(Optional smoke test from your terminal)*:
+   ```bash
+   curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"contents":[{"parts":[{"text":"Say Leeroy Jenkins in one sentence."}]}]}'
+   ```
+
+#### Option B: Anthropic Claude API Key (`ANTHROPIC_API_KEY`)
+1. Sign into the [Anthropic Console (`https://console.anthropic.com/settings/keys`)](https://console.anthropic.com/settings/keys).
+2. Create or copy your existing API key (`sk-ant-...`).
+
+### Step 4: Generate a Party Write Key (`BOARD_ADMIN_TOKEN`)
+The frontend ([`js/brain.js`](../js/brain.js#L4)) validates that the write key (`#k=<token>`) matches `/^[A-Za-z0-9_-]{22,64}$/` (22 to 64 URL-safe characters).
+1. Generate a valid 32-character token in your terminal:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+   ```
+2. Save this token as `BOARD_ADMIN_TOKEN` in GitHub Secrets (Step 5).
+3. **How Party Members Unlock Write Mode on the Board**:
+   - Anyone opening `https://leeroy-board.pages.dev` (or a PR preview `https://pr-<N>.leeroy-board.pages.dev`) can browse the entire board, library, and live WebSocket updates **without** a key.
+   - To unlock write actions (**Ask Leeroy**, **Fact Fixes**, **Sign-ups**, and **Character Sheet edits**), open the board once with `#k=<YOUR_BOARD_ADMIN_TOKEN>` appended to the URL:
+     ```text
+     https://leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>
+     ```
+   - `js/brain.js` automatically saves the key into `localStorage["board-key"]` and strips `#k=` from the address bar so the browser remembers you on all future visits.
+
+### Step 5: Configure GitHub Repository Secrets & Actions Permissions
+1. In your GitHub repository (`Matt-Bloise/leeroy-board`), go to **Settings -> Secrets and variables -> Actions -> New repository secret** and add:
+
+| GitHub Secret Name | Required? | Used By | Description |
+| :--- | :---: | :---: | :--- |
+| `CLOUDFLARE_API_TOKEN` | **Yes** | Prod & PR | Cloudflare API token from Step 2 (`Workers Scripts: Edit`, `D1: Edit`, `Cloudflare Pages: Edit`, `Account Settings: Read`). |
+| `CLOUDFLARE_ACCOUNT_ID` | **Yes** | Prod & PR | Your 32-character Cloudflare Account ID from Step 1. |
+| `GEMINI_API_KEY` | One or Both | Prod & PR | Google AI Studio Free-Tier API key (`AIzaSy...` from Step 3A) used when `provider = "gemini"`. |
+| `ANTHROPIC_API_KEY` | One or Both | Prod & PR | Site's Claude API key (`sk-ant-...` from Step 3B) used when `provider = "claude"`. |
+| `BOARD_ADMIN_TOKEN` | Recommended | Prod & PR | 22–64 char URL-safe token from Step 4 matched against `#k=<token>` in the browser or `Authorization: Bearer <token>` from the bot. |
+| `DISCORD_WEBHOOK_URL` | Optional | Prod only | Discord channel webhook URL for `#wow-forever` to mirror Leeroy's answers into Discord chat (excluded from PR previews). |
+| `DISCORD_PUBLIC_KEY` | Optional | Prod only | Public key from the Discord Developer Portal if using `POST /api/discord` as a serverless Discord Interactions Endpoint. |
+
+2. **Enable GitHub Actions PR Comment Permissions (Required for PR Previews)**:
+   - In your GitHub repository, go to **Settings -> Actions -> General**.
+   - Scroll down to **Workflow permissions**, select **Read and write permissions**, and click **Save**. *(This allows `.github/workflows/pr-preview-cloudflare.yml` to post and update the sticky PR comment containing your live preview URLs.)*
+   - **Note on Fork PRs**: By default, GitHub does not pass repository `secrets.*` to `pull_request` workflows opened from an external fork. For PR preview environments to spin up automatically, either push feature branches directly to `Matt-Bloise/leeroy-board` (collaborator access) or enable **"Send write tokens to workflows from pull requests"** under **Settings -> Actions -> General -> Fork pull request workflows from outside collaborators**.
+
+---
+
+## 4. Operating the `master` Production Environment
+
+The production workflow ([`.github/workflows/deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml)) runs **exclusively on new commits pushed or merged to `master`**:
 
 ```yaml
 on:
@@ -81,42 +159,58 @@ on:
       - master
 ```
 
-### Step 1a: Create a Cloudflare API Token
-1. Log into the [Cloudflare Dashboard](https://dash.cloudflare.com/) -> **My Profile** -> **API Tokens** -> **Create Token**.
-2. Start from the **Edit Cloudflare Workers** template and ensure the following permissions are included:
-   - **Account** -> **Workers Scripts**: `Edit`
-   - **Account** -> **D1**: `Edit`
-   - **Account** -> **Cloudflare Pages**: `Edit`
-3. Copy your **API Token** and your **Account ID** (visible on the right sidebar of the Workers & Pages overview page).
+### What Happens Automatically on Every `master` Push
+1. **D1 Database Provisioning (`leeroy-board-db`)**: Checks if `leeroy-board-db` exists in your Cloudflare account; creates it on the first run and patches its UUID into `infrastructure/wrangler.toml`.
+2. **Idempotent Schema Migration**: Runs [`infrastructure/schema.sql`](./schema.sql) (`CREATE TABLE IF NOT EXISTS ...`).
+3. **One-Time Initial Seeding**: Checks `SELECT COUNT(*) FROM kv_state`. If `0` (first deploy), runs [`scripts/seed-d1.mjs --remote`](./scripts/seed-d1.mjs) to load all 9 board JSON documents, 19 library blobs, 59 library pages, and 186 source URLs into D1. On all subsequent `master` commits, seeding is skipped so live party data in D1 is never overwritten.
+4. **Worker + Durable Object + Cron Deployment**: Deploys `leeroy-brain`, provisions the SQLite-backed `BoardRoom` Durable Object (`v1`), activates the `*/15 * * * *` Cron Trigger, and syncs all Worker secrets.
+5. **Cloudflare Pages Production Deployment**: Stamps the production Worker URL into `.cloudflare-dist/js/brain.js`, creates the `leeroy-board` Cloudflare Pages project (`--production-branch=master`) if needed, and deploys the static site to `https://leeroy-board.pages.dev`.
 
-### Step 1b: Create a Free-Tier Google Gemini API Key (`GEMINI_API_KEY`)
-Google AI Studio provides a **100% Free Tier** for `gemini-2.5-flash` (15 requests/minute, 1,000,000 tokens/minute, 1,500 requests/day) and `gemini-2.5-pro` with **no credit card or billing account required**:
-1. Sign into [Google AI Studio — API Keys (`https://aistudio.google.com/apikey`)](https://aistudio.google.com/apikey) with your Google account.
-2. Click **Create API key** in the top-right corner.
-3. Choose **Create API key in new project** (or select an existing Google Cloud project that does **not** have Cloud Billing enabled so the key remains strictly locked to the **$0 Free Tier** and can never incur charges).
-4. Confirm that the **Plan** column next to your new key says **Free of charge**.
-5. Copy the generated key (starts with `AIzaSy...`) and save it as the `GEMINI_API_KEY` secret in your GitHub repository (Step 2 below).
-6. *(Optional smoke test from your terminal)*:
+### Production Verification Checklist (After First `master` Merge)
+1. **Verify Worker & AI Health**:
    ```bash
-   curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=YOUR_GEMINI_API_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"contents":[{"parts":[{"text":"Say Leeroy Jenkins in one sentence."}]}]}'
+   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/health
    ```
+   Expected response:
+   ```json
+   {"ok":true,"service":"leeroy-brain","runtime":"cloudflare-workers-d1","aiProvider":"claude","providers":{"claude":true,"gemini":true}}
+   ```
+2. **Verify D1 Bootstrap & Library Blobs**:
+   - Open `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/bootstrap` (returns `party`, `timeline`, `stats`, `signups`, `tonight`, `launch`, `marks`, `decide`).
+   - Open `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/library/index.json` (returns the 59-page library index).
+3. **Verify Production Site & Write Key**:
+   - Open `https://leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>` in your browser.
+   - Open the **Leeroy** tab, select **Model: Claude (Anthropic)** or **Model: Gemini Free Tier**, and send a test question.
 
-### Step 2: Configure GitHub Repository Secrets
-In your GitHub repository (`Matt-Bloise/leeroy-board`), navigate to **Settings -> Secrets and variables -> Actions -> New repository secret** and add:
+---
 
-| GitHub Secret Name | Required? | Description |
+## 5. Operating the Ephemeral PR Preview Environments
+
+The PR preview workflow ([`.github/workflows/pr-preview-cloudflare.yml`](../.github/workflows/pr-preview-cloudflare.yml)) triggers on every Pull Request targeting `master` (`opened`, `synchronize`, `reopened`, `closed`):
+
+| Layer | Production (`master`) | Ephemeral PR Preview (`PR #<N>`) |
 | :--- | :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | **Yes** | Cloudflare API token with `Workers Scripts: Edit`, `D1: Edit`, and `Cloudflare Pages: Edit` permissions. |
-| `CLOUDFLARE_ACCOUNT_ID` | **Yes** | Your 32-character Cloudflare Account ID. |
-| `ANTHROPIC_API_KEY` | One or Both | Site's Claude API key (`sk-ant-...`) used when `provider = "claude"`. |
-| `GEMINI_API_KEY` | One or Both | Google AI Studio Free-Tier API key (`AIzaSy...` created in Step 1b) used when `provider = "gemini"`. |
-| `BOARD_ADMIN_TOKEN` | Optional | Shared secret key matched against `#k=<token>` in the browser URL or `Authorization: Bearer <token>` from the Discord bot for write intents (`/api/intent`, `/api/sheet`, `/api/signups`). |
-| `DISCORD_WEBHOOK_URL` | Optional | Discord channel webhook URL for `#wow-forever` to mirror Leeroy's answers into Discord chat. |
-| `DISCORD_PUBLIC_KEY` | Optional | Public key (`General Information -> Public Key`) from the Discord Developer Portal if using `POST /api/discord` as a serverless Discord Interactions Endpoint. |
+| **Static Site (Pages)** | `https://leeroy-board.pages.dev` | `https://pr-<N>.leeroy-board.pages.dev` |
+| **Worker + Durable Object** | `leeroy-brain` | `leeroy-brain-pr-<N>` |
+| **D1 SQLite Database** | `leeroy-board-db` | `leeroy-board-db-pr-<N>` |
+| **Cron Trigger** | Enabled (`*/15 * * * *`) | Stripped (preserves 5-cron Free-Tier account quota) |
+| **Discord Webhook** | Enabled (`#wow-forever`) | Omitted (prevents PR test queries from spamming Discord) |
 
-### Step 3: Switching Between Claude and Gemini's Free Tier
+### PR Preview Lifecycle & Limits
+1. **When a PR is Opened or Updated**:
+   - Creates an isolated D1 database `leeroy-board-db-pr-<N>`, applies `schema.sql`, and seeds it from the PR branch's `data/*.json`.
+   - Deploys an isolated Worker `leeroy-brain-pr-<N>` + `BoardRoom` Durable Object and syncs `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, and `BOARD_ADMIN_TOKEN`.
+   - Deploys the static site to `https://pr-<N>.leeroy-board.pages.dev` (pre-wired to `leeroy-brain-pr-<N>`) and posts a sticky comment on the PR with clickable links.
+   - To test write actions on the PR preview, append your write key once: `https://pr-<N>.leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>`.
+2. **When the PR is Merged or Closed**:
+   - Automatically deletes `leeroy-brain-pr-<N>` (Worker + Durable Object), deletes `leeroy-board-db-pr-<N>` (D1 database), deletes the Cloudflare Pages preview deployments for branch `pr-<N>`, and updates the sticky PR comment to `🧹 Cloudflare Ephemeral PR Preview Torn Down`.
+3. **Free-Tier Concurrency Limit**:
+   - Cloudflare's Free Tier allows up to **10 D1 databases per account** (1 production DB + up to **9 simultaneously open PRs**). Merging or closing a PR immediately frees its D1 slot.
+
+---
+
+## 6. Switching Between Claude and Gemini's Free Tier
+
 You can switch Leeroy's AI model between **Claude** and **Gemini Free Tier (`gemini-2.5-flash` / `gemini-2.5-pro`)** in three ways:
 1. **Per-Question in the Web Board UI ([`js/ask.js`](../js/ask.js))**:
    - In the **Leeroy** tab (`#ask-form`), use the model dropdown (`Model: Claude (Anthropic)` vs `Model: Gemini Free Tier`). Your selection is saved in `localStorage["board-ai-provider"]` and sent with each question (`patch.provider`).
@@ -128,21 +222,7 @@ You can switch Leeroy's AI model between **Claude** and **Gemini Free Tier (`gem
 
 ---
 
-## 4. Ephemeral PR Preview Environments & Automatic Teardown
-
-The workflow at [`.github/workflows/pr-preview-cloudflare.yml`](../.github/workflows/pr-preview-cloudflare.yml) gives every Pull Request targeting `master` its own **100% isolated full-stack environment** on Cloudflare's Free Tier:
-
-| Layer | Production (`master`) | Ephemeral PR Preview (`PR #<N>`) |
-| :--- | :--- | :--- |
-| **Static Site (Pages)** | `https://leeroy-board.pages.dev` | `https://pr-<N>.leeroy-board.pages.dev` |
-| **Worker + Durable Object** | `leeroy-brain` | `leeroy-brain-pr-<N>` |
-| **D1 SQLite Database** | `leeroy-board-db` | `leeroy-board-db-pr-<N>` |
-| **Cron Trigger** | Enabled (`*/15 * * * *`) | Stripped (preserves 5-cron Free-Tier account quota) |
-| **Discord Webhook** | Enabled (`#wow-forever`) | Omitted (prevents PR test queries from spamming Discord) |
-
----
-
-## 5. Hooking Up the Discord Bot & Discord Activity (`1561857940174938114`)
+## 7. Hooking Up the Discord Bot & Discord Activity (`1561857940174938114`)
 
 There are **three** touchpoints between Discord (`#wow-forever`) and the new Cloudflare deployment:
 
@@ -156,7 +236,7 @@ To point the Discord Activity at your new Cloudflare deployment:
 | Prefix | Target | Purpose |
 | :--- | :--- | :--- |
 | `/` | `leeroy-board.pages.dev` | Serves the static board UI from Cloudflare Pages inside the Discord Activity iframe |
-| `/api` | `leeroy-brain.jmattbloise.workers.dev/api` | Proxies all `/api/*` REST calls and `wss://.../api/live` WebSockets directly to the Cloudflare Worker |
+| `/api` | `leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api` | Proxies all `/api/*` REST calls and `wss://.../api/live` WebSockets directly to the Cloudflare Worker |
 
 ### B. Outbound Answers to `#wow-forever` (`DISCORD_WEBHOOK_URL`)
 Whenever someone asks Leeroy a question from the web board (`POST /api/intent { kind: "ask" }`), [`worker/claude.js`](./worker/claude.js#L243-L253) automatically posts the question and Claude/Gemini's cited answer to `#wow-forever` if `DISCORD_WEBHOOK_URL` is set:
@@ -171,7 +251,7 @@ The Cloudflare Worker includes a native Discord HTTP Interactions endpoint in [`
 1. In the [Discord Developer Portal](https://discord.com/developers/applications/1561857940174938114) -> **General Information**, copy the **Public Key** and add it as the `DISCORD_PUBLIC_KEY` secret in GitHub Actions.
 2. On the same **General Information** page, set **Interactions Endpoint URL** to:
    ```text
-   https://leeroy-brain.jmattbloise.workers.dev/api/discord
+   https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/discord
    ```
    *(Discord will immediately send a signed `PING` request; the Worker verifies the `X-Signature-Ed25519` header using WebCrypto and responds with `PONG`.)*
 3. What `POST /api/discord` handles automatically:
@@ -183,21 +263,21 @@ If you already run a gateway bot script that listens to message events or reacti
 - **Board Link in Bot Replies**: `https://leeroy-board.pages.dev`
 - **Forwarding `/ask` from Bot to Worker (using Claude or Gemini Free Tier)**:
   ```bash
-  curl -X POST https://leeroy-brain.jmattbloise.workers.dev/api/intent \
+  curl -X POST https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/intent \
     -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"kind":"ask","by":"Mend","q":"When do dungeons unlock?","provider":"gemini"}'
   ```
 - **Syncing `#wow-forever` Sign-up Card Tallies to Worker**:
   ```bash
-  curl -X POST https://leeroy-brain.jmattbloise.workers.dev/api/signups \
+  curl -X POST https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/signups \
     -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name":"Mend","rsvp":"in","pack":"yes","meet":"Valley of Strength","when":"6pm"}'
   ```
 - **Syncing Character Sheet Changes to Worker**:
   ```bash
-  curl -X POST https://leeroy-brain.jmattbloise.workers.dev/api/sheet \
+  curl -X POST https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/sheet \
     -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"member":"mend","patch":{"race":"undead","spec":"holy"}}'
@@ -205,7 +285,7 @@ If you already run a gateway bot script that listens to message events or reacti
 
 ---
 
-## 6. Local Development & Verification
+## 8. Local Development & Verification
 
 You can run the entire Cloudflare Worker + D1 + Durable Objects stack locally on your machine using Wrangler's built-in Miniflare simulator:
 
