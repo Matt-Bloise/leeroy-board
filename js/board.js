@@ -267,7 +267,6 @@ function renderTimeline() {
   });
   renderCalendar(now);
   KIT.emit("timeline");
-  for (const b of tl.querySelectorAll(".stop .ics")) { const e = t.events.find((x) => x.key === b.closest(".stop").dataset.ev); if (e) b.setAttribute("aria-label", `Add ${e.label.toLowerCase()} to my calendar`); } /* fix C21: one name per button (js/v13d.js adds them) */
 }
 function renderCalendar(now) {
   const box = $("#cal-col"); if (!box) return;
@@ -304,7 +303,7 @@ function renderCalendar(now) {
     h("h4", { text: month }),
     h("div", { class: "cal-grid" }, ...["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
     h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}: the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
-      ...later.map((e) => h("button", { type: "button", class: "cal-day cal-later", "data-ev": e.key, "data-day": dayKey(local(e)), "aria-label": `${fmtDay(local(e))}: ${e.label}` }, emb(EMB_LABEL[e.key] || "seal"), h("span", { text: `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}` }))))));
+      ...later.map((e) => h("button", { type: "button", class: "cal-day cal-later", "data-ev": e.key, "data-day": dayKey(local(e)), "aria-label": `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}, ${fmtDay(local(e))}` }, emb(EMB_LABEL[e.key] || "seal"), h("span", { text: `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}` }))))));
 }
 function setClockLabel(kicker, event) {
   if ($("#clock-kicker").textContent !== kicker) $("#clock-kicker").textContent = kicker;
@@ -348,7 +347,7 @@ function tick() {
   for (const [u, v] of parts) setDigits(digits.querySelector(`[data-u="${u}"]`), String(v).padStart(u === "days" ? 1 : 2, "0"));
   /* Screen readers get the countdown as words, once a minute, not digit by digit. */
   const leftText = parts.filter(([u]) => u !== "seconds").map(([u, v]) => `${v} ${v === 1 ? u.replace(/s$/, "") : u}`).join(", ") + " left";
-  const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").setAttribute("aria-label", `Dates. ${next.label}: ${leftText}. Launch: ${launchLine()}. Open all the dates.`); }
+  const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").removeAttribute("aria-label"); }
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { mine: true }); /* V13c (consistency 10): the one formatter */
   const mc = $("#mini-clock");
   /* V12: the phone bar fits 375 px: the countdown, then the launch in the viewer's own time, short (no repeated "Launch", no zone) */
@@ -747,7 +746,7 @@ function renderMap() {
   /* V11: each of the five is a pin carrying their class crest, with a name banner. */
   /* V13b (spec 1.5): a name is a small label (12.5 px on screen at any map size) on a quiet plate beside its pin, and place */
   /* a larger map carries larger names (up to 1.8 times at 1400 px and more), so they stay readable at arm's length */
-  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = 13 * u * bump, BIG = (tiny ? 13 : 14.5) * u * bump, SMALL = 13 * u * bump /* mobile build (2026-10-30): 13 px on screen at least, the phone floor for labels (was 12.5, 11 on a tiny map) */, CH = 0.6;
+  const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = Math.max(12, 13 * u * bump), BIG = Math.max(12, (tiny ? 13 : 14.5) * u * bump), SMALL = Math.max(12, 13 * u * bump) /* mobile build (2026-10-30): 13 px on screen at least, the phone floor for labels (was 12.5, 11 on a tiny map) */, CH = 0.6; /* fix round 2: the SVG font size is never under 12 user units (computed 11.24 px at a 694 px map, drawn at 13) */
   MAPW.drawn = mw;
   svg.style.setProperty("--fs", `${FS.toFixed(2)}px`); svg.style.setProperty("--fb", `${BIG.toFixed(2)}px`); svg.style.setProperty("--fsm", `${SMALL.toFixed(2)}px`);
   const boxes = [];
@@ -899,7 +898,7 @@ const unchosen = (o) => /nothing chosen|not chosen/i.test(o.status || "");
 function meetLine(meet) {
   const url = D.party.signup_url;
   if (!unchosen(meet)) return [`${meet.title}: ${meet.status}. ${meet.detail || ""}`];
-  return [h("b", { text: `${meet.title}: ` }), "Not chosen yet. ", meet.detail || "", " ", h("a", { class: "tn-link", href: "#signups", text: "Sign-ups" }), " has the answers so far."]; /* fix C8: facts, no imperative */
+  return [h("b", { text: `${meet.title}: ` }), "Not chosen yet. ", meet.detail || "", " ", h("a", { class: "tn-link", href: `${location.pathname}${location.search}#signups`, text: "Sign-ups" }), " has the answers so far."]; /* fix C8: facts, no imperative */
 }
 function splitNotes(text) {
   const notes = [];
@@ -991,7 +990,7 @@ function renderWheel() {
   const nodes = keys.map((k) => {
     const m = memberByKey(k), [x, y] = pos[k];
     const g = s("g", { class: `wheel-node${ART.crest[k] ? " has-crest" : ""}`, tabindex: 0, role: "button", "aria-pressed": "false", "aria-label": `${m.name}, ${m.class}: show buffs`, style: `--nc: ${classVar(k)}`, "data-k": k, "data-x": x, "data-y": y },
-      s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y + 44, text: m.name }), s("text", { x, y: y + 60, style: "font-size:16.5px;fill:var(--l-text)", text: m.class }));
+      s("circle", { cx: x, cy: y, r: 26 }), ART.crest[k] ? crestSvg(k, x, y) : null, s("text", { x, y: y + 44, text: m.name }), s("text", { x, y: y + 60, style: "font-size:16.5px;fill:var(--l-text)", text: " " + m.class }));
     svg.append(g); return g;
   });
   const meKey = (MEM.member() || {}).class_key;
@@ -3266,14 +3265,14 @@ const changeGroupLi = (g) => {
   const list = h("ul", { hidden: true }, g.items.map((c) => h("li", { text: c.text })));
   return h("li", {}, h("time", { datetime: g.date, text: libDay(g.date) }), h("span", { class: "chg-box chg-group" },
     h("span", {}, pageLink(g.page, "", libTitle(g.page)), `: ${g.items.length} numbers changed, including ${g.items[0].thing.replace(/ top rank$/, "")} and ${g.items[1].thing.replace(/ top rank$/, "")}.`),
-    h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `Show the ${g.items.length} changes on ${libTitle(g.page)}`, onclick: (e) => { list.hidden = !list.hidden; e.currentTarget.setAttribute("aria-expanded", String(!list.hidden)); e.currentTarget.textContent = list.hidden ? "Show them" : "Hide them"; } }, "Show them"), list));
+    h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `Show them: the ${g.items.length} changes on ${libTitle(g.page)}`, onclick: (e) => { list.hidden = !list.hidden; const t = e.currentTarget; t.setAttribute("aria-expanded", String(!list.hidden)); t.textContent = list.hidden ? "Show them" : "Hide them"; t.setAttribute("aria-label", `${t.textContent}: the ${g.items.length} changes on ${libTitle(g.page)}`); } }, "Show them"), list));
 };
 const changeLi = (c) => {
   const body = h("span", { class: "chg" }, pageLink(c.page, "", libTitle(c.page)), ": ", c.text);
   const long = c.text.length > 110;
   if (long) body.classList.add("clamp");
   return h("li", {}, h("time", { datetime: c.date, text: libDay(c.date) }), h("span", { class: "chg-box" }, body,
-    long ? h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `Read the whole change on ${libTitle(c.page)}`, onclick: (e) => { const on = body.classList.toggle("clamp"); e.currentTarget.setAttribute("aria-expanded", String(!on)); e.currentTarget.textContent = on ? "More" : "Less"; } }, "More") : null));
+    long ? h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `More: read the whole change on ${libTitle(c.page)}`, onclick: (e) => { const on = body.classList.toggle("clamp"), t = e.currentTarget; t.setAttribute("aria-expanded", String(!on)); t.textContent = on ? "More" : "Less"; t.setAttribute("aria-label", `${t.textContent}: ${on ? "read the whole change" : "show less of the change"} on ${libTitle(c.page)}`); } }, "More") : null));
 };
 function libDoors() {
   const ix = LIBD.index, T = ix.totals;

@@ -131,11 +131,14 @@ html.nx-tn.nx-first #scene .sheet { background: var(--parchment); }
 html.nx-tn.nx-first #scene-veil { background: var(--oak-0); }
 .tn-wall { justify-self: center; color: var(--ink); background: transparent; border-color: transparent; text-decoration: underline; text-decoration-color: var(--brass); text-underline-offset: 3px; }
 /* fix round A11: from 1600 px two column lines (the card's and the queue's: #tn-cards had three tracks for two cards), prose to 72ch,
-   one label size for every section heading (1.125rem: lane C's --fs-label token, once board.css has it) */
+   one label size for every section heading (var(--fs-label)) */
 @media (min-width: 1600px) {
   #panel-tonight { max-width: 1600px; margin-inline: auto; }
   html.nx-on[data-journey="everything"] #panel-tonight > #tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--g3, 18px); }
   html.nx-on[data-journey="everything"] #panel-tonight > #tn-actions { justify-self: stretch; width: auto; max-width: none; margin-inline: 0; }
   #panel-tonight :is(p, li, summary) { max-width: 72ch; }
-  #panel-tonight :is(.tn-card > h3, #tnb-h, #tnh-h, .nx-k, .nx-trails-h) { font-size: 1.125rem; }
+  #panel-tonight :is(.tn-card > h3, #tnb-h, #tnh-h, .nx-k, .nx-trails-h) { font-size: var(--fs-label); }
 }
+
+/* round 2: the first-visit seal sheet opens without the rise */
+html.nx-first .scene-layer.rise .sheet, html.nx-first .scene-layer.fade .sheet { animation: none; }

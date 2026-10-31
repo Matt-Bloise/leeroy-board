@@ -85,7 +85,7 @@ html.has-seal .sheet-emblem, html.has-seal .medal-side { display: none !importan
 .fl-tray { padding-bottom: 2.6em; }
 .fc-b { transform: rotateY(180deg); background: radial-gradient(circle at 34% 28%, var(--cc, #c79a45), #2a1a0c 92%); box-shadow: inset 0 0 0 3px #c79a45, inset 0 0 0 5px #5d3f14, 0 6px 10px rgba(30, 16, 6, 0.5); color: #fff4dc; text-align: center; align-content: center; }
 .fc-b b { font-family: var(--font-display); font-size: calc(var(--fc) * 0.2); line-height: 1.1; }
-.fc-b i { font-size: calc(var(--fc) * 0.14); opacity: 0.85; }
+.fc-b i { font-size: max(12px, calc(var(--fc) * 0.14)); opacity: 0.85; }
 @media (hover: hover) { .fc:not(.drag):hover { transform: translateY(-3px); } }
 .fc:focus-visible { outline: 3px solid var(--wax); outline-offset: 4px; }
 .fv-sum { margin: 0; font-size: var(--step-0); max-width: 34ch; }

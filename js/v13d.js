@@ -63,7 +63,7 @@ function pickerEl() {
 }
 K.on("tonight", () => {
   const meBox = $("#tn-me"); if (!meBox) return;
-  paths("tonight");
+  paths(); /* a name picked anywhere redraws every scene's band, not only this one (fix round 2) */
   if (!V.picked || V.confirm) { const p = pickerEl(); meBox.append(p); if (V.confirm) p.replaceChildren(h("p", { class: "jr-done", role: "status", text: `Exploring: ${V.confirm.charAt(0).toUpperCase() + V.confirm.slice(1)}. Change it any time at the top.` })); }
 });
 function startJourneySwitch() {
@@ -103,7 +103,7 @@ function band(key) {
   const later = /^(\w+) until (\d+), (\w+) from level/i.exec(me.role_detail || "");
   switch (key) {
     case "five": return `${me.name}: ${me.race} ${me.class}, ${later ? `${later[1]} to ${later[2]}, then ${later[3]}` : me.role}.`;
-    case "roads": return me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${how} to Orgrimmar.` : null;
+    case "roads": return me.start_zone ? `${me.name}: ${me.start_zone}, then ${how} to Orgrimmar.` : null;
     case "racials": { const rs = C.racials[me.race] || [], a = rs.find((r) => r.kind === "active") || rs[0]; return a ? `${me.name}: ${me.race}, with ${a.name} among its race skills.` : null; }
     case "buffs": { const give = C.buffs ? C.buffs.list.filter((b) => !b.sixth && b.class === me.class_key).map((b) => b.name) : []; return C.buffs ? `${me.name} gives the others ${!give.length ? "no group buffs" : give.length > 2 ? `${give[0]}, ${give[1]} and ${give.length - 2} more` : K.andList(give)}.` : null; }
     case "signups": { const S = D.signups, su = S && S.entries ? S.entries.find((e) => K.cleanName(e.name).toLowerCase() === me.name.toLowerCase()) : null; return `${me.name}: ${su && su.rsvp ? `${K.RSVP_SAY[su.rsvp] || su.rsvp} for launch night` : "no launch-night answer yet"}.`; }
@@ -119,7 +119,7 @@ function paths(only) {
   for (const key of only ? [only] : K.SCENES) {
     const panel = $(`#panel-${key}`); if (!panel) continue;
     let box = kid(panel, "jr-path");
-    if (!box) { box = h("section", { class: "jr-path", "data-j": "g", "aria-label": "For you" }); const after = key === "tonight" ? $("#tn-cards") : null; panel.insertBefore(box, after || panel.firstChild); }
+    if (!box) { box = h("section", { class: "jr-path", "data-j": "g", "aria-label": "Your line for this scene" }); const after = key === "tonight" ? $("#tn-cards") : null; panel.insertBefore(box, after || panel.firstChild); }
     if (key === "tonight") {
       const dl = nextDeadline(), launchEv = D.timeline.events.find((e) => e.key === "launch" && e.epoch > Date.now() / 1000);
       box.replaceChildren(...[dl || launchEv ? h("p", { class: "jr-dates" },
@@ -300,7 +300,7 @@ K.on("timeline", () => {
   for (const st of rail.querySelectorAll(".stop[data-ev]")) {
     const e = D.timeline.events.find((x) => x.key === st.dataset.ev);
     if (!e || !e.epoch || !["launch", "raids"].includes(e.key) || st.querySelector(".ics")) continue;
-    const a = h("button", { type: "button", class: "lib-tool ics", "data-j": "c e", onclick: () => { try { const u = URL.createObjectURL(new Blob([icsFor(e)], { type: "text/calendar" })); const x = h("a", { href: u, download: `wow-forever-${e.key}.ics` }); document.body.append(x); x.click(); rm(x); setTimeout(() => URL.revokeObjectURL(u), 4000); sfx("copy"); } catch (er) {} } }, emb("cal"), "Add to my calendar");
+    const a = h("button", { type: "button", class: "lib-tool ics", "data-j": "c e", "aria-label": `Add to my calendar: ${e.label.toLowerCase()}`, onclick: () => { try { const u = URL.createObjectURL(new Blob([icsFor(e)], { type: "text/calendar" })); const x = h("a", { href: u, download: `wow-forever-${e.key}.ics` }); document.body.append(x); x.click(); rm(x); setTimeout(() => URL.revokeObjectURL(u), 4000); sfx("copy"); } catch (er) {} } }, emb("cal"), "Add to my calendar");
     const body = st.querySelector(".stop-body"); if (body) body.append(a);
   }
 });

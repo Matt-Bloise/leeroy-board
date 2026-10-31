@@ -2079,3 +2079,17 @@ html.room-off.scene-open body { background: var(--black) url("../img/tavern-plat
 /* spec 7.6, retest-9: every inline word you can tap is at least 24 px tall */
 .gl[data-term], .sheet-body .gl[data-term] { padding-block: 4px; margin-block: -4px; } /* a taller tap box, the same line height (the margin gives the padding back) */
 .sheet-body a, .tn-link, #panel-ledger a { padding-block: 3px; }
+
+/* round 2: 44 px targets, coarse pointers */
+@media (pointer: coarse) {
+  .src { min-height: 44px; }
+  label.tnb-tick input[type=checkbox], label.lh-ck-tick input[type=checkbox] { width: 44px; height: 44px; margin: 0; }
+  .deep-six input { box-sizing: border-box; width: 44px; height: 44px; margin: -9px; border: 9px solid transparent; background-clip: padding-box; }
+}
+/* round 2: tile insides grow with the screen */
+@media (min-width: 2200px) {
+  .tile-title { font-size: clamp(1.5rem, 0.95vw, 2.3rem); }
+  .t-five .tile-body, .t-signups .tile-body { font-size: clamp(1.2rem, 0.8vw, 1.9rem); }
+  .med-ico { --med: clamp(120px, calc((100cqi - 56px) / 5), 190px); }
+  .wall > li:not(.t-five):not(.t-signups) .tile-body { zoom: 1.4; }
+}
