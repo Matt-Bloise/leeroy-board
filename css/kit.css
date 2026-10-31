@@ -1,0 +1,56 @@
+html:not(#k) :is(.lib-btn,.copy,.tile-q-go){border-image:url("../img/kit/rt-sec-n.webp") 36 fill/12px/0 stretch;}
+@media(hover:hover){html:not(#k) :is(.lib-btn,.copy,.tile-q-go):hover{border-image-source:url("../img/kit/rt-sec-h.webp")}}
+html:not(#k) :is(.lib-btn,.copy,.tile-q-go):active{border-image-source:url("../img/kit/rt-sec-p.webp")}
+html:not(#k) :is(.lib-btn,.copy,.tile-q-go):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-sec-d.webp")}
+html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button){border-image:url("../img/kit/rt-hdr-n.webp") 26 fill/9px/0 stretch;}
+@media(hover:hover){html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button):hover{border-image-source:url("../img/kit/rt-hdr-h.webp")}}
+html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button):active{border-image-source:url("../img/kit/rt-hdr-p.webp")}
+html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-hdr-d.webp")}
+html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]){border-image:url("../img/kit/rt-pri-n.webp") 36 fill/12px/0 stretch;}
+@media(hover:hover){html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]):hover{border-image-source:url("../img/kit/rt-pri-h.webp")}}
+html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]):active{border-image-source:url("../img/kit/rt-pri-p.webp")}
+html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-pri-d.webp")}
+html:not(#k) :is(.sense-panel button[aria-pressed="true"],.lib-tool[aria-pressed="true"]:not(.rc-chip,.deep-marks *)){border-image-source:url("../img/kit/rt-pri-s.webp");border-image-slice:34 fill}
+html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip){border-image:url("../img/kit/ch-par-n.webp") 36 40 fill/14px/0 stretch;}
+@media(hover:hover){html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip):hover{border-image-source:url("../img/kit/ch-par-a.webp")}}
+html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip):active{border-image-source:url("../img/kit/ch-par-p.webp")}
+html:not(#k) :is(.deep-marks .lib-tool[aria-pressed="true"],.rc-chip[aria-pressed="true"],.toggle button[aria-pressed="true"]){border-image:url("../img/kit/ch-oak-a.webp") 36 40 fill/14px/0 stretch}
+html:not(#k) .toggle button[aria-pressed="true"]{border-image-width:9px}
+html:not(#k) :is(.dial-btn[aria-label*="more"],.atlas-b.a-in,.m-btn.m-in){background:image-set(url("../img/kit/rb-plus-n-2x.webp") 2x,url("../img/kit/rb-plus-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
+@media(hover:hover){html:not(#k) :is(.dial-btn[aria-label*="more"],.atlas-b.a-in,.m-btn.m-in):hover{background-image:image-set(url("../img/kit/rb-plus-h-2x.webp") 2x,url("../img/kit/rb-plus-h-3x.webp") 3x)}}
+html:not(#k) :is(.dial-btn[aria-label*="more"],.atlas-b.a-in,.m-btn.m-in):active{background-image:image-set(url("../img/kit/rb-plus-p-2x.webp") 2x,url("../img/kit/rb-plus-p-3x.webp") 3x)}
+html:not(#k) :is(.dial-btn[aria-label*="more"],.atlas-b.a-in,.m-btn.m-in):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-plus-d-2x.webp") 2x,url("../img/kit/rb-plus-d-3x.webp") 3x)}
+html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out){background:image-set(url("../img/kit/rb-minus-n-2x.webp") 2x,url("../img/kit/rb-minus-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
+@media(hover:hover){html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out):hover{background-image:image-set(url("../img/kit/rb-minus-h-2x.webp") 2x,url("../img/kit/rb-minus-h-3x.webp") 3x)}}
+html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out):active{background-image:image-set(url("../img/kit/rb-minus-p-2x.webp") 2x,url("../img/kit/rb-minus-p-3x.webp") 3x)}
+html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-minus-d-2x.webp") 2x,url("../img/kit/rb-minus-d-3x.webp") 3x)}
+html:not(#k) :is(.close){background:image-set(url("../img/kit/rb-cross-n-2x.webp") 2x,url("../img/kit/rb-cross-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
+@media(hover:hover){html:not(#k) :is(.close):hover{background-image:image-set(url("../img/kit/rb-cross-h-2x.webp") 2x,url("../img/kit/rb-cross-h-3x.webp") 3x)}}
+html:not(#k) :is(.close):active{background-image:image-set(url("../img/kit/rb-cross-p-2x.webp") 2x,url("../img/kit/rb-cross-p-3x.webp") 3x)}
+html:not(#k) :is(.close):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-cross-d-2x.webp") 2x,url("../img/kit/rb-cross-d-3x.webp") 3x)}
+html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset){background:image-set(url("../img/kit/rb-ring-n-2x.webp") 2x,url("../img/kit/rb-ring-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
+@media(hover:hover){html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):hover{background-image:image-set(url("../img/kit/rb-ring-h-2x.webp") 2x,url("../img/kit/rb-ring-h-3x.webp") 3x)}}
+html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):active{background-image:image-set(url("../img/kit/rb-ring-p-2x.webp") 2x,url("../img/kit/rb-ring-p-3x.webp") 3x)}
+html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-ring-d-2x.webp") 2x,url("../img/kit/rb-ring-d-3x.webp") 3x)}
+html:not(#k) :is(.close svg,.m-btn svg){opacity:0}
+html:not(#k) :is(.ch-text,.mine-place){border-image:url("../img/kit/in-text-n.webp") 18 fill/11px/0 stretch}
+html:not(#k) :is(.mine-note){border-image:url("../img/kit/in-multi-n.webp") 20 fill/11px/0 stretch}
+html:not(#k) :is(.ch-text,.mine-place):focus{border-image-source:url("../img/kit/in-text-f.webp")}
+html:not(#k) :is(.mine-note):focus{border-image-source:url("../img/kit/in-multi-f.webp")}
+html:not(#k) :is(.ch-text,.mine-place,.mine-note):disabled{border-image-source:url("../img/kit/in-text-d.webp")}
+html:not(#k) :is(.sense-panel,.bsheet){border-image:url("../img/kit/oak-a.webp") 40 fill/16px/0 stretch}
+html:not(#k) :is(.tn-card,.tnh-card,.dc-card,.cal-card,.mine-card){border-image:url("../img/kit/par-a.webp") 40 fill/14px/0 stretch}
+html:not(#k) :is(.ttc,.seal-say){border-image:url("../img/kit/tt-dark.webp") 34 fill/12px/0 stretch}
+html:not(#k) kbd{border-image:url("../img/kit/key-n.webp") 22 fill/7px/0 stretch}
+html:not(#k) #deep-sixth{-webkit-appearance:none;appearance:none;background:url("../img/kit/tg-box-off.webp") center/100% 100% no-repeat;border:0;border-radius:0}
+html:not(#k) #deep-sixth:checked{background-image:url("../img/kit/tg-box-on.webp")}
+html:not(#k) :is(#deep-level,.sense-row input[type="range"]){-webkit-appearance:none;appearance:none;background:transparent;accent-color:auto}
+html:not(#k) :is(#deep-level,.sense-row input[type="range"])::-webkit-slider-runnable-track{height:10px;border-radius:0;background:url("../img/kit/sl-groove.webp") 0 0/100% 100% no-repeat;box-shadow:none}
+html:not(#k) :is(#deep-level,.sense-row input[type="range"])::-moz-range-track{height:10px;border-radius:0;background:url("../img/kit/sl-groove.webp") 0 0/100% 100% no-repeat}
+html:not(#k) :is(#deep-level,.sense-row input[type="range"])::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;margin-top:-8px;border:0;border-radius:0;background:url("../img/kit/sl-knob-n.webp") center/100% 100% no-repeat;box-shadow:none}
+html:not(#k) :is(#deep-level,.sense-row input[type="range"])::-moz-range-thumb{width:26px;height:26px;border:0;border-radius:0;background:url("../img/kit/sl-knob-n.webp") center/100% 100% no-repeat}
+html:not(#k) :is(#deep-level,.sense-row input[type="range"]):active::-webkit-slider-thumb{background-image:url("../img/kit/sl-knob-p.webp")}
+html:not(#k) .bsheet-grip::after{width:48px;height:12px;margin:-6px 0 0 -24px;border-radius:0;background:url("../img/kit/grab-n.webp") center/100% 100% no-repeat}
+html:not(#k) .bsheet-row{border-bottom-color:transparent;background:url("../img/kit/dv-hair.webp") bottom/100% 3px no-repeat}
+.kit-bar{height:24px;border-image:url("../img/kit/pg-trough.webp") 22 fill/10px/0 stretch}
+.kit-bar>i{display:block;height:100%;background:url("../img/kit/pg-fill.webp") 0 0/auto 100%}
