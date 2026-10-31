@@ -58,8 +58,7 @@ const EMB = {
   question: [["b", "M12 2.8l8.4 4.6v9.2L12 21.2l-8.4-4.6V7.4z"], ["d", "M12 5.4l6.2 3.4v6.4L12 18.6l-6.2-3.4V8.8z"], ["lb", "M9.8 10.2a2.2 2.2 0 1 1 3.4 1.8c-.8.5-1.2 1-1.2 1.9M12 15.8v.2"]],
 };
 const EMB_LABEL = { names_open: "scroll", sub_active: "hourglass", launch: "horn", raids: "skull" };
-/* emb(name, cls, label): the ChatGPT-painted emblem as an <img>. The inline SVG built from EMB stays as the onerror fallback only (emb.svg).
-   chips and library are 128 px sets, dates is 192 px; names with no painted file (moon, adventure, tankard, candle, banner, laurel, rune, gear) keep the SVG glyph. */
+/* emb(name, cls, label). */
 const EMB_FILE = {};
 for (const k of ["pin", "voice", "clock", "seal", "quill", "speech", "lock", "ribbon", "question"]) EMB_FILE[k] = ["chips", 128];
 for (const k of ["ticket", "cal", "book", "classes", "dungeons", "leveling", "tradeskills", "pvp", "races", "skull", "systems", "ui"]) EMB_FILE[k] = ["library", 128];
@@ -84,7 +83,7 @@ function emb(name, cls, label, dates) {
 emb.svg = embSvg;
 emb.dates = (name, cls, label) => emb(name, cls, label, true);
 /* a person's mark: their class crest, sized to the text, with the name for screen readers when it stands alone */
-const crestMark = (m, cls = "crest-mark") => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, decoding: "async", title: m.name });
+const crestMark = (m, cls = "crest-mark", title = m.name) => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, decoding: "async", title }); /* fix C10: a decorative crest passes title null (js/place.js makes a titled thing a Tab stop) */
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 const roomHas = (c) => document.documentElement.classList.contains(c);
 /* V7: the room's state, read by window.__board.room() and written by room/tier.js */
@@ -102,14 +101,12 @@ function startRoomLadder() {
   const launch = D.timeline && D.timeline.events.find((e) => e.key === "launch");
   const seen = MEM.seenMap(), S = D.signups;
   const host = { state: RS, motion: MOTION, launchEpoch: launch ? launch.epoch : null, newSignup: !!(S && S.updated && seen.signups && Date.parse(S.updated) > seen.signups), select: $("#room-pick"), moreButton: $("#more-room"),
-    /* V13b: the room's key light and the page's card highlights are one light (LB); the room reads the aim and the shared
-       flicker, and hands its eased key light position back */
+    /* V13b: the room's key light and the page's card highlights are one light (LB). */
     aim: () => LB, signal: flickAt, tiltOn: () => LB.tilt,
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   /* V13c (craft 22): the room's two story beats are heard as well as seen, once a visit, when sound runs */
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  /* the tier module's first run blocked the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance: it starts after the entrance.
-     2026-10-30: the room now draws in a Web Worker where the browser has OffscreenCanvas (room/tier.js), so that cost is off this thread; the page path is the fallback */
+  /* the tier module's first run blocked the main thread for about 0.8 s (long-frame trace), which would stutter the wall's entrance. */
   const bootRoom = () => import("../room/tier.js?v=11b18a8ff5").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
@@ -141,9 +138,15 @@ function fmtCost(c) {
   if (c.type === "rage") return `${nf.format(c.amount / 10)} rage`; /* rage costs are stored in tenths */
   return `${nf.format(c.amount)} ${c.type}`;
 }
-const dtFull = new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-const dtDay = new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-const dtDayUTC = new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+/* fix C7: dates read one way, "Wed, Nov 4, 6 PM ET"; a date-only event is its Eastern day with no zone, "Wed, Dec 9", in every zone */
+const fmtDay = (epoch) => fmtWhen(epoch, { time: false });
+const MON = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+/* card text ("Oct 27 4 PM ET", "until Nov 3 (Pacific)") in the same short form; the pack window's end is an instant */
+function cardDates(t) {
+  const w = D.timeline && D.timeline.events.find((e) => e.until_epoch), y = new Date().getFullYear();
+  return String(t).replace(/\b(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),? )?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}),? (\d{1,2}(?::\d\d)? ?[AP]M) ET\b/g, (m, mo, d, hr) => `${fmtDay(Date.UTC(y, MON.indexOf(mo), +d, 12) / 1000)}, ${hr.replace(/(\d)([AP])/, "$1 $2")} ET`)
+    .replace(/until (?:the end of )?(\w{3} \d{1,2}),? \(?Pacific(?: time)?\)?/g, (m, d) => (w && w.until === d ? `until the end of ${d} Pacific (${fmtWhen(w.until_epoch).replace(/^\w+, (\w+ \d+), (.+)$/, "$2 $1")})` : m));
+}
 const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 function rel(epoch) {
   const d = epoch - Date.now() / 1000, a = Math.abs(d);
@@ -164,15 +167,15 @@ function relWhen(epoch, now) {
 }
 function fmtWhen(epoch, o = {}) {
   if (!Number.isFinite(epoch)) return "";
-  const d = new Date(epoch * 1000), tz = o.tz || viewerZone(), time = o.time !== false;
+  const d = new Date(epoch * 1000), tz = o.tz || (o.mine ? viewerZone() : ET_ZONE), time = o.time !== false; /* fix C7: the viewer's own time only where asked (the clock) */
   const one = (zone) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short", month: "short", day: "numeric", ...(time ? { hour: "numeric", minute: "2-digit" } : {}) }).formatToParts(d).map((x) => [x.type, x.value])); return `${p.weekday}, ${p.month} ${p.day}${time ? `, ${p.hour}${p.minute !== "00" ? `:${p.minute}` : ""} ${p.dayPeriod}` : ""}`; };
   const et = one(ET_ZONE), mine = one(tz);
-  const s = mine === et ? `${et} ET` : `${mine} your time (${et} ET)`;
+  const z = time ? " ET" : "", s = mine === et ? `${et}${z}` : `${mine} your time (${et}${z})`; /* fix C7: a day alone carries no zone */
   return o.rel ? `${s}, ${relWhen(epoch, o.now)}` : s;
 }
 function eventWhen(e) {
-  if (e.epoch === null) return dtDayUTC.format(new Date(`${e.date}T12:00:00Z`));
-  return e.format === "D" ? dtDay.format(new Date(e.epoch * 1000)) : dtFull.format(new Date(e.epoch * 1000));
+  if (e.epoch === null) return fmtDay(Date.parse(`${e.date}T12:00:00Z`) / 1000);
+  return e.format === "D" ? fmtDay(e.epoch) : fmtWhen(e.epoch);
 }
 
 const D = {};
@@ -199,7 +202,7 @@ function launchLine() {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
-const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "Decisions and polls", signups: "Who is coming on launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" }; /* integrator pass 3: short enough for one line at 1280 (it read "Still open for each of us, by Bli...") */
+const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "What is settled, what is open", signups: "Answers for launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" }; /* integrator pass 3: short enough for one line at 1280 (it read "Still open for each of us, by Bli...") */
 function startSubtitles() {
   for (const [k, sub] of Object.entries(SUBTITLE)) {
     const title = document.querySelector(`#board [data-scene="${k}"] .tile-title`);
@@ -234,7 +237,7 @@ let shownNext;
 /* V11: */
 function eventState(e, now, next) {
   const ts = eventTs(e);
-  if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, until the end of ${e.until}, ${e.until_zone || "Pacific"} time`];
+  if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, ${cardDates(`until ${e.until} (${e.until_zone || "Pacific"})`)}`];
   if (e.until_epoch && now >= e.until_epoch) return ["past", `Closed ${e.until}`];
   if (ts < now) return ["past", "Passed"];
   const relText = e.epoch === null ? rel(Date.parse(`${e.date}T12:00:00Z`) / 1000) : rel(e.epoch);
@@ -264,22 +267,24 @@ function renderTimeline() {
   });
   renderCalendar(now);
   KIT.emit("timeline");
+  for (const b of tl.querySelectorAll(".stop .ics")) { const e = t.events.find((x) => x.key === b.closest(".stop").dataset.ev); if (e) b.setAttribute("aria-label", `Add ${e.label.toLowerCase()} to my calendar`); } /* fix C21: one name per button (js/v13d.js adds them) */
 }
 function renderCalendar(now) {
   const box = $("#cal-col"); if (!box) return;
   const t = D.timeline, dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  const local = (e) => (e.epoch === null ? new Date(`${e.date}T12:00:00`) : new Date(e.epoch * 1000));
+  /* fix C7: the grid is Eastern days in every zone (a date never shifts a day); the window ends on its own zone's last day */
+  const zday = (ts, tz = ET_ZONE) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value])); return new Date(+p.year, p.month - 1, +p.day, 12); };
+  const local = (e) => zday(e.epoch === null ? Date.parse(`${e.date}T12:00:00Z`) / 1000 : e.epoch);
   const marks = {}; for (const e of t.events) marks[dayKey(local(e))] = e;
-  const win = t.events.find((e) => e.until_epoch);
-  const inWin = (d) => win && d.getTime() + 864e5 > local(win).getTime() && d.getTime() + 432e5 < win.until_epoch * 1000; /* the day counts when its noon falls in the window */
+  const win = t.events.find((e) => e.until_epoch), wEnd = win && zday(win.until_epoch - 1, win.until_zone === "Pacific" ? "America/Los_Angeles" : ET_ZONE);
+  const inWin = (d) => win && d.getTime() + 432e5 >= local(win).getTime() && d.getTime() + 432e5 <= wEnd.getTime(); /* the day counts when its noon falls in the window */
   const launch = t.events.find((e) => e.key === "launch") || t.events[0];
   const mid = local(launch), first = new Date(mid.getFullYear(), mid.getMonth(), 1), last = new Date(mid.getFullYear(), mid.getMonth() + 1, 0);
-  /* weeks start on Sunday, as US calendars do (the owner, 2026-10-29); when today falls in the week before the month, the grid
-     starts on that week's Sunday so today stays on it (Nov 2026 begins on a Sunday, which would drop Oct 29 to 31) */
-  const nowD = new Date(now * 1000), from = nowD < first && first - nowD < 7 * 864e5 ? new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()) : first;
+  /* weeks start on Sunday, as US calendars do (the owner, 2026-10-29). */
+  const nowD = zday(now), from = nowD < first && first - nowD < 7 * 864e5 ? new Date(nowD.getFullYear(), nowD.getMonth(), nowD.getDate()) : first;
   const start = new Date(from); start.setDate(from.getDate() - from.getDay());
   const end = new Date(last); end.setDate(last.getDate() + (6 - last.getDay()));
-  const today = dayKey(new Date(now * 1000));
+  const today = dayKey(nowD);
   const cells = [];
   for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const e = marks[dayKey(d)], w = inWin(d);
@@ -298,7 +303,7 @@ function renderCalendar(now) {
   box.replaceChildren(h("details", { class: "cal-wrap", ...(calOpen ? { open: "" } : {}) }, h("summary", { class: "cal-sum" }, "The month on a calendar"), h("div", { class: "cal", role: "group", "aria-label": `${month}, with the board's dates marked` },
     h("h4", { text: month }),
     h("div", { class: "cal-grid" }, ...["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
-    h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}, the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
+    h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}: the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
       ...later.map((e) => h("button", { type: "button", class: "cal-day cal-later", "data-ev": e.key, "data-day": dayKey(local(e)), "aria-label": `${fmtDay(local(e))}: ${e.label}` }, emb(EMB_LABEL[e.key] || "seal"), h("span", { text: `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}` }))))));
 }
 function setClockLabel(kicker, event) {
@@ -317,8 +322,7 @@ function setDigits(b, str) {
     was.textContent = old[i]; now.textContent = str[i];
     clockTick();
     if (reduceMQ.matches || roomHas("play") || typeof now.animate !== "function") return; /* companion N4: Play mode rolls no digit */
-    /* V13c (craft 30): the old half falls first (0 to 120 ms, accelerating, darkening to 70% edge-on), then the new half
-       settles (120 to 240 ms) with a small overshoot */
+    /* V13c (craft 30): the old half falls first (0 to 120 ms, accelerating, darkening to 70% edge-on), then the new half */
     const half = MOTION.digit / 2;
     was.animate([{ transform: "none", opacity: 1, filter: "brightness(1)" }, { transform: "rotateX(90deg)", opacity: 0.6, filter: "brightness(0.7)" }], { duration: half, easing: "cubic-bezier(.55, 0, 1, .45)", fill: "forwards" });
     now.animate([{ transform: "rotateX(-90deg)", filter: "brightness(0.7)" }, { transform: "rotateX(9deg)", offset: 0.7 }, { transform: "none", filter: "brightness(1)" }], { duration: half, delay: half, easing: MOTION.oak, fill: "backwards" });
@@ -332,6 +336,7 @@ function tick() {
   const now = Date.now() / 1000;
   const next = nextEvent(now);
   if ((next ? next.key : null) !== shownNext) renderTimeline();
+  if (D.party && D.party.polls.some((q) => q.closes_epoch <= now) && splitPolls()) { try { renderLedger(); renderTiles(); } catch (e) {} } /* fix C1: a poll closing while the page is open */
   const digits = $("#clock-digits");
   if (!next) { setClockLabel("Every date on the board has passed", ""); digits.replaceChildren(); $("#clock-when").textContent = "Open the dates for the whole rail."; return; }
   const left = Math.max(0, Math.floor(next.epoch - now));
@@ -344,7 +349,7 @@ function tick() {
   /* Screen readers get the countdown as words, once a minute, not digit by digit. */
   const leftText = parts.filter(([u]) => u !== "seconds").map(([u, v]) => `${v} ${v === 1 ? u.replace(/s$/, "") : u}`).join(", ") + " left";
   const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").setAttribute("aria-label", `Dates. ${next.label}: ${leftText}. Launch: ${launchLine()}. Open all the dates.`); }
-  $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { rel: false }); /* V13c (consistency 10): the one formatter */
+  $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { mine: true }); /* V13c (consistency 10): the one formatter */
   const mc = $("#mini-clock");
   /* V12: the phone bar fits 375 px: the countdown, then the launch in the viewer's own time, short (no repeated "Launch", no zone) */
   if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
@@ -353,15 +358,18 @@ function tick() {
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function fill(key, ...kids) { const el = $(`#ts-${key}`); if (el) el.replaceChildren(...kids.flat().filter(Boolean)); }
+const LEEROY_HOW = "In #wow-forever, type /ask and your question, or tag Leeroy Jenkins.";
 function renderTiles() {
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
-  const count = (role) => p.members.filter((m) => m.role === role).length;
+  const count = (role) => p.members.filter((m) => (m.role_now || m.role) === role).length, later = p.members.filter((m) => m.role_from);
   fill("five",
     /* V12: phones show race and class under each name too, as the laptop medallions do */
     h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
     h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
-    h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many]) => [h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`), " "]),
-      h("span", {}, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `· Still choosing a play style: ${andList(o)}` : "· All five have picked a play style"; })())));
+    /* fix C3: counted on role_now (damage until 40 is damage at launch); the second sentence starts its own line, no stray dot */
+    h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many], i) => [i ? ", " : "", h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`)]),
+      later.length ? ` (${andList(later.map((m) => `${count(m.role_from.role) === 1 ? "a second" : "a"} ${m.role_from.role} from ${m.role_from.level}`))}).` : ".", " ",
+      h("span", { class: "strip-2" }, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : "All five have picked a spec."; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), `\u00a0${ms.length}`])),
@@ -370,10 +378,10 @@ function renderTiles() {
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
-    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line", "data-land": `racials.${MEM.slug(race)}` }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m))), " ", h("b", { text: race }), a ? `\u00a0· ${a.name}` : ""); }),
-    changed ? h("span", { class: "tile-line", "data-land": "racials.changed", text: `${plural(changed, "racial", "racials")} changed since Oct 26` }) : null);
+    races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line", "data-land": `racials.${MEM.slug(race)}` }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m, undefined, null))), " ", h("b", { text: race }), a ? ["\u00a0· ", h("span", { class: "rk-n", text: a.name })] : ""); }),
+    changed ? h("span", { class: "tile-line", "data-land": "racials.changed", text: `${plural(changed, "race skill", "race skills")} changed since Oct 26` }) : null);
   fill("legacy",
-    wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], ". They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."]),
+    wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], "."]), wallGloss(L.gloss || {}, ["They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."], "tl-more"),
     h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
     /* consistency 5: the count the scene shows (every buff the five bring), not the wheel's links */
@@ -384,7 +392,7 @@ function renderTiles() {
   fill("ledger",
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
     /* V13e retest-14: the "still open" count lands on the first open line, so the landing works where the list is hidden (1500 px and up) */
-    (() => { const mm = minis([[stillOpen.length, "still open"], [p.polls.length, p.polls.length === 1 ? "poll" : "polls"]]); if (stillOpen.length && mm.firstChild) mm.firstChild.setAttribute("data-land", "ledger.open-0"); return mm; })(),
+    (() => { const mm = minis([[stillOpen.length, "still open"], ...(p.polls.length ? [[p.polls.length, p.polls.length === 1 ? "poll taking votes" : "polls taking votes"]] : [])]); if (stillOpen.length && mm.firstChild) mm.firstChild.setAttribute("data-land", "ledger.open-0"); return mm; })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
@@ -395,13 +403,12 @@ function renderTiles() {
     fill("signups", h("span", { class: "su-nums" }, nums.map(([v, l, k]) => h("span", { class: "su-num", "data-land": `signups.${k}` }, h("b", { text: String(v) }), h("small", { text: l })))),
       h("span", { class: "rsvp-bar su-keg", "aria-hidden": "true" }, kegRow([...RSVP_KEYS.flatMap((k) => Array(cnt(k)).fill(k)), ...Array(none).fill("none")])), when);
   } else fill("signups", h("span", { class: "tile-line", text: "The Discord sign-ups did not load." }));
-  fill("librarian",
-    h("span", { class: "tile-line" }, "Leeroy answers questions. In any Discord channel here, type ", h("b", { text: "/ask" }), " and your question."),
-    h("span", { class: "tile-line", text: "It reads the same library this board searches." }));
+  /* fix C5: one sentence on the tile and in the scene (index.html .act-how); fix C4: one whole sentence per line */
+  fill("librarian", h("span", { class: "tile-line", text: "Leeroy answers questions in Discord." }), h("span", { class: "tile-line", text: LEEROY_HOW }), h("span", { class: "tile-line tl-more", text: "It reads the same library this board searches." }));
 }
 /* A wall line with dotted glossary words. */
-function wallGloss(G, parts) {
-  return h("span", { class: "tile-line" }, ...parts.map((x) => (Array.isArray(x) ? dotBtn(x[0], x[1]) : x)));
+function wallGloss(G, parts, cls) {
+  return h("span", { class: `tile-line${cls ? ` ${cls}` : ""}` }, ...parts.map((x) => (Array.isArray(x) ? dotBtn(x[0], x[1]) : x)));
 }
 /* V12: */
 const GL = { open: null, re: null };
@@ -557,6 +564,7 @@ function miniSpark(vals) {
   return s("svg", { viewBox: `-4 -4 ${W + 8} ${H + 8}`, "aria-hidden": "true", preserveAspectRatio: "none" }, s("polyline", { class: "viz-line", points: pts }));
 }
 
+const roleWords = (m) => (m.role_from ? `${m.role_now || m.role} to ${m.role_from.level}, then ${m.role_from.role}` : m.role_now || m.role);
 function renderCards() {
   const wrap = $("#cards"); wrap.replaceChildren();
   const lvl = D.client.level;
@@ -577,8 +585,8 @@ function renderCards() {
       h("div", { class: "what", text: `${m.race} ${m.class}` }),
       h("div", { class: "spec", text: m.spec }),
       h("dl", { "data-j": "g c e" },
-        h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: m.role }), m.role_detail ? h("span", { class: "spec", text: m.role_detail }) : null)),
-        h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), "chosen")))),
+        h("div", {}, h("dt", { text: "Role" }), h("dd", {}, h("span", { class: "role", text: roleWords(m) }))), /* fix C3 */
+        h("div", { "data-j": "c e" }, h("dt", { text: "Spec" }), h("dd", {}, (m.spec_status.status === "open" ? h("span", { class: "chip stamp new open-lock" }, emb("lock"), "not chosen yet") : h("span", { class: "chip stamp board declared" }, emb("ribbon"), m.spec)))),
         h("div", {}, h("dt", { text: "Starts in" }), h("dd", { text: m.start_zone || "unknown" })),
         h("div", { "data-j": "c e" }, h("dt", { text: "Professions" }), h("dd", {}, profs.length ? profs : "none said yet"))),
       flipBtn(`${m.class} spells at ${lvl}`));
@@ -588,8 +596,7 @@ function renderCards() {
         sp.duration_ms && !sp.values.some((v) => v.mode === "total") ? `lasts ${fmtMs(sp.duration_ms)}` : null, sp.learned ? `learned at ${sp.learned}` : null].filter(Boolean).join(" · ");
       return h("li", { class: "spell" }, h("div", { class: "spell-name" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null), vals ? h("div", { class: "spell-vals", text: vals }) : null, h("div", { class: "spell-meta", text: meta }));
     }));
-    /* V13d (interaction 8): the back is a list of spell names; a tap opens the game-style card (js/v13d.js). Everything shows
-       every row with its numbers, as V13c did. */
+    /* V13d (interaction 8). */
     list.setAttribute("data-j", "e");
     const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class} spells at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class, "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
     const back = h("div", { class: "face back" },
@@ -636,6 +643,8 @@ function mapWidth() {
   return Math.max(200, Math.min(side ? tall : Math.max(960, tall), sheet - 36 - (side ? 26 * rem + 28 : 0)) - 20);
 }
 /* V13b (owner-8): */
+/* fix C19: the road lines are obstacles for every label, sampled along each curve past its first stretch at its own pins */
+const roadBoxes = () => ROADS.flatMap((r) => { const n = r.d.match(/-?[\d.]+/g).map(Number), out = []; for (let i = 0; i + 7 < n.length; i += 6) for (let t = i ? 0 : 0.12; t <= 1; t += 0.06) { const u = 1 - t, f = (k) => u * u * u * n[i + k] + 3 * u * u * t * n[i + 2 + k] + 3 * u * t * t * n[i + 4 + k] + t * t * t * n[i + 6 + k]; out.push({ x: f(0) - 3, y: f(1) - 3, w: 6, h: 6 }); } return out; });
 function mapUntangle() {
   /* in map units, from the drawing's own attributes and getBBox, so the pins' and plates' drop-in motion never skews it */
   const sv = $("#map svg"); if (!sv) return;
@@ -645,6 +654,7 @@ function mapUntangle() {
   const fixed = [...sv.querySelectorAll(".banner-cloth")].map((r) => ({ x: num(r, "x"), y: num(r, "y"), w: num(r, "width"), h: num(r, "height") }));
   for (const p of sv.querySelectorAll(".map-pin")) { const m = /translate\(([-\d.]+) ([-\d.]+)\)/.exec(p.getAttribute("transform") || ""); if (m) fixed.push({ x: +m[1] - 15, y: +m[2] - 42, w: 30, h: 42 }); }
   for (const e of sv.querySelectorAll(".map-mark")) fixed.push({ x: num(e, "x"), y: num(e, "y"), w: num(e, "width"), h: num(e, "height") });
+  fixed.push(...roadBoxes());
   const placed = [];
   for (const t of sv.querySelectorAll(".map-text")) {
     let r; try { const b = t.getBBox(); r = { x: b.x, y: b.y, w: b.width, h: b.height }; } catch (e) { continue; }
@@ -724,9 +734,7 @@ function renderMap() {
     s("path", { class: "map-land", d: "M330 40 C400 30 470 50 540 80 C580 120 570 200 560 260 C540 320 470 360 390 380 C300 395 210 380 180 330 C170 280 220 230 260 200 C300 160 300 90 330 40 Z" }));
   const byZone = {};
   for (const m of D.party.members) (byZone[m.start_zone] ||= []).push(m);
-  /* paint order is document order: the road lines, their trail prints, the walkers and the zeppelin (the "lines" layer) come
-     first, then the town and crossroads marks and the place names, then the pins (the road-g groups), then the plates. So a
-     line never runs over an icon. Each road has a lines group and a pin group, both keyed by data-road. */
+  /* paint order is document order. */
   const lines = ROADS.map((r) => {
     const g = s("g", { class: "road-line", "data-road": r.key });
     /* V13a: the march is SMIL on the map's own clock (mapClock), not a CSS animation that repainted the page every refresh */
@@ -736,12 +744,8 @@ function renderMap() {
     svg.append(g); return g;
   });
   const groups = [];
-  /* V11: each of the five is a pin carrying their class crest, with a name banner. Labels never collide: every banner tries
-     a ladder of spots around its pin against the boxes already placed (fixed place names, other pins, other banners) and
-     takes the first clear one, with a leader line when it had to move. Sizes follow the phone type ramp (26/24 units). */
-  /* V13b (spec 1.5): a name is a small label (12.5 px on screen at any map size) on a quiet plate beside its pin, and place
-     names 14 px, so the pins carry the map. The sizes are in map units for the map's drawn width; the map draws again when
-     that width changes by more than a sixth (mapFit). */
+  /* V11: each of the five is a pin carrying their class crest, with a name banner. */
+  /* V13b (spec 1.5): a name is a small label (12.5 px on screen at any map size) on a quiet plate beside its pin, and place */
   /* a larger map carries larger names (up to 1.8 times at 1400 px and more), so they stay readable at arm's length */
   const phone = innerWidth < 700, mw = mapWidth(), u = 600 / mw, tiny = mw < 330, bump = mw > 600 ? Math.min(1.8, 1 + (mw - 600) / 1000) : 1, FS = 13 * u * bump, BIG = (tiny ? 13 : 14.5) * u * bump, SMALL = 13 * u * bump /* mobile build (2026-10-30): 13 px on screen at least, the phone floor for labels (was 12.5, 11 on a tiny map) */, CH = 0.6;
   MAPW.drawn = mw;
@@ -787,6 +791,7 @@ function renderMap() {
       banners.push({ g, m, tx, ty, plate: plates[i], row: stagger ? i % 2 : 0 });
     });
   }
+  boxes.push(...roadBoxes());
   /* the plates last, so they keep clear of every pin and place name: */
   const labels = s("g", { class: "map-labels" }); /* drawn last, over the roads and the walkers */
   const clear = (b) => b.x >= 3 && b.y >= 3 && b.x + b.w <= 597 && b.y + b.h <= 397 && !boxes.some((o) => b.x < o.x + o.w + 2 && o.x < b.x + b.w + 2 && b.y < o.y + o.h + 2 && o.y < b.y + b.h + 2);
@@ -854,7 +859,7 @@ function renderMap() {
   if (SC.open === "roads") requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); /* drawn again while open (a resize): measured again */
   const panel = h("div", { class: "road-panel", "aria-hidden": "true" });
   box.append(svg, panel);
-  mapClock(); /* integrator pass 3: the new drawing is paused here too (mapVisibility above ran before it was in the page, so its marching roads ran 60 frames a second behind a closed scene and in Play) */
+  mapClock(); /* integrator pass 3 */
   const legend = $("#roads-legend"); legend.replaceChildren();
   let sticky = null;
   const btns = [];
@@ -894,7 +899,7 @@ const unchosen = (o) => /nothing chosen|not chosen/i.test(o.status || "");
 function meetLine(meet) {
   const url = D.party.signup_url;
   if (!unchosen(meet)) return [`${meet.title}: ${meet.status}. ${meet.detail || ""}`];
-  return [h("b", { text: `${meet.title}: ` }), "Not chosen yet. ", url ? h("a", { href: url, target: "_blank", rel: "noopener noreferrer", text: "Answer on the Sign-ups card" }) : "Answer on the Sign-ups card", ". ", meet.detail || ""];
+  return [h("b", { text: `${meet.title}: ` }), "Not chosen yet. ", meet.detail || "", " ", h("a", { class: "tn-link", href: "#signups", text: "Sign-ups" }), " has the answers so far."]; /* fix C8: facts, no imperative */
 }
 function splitNotes(text) {
   const notes = [];
@@ -907,8 +912,7 @@ function raceRow(r, i) {
   const client = (r.client.values.length || r.client.cooldown_ms) ? `client ${r.client.build}: ${[...r.client.values.map((v) => fmtVal(v)), r.client.cooldown_ms ? `${fmtMs(r.client.cooldown_ms)} cooldown` : null].filter(Boolean).join(" · ")}${r.changed_oct26 ? " (this build predates the Oct 26 notes)" : ""}` : null;
   const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: `changed ${r.changed_on || "Oct 26"}` }) : null];
   const li = h("li", { class: "rrow", style: `--di: ${i}`, "data-key": MEM.slug(r.name), ...(r.changed_oct26 ? { "data-changed": r.changed_on || "Oct 26" } : {}) });
-  /* V13d (interaction 3): closed by default, one plain line each (the first clause); the whole line, the dated notes and the
-     client numbers open on tap. Everything opens every row. */
+  /* V13d (interaction 3). */
   const plain = wholeClause(now.split(/;\s*/)[0].replace(/\s*\([^)]*\)/g, ""), 90);
   const open = JR() === "everything";
   if (!notes.length && !client && plain === now) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
@@ -923,7 +927,7 @@ function renderRaces() {
   Object.entries(D.client.racials).forEach(([race, list], idx) => {
     const ms = D.party.members.filter((m) => m.race === race);
     wrap.append(h("details", { class: "slip race", "data-race": MEM.slug(race), open: wideMQ.matches || idx === 0 || JR() === "everything" },
-      h("summary", {}, h("h3", {}, race, h("span", { class: "dots", "aria-hidden": "true" }, ms.map((m) => crestMark(m))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") }))),
+      h("summary", {}, h("h3", {}, race, h("span", { class: "dots", "aria-hidden": "true" }, ms.map((m) => crestMark(m, undefined, null))), h("span", { class: "label", text: ms.map((m) => m.name).join(", ") }))),
       h("ul", {}, list.map((r, i) => raceRow(r, i)))));
   });
 }
@@ -1150,11 +1154,34 @@ const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hid
 /* where a ledger line was written: the Party Board under a wax seal, the group notes under a quill */
 const srcTag = (src) => h("span", { class: `label srctag ${src === "board" ? "board" : "notes"}` }, emb(src === "board" ? "seal" : "quill"), SRC_WORD[src] || src);
 const SRC_WORD = { board: "on the Party Board", chat: "said in chat", "group notes": "in the group notes" };
-/* V12: a time in the viewer's own zone, short ("Thu, Oct 29, 1:37 PM"); with a zone, that zone's clock instead */
-function whenLocal(epoch, tz) { return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", ...(tz ? { timeZone: tz } : {}) }).format(new Date(epoch * 1000)).replace(":00", ""); }
+/* fix C1: D.party.polls holds only the polls still taking votes, polls_closed the rest (lane A reads polls); the clock re-splits */
+function splitPolls() {
+  const p = D.party; if (!p) return false;
+  const now = Date.now() / 1000, all = [...(p.polls || []), ...(p.polls_closed || [])], n = (p.polls || []).length;
+  p.polls = all.filter((q) => !(q.closes_epoch <= now)); p.polls_closed = all.filter((q) => q.closes_epoch <= now);
+  return p.polls.length !== n;
+}
+/* fix C3: Street Rat is damage until 40; role_now and role_from (lane A reads both names) */
+function roles() {
+  for (const m of (D.party && D.party.members) || []) {
+    const d = m.role_detail || "", f = /(\w+) from level (\d+)/i.exec(d);
+    m.role_now = /^damage until \d+/i.test(d) ? "damage" : m.role;
+    m.role_from = f ? { role: f[1].toLowerCase(), level: +f[2] } : null;
+  }
+}
+/* fix C8: a Still open line is a statement per kind of item, not the card's link text */
+function openLine(o, link) {
+  const cq = (D.party.polls_closed || []).find((q) => q.title === o.title), l = (o.links || [])[0], gap = /Gap: ([A-Za-z ]+?)\./.exec(o.text || "");
+  if (cq) return [`The poll closed ${fmtWhen(cq.closes_epoch)}${cq.result ? `: ${cq.result}` : /name/i.test(o.title) ? " with no name chosen yet" : ", no result on the board yet"}.`];
+  if (unchosen(o)) return meetLine(o).slice(1);
+  if (gap) return [`Nobody has ${gap[1]} yet. `, l ? link(l, `The options for ${o.title.toLowerCase()} in Discord`) : null, l ? "." : null];
+  if (o.status === "the event") { const T = D.signups && D.signups.tallies, n = T ? RSVP_KEYS.reduce((a, k) => a + (T.rsvp[k] ? T.rsvp[k].count : 0), 0) : null; return [cardDates((o.detail || "").replace(/\s*Who's on\?/, "")), " ", l ? link(l) : null, l ? "." : null, n === null ? null : ` Launch-night answers: ${n} of ${D.party.members.length} so far.`]; }
+  return linkify(capFirst(cardDates(o.status ? `${o.status}${/^nobody/i.test(o.status) ? " yet" : ""}. ${o.detail || ""}` : o.text || "")).replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (x) => link(x, o));
+}
+const capFirst = (x) => x.charAt(0).toUpperCase() + x.slice(1);
 function renderLedger() {
   const p = D.party, wrap = $("#ledger-slip"); wrap.replaceChildren();
-  const link = (l, o) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: /discord\.com\/events\//.test(l.url) ? "the launch-night event in Discord" : `${l.label}${o ? ` for ${o.title.toLowerCase()}` : ""} in Discord` });
+  const link = (l, o) => h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer", text: typeof o === "string" ? o : /discord\.com\/events\//.test(l.url) ? "The launch-night event in Discord" : `${l.label}${o ? ` for ${o.title.toLowerCase()}` : ""} in Discord` });
   const pollNames = p.polls.map((q) => q.title.toLowerCase());
   $("#ledger-lede").textContent = p.polls.length
     ? `What is settled, what is open, and ${p.polls.length === 1 ? "a poll" : `${p.polls.length} polls`} to vote in: ${andList(pollNames)}.`
@@ -1165,11 +1192,11 @@ function renderLedger() {
     h("ul", { "data-j": "c e" }, [...p.settled, ...p.settled_extra].map((x, i, all) => h("li", { class: "settled-li", style: `--di: ${i}`, ...(i === all.length - 1 ? { "data-land-to": "settled" } : {}) }, h("span", {}, seal(), x.text), srcTag(x.source))),
       p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), p.play.text), srcTag(p.play.source)) : null),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
-    ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), q.closes_epoch ? h("span", {}, `Closes ${whenLocal(q.closes_epoch)} your time`, h("small", { class: "et-anchor", text: ` (${whenLocal(q.closes_epoch, "America/New_York").replace(whenLocal(q.closes_epoch).replace(/,[^,]*$/, ""), "").replace(/^,\s*/, "")} ET)` }), `. ${q.text.replace(/^poll closes on [^.]*?ET\.\s*/i, "")}`) : h("span", { text: q.text }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `Open the ${q.title.toLowerCase()} poll in Discord` })))),
+    ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.closes_epoch ? `Closes ${fmtWhen(q.closes_epoch)}.` : cardDates(q.text.replace(/\s*Add names in chat\.?/i, "")) }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `The ${q.title.toLowerCase()} poll in Discord` })))),
     h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}`, "data-land-to": `open-${i}`, "data-title": o.title },
       h("strong", { text: o.title }),
-      h("span", { "data-j": "c e" }, ...(unchosen(o) ? meetLine(o).slice(1) : linkify((o.status ? `${o.status}. ${o.detail || ""}` : o.text || "").replace(/\(Pacific\)/g, "(Pacific time)"), o.links || [], (l) => link(l, o))),
+      h("span", { "data-j": "c e" }, ...openLine(o, link),
         /* V16: the professions item opens the decision view, where each option's facts are */
         /profession/i.test(o.title) ? [" ", h("a", { class: "tn-link ledger-decide", href: "#decide", text: "The options, by person." })] : null),
       srcTag(o.source))))));
@@ -1217,11 +1244,11 @@ function renderFooter() {
   $("#footer").replaceChildren(
     h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     /* V12: touch wording on touch screens; keys only where there is a keyboard and mouse */
-    h("span", { text: window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click a tile to open it. Escape or the browser's back button returns to the wall. Press ? for keys." : "Tap a tile to open it. The X at the top, or your phone's back gesture, returns to the wall." }));
+    h("span", { text: window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click a tile to open it. Escape returns to the wall. Press ? for keys." : "Tap a tile to open it. The X at the top, or your phone's back gesture, returns to the wall." }));
   $("#lib-sources").replaceChildren(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
-    h("p", { text: "Tavern paintings generated on 2026-10-26 for this board. Scene, buff, pint and map emblems generated with ChatGPT on 2026-10-28." }),
+    h("p", { text: "Tavern paintings generated on Oct 26 for this board. Scene, buff, pint and map emblems generated with ChatGPT on Oct 28." }),
     h("p", { text: "Spell numbers are the game's own values at the level cap and can move with Blizzard's hotfixes. A wax seal marks what is written on the Party Board; a quill, what the group has noted down; a speech bubble, what was said in chat." }));
 }
 
@@ -1403,7 +1430,7 @@ const cleanName = (n) => String(n).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, 
 /* V11: one clear way to answer: the Sign-ups card in Discord */
 function actRow() {
   const url = D.party && D.party.signup_url; if (!url) return;
-  $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "Answer in Discord"), h("p", { class: "act-how", text: "Open #wow-forever in Discord and tap I'm in, Tentative, Running late or Out on the Sign-ups card." }));
+  $("#dsu-act").replaceChildren(h("a", { class: "act-btn", href: url, target: "_blank", rel: "noopener noreferrer" }, emb("speech"), "The Sign-ups card in Discord"), h("p", { class: "act-how", text: "The card in #wow-forever takes I'm in, Tentative, Running late or Out." }));
 }
 function renderSeats(S) {
   const box = $("#dsu-seats"); if (!box) return;
@@ -1448,10 +1475,10 @@ function renderDiscordSignups() {
 }
 
 /* V11: the board opens in any browser from the web link; nobody needs Discord's Activity to read it */
-const PRESENCE_WEB = "Open in any browser, no sign-in";
+const PRESENCE_WEB = ""; /* fix C22: the header carries no stray note (the intro says it opens in any browser) */
 async function startRuntime() {
   const c = window.claude;
-  if (!c || typeof c.use !== "function") return;
+  if (!c || typeof c.use !== "function") { setStatus(D.signups && D.signups.updated ? `Sign-ups as of ${fmtWhen(Date.parse(D.signups.updated) / 1000)}.` : ""); return; } /* fix C17: never a stuck "Loading" */
   const use = (n) => Promise.resolve().then(() => c.use(n)).catch(() => null);
   const [db, user, room] = await Promise.all([use("db"), use("user"), use("room")]);
   RT.db = db; RT.user = user; RT.room = room; RT.tried = true;
@@ -1485,8 +1512,7 @@ async function startRuntime() {
 
 /* V16 (2026-10-30): "decide" (What to decide) sits before Next steps, which stays last; js/decide.js adds its tab and panel at load */
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "decide", "tonight"];
-/* V13c (spec 7.1, NORTH-STAR "One vocabulary"): one name per thing; tiles, tabs, sheet titles, the bar, the menu, the key list
-   and the page title all read this table */
+/* V13c (spec 7.1, NORTH-STAR "One vocabulary"). */
 const TITLES = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const PAGE_TITLE = { base: "" };
 /* spec 7.4: the document title follows the open scene */
@@ -1505,8 +1531,7 @@ function setHash(key, push) {
   try { if (push) history.pushState({ boardScene: key, pushed: true }, "", url); else history.replaceState(key ? { boardScene: key, pushed: !!(history.state && history.state.pushed) } : null, "", url); return true; } catch (e) { return false; }
 }
 function replay(el, cls) { if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); }
-/* one frame (2026-10-30): a panel on its way out leaves the layout where it stood (absolute in the body, which contains it), so the new one
-   lays out alone, centres and fits as it will stay, and the body never holds two panels one under the other during the cross-fade */
+/* one frame (2026-10-30). */
 function liftPanel(p) {
   const b = $("#sheet-body"); if (!b || p.hidden || !b.getBoundingClientRect) return;
   b.scrollTop = 0;
@@ -1550,10 +1575,7 @@ function selectPanel(key, crossFade) {
   dropPanel(next); next.hidden = false; next.classList.remove("leaving");
   if (crossFade) { replay(next, "entering"); sfx("tab"); }
   $("#sheet-body").scrollTop = 0;
-  /* V13c (craft 21): a scene's entrance choreography plays in full on its first open of the visit; later opens are a short fade.
-     2026-10-30: only on a tab change. An open already fades the whole sheet (the view transition, the FLIP, the rise, the
-     reduced-motion fade); a second fade on the panel under it put the bright paper on screen before its cards, a 22 luma hump
-     on a phone (board/qa/2026-10-30-render.md) */
+  /* V13c (craft 21): a scene's entrance choreography plays in full on its first open of the visit. */
   const first = !PLAYED.has(key); PLAYED.add(key);
   if (first) { if (PLAY[key]) replay($(PLAY[key][0]), PLAY[key][1]); if (ON_FIRST[key]) ON_FIRST[key](); }
   else if (crossFade) replay(next, "again");
@@ -1563,8 +1585,7 @@ function selectPanel(key, crossFade) {
   if (tabs.scrollWidth > tabs.clientWidth) tabs.scrollLeft = Math.max(0, tab.offsetLeft - (tabs.clientWidth - tab.offsetWidth) / 2);
   moveInd(); markBar(key);
   KIT.emit("scene", key, prev);
-  /* one frame (2026-10-30): the fit is measured after the scene event (the coin's class sets the head's height, a panel may fill its rows) and
-     checked again once the frame has painted and the fonts are in */
+  /* one frame (2026-10-30). */
   fitScene();
   if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(() => { if (SC.open === key) { fitScene(); moveInd(); } }));
   /* the rail's bar is measured again once the fonts are in (a first open at load measured the tabs in the fallback font) */
@@ -1576,16 +1597,14 @@ const FIT_MIN_W = 900, FIT_MIN = 0.86, FIT_OVER = 0.15; /* 2026-10-30: from 900 
 const FIT = {};
 const fitKey = (key) => `${key}:${innerWidth}x${innerHeight}`;
 /* one frame (2026-10-30): the room a panel has is the body's own height inside its padding, whatever the frame is at this size */
-/* the panel's height as it shows: offsetHeight is in the panel's own (zoomed) units and ignores the transforms the open and close
-   animations put on the sheet, which getBoundingClientRect() would count */
+/* the panel's height as it shows. */
 const fitTall = (p) => p.offsetHeight * (parseFloat(p.style.zoom) || 1);
 function fitRoom(body) { const cs = getComputedStyle(body); return body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 4; }
 function fitScene(want) {
   const key = want || SC.open, p = key && $(`#panel-${key}`), body = $("#sheet-body"), sheet = $(".sheet");
   if (!p || !body || !sheet) return;
   const k = fitKey(key);
-  /* a remembered zoom is checked against the panel as it is now (2026-10-30): the warm-up can measure before the fonts and rows
-     land, and a zoom that no longer fits is measured again, never trusted */
+  /* a remembered zoom is checked against the panel as it is now (2026-10-30). */
   if (!want && FIT[k] !== undefined) {
     p.style.zoom = FIT[k];
     const room = fitRoom(body);
@@ -1657,9 +1676,7 @@ function startLibBar() {
 }
 let swipeBound = false;
 function startSwipe() {
-  /* mobile build: the phone shell's swipe.js owns scene swipes on a phone. The listeners always bind and every pointerdown asks
-     shellOwns() (BoardShell.phone()), so the two engines never both move a panel and a page whose shell switches off at run time
-     (widened past 700, or shell.js missing) keeps this swipe; a return here at boot left that page with no swipe at all */
+  /* mobile build: the phone shell's swipe.js owns scene swipes on a phone. */
   if (swipeBound) return; swipeBound = true;
   const shellOwns = () => !!(window.BoardShell && window.BoardShell.phone());
   try { if (localStorage.getItem("board-swiped") === "1") { const hint = $("#scene-hint"); if (hint) hint.classList.add("used"); } } catch (e) {}
@@ -1704,9 +1721,7 @@ let countToken = 0;
 function countUp(box) {
   const els = [...box.querySelectorAll("b[data-n]")], tok = ++countToken;
   if (reduceMQ.matches || !els.length) return;
-  /* 2026-10-30: the count's clock starts at the first frame it paints, not when it is called. An open that kept the thread busy for
-     50 ms after this call (a slow phone, a loaded machine) let the first frame land past the ease's steep start, so some tallies
-     showed their numbers at once instead of counting up from 0 (harness3 "tallies start at 0" failed on master and the branch alike) */
+  /* 2026-10-30: the count's clock starts at the first frame it paints, not when it is called. */
   let t0 = null;
   const step = (t) => { if (tok !== countToken) return; if (t0 === null) t0 = t; const k = Math.min(1, Math.max(0, t - t0) / MOTION.count), e = 1 - Math.pow(1 - k, 3); for (const el of els) el.textContent = String(Math.round(Number(el.dataset.n) * e)); if (k < 1) requestAnimationFrame(step); };
   for (const el of els) el.textContent = "0";
@@ -1734,7 +1749,7 @@ function placeOrnament(key) {
   const o = h("div", { id: "sheet-orn", class: `sheet-orn orn-${key}`, "aria-hidden": "true" }, move);
   sheet.append(o); replay(o, "drawing");
 }
-/* the wall's photograph decodes late and used to pop in on the first paint; the plate fades in once the image is decoded (a 1.8 s fallback shows it anyway) */
+/* the wall's photograph decodes late and used to pop in on the first paint */
 (function wallFade() {
   const mark = (el, src) => {
     if (!el) return;
@@ -1842,8 +1857,7 @@ function landing(k) {
   return KIT.lander ? KIT.lander(k, L.sub) || null : null;
 }
 /* The library tile is a div holding a link and a search field; focus returns to its link. */
-/* 2026-10-30 (integration review 7): a scene opened by a link at load (Next steps, What to decide) has no tile to go back to, or its tile is hidden
-   (display none, so the focus call is dropped and the document body keeps focus): the wall itself takes it */
+/* 2026-10-30 (integration review 7). */
 const tileFocus = (t) => {
   let f = t.matches("a, button, main") ? t : t.querySelector("a[href]");
   if (f && f.getClientRects && !f.getClientRects().length) f = $("#main");
@@ -1904,7 +1918,7 @@ function requestClose() {
 function switchTab(key, crossFade = true) { if (key === SC.open) return; setHash(key, false); selectPanel(key, crossFade); swiped(); }
 /* Phones have no tab rail (v4 stage 9): focus goes to the panel when the tab is not rendered. */
 function focusScene(k) { const t = $(`#tab-${k}`); if (t && t.getClientRects().length) t.focus({ preventScroll: true }); else { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
-function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); focusScene(k); }
+function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); focusScene(k); if (document.activeElement === document.body) { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } } /* fix C10: focus never falls to the body */
 function goScene(k) {
   if (SC.open !== null) { switchTab(k); focusScene(k); return; }
   setHash(k, true); showScene(k);
@@ -1919,20 +1933,21 @@ function shown(el) {
 const focusables = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && el.getAttribute("tabindex") !== "-1" && shown(el));
 /* the Sensory button and its panel sit outside the scene layer: they join the scene's Tab loop so a keyboard user can reach them */
 const senseBox = () => ["#sense-btn", "#sense-panel"].map((q) => $(q)).filter(Boolean);
+/* fix C10 */
+const LEAD = ["scene-close", "scene-peek", "mode-btn-scene"];
+const sceneFocus = () => { const l = focusables($("#scene")).filter((el, i, a) => !(el.type === "radio" && !el.checked && a.some((x) => x.type === "radio" && x.name === el.name && (x.checked || a.indexOf(x) < i)))); return l.map((el, i) => [el.getAttribute("role") === "tab" ? 0 : LEAD.includes(el.id) ? 1 + LEAD.indexOf(el.id) : el.closest(".journey-scene") ? 4 : 5, i, el]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map((x) => x[2]); };
 function trapFocus(e) {
-  const box = $("#scene"), list = [...focusables(box), ...senseBox().flatMap((n) => (n.matches(FOCUSABLE) ? (shown(n) ? [n] : []) : focusables(n)))];
-  if (!list.length) { e.preventDefault(); return; }
-  const first = list[0], last = list[list.length - 1], at = document.activeElement;
-  if (!list.includes(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
-  else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
-  else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
+  const list = [...new Set([...sceneFocus(), ...senseBox().flatMap((n) => (n.matches(FOCUSABLE) ? (shown(n) ? [n] : []) : focusables(n)))])];
+  e.preventDefault(); if (!list.length) return;
+  const i = list.indexOf(document.activeElement), n = list.length;
+  list[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n].focus();
 }
 
 function showKeys(on) {
   const box = $("#keys");
   if (on && !$("#keys-list").childElementCount) {
     /* the ten digits open the ten scenes before What to decide (V16: D) and Next steps (T) */
-    const rows = [...SCENES.filter((k) => k !== "tonight" && k !== "decide").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["D", "open What to decide"], ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["P", "Play mode: text only, nothing moves"], ["?", "show or hide this list"]];
+    const rows = [...SCENES.filter((k) => k !== "tonight" && k !== "decide").map((k, i) => [String((i + 1) % 10), `open ${$(`#tab-${k}`).textContent.trim()}`]), ["D", "open What to decide"], ["T", "open Next steps"], ["\u2190 \u2192", "previous or next tab"], ["/", "search the library"], ["Esc", "back out, then close the scene"], ["M", "sound on or off"], ["P", "Play mode: text only, nothing moves"], ["S", "the Sensory panel"], ["?", "show or hide this list"]];
     $("#keys-list").replaceChildren(...rows.flatMap(([k, what]) => [h("dt", {}, h("kbd", { text: k })), h("dd", { text: what })]));
   }
   box.hidden = !on;
@@ -2006,7 +2021,7 @@ function startScenes() {
   document.addEventListener("keydown", onKey);
   document.addEventListener("focusin", (e) => {
     if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target) || senseBox().some((n) => n.contains(e.target))) return;
-    const first = focusables($("#scene"))[0]; if (first) first.focus();
+    const first = sceneFocus()[0]; if (first) first.focus();
   });
   addEventListener("popstate", route);
   addEventListener("hashchange", route);
@@ -2031,18 +2046,16 @@ function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.repl
 const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes." };
 const medalImg = (key, cls) => h("img", { class: cls || "medal-img", src: `img/medal/${key}.webp`, alt: "", width: 640, height: 640, decoding: "async", loading: "lazy" });
-/* frame leftovers (2026-10-30): every medal (640 px webp: the coin's face, the side medal) is fetched and decoded in idle time after load,
-   one at a time, and an img takes a medal only once it is decoded, keeping what it shows until then. A first open never decodes one
-   mid-transition (the owner's Edge, Oct 29: frames of 315 to 455 ms on the first open, then the coin popped in on an empty disc) */
+/* frame leftovers (2026-10-30). */
 const MEDALS = {};
 function medalLoad(key) {
   let m = MEDALS[key]; if (m) return m;
   m = MEDALS[key] = { ok: false, p: null, im: null };
   if (typeof Image !== "function") { m.ok = true; m.p = Promise.resolve(); return m; }
   const im = new Image(); m.im = im; im.decoding = "async";
-  const loaded = new Promise((r, j) => { im.onload = r; im.onerror = j; });
+  const dec = typeof im.decode === "function", loaded = dec ? null : new Promise((r, j) => { im.onload = r; im.onerror = j; }); /* fix C23: no load promise nobody handles (WebKit's "Unhandled Promise Rejection: [object Event]") */
   im.src = `img/medal/${key}.webp`;
-  m.p = (typeof im.decode === "function" ? im.decode() : loaded).then(() => { m.ok = true; }, () => { m.ok = true; m.failed = true; });
+  m.p = (dec ? im.decode() : loaded).then(() => { m.ok = true; }, () => { m.ok = true; m.failed = true; });
   return m;
 }
 function medalSet(img, key) {
@@ -2329,8 +2342,7 @@ function tiltReady() {
   tiltLabel(false);
   reduceMQ.addEventListener("change", () => { tilt.hidden = reduceMQ.matches; if (reduceMQ.matches && LB.tilt) tiltOff(); });
   if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) window.screen.orientation.addEventListener("change", () => { TILT.b0 = TILT.g0 = null; });
-  /* mobile build: js/tilt.js (window.BoardTilt) is the one orientation source when it is on the page. The button toggles it and the
-     light aim subscribes to it; the deviceorientation listener and the watchdog below stay only for a page without tilt.js. */
+  /* mobile build: js/tilt.js (window.BoardTilt) is the one orientation source when it is on the page. */
   const linkTilt = () => {
     const BT = window.BoardTilt; if (!BT || TILT.linked) return; TILT.linked = true;
     BT.on(({ x, y }) => { LB.tilt = !!BT.status().on; if (LB.tilt) aimAt(innerWidth * (0.5 + 0.5 * x), innerHeight * (0.5 + 0.5 * y)); });
@@ -2475,7 +2487,7 @@ function startWisps() {
     if (live()) raf = requestAnimationFrame(frame);
   };
   const live = () => !reduceMQ.matches && !document.hidden && !covered && !roomHas("room-wisps") && !roomHas("room-off") && !roomHas("play"); /* companion N4: Play stops them before the ladder starts */
-  addEventListener("board-room", () => { if (live()) run(); else { stop(); ctx.clearRect(0, 0, W, H); } });
+  addEventListener("board-room", () => { if (live()) run(); else { stop(); setTimeout(() => { if (!live()) ctx.clearRect(0, 0, W, H); }, roomHas("play") ? motionMs("move") : 0); } }); /* fix C18: Play fades the still frame first */
   const run = () => { WS.running = live(); if (!raf && WS.running) raf = requestAnimationFrame(frame); };
   const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; WS.running = false; };
   size();
@@ -2516,7 +2528,7 @@ function startArt() {
     ART.beam = true;
     $("#main").classList.add("has-beam"); $("#main").classList.remove("beam-soon");
     $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", alt: "", "aria-hidden": "true", decoding: "async" }));
-  }, () => { $("#main").classList.remove("beam-soon"); }); /* CLS (2026-10-30): main.beam-soon (set in index.html) holds the beam's margin from the first paint; it was added by this probe about 0.5 s in and moved the whole wall 22 px */
+  }, () => {}); /* fix C12 */
 }
 
 /* Sound (V13c): */
@@ -2629,7 +2641,7 @@ function libLink(v) {
 function libToast(msg, sel) {
   const t = $("#toast"); if (!t) return;
   clearTimeout(LIBS.toastT);
-  t.replaceChildren(h("span", { text: msg }), sel ? h("input", { value: sel, readonly: true, "aria-label": "Text to copy" }) : null);
+  t.replaceChildren(h("span", { text: msg }), ...(sel ? [h("input", { value: sel, readonly: true, "aria-label": "Text to copy" })] : [])); /* fix C2: a null child is the text "null" */
   t.hidden = false;
   if (sel) { const i = t.querySelector("input"); try { i.focus({ preventScroll: true }); i.select(); } catch (e) {} }
   LIBS.toastT = setTimeout(() => { t.hidden = true; }, sel ? 9000 : 2600);
@@ -2755,10 +2767,20 @@ function libRibbon(page) {
   return box;
 }
 const libRead = (refs) => { const d = refs.map((r) => r.accessed).filter(Boolean).sort().pop(); return d ? h("span", { class: "read", text: `read ${libDay(d)}` }) : null; };
-const libKey = (k) => k.replace(/_/g, " ").split(".").join(" · ");
-/* A fact that is only an ISO date reads as a date; the ISO text stays beside it. */
-const dtET = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-const libValue = (t, self) => { const iso = /^(\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?Z)$/.exec(String(t).trim()); if (iso) return [h("b", { class: "iso", text: dtET.format(new Date(iso[1])) }), h("span", { class: "read", text: ` ${iso[1]}` })]; const m = /^(\d{4}-\d\d-\d\d)$/.exec(String(t).trim()); return m ? [h("b", { class: "iso", text: dtDayUTC.format(new Date(`${m[1]}T12:00:00Z`)) }), h("span", { class: "read", text: ` ${m[1]}` })] : richText(t, self); };
+/* fix C14: a fact key read as words, with spell names (the tooltip table), places, months and classes capitalised; an ISO value is a date */
+const PROPER = /^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|paris|dalaran|orgrimmar|undercity|durotar|mulgore|tirisfal|crossroads|onyxia|hyjal|blizzard|discord|horde|alliance|forever|fellowship|mage|warlock|priest|paladin|druid|shaman|hunter|rogue|warrior|undead|troll|tauren|orc)$/i;
+function libWords(t) {
+  const T = LIBD.tips, w = String(t).replace(/[_.]/g, " ").replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(\d{1,2})\b/gi, "$1 $2").split(/\s+/).filter(Boolean), out = [];
+  for (let i = 0; i < w.length;) {
+    let n = Math.min(4, w.length - i);
+    for (; n > 0; n--) { const k = w.slice(i, i + n).join(" ").toLowerCase(); if (T && T.names[k] !== undefined) { out.push(T.tooltips[T.names[k]].name); break; } }
+    if (n) { i += n; continue; }
+    out.push(PROPER.test(w[i]) ? capFirst(w[i].toLowerCase()) : w[i]); i++;
+  }
+  return capFirst(out.join(" ").replace(/\bseal of (\w)/g, (m, c) => `Seal of ${c.toUpperCase()}`));
+}
+const libKey = (k) => libWords(k);
+const libValue = (t, self) => { const v = String(t).trim(), iso = /^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?Z$/.test(v), day = /^\d{4}-\d\d-\d\d$/.test(v); return iso || day ? [h("b", { class: "iso", title: v, text: iso ? fmtWhen(Date.parse(v) / 1000) : fmtDay(Date.parse(`${v}T12:00:00Z`) / 1000) })] : richText(t, self); };
 const pageLink = (id, cls, kids, fact) => h("a", { class: cls, href: `#${libTok({ kind: "page", id, fact })}`, "data-lv": libTok({ kind: "page", id, fact }) }, ...[].concat(kids));
 function libRenderHead() {
   const ix = LIBD.index, box = $("#lib-head"); if (!ix || !box) return;
@@ -2766,7 +2788,7 @@ function libRenderHead() {
   const stat = (v, l) => h("div", { class: "lib-stat" }, h("b", { text: v }), h("span", { text: l }));
   const extra = (el) => { el.classList.add("extra"); return el; };
   box.replaceChildren(stat(nf.format(T.pages), "pages"), stat(nf.format(T.facts), "facts"), stat(nf.format(T.blizzard), "from Blizzard"), stat(nf.format(T.open), "open questions"), extra(stat(nf.format(T.gaps), "researched gaps")),
-    st ? extra(stat(String(st.answers), "answers by Leeroy")) : null, st ? extra(stat(fmtSecs(st.median_s), "median reply")) : null,
+    ...(st ? [extra(stat(String(st.answers), "answers by Leeroy")), extra(stat(fmtSecs(st.median_s), "median reply"))] : []), /* fix C2 */
     extra(stat(libDay(ix.generated.slice(0, 10)), "as of")));
 }
 const CAT_EMB = { classes: "classes", dungeons: "dungeons", events: "cal", history: "book", leveling: "leveling", professions: "tradeskills", pvp: "pvp", races: "races", raids: "skull", systems: "systems", ui: "ui" };
@@ -2813,12 +2835,13 @@ function libRenderShelf(main) {
   if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids); return; }
   /* V9: */
   if (libExpert()) kids.push(libRibbon(null));
-  kids.push(libDoors(),
-    h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
-    h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
+  /* fix C13 */
+  kids.push(wideLib() ? null : h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
+    wideLib() ? null : h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
       h("b", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")} · ${nf.format(c.facts)} facts` })))),
-    h("details", { class: "allshelf", open: innerWidth >= 1800 && innerHeight >= 1200 ? "" : null /* integrator pass 3: a wide, tall frame shows every shelf (the front page left 40 percent of it empty) */ }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
-    h("details", { class: "allshelf", ...(wideLib() ? { open: "" } : {}) }, h("summary", { text: "The front page: what changed, what nobody knows, what Blizzard said" }), libFront(wideLib() ? 2 : 8)));
+    h("details", { class: "allshelf" }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
+    libDoors(),
+    h("details", { class: "allshelf" }, h("summary", { text: "The front page: what changed, what nobody knows, what Blizzard said" }), libFront(wideLib() ? 2 : 8)));
   main.replaceChildren(...kids.filter(Boolean));
 }
 function libRenderResults(main) {
@@ -2831,7 +2854,7 @@ function libRenderResults(main) {
   const hits = LIBS.res.hits.filter((x) => !LIBS.cat || x.category === LIBS.cat);
   const pages = new Map();
   for (const x of hits) { if (!pages.has(x.page)) pages.set(x.page, { id: x.page, title: x.title, category: x.category, hits: [] }); pages.get(x.page).hits.push(x); }
-  if (count) count.textContent = hits.length ? `${plural(hits.length, "match", "matches")} on ${plural(pages.size, "page", "pages")}` : "No match";
+  if (count) count.textContent = hits.length ? (hits.length > 1 ? `Best answer first, then ${plural(hits.length - 1, "more line", "more lines")} from ${plural(pages.size, "page", "pages")}.` : "One answer.") : "No match"; /* fix C15 */
   $("#panel-library").dataset.view = hits.length ? "results" : "zero";
   if (LIBS.lastQ !== v.q) { LIBS.lastQ = v.q; const sb = $("#sheet-body"); if (sb) sb.scrollTop = 0; }
   if (!hits.length) { main.replaceChildren(libZero(v.q)); return; }
@@ -2906,10 +2929,8 @@ function libAnswer(q, best) {
 const PROV_RE = /\s*\((?=[^()]*\b(?:client|build|spell \d|datamine|notes|deep dive|hotfix|forum|Wowhead|wiki|tier|source|cache|S\d+)\b)[^()]*\)/gi;
 function libPlain(x) {
   const raw = String(x.value == null ? "" : x.value).trim(), prov = [];
-  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-  const segs = String(x.key || "").split("."), subj = cap((segs.length <= 2 ? segs.join(" ") : segs[segs.length - 1]).replace(/_/g, " "));
-  const iso = /^(\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?Z)$/.exec(raw), day = /^(\d{4}-\d\d-\d\d)$/.exec(raw);
-  if (iso || day) { prov.push(raw); return { lead: [h("b", { text: `${subj}: ` }), iso ? dtET.format(new Date(iso[1])) : dtDayUTC.format(new Date(`${day[1]}T12:00:00Z`)), "."], prov }; }
+  const segs = String(x.key || "").split("."), subj = libWords(segs.length <= 2 ? segs.join(" ") : segs[segs.length - 1]);
+  if (/^\d{4}-\d\d-\d\d(T[\d:]+Z)?$/.test(raw)) return { lead: [h("b", { text: `${subj}: ` }), ...libValue(raw), "."], prov };
   let v = raw.replace(PROV_RE, (m) => { prov.push(m.trim().replace(/^\(|\)$/g, "")); return ""; }).replace(/\s+([.,;:])/g, "$1").trim();
   if (!/[.!?"]$/.test(v)) v += ".";
   return { lead: [h("b", { text: x.open ? "Nobody knows yet: " : `${subj}: ` }), ...richText(v)], prov };
@@ -2954,9 +2975,10 @@ function libBuffAnswer(key) {
 /* "what is a racial", "racials", "define cooldown": the glossary term the question asks about, if any. */
 function libGlossFor(key) {
   if (!LIBD.gloss || !LIBD.glossForm) return null;
-  const k = key.replace(/[?.!]+$/, "").replace(/^(?:what(?:'s| is| are)|whats|define|meaning of)\s+(?:an?\s+|the\s+)?/, "").trim();
-  const i = LIBD.glossForm[k];
-  return i === undefined ? null : LIBD.gloss[i];
+  /* fix C13: "what does a tank do", "what is a healer for", "how does a cooldown work", "healers" reach the plain-words card too */
+  const k = key.replace(/[?.!]+$/, "").trim().replace(/^(?:what(?:'s| is| are| does| do)|whats|define|meaning of|how (?:does|do))\s+(?:an?\s+|the\s+)?/, "").replace(/\s+(?:used for|do|work|for|mean)$/, "").trim();
+  for (const x of [k, k.replace(/s$/, ""), k.replace(/es$/, "")]) if (LIBD.glossForm[x] !== undefined) return LIBD.gloss[LIBD.glossForm[x]];
+  return null;
 }
 function libNearest(q, n = 5) {
   const words = String(q).toLowerCase().replace(/[^a-z0-9\s']/g, " ").split(/\s+/).filter((w) => w.length > 1);
@@ -2972,7 +2994,7 @@ function libNearest(q, n = 5) {
 function libZero(q) {
   const near = libNearest(q);
   const card = h("div", { class: "lib-empty" },
-    h("h3", { class: "lib-title", text: `Nothing on the shelves for "${q}"` }),
+    h("h3", { class: "lib-title", text: `Nothing on the shelves for "${q.length > 60 ? `${q.slice(0, 57).trim()}...` : q}"` }), /* fix C15: a long query is cut */
     near.length ? h("p", { text: "Pages with a similar name:" }) : null,
     near.length ? h("ul", { class: "hits" }, near.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: libCatTitle(p.category) })])))) : null,
     h("p", { text: "Leeroy can look it up. The button copies the question as a Discord command." }),
@@ -3243,7 +3265,7 @@ const changeGroupLi = (g) => {
   if (g.items.length < 3) return g.items.map(changeLi);
   const list = h("ul", { hidden: true }, g.items.map((c) => h("li", { text: c.text })));
   return h("li", {}, h("time", { datetime: g.date, text: libDay(g.date) }), h("span", { class: "chg-box chg-group" },
-    h("span", {}, pageLink(g.page, "", libTitle(g.page)), `: ${g.items.length} numbers moved, among them ${g.items[0].thing.toLowerCase()} and ${g.items[1].thing.toLowerCase()}.`),
+    h("span", {}, pageLink(g.page, "", libTitle(g.page)), `: ${g.items.length} numbers changed, including ${g.items[0].thing.replace(/ top rank$/, "")} and ${g.items[1].thing.replace(/ top rank$/, "")}.`),
     h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `Show the ${g.items.length} changes on ${libTitle(g.page)}`, onclick: (e) => { list.hidden = !list.hidden; e.currentTarget.setAttribute("aria-expanded", String(!list.hidden)); e.currentTarget.textContent = list.hidden ? "Show them" : "Hide them"; } }, "Show them"), list));
 };
 const changeLi = (c) => {
@@ -3316,7 +3338,7 @@ function libRailHint() {
   hint.hidden = false;
   rail.addEventListener("scroll", () => { hint.hidden = true; try { localStorage.setItem("board-railhint", "1"); } catch (e) {} }, { once: true, passive: true });
 }
-const LIB_EXAMPLES = ["onyxia open", "frost blast", "name reservation", "what do packs give"];
+const LIB_EXAMPLES = ["What is Forever?", "When is launch?", "What does a tank do?", "Do I need to pay?"]; /* fix C13: a newcomer's way in */
 function libExamples() {
   const box = $("#lib-examples"); if (!box || box.childElementCount) return;
   box.replaceChildren(...LIB_EXAMPLES.map((q) => h("button", { class: "ex", type: "button", onclick: () => { const i = $("#lib-q"); i.value = q; libSearch(q); } }, q)));
@@ -3378,7 +3400,7 @@ function meetP() {
   const m = D.party && D.party.open.find((o) => /meeting point/i.test(o.title));
   if (!m) return null;
   const url = D.party.signup_url;
-  return h("p", { class: "tn-line" }, h("b", { text: "Meeting point: " }), unchosen(m) ? (url ? h("a", { class: "tn-link", href: url, target: "_blank", rel: "noopener noreferrer", "aria-label": "Meeting point not chosen yet: answer on the sign-up card in Discord" }, "not chosen yet") : "not chosen yet") : m.status);
+  return h("p", { class: "tn-line" }, h("b", { text: "Meeting point: " }), unchosen(m) ? (url ? h("a", { class: "tn-link", href: url, target: "_blank", rel: "noopener noreferrer", "aria-label": "Meeting point not chosen yet: the Sign-ups card in Discord" }, "not chosen yet") : "not chosen yet") : m.status);
 }
 function yourTime(T) {
   const l = T.events.find((e) => e.key === "launch"); if (!l || !l.epoch) return "";
@@ -3392,8 +3414,7 @@ function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
   const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
   const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
-  /* V13b (mobile 8): one name chip everywhere: the same crest pills as the Buffs picker, and once chosen, a plain line saying
-     who and the one action, "Change person" */
+  /* V13b (mobile 8): one name chip everywhere. */
   if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, crestMark(m), m.name)), h("button", { type: "button", class: "lib-tool tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
   else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
@@ -3433,20 +3454,19 @@ function renderTonight() {
   $("#tn-left").replaceChildren(...(left ? ["Last time you read ", h("a", { href: `#${left.tok}`, text: left.title }), " in the library."] : []));
   KIT.emit("tonight");
 }
-/* V15: "Before launch" checklist (per person, ticks in this browser only) and "How things work" strip. Facts come from the
-   generated tonight/party data and from library pages already shipped; a fact the library lacks reads "not published yet". */
+/* V15: "Before launch" checklist (per person, ticks in this browser only) and "How things work" strip. */
 function beforeTicks(slug) { try { const a = JSON.parse(MEM.get(`before-${slug}`) || "[]"); return Array.isArray(a) ? a.filter((x) => typeof x === "string") : []; } catch (e) { return []; } }
 function beforeItems(T, P, member, mine) {
   const open = (rx) => P.open.find((o) => rx.test(o.title)), nowS = Date.now() / 1000, L = T.links || {};
   const ev = (k) => T.events.find((e) => e.key === k), names = ev("names_open"), launch = ev("launch");
   const dt = (epoch) => fmtWhen(epoch), out = [];
   if (member) out.push({ id: "build", text: `Your build on the board: ${member.race} ${member.class}, ${member.spec}.`, more: `As the group has it (${(member.spec_status && member.spec_status.status) || "listed"}).` });
-  if (T.poll_closes) out.push({ id: "guild", text: `Guild name: the poll ${nowS < T.poll_closes ? "closes" : "closed"} ${dt(T.poll_closes)}.`, href: L.poll, more: "Names can also be added in chat.", stamp: T.poll_closes });
+  if (T.poll_closes) out.push({ id: "guild", text: `Guild name: the poll ${nowS < T.poll_closes ? "closes" : "closed"} ${dt(T.poll_closes)}.`, href: L.poll, more: nowS < T.poll_closes ? "Names can also be added in chat." : "", stamp: T.poll_closes });
   if (member) {
     const po = open(/profession/i) || {}, pr = member.professions || [], und = pr.some((p) => p.status === "undecided"), gap = (po.text || "").match(/Gap: ([A-Za-z]+)/);
     out.push({ id: "prof", text: `Professions on the board: ${pr.map((p) => p.name).join(" and ") || "none yet"}${und ? " (one still undecided)" : ""}.`, href: po.links && po.links[0] ? po.links[0].url : L.choose, more: gap ? `The group has no ${gap[1]} yet.` : "" });
   }
-  if (names && names.until_epoch) out.push({ id: "names", text: nowS < names.until_epoch ? "Names: open now for pack holders, until the end of Nov 3 (Pacific time)." : "Names: the pack-holder window has closed.", more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
+  if (names && names.until_epoch) out.push({ id: "names", text: nowS < names.until_epoch ? `Names: open now for pack holders, ${cardDates("until Nov 3 (Pacific)")}.` : "Names: the pack-holder window has closed.", more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
   if (member) out.push({ id: "signup", text: mine ? `Sign-up card: you answered "${T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || mine.rsvp}".` : "Sign-up card: no answer from you yet.", href: L.signup });
   const meet = open(/meeting point/i);
   if (meet) out.push({ id: "meet", text: unchosen(meet) ? "Meeting point: nothing chosen yet." : `Meeting point: ${meet.status}.`, href: unchosen(meet) ? P.signup_url : null, more: meet.detail || "" });
@@ -3526,7 +3546,7 @@ function startDepth() {
   const xb = $("#lib-expert"), fb = $("#lib-forget");
   const xpLabel = (on) => { xb.setAttribute("aria-pressed", String(on)); xb.textContent = on ? "Expert: on" : "Expert: off"; };
   if (xb) { xpLabel(libExpert()); xb.addEventListener("click", () => { const on = !libExpert(); MEM.set("expert", on ? "1" : null); xpLabel(on); libRender(false); }); }
-  if (fb) fb.addEventListener("click", () => { MEM.forget(); KIT.emit("forget"); if (xb) xpLabel(false); renderTonight(); markMe(); markDepth(); document.querySelectorAll(".new-badge").forEach((x) => x.remove()); libRender(false); fb.textContent = "Forgotten"; setTimeout(() => { fb.textContent = "Forget me"; }, 2400); });
+  if (fb) fb.addEventListener("click", () => { MEM.forget(); KIT.emit("forget"); if (xb) xpLabel(false); renderTonight(); markMe(); markDepth(); document.querySelectorAll(".new-badge").forEach((x) => x.remove()); libRender(false); fb.textContent = "Forgotten"; setTimeout(() => { fb.textContent = "Forget me on this browser"; }, 2400); });
   const nav = $("#depth"); if (!nav) return;
   markDepth();
   nav.addEventListener("click", (e) => { const b = e.target.closest("[data-depth]"); if (!b) return; const d = b.dataset.depth; if (d === "wall") { MEM.set("depth", "wall"); requestClose(); markDepth(); } else goScene(d); });
@@ -3572,7 +3592,7 @@ function warmNext() {
      done while idle */
   if (step.layer) { L.inert = true; L.classList.add("warming"); L.hidden = false; }
   if (!WARM.fx) { WARM.fx = true; step.fx = h("div", { class: "warm-fx", "aria-hidden": "true" }); L.append(step.fx); }
-  /* CLS (2026-10-30): the panel is laid out and fitted while visibility: hidden (.warm-m), then shown for the raster frames: a box that was not visible in the previous frame is not a layout shift, and the fit zoom / late rows used to count 0.05 to 0.1 per scene on the wall */
+  /* CLS (2026-10-30): laid out and fitted while hidden (.warm-m), then shown for the raster frames. */
   panel.classList.add("warm", "warm-m"); panel.inert = true; panel.hidden = false;
   WARM.step = step;
   /* three frames: the commit, the raster, the draw; then the panel goes back */
@@ -3613,6 +3633,7 @@ async function boot(mode, sdk) {
     const got = await Promise.all(DATA_P.need);
     DATA_NAMES.forEach((n, i) => { D[n] = got[i]; });
     [D.signups, D.tonight] = await Promise.all(DATA_P.opt);
+    splitPolls(); roles();
     try { performance.mark("board-data"); } catch (e) {}
   } catch (e) {
     setClockLabel("The data files did not load", "");
@@ -3624,18 +3645,10 @@ async function boot(mode, sdk) {
   if (mode === "discord" && sdk) { const tok = launchToken(sdk.customId); if (tok) { try { history.replaceState(null, "", `${location.pathname}${location.search}#${tok}`); } catch (e) {} } }
   /* No hash: open at the depth the person left at; a first visit opens Tonight (V6-SPEC 3.1). */
   /* V14: */
-  let firstBeat = null;
+  /* fix C11 */
   if (!location.hash || location.hash === "#") {
     const d = (KIT.openDepth ? KIT.openDepth() : null) || MEM.get("depth"); /* V15 (2026-10-30): launch night opens on the wall's hero (js/v15.js), the memory untouched */
-    if (!d) {
-      document.documentElement.classList.add("first-beat");
-      const cancel = () => { if (firstBeat) { clearTimeout(firstBeat); firstBeat = null; } document.documentElement.classList.remove("first-beat"); removeEventListener("pointerdown", cancel, true); removeEventListener("keydown", cancel, true); removeEventListener("hashchange", cancel); };
-      addEventListener("pointerdown", cancel, true); addEventListener("keydown", cancel, true); addEventListener("hashchange", cancel);
-      const open = () => { if (!firstBeat) return; firstBeat = null; if (!location.hash || location.hash === "#") { document.documentElement.classList.remove("first-beat"); goScene("tonight"); } };
-      /* the room's first frame freezes the main thread for about a second (long-frame trace, 2026-10-29), so on a room-capable screen the sheet waits for the */
-      const small = innerWidth < 700 || matchMedia("(pointer: coarse)").matches || MEM.get("room") === "off" || !(() => { try { const g = document.createElement("canvas").getContext("webgl2"); if (g) { const x = g.getExtension("WEBGL_lose_context"); x && x.loseContext(); } return !!g; } catch (e) { return false; } })(), calm = reduceMQ && reduceMQ.matches;
-      firstBeat = setTimeout(open, calm ? 900 : small ? 1500 : 7500);
-      if (!calm && !small) { const onRoom = () => { if (!document.documentElement.classList.contains("room-on") || !firstBeat) return; removeEventListener("board-room", onRoom); clearTimeout(firstBeat); firstBeat = setTimeout(open, 1700); }; addEventListener("board-room", onRoom); }
+    if (!d) { if (!MEM.get("journey")) setHash("tonight", true);
     } else if (d === "tonight" || d === "library") setHash(d, false);
   }
   /* Tonight paints first (V6-SPEC 3.3: under 1.0 s on the 4x throttle): its cards and the scene open before the wall renders. */
@@ -3663,7 +3676,7 @@ async function boot(mode, sdk) {
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
 /* V13d: what js/v13d.js reads and calls (it runs after this file, before boot) */
-Object.assign(KIT, { medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 /* V14: an image that 404s is hidden (and its slot keeps its size) instead of showing a broken-image icon. */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
@@ -3682,7 +3695,7 @@ KIT.on("booted", () => {
   if (typeof document.querySelectorAll !== "function") return;
   const stampOf = (txt) => { const m = /js\/board\.js\?v=([0-9a-f]{10})/.exec(txt || ""); return m ? m[1] : ""; };
   const mine = stampOf([...document.querySelectorAll("script[src]")].map((x) => x.getAttribute("src") || "").join(" "));
-  const foot = $("#footer"); if (foot && mine && !foot.querySelector(".build-stamp")) foot.appendChild(h("span", { class: "build-stamp", title: "Build stamp of this page", text: `build ${mine.slice(0, 7)}` }));
+  const foot = $("#footer"); if (foot && mine && !foot.querySelector(".build-stamp")) foot.appendChild(h("span", { class: "build-stamp", text: `build ${mine.slice(0, 7)}` }));
   if (!mine || location.protocol === "file:") return;
   let shown = false;
   const check = async () => {

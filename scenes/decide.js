@@ -48,42 +48,49 @@ K.decideData = get; /* Phase 0 (2026-10-30): the party sheet (js/sheet.js) reads
 const defaultWho = () => { const m = MEM.member(); return m && DV.data && DV.data.people.some((p) => p.class_key === m.class_key) ? m.class_key : "all"; };
 const who = () => DV.who || defaultWho();
 
-/* one person's open items in a sentence, from the states alone */
+/* fix C9: a person's line leads with what is open, in plain words; nothing open is one line */
 function summary(p) {
-  const open = p.decisions.filter((x) => x.state === "open"), chat = p.decisions.filter((x) => x.state === "chat"), spec = p.decisions.find((x) => x.key === "spec40");
-  const bits = [open.length ? `Still open on the Party Board: ${K.andList(open.map((x) => x.title.toLowerCase()))}.` : "Nothing still open on the Party Board."];
-  if (chat.length) bits.push(`${K.andList(chat.map((x) => x.title))}: said in chat, not on a card yet.`);
-  if (spec) bits.push(spec.at40 ? "The board names a change at 40." : "No change at 40 on the board.");
+  const open = p.decisions.filter((x) => x.state === "open"), chat = p.decisions.filter((x) => x.state === "chat");
+  const bits = open.map((x) => { const two = /([A-Z][a-z]+) or ([A-Z][a-z]+)/.exec(x.state_text || ""); return `${x.title}: still choosing${two ? ` between ${two[1]} and ${two[2]}` : ""}.`; });
+  if (!bits.length) bits.push(chat.length ? "Nothing left to decide." : "Nothing left to decide; the board has it all.");
+  for (const x of chat) bits.push(`${x.title}: ${K.andList(x.options.map((o) => o.name))}, said in chat.`);
   return bits.join(" ");
 }
+/* fix C7: "until the end of Nov 3 Pacific (3 AM ET Nov 4)" */
+const until = (e) => (K.cardDates ? K.cardDates(`until ${e.until} (${e.until_zone})`) : `until the end of ${e.until}, ${e.until_zone} time`);
+const day = (e) => (K.fmtDay ? K.fmtDay(e.epoch) : K.fmtWhen(e.epoch, { time: false }));
+/* fix C9: a source names its page and read date, never a page id, key or tier */
+const pageName = (id) => { const [c, n] = String(id).split("/"); const t = (n === "overview" ? `${c} ${n}` : n || c).replace(/-/g, " "); return t.charAt(0).toUpperCase() + t.slice(1); };
 function eventWhen(d, key) {
   const e = d.dates[key]; if (!e) return "";
-  if (key === "names_open") return `${K.fmtWhen(e.epoch)}, until the end of ${e.until}, ${e.until_zone} time.`;
-  if (key === "raids") return `${K.fmtWhen(e.epoch, { time: false })}.`;
+  if (key === "names_open") return `${K.fmtWhen(e.epoch)}, ${until(e)}.`;
+  if (key === "raids") return `${day(e)}.`;
   return `${K.fmtWhen(e.epoch, { rel: true })}.`;
 }
 function dateLines(d) {
   const now = Date.now() / 1000, n = d.dates.names_open, l = d.dates.launch, r = d.dates.raids;
-  const row = (label, when, note) => h("p", { class: "dc-date" }, h("b", { text: `${label}: ` }), h("span", { class: "dc-when", text: when }), note ? h("span", { class: "dc-now", text: ` ${note}` }) : null);
+  const row = (label, when, note) => h("p", { class: "dc-date" }, h("b", { text: `${label}: ` }), h("span", { class: "dc-when", text: `${when}.` }), note ? h("span", { class: "dc-now", text: ` ${note}` }) : null);
   return [
-    n ? row("Names", `opened ${K.fmtWhen(n.epoch)}, until the end of ${n.until}, ${n.until_zone} time`, n.until_epoch && now < n.until_epoch ? (now >= n.epoch ? "(open now, pack holders)" : "") : "(closed)") : null,
+    n ? row("Names for pack holders", `from ${K.fmtWhen(n.epoch)}, ${until(n)}`, n.until_epoch && now < n.until_epoch ? (now >= n.epoch ? "Open now." : "") : "Closed.") : null,
     l ? row("Launch", K.fmtWhen(l.epoch, { rel: true }), "") : null,
-    r ? row("Raids open", K.fmtWhen(r.epoch, { time: false }), "(no opening hour announced)") : null,
+    r ? row("Raids open", day(r), "No opening hour announced yet.") : null,
   ].filter(Boolean);
 }
 function srcEl(src) {
   if (!src) return null;
   if (src.kind === "wiki") {
     const tok = `library.${String(src.page).replace("/", ".")}${src.key ? `~${src.key}` : ""}`;
-    return h("span", { class: "dc-src" }, h("a", { class: "dc-ref", href: `#${tok}` }, src.open ? "an open question in the library" : src.label), src.accessed ? `, read ${dayOf(src.accessed)}` : "", h("span", { class: "dc-id", "data-j": "e", text: ` (${src.page}${src.key ? `, ${src.key}` : ""}${src.tier === null || src.tier === undefined ? "" : `, tier ${src.tier}`})` }));
+    return h("span", { class: "dc-src" }, h("a", { class: "dc-ref", href: `#${tok}` }, src.open ? "an open question in the library" : src.label), src.accessed ? `, read ${dayOf(src.accessed)}` : "", h("span", { class: "dc-id", "data-j": "e", text: ` (${pageName(src.page)})` }));
   }
-  if (src.kind === "client") return h("span", { class: "dc-src" }, `client table ${String(src.build || "").split(".").pop()}`, h("span", { class: "dc-id", "data-j": "e", text: ` (${[src.spells ? `spell ${src.spells.join(", ")}` : src.spell ? `spell ${src.spell}` : "", src.talent ? `talent ${src.talent}` : "", src.items ? `item ${src.items.join(", ")}` : ""].filter(Boolean).join(", ")})` }));
+  if (src.kind === "client") return h("span", { class: "dc-src", text: "from the game client's own table" });
   if (src.kind === "board") return h("span", { class: "dc-src", text: "the Party Board" });
   if (src.kind === "timeline") return h("span", { class: "dc-src", text: "Blizzard's calendar" });
   return h("span", { class: "dc-src", text: "the library" });
 }
+/* fix C9, C7: a line reads as its fact: the research log after "Searched", client ids and ISO days stay in the library */
+const clean = (t) => slot(t).replace(/\s*Searched \d{4}-\d\d-\d\d:.*$/, "").replace(/,?\s*\b(?:item|spell|talent)s? \d+(?:(?:, | and )\d+)*/g, "").replace(/client table build \d+/g, "the game client's own table").replace(/\(\s*,\s*/g, "(").replace(/\b\d{4}-\d\d-\d\d\b/g, (m) => day({ epoch: Date.parse(`${m}T12:00:00Z`) / 1000 }));
 function lineEl(l) {
-  return h("li", { class: "dc-line", "data-status": l.status }, h("span", { class: `st st-${l.status}`, text: labels()[l.status] || l.status }), " ", h("b", { class: "dc-l", text: `${l.label}: ` }), h("span", { class: "dc-t", text: slot(l.text) }), srcEl(l.src));
+  return h("li", { class: "dc-line", "data-status": l.status }, h("span", { class: `st st-${l.status}`, text: labels()[l.status] || l.status }), " ", h("b", { class: "dc-l", text: `${l.label}: ` }), h("span", { class: "dc-t", text: clean(l.text) }), srcEl(l.src));
 }
 const OPT_H = { professions: "Each profession, what it makes", spec40: "Each tree, what the game says", talents: "Row one of each tree, from the client table" };
 function card(d, x) {
@@ -113,13 +120,13 @@ function allView(d) {
       h("span", { class: "dc-rowt", text: `${m.race} ${m.class}. ${summary(p)}` }));
   })));
 }
-const tick = () => s("svg", { class: "dc-tick", viewBox: "0 0 24 24", role: "img", "aria-label": "yes" }, s("path", { d: "M5 12.5l4.5 4.5L19 7" }));
+const tick = () => [s("svg", { class: "dc-tick", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M5 12.5l4.5 4.5L19 7" })), h("span", { class: "sr-only", text: "yes" })]; /* fix C9: the word is text, the mark is not read */
 function partyView(d) {
   const P = d.party, ms = members(), names = (ks) => (ks.length ? K.andList(ks.map(nameOf)) : "nobody");
   const roles = h("div", { class: "dc-sect" }, h("h4", { class: "dc-h4", text: "Roles by level" }),
     h("table", { class: "dc-table" }, h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Levels" }), h("th", { scope: "col", text: "Tank" }), h("th", { scope: "col", text: "Healers" }), h("th", { scope: "col", text: "Damage" }))),
       h("tbody", {}, P.brackets.map((b) => h("tr", {}, h("th", { scope: "row", text: `${b.from} to ${b.to}` }), h("td", { text: `${b.tank.length}: ${names(b.tank)}` }), h("td", { text: `${b.healer.length}: ${names(b.healer)}` }), h("td", { text: `${b.damage.length}: ${names(b.damage)}` }))))),
-    h("p", { class: "dc-note", text: `${P.brackets.map((b) => b.note).filter((x, i, a) => a.indexOf(x) === i).join(". ")}.` }),
+    h("p", { class: "dc-note", text: `${P.brackets.map((b) => b.note.charAt(0).toUpperCase() + b.note.slice(1)).filter((x, i, a) => a.indexOf(x) === i).join(". ")}.` }),
     h("ul", { class: "dc-lines" }, P.role_lines.map(lineEl)));
   const givers = [...new Set(P.buffs.map((b) => b.giver))];
   const grid = h("div", { class: "dc-grid" }, h("table", { class: "dc-table dc-bufft" },
@@ -135,7 +142,7 @@ function partyView(d) {
     nb(`Buffs nobody gives: a Shaman's (${P.nobody.buffs.length})`, P.nobody.buffs.map((b) => h("li", { class: "dc-line" }, h("b", { class: "dc-l", text: `${b.name}: ` }), h("span", { class: "dc-t", text: b.lands_text })))));
   const facts = h("div", { class: "dc-sect" }, h("h4", { class: "dc-h4", text: "Group sizes and tuning" }), h("ul", { class: "dc-lines" }, P.lines.map(lineEl)));
   const b0 = P.brackets[0], b1 = P.brackets[1];
-  const sumText = `${b0.tank.length} tank, ${b0.healer.length} ${b0.healer.length === 1 ? "healer" : "healers"} to ${b0.to}${b1 ? `, then ${b1.healer.length}` : ""}; ${P.buffs.length} buffs between the five; nobody for ${P.nobody.classes.length} classes.`;
+  const sumText = `${K.andList([`${b0.tank.length} tank`, `${b0.healer.length} ${b0.healer.length === 1 ? "healer" : "healers"}${b1 ? ` (${b1.healer.length} from ${b1.from})` : ""}`, `${b0.damage.length} damage`])}; ${P.buffs.length} buffs between the five; nobody for ${P.nobody.classes.length} classes.`;
   return h("details", { class: "dc-card dc-partyc", id: "dc-party-card" }, h("summary", { class: "dc-sumy" }, h("span", { class: "dc-title", text: "Party composition" }), h("span", { class: "dc-stext", text: sumText })), h("div", { class: "dc-body" }, roles, buffs, nobody, facts));
 }
 function render() {

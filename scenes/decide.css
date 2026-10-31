@@ -30,12 +30,13 @@
 .dc-state[data-state="none"] { color: var(--ink-soft); border-style: dotted; }
 .dc-state[data-state="locked"] { background: var(--oak-3); color: var(--parchment); border-color: var(--brass); }
 .dc-stext { grid-column: 1 / -1; font-family: var(--font-body); font-size: 1.1rem; line-height: 1.35; }
-.dc-stext::after { content: " +"; font-family: var(--font-display); color: var(--brass-dim); }
-.dc-card[open] > .dc-sumy .dc-stext::after { content: " -"; }
+/* fix C9: the fold mark is a drawn chevron, not a dash at the end of the sentence */
+.dc-sumy::after { content: ""; justify-self: end; width: 0.5em; height: 0.5em; margin: 0 6px; border: solid var(--brass-dim); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.dc-card[open] > .dc-sumy::after { transform: rotate(-135deg); }
 .dc-body { display: grid; gap: 12px; padding: 10px 0 12px; border-top: 1px dashed var(--ink-line); }
 .dc-by { margin: 0; font-family: var(--font-body); font-size: 1.05rem; line-height: 1.4; }
 .dc-by b { font-family: var(--font-sc); letter-spacing: 0.06em; }
-.dc-h4 { margin: 0; font-family: var(--font-sc); letter-spacing: 0.05em; font-size: 1.05rem; font-weight: 600; color: var(--ink); border-bottom: 2px solid var(--brass-dim); padding-bottom: 2px; }
+.dc-h4 { margin: 0; font-family: var(--font-sc); letter-spacing: 0.05em; font-size: var(--fs-label); font-weight: 600; color: var(--ink); border-bottom: 2px solid var(--brass-dim); padding-bottom: 2px; }
 .dc-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .dc-line { display: block; padding: 6px 10px; border-radius: 6px; background: var(--parchment-2); font-family: var(--font-body); font-size: 1rem; line-height: 1.4; overflow-wrap: anywhere; }
 .dc-line .st { margin-right: 4px; vertical-align: 1px; }
@@ -62,7 +63,7 @@
 .dc-rowt { font-family: var(--font-body); font-size: 1.05rem; line-height: 1.4; }
 @media (min-width: 700px) { .dc-row { grid-template-columns: 14rem minmax(0, 1fr); align-items: center; } }
 /* the party panel: roles by level, the buff grid (a list per giver on phones), what nobody brings */
-.dc-table { width: 100%; border-collapse: collapse; font-family: var(--font-body); font-size: 1rem; }
+.dc-table { table-layout: auto; width: max-content; max-width: 100%; border-collapse: collapse; font-family: var(--font-body); font-size: 1rem; }
 .dc-table th, .dc-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--ink-line); vertical-align: top; }
 .dc-table thead th { font-family: var(--font-sc); letter-spacing: 0.05em; font-weight: 600; }
 .dc-grid { overflow-x: auto; }

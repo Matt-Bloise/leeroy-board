@@ -113,6 +113,7 @@
 @media (min-width: 1200px) and (max-width: 1499px) and (min-height: 501px) { #scene .sheet-top:has(> .journey) > .sheet-name { padding-right: 12px; } }
 @media (min-width: 1100px) and (max-height: 740px) {
   #board > #main:not(.has-beam):not(.beam-soon) { margin-top: 6px; }
+  #board { --fit-beam: 4px; }
   #board { padding-bottom: 3px; row-gap: 2px; } #board > #main { margin-bottom: 0; } #board > .wall-foot, #board > .wall-foot * { line-height: 1.1; }
 }
 /* B7: short screens keep 260 px of content: a phone on its side fills the screen; at 1000+ x 800- the library block is two rows */

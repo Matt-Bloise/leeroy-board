@@ -30,6 +30,7 @@
   --wear: rgba(0, 0, 0, 0.45);
   --fs-small: 1rem;
   --fs-chip: 1rem;
+  --fs-label-s: 0.8125rem; --fs-label: 1.125rem; --fs-body: 1rem; /* fix C16: two label sizes and one body size for scene heads and section labels */
   --text: var(--l-text);
   --text-dim: var(--l-dim);
   --brass: #d1a85a;
@@ -168,7 +169,7 @@ body {
   line-height: 1.55;
   overflow-x: hidden;
 }
-/* dither: a 64 px tile of white at alpha 1/255 on a quarter of its pixels, over everything but the open scene. It breaks the one-step contours of dark gradients (the shades, the veil, the blurred wall) on an 8-bit OLED panel; normal blending, so it costs one tiled quad and no backdrop read. It only ever adds one level, so black stays under 2/255. */
+
 html::after { content: ""; position: fixed; inset: 0; z-index: 6; pointer-events: none; background: url("../img/dither.png") 0 0 / 64px 64px; }
 @media print { html::after { display: none; } }
 .hero-art { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
@@ -186,8 +187,17 @@ html::after { content: ""; position: fixed; inset: 0; z-index: 6; pointer-events
   animation: candle 5.2s linear infinite;
   -webkit-mask-image: linear-gradient(90deg, transparent 0%, var(--black) 7%, var(--black) 93%, transparent 100%); mask-image: linear-gradient(90deg, transparent 0%, var(--black) 7%, var(--black) 93%, transparent 100%); } /* the candle's glow ends before the frame, which stays black */
 @keyframes candle { 0% { opacity: 1; } 14% { opacity: 0.94; } 27% { opacity: 0.985; } 41% { opacity: 0.92; } 55% { opacity: 0.975; } 68% { opacity: 0.935; } 84% { opacity: 0.99; } 100% { opacity: 1; } }
-#wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; will-change: transform; }
+#wisps { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; will-change: transform; transition: opacity var(--t-move) var(--ease-oak); }
 @media print { #wisps, .hero-art, .candle, .scene-layer { display: none !important; } }
+/* fix C4: the title fits two lines on the narrowest phones (css/fit.css sizes it from 699 px down) */
+@media (max-width: 399px) { #top.hero .hero-title h1 { font-size: 1.15rem; } }
+/* fix C25: from 2200 px the 1672 px painting is framed, never drawn past about 1.3x (2170 px), with the tavern's own dark either side */
+@media (min-width: 2200px) {
+  .hero-art { background: radial-gradient(ellipse 60% 80% at 50% 32%, var(--oak-1), var(--black) 78%); }
+  .hero-art img { top: 0; left: 50%; width: min(2170px, 100%); height: auto; translate: -50% 0;
+    -webkit-mask-image: linear-gradient(90deg, transparent, var(--black) 10%, var(--black) 90%, transparent), linear-gradient(180deg, var(--black) 78%, transparent); -webkit-mask-composite: source-in;
+    mask-image: linear-gradient(90deg, transparent, var(--black) 10%, var(--black) 90%, transparent), linear-gradient(180deg, var(--black) 78%, transparent); mask-composite: intersect; }
+}
 .wrap {
   position: relative; z-index: 2; box-sizing: border-box;
   margin: 0 auto; min-height: 100vh; min-height: 100svh;
@@ -271,13 +281,12 @@ a { color: var(--brass); text-underline-offset: 3px; }
 main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; isolation: isolate; min-width: 0; margin: 6px 0 8px; }
 main:focus { outline: none; }
 .wall-plate { position: absolute; inset: -8px; z-index: -1; border-radius: 10px; pointer-events: none; overflow: hidden;
-  background-color: var(--oak-2);
+  background-color: var(--oak-2); box-shadow: 0 24px 60px var(--shadow), 0 0 0 1px var(--grain); }
+/* fix C12: the flat oak paints at the first paint; the photograph fades in on top once js/board.js has decoded it (.ready) */
+.wall-plate::before { content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity var(--t-hero) var(--ease-fade);
   background-image: radial-gradient(ellipse at 50% 46%, var(--shade-none) 0%, var(--shade-light) 42%, var(--shade-mid) 76%, var(--shade-deep) 100%), url("../img/board-wall.jpg");
-  background-size: auto, cover; background-position: center, center; background-repeat: no-repeat;
-  box-shadow: 0 24px 60px var(--shadow), 0 0 0 1px var(--grain); }
-/* the photograph decodes late and used to pop in on the first paint: the plate fades in once js/board.js has decoded it (.ready) */
-.wall-plate { opacity: 0; transition: opacity var(--t-hero) var(--ease-fade); }
-.wall-plate.ready { opacity: 1; }
+  background-size: auto, cover; background-position: center, center; background-repeat: no-repeat; }
+.wall-plate.ready::before { opacity: 1; }
 .hero-art img:not(.ready) { opacity: 0; }
 .hero-art img.ready { transition: opacity var(--t-hero) var(--ease-fade), transform var(--t-hero) var(--ease-oak); }
 .wall-plate::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 60% 70% at 4% 6%, var(--candle-soft), transparent 70%); animation: candle 4.4s linear infinite; }
@@ -288,25 +297,24 @@ main:focus { outline: none; }
 .tilt[aria-pressed="true"] { color: var(--parchment); border-color: var(--brass); }
 .sound-box { position: relative; display: inline-flex; align-items: center; gap: 8px; }
 /* V7/V10: the 3D room sits behind the board at medium tier and up, under the hero's shade; only the painting gives way to it */
-/* 2026-10-30 (OLED): real black under the canvas before its first frame, and nothing but black under the room: with it on,
-   the page's oak gradient never shows, so the body does not paint it */
+
 #room { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; display: block; background: var(--black); }
 html.room-on body { background-image: none; }
 /* the photograph gives way to the room over the hero's fade, not in one frame (2026-10-30; the room has drawn before the class lands) */
 html.room-on .hero-art img { opacity: 0; visibility: hidden; transition: opacity var(--t-hero) var(--ease-fade), visibility var(--t-micro) linear var(--t-hero); }
-/* the room is lit dark by itself, so its scrim only calms the heading and the foot, where the painting's needs the whole frame.
-   The two scrims are two layers that cross-fade with the photograph (the painting's on ::after, the room's on ::before), so the
-   swap is never a step in the hero band */
+
 .hero-art::before { content: ""; position: absolute; inset: 0; z-index: 1; opacity: 0; pointer-events: none; background: linear-gradient(180deg, var(--shade-mid) 0%, var(--shade-light) 18%, var(--shade-none) 34%, var(--shade-none) 80%, var(--shade-mid) 100%); }
 html.room-on .hero-art::before { opacity: 1; transition: opacity var(--t-hero) var(--ease-fade); }
 html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) var(--ease-fade); }
-.room-pick { box-sizing: border-box; width: 0; opacity: 0; margin-left: -8px; min-height: 32px; font-family: var(--font-ui); font-size: var(--fs-chip); color: var(--cream); background: var(--glass); border: 0 solid var(--grain); border-radius: 999px; padding: 0; appearance: none; transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
-.sound-box:focus-within .room-pick, .sound-box.show .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; }
-@media (hover: hover) { .sound-box:hover .room-pick { width: 9rem; opacity: 1; padding: 2px 8px; margin-left: 0; border-width: 1px; } }
+/* fix C10: the volume and the room menu open over the page under Sound at every width; hidden at rest, so no zero-width Tab stop and no reflow */
+.room-pick { box-sizing: border-box; width: 9rem; min-height: 32px; font-family: var(--font-ui); font-size: var(--fs-chip); color: var(--cream); background: var(--glass); border: 1px solid var(--grain); border-radius: 999px; padding: 2px 8px; appearance: none; }
 .room-pick option { color: var(--ink); background: var(--parchment); }
-.vol { width: 0; opacity: 0; accent-color: var(--brass); transition: width var(--t-move) var(--ease-oak), opacity var(--t-move) var(--ease-oak); }
-.sound-box:focus-within .vol, .sound-box.show .vol { width: 6rem; opacity: 1; }
-@media (hover: hover) { .sound-box:hover .vol { width: 6rem; opacity: 1; } }
+.vol { width: 6rem; accent-color: var(--brass); }
+.sound-box .vol, .sound-box .room-pick { position: absolute; z-index: 5; top: calc(100% + 6px); right: 0; opacity: 0; visibility: hidden; transition: opacity var(--t-move) var(--ease-oak), visibility var(--t-micro) linear var(--t-move); }
+.sound-box .room-pick { top: calc(100% + 44px); }
+.sound-box::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 8px; }
+.sound-box:focus-within :is(.vol, .room-pick), .sound-box.show :is(.vol, .room-pick) { opacity: 1; visibility: visible; transition: opacity var(--t-move) var(--ease-oak); }
+@media (hover: hover) { .sound-box:hover :is(.vol, .room-pick) { opacity: 1; visibility: visible; transition: opacity var(--t-move) var(--ease-oak); } }
 @media (min-width: 1500px) {
   .hero { gap: 8px; }
   main { margin-bottom: 4px; }
@@ -596,8 +604,7 @@ html.room-on .hero-art::after { opacity: 0; transition: opacity var(--t-hero) va
 @media (min-width: 700px) {
   html.scene-open #board { filter: blur(var(--wall-blur)) brightness(0.72); } /* V13b: the wall falls out of focus; the room behind it keeps drawing, dimmed by its own exposure and the veil (room.js scene state) */
 }
-/* V13a: behind an open scene nothing in the wall moves, so the blur is drawn once per opening, not on every refresh; the room
-   holds its last frame (room.js) and the plate's candle waits */
+
 html.scene-open .wall-plate::after, html.scene-open .candle { animation-play-state: paused; }
 /* V13b: the shared flicker signal drives the candle glow from js/board.js (startSheen); the CSS loops are the fallback */
 html.flick-js .candle, html.flick-js .wall-plate::after { animation: none; }
@@ -605,12 +612,11 @@ html.flick-js .candle { will-change: opacity; }
 
 /* V13b (craft 11, 12): */
 /* measured (V13b): */
-/* the veil is not a named group: as its own group it painted over the sheet body (which lives in the root snapshot) and the sheet popped bright when the transition ended; inside the root snapshots it layers as it does live */
+
 ::view-transition-group(*) { animation-duration: var(--t-move); animation-timing-function: var(--ease-oak); }
 /* V13b: */
 ::view-transition-old(scene-band), ::view-transition-new(scene-band) { height: 100%; object-fit: none; object-position: left top; }
-/* 2026-10-30: the band's two images cross-fade on the symmetric ease like the root (the UA default is the asymmetric ease, so
-   the tile band dropped out ahead of the sheet head coming in); their duration follows the group's (the move, or the close) */
+
 ::view-transition-old(scene-band), ::view-transition-new(scene-band) { animation-timing-function: var(--ease-fade); }
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
 html.vt-close::view-transition-group(*) { animation-duration: var(--t-close); animation-timing-function: var(--ease-shut); }
@@ -935,12 +941,13 @@ main.has-beam, main.beam-soon { margin-top: 44px; }
 .med-ico { width: var(--med); height: var(--med); --med: clamp(52px, 5.6vw, 120px); display: grid; place-items: center; }
 .med-ico img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(3px 4px 3px var(--shadow)); }
 .med-ico i { width: 24px; height: 30px; clip-path: polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%); background: linear-gradient(180deg, var(--edge-hi), transparent 45%), var(--cc); }
-.med b { color: var(--cc); font-family: var(--font-ui); font-size: 1.15rem; text-shadow: 0 0 10px var(--cc); }
+.med b { color: var(--cc); font-family: var(--font-ui); font-size: 1.15rem; text-shadow: 0 0 10px var(--cc); overflow-wrap: anywhere; } /* fix C4: a name wraps, never an ellipsis */
 .med small { color: var(--cream); line-height: 1.2; font-size: max(var(--fs-small), 0.875rem); }
 @media (min-width: 1200px) { .med-ico { --med: clamp(96px, 6vw, 120px); } }
 @media (min-width: 1500px) { .t-five .tile-body { container-type: inline-size; } .med-ico { --med: clamp(80px, calc((100cqi - 56px) / 5), 120px); } }
-.five-strip { display: flex; flex-wrap: wrap; gap: 4px 18px; padding-top: 10px; border-top: 1px solid var(--edge-hi); font-family: var(--font-ui); letter-spacing: 0.05em; }
+.five-strip { display: block; padding-top: 10px; border-top: 1px solid var(--edge-hi); font-family: var(--font-ui); letter-spacing: 0.05em; }
 .five-strip b { color: var(--brass-hi); }
+.strip-2 { display: block; margin-top: 2px; }
 .t-signups .tile { border: 2px solid var(--brass); }
 .rsvp-bar { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: var(--shade-deep); box-shadow: inset 1px 1px 0 var(--wear); }
 .rsvp-bar i { min-width: 0; }
@@ -967,8 +974,7 @@ main.has-beam, main.beam-soon { margin-top: 44px; }
 @media (min-width: 640px) { .t-racials .tile-line { font-size: 1.12rem; } .tile-viz.five-viz { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } .t-five .five-row { display: none; } }
 .sheet-body { --text: var(--ink); --text-dim: var(--ink); color: var(--ink); background-color: var(--parchment-2); background-image: url("../img/paper-baked.jpg"); background-size: 1395px auto; background-position: center top; box-shadow: inset 0 0 0 1px var(--ink-line); }
 /* V13b: */
-/* and the sheet's own candle corner and vignette move onto the paper itself: an overlay over the whole full-screen sheet
-   was a second full-screen layer to draw and blend on every first opening */
+
 .sheet::after { content: none; }
 .sheet-body { background-image: radial-gradient(ellipse 55% 45% at 0% 0%, var(--candle-soft), transparent 70%), radial-gradient(ellipse 75% 70% at 50% 45%, transparent 70%, var(--slip-burn) 100%), url("../img/paper-baked.jpg"); background-size: auto, auto, 1395px auto; background-position: 0 0, 0 0, center top; }
 .face, .road-btn, .librarian, .toggle, .road-panel, .buff { --text: var(--l-text); --text-dim: var(--l-dim); color: var(--l-text); }
@@ -987,12 +993,13 @@ main.has-beam, main.beam-soon { margin-top: 44px; }
 .slip { background-color: var(--parchment); }
 
 .t-library .tile { border: 2px solid var(--brass-dim); }
-.kicker, .clock-kicker, .clock-unit b, .tilt, .tile-go, .mini b, .fm, .viz-ring-num, .tab, .flip, .map-text, .ring-num, .stat b, .bb, .more-menu button, .med b, .tile-q-go, .lib-stat b, .lib-btn, .copy, .toggle button, .opt label, kbd, .chg-more, .skip, .road-btn b, .rewards b, .tally b, .ex, .su-num b { font-family: var(--font-sc); }
+.kicker, .clock-kicker, .clock-unit b, .tilt, .tile-go, .mini b, .fm, .viz-ring-num, .tab, .flip, .map-text, .ring-num, .stat b, .bb, .more-menu button, .med b, .tile-q-go, .lib-stat b, .lib-btn, .copy, .toggle button, .opt label, kbd, .chg-more, .skip, .road-btn b, .rewards b, .tally b, .su-num b { font-family: var(--font-sc); }
 .tile-sub { display: block; flex-basis: auto; font-family: var(--font-body); font-weight: 600; font-size: 1rem; line-height: 1.15; color: var(--ink); }
 @media (min-width: 640px) { .tile-name { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; } .tile-name .tile-title { flex-basis: 100%; } }
 @media (min-width: 1000px) { .clock-event { font-size: var(--step-2); } .clock-unit b { font-size: clamp(3.2rem, 3.8vw, 4.4rem); } .clock { padding: 12px 28px; row-gap: 2px; } }
 @media (min-width: 1500px) { .t-ledger .tile-viz.list { display: none; } .tile-body { gap: 6px; padding-top: 10px; padding-bottom: 10px; } .tile-viz { min-height: 48px; } .tile-band { padding-top: 10px; padding-bottom: 6px; } }
 .kicker, .clock-kicker, .clock-unit b, .dg-now { color: var(--brass-hi); }
+.clock-kicker, .clock-event, .clock .tile-go { font-family: var(--font-sc); } /* fix C22: one face on the clock's label line */
 .chip.board, .chip { color: var(--l-text); }
 .slip .chip, .sheet-body .slip .chip { color: var(--ink); }
 .slip .chip.new { color: var(--wax); }
@@ -1013,19 +1020,23 @@ main.has-beam, main.beam-soon { margin-top: 44px; }
 .mini-clock { position: fixed; z-index: 15; top: 0; left: 0; right: 0; box-sizing: border-box; padding: calc(6px + env(safe-area-inset-top, 0px)) 16px 6px; font-family: var(--font-body); font-weight: 700; font-size: 1rem; color: var(--cream); background: linear-gradient(180deg, var(--oak-1), var(--oak-2)); border-bottom: 2px solid var(--brass-dim); box-shadow: 0 4px 12px var(--shadow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .viz-cap { font-family: var(--font-body); font-style: italic; font-size: 1rem; color: var(--cream); }
 .strip-k { color: var(--brass-hi); }
-.su-nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.su-num { display: grid; justify-items: center; gap: 2px; padding: 0 6px; border-left: 1px solid var(--edge-hi); text-align: center; }
-.su-num:first-child { border-left: 0; }
+.su-nums { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); column-gap: 12px; } /* fix C24: a gap between the cells, the divider is each cell's own border */
+.su-num { display: grid; justify-items: center; gap: 2px; padding: 0 0 0 12px; border-left: 1px solid var(--edge-hi); text-align: center; min-width: 0; }
+.su-num:first-child { border-left: 0; padding-left: 0; }
 .su-num b { font-variant-numeric: tabular-nums lining-nums; font-size: clamp(2rem, 2.6vw, 2.8rem); line-height: 1; color: var(--brass-hi); }
 .su-num small { font-family: var(--font-body); font-size: 1rem; color: var(--cream); }
 .spk { width: 18px; height: 18px; vertical-align: -0.2em; margin-right: 6px; }
 .spk * { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .lib-examples { display: flex; flex-wrap: wrap; gap: 6px 8px; flex: 1 1 100%; }
 .lib[data-view="results"] .lib-examples, .lib[data-view="page"] .lib-examples, .lib[data-view="zero"] .lib-examples { display: none; }
-.ex { min-height: 40px; padding: 4px 14px; font-size: 1rem; letter-spacing: 0.03em; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--brass); border-radius: 999px; cursor: pointer; }
+.ex { min-height: 40px; padding: 4px 14px; font-family: var(--font-ui); font-size: 1rem; text-transform: none; color: var(--ink); background: var(--parchment-2); border: 1px solid var(--brass); border-radius: 999px; cursor: pointer; }
 @media (hover: hover) { .ex:hover { background: var(--parchment); } }
 .rail-hint { display: none; margin: -8px 0 0; font-family: var(--font-body); font-style: italic; font-size: 1rem; color: var(--ink); }
 @media (max-width: 899px) { .rail-hint:not([hidden]) { display: block; } }
+.lib-foot { margin: 16px 0 0; text-align: right; }
+/* fix C8: the waymark keeps its 300:370 shape; the Ledger's unlabeled pins go (the Atlas is on Three roads) */
+.panel .atlas-mark img { width: 18px; height: 22px; object-fit: contain; }
+#ledger-slip .atlas-mark { display: none; }
 .lib-legend { flex: 1 1 100%; margin: 0; font-family: var(--font-body); font-style: italic; font-size: 1rem; color: var(--l-dim); }
 .lib[data-view="shelf"] .lib-q { min-height: 52px; font-size: var(--step-1); }
 .gl { display: inline; padding: 0; margin: 0; font: inherit; color: inherit; background: none; border: 0; cursor: help; text-decoration: underline dotted var(--ink-soft); text-decoration-thickness: 2px; text-underline-offset: 4px; }
@@ -1111,7 +1122,7 @@ main.has-beam, main.beam-soon { margin-top: 44px; }
 .cat[aria-pressed="true"] b { color: var(--ink); }
 @media (max-width: 899px) { .cat { border: 1px solid var(--ink-line); border-radius: 999px; padding-left: 6px; } .lib-rail { -webkit-mask-image: linear-gradient(90deg, var(--mask-solid) 85%, transparent); mask-image: linear-gradient(90deg, var(--mask-solid) 85%, transparent); } }
 @media (min-width: 900px) { .lib-rail { gap: 0; background: var(--parchment); border: 1px solid var(--brass-dim); border-top: 3px solid var(--oak-3); border-radius: 4px; box-shadow: 0 2px 10px var(--wear); } }
-.hits, .facts { background-image: repeating-linear-gradient(180deg, transparent 0 31px, var(--ink-wash) 31px 32px); }
+.facts { background-image: repeating-linear-gradient(180deg, transparent 0 31px, var(--ink-wash) 31px 32px); } /* fix C15: no rules through the hit text */
 .hit-go { font-family: var(--font-body); font-style: italic; letter-spacing: 0.02em; }
 .lf dt { font-family: var(--font-body); font-style: italic; letter-spacing: 0.02em; }
 @media (min-width: 900px) {
@@ -1246,7 +1257,7 @@ main.has-beam, main.beam-soon { margin-top: 44px; }
 .lib-front { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 1000px) { .lib-front { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
 .lib-front-col { display: grid; gap: 12px; align-content: start; min-width: 0; }
-/* frame leftovers (2026-10-30): on an ultrawide frame the front page takes three columns, so Nobody knows yet no longer stacks over Blizzard said and the default view fits (it ran 93 px over at 3440x1440) */
+
 @media (min-width: 2200px) { .lib-front { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 12px 28px; } .lib-front > .lib-front-col:first-child { grid-row: 1 / span 2; } .lib-front > .lib-front-col + .lib-front-col { display: contents; } .lib-front-col + .lib-front-col > .lib-title { grid-row: 1; grid-column: 2; align-self: end; } .lib-front-col + .lib-front-col > .lib-title ~ .lib-title { grid-column: 3; } .lib-front-col + .lib-front-col > .nk { grid-row: 2; grid-column: 2; align-self: start; } .lib-front-col + .lib-front-col > .said, .lib-front-col + .lib-front-col > p { grid-row: 2; grid-column: 3; align-self: start; } }
 .nk { display: grid; gap: 10px; padding: 14px 16px; border-radius: 4px; border: 2px dashed var(--brass-dim); background: var(--parchment-2); color: var(--ink); }
 .nk-nums { display: flex; gap: 22px; flex-wrap: wrap; }
@@ -1349,7 +1360,12 @@ svg.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; 
 .cal-day.win { background: var(--hi-brass); }
 .cal-day.win.first { border-radius: 10px 3px 3px 10px; }
 .cal-day.today { outline: 2px solid var(--wax); outline-offset: -2px; font-weight: 700; }
-.cal-day .emb { position: absolute; right: -4px; top: -6px; width: 19px; height: 19px; --el: var(--ink); --eb: var(--brass); filter: drop-shadow(0 1px 1px var(--wear)); }
+/* fix C21: a date's mark sits above its numeral; the window shades every day it covers, out-of-month ones too, with a 3:1 bar */
+.cal-day.has-emb { place-items: end center; padding-bottom: 1px; }
+.cal-day.out.win { opacity: 1; color: var(--ink-soft); }
+.cal-day.win, .cal-key .sw-win { box-shadow: inset 0 -3px 0 var(--brass-dim); }
+.cal-key .cal-later .emb { translate: none; }
+.cal-day .emb { position: absolute; left: 50%; top: 1px; translate: -50% 0; width: 15px; height: 15px; --el: var(--ink); --eb: var(--brass); filter: drop-shadow(0 1px 1px var(--wear)); }
 .cal-day.has-emb span { font-weight: 700; color: var(--ink); }
 .cal-key .today-k { width: 1.1em; height: 1.1em; outline: 2px solid var(--wax); outline-offset: -2px; border-radius: 3px; }
 .cal-key { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-small); color: var(--ink-soft); }
@@ -1407,7 +1423,7 @@ svg.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; 
 /* wall tiles: crests and emblems instead of dots */
 .dots { display: inline-flex; align-items: center; }
 .dots .crest-mark { width: 1.35em; height: 1.35em; }
-.dots .crest-mark + .crest-mark { margin-left: -0.45em; }
+.dots { gap: 4px; } .rk-n { white-space: nowrap; } /* fix C4: crests side by side, a race skill name never splits */
 .su-keg { display: flex; align-items: center; gap: 10px; }
 .su-keg svg { width: 100%; height: 44px; display: block; }
 .keg-pint { stroke: var(--oak-0); stroke-width: 1.4; }
@@ -1462,8 +1478,7 @@ svg.emb .ef { fill: var(--light-warm); stroke: var(--brass); stroke-width: 0.8; 
 @keyframes drip { from { opacity: 0; transform: translateY(-14px); } }
 .sheet-orn.drawing { animation: orn-in var(--t-hero) var(--ease-oak) backwards; animation-delay: var(--t-move); }
 @keyframes orn-in { from { opacity: 0; transform: translateY(10px) rotate(-3deg); } }
-/* V13a: the ornament is a div (.sheet-orn) holding a div that moves (.orn-in) and the emblem's svg; the motions run on the
-   divs and on the glint copy, all composited */
+
 .sheet-orn .orn-in { position: relative; transform-origin: 50% 50%; }
 .sheet-orn .orn-art { display: block; width: 100%; height: auto; }
 .orn-five .orn-in { animation: sway 7s linear infinite; transform-origin: 25% 10%; }
@@ -1523,7 +1538,7 @@ html { font-size: clamp(16px, 0.25vw + 12px, 22px); }
 
 /* 1.1 see through to the room: */
 html.room-on .wall-plate { background: none; box-shadow: none; }
-html.room-on .wall-plate::after, html.room-on .wall-plate .light { display: none; }
+html.room-on .wall-plate::after, html.room-on .wall-plate::before, html.room-on .wall-plate .light { display: none; }
 html.room-on main.has-beam .beam { display: none; }
 html.room-on .tile, html.room-on .clock { box-shadow: inset 1px 1px 0 var(--edge-hi), inset 0 0 22px var(--wear), calc(var(--ldx, 0.5) * 24px) calc(var(--ldy, 0.75) * 24px + 10px) 38px var(--shadow-room), 2px 3px 0 var(--edge-dark); }
 html.room-on .scene-veil { background: var(--veil-room); }
@@ -1548,14 +1563,13 @@ html.scene-open .tile-sheen { visibility: hidden; }
 .peers:empty { display: none; }
 /* mobile 17, phone-deep 2.7: the beam's overhang never makes the page scroll sideways; the search's clear cross reads on cream */
 @media (max-width: 599px) { .tile { --sx: 0px !important; } } /* 2026-10-30: on a phone the wall has a 10 px gutter; no sideways lean, so a leaning tile keeps its whole edge */
-/* 2026-10-30: the clip moved from main to .wrap. main's clip edge is the wall's own left edge, and overflow-clip-margin is not honoured for one axis, so a tilted tile (Three roads) lost its left edge and shadow at 1366 px and wider. .wrap is the full viewport width: the beam's overhang is still clipped, the wall's padding is room for every tilt */
+
 .wrap { overflow-x: clip; }
 .lib-q::-webkit-search-cancel-button { filter: brightness(0.35); }
 .kicker { text-wrap: balance; }
 .dg { overflow: clip; }
 
-/* layout 4 and 14: no half-empty stretched tiles: rows take their content's height and the wall sits in the middle of its
-   space (the room or the plate shows around it) */
+
 @media (min-width: 1100px) and (min-height: 961px) { .wall { grid-auto-rows: auto; align-content: start; } }
 @media (max-width: 1099px) { .wall { grid-auto-rows: auto; align-items: start; align-content: start; } }
 /* layout 5: Next steps uses the width */
@@ -1579,7 +1593,7 @@ html.scene-open .tile-sheen { visibility: hidden; }
   .beam { top: -28px; height: 40px; }
 }
 /* layout 11: names in the five tile line up, one name per column */
-.med b { min-height: 1.3em; display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 0.95rem; background: var(--plate-name); text-shadow: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; box-sizing: border-box; }
+.med b { min-height: 1.3em; display: inline-block; padding: 0 6px; border-radius: 3px; font-size: 0.95rem; line-height: 1.15; background: var(--plate-name); text-shadow: none; max-width: 100%; box-sizing: border-box; }
 /* layout 13: a scrolling tab rail fades at its edge, so the hidden tabs show they are there */
 @media (max-width: 1099px) { .tabs { -webkit-mask-image: linear-gradient(90deg, var(--mask-solid) calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, var(--mask-solid) calc(100% - 44px), transparent); padding-right: 44px; } }
 /* layout 15: a turned card grows to fit its back; nothing scrolls inside it */
@@ -1594,8 +1608,7 @@ html.scene-open .tile-sheen { visibility: hidden; }
 /* layout 17: chart labels 14 px at least */
 .ring-tlabel, .ring-sub, .spark-text { font-size: 14px; }
 
-/* 1.5 names are labels, not headings: small type on a quiet plate beside the person's icon (the person's own card keeps its
-   name large: there the name is the subject) */
+
 .fm { font-size: 0.875rem; text-shadow: none; }
 .wheel-node text { font-size: 13px; }
 .trow-who .who { font-size: 0.9rem; }
@@ -1622,8 +1635,7 @@ html.scene-open .tile-sheen { visibility: hidden; }
   #panel-roads > .roads-legend { grid-column: 2; grid-row: 2; grid-template-columns: minmax(0, 1fr); max-width: none; }
   #panel-roads > .map-caption { grid-column: 2; grid-row: 3; }
 }
-/* owner-9: the scenes that ran over a 1080 px sheet fit it: Next steps keeps its big type for tall screens only, and the
-   sign-ups' seat drawing waits for a screen tall enough to hold it */
+
 @media (min-width: 1000px) and (min-height: 900px) and (max-height: 1199px) {
   .tn-card p { font-size: 1.12rem; }
   .tn-card .tn-big { font-size: var(--step-2); }
@@ -1669,11 +1681,6 @@ html.scene-open .tile-sheen { visibility: hidden; }
   .lib-tools { width: 100%; justify-content: flex-end; }
   .lib-tool { min-height: 44px; display: inline-flex; align-items: center; }
   .lib-more summary { display: inline-flex; align-items: center; }
-}
-/* mobile 7: the sound control keeps its size; its volume and room menu open over the page, not into it */
-@media (max-width: 699px) {
-  .sound-box .vol, .sound-box .room-pick { position: absolute; z-index: 5; top: calc(100% + 6px); right: 0; }
-  .sound-box .room-pick { top: calc(100% + 44px); }
 }
 
 /* layout 6, mobile 1 and 2: a phone on its side gets a full-screen compact sheet */
@@ -1751,9 +1758,9 @@ html.scene-open .tile-sheen { visibility: hidden; }
   .t-five .med-ico { --med: 40px; }
   .t-five .med b { font-size: 0.8125rem; padding: 0 4px; }
   .t-five .med small { display: none; }
-  .t-five .five-strip { padding-top: 4px; gap: 2px 10px; font-size: 0.8125rem; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden; }
+  .t-five .five-strip { padding-top: 4px; font-size: 0.8125rem; } .t-five .strip-2, .wall .tl-more { display: none; }
+  .t-librarian .tile-line, .t-legacy .tile-line { display: block; -webkit-line-clamp: unset; } /* fix C4: whole sentences, the tile grows */
   .su-num small { font-size: 0.75rem; }
-  .su-num { padding: 0 2px; }
   .t-library .mini b { font-size: 1.2rem; }
   .t-library .mini:nth-child(n+3) { display: none; }
   .tile-sub { display: none; }
@@ -1763,12 +1770,10 @@ html.scene-open .tile-sheen { visibility: hidden; }
   .hero-title h1 { grid-column: 1; grid-row: 2; }
   .hero-title .presence { grid-column: 2; grid-row: 2 / span 2; }
   .hero-title #presence-text { display: none; }
-  .t-five .five-strip { display: block !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset; }
   .t-roads .tile-viz.roads-viz { flex: none; width: 100%; height: auto; }
   .hero-title .kicker { font-size: 0.75rem; letter-spacing: 0.1em; }
   .clock-when { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .t-signups .tile-body > .su-nums { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
-  .t-signups .su-num:nth-child(3) { border-left: 1px solid var(--edge-hi) !important; }
+  .t-signups .tile-body > .su-nums { grid-template-columns: none !important; column-gap: 10px; } .t-signups .su-num { padding-left: 8px; } .t-signups .su-num:first-child { padding-left: 0; }
   .su-nums b, .su-num b { font-size: 1.3rem !important; }
   .tile-q-go { display: none; }
   .wall .tile-line { -webkit-line-clamp: 2; }
@@ -1875,7 +1880,7 @@ html.scene-open .tile-sheen { visibility: hidden; }
   /* the ledger and the sign-ups: their lines are tighter, the ledger's lede waits (its slip says the same) */
   #ledger-lede { display: none; }
   .ledger .settled-li, .ledger li { line-height: 1.3; }
-  .ledger h3, .signup h3, .dsu h4 { font-size: 1.05rem; }
+  .ledger h3, .signup h3, .dsu h4 { font-size: var(--fs-label); }
   .act-btn { min-height: 44px; padding: 4px 12px 4px 8px; font-size: 0.875rem; }
   #panel-signups > .lede { font-size: 0.8125rem; }
   .trow { padding: 0; gap: 0 8px; }
@@ -1925,8 +1930,7 @@ html.scene-open .tile-sheen { visibility: hidden; }
 .signup-grid { max-width: min(100%, 92rem); }
 .sources { max-width: min(100%, 72ch); }
 .seats svg { max-width: 520px; }
-/* the laptops (768 to 960 tall) take the frame's wider end (90%) and shorter blocks, so the wall stays one screen and the
-   scenes stay inside the scroll budget */
+
 @media (min-width: 1100px) and (max-height: 960px) {
   .wrap { padding-left: max(5vw, env(safe-area-inset-left, 0px)); padding-right: max(5vw, env(safe-area-inset-right, 0px)); }
   .sheet { width: 90vw; height: 88vh; }
@@ -1940,8 +1944,7 @@ html.scene-open .tile-sheen { visibility: hidden; }
 .lede-row, .tn-actions, .deep-ctl, .deep-who, .lib-row, .act { justify-content: center; justify-items: center; }
 .roads-legend, .ledger, .rail, .map-box, .ring-wrap, .signup-grid, .librarian, .tn { margin-inline: auto; }
 @media (min-width: 1300px) and (min-aspect-ratio: 4/3) { #panel-roads { justify-content: center; } #panel-roads > #map-lede { justify-self: center; } }
-/* one frame (2026-10-30): every scene opens in the frame The five uses, at every viewport, so changing tabs never resizes the window.
-   The content-sized reading frame (owner-12b) is retired; a panel that is a little too tall is zoomed to fit by fitScene(), a long one scrolls inside the body. */
+
 @media (max-width: 899px) and (min-width: 600px) and (min-height: 501px) { .sheet { width: 94vw; height: 92vh; height: 92svh; } }
 .sheet, .scene-veil { transition: opacity var(--t-move) var(--ease-oak); }
 .scene-layer.peek .sheet { opacity: 0.15; }
@@ -1998,9 +2001,7 @@ html.room-on #board { transition: opacity var(--t-close) var(--ease-oak); }
   #ledger-slip { justify-content: center; grid-template-columns: repeat(2, minmax(0, max-content)); }
   .dates-grid { justify-content: center; grid-template-columns: minmax(0, max-content) minmax(0, 23rem); }
 }
-/* tabs across the top (2026-10-30): the rail is one row in every open scene at every width (the old wrap to a second row on tall screens is gone,
-   so the head is the same height in every scene). Compact: below 1500 px only the selected tab keeps its icon. It scrolls sideways only when the
-   eleven tabs truly cannot fit (arrows from 700 px, touch below), and a rail that fits sits on the centre line. The sliding brass bar (.tab-ind) marks the selected tab. */
+
 .sheet-head .tabs { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; justify-content: safe center; scrollbar-width: none; }
 .sheet-head .tabs::-webkit-scrollbar { display: none; }
 .sheet-head .tab[aria-selected="true"] { box-shadow: inset 1px 1px 0 var(--slip-sheen), 0 -3px 12px var(--wear), inset 0 3px 0 var(--brass); }
@@ -2071,7 +2072,7 @@ html.room-off.scene-open body { background: var(--black) url("../img/tavern-plat
 @media (max-width: 599px) {
   .wall .t-signups .rsvp-bar.su-keg { display: block !important; margin-top: 6px; }
   .wall .t-signups .su-keg svg { height: 30px; }
-  .su-num small { white-space: nowrap; }
+  .su-num small { overflow-wrap: anywhere; line-height: 1.15; }
 }
 /* with the full names (spec 7.1) the eleven tabs still fit one row in a 1150 px frame: tighter tabs between 1000 and 2199 px */
 @media (min-width: 1000px) and (max-width: 2199px) { .sheet-head .tab { padding-left: 5px; padding-right: 5px; letter-spacing: 0.01em; font-size: 0.875rem; } .sheet-head .tab-ico { width: 17px; height: 17px; } .sheet-head .tabs { gap: 1px; } }

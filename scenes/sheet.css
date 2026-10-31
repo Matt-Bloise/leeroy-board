@@ -8,13 +8,15 @@
 #panel-five[data-view="sheet"] > :not(.ps-views):not(#ps-sheet), #panel-five[data-view="party"] > :not(.ps-views):not(#ps-party) { display: none; }
 .sheet:has(#panel-five[data-view="sheet"]:not([hidden])) .sheet-orn, .sheet:has(#panel-five[data-view="party"]:not([hidden])) .sheet-orn { display: none; }
 /* the crest on each card opens that friend's sheet */
-.ps-crestbtn { position: absolute; z-index: 2; top: 6px; right: 6px; display: grid; justify-items: center; align-content: start; gap: 0; padding: 4px 4px 2px; margin: 0; min-width: 64px; min-height: 64px; border: 1px solid transparent; border-radius: 12px; background: none; color: inherit; cursor: pointer; }
+.ps-crestbtn { position: static; float: right; display: grid; justify-items: center; align-content: start; gap: 0; padding: 4px 4px 2px; margin: 0; min-width: 64px; min-height: 64px; border: 1px solid transparent; border-radius: 12px; background: none; color: inherit; cursor: pointer; }
 .ps-crestbtn .crest { position: static; display: block; }
-.ps-crestbtn + .who { padding-right: 76px; }
 .ps-crestbtn:hover, .ps-crestbtn:focus-visible { border-color: var(--brass); background: var(--lamp); }
 .ps-crestbtn:focus-visible { outline: 3px solid var(--brass-hi); outline-offset: 2px; }
 .ps-crest-t { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); padding: 0 6px; font-family: var(--font-sc); font-size: 1rem; letter-spacing: 0.08em; color: var(--brass-hi); line-height: 1.15; background: var(--oak-1); border: 1px solid var(--brass-dim); border-radius: 6px; }
-@media (max-width: 699px) { .ps-crestbtn { top: 2px; right: 2px; min-width: 56px; min-height: 56px; } .ps-crestbtn + .who { padding-right: 62px; } }
+@media (max-width: 699px) { .ps-crestbtn { min-width: 56px; min-height: 56px; } }
+/* fix C6: the crest sits in its own column beside the name, never over it or the label */
+.card .front { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; } .card .front > * { grid-column: 1 / -1; } .card .front > .ps-crestbtn { grid-column: 2; grid-row: 1 / span 3; float: none; margin: 0 0 0 8px; align-self: start; } .card .front > .who, .card .front > .what, .card .front > .spec { grid-column: 1; overflow-wrap: anywhere; }
+.ps-table td, .ps-table th { overflow-wrap: anywhere; }
 .tn-chip .ps-mine { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
 /* one sheet */
 .ps-card { display: grid; gap: 10px; max-width: 64rem; margin: 0 auto; padding: 14px 16px 16px; background: var(--parchment); color: var(--ink); --text: var(--ink); --text-dim: var(--ink-soft); border-radius: 8px; border-top: 4px solid var(--cc, var(--brass-dim)); box-shadow: 0 8px 22px var(--shadow), inset 0 0 40px var(--slip-burn); }
@@ -42,7 +44,7 @@
 @media (min-width: 900px) { .ps-line { grid-template-columns: 11rem minmax(0, 1fr) auto; align-items: center; } .ps-ed-box { grid-column: 2 / -1; } }
 /* a wide frame: the sheet takes the room in two columns of lines instead of a narrow strip (pillar 2, no empty acres) */
 @media (min-width: 1800px) { .ps-card { max-width: 104rem; } .ps-lines { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 40px; } .ps-line:nth-child(2) { border-top: 0; } }
-.ps-k { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-sc); font-size: 1.05rem; letter-spacing: 0.08em; color: var(--ink-soft); }
+.ps-k { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-sc); font-size: var(--fs-label); letter-spacing: 0.08em; color: var(--ink-soft); }
 .ps-v { font-family: var(--font-body); font-size: 1.12rem; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
 .ps-empty { color: var(--ink-soft); font-style: italic; }
 .ps-empty a { font-style: normal; }

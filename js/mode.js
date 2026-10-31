@@ -25,7 +25,7 @@
      css/mode.css keeps the hero's height) */
   /* integrator pass 3: the button is named for what it switches (Play mode), aria-pressed says whether it is on, and the tip names
      what a press does (the word had flipped between Lounge and Play mode, naming the state, not the action) */
-  const TIP = { off: "Turn on Play mode: text only, nothing moves, for while the game runs.", on: "Play mode is on. Press to light the Lounge again." };
+  const TIP = { off: "Turn on Play mode: text only, nothing moves, for while the game runs.", on: "Play mode is on. Press to light the tavern room again." }; /* fix C20 */
   const TITLE = TIP.off;
   /* the painted lantern pair (img/companion, contract 13 sheet 1) once it has loaded; until then, or if it never does, the candle emblem */
   const ART = { lit: "img/companion/lantern-lit.webp", snuffed: "img/companion/lantern-snuffed.webp" };

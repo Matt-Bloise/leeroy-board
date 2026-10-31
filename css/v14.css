@@ -7,8 +7,6 @@ body { background-image: repeating-linear-gradient(92deg, var(--grain-line) 0 2p
 
 @media print { body::after { display: none; } }
 
-@keyframes v14-nudge { 0%, 100% { box-shadow: 0 0 0 0 rgba(238, 205, 140, 0); } 50% { box-shadow: 0 0 0 3px rgba(238, 205, 140, 0.55), 0 0 28px 6px rgba(255, 170, 70, 0.35); } }
-html.first-beat .depth button[data-depth="tonight"], html.first-beat .tonight-link { animation: v14-nudge 1.4s var(--ease-oak) 2 both; }
 @keyframes v14-rise { from { opacity: 0; translate: 0 14px; scale: 0.985; } to { opacity: 1; translate: 0 0; scale: 1; } }
 #wall > .tile, #wall > li { animation: v14-rise 720ms var(--ease-oak) both; animation-delay: calc(450ms + var(--i, 0) * 75ms); }
 #wall > :nth-child(1) { --i: 0; } #wall > :nth-child(2) { --i: 1; } #wall > :nth-child(3) { --i: 2; } #wall > :nth-child(4) { --i: 3; } #wall > :nth-child(5) { --i: 4; } #wall > :nth-child(6) { --i: 5; } #wall > :nth-child(7) { --i: 6; } #wall > :nth-child(8) { --i: 7; }
@@ -18,7 +16,7 @@ html.first-beat .depth button[data-depth="tonight"], html.first-beat .tonight-li
 .scene-layer.rise .sheet { animation: v14-unfold var(--t-move) var(--ease-oak) both, fade-in var(--t-move) var(--ease-fade) both; }
 @keyframes v14-fade { from { opacity: 0; } to { opacity: 1; } }
 .hero-art, #room { animation: v14-fade 1200ms ease-out both; }
-#board:not([hidden]) .hero, #board:not([hidden]) .mini-clock, #board:not([hidden]) .wall-foot, #board:not([hidden]) .clock { animation: v14-fade 900ms ease-out 250ms both; }
+/* fix C12: the header, the clock and the foot paint at the first paint (they faded in from 250 ms, a dark void at 1920) */
 /* a tab change cross-fades: the old panel eases out, the new one eases in, no flash between */
 /* (the leave and enter timing now lives in board.css as --t-leave and --t-enter) */
 
@@ -158,8 +156,8 @@ html.vt-close::view-transition-old(root), html.vt-close::view-transition-new(roo
 
 /* 11. Reduced motion: no sweep, no bob, no unfold; the coin still shows and still turns instantly. */
 @media (prefers-reduced-motion: reduce) {
-  .hero-art, #room, #board .hero, #board .mini-clock, #board .wall-foot, #board .clock { animation: none !important; }
-  .coin, .coin-in, .coin-shine::before, #wall > .tile, #wall > li, html.first-beat .depth button, html.first-beat .tonight-link, .scene-layer.rise .sheet { animation: none !important; }
+  .hero-art, #room { animation: none !important; }
+  .coin, .coin-in, .coin-shine::before, #wall > .tile, #wall > li, .scene-layer.rise .sheet { animation: none !important; }
   .lb-face, .lb-coin, .sheet-emblem .emblem-img { transition: none !important; }
   .hero-title, .mini-clock, .sheet-head .sheet-top, .tabs { transition: none; }
 }

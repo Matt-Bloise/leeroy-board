@@ -22,6 +22,8 @@ const PS = { view: "cards", who: null, data: null, voc: null, edit: null, say: "
 const slugOf = (n) => String(n == null ? "" : n).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "");
 const words = (sl) => String(sl || "").split("-").filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
 const members = () => (D.party ? D.party.members : []);
+/* fix C3: "damage to 40, then healer" (role_now, role_from from board.js), one role word otherwise */
+const roleOf = (m) => (m.role_from ? `${m.role_now || m.role} to ${m.role_from.level}, then ${m.role_from.role}` : m.role_now || m.role);
 const pslug = (m) => MEM.slug(m.name);
 const bySlug = (sl) => members().find((m) => pslug(m) === sl) || null;
 const sameName = (a, b) => K.cleanName(a).toLowerCase() === K.cleanName(b).toLowerCase();
@@ -214,7 +216,7 @@ function sheetView(m) {
   return h("article", { class: "ps-card", "data-who": pslug(m), style: `--cc: ${K.classVar(m.class_key)}`, "aria-labelledby": "ps-name" },
     h("header", { class: "ps-head" },
       h("span", { class: "ps-crest" }, h("img", { src: `img/crests/${m.class_key}.png`, alt: "", width: 72, height: 72, loading: "lazy", decoding: "async" })),
-      h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${m.race} ${m.class}${m.role ? `, ${m.role_detail || m.role}` : ""}` }), parity(m, F)),
+      h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${m.race} ${m.class}${m.role ? `, ${roleOf(m)}` : ""}` }), parity(m, F)),
       h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, "Back to The five")),
     h("p", { class: "ps-how", text: how }),
     h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
@@ -239,7 +241,7 @@ function tableView() {
     const { m, F } = x, profs = Array.isArray(F.professions.value) ? F.professions.value : [], open = deciding(x);
     return h("tr", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` },
       h("th", { scope: "row" }, h("button", { type: "button", class: "ps-who", "aria-label": `${m.name}: open their sheet`, onclick: () => openSheet(pslug(m), true) }, crest(m), h("b", { text: m.name }))),
-      cell("Role", m.role_detail ? `${m.role} (${m.role_detail})` : m.role || "not on the board"),
+      cell("Role", m.role ? roleOf(m) : "not on the board"),
       cell("Race and class", `${F.race.text || m.race} ${F.class.text || m.class}`),
       cell("Spec plan", F.spec_path.text ? `${F.spec_path.text}${F.spec_at_40.text && F.spec_at_40.value !== F.spec_path.value ? `, then ${F.spec_at_40.text} at 40` : ", no change at 40 on record"}` : "not on the board"),
       cell("Professions", profs.length ? h("span", {}, ...profs.flatMap((pr, i) => [i ? " and " : "", labelOf("professions", pr), take[pr] && take[pr].length > 1 ? h("span", { class: "ps-two-t", text: ` (${NUM[take[pr].length] || take[pr].length} takers)` }) : ""])) : "none on the board", F.professions.note ? h("small", { class: "ps-note", text: ` ${F.professions.note}` }) : null),

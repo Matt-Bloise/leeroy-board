@@ -181,12 +181,12 @@
   /* fix round A7: seated by the role played now (role_detail "damage until 40, healer from level 40" plays damage at launch); lane C's
      role_now and role_from win once the data carries them */
   const roleNow = (m) => m.role_now || (/^damage until \d+/i.test(m.role_detail || "") ? "damage" : m.role);
-  const roleFrom = (m) => m.role_from || ((/healer from level (\d+)/i.exec(m.role_detail || "") || [])[1] ? "healer" : null);
+  const roleFrom = (m) => (m.role_from && (m.role_from.role || (typeof m.role_from === "string" && m.role_from))) || ((/healer from level (\d+)/i.exec(m.role_detail || "") || [])[1] ? "healer" : null); /* lane C sends { role, level } */
   function fiveSum() {
     const ms = members(), n = Object.fromEntries(LANES.map(([r]) => [r, 0])), diff = [];
     ms.forEach((m) => { const r = F.lane[m.name], now = roleNow(m); n[r]++; if (r !== now) diff.push(`${m.name} on ${r}, the cards say ${now}`); });
     const out = $("#five-sum"); if (!out) return;
-    const later = ms.filter(roleFrom).map((m) => { const r = roleFrom(m), lv = (/from level (\d+)/i.exec(m.role_detail || "") || [])[1]; return `A ${["first", "second", "third", "fourth"][n[r]] || "further"} ${r}${lv ? ` from level ${lv}` : " later"}. `; }).join("");
+    const later = ms.filter(roleFrom).map((m) => { const r = roleFrom(m), lv = (m.role_from && m.role_from.level) || (/from level (\d+)/i.exec(m.role_detail || "") || [])[1]; return `A ${["first", "second", "third", "fourth"][n[r]] || "further"} ${r}${lv ? ` from level ${lv}` : " later"}. `; }).join("");
     out.textContent = `Your arrangement: ${LANES.map(([r]) => (r === "damage" ? `${n[r]} damage` : plural(n[r], r))).join(", ")}. ${later}` + (diff.length ? `Different from the cards: ${diff.join("; ")}.` : "Same as the cards.");
     $("#five-reset").hidden = !diff.length;
   }

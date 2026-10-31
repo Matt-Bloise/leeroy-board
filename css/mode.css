@@ -17,7 +17,8 @@ html.play *:not(.nx-fade), html.play *::before, html.play *::after { animation: 
 html.play .hero-title, html.play .mini-clock, html.play .sheet-head .sheet-top, html.play .tabs,
 html.play.oled-care .sense-fab, html.play.oled-care .bottombar, html.play.oled-care .seal { translate: none !important; }
 html.play .wall-plate::after, html.play .candle { animation: none !important; }
-html.play #wisps, html.play .seal-spec, html.play .seal-sweep,
+html.play #wisps { opacity: 0; } /* fix C18: the last frame fades out, then board.js clears it */
+html.play .seal-spec, html.play .seal-sweep,
 html.play .clock-unit b::after, html.play .candle::after, html.play .stop-ember::after { display: none !important; }
 /* under an open scene the wall is not drawn (as with room-on): a blurred wall rastered on each clock tick (NOTES-N4.md) */
 html.play.scene-open #board { filter: none !important; visibility: hidden; }
