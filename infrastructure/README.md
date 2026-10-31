@@ -1,6 +1,6 @@
 # Cloudflare 100% Serverless Infrastructure & GitHub Actions CI/CD Proposal
 
-This directory (`infrastructure/`) contains the complete Infrastructure-as-Code (IaC), Cloudflare Worker runtime, D1 SQLite schema, automated seed tooling, and GitHub Actions CI/CD workflow to run the **Dungeons & Drinking Living Board** (`leeroy-brain`) at **$0/month** on Cloudflare's Free Tier + the site's existing Anthropic Claude API key.
+This directory (`infrastructure/`) contains the complete Infrastructure-as-Code (IaC), Cloudflare Worker runtime, D1 SQLite schema, automated seed tooling, and GitHub Actions CI/CD workflow to run the **Dungeons & Drinking Living Board** (`leeroy-board` + `leeroy-brain`) at **$0/month** on Cloudflare's Free Tier + the site's existing Anthropic Claude API key.
 
 ---
 
@@ -9,7 +9,7 @@ This directory (`infrastructure/`) contains the complete Infrastructure-as-Code 
 ```mermaid
 flowchart LR
   subgraph Client["Browser / Discord Activity"]
-    UI["Living Board UI\n(board.js, brain.js, scenes/*)"]
+    UI["Living Board UI\n(Cloudflare Pages: leeroy-board)"]
   end
 
   subgraph Edge["Cloudflare Global Edge ($0 Free Tier)"]
@@ -41,7 +41,8 @@ flowchart LR
 ### Cloudflare Free-Tier Quotas Used
 | Resource | Cloudflare Free Quota | Board Usage |
 | :--- | :--- | :--- |
-| **Workers Requests** | **100,000 req / day** | ~500–3,000 req/day (Edge Cache absorbs >95% of reads) |
+| **Cloudflare Pages (`leeroy-board`)** | **Unlimited requests & bandwidth** | Hosts `index.html`, `js/`, `css/`, `scenes/`, `atlas/`, `img/`, `fonts/` |
+| **Workers Requests (`leeroy-brain`)** | **100,000 req / day** | ~500–3,000 req/day (Edge Cache absorbs >95% of reads) |
 | **Edge Cache (`caches.default`)** | **Unlimited (Unmetered)** | Serves `/api/bootstrap` and `/api/library/*.json` in 10–25 ms globally |
 | **D1 Serverless SQLite** | **5 GB storage, 5M row reads/day, 100k writes/day** | ~3.5 MB total storage; 1-row reads per cache miss |
 | **Durable Objects (`BoardRoom`)** | **100,000 req/day, 13,000 GB-s/day, 5 GB SQLite** | Hibernates at 0 GB-s when idle; instant `<5ms` WebSocket fan-out |
@@ -60,20 +61,29 @@ flowchart LR
 | [`worker/room.js`](./worker/room.js) | `BoardRoom` Hibernatable WebSocket Durable Object class (SQLite-backed live state & sub-5ms WebSocket broadcast). |
 | [`worker/claude.js`](./worker/claude.js) | Direct Anthropic Messages API integration (`https://api.anthropic.com/v1/messages`) with D1 RAG context retrieval and live WebSocket + Discord webhook push. |
 | [`worker/scraper.js`](./worker/scraper.js) | 15-minute Cron Trigger source sweep (`ETag` / `If-Modified-Since` / `SHA-256`) and D1 library blob rebuilder + Edge Cache invalidator. |
-| [`workflows/deploy-cloudflare.yml`](./workflows/deploy-cloudflare.yml) | Reference copy of `.github/workflows/deploy-cloudflare.yml` for zero-touch GitHub Actions provisioning and deployment. |
+| [`workflows/deploy-cloudflare.yml`](./workflows/deploy-cloudflare.yml) | Reference copy of `.github/workflows/deploy-cloudflare.yml` for production deployment on new commits to `master`. |
 
 ---
 
-## 3. Spinning Up the Environment via GitHub Actions CI/CD
+## 3. Spinning Up & Deploying to Production via GitHub Actions (`master` Only)
 
-The workflow at [`.github/workflows/deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml) is designed to be **100% self-provisioning and idempotent**—you do **not** need to run any manual CLI commands on your machine to create the D1 database, run migrations, or seed the initial data.
+The workflow at [`.github/workflows/deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml) is configured to run **exclusively on new commits pushed to `master`**:
+
+```yaml
+on:
+  push:
+    branches:
+      - master
+```
+
+Feature branches, pull requests, and non-`master` commits will **never** deploy to or mutate the production Cloudflare instance.
 
 ### Step 1: Create a Cloudflare API Token
 1. Log into the [Cloudflare Dashboard](https://dash.cloudflare.com/) -> **My Profile** -> **API Tokens** -> **Create Token**.
 2. Start from the **Edit Cloudflare Workers** template and ensure the following permissions are included:
    - **Account** -> **Workers Scripts**: `Edit`
    - **Account** -> **D1**: `Edit`
-   - **Account** -> **Workers KV Storage** (optional): `Edit`
+   - **Account** -> **Cloudflare Pages**: `Edit`
 3. Copy your **API Token** and your **Account ID** (visible on the right sidebar of the Workers & Pages overview page).
 
 ### Step 2: Configure GitHub Repository Secrets
@@ -81,37 +91,35 @@ In your GitHub repository (`Matt-Bloise/leeroy-board`), navigate to **Settings -
 
 | GitHub Secret Name | Required? | Description |
 | :--- | :---: | :--- |
-| `CLOUDFLARE_API_TOKEN` | **Yes** | Cloudflare API token with `Workers Scripts: Edit` and `D1: Edit` permissions. |
+| `CLOUDFLARE_API_TOKEN` | **Yes** | Cloudflare API token with `Workers Scripts: Edit`, `D1: Edit`, and `Cloudflare Pages: Edit` permissions. |
 | `CLOUDFLARE_ACCOUNT_ID` | **Yes** | Your 32-character Cloudflare Account ID. |
 | `ANTHROPIC_API_KEY` | **Yes** | Site's Claude API key (`sk-ant-...`) used by `worker/claude.js` to answer `/ask` queries. |
 | `BOARD_ADMIN_TOKEN` | Optional | Shared secret key matched against `#k=<token>` in the browser URL for write intents (`/api/intent`, `/api/sheet`). If omitted, writes are open to all party members. |
 | `DISCORD_WEBHOOK_URL` | Optional | Discord channel webhook URL for `#wow-forever` to mirror Leeroy's Claude answers into Discord chat. |
 
-### Step 3: Trigger the GitHub Actions Pipeline
-The pipeline runs automatically whenever changes in `infrastructure/**` are pushed, or you can trigger it manually at any time:
-1. Go to **Actions -> Deploy Cloudflare Serverless Stack (Workers + D1 + Durable Objects)** in GitHub.
-2. Click **Run workflow** (leave `seed_d1` as `false` for normal deploys; the workflow automatically seeds D1 on first creation when `kv_state` has `0` rows, or set `seed_d1` to `true` if you want to force-reset D1 from the repo's `data/*.json` files).
+### Step 3: Merge to `master`
+When `feat/cloudflare-serverless-migration` (or any future commit) lands on `master`, GitHub Actions automatically executes the full production pipeline:
 
-### What the CI Pipeline Does Automatically on Every Run
 1. **D1 Provisioning (`Ensure D1 Database Exists`)**:
-   - Runs `npx wrangler d1 list --json` to check if `leeroy-board-db` exists in your Cloudflare account.
-   - On the very first run, it automatically creates `leeroy-board-db` (`npx wrangler d1 create leeroy-board-db`), extracts its UUID, and patches `database_id` in `infrastructure/wrangler.toml`.
+   - Checks if `leeroy-board-db` exists in your Cloudflare account. On the first `master` run, it creates `leeroy-board-db` (`npx wrangler d1 create leeroy-board-db`), extracts its UUID, and patches `database_id` in `infrastructure/wrangler.toml`.
 2. **Schema Migration (`Apply Idempotent D1 Schema`)**:
    - Executes [`infrastructure/schema.sql`](./schema.sql) (`CREATE TABLE IF NOT EXISTS ...`) against the remote D1 database.
 3. **Smart Initial Seeding (`Seed Initial Board & Library Data into D1`)**:
    - Checks `SELECT COUNT(*) FROM kv_state` in D1.
-   - If the database is brand new (`0` rows) or `seed_d1 == 'true'` was requested via `workflow_dispatch`, runs [`scripts/seed-d1.mjs --remote`](./scripts/seed-d1.mjs) to populate all 9 board JSON documents (`party`, `timeline`, `stats`, `signups`, `tonight`, `launch`, `decide`, `marks`, `links`), all 19 library blobs (`index.json`, `classes.json`, etc.), all 59 library pages (`lib_pages`), and all 186 external source URLs (`lib_sources`).
-   - On subsequent code deployments, it **skips seeding** so live edits, signups, and Claude Q&A turns stored in D1 are never overwritten by static repo files.
+   - If the database is empty (`0` rows), runs [`scripts/seed-d1.mjs --remote`](./scripts/seed-d1.mjs) to populate all 9 board JSON documents, all 19 library blobs, all 59 library pages, and all 186 external source URLs.
+   - On all subsequent `master` commits, it **skips seeding** so live edits, signups, and Claude Q&A turns stored in D1 are never overwritten by static repo files.
 4. **Worker + Durable Object + Cron Deployment (`npx wrangler deploy`)**:
    - Deploys `leeroy-brain`, provisions the SQLite-backed `BoardRoom` Durable Object migration (`v1`), and activates the `*/15 * * * *` Cron Trigger.
 5. **Secret Synchronization (`Sync Worker Secrets`)**:
-   - Pushes `ANTHROPIC_API_KEY`, `BOARD_ADMIN_TOKEN`, and `DISCORD_WEBHOOK_URL` into encrypted Cloudflare Worker Secrets via `npx wrangler secret put`.
+   - Pushes `ANTHROPIC_API_KEY`, `BOARD_ADMIN_TOKEN`, and `DISCORD_WEBHOOK_URL` into encrypted Cloudflare Worker Secrets.
+6. **Production Static Site Deployment (`Deploy to Cloudflare Pages Production`)**:
+   - Stages the static frontend bundle (`index.html`, `atlas/`, `cloth/`, `css/`, `data/`, `fonts/`, `img/`, `js/`, `next/`, `room/`, `scenes/`, `vendor/`, `og-1200x630.jpg`, `robots.txt`), ensures the `leeroy-board` Cloudflare Pages project exists (`--production-branch=master`), and deploys the site directly to Cloudflare Pages production (`--branch=master`).
 
 ---
 
 ## 4. Local Development & Verification
 
-You can run the entire Cloudflare Worker + D1 + Durable Objects stack locally on your machine using Wrangler's built-in Miniflare simulator:
+You can run the entire Cloudflare Worker + D1 + Durable Objects stack locally on your machine using Wrangler's built-in Miniflare simulator without touching production:
 
 ```bash
 cd infrastructure
