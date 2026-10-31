@@ -12,9 +12,9 @@ const SCENES = {
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
   hades: () => [new URL("../scenes/hades.css?v=8eb34e6d88", HERE), new URL("../scenes/hades.js?v=f432c92235", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
-  settings: () => [new URL("../scenes/settings.css?v=69b6158bbc", HERE), new URL("../scenes/settings.js?v=f44aed99e7", HERE)],
+  settings: () => [new URL("../scenes/settings.css?v=12fc8c6695", HERE), new URL("../scenes/settings.js?v=775b214de9", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],
-  guided: () => [new URL("../scenes/guided-atlas.css?v=6cd88a7eed", HERE), new URL("../scenes/guided-atlas.js?v=51a8daed4d", HERE)],
+  guided: () => [new URL("../scenes/guided-atlas.css?v=7eb7ee0fdb", HERE), new URL("../scenes/guided-atlas.js?v=9e58318500", HERE)],
   foley: () => [null, new URL("../scenes/foley.js?v=54054813b9", HERE)],
   foleyfx: () => [null, new URL("../scenes/foley-fx.js?v=ef6c4c1e09", HERE)],
 };

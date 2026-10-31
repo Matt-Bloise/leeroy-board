@@ -3,7 +3,7 @@
 const K = window.__boardKit, D = document;
 if (!K || !D.head || !K.MEM || /[?&](render|brain)=/.test(String(location.search || ""))) return;
 const { $, h, MEM } = K, root = D.documentElement, VIEW = "board-view", JN = ["guided", "curious", "everything"];
-const G = { more: innerWidth >= 1000 && innerHeight >= 640, layer: null, A: null, loading: null, data: null, dataP: null, failed: false, booted: false, shown: false, plan: null, stops: [], hi: -1, moved: false, tour: null };
+const G = { stopsOpen: false, more: innerWidth >= 1000 && innerHeight >= 640, layer: null, A: null, loading: null, data: null, dataP: null, failed: false, booted: false, shown: false, plan: null, stops: [], hi: -1, moved: false, tour: null };
 const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
 const journey = () => (JN.includes(root.dataset.journey) ? root.dataset.journey : "guided");
 const view = () => (ls.get(VIEW) === "team" ? "team" : "atlas");
@@ -52,7 +52,8 @@ function build() {
   G.more_ = h("div", { class: "ga-more", id: "ga-more" });
   G.key = h("ul", { class: "ga-key", id: "ga-key", "aria-label": "What the pictures on the map mean" });
   G.map = h("div", { class: "ga-map", id: "ga-map" });
-  const rail = h("aside", { class: "ga-rail", id: "ga-rail", "aria-label": "Your guide" }, G.card, G.key, G.more_);
+  G.nolab = h("div", { class: "ga-nolab", id: "ga-stops", hidden: true });
+  const rail = h("aside", { class: "ga-rail", id: "ga-rail", "aria-label": "Your guide" }, G.card, G.key, G.nolab, G.more_);
   G.layer = h("div", { class: "ga", id: "ga", hidden: true, role: "region", "aria-labelledby": "ga-h" }, h("header", { class: "ga-bar" }, G.title, team), h("div", { class: "ga-body" }, rail, G.map));
   D.body.appendChild(G.layer);
   return G.layer;
@@ -84,17 +85,24 @@ function extra(src) {
   if (min) out.push(h("p", { class: "ga-meta", text: min }));
   const week = src && $(".nx-week", src); if (week) out.push(h("p", { class: "ga-meta", text: [...week.querySelectorAll("li")].map((li) => li.textContent).join(" ") }));
   const st = steps();
-  if (st.length) out.push(h("h3", { class: "ga-sub", text: "Your route" }), h("ol", { class: "ga-steps" }, ...st.map((s) => h("li", {}, h("button", { type: "button", class: "ga-step", onclick: () => fly(s.id) },
+  if (st.length) out.push(h("div", { class: "ga-subrow" }, h("h3", { class: "ga-sub", text: "Your route" }), G.stops.length ? h("button", { type: "button", class: "ga-link ga-stopsbtn", id: "ga-stopsbtn", "aria-expanded": String(G.stopsOpen), "aria-controls": "ga-stopsd", onclick: toggleStops }, G.stopsOpen ? "Hide stops" : "Stops on the map") : null),
+    h("ol", { class: "ga-steps" }, ...st.map((s) => h("li", {}, h("button", { type: "button", class: "ga-step", onclick: () => fly(s.id) },
     h("img", { src: `img/atlas/C-${s.icon}.webp`, alt: "", width: 28, height: 28, decoding: "async" }), h("span", { class: "ga-step-t" }, h("b", { text: s.head }), s.sub ? h("small", { text: s.sub }) : null))))));
+  if (G.stops.length) out.push(h("div", { class: "ga-stopsd", id: "ga-stopsd", hidden: !G.stopsOpen }, h("ol", { class: "ga-steps ga-stoplist", "aria-label": "Stops on the map, by the number on the pin" }, ...stopRows())));
   out.push(h("h3", { class: "ga-sub", text: "What the map shows" }), h("dl", { class: "ga-legend" }, ...legend().flatMap(([ic, n, say]) => [h("dt", {}, h("img", { src: `img/atlas/C-${ic}.webp`, alt: "", width: 24, height: 24 }), n), h("dd", { text: say })]),
     h("dt", { text: "The line" }), h("dd", { text: "Your route. The walking times are estimates, not measured." })));
   const src2 = G.data && G.data.classes && mine(); if (src2 && src2.trainer.src) out.push(h("p", { class: "ga-meta", text: `Trainer names come from a community guide (${src2.trainer.src.host}), not from Blizzard.` }));
   return out;
 }
+function stopRows(only) {
+  return G.stops.filter((s) => !only || only.includes(s.n)).map((s) => h("li", { class: "ga-stop", "data-stop": String(s.n) }, h("button", { type: "button", class: "ga-stopbtn", "aria-label": `Stop ${s.n}: ${s.name}. ${s.say}. Fly the map there.`, onclick: () => fly(s.id) },
+    h("span", { class: "ga-stop-n", "aria-hidden": "true", text: String(s.n) }), h("span", { class: "ga-step-t" }, h("b", { text: s.name }), h("small", { text: s.say })))));
+}
 function keyRow() {
   if (!G.key) return;
   G.key.replaceChildren(...legend().map(([ic, n]) => h("li", {}, h("img", { src: `img/atlas/C-${ic}.webp`, alt: "", width: 22, height: 22 }), n)));
 }
+function toggleStops() { G.stopsOpen = !G.stopsOpen; mirror(); }
 function toggle() { G.more = !G.more; try { if (window.__next) window.__next.expand(G.more); } catch (e) {} mirror(); }
 function fly(id) { if (id && G.A) { try { G.A.open(id, { animate: !calm() }); } catch (e) {} } }
 
@@ -114,7 +122,7 @@ async function ensure() {
   })();
   return G.loading;
 }
-function destroyAtlas() { Z.stop(); G.stops = []; Z.pins = null; if (G.A) { try { G.A.destroy(); } catch (e) {} } G.A = null; G.loading = null; if (G.host) G.host.remove(); G.host = null; }
+function destroyAtlas() { Z.stop(); G.stops = []; Z.pins = null; Z.nolabKey = null; if (G.nolab) { G.nolab.hidden = true; G.nolab.replaceChildren(); } if (G.A) { try { G.A.destroy(); } catch (e) {} } G.A = null; G.loading = null; if (G.host) G.host.remove(); G.host = null; }
 
 const TOURKEY = "board-ga-toured", PIN = 15;
 const clampN = (n, a, b) => Math.max(a, Math.min(b, n));
@@ -172,6 +180,8 @@ const Z = {
     for (const ev of ["pointerdown", "wheel", "keydown"]) host.addEventListener(ev, (e) => { if (e.target && e.target.closest && e.target.closest(".ga-mapbar")) return; G.moved = true; Z.stop(); }, { capture: true, passive: true });
     Z.hiSync(true);
     Z.frame(false);
+    mirror();
+    const A0 = G.A; for (const ms of [150, 500, 1200]) setTimeout(() => { if (G.A === A0 && Z.pins) { Z.watchFurn(); Z.place(); } }, ms);
     let never = true; try { never = !localStorage.getItem(TOURKEY); } catch (e) { never = true; }
     if (never && !calm() && G.stops.length > 1 && G.shown) Z.startTour(); else Z.place();
   },
@@ -220,18 +230,30 @@ const Z = {
         }
         if (best && best.cost === 0) break;
       }
+      q.numOnly = best.cost - (best.tier === "short" ? 20 : 0) > 0;
+      if (q.numOnly) { q.lab = null; continue; }
       placed.push(best.b); q.lab = best;
     }
     G.labels = placed.length;
     for (const q of P) {
       const s = q.p.s, hi = s.n - 1 === G.hi, calmed = G.hi >= 0 && !hi;
       const bw = Z.bw || 30; q.p.pin.style.transform = `translate(${(q.x - bw / 2).toFixed(1)}px, ${(q.y - bw / 2).toFixed(1)}px)`;
-      q.p.pin.hidden = !q.on; q.p.lab.hidden = !q.on;
+      q.p.pin.hidden = !q.on; q.p.lab.hidden = !q.on || !!q.numOnly;
       q.p.pin.classList.toggle("hi", hi); q.p.lab.classList.toggle("hi", hi); q.p.pin.classList.toggle("calm", calmed); q.p.lab.classList.toggle("calm", calmed);
       if (q.lab) { q.p.lab.classList.toggle("short", q.lab.tier === "short"); q.p.lab.style.transform = `translate(${q.lab.x.toFixed(1)}px, ${q.lab.y.toFixed(1)}px)`; }
     }
-    Z.last = P.map((q) => ({ n: q.p.s.n, x: q.x, y: q.y, tx: q.tx, ty: q.ty, on: q.on, box: q.lab ? q.lab.b : null, cost: q.lab ? q.lab.cost : 0 }));
+    Z.nolab(P.filter((q) => q.on && q.numOnly).map((q) => q.p.s.n));
+    Z.last = P.map((q) => ({ numOnly: !!q.numOnly, n: q.p.s.n, x: q.x, y: q.y, tx: q.tx, ty: q.ty, on: q.on, box: q.lab ? q.lab.b : null, cost: q.lab ? q.lab.cost : 0 }));
     Z.paint(V, P);
+  },
+  watchFurn() {
+    if (typeof ResizeObserver !== "function" || !G.host) return;
+    if (!Z.ro2) Z.ro2 = new ResizeObserver(() => Z.place());
+    for (const sel of [".atlas-ctl", ".atlas-plan", ".atlas-card", ".atlas-scale"]) { const e = G.host.querySelector(sel); if (e && !e.__gaWatched) { e.__gaWatched = true; Z.ro2.observe(e); } }
+  },
+  nolab(ns) {
+    const k = ns.join(","); if (!G.nolab || Z.nolabKey === k) return; Z.nolabKey = k;
+    G.nolab.hidden = true; G.nolab.replaceChildren();
   },
   paint(V, P) {
     const cx = Z.cv.getContext && Z.cv.getContext("2d"); if (!cx) return;

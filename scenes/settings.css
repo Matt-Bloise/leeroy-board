@@ -15,3 +15,15 @@
 html.settings-open body { overflow: hidden; }
 @media (forced-colors: active) { .st-card, .st-btn { border-color: CanvasText; } .st-btn[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; } }
 @media (max-width: 699px) { .st { padding: 0; place-items: end stretch; } .st-card { width: 100%; max-height: 92dvh; border-radius: 12px 12px 0 0; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); } }
+.st-card .st-btn { border-image: url("../img/kit/rt-sec-n.webp") 36 fill / 12px / 0 stretch; background-color: var(--parchment); color: var(--ink); }
+@media (hover: hover) { .st-card .st-btn:hover { border-image-source: url("../img/kit/rt-sec-h.webp"); } }
+.st-card .st-btn:active { border-image-source: url("../img/kit/rt-sec-p.webp"); }
+.st-card .st-btn[aria-pressed="true"] { background-color: var(--parchment); color: var(--ink); }
+.st-card :is([data-density], [data-profile])[aria-pressed="true"] { border-image-source: url("../img/kit/rt-pri-s.webp"); border-image-slice: 34 fill; color: var(--parchment); background-color: var(--oak-3); }
+.st-card :is(#st-calm-b, #st-still-b, #st-sound-b, #st-care-b) { display: inline-flex; align-items: center; gap: 12px; text-align: left; border-image-source: url("../img/kit/rt-hdr-n.webp"); border-image-slice: 26 fill; border-image-width: 9px; color: var(--parchment); background-color: var(--oak-3); }
+@media (hover: hover) { .st-card :is(#st-calm-b, #st-still-b, #st-sound-b, #st-care-b):hover { border-image-source: url("../img/kit/rt-hdr-h.webp"); } }
+.st-card :is(#st-calm-b, #st-still-b, #st-sound-b, #st-care-b):active { border-image-source: url("../img/kit/rt-hdr-p.webp"); }
+.st-card :is(#st-calm-b, #st-still-b, #st-sound-b, #st-care-b)::before { content: ""; flex: none; width: 74px; height: 35px; background: url("../img/kit/tg-sw-off.webp") center / 100% 100% no-repeat; }
+.st-card :is(#st-calm-b, #st-still-b, #st-sound-b, #st-care-b)[aria-pressed="true"]::before { background-image: url("../img/kit/tg-sw-on.webp"); }
+.st-card .st-btn:disabled::before { background-image: url("../img/kit/tg-sw-dis.webp"); }
+@media (forced-colors: active) { .st-card .st-btn { border-image: none; } .st-card .st-btn::before { display: none; } }
