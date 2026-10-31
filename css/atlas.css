@@ -10,7 +10,6 @@
 .atlas-open{display:inline-flex;align-items:center;justify-content:center;min-height:44px;margin:10px 0 0;padding:0 18px;border-radius:999px;border:1px solid var(--brass-dim);background:linear-gradient(180deg,var(--oak-3),var(--oak-2));color:var(--parchment);font:inherit;font-weight:600;letter-spacing:.02em;cursor:pointer;box-shadow:inset 1px 1px 0 var(--edge-hi),0 3px 8px var(--shadow);transition:transform var(--t-micro) var(--ease-oak),color var(--t-micro) var(--ease-fade)}
 :is(.atlas-open,.atlas-b,.atlas-btn,.atlas-x,.atlas-link,.atlas-who,.atlas-copy,.atlas-fold,.atlas-away,.atlas-mark):focus-visible,#atlas:focus-visible{outline:3px solid var(--brass-hi);outline-offset:2px}
 @media (hover:hover){.atlas-open:hover,.atlas-b:hover{transform:translateY(-2px);color:var(--brass-hi)}}
-@media (pointer:coarse){.atlas-open{min-height:var(--atlas-hit)}}
 @media (min-width:700px){
 #panel-roads.wide-map > .atlas-open{grid-area:map;z-index:3;align-self:start;justify-self:start;margin:14px}
 }
@@ -37,9 +36,6 @@
 .atlas-scale{position:absolute;z-index:3;left:14px;bottom:14px;display:grid;gap:2px;pointer-events:none;font-size:.78rem;color:var(--ink)}
 .atlas-scale .orn-scale{position:absolute;left:0;bottom:14px;width:140px;opacity:.8}
 .atlas-bar{display:block;height:6px;margin-top:18px;border:2px solid var(--ink);border-top:0}
-.atlas-scale-t{color:var(--ink-soft)}
-/* polish (2026-10-30): from 700 px the scale stands clear of the 72 px corner flourish (its "thousand yards" ran under the scrollwork at
-   768x1024), and its words sit on a parchment slip so a painted tile under them never hides them */
 @media (min-width:700px){.atlas-scale{left:86px;bottom:16px}.atlas-scale .orn-scale{bottom:auto;top:-56px}}
 .atlas-scale-t{justify-self:start;padding:0 6px;border-radius:6px;background:var(--parchment);color:var(--ink)}
 .atlas-ctl{position:absolute;z-index:4;right:12px;bottom:12px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
@@ -58,16 +54,16 @@
 .atlas:has(.atlas-plan.folded:not([hidden])) .atlas-ctl{bottom:86px}
 @keyframes atlas-card{from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none}}
 @media (max-width:699px){
-.atlas-card,.atlas-plan{left:0;right:0;top:auto;bottom:0;width:auto;max-height:52%;border-radius:14px 14px 0 0;padding-bottom:max(16px,env(safe-area-inset-bottom))}
+.atlas-card,.atlas-plan{left:0;right:0;top:auto;bottom:0;width:auto;max-height:46%;border-radius:14px 14px 0 0;padding-bottom:max(16px,env(safe-area-inset-bottom))}
 .atlas-ctl{flex-direction:row;align-items:center}
 .atlas:has(.atlas-plan:not([hidden]):not(.folded)) .atlas-ctl{right:12px}
 .atlas-b.a-back{order:-1}
-.atlas-card{max-height:46%}
-.atlas-plan{box-sizing:border-box;max-height:46%}
+.atlas-plan{box-sizing:border-box}
 .atlas-cartouche{left:8px;top:8px;transform:none;align-items:flex-start;max-width:calc(100% - 76px)}
-.atlas-cart{min-width:0;padding:12px 26px}
+.atlas-cart{min-width:0;padding:16px 44px}
+.atlas-shapes{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal;text-wrap:balance;border-radius:10px;font-size:.8125rem}
 .orn-compass{display:none}
-.atlas-scale{top:84px;bottom:auto}
+.atlas-scale{top:120px;bottom:auto}
 .orn-scale{display:none}
 .atlas-card:not([hidden]) + .atlas-plan{display:none}
 }
@@ -107,7 +103,7 @@
 .atlas,.atlas-card,.atlas-plan{animation:none}
 }
 @media (pointer:coarse),(max-width:699px){
-.atlas-x,.atlas-btn,.atlas-copy,.atlas-link,.atlas-links a,a.atlas-chip,.atlas-who,.atlas-zone,.atlas-fold,.atlas-away,.atlas-b{min-height:var(--atlas-hit)}
+.atlas-open,.atlas-x,.atlas-btn,.atlas-copy,.atlas-link,.atlas-links a,a.atlas-chip,.atlas-who,.atlas-zone,.atlas-fold,.atlas-away,.atlas-b{min-height:var(--atlas-hit)}
 .atlas-b{min-width:var(--atlas-hit)}
 .atlas-copy,.atlas-links a,.atlas-link,a.atlas-chip{display:inline-flex;align-items:center;padding-left:12px;padding-right:12px}
 .atlas-links a,.atlas-link{padding-left:0}

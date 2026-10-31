@@ -1,4 +1,4 @@
-/* The phone shell (notes/VISION-MOBILE.md M1; contract section 4; 2026-10-30): on a phone the scene's bottom bar ... Full note: board/MOBILE-NOTES.md, file notes. Fix round B: notes/fix-round/NOTES-B.md. */
+/* The phone shell (board/MOBILE-NOTES.md) */
 (() => {
 "use strict";
 const K = window.__boardKit; if (!K || typeof document === "undefined") return;
@@ -10,9 +10,8 @@ const PHONE_ORDER = ["tonight", "five", "signups", "librarian", "timeline", "roa
 const REST = PHONE_ORDER.filter((k) => !["tonight", "five", "librarian"].includes(k));
 const ICO = { tonight: "icons/tab-tonight.png", five: "icons/tab-five.png", sheet: "emblems/dates/scroll.webp", librarian: "icons/tab-librarian.png", more: "emblems/chips/seal.webp" };
 const raf = (f) => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(f) : setTimeout(f, 16));
-const BANNER = { timeline: "indigo", five: "royal", roads: "burnt-orange", racials: "crimson", legacy: "copper", buffs: "plum", ledger: "wine", signups: "forest", librarian: "slate", library: "ochre", decide: "olive", tonight: "teal" };
 const HTML = document.documentElement;
-const S = { phone: false, built: false, saved: null, place: null, coinKey: null, coinSpin: false, coinX: 0, spring: null, firstFillMs: 0, toastT: 0, scrollSp: null, pick: false };
+const S = { phone: false, built: false, saved: null, place: null, coinKey: null, spring: null, toastT: 0, scrollSp: null, pick: false };
 const mm = (q) => { try { return matchMedia(q); } catch (e) { return { matches: false }; } };
 const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
 const coarse = () => mm("(pointer: coarse)").matches;
@@ -30,9 +29,11 @@ function placeFor(key) {
   return key === "tonight" || key === "librarian" ? key : "more";
 }
 function markPlaces() {
-  const b = bar(); if (!b || !S.phone) return;
+  const b = bar(), p = placeFor(K.SC.open), m = S.mine;
+  if (m) m.setAttribute("aria-current", String(p === "sheet"));
+  if (!b || !S.phone) return;
   refreshSheetIcon();
-  const p = placeFor(K.SC.open), was = S.place; S.place = p;
+  const was = S.place; S.place = p;
   for (const x of b.querySelectorAll("[data-place]")) x.setAttribute("aria-current", String(x.dataset.place === p));
   if (p !== was) K.emit("place", p);
   if (K.SC.open !== null) setCoin(p === "sheet" ? "sheet" : K.SC.open);
@@ -51,7 +52,6 @@ function refreshSheetIcon() {
 }
 function build() {
   const b = bar(); if (!b || S.built) return;
-  const t0 = performance.now();
   S.saved = [...b.children];
   const pl = PLACES.map((p) => h("button", { class: "pl", type: "button", "data-place": p, "aria-current": "false", "aria-haspopup": p === "more" ? "dialog" : null, "aria-expanded": p === "more" ? "false" : null }, icon(p), h("span", { class: "pl-txt", text: LABEL[p] })));
   const coin = h("button", { class: "bb-coin off", id: "bb-coin", type: "button", "aria-label": "The scene's coin: press it as you would the seal" }, h("img", { class: "bb-coin-img", alt: "", width: 36, height: 36, decoding: "async" }));
@@ -59,7 +59,6 @@ function build() {
   b.setAttribute("aria-label", "Places");
   S.built = true; S.coinKey = null;
   markPlaces();
-  S.firstFillMs = Math.round((performance.now() - t0) * 10) / 10;
 }
 function teardown() {
   const b = bar();
@@ -79,7 +78,6 @@ function placeCoin() {
   const c = $("#bb-coin"), p = placeBtn(S.place || "more"); if (!c || !p) return;
   const w = p.offsetWidth || 0; c.classList.toggle("off", !w); if (!w) return;
   const x = (p.offsetLeft || 0) + w / 2 - 18;
-  S.coinX = x;
   const SP = window.BoardSpring;
   if (SP && !reduced() && coarse()) {
     if (!S.spring) S.spring = SP.spring({ preset: "firm", x, target: x, onFrame: (v) => { c.style.transform = `translateX(${v.toFixed(1)}px)`; } });
@@ -97,11 +95,11 @@ function setCoin(key0) {
   const first = !S.coinKey; S.coinKey = key;
   if (first) { face(img, key); return; }
   if (reduced()) { c.classList.add("fade"); face(img, key); setTimeout(() => c.classList.remove("fade"), 120); return; }
-  c.classList.add("spin"); S.coinSpin = true;
+  c.classList.add("spin");
   const swap = () => { if (S.coinKey === key) face(img, key); };
   const ld = key0 === "sheet" ? { ok: true } : K.medalLoad(key);
   setTimeout(() => { if (ld.ok) swap(); else ld.p.then(swap); }, Math.round(moveMs() / 2));
-  setTimeout(() => { c.classList.remove("spin"); S.coinSpin = false; }, moveMs());
+  setTimeout(() => { c.classList.remove("spin"); }, moveMs());
 }
 function say(msg) {
   const t = $("#toast"); if (!t) return;
@@ -115,7 +113,7 @@ function pressCoin() {
 
 function headFor(key) {
   const head = $(".sheet-head"); if (!head || !S.phone) return;
-  head.setAttribute("data-pscene", BANNER[key] ? key : "tonight");
+  head.setAttribute("data-pscene", PHONE_ORDER.includes(key) ? key : "tonight");
   head.style.setProperty("--sway", "0");
   const nm = $(".sheet-name"); if (nm) { nm.classList.remove("unroll"); void nm.offsetWidth; nm.classList.add("unroll"); }
 }
@@ -138,7 +136,7 @@ function openMySheet() {
 function pickSheet() {
   /* no name yet: pick in a bottom sheet, in place (2026-10-30) */
   const B = window.BoardSheets, P = K.D && K.D.party; if (!B || !P) { K.goScene("five"); return; }
-  const mb = placeBtn("sheet");
+  const mb = placeBtn("sheet") || S.mine;
   const pick = (m) => { K.MEM.setMe(K.MEM.slug(m.name)); unpick(); try { K.render.tonight(); } catch (e) {} openMySheet(); };
   S.pick = true; markPlaces();
   B.open({
@@ -149,7 +147,7 @@ function pickSheet() {
         ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${K.classVar(m.class_key)}`, onclick: () => pick(m) }, K.crestMark(m), m.name))));
     },
   });
-  const first = $("#sh-pick button"); if (first && first.focus) { try { first.focus({ preventScroll: true }); } catch (e) {} } /* the sheet focuses its body; the first name is where a keyboard wants to be */
+  const first = $("#sh-pick button"); if (first && first.focus) { try { first.focus({ preventScroll: true }); } catch (e) {} }
 }
 function unpick() {
   const B = window.BoardSheets; if (B && B.status().open === "pick") B.close("pick");
@@ -202,6 +200,14 @@ function openMore() {
   });
 }
 
+function dockMine() {
+  const sc = K.SC.open !== null, peek = $("#scene-peek"), pill = $("#sense-btn"), par = S.phone ? 0 : !sc ? $("#footer") : innerWidth >= 1024 && peek && peek.parentNode;
+  let b = S.mine; if (!par) { if (b) b.remove(); return; }
+  b = b || (S.mine = h("button", { class: "lib-tool my-sheet", type: "button", "aria-label": "Open my sheet", onclick: () => openMySheet() }, LABEL.sheet));
+  const c = [...par.childNodes], nx = (n) => c[c.indexOf(n) + 1] || null, at = pill && pill.parentNode === par && (!sc || nx(peek) === pill) ? pill : sc && peek, ref = at ? nx(at) : c[0] || null;
+  if (ref !== b) par.insertBefore(b, ref);
+  markPlaces();
+}
 function apply() {
   const on = isPhone();
   if (on === S.phone) { if (on) placeCoin(); return; }
@@ -209,6 +215,7 @@ function apply() {
   HTML.classList.toggle("phone-shell", on);
   if (on) { if (K.SC.open !== null) { build(); headFor(K.SC.open); raf(placeCoin); } }
   else teardown();
+  dockMine();
 }
 function onKey(e) {
   const t = e && e.target; if (!t || !t.closest || !t.closest("[data-place]")) return;
@@ -225,15 +232,16 @@ function onClick(e) {
 sceneHooksInit();
 function sceneHooksInit() {
   K.sceneHooks.push((open) => { if (open && S.phone && !S.built) { build(); } });
-  K.on("scene", (key) => { if (!S.phone) return; build(); headFor(key); markPlaces(); setTimeout(markPlaces, 0); raf(placeCoin); });
+  K.on("scene", (key) => { dockMine(); if (!S.phone) return; build(); headFor(key); markPlaces(); setTimeout(markPlaces, 0); raf(placeCoin); });
   const five = $("#panel-five"); if (five) five.addEventListener("click", () => { if (S.phone) setTimeout(markPlaces, 60); }, true);
   K.on("sheet", markPlaces);
-  K.on("closed", () => { unpick(); if (S.phone) closeMore(); });
+  K.on("rendered", dockMine);
+  K.on("closed", () => { unpick(); dockMine(); if (S.phone) closeMore(); });
   K.on("sheetview", (v) => { if (v === "sheet") unpick(); markPlaces(); });
 }
 const b0 = bar();
 if (b0) { b0.addEventListener("click", onClick); b0.addEventListener("keydown", onKey); }
-for (const ev of ["resize", "orientationchange"]) addEventListener(ev, () => { apply(); if (S.phone) { placeCoin(); markPlaces(); raf(placeCoin); } });
+for (const ev of ["resize", "orientationchange"]) addEventListener(ev, () => { apply(); dockMine(); if (S.phone) { placeCoin(); markPlaces(); raf(placeCoin); } });
 addEventListener("hashchange", () => { if (S.phone) markPlaces(); });
 for (const q of ["(max-width: 699px)", "(max-height: 500px) and (orientation: landscape) and (pointer: coarse)"]) { const m = mm(q); if (m && m.addEventListener) m.addEventListener("change", apply); }
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (S.phone) placeCoin(); }, () => {});
@@ -243,7 +251,7 @@ window.BoardShell = Object.freeze({
   phone: () => S.phone,
   ownsSwipe: () => S.phone && coarse() && !reduced(),
   place: () => S.place,
-  status: () => ({ phone: S.phone, place: S.place, coin: { key: S.coinKey, spinning: S.coinSpin, x: S.coinX }, more: !!(window.BoardSheets && window.BoardSheets.status().open === "more"), bar: S.built ? (bar() ? bar().querySelectorAll(".pl").length : 0) : 0, firstFillMs: S.firstFillMs }),
+  status: () => ({ phone: S.phone, place: S.place, coin: { key: S.coinKey }, more: !!(window.BoardSheets && window.BoardSheets.status().open === "more"), bar: S.built ? (bar() ? bar().querySelectorAll(".pl").length : 0) : 0 }),
   PHONE_MQ,
 });
 })();

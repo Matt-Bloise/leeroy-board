@@ -1,4 +1,4 @@
-/* The phone shell (contract section 4; 2026-10-30). Full note: board/MOBILE-NOTES.md, file notes. Fix round B: notes/fix-round/NOTES-B.md. */
+/* The phone shell */
 html.phone-shell { --pl-h: 56px; }
 html.phone-shell .sheet { grid-template-rows: auto minmax(0, 1fr) auto; }
 html.phone-shell #tabs, html.phone-shell .scene-hint, html.phone-shell .seal:not(.seal-free) { display: none !important; }
@@ -10,8 +10,8 @@ html.phone-shell { --step-0: 1rem; }
 html.phone-shell .bottombar { display: flex; position: relative; overflow: visible; scroll-snap-type: none; align-items: stretch; border-top: 1px solid var(--grain); background: var(--oak-1); padding: 0 max(2px, env(safe-area-inset-right, 0px)) max(0px, env(safe-area-inset-bottom, 0px)) max(2px, env(safe-area-inset-left, 0px)); -webkit-mask-image: none; mask-image: none; touch-action: manipulation; }
 html.phone-shell .pl { flex: 1 1 0; min-height: 56px; min-width: 48px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; padding: 4px 2px 6px; font-family: var(--font-sc); font-size: 0.8125rem; letter-spacing: 0.04em; line-height: 1.1; color: var(--text-dim); background: none; border: 0; border-top: 2px solid transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 html.phone-shell .pl-ico { display: block; width: 22px; height: 22px; opacity: 1; transition: opacity var(--t-micro) var(--ease-oak); }
-html.phone-shell .pl-ico svg, html.phone-shell .pl-ico img { display: block; width: 22px; height: 22px; object-fit: contain; }
-html.phone-shell .pl-ico .pl-crest { border-radius: 50%; }
+.pl-ico img { display: block; width: 22px; height: 22px; object-fit: contain; }
+.pl-crest { border-radius: 50%; }
 html.phone-shell .pl-txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html.phone-shell .pl[aria-current="true"] { color: var(--parchment); border-top-color: var(--brass); }
 html.phone-shell .pl[aria-current="true"] .pl-ico { opacity: 0; }
@@ -56,6 +56,18 @@ html.phone-shell .sheet-head[data-pscene="librarian"] { --banner: url("../img/ri
 html.phone-shell .sheet-head[data-pscene="library"] { --banner: url("../img/ribbons/ochre-w.webp"); }
 html.phone-shell .sheet-head[data-pscene="decide"] { --banner: url("../img/ribbons/olive-w.webp"); }
 html.phone-shell .sheet-head[data-pscene="tonight"] { --banner: url("../img/ribbons/teal-w.webp"); }
+[data-pscene=timeline] { --banner: url("../img/banners/indigo.webp"); }
+[data-pscene=five] { --banner: url("../img/banners/royal.webp"); }
+[data-pscene=roads] { --banner: url("../img/banners/burnt-orange.webp"); }
+[data-pscene=racials] { --banner: url("../img/banners/crimson.webp"); }
+[data-pscene=legacy] { --banner: url("../img/banners/copper.webp"); }
+[data-pscene=buffs] { --banner: url("../img/banners/plum.webp"); }
+[data-pscene=ledger] { --banner: url("../img/banners/wine.webp"); }
+[data-pscene=signups] { --banner: url("../img/banners/forest.webp"); }
+[data-pscene=librarian] { --banner: url("../img/banners/slate.webp"); }
+[data-pscene=library] { --banner: url("../img/banners/ochre.webp"); }
+[data-pscene=decide] { --banner: url("../img/banners/olive.webp"); }
+[data-pscene=tonight] { --banner: url("../img/banners/teal.webp"); }
 
 html.phone-shell.scene-open #board { visibility: hidden; }
 html.phone-shell #scene .sheet-top { display: flex; justify-content: flex-start; gap: 4px; }
@@ -75,3 +87,17 @@ html.phone-shell .close, html.phone-shell .peek-btn, html.phone-shell .sheet-emb
 html.phone-shell .tabs-wrap { display: none; }
 html.phone-shell.has-seal .sheet-head { min-height: 0; padding-left: max(10px, env(safe-area-inset-left, 0px)); } html.phone-shell.has-seal .sheet-top { min-height: 48px; }
 @media (max-height: 500px) and (orientation: landscape) { html.phone-shell .sheet-top { min-height: 0; } html.phone-shell #scene .sheet-head { padding-top: 2px; padding-bottom: 2px; } }
+
+.my-sheet[aria-current="true"] { color: var(--brass-hi); border-color: var(--brass); }
+html.nx-tn:is(.nx-first, .nx-solo) .my-sheet { display: none; }
+.sheet-top > .my-sheet { order: -1; flex: none; min-height: 44px; font-family: var(--font-sc); }
+#footer .my-sheet { min-height: 0; padding: 0 10px; font-size: 13px; }
+@media (max-width: 1199px) {
+  .sheet-top:has(> .my-sheet) > .peek-btn { display: grid; place-items: center; width: 44px; padding: 0; font-size: 0; }
+  .sheet-top:has(> .my-sheet) > .peek-btn::before { content: ""; width: 18px; height: 12px; border: 2px solid; border-radius: 50% / 60%; box-sizing: border-box; background: radial-gradient(circle, currentColor 2.5px, transparent 3px); }
+}
+@media (min-width: 1200px) {
+  .sheet-top:has(> .my-sheet) { justify-content: flex-start; }
+  .sheet-top:has(> .my-sheet) > .peek-btn { position: relative; inset: auto; margin: 0; order: -1; flex: none; }
+  .sheet-top:has(> .my-sheet) > .sheet-name { flex: 1 1 auto; padding: 0; }
+}
