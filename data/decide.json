@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-31T05:43:18.028Z",
+ "generated": "2026-10-31T05:45:31.984Z",
  "build": "1.60.1.70532",
  "as_of": "2026-10-29",
  "labels": {
@@ -5046,7 +5046,7 @@
      "key": "new_dungeons.group_size",
      "tier": 1,
      "label": "Blizzard",
-     "accessed": "2026-10-26"
+     "accessed": "2026-10-31"
     }
    },
    {
