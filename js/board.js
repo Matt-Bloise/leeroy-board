@@ -489,7 +489,7 @@ function miniRoads() {
         s("image", { href: `img/crests/${m.class_key}.png`, x: -13, y: -39, width: 26, height: 26 })));
     });
   }
-  return svg;
+  VF("pins", svg); return svg;
 }
 function miniRing(L) {
   const r = 38, C = 2 * Math.PI * r;
@@ -501,7 +501,7 @@ function miniRing(L) {
     start += len;
   });
   svg.append(s("text", { class: "viz-ring-num", x: 0, y: 11, "text-anchor": "middle", text: String(L.earned_now) }));
-  return svg;
+  VF("mini", svg); return svg;
 }
 function miniWheel() {
   const keys = D.party.members.map((m) => m.class_key), R = 40, pos = {};
@@ -512,7 +512,7 @@ function miniWheel() {
     svg.append(s("line", { class: "viz-thin", x1: pos[b.from][0], y1: pos[b.from][1], x2: pos[to][0], y2: pos[to][1], stroke: classVar(b.from) }));
   }
   for (const k of keys) svg.append(s("image", { href: `img/crests/${k}.png`, x: pos[k][0] - 10, y: pos[k][1] - 10, width: 20, height: 20, "data-land": `buffs.${k}` }));
-  return svg;
+  VF("mini", svg); return svg;
 }
 function miniSpark(vals) {
   if (!vals.length) return null;
@@ -813,6 +813,7 @@ function renderMap() {
   }
   groups.concat(lines).forEach((g) => { g.addEventListener("pointerenter", () => light(g.dataset.road)); g.addEventListener("pointerleave", () => light(null)); });
   lines.forEach((l, i) => l.addEventListener("click", (e) => { e.stopPropagation(); if (typeof groups[i].click === "function") groups[i].click(); }));
+  VF("pins", svg);
   KIT.emit("map", { svg, groups, lines, byZone, roads: ROADS, zones: ZONES, pick: (key) => { sticky = key; light(null); } });
   const meet = D.party.open.find((o) => /meeting point/i.test(o.title));
   const names = Object.entries(byZone).map(([z, ms]) => `${andList(ms.map((m) => m.name))} in ${z}`);
@@ -858,10 +859,11 @@ function renderRaces() {
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
 const KIND_WORD = { toy: "a fun item with no stats", tabard: "a cloth crest worn over armor", pet: "a pet that follows you", mount: "a mount to ride" };
+const VF = (n, ...a) => import("../img/vector/vector.js?v=a5cc909c22").then((m) => m[n](...a)).catch(() => {});
 function renderLegacy() {
   const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
-  const r = 84, C = 2 * Math.PI * r;
+  const r = 74, C = 2 * Math.PI * r;
   const svg = s("svg", { viewBox: "-130 -130 260 260", role: "img", "aria-label": `Legacy: ${L.earned_now} of ${L.total} points` });
   svg.append(s("defs", {}, s("mask", { id: "mask-ring", class: "draw-mask", maskUnits: "userSpaceOnUse", x: -130, y: -130, width: 260, height: 260 },
     s("circle", { class: "draw", r, cx: 0, cy: 0, pathLength: 1, transform: "rotate(-90)", style: "stroke-width: 44; stroke-linecap: butt" }))));
@@ -889,7 +891,7 @@ function renderLegacy() {
       h("div", {}, h("div", { class: "label", text: `Reward track, ${L.thresholds_label}` }), rewards),
       h("p", { class: "label", "data-j": "c e", text: `Claimed from ${L.claim}.` }),
       legend));
-  KIT.emit("legacy", { svg, r, C, L, rewards, legend });
+  KIT.emit("legacy", { svg, r, C, L, rewards, legend }); VF("ring", svg);
 }
 
 function renderWheel() {
@@ -937,6 +939,7 @@ function renderWheel() {
   };
   nodes.forEach((n) => { n.addEventListener("click", () => setActive(n.dataset.k)); n.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(n.dataset.k); } }); });
   const wide = !window.matchMedia || window.matchMedia("(min-width: 700px)").matches;
+  VF("wheel", svg);
   wrap.append(h("details", { class: "wheel-svg", ...(wide ? { open: "" } : {}) }, h("summary", { text: "The wheel between the five" }), svg), h("details", { class: "wheel-links", id: "wheel-links" }, h("summary", { text: `The wheel's ${D.client.synergy.length} links, with sources` }), h("ul", { class: "buffs" }, items)));
 }
 const BUFF_STATUS = { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
@@ -1139,6 +1142,7 @@ function renderLibrarian() {
     (() => { const q = emb("quill", "spark-quill"); for (const [k, v] of Object.entries({ x: xs(vals.length - 1) - 34, y: ys(vals[vals.length - 1]) - 2, width: 22, height: 22 })) q.setAttribute(k, v); q.append(s("title", { text: "The quill draws the line, newest answer last" })); return q; })(),
     ...vals.map((v, i) => s("text", { class: "spark-text", x: xs(i), y: H + 10, "text-anchor": "middle", text: String(v) })),
     s("text", { class: "spark-text", x: W - pad, y: ys(max) - 4, "text-anchor": "end", text: `${max} s` }));
+  VF("spark", spark);
   wrap.append(
     h("div", { class: "stack" },
       h("div", { class: "stats" }, stat("answers", String(st.answers)), stat("median reply", fmtSecs(st.median_s)), stat("wiki pages", String(st.wiki_pages)), stat("wiki facts", nf.format(st.wiki_facts))),
