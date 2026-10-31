@@ -1,30 +1,34 @@
-/* Woven lettering for the ribbons (lane R, RIBBONS.md section 3, R3). The scene name is drawn once per ribbon into a canvas, filled with the
-   gold satin-stitch tile and edged one shade darker, then uploaded by cloth.js as the ribbon's label texture, so the letters ride the cloth:
-   they bend with the wave and take the fold light. No drop shadow, no blur. Imported by cloth.js; no other imports. */
+/* Lettering bake for the ribbons (polish round lane A, A2). The scene name becomes a signed distance field (sdf-worker.js) in a module Worker,
+   so the 7 to 19 ms of a bake never lands on the main thread; where module workers or OffscreenCanvas are missing, one label per idle slice
+   (50 ms timeout) with the page's own font. cloth.js uploads each field as an R8 texture with mipmaps and the shader stitches it. */
+import { sdfLabel } from "./sdf-worker.js?v=07781af8ec";
 
-export const LABEL_FONT = '700 {px}px "Alegreya Sans SC", "Alegreya Sans", Georgia, serif';
+const FONT_URL = new URL("../fonts/alegreya-sans-sc-700-latin.woff2", import.meta.url).href;
+export function fontReady() { try { return !document.fonts || document.fonts.check('700 13px "Alegreya Sans SC"'); } catch (e) { return true; } }
+const mk = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+const idle = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 50 }) : setTimeout(f, 16));
 
-/* a canvas widthPx by 1.5 * fontPx css px (times dpr), the text centred; shrinks the font until it fits the ribbon between its selvedges */
-export function bakeLabel({ text, widthPx, fontPx, dpr = 1, maxH = 0, gold = null, pale = false, stroke = "#9a7a2c" }) {
-  const d = Math.max(1, Math.min(2, dpr)), fp = fontPx * 1.15;
-  const c = document.createElement("canvas"), w = Math.max(8, Math.round(widthPx * d)); c.width = w;
-  const x = c.getContext("2d"); if (!x) { c.height = 8; return c; }
-  const room = w - 14 * d, setF = (p) => { x.font = LABEL_FONT.replace("{px}", String(p)); if ("letterSpacing" in x) x.letterSpacing = `${(p * 0.05).toFixed(2)}px`; };
-  let px = fp * d; setF(px);
-  let lines = [text];
-  if (x.measureText(text).width > room && text.indexOf(" ") > 0) { /* too wide for one line: break at the space that balances the two halves, so the letters stay large */
-    let best = 1e9; for (let i = text.indexOf(" "); i >= 0; i = text.indexOf(" ", i + 1)) { const a = text.slice(0, i), b = text.slice(i + 1), m = Math.max(x.measureText(a).width, x.measureText(b).width); if (m < best) { best = m; lines = [a, b]; } }
+/* done(result) gets { id, w, h, data, lines, cap, inkTop, inkBot, ms, font } */
+export function createBaker(done) {
+  let w = null, dead = false, q = [], busy = 0;
+  const sent = new Map();
+  function run() {
+    busy = 0; if (dead || !q.length) return;
+    const j = q.shift();
+    try { const r = sdfLabel(j, mk); r.id = j.id; r.font = fontReady(); done(r); } catch (e) {}
+    if (q.length) busy = idle(run);
   }
-  const widest = () => Math.max(...lines.map((l) => x.measureText(l).width));
-  const m = widest(); if (m > room) { px = Math.max(7 * d, px * (room / m)); setF(px); }
-  if (maxH > 0 && lines.length * px * 1.12 > maxH * d) { px = Math.max(7 * d, (maxH * d) / (lines.length * 1.12)); setF(px); }
-  const lh = px * 1.12, hPx = Math.ceil(lh * lines.length + px * 0.5); c.height = Math.max(8, hPx);
-  setF(px); x.textAlign = "center"; x.textBaseline = "middle"; x.lineJoin = "round";
-  let fill = pale ? "#fff3cf" : "#e8c97c"; try { if (gold && !pale) fill = x.createPattern(gold, "repeat") || fill; } catch (e) { fill = "#e8c97c"; }
-  lines.forEach((l, i) => {
-    const cx = w / 2, cy = c.height / 2 + (i - (lines.length - 1) / 2) * lh + px * 0.04;
-    x.lineWidth = 4 * d; x.strokeStyle = "rgba(24,14,4,0.9)"; x.strokeText(l, cx, cy); x.lineWidth = Math.max(1, d * 1.2); x.strokeStyle = stroke; x.strokeText(l, cx, cy);
-    x.fillStyle = fill; x.fillText(l, cx, cy);
-  });
-  return c;
+  const later = (j) => { q = q.filter((x) => x.id !== j.id); q.push(j); if (!busy) busy = idle(run); };
+  try {
+    if (typeof OffscreenCanvas === "function" && typeof Worker === "function") {
+      w = new Worker(new URL("./sdf-worker.js?v=07781af8ec", import.meta.url), { type: "module" });
+      w.onmessage = (e) => { const r = e.data || {}; sent.delete(r.id); if (!dead && !r.error) done(r); };
+      w.onerror = () => { try { w.terminate(); } catch (x) {} w = null; for (const j of sent.values()) later(j); sent.clear(); };
+    }
+  } catch (e) { w = null; }
+  return {
+    bake(job) { job.fontUrl = FONT_URL; if (w) { sent.set(job.id, job); w.postMessage(job); } else later(job); },
+    mode: () => (w ? "worker" : "idle"),
+    destroy() { dead = true; q = []; sent.clear(); if (w) { try { w.terminate(); } catch (e) {} } w = null; },
+  };
 }
