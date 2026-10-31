@@ -223,7 +223,7 @@ export function wheel(svg) {
    brass and the enamel show round it. */
 export function pins(root) {
   kit(); if (!root) return;
-  for (const n of root.querySelectorAll(".map-zep-g,.map-town")) n.setAttribute("role", "img");
+  for (const n of root.querySelectorAll(".map-zep-g,.map-town")) { n.setAttribute("role", "img"); if (!n.getAttribute("aria-label")) n.setAttribute("aria-label", n.classList.contains("map-zep-g") ? "Zeppelin" : "Town"); } /* qa-sweep: axe svg-img-alt, an image needs a name */
   const D = "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z", sc = (k) => `translate(0 -26) scale(${k}) translate(0 26)`;
   for (const g of root.querySelectorAll(".map-pin,.mm-pin")) {
     if (g.getAttribute("data-vf")) continue;
