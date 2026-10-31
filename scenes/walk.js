@@ -2,7 +2,7 @@
 "use strict";
 const K = window.__boardKit, D = document; if (!K) return;
 const KEY = "board-walked", get = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
-const OFF = !!get() || !D.head || /[?&](render|brain)=/.test(location.search || "");
+const OFF = !!get() || D.documentElement.classList.contains("ga-one")  || !D.head || /[?&](render|brain)=/.test(location.search || "");
 const { $, h } = K, phone = () => D.documentElement.classList.contains("phone-shell");
 const CARDS = [
   ["This board is the tavern for the five of you: start with who you are.", ["#tn-me"], "door"],

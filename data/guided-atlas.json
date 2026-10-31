@@ -1,0 +1,179 @@
+{
+ "generated": "2026-10-30T04:38:07.724Z",
+ "build": "1.60.1.70532",
+ "starter_cap": {
+  "level": 6,
+  "src": {
+   "page": "systems/class-trainers",
+   "key": "trainers.starter_cap",
+   "host": "warcrafttavern.com",
+   "tier": 2,
+   "accessed": "2026-10-31"
+  }
+ },
+ "classes": {
+  "druid": {
+   "start": {
+    "id": "red-cloud-mesa",
+    "name": "Red Cloud Mesa",
+    "zone": "mulgore",
+    "zone_name": "Mulgore"
+   },
+   "trainer": {
+    "name": "Gart Mistrunner",
+    "src": {
+     "page": "systems/class-trainers",
+     "key": "trainers.druid.first",
+     "host": "warcrafttavern.com",
+     "tier": 2,
+     "accessed": "2026-10-31"
+    }
+   },
+   "town": {
+    "id": "bloodhoof-village",
+    "name": "Bloodhoof Village",
+    "trainer": "Gennia Runetotem",
+    "course": {
+     "minutes": 1.8,
+     "status": "speculative"
+    }
+   }
+  },
+  "priest": {
+   "start": {
+    "id": "deathknell",
+    "name": "Deathknell",
+    "zone": "tirisfal-glades",
+    "zone_name": "Tirisfal Glades"
+   },
+   "trainer": {
+    "name": "Dark Cleric Duesten",
+    "src": {
+     "page": "systems/class-trainers",
+     "key": "trainers.priest.first",
+     "host": "warcrafttavern.com",
+     "tier": 2,
+     "accessed": "2026-10-31"
+    }
+   },
+   "town": {
+    "id": "brill",
+    "name": "Brill",
+    "trainer": "Dark Cleric Beryl",
+    "course": {
+     "minutes": 4.5,
+     "status": "speculative"
+    }
+   }
+  },
+  "paladin": {
+   "start": {
+    "id": "deathknell",
+    "name": "Deathknell",
+    "zone": "tirisfal-glades",
+    "zone_name": "Tirisfal Glades"
+   },
+   "trainer": {
+    "name": "Aramis Hammerhand",
+    "src": {
+     "page": "systems/class-trainers",
+     "key": "trainers.paladin.first",
+     "host": "warcrafttavern.com",
+     "tier": 2,
+     "accessed": "2026-10-31"
+    }
+   },
+   "town": {
+    "id": "brill",
+    "name": "Brill",
+    "trainer": "Shari Stilwell",
+    "course": {
+     "minutes": 4.5,
+     "status": "speculative"
+    }
+   }
+  },
+  "mage": {
+   "start": {
+    "id": "deathknell",
+    "name": "Deathknell",
+    "zone": "tirisfal-glades",
+    "zone_name": "Tirisfal Glades"
+   },
+   "trainer": {
+    "name": "Isabella",
+    "src": {
+     "page": "systems/class-trainers",
+     "key": "trainers.mage.first",
+     "host": "warcrafttavern.com",
+     "tier": 2,
+     "accessed": "2026-10-31"
+    }
+   },
+   "town": {
+    "id": "brill",
+    "name": "Brill",
+    "trainer": "Cain Firesong",
+    "course": {
+     "minutes": 4.5,
+     "status": "speculative"
+    }
+   }
+  },
+  "warlock": {
+   "start": {
+    "id": "valley-of-trials",
+    "name": "Valley of Trials",
+    "zone": "durotar",
+    "zone_name": "Durotar"
+   },
+   "trainer": {
+    "name": "Nartok",
+    "src": {
+     "page": "systems/class-trainers",
+     "key": "trainers.warlock.first",
+     "host": "warcrafttavern.com",
+     "tier": 2,
+     "accessed": "2026-10-31"
+    }
+   },
+   "town": {
+    "id": "razor-hill",
+    "name": "Razor Hill",
+    "trainer": "Dhugru Gorelust",
+    "course": {
+     "minutes": 3.1,
+     "status": "speculative"
+    }
+   }
+  }
+ },
+ "dungeon": {
+  "id": "ragefire-chasm",
+  "name": "Ragefire Chasm",
+  "level": 13,
+  "zone": "orgrimmar",
+  "zone_name": "Orgrimmar",
+  "where": "Cleft of Shadow, Orgrimmar (52.8, 49.6)",
+  "src": {
+   "page": "dungeons/returning-dungeons-13-22",
+   "key": "ragefire_chasm.gf_entry_level",
+   "host": "kami-labs.fr",
+   "tier": 2,
+   "accessed": "2026-10-26"
+  },
+  "where_src": {
+   "page": "dungeons/returning-dungeons-13-22",
+   "key": "ragefire_chasm.location",
+   "host": "warcrafttavern.com",
+   "tier": 2,
+   "accessed": "2026-10-26"
+  }
+ },
+ "dungeon_def": "A shorter adventure for a group of five players, ending with bosses.",
+ "meet": {
+  "id": "valley-of-strength",
+  "name": "Valley of Strength",
+  "chosen": false
+ }
+}

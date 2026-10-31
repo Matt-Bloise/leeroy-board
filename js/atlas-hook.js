@@ -10,7 +10,7 @@
 
   const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : k === "reduceMQ" ? { get matches() { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } } : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=89702f4ee6");
+    const m = await import("../atlas/atlas.js?v=f90088706f");
     return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, member: () => (K.MEM && K.MEM.member ? K.MEM.member() : null), sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {

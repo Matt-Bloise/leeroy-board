@@ -1,6 +1,6 @@
 import * as geo from "./geo.js?v=eb6dd67b63";
 import { createView, createTiles, defaultLoader, createFrames, backingDpr } from "./view.js?v=7879e18ed8";
-import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=1949211efd";
+import { createLayers, LAYERS, FALLBACK, ICON } from "./layers.js?v=bd27730548";
 import { bindGestures } from "./gestures.js?v=b5b1af167f";
 import { buildGraph, makePlan, buildTimeline, timelineAt, slicePath, meetOf } from "./routes.js?v=1b698e7e6d";
 import { createCards } from "./cards.js?v=a6fa8e4340";
@@ -419,6 +419,7 @@ export async function createAtlas(opts) {
     },
     goto(v, o = {}) { return moveTo(v.au, v.av, v.zoom, o); },
     fit(ids, o = {}) { return fitIds(ids, o); },
+    place(id) { return placeById.get(id) || null; },
     plan(o = {}) { return makePlan(graph, o); },
     showPlan(plan, o = {}) {
       if (!plan || !plan.who.length) return false;

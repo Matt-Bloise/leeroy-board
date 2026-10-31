@@ -183,7 +183,7 @@ export function createLayers(data) {
       }
       if (S.pinned === x.p.id) { ctx.beginPath(); ctx.arc(sx, sy, sz * 0.55, 0, 6.2832); ctx.strokeStyle = C.plan; ctx.lineWidth = 3; ctx.stroke(); }
       const nz = NAME[x.p.kind] === undefined ? 3 : NAME[x.p.kind];
-      if (L.on.labels && (z >= nz || isF || end || S.hover === x.p.id)) cands.push({ t: x.p.name, x: sx, y: sy + sz * 0.62, pr: isF || S.hover === x.p.id ? 9 : end ? 8 : PRIO[x.p.kind] || 1, size: 12, kind: "place", dot: { x: sx, y: sy, r: sz * 0.25 } });
+      if (L.on.labels && !(S.noLabel && S.noLabel.has(x.p.id)) && (z >= nz || isF || end || S.hover === x.p.id)) cands.push({ t: x.p.name, x: sx, y: sy + sz * 0.62, pr: isF || S.hover === x.p.id ? 9 : end ? 8 : PRIO[x.p.kind] || 1, size: 12, kind: "place", dot: { x: sx, y: sy, r: sz * 0.25 } });
     }
     L.lastDrawn = drawn;
     if (L.on.zeppelins && S.zep && sprite("zeppelin")) {
