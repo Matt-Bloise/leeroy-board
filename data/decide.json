@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-31T08:54:06.731Z",
+ "generated": "2026-10-31T08:55:37.919Z",
  "build": "1.60.1.70532",
  "as_of": "2026-10-29",
  "labels": {
@@ -4238,7 +4238,7 @@
       },
       {
        "label": "Touch of the Dead, for the Undead at this table",
-       "text": "Undead racial: 30% proc for casters on a 25 s internal cooldown (Oct 15 notes); drains proc it only on their first tick (Kami Labs beta tests; Wowhead Touch of the Grave tooltips)",
+       "text": "Undead racial (Touch of the Grave): 30% proc for casters, internal cooldown 15 s since Blizzard's Oct 27 dev notes (25 s from the Oct 15 notes); drains proc it only on their first tick (Kami Labs beta tests; Wowhead Touch of the Grave tooltips)",
        "status": "forever",
        "src": {
         "kind": "wiki",
@@ -4246,7 +4246,7 @@
         "key": "warlock.touch_of_the_dead",
         "tier": 1,
         "label": "Blizzard",
-        "accessed": "2026-10-26"
+        "accessed": "2026-10-27"
        }
       }
      ],
