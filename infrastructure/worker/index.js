@@ -1,12 +1,13 @@
 // =============================================================================
 // Cloudflare Worker Entry Point (`leeroy-brain`)
-// Serves Edge-cached D1 state, library blobs, Claude Q&A, Fact Fixes, and
-// delegates WebSockets + live mutations to the `BoardRoom` Durable Object.
+// Serves Edge-cached D1 state, library blobs, Claude Q&A, Fact Fixes, Discord
+// HTTP Interactions, and delegates WebSockets + live mutations to `BoardRoom`.
 // =============================================================================
 
 import { BoardRoom } from "./room.js";
 import { answerWithClaude } from "./claude.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
+import { handleDiscordInteraction, recomputeSignupTallies } from "./discord.js";
 
 export { BoardRoom };
 
@@ -80,6 +81,11 @@ export default {
     const path = url.pathname.replace(/^\/api(?=\/|$)/, "") || "/";
 
     try {
+      // 0. Discord Serverless HTTP Interactions Endpoint (`POST /api/discord`)
+      if (req.method === "POST" && path === "/discord") {
+        return await handleDiscordInteraction(req, env, ctx, url.origin);
+      }
+
       // 1. WebSocket / Live State / Sheet mutations -> Durable Object (`BoardRoom`)
       if (path === "/live" || path === "/state" || path === "/sheet") {
         if (path === "/sheet" && req.method === "POST" && !isAuthorized(req, url, env)) {
@@ -92,6 +98,36 @@ export default {
         const headers = new Headers(doResp.headers);
         for (const [k, v] of Object.entries(cors)) headers.set(k, v);
         return new Response(doResp.body, { status: doResp.status, headers });
+      }
+
+      // 1b. POST /signups -> External Discord Bot sync for `#wow-forever` Sign-ups card
+      if (req.method === "POST" && path === "/signups") {
+        if (!isAuthorized(req, url, env)) {
+          return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+        }
+        const body = await req.json();
+        const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
+        const doc = row ? JSON.parse(row.json) : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
+        if (Array.isArray(body.entries)) {
+          doc.entries = body.entries;
+        } else if (body.name) {
+          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+          let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === String(body.name).toLowerCase());
+          if (!entry) {
+            entry = { name: body.name };
+            doc.entries.push(entry);
+          }
+          for (const k of ["pack", "meet", "meet_other", "rsvp", "when"]) {
+            if (body[k] !== undefined) entry[k] = body[k];
+          }
+        }
+        await recomputeSignupTallies(doc);
+        await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
+          .bind(JSON.stringify(doc), doc.updated)
+          .run();
+        await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json"]);
+        await broadcastToRoom(env, { type: "data", key: "signups" });
+        return jsonResp({ ok: true, signups: doc }, 200, cors);
       }
 
       // 2. GET /bootstrap -> Single-roundtrip Edge-cached startup bundle
