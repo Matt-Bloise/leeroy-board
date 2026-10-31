@@ -1,26 +1,14 @@
-/* Companion N3: the first screen of Next steps per journey (js/next.js; COMPANION-CONTRACT.md section 3). The seals picker
-   shows only while no journey is stored; with the card drawn (html.nx-on), Guided folds the rest of the panel until "Show me
-   more" (#panel-tonight.nx-open) brings the three cards back. Tokens only. */
-html.jr-set #tn-seals { display: none; }
-/* One decision on the first screen (verifier round 1). nx-first: no journey stored, the seals alone; nx-solo: Guided with the card
-   folded, the card alone. The scene head's controls and the phone's bottom bar come back with a journey or "Show me more"; Escape
-   still closes the scene. nx-tn scopes this to the Next steps scene. */
-html.nx-tn.nx-first #tn-me .tn-pick, html.nx-tn.nx-first #tn-me .tn-chip, html.nx-tn.nx-first #tn-cards, html.nx-tn.nx-first #tn-before, html.nx-tn.nx-first #tn-how,
-html.nx-tn.nx-first #tn-actions, html.nx-tn.nx-first #tn-left, html.nx-tn.nx-first #panel-tonight .jr-path,
-html.nx-tn.nx-first #scene .sheet-emblem, html.nx-tn.nx-first #scene-peek, html.nx-tn.nx-first #scene-close, html.nx-tn.nx-first #scene-hint,
-html.nx-tn.nx-first #tabs, html.nx-tn.nx-first #scene .tabs-arrow, html.nx-tn.nx-first #mode-btn-scene, html.nx-tn.nx-first #journey-scene, html.nx-tn.nx-first #bottombar, html.nx-tn.nx-first #sense-btn, html.nx-tn.nx-first #seal,
-html.nx-tn.nx-solo #scene .sheet-emblem, html.nx-tn.nx-solo #scene-peek, html.nx-tn.nx-solo #scene-hint,
-html.nx-tn.nx-solo #tabs, html.nx-tn.nx-solo #scene .tabs-arrow, html.nx-tn.nx-solo #journey-scene, html.nx-tn.nx-solo #bottombar, html.nx-tn.nx-solo #sense-btn,
-html.nx-tn.nx-solo #seal, html.nx-tn.nx-solo #tn-change, html.nx-tn.nx-solo #mode-btn-scene { display: none !important; }
-html.nx-tn.nx-first #tn-me { grid-template-columns: minmax(0, 1fr); width: 100%; max-width: 960px; }
+
+/* D1: no chooser takes the screen. The card draws on the first visit; the seals are a compact row under it. nx-solo (Guided, card
+   folded) folds the other cards only: the scene head, the plate and the bottom bar stay. */
+html.nx-tn.nx-solo #tn-change { display: none; }
 /* a panel focused by a pointer draws no ring (WebKit focuses the panel when a button inside it is pressed) */
-html.nx-ptr #sheet-body .panel:focus-visible, html.nx-first #panel-tonight:focus-visible, html.nx-solo #panel-tonight:focus-visible { outline: none; box-shadow: none; }
+html.nx-ptr #sheet-body .panel:focus-visible, html.nx-solo #panel-tonight:focus-visible { outline: none; box-shadow: none; }
 html.nx-on[data-journey="guided"] #tn-cards,
 html.nx-on[data-journey="guided"] #tn-before,
 html.nx-on[data-journey="guided"] #tn-how,
 html.nx-on[data-journey="guided"] #tn-actions,
 html.nx-on[data-journey="guided"] #tn-left,
-html.nx-on[data-journey="guided"] #panel-tonight .jr-path,
 html.nx-on[data-journey="guided"] #tn-me.nx-compact .ps-mine { display: none; }
 html.nx-on[data-journey="guided"] #panel-tonight.nx-open #tn-cards { display: grid; }
 html.nx-on[data-journey="guided"] #panel-tonight.nx-open #tn-me.nx-compact .ps-mine { display: inline-flex; }
@@ -68,21 +56,18 @@ html.nx-on[data-journey="guided"] #tn-me .tn-pick { box-sizing: border-box; widt
 /* ultrawide: the type scales up with the frame, so the card widens with it (at 3440x1440 the Curious card ran past the frame) */
 @media (min-width: 2000px) { .nx, #panel-tonight #nx-queue { max-width: 960px; } #tn-me.nx-compact { max-width: 960px; } }
 @media (forced-colors: active) { .nx { border: 1px solid CanvasText; } }
-/* integrator pass 2: the fold in CSS too, so a part drawn after next.js folded (v13d redraws the path card on its own events) or before
-   the engine's first card (the rules import is async) never shows on the folded Guided screen */
-html.nx-solo #panel-tonight :is(#tn-cards, #tn-before, #tn-how, #tn-actions, #tn-left, .jr-path) { display: none !important; }
+
+html.nx-solo #panel-tonight :is(#tn-cards, #tn-before, #tn-how, #tn-actions, #tn-left) { display: none !important; }
 /* integrator pass 2: a phone on its side (390 px tall) shows the whole Guided card; the minutes line gives its 22 px */
 @media (max-height: 500px) { html.nx-solo #nx-card .nx-min { display: none; } }
 /* integrator pass 2: Everything links each queued step to where it is done */
 .nx-q-go { color: var(--ink); text-decoration-color: var(--brass); text-underline-offset: 3px; }
 /* integrator pass 2: the step seal beside "Next" (img/companion/seal-*.webp, else an emblem) */
 .nx-k { display: flex; align-items: center; gap: 8px; }
-.nx-seal { width: 32px; height: 32px; flex: none; object-fit: contain; }
-.nx-k .emblem.nx-seal { width: 24px; height: 24px; color: var(--wax); }
+.nx-stepseal { width: 32px; height: 32px; flex: none; object-fit: contain; }
+.nx-k .emblem.nx-stepseal { width: 24px; height: 24px; color: var(--wax); }
 /* integrator pass 3 (the outside walks): the folded Guided card keeps the scene's close, the one visible way back to the wall */
-/* the picker sits under the card on every journey and fills its row: from 1100 px v14 split #tn-me in two (the picker, then the
-   seals' column), and once the seals went that column was an empty parchment slab beside "Who are you?"; the three cards follow the
-   card instead of taking row 2 above it */
+
 @media (min-width: 1100px) {
   html.jr-set .tn:has(.tn-pick) > .tn-me { grid-template-columns: minmax(0, 1fr); width: 100% !important; max-width: 720px !important; justify-self: center; }
   html.jr-set .tn:has(.tn-pick) > .tn-cards { grid-row: auto; }
@@ -96,22 +81,18 @@ html.nx-solo #panel-tonight :is(#tn-cards, #tn-before, #tn-how, #tn-actions, #tn
 .tnb-sum { display: flex; align-items: center; min-height: 44px; cursor: pointer; font-family: var(--font-body); font-size: var(--step-0); color: var(--ink); text-decoration: underline; text-decoration-color: var(--brass); text-underline-offset: 3px; }
 /* integrator pass 3: Everything's queue lists every step, so the "Your steps" card above Next up goes */
 html.nx-on[data-journey="everything"] #tn-cards > .tn-card:first-child { display: none; }
-/* integrator pass 3: Everything from 1100 px sets the card and its queue side by side (stacked, the queue pushed the board's own cards
-   under the fold and Next steps to 2.45 laptop screens; at 2560 and 3440 the column left wide empty parchment either side) */
+
 @media (min-width: 1100px) {
   html.nx-on[data-journey="everything"] #panel-tonight { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--g3, 18px); }
   html.nx-on[data-journey="everything"] #panel-tonight > * { grid-column: 1 / -1; }
   html.nx-on[data-journey="everything"] #panel-tonight > #nx-card { grid-column: 1; justify-self: stretch; max-width: none; margin: 0 0 var(--g2); }
   html.nx-on[data-journey="everything"] #panel-tonight > #nx-queue { grid-column: 2; justify-self: stretch; align-self: start; max-width: none; margin: 0 0 var(--g2); }
 }
-/* integrator pass 3 (phones, named or not): the card carries the step and the bottom bar the way out, so the three action buttons and
-   the buff shortcut wait on the wall and the Buffs tab (Next steps ran 2.75 phone screens on Curious, 3.02 on Everything); on
-   Everything the queue already lists the next date, so the Next up card goes too */
+
 @media (max-width: 699px) {
   html.nx-on #panel-tonight > #tn-actions { display: none; }
 }
-/* polish (2026-10-30): a short laptop screen (up to 760 px tall) does the same; the banner rail above holds every way the three buttons
-   go (Curious with a name read 2.51 screens at 1280x720 against 2.25) */
+
 @media (min-width: 700px) and (max-height: 760px) { html.nx-on #panel-tonight > #tn-actions { display: none; } }
 @media (max-width: 699px) {
   html.nx-on[data-journey="everything"] #tn-cards > .tn-card:nth-child(2) { display: none; }
@@ -121,14 +102,7 @@ html.nx-on[data-journey="everything"] #tn-cards > .tn-card:first-child { display
 #tn-how:has(> .tnh-det:not([open])) { padding-top: 8px; padding-bottom: 8px; }
 /* polish (2026-10-30): a trail chip under the pointer kept the page's link hover colour (parchment on parchment: its words vanished) */
 .nx-trail:hover, .nx-trail:focus-visible { color: var(--ink); border-color: var(--brass); text-decoration: underline; }
-/* fix round A3: the first visit's seals start 24 px under the scene head on an opaque sheet (the wall had ghosted through), with a
-   quiet way to the wall that stores no journey. A5: on phones the Guided card starts at the top too (the bottom bar is in the sheet's
-   flow, so it covers nothing; next.js brings the trails into view when Show me more opens) */
-html.nx-tn.nx-first #sheet-body, html.phone-shell.nx-tn #sheet-body { align-content: start; }
-html.nx-tn.nx-first #sheet-body { padding-top: 24px; }
-html.nx-tn.nx-first #panel-tonight { padding-top: 0; }
-html.nx-tn.nx-first #scene .sheet { background: var(--parchment); }
-html.nx-tn.nx-first #scene-veil { background: var(--oak-0); }
+
 .tn-wall { justify-self: center; color: var(--ink); background: transparent; border-color: transparent; text-decoration: underline; text-decoration-color: var(--brass); text-underline-offset: 3px; }
 /* fix round A11: from 1600 px two column lines (the card's and the queue's: #tn-cards had three tracks for two cards), prose to 72ch,
    one label size for every section heading (var(--fs-label)) */
@@ -140,5 +114,43 @@ html.nx-tn.nx-first #scene-veil { background: var(--oak-0); }
   #panel-tonight :is(.tn-card > h3, #tnb-h, #tnh-h, .nx-k, .nx-trails-h) { font-size: var(--fs-label); }
 }
 
-/* round 2: the first-visit seal sheet opens without the rise */
-html.nx-first .scene-layer.rise .sheet, html.nx-first .scene-layer.fade .sheet { animation: none; }
+/* D4 (lane D): the card, two buttons, two links, low on a phone */
+.nx { position: relative; background: var(--mat-paper, var(--parchment)); border-top-color: var(--mat-brass, var(--wax)); }
+.nx-seal { position: absolute; top: 10px; right: 10px; width: 28px; height: 28px; border-radius: 50%; background: center / contain no-repeat; }
+.nx-seal[data-wax="red"] { background-image: url("../img/wax/red.webp"); }
+.nx-seal[data-wax="amber"] { background-image: url("../img/wax/amber.webp"); }
+.nx-seal[data-wax="green"] { background-image: url("../img/wax/green.webp"); }
+.nx-links { display: flex; flex-wrap: wrap; gap: 0 var(--g3); margin: var(--g1) 0 0; }
+.nx-link { display: inline-flex; align-items: center; min-height: 48px; font-family: var(--font-body); font-size: var(--step-0); color: var(--ink); text-decoration: underline; text-decoration-color: var(--brass); text-underline-offset: 3px; }
+.nx-link:hover, .nx-link:focus-visible { text-decoration-thickness: 2px; }
+#panel-tonight > .nx-line { margin: 0 auto var(--g1); padding-top: 0; border-top: 0; text-align: center; }
+.nx-week { margin-top: var(--g2); }
+.nx-week-h { margin: 0; font-family: var(--font-sc); font-size: var(--fs-label, 0.8125rem); font-weight: 400; letter-spacing: 0.08em; color: var(--ink-soft); }
+.nx-week ol { margin: 4px 0 0; padding-left: 1.2em; }
+.nx-week li { margin: 4px 0 0; line-height: 1.35; }
+/* the seals: one compact row under the card (words trimmed in v13d.js) */
+#tn-seals { padding: var(--g1) var(--g2); gap: 4px; }
+#tn-seals .tn-seals-q { font-size: var(--step-0); font-weight: 400; color: var(--ink-soft); }
+#tn-seals .wx-row { gap: var(--g1); }
+#tn-seals .wx { grid-template-columns: 40px minmax(0, 1fr); justify-items: start; align-items: center; min-height: 56px; padding: 4px 8px; gap: 8px; }
+#tn-seals .wx-wax { width: 40px; }
+@media (max-width: 699px) {
+  html.phone-shell #panel-tonight { align-content: end; min-height: calc(100dvh - var(--head-h, 112px) - var(--bar-h, 64px)); }
+  #tn-seals .wx { grid-template-columns: minmax(0, 1fr); justify-items: center; padding: 4px 2px; }
+  #tn-seals .wx-wax { width: 32px; }
+}
+@media (min-width: 1200px) {
+  #panel-tonight #nx-card { max-width: 72ch; }
+  html.nx-on #panel-tonight > #tn-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(100%, 1000px); justify-self: center; }
+}
+@media (prefers-reduced-motion: reduce) { .nx-link { transition: none; } }
+
+/* scroll budget (2026-10-31): the blocks Curious and Everything keep under the card wait in one details, "Show me more" */
+#panel-tonight > .nx-rest { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 820px; min-width: 0; }
+#panel-tonight > .nx-rest[open] { display: grid; gap: var(--g2); }
+#panel-tonight > .nx-rest > .nx-rest-s { display: flex; justify-content: center; align-items: center; width: fit-content; margin: 0 auto; padding: 0 18px; cursor: pointer; list-style: none; }
+#panel-tonight > .nx-rest > .nx-rest-s::-webkit-details-marker { display: none; }
+#panel-tonight > .nx-rest[open] > .nx-rest-s { margin-bottom: var(--g1); }
+#panel-tonight > .nx-rest > :is(#tn-cards, #tn-before, #tn-how) { grid-column: 1 / -1; min-width: 0; }
+#panel-tonight > .nx-rest > #tn-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px 20px; align-items: start; }
+@media (min-width: 1100px) { html.nx-on[data-journey="everything"] #panel-tonight > .nx-rest { max-width: none; } }

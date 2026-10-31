@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-31T07:36:06.699Z",
+ "generated": "2026-10-31T07:46:58.805Z",
  "cards": [
   "Next up",
   "Your steps",
@@ -85,6 +85,16 @@
    "step": null
   }
  ],
+ "week_one": {
+  "trainers": {
+   "druid": null,
+   "priest": null,
+   "paladin": null,
+   "mage": null,
+   "warlock": null
+  },
+  "first_dungeon": null
+ },
  "links": {
   "signup": "https://discord.com/channels/782702097421565952/1558663575495770193/1564402158181290037",
   "choose": "#decide",

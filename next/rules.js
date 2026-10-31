@@ -1,5 +1,5 @@
 // board/next/rules.js: the next-step engine of the companion build (notes/companion/COMPANION-CONTRACT.md section 2, node N2,
-// 2026-10-30). One pure ES module shared by the board (js/next.js imports it at the first Tonight open), the bot
+// 2026-10-30). One pure ES module shared by the board (js/next.js imports it at the first Next steps open), the bot
 // (bot/next-step.js) and the suites. It reads the party's records and returns the one next step for a friend, the full queue,
 // a tonight summary and one line per party member. Pure: no DOM, no network, no storage and no clock (nowMs is an argument);
 // it never formats a date either: every epoch goes back to the caller, who formats it. Names reach the output only in
@@ -8,11 +8,13 @@
 
 export const VERSION = 1;
 export const WEIGHTS = Object.freeze({ "pick-name": 100, "launch-state": 95, "make-character": 90, rsvp: 85, meet: 70, decide: 65, "say-pack": 60, poll: 60, "learn-role": 40, "learn-role-guided": 10, "next-date": 20, rest: 1, snoozed: 5 });
+/* lane D7: the first-week steps sit under every launch-night step and over the class page; kept apart from WEIGHTS, which bot/test-next-step.mjs freezes */
+const WEEK_WEIGHTS = Object.freeze({ "train-10": 48, "first-dungeon": 46, "meet-again": 44 });
 export const MINUTES = Object.freeze({ "pick-name": 1, "launch-state": 1, "make-character": 10, rsvp: 1, meet: 1, decide: 5, "say-pack": 1, poll: 1, "learn-role": 3 });
 
 const DAY = 24 * 3600 * 1000;
 /* the contract's table order: ties in weight go to the earlier row, then to the data's own order */
-const ORDER = ["pick-name", "launch-state", "make-character", "say-pack", "rsvp", "meet", "decide", "poll", "learn-role", "next-date", "rest"];
+const ORDER = ["pick-name", "launch-state", "make-character", "say-pack", "rsvp", "meet", "decide", "poll", "train-10", "first-dungeon", "meet-again", "learn-role", "next-date", "rest"];
 const JOURNEYS = ["guided", "curious", "everything"];
 const RSVPS = ["in", "maybe", "late", "out"];
 const RSVP_LINE = { in: "in", maybe: "tentative", late: "running late", out: "out" };
@@ -199,6 +201,16 @@ export function candidates(input, nowMs) {
     if (!title || closes === null || closes * 1000 <= nowMs) continue;
     const when = pollWhen(p), url = /^https:\/\//.test(str(p.url)) ? p.url : linkOf(T, "poll");
     add(`poll-${slug(title)}`, "poll", { kind: "party", title: `Vote: ${title}`, fact: `Poll open: ${title}`, why: when ? `Closes ${when}.` : "Open in Discord until it closes.", due: closes, label: "Vote", href: /^https:\/\//.test(str(url)) ? url : null, alt: "Not now", source: "discord" });
+  }
+
+  /* lane D7: the first week, from launch on. Each reads tonight.week_one (build-data.mjs, filled from wiki facts); a null value is no step */
+  const wk = obj(N.tonight && N.tonight.week_one), line = (v) => (typeof v === "string" && v.trim() ? fit(v, 110) : null);
+  if (launchEpoch !== null && nowMs >= launchEpoch * 1000) {
+    const place = me && me.class_key ? line(obj(wk && wk.trainers) && wk.trainers[me.class_key]) : null, dungeon = line(wk && wk.first_dungeon);
+    const meetItem = arr(P.open).find((o) => obj(o) && /meeting point/i.test(str(o.title))), meetSet = meetItem && !unchosen(meetItem) && str(meetItem.status) ? meetItem.status : null;
+    if (place) add("train-10", "train-10", { kind: "learn", title: `Visit your first trainer: ${place.replace(/\.$/, "")}`, fact: `Your first trainer: ${place.replace(/\.$/, "")}`, why: "The trainer is where new spells come from.", label: "Open my class page", href: me.class_key ? `#library.classes.${slug(me.class_key)}` : null, source: "library", weight: WEEK_WEIGHTS["train-10"] });
+    if (dungeon) add("first-dungeon", "first-dungeon", { kind: "learn", title: `Plan the first dungeon run: ${dungeon.replace(/\.$/, "")}`, fact: `The first dungeon run: ${dungeon.replace(/\.$/, "")}`, why: null, label: "Read it", href: "#library.dungeons", source: "library", weight: WEEK_WEIGHTS["first-dungeon"] });
+    if (meetSet) add("meet-again", "meet-again", { kind: "party", title: "Meet the other four at the meeting point", fact: `Where the five meet after day one: ${meetSet}`, why: null, label: "Open the roads", href: "#roads", source: "discord", weight: WEEK_WEIGHTS["meet-again"] });
   }
 
   if (me && me.class_key && libraryHas(N.library, `classes/${me.class_key}`)) {
