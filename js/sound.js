@@ -105,6 +105,7 @@
     if (!list && S.ensure && EVT_DB[name] != null) S.ensure(name);
     if (!S.on || !c || c.state !== "running" || document.hidden || !list) return false;
     const o = opt || {}, at = c.currentTime + Math.max(0, (o.delay || 0) / 1000);
+    if (!o.amb && !gate()) return false;
     let k = (Math.random() * list.length) | 0; if (list.length > 1 && k === S.last[name]) k = (k + 1 + ((Math.random() * (list.length - 1)) | 0)) % list.length;
     S.last[name] = k;
     try {
@@ -123,6 +124,8 @@
       return true;
     } catch (e) { return false; }
   }
+  function gate() { const t = performance.now(), g = S.gov || (S.gov = []); while (g.length && t - g[0] > 1000) g.shift(); if (g.length >= 12) return false; g.push(t); return true; }
+  function duckHold(db, ms) { const c = S.ctx; if (!S.on || !c) return; const g = S.duck.gain, t = c.currentTime; g.cancelScheduledValues(t); g.setTargetAtTime(dbToGain(db), t, 0.02); g.setTargetAtTime(1, t + ms / 1000, 0.1); }
   function duck(at) {
     const g = S.duck.gain, low = dbToGain(DUCK_DB);
     g.cancelScheduledValues(at); g.setTargetAtTime(low, at, 0.01); g.setTargetAtTime(1, at + DUCK_MS / 1000, 0.08);
@@ -175,7 +178,7 @@
   window.BoardSound = Object.freeze({
     CUE_DB, EVT_DB, LIMIT, DUCK_DB, DUCK_MS, TAKES,
     setOn, setVol, setScene, play, gesture, running, measure,
-    setFlick: (f) => { S.flick = f; },
+    setFlick: (f) => { S.flick = f; }, gate, duckHold,
     internals: () => (S.ctx ? { ctx: S.ctx, ui: S.ui, amb: S.amb, ambLvl: S.ambLvl, mus: S.mus, duck: S.duck, master: S.master, limiter: S.limiter, verbIn: S.verbIn } : null),
     setCueHook: (f) => { S.cueHook = f; }, onState: (f) => { S.listeners.push(f); }, setSpatial: (v) => { S.spatial = !!v; }, setPanSource: (f) => { S.getPan = f; }, ensure: (n) => { if (S.ensure) S.ensure(n); }, hasTake: (n) => !!(S.takes[n] && S.takes[n].length), onCrackle: (f) => { S.onCrackle = f; },
     status: () => ({ buildMs: Object.fromEntries(Object.entries(S.buildMs).map(([k, v]) => [k, Math.round(v)])), on: S.on, state: S.ctx ? S.ctx.state : "none", live: S.live, plays: S.plays, takes: Object.fromEntries(Object.entries(S.takes).map(([k, v]) => [k, v.length])), master: S.master ? +S.master.gain.value.toFixed(3) : 0, ambience: S.amb ? +S.amb.gain.value.toFixed(3) : 0, lowpass: S.lp ? Math.round(S.lp.frequency.value) : 0, limiter: S.limiter ? { threshold: S.limiter.threshold.value, ratio: S.limiter.ratio.value } : null, volume: S.vol, lastCue: { ...S.lastCue } }),

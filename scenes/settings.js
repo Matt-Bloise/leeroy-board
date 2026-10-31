@@ -37,6 +37,12 @@ function setCalm(on) {
   fire("board-calm"); paint(); return on;
 }
 function setSound(on) { sound(!!on); paint(); }
+const foleyOn = () => get("board-foley") !== "0";
+function setFoley(on) {
+  on = !!on; put("board-foley", on ? "1" : "0");
+  try { Promise.resolve(window.__scenes.load("foley")).then(() => { if (window.BoardFoley) window.BoardFoley.set(on, true); }); } catch (e) {}
+  paint(); return on;
+}
 function setCare(on) {
   put("board-screencare", on ? "1" : null);
   if (!on) for (const c of ["oled-care", "idle-dim"]) root.classList.remove(c);
@@ -81,6 +87,7 @@ function build() {
   const calm = btn("", () => setCalm(!calmOn()), { id: "st-calm-b", "aria-describedby": "st-calm-n" });
   const still = btn("", () => { applyStill(!stillOn()); paint(); }, { id: "st-still-b", "aria-describedby": "st-still-n" });
   const snd = btn("", () => setSound(!sound()), { id: "st-sound-b", "aria-describedby": "st-sound-n" });
+  const fol = btn("", () => setFoley(!foleyOn()), { id: "st-foley-b", "aria-describedby": "st-foley-n" });
   const care = btn("", () => setCare(!careOn()), { id: "st-care-b", "aria-describedby": "st-care-n" });
   const dens = DENSITY.map(([j, name, sub]) => btn(name, () => setDensity(j), { "data-density": j, "aria-pressed": "false", title: sub }));
   const who = PROFILES.map((p, i) => btn(`Profile ${i + 1}`, () => setProfile(p), { "data-profile": p, "aria-pressed": "false" }));
@@ -93,6 +100,7 @@ function build() {
       row("calm", "Calm", "Text only, nothing moves, no sound, no popups. One tap on, one tap off. Density stays as it is.", calm),
       row("still", "Stop motion", "Stops every animation and transition on the page.", still),
       row("sound", "Sound", "Off until you turn it on. This is the same switch as the Sensory panel.", snd),
+      row("foley", "Value sounds", "Soft notes and buzzes that follow the numbers you change. Needs Sound on. Silent in Calm, Play and reduced motion unless you turn it on here, and never before your first tap.", fol),
       row("care", "Screen care", "Off. When on, the page drifts a few pixels, dims after two minutes idle and shifts on OLED screens, to protect the display.", care),
       row("density", "Density", "How much each step shows. Changing it never closes what you have open.", ...dens),
       row("profile", "Who is using this", "Three nameless profiles on this device. Each keeps its own density, mode and what it has seen. Only changes what this page shows you.", ...who),
@@ -108,6 +116,7 @@ function paint() {
   set("st-calm-b", calmOn() ? "Turn Calm off" : "Turn Calm on", calmOn());
   set("st-still-b", stillOn() ? "Allow animation again" : "Stop every animation", stillOn());
   set("st-sound-b", sound() ? "Sound is on: turn it off" : "Sound is off: turn it on", sound());
+  set("st-foley-b", foleyOn() ? "Value sounds are on: turn them off" : "Value sounds are off: turn them on", foleyOn());
   set("st-care-b", careOn() ? "Screen care is on: turn it off" : "Screen care is off: turn it on", careOn());
   const d = density(); for (const b of S.el.querySelectorAll("[data-density]")) b.setAttribute("aria-pressed", String(b.getAttribute("data-density") === d));
   const p = profile(); for (const b of S.el.querySelectorAll("[data-profile]")) b.setAttribute("aria-pressed", String(b.getAttribute("data-profile") === p));
@@ -141,6 +150,6 @@ document.addEventListener("click", (e) => { const t = e.target && e.target.close
 addEventListener("hashchange", () => { if (location.hash === "#settings") open(); else if (S.el && !S.el.hidden) close(); });
 if (calmOn()) root.classList.add("calm");
 if (stillOn()) root.classList.add("still");
-window.BoardSettings = Object.freeze({ open, close, setCalm, setSound, setCare, setDensity, setProfile, clearTraces, status: () => ({ calm: calmOn(), still: stillOn(), sound: sound(), care: careOn(), density: density(), profile: profile(), open: !!(S.el && !S.el.hidden) }) });
+window.BoardSettings = Object.freeze({ open, close, setCalm, setSound, setFoley, setCare, setDensity, setProfile, clearTraces, status: () => ({ calm: calmOn(), still: stillOn(), sound: sound(), care: careOn(), density: density(), profile: profile(), open: !!(S.el && !S.el.hidden) }) });
 if (location.hash === "#settings") open();
 })();
