@@ -19,7 +19,12 @@ const tabList = () => Array.from(rail.querySelectorAll(".tab")).map((el, i) => {
 const idle = (f) => (window.requestIdleCallback ? window.requestIdleCallback(f, { timeout: 2500 }) : setTimeout(f, 300));
 const shut = () => !lay || lay.hidden || lay.classList.contains("closing");
 
-const show = () => { const on = !!ctl && ctl.layout() !== false; root.classList.toggle("cloth-gl", on); root.classList.toggle("cloth-paint", !on); root.classList.toggle("ribbons-on", !phoneMQ.matches && !forcedMQ.matches); };
+const clear = () => {
+  const b = document.getElementById("sheet-body"), t = rail.querySelector(".tab"), c = lay && getComputedStyle(lay), n = (k) => parseFloat(c.getPropertyValue(k)) || 0;
+  if (!b || !t || lay.hidden || phoneMQ.matches) return lay.style.removeProperty("--rail-pad");
+  lay.style.setProperty("--rail-pad", Math.ceil(t.getBoundingClientRect().top + n("--ribbon-rod") + n("--ribbon-rest") + 22 - b.getBoundingClientRect().top) + "px");
+};
+const show = () => { const on = !!ctl && ctl.layout() !== false; root.classList.toggle("cloth-gl", on); root.classList.toggle("cloth-paint", !on); root.classList.toggle("ribbons-on", !phoneMQ.matches && !forcedMQ.matches); clear(); };
 function start() {
   if (ctl || loading || !allowed()) { show(); return; }
   loading = true; const my = ++gen;

@@ -52,10 +52,8 @@
   .ribbons-on #scene #tabs .tab[aria-selected="true"] { z-index: 2; }
   .ribbons-on #scene #tabs .tab[aria-selected="true"]::before { height: calc(var(--ribbon-rod) + var(--ribbon-rest) + 14px); background-image: var(--still-on); }
   .ribbons-on #tabs [class~="tab-ind"] { opacity: 0; }
-  .ribbons-on #scene .sheet-body { padding-top: 20px; }
-}
-@media (min-width: 700px) and (max-height: 800px) { .ribbons-on #scene .sheet-body { padding-top: 2px; } }
-@media (min-width: 700px) and (max-height: 740px) { #scene { --ribbon-rest: 48px; --ribbon-rod: 12px; } .ribbons-on #scene .sheet-body { padding-top: 0; } }
+  .ribbons-on #scene .sheet-body, .ribbons-on #scene .sheet-body:has(#panel-roads.wide-map:not([hidden])) { padding-top: var(--rail-pad, 20px); }}
+@media (min-width: 700px) and (max-height: 740px) { #scene { --ribbon-rest: 48px; --ribbon-rod: 12px; } }
 @media (min-width: 1300px) { .ribbons-on.cloth-paint .sheet-head .tabs { overflow: visible; } }
 @media (min-width: 2200px) { html #scene #tabs .tab { min-width: clamp(110px, 6vw, 200px); font-size: clamp(13px, 0.8vw, 18px); } }
 @media (forced-colors: active) { #tabs .tab::before, #tab-cloth { display: none !important; } }
