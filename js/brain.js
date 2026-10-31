@@ -3,13 +3,10 @@
    15 s poll when the socket is not there; V13e: the socket only with a key, keyless boards poll) and, with a personal board key, sends one person's sign-up state and journey
    (POST /api/intent). It never sends a name, an id or anything but the fixed answer words, plus (Ask Leeroy, 2026-10-29) the
    one question a person types into the ask box and its share tick; the answer comes back with GET /api/ask.
-   - V15 (2026-10-30, board/V15-LAUNCH-SPEC.md 5): the launch-night state (queue, in, done) goes the same way as a third kind;
-     the Worker keeps it per key and mirrors it as `launch` rows in GET /api/state. Without a Worker, a key, or against the
-     Worker deployed before this change (which answers 400), setLaunch reports local: the page keeps the state on the device.
-   - M0 (2026-10-30, notes/VISION-MOBILE.md section 3): sendProbe posts one capability report (js/probe.js) to POST /probe: a closed
-     list of yes/no answers, bounded numbers and three fixed words (engine family, platform family, the kind), nothing typed and no
-     user agent text. A known board key, when this browser has one, only picks the Worker's limit. Against a Worker without the
-     route (404), without a Worker, or offline, the report stays on this device and sendProbe says so (local: true).
+   - V15 (2026-10-30, board/V15-LAUNCH-SPEC.md 5): the launch-night state (queue, in, done) is a third kind, mirrored as `launch`
+     rows in GET /api/state; with no Worker, no key or an older Worker (400), setLaunch reports local: true.
+   - M0 (2026-10-30, notes/VISION-MOBILE.md section 3): sendProbe posts one capability report (js/probe.js) to POST /probe: yes/no
+     answers, bounded numbers and three fixed words, nothing typed. Without the route, a Worker or a connection it stays here (local: true).
    - Party sheet Phase 0 (2026-10-30, notes/VISION-PARTY-SHEET.md 5.1 to 5.4): GET and POST /api/sheet (one field of the key's own
      sheet per call; a value only from the lists the page hands sheetVocab(), built from the board's own data) and POST /api/dispatch
      (the asker's answered asks and their yes). The mirror's party rows (what each person left visible) ride in GET /api/state. A
@@ -146,6 +143,7 @@ function safe(body, route) {
     if (!okAsk || /\d{17,20}/.test(p ? p.text : "")) throw new Error("refused: an ask carries only its text and the share tick");
     return body;
   }
+  if (body && body.kind === "refresh") { if (Object.keys(body).length !== 1) throw new Error("refused: a refresh carries nothing but its kind"); return body; }
   if (body && (body.kind === "fix" || (body.kind === "signup" && body.field !== undefined))) {
     if (!mineOk(body) || /\d{17,20}/.test(JSON.stringify(body))) throw new Error("refused: a launch-night answer or a fact report carries only its fixed words, a short place or note");
     return body;
@@ -375,9 +373,8 @@ async function setLaunch(v) {
   emit("launchPending", launchPending());
   return { ok: p.state === "waiting" || p.state === "saved", local: p.state === "local", state: p.state };
 }
-/* M3: launch-night answers (when, pack, meeting point) and "Something here looks wrong?" reports. 4xx from a Worker that does not
-   know the field or kind yet resolves { ok: false, why: "not-yet" }; the answer stays on this device (localStorage board-mine) and
-   goes out again on the next state pull that lands. */
+/* M3: launch-night answers and "Something here looks wrong?" reports. A 4xx from a Worker that lacks the field or kind resolves
+   { ok: false, why: "not-yet" }; the answer waits in localStorage board-mine and goes out on the next state pull. */
 const MINE_KEY = "board-mine";
 function mineRead() { try { const j = JSON.parse(localStorage.getItem(MINE_KEY) || "{}"); return j && typeof j === "object" && !Array.isArray(j) ? j : {}; } catch (e) { return {}; } }
 function mineWrite(o) { try { if (Object.keys(o).length) localStorage.setItem(MINE_KEY, JSON.stringify(o)); else localStorage.removeItem(MINE_KEY); } catch (e) {} }
@@ -393,8 +390,7 @@ async function mineSend(slot, body) {
     if (r.status === 200) { mineDrop(slot, body); return { ok: true, state: "waiting" }; }
     if (r.status === 401) { B.keyBad = true; return { ok: false, why: "key" }; }
     if (r.status === 429) return { ok: false, why: "busy" };
-    /* integrator (2026-10-30): a Worker deployed before this build answers 400 "kind must be ..." or "unknown field ..." (or an
-       "unknown kind" from the fake): that is a kind it does not know yet, not a refused answer */
+    /* an older Worker answers 400 "kind must be ...", "unknown field ..." (the fake: "unknown kind"): not yet, not refused */
     const notYet = r.status === 400 && r.data && typeof r.data.error === "string" && /kind must be|unknown kind|unknown field/i.test(r.data.error);
     if (r.status === 404 || r.status === 405 || r.status === 501 || notYet) { mineKeep(slot, body); MINE_NOT_YET = true; return { ok: false, why: "not-yet" }; }
     if (r.status >= 400 && r.status < 500) { mineDrop(slot, body); return { ok: false, why: "refused" }; }
@@ -408,6 +404,11 @@ function setMeet(k, place) {
   return mineSend("meet", { kind: "signup", field: "meet", value: k, ...(clean ? { place: clean } : {}) });
 }
 const reportFact = (o) => mineSend("fix", { kind: "fix", page: o && o.page, key: o && o.key, ...(o && o.note ? { note: String(o.note) } : {}) });
+/* Library refresh: no body; resolves the status and JSON so the caller can read retryAfterMs (mineSend would drop both) */
+async function refreshLibrary() {
+  if (!B.base || !B.key) return { ok: false, why: B.key ? "nowhere to send" : "no key" };
+  try { const r = await call("POST", "/intent", { kind: "refresh" }); B.sent++; if (r.status === 401) B.keyBad = true; return { ok: r.status === 200, status: r.status, data: r.data }; } catch (e) { B.errors++; return { ok: false, why: "offline" }; }
+}
 let mineFlushing = false;
 async function mineFlush() {
   if (mineFlushing || MINE_NOT_YET || !B.base || !B.key) return; const o = mineRead(); if (!Object.keys(o).length) return;
@@ -479,8 +480,7 @@ function start(handlers) {
   if (!B.base) { B.via = "off"; emit("status", status()); return status(); }
   B.via = "poll";
   pollOnce();
-  /* V13e (retest defect 3): only a board with a key opens the socket. A keyless board reads the mirror with the 15 s poll
-     while visible, so a public viewer never opens /api/live and never logs a failed socket (the 503 seen on github.io). */
+  /* V13e: only a board with a key opens the socket; a keyless viewer polls (15 s, while visible), so /api/live never logs a 503 */
   if (B.key) openWs();
   if (B.key) me(); else emit("me", null);
   if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", () => { if (!hidden() && B.via !== "ws") pollOnce(); });
@@ -488,5 +488,5 @@ function start(handlers) {
   return status();
 }
 function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); }
-window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
+window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
 })();

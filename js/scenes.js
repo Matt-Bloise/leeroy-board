@@ -17,6 +17,7 @@ const SCENES = {
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=2f4a786354", HERE)],
   hades: () => [new URL("../scenes/hades.css?v=91cb70f5b9", HERE), new URL("../scenes/hades.js?v=6b923d0256", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
+  refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],
 };
 const NEEDS = { sheet: ["decide"] }; /* the sheet reads decide.json through decide.js (K.decideData) */
 NEEDS.hades = ["chamber"]; /* the bar room stages the chamber's own DOM */
@@ -88,7 +89,7 @@ function load(name) {
 })();
 /* what opens a scene's code: its scene, Next steps with a name picked (the sheet's "Your sheet" link), #probe, a first visit (the walk) */
 /* polish (2026-10-30, contract 10.4 pattern): Who buffs whom's effects layer (scenes/buffs.*, the scene name, so the harness runs it) and the wide roads map left the first download too */
-const OF = { five: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide" };
+const OF = { five: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide", library: "refresh" };
 K.on("scene", (k) => {
   const m = OF[k]; if (!m) return;
   const L = K.SC.land; if (!ok.includes(m)) land[m] = L && L.key === k ? { key: k, sub: L.sub, from: null } : null;
@@ -109,7 +110,7 @@ K.on("booted", () => { let walked = null; try { walked = localStorage.getItem("b
    (verifier round 1: 1 to 4 blank frames, then a jump of up to 1,203 px on What to decide). A pointer over, a touch on or a focus on
    a scene's control warms that one at once. Only in a real browser (this file's URL known; Safari has no idle callback, so a short
    timer stands in); never under ?render= or ?brain=. */
-const WARM = ["chamber", "sheet", "decide", "wide"], PLACE = { five: "sheet", sheet: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide" };
+const WARM = ["chamber", "sheet", "decide", "wide"], PLACE = { five: "sheet", sheet: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide", library: "refresh" };
 /* polish (2026-10-30): Play mode is for while the game runs, so nothing is fetched in idle time there (the warm-up and the hover
    layer ran in the 10 s after a Play load: 0.135 s of main thread at 2560); a control's own pointer, touch or focus still warms its
    scene, and leaving Play starts the idle warm-up then */

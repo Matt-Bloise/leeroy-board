@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-10-30",
+ "updated": "2026-10-31",
  "about": "Every action a friend can take, with its board path, its Discord path and the brain write it makes (the mobile plan, step M0). The parity test reads this file: a reference that no longer exists is a failure; an empty cell is a parity gap and is printed, never hidden. A cell is null (empty, a gap), or listed in byDesign with the reason it is meant to be empty. Board refs: scene (a board scene, wall, or device), control (the words for a person), file and proof (a literal that must be in that file under board/). Discord refs: kind slash (command, option), button (customId, source signups-card | outbox | share | launch), modal (customId), message-command (name), mention, card (module, export). Brain refs: route ('METHOD /api/path' in the Worker), kind (an intent kind) or field (a sheet field), client (a BoardBrain function).",
  "actions": [
   {
@@ -794,6 +794,28 @@
     "route": "POST /api/intent",
     "kind": "fix",
     "client": "reportFact"
+   }
+  },
+  {
+   "id": "library.refresh",
+   "label": "Ask Leeroy's pipeline to check Blizzard now and see when it last checked",
+   "group": "Library",
+   "board": [
+    {
+     "scene": "library",
+     "control": "#lib-head .lib-refresh-go (needs your own board link)",
+     "file": "scenes/refresh.js",
+     "proof": "lib-refresh-go"
+    }
+   ],
+   "discord": null,
+   "brain": {
+    "route": "POST /api/intent",
+    "kind": "refresh",
+    "client": "refreshLibrary"
+   },
+   "byDesign": {
+    "discord": "The pipeline already runs every 4 hours; Discord has no button for it."
    }
   },
   {
