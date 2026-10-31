@@ -23,12 +23,23 @@ bindings = [
 tag = "v1"
 new_sqlite_classes = ["BoardRoom"]
 
+# Native Cloudflare Workers AI Binding (Free Tier: 10,000 Neurons/day, Zero external API key needed)
+[ai]
+binding = "AI"
+
 [vars]
-# Default AI provider ("claude" for Anthropic Claude API, or "gemini" for Google Gemini Free Tier)
+# Default AI provider ("claude", "gemini", "workers-ai", "groq", "cerebras", "github", or "openrouter")
 # Can also be switched per-question in the UI or Discord `/ask` command.
 AI_PROVIDER = "claude"
 CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"
 CLAUDE_MODEL_DEEP = "claude-sonnet-4-5-20250929"
 GEMINI_MODEL_FAST = "gemini-2.5-flash"
 GEMINI_MODEL_DEEP = "gemini-2.5-pro"
+WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+GROQ_MODEL_FAST = "llama-3.3-70b-versatile"
+GROQ_MODEL_DEEP = "llama-3.3-70b-versatile"
+CEREBRAS_MODEL = "llama-3.3-70b"
+GITHUB_MODEL_FAST = "gpt-4o-mini"
+GITHUB_MODEL_DEEP = "gpt-4o"
+OPENROUTER_MODEL = "deepseek/deepseek-chat-v3-0324:free"
 ALLOWED_ORIGINS = "*"

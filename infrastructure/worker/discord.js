@@ -7,7 +7,7 @@
 //      #wow-forever Sign-ups card tallies in D1 and broadcasting over WebSockets.
 // =============================================================================
 
-import { answerWithClaude, resolveAiProvider } from "./claude.js";
+import { answerWithAi, resolveAiProvider } from "./ai-models.js";
 import { broadcastToRoom, purgeWorkerCache } from "./index.js";
 
 function hexToBytes(hex) {
@@ -122,7 +122,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     user.username ||
     "party";
 
-  // 2. Slash Command (Type 2): `/ask <question> [model:claude|gemini]`
+  // 2. Slash Command (Type 2): `/ask <question> [model:claude|gemini|workers-ai|groq|cerebras|github|openrouter]`
   if (interaction.type === 2 && interaction.data && interaction.data.name === "ask") {
     const opts = interaction.data.options || [];
     const qOpt = opts.find((o) => o.name === "question" || o.name === "q") || opts[0];
@@ -140,7 +140,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     ctx.waitUntil(
       (async () => {
-        await answerWithClaude({ env, origin, intentId, by: byName, question, provider, share: false });
+        await answerWithAi({ env, origin, intentId, by: byName, question, provider, share: false });
         const row = await env.DB.prepare("SELECT answer FROM ask_turns WHERE id = ?").bind(intentId).first();
         if (interaction.application_id && interaction.token && row && row.answer) {
           await fetch(

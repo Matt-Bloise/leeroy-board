@@ -3,7 +3,7 @@
 const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const WHEN = ["6pm", "8pm", "later"], PACK = ["yes", "no"], MEET = ["vos", "xroads", "other"], FIX_PAGE = /^[a-z0-9/_.-]{1,80}$/, FIX_KEY = /^[a-z0-9_.-]{1,80}$/, PLACE_MAX = 40, FIX_NOTE_MAX = 200;
-const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"], AI_PROVIDERS = ["claude", "gemini"];
+const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"], AI_PROVIDERS = ["claude", "gemini", "workers-ai", "groq", "cerebras", "github", "openrouter"];
 const PROBE = {
   kind: ["probe"], v: [1, 1],
   engine: ["webkit", "blink", "gecko", "other"],

@@ -1,11 +1,11 @@
 // =============================================================================
 // Cloudflare Worker Entry Point (`leeroy-brain`)
-// Serves Edge-cached D1 state, library blobs, Claude / Gemini Q&A, Fact Fixes,
+// Serves Edge-cached D1 state, library blobs, Multi-Provider AI Q&A, Fact Fixes,
 // Discord HTTP Interactions, and delegates WebSockets + live mutations to `BoardRoom`.
 // =============================================================================
 
 import { BoardRoom } from "./room.js";
-import { answerWithClaude, resolveAiProvider } from "./claude.js";
+import { answerWithAi, resolveAiProvider, isProviderConfigured, AI_PROVIDER_LABELS } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies } from "./discord.js";
 
@@ -146,7 +146,7 @@ export default {
             ? "answered"
             : "failed";
         const [provider, model] = String(row.model || "").includes(":")
-          ? String(row.model).split(":")
+          ? String(row.model).split(/:(.+)/)
           : [resolveAiProvider(env), row.model || null];
         let sources = [];
         try {
@@ -239,7 +239,7 @@ export default {
         });
       }
 
-      // 5. POST /intent -> Ask Leeroy (Claude or Gemini Free Tier), Fact Fix (D1 update), or Refresh Sweep
+      // 5. POST /intent -> Ask Leeroy (Multi-Provider AI), Fact Fix (D1 update), or Refresh Sweep
       if (req.method === "POST" && path === "/intent") {
         if (!isAuthorized(req, url, env)) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
@@ -276,9 +276,9 @@ export default {
           };
           await broadcastToRoom(env, { type: "intent", item: intentItem });
 
-          // Run Claude or Gemini API call asynchronously via waitUntil so POST /intent returns in <15ms
+          // Run AI provider call asynchronously via waitUntil so POST /intent returns in <15ms
           ctx.waitUntil(
-            answerWithClaude({
+            answerWithAi({
               env,
               origin: url.origin,
               intentId,
@@ -377,16 +377,17 @@ export default {
 
       // 6. Health check
       if (req.method === "GET" && (path === "/" || path === "/health")) {
+        const providers = {};
+        for (const k of Object.keys(AI_PROVIDER_LABELS)) {
+          providers[k] = isProviderConfigured(env, k);
+        }
         return jsonResp(
           {
             ok: true,
             service: "leeroy-brain",
             runtime: "cloudflare-workers-d1",
             aiProvider: resolveAiProvider(env),
-            providers: {
-              claude: Boolean(env.ANTHROPIC_API_KEY),
-              gemini: Boolean(env.GEMINI_API_KEY),
-            },
+            providers,
           },
           200,
           cors

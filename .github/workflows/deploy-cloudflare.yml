@@ -95,30 +95,25 @@ jobs:
           fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Sync Worker Secrets (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `BOARD_ADMIN_TOKEN`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`)
+      - name: Sync Worker Secrets (AI Providers, Admin Token, Discord)
         working-directory: infrastructure
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
-            printf "%s" "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY
-          fi
-          if [ -n "$GEMINI_API_KEY" ]; then
-            printf "%s" "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY
-          fi
-          if [ -n "$BOARD_ADMIN_TOKEN" ]; then
-            printf "%s" "$BOARD_ADMIN_TOKEN" | npx wrangler secret put BOARD_ADMIN_TOKEN
-          fi
-          if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-            printf "%s" "$DISCORD_WEBHOOK_URL" | npx wrangler secret put DISCORD_WEBHOOK_URL
-          fi
-          if [ -n "$DISCORD_PUBLIC_KEY" ]; then
-            printf "%s" "$DISCORD_PUBLIC_KEY" | npx wrangler secret put DISCORD_PUBLIC_KEY
-          fi
+          for SECRET_NAME in ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY BOARD_ADMIN_TOKEN DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY; do
+            SECRET_VAL="${!SECRET_NAME}"
+            if [ -n "$SECRET_VAL" ]; then
+              printf "%s" "$SECRET_VAL" | npx wrangler secret put "$SECRET_NAME"
+            fi
+          done
 
       - name: Stage Static Site Bundle & Deploy to Cloudflare Pages Production
         run: |

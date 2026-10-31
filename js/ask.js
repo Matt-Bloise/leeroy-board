@@ -11,13 +11,27 @@ const NOTE = {
 };
 const FAIL = { no_answer: "Leeroy did not get to that one in time.", held: "Leeroy held that answer back for a check.", error: "Leeroy could not finish that one." };
 const ERR = { offline: "The board could not reach Leeroy just now. Your question is still in the box.", busy: "The brain is busy right now. Your question is still in the box.", refused: `That could not be sent. After links and odd characters are removed it needs ${MIN} to ${MAX} characters.`, key: NOTE.bad };
+const LABELS = {
+  claude: "Leeroy · Claude",
+  gemini: "Leeroy · Gemini Free Tier",
+  "workers-ai": "Leeroy · Cloudflare Workers AI (Llama 3.3 70B)",
+  groq: "Leeroy · Groq Free Tier (Llama 3.3 70B)",
+  cerebras: "Leeroy · Cerebras Free Tier (Llama 3.3 70B)",
+  github: "Leeroy · GitHub Models (GPT-4o)",
+  openrouter: "Leeroy · OpenRouter Free (DeepSeek V3)",
+};
 
 const ta = el("textarea", { id: "ask-text", rows: 3, "aria-describedby": "ask-count ask-status", "aria-keyshortcuts": "Control+Enter", autocomplete: "off", spellcheck: "true" });
 const count = el("span", { id: "ask-count", class: "ask-count" });
 const share = el("input", { type: "checkbox", id: "ask-share" });
 const modelSel = el("select", { id: "ask-model", class: "ask-model", "aria-label": "AI model for Leeroy" },
   el("option", { value: "claude", text: "Model: Claude (Anthropic)" }),
-  el("option", { value: "gemini", text: "Model: Gemini Free Tier" })
+  el("option", { value: "gemini", text: "Model: Gemini Free Tier" }),
+  el("option", { value: "workers-ai", text: "Model: Cloudflare Workers AI (Llama 3.3 70B · Free)" }),
+  el("option", { value: "groq", text: "Model: Groq Free Tier (Llama 3.3 70B)" }),
+  el("option", { value: "cerebras", text: "Model: Cerebras Free Tier (Llama 3.3 70B)" }),
+  el("option", { value: "github", text: "Model: GitHub Models (GPT-4o · Free)" }),
+  el("option", { value: "openrouter", text: "Model: OpenRouter Free (DeepSeek V3)" })
 );
 if (typeof B.getAiProvider === "function") modelSel.value = B.getAiProvider();
 modelSel.addEventListener("change", () => { if (typeof B.setAiProvider === "function") B.setAiProvider(modelSel.value); });
@@ -62,7 +76,7 @@ function paint(s) {
   if (!a || old || s.state === "idle") return;
   const card = el("div", { class: `ask-card ${a.status}` }, el("p", { class: "ask-q" }, el("b", { text: "You asked: " }), a.text));
   if (a.status === "answered" && a.answer) {
-    const badge = a.provider === "gemini" ? "Leeroy · Gemini Free Tier" : a.provider === "claude" ? "Leeroy · Claude" : "Leeroy";
+    const badge = LABELS[a.provider] || "Leeroy";
     card.append(el("p", { class: "ask-who", text: badge }));
     for (const para of String(a.answer).split(/\n+/)) if (para.trim()) card.append(el("p", { class: "ask-a", text: para }));
     if (a.sources && a.sources.length) card.append(el("p", { class: "ask-src" }, el("b", { text: "Sources: " }), a.sources.join("; ")));

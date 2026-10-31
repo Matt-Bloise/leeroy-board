@@ -117,17 +117,18 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
         run: |
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
-            printf "%s" "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY --name "$WORKER_NAME"
-          fi
-          if [ -n "$GEMINI_API_KEY" ]; then
-            printf "%s" "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --name "$WORKER_NAME"
-          fi
-          if [ -n "$BOARD_ADMIN_TOKEN" ]; then
-            printf "%s" "$BOARD_ADMIN_TOKEN" | npx wrangler secret put BOARD_ADMIN_TOKEN --name "$WORKER_NAME"
-          fi
+          for SECRET_NAME in ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY BOARD_ADMIN_TOKEN; do
+            SECRET_VAL="${!SECRET_NAME}"
+            if [ -n "$SECRET_VAL" ]; then
+              printf "%s" "$SECRET_VAL" | npx wrangler secret put "$SECRET_NAME" --name "$WORKER_NAME"
+            fi
+          done
 
       - name: Stage Static Site (Wired to PR Worker) & Deploy to Cloudflare Pages Preview
         id: pages
