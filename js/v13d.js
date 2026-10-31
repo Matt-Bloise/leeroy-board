@@ -139,7 +139,8 @@ function core(only) {
     rm(kid(panel, "jr-deep")); rm(kid(panel, "jr-all"));
     if (all) {
       panel.append(h("p", { class: "jr-deep", "data-j": "e", text: deepLine(key) }));
-      if (panel.querySelector("details")) panel.insertBefore(h("button", { type: "button", class: "lib-tool jr-all", "data-j": "e", onclick: (ev) => { const b = ev.currentTarget, open = !b.dataset.open; panel.querySelectorAll("details").forEach((x) => { x.open = open; }); if (open) b.dataset.open = "1"; else delete b.dataset.open; b.textContent = open ? "Close every fold" : "Open every fold"; } }, "Open every fold"), panel.firstChild);
+      const T = key === "racials" ? ["Show the full table", "Fold the table back"] : ["Open every fold", "Close every fold"];
+      if (key !== "decide" && panel.querySelector("details")) panel.insertBefore(h("button", { type: "button", class: "lib-tool jr-all", "data-j": "e", onclick: (ev) => { const b = ev.currentTarget, open = !b.dataset.open; panel.querySelectorAll("details").forEach((x) => { x.open = open; }); panel.querySelectorAll(".rrow").forEach((r) => { const t = r.querySelector("button.rhead"); if (t) { r.classList.toggle("open", open); t.setAttribute("aria-expanded", String(open)); } }); if (open) b.dataset.open = "1"; else delete b.dataset.open; b.textContent = T[+open]; } }, T[0]), panel.firstChild);
     }
   }
 }

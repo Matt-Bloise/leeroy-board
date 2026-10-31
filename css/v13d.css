@@ -68,7 +68,7 @@ html[data-journey="guided"] .tn-cards { display: none; }
 .rplain { color: var(--ink-soft); font-size: 1rem; }
 .rfull { margin: 0 0 6px; }
 
-html[data-journey="everything"] .card .back { overflow: visible; }
+html[data-journey="everything"] .card.flipped .back { overflow: visible; }
 html[data-journey="everything"] .cards { align-items: start; }
 
 #board [data-land] { cursor: pointer; }

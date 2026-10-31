@@ -129,7 +129,11 @@ function partyView(d) {
   const facts = h("div", { class: "dc-sect" }, h("h4", { class: "dc-h4", text: "Group sizes and tuning" }), h("ul", { class: "dc-lines" }, P.lines.map(lineEl)));
   const b0 = P.brackets[0], b1 = P.brackets[1];
   const sumText = `${K.andList([`${b0.tank.length} tank`, `${b0.healer.length} ${b0.healer.length === 1 ? "healer" : "healers"}${b1 ? ` (${b1.healer.length} from ${b1.from})` : ""}`, `${b0.damage.length} damage`])}; ${P.buffs.length} buffs between the five; nobody for ${P.nobody.classes.length} classes.`;
-  return h("details", { class: "dc-card dc-partyc", id: "dc-party-card" }, h("summary", { class: "dc-sumy" }, h("span", { class: "dc-title", text: "Party composition" }), h("span", { class: "dc-stext", text: sumText })), h("div", { class: "dc-body" }, roles, buffs, nobody, facts));
+  const sec = (id, title, note, el) => (K.JR() === "everything" ? h("details", { class: "dc-sectd", "data-sec": id }, h("summary", {}, h("b", { text: title }), h("span", { class: "dc-n", text: note })), el) : el);
+  const nN = P.nobody.classes.length + P.nobody.professions.length + P.nobody.secondaries.length + P.nobody.buffs.length;
+  return h("details", { class: "dc-card dc-partyc", id: "dc-party-card" }, h("summary", { class: "dc-sumy" }, h("span", { class: "dc-title", text: "Party composition" }), h("span", { class: "dc-stext", text: sumText })), h("div", { class: "dc-body" },
+    sec("roles", "Roles by level", `${P.brackets.length} level ranges`, roles), sec("buffs", "Who gives which buff to whom", `${P.buffs.length} buffs`, buffs),
+    sec("nobody", "Nobody at this table for", `${nN} lines`, nobody), sec("sizes", "Group sizes and tuning", `${P.lines.length} lines`, facts)));
 }
 function render() {
   const panel = $("#panel-decide"), d = DV.data; if (!panel || !d || !D.party) return;
@@ -140,9 +144,29 @@ function render() {
   $("#dc-dates").replaceChildren(...dateLines(d));
   const main = $("#dc-main"); main.replaceChildren(w === "all" ? allView(d) : personView(d, w));
   $("#dc-party").replaceChildren(partyView(d));
-  if (K.JR() === "everything") panel.querySelectorAll("details").forEach((x) => { x.open = true; });
+  DV.j = K.JR();
+  const old = $("#dc-all-btn"); if (old) old.remove();
+  if (DV.j === "everything") {
+    const cs = Array.from(panel.querySelectorAll("#dc-main .dc-card")), one = cs.find((c) => c.dataset.state === "open") || cs[0];
+    if (one) one.open = true;
+    const pc = $("#dc-party-card"), f1 = panel.querySelector(".dc-sectd"); if (pc && w === "all") pc.open = true; if (f1) f1.open = true;
+    const all = h("button", { type: "button", class: "lib-tool dc-all-btn", id: "dc-all-btn", "data-j": "e", "aria-pressed": "false" }, "Open every fold");
+    all.addEventListener("click", () => { const on = all.getAttribute("aria-pressed") !== "true"; panel.querySelectorAll("details").forEach((x) => { x.open = on; }); all.setAttribute("aria-pressed", String(on)); all.textContent = on ? "Close every fold" : "Open every fold"; });
+    const main2 = $("#dc-main"); if (main2 && main2.parentNode) main2.parentNode.insertBefore(all, main2);
+  }
   K.emit("decide", w);
 }
+function openTarget(sub) {
+  const panel = $("#panel-decide"); if (!panel || !sub) return false;
+  let el = null;
+  if (sub === "party" || /^party-/.test(sub)) {
+    el = $("#dc-party-card"); if (el) { el.open = true; const sc = sub === "party" ? null : panel.querySelector(`.dc-sectd[data-sec="${sub.slice(6)}"]`); if (sc) { sc.open = true; el = sc; } }
+  } else el = panel.querySelector(`#dc-main .dc-card[data-key="${sub}"]`);
+  if (!el) return false;
+  el.open = true; try { el.scrollIntoView({ block: "start" }); } catch (e) {}
+  return true;
+}
+const isKey = (d, sub) => !!sub && (sub === "party" || /^party-/.test(sub) || d.people.some((p) => p.decisions.some((x) => x.key === sub)));
 function pick(w, quiet) {
   const was = who(); DV.who = w;
   const main = $("#dc-main"); if (main) { main.classList.remove("dc-in"); void main.getBoundingClientRect(); main.classList.add("dc-in"); }
@@ -158,9 +182,15 @@ K.on("scene", (k) => {
   if (k !== KEY) return;
   const L = SC.land; let want = null;
   if (L && L.key === KEY && L.sub) { const m = byslug(L.sub); want = m ? m.class_key : L.sub === "all" ? "all" : null; }
-  get().then(() => { if (want) { DV.who = want; render(); } else if (shown() !== who()) render(); }, fail);
+  const sub = L && L.key === KEY ? L.sub : null;
+  get().then(() => {
+    const target = isKey(DV.data, sub) ? sub : null;
+    if (target && who() === "all" && !/^party/.test(target)) want = (members()[0] || {}).class_key || null;
+    if (want) { DV.who = want; render(); } else if (shown() !== who() || DV.j !== K.JR()) render();
+    if (target) openTarget(target);
+  }, fail);
 });
-K.on("tonight", () => { if (DV.data && SC.open === KEY && shown() !== who()) render(); });
+K.on("tonight", () => { if (DV.data && SC.open === KEY && (shown() !== who() || DV.j !== K.JR())) render(); });
 K.on("booted", () => { (window.requestIdleCallback || ((f) => setTimeout(f, 1200)))(() => { get().then(() => { if (SC.open === KEY && shown() !== who()) render(); }, () => {}); }, { timeout: 4000 }); });
 K.on("forget", () => { DV.who = null; });
 

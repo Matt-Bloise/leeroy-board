@@ -5,7 +5,7 @@ const HERE = (document.currentScript && document.currentScript.src) || null;
 const SCENES = {
   sheet: () => [new URL("../scenes/sheet.css?v=7a8d1c52e5", HERE), new URL("../scenes/sheet.js?v=5b5a1785d3", HERE)],
   chamber: () => [new URL("../scenes/chamber.css?v=5951072482", HERE), new URL("../scenes/chamber.js?v=134acfc3b1", HERE)],
-  decide: () => [new URL("../scenes/decide.css?v=8d874e23ef", HERE), new URL("../scenes/decide.js?v=907d901b50", HERE)],
+  decide: () => [new URL("../scenes/decide.css?v=67ef669934", HERE), new URL("../scenes/decide.js?v=20527dc1be", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=9a7fa09c43", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1280b387e0", HERE)],

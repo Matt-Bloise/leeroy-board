@@ -839,10 +839,8 @@ function raceRow(r, i) {
   const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: `changed ${r.changed_on || "Oct 26"}` }) : null];
   const li = h("li", { class: "rrow", style: `--di: ${i}`, "data-key": MEM.slug(r.name), ...(r.changed_oct26 ? { "data-changed": r.changed_on || "Oct 26" } : {}) });
   const plain = wholeClause(now.split(/;\s*/)[0].replace(/\s*\([^)]*\)/g, ""), 90);
-  const open = JR() === "everything";
   if (!notes.length && !client && plain === now) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
-  if (open) li.classList.add("open");
-  const btn = h("button", { class: "rhead", type: "button", "aria-expanded": String(open), onclick: () => { const on = li.classList.toggle("open"); btn.setAttribute("aria-expanded", String(on)); sfx("paper"); } }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));
+  const btn = h("button", { class: "rhead", type: "button", "aria-expanded": "false", onclick: () => { const on = li.classList.toggle("open"); btn.setAttribute("aria-expanded", String(on)); sfx("paper"); } }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));
   li.append(btn, h("div", { class: plain === now ? "rwiki" : "rplain", text: plain }), h("div", { class: "rmore" }, h("div", {}, plain !== now ? h("p", { class: "rwiki rfull", text: now }) : null, notes.length ? h("ul", { class: "rnotes", "aria-label": "Dev notes" }, notes.map((n) => h("li", { text: n }))) : null, client ? h("div", { class: "rclient", text: client }) : null)));
   return li;
 }
