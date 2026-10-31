@@ -3,7 +3,7 @@
 const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const WHEN = ["6pm", "8pm", "later"], PACK = ["yes", "no"], MEET = ["vos", "xroads", "other"], FIX_PAGE = /^[a-z0-9/_.-]{1,80}$/, FIX_KEY = /^[a-z0-9_.-]{1,80}$/, PLACE_MAX = 40, FIX_NOTE_MAX = 200;
-const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"];
+const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"], AI_PROVIDERS = ["claude", "gemini"];
 const PROBE = {
   kind: ["probe"], v: [1, 1],
   engine: ["webkit", "blink", "gecko", "other"],
@@ -70,6 +70,7 @@ function bootstrap() {
         if (typeof j.ver === "number" && j.ver > B.ver) B.ver = j.ver;
         if (Array.isArray(j.launch)) B.launch = j.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null }));
         if (j.signups) B.signups = j.signups;
+        if (AI_PROVIDERS.includes(j.aiProvider) && !store.get("board-ai-provider")) B.aiProvider = j.aiProvider;
         return j;
       }
       return null;
@@ -140,8 +141,8 @@ function safe(body, route) {
   }
   if (body && body.kind === "ask") {
     const p = body.patch, okAsk = Object.keys(body).every((k) => k === "kind" || k === "patch") && p && typeof p === "object" && typeof p.text === "string" && p.text.length <= 1200
-      && Object.keys(p).every((k) => k === "text" || (k === "share" && typeof p.share === "boolean"));
-    if (!okAsk || /\d{17,20}/.test(p ? p.text : "")) throw new Error("refused: an ask carries only its text and the share tick");
+      && Object.keys(p).every((k) => k === "text" || (k === "share" && typeof p.share === "boolean") || (k === "provider" && AI_PROVIDERS.includes(p.provider)));
+    if (!okAsk || /\d{17,20}/.test(p ? p.text : "")) throw new Error("refused: an ask carries only its text, share tick, and AI provider");
     return body;
   }
   if (body && body.kind === "refresh") { if (Object.keys(body).length !== 1) throw new Error("refused: a refresh carries nothing but its kind"); return body; }
@@ -406,8 +407,10 @@ async function mineFlush() {
   mineFlushing = true;
   try { for (const s of ["when", "pack", "meet"]) if (o[s]) { const r = await mineSend(s, o[s]); if (!r.ok) break; } for (const f of (o.fix || [])) { const r = await mineSend("fix", f); if (!r.ok) break; } } finally { mineFlushing = false; }
 }
+const getAiProvider = () => { const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
+const setAiProvider = (prov) => { if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
 const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
-const askStatus = () => ({ state: AK.st, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
+const askStatus = () => ({ state: AK.st, provider: getAiProvider(), ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
 const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };
 const askAdopt = (a) => { AK.ask = a || null; AK.st = !a ? "idle" : a.status === "queued" ? "queued" : a.status === "answered" ? "answered" : "failed"; AK.err = ""; AK.retry = 0; if (AK.st === "queued") { if (!AK.since) AK.since = Date.now(); } else AK.since = 0; };
 async function askRead() {
@@ -427,18 +430,19 @@ async function askRead() {
   const waited = Date.now() - AK.since;
   if (again && AK.st === "queued" && waited < 600000) AK.t = setTimeout(askRead, hidden() ? 20000 : waited < 120000 ? 4000 : waited < 300000 ? 10000 : 20000);
 }
-async function ask(text, share) {
+async function ask(text, share, provider) {
   const t = String(text == null ? "" : text).replace(/\s+/g, " ").trim(), n = Array.from(t).length;
+  const prov = AI_PROVIDERS.includes(provider) ? provider : getAiProvider();
   if (!B.base || !B.key) return { ok: false, why: B.key ? "nowhere" : "no key" };
   if (n < 3) return { ok: false, why: "short" };
   if (n > 280) return { ok: false, why: "long" };
   if (AK.st === "sending" || AK.st === "queued") return { ok: false, why: "busy" };
   AK.st = "sending"; AK.err = ""; AK.retry = 0; clearTimeout(AK.t); askEmit();
   try {
-    const r = await call("POST", "/intent", { kind: "ask", patch: { text: t, share: share === true } }); B.sent++;
+    const r = await call("POST", "/intent", { kind: "ask", patch: { text: t, share: share === true, provider: prov } }); B.sent++;
     if (r.status === 200 && r.data && r.data.ok) {
       AK.left = typeof r.data.left === "number" ? r.data.left : AK.left;
-      AK.ask = { id: r.data.id, status: "queued", text: t, share: share === true, at: r.data.at, answer: null, sources: [] };
+      AK.ask = { id: r.data.id, status: "queued", text: t, share: share === true, provider: (r.data && r.data.provider) || prov, at: r.data.at, answer: null, sources: [] };
       AK.st = "queued"; AK.since = Date.now(); askEmit(); AK.t = setTimeout(askRead, 3000);
       return { ok: true, state: "queued" };
     }
@@ -474,5 +478,5 @@ function start(handlers) {
   return status();
 }
 function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); openWs(); }
-window.BoardBrain = Object.freeze({ start, on, status, url: apiUrl, bootstrap, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
+window.BoardBrain = Object.freeze({ start, on, status, url: apiUrl, bootstrap, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, getAiProvider, setAiProvider, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
 })();

@@ -1,6 +1,6 @@
 # Cloudflare 100% Serverless Infrastructure & GitHub Actions CI/CD Proposal
 
-This directory (`infrastructure/`) contains the complete Infrastructure-as-Code (IaC), Cloudflare Worker runtime, D1 SQLite schema, and automated seed tooling to run the **Dungeons & Drinking Living Board** (`leeroy-board` + `leeroy-brain`) at **$0/month** on Cloudflare's Free Tier + the site's existing Anthropic Claude API key, paired with the live GitHub Actions workflows in [`.github/workflows/`](../.github/workflows/).
+This directory (`infrastructure/`) contains the complete Infrastructure-as-Code (IaC), Cloudflare Worker runtime, D1 SQLite schema, and automated seed tooling to run the **Dungeons & Drinking Living Board** (`leeroy-board` + `leeroy-brain`) at **$0/month** on Cloudflare's Free Tier, with dual-provider AI support for both **Anthropic Claude** (`ANTHROPIC_API_KEY`) and **Google Gemini's Free Tier** (`GEMINI_API_KEY`), paired with the live GitHub Actions workflows in [`.github/workflows/`](../.github/workflows/).
 
 ---
 
@@ -22,6 +22,7 @@ flowchart LR
 
   subgraph External["External APIs & Discord"]
     Claude["Anthropic Messages API\n(Claude Haiku 4.5 / Sonnet 4.5)"]
+    Gemini["Google Gemini Free Tier\n(Gemini 2.5 Flash / Pro)"]
     Sources["Blizzard / Wowhead / Wiki\n(186 tracked URLs)"]
     Discord["Discord (#wow-forever)\nWebhook + /api/discord Interactions"]
   end
@@ -32,14 +33,15 @@ flowchart LR
   UI <-->|"WSS /api/live (0ms cold start)"| DO
   UI -- "POST /api/intent (ask / fix / refresh)\nPOST /api/sheet" --> Worker
   Worker -- "Broadcast live diff (<5ms)" --> DO
-  Worker -- "ctx.waitUntil() + ANTHROPIC_API_KEY" --> Claude
+  Worker -- "provider = 'claude'" --> Claude
+  Worker -- "provider = 'gemini' ($0 Free Tier)" --> Gemini
   Worker <-->|"Slash commands, Sign-ups & Q&A"| Discord
   Cron -- "Every 15m" --> Worker
   Worker -- "ETag / SHA-256 check" --> Sources
 ```
 
-### Cloudflare Free-Tier Quotas Used
-| Resource | Cloudflare Free Quota | Board Usage |
+### Cloudflare & AI Free-Tier Quotas Used
+| Resource | Free Quota | Board Usage |
 | :--- | :--- | :--- |
 | **Cloudflare Pages (`leeroy-board`)** | **Unlimited requests & bandwidth** | Hosts `index.html`, `js/`, `css/`, `scenes/`, `atlas/`, `img/`, `fonts/` |
 | **Workers Requests (`leeroy-brain`)** | **100,000 req / day** | ~500–3,000 req/day (Edge Cache absorbs >95% of reads) |
@@ -47,6 +49,7 @@ flowchart LR
 | **D1 Serverless SQLite** | **5 GB storage, 5M row reads/day, 100k writes/day, 10 DBs** | ~3.5 MB total storage; 1 production DB + up to 9 concurrent PR preview DBs |
 | **Durable Objects (`BoardRoom`)** | **100,000 req/day, 13,000 GB-s/day, 5 GB SQLite** | Hibernates at 0 GB-s when idle; instant `<5ms` WebSocket fan-out |
 | **Cron Triggers** | **5 schedules / account** | 1 schedule (`*/15 * * * *` on production only) |
+| **Google Gemini Free Tier (`gemini-2.5-flash`)** | **15 RPM, 1,000,000 TPM, 1,500 req/day ($0)** | Selectable in UI, Discord `/ask`, or as default via `AI_PROVIDER = "gemini"` |
 
 ---
 
@@ -54,12 +57,12 @@ flowchart LR
 
 | File | Purpose |
 | :--- | :--- |
-| [`wrangler.toml`](./wrangler.toml) | Cloudflare Worker configuration (`leeroy-brain`), D1 binding (`DB`), SQLite Durable Object (`BoardRoom`), and `*/15 * * * *` Cron Trigger. |
+| [`wrangler.toml`](./wrangler.toml) | Cloudflare Worker configuration (`leeroy-brain`), D1 binding (`DB`), SQLite Durable Object (`BoardRoom`), `AI_PROVIDER` config, and `*/15 * * * *` Cron Trigger. |
 | [`schema.sql`](./schema.sql) | Idempotent D1 SQLite schema (`kv_state`, `lib_pages`, `lib_blobs`, `lib_sources`, `ask_turns`, `fact_fixes`). |
 | [`scripts/seed-d1.mjs`](./scripts/seed-d1.mjs) | Compiles existing `../data/*.json`, `../data/library/*.json`, and `../data/atlas/{links,marks}.json` into SQL batches and seeds D1 via `wrangler d1 execute`. |
-| [`worker/index.js`](./worker/index.js) | Main Cloudflare Worker entry point (`/api/bootstrap`, `/api/library/:name`, `/api/data/:name`, `/api/atlas/:name`, `/api/intent`, `/api/signups`, `/api/discord`, `/api/sheet`, `/api/state`, `/api/live`). |
+| [`worker/index.js`](./worker/index.js) | Main Cloudflare Worker entry point (`/api/bootstrap`, `/api/library/:name`, `/api/data/:name`, `/api/atlas/:name`, `/api/intent`, `/api/ask`, `/api/signups`, `/api/discord`, `/api/sheet`, `/api/state`, `/api/live`). |
 | [`worker/room.js`](./worker/room.js) | `BoardRoom` Hibernatable WebSocket Durable Object class (SQLite-backed live state & sub-5ms WebSocket broadcast). |
-| [`worker/claude.js`](./worker/claude.js) | Direct Anthropic Messages API integration (`https://api.anthropic.com/v1/messages`) with D1 RAG context retrieval and live WebSocket + Discord webhook push. |
+| [`worker/claude.js`](./worker/claude.js) | Dual-provider AI integration supporting both **Anthropic Claude** (`ANTHROPIC_API_KEY`) and **Google Gemini Free Tier** (`GEMINI_API_KEY`) with D1 RAG context retrieval and live WebSocket + Discord webhook push. |
 | [`worker/discord.js`](./worker/discord.js) | Native Discord HTTP Interactions endpoint (`POST /api/discord` with Ed25519 signature verification) and external bot signup sync (`POST /api/signups`). |
 | [`worker/scraper.js`](./worker/scraper.js) | 15-minute Cron Trigger source sweep (`ETag` / `If-Modified-Since` / `SHA-256`) and D1 library blob rebuilder + Edge Cache invalidator. |
 | [`.github/workflows/deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml) | Live GitHub Actions workflow — deploys to **Production ONLY on new commits to `master`**. |
@@ -93,18 +96,21 @@ In your GitHub repository (`Matt-Bloise/leeroy-board`), navigate to **Settings -
 | :--- | :--- | :--- |
 | `CLOUDFLARE_API_TOKEN` | **Yes** | Cloudflare API token with `Workers Scripts: Edit`, `D1: Edit`, and `Cloudflare Pages: Edit` permissions. |
 | `CLOUDFLARE_ACCOUNT_ID` | **Yes** | Your 32-character Cloudflare Account ID. |
-| `ANTHROPIC_API_KEY` | **Yes** | Site's Claude API key (`sk-ant-...`) used by `worker/claude.js` to answer `/ask` queries. |
+| `ANTHROPIC_API_KEY` | One or Both | Site's Claude API key (`sk-ant-...`) used when `provider = "claude"`. |
+| `GEMINI_API_KEY` | One or Both | Google AI Studio Free-Tier API key (`AIza...` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) used when `provider = "gemini"`. |
 | `BOARD_ADMIN_TOKEN` | Optional | Shared secret key matched against `#k=<token>` in the browser URL or `Authorization: Bearer <token>` from the Discord bot for write intents (`/api/intent`, `/api/sheet`, `/api/signups`). |
-| `DISCORD_WEBHOOK_URL` | Optional | Discord channel webhook URL for `#wow-forever` to mirror Leeroy's Claude answers into Discord chat. |
+| `DISCORD_WEBHOOK_URL` | Optional | Discord channel webhook URL for `#wow-forever` to mirror Leeroy's answers into Discord chat. |
 | `DISCORD_PUBLIC_KEY` | Optional | Public key (`General Information -> Public Key`) from the Discord Developer Portal if using `POST /api/discord` as a serverless Discord Interactions Endpoint. |
 
-### Step 3: Merge to `master`
-When any commit lands on `master`, GitHub Actions automatically executes the full production pipeline:
-1. **D1 Provisioning (`leeroy-board-db`)**: Creates the production D1 database on first run and patches `wrangler.toml`.
-2. **Schema Migration**: Executes [`infrastructure/schema.sql`](./schema.sql).
-3. **Smart Initial Seeding**: Seeds `leeroy-board-db` from `data/*.json` and `data/library/*.json` only if `kv_state` is empty (`0` rows), preserving live party state on all future `master` deploys.
-4. **Worker + Durable Object + Cron Deployment**: Deploys `leeroy-brain` and syncs secrets.
-5. **Production Static Site Deployment**: Stages the static frontend bundle and deploys it to **Cloudflare Pages production** (`leeroy-board`, `--branch=master`).
+### Step 3: Switching Between Claude and Gemini's Free Tier
+You can switch Leeroy's AI model between **Claude** and **Gemini Free Tier (`gemini-2.5-flash` / `gemini-2.5-pro`)** in three ways:
+1. **Per-Question in the Web Board UI ([`js/ask.js`](../js/ask.js))**:
+   - In the **Leeroy** tab (`#ask-form`), use the model dropdown (`Model: Claude (Anthropic)` vs `Model: Gemini Free Tier`). Your selection is saved in `localStorage["board-ai-provider"]` and sent with each question (`patch.provider`).
+2. **Per-Command in Discord (`/ask`)**:
+   - Pass `model: gemini` or `model: claude` on `/ask`, or in JSON API calls: `POST /api/intent {"kind":"ask","q":"...","provider":"gemini"}`.
+3. **Global Default (`AI_PROVIDER` in [`wrangler.toml`](./wrangler.toml#L27))**:
+   - Set `AI_PROVIDER = "gemini"` or `AI_PROVIDER = "claude"` in `infrastructure/wrangler.toml`.
+   - Furthermore, [`resolveAiProvider()`](./worker/claude.js#L23-L30) automatically falls back to whichever provider has a configured API key secret if only `GEMINI_API_KEY` or only `ANTHROPIC_API_KEY` is present.
 
 ---
 
@@ -139,7 +145,7 @@ To point the Discord Activity at your new Cloudflare deployment:
 | `/api` | `leeroy-brain.jmattbloise.workers.dev/api` | Proxies all `/api/*` REST calls and `wss://.../api/live` WebSockets directly to the Cloudflare Worker |
 
 ### B. Outbound Answers to `#wow-forever` (`DISCORD_WEBHOOK_URL`)
-Whenever someone asks Leeroy a question from the web board (`POST /api/intent { kind: "ask" }`), [`worker/claude.js`](./worker/claude.js#L139-L148) automatically posts the question and Claude's cited answer to `#wow-forever` if `DISCORD_WEBHOOK_URL` is set:
+Whenever someone asks Leeroy a question from the web board (`POST /api/intent { kind: "ask" }`), [`worker/claude.js`](./worker/claude.js#L243-L253) automatically posts the question and Claude/Gemini's cited answer to `#wow-forever` if `DISCORD_WEBHOOK_URL` is set:
 1. In Discord, open **Channel Settings (⚙️) for `#wow-forever` -> Integrations -> Webhooks -> New Webhook**.
 2. Name it `Leeroy`, copy the **Webhook URL**, and save it as the `DISCORD_WEBHOOK_URL` secret in GitHub Actions.
 
@@ -155,18 +161,18 @@ The Cloudflare Worker includes a native Discord HTTP Interactions endpoint in [`
    ```
    *(Discord will immediately send a signed `PING` request; the Worker verifies the `X-Signature-Ed25519` header using WebCrypto and responds with `PONG`.)*
 3. What `POST /api/discord` handles automatically:
-   - **`/ask <question>` slash command**: Returns a deferred thinking state (`type: 5`) in `<5ms`, runs [`answerWithClaude()`](./worker/claude.js) via `ctx.waitUntil()`, PATCHes the Discord message with Leeroy's cited answer, saves the turn in D1, and broadcasts it live to all open boards.
+   - **`/ask <question> [model:claude|gemini]` slash command**: Returns a deferred thinking state (`type: 5`) in `<5ms`, runs [`answerWithClaude()`](./worker/claude.js) (using Claude or Gemini Free Tier) via `ctx.waitUntil()`, PATCHes the Discord message with Leeroy's cited answer, saves the turn in D1, and broadcasts it live to all open boards.
    - **Sign-ups Card Buttons (`signup:<field>:<value>`, e.g. `signup:rsvp:in`, `signup:pack:yes`, `signup:meet:Valley of Strength`, `signup:when:6pm`)**: Updates the caller's entry in D1 `kv_state['signups']`, recomputes all tallies, purges the Edge Cache, and broadcasts `{ type: "data", key: "signups" }` over WebSockets so the tavern table on the web board updates in `<5ms`.
 
 #### Option 2: Keeping an Existing Gateway Discord Bot Process
 If you already run a gateway bot script that listens to message events or reactions in `#wow-forever`, point its HTTP calls at the Worker instead of writing/committing JSON files to Git:
 - **Board Link in Bot Replies**: `https://leeroy-board.pages.dev`
-- **Forwarding `/ask` from Bot to Worker**:
+- **Forwarding `/ask` from Bot to Worker (using Claude or Gemini Free Tier)**:
   ```bash
   curl -X POST https://leeroy-brain.jmattbloise.workers.dev/api/intent \
     -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
-    -d '{"kind":"ask","by":"Mend","q":"When do dungeons unlock?"}'
+    -d '{"kind":"ask","by":"Mend","q":"When do dungeons unlock?","provider":"gemini"}'
   ```
 - **Syncing `#wow-forever` Sign-up Card Tallies to Worker**:
   ```bash

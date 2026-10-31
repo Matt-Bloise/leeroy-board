@@ -15,12 +15,19 @@ const ERR = { offline: "The board could not reach Leeroy just now. Your question
 const ta = el("textarea", { id: "ask-text", rows: 3, "aria-describedby": "ask-count ask-status", "aria-keyshortcuts": "Control+Enter", autocomplete: "off", spellcheck: "true" });
 const count = el("span", { id: "ask-count", class: "ask-count" });
 const share = el("input", { type: "checkbox", id: "ask-share" });
+const modelSel = el("select", { id: "ask-model", class: "ask-model", "aria-label": "AI model for Leeroy" },
+  el("option", { value: "claude", text: "Model: Claude (Anthropic)" }),
+  el("option", { value: "gemini", text: "Model: Gemini Free Tier" })
+);
+if (typeof B.getAiProvider === "function") modelSel.value = B.getAiProvider();
+modelSel.addEventListener("change", () => { if (typeof B.setAiProvider === "function") B.setAiProvider(modelSel.value); });
+
 const btn = el("button", { type: "submit", class: "ask-send", text: "Send" });
 const stat = el("p", { id: "ask-status", class: "ask-status", role: "status", "aria-live": "polite" });
 const check = el("button", { type: "button", class: "ask-check", text: "Check now", hidden: true });
 const form = el("form", { class: "ask-form", id: "ask-form", novalidate: true, hidden: true },
   el("label", { for: "ask-text", class: "ask-label", text: "Your question for Leeroy" }), ta,
-  el("div", { class: "ask-row" }, el("label", { class: "ask-share", for: "ask-share" }, share, el("span", { text: " Also share the answer in #wow-forever" })), count),
+  el("div", { class: "ask-row" }, el("label", { class: "ask-share", for: "ask-share" }, share, el("span", { text: " Also share the answer in #wow-forever" })), modelSel, count),
   el("div", { class: "ask-row" }, btn, check), stat);
 note.parentNode.insertBefore(form, note);
 
@@ -30,6 +37,7 @@ function tally() { const n = len(); count.textContent = `${n} / ${MAX}`; count.c
 function say(t) { if (stat.textContent !== t) stat.textContent = t; }
 function paint(s) {
   cur = s;
+  if (s && s.provider && modelSel.value !== s.provider) modelSel.value = s.provider;
   const live = s.base && s.key && !s.keyBad;
   note.hidden = live; form.hidden = !live;
   note.textContent = !s.base ? NOTE.off : s.keyBad ? NOTE.bad : NOTE.none;
@@ -47,14 +55,15 @@ function paint(s) {
     : s.state === "error" ? ERR[s.error] || ERR.busy
     : s.state === "limited" ? `That is six questions in the last hour. Leeroy opens up again in about ${Math.max(1, Math.ceil(s.retryAfter / 60))} minute${Math.ceil(s.retryAfter / 60) === 1 ? "" : "s"}.`
     : "");
-  const sig = `${s.state === "limited" || s.state === "error" || s.state === "sending" ? "x" : s.state}|${a ? `${a.id}|${a.status}` : ""}|${old}`;
+  const sig = `${s.state === "limited" || s.state === "error" || s.state === "sending" ? "x" : s.state}|${a ? `${a.id}|${a.status}|${a.provider || ""}` : ""}|${old}`;
   if (sig === shown) return;
   shown = sig;
   out.replaceChildren();
   if (!a || old || s.state === "idle") return;
   const card = el("div", { class: `ask-card ${a.status}` }, el("p", { class: "ask-q" }, el("b", { text: "You asked: " }), a.text));
   if (a.status === "answered" && a.answer) {
-    card.append(el("p", { class: "ask-who", text: "Leeroy" }));
+    const badge = a.provider === "gemini" ? "Leeroy · Gemini Free Tier" : a.provider === "claude" ? "Leeroy · Claude" : "Leeroy";
+    card.append(el("p", { class: "ask-who", text: badge }));
     for (const para of String(a.answer).split(/\n+/)) if (para.trim()) card.append(el("p", { class: "ask-a", text: para }));
     if (a.sources && a.sources.length) card.append(el("p", { class: "ask-src" }, el("b", { text: "Sources: " }), a.sources.join("; ")));
     if (a.share) card.append(el("p", { class: "ask-src", text: "This one was also posted in #wow-forever." }));
@@ -66,7 +75,7 @@ async function send() {
   const n = len();
   if (n < MIN) { say(`A question needs at least ${MIN} characters.`); return; }
   if (n > MAX) { say(`That is ${n - MAX} over the ${MAX} character limit.`); return; }
-  const r = await B.ask(ta.value, share.checked);
+  const r = await B.ask(ta.value, share.checked, modelSel.value);
   if (r && r.ok) { ta.value = ""; share.checked = false; tally(); }
 }
 ta.addEventListener("input", tally);

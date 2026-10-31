@@ -7,7 +7,7 @@
 //      #wow-forever Sign-ups card tallies in D1 and broadcasting over WebSockets.
 // =============================================================================
 
-import { answerWithClaude } from "./claude.js";
+import { answerWithClaude, resolveAiProvider } from "./claude.js";
 import { broadcastToRoom, purgeWorkerCache } from "./index.js";
 
 function hexToBytes(hex) {
@@ -122,23 +122,25 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     user.username ||
     "party";
 
-  // 2. Slash Command (Type 2): `/ask <question>`
+  // 2. Slash Command (Type 2): `/ask <question> [model:claude|gemini]`
   if (interaction.type === 2 && interaction.data && interaction.data.name === "ask") {
     const opts = interaction.data.options || [];
     const qOpt = opts.find((o) => o.name === "question" || o.name === "q") || opts[0];
+    const mOpt = opts.find((o) => o.name === "model" || o.name === "provider");
     const question = String((qOpt && qOpt.value) || "").trim();
+    const provider = resolveAiProvider(env, mOpt && mOpt.value);
     const intentId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const now = new Date().toISOString();
 
     await env.DB.prepare(
-      "INSERT INTO ask_turns (id, by_name, question, status, created_at) VALUES (?, ?, ?, 'thinking', ?)"
+      "INSERT INTO ask_turns (id, by_name, question, model, status, created_at) VALUES (?, ?, ?, ?, 'thinking', ?)"
     )
-      .bind(intentId, byName, question, now)
+      .bind(intentId, byName, question, provider, now)
       .run();
 
     ctx.waitUntil(
       (async () => {
-        await answerWithClaude({ env, origin, intentId, by: byName, question });
+        await answerWithClaude({ env, origin, intentId, by: byName, question, provider, share: false });
         const row = await env.DB.prepare("SELECT answer FROM ask_turns WHERE id = ?").bind(intentId).first();
         if (interaction.application_id && interaction.token && row && row.answer) {
           await fetch(

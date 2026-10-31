@@ -86,16 +86,20 @@ jobs:
         working-directory: infrastructure
         run: npx wrangler deploy
 
-      - name: Sync Worker Secrets (`ANTHROPIC_API_KEY`, `BOARD_ADMIN_TOKEN`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`)
+      - name: Sync Worker Secrets (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `BOARD_ADMIN_TOKEN`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`)
         working-directory: infrastructure
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
         run: |
           if [ -n "$ANTHROPIC_API_KEY" ]; then
             printf "%s" "$ANTHROPIC_API_KEY" | npx wrangler secret put ANTHROPIC_API_KEY
+          fi
+          if [ -n "$GEMINI_API_KEY" ]; then
+            printf "%s" "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY
           fi
           if [ -n "$BOARD_ADMIN_TOKEN" ]; then
             printf "%s" "$BOARD_ADMIN_TOKEN" | npx wrangler secret put BOARD_ADMIN_TOKEN

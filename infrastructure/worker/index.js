@@ -1,11 +1,11 @@
 // =============================================================================
 // Cloudflare Worker Entry Point (`leeroy-brain`)
-// Serves Edge-cached D1 state, library blobs, Claude Q&A, Fact Fixes, Discord
-// HTTP Interactions, and delegates WebSockets + live mutations to `BoardRoom`.
+// Serves Edge-cached D1 state, library blobs, Claude / Gemini Q&A, Fact Fixes,
+// Discord HTTP Interactions, and delegates WebSockets + live mutations to `BoardRoom`.
 // =============================================================================
 
 import { BoardRoom } from "./room.js";
-import { answerWithClaude } from "./claude.js";
+import { answerWithClaude, resolveAiProvider } from "./claude.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies } from "./discord.js";
 
@@ -36,6 +36,7 @@ function jsonResp(body, status = 200, extraHeaders = {}) {
 function extractKey(req, url) {
   const auth = req.headers.get("Authorization") || "";
   if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
+  if (auth.startsWith("Board ")) return auth.slice(6).trim();
   const h = req.headers.get("X-Board-Key");
   if (h) return h.trim();
   return (url.searchParams.get("k") || "").trim();
@@ -130,6 +131,47 @@ export default {
         return jsonResp({ ok: true, signups: doc }, 200, cors);
       }
 
+      // 1c. GET /ask -> Returns latest Q&A turn for `js/brain.js` (`askRead()`)
+      if (req.method === "GET" && path === "/ask") {
+        const row = await env.DB.prepare(
+          "SELECT * FROM ask_turns ORDER BY created_at DESC LIMIT 1"
+        ).first();
+        if (!row) {
+          return jsonResp({ ask: null, limit: { left: 6 }, aiProvider: resolveAiProvider(env) }, 200, cors);
+        }
+        const status =
+          row.status === "thinking" || row.status === "pending"
+            ? "queued"
+            : row.status === "answered"
+            ? "answered"
+            : "failed";
+        const [provider, model] = String(row.model || "").includes(":")
+          ? String(row.model).split(":")
+          : [resolveAiProvider(env), row.model || null];
+        let sources = [];
+        try {
+          sources = JSON.parse(row.cites_json || "[]");
+        } catch {}
+        return jsonResp(
+          {
+            ask: {
+              id: row.id,
+              status,
+              text: row.question,
+              answer: row.answer || null,
+              sources,
+              provider,
+              model,
+              at: row.answered_at || row.created_at,
+            },
+            limit: { left: 6 },
+            aiProvider: resolveAiProvider(env),
+          },
+          200,
+          cors
+        );
+      }
+
       // 2. GET /bootstrap -> Single-roundtrip Edge-cached startup bundle
       if (req.method === "GET" && path === "/bootstrap") {
         const cache = caches.default;
@@ -139,7 +181,7 @@ export default {
           const { results } = await env.DB.prepare(
             "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','marks','decide')"
           ).all();
-          const bundle = {};
+          const bundle = { aiProvider: resolveAiProvider(env) };
           for (const row of results || []) {
             try {
               bundle[row.key] = JSON.parse(row.json);
@@ -197,7 +239,7 @@ export default {
         });
       }
 
-      // 5. POST /intent -> Ask Leeroy (Claude API), Fact Fix (D1 update), or Refresh Sweep
+      // 5. POST /intent -> Ask Leeroy (Claude or Gemini Free Tier), Fact Fix (D1 update), or Refresh Sweep
       if (req.method === "POST" && path === "/intent") {
         if (!isAuthorized(req, url, env)) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
@@ -209,19 +251,32 @@ export default {
         const intentId = `int_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
         if (kind === "ask") {
-          const question = String(body.q || body.text || "").trim();
+          const patch = body.patch && typeof body.patch === "object" ? body.patch : {};
+          const question = String(patch.text || body.q || body.text || "").trim();
+          const share = patch.share !== undefined ? Boolean(patch.share) : true;
+          const requestedProvider = patch.provider || body.provider || env.AI_PROVIDER;
+          const activeProvider = resolveAiProvider(env, requestedProvider);
+
           if (!question) return jsonResp({ error: "Missing question" }, 400, cors);
 
           await env.DB.prepare(
-            "INSERT INTO ask_turns (id, by_name, question, status, created_at) VALUES (?, ?, ?, 'thinking', ?)"
+            "INSERT INTO ask_turns (id, by_name, question, model, status, created_at) VALUES (?, ?, ?, ?, 'thinking', ?)"
           )
-            .bind(intentId, by, question, now)
+            .bind(intentId, by, question, activeProvider, now)
             .run();
 
-          const intentItem = { id: intentId, kind: "ask", by, q: question, status: "thinking", at: now };
+          const intentItem = {
+            id: intentId,
+            kind: "ask",
+            by,
+            q: question,
+            provider: activeProvider,
+            status: "thinking",
+            at: now,
+          };
           await broadcastToRoom(env, { type: "intent", item: intentItem });
 
-          // Run Claude API call asynchronously via waitUntil so POST /intent returns in <15ms
+          // Run Claude or Gemini API call asynchronously via waitUntil so POST /intent returns in <15ms
           ctx.waitUntil(
             answerWithClaude({
               env,
@@ -229,17 +284,23 @@ export default {
               intentId,
               by,
               question,
-              deep: Boolean(body.deep),
+              deep: Boolean(body.deep || patch.deep),
+              share,
+              provider: activeProvider,
             })
           );
 
-          return jsonResp({ ok: true, id: intentId, status: "thinking" }, 202, cors);
+          return jsonResp(
+            { ok: true, id: intentId, status: "thinking", provider: activeProvider, at: now, left: 5 },
+            200,
+            cors
+          );
         }
 
         if (kind === "fix") {
           const pageId = String(body.page || "").trim();
-          const factKey = String(body.fact || "").trim();
-          const newVal = String(body.val || body.text || "").trim();
+          const factKey = String(body.fact || body.key || "").trim();
+          const newVal = String(body.val || body.text || body.note || "").trim();
           const note = String(body.note || "").trim();
           if (!pageId || !factKey || !newVal) {
             return jsonResp({ error: "Missing page, fact, or val" }, 400, cors);
@@ -308,7 +369,7 @@ export default {
           ctx.waitUntil(
             runScheduledSourceSweep(env, url.origin, { triggeredBy: by, intentId })
           );
-          return jsonResp({ ok: true, id: intentId, status: "running" }, 202, cors);
+          return jsonResp({ ok: true, id: intentId, status: "running" }, 200, cors);
         }
 
         return jsonResp({ error: `Unsupported intent kind: ${kind}` }, 400, cors);
@@ -316,7 +377,20 @@ export default {
 
       // 6. Health check
       if (req.method === "GET" && (path === "/" || path === "/health")) {
-        return jsonResp({ ok: true, service: "leeroy-brain", runtime: "cloudflare-workers-d1" }, 200, cors);
+        return jsonResp(
+          {
+            ok: true,
+            service: "leeroy-brain",
+            runtime: "cloudflare-workers-d1",
+            aiProvider: resolveAiProvider(env),
+            providers: {
+              claude: Boolean(env.ANTHROPIC_API_KEY),
+              gemini: Boolean(env.GEMINI_API_KEY),
+            },
+          },
+          200,
+          cors
+        );
       }
 
       return jsonResp({ error: "Not found", path }, 404, cors);
