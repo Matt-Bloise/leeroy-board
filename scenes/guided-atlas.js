@@ -19,7 +19,6 @@ function facts() {
   const own = () => (window.BoardFetch ? window.BoardFetch.json("data/guided-atlas.json", { cache: "no-cache" }) : fetch("data/guided-atlas.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)));
   const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/guided-atlas.json")) || "";
   return (G.dataP ||= (u ? fetch(u, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : own())) : own()).catch(() => { G.dataP = null; return null; }).then((d) => { G.data = d; return d; }));
-
 }
 const mine = () => { const m = MEM.member(), d = G.data; return m && d && d.classes ? d.classes[m.class_key] || null : null; };
 function meetLine() {

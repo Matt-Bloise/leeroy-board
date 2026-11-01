@@ -229,7 +229,6 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
       if (b && b.launchDoc && typeof b.launchDoc === "object" && !b.launchDoc.error) return b.launchDoc;
       const u = window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/launch.json");
       const j = u ? await fetch(u, { cache: "no-cache" }).then((res) => (res.ok ? res.json() : null)).catch(() => null).then((x) => (x != null ? x : own())) : await own();
-
       return j && typeof j === "object" && !j.error ? j : null;
     } catch (e) { return null; }
   })();

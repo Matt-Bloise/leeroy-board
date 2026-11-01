@@ -221,7 +221,6 @@ const dataGet = (n) => {
   if (n === "client") return fallback();
   const b = window.BoardBrain;
   if (b && typeof b.bootstrap === "function") return b.bootstrap().then((boot) => (boot && boot[n] != null ? boot[n] : fallback()));
-
   return fallback();
 };
 const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n)), opt: ["signups", "tonight"].map((n) => dataGet(n).catch(() => null)) };
@@ -2557,7 +2556,6 @@ const libFetch = (url, init) => {
   const f = libFile(url), b = window.BoardBrain, api = b && typeof b.url === "function" ? b.url(`/library/${f}`) : (API ? `${API}/api/library/${f}` : "");
   const fallback = () => BF.json(libStamped(`data/library/${f}`), init);
   return api ? fetch(libStamped(api), init).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : fallback())) : fallback();
-
 };
 const libGet = (url) => libIndex().catch(() => null).then(() => libFetch(url));
 const libTitle = (id) => (LIBD.head[id] ? LIBD.head[id].title : id);
