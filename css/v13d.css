@@ -15,8 +15,9 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
   .journey { position: relative; flex: none; overflow: visible; }
   .journey button { min-height: 44px; padding: 4px 10px; font-size: 0.95rem; }
   .journey:not(.open) button:not([aria-pressed="true"]) { display: none; }
-  .journey:not(.open) button[aria-pressed="true"]::after, .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"]::after { content: " \25BE"; }
-  .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"] { display: inline-block; }
+  .journey:not(.open) button[aria-pressed="true"]::after { content: " \25BE"; }
+  html[data-journey="guided"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="guided"], html[data-journey="curious"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"], html[data-journey="everything"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="everything"] { display: inline-block; }
+  html[data-journey="guided"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="guided"]::after, html[data-journey="curious"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"]::after, html[data-journey="everything"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="everything"]::after { content: " \25BE"; }
   .journey.open { position: absolute; z-index: 40; right: 0; flex-direction: column; }
   .journey.open button + button { border-left: 0; border-top: 1px solid var(--brass-dim); }
       .sheet-top:has(> .journey) { justify-content: flex-start; gap: 3px; }
