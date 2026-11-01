@@ -24,10 +24,16 @@
     S.ambLvl = G(1, S.duck);
     S.lp = F("lowpass", 18000, 0.5, S.ambLvl);
     S.mus = G(0, S.duck);
-    const verb = () => { try { const n = Math.round(1.4 * R), ir = c.createBuffer(2, n, R), dk = Math.exp(-3.4 / R), kk = Math.exp(-3 / R); for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let lp = 0, e = 1, k = 0.95; for (let i = 0; i < n; i++) { lp += (Math.random() * 2 - 1 - lp) * (0.25 + k * 0.7 / 0.95 * 0.95); e *= dk; k *= kk; d[i] = lp * e * (i < 90 ? i / 90 : 1); } } const cv = c.createConvolver(); cv.buffer = ir; S.verbIn = G(1, cv); cv.connect(G(0.7, S.duck)); S.ui.connect(G(dbToGain(-17), S.verbIn)); S.mus.connect(G(dbToGain(-10), S.verbIn)); } catch (e) {} };
+    const verb = () => { try { const n = Math.round(1.4 * R), ir = c.createBuffer(2, n, R), dk = Math.exp(-3.4 / R), kk = Math.exp(-3 / R); let ch = 0, i = 0, lp = 0, e = 1, k = 0.95;
+      const fin = () => { const cv = c.createConvolver(); cv.buffer = ir; S.verbIn = G(1, cv); cv.connect(G(0.7, S.duck)); S.ui.connect(G(dbToGain(-17), S.verbIn)); S.mus.connect(G(dbToGain(-10), S.verbIn)); };
+      const piece = () => { try { const t0 = performance.now(), d = ir.getChannelData(ch); do { const end = Math.min(n, i + 512); for (; i < end; i++) { lp += (Math.random() * 2 - 1 - lp) * (0.25 + k * 0.7 / 0.95 * 0.95); e *= dk; k *= kk; d[i] = lp * e * (i < 90 ? i / 90 : 1); } if (i >= n) { ch++; i = 0; lp = 0; e = 1; k = 0.95; if (ch >= 2) return fin(); return setTimeout(piece, 0); } } while (performance.now() - t0 < 2); setTimeout(piece, 0); } catch (x) {} };
+      piece(); } catch (e) {} };
     setTimeout(verb, 40);
     S.amb = G(1, S.lp);
-    const mk = (sec, fn, take, lo) => { const r = lo ? R / 2 : R, b = c.createBuffer(1, Math.max(1, Math.round(sec * r)), r), d = b.getChannelData(0); const st = { a: 0, b: 0, c: 0, take, R: r }; for (let i = 0; i < d.length; i++) d[i] = fn(i / r, Math.random() * 2 - 1, st); let pk = 0; for (const v of d) pk = Math.max(pk, Math.abs(v)); if (pk > 0) for (let i = 0; i < d.length; i++) d[i] /= pk; return b; };
+    const mkStart = (sec, fn, take, lo) => { const r = lo ? R / 2 : R, b = c.createBuffer(1, Math.max(1, Math.round(sec * r)), r); return { b, d: b.getChannelData(0), fn, r, st: { a: 0, b: 0, c: 0, take, R: r }, i: 0, pk: 0, ph: 0 }; };
+    const mkRun = (j, ms) => { const d = j.d, t0 = performance.now(); const over = () => performance.now() - t0 >= ms;
+      while (j.ph < 3) { const e = Math.min(d.length, j.i + (j.ph === 0 ? 256 : 4096)); if (j.ph === 0) for (let i = j.i; i < e; i++) d[i] = j.fn(i / j.r, Math.random() * 2 - 1, j.st); else if (j.ph === 1) for (let i = j.i; i < e; i++) j.pk = Math.max(j.pk, Math.abs(d[i])); else for (let i = j.i; i < e; i++) d[i] /= j.pk; j.i = e; if (e >= d.length) { j.ph++; j.i = 0; if (j.ph === 2 && !(j.pk > 0)) j.ph = 3; } if (j.ph < 3 && over()) return null; }
+      return j.b; };
     const band = (st, w, lo, hi) => { const Rr = st.R || R; st.a += (w - st.a) * (1 - Math.exp(-TAU * hi / Rr)); st.b += (w - st.b) * (1 - Math.exp(-TAU * lo / Rr)); return st.a - st.b; };
     const sub = (st) => st.s || (st.s = { a: 0, b: 0, take: st.take, R: st.R });
     const LO = new Set(["thunder", "purr", "hoof", "door", "babble", "laugh", "gull", "shimmer", "pour", "creak", "fanfare", "swell", "cheer", "unfurl", "whoosh"]);
@@ -82,17 +88,21 @@
       pour: [1.2, (t, w, st) => band(st, w, 1200, 3500) * (0.55 + 0.45 * Math.sin(TAU * 9 * t)) * Math.sin(Math.PI * Math.min(1, t / 1.2))],
     };
     const jobs = Object.keys(defs).filter((n) => EVT_DB[n] == null).flatMap((n) => Array.from({ length: defs[n][2] || TAKES }, (_, k) => [n, k])); let i = 0, busy = false;
-    const step = () => { busy = true; const t0 = performance.now(); while (i < jobs.length && performance.now() - t0 < 6) { const [n, k] = jobs[i++], [sec, fn] = defs[n]; const q0 = performance.now(); (S.takes[n] ||= []).push(mk(sec, fn, k, LO.has(n))); S.buildMs[n] = (S.buildMs[n] || 0) + performance.now() - q0; } if (i < jobs.length) setTimeout(step, 0); else busy = false; };
+    let cur = null;
+    const step = () => { busy = true; const t0 = performance.now(); while ((cur || i < jobs.length) && performance.now() - t0 < 2) { if (!cur) { const [n, k] = jobs[i++], [sec, fn] = defs[n]; cur = { n, j: mkStart(sec, fn, k, LO.has(n)) }; } const q0 = performance.now(), r = mkRun(cur.j, Math.max(0.5, 2 - (q0 - t0))); S.buildMs[cur.n] = (S.buildMs[cur.n] || 0) + performance.now() - q0; if (r) { (S.takes[cur.n] ||= []).push(r); cur = null; } } if (cur || i < jobs.length) setTimeout(step, 0); else busy = false; };
     S.ensure = (n) => { if (!defs[n] || S.queued[n]) return; S.queued[n] = 1; for (let k = 0; k < 2; k++) jobs.push([n, k]); if (!busy) setTimeout(step, 0); };
     setTimeout(step, 0);
-    let p1 = 0, p2 = 0;
+    let p1 = 0, p2 = 0, nk = 0;
     const noise = c.createBuffer(1, Math.round(1.5 * R), R), nd = noise.getChannelData(0);
-    for (let k = 0; k < nd.length; k++) { const w = Math.random() * 2 - 1; p1 += (w - p1) * 0.08; p2 += (p1 - p2) * 0.3; nd[k] = p2 * 3 + w * 0.08; }
-    const src = c.createBufferSource(); src.buffer = noise; src.loop = true; src.start();
-    S.fire = G(0.11, S.amb); src.connect(F("bandpass", 400, 0.9, S.fire));
-    src.connect(F("lowpass", 110, 0.7, G(0.07, S.amb)));
-    S.murmur = G(dbToGain(-40) * 4, S.amb);
-    const mf = F("bandpass", 520, 1.4, S.murmur); src.connect(mf);
+    S.fire = G(0.11, S.amb); S.murmur = G(dbToGain(-40) * 4, S.amb);
+    const bed = () => {
+      const t0 = performance.now(); do { const end = Math.min(nd.length, nk + 512); for (; nk < end; nk++) { const w = Math.random() * 2 - 1; p1 += (w - p1) * 0.08; p2 += (p1 - p2) * 0.3; nd[nk] = p2 * 3 + w * 0.08; } } while (nk < nd.length && performance.now() - t0 < 2);
+      if (nk < nd.length) return setTimeout(bed, 0);
+      try { const src = c.createBufferSource(); src.buffer = noise; src.loop = true; src.start();
+        src.connect(F("bandpass", 400, 0.9, S.fire));
+        src.connect(F("lowpass", 110, 0.7, G(0.07, S.amb)));
+        src.connect(F("bandpass", 520, 1.4, S.murmur)); } catch (e) {} };
+    setTimeout(bed, 0);
     const lfo = c.createOscillator(); lfo.frequency.value = 0.09; const lg = G(dbToGain(-40) * 2, S.murmur.gain); lfo.connect(lg); lfo.start();
     S.next = c.currentTime + 5; S.crack = c.currentTime + 0.5;
     S.timer = setInterval(tickAmb, 100);
