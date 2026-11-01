@@ -2,8 +2,6 @@ name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 
 on:
   pull_request:
-    branches:
-      - master
     types:
       - opened
       - synchronize
@@ -19,9 +17,27 @@ permissions:
   pull-requests: write
 
 jobs:
+  validate-fork-pr:
+    name: Enforce Fork PR Policy
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Fork PR Target Branch
+        run: |
+          IS_FORK="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          echo "Head repository: ${{ github.event.pull_request.head.repo.full_name }}"
+          echo "Base repository: ${{ github.repository }}"
+          echo "Base branch: $BASE_BRANCH"
+          echo "Is fork PR: $IS_FORK"
+          if [ "$IS_FORK" = "true" ] && [ "$BASE_BRANCH" = "master" ]; then
+            echo "::error::Fork pull requests cannot be merged directly into 'master'. Fork pull requests must target a non-master branch (e.g. an integration or feature branch)."
+            exit 1
+          fi
+
   deploy-pr-preview:
     name: Spin Up Isolated PR Preview (Pages + Worker + D1 + DO)
-    if: github.event.action != 'closed'
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -107,29 +123,25 @@ jobs:
             D1_DATABASE_NAME="$D1_DATABASE_NAME" node ./scripts/seed-d1.mjs --remote
           fi
 
-      - name: Deploy Ephemeral PR Worker & Durable Object
+      - name: Deploy Ephemeral PR Worker & Durable Object (Single Deploy)
         id: worker
         working-directory: infrastructure
+        env:
+          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
         run: |
           set -e
-          DEPLOY_OUT=$(npx wrangler deploy 2>&1)
+          # Deploy Worker once; pass BOARD_ADMIN_TOKEN directly to avoid double redeployment
+          if [ -n "$BOARD_ADMIN_TOKEN" ]; then
+            DEPLOY_OUT=$(npx wrangler deploy --var BOARD_ADMIN_TOKEN:"$BOARD_ADMIN_TOKEN" 2>&1)
+          else
+            DEPLOY_OUT=$(npx wrangler deploy 2>&1)
+          fi
           echo "$DEPLOY_OUT"
           WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://${WORKER_NAME}\.[a-z0-9-]+\.workers\.dev" | head -n 1)
           if [ -z "$WORKER_URL" ]; then
             WORKER_URL="https://${WORKER_NAME}.jmattbloise.workers.dev"
           fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Sync Admin Secret to Ephemeral PR Worker (Zero AI Keys Injected)
-        working-directory: infrastructure
-        env:
-          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
-        run: |
-          # Ephemeral PR environments run with ZERO external AI keys and strictly use free Cloudflare Workers AI.
-          # Live Discord webhook and external paid AI keys are intentionally omitted.
-          if [ -n "$BOARD_ADMIN_TOKEN" ]; then
-            printf "%s" "$BOARD_ADMIN_TOKEN" | npx wrangler secret put BOARD_ADMIN_TOKEN --name "$WORKER_NAME"
-          fi
 
       - name: Stage Static Site (Wired to PR Worker) & Deploy to Cloudflare Pages Preview
         id: pages
@@ -207,7 +219,7 @@ jobs:
 
   teardown-pr-preview:
     name: Tear Down Ephemeral PR Environment on Merge / Close
-    if: github.event.action == 'closed'
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

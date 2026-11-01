@@ -323,7 +323,62 @@ If you already run a gateway bot script that listens to message events or reacti
 
 ---
 
-## 8. Local Development & Verification
+## 8. Custom Domain Setup & Edge Caching Optimization (Cloudflare Free Tier)
+
+Operating on a custom domain unlocks Cloudflare's full **Cache API (`caches.default`)** and **Tiered Cache** on the Free Tier ($0/month), reducing D1 database reads to near-zero and serving global requests in 10–30 ms.
+
+### Why Attach a Custom Domain?
+* **Worker Subdomain Limitation**: On default `*.workers.dev` subdomains, Cloudflare's programmatic Cache API (`caches.default`) is disabled by platform policy. Requests rely on our L1 in-memory isolate cache (`ISOLATE_CACHE` in [`worker/index.js`](./worker/index.js)).
+* **Custom Domain Advantage**: Routing `leeroy-brain` through an apex domain or subdomain under an active Cloudflare Zone enables Cloudflare's global Edge Cache (`caches.default`) across all 300+ edge data centers. Edge responses for `/api/bootstrap`, `/api/state`, and `/api/library/*.json` are served with **zero D1 database queries**.
+* **Tiered Cache**: Enables Cloudflare's regional cache hubs to aggregate misses, yielding >90% edge cache hit rates for free.
+
+---
+
+### Step-by-Step Custom Domain Configuration ($0 Free Tier)
+
+#### Step 1: Add Your Domain to Cloudflare (Free Plan)
+1. In the [Cloudflare Dashboard](https://dash.cloudflare.com/), click **Add a site** and enter your apex domain (e.g. `yourdomain.com`).
+2. Select the **Free** plan ($0/mo).
+3. Update your domain registrar's nameservers to the two Cloudflare nameservers assigned to your zone.
+
+#### Step 2: Attach Custom Subdomain to `leeroy-brain` Worker
+Route your API Worker to a dedicated subdomain, such as `api.yourdomain.com`:
+
+* **Option A: Via Cloudflare Dashboard (Instant SSL & DNS)**:
+  1. Go to **Workers & Pages** -> **leeroy-brain** -> **Settings** -> **Domains & Routes**.
+  2. Click **Add** -> **Custom Domain**.
+  3. Enter `api.yourdomain.com` and click **Add Custom Domain**.
+  4. Cloudflare will automatically provision the edge SSL certificate and bind the DNS record.
+
+* **Option B: Via `infrastructure/wrangler.toml`**:
+  Add a `routes` definition:
+  ```toml
+  routes = [
+    { pattern = "api.yourdomain.com/*", custom_domain = true }
+  ]
+  ```
+
+#### Step 3: Attach Custom Domain to `leeroy-board` Frontend (Cloudflare Pages)
+1. Go to **Workers & Pages** -> **leeroy-board** (Pages project) -> **Custom domains** -> **Set up a custom domain**.
+2. Enter your desired frontend host (e.g. `board.yourdomain.com` or apex `yourdomain.com`).
+3. Add the new origins to `ALLOWED_ORIGINS` in [`infrastructure/wrangler.toml`](./wrangler.toml):
+   ```toml
+   ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://board.yourdomain.com,https://yourdomain.com"
+   ```
+4. In [`js/brain.js`](../js/brain.js#L26), point `WORKER` to your custom API domain:
+   ```javascript
+   const WORKER = "https://api.yourdomain.com";
+   ```
+
+#### Step 4: Enable Tiered Cache in Cloudflare (Free)
+1. In the Cloudflare Dashboard, select your domain zone.
+2. In the left navigation, go to **Caching** -> **Tiered Cache**.
+3. Toggle **Tiered Cache** to **Enabled**.
+4. **Result**: Cache misses at an edge data center check regional Cloudflare Tiered Cache hubs before hitting the Worker, keeping D1 database reads under 1% of total traffic.
+
+---
+
+## 9. Local Development & Verification
 
 You can run the entire Cloudflare Worker + D1 + Durable Objects stack locally on your machine using Wrangler's built-in Miniflare simulator:
 

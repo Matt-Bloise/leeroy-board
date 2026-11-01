@@ -7,7 +7,7 @@
 
 import { broadcastToRoom, purgeWorkerCache } from "./index.js";
 import { extractWikiFactsWithAi } from "./ai-models.js";
-import { factHays, vocabIdf } from "./rank-core.js";
+import { factHays, idfOf, stem } from "./rank-core.js";
 
 async function sha8Hex(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -103,7 +103,34 @@ export async function recomputeCategoryAndIndex(env, categoryKey, changeEntry = 
         open: JSON.parse(r.open_json || "[]"),
       }));
 
-      const nextSearchJson = JSON.stringify({ generated: now, idf: vocabIdf(factHays(allPages)) });
+      // Incrementally update `search.json` idf for changed page/category stems instead of full 4,200-word scan
+      const searchRow = await env.DB.prepare("SELECT json FROM lib_blobs WHERE name = 'search.json'").first();
+      let existingSearch = { generated: now, idf: {} };
+      if (searchRow) {
+        try {
+          existingSearch = JSON.parse(searchRow.json);
+        } catch {}
+      }
+      const allHays = factHays(allPages);
+      const targetPages = changeEntry && changeEntry.page
+        ? allPages.filter((p) => p.id === changeEntry.page)
+        : (pages && pages.length ? pages : allPages.slice(0, 5));
+      const changedHays = factHays(targetPages);
+      const changedWords = new Set();
+      for (const h of changedHays) {
+        for (const w of h.match(/[a-z0-9][a-z0-9'-]+/g) || []) {
+          const s = stem(w);
+          if (s.length > 2) changedWords.add(s);
+        }
+      }
+      const updatedIdf = { ...(existingSearch.idf || {}) };
+      for (const w of changedWords) {
+        updatedIdf[w] = idfOf(w, allHays);
+      }
+      existingSearch.generated = now;
+      existingSearch.idf = updatedIdf;
+
+      const nextSearchJson = JSON.stringify(existingSearch);
       const nextSearchStamp = await sha8Hex(nextSearchJson);
       await env.DB.prepare(
         "INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('search.json', ?, ?, ?) ON CONFLICT(name) DO UPDATE SET stamp = excluded.stamp, json = excluded.json, updated_at = excluded.updated_at"

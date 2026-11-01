@@ -91,11 +91,13 @@ CREATE TABLE IF NOT EXISTS ask_turns (
   cites_json TEXT NOT NULL DEFAULT '[]',
   model TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
+  share INTEGER NOT NULL DEFAULT 1,
   latency_ms INTEGER,
   created_at TEXT NOT NULL,
   answered_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_ask_turns_created ON ask_turns(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ask_turns_by ON ask_turns(by_name, created_at DESC);
 
 -- 8. Audit log of inline fact fixes & automated cron diffs
 CREATE TABLE IF NOT EXISTS fact_fixes (

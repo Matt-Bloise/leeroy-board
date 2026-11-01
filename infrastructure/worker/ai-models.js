@@ -165,7 +165,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep }) {
     },
     body: JSON.stringify({
       model,
-      max_tokens: 450,
+      max_tokens: 350,
       system: [
         {
           type: "text",
@@ -218,7 +218,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep }) {
         },
       ],
       generationConfig: {
-        maxOutputTokens: 450,
+        maxOutputTokens: 350,
         temperature: 0.3,
       },
     }),
@@ -258,7 +258,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt }) {
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    max_tokens: 450,
+    max_tokens: 350,
     temperature: 0.3,
   });
 
@@ -283,7 +283,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
     },
     body: JSON.stringify({
       model,
-      max_tokens: 450,
+      max_tokens: 350,
       temperature: 0.3,
       messages: [
         { role: "system", content: systemPrompt },
@@ -363,18 +363,20 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
 }
 
 let cachedParsedPages = null;
+let cachedHays = null;
 let cachedPagesAt = 0;
 const PAGES_TTL_MS = 15 * 60 * 1000; // 15 minutes in-memory isolate cache
 
 export function invalidatePagesCache() {
   cachedParsedPages = null;
+  cachedHays = null;
   cachedPagesAt = 0;
 }
 
-export async function getParsedLibraryPages(env) {
+export async function getParsedLibraryData(env) {
   const now = Date.now();
-  if (cachedParsedPages && now - cachedPagesAt < PAGES_TTL_MS) {
-    return cachedParsedPages;
+  if (cachedParsedPages && cachedHays && now - cachedPagesAt < PAGES_TTL_MS) {
+    return { pages: cachedParsedPages, hays: cachedHays };
   }
   const { results: pages } = await env.DB.prepare(
     "SELECT id, category, title, as_of, blurb, aliases_json, facts_json, open_json FROM lib_pages"
@@ -394,8 +396,14 @@ export async function getParsedLibraryPages(env) {
     } catch {}
     return { ...p, aliases, facts, open };
   });
+  cachedHays = factHays(cachedParsedPages);
   cachedPagesAt = now;
-  return cachedParsedPages;
+  return { pages: cachedParsedPages, hays: cachedHays };
+}
+
+export async function getParsedLibraryPages(env) {
+  const { pages } = await getParsedLibraryData(env);
+  return pages;
 }
 
 export async function answerWithAi({
@@ -403,6 +411,7 @@ export async function answerWithAi({
   origin,
   intentId,
   by,
+  memberSlug,
   question,
   deep = false,
   share = true,
@@ -415,20 +424,20 @@ export async function answerWithAi({
 
   try {
     // 1. Pull relevant library pages & full party/schedule state from D1 for grounded RAG context
-    const [parsedPages, { results: stateRows }, partySheets] = await Promise.all([
-      getParsedLibraryPages(env),
+    const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets] = await Promise.all([
+      getParsedLibraryData(env),
       env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
       buildPartySheetsFromD1(env),
     ]);
 
-    // Score individual facts & open questions using `vendor/rank-core.js` (TF-IDF + stemming + synonyms + role/lead boosts)
-    const { words, hits } = rankWikiCore(question, parsedPages, { hays: factHays(parsedPages) });
+    // Score individual facts & open questions using precomputed cachedHays (TF-IDF + stemming + synonyms + role/lead boosts)
+    const { words, hits } = rankWikiCore(question, parsedPages, { hays: cachedHays });
     const topFactHits = hits
-      .slice(0, 35)
+      .slice(0, 20)
       .map((h) => `  - [${h.page}~${h.key}] (score ${h.score}): ${h.value}`);
 
     const pageHitBonus = new Map();
-    for (const h of hits.slice(0, 50)) {
+    for (const h of hits.slice(0, 30)) {
       pageHitBonus.set(h.page, (pageHitBonus.get(h.page) || 0) + h.score);
     }
 
@@ -444,19 +453,12 @@ export async function answerWithAi({
     const ranked = parsedPages
       .map((p) => ({ p, s: scorePageForQuestion(p, fallbackWords) + (pageHitBonus.get(p.id) || 0) }))
       .sort((a, b) => b.s - a.s)
-      .slice(0, 12)
+      .slice(0, 5)
       .map((x) => x.p);
 
-    const contextBlocks = ranked.map((p) => {
-      const lines = (p.facts || []).slice(0, 25).map((f) => `  - [${p.id}~${f.key}]: ${f.value}`);
-      const openLines = (Array.isArray(p.open) ? p.open : [])
-        .slice(0, 10)
-        .map((o) => `  - [${p.id}~open]: ${typeof o === "string" ? o : o && (o.text || o.question || JSON.stringify(o))}`);
-      return `Page: ${p.title} (${p.id}, as of ${p.as_of || "current"})${p.blurb ? ` — ${p.blurb}` : ""}\n${[
-        ...lines,
-        ...openLines,
-      ].join("\n")}`;
-    });
+    const topPagesSummary = ranked
+      .map((p) => `  - ${p.title} (${p.id})${p.blurb ? `: ${p.blurb}` : ""}`)
+      .join("\n");
 
     const stateMap = {};
     for (const r of stateRows || []) {
@@ -466,13 +468,21 @@ export async function answerWithAi({
         stateMap[r.key] = r.json;
       }
     }
-    const partySummary = JSON.stringify({
-      party: stateMap.party || {},
-      partySheets: (partySheets && partySheets.party) || [],
-      signups: stateMap.signups || {},
-      timeline: stateMap.timeline || {},
-      tonight: stateMap.tonight || {},
-    });
+
+    let partySummary = "";
+    if (isCoach) {
+      const roster = (partySheets && partySheets.party ? partySheets.party : []).map(
+        (m) => `${m.name || m.slug}: ${m.role || "Member"} (${m.class || "Adventurer"} lvl ${m.level || 1})`
+      ).join(", ");
+      const tonight = stateMap.tonight ? (stateMap.tonight.title || stateMap.tonight.status || "") : "";
+      const signups = stateMap.signups && stateMap.signups.roster
+        ? Object.entries(stateMap.signups.roster).map(([k, v]) => `${k}:${v}`).join(", ")
+        : "";
+      partySummary = `Party Roster: ${roster || "Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward"}${tonight ? ` | Tonight: ${tonight}` : ""}${signups ? ` | Signups: ${signups}` : ""}`;
+    } else {
+      partySummary = "Party: Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward.";
+    }
+
     const baseSystemPrompt = [
       "You are Leeroy Jenkins, the party librarian for the 'Dungeons and Drinking' WoW Classic Forever five-player Horde group (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward).",
       "Answer strictly using the verified library facts and party state below. Where the library does not know something yet, state plainly that it is not published yet.",
@@ -481,11 +491,9 @@ export async function answerWithAi({
     ].join(" ");
     const systemPrompt = isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
 
-    const userPrompt = `Party Context:\n${partySummary}\n\nTop Ranked Fact Hits:\n${topFactHits.join(
+    const userPrompt = `Party Context:\n${partySummary}\n\nTop Library Facts:\n${topFactHits.join(
       "\n"
-    )}\n\nLibrary Pages:\n${contextBlocks.join(
-      "\n\n"
-    )}\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
+    )}\n\nTop Matching Pages:\n${topPagesSummary}\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -613,9 +621,10 @@ export async function answerWithAi({
       key: "stats",
       intent: completedItem,
     });
+    const broadcastSlug = memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-");
     await broadcastToRoom(env, {
       type: "ask",
-      slug: by.toLowerCase(),
+      slug: broadcastSlug,
       ask: completedItem,
     });
 

@@ -14,12 +14,14 @@ import {
   resolveAiProvider,
   isProviderConfigured,
   isPrPreviewEnv,
+  invalidatePagesCache,
   AI_PROVIDER_LABELS,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
+import { timingSafeEqualStr } from "./crypto.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -40,23 +42,13 @@ async function resolveMemberAuth(req, url, env) {
   if (authWho && authWho.slug) {
     const found = PARTY_MEMBERS.find((m) => m.slug === authWho.slug);
     if (found) return { ok: true, member: found };
+    return { ok: true, member: { slug: authWho.slug, name: authWho.name || authWho.slug } };
   }
 
-  // 2. Fallback to BOARD_ADMIN_TOKEN or key matching
+  // 2. Verified BOARD_ADMIN_TOKEN via constant-time comparison
   const k = extractKey(req, url);
-  if (env.BOARD_ADMIN_TOKEN && k === env.BOARD_ADMIN_TOKEN) {
+  if (env.BOARD_ADMIN_TOKEN && k && timingSafeEqualStr(k, env.BOARD_ADMIN_TOKEN)) {
     return { ok: true, member: PARTY_MEMBERS[3] }; // Default admin to Bloise
-  }
-
-  // 3. If members table is not seeded yet, check slug prefix with valid key shape
-  if (/^[A-Za-z0-9_-]{22,64}$/.test(k)) {
-    const kLow = k.toLowerCase();
-    for (const m of PARTY_MEMBERS) {
-      if (kLow.startsWith(m.slug) || kLow.includes(m.slug.replace(/-/g, ""))) {
-        return { ok: true, member: m };
-      }
-    }
-    return { ok: true, member: PARTY_MEMBERS[3] };
   }
 
   return { ok: false, member: null };
@@ -90,29 +82,89 @@ function extractKey(req, url) {
   return (url.searchParams.get("k") || "").trim();
 }
 
-function resolveMember(req, url) {
-  const k = extractKey(req, url).toLowerCase();
-  for (const m of PARTY_MEMBERS) {
-    if (k.startsWith(m.slug) || k.includes(m.slug.replace(/-/g, ""))) return m;
+// In-memory isolate L1 cache for sub-millisecond edge responses on *.workers.dev and custom domains
+const ISOLATE_CACHE = new Map();
+const ISOLATE_CACHE_MAX = 150;
+const ISOLATE_CACHE_TTL_MS = 60 * 1000; // 60 seconds default TTL
+
+function getIsolateCache(path) {
+  const hit = ISOLATE_CACHE.get(path);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    ISOLATE_CACHE.delete(path);
+    return null;
   }
-  return PARTY_MEMBERS[3]; // Default to Bloise for general valid board keys
+  return new Response(hit.body, {
+    status: hit.status,
+    headers: { ...hit.headers, "X-Isolate-Cache": "HIT" },
+  });
 }
 
-function isAuthorized(req, url, env) {
-  const k = extractKey(req, url);
-  if (!env.BOARD_ADMIN_TOKEN) return true;
-  if (k && k === env.BOARD_ADMIN_TOKEN) return true;
-  return /^[A-Za-z0-9_-]{22,64}$/.test(k);
+function putIsolateCache(path, resp, ttlMs = ISOLATE_CACHE_TTL_MS) {
+  if (ISOLATE_CACHE.size >= ISOLATE_CACHE_MAX) {
+    const firstKey = ISOLATE_CACHE.keys().next().value;
+    if (firstKey) ISOLATE_CACHE.delete(firstKey);
+  }
+  const cloned = resp.clone();
+  cloned.text().then((body) => {
+    const headers = {};
+    for (const [k, v] of cloned.headers.entries()) {
+      headers[k] = v;
+    }
+    ISOLATE_CACHE.set(path, {
+      body,
+      status: cloned.status,
+      headers,
+      expiresAt: Date.now() + ttlMs,
+    });
+  }).catch(() => {});
+}
+
+function clearIsolateCache(paths = []) {
+  if (!paths || paths.length === 0) {
+    ISOLATE_CACHE.clear();
+    return;
+  }
+  for (const path of paths) {
+    for (const key of ISOLATE_CACHE.keys()) {
+      if (key.includes(path)) {
+        ISOLATE_CACHE.delete(key);
+      }
+    }
+  }
+}
+
+async function getCachedResponse(origin, path) {
+  const local = getIsolateCache(path);
+  if (local) return local;
+  try {
+    const cacheKey = new Request(`${origin}${path}`, { method: "GET" });
+    return await caches.default.match(cacheKey);
+  } catch {
+    return null;
+  }
+}
+
+function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS) {
+  putIsolateCache(path, resp, ttlMs);
+  try {
+    const cacheKey = new Request(`${origin}${path}`, { method: "GET" });
+    ctx.waitUntil(caches.default.put(cacheKey, resp.clone()));
+  } catch {}
 }
 
 export async function purgeWorkerCache(origin, paths = []) {
-  const cache = caches.default;
-  const allPaths = new Set(paths);
-  allPaths.add("/api/state");
-  allPaths.add("/api/bootstrap");
-  await Promise.all(
-    [...allPaths].map((p) => cache.delete(new Request(`${origin}${p}`, { method: "GET" })).catch(() => false))
-  );
+  clearIsolateCache(paths);
+  invalidatePagesCache();
+  try {
+    const cache = caches.default;
+    const allPaths = new Set(paths);
+    allPaths.add("/api/state");
+    allPaths.add("/api/bootstrap");
+    await Promise.all(
+      [...allPaths].map((p) => cache.delete(new Request(`${origin}${p}`, { method: "GET" })).catch(() => false))
+    );
+  } catch {}
 }
 
 export async function broadcastToRoom(env, payload) {
@@ -381,9 +433,7 @@ export default {
       // 1. WebSocket / Live State -> Durable Object (`BoardRoom`) + D1 state
       if (path === "/live" || path === "/state") {
         if (path === "/state" && req.method === "GET") {
-          const cache = caches.default;
-          const cacheKey = new Request(`${url.origin}/api/state`, { method: "GET" });
-          let resp = await cache.match(cacheKey);
+          let resp = await getCachedResponse(url.origin, "/api/state");
           if (!resp) {
             const [{ results }, { party }] = await Promise.all([
               env.DB.prepare(
@@ -422,7 +472,7 @@ export default {
                 "Cache-Control": "public, max-age=10, s-maxage=30, stale-while-revalidate=60",
               }
             );
-            ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+            setCachedResponse(ctx, url.origin, "/api/state", resp, 30000);
           } else {
             const headers = new Headers(resp.headers);
             for (const [k, v] of Object.entries(cors)) headers.set(k, v);
@@ -488,7 +538,8 @@ export default {
 
       // 1b. POST /signups -> External Discord Bot sync for `#wow-forever` Sign-ups card
       if (req.method === "POST" && path === "/signups") {
-        if (!isAuthorized(req, url, env)) {
+        const auth = await resolveMemberAuth(req, url, env);
+        if (!auth.ok) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         const body = await req.json();
@@ -519,9 +570,21 @@ export default {
       // 1c. GET /ask -> Returns latest Q&A turn for `js/brain.js` (`askRead()`)
       if (req.method === "GET" && path === "/ask") {
         const isPrPreview = isPrPreviewEnv(env);
-        const row = await env.DB.prepare(
-          "SELECT * FROM ask_turns ORDER BY created_at DESC LIMIT 1"
-        ).first();
+        const auth = await resolveMemberAuth(req, url, env);
+        const askId = url.searchParams.get("id");
+
+        let row = null;
+        if (askId) {
+          row = await env.DB.prepare("SELECT * FROM ask_turns WHERE id = ?").bind(askId).first();
+        } else if (auth.ok && auth.member) {
+          row = await env.DB.prepare(
+            "SELECT * FROM ask_turns WHERE by_name = ? OR by_name = ? OR share = 1 ORDER BY created_at DESC LIMIT 1"
+          ).bind(auth.member.name, auth.member.slug).first();
+        } else {
+          row = await env.DB.prepare(
+            "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
+          ).first();
+        }
         if (!row) {
           return jsonResp({ ask: null, limit: { left: 6 }, isPrPreview, aiProvider: resolveAiProvider(env) }, 200, cors);
         }
@@ -580,7 +643,8 @@ export default {
 
       // 1e. PUT /wiki/page -> Direct D1 wiki page authoring/editing (replaces editing markdown in `wow-mage`)
       if (req.method === "PUT" && path === "/wiki/page") {
-        if (!isAuthorized(req, url, env)) {
+        const auth = await resolveMemberAuth(req, url, env);
+        if (!auth.ok) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         const body = await req.json();
@@ -649,9 +713,7 @@ export default {
 
       // 2. GET /bootstrap -> Single-roundtrip Edge-cached startup bundle
       if (req.method === "GET" && path === "/bootstrap") {
-        const cache = caches.default;
-        const cacheKey = new Request(`${url.origin}/api/bootstrap`, { method: "GET" });
-        let resp = await cache.match(cacheKey);
+        let resp = await getCachedResponse(url.origin, "/api/bootstrap");
         if (!resp) {
           const [{ results }, { party: partySheets }] = await Promise.all([
             env.DB.prepare(
@@ -681,7 +743,7 @@ export default {
             ...cors,
             "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
           });
-          ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+          setCachedResponse(ctx, url.origin, "/api/bootstrap", resp, 60000);
         } else {
           const headers = new Headers(resp.headers);
           for (const [k, v] of Object.entries(cors)) headers.set(k, v);
@@ -693,9 +755,7 @@ export default {
       // 3. GET /library/:name -> Edge-cached library JSON blob from D1 `lib_blobs`
       if (req.method === "GET" && path.startsWith("/library/")) {
         const name = decodeURIComponent(path.slice("/library/".length));
-        const cache = caches.default;
-        const cacheKey = new Request(`${url.origin}/api/library/${name}`, { method: "GET" });
-        let resp = await cache.match(cacheKey);
+        let resp = await getCachedResponse(url.origin, `/api/library/${name}`);
         if (!resp) {
           const row = await env.DB.prepare("SELECT json, stamp FROM lib_blobs WHERE name = ?")
             .bind(name)
@@ -707,7 +767,7 @@ export default {
             ETag: `"${row.stamp}"`,
             "Cache-Control": `public, max-age=${ttl}, s-maxage=${ttl * 4}, stale-while-revalidate=600`,
           });
-          ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+          setCachedResponse(ctx, url.origin, `/api/library/${name}`, resp, ttl * 1000);
         } else {
           const headers = new Headers(resp.headers);
           for (const [k, v] of Object.entries(cors)) headers.set(k, v);
@@ -719,10 +779,9 @@ export default {
       // 4. GET or PUT /data/:name or GET /atlas/:name -> Single document in D1 `kv_state`
       if (path.startsWith("/data/") || path.startsWith("/atlas/")) {
         const raw = decodeURIComponent(path.split("/").pop() || "").replace(/\.json$/, "");
+        const cachePath = `/api${path.startsWith("/") ? path : `/${path}`}`;
         if (req.method === "GET") {
-          const cache = caches.default;
-          const cacheKey = new Request(`${url.origin}/api${path.startsWith("/") ? path : `/${path}`}`, { method: "GET" });
-          let resp = await cache.match(cacheKey);
+          let resp = await getCachedResponse(url.origin, cachePath);
           if (!resp) {
             const row = await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first();
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
@@ -732,7 +791,7 @@ export default {
               ETag: etag,
               "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
             });
-            ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+            setCachedResponse(ctx, url.origin, cachePath, resp, 60000);
           } else {
             const headers = new Headers(resp.headers);
             for (const [k, v] of Object.entries(cors)) headers.set(k, v);
@@ -767,8 +826,9 @@ export default {
           body = (await req.json()) || {};
         } catch {}
         const kind = path === "/refresh" ? "refresh" : String(body.kind || "");
-        const member = auth.member || resolveMember(req, url);
-        const by = String(body.by || member.slug || "party").slice(0, 40);
+        const member = auth.member;
+        const by = member.name || member.slug;
+        const memberSlug = member.slug;
         const now = new Date().toISOString();
         const numericIntentId = Date.now();
         const intentId = String(numericIntentId);
@@ -882,15 +942,16 @@ export default {
           if (!question) return jsonResp({ error: "Missing question" }, 400, cors);
 
           await env.DB.prepare(
-            "INSERT INTO ask_turns (id, by_name, question, model, status, created_at) VALUES (?, ?, ?, ?, 'thinking', ?)"
+            "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)"
           )
-            .bind(intentId, by, question, activeProvider, now)
+            .bind(intentId, by, question, activeProvider, share ? 1 : 0, now)
             .run();
 
           const intentItem = {
             id: numericIntentId,
             kind: "ask",
             by,
+            slug: memberSlug,
             q: question,
             provider: activeProvider,
             status: "thinking",
@@ -904,6 +965,7 @@ export default {
               origin: url.origin,
               intentId,
               by,
+              memberSlug,
               question,
               deep: Boolean(body.deep || patch.deep),
               share,
