@@ -82,6 +82,28 @@ function row(id, title, note, ...controls) {
     h("div", { class: "st-ctl" }, ...controls));
   S.rows[id] = r; return r;
 }
+const withAcct = (f) => { try { return Promise.resolve(window.__scenes.load("account")).then(() => (window.BoardAccount ? f(window.BoardAccount) : null)).catch(() => null); } catch (e) { return Promise.resolve(null); } };
+function accountRow() {
+  const inB = btn("Sign in with Discord", () => { withAcct((a) => a.signIn()); }, { id: "st-acct-in" });
+  const outB = btn("Sign out on this device", () => { withAcct((a) => a.signOut()); }, { id: "st-acct-out" });
+  const delB = btn("Delete my saved data", () => {
+    if (!S.arm) { S.arm = true; delB.textContent = "Press again to delete"; setTimeout(() => { S.arm = false; paintAcct(); }, 6000); return; }
+    S.arm = false; paintAcct(); withAcct((a) => a.erase());
+  }, { id: "st-acct-del" });
+  S.acctSay = h("p", { class: "st-note", id: "st-acct-say", role: "status", "aria-live": "polite" });
+  addEventListener("board-account", () => paintAcct());
+  return row("acct", "Saved settings", "Sign in with Discord to keep your density, modes and what you have seen across this browser, the Discord Activity and your phone. The server keeps a one-way scrambled form of your Discord id and these board settings, nothing else: no email, no name, no Discord token. Delete my saved data removes it all and signs every device out.", inB, outB, delB, S.acctSay);
+}
+function paintAcct() {
+  if (!S.el || !K.api) return;
+  const A = window.BoardAccount, on = A ? A.signedIn() : !!get("board-session"), live = !!window.__sdk;
+  const i = S.el.querySelector("#st-acct-in"), o = S.el.querySelector("#st-acct-out"), x = S.el.querySelector("#st-acct-del");
+  if (i) { i.hidden = on; i.disabled = !live; i.setAttribute("aria-disabled", String(!live)); }
+  if (o) o.hidden = !on;
+  if (x) { x.hidden = !on; if (!S.arm) x.textContent = "Delete my saved data"; }
+  const say = A ? A.status().say : "";
+  if (S.acctSay) S.acctSay.textContent = say || (on ? "Signed in. Changes to these settings are saved a moment after you make them." : live ? "Not signed in." : "Sign-in works inside the Discord Activity for now. On the open web it needs Discord web sign-in switched on by the owner.");
+}
 function build() {
   if (S.el) return S.el;
   const calm = btn("", () => setCalm(!calmOn()), { id: "st-calm-b", "aria-describedby": "st-calm-n" });
@@ -93,6 +115,7 @@ function build() {
   const who = PROFILES.map((p, i) => btn(`Profile ${i + 1}`, () => setProfile(p), { "data-profile": p, "aria-pressed": "false" }));
   const clear = btn("Clear my traces and reload", () => clearTraces(), { id: "st-clear-b", "aria-describedby": "st-clear-n" });
   S.say = h("p", { class: "st-say", id: "st-say", role: "status", "aria-live": "polite" });
+  const acct = K.api ? accountRow() : null;
   S.el = h("section", { class: "st", id: "settings", role: "dialog", "aria-modal": "true", "aria-labelledby": "st-h", hidden: "" },
     h("div", { class: "st-veil", onclick: () => close() }),
     h("div", { class: "st-card", tabindex: "-1", id: "st-card" },
@@ -104,6 +127,7 @@ function build() {
       row("care", "Screen care", "Off. When on, the page drifts a few pixels, dims after two minutes idle and shifts on OLED screens, to protect the display.", care),
       row("density", "Density", "How much each step shows. Changing it never closes what you have open.", ...dens),
       row("profile", "Who is using this", "Three nameless profiles on this device. Each keeps its own density, mode and what it has seen. Only changes what this page shows you.", ...who),
+      acct,
       row("clear", "Clear my traces", "Removes everything this page stored for the profile in use, then reloads. Other profiles are kept.", clear),
       S.say));
   S.el.addEventListener("keydown", onKey);
@@ -112,7 +136,8 @@ function build() {
 }
 function paint() {
   if (!S.el) return;
-  const set = (id, label, pressed) => { const b = S.el.querySelector(`#${id}`); if (!b) return; b.textContent = label; b.setAttribute("aria-pressed", String(pressed)); };
+  paintAcct();
+  const set =(id, label, pressed) => { const b = S.el.querySelector(`#${id}`); if (!b) return; b.textContent = label; b.setAttribute("aria-pressed", String(pressed)); };
   set("st-calm-b", calmOn() ? "Turn Calm off" : "Turn Calm on", calmOn());
   set("st-still-b", stillOn() ? "Allow animation again" : "Stop every animation", stillOn());
   set("st-sound-b", sound() ? "Sound is on: turn it off" : "Sound is off: turn it on", sound());
@@ -131,6 +156,7 @@ function onKey(e) {
 }
 function open(from) {
   build(); paint();
+  if (K.api) withAcct(() => paintAcct());
   S.opener = from || (document.activeElement !== document.body ? document.activeElement : null);
   S.el.hidden = false; root.classList.add("settings-open");
   const f = S.el.querySelector("#st-calm-b"); try { f.focus({ preventScroll: true }); } catch (e) {}
