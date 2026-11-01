@@ -1627,10 +1627,11 @@ const PLAYED = new Set();
 const ON_FIRST = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => ledgerStamps(), timeline: () => replay($("#rail"), "pressing"), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
 const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); KIT.emit("roads-open");  requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); }));  } };
 const ORN = { timeline: "hourglass", five: "banner", roads: "compass", racials: "skull", legacy: "laurel", buffs: "compass", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon", decide: "scroll" };
+const ORN_HI = ["moon", "compass", "candle", "banner"];
 function placeOrnament(key) {
   const sheet = document.querySelector("#scene .sheet"); if (!sheet) return;
   const old = $("#sheet-orn"); if (old && old.parentNode) old.parentNode.removeChild(old);
-  const still = h("img", { class: "orn-art", src: `img/emblems/ornaments/${ORN[key] || "book"}.webp`, width: 400, height: 400, alt: "", loading: "lazy" }), move = h("div", { class: "orn-in" }, still);
+  const on = ORN[key] || "book", at = `img/emblems/ornaments/${on}`, still = h("img", { class: "orn-art", src: `${at}.webp`, srcset: ORN_HI.includes(on) ? `${at}.webp 400w, ${at}-848.webp 848w` : null, sizes: "(min-width: 700px) 282px, 200px", width: 400, height: 400, alt: "", loading: "lazy" }), move = h("div", { class: "orn-in" }, still);
   const o = h("div", { id: "sheet-orn", class: `sheet-orn orn-${key}`, "aria-hidden": "true" }, move);
   sheet.append(o); replay(o, "drawing");
 }
@@ -1642,7 +1643,7 @@ function placeOrnament(key) {
     setTimeout(show, 1800);
   };
   mark(document.querySelector(".wall-plate"), "img/board-wall.jpg");
-  mark(document.querySelector(".hero-art img"), "img/tavern-hero.jpg");
+  mark(document.querySelector(".hero-art img"), (document.querySelector(".hero-art img") || {}).currentSrc || "img/tavern-hero.jpg");
 })();
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
 const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;
