@@ -74,7 +74,20 @@ function clearTraces() {
   reload();
 }
 
-const S = { el: null, rows: {}, opener: null, say: null };
+const S = { el: null, rows: {}, opener: null, say: null, errs: [] };
+const CHANNEL = "https://discord.com/channels/782702097421565952/1558663575495770193";
+try { const ce = console.error; console.error = function () { try { S.errs.push(Array.prototype.map.call(arguments, String).join(" ").slice(0, 120)); S.errs = S.errs.slice(-3); } catch (e) {} return ce.apply(console, arguments); }; addEventListener("error", (e) => { S.errs.push(String(e && e.message || "error").slice(0, 120)); S.errs = S.errs.slice(-3); }); } catch (e) {}
+function feedback() {
+  const mm = (q) => { try { return !!matchMedia(q).matches; } catch (e) { return false; } }, e = S.errs;
+  return ["scene: " + ((root.dataset && root.dataset.scene) || "unknown"), "hash: " + (location.hash || "none"), "tier: " + ((window.__room && window.__room.tier) || (root.dataset && root.dataset.tier) || "unknown"),
+    "viewport: " + window.innerWidth + "x" + window.innerHeight, "DPR: " + (window.devicePixelRatio || 1), "reduced motion: " + (mm("(prefers-reduced-motion: reduce)") ? "yes" : "no"),
+    "console errors: " + (e.length ? "" : "none"), ...e.map((x, i) => (i + 1) + ". " + x)].join("\n");
+}
+function copyFeedback() {
+  const t = feedback(), ok = () => { S.say.textContent = "Copied. Paste it in the Discord channel."; }, no = () => { S.say.textContent = "Could not copy. Select the text above and copy it by hand."; };
+  try { navigator.clipboard.writeText(t).then(ok, no); } catch (e) { no(); }
+  return t;
+}
 const btn = (label, onclick, extra) => h("button", Object.assign({ type: "button", class: "st-btn", onclick }, extra || {}), label);
 function row(id, title, note, ...controls) {
   const r = h("div", { class: "st-row", id: `st-${id}`, role: "group", "aria-labelledby": `st-${id}-t` },
@@ -114,6 +127,10 @@ function build() {
   const dens = DENSITY.map(([j, name, sub]) => btn(name, () => setDensity(j), { "data-density": j, "aria-pressed": "false", title: sub }));
   const who = PROFILES.map((p, i) => btn(`Profile ${i + 1}`, () => setProfile(p), { "data-profile": p, "aria-pressed": "false" }));
   const clear = btn("Clear my traces and reload", () => clearTraces(), { id: "st-clear-b", "aria-describedby": "st-clear-n" });
+  const fbText = h("pre", { class: "st-fb", id: "st-fb-text", text: feedback() });
+  const fbCopy = btn("Copy this", () => { fbText.textContent = copyFeedback(); }, { id: "st-fb-copy" });
+  const fbLink = h("a", { class: "st-btn st-link", id: "st-fb-link", href: CHANNEL, target: "_blank", rel: "noopener noreferrer", text: "Open the Discord channel" });
+  let fbRow;
   S.say = h("p", { class: "st-say", id: "st-say", role: "status", "aria-live": "polite" });
   const acct = K.api ? accountRow() : null;
   S.el = h("section", { class: "st", id: "settings", role: "dialog", "aria-modal": "true", "aria-labelledby": "st-h", hidden: "" },
@@ -129,14 +146,15 @@ function build() {
       row("profile", "Who is using this", "Three nameless profiles on this device. Each keeps its own density, mode and what it has seen. Only changes what this page shows you.", ...who),
       acct,
       row("clear", "Clear my traces", "Removes everything this page stored for the profile in use, then reloads. Other profiles are kept.", clear),
+      fbRow = row("fb", "Tell Leeroy what broke", "Copy this note and paste it in the Discord channel. Nothing is sent from here and nothing is collected: only the lines below, no name, no ids, no device details.", fbText, fbCopy, fbLink),
       S.say));
-  S.el.addEventListener("keydown", onKey);
+  fbRow.setAttribute("class", "st-fbrow"); S.el.addEventListener("keydown", onKey);
   document.body.appendChild(S.el);
   return S.el;
 }
 function paint() {
   if (!S.el) return;
-  paintAcct();
+  paintAcct(); const ft = S.el.querySelector("#st-fb-text"); if (ft) ft.textContent = feedback();
   const set =(id, label, pressed) => { const b = S.el.querySelector(`#${id}`); if (!b) return; b.textContent = label; b.setAttribute("aria-pressed", String(pressed)); };
   set("st-calm-b", calmOn() ? "Turn Calm off" : "Turn Calm on", calmOn());
   set("st-still-b", stillOn() ? "Allow animation again" : "Stop every animation", stillOn());
@@ -146,7 +164,7 @@ function paint() {
   const d = density(); for (const b of S.el.querySelectorAll("[data-density]")) b.setAttribute("aria-pressed", String(b.getAttribute("data-density") === d));
   const p = profile(); for (const b of S.el.querySelectorAll("[data-profile]")) b.setAttribute("aria-pressed", String(b.getAttribute("data-profile") === p));
 }
-const stops = () => [...S.el.querySelectorAll("button, input")].filter((b) => !b.disabled && !b.closest("[hidden]"));
+const stops = () => [...S.el.querySelectorAll("button, input, a[href]")].filter((b) => !b.disabled && !b.closest("[hidden]"));
 function onKey(e) {
   if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
   if (e.key !== "Tab") return;
