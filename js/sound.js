@@ -87,7 +87,7 @@
       drip: [0.12, (t) => Math.sin(TAU * (1000 + (t < 0.05 ? 900 * t / 0.05 : 900)) * t) * env(t, 0.001, 0.02)],
       pour: [1.2, (t, w, st) => band(st, w, 1200, 3500) * (0.55 + 0.45 * Math.sin(TAU * 9 * t)) * Math.sin(Math.PI * Math.min(1, t / 1.2))],
     };
-    const jobs = Object.keys(defs).filter((n) => EVT_DB[n] == null).flatMap((n) => Array.from({ length: defs[n][2] || TAKES }, (_, k) => [n, k])); let i = 0, busy = false;
+    const jobs = Object.keys(defs).filter((n) => EVT_DB[n] == null).flatMap((n) => Array.from({ length: defs[n][2] || TAKES }, (_, k) => [n, k])).sort((x, y) => x[1] - y[1]);  let i = 0, busy = false;
     let cur = null;
     const step = () => { busy = true; const t0 = performance.now(); while ((cur || i < jobs.length) && performance.now() - t0 < 2) { if (!cur) { const [n, k] = jobs[i++], [sec, fn] = defs[n]; cur = { n, j: mkStart(sec, fn, k, LO.has(n)) }; } const q0 = performance.now(), r = mkRun(cur.j, Math.max(0.5, 2 - (q0 - t0))); S.buildMs[cur.n] = (S.buildMs[cur.n] || 0) + performance.now() - q0; if (r) { (S.takes[cur.n] ||= []).push(r); cur = null; } } if (cur || i < jobs.length) setTimeout(step, 0); else busy = false; };
     S.ensure = (n) => { if (!defs[n] || S.queued[n]) return; S.queued[n] = 1; for (let k = 0; k < 2; k++) jobs.push([n, k]); if (!busy) setTimeout(step, 0); };
@@ -113,13 +113,18 @@
   function play(name, opt) {
     const c = S.ctx, list = S.takes[name];
     if (!list && S.ensure && EVT_DB[name] != null) S.ensure(name);
-    if (!S.on || !c || c.state !== "running" || document.hidden || !list) return false;
+    if (!S.on || !c || c.state !== "running" || document.hidden) return false;
+    let pool = list;
+    if (!pool && CUE_DB[name] != null) {
+      try { if (!S.plain) { const n = Math.max(1, Math.round(0.03 * R)), b0 = c.createBuffer(1, n, R), d0 = b0.getChannelData(0); for (let q = 0; q < n; q++) d0[q] = (Math.random() * 2 - 1) * Math.pow(1 - q / n, 3); S.plain = b0; } pool = S.plain ? [S.plain] : null; } catch (e) { pool = null; }
+    }
+    if (!pool) return false;
     const o = opt || {}, at = c.currentTime + Math.max(0, (o.delay || 0) / 1000);
     if (!o.amb && !gate()) return false;
-    let k = (Math.random() * list.length) | 0; if (list.length > 1 && k === S.last[name]) k = (k + 1 + ((Math.random() * (list.length - 1)) | 0)) % list.length;
+    let k = (Math.random() * pool.length) | 0; if (pool.length > 1 && k === S.last[name]) k = (k + 1 + ((Math.random() * (pool.length - 1)) | 0)) % pool.length;
     S.last[name] = k;
     try {
-      const b = c.createBufferSource(); b.buffer = list[k]; b.playbackRate.value = rnd(0.97, 1.03) * (o.rate || 1);
+      const b = c.createBufferSource(); b.buffer = pool[k]; b.playbackRate.value = rnd(0.97, 1.03) * (o.rate || 1);
       const f = c.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = (o.amb ? 6000 : 9000) * rnd(0.9, 1.1);
       const g = c.createGain(); g.gain.value = dbToGain((o.db != null ? o.db : CUE_DB[name] != null ? CUE_DB[name] : EVT_DB[name] != null ? EVT_DB[name] : -24) + rnd(-1.5, 1.5)) * (o.gain || 1);
       b.connect(f); f.connect(g);
