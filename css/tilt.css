@@ -8,8 +8,8 @@ html.tilting .wall > li { transform: translate(calc(var(--tilt-x) * var(--depth)
 html.tilting .seal-spec,
 html.tilting .bb-coin-img { --lx: calc(50% + var(--tilt-x) * 22%); --ly: calc(50% + var(--tilt-y) * 22%); }
 
-html.tilting.phone-shell .sheet-name::before { rotate: calc(var(--tilt-x) * 2deg); transition: rotate var(--t-micro) var(--ease-oak); }
+html.tilting:is(.phone-shell, .tablet) .sheet-name::before { rotate: calc(var(--tilt-x) * 2deg); transition: rotate var(--t-micro) var(--ease-oak); }
 
 @media (prefers-reduced-motion: reduce) {
-  html.tilting .wall > li, html.tilting.phone-shell .sheet-name::before { transform: none; rotate: none; }
+  html.tilting .wall > li, html.tilting:is(.phone-shell, .tablet) .sheet-name::before { transform: none; rotate: none; }
 }

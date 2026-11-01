@@ -55,7 +55,7 @@
   } catch (e) {}
   const cssSwitch = () => { try { return !!(window.CSS && typeof CSS.supports === "function" && CSS.supports("appearance", "switch")); } catch (e) { return false; } };
   const vibrateOK = () => typeof navigator.vibrate === "function";
-  const ios = /iP(hone|ad|od)/.test(navigator.userAgent || "") && !vibrateOK() && cssSwitch();
+  const ios = (/iP(hone|ad|od)/.test(navigator.userAgent || "") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) && !vibrateOK() && cssSwitch();
   const route = () => (vibrateOK() ? "vibrate" : ios ? "ios-switch" : "none");
   let sw = null, pads = new Map();
   try {
@@ -85,7 +85,7 @@
   }
   function fire(name) {
     try {
-      if (!H.on || document.hidden || low || (reduce() && !H.explicit)) return false;
+      if (!H.on || document.hidden || low || /play|calm/.test(document.documentElement.className) || (reduce() && !H.explicit)) return false;
       const key = canon(String(name || "select"));
       const p = Object.prototype.hasOwnProperty.call(CANON, key) ? CANON[key] : (PAT[name] !== undefined ? PAT[name] : CANON.select);
       if (!p.length) return false;

@@ -76,7 +76,7 @@
     reflect();
     return status();
   }
-  const gate = () => isRed() ? "reduced motion" : !isCoarse() ? "not coarse" : ST.lowPower ? "low power" : document.hidden ? "hidden page" : !hasDOE() ? "no motion API" : "";
+  const gate = () => isRed() ? "reduced motion" : /play|calm/.test(root.className) ? "q" : !isCoarse() ? "not coarse" : ST.lowPower ? "low power" : document.hidden ? "hidden page" : !hasDOE() ? "no motion API" : "";
   function start(isAuto) {
     auto = isAuto === true; ST.on = true; ST.why = ""; ST.note = "";
     memSet("on"); listen(); reflect();
@@ -113,6 +113,7 @@
   }); } catch (e) {}
   const onMQ = () => { if (ST.on && gate() && !document.hidden) disable(gate()); reflect(); };
   for (const q of [qRed, qCoarse]) { try { q.addEventListener("change", onMQ); } catch (e) {} }
+  if (typeof MutationObserver === "function") new MutationObserver(onMQ).observe(root, { attributeFilter: ["class"] });
   try {
     navigator.getBattery().then((bat) => {
       const read = () => { ST.lowPower = bat.level <= 0.2 && !bat.charging; if (ST.lowPower && ST.on) disable("low power"); else reflect(); };

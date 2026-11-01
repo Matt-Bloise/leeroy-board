@@ -85,3 +85,13 @@
 .dc-sumy { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 10px; }
 .dc-sumy > .dc-stext { flex: 0 0 100%; }
 .dc-sumy > .dc-title { flex: 0 1 auto; }
+.dc-all-btn { justify-self: start; min-height: 44px; margin: 4px 0; color: var(--ink); background: var(--parchment-2); border-color: var(--ink-soft); }
+.dc-sectd { padding: 4px 10px; border-radius: 6px; border-left: 4px solid var(--brass-dim); background: var(--cream-2); }
+.dc-sectd > summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 44px; font-family: var(--font-sc); font-size: 1.05rem; letter-spacing: 0.05em; list-style: none; }
+.dc-sectd > summary::-webkit-details-marker { display: none; }
+.dc-sectd > summary:focus-visible { outline: 3px solid var(--wax); outline-offset: 2px; border-radius: 4px; }
+.dc-sectd > summary::after { content: ""; width: 0.5em; height: 0.5em; margin: 0 6px 0 4px; border: solid var(--brass-dim); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.dc-sectd[open] > summary::after { transform: rotate(-135deg); }
+.dc-sectd > summary .dc-n { margin-left: auto; }
+.dc-sectd[open] > summary { border-bottom: 1px dashed var(--ink-line); margin-bottom: 8px; }
+.dc-sectd > .dc-sect > .dc-h4:first-child { display: none; }

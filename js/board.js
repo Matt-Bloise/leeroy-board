@@ -845,10 +845,8 @@ function raceRow(r, i) {
   const head = [h("span", { class: "rname", text: r.name }), r.kind ? h("span", { class: "chip", text: r.kind }) : null, r.changed_oct26 ? h("span", { class: "chip new", text: `changed ${r.changed_on || "Oct 26"}` }) : null];
   const li = h("li", { class: "rrow", style: `--di: ${i}`, "data-key": MEM.slug(r.name), ...(r.changed_oct26 ? { "data-changed": r.changed_on || "Oct 26" } : {}) });
   const plain = wholeClause(now.split(/;\s*/)[0].replace(/\s*\([^)]*\)/g, ""), 90);
-  const open = JR() === "everything";
   if (!notes.length && !client && plain === now) { li.append(h("div", { class: "rhead" }, ...head), h("div", { class: "rwiki", text: now })); return li; }
-  if (open) li.classList.add("open");
-  const btn = h("button", { class: "rhead", type: "button", "aria-expanded": String(open), onclick: () => { const on = li.classList.toggle("open"); btn.setAttribute("aria-expanded", String(on)); sfx("paper"); } }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));
+  const btn = h("button", { class: "rhead", type: "button", "aria-expanded": "false", onclick: () => { const on = li.classList.toggle("open"); btn.setAttribute("aria-expanded", String(on)); sfx("paper"); } }, ...head, h("span", { class: "rcaret", "aria-hidden": "true" }));
   li.append(btn, h("div", { class: plain === now ? "rwiki" : "rplain", text: plain }), h("div", { class: "rmore" }, h("div", {}, plain !== now ? h("p", { class: "rwiki rfull", text: now }) : null, notes.length ? h("ul", { class: "rnotes", "aria-label": "Dev notes" }, notes.map((n) => h("li", { text: n }))) : null, client ? h("div", { class: "rclient", text: client }) : null)));
   return li;
 }
@@ -865,7 +863,7 @@ function renderRaces() {
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
 const KIND_WORD = { toy: "a fun item with no stats", tabard: "a cloth crest worn over armor", pet: "a pet that follows you", mount: "a mount to ride" };
-const VF = (n, ...a) => import("../img/vector/vector.js?v=a5cc909c22").then((m) => m[n](...a)).catch(() => {});
+const VF = (n, ...a) => import("../img/vector/vector.js?v=76e7d18cfa").then((m) => m[n](...a)).catch(() => {});
 function renderLegacy() {
   const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
@@ -1323,7 +1321,7 @@ function startDiscordPresence(sdk) {
     }
   };
   render([], "none");
-  poll();
+  Promise.race([import("../vendor/discord-auth.js?v=6ed8b65c34").then((m) => m.signIn(sdk)), new Promise((r) => setTimeout(r, 6000))]).catch(() => {}).then(poll);
   clearInterval(discordPoll);
   discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
   document.addEventListener("click", (e) => {
@@ -1635,10 +1633,11 @@ const PLAYED = new Set();
 const ON_FIRST = { signups: () => { countUp($("#dsu-body")); replay($("#dsu-body"), "filling"); }, ledger: () => ledgerStamps(), timeline: () => replay($("#rail"), "pressing"), five: () => replay($("#cards"), "stamping"), librarian: () => replay($("#lib-box .spark"), "drawing") };
 const ON_OPEN = { library: () => LIBUI.open(), roads: () => { mapFit(); KIT.emit("roads-open");  requestAnimationFrame(() => { fitBanners(); mapUntangle(); }); if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(() => { fitBanners(); mapUntangle(); }));  } };
 const ORN = { timeline: "hourglass", five: "banner", roads: "compass", racials: "skull", legacy: "laurel", buffs: "compass", ledger: "quill", signups: "tankard", librarian: "candle", library: "book", tonight: "moon", decide: "scroll" };
+const ORN_HI = ["moon", "compass", "candle", "banner"];
 function placeOrnament(key) {
   const sheet = document.querySelector("#scene .sheet"); if (!sheet) return;
   const old = $("#sheet-orn"); if (old && old.parentNode) old.parentNode.removeChild(old);
-  const still = h("img", { class: "orn-art", src: `img/emblems/ornaments/${ORN[key] || "book"}.webp`, width: 400, height: 400, alt: "", loading: "lazy" }), move = h("div", { class: "orn-in" }, still);
+  const on = ORN[key] || "book", at = `img/emblems/ornaments/${on}`, still = h("img", { class: "orn-art", src: `${at}.webp`, srcset: ORN_HI.includes(on) ? `${at}.webp 400w, ${at}-848.webp 848w` : null, sizes: "(min-width: 700px) 282px, 200px", width: 400, height: 400, alt: "", loading: "lazy" }), move = h("div", { class: "orn-in" }, still);
   const o = h("div", { id: "sheet-orn", class: `sheet-orn orn-${key}`, "aria-hidden": "true" }, move);
   sheet.append(o); replay(o, "drawing");
 }
@@ -1650,7 +1649,7 @@ function placeOrnament(key) {
     setTimeout(show, 1800);
   };
   mark(document.querySelector(".wall-plate"), "img/board-wall.jpg");
-  mark(document.querySelector(".hero-art img"), "img/tavern-hero.jpg");
+  mark(document.querySelector(".hero-art img"), (document.querySelector(".hero-art img") || {}).currentSrc || "img/tavern-hero.jpg");
 })();
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
 const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;
@@ -2420,7 +2419,7 @@ function startArt() {
   probe("img/beam.png", () => {
     ART.beam = true;
     $("#main").classList.add("has-beam"); $("#main").classList.remove("beam-soon");
-    $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", alt: "", "aria-hidden": "true", decoding: "async" }));
+    $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", srcset: "img/beam.png 1920w, img/beam-2172.webp 2172w", sizes: "104vw", alt: "", "aria-hidden": "true", decoding: "async" }));
   }, () => {});
 }
 
