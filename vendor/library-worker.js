@@ -2,10 +2,18 @@
 // search.json off the page's thread, then answers { id, q, cap, full, cat, more } with the ranked hits, scored by rank-core.js (the wiki's
 // own ranker, copied by build-data.mjs), so typing never blocks a frame. Hits carry what a result row shows.
 import { rank, factHays } from "./rank-core.js?v=16d8a1283e";
-let pages = [], hays = [], idf = null, ready = null;
+let pages = [], hays = [], idf = null, ready = null, apiBase = "";
 /* V11 cache stamps: index.json loads with "no-cache" and names every other file's stamp, which rides on its URL */
 let stamps = {};
-const get = (f) => fetch(new URL(`../data/library/${f}${stamps[f] ? `?v=${stamps[f]}` : ""}`, import.meta.url), f === "index.json" ? { cache: "no-cache" } : {}).then((r) => { if (!r.ok) throw new Error(`${f} answered ${r.status}`); return r.json(); });
+const get = (f) => {
+  const qs = stamps[f] ? `?v=${stamps[f]}` : "";
+  const opts = f === "index.json" ? { cache: "no-cache" } : {};
+  const fallback = () => fetch(new URL(`../data/library/${f}${qs}`, import.meta.url), opts).then((r) => { if (!r.ok) throw new Error(`${f} answered ${r.status}`); return r.json(); });
+  if (apiBase) {
+    return fetch(`${apiBase}/${f}${qs}`, opts).then((r) => (r.ok ? r.json() : fallback())).catch(fallback);
+  }
+  return fallback();
+};
 async function load() {
   const index = await get("index.json");
   stamps = index.stamps || {};
@@ -20,6 +28,8 @@ async function load() {
 onmessage = async (e) => {
   const m = e.data || {};
   try {
+    if (typeof m.apiBase === "string" && m.apiBase) apiBase = m.apiBase.replace(/\/+$/, "");
+    if (m.reload) ready = null;
     ready ||= load();
     const info = await ready;
     if (m.q === undefined) { postMessage({ ready: true, ...info }); return; }

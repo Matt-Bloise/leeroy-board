@@ -173,7 +173,17 @@ const D = {};
 const KIT = { hooks: {}, on(n, f) { (this.hooks[n] ||= []).push(f); }, emit(n, ...a) { for (const f of this.hooks[n] || []) { try { f(...a); } catch (e) { console.error(n, e); } } }, lander: null };
 const JR = () => document.documentElement.dataset.journey || "curious";
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
-const API = (() => { try { const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:"); return /^(https:\/\/leeroy-board-api[\w.-]*\.workers\.dev|http:\/\/127\.0\.0\.1:\d+)$/.test(u.origin) ? u.origin : null; } catch (e) { return null; } })();
+const API = (() => {
+  try {
+    const b = window.BoardBrain;
+    if (b && typeof b.url === "function") {
+      const u = b.url("");
+      if (u) return new URL(u).origin;
+    }
+    const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:");
+    return /^(https:\/\/leeroy-(?:board-api|brain)[\w.-]*\.workers\.dev|http:\/\/127\.0\.0\.1:\d+)$/.test(u.origin) ? u.origin : null;
+  } catch (e) { return null; }
+})();
 const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt); };
 const BF = (() => {
   const B = ((document.currentScript || {}).src || "").match(/[?&]v=([0-9a-f]+)/), stale = new Set(), file = (u) => String(u).split("?")[0], key = (u) => `bd:${B ? B[1] : "dev"}:${file(u)}`;
@@ -206,7 +216,13 @@ const BF = (() => {
   return { json, note, fail, stale };
 })();
 window.BoardFetch = BF;
-const dataGet = (n) => BF.json(`data/${n}.json`, { cache: "no-cache" });
+const dataGet = (n) => {
+  const fallback = () => BF.json(`data/${n}.json`, { cache: "no-cache" });
+  if (n === "client") return fallback();
+  const b = window.BoardBrain;
+  if (b && typeof b.bootstrap === "function") return b.bootstrap().then((boot) => (boot && boot[n] != null ? boot[n] : fallback()));
+  return fallback();
+};
 const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n)), opt: ["signups", "tonight"].map((n) => dataGet(n).catch(() => null)) };
 DATA_P.need.forEach((p) => p.catch(() => {}));
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
@@ -2534,12 +2550,18 @@ const LIB_FIRST_WIDE = 12, LIB_SLICE = 16;
 const libFirst = () => (innerWidth < 700 ? 6 : LIB_FIRST_WIDE);
 const dtShort = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const libDay = (d) => (d ? dtShort.format(new Date(`${d}T12:00:00Z`)) : "undated");
-const libStamped = (url) => { const v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[url.replace(/^data\/library\//, "")]; return v ? `${url}?v=${v}` : url; };
-const libGet = (url) => libIndex().catch(() => null).then(() => BF.json(libStamped(url)));
+const libFile = (url) => String(url || "").replace(/^(?:.*\/)?(?:data\/)?library\//, "");
+const libStamped = (url) => { const f = libFile(url), v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[f]; return v ? `${url}?v=${v}` : url; };
+const libFetch = (url, init) => {
+  const f = libFile(url), b = window.BoardBrain, api = b && typeof b.url === "function" ? b.url(`/library/${f}`) : (API ? `${API}/api/library/${f}` : "");
+  const fallback = () => BF.json(libStamped(`data/library/${f}`), init);
+  return api ? fetch(libStamped(api), init).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : fallback())) : fallback();
+};
+const libGet = (url) => libIndex().catch(() => null).then(() => libFetch(url));
 const libTitle = (id) => (LIBD.head[id] ? LIBD.head[id].title : id);
 const libCatTitle = (key) => { const c = LIBD.index && LIBD.index.categories.find((x) => x.key === key); return c ? c.title : key; };
 function libIndex() {
-  LIBD.indexP ||= BF.json("data/library/index.json", { cache: "no-cache" }).then((j) => {
+  LIBD.indexP ||= libFetch("data/library/index.json", { cache: "no-cache" }).then((j) => {
     LIBD.index = j; for (const p of j.pages) LIBD.head[p.id] = p;
     try { renderLibTile(); } catch (e) { console.error(e); }
     return j;
@@ -2601,7 +2623,7 @@ function libStart() {
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=7a8883dd5a", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=9ee32dfeb0", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);
@@ -2612,7 +2634,7 @@ function libStart() {
     libResults(m);
   };
   w.onerror = (e) => { if (e && e.preventDefault) e.preventDefault(); clearTimeout(timer); libFallback("worker error"); };
-  w.postMessage({});
+  w.postMessage({ apiBase: window.BoardBrain && typeof window.BoardBrain.url === "function" ? window.BoardBrain.url("/library") : "" });
 }
 async function libFallback(why) {
   if (LIBS.via === "page") return;
@@ -3590,6 +3612,36 @@ KIT.on("booted", () => {
     } catch (e) {}
   };
   setTimeout(check, 20000); setInterval(check, 300000); document.addEventListener("visibilitychange", () => { if (!document.hidden) setTimeout(check, 1500); });
+  if (window.BoardBrain && typeof window.BoardBrain.on === "function") {
+    window.BoardBrain.on("library", (ev) => {
+      LIBD.indexP = null; LIBD.openP = null; LIBD.newsP = null;
+      const cats = ev && Array.isArray(ev.categories) ? ev.categories : Object.keys(LIBD.catP);
+      for (const c of cats) delete LIBD.catP[c];
+      if (ev && ev.page && LIBD.full[ev.page]) delete LIBD.full[ev.page];
+      libIndex().then(() => {
+        if (LIBS.worker) LIBS.worker.postMessage({ reload: true, apiBase: window.BoardBrain.url("/library") });
+        if (SC.open === "library") { libRenderHead(); libRender(false); }
+      }).catch(() => {});
+    });
+    window.BoardBrain.on("data", (ev) => {
+      if (!ev || !ev.key) return;
+      const handleData = (val) => {
+        if (!val) return;
+        D[ev.key] = val;
+        if (ev.key === "party") { splitPolls(); roles(); renderHero(); renderTiles(); renderCards(); renderLedger(); renderTonight(); }
+        else if (ev.key === "timeline") { renderHero(); renderTiles(); renderTimeline(); renderTonight(); }
+        else if (ev.key === "stats") { renderTiles(); renderLibrarian(); if (SC.open === "library") libRenderHead(); }
+        else if (ev.key === "signups") { renderTiles(); renderDiscordSignups(); renderTonight(); }
+        else if (ev.key === "tonight") { renderTonight(); }
+        else if (ev.key === "launch") { renderTiles(); renderTonight(); }
+      };
+      if (ev.data) {
+        handleData(ev.data);
+      } else {
+        dataGet(ev.key).then(handleData).catch(() => {});
+      }
+    });
+  }
 });
 window.__boardKit = KIT;
 startWisps();

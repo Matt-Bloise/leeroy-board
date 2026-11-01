@@ -4,8 +4,8 @@ const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const HERE = (document.currentScript && document.currentScript.src) || null;
 const SCENES = {
   sheet: () => [new URL("../scenes/sheet.css?v=7a8d1c52e5", HERE), new URL("../scenes/sheet.js?v=5b5a1785d3", HERE)],
-  chamber: () => [new URL("../scenes/chamber.css?v=ba47e5cb41", HERE), new URL("../scenes/chamber.js?v=f565912eae", HERE)],
-  decide: () => [new URL("../scenes/decide.css?v=67ef669934", HERE), new URL("../scenes/decide.js?v=e871b732e8", HERE)],
+  chamber: () => [new URL("../scenes/chamber.css?v=ba47e5cb41", HERE), new URL("../scenes/chamber.js?v=c8f5fc8fc6", HERE)],
+  decide: () => [new URL("../scenes/decide.css?v=67ef669934", HERE), new URL("../scenes/decide.js?v=1675a4a57a", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=9a7fa09c43", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1280b387e0", HERE)],
@@ -13,8 +13,8 @@ const SCENES = {
   hades: () => [new URL("../scenes/hades.css?v=0ed9bb5995", HERE), new URL("../scenes/hades.js?v=22bd5fa90f", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
   settings: () => [new URL("../scenes/settings.css?v=12fc8c6695", HERE), new URL("../scenes/settings.js?v=7350eb0413", HERE)],
-  refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],
-  guided: () => [new URL("../scenes/guided-atlas.css?v=7eb7ee0fdb", HERE), new URL("../scenes/guided-atlas.js?v=a6dfddaded", HERE)],
+  refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=9f3ce7b411", HERE)],
+  guided: () => [new URL("../scenes/guided-atlas.css?v=7eb7ee0fdb", HERE), new URL("../scenes/guided-atlas.js?v=a042114538", HERE)],
   tablet: () => [new URL("../scenes/tablet.css?v=cfdadddba3", HERE), new URL("../scenes/tablet.js?v=c71a266812", HERE)],
   foley: () => [null, new URL("../scenes/foley.js?v=54054813b9", HERE)],
   foleyfx: () => [null, new URL("../scenes/foley-fx.js?v=ef6c4c1e09", HERE)],

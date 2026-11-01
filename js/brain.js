@@ -3,7 +3,7 @@
 const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const WHEN = ["6pm", "8pm", "later"], PACK = ["yes", "no"], MEET = ["vos", "xroads", "other"], FIX_PAGE = /^[a-z0-9/_.-]{1,80}$/, FIX_KEY = /^[a-z0-9_.-]{1,80}$/, PLACE_MAX = 40, FIX_NOTE_MAX = 200;
-const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"];
+const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"], AI_PROVIDERS = ["claude", "gemini", "workers-ai", "groq", "cerebras", "github", "openrouter"];
 const PROBE = {
   kind: ["probe"], v: [1, 1],
   engine: ["webkit", "blink", "gecko", "other"],
@@ -42,12 +42,50 @@ function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
 
 function baseFor() {
   const host = location.hostname || "";
+  const q = new URLSearchParams(location.search || "").get("brain");
+  if (q && /^https?:\/\//i.test(q)) {
+    const clean = q.replace(/\/+$/, "").replace(/\/api$/, "");
+    return { http: `${clean}/api`, ws: `${clean.replace(/^http/i, "ws")}/api/live` };
+  }
+  const pr = host.match(/^pr-(\d+)\.leeroy-board\.pages\.dev$/i);
+  if (pr) {
+    const prWorker = `https://leeroy-brain-pr-${pr[1]}.jmattbloise.workers.dev`;
+    return { http: `${prWorker}/api`, ws: `${prWorker.replace(/^https:/, "wss:")}/api/live` };
+  }
   if (/\.discordsays\.com$/.test(host)) return { http: "/api", ws: `wss://${host}/api/live` };
-  if (host === "matt-bloise.github.io") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
+  if (host === "leeroy.party" || host.endsWith(".leeroy.party")) {
+    return { http: "https://api.leeroy.party/api", ws: "wss://api.leeroy.party/api/live" };
+  }
+  if (host === "matt-bloise.github.io" || /\.pages\.dev$/.test(host)) return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   if ((host === "127.0.0.1" || host === "localhost") && /(^|[?&])brain=local(&|$)/.test(location.search || "")) return { http: "/api", ws: `ws://${location.host || host}/api/live` };
+  if ((location.protocol === "http:" || location.protocol === "https:") && host !== "127.0.0.1" && host !== "localhost" && host !== "[::1]") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   return null;
 }
+const getAiProvider = () => { if (B.isPrPreview) return "workers-ai"; const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
+const setAiProvider = (prov) => { if (B.isPrPreview) { B.aiProvider = "workers-ai"; return "workers-ai"; } if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
 B.base = baseFor();
+const apiUrl = (path) => (B.base && path ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
+let BOOT_P = null;
+function bootstrap(force = false) { if (force) BOOT_P = null;
+  if (!B.base) return Promise.resolve(null);
+  return (BOOT_P ||= fetch(`${B.base.http}/bootstrap`, { cache: "no-cache", credentials: "omit" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      if (j && typeof j === "object" && !j.error) {
+        if (typeof j.ver === "number" && j.ver > B.ver) B.ver = j.ver;
+        if (Array.isArray(j.launch)) B.launch = j.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null }));
+        if (j.signups) B.signups = j.signups;
+        if (j.isPrPreview) B.isPrPreview = true;
+        if (j.providers && typeof j.providers === "object") B.providers = j.providers;
+        if (AI_PROVIDERS.includes(j.aiProvider)) {
+          if (j.isPrPreview || !store.get("board-ai-provider")) B.aiProvider = j.aiProvider;
+        }
+        return j;
+      }
+      return null;
+    })
+    .catch(() => null));
+}
 
 function probeOk(b) {
   if (!b || typeof b !== "object" || Array.isArray(b)) return false;
@@ -112,8 +150,8 @@ function safe(body, route) {
   }
   if (body && body.kind === "ask") {
     const p = body.patch, okAsk = Object.keys(body).every((k) => k === "kind" || k === "patch") && p && typeof p === "object" && typeof p.text === "string" && p.text.length <= 1200
-      && Object.keys(p).every((k) => k === "text" || (k === "share" && typeof p.share === "boolean"));
-    if (!okAsk || /\d{17,20}/.test(p ? p.text : "")) throw new Error("refused: an ask carries only its text and the share tick");
+      && Object.keys(p).every((k) => k === "text" || (k === "share" && typeof p.share === "boolean") || (k === "provider" && AI_PROVIDERS.includes(p.provider)));
+    if (!okAsk || /\d{17,20}/.test(p ? p.text : "")) throw new Error("refused: an ask carries only its text, share tick, and AI provider");
     return body;
   }
   if (body && body.kind === "refresh") { if (Object.keys(body).length !== 1) throw new Error("refused: a refresh carries nothing but its kind"); return body; }
@@ -166,6 +204,9 @@ function onState(m) {
   if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups)) return false;
   B.ver = m.ver; B.at = m.at || null;
   takeParty(m.party);
+  if (m.partyDoc || m.tonight || m.timeline || m.stats) emit("data", { party: m.partyDoc, tonight: m.tonight, timeline: m.timeline, stats: m.stats, ver: m.ver });
+  if (m.stamps) emit("library", { stamps: m.stamps, checked: m.checked || m.at || null });
+  if (m.decide) emit("decide", m.decide);
   if (Array.isArray(m.launch)) { B.launch = m.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null })); emit("launch", B.launch.slice()); settleLaunch(); }
   if (!m.signups) return false;
   B.signups = m.signups;
@@ -188,7 +229,7 @@ function schedulePoll(ms) { clearTimeout(B.pollT); B.pollT = setTimeout(pollOnce
 async function pollOnce() {
   if (!B.base) return;
   if (B.via === "ws") return;
-  if (hidden()) { schedulePoll(POLL_MS); return; }
+  if (hidden()) return;
   try {
     const r = await call("GET", `/state${B.ver ? `?ver=${B.ver}` : ""}`); B.polls++;
     if (r.status === 200) { onState(r.data); B.errors = 0; } else B.errors++;
@@ -198,18 +239,27 @@ async function pollOnce() {
 }
 function openWs() {
   clearTimeout(B.wsT);
-  if (!B.base || !B.key || typeof WebSocket !== "function" || B.ws) return false;
+  if (!B.base || typeof WebSocket !== "function" || B.ws) return false;
   if (B.offline) { B.wsT = setTimeout(openWs, WS_RETRY_MS); return false; }
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
   ws.onopen = () => { if (B.ws !== ws) return; opened = true; B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
-  ws.onmessage = (e) => { const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return; let m; try { m = JSON.parse(d); } catch (er) { return; } B.wsMsgs++; if (m && m.type === "state") onState(m); if (m && m.type === "ask" && B.me && m.slug === B.me.slug) askRead(); };
+  ws.onmessage = (e) => {
+    const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return;
+    let m; try { m = JSON.parse(d); } catch (er) { return; }
+    B.wsMsgs++;
+    if (m && m.type === "state") onState(m);
+    if (m && m.type === "library") emit("library", m);
+    if (m && m.type === "decide") emit("decide", m);
+    if (m && m.type === "data") emit("data", m);
+    if (m && m.type === "ask") { const matchMe = !B.me || (m.slug && (m.slug === B.me.slug || m.slug === (B.me.name && B.me.name.toLowerCase()))); if (m.ask && matchMe) { askAdopt(m.ask); askEmit(); } else if (matchMe) { askRead(); } }
+  };
   const down = () => {
     if (B.ws !== ws) return;
     B.ws = null; clearInterval(B.pingT); B.via = "poll";
     emit("status", status());
     schedulePoll(opened ? 0 : POLL_MS);
-    if (B.key) B.wsT = setTimeout(openWs, WS_RETRY_MS);
+    B.wsT = setTimeout(openWs, WS_RETRY_MS);
   };
   ws.onclose = down; ws.onerror = () => { down(); try { ws.close(); } catch (e) {} };
   return true;
@@ -367,7 +417,7 @@ async function mineFlush() {
   try { for (const s of ["when", "pack", "meet"]) if (o[s]) { const r = await mineSend(s, o[s]); if (!r.ok) break; } for (const f of (o.fix || [])) { const r = await mineSend("fix", f); if (!r.ok) break; } } finally { mineFlushing = false; }
 }
 const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
-const askStatus = () => ({ state: AK.st, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
+const askStatus = () => ({ state: AK.st, provider: getAiProvider(), isPrPreview: !!B.isPrPreview, providers: B.providers || null, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
 const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };
 const askAdopt = (a) => { AK.ask = a || null; AK.st = !a ? "idle" : a.status === "queued" ? "queued" : a.status === "answered" ? "answered" : "failed"; AK.err = ""; AK.retry = 0; if (AK.st === "queued") { if (!AK.since) AK.since = Date.now(); } else AK.since = 0; };
 async function askRead() {
@@ -377,7 +427,7 @@ async function askRead() {
   try {
     const r = await call("GET", "/ask");
     if (r.status === 200 && r.data) {
-      if (r.data.limit) AK.left = r.data.limit.left;
+      if (r.data.isPrPreview) B.isPrPreview = true; if (r.data.limit) AK.left = r.data.limit.left;
       if (AK.st !== "sending") askAdopt(r.data.ask);
       again = AK.st === "queued";
     } else if (r.status === 401) { B.keyBad = true; AK.st = "error"; AK.err = "key"; } else if (r.status !== 429) { again = AK.st === "queued"; }
@@ -385,20 +435,21 @@ async function askRead() {
   } catch (e) { B.errors++; again = AK.st === "queued"; }
   askEmit();
   const waited = Date.now() - AK.since;
-  if (again && AK.st === "queued" && waited < 600000) AK.t = setTimeout(askRead, hidden() ? 20000 : waited < 120000 ? 4000 : waited < 300000 ? 10000 : 20000);
+  if (again && AK.st === "queued" && waited < 600000) { const intv = B.via === "ws" ? 15000 : (hidden() ? 20000 : (waited < 120000 ? 4000 : waited < 300000 ? 10000 : 20000)); AK.t = setTimeout(askRead, intv); }
 }
-async function ask(text, share) {
+async function ask(text, share, provider) {
   const t = String(text == null ? "" : text).replace(/\s+/g, " ").trim(), n = Array.from(t).length;
+  const prov = B.isPrPreview ? "workers-ai" : (AI_PROVIDERS.includes(provider) ? provider : getAiProvider());
   if (!B.base || !B.key) return { ok: false, why: B.key ? "nowhere" : "no key" };
   if (n < 3) return { ok: false, why: "short" };
   if (n > 280) return { ok: false, why: "long" };
   if (AK.st === "sending" || AK.st === "queued") return { ok: false, why: "busy" };
   AK.st = "sending"; AK.err = ""; AK.retry = 0; clearTimeout(AK.t); askEmit();
   try {
-    const r = await call("POST", "/intent", { kind: "ask", patch: { text: t, share: share === true } }); B.sent++;
+    const r = await call("POST", "/intent", { kind: "ask", patch: { text: t, share: share === true, provider: prov } }); B.sent++;
     if (r.status === 200 && r.data && r.data.ok) {
       AK.left = typeof r.data.left === "number" ? r.data.left : AK.left;
-      AK.ask = { id: r.data.id, status: "queued", text: t, share: share === true, at: r.data.at, answer: null, sources: [] };
+      AK.ask = { id: r.data.id, status: "queued", text: t, share: share === true, provider: (r.data && r.data.provider) || prov, at: r.data.at, answer: null, sources: [] };
       AK.st = "queued"; AK.since = Date.now(); askEmit(); AK.t = setTimeout(askRead, 3000);
       return { ok: true, state: "queued" };
     }
@@ -427,12 +478,12 @@ function start(handlers) {
   if (!B.base) { B.via = "off"; emit("status", status()); return status(); }
   B.via = "poll";
   pollOnce();
-  if (B.key) openWs();
+  openWs();
   if (B.key) me(); else emit("me", null);
   if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", () => { if (!hidden() && B.via !== "ws") pollOnce(); });
   if (typeof addEventListener === "function") addEventListener("focus", () => { if (B.via !== "ws") pollOnce(); });
   return status();
 }
-function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); }
-window.BoardBrain = Object.freeze({ start, on, status, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
+function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); openWs(); }
+window.BoardBrain = Object.freeze({ start, on, status, url: apiUrl, bootstrap, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, getAiProvider, setAiProvider, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
 })();

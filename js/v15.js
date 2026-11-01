@@ -222,7 +222,16 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
     clearInterval(L.timer); L.timer = setInterval(refresh, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   }
-  const launchP = (async () => { try { const j = await (window.BoardFetch ? window.BoardFetch.json("data/launch.json", { cache: "no-store" }) : fetch("data/launch.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null))); return j && typeof j === "object" && !j.error ? j : null; } catch (e) { return null; } })();
+  const launchP = (async () => {
+    try {
+      const own = () => (window.BoardFetch ? window.BoardFetch.json("data/launch.json", { cache: "no-store" }) : fetch("data/launch.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)));
+      const b = window.BoardBrain && window.BoardBrain.bootstrap ? await window.BoardBrain.bootstrap() : null;
+      if (b && b.launchDoc && typeof b.launchDoc === "object" && !b.launchDoc.error) return b.launchDoc;
+      const u = window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/launch.json");
+      const j = u ? await fetch(u, { cache: "no-cache" }).then((res) => (res.ok ? res.json() : null)).catch(() => null).then((x) => (x != null ? x : own())) : await own();
+      return j && typeof j === "object" && !j.error ? j : null;
+    } catch (e) { return null; }
+  })();
   K.on("rendered", () => { launchP.then((j) => { if (j) K.D.launch = j; start(); }); });
   K.on("signups", () => { if (L.built) { renderFacts(); renderCheck(); } });
   K.on("tonight", () => { if (L.built) { renderStates(); renderCheck(); } });

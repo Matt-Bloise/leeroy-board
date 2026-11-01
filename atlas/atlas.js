@@ -24,7 +24,9 @@ export async function createAtlas(opts) {
   const parse = (txt) => (parsing = parsing.then(tick).then(() => JSON.parse(txt)));
   const getJSON = async (n, required) => {
     try {
-      const r = await fetch(dataUrl(n), { cache: "no-store" });
+      const api = n === "links.json" && typeof window !== "undefined" && window.BoardBrain && typeof window.BoardBrain.url === "function" ? window.BoardBrain.url("/atlas/links.json") : "";
+      let r = api ? await fetch(api, { cache: "no-store" }).catch(() => null) : null;
+      if (!r || !r.ok) r = await fetch(dataUrl(n), { cache: "no-store" });
       if (!r.ok) throw new Error(`${n} ${r.status}`);
       return typeof r.text === "function" ? await parse(await r.text()) : await r.json();
     } catch (e) {
