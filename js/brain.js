@@ -70,7 +70,11 @@ function bootstrap() {
         if (typeof j.ver === "number" && j.ver > B.ver) B.ver = j.ver;
         if (Array.isArray(j.launch)) B.launch = j.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null }));
         if (j.signups) B.signups = j.signups;
-        if (AI_PROVIDERS.includes(j.aiProvider) && !store.get("board-ai-provider")) B.aiProvider = j.aiProvider;
+        if (j.isPrPreview) B.isPrPreview = true;
+        if (j.providers && typeof j.providers === "object") B.providers = j.providers;
+        if (AI_PROVIDERS.includes(j.aiProvider)) {
+          if (j.isPrPreview || !store.get("board-ai-provider")) B.aiProvider = j.aiProvider;
+        }
         return j;
       }
       return null;
@@ -407,10 +411,10 @@ async function mineFlush() {
   mineFlushing = true;
   try { for (const s of ["when", "pack", "meet"]) if (o[s]) { const r = await mineSend(s, o[s]); if (!r.ok) break; } for (const f of (o.fix || [])) { const r = await mineSend("fix", f); if (!r.ok) break; } } finally { mineFlushing = false; }
 }
-const getAiProvider = () => { const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
-const setAiProvider = (prov) => { if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
+const getAiProvider = () => { if (B.isPrPreview) return "workers-ai"; const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
+const setAiProvider = (prov) => { if (B.isPrPreview) { B.aiProvider = "workers-ai"; return "workers-ai"; } if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
 const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
-const askStatus = () => ({ state: AK.st, provider: getAiProvider(), ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
+const askStatus = () => ({ state: AK.st, provider: getAiProvider(), isPrPreview: !!B.isPrPreview, providers: B.providers || null, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
 const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };
 const askAdopt = (a) => { AK.ask = a || null; AK.st = !a ? "idle" : a.status === "queued" ? "queued" : a.status === "answered" ? "answered" : "failed"; AK.err = ""; AK.retry = 0; if (AK.st === "queued") { if (!AK.since) AK.since = Date.now(); } else AK.since = 0; };
 async function askRead() {
@@ -420,7 +424,7 @@ async function askRead() {
   try {
     const r = await call("GET", "/ask");
     if (r.status === 200 && r.data) {
-      if (r.data.limit) AK.left = r.data.limit.left;
+      if (r.data.isPrPreview) B.isPrPreview = true; if (r.data.limit) AK.left = r.data.limit.left;
       if (AK.st !== "sending") askAdopt(r.data.ask);
       again = AK.st === "queued";
     } else if (r.status === 401) { B.keyBad = true; AK.st = "error"; AK.err = "key"; } else if (r.status !== 429) { again = AK.st === "queued"; }
@@ -432,7 +436,7 @@ async function askRead() {
 }
 async function ask(text, share, provider) {
   const t = String(text == null ? "" : text).replace(/\s+/g, " ").trim(), n = Array.from(t).length;
-  const prov = AI_PROVIDERS.includes(provider) ? provider : getAiProvider();
+  const prov = B.isPrPreview ? "workers-ai" : (AI_PROVIDERS.includes(provider) ? provider : getAiProvider());
   if (!B.base || !B.key) return { ok: false, why: B.key ? "nowhere" : "no key" };
   if (n < 3) return { ok: false, why: "short" };
   if (n > 280) return { ok: false, why: "long" };

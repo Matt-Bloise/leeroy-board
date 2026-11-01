@@ -9,7 +9,13 @@
 // =============================================================================
 
 import { BoardRoom } from "./room.js";
-import { answerWithAi, resolveAiProvider, isProviderConfigured, AI_PROVIDER_LABELS } from "./ai-models.js";
+import {
+  answerWithAi,
+  resolveAiProvider,
+  isProviderConfigured,
+  isPrPreviewEnv,
+  AI_PROVIDER_LABELS,
+} from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
@@ -448,11 +454,12 @@ export default {
 
       // 1c. GET /ask -> Returns latest Q&A turn for `js/brain.js` (`askRead()`)
       if (req.method === "GET" && path === "/ask") {
+        const isPrPreview = isPrPreviewEnv(env);
         const row = await env.DB.prepare(
           "SELECT * FROM ask_turns ORDER BY created_at DESC LIMIT 1"
         ).first();
         if (!row) {
-          return jsonResp({ ask: null, limit: { left: 6 }, aiProvider: resolveAiProvider(env) }, 200, cors);
+          return jsonResp({ ask: null, limit: { left: 6 }, isPrPreview, aiProvider: resolveAiProvider(env) }, 200, cors);
         }
         const status =
           row.status === "thinking" || row.status === "pending"
@@ -460,9 +467,11 @@ export default {
             : row.status === "answered"
             ? "answered"
             : "failed";
-        const [provider, model] = String(row.model || "").includes(":")
-          ? String(row.model).split(/:(.+)/)
-          : [resolveAiProvider(env), row.model || null];
+        const [provider, model] = isPrPreview
+          ? ["workers-ai", row.model || "workers-ai"]
+          : String(row.model || "").includes(":")
+            ? String(row.model).split(/:(.+)/)
+            : [resolveAiProvider(env), row.model || null];
         let sources = [];
         try {
           sources = JSON.parse(row.cites_json || "[]");
@@ -482,6 +491,7 @@ export default {
               answeredAt: row.answered_at || null,
             },
             limit: { left: 6 },
+            isPrPreview,
             aiProvider: resolveAiProvider(env),
           },
           200,
@@ -585,7 +595,17 @@ export default {
             ).all(),
             buildPartySheetsFromD1(env),
           ]);
-          const bundle = { aiProvider: resolveAiProvider(env), partySheets };
+          const isPrPreview = isPrPreviewEnv(env);
+          const providers = {};
+          for (const k of Object.keys(AI_PROVIDER_LABELS)) {
+            providers[k] = isProviderConfigured(env, k);
+          }
+          const bundle = {
+            aiProvider: resolveAiProvider(env),
+            isPrPreview,
+            providers,
+            partySheets,
+          };
           for (const row of results || []) {
             try {
               bundle[row.key] = JSON.parse(row.json);
@@ -777,7 +797,8 @@ export default {
           const patch = body.patch && typeof body.patch === "object" ? body.patch : {};
           const question = String(patch.text || body.q || body.text || "").trim();
           const share = patch.share !== undefined ? Boolean(patch.share) : true;
-          const requestedProvider = patch.provider || body.provider || env.AI_PROVIDER;
+          const isPrPreview = isPrPreviewEnv(env);
+          const requestedProvider = isPrPreview ? "workers-ai" : (patch.provider || body.provider || env.AI_PROVIDER);
           const activeProvider = resolveAiProvider(env, requestedProvider);
 
           if (!question) return jsonResp({ error: "Missing question" }, 400, cors);
@@ -808,7 +829,7 @@ export default {
               question,
               deep: Boolean(body.deep || patch.deep),
               share,
-              provider: requestedProvider || activeProvider,
+              provider: activeProvider,
             })
           );
 
@@ -817,7 +838,7 @@ export default {
               ok: true,
               id: numericIntentId,
               status: "thinking",
-              provider: requestedProvider || activeProvider,
+              provider: activeProvider,
               at: now,
               left: 5,
             },
@@ -911,6 +932,7 @@ export default {
 
       // 6. Health check
       if (req.method === "GET" && (path === "/" || path === "/health")) {
+        const isPrPreview = isPrPreviewEnv(env);
         const providers = {};
         for (const k of Object.keys(AI_PROVIDER_LABELS)) {
           providers[k] = isProviderConfigured(env, k);
@@ -920,6 +942,7 @@ export default {
             ok: true,
             service: "leeroy-brain",
             runtime: "cloudflare-workers-d1",
+            isPrPreview,
             aiProvider: resolveAiProvider(env),
             providers,
           },

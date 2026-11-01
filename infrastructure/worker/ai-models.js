@@ -73,7 +73,22 @@ export function repairHouseVoice(rawText, opts = {}) {
   return out.replace(/\s{2,}/g, " ").trim();
 }
 
+export function isPrPreviewEnv(env) {
+  if (!env) return false;
+  return (
+    String(env.IS_PR_PREVIEW || "").toLowerCase() === "true" ||
+    String(env.IS_PR_PREVIEW || "") === "1" ||
+    Boolean(env.PR_NUMBER) ||
+    String(env.WORKER_NAME || "").includes("-pr-")
+  );
+}
+
 export function isProviderConfigured(env, provider) {
+  if (isPrPreviewEnv(env)) {
+    // In ephemeral PR preview environments, strictly enforce free zero-key AI models
+    return provider === "workers-ai" && Boolean(env.AI && typeof env.AI.run === "function");
+  }
+
   switch (provider) {
     case "claude":
       return Boolean(env.ANTHROPIC_API_KEY);
@@ -95,6 +110,11 @@ export function isProviderConfigured(env, provider) {
 }
 
 export function resolveAiProvider(env, requestedProvider) {
+  if (isPrPreviewEnv(env)) {
+    // In ephemeral PR preview environments, only free AI models are permitted
+    return "workers-ai";
+  }
+
   const valid = Object.keys(AI_PROVIDER_LABELS);
   const req = String(requestedProvider || "").toLowerCase().trim();
   if (valid.includes(req) && isProviderConfigured(env, req)) {
@@ -286,6 +306,9 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
 }
 
 export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep }) {
+  if (isPrPreviewEnv(env) && provider !== "workers-ai") {
+    provider = "workers-ai";
+  }
   switch (provider) {
     case "gemini":
       return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep });
@@ -446,9 +469,11 @@ export async function answerWithAi({
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
-    const chosenProvider = Object.prototype.hasOwnProperty.call(AI_PROVIDER_LABELS, reqClean)
-      ? reqClean
-      : resolveAiProvider(env, requestedProvider);
+    const chosenProvider = isPrPreviewEnv(env)
+      ? "workers-ai"
+      : (Object.prototype.hasOwnProperty.call(AI_PROVIDER_LABELS, reqClean) && isProviderConfigured(env, reqClean))
+        ? reqClean
+        : resolveAiProvider(env, requestedProvider);
     const activeProvider = resolveAiProvider(env, chosenProvider);
     let rawAnswer, model, provider;
     try {

@@ -282,7 +282,7 @@ function refusal(r, st) {
 function say(t) { if (sayEl.textContent !== t) sayEl.textContent = t; }
 function compose(st) {
   const live0 = liveOk(st), busy = busyOk(st);
-  if (st && st.provider && modelSel.value !== st.provider) modelSel.value = st.provider;
+  if (st && st.isPrPreview) { for (const opt of Array.from(modelSel.options)) { if (opt.value !== "workers-ai") { opt.disabled = true; opt.hidden = true; } else { opt.textContent = "Model: Cloudflare Workers AI (Llama 3.3 70B · Free)"; } } modelSel.value = "workers-ai"; } else if (st && st.provider && modelSel.value !== st.provider) { modelSel.value = st.provider; }
   note.hidden = live0; if (!live0) note.textContent = noteText();
   input.disabled = !live0 || busy; sendBtn.disabled = live0 && busy; shareBox.disabled = !live0 || busy; modelSel.disabled = !live0 || busy;
   sendBtn.setAttribute("aria-disabled", String(!live0 || busy)); form.classList.toggle("ch-off", !live0);

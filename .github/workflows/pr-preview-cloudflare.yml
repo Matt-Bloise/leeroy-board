@@ -69,7 +69,8 @@ jobs:
             exit 1
           fi
 
-          # Patch wrangler.toml with PR-specific Worker name, D1 name/ID, and remove [triggers]
+          # Patch wrangler.toml with PR-specific Worker name, D1 name/ID, set AI_PROVIDER="workers-ai",
+          # mark IS_PR_PREVIEW="true", add PR Pages preview to ALLOWED_ORIGINS, and remove [triggers]
           # so PR previews do not consume the 5-Cron-Trigger Free-Tier account limit.
           node -e '
             const fs = require("fs");
@@ -78,6 +79,12 @@ jobs:
             toml = toml.replace(/database_name\s*=\s*".*"/, `database_name = "${process.env.D1_DATABASE_NAME}"`);
             toml = toml.replace(/database_id\s*=\s*".*"/, `database_id = "${process.argv[1]}"`);
             toml = toml.replace(/\[triggers\][\s\S]*?crons\s*=\s*\[[^\]]*\]\r?\n?/, "");
+            toml = toml.replace(/AI_PROVIDER\s*=\s*".*"/, `AI_PROVIDER = "workers-ai"`);
+            const prOrigin = `https://${process.env.PAGES_BRANCH}.${process.env.PAGES_PROJECT_NAME}.pages.dev`;
+            toml = toml.replace(/ALLOWED_ORIGINS\s*=\s*"([^"]*)"/, (m, orig) => `ALLOWED_ORIGINS = "${orig},${prOrigin}"`);
+            if (!toml.includes("IS_PR_PREVIEW")) {
+              toml = toml.replace(/\[vars\]/, `[vars]\nIS_PR_PREVIEW = "true"\nWORKER_NAME = "${process.env.WORKER_NAME}"`);
+            }
             fs.writeFileSync("wrangler.toml", toml, "utf8");
           ' "$DB_ID"
 
@@ -113,23 +120,16 @@ jobs:
           fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Sync Secrets to Ephemeral PR Worker (Excludes Live Discord Webhook)
+      - name: Sync Admin Secret to Ephemeral PR Worker (Zero AI Keys Injected)
         working-directory: infrastructure
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-          GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_MODELS_TOKEN }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
         run: |
-          for SECRET_NAME in ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY BOARD_ADMIN_TOKEN; do
-            SECRET_VAL="${!SECRET_NAME}"
-            if [ -n "$SECRET_VAL" ]; then
-              printf "%s" "$SECRET_VAL" | npx wrangler secret put "$SECRET_NAME" --name "$WORKER_NAME"
-            fi
-          done
+          # Ephemeral PR environments run with ZERO external AI keys and strictly use free Cloudflare Workers AI.
+          # Live Discord webhook and external paid AI keys are intentionally omitted.
+          if [ -n "$BOARD_ADMIN_TOKEN" ]; then
+            printf "%s" "$BOARD_ADMIN_TOKEN" | npx wrangler secret put BOARD_ADMIN_TOKEN --name "$WORKER_NAME"
+          fi
 
       - name: Stage Static Site (Wired to PR Worker) & Deploy to Cloudflare Pages Preview
         id: pages
@@ -178,8 +178,9 @@ jobs:
               `| **Frontend (Cloudflare Pages)** | [${previewUrl}](${previewUrl}) | 🟢 Live (\`${sha}\`) |`,
               `| **API & WebSockets (Worker + DO)** | [\`${workerUrl}/api/health\`](${workerUrl}/api/health) | 🟢 Isolated \`BoardRoom\` |`,
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
+              `| **AI Model (Zero Keys)** | Cloudflare Workers AI (\`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`) | 🟢 Free Tier (No External Keys) |`,
               "",
-              "_This environment is 100% isolated from production and will be **automatically torn down** when this PR is merged or closed._"
+              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, uses only the free native Cloudflare Workers AI model, and will be **automatically torn down** when this PR is merged or closed._"
             ].join("\n");
 
             const { data: comments } = await github.rest.issues.listComments({

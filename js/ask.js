@@ -51,7 +51,7 @@ function tally() { const n = len(); count.textContent = `${n} / ${MAX}`; count.c
 function say(t) { if (stat.textContent !== t) stat.textContent = t; }
 function paint(s) {
   cur = s;
-  if (s && s.provider && modelSel.value !== s.provider) modelSel.value = s.provider;
+  if (s && s.isPrPreview) { for (const opt of Array.from(modelSel.options)) { if (opt.value !== "workers-ai") { opt.disabled = true; opt.hidden = true; } else { opt.textContent = "Model: Cloudflare Workers AI (Llama 3.3 70B · Free)"; } } modelSel.value = "workers-ai"; } else if (s && s.provider && modelSel.value !== s.provider) { modelSel.value = s.provider; }
   const live = s.base && s.key && !s.keyBad;
   note.hidden = live; form.hidden = !live;
   note.textContent = !s.base ? NOTE.off : s.keyBad ? NOTE.bad : NOTE.none;
