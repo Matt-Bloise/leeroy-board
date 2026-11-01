@@ -291,7 +291,7 @@ function refusal(r, st) {
   if (why === "long") return `That is over the ${MAX} character limit.`;
   if (why === "open" || (why === "busy" && st.state !== "error")) return "One question at a time: Leeroy is still on the last one.";
   if (why === "no key" || why === "nowhere" || why === "key") return noteText();
-  return ERR[why] || ERR[st.error] || ERR.busy;
+  return ERR[why] || ERR[st.error] || (typeof st.error === "string" && st.error) || ERR.busy;
 }
 function say(t) { if (sayEl.textContent !== t) sayEl.textContent = t; }
 function compose(st) {

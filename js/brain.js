@@ -464,8 +464,9 @@ async function ask(text, share, provider) {
       AK.err = r.data && r.data.error ? r.data.error : "limited";
     }
     else if (r.status === 401 && B.key) { B.keyBad = true; AK.st = "error"; AK.err = "key"; }
+    else if (r.status === 401 && !B.key) { AK.st = "error"; AK.err = "no key"; }
     else if (r.status === 400) { AK.st = "error"; AK.err = "refused"; }
-    else { AK.st = "error"; AK.err = "busy"; }
+    else { AK.st = "error"; AK.err = (r.data && r.data.error) || "busy"; }
   } catch (e) { B.errors++; AK.st = "error"; AK.err = "offline"; }
   askEmit();
   return { ok: false, why: AK.st === "limited" ? "limited" : AK.err };
