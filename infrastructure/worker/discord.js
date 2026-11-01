@@ -384,7 +384,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
           at: now,
         });
         await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/launch.json"]);
-        await broadcastToRoom(env, { type: "data", key: "launch" });
+        await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
       }
       const summary = rows.length
         ? rows.map((r) => `• **${r.name}:** ${r.state}`).join("\n")
@@ -452,7 +452,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
             .bind(JSON.stringify(doc), doc.updated)
             .run();
           await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json"]);
-          await broadcastToRoom(env, { type: "data", key: "signups" });
+          await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
         }
         return new Response(
           JSON.stringify({
@@ -487,7 +487,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
           .bind(JSON.stringify(doc), doc.updated)
           .run();
         await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json"]);
-        await broadcastToRoom(env, { type: "data", key: "signups" });
+        await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
       }
       return new Response(
         JSON.stringify({

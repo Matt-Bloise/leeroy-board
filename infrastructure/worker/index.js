@@ -105,10 +105,13 @@ function isAuthorized(req, url, env) {
   return /^[A-Za-z0-9_-]{22,64}$/.test(k);
 }
 
-export async function purgeWorkerCache(origin, paths) {
+export async function purgeWorkerCache(origin, paths = []) {
   const cache = caches.default;
+  const allPaths = new Set(paths);
+  allPaths.add("/api/state");
+  allPaths.add("/api/bootstrap");
   await Promise.all(
-    paths.map((p) => cache.delete(new Request(`${origin}${p}`, { method: "GET" })).catch(() => false))
+    [...allPaths].map((p) => cache.delete(new Request(`${origin}${p}`, { method: "GET" })).catch(() => false))
   );
 }
 
@@ -128,6 +131,19 @@ export async function broadcastToRoom(env, payload) {
 
 export async function buildPartySheetsFromD1(env) {
   const now = new Date().toISOString();
+
+  // 1. Fast path: Read pre-materialized party sheets from kv_state (single point lookup)
+  try {
+    const cachedRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").first();
+    if (cachedRow && cachedRow.json) {
+      const parsed = JSON.parse(cachedRow.json);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return { party: parsed, seq: Date.now() };
+      }
+    }
+  } catch {}
+
+  // 2. Slow path / bootstrap fallback: Reconstruct from base + sheet_events
   const bySlug = new Map();
 
   for (const m of PARTY_MEMBERS) {
@@ -167,17 +183,46 @@ export async function buildPartySheetsFromD1(env) {
   } catch {}
 
   const party = [...bySlug.values()];
+  try {
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, ?)"
+    )
+      .bind(JSON.stringify(party), now)
+      .run();
+  } catch {}
+
   return { party, seq: Date.now() };
 }
 
 export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
-  await env.DB.prepare(
-    "INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  )
-    .bind(slug, name, field, valJson, visible ? 1 : 0, source, now)
-    .run();
+
+  // 1. Rebuild updated party sheets
+  const { party: currentParty } = await buildPartySheetsFromD1(env);
+  let memberSheet = currentParty.find((m) => m.slug === slug);
+  if (!memberSheet) {
+    memberSheet = { slug, name: name || slug, fields: {}, updated: now };
+    currentParty.push(memberSheet);
+  }
+  memberSheet.fields = memberSheet.fields || {};
+  memberSheet.fields[field] = {
+    value,
+    visible: Boolean(visible),
+    source: source || "board",
+    at: now,
+  };
+  memberSheet.updated = now;
+
+  // 2. Prepare batch updates (insert event + materialize party_sheets + sync party doc if needed)
+  const batchStatements = [
+    env.DB.prepare(
+      "INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).bind(slug, name, field, valJson, visible ? 1 : 0, source, now),
+    env.DB.prepare(
+      "INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, ?)"
+    ).bind(JSON.stringify(currentParty), now),
+  ];
 
   // Also sync common fields back into kv_state['party']
   try {
@@ -191,23 +236,28 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
         if (field === "race") m.race = String(value);
         if (field === "class") m.class = String(value);
         if (field === "spec_path") m.spec = String(value);
-        await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'party'")
-          .bind(JSON.stringify(partyDoc), now)
-          .run();
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json"]);
+        batchStatements.push(
+          env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'party'")
+            .bind(JSON.stringify(partyDoc), now)
+        );
       }
     }
   } catch {}
 
-  const { party } = await buildPartySheetsFromD1(env);
-  await broadcastToRoom(env, { type: "state", party });
-  return { party, at: now };
+  await env.DB.batch(batchStatements);
+  await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
+  await broadcastToRoom(env, { type: "state", party: currentParty });
+  return { party: currentParty, at: now };
 }
 
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
-    const cors = corsHeaders(req, env);
+    const verdict = originVerdict(req, env);
+    if (!verdict.ok) {
+      return new Response("Forbidden Origin", { status: 403 });
+    }
+    const cors = buildCorsHeaders(verdict.origin);
 
     if (req.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
@@ -331,40 +381,54 @@ export default {
       // 1. WebSocket / Live State -> Durable Object (`BoardRoom`) + D1 state
       if (path === "/live" || path === "/state") {
         if (path === "/state" && req.method === "GET") {
-          const [{ results }, { party }] = await Promise.all([
-            env.DB.prepare(
-              "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
-            ).all(),
-            buildPartySheetsFromD1(env),
-          ]);
-          const map = {};
-          for (const row of results || []) {
-            try {
-              map[row.key] = JSON.parse(row.json);
-            } catch {}
+          const cache = caches.default;
+          const cacheKey = new Request(`${url.origin}/api/state`, { method: "GET" });
+          let resp = await cache.match(cacheKey);
+          if (!resp) {
+            const [{ results }, { party }] = await Promise.all([
+              env.DB.prepare(
+                "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
+              ).all(),
+              buildPartySheetsFromD1(env),
+            ]);
+            const map = {};
+            for (const row of results || []) {
+              try {
+                map[row.key] = JSON.parse(row.json);
+              } catch {}
+            }
+            const now = new Date().toISOString();
+            resp = jsonResp(
+              {
+                type: "state",
+                ver: 1,
+                at: now,
+                party,
+                signups: map.signups || null,
+                partyDoc: map.party || null,
+                tonight: map.tonight || null,
+                timeline: map.timeline || null,
+                stats: map.stats || null,
+                decide: map.decide || null,
+                launch: Array.isArray(map.launch)
+                  ? map.launch
+                  : map.launch && Array.isArray(map.launch.rows)
+                  ? map.launch.rows
+                  : [],
+              },
+              200,
+              {
+                ...cors,
+                "Cache-Control": "public, max-age=10, s-maxage=30, stale-while-revalidate=60",
+              }
+            );
+            ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+          } else {
+            const headers = new Headers(resp.headers);
+            for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+            resp = new Response(resp.body, { status: resp.status, headers });
           }
-          const now = new Date().toISOString();
-          return jsonResp(
-            {
-              type: "state",
-              ver: 1,
-              at: now,
-              party,
-              signups: map.signups || null,
-              partyDoc: map.party || null,
-              tonight: map.tonight || null,
-              timeline: map.timeline || null,
-              stats: map.stats || null,
-              decide: map.decide || null,
-              launch: Array.isArray(map.launch)
-                ? map.launch
-                : map.launch && Array.isArray(map.launch.rows)
-                ? map.launch.rows
-                : [],
-            },
-            200,
-            cors
-          );
+          return resp;
         }
         const id = env.BOARD_ROOM.idFromName("global");
         const stub = env.BOARD_ROOM.get(id);
@@ -656,12 +720,25 @@ export default {
       if (path.startsWith("/data/") || path.startsWith("/atlas/")) {
         const raw = decodeURIComponent(path.split("/").pop() || "").replace(/\.json$/, "");
         if (req.method === "GET") {
-          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(raw).first();
-          if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
-          return jsonResp(row.json, 200, {
-            ...cors,
-            "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
-          });
+          const cache = caches.default;
+          const cacheKey = new Request(`${url.origin}/api${path.startsWith("/") ? path : `/${path}`}`, { method: "GET" });
+          let resp = await cache.match(cacheKey);
+          if (!resp) {
+            const row = await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first();
+            if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
+            const etag = `"${raw}-${row.updated_at || '1'}"`;
+            resp = jsonResp(row.json, 200, {
+              ...cors,
+              ETag: etag,
+              "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
+            });
+            ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+          } else {
+            const headers = new Headers(resp.headers);
+            for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+            resp = new Response(resp.body, { status: resp.status, headers });
+          }
+          return resp;
         }
         if (req.method === "PUT") {
           const auth = await resolveMemberAuth(req, url, env);
@@ -674,7 +751,7 @@ export default {
             .bind(raw, JSON.stringify(body), now)
             .run();
           await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/data/${raw}.json`]);
-          await broadcastToRoom(env, { type: "data", key: raw });
+          await broadcastToRoom(env, { type: "data", key: raw, data: body });
           return jsonResp({ ok: true, key: raw, updated_at: now }, 200, cors);
         }
       }
@@ -736,7 +813,7 @@ export default {
             .bind(JSON.stringify(doc), now)
             .run();
           await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json"]);
-          await broadcastToRoom(env, { type: "data", key: "signups" });
+          await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
           return jsonResp({ ok: true, id: numericIntentId, seq: numericIntentId, at: now }, 200, cors);
         }
 
@@ -788,6 +865,7 @@ export default {
               at: now,
             });
             await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/launch.json"]);
+            await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
           }
           return jsonResp({ ok: true, id: numericIntentId, seq: numericIntentId, at: now }, 200, cors);
         }

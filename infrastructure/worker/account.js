@@ -107,10 +107,11 @@ async function login(request, env, ip, now, deps) {
   id = null;
   const token = newToken();
   const expires = now + ACCOUNT.sessionDays * 86400000;
-  await env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now).run();
-  await env.DB.prepare("INSERT INTO sessions (token_hash, user_key, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?, ?)").bind(await sessionHash(token), user, now, expires, now).run();
-  // keep the newest few sessions per person
-  await env.DB.prepare("DELETE FROM sessions WHERE user_key = ? AND token_hash NOT IN (SELECT token_hash FROM sessions WHERE user_key = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)").bind(user, user, ACCOUNT.maxSessionsPerUser).run();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
+    env.DB.prepare("INSERT INTO sessions (token_hash, user_key, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?, ?)").bind(await sessionHash(token), user, now, expires, now),
+    env.DB.prepare("DELETE FROM sessions WHERE user_key = ? AND token_hash NOT IN (SELECT token_hash FROM sessions WHERE user_key = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)").bind(user, user, ACCOUNT.maxSessionsPerUser),
+  ]);
   return [200, { session: token, expires_at: expires }];
 }
 
@@ -166,8 +167,10 @@ export async function handleAccount(request, env, { path, ip, now, deps = {} }) 
   if (path === "/me") {
     if (m === "GET" || m === "HEAD") return [200, { user: s.user_key.slice(0, 8), expires_at: s.expires_at }];
     if (m === "DELETE") { // a real erase: every session and every document of this person
-      await env.DB.prepare("DELETE FROM user_state WHERE user_key = ?").bind(s.user_key).run();
-      await env.DB.prepare("DELETE FROM sessions WHERE user_key = ?").bind(s.user_key).run();
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM user_state WHERE user_key = ?").bind(s.user_key),
+        env.DB.prepare("DELETE FROM sessions WHERE user_key = ?").bind(s.user_key),
+      ]);
       return [200, { erased: true }];
     }
     return [405, { error: "method not allowed" }, { Allow: "GET, DELETE, OPTIONS" }];

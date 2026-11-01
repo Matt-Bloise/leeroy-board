@@ -169,7 +169,7 @@ export async function recomputeCategoryAndIndex(env, categoryKey, changeEntry = 
 export async function runScheduledSourceSweep(env, origin, opts = {}) {
   const now = new Date().toISOString();
   const { results: sources } = await env.DB.prepare(
-    "SELECT * FROM lib_sources ORDER BY COALESCE(checked_at, '1970-01-01') ASC LIMIT 12"
+    "SELECT * FROM lib_sources ORDER BY checked_at ASC LIMIT 12"
   ).all();
 
   let checked = 0;
@@ -204,28 +204,29 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
       const didChange = Boolean(src.sha8 && src.sha8 !== newSha8);
       if (didChange) changed++;
 
-      await env.DB.prepare(
-        "UPDATE lib_sources SET etag = ?, last_modified = ?, sha8 = ?, checked_at = ?, status = '200', changed_count = changed_count + ? WHERE id = ?"
-      )
-        .bind(
+      const sourceUpdateStmts = [
+        env.DB.prepare(
+          "UPDATE lib_sources SET etag = ?, last_modified = ?, sha8 = ?, checked_at = ?, status = '200', changed_count = changed_count + ? WHERE id = ?"
+        ).bind(
           resp.headers.get("ETag") || src.etag || null,
           resp.headers.get("Last-Modified") || src.last_modified || null,
           newSha8,
           now,
           didChange ? 1 : 0,
           src.id
-        )
-        .run();
+        ),
+      ];
 
       // Store stripped text snapshot in D1 `lib_source_snapshots` when new or changed
       if ((isFirstSnapshot || didChange) && cleanText) {
         const snapId = `${src.id}_${newSha8}`;
-        await env.DB.prepare(
-          "INSERT OR REPLACE INTO lib_source_snapshots (id, source_id, url, sha8, body_text, fetched_at) VALUES (?, ?, ?, ?, ?, ?)"
-        )
-          .bind(snapId, src.id, src.url, newSha8, cleanText, now)
-          .run();
+        sourceUpdateStmts.push(
+          env.DB.prepare(
+            "INSERT OR REPLACE INTO lib_source_snapshots (id, source_id, url, sha8, body_text, fetched_at) VALUES (?, ?, ?, ?, ?, ?)"
+          ).bind(snapId, src.id, src.url, newSha8, cleanText, now)
+        );
       }
+      await env.DB.batch(sourceUpdateStmts);
 
       // Run AI fact learner (`wiki-learn.mjs` replacement) when a monitored source changes
       if (didChange && cleanText) {

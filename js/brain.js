@@ -61,7 +61,7 @@ function baseFor() {
 B.base = baseFor();
 const apiUrl = (path) => (B.base && path ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
 let BOOT_P = null;
-function bootstrap() {
+function bootstrap(force = false) { if (force) BOOT_P = null;
   if (!B.base) return Promise.resolve(null);
   return (BOOT_P ||= fetch(`${B.base.http}/bootstrap`, { cache: "no-cache", credentials: "omit" })
     .then((r) => (r.ok ? r.json() : null))
@@ -224,7 +224,7 @@ function schedulePoll(ms) { clearTimeout(B.pollT); B.pollT = setTimeout(pollOnce
 async function pollOnce() {
   if (!B.base) return;
   if (B.via === "ws") return;
-  if (hidden()) { schedulePoll(POLL_MS); return; }
+  if (hidden()) return;
   try {
     const r = await call("GET", `/state${B.ver ? `?ver=${B.ver}` : ""}`); B.polls++;
     if (r.status === 200) { onState(r.data); B.errors = 0; } else B.errors++;
@@ -247,7 +247,7 @@ function openWs() {
     if (m && m.type === "library") emit("library", m);
     if (m && m.type === "decide") emit("decide", m);
     if (m && m.type === "data") emit("data", m);
-    if (m && m.type === "ask" && B.me && m.slug === B.me.slug) askRead();
+    if (m && m.type === "ask") { const matchMe = !B.me || (m.slug && (m.slug === B.me.slug || m.slug === (B.me.name && B.me.name.toLowerCase()))); if (m.ask && matchMe) { askAdopt(m.ask); askEmit(); } else if (matchMe) { askRead(); } }
   };
   const down = () => {
     if (B.ws !== ws) return;
@@ -432,7 +432,7 @@ async function askRead() {
   } catch (e) { B.errors++; again = AK.st === "queued"; }
   askEmit();
   const waited = Date.now() - AK.since;
-  if (again && AK.st === "queued" && waited < 600000) AK.t = setTimeout(askRead, hidden() ? 20000 : waited < 120000 ? 4000 : waited < 300000 ? 10000 : 20000);
+  if (again && AK.st === "queued" && waited < 600000) { const intv = B.via === "ws" ? 15000 : (hidden() ? 20000 : (waited < 120000 ? 4000 : waited < 300000 ? 10000 : 20000)); AK.t = setTimeout(askRead, intv); }
 }
 async function ask(text, share, provider) {
   const t = String(text == null ? "" : text).replace(/\s+/g, " ").trim(), n = Array.from(t).length;

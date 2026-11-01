@@ -15,6 +15,26 @@ export async function hashKey(env, key) {
   return sha256Hex(`${env.KEY_SALT}:${key}`);
 }
 
+let cachedMembers = null;
+let cachedMembersAt = 0;
+const MEMBERS_TTL_MS = 15 * 60 * 1000; // 15 minutes in-memory isolate cache
+
+export function invalidateMembersCache() {
+  cachedMembers = null;
+  cachedMembersAt = 0;
+}
+
+export async function getMembers(env) {
+  const now = Date.now();
+  if (cachedMembers && now - cachedMembersAt < MEMBERS_TTL_MS) {
+    return cachedMembers;
+  }
+  const { results } = await env.DB.prepare("SELECT slug, key_hash FROM members").all();
+  cachedMembers = results || [];
+  cachedMembersAt = now;
+  return cachedMembers;
+}
+
 // Returns { slug } for a good key, { configured: false } when the salt is missing, or null. Every stored hash is compared,
 // so the time taken does not depend on which member (if any) matched.
 export async function authenticate(request, env) {
@@ -22,9 +42,9 @@ export async function authenticate(request, env) {
   const key = keyFromRequest(request);
   if (!key) return null;
   const h = await hashKey(env, key);
-  const { results } = await env.DB.prepare("SELECT slug, key_hash FROM members").all();
+  const members = await getMembers(env);
   let slug = null;
-  for (const row of results || []) {
+  for (const row of members) {
     const same = timingSafeEqualStr(row.key_hash, h);
     if (same) slug = row.slug;
   }

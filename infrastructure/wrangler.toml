@@ -3,9 +3,11 @@ main = "worker/index.js"
 compatibility_date = "2025-02-01"
 workers_dev = true
 
-# 15-minute autonomous source sweep (Blizzard news, Wowhead, Raidplan, Wiki)
+# 6-Hour autonomous source sweep (Blizzard news, Wowhead, Raidplan, Wiki)
+# 4 runs/day keeps background AI fact extraction strictly under the 10,000 Workers AI neuron/day free limit.
+# Live on-demand refreshes remain available via UI and /intent { kind: "refresh" }.
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["0 */6 * * *"]
 
 # Cloudflare D1 Serverless SQLite Database (Free Tier: 5 GB storage, 5M reads/day, 100k writes/day)
 [[d1_databases]]

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS lib_sources (
   status TEXT NOT NULL DEFAULT 'ok',
   changed_count INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_lib_sources_checked ON lib_sources(checked_at ASC);
 
 -- 5. Clean extracted text snapshots of monitored wiki sources (replaces wow-mage/wiki/sources/*.txt)
 CREATE TABLE IF NOT EXISTS lib_source_snapshots (
@@ -107,6 +108,8 @@ CREATE TABLE IF NOT EXISTS fact_fixes (
   by_name TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_fact_fixes_page ON fact_fixes(page_id);
+CREATE INDEX IF NOT EXISTS idx_fact_fixes_created ON fact_fixes(created_at DESC);
 
 -- 9. Event-sourced Party Character Sheet log (replaces wow-mage/cloudflare/worker/src/brain.js sheet_events)
 CREATE TABLE IF NOT EXISTS sheet_events (

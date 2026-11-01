@@ -362,6 +362,42 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
   }
 }
 
+let cachedParsedPages = null;
+let cachedPagesAt = 0;
+const PAGES_TTL_MS = 15 * 60 * 1000; // 15 minutes in-memory isolate cache
+
+export function invalidatePagesCache() {
+  cachedParsedPages = null;
+  cachedPagesAt = 0;
+}
+
+export async function getParsedLibraryPages(env) {
+  const now = Date.now();
+  if (cachedParsedPages && now - cachedPagesAt < PAGES_TTL_MS) {
+    return cachedParsedPages;
+  }
+  const { results: pages } = await env.DB.prepare(
+    "SELECT id, category, title, as_of, blurb, aliases_json, facts_json, open_json FROM lib_pages"
+  ).all();
+  cachedParsedPages = (pages || []).map((p) => {
+    let aliases = [],
+      facts = [],
+      open = [];
+    try {
+      aliases = JSON.parse(p.aliases_json || "[]");
+    } catch {}
+    try {
+      facts = JSON.parse(p.facts_json || "[]");
+    } catch {}
+    try {
+      open = JSON.parse(p.open_json || "[]");
+    } catch {}
+    return { ...p, aliases, facts, open };
+  });
+  cachedPagesAt = now;
+  return cachedParsedPages;
+}
+
 export async function answerWithAi({
   env,
   origin,
@@ -379,27 +415,11 @@ export async function answerWithAi({
 
   try {
     // 1. Pull relevant library pages & full party/schedule state from D1 for grounded RAG context
-    const [{ results: pages }, { results: stateRows }, partySheets] = await Promise.all([
-      env.DB.prepare("SELECT id, category, title, as_of, blurb, aliases_json, facts_json, open_json FROM lib_pages").all(),
+    const [parsedPages, { results: stateRows }, partySheets] = await Promise.all([
+      getParsedLibraryPages(env),
       env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
       buildPartySheetsFromD1(env),
     ]);
-
-    const parsedPages = (pages || []).map((p) => {
-      let aliases = [],
-        facts = [],
-        open = [];
-      try {
-        aliases = JSON.parse(p.aliases_json || "[]");
-      } catch {}
-      try {
-        facts = JSON.parse(p.facts_json || "[]");
-      } catch {}
-      try {
-        open = JSON.parse(p.open_json || "[]");
-      } catch {}
-      return { ...p, aliases, facts, open };
-    });
 
     // Score individual facts & open questions using `vendor/rank-core.js` (TF-IDF + stemming + synonyms + role/lead boosts)
     const { words, hits } = rankWikiCore(question, parsedPages, { hays: factHays(parsedPages) });
@@ -683,22 +703,6 @@ export async function extractWikiFactsWithAi({ env, source, cleanText }) {
       const oldVal = existing ? existing.value : null;
       if (oldVal === prop.proposed_value) continue;
 
-      const propId = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-      await env.DB.prepare(
-        "INSERT INTO wiki_proposals (id, source_id, page_id, fact_key, old_value, proposed_value, confidence, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'applied', ?)"
-      )
-        .bind(
-          propId,
-          source.id,
-          page.id,
-          prop.fact_key,
-          oldVal,
-          String(prop.proposed_value),
-          prop.confidence || "confirmed",
-          now
-        )
-        .run();
-
       if (existing) {
         existing.value = String(prop.proposed_value);
       } else {
@@ -713,15 +717,29 @@ export async function extractWikiFactsWithAi({ env, source, cleanText }) {
         text: `${prop.fact_key} auto-updated from ${source.id} (${provider})`,
       });
 
-      await env.DB.prepare(
-        "UPDATE lib_pages SET facts_json = ?, history_json = ?, checked = ?, updated_at = ? WHERE id = ?"
-      )
-        .bind(JSON.stringify(facts), JSON.stringify(history), now.slice(0, 10), now, page.id)
-        .run();
+      const propId = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO wiki_proposals (id, source_id, page_id, fact_key, old_value, proposed_value, confidence, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'applied', ?)"
+        ).bind(
+          propId,
+          source.id,
+          page.id,
+          prop.fact_key,
+          oldVal,
+          String(prop.proposed_value),
+          prop.confidence || "confirmed",
+          now
+        ),
+        env.DB.prepare(
+          "UPDATE lib_pages SET facts_json = ?, history_json = ?, checked = ?, updated_at = ? WHERE id = ?"
+        ).bind(JSON.stringify(facts), JSON.stringify(history), now.slice(0, 10), now, page.id),
+      ]);
 
       applied.push({ page_id: page.id, category: page.category, fact_key: prop.fact_key });
     }
 
+    if (applied.length > 0) invalidatePagesCache();
     return applied;
   } catch {
     return [];

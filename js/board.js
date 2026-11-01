@@ -3583,7 +3583,7 @@ KIT.on("booted", () => {
     });
     window.BoardBrain.on("data", (ev) => {
       if (!ev || !ev.key) return;
-      dataGet(ev.key).then((val) => {
+      const handleData = (val) => {
         if (!val) return;
         D[ev.key] = val;
         if (ev.key === "party") { splitPolls(); roles(); renderHero(); renderTiles(); renderCards(); renderLedger(); renderTonight(); }
@@ -3591,7 +3591,13 @@ KIT.on("booted", () => {
         else if (ev.key === "stats") { renderTiles(); renderLibrarian(); if (SC.open === "library") libRenderHead(); }
         else if (ev.key === "signups") { renderTiles(); renderDiscordSignups(); renderTonight(); }
         else if (ev.key === "tonight") { renderTonight(); }
-      }).catch(() => {});
+        else if (ev.key === "launch") { renderTiles(); renderTonight(); }
+      };
+      if (ev.data) {
+        handleData(ev.data);
+      } else {
+        dataGet(ev.key).then(handleData).catch(() => {});
+      }
     });
   }
 });
