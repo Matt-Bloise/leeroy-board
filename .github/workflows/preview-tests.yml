@@ -16,7 +16,7 @@ jobs:
   preview-tests:
     name: API and browser tests against the PR preview
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
@@ -71,6 +71,7 @@ jobs:
       - name: Install test dependencies
         working-directory: tests
         run: |
+          sudo apt-get update
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium webkit
 
