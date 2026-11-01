@@ -64,10 +64,11 @@ function baseFor() {
 const getAiProvider = () => { if (B.isPrPreview) return "workers-ai"; const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
 const setAiProvider = (prov) => { if (B.isPrPreview) { B.aiProvider = "workers-ai"; return "workers-ai"; } if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
 B.base = baseFor();
-const apiUrl = (path) => (B.base && path ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
+const LEGACY = (location.hostname || "") === "matt-bloise.github.io" || (/\.pages\.dev$/.test(location.hostname || "") && !/^pr-\d+\./.test(location.hostname || ""));
+const apiUrl = (path) => (B.base && path && !(LEGACY && /^\/?(data|atlas|library)\//.test(path)) ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
 let BOOT_P = null;
 function bootstrap(force = false) { if (force) BOOT_P = null;
-  if (!B.base) return Promise.resolve(null);
+  if (!B.base || LEGACY) return Promise.resolve(null);
   return (BOOT_P ||= fetch(`${B.base.http}/bootstrap`, { cache: "no-cache", credentials: "omit" })
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
