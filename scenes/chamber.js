@@ -91,8 +91,12 @@ const room = h("section", { class: "chamber", id: "chamber", hidden: true, "aria
 const stillImg = h("img", { class: "ch-still-img", alt: MOOD_ALT.smug, width: 480, height: 720, loading: "lazy", decoding: "async" });
 const BAR = "img/chamber/leeroy-bar-smug.webp";
 artLoad(BAR).then((good) => { if (!good) stillImg.classList.add("is-head"); stillImg.setAttribute("src", good ? BAR : moodUrl("smug")); });
+const STILL_LINES = ["Pull up a stool. I am not going anywhere.", "The tankard is full and the library is open. Ask whenever you like.", "Take the stool by the candle. I will keep your place.", "Quiet night at the bar. Good for questions about Forever."];
+const stillLine = (t) => STILL_LINES[Math.floor((t === undefined ? Date.now() : t) / 86400000) % STILL_LINES.length];
+const HOW = "To ask Leeroy from this box you need your own board link: it is the My board link button on the Sign-ups card in Discord. Without one you can still use /ask in #wow-forever or search the Library here.";
 const still = h("section", { class: "hades is-still", id: "ch-still", hidden: true, "aria-label": "Leeroy at the bar" },
-  h("div", { class: "ch-still-stage" }, h("div", { class: "ch-still-bust" }, stillImg), h("div", { class: "ch-still-counter", "aria-hidden": "true" }), h("p", { class: "ch-still-line" })));
+  h("div", { class: "ch-still-stage" }, h("div", { class: "ch-still-bust" }, stillImg), h("div", { class: "ch-still-counter", "aria-hidden": "true" }), h("p", { class: "ch-still-line" })),
+  h("p", { class: "ch-still-how", text: HOW }));
 panel.insertBefore(room, box); panel.insertBefore(still, box);
 panel.insertBefore(h("p", { class: "ch-intro", id: "ch-intro" }, "Leeroy is the group's Discord bot; he answers from this library. /ask in #wow-forever reaches him, and ", h("a", { href: "#library", text: "the Library" }), " here holds the same answers."), panel.firstChild);
 const input = h("input", { type: "text", id: "ch-text", class: "ch-text", maxlength: MAX, enterkeyhint: "send", autocomplete: "off", spellcheck: "true", "aria-describedby": "ch-say ch-note" });
@@ -139,7 +143,7 @@ const LINES = {
   error: "I cannot hear the board just now. Your question is still in the box.",
   limited: "That is six questions in the last hour. I open up again soon.",
 };
-still.querySelector(".ch-still-line").textContent = LINES.idle;
+still.querySelector(".ch-still-line").textContent = stillLine();
 const WAIT = "Leeroy is checking the library (about 20 to 40 seconds).";
 const waitEl = () => bubble("Leeroy", "ch-a ch-wait", line(LINES.queued), h("p", { class: "ch-eta", text: WAIT }), h("span", { class: "ch-dots", "aria-hidden": "true" }, h("i"), h("i"), h("i")));
 const askEl = (who, text) => bubble(who.name, "ch-q", line(text));
@@ -480,7 +484,7 @@ K.on("closed", (k) => { if (k === "librarian") close(false); });
 K.on("scene", (k) => { if (k === "librarian") { CH.chips = null; resume(); } });
 K.on("tonight", () => { CH.chips = null; });
 K.on("forget", () => { CH.turns = []; CH.typed = {}; CH.seen = {}; CH.picked = []; CH.follow = {}; CH.kh = "none"; CH.sig = null; file.set(null); closeLetter(); say(""); draw(B.askStatus()); });
-window.__chamber = Object.freeze({ open, close, letter, send, ask, moodFor,
+window.__chamber = Object.freeze({ open, close, letter, send, ask, moodFor, stillLine, STILL_LINES, HOW,
   status: () => { const st = B.askStatus(), a = st.ask; return { on: CH.on, mood: CH.mood, state: room.dataset.state, typing: !!CH.typing, letter: CH.letter, turns: CH.turns.length, live: a && busyOk(st) && Number.isInteger(a.id) ? a.id : null, picked: CH.picked.slice(), left: typeof st.left === "number" ? st.left : null }; } });
 paint(B.askStatus());
 keyHash().then((kh) => { adopt(kh); CH.sig = null; resume(); });

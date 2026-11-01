@@ -4,13 +4,13 @@ const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const HERE = (document.currentScript && document.currentScript.src) || null;
 const SCENES = {
   sheet: () => [new URL("../scenes/sheet.css?v=7a8d1c52e5", HERE), new URL("../scenes/sheet.js?v=5b5a1785d3", HERE)],
-  chamber: () => [new URL("../scenes/chamber.css?v=5951072482", HERE), new URL("../scenes/chamber.js?v=134acfc3b1", HERE)],
+  chamber: () => [new URL("../scenes/chamber.css?v=ba47e5cb41", HERE), new URL("../scenes/chamber.js?v=f565912eae", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=67ef669934", HERE), new URL("../scenes/decide.js?v=e871b732e8", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=9a7fa09c43", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1280b387e0", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
-  hades: () => [new URL("../scenes/hades.css?v=8eb34e6d88", HERE), new URL("../scenes/hades.js?v=f432c92235", HERE)],
+  hades: () => [new URL("../scenes/hades.css?v=0ed9bb5995", HERE), new URL("../scenes/hades.js?v=22bd5fa90f", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
   settings: () => [new URL("../scenes/settings.css?v=12fc8c6695", HERE), new URL("../scenes/settings.js?v=7350eb0413", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],

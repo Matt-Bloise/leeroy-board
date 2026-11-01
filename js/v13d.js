@@ -121,7 +121,7 @@ function fold(panel) {
   const deepLink = location.hash.indexOf(`#${panel.id.slice(6)}.`) === 0 || (panel.id === "panel-roads" && /^#atlas(\.|$)/.test(location.hash)) || panel.dataset.view === "sheet" || panel.classList.contains("chamber-on");
   const on = journey() === "guided" && panel.id !== "panel-tonight" && !!kid(panel, "jr-core") && !panel.classList.contains("jr-open") && !deepLink;
   panel.classList.toggle("jr-dest", journey() === "guided" && deepLink && panel.id !== "panel-tonight" && !!kid(panel, "jr-core"));
-  for (const c of panel.children) if (!c.classList.contains("jr-core")) c.classList.toggle("jr-fold", on && c.id !== "ask-box" && !c.querySelector("#ask-box"));
+  for (const c of panel.children) if (!c.classList.contains("jr-core")) c.classList.toggle("jr-fold", on && c.id !== "ask-box" && c.id !== "ch-still" && !c.querySelector("#ask-box"));
 }
 function core(only) {
   if (!D.party || !D.timeline) return;
