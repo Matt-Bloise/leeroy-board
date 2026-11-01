@@ -118,8 +118,9 @@ const CORE = {
 };
 const deepLine = (key) => { const C = D.client; return ["racials", "legacy", "buffs"].includes(key) && C ? `Numbers here are from the game client's tables, build ${C.build}.` : key === "timeline" ? `Launch: ${(evOf("launch") || {}).epoch}, raids: ${(evOf("raids") || {}).epoch} (seconds since 1970, UTC).` : `Built from the board's own records on ${String((D.party || {}).generated || "").slice(0, 10)}.`; };
 function fold(panel) {
-  const deepLink = location.hash.indexOf(`#${panel.id.slice(6)}.`) === 0 || panel.dataset.view === "sheet" || panel.classList.contains("chamber-on");
+  const deepLink = location.hash.indexOf(`#${panel.id.slice(6)}.`) === 0 || (panel.id === "panel-roads" && /^#atlas(\.|$)/.test(location.hash)) || panel.dataset.view === "sheet" || panel.classList.contains("chamber-on");
   const on = journey() === "guided" && panel.id !== "panel-tonight" && !!kid(panel, "jr-core") && !panel.classList.contains("jr-open") && !deepLink;
+  panel.classList.toggle("jr-dest", journey() === "guided" && deepLink && panel.id !== "panel-tonight" && !!kid(panel, "jr-core"));
   for (const c of panel.children) if (!c.classList.contains("jr-core")) c.classList.toggle("jr-fold", on && c.id !== "ask-box" && !c.querySelector("#ask-box"));
 }
 function core(only) {
@@ -147,6 +148,19 @@ function core(only) {
 function libRest() {
   const panel = $("#panel-library"), facts = panel && panel.querySelector(".lib-page dl.facts"); if (!panel || !facts || journey() === "everything" || !panel.querySelector("[data-depth]") || panel.querySelector(".jr-rest")) return;
   facts.parentNode.insertBefore(h("button", { type: "button", class: "lib-tool jr-rest", "aria-pressed": "false", onclick: (e) => { const on = panel.classList.toggle("lib-rest"); e.currentTarget.setAttribute("aria-pressed", String(on)); e.currentTarget.textContent = on ? "Show less" : "Show the rest"; } }, "Show the rest"), facts);
+}
+const GUIDED_FACTS = 6;
+function libTier() {
+  const panel = $("#panel-library"), facts = panel && panel.querySelector(".lib-page dl.facts"); if (!facts) return;
+  const g = journey() === "guided";
+  [...facts.children].forEach((r, i) => { if (g && i >= GUIDED_FACTS && !r.classList.contains("lit")) r.setAttribute("data-depth", "good"); else if (r.getAttribute("data-depth") === "good") r.removeAttribute("data-depth"); });
+  const b = panel.querySelector(".jr-rest"); if (b && !g) { b.remove(); panel.classList.remove("lib-rest"); }
+  if (g) { if (!panel.querySelector(".jr-rest")) panel.classList.remove("lib-rest"); libRest(); }
+}
+function startLibTier() {
+  const main = $("#lib-main"); if (!main || typeof MutationObserver !== "function") return;
+  new MutationObserver(() => libTier()).observe(main, { childList: true });
+  libTier();
 }
 let landT = 0;
 function lit(panel, el) {
@@ -578,6 +592,7 @@ K.on("booted", () => {
   startBrain();
   for (const ev of ["ledger", "timeline", "signups"]) K.on(ev, () => core(ev));
   K.on("scene", (k) => { if (k === "library") libRest(); });
+  startLibTier();
 });
 addEventListener("hashchange", () => { const p = SC.open && $(`#panel-${SC.open}`); if (p) fold(p); });
 K.on("chamber", (on) => { if (on) unfold("librarian"); });
@@ -585,5 +600,5 @@ K.on("scene", (key) => { applyDepth(); looked(key); sealRows(key); const p = $(`
 K.on("closed", (k) => { if (k === "tonight") setTimeout(glow, K.motionMs("move") + 900); });
 K.on("legacy", () => sealRows("legacy"));
 for (const f of ["races", "cards"]) { const orig = K.render[f]; K.render[f] = () => { orig(); applyDepth(); sealRows(f === "races" ? "racials" : "five"); }; }
-window.__v13d = Object.freeze({ journey, setJourney, landOn, zoomTo, zoomOut, core, nextDeadline, status: () => ({ journey: journey(), picked: V.picked, zoom: V.zoom, dial: V.dial ? V.dial.v : null, glow: V.glow, isNew: JSON.parse(JSON.stringify(NEW)), brain: window.BoardBrain ? window.BoardBrain.status() : null }) });
+window.__v13d = Object.freeze({ libTier, journey, setJourney, landOn, zoomTo, zoomOut, core, nextDeadline, status: () => ({ journey: journey(), picked: V.picked, zoom: V.zoom, dial: V.dial ? V.dial.v : null, glow: V.glow, isNew: JSON.parse(JSON.stringify(NEW)), brain: window.BoardBrain ? window.BoardBrain.status() : null }) });
 })();
