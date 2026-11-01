@@ -101,13 +101,6 @@ function leave() {
   R.inLib = false;
   try { localStorage.setItem(SEEN, new Date().toISOString()); } catch (e) {}
 }
-const b = BB();
-if (b && b.on) {
-  b.on("library", (m) => {
-    if (m && m.checked) { R.file = { ...(R.file || {}), checked: m.checked }; R.busy = false; R.msg = ""; clearTimeout(R.timer); R.timer = 0; }
-    if (R.inLib) open();
-  });
-}
 K.on("scene", (key, prev) => { if (key === "library") open(); else if (prev === "library") leave(); });
 K.on("closed", (key) => { if (key === "library") leave(); });
 window.__libRefresh = Object.freeze({ state: () => ({ busy: R.busy, msg: R.msg, polls: R.polls, pending: !!R.timer, text: text() }), tick });

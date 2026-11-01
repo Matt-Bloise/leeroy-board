@@ -57,15 +57,6 @@ function keyHash() {
   if (!sub || typeof sub.digest !== "function" || typeof TextEncoder !== "function") return Promise.resolve("fake");
   return Promise.resolve().then(() => sub.digest("SHA-256", new TextEncoder().encode(k))).then((buf) => Array.from(new Uint8Array(buf).slice(0, 8), (b) => b.toString(16).padStart(2, "0")).join(""), () => "fake");
 }
-const MODEL_LABELS = {
-  claude: "Leeroy · Claude",
-  gemini: "Leeroy · Gemini Free Tier",
-  "workers-ai": "Leeroy · Cloudflare Workers AI (Llama 3.3 70B)",
-  groq: "Leeroy · Groq Free Tier (Llama 3.3 70B)",
-  cerebras: "Leeroy · Cerebras Free Tier (Llama 3.3 70B)",
-  github: "Leeroy · GitHub Models (GPT-4o)",
-  openrouter: "Leeroy · OpenRouter Free (DeepSeek V3)",
-};
 const fresh = (at) => { const t = Date.parse(at); return Number.isFinite(t) && Date.now() - t < WEEK; };
 const turnOf = (t) => ({ id: t.id, text: String(t.text), answer: typeof t.answer === "string" && t.answer ? t.answer : null, provider: t.provider || null, sources: Array.isArray(t.sources) ? t.sources.map(String).slice(0, 8) : [], at: t.at, answeredAt: typeof t.answeredAt === "string" ? t.answeredAt : null, dispatched: t.dispatched ? String(t.dispatched) : null });
 const byTime = (a, b) => Date.parse(a.at) - Date.parse(b.at) || a.id - b.id;
