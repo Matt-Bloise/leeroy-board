@@ -513,7 +513,7 @@ export async function createAtlas(opts) {
   ctl.append(
     mkBtn("a-in", "Zoom in", "+", () => atlas.zoomBy(1)),
     mkBtn("a-out", "Zoom out", "−", () => atlas.zoomBy(-1)),
-    mkBtn("a-fit", "Show the day-one view", "0", () => atlas.dayOne()),
+    mkBtn("a-fit", "0, show the day-one view", "0", () => atlas.dayOne()),
     mkBtn("a-back", "Back to the simple map", "Back to the simple map", () => emit("close", {})));
   const foley = createFoley({ sound: opts.sound, reduced, soundOn: () => { try { return !!(window.__board && window.__board.sound && window.__board.sound()); } catch (e) { return false; } } });
   const keys = {

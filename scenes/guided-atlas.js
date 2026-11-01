@@ -54,7 +54,7 @@ function build() {
   G.map = h("div", { class: "ga-map", id: "ga-map" });
   G.nolab = h("div", { class: "ga-nolab", id: "ga-stops", hidden: true });
   const rail = h("aside", { class: "ga-rail", id: "ga-rail", "aria-label": "Your guide" }, G.card, G.key, G.nolab, G.more_);
-  G.layer = h("div", { class: "ga", id: "ga", hidden: true, role: "region", "aria-labelledby": "ga-h" }, h("header", { class: "ga-bar" }, G.title, team), h("div", { class: "ga-body" }, rail, G.map));
+  G.layer = h("div", { class: "ga", id: "ga", hidden: true, role: "region", "aria-labelledby": "ga-h" }, h("div", { class: "ga-bar" }, G.title, team), h("div", { class: "ga-body" }, rail, G.map));
   D.body.appendChild(G.layer);
   return G.layer;
 }
@@ -112,7 +112,7 @@ async function ensure() {
   if (!G.host.parentNode) G.map.appendChild(G.host);
   G.loading = (async () => {
     try {
-      const [m] = await Promise.all([import("../atlas/atlas.js?v=f90088706f"), facts()]);
+      const [m] = await Promise.all([import("../atlas/atlas.js?v=f98cac4ab8"), facts()]);
       G.A = await m.createAtlas({ host: G.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, member: () => MEM.member(), sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: (t) => { if (t === "view") Z.place(); } });
       if (G.busy || !G.shown) { G.A.pause(); } else { G.A.resume(); }
       G.A.openToken("atlas", { animate: false });

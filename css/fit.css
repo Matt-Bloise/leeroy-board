@@ -63,6 +63,7 @@
   #top .clock { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "digits" "when"; justify-items: center; align-content: center; }
   #top .clock-when { text-align: center; }
 }
+@media (min-width: 1000px) and (max-width: 1099px) and (max-height: 800px) { #top.hero { grid-template-columns: minmax(0, 1fr) minmax(400px, 40%); row-gap: 2px; } #top .hero-title { gap: 0 16px; } #top .presence { gap: 2px 8px; } #top.hero h1 { line-height: 1; } #top .clock-when { font-size: 0.8125rem; } }
 @media (min-width: 1100px) and (max-width: 1499px) { #top #presence-text { max-width: 9em; text-wrap: balance; } }
 @media (min-width: 700px) and (max-width: 1099px) {
   #top #presence-text { display: none; }
