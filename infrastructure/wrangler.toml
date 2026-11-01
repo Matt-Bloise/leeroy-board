@@ -1,0 +1,58 @@
+name = "leeroy-brain"
+main = "worker/index.js"
+compatibility_date = "2025-02-01"
+workers_dev = true
+
+# Custom Domain binding on Cloudflare Free Tier
+# Automatically provisions edge SSL and routes https://api.leeroy.party/* to this Worker
+routes = [
+  { pattern = "api.leeroy.party/*", custom_domain = true }
+]
+
+# 6-Hour autonomous source sweep (Blizzard news, Wowhead, Raidplan, Wiki)
+# 4 runs/day keeps background AI fact extraction strictly under the 10,000 Workers AI neuron/day free limit.
+# Live on-demand refreshes remain available via UI and /intent { kind: "refresh" }.
+[triggers]
+crons = ["0 */6 * * *"]
+
+# Cloudflare D1 Serverless SQLite Database (Free Tier: 5 GB storage, 5M reads/day, 100k writes/day)
+[[d1_databases]]
+binding = "DB"
+database_name = "leeroy-board-db"
+database_id = "00000000-0000-0000-0000-000000000000" # Replaced automatically in CI or via `wrangler d1 create`
+migrations_dir = "migrations"
+
+# Hibernatable WebSocket Durable Object (Free Tier: SQLite-backed, 100k req/day)
+[durable_objects]
+bindings = [
+  { name = "BOARD_ROOM", class_name = "BoardRoom" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BoardRoom"]
+
+# Native Cloudflare Workers AI Binding (Free Tier: 10,000 Neurons/day, Zero external API key needed)
+[ai]
+binding = "AI"
+
+[vars]
+# Default AI provider ("claude", "gemini", "workers-ai", "groq", "cerebras", "github", or "openrouter")
+# Can also be switched per-question in the UI or Discord `/ask` command.
+AI_PROVIDER = "claude"
+CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"
+CLAUDE_MODEL_DEEP = "claude-sonnet-4-5-20250929"
+GEMINI_MODEL_FAST = "gemini-2.5-flash"
+GEMINI_MODEL_DEEP = "gemini-2.5-pro"
+WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+GROQ_MODEL_FAST = "llama-3.3-70b-versatile"
+GROQ_MODEL_DEEP = "llama-3.3-70b-versatile"
+CEREBRAS_MODEL = "llama-3.3-70b"
+GITHUB_MODEL_FAST = "gpt-4o-mini"
+GITHUB_MODEL_DEEP = "gpt-4o"
+OPENROUTER_MODEL = "deepseek/deepseek-chat-v3-0324:free"
+API_ORIGIN = "https://api.leeroy.party"
+BOARD_PUBLIC_URL = "https://leeroy.party"
+ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://leeroy.party,https://www.leeroy.party,https://api.leeroy.party,https://1561857940174938114.discordsays.com,http://127.0.0.1:8080,http://localhost:8080"
+USER_SALT = "leeroy-board-user-state-salt-v1"
+KEY_SALT = "leeroy-board-member-key-salt-v1"
