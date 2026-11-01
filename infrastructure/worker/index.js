@@ -302,6 +302,18 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
   return { party: currentParty, at: now };
 }
 
+export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
+  const now = at || new Date().toISOString();
+  const bodyJson = typeof body === "string" ? body : JSON.stringify(body || {});
+  const res = await env.DB.prepare(
+    "INSERT INTO intents (at, slug, kind, body, ver) VALUES (?, ?, ?, ?, ?)"
+  )
+    .bind(now, slug || "unknown", kind || "unknown", bodyJson, ver)
+    .run();
+  const seq = res.meta && res.meta.last_row_id ? res.meta.last_row_id : Date.now();
+  return { seq, at: now };
+}
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
@@ -382,7 +394,13 @@ export default {
             source: "board",
             at: now,
           });
-          const seq = Date.now();
+          const { seq } = await insertIntent(env, {
+            slug: m.slug,
+            kind: "sheet",
+            body: { field, value, visible, source: "board" },
+            ver: 1,
+            at: now,
+          });
           return jsonResp({ ok: true, id: seq, seq, at: now, field, value, visible }, 200, cors);
         }
       }
@@ -428,6 +446,175 @@ export default {
           }).catch(() => {});
         }
         return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
+      }
+
+      // 0e. GET /intents -> Shared brain intents mailbox polling for bot or consumer
+      if (path === "/intents" && req.method === "GET") {
+        const after = parseInt(url.searchParams.get("after") || "0", 10) || 0;
+        const limit = Math.min(parseInt(url.searchParams.get("limit") || "100", 10) || 100, 500);
+
+        const [rows, countRow] = await Promise.all([
+          env.DB.prepare(
+            "SELECT seq, at, slug, kind, body, ver FROM intents WHERE seq > ? ORDER BY seq ASC LIMIT ?"
+          )
+            .bind(after, limit)
+            .all(),
+          env.DB.prepare("SELECT COUNT(*) AS count FROM intents").first(),
+        ]);
+
+        const intents = (rows.results || []).map((r) => {
+          let parsed = {};
+          try {
+            parsed = JSON.parse(r.body);
+          } catch {
+            parsed = { raw: r.body };
+          }
+          return {
+            seq: r.seq,
+            at: r.at,
+            slug: r.slug,
+            kind: r.kind,
+            body: parsed,
+            ver: r.ver,
+          };
+        });
+
+        return jsonResp(
+          {
+            ok: true,
+            intents,
+            expired: 0,
+            pending: countRow ? countRow.count : 0,
+          },
+          200,
+          cors
+        );
+      }
+
+      // 0f. POST /ack -> Acknowledge and clear intents up to `upTo` sequence number
+      if (path === "/ack" && req.method === "POST") {
+        let body = {};
+        try {
+          body = (await req.json()) || {};
+        } catch {}
+        const upTo = parseInt(body.upTo || body.up_to || "0", 10);
+        if (!upTo || upTo <= 0) {
+          return jsonResp({ error: "Missing or invalid upTo sequence number" }, 400, cors);
+        }
+        const res = await env.DB.prepare("DELETE FROM intents WHERE seq <= ?").bind(upTo).run();
+        const countRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM intents").first();
+        const deleted = (res.meta && res.meta.changes) || 0;
+        return jsonResp(
+          {
+            ok: true,
+            deleted,
+            pending: countRow ? countRow.count : 0,
+          },
+          200,
+          cors
+        );
+      }
+
+      // 0g. POST /answer -> Push answer to ask question into ask_turns & broadcast
+      if (path === "/answer" && req.method === "POST") {
+        let body = {};
+        try {
+          body = (await req.json()) || {};
+        } catch {}
+        const id = String(body.id || "").trim();
+        if (!id) {
+          return jsonResp({ error: "Missing ask turn id" }, 400, cors);
+        }
+        const now = new Date().toISOString();
+        const failed = body.failed || null;
+        const status = failed ? "failed" : "done";
+        const answer = body.answer || null;
+        const sources = body.sources ? (typeof body.sources === "string" ? body.sources : JSON.stringify(body.sources)) : null;
+
+        await env.DB.prepare(
+          "UPDATE ask_turns SET answer = ?, sources = ?, status = ?, answered_at = ? WHERE id = ?"
+        )
+          .bind(answer, sources, status, now, id)
+          .run();
+
+        const askItem = {
+          id,
+          status,
+          answer,
+          sources: body.sources || [],
+          answered_at: now,
+          failed,
+        };
+        await broadcastToRoom(env, { type: "ask", ask: askItem });
+        await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/ask?id=${id}`]);
+
+        return jsonResp({ ok: true, id, status }, 200, cors);
+      }
+
+      // 0h. GET/POST /signups -> Direct signups endpoint
+      if (path === "/signups") {
+        if (req.method === "GET") {
+          let resp = await getCachedResponse(url.origin, "/api/signups");
+          if (!resp) {
+            const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
+            const doc = row ? JSON.parse(row.json) : { entries: [], tallies: {} };
+            resp = jsonResp(doc, 200, cors, { "Cache-Control": "public, max-age=15, stale-while-revalidate=60" });
+            await putCachedResponse(url.origin, "/api/signups", resp);
+          }
+          return resp;
+        }
+        if (req.method === "POST") {
+          const auth = await resolveMemberAuth(req, url, env);
+          if (!auth.ok) {
+            return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+          }
+          const member = auth.member;
+          const body = (await req.json()) || {};
+          const now = new Date().toISOString();
+
+          const patch = body.patch && typeof body.patch === "object" ? { ...body.patch } : { ...body };
+          delete patch.token;
+          delete patch.key;
+
+          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
+          const doc = row
+            ? JSON.parse(row.json)
+            : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
+          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+          let entry = doc.entries.find(
+            (e) =>
+              (e.slug && e.slug === member.slug) ||
+              (e.name || "").toLowerCase() === member.name.toLowerCase()
+          );
+          if (!entry) {
+            entry = { slug: member.slug, name: member.name };
+            doc.entries.push(entry);
+          }
+          for (const [k, v] of Object.entries(patch)) {
+            if (k !== "slug" && k !== "name") {
+              entry[k] = v === "vos" ? "Valley of Strength" : v === "xroads" ? "The Crossroads" : v;
+            }
+          }
+          entry.updated = now;
+          await recomputeSignupTallies(doc);
+
+          await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
+            .bind(JSON.stringify(doc), now)
+            .run();
+
+          const { seq } = await insertIntent(env, {
+            slug: member.slug,
+            kind: "signup",
+            body: { patch, entry },
+            ver: 1,
+            at: now,
+          });
+
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+          await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
+
+          return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
+        }
       }
 
       // 1. WebSocket / Live State -> Durable Object (`BoardRoom`) + D1 state
@@ -872,9 +1059,16 @@ export default {
           await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
             .bind(JSON.stringify(doc), now)
             .run();
-          await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json"]);
+          const { seq } = await insertIntent(env, {
+            slug: member.slug,
+            kind: "signup",
+            body: { patch, entry },
+            ver: 1,
+            at: now,
+          });
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
           await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
-          return jsonResp({ ok: true, id: numericIntentId, seq: numericIntentId, at: now }, 200, cors);
+          return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
         }
 
         // 5b. `journey` (`{ kind: "journey", patch: { journey } }`)
@@ -893,7 +1087,14 @@ export default {
                 .run();
             }
           }
-          return jsonResp({ ok: true, id: numericIntentId, seq: numericIntentId, at: now }, 200, cors);
+          const { seq } = await insertIntent(env, {
+            slug: member.slug,
+            kind: "journey",
+            body: { journey: jVal },
+            ver: 1,
+            at: now,
+          });
+          return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
         }
 
         // 5c. `launch` (`{ kind: "launch", patch: { state: "queue"|"in"|"done" } }`)
@@ -927,7 +1128,14 @@ export default {
             await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/launch.json"]);
             await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
           }
-          return jsonResp({ ok: true, id: numericIntentId, seq: numericIntentId, at: now }, 200, cors);
+          const { seq } = await insertIntent(env, {
+            slug: member.slug,
+            kind: "launch",
+            body: { state: lState },
+            ver: 1,
+            at: now,
+          });
+          return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
         }
 
         // 5d. `ask` (`{ kind: "ask", patch: { text, share, provider } }`)
@@ -947,8 +1155,16 @@ export default {
             .bind(intentId, by, question, activeProvider, share ? 1 : 0, now)
             .run();
 
+          const { seq } = await insertIntent(env, {
+            slug: memberSlug,
+            kind: "ask",
+            body: { question, by, provider: activeProvider, share },
+            ver: 1,
+            at: now,
+          });
+
           const intentItem = {
-            id: numericIntentId,
+            id: seq,
             kind: "ask",
             by,
             slug: memberSlug,
@@ -976,11 +1192,13 @@ export default {
           return jsonResp(
             {
               ok: true,
-              id: numericIntentId,
+              id: seq,
+              seq,
               status: "thinking",
               provider: activeProvider,
               at: now,
               left: 5,
+              ask: { id: intentId, question, by, status: "thinking", model: activeProvider, at: now },
             },
             200,
             cors
@@ -1037,8 +1255,16 @@ export default {
             `/api/library/${pageRow.category}.json`,
           ]);
 
+          const { seq } = await insertIntent(env, {
+            slug: member.slug,
+            kind: "fix",
+            body: { pageId, factKey, oldVal, newVal, note, by: member.name },
+            ver: 1,
+            at: now,
+          });
+
           const intentItem = {
-            id: numericIntentId,
+            id: seq,
             kind: "fix",
             by: member.name,
             page: pageId,
@@ -1053,18 +1279,26 @@ export default {
             intent: intentItem,
           });
 
-          return jsonResp({ ok: true, id: numericIntentId, seq: numericIntentId, status: "applied" }, 200, cors);
+          return jsonResp({ ok: true, id: seq, seq, status: "applied" }, 200, cors);
         }
 
         // 5f. `refresh` (`POST /api/refresh` or `POST /api/intent { kind: "refresh" }`)
         if (kind === "refresh") {
-          const intentItem = { id: numericIntentId, kind: "refresh", by: member.name, status: "running", at: now };
+          const { seq } = await insertIntent(env, {
+            slug: member.slug,
+            kind: "refresh",
+            body: { triggeredBy: member.name },
+            ver: 1,
+            at: now,
+          });
+
+          const intentItem = { id: seq, kind: "refresh", by: member.name, status: "running", at: now };
           await broadcastToRoom(env, { type: "intent", item: intentItem });
 
           ctx.waitUntil(
             runScheduledSourceSweep(env, url.origin, { triggeredBy: member.name, intentId })
           );
-          return jsonResp({ ok: true, queued: true, id: numericIntentId, seq: numericIntentId, status: "running", at: now }, 200, cors);
+          return jsonResp({ ok: true, queued: true, id: seq, seq, status: "running", at: now }, 200, cors);
         }
 
         return jsonResp({ error: `Unsupported intent kind: ${kind}` }, 400, cors);

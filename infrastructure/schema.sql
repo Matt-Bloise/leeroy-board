@@ -1,17 +1,19 @@
 -- =============================================================================
 -- Dungeons & Drinking Living Board — Cloudflare D1 Schema (SQLite)
--- Full parity with wow-mage: kv_state, lib_pages, lib_blobs, lib_sources,
--- lib_source_snapshots, wiki_proposals, ask_turns, fact_fixes, sheet_events, dispatches
+-- Complete Unified Baseline Schema (Full parity with wow-mage)
+-- Contains: kv_state, lib_pages, lib_blobs, lib_sources, lib_source_snapshots,
+--           wiki_proposals, ask_turns, fact_fixes, sheet_events, dispatches,
+--           members, accounts, account_keys, sessions, user_state, intents
 -- =============================================================================
 
--- 1. Core Board JSON documents (party, timeline, stats, signups, tonight, launch, decide, marks, links, vocab)
+-- 1. Core Board JSON documents (party, timeline, stats, signups, tonight, launch, decide, marks, links, vocab, party_sheets)
 CREATE TABLE IF NOT EXISTS kv_state (
   key TEXT PRIMARY KEY,
   json TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 
--- 2. Library pages (61 pages across 11 categories, ~1,134 facts + optional markdown body)
+-- 2. Library pages (67 indexed pages across 19 categories, facts + optional markdown body)
 CREATE TABLE IF NOT EXISTS lib_pages (
   id TEXT PRIMARY KEY,             -- e.g. 'classes/paladin-holy'
   category TEXT NOT NULL,          -- e.g. 'classes'
@@ -57,7 +59,7 @@ CREATE TABLE IF NOT EXISTS lib_sources (
 );
 CREATE INDEX IF NOT EXISTS idx_lib_sources_checked ON lib_sources(checked_at ASC);
 
--- 5. Clean extracted text snapshots of monitored wiki sources (replaces wow-mage/wiki/sources/*.txt)
+-- 5. Clean extracted text snapshots of monitored wiki sources
 CREATE TABLE IF NOT EXISTS lib_source_snapshots (
   id TEXT PRIMARY KEY,
   source_id TEXT NOT NULL,
@@ -68,7 +70,7 @@ CREATE TABLE IF NOT EXISTS lib_source_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_source_snapshots_src ON lib_source_snapshots(source_id, fetched_at DESC);
 
--- 6. Automated AI-extracted wiki fact proposals & applied edits (replaces wow-mage/wiki/proposals/ & wiki-learn.mjs)
+-- 6. Automated AI-extracted wiki fact proposals & applied edits
 CREATE TABLE IF NOT EXISTS wiki_proposals (
   id TEXT PRIMARY KEY,
   source_id TEXT NOT NULL,
@@ -98,6 +100,7 @@ CREATE TABLE IF NOT EXISTS ask_turns (
 );
 CREATE INDEX IF NOT EXISTS idx_ask_turns_created ON ask_turns(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ask_turns_by ON ask_turns(by_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ask_turns_share_created ON ask_turns(share, created_at DESC);
 
 -- 8. Audit log of inline fact fixes & automated cron diffs
 CREATE TABLE IF NOT EXISTS fact_fixes (
@@ -113,7 +116,7 @@ CREATE TABLE IF NOT EXISTS fact_fixes (
 CREATE INDEX IF NOT EXISTS idx_fact_fixes_page ON fact_fixes(page_id);
 CREATE INDEX IF NOT EXISTS idx_fact_fixes_created ON fact_fixes(created_at DESC);
 
--- 9. Event-sourced Party Character Sheet log (replaces wow-mage/cloudflare/worker/src/brain.js sheet_events)
+-- 9. Event-sourced Party Character Sheet log
 CREATE TABLE IF NOT EXISTS sheet_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slug TEXT NOT NULL,
@@ -125,6 +128,7 @@ CREATE TABLE IF NOT EXISTS sheet_events (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sheet_events_slug_field ON sheet_events(slug, field, id DESC);
+CREATE INDEX IF NOT EXISTS idx_sheet_events_slug_vis ON sheet_events(slug, visible, id DESC);
 
 -- 10. Dispatched Q&A letters ("Bring this to the party" in Leeroy Chamber)
 CREATE TABLE IF NOT EXISTS dispatches (
@@ -142,7 +146,24 @@ CREATE TABLE IF NOT EXISTS members (
   created_at TEXT NOT NULL
 );
 
--- 12. Discord OAuth2 session store for cross-device user state (sessions & user_state)
+-- 12. Multi-token Account Management
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS account_keys (
+  key_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  label TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_account_keys_account ON account_keys(account_id);
+
+-- 13. Discord OAuth2 session store for cross-device user state (sessions & user_state)
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
   user_key TEXT NOT NULL CHECK (length(user_key) = 64),
@@ -153,7 +174,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_key);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
--- 12. Per-user saved settings documents (journey, prefs, walked, seen, signups-choice)
+-- 14. Per-user saved settings documents (journey, prefs, walked, seen, signups-choice)
 CREATE TABLE IF NOT EXISTS user_state (
   user_key TEXT NOT NULL CHECK (length(user_key) = 64),
   doc TEXT NOT NULL CHECK (doc IN ('journey', 'prefs', 'walked', 'seen', 'signups-choice')),
@@ -162,3 +183,15 @@ CREATE TABLE IF NOT EXISTS user_state (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (user_key, doc)
 );
+
+-- 15. Shared Brain Intents Mailbox: Queued board-side changes waiting for the bot or external consumers
+CREATE TABLE IF NOT EXISTS intents (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  body TEXT NOT NULL,
+  ver INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_intents_slug ON intents(slug);
+CREATE INDEX IF NOT EXISTS idx_intents_kind ON intents(kind);

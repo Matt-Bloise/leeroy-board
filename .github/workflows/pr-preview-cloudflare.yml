@@ -105,12 +105,17 @@ jobs:
             fs.writeFileSync("wrangler.toml", toml, "utf8");
           ' "$DB_ID"
 
-      - name: Apply D1 Schema, Migrations & Seed Ephemeral Database
+      - name: Apply Unified D1 Schema (`schema.sql`), Migrations & Seed Ephemeral Database
         working-directory: infrastructure
         run: |
           set -e
           npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --file=./schema.sql
-          npx wrangler d1 migrations apply "$D1_DATABASE_NAME" --remote
+          if [ -d "migrations" ] && [ -n "$(find migrations -maxdepth 1 -name '*.sql' 2>/dev/null)" ]; then
+            echo "Applying numbered migrations..."
+            npx wrangler d1 migrations apply "$D1_DATABASE_NAME" --remote
+          else
+            echo "Initial database deployment: unified schema.sql applied with zero migrations."
+          fi
 
           COUNT_JSON=$(npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --command="SELECT COUNT(*) AS n FROM kv_state;" --json)
           ROW_COUNT=$(node -e '

@@ -59,12 +59,17 @@ jobs:
           echo "Resolved D1 database_id: $DB_ID"
           sed -i "s/00000000-0000-0000-0000-000000000000/$DB_ID/g" wrangler.toml
 
-      - name: Apply D1 Schema & Numbered Migrations (`schema.sql` + `migrations/*.sql`)
+      - name: Apply Unified D1 Schema (`schema.sql`) & Pending Migrations
         working-directory: infrastructure
         run: |
           set -e
           npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --file=./schema.sql
-          npx wrangler d1 migrations apply "$D1_DATABASE_NAME" --remote
+          if [ -d "migrations" ] && [ -n "$(find migrations -maxdepth 1 -name '*.sql' 2>/dev/null)" ]; then
+            echo "Applying numbered migrations..."
+            npx wrangler d1 migrations apply "$D1_DATABASE_NAME" --remote
+          else
+            echo "Initial database deployment: unified schema.sql applied with zero migrations."
+          fi
 
       - name: Seed Initial Board & Library Data into D1 (if empty)
         working-directory: infrastructure

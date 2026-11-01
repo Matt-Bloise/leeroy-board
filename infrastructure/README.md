@@ -300,8 +300,33 @@ The Cloudflare Worker includes a native Discord HTTP Interactions endpoint in [`
    ```
    *(Discord will immediately send a signed `PING` request; the Worker verifies the `X-Signature-Ed25519` header using WebCrypto and responds with `PONG`.)*
 3. What `POST /api/discord` handles automatically:
-   - **`/ask <question> [model:claude|gemini|workers-ai|groq|cerebras|github|openrouter]` slash command**: Returns a deferred thinking state (`type: 5`) in `<5ms`, runs [`answerWithAi()`](./worker/ai-models.js) via `ctx.waitUntil()`, PATCHes the Discord message with Leeroy's cited answer, saves the turn in D1, and broadcasts it live to all open boards.
-   - **Sign-ups Card Buttons (`signup:<field>:<value>`, e.g. `signup:rsvp:in`, `signup:pack:yes`, `signup:meet:Valley of Strength`, `signup:when:6pm`)**: Updates the caller's entry in D1 `kv_state['signups']`, recomputes all tallies, purges the Edge Cache, and broadcasts `{ type: "data", key: "signups" }` over WebSockets so the tavern table on the web board updates in `<5ms`.
+   - **All 20 Slash Commands**:
+     - `/ask <question> [model] [private]`: Multi-model AI question & answering with live cited answers.
+     - `/tonight`: Launch night card, next step, party members, and RSVP in list.
+     - `/sheet [field] [value]`: View or update character sheet fields in D1 (`sheet_events` + `party_sheets`).
+     - `/launch [state:queue|in|done]`: Set or view launch-night queue status.
+     - `/map [place] [plan]`: Deep-link to places or routes on the Living Board Atlas.
+     - `/signup [rsvp] [pack] [meet] [when]`: Direct launch-night sign-up updates and interactive buttons.
+     - `/countdown`: Launch countdown with hype, stress test info, and relative Discord timestamps.
+     - `/dates`: All verified WoW: Forever dates with certainty ratings.
+     - `/library`: Reference threads on shelves and upcoming topics.
+     - `/quiz [reveal:spoiler|reaction]`: Random Pop Quiz questions with spoiler bars or eye reaction reveals.
+     - `/didyouknow`: Random verified facts from the library.
+     - `/build <who>`: Link to party members' build threads (Bloise, Street Rat, Handsome Squidward, Bible Boi, Santa).
+     - `/leeroy`: The yell with channel cooldown: "LEEROOOOOOOOY JENKINS!"
+     - `/help`: Ephemeral guide to Leeroy bot and Living Board.
+     - `/page <title>`: Library page summary card with facts & direct board link (with autocomplete).
+     - `/tooltip <name>`: Spell or item tooltip from the game (with autocomplete).
+     - `/journey <choice>`: Pick learning depth (guided, curious, everything).
+     - `/intents [after] [limit]`: View pending intents in the D1 mailbox waiting for consumers.
+     - `/ack <up_to>`: Acknowledge and clear intents up to a sequence number.
+     - `/answer <id> <answer> [sources] [failed]`: Record answer to an ask turn and broadcast to the Living Board.
+   - **Message Context Menu Commands**:
+     - `Ask Leeroy`: Right-click / tap and hold any message to ask Leeroy about it.
+     - `Fix this fact`: Right-click / tap and hold to file an audit fix in `fact_fixes`.
+   - **Interactive Component Buttons & Mailbox Sync**:
+     - Sign-ups buttons (`signup:<field>:<value>`) update `signups` in D1 and broadcast via WebSockets in `<5ms`.
+     - All mutations queue into the D1 `intents` mailbox (`GET /api/intents`, `POST /api/ack`, `POST /api/answer`).
 
 #### Option 2: Keeping an Existing Gateway Discord Bot Process
 If you already run a gateway bot script that listens to message events or reactions in `#wow-forever`, point its HTTP calls at the Worker instead of writing/committing JSON files to Git:
