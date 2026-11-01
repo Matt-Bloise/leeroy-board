@@ -54,6 +54,7 @@ const kvFiles = [
   ["tonight", path.join(DATA_DIR, "tonight.json")],
   ["launch", path.join(DATA_DIR, "launch.json")],
   ["decide", path.join(DATA_DIR, "decide.json")],
+  ["guided-atlas", path.join(DATA_DIR, "guided-atlas.json")],
   ["marks", path.join(ATLAS_DIR, "marks.json")],
   ["links", path.join(ATLAS_DIR, "links.json")],
 ];

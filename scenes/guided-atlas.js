@@ -16,7 +16,7 @@ const sched = (f) => (typeof requestAnimationFrame === "function" ? requestAnima
 const focus = (el) => { try { if (el) el.focus({ preventScroll: true }); } catch (e) {} };
 
 function facts() {
-  const u = (window.__brain && window.__brain.dataUrl && window.__brain.dataUrl("data/guided-atlas.json")) || "data/guided-atlas.json";
+  const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/guided-atlas.json")) || "data/guided-atlas.json";
   return (G.dataP ||= fetch(u, { cache: "no-cache" }).then((r) => (r && r.ok ? r : fetch("data/guided-atlas.json", { cache: "no-cache" }))).catch(() => fetch("data/guided-atlas.json", { cache: "no-cache" })).then((r) => (r && r.ok ? r.json() : null)).catch(() => null).then((d) => { G.data = d; return d; }));
 }
 const mine = () => { const m = MEM.member(), d = G.data; return m && d && d.classes ? d.classes[m.class_key] || null : null; };

@@ -337,6 +337,42 @@ export default {
         return new Response(doResp.body, { status: doResp.status, headers });
       }
 
+      // 1a. POST /token -> Discord Embedded App SDK OAuth2 code-to-token exchange (`vendor/discord-auth.js`)
+      if (req.method === "POST" && path === "/token") {
+        let body = {};
+        try {
+          body = await req.json();
+        } catch {}
+        const code = typeof body?.code === "string" ? body.code.trim() : "";
+        if (!code || code.length > 512) {
+          return jsonResp({ error: "Invalid authorization code" }, 400, cors);
+        }
+        const clientId = env.DISCORD_CLIENT_ID || "1561857940174938114";
+        const clientSecret = env.DISCORD_CLIENT_SECRET || "";
+        if (!clientSecret) {
+          return jsonResp({ error: "Discord client secret not configured" }, 503, cors);
+        }
+        const params = new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "authorization_code",
+          code,
+        });
+        const tokenRes = await fetch("https://discord.com/api/v10/oauth2/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString(),
+        });
+        if (!tokenRes.ok) {
+          return jsonResp({ error: "Token exchange failed" }, 502, cors);
+        }
+        const tokenJson = await tokenRes.json().catch(() => null);
+        if (!tokenJson || typeof tokenJson.access_token !== "string") {
+          return jsonResp({ error: "Invalid token response" }, 502, cors);
+        }
+        return jsonResp({ access_token: tokenJson.access_token }, 200, cors);
+      }
+
       // 1b. POST /signups -> External Discord Bot sync for `#wow-forever` Sign-ups card
       if (req.method === "POST" && path === "/signups") {
         if (!isAuthorized(req, url, env)) {
