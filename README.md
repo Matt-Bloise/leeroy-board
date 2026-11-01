@@ -28,17 +28,21 @@ All development, content authoring, and database management happen directly in t
 cd infrastructure
 npm install
 
-# 1. Initialize & seed local D1 SQLite database from data/
+# 1. Initialize & migrate local D1 SQLite database, then seed from data/
 npm run d1:schema:local
+npm run d1:migrate:local
 npm run d1:seed:local
 
-# 2. Run the Cloudflare Worker + D1 locally on http://127.0.0.1:8787
+# 2. Create a new numbered D1 SQL migration (auto-applied on every CI/CD deploy)
+npm run d1:migrate:create -- add_new_column
+
+# 3. Run the Cloudflare Worker + D1 locally on http://127.0.0.1:8787
 npm run dev
 
-# 3. Rebuild data/library/{search,open,index}.json stamps & TF-IDF indexes locally
+# 4. Rebuild data/library/{search,open,index}.json stamps & TF-IDF indexes locally
 npm run library:rebuild
 
-# 4. Export live D1 state (remote or local) back to data/*.json
+# 5. Export live D1 state (remote or local) back to data/*.json
 npm run d1:export:local
 npm run d1:export:remote
 ```

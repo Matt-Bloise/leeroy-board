@@ -12,6 +12,7 @@ crons = ["*/15 * * * *"]
 binding = "DB"
 database_name = "leeroy-board-db"
 database_id = "00000000-0000-0000-0000-000000000000" # Replaced automatically in CI or via `wrangler d1 create`
+migrations_dir = "migrations"
 
 # Hibernatable WebSocket Durable Object (Free Tier: SQLite-backed, 100k req/day)
 [durable_objects]
