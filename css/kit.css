@@ -58,7 +58,8 @@ html:not(#k) .tn-pick .tn-name{color:#f4e8c8;text-shadow:0 1px 2px #1a0f06}
 html:not(#k) :is(.dc-pill,.ps-view,.ics,.nx-trail,.jr-core .jr-more):not([aria-pressed="true"]){color:var(--cream)}
 html:not(#k) .rc-chip:not([aria-pressed="true"]){color:var(--ink)}
 html:not(#k) :is(.dc-pill,.ps-view,.ics,.nx-trail,.jr-core .jr-more,.tn-pick .tn-name):not([aria-pressed="true"]){background-color:var(--glass)}
-html:not(#k) :is(.page-head .lib-btn,.page-head .copy,.lib-front-col .lib-btn.strong,.more-hits-in,#lib-expert){color:var(--ink);text-shadow:none}
+html:not(#k) :is(.page-head .lib-btn,.page-head .copy,.lib-front-col .lib-btn.strong,.more-hits-in,#lib-expert[aria-pressed="true"]){color:var(--ink);text-shadow:none}
+html:not(#k) #lib-expert:not([aria-pressed="true"]){color:var(--cream)}
 html:not(#k) .mine-opt:not([aria-pressed="true"]){color:var(--cream)}
 html:not(#k) .sense-fab{color:var(--cream)}
 html:not(#k) .nx-k{color:color-mix(in srgb,var(--wax) 72%,#000)}
