@@ -352,7 +352,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         systemPrompt,
         userPrompt,
         extraHeaders: {
-          "HTTP-Referer": "https://leeroy-board.pages.dev",
+          "HTTP-Referer": env.BOARD_PUBLIC_URL || "https://leeroy.party",
           "X-Title": "Dungeons and Drinking Living Board",
         },
       });

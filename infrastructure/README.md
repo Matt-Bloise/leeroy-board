@@ -94,13 +94,15 @@ If your Cloudflare account has never deployed a Worker before, `wrangler deploy`
 ### Step 2: Create a Cloudflare API Token (`CLOUDFLARE_API_TOKEN`)
 1. In the Cloudflare Dashboard, go to **My Profile (top-right avatar) -> API Tokens -> Create Token**.
 2. Click **Use template** next to **Edit Cloudflare Workers**.
-3. Under **Permissions**, ensure the token has these **5 permissions** (add D1, Workers AI, and Cloudflare Pages using **+ Add more**):
+3. Under **Permissions**, ensure the token has these permissions (add D1, Workers AI, Pages, and Zone DNS using **+ Add more**):
    - **Account** -> **Workers Scripts** -> `Edit` *(deploys & deletes production/PR Workers, Durable Objects, and Cron Triggers)*
    - **Account** -> **D1** -> `Edit` *(creates, migrates, seeds, and deletes production/PR D1 databases)*
-   - **Account** -> **Cloudflare Pages** -> `Edit` *(creates the `leeroy-board` Pages project, deploys production & PR previews, and deletes closed PR preview deployments)*
+   - **Account** -> **Cloudflare Pages** -> `Edit` *(creates the `leeroy-board` Pages project, deploys production & PR previews, attaches custom domains, and deletes closed PR preview deployments)*
    - **Account** -> **Workers AI** -> `Edit` or `Read` *(allows the `[ai]` binding to run `@cf/meta/llama-3.3-70b-instruct-fp8-fast` on Cloudflare's Free Tier)*
    - **Account** -> **Account Settings** -> `Read` *(allows Wrangler CLI to resolve account metadata in CI)*
-4. Under **Account Resources**, select **Include -> All accounts** (or your specific account).
+   - **Zone** -> **DNS** -> `Edit` *(provisions DNS routes and custom domains for `api.leeroy.party`, `leeroy.party`, and `www.leeroy.party`)*
+   - **Zone** -> **Zone** -> `Read` *(resolves `leeroy.party` zone ID during custom domain setup)*
+4. Under **Account Resources**, select **Include -> All accounts** (or your specific account). Under **Zone Resources**, select **Include -> All zones from an account** (or the specific zone for `leeroy.party`).
 5. Click **Continue to summary -> Create Token**, and copy the token value.
 
 ### Step 3: Create AI API Key(s) (Configure Any Combination — or Use Built-in Workers AI with 0 Keys)
@@ -141,7 +143,7 @@ The frontend ([`js/brain.js`](../js/brain.js#L4)) validates that the write key (
    ```
 2. Save this token as `BOARD_ADMIN_TOKEN` in GitHub Secrets (Step 5).
 3. **How Party Members Unlock Write Mode on the Board**:
-   - Anyone opening `https://leeroy-board.pages.dev` (or a PR preview `https://pr-<N>.leeroy-board.pages.dev`) can browse the entire board, library, and live WebSocket updates **without** a key.
+   - Anyone opening `https://leeroy.party` (or a PR preview `https://pr-<N>.leeroy-board.pages.dev`) can browse the entire board, library, and live WebSocket updates **without** a key.
    - To unlock write actions (**Ask Leeroy**, **Fact Fixes**, **Sign-ups**, and **Character Sheet edits**), open the board once with `#k=<YOUR_BOARD_ADMIN_TOKEN>` appended to the URL:
      ```text
      https://leeroy.party/#k=<YOUR_BOARD_ADMIN_TOKEN>
@@ -190,7 +192,7 @@ on:
 2. **Idempotent Schema & Numbered Migrations**: Runs [`infrastructure/schema.sql`](./schema.sql) (`CREATE TABLE IF NOT EXISTS ...`) followed by `npx wrangler d1 migrations apply leeroy-board-db --remote` (applying all pending migrations in `infrastructure/migrations/`).
 3. **One-Time Initial Seeding**: Checks `SELECT COUNT(*) FROM kv_state`. If `0` (first deploy), runs [`scripts/seed-d1.mjs --remote`](./scripts/seed-d1.mjs) to load all 10 board JSON documents, 20 library blobs, 67 library pages, and 31 source URLs into D1. On all subsequent `master` commits, seeding is skipped so live party data in D1 is never overwritten.
 4. **Worker + Durable Object + Cron Deployment**: Deploys `leeroy-brain`, provisions the `BoardRoom` Durable Object (`v1`), activates the `0 */6 * * *` Cron Trigger, and syncs all configured Worker secrets.
-5. **Cloudflare Pages Production Deployment**: Stamps the production Worker URL into `.cloudflare-dist/js/brain.js`, creates the `leeroy-board` Cloudflare Pages project (`--production-branch=master`) if needed, and deploys the static site to `https://leeroy-board.pages.dev`.
+5. **Cloudflare Pages Production Deployment**: Stamps the production Worker URL into `.cloudflare-dist/js/brain.js`, creates the `leeroy-board` Cloudflare Pages project (`--production-branch=master`) if needed, deploys the static site, and attaches the custom domains `https://leeroy.party` and `https://www.leeroy.party`.
 
 ### Production Verification Checklist (After First `master` Merge)
 1. **Verify Worker & AI Providers Health**:
@@ -216,10 +218,10 @@ on:
    }
    ```
 2. **Verify D1 Bootstrap & Library Blobs**:
-   - Open `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/bootstrap` (returns `party`, `timeline`, `stats`, `signups`, `tonight`, `launch`, `marks`, `decide`).
-   - Open `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/library/index.json` (returns the 67-page library index).
+   - Open `https://api.leeroy.party/api/bootstrap` (returns `party`, `timeline`, `stats`, `signups`, `tonight`, `launch`, `marks`, `decide`).
+   - Open `https://api.leeroy.party/api/library/index.json` (returns the 67-page library index).
 3. **Verify Production Site & Write Key**:
-   - Open `https://leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>` in your browser.
+   - Open `https://leeroy.party/#k=<YOUR_BOARD_ADMIN_TOKEN>` in your browser.
    - Open the **Leeroy** tab, pick any model from the dropdown, and send a test question.
 
 ---
@@ -230,8 +232,8 @@ The PR preview workflow ([`.github/workflows/pr-preview-cloudflare.yml`](../.git
 
 | Layer | Production (`master`) | Ephemeral PR Preview (`PR #<N>`) |
 | :--- | :--- | :--- |
-| **Static Site (Pages)** | `https://leeroy-board.pages.dev` | `https://pr-<N>.leeroy-board.pages.dev` |
-| **Worker + Durable Object** | `leeroy-brain` | `leeroy-brain-pr-<N>` |
+| **Static Site (Pages)** | `https://leeroy.party` (and `www.leeroy.party`) | `https://pr-<N>.leeroy-board.pages.dev` |
+| **Worker + Durable Object** | `leeroy-brain` (`https://api.leeroy.party`) | `leeroy-brain-pr-<N>` (`https://leeroy-brain-pr-<N>.<subdomain>.workers.dev`) |
 | **D1 SQLite Database** | `leeroy-board-db` | `leeroy-board-db-pr-<N>` |
 | **Cron Trigger** | Enabled (`0 */6 * * *`) | Stripped (preserves 5-cron Free-Tier account quota) |
 | **Discord Webhook** | Enabled (`#wow-forever`) | Omitted (prevents PR test queries from spamming Discord) |
@@ -496,12 +498,12 @@ This runbook guides you through a seamless, zero-downtime cutover from the legac
      2. Apply `schema.sql` and run all numbered migrations in `infrastructure/migrations/`.
      3. Seed the D1 database from `data/*.json` and `data/library/*.json` (10 KV documents, 20 blobs, 67 pages, 31 sources).
      4. Deploy the `leeroy-brain` Worker, `BoardRoom` Durable Object, and `0 */6 * * *` Cron Trigger.
-     5. Build and publish the static site to Cloudflare Pages at `https://leeroy-board.pages.dev`.
+     5. Build and publish the static site to Cloudflare Pages at `https://leeroy.party` (and `https://www.leeroy.party`).
 
 ### Phase 3: Verification & Sanity Checks
 1. **API & AI Provider Health**:
    ```bash
-   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/health
+   curl -s https://api.leeroy.party/api/health
    ```
    Verify `"ok": true` and that active AI providers are reported correctly.
 2. **Bootstrap & Library Payloads**:
@@ -511,7 +513,7 @@ This runbook guides you through a seamless, zero-downtime cutover from the legac
    ```
    Verify the bootstrap returns party state and the library returns 67 indexed pages.
 3. **Frontend & Write Key**:
-   - Open `https://leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>`.
+   - Open `https://leeroy.party/#k=<YOUR_BOARD_ADMIN_TOKEN>`.
    - Verify that the green live connection indicator illuminates.
    - In the **Leeroy** chamber tab, submit a test question to verify that streaming / instant Q&A answers with source citations.
    - Test an RSVP or character sheet modification to verify sub-5ms WebSocket fan-out.
@@ -522,9 +524,9 @@ This runbook guides you through a seamless, zero-downtime cutover from the legac
      - Route `/` to `leeroy.party`
      - Route `/api` to `api.leeroy.party/api`
 2. **Update Interactions Endpoint (Serverless Bot)**:
-   - If using the native serverless bot, set **Interactions Endpoint URL** to `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/discord`.
+   - If using the native serverless bot, set **Interactions Endpoint URL** to `https://api.leeroy.party/api/discord`.
 3. **External Bot / Gateway Bot (Alternative)**:
-   - If keeping an existing Node.js bot script, point its outbound requests to `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/signups` and `/api/sheet`, passing `Authorization: Bearer <BOARD_ADMIN_TOKEN>`.
+   - If keeping an existing Node.js bot script, point its outbound requests to `https://api.leeroy.party/api/signups` and `/api/sheet`, passing `Authorization: Bearer <BOARD_ADMIN_TOKEN>`.
 
 ### Phase 5: Decommissioning Legacy Infrastructure
 Once the production Cloudflare Pages site and Worker are active:

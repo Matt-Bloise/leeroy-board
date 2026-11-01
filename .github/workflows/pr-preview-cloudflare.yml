@@ -99,6 +99,7 @@ jobs:
             toml = toml.replace(/AI_PROVIDER\s*=\s*".*"/, `AI_PROVIDER = "workers-ai"`);
             const prOrigin = `https://${process.env.PAGES_BRANCH}.${process.env.PAGES_PROJECT_NAME}.pages.dev`;
             toml = toml.replace(/ALLOWED_ORIGINS\s*=\s*"([^"]*)"/, (m, orig) => `ALLOWED_ORIGINS = "${orig},${prOrigin}"`);
+            toml = toml.replace(/BOARD_PUBLIC_URL\s*=\s*".*"/, `BOARD_PUBLIC_URL = "${prOrigin}"`);
             if (!toml.includes("IS_PR_PREVIEW")) {
               toml = toml.replace(/\[vars\]/, `[vars]\nIS_PR_PREVIEW = "true"\nWORKER_NAME = "${process.env.WORKER_NAME}"`);
             }

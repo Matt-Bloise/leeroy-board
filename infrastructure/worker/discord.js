@@ -454,7 +454,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     "Bloise";
   const member = slugFromDisplayName(rawUser);
   const byName = member.name;
-  const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy-board.pages.dev";
+  const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
 
   // 4. Autocomplete (Type 4) -> Application Command Autocomplete Result (Type 8)
   if (interaction.type === 4 && interaction.data) {

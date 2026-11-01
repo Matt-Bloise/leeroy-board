@@ -148,3 +148,18 @@ jobs:
           cd infrastructure
           npx wrangler pages project create "$PAGES_PROJECT_NAME" --production-branch=master >/dev/null 2>&1 || true
           npx wrangler pages deploy ../.cloudflare-dist --project-name="$PAGES_PROJECT_NAME" --branch=master --commit-dirty=true
+
+      - name: Ensure Custom Domains (leeroy.party & www.leeroy.party) Attached to Pages
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "Ensuring leeroy.party and www.leeroy.party are attached to Pages project '$PAGES_PROJECT_NAME'..."
+            for DOMAIN in "leeroy.party" "www.leeroy.party"; do
+              RES=$(curl -s -w "\n%{http_code}" -X POST "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/${PAGES_PROJECT_NAME}/domains" \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "{\"name\":\"${DOMAIN}\"}")
+              HTTP_CODE=$(echo "$RES" | tail -n 1)
+              BODY=$(echo "$RES" | head -n -1)
+              echo "Custom domain $DOMAIN configuration (HTTP $HTTP_CODE): $BODY"
+            done
+          fi

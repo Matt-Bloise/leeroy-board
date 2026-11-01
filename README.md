@@ -9,14 +9,14 @@ Previously a static export mirror of `Matt-Bloise/wow-mage`, `leeroy-board` now 
 ## Architecture Overview
 
 - **Frontend (`index.html`, `js/`, `scenes/`, `atlas/`, `room/`, `css/`)**:
-  - Hosted on **Cloudflare Pages** at **`https://leeroy.party`** with automatic PR preview environments (`.github/workflows/`).
-  - Connects to the `leeroy-brain` Cloudflare Worker via [`js/brain.js`](js/brain.js) for single-roundtrip `/api/bootstrap` state, live WebSocket synchronization (`/api/live`), character sheet editing (`/api/sheet`), and Leeroy Chamber Q&A (`/api/intent`).
+  - Hosted on **Cloudflare Pages** at **`https://leeroy.party`** (and `https://www.leeroy.party`) with automatic, isolated PR preview environments (`https://pr-<N>.leeroy-board.pages.dev`).
+  - Connects to the `leeroy-brain` Cloudflare Worker at **`https://api.leeroy.party`** via [`js/brain.js`](js/brain.js) for single-roundtrip `/api/bootstrap` state, live WebSocket synchronization (`wss://api.leeroy.party/api/live`), character sheet editing (`/api/sheet`), and Leeroy Chamber Q&A (`/api/intent`).
 - **Serverless Edge Backend ([`infrastructure/`](infrastructure/README.md))**:
-  - **[`infrastructure/worker/index.js`](infrastructure/worker/index.js)**: Edge-cached REST API (`/api/bootstrap`, `/api/state`, `/api/library/:name`, `/api/data/:name`, `/api/sheet`, `/api/vocab`, `/api/dispatch`, `/api/intent`, `/api/wiki/page`, `/api/wiki/snapshots`, `/api/wiki/proposals`).
-  - **[`infrastructure/worker/room.js`](infrastructure/worker/room.js)**: Hibernatable WebSocket Durable Object (`BoardRoom`) for sub-second presence and live board updates.
+  - **[`infrastructure/worker/index.js`](infrastructure/worker/index.js)**: Edge-cached REST API at **`https://api.leeroy.party/api`** (`/api/bootstrap`, `/api/state`, `/api/library/:name`, `/api/data/:name`, `/api/sheet`, `/api/vocab`, `/api/dispatch`, `/api/intent`, `/api/signups`, `/api/intents`, `/api/ack`, `/api/answer`).
+  - **[`infrastructure/worker/room.js`](infrastructure/worker/room.js)**: Hibernatable WebSocket Durable Object (`BoardRoom`) at `wss://api.leeroy.party/api/live` for sub-second presence and live board updates.
   - **[`infrastructure/worker/ai-models.js`](infrastructure/worker/ai-models.js)**: Multi-provider AI RAG engine supporting **7 providers** (`claude`, `gemini`, `workers-ai`, `groq`, `cerebras`, `github`, `openrouter`), ranked by [`vendor/rank-core.js`](vendor/rank-core.js) with `wow-mage` house-voice guardrails (`repairHouseVoice`) and automated wiki fact extraction (`extractWikiFactsWithAi`).
   - **[`infrastructure/worker/scraper.js`](infrastructure/worker/scraper.js)**: 6-hour Cloudflare Cron Trigger (`0 */6 * * *`) that monitors canonical Blizzard/Wowhead/Warcraft Wiki sources (tracked in D1 lib_sources), archives stripped text snapshots in D1 (`lib_source_snapshots`), auto-learns updated facts (`wiki_proposals`), and rebuilds `search.json`, `open.json`, `index.json`, and category blobs in D1.
-  - **[`infrastructure/worker/discord.js`](infrastructure/worker/discord.js)**: Ed25519-verified Discord HTTP Interactions endpoint (`/ask`, `/signup`, `/tonight`, `/sheet`, `/launch`, `/map`, `/status`, and interactive Sign-up card buttons).
+  - **[`infrastructure/worker/discord.js`](infrastructure/worker/discord.js)**: Ed25519-verified Discord HTTP Interactions endpoint at `https://api.leeroy.party/api/discord` supporting all 20 slash commands (`/ask`, `/tonight`, `/sheet`, `/launch`, `/map`, `/signup`, `/countdown`, `/dates`, `/library`, `/quiz`, `/didyouknow`, `/build`, `/leeroy`, `/help`, `/page`, `/tooltip`, `/journey`, `/intents`, `/ack`, `/answer`) and interactive buttons linking to `https://leeroy.party`.
 
 ---
 

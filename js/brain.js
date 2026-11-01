@@ -1,6 +1,6 @@
 (() => {
 "use strict";
-const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
+const WORKER = "https://api.leeroy.party";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const WHEN = ["6pm", "8pm", "later"], PACK = ["yes", "no"], MEET = ["vos", "xroads", "other"], FIX_PAGE = /^[a-z0-9/_.-]{1,80}$/, FIX_KEY = /^[a-z0-9_.-]{1,80}$/, PLACE_MAX = 40, FIX_NOTE_MAX = 200;
 const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"], AI_PROVIDERS = ["claude", "gemini", "workers-ai", "groq", "cerebras", "github", "openrouter"];
@@ -49,7 +49,7 @@ function baseFor() {
   }
   const pr = host.match(/^pr-(\d+)\.leeroy-board\.pages\.dev$/i);
   if (pr) {
-    const prWorker = `https://leeroy-brain-pr-${pr[1]}.jmattbloise.workers.dev`;
+    const prWorker = WORKER && WORKER.includes(`pr-${pr[1]}`) ? WORKER : `https://leeroy-brain-pr-${pr[1]}.jmattbloise.workers.dev`;
     return { http: `${prWorker}/api`, ws: `${prWorker.replace(/^https:/, "wss:")}/api/live` };
   }
   if (/\.discordsays\.com$/.test(host)) return { http: "/api", ws: `wss://${host}/api/live` };
