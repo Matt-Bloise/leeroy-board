@@ -10,7 +10,7 @@
 
   const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : k === "reduceMQ" ? { get matches() { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } } : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=f98cac4ab8");
+    const m = await import("../atlas/atlas.js?v=17aeb78083");
     return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, member: () => (K.MEM && K.MEM.member ? K.MEM.member() : null), sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {
@@ -101,7 +101,7 @@
   const later = () => { clearTimeout(H.pt); H.pt = setTimeout(pass, 160); };
   const loadMarks = async () => {
     if (H.marks || H.mLoading) return; H.mLoading = true;
-    try { const r = await fetch("data/atlas/marks.json", { cache: "no-store" }); if (r.ok) H.marks = await r.json(); } catch (e) { }
+    try { H.marks = await (window.BoardFetch ? window.BoardFetch.json("data/atlas/marks.json", { cache: "no-store" }) : fetch("data/atlas/marks.json", { cache: "no-store" }).then((r) => r.json())); } catch (e) { }
     if (!H.marks) return;
     pass();
     if (typeof MutationObserver === "function" && !H.mo) { H.mo = true; for (const q of ["#lib-main", "#ask-out"]) { const t = $(q); if (t) new MutationObserver(later).observe(t, { childList: true, subtree: true }); } }

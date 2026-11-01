@@ -219,7 +219,7 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
     clearInterval(L.timer); L.timer = setInterval(refresh, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   }
-  const launchP = (async () => { try { const r = await fetch("data/launch.json", { cache: "no-store" }); if (!r.ok) return null; const j = await r.json(); return j && typeof j === "object" && !j.error ? j : null; } catch (e) { return null; } })();
+  const launchP = (async () => { try { const j = await (window.BoardFetch ? window.BoardFetch.json("data/launch.json", { cache: "no-store" }) : fetch("data/launch.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null))); return j && typeof j === "object" && !j.error ? j : null; } catch (e) { return null; } })();
   K.on("rendered", () => { launchP.then((j) => { if (j) K.D.launch = j; start(); }); });
   K.on("signups", () => { if (L.built) { renderFacts(); renderCheck(); } });
   K.on("tonight", () => { if (L.built) { renderStates(); renderCheck(); } });

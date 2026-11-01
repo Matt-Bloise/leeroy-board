@@ -33,7 +33,7 @@ function mount() {
 }
 mount();
 
-const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/decide.json answered ${r.status}`); return r.json(); }).then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
+const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= (window.BoardFetch ? window.BoardFetch.json("data/decide.json", { cache: "no-store" }) : fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`${"data/decide.json"} answered ${r.status}`); return r.json(); })).then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
 K.decideData = get;
 const defaultWho = () => { const m = MEM.member(); return m && DV.data && DV.data.people.some((p) => p.class_key === m.class_key) ? m.class_key : "all"; };
 const who = () => DV.who || defaultWho();
@@ -175,7 +175,8 @@ function pick(w, quiet) {
   if (!quiet) { if (was !== w) { snd("page"); hap("tick"); } const b = $(`#dc-who [data-who="${w}"]`); if (b) { try { b.focus({ preventScroll: true }); } catch (e) {} } }
 }
 function fail(e) {
-  const main = $("#dc-main"); if (main && !DV.data) main.replaceChildren(h("p", { class: "dc-sum", text: `The decision data did not load (${e && e.message ? e.message : "no file"}). A refresh may help.` }));
+  const main = $("#dc-main"); if (!main || DV.data) return;
+  if (window.BoardFetch) window.BoardFetch.fail(main, "the decisions", () => get().then(() => render())); else main.replaceChildren(h("p", { class: "dc-sum", text: "The decision data did not load. A refresh may help." }));
 }
 const shown = () => { const p = $("#dc-main .dc-person"); return p ? p.dataset.who : null; };
 K.on("scene", (k) => {

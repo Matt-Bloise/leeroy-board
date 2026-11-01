@@ -175,8 +175,39 @@ const JR = () => document.documentElement.dataset.journey || "curious";
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
 const API = (() => { try { const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:"); return /^(https:\/\/leeroy-board-api[\w.-]*\.workers\.dev|http:\/\/127\.0\.0\.1:\d+)$/.test(u.origin) ? u.origin : null; } catch (e) { return null; } })();
 const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt); };
-const dataGet = (n) => apiFetch(`data/${n}.json`, { cache: "no-cache" });
-const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })), opt: ["signups", "tonight"].map((n) => dataGet(n).then((r) => (r.ok ? r.json() : null)).catch(() => null)) };
+const BF = (() => {
+  const B = ((document.currentScript || {}).src || "").match(/[?&]v=([0-9a-f]+)/), stale = new Set(), file = (u) => String(u).split("?")[0], key = (u) => `bd:${B ? B[1] : "dev"}:${file(u)}`;
+  const nap = (ms) => new Promise((r) => setTimeout(r, ms * (0.8 + Math.random() * 0.4)));
+  const json = async (url, opt, raw) => {
+    let err, soft = false;
+    for (let i = 0; i < 3; i++) {
+      if (i) await nap(i === 1 ? 400 : 1200);
+      const ac = typeof AbortController === "function" ? new AbortController() : null, t = setTimeout(() => ac && ac.abort(), 8000);
+      try {
+        const r = await (raw || apiFetch)(url, { ...opt, ...(ac ? { signal: ac.signal } : {}) });
+        if (!r.ok) { err = new Error(`${url} answered ${r.status}`); if (r.status < 500) { soft = true; break; } continue; }
+        const j = await r.json();
+        stale.delete(file(url)); try { const x = JSON.stringify(j); if (x.length < 3e5) localStorage.setItem(key(url), x); } catch (e) {}
+        return j;
+      } catch (e) { err = e; } finally { clearTimeout(t); }
+    }
+    if (!soft) { try { const c = localStorage.getItem(key(url)); if (c) { const j = JSON.parse(c); stale.add(file(url)); return j; } } catch (e) {} }
+    throw err;
+  };
+  const note = (...names) => (names.some((n) => [...stale].some((f) => f.endsWith(`/${n}.json`))) ? h("p", { class: "stale-note", role: "status", text: "Showing the last saved copy." }) : null);
+  const fail = (box, what, retry, manual) => {
+    if (!box) return;
+    const go = h("button", { type: "button", class: "retry-btn", text: "Try again" });
+    box.replaceChildren(h("p", { class: "data-fail", role: "status", text: `Could not load ${what}.` }), go);
+    const run = () => { go.disabled = true; go.textContent = "Trying"; Promise.resolve().then(retry).catch(() => {}).then(() => { if (go.isConnected) { go.disabled = false; go.textContent = "Try again"; } }); };
+    go.addEventListener("click", run);
+    if (!manual) setTimeout(() => { if (go.isConnected && !go.disabled) run(); }, 10000);
+  };
+  return { json, note, fail, stale };
+})();
+window.BoardFetch = BF;
+const dataGet = (n) => BF.json(`data/${n}.json`, { cache: "no-cache" });
+const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n)), opt: ["signups", "tonight"].map((n) => dataGet(n).catch(() => null)) };
 DATA_P.need.forEach((p) => p.catch(() => {}));
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
@@ -1369,9 +1400,17 @@ function renderSeats(S) {
   });
   box.replaceChildren(h("h4", { class: "seats-cap", text: launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
 }
+const signupsOk = (S) => !!(S && S.tallies && S.tallies.pack && S.tallies.meet && S.tallies.rsvp && S.options && Array.isArray(S.options.meet));
+async function reloadOpt() {
+  const [su, tn] = await Promise.all([dataGet("signups").catch(() => null), dataGet("tonight").catch(() => null)]);
+  if (!su && !tn) throw new Error("data still unavailable");
+  if (signupsOk(su)) D.signups = su; if (tn) D.tonight = tn;
+  for (const step of [renderTonight, renderTiles, renderDiscordSignups, buildSignupControls, renderBefore]) { try { step(); } catch (e) { console.error(step.name, e); } }
+  KIT.emit("signups"); KIT.emit("tonight");
+}
 function renderDiscordSignups() {
   const S = D.signups, body = $("#dsu-body");
-  if (!S) { body.replaceChildren(h("p", { text: "The Discord sign-ups did not load." })); $("#dsu-stamp").textContent = ""; return; }
+  if (!signupsOk(S)) { BF.fail(body, "sign-ups", reloadOpt); $("#dsu-stamp").textContent = ""; return; }
   const T = S.tallies;
   const meName = (MEM.member() || {}).name;
   const mineFirst = (names) => names.map(cleanName).sort((a, b) => (b.toLowerCase() === String(meName).toLowerCase()) - (a.toLowerCase() === String(meName).toLowerCase()));
@@ -1387,6 +1426,7 @@ function renderDiscordSignups() {
     ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
   body.replaceChildren(...groups.map(([title, icon, rows], gi) => h("div", { class: "tally", "data-q": ["pack", "meet", "rsvp", "when"][gi] }, h("h4", {}, emb(icon), title), ...rows)));
+  { const sn = BF.note("signups"); if (sn) body.append(sn); }
   renderSeats(S); actRow();
   $("#dsu-stamp").textContent = S.updated ? `Last change on Discord: ${fmtWhen(Date.parse(S.updated) / 1000, { rel: true })}.` : "Nobody has clicked the card yet.";
   KIT.emit("signups");
@@ -2494,19 +2534,19 @@ const libFirst = () => (innerWidth < 700 ? 6 : LIB_FIRST_WIDE);
 const dtShort = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const libDay = (d) => (d ? dtShort.format(new Date(`${d}T12:00:00Z`)) : "undated");
 const libStamped = (url) => { const v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[url.replace(/^data\/library\//, "")]; return v ? `${url}?v=${v}` : url; };
-const libGet = (url) => libIndex().catch(() => null).then(() => apiFetch(libStamped(url))).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
+const libGet = (url) => libIndex().catch(() => null).then(() => BF.json(libStamped(url)));
 const libTitle = (id) => (LIBD.head[id] ? LIBD.head[id].title : id);
 const libCatTitle = (key) => { const c = LIBD.index && LIBD.index.categories.find((x) => x.key === key); return c ? c.title : key; };
 function libIndex() {
-  LIBD.indexP ||= apiFetch("data/library/index.json", { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(`the library index answered ${r.status}`); return r.json(); }).then((j) => {
+  LIBD.indexP ||= BF.json("data/library/index.json", { cache: "no-cache" }).then((j) => {
     LIBD.index = j; for (const p of j.pages) LIBD.head[p.id] = p;
     try { renderLibTile(); } catch (e) { console.error(e); }
     return j;
-  });
+  }, (e) => { LIBD.indexP = null; throw e; });
   return LIBD.indexP;
 }
 function libCat(key) {
-  LIBD.catP[key] ||= libGet(`data/library/${key}.json`).then((j) => { for (const p of j.pages) LIBD.full[p.id] = p; return j; });
+  LIBD.catP[key] ||= libGet(`data/library/${key}.json`).then((j) => { for (const p of j.pages) LIBD.full[p.id] = p; return j; }, (e) => { delete LIBD.catP[key]; throw e; });
   return LIBD.catP[key];
 }
 function renderLibTile() {
@@ -2706,7 +2746,7 @@ function libRender(fresh) {
   const v = LIBS.view, count = $("#lib-count");
   $("#panel-library").dataset.view = v.kind;
   if (count && v.kind !== "results") count.textContent = "";
-  if (!LIBD.index) { main.replaceChildren(h("p", { class: "loading", text: LIBS.state === "failed" ? "The library did not load." : "Opening the stacks." })); return; }
+  if (!LIBD.index) { if (LIBS.state === "failed") BF.fail(main, "the library", libRetry); else main.replaceChildren(h("p", { class: "loading", text: "Opening the stacks." })); return; }
   if (v.kind === "page") { libRenderPage(v, tok, fresh); return; }
   if (v.kind === "results") { const t0 = performance.now(); libRenderResults(main); LIBS.renderMs = Math.round((performance.now() - t0) * 10) / 10; return; }
   if (v.kind === "open") { libRenderOpen(main, tok); return; }
@@ -2737,7 +2777,7 @@ function libRenderResults(main) {
   const count = $("#lib-count"), v = LIBS.view;
   if (!LIBS.ready || !LIBS.res || LIBS.res.q !== v.q) {
     if (count) count.textContent = LIBS.state === "failed" ? "Search is not available." : "Reading the shelves.";
-    if (LIBS.state === "failed") main.replaceChildren(h("p", { text: `Search did not start: ${LIBS.why}.` }));
+    if (LIBS.state === "failed") BF.fail(main, "search", libRetry);
     return;
   }
   const hits = LIBS.res.hits.filter((x) => !LIBS.cat || x.category === LIBS.cat);
@@ -2889,7 +2929,7 @@ async function libRenderPage(v, tok, fresh) {
   const main = $("#lib-main"), head = LIBD.head[v.id];
   const back = h("div", { class: "lib-row" }, h("button", { class: "lib-btn", type: "button", "data-back": "1" }, LIBS.back && LIBS.back.kind === "results" ? `Back to results for "${LIBS.back.q}"` : "Back to the shelf"));
   if (!head) { main.replaceChildren(back, h("p", { text: "That page is not on the shelves." })); return; }
-  if (!LIBD.full[v.id]) { main.replaceChildren(back, h("p", { class: "loading", text: `Taking ${head.title} off the shelf.` })); try { await libCat(head.category); } catch (e) { if (tok === LIBS.token) main.replaceChildren(back, h("p", { text: "That shelf did not load." })); return; } }
+  if (!LIBD.full[v.id]) { main.replaceChildren(back, h("p", { class: "loading", text: `Taking ${head.title} off the shelf.` })); try { await libCat(head.category); } catch (e) { if (tok === LIBS.token) { const bx = h("div", { class: "data-box" }); main.replaceChildren(back, bx); BF.fail(bx, "that shelf", () => libRender(false)); } return; } }
   if (tok !== LIBS.token) return;
   const p = LIBD.full[v.id];
   const xp = libExpert(), hostOf = {};
@@ -2929,6 +2969,7 @@ async function libRenderPage(v, tok, fresh) {
   if (row) { row.classList.add("lit"); const v = row.querySelector(".lf-v.clamp3"); if (v) { v.classList.remove("clamp3"); const b = row.querySelector(".lf-more"); if (b) { b.textContent = "less"; b.setAttribute("aria-expanded", "true"); } } row.scrollIntoView({ block: "center", behavior: "auto" }); }
   else if (fresh && body) { const top = $("#lib-main").offsetTop - 70; if (body.scrollTop > top) body.scrollTop = Math.max(0, top); }
 }
+function libRetry() { LIBD.indexP = null; return libIndex().then(() => { if (LIBS.state === "failed") { LIBS.state = "idle"; LIBS.via = "none"; LIBS.ready = false; libStart(); } libRenderHead(); libRender(); }); }
 const LIBUI = {
   open() {
     libIndex().then(() => { libRenderHead(); libRender(); }).catch((e) => { LIBS.state = "failed"; LIBS.why = e.message; libRender(); });
@@ -3124,7 +3165,7 @@ function startTooltips() {
 const NEWS_LABEL = { "forum-tracker": "Blizzard forums", "forum-search": "Blizzard forums", "wowhead-blue": "Blizzard, via Wowhead", "wowhead-news": "Wowhead", icyveins: "Icy Veins", warcrafttavern: "Warcraft Tavern" };
 const newsLabel = (s) => NEWS_LABEL[String(s).split("/")[1]] || String(s).split("/").pop();
 function libAux() {
-  LIBD.newsP ||= libGet("data/library/news.json").then((j) => { LIBD.news = j; if (LIBS.view.kind === "shelf" && !LIBS.cat) libRender(false); return j; }).catch(() => null);
+  LIBD.newsP ||= libGet("data/library/news.json").then((j) => { LIBD.news = j; if (LIBS.view.kind === "shelf" && !LIBS.cat) libRender(false); return j; }).catch(() => { LIBD.newsP = null; return null; });
   return LIBD.newsP;
 }
 function libOpenList() {
@@ -3278,7 +3319,7 @@ function yourTime(T) {
 function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `Launch: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
-  const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) return;
+  const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) { if (box && P && !T) BF.fail(box, "the steps for tonight", reloadOpt); return; }
   const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
   if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, crestMark(m), m.name)), h("button", { type: "button", class: "lib-tool tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
   else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
@@ -3481,12 +3522,16 @@ async function boot(mode, sdk) {
     const got = await Promise.all(DATA_P.need);
     DATA_NAMES.forEach((n, i) => { D[n] = got[i]; });
     [D.signups, D.tonight] = await Promise.all(DATA_P.opt);
+    if (!signupsOk(D.signups)) D.signups = null;
     splitPolls(); roles();
     try { performance.mark("board-data"); } catch (e) {}
   } catch (e) {
     setClockLabel("The data files did not load", "");
-    $("#footer").textContent = `Could not read the board's data: ${e.message}. The page needs its data folder published beside it.`;
+    const again = () => dataGet("party").then(() => location.reload());
+    BF.fail($("#footer"), "the board's data", again, 1);
+    $("#footer").append(h("small", { text: `Could not read the board's data: ${e.message}.` }));
     document.querySelectorAll(".tile-body").forEach((b) => b.replaceChildren(h("span", { class: "tile-line", text: "Not loaded." })));
+    [...document.querySelectorAll(".panel")].filter((pn) => pn.id !== "panel-library").forEach((pn) => { const bx = h("div", { class: "data-box data-down" }); pn.insertBefore(bx, pn.firstChild); BF.fail(bx, "this scene's data", again, 1); });
     route();
     return;
   }
