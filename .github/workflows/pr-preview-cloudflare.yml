@@ -15,6 +15,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 jobs:
   validate-fork-pr:
@@ -60,6 +61,100 @@ jobs:
       - name: Install Wrangler CLI
         working-directory: infrastructure
         run: npm install --no-audit --no-fund
+
+      - name: Verify Cloudflare Credentials & Scope Diagnostics
+        working-directory: infrastructure
+        run: |
+          set -e
+          echo "=== Cloudflare Credential & Account Pre-flight Check ==="
+
+          # Sanitize whitespace / carriage returns / quotes
+          CLEAN_TOKEN=$(echo "$CLOUDFLARE_API_TOKEN" | tr -d '\r\n ' | sed -e 's/^["\x27]//' -e 's/["\x27]$//')
+          CLEAN_ACC=$(echo "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n ' | sed -e 's/^["\x27]//' -e 's/["\x27]$//')
+
+          if [ -z "$CLEAN_TOKEN" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is empty or missing in GitHub Secrets."
+            exit 1
+          fi
+
+          # 1. Verify token status against Cloudflare verify endpoint
+          VERIFY_RES=$(curl -s "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+            -H "Authorization: Bearer $CLEAN_TOKEN")
+          TOKEN_STATUS=$(node -e 'try { const j = JSON.parse(process.argv[1]); console.log(j.result?.status || (j.success ? "active" : "failed")); } catch(e) { console.log("failed"); }' "$VERIFY_RES")
+
+          if [ "$TOKEN_STATUS" != "active" ]; then
+            echo "::error::Cloudflare API Token validation failed. Status: $TOKEN_STATUS"
+            echo "Raw response from Cloudflare: $VERIFY_RES"
+            echo ""
+            echo "Action Required:"
+            echo "1. Verify CLOUDFLARE_API_TOKEN is a valid API Token (not a Global API Key)."
+            echo "2. Check that the token is Active in Cloudflare Dashboard -> My Profile -> API Tokens."
+            exit 1
+          fi
+          echo "✓ Cloudflare API Token is ACTIVE and verified."
+
+          # 2. Check accounts the token has access to
+          ACCOUNTS_RES=$(curl -s "https://api.cloudflare.com/client/v4/accounts" \
+            -H "Authorization: Bearer $CLEAN_TOKEN")
+          ACC_INFO=$(node -e '
+            try {
+              const j = JSON.parse(process.argv[1]);
+              const accs = j.result || [];
+              const target = process.env.TARGET_ID;
+              const match = accs.find(a => a.id === target);
+              if (match) {
+                console.log("MATCH:" + match.id + ":" + match.name);
+              } else if (accs.length === 1) {
+                console.log("RESOLVED_SINGLE:" + accs[0].id + ":" + accs[0].name);
+              } else if (accs.length > 1) {
+                console.log("MULTIPLE:" + accs.map(a => `${a.name} (${a.id})`).join(", "));
+              } else {
+                console.log("NONE");
+              }
+            } catch(e) {
+              console.log("PARSE_ERROR");
+            }
+          ' "$ACCOUNTS_RES")
+
+          TARGET_ACCOUNT_ID="$CLEAN_ACC"
+          if [[ "$ACC_INFO" == MATCH:* ]]; then
+            ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
+            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
+            echo "✓ Account ID matches token: '$ACC_NAME' ($ACC_ID)"
+          elif [[ "$ACC_INFO" == RESOLVED_SINGLE:* ]]; then
+            ACC_ID=$(echo "$ACC_INFO" | cut -d: -f2)
+            ACC_NAME=$(echo "$ACC_INFO" | cut -d: -f3)
+            echo "::notice::Auto-resolved Cloudflare Account ID: '$ACC_NAME' ($ACC_ID)"
+            TARGET_ACCOUNT_ID="$ACC_ID"
+          elif [[ "$ACC_INFO" == MULTIPLE:* ]]; then
+            echo "::error::Provided Account ID '$CLEAN_ACC' does not match any accounts this token can access."
+            echo "Available accounts for this token: ${ACC_INFO#MULTIPLE:}"
+            exit 1
+          else
+            echo "::warning::Could not query /accounts via token. Proceeding with provided Account ID: $CLEAN_ACC"
+          fi
+
+          echo "CLOUDFLARE_API_TOKEN=$CLEAN_TOKEN" >> "$GITHUB_ENV"
+          echo "CLOUDFLARE_ACCOUNT_ID=$TARGET_ACCOUNT_ID" >> "$GITHUB_ENV"
+
+          # 3. Test D1 permissions specifically
+          D1_CHECK=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$TARGET_ACCOUNT_ID/d1/database" \
+            -H "Authorization: Bearer $CLEAN_TOKEN")
+          D1_SUCCESS=$(node -e 'try { const j = JSON.parse(process.argv[1]); console.log(j.success ? "true" : "false"); } catch(e) { console.log("false"); }' "$D1_CHECK")
+
+          if [ "$D1_SUCCESS" != "true" ]; then
+            echo "::error::Token lacks D1 permissions for account '$TARGET_ACCOUNT_ID'."
+            echo "Cloudflare response: $D1_CHECK"
+            echo ""
+            echo "Action Required to Fix (Authentication error 10000 on D1):"
+            echo "In Cloudflare Dashboard -> My Profile (top-right avatar) -> API Tokens:"
+            echo "1. Edit the token used for CLOUDFLARE_API_TOKEN."
+            echo "2. Under 'Permissions', click '+ Add more' and add: 'Account' -> 'D1' -> 'Edit'."
+            echo "3. Also ensure 'Account' -> 'Cloudflare Pages' -> 'Edit' is present."
+            echo "4. Save token and re-run workflow."
+            exit 1
+          fi
+          echo "✓ Cloudflare D1 permissions verified."
 
       - name: Provision Ephemeral D1 Database & Configure PR `wrangler.toml`
         working-directory: infrastructure
@@ -146,7 +241,12 @@ jobs:
           echo "$DEPLOY_OUT"
           WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://${WORKER_NAME}\.[a-z0-9-]+\.workers\.dev" | head -n 1)
           if [ -z "$WORKER_URL" ]; then
-            WORKER_URL="https://${WORKER_NAME}.jmattbloise.workers.dev"
+            SUBDOMAIN=$(npx wrangler subdomain get 2>/dev/null | grep -oE '[a-z0-9-]+' | head -n 1 || true)
+            if [ -n "$SUBDOMAIN" ]; then
+              WORKER_URL="https://${WORKER_NAME}.${SUBDOMAIN}.workers.dev"
+            else
+              WORKER_URL="https://${WORKER_NAME}.jmattbloise.workers.dev"
+            fi
           fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 

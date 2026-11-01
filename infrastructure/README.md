@@ -105,6 +105,10 @@ If your Cloudflare account has never deployed a Worker before, `wrangler deploy`
 4. Under **Account Resources**, select **Include -> All accounts** (or your specific account). Under **Zone Resources**, select **Include -> All zones from an account** (or the specific zone for `leeroy.party`).
 5. Click **Continue to summary -> Create Token**, and copy the token value.
 
+> [!IMPORTANT]
+> **Avoid "Authentication error [code: 10000]" in CI**:
+> Cloudflare's default "Edit Cloudflare Workers" template does **NOT** include permissions for D1, Pages, or DNS by default. You **must** click **+ Add more** to manually add `Account -> D1 -> Edit` and `Account -> Cloudflare Pages -> Edit`. If omitted, CI jobs will fail during database provisioning with `Authentication error [code: 10000]`. Also verify that `CLOUDFLARE_ACCOUNT_ID` in GitHub Secrets matches the account selected in the token's Account Resources.
+
 ### Step 3: Create AI API Key(s) (Configure Any Combination — or Use Built-in Workers AI with 0 Keys)
 
 Because [`wrangler.toml`](./wrangler.toml#L25-L26) binds Cloudflare Workers AI (`[ai] binding = "AI"`), **`workers-ai` (Llama 3.3 70B) works immediately with zero external API keys**. You can also configure any or all of the following external providers:
