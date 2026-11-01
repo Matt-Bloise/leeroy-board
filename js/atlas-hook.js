@@ -10,7 +10,7 @@
 
   const kit = () => Object.fromEntries("h $ reduceMQ motionMs MOTION classVar andList sfx setHash goScene JR".split(" ").map((k) => [k, k === "$" ? $ : k === "reduceMQ" ? { get matches() { return !!(K.reduceMQ && K.reduceMQ.matches) || document.documentElement.classList.contains("play"); } } : K[k]]));
   const load = async () => {
-    const m = await import("../atlas/atlas.js?v=f98cac4ab8");
+    const m = await import("../atlas/atlas.js?v=99ce68a6e2");
     return m.createAtlas({ host: H.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, member: () => (K.MEM && K.MEM.member ? K.MEM.member() : null), sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: onEv });
   };
   const onEv = (type, d) => {
@@ -101,13 +101,13 @@
   const later = () => { clearTimeout(H.pt); H.pt = setTimeout(pass, 160); };
   const loadMarks = async () => {
     if (H.marks || H.mLoading) return; H.mLoading = true;
+    const own = () => (window.BoardFetch ? window.BoardFetch.json("data/atlas/marks.json", { cache: "no-store" }) : fetch("data/atlas/marks.json", { cache: "no-store" }).then((r) => r.json()));
     try {
       const b = window.BoardBrain && window.BoardBrain.bootstrap ? await window.BoardBrain.bootstrap() : null;
       if (b && b.marks && typeof b.marks === "object") H.marks = b.marks;
       else {
-        const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/atlas/marks.json")) || "data/atlas/marks.json";
-        const r = await fetch(u, { cache: "no-cache" }).then((res) => (res.ok ? res : fetch("data/atlas/marks.json", { cache: "no-store" }))).catch(() => fetch("data/atlas/marks.json", { cache: "no-store" }));
-        if (r.ok) H.marks = await r.json();
+        const u = window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/atlas/marks.json");
+        H.marks = u ? await fetch(u, { cache: "no-cache" }).then((res) => (res.ok ? res.json() : null)).catch(() => null).then((j) => (j != null ? j : own())) : await own();
       }
     } catch (e) { }
     if (!H.marks) return;

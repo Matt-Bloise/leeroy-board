@@ -134,3 +134,7 @@
   html.phone-shell #scene .lib-rail { margin-left: 0; padding-left: 2px; }
   html.phone-shell .cat[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--wax); }
 }
+.data-fail, .stale-note { margin: 0.4em 0; color: var(--ink); font-size: 0.95em; }
+.stale-note { opacity: 0.75; font-size: 0.85em; }
+.retry-btn { min-height: 44px; margin: 0.3em 0.5em 0.3em 0; padding: 0 1.1em; border: 1px solid var(--wax); border-radius: 6px; background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
+.retry-btn:disabled { opacity: 0.6; cursor: progress; }

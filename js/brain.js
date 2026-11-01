@@ -58,14 +58,15 @@ function baseFor() {
   }
   if (host === "matt-bloise.github.io" || /\.pages\.dev$/.test(host)) return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   if ((host === "127.0.0.1" || host === "localhost") && /(^|[?&])brain=local(&|$)/.test(location.search || "")) return { http: "/api", ws: `ws://${location.host || host}/api/live` };
-  if (location.protocol === "http:" || location.protocol === "https:") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
+  if ((location.protocol === "http:" || location.protocol === "https:") && host !== "127.0.0.1" && host !== "localhost" && host !== "[::1]") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   return null;
 }
 B.base = baseFor();
-const apiUrl = (path) => (B.base && path ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
+const LEGACY = (location.hostname || "") === "matt-bloise.github.io";
+const apiUrl = (path) => (B.base && path && !(LEGACY && /^\/?(data|atlas|library)\//.test(path)) ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
 let BOOT_P = null;
 function bootstrap(force = false) { if (force) BOOT_P = null;
-  if (!B.base) return Promise.resolve(null);
+  if (!B.base || LEGACY) return Promise.resolve(null);
   return (BOOT_P ||= fetch(`${B.base.http}/bootstrap`, { cache: "no-cache", credentials: "omit" })
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {

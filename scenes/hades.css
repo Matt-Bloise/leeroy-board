@@ -80,4 +80,4 @@
 @keyframes hd-bob { 50% { transform: translateY(-4px); } }
 @keyframes hd-tilt { from { transform: rotate(-1.5deg); } }
 @media (prefers-reduced-motion: reduce) { .hades *, .hades .ch-stage { animation: none !important; transition: none !important; } }
-html.play #chamber.hades, html.play .hades * { animation: none !important; transition: none !important; }
+html.play #chamber.hades, html.play .hades *, html.calm .hades *, html.still .hades * { animation: none !important; transition: none !important; }

@@ -29,7 +29,10 @@ export async function createAtlas(opts) {
       if (!r || !r.ok) r = await fetch(dataUrl(n), { cache: "no-store" });
       if (!r.ok) throw new Error(`${n} ${r.status}`);
       return typeof r.text === "function" ? await parse(await r.text()) : await r.json();
-    } catch (e) { if (required) throw e; return null; }
+    } catch (e) {
+      try { const BF = typeof window !== "undefined" && window.BoardFetch; if (BF) return await BF.json(dataUrl(n), { cache: "no-store" }, (u, o) => fetch(u, o)); } catch (e2) { e = e2; }
+      if (required) throw e; return null;
+    }
   };
   let cssReady = null;
   if (doc.head && !doc.querySelector("#atlas-panels-css")) {

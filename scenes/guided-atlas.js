@@ -16,8 +16,10 @@ const sched = (f) => (typeof requestAnimationFrame === "function" ? requestAnima
 const focus = (el) => { try { if (el) el.focus({ preventScroll: true }); } catch (e) {} };
 
 function facts() {
-  const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/guided-atlas.json")) || "data/guided-atlas.json";
-  return (G.dataP ||= fetch(u, { cache: "no-cache" }).then((r) => (r && r.ok ? r : fetch("data/guided-atlas.json", { cache: "no-cache" }))).catch(() => fetch("data/guided-atlas.json", { cache: "no-cache" })).then((r) => (r && r.ok ? r.json() : null)).catch(() => null).then((d) => { G.data = d; return d; }));
+  const own = () => (window.BoardFetch ? window.BoardFetch.json("data/guided-atlas.json", { cache: "no-cache" }) : fetch("data/guided-atlas.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)));
+  const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/guided-atlas.json")) || "";
+  return (G.dataP ||= (u ? fetch(u, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : own())) : own()).catch(() => { G.dataP = null; return null; }).then((d) => { G.data = d; return d; }));
+
 }
 const mine = () => { const m = MEM.member(), d = G.data; return m && d && d.classes ? d.classes[m.class_key] || null : null; };
 function meetLine() {
@@ -113,7 +115,7 @@ async function ensure() {
   if (!G.host.parentNode) G.map.appendChild(G.host);
   G.loading = (async () => {
     try {
-      const [m] = await Promise.all([import("../atlas/atlas.js?v=f98cac4ab8"), facts()]);
+      const [m] = await Promise.all([import("../atlas/atlas.js?v=99ce68a6e2"), facts()]);
       G.A = await m.createAtlas({ host: G.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, member: () => MEM.member(), sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: (t) => { if (t === "view") Z.place(); } });
       if (G.busy || !G.shown) { G.A.pause(); } else { G.A.resume(); }
       G.A.openToken("atlas", { animate: false });

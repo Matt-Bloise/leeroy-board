@@ -19,6 +19,13 @@ function count() {
   const since = R.seen == null ? "the library was built" : "you last looked";
   return n ? `${n} ${n === 1 ? "line" : "lines"} changed since ${since}.` : `Nothing changed since ${since}.`;
 }
+const b = BB();
+if (b && b.on) {
+  b.on("library", (m) => {
+    if (m && m.checked) { R.file = { ...(R.file || {}), checked: m.checked }; R.busy = false; R.msg = ""; clearTimeout(R.timer); R.timer = 0; }
+    if (R.inLib) open();
+  });
+}
 function text() {
   const f = R.file, gen = R.news && R.news.generated;
   const lead = f ? `Checked ${when(f.checked)}.` : Date.parse(gen) ? `Library built ${when(gen)}.` : "";

@@ -34,7 +34,9 @@ function mount() {
 mount();
 
 const decideUrl = () => (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/decide.json")) || "data/decide.json";
-const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= fetch(decideUrl(), { cache: "no-cache" }).then((r) => (r.ok ? r : fetch("data/decide.json", { cache: "no-store" }))).catch(() => fetch("data/decide.json", { cache: "no-store" })).then((r) => { if (!r.ok) throw new Error(`data/decide.json answered ${r.status}`); return r.json(); }).then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
+const decideOwn = () => (window.BoardFetch ? window.BoardFetch.json("data/decide.json", { cache: "no-store" }) : fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`${"data/decide.json"} answered ${r.status}`); return r.json(); }));
+const decideLoad = () => { const u = decideUrl(); return u === "data/decide.json" ? decideOwn() : fetch(u, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : decideOwn())); };
+const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= decideLoad().then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
 if (window.BoardBrain && window.BoardBrain.on) {
   window.BoardBrain.on("decide", (d) => {
     if (d && typeof d === "object" && Array.isArray(d.people)) { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; if (SC.open === KEY) render(); }
@@ -182,7 +184,8 @@ function pick(w, quiet) {
   if (!quiet) { if (was !== w) { snd("page"); hap("tick"); } const b = $(`#dc-who [data-who="${w}"]`); if (b) { try { b.focus({ preventScroll: true }); } catch (e) {} } }
 }
 function fail(e) {
-  const main = $("#dc-main"); if (main && !DV.data) main.replaceChildren(h("p", { class: "dc-sum", text: `The decision data did not load (${e && e.message ? e.message : "no file"}). A refresh may help.` }));
+  const main = $("#dc-main"); if (!main || DV.data) return;
+  if (window.BoardFetch) window.BoardFetch.fail(main, "the decisions", () => get().then(() => render())); else main.replaceChildren(h("p", { class: "dc-sum", text: "The decision data did not load. A refresh may help." }));
 }
 const shown = () => { const p = $("#dc-main .dc-person"); return p ? p.dataset.who : null; };
 K.on("scene", (k) => {

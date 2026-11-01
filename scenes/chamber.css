@@ -123,4 +123,5 @@ html.phone-shell #panel-librarian:has(#ch-form) > .act { display: none; }
 .ch-still-img.is-head { border-radius: 50%; border: 3px solid var(--brass); object-fit: cover; aspect-ratio: 1; height: auto; }
 .ch-still-counter { grid-area: 1 / 1; align-self: end; justify-self: stretch; z-index: 1; height: calc(var(--sl) * 0.2); background: var(--oak-0) url("../img/chamber/bar-counter.webp") 50% -15.7cqw / 100% auto no-repeat; }
 .ch-still-line { grid-area: 1 / 1; z-index: 2; align-self: start; justify-self: start; margin: 14px; max-width: min(46%, 34rem); padding: 6px 12px; border-radius: 6px; font-size: 1rem; line-height: 1.4; color: var(--ink); background: var(--parchment); box-shadow: 0 4px 12px var(--black); }
+.ch-still-how { margin: 6px 2px 0; font-size: 0.95rem; line-height: 1.45; color: var(--parchment); opacity: 0.9; max-width: 60rem; }
 @media (max-width: 699px) { .ch-still-line { max-width: calc(100% - 28px); } .ch-still-stage { height: calc(var(--sl) + 120px); } }
