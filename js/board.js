@@ -1556,6 +1556,7 @@ function selectPanel(key, crossFade) {
 const FIT_SKIP = ["roads", "library"];
 const FIT_MIN_W = 900, FIT_MIN = 0.86, FIT_OVER = 0.15;
 const FIT = {};
+const fitTouch = () => { try { return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches; } catch (e) { return false; } };
 const fitKey = (key) => `${key}:${innerWidth}x${innerHeight}`;
 const fitTall = (p) => p.offsetHeight * (parseFloat(p.style.zoom) || 1);
 function fitRoom(body) { const cs = getComputedStyle(body); return body.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 4; }
@@ -1577,7 +1578,7 @@ function fitScene(want) {
   if (maxH < 120) return;
   const wide = innerWidth < 1100 ? 1 : Math.min(1.45, (body.clientWidth - padX) / 1150);
   const tall0 = fitTall(p);
-  if (tall0 > maxH && tall0 <= maxH * (1 + FIT_OVER)) {
+  if (tall0 > maxH && tall0 <= maxH * (1 + FIT_OVER) && !fitTouch()) {
     let z = Math.max(FIT_MIN, Math.min(1, (maxH * 0.99) / tall0));
     for (let i = 0; i < 3; i++) {
       p.style.zoom = z.toFixed(3);
