@@ -1,5 +1,12 @@
--- 0002 accounts: the same statements as the end of schema.sql. Idempotent; run on an existing database:
---   npx wrangler@4.150.0 d1 execute leeroy-board-api-pilot --remote --file=migrations/0002_accounts.sql
+-- 0002 accounts: sessions, user_state, and members tables. Idempotent;
+-- Future schema updates run automatically on deploy.
+
+-- Members: a slug and the salted sha256 hash of that member's key (no plain keys stored)
+CREATE TABLE IF NOT EXISTS members (
+  slug TEXT PRIMARY KEY CHECK (slug GLOB '[a-z0-9]*' AND length(slug) BETWEEN 1 AND 32),
+  key_hash TEXT NOT NULL UNIQUE CHECK (length(key_hash) = 64),
+  created_at TEXT NOT NULL
+);
 
 -- Login and per-user persistence (src/account.js). The Discord id is never stored: user_key is a salted sha256 of it. The
 -- session token is never stored: token_hash is a sha256 of it. No Discord token, email or name has a column.

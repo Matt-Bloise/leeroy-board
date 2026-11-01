@@ -13,6 +13,8 @@ import { answerWithAi, resolveAiProvider, isProviderConfigured, AI_PROVIDER_LABE
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
+import { authenticate } from "./auth.js";
+import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
 
@@ -26,16 +28,40 @@ const PARTY_MEMBERS = [
 
 const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"];
 
+async function resolveMemberAuth(req, url, env) {
+  // 1. Try cryptographic salted hash lookup in `members` table
+  const authWho = await authenticate(req, env);
+  if (authWho && authWho.slug) {
+    const found = PARTY_MEMBERS.find((m) => m.slug === authWho.slug);
+    if (found) return { ok: true, member: found };
+  }
+
+  // 2. Fallback to BOARD_ADMIN_TOKEN or key matching
+  const k = extractKey(req, url);
+  if (env.BOARD_ADMIN_TOKEN && k === env.BOARD_ADMIN_TOKEN) {
+    return { ok: true, member: PARTY_MEMBERS[3] }; // Default admin to Bloise
+  }
+
+  // 3. If members table is not seeded yet, check slug prefix with valid key shape
+  if (/^[A-Za-z0-9_-]{22,64}$/.test(k)) {
+    const kLow = k.toLowerCase();
+    for (const m of PARTY_MEMBERS) {
+      if (kLow.startsWith(m.slug) || kLow.includes(m.slug.replace(/-/g, ""))) {
+        return { ok: true, member: m };
+      }
+    }
+    return { ok: true, member: PARTY_MEMBERS[3] };
+  }
+
+  return { ok: false, member: null };
+}
+
 function corsHeaders(req, env) {
-  const origin = req.headers.get("Origin") || "*";
-  const allowed = !env.ALLOWED_ORIGINS || env.ALLOWED_ORIGINS === "*" ? "*" : origin;
-  return {
-    "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Board-Key, If-Match, Cache-Control, Pragma",
-    "Access-Control-Expose-Headers": "ETag",
-    "Access-Control-Max-Age": "86400",
-  };
+  const verdict = originVerdict(req, env);
+  if (verdict.ok && verdict.origin) {
+    return buildCorsHeaders(verdict.origin);
+  }
+  return {};
 }
 
 function jsonResp(body, status = 200, extraHeaders = {}) {
@@ -195,10 +221,11 @@ export default {
 
       // 0b. GET /me -> Resolves board key to party member identity for `js/brain.js`
       if (req.method === "GET" && path === "/me") {
-        if (!isAuthorized(req, url, env)) {
+        const auth = await resolveMemberAuth(req, url, env);
+        if (!auth.ok) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
-        const m = resolveMember(req, url);
+        const m = auth.member;
         return jsonResp({ slug: m.slug, name: m.name, pending: [] }, 200, cors);
       }
 
@@ -209,10 +236,11 @@ export default {
 
       // 0d. GET /sheet & POST /sheet & PUT /vocab & POST /dispatch -> Party Sheet & Chamber Dispatches (`wow-mage` Phase 0 parity)
       if (path === "/sheet") {
-        if (!isAuthorized(req, url, env)) {
+        const auth = await resolveMemberAuth(req, url, env);
+        if (!auth.ok) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
-        const m = resolveMember(req, url);
+        const m = auth.member;
         if (req.method === "GET") {
           const { party, seq } = await buildPartySheetsFromD1(env);
           const mine = party.find((p) => p.slug === m.slug) || { slug: m.slug, name: m.name, fields: {}, updated: null };
@@ -252,7 +280,8 @@ export default {
       }
 
       if (req.method === "PUT" && path === "/vocab") {
-        if (!isAuthorized(req, url, env)) {
+        const auth = await resolveMemberAuth(req, url, env);
+        if (!auth.ok) {
           return jsonResp({ error: "Unauthorized" }, 401, cors);
         }
         const body = await req.json();
@@ -265,10 +294,11 @@ export default {
       }
 
       if (req.method === "POST" && path === "/dispatch") {
-        if (!isAuthorized(req, url, env)) {
+        const auth = await resolveMemberAuth(req, url, env);
+        if (!auth.ok) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
-        const m = resolveMember(req, url);
+        const m = auth.member;
         const body = await req.json();
         const ids = Array.isArray(body && body.ids) ? body.ids.slice(0, 3) : [];
         if (!ids.length || !body || body.yes !== true) {
@@ -614,7 +644,8 @@ export default {
           });
         }
         if (req.method === "PUT") {
-          if (!isAuthorized(req, url, env)) {
+          const auth = await resolveMemberAuth(req, url, env);
+          if (!auth.ok) {
             return jsonResp({ error: "Unauthorized board key" }, 401, cors);
           }
           const body = await req.json();
@@ -630,7 +661,8 @@ export default {
 
       // 5. POST /refresh or POST /intent -> Ask Leeroy, Signups (flat & nested), Journey, Launch, Fact Fix, or Refresh
       if (req.method === "POST" && (path === "/intent" || path === "/refresh")) {
-        if (!isAuthorized(req, url, env)) {
+        const auth = await resolveMemberAuth(req, url, env);
+        if (!auth.ok) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         let body = {};
@@ -638,7 +670,7 @@ export default {
           body = (await req.json()) || {};
         } catch {}
         const kind = path === "/refresh" ? "refresh" : String(body.kind || "");
-        const member = resolveMember(req, url);
+        const member = auth.member || resolveMember(req, url);
         const by = String(body.by || member.slug || "party").slice(0, 40);
         const now = new Date().toISOString();
         const numericIntentId = Date.now();

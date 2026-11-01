@@ -130,7 +130,14 @@ CREATE TABLE IF NOT EXISTS dispatches (
   created_at TEXT NOT NULL
 );
 
--- 11. Discord OAuth2 session store for cross-device user state (sessions & user_state)
+-- 11. Members: a slug and the salted sha256 hash of that member's key (no plain keys stored)
+CREATE TABLE IF NOT EXISTS members (
+  slug TEXT PRIMARY KEY CHECK (slug GLOB '[a-z0-9]*' AND length(slug) BETWEEN 1 AND 32),
+  key_hash TEXT NOT NULL UNIQUE CHECK (length(key_hash) = 64),
+  created_at TEXT NOT NULL
+);
+
+-- 12. Discord OAuth2 session store for cross-device user state (sessions & user_state)
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
   user_key TEXT NOT NULL CHECK (length(user_key) = 64),
