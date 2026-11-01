@@ -1,9 +1,12 @@
 // =============================================================================
-// 15-Minute Cloudflare Cron Source Sweep & D1 Library Blob Rebuilder
+// 6-Hour Cloudflare Cron Source Sweep, D1 Snapshot Archiver & AI Fact Learner
 // (`worker/scraper.js`)
+// Replaces `wow-mage/wiki/scripts/source-watch.mjs`, `wiki-ingest.mjs`,
+// and `wiki-learn.mjs` entirely inside Cloudflare Workers + D1.
 // =============================================================================
 
 import { broadcastToRoom, purgeWorkerCache } from "./index.js";
+import { extractWikiFactsWithAi } from "./ai-models.js";
 
 async function sha8Hex(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -11,6 +14,24 @@ async function sha8Hex(text) {
     .slice(0, 4)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+export function stripHtmlToText(rawHtml) {
+  return String(rawHtml || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<\/(p|div|li|h[1-6]|tr|section|article|br)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(amp|lt|gt|quot|#39|nbsp);/gi, (_, e) =>
+      ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'", nbsp: " " }[e.toLowerCase()] || " ")
+    )
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 24000);
 }
 
 export async function recomputeCategoryAndIndex(env, categoryKey, changeEntry = null) {
@@ -99,6 +120,7 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
 
   let checked = 0;
   let changed = 0;
+  const touchedCategories = new Set();
 
   for (const src of sources || []) {
     checked++;
@@ -121,8 +143,10 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
         continue;
       }
 
-      const text = await resp.text();
-      const newSha8 = await sha8Hex(text);
+      const rawHtml = await resp.text();
+      const cleanText = stripHtmlToText(rawHtml);
+      const newSha8 = await sha8Hex(cleanText || rawHtml);
+      const isFirstSnapshot = !src.sha8;
       const didChange = Boolean(src.sha8 && src.sha8 !== newSha8);
       if (didChange) changed++;
 
@@ -138,11 +162,37 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
           src.id
         )
         .run();
+
+      // Store stripped text snapshot in D1 `lib_source_snapshots` when new or changed
+      if ((isFirstSnapshot || didChange) && cleanText) {
+        const snapId = `${src.id}_${newSha8}`;
+        await env.DB.prepare(
+          "INSERT OR REPLACE INTO lib_source_snapshots (id, source_id, url, sha8, body_text, fetched_at) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+          .bind(snapId, src.id, src.url, newSha8, cleanText, now)
+          .run();
+      }
+
+      // Run AI fact learner (`wiki-learn.mjs` replacement) when a monitored source changes
+      if (didChange && cleanText) {
+        const applied = await extractWikiFactsWithAi({ env, source: src, cleanText });
+        for (const item of applied) {
+          if (item.category) touchedCategories.add(item.category);
+        }
+      }
     } catch (e) {
       await env.DB.prepare("UPDATE lib_sources SET checked_at = ?, status = 'error' WHERE id = ?")
         .bind(now, src.id)
         .run();
     }
+  }
+
+  for (const cat of touchedCategories) {
+    await recomputeCategoryAndIndex(env, cat, {
+      date: now.slice(0, 10),
+      page: cat,
+      text: `Auto-updated facts from scheduled source check`,
+    });
   }
 
   // Update `refresh.json` blob in D1
@@ -161,11 +211,16 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
   }
 
   await recomputeCategoryAndIndex(env, null);
-  await purgeWorkerCache(origin, ["/api/library/index.json", "/api/library/refresh.json", "/api/library/news.json"]);
+  await purgeWorkerCache(origin, [
+    "/api/library/index.json",
+    "/api/library/refresh.json",
+    "/api/library/news.json",
+    ...[...touchedCategories].map((c) => `/api/library/${c}.json`),
+  ]);
 
   await broadcastToRoom(env, {
     type: "library",
-    categories: [],
+    categories: [...touchedCategories],
     intent: opts.intentId
       ? { id: opts.intentId, kind: "refresh", by: opts.triggeredBy || "cron", status: "done", checked, changed, at: now }
       : undefined,

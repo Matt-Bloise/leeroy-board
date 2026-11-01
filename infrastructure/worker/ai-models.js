@@ -1,5 +1,5 @@
 // =============================================================================
-// Multi-Provider AI Integration for Leeroy (`worker/ai-models.js`)
+// Multi-Provider AI Integration & House-Voice Guardrails (`worker/ai-models.js`)
 // Supports switching seamlessly between:
 //   1. Anthropic Claude (`claude` — Haiku 4.5 / Sonnet 4.5 via `ANTHROPIC_API_KEY`)
 //   2. Google Gemini Free Tier (`gemini` — Gemini 2.5 Flash / Pro via `GEMINI_API_KEY`)
@@ -8,6 +8,8 @@
 //   5. Cerebras Free Tier (`cerebras` — Llama 3.3 70B via `CEREBRAS_API_KEY`)
 //   6. GitHub Models Free Tier (`github` — OpenAI GPT-4o-mini / GPT-4o via `GITHUB_MODELS_TOKEN`)
 //   7. OpenRouter Free Tier (`openrouter` — DeepSeek V3 `:free` via `OPENROUTER_API_KEY`)
+// Includes `wow-mage/bot/tools/api-brain.mjs` + `precheck.mjs` house-voice guardrails,
+// `guided` coach voice, and `wiki-learn.mjs` automated D1 fact extraction.
 // =============================================================================
 
 import { broadcastToRoom, purgeWorkerCache } from "./index.js";
@@ -21,6 +23,54 @@ export const AI_PROVIDER_LABELS = {
   github: "GitHub Models (GPT-4o)",
   openrouter: "OpenRouter Free (DeepSeek V3)",
 };
+
+const FIRST_NAME_MAP = {
+  Nick: "Santa",
+  Tony: "Bible Boi",
+  Ethan: "Street Rat",
+  Derek: "Handsome Squidward",
+  Matt: "Bloise",
+};
+
+const ORDERS_RE = new RegExp(
+  String.raw`(^|[.!?]\s+)(?:Don't|Do not|Make sure|Start with|Treat (?:it|this|that) as|Go with|Get it done|You should|Remember to|Be sure to)\b[^.!?\n]*[.!?]?`,
+  "gm"
+);
+
+const COACH_PROMPT =
+  "This reply stays on the asker's own screen. Speak as their coach: two or three plain sentences, the one next thing to do, in the second person, no list, and say how long it takes when you know.";
+
+export function repairHouseVoice(rawText, opts = {}) {
+  let out = String(rawText || "").trim();
+  if (!out) return out;
+
+  // 1. Replace real-life first names with party display names (wow-mage privacy rule)
+  for (const [first, display] of Object.entries(FIRST_NAME_MAP)) {
+    out = out.replace(new RegExp(`\\b${first}\\b`, "g"), display);
+  }
+  out = out.replace(/\bSkippy\b/gi, "Leeroy");
+
+  // 2. Strip bare 17-20 digit Discord snowflake IDs outside URLs
+  out = out.replace(/(?<!https:\/\/discord\.com\/[^\s"]*)\b\d{17,20}\b/g, "");
+
+  // 3. Inform, never instruct (strip imperative openers unless in private Guided coach mode)
+  if (!opts.isCoach) {
+    const stripped = out.replace(ORDERS_RE, "$1").trim();
+    if (stripped.length >= 16) out = stripped;
+  }
+
+  // 4. Keep at most one bold span (`**...**`) per `api-brain.mjs` house-style rule
+  let seenBold = false;
+  out = out.replace(/\*\*([^*]+)\*\*/g, (match, inner) => {
+    if (!seenBold) {
+      seenBold = true;
+      return match;
+    }
+    return inner;
+  });
+
+  return out.replace(/\s{2,}/g, " ").trim();
+}
 
 export function isProviderConfigured(env, provider) {
   switch (provider) {
@@ -63,10 +113,12 @@ export function resolveAiProvider(env, requestedProvider) {
 }
 
 function scorePageForQuestion(page, words) {
-  const hay = `${page.title} ${page.id} ${page.blurb || ""} ${page.facts_json || ""}`.toLowerCase();
   let score = 0;
+  const hayTitle = `${page.id} ${page.title} ${page.blurb || ""}`.toLowerCase();
+  const hayFacts = String(page.facts_json || "").toLowerCase();
   for (const w of words) {
-    if (hay.includes(w)) score += page.title.toLowerCase().includes(w) ? 4 : 1;
+    if (hayTitle.includes(w)) score += 5;
+    if (hayFacts.includes(w)) score += 2;
   }
   return score;
 }
@@ -89,20 +141,26 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep }) {
     body: JSON.stringify({
       model,
       max_tokens: 450,
-      system: systemPrompt,
+      system: [
+        {
+          type: "text",
+          text: systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       messages: [{ role: "user", content: userPrompt }],
     }),
   });
 
   if (!resp.ok) {
     const errTxt = await resp.text();
-    throw new Error(`Claude API HTTP ${resp.status}: ${errTxt.slice(0, 200)}`);
+    throw new Error(`Anthropic API HTTP ${resp.status}: ${errTxt.slice(0, 200)}`);
   }
 
   const data = await resp.json();
   const answer = (data.content || [])
-    .filter((c) => c.type === "text")
-    .map((c) => c.text)
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
     .join("\n")
     .trim();
 
@@ -125,9 +183,19 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep }) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      generationConfig: { maxOutputTokens: 450, temperature: 0.3 },
+      systemInstruction: {
+        parts: [{ text: systemPrompt }],
+      },
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: userPrompt }],
+        },
+      ],
+      generationConfig: {
+        maxOutputTokens: 450,
+        temperature: 0.3,
+      },
     }),
   });
 
@@ -148,7 +216,10 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep }) {
     .join("\n")
     .trim();
 
-  if (!answer) throw new Error("Gemini returned an empty response");
+  if (!answer) {
+    throw new Error("Gemini API returned an empty response");
+  }
+
   return { answer, model, provider: "gemini" };
 }
 
@@ -157,7 +228,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt }) {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
   const model = env.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-  const res = await env.AI.run(model, {
+  const result = await env.AI.run(model, {
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
@@ -166,7 +237,10 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt }) {
     temperature: 0.3,
   });
 
-  const answer = String((res && (res.response || (res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content))) || "").trim();
+  const answer = String(
+    (result && (result.response || (result.choices && result.choices[0] && result.choices[0].message && result.choices[0].message.content))) || ""
+  ).trim();
+
   if (!answer) throw new Error("Cloudflare Workers AI returned an empty response");
   return { answer, model, provider: "workers-ai" };
 }
@@ -206,7 +280,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep }) {
   switch (provider) {
     case "gemini":
       return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep });
@@ -268,10 +342,12 @@ export async function answerWithAi({
   question,
   deep = false,
   share = true,
+  journey = "curious",
   provider: requestedProvider,
 }) {
   const t0 = Date.now();
   const nowIso = () => new Date().toISOString();
+  const isCoach = journey === "guided" && share !== true;
 
   try {
     // 1. Pull relevant library pages & party state from D1 for grounded RAG context
@@ -302,15 +378,17 @@ export async function answerWithAi({
     });
 
     const partySummary = partyRow ? partyRow.json : "{}";
-    const systemPrompt = [
-      "You are Leeroy, the party librarian for the 'Dungeons and Drinking' WoW Classic Forever five-player group (Mend, Tank, Moira, Shazz, Faux).",
+    const baseSystemPrompt = [
+      "You are Leeroy Jenkins, the party librarian for the 'Dungeons and Drinking' WoW Classic Forever five-player Horde group (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward).",
       "Answer strictly using the verified library facts and party state below. Where the library does not know something yet, state plainly that it is not published yet.",
+      "Display names only in full every time (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward; never real first names). Inform, never instruct: facts, options, and trade-offs.",
       "Keep answers concise (2 to 4 sentences), warm, plain-spoken, and cite specific library page IDs in brackets like [classes/paladin-holy] or [dungeons/overview] whenever you use a fact.",
     ].join(" ");
+    const systemPrompt = isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
 
     const userPrompt = `Party Context:\n${partySummary}\n\nLibrary Facts:\n${contextBlocks.join(
       "\n\n"
-    )}\n\nQuestion from ${by}: ${question}`;
+    )}\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -318,9 +396,9 @@ export async function answerWithAi({
       ? reqClean
       : resolveAiProvider(env, requestedProvider);
     const activeProvider = resolveAiProvider(env, chosenProvider);
-    let answer, model, provider;
+    let rawAnswer, model, provider;
     try {
-      ({ answer, model, provider } = await dispatchToProvider({
+      ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
         env,
         systemPrompt,
@@ -330,7 +408,7 @@ export async function answerWithAi({
     } catch (providerErr) {
       if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
         try {
-          ({ answer, model, provider } = await dispatchToProvider({
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: activeProvider,
             env,
             systemPrompt,
@@ -339,7 +417,7 @@ export async function answerWithAi({
           }));
         } catch {}
       }
-      if (!answer) {
+      if (!rawAnswer) {
         const topPages = ranked.slice(0, 3);
         if (topPages.length > 0) {
           const snippets = [];
@@ -353,7 +431,7 @@ export async function answerWithAi({
               : `${p.blurb || p.title} [${p.id}]`;
             snippets.push(topFact);
           }
-          answer = snippets.join(" ");
+          rawAnswer = snippets.join(" ");
           provider = chosenProvider;
           model = `${chosenProvider}-local-d1-rag`;
         } else {
@@ -361,6 +439,9 @@ export async function answerWithAi({
         }
       }
     }
+
+    // Apply `wow-mage` house-voice & privacy guardrails (`precheck.mjs` parity)
+    const answer = repairHouseVoice(rawAnswer, { isCoach });
 
     // Extract cited page IDs like [classes/paladin-holy]
     const cites = [
@@ -408,8 +489,9 @@ export async function answerWithAi({
     }
 
     // 4. Broadcast live completion over WebSockets to all connected browsers
+    const numericId = Number(String(intentId).replace(/\D/g, "").slice(0, 13)) || Date.now();
     const completedItem = {
-      id: intentId,
+      id: numericId,
       kind: "ask",
       by,
       q: question,
@@ -458,6 +540,109 @@ export async function answerWithAi({
       type: "intent",
       item: { id: intentId, kind: "ask", by, q: question, status: "error", error: msg, at: failedAt },
     });
+  }
+}
+
+// =============================================================================
+// Automated D1 Wiki Fact Learning (`wiki-learn.mjs` serverless replacement)
+// Extracts updated facts from newly fetched source text snapshots and saves
+// proposals + confirmed updates directly in D1 (`wiki_proposals` & `lib_pages`).
+// =============================================================================
+export async function extractWikiFactsWithAi({ env, source, cleanText }) {
+  try {
+    const { results: allPages } = await env.DB.prepare(
+      "SELECT id, category, title, facts_json, history_json FROM lib_pages"
+    ).all();
+    const matchingPages = (allPages || []).filter((p) =>
+      String(p.facts_json || "").includes(`"${source.id}"`)
+    );
+    if (!matchingPages.length) return [];
+
+    const pagesContext = matchingPages.slice(0, 4).map((p) => ({
+      page_id: p.id,
+      title: p.title,
+      facts: JSON.parse(p.facts_json || "[]")
+        .slice(0, 15)
+        .map((f) => ({ key: f.key, value: f.value })),
+    }));
+
+    const systemPrompt =
+      "You are the WoW: Forever wiki fact extractor (`wiki-learn`). Compare the newly fetched source text against existing page facts. Output ONLY a valid JSON array of updated facts: [{\"page_id\":\"...\",\"fact_key\":\"...\",\"proposed_value\":\"...\",\"confidence\":\"confirmed\"}]. If nothing changed, output [].";
+    const userPrompt = `Source (${source.id} - ${source.label}, ${source.url}):\n${cleanText.slice(
+      0,
+      5000
+    )}\n\nExisting Facts:\n${JSON.stringify(pagesContext)}`;
+
+    const provider = resolveAiProvider(env);
+    const { answer } = await dispatchToProvider({
+      provider,
+      env,
+      systemPrompt,
+      userPrompt,
+      deep: false,
+    });
+
+    const jsonMatch = answer.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+    const proposals = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(proposals) || !proposals.length) return [];
+
+    const now = new Date().toISOString();
+    const applied = [];
+
+    for (const prop of proposals.slice(0, 5)) {
+      if (!prop || !prop.page_id || !prop.fact_key || !prop.proposed_value) continue;
+      const page = matchingPages.find((p) => p.id === prop.page_id);
+      if (!page) continue;
+
+      const facts = JSON.parse(page.facts_json || "[]");
+      const history = JSON.parse(page.history_json || "[]");
+      const existing = facts.find((f) => f.key === prop.fact_key);
+      const oldVal = existing ? existing.value : null;
+      if (oldVal === prop.proposed_value) continue;
+
+      const propId = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      await env.DB.prepare(
+        "INSERT INTO wiki_proposals (id, source_id, page_id, fact_key, old_value, proposed_value, confidence, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'applied', ?)"
+      )
+        .bind(
+          propId,
+          source.id,
+          page.id,
+          prop.fact_key,
+          oldVal,
+          String(prop.proposed_value),
+          prop.confidence || "confirmed",
+          now
+        )
+        .run();
+
+      if (existing) {
+        existing.value = String(prop.proposed_value);
+      } else {
+        facts.push({
+          key: prop.fact_key,
+          value: String(prop.proposed_value),
+          refs: [{ id: source.id, url: source.url, host: source.host, label: source.label, tier: source.tier }],
+        });
+      }
+      history.unshift({
+        date: now.slice(0, 10),
+        text: `${prop.fact_key} auto-updated from ${source.id} (${provider})`,
+      });
+
+      await env.DB.prepare(
+        "UPDATE lib_pages SET facts_json = ?, history_json = ?, checked = ?, updated_at = ? WHERE id = ?"
+      )
+        .bind(JSON.stringify(facts), JSON.stringify(history), now.slice(0, 10), now, page.id)
+        .run();
+
+      applied.push({ page_id: page.id, category: page.category, fact_key: prop.fact_key });
+    }
+
+    return applied;
+  } catch {
+    return [];
   }
 }
 
