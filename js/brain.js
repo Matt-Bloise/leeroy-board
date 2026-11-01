@@ -1,6 +1,6 @@
 (() => {
 "use strict";
-const WORKER = "https://leeroy-brain.jmattbloise.workers.dev";
+const WORKER = "https://api.leeroy.party";
 const KEY_RE = /^[A-Za-z0-9_-]{22,64}$/;
 const WHEN = ["6pm", "8pm", "later"], PACK = ["yes", "no"], MEET = ["vos", "xroads", "other"], FIX_PAGE = /^[a-z0-9/_.-]{1,80}$/, FIX_KEY = /^[a-z0-9_.-]{1,80}$/, PLACE_MAX = 40, FIX_NOTE_MAX = 200;
 const RSVP = ["in", "maybe", "late", "out"], JOURNEYS = ["guided", "curious", "everything"], LAUNCH = ["queue", "in", "done"], AI_PROVIDERS = ["claude", "gemini", "workers-ai", "groq", "cerebras", "github", "openrouter"];
@@ -49,7 +49,7 @@ function baseFor() {
   }
   const pr = host.match(/^pr-(\d+)\.leeroy-board\.pages\.dev$/i);
   if (pr) {
-    const prWorker = `https://leeroy-brain-pr-${pr[1]}.jmattbloise.workers.dev`;
+    const prWorker = WORKER && WORKER.includes(`pr-${pr[1]}`) ? WORKER : `https://leeroy-brain-pr-${pr[1]}.jmattbloise.workers.dev`;
     return { http: `${prWorker}/api`, ws: `${prWorker.replace(/^https:/, "wss:")}/api/live` };
   }
   if (/\.discordsays\.com$/.test(host)) return { http: "/api", ws: `wss://${host}/api/live` };
@@ -61,10 +61,8 @@ function baseFor() {
   if ((location.protocol === "http:" || location.protocol === "https:") && host !== "127.0.0.1" && host !== "localhost" && host !== "[::1]") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   return null;
 }
-const getAiProvider = () => { if (B.isPrPreview) return "workers-ai"; const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
-const setAiProvider = (prov) => { if (B.isPrPreview) { B.aiProvider = "workers-ai"; return "workers-ai"; } if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
 B.base = baseFor();
-const LEGACY = (location.hostname || "") === "matt-bloise.github.io" || (/\.pages\.dev$/.test(location.hostname || "") && !/^pr-\d+\./.test(location.hostname || ""));
+const LEGACY = (location.hostname || "") === "matt-bloise.github.io";
 const apiUrl = (path) => (B.base && path && !(LEGACY && /^\/?(data|atlas|library)\//.test(path)) ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
 let BOOT_P = null;
 function bootstrap(force = false) { if (force) BOOT_P = null;
@@ -417,6 +415,8 @@ async function mineFlush() {
   mineFlushing = true;
   try { for (const s of ["when", "pack", "meet"]) if (o[s]) { const r = await mineSend(s, o[s]); if (!r.ok) break; } for (const f of (o.fix || [])) { const r = await mineSend("fix", f); if (!r.ok) break; } } finally { mineFlushing = false; }
 }
+const getAiProvider = () => { if (B.isPrPreview) return "workers-ai"; const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
+const setAiProvider = (prov) => { if (B.isPrPreview) { B.aiProvider = "workers-ai"; return "workers-ai"; } if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
 const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
 const askStatus = () => ({ state: AK.st, provider: getAiProvider(), isPrPreview: !!B.isPrPreview, providers: B.providers || null, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
 const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };

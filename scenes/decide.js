@@ -37,6 +37,12 @@ const decideUrl = () => (window.BoardBrain && window.BoardBrain.url && window.Bo
 const decideOwn = () => (window.BoardFetch ? window.BoardFetch.json("data/decide.json", { cache: "no-store" }) : fetch("data/decide.json", { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`${"data/decide.json"} answered ${r.status}`); return r.json(); }));
 const decideLoad = () => { const u = decideUrl(); return u === "data/decide.json" ? decideOwn() : fetch(u, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : decideOwn())); };
 const get = () => (DV.data ? Promise.resolve(DV.data) : (DV.p ||= decideLoad().then((d) => { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; return d; }).catch((e) => { DV.p = null; throw e; })));
+if (window.BoardBrain && window.BoardBrain.on) {
+  window.BoardBrain.on("decide", (d) => {
+    if (d && typeof d === "object" && Array.isArray(d.people)) { DV.data = d; DV.order = [...d.people.map((p) => p.class_key), "all"]; if (SC.open === KEY) render(); }
+    else { DV.data = null; DV.p = null; if (SC.open === KEY) get().then(render, () => {}); }
+  });
+}
 K.decideData = get;
 const defaultWho = () => { const m = MEM.member(); return m && DV.data && DV.data.people.some((p) => p.class_key === m.class_key) ? m.class_key : "all"; };
 const who = () => DV.who || defaultWho();
