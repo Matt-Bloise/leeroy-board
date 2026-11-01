@@ -67,6 +67,9 @@
     const words = live ? `Forever has been live since ${K.fmtWhen(L0)}: ${elapsedWords(nowS() - L0)}.` : `Launch: ${K.fmtWhen(L0, { rel: true })}.`;
     turn("back", () => face(live ? "Live" : "Launch", live ? `since ${hourOf(L0)}` : K.relWhen(L0))).then(() => say(words));
   }
+  const plate = () => h("div", { class: "lh-plate", "aria-hidden": "true" },
+    h("img", { class: "lh-art", src: "img/launch/hero-960.webp", srcset: "img/launch/hero-640.webp 640w, img/launch/hero-960.webp 960w, img/launch/hero-1534.webp 1534w", sizes: "(max-width: 699px) 145vw, 760px", alt: "", decoding: "async", draggable: "false" }),
+    h("span", { class: "lh-glow lh-glow-l" }), h("span", { class: "lh-glow lh-glow-r" }));
   function build() {
     const el = h("section", { class: "lh", id: "launch-hero", "aria-labelledby": "lh-title", "data-phase": L.phase });
     const BS = window.BoardSeals;
@@ -75,7 +78,7 @@
       h("div", { class: "lh-head" }, L.coin ? h("div", { class: "lh-coin" }, L.coin.el) : null,
         h("div", { class: "lh-titles" }, h("p", { class: "lh-kicker", id: "lh-kicker", text: "Launch night" }), h("h2", { class: "lh-title", id: "lh-title" }), h("p", { class: "lh-sub", id: "lh-sub" }), h("p", { class: "lh-say", id: "lh-say", role: "status", "aria-live": "polite" }))),
       h("div", { class: "lh-main" },
-        h("div", { class: "lh-count", id: "lh-count" }, h("div", { class: "lh-live", id: "lh-live", hidden: true }, h("p", { class: "lh-live-k", text: "Live since" }), h("div", { class: "lh-live-digits", id: "lh-live-digits", "aria-hidden": "true" }), h("p", { class: "sr-only", id: "lh-live-sr" }))),
+        h("div", { class: "lh-count", id: "lh-count" }, plate(), h("div", { class: "lh-live", id: "lh-live", hidden: true }, h("p", { class: "lh-live-k", text: "Live since" }), h("div", { class: "lh-live-digits", id: "lh-live-digits", "aria-hidden": "true" }), h("p", { class: "sr-only", id: "lh-live-sr" }))),
         h("dl", { class: "lh-facts", id: "lh-facts", "aria-label": "Launch night, as the group has it" })),
       h("div", { class: "lh-side" },
         h("div", { class: "lh-states", id: "lh-states", role: "group", "aria-labelledby": "lh-states-q" }, h("h3", { class: "lh-h", id: "lh-states-q", text: "Where are you tonight?" }), h("div", { class: "lh-st-row", id: "lh-st-row" }), h("p", { class: "lh-st-say", id: "lh-st-say", role: "status", "aria-live": "polite" }), h("p", { class: "lh-st-who", id: "lh-st-who" })),
