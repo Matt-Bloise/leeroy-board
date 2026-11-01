@@ -12,12 +12,13 @@ const SCENES = {
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
   hades: () => [new URL("../scenes/hades.css?v=8eb34e6d88", HERE), new URL("../scenes/hades.js?v=f432c92235", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
-  settings: () => [new URL("../scenes/settings.css?v=12fc8c6695", HERE), new URL("../scenes/settings.js?v=775b214de9", HERE)],
+  settings: () => [new URL("../scenes/settings.css?v=12fc8c6695", HERE), new URL("../scenes/settings.js?v=7350eb0413", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=a053a35f34", HERE)],
-  guided: () => [new URL("../scenes/guided-atlas.css?v=7eb7ee0fdb", HERE), new URL("../scenes/guided-atlas.js?v=9e58318500", HERE)],
+  guided: () => [new URL("../scenes/guided-atlas.css?v=7eb7ee0fdb", HERE), new URL("../scenes/guided-atlas.js?v=cf93b4c0e4", HERE)],
   tablet: () => [new URL("../scenes/tablet.css?v=a062f2cda9", HERE), new URL("../scenes/tablet.js?v=c71a266812", HERE)],
   foley: () => [null, new URL("../scenes/foley.js?v=54054813b9", HERE)],
   foleyfx: () => [null, new URL("../scenes/foley-fx.js?v=ef6c4c1e09", HERE)],
+  account: () => [null, new URL("../scenes/account.js?v=e9e14bd8b1", HERE)],
 };
 const NEEDS = { sheet: ["decide"] };
 NEEDS.hades = ["chamber"];
@@ -97,6 +98,7 @@ addEventListener("hashchange", () => { if (probeHash()) load("probe"); });
 try { if (decodeURIComponent(String(location.hash || "").slice(1)) === "settings") load("settings"); } catch (e) {}
 addEventListener("hashchange", () => { if (location.hash === "#settings") load("settings"); });
 document.addEventListener("click", (e) => { const tg = e.composedPath ? e.composedPath()[0] : null; const t = tg && tg.closest ? tg.closest("[data-open-settings]") : null; if (t && !P.settings) { e.preventDefault(); load("settings").then(() => { if (window.BoardSettings) window.BoardSettings.open(t); }); } });
+K.on("booted", () => { try { if (K.api && localStorage.getItem("board-session")) load("account"); } catch (e) {} });
 K.on("booted", () => { let walked = null; try { walked = localStorage.getItem("board-walked"); } catch (e) {} if (!walked && !/[?&](render|brain)=/.test(location.search)) load("walk"); });
 const WARM = ["chamber", "sheet", "decide", "wide"], PLACE = { five: "sheet", sheet: "sheet", librarian: "chamber", decide: "decide", buffs: "buffs", roads: "wide", library: "refresh" };
 const playing = () => { try { return document.documentElement.classList.contains("play"); } catch (e) { return false; } };

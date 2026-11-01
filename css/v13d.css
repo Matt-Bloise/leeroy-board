@@ -15,8 +15,9 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
   .journey { position: relative; flex: none; overflow: visible; }
   .journey button { min-height: 44px; padding: 4px 10px; font-size: 0.95rem; }
   .journey:not(.open) button:not([aria-pressed="true"]) { display: none; }
-  .journey:not(.open) button[aria-pressed="true"]::after, .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"]::after { content: " \25BE"; }
-  .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"] { display: inline-block; }
+  .journey:not(.open) button[aria-pressed="true"]::after { content: " \25BE"; }
+  html[data-journey="guided"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="guided"], html[data-journey="curious"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"], html[data-journey="everything"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="everything"] { display: inline-block; }
+  html[data-journey="guided"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="guided"]::after, html[data-journey="curious"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="curious"]::after, html[data-journey="everything"] .journey:not(.open):not(:has([aria-pressed="true"])) button[data-journey="everything"]::after { content: " \25BE"; }
   .journey.open { position: absolute; z-index: 40; right: 0; flex-direction: column; }
   .journey.open button + button { border-left: 0; border-top: 1px solid var(--brass-dim); }
       .sheet-top:has(> .journey) { justify-content: flex-start; gap: 3px; }
@@ -59,10 +60,11 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 .jr-core .jr-more { min-height: 48px; color: var(--ink); }
 .jr-all { margin: 0 0 var(--g1, 8px); min-height: 44px; }
 .jr-deep { margin: 12px 0 0; font-size: 0.9375rem; color: var(--ink-soft); }
-html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(:has(#ask-box)) { display: none !important; }
+html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):not(.jr-dest):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(:has(#ask-box)) { display: none !important; }
 html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="good"], html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="deep"], html[data-journey="curious"] #panel-library:not(.lib-rest) [data-depth="deep"] { display: none; }
 @media (min-width: 700px) { #sheet-body .panel > .jr-core { width: max-content; max-width: min(100%, 72ch); justify-self: center; box-sizing: border-box; } }
 html[data-journey="guided"] .tn-cards { display: none; }
+html[data-journey="guided"] #panel-library.jr-dest > .jr-core, html[data-journey="guided"] #panel-library.jr-dest .lib-examples, html[data-journey="guided"] #panel-library.jr-dest .lib-legend, html[data-journey="guided"] #panel-library.jr-dest .lib-kbd { display: none; }
 
 .rrow.open > .rplain { display: none; }
 .rplain { color: var(--ink-soft); font-size: 1rem; }

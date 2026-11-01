@@ -130,6 +130,8 @@ function fmtCost(c) {
   if (c.type === "rage") return `${nf.format(c.amount / 10)} rage`;
   return `${nf.format(c.amount)} ${c.type}`;
 }
+const DTF = new Map();
+function dtf(loc, o) { const k = `${loc || ""}|${o ? JSON.stringify(o) : ""}`; let f = DTF.get(k); if (!f) { f = new Intl.DateTimeFormat(loc, o); DTF.set(k, f); } return f; }
 const fmtDay = (epoch) => fmtWhen(epoch, { time: false });
 const MON = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
 function cardDates(t) {
@@ -145,7 +147,7 @@ function rel(epoch) {
   return rtf.format(Math.round(d / 86400), "day");
 }
 const ET_ZONE = "America/New_York";
-const viewerZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ET_ZONE; } catch (e) { return ET_ZONE; } };
+const viewerZone = () => { try { return dtf(undefined, undefined).resolvedOptions().timeZone || ET_ZONE; } catch (e) { return ET_ZONE; } };
 const rtfEn = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
 function relWhen(epoch, now) {
   const d = epoch - (now === undefined ? Date.now() / 1000 : now), a = Math.abs(d);
@@ -157,7 +159,7 @@ function relWhen(epoch, now) {
 function fmtWhen(epoch, o = {}) {
   if (!Number.isFinite(epoch)) return "";
   const d = new Date(epoch * 1000), tz = o.tz || (o.mine ? viewerZone() : ET_ZONE), time = o.time !== false;
-  const one = (zone) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short", month: "short", day: "numeric", ...(time ? { hour: "numeric", minute: "2-digit" } : {}) }).formatToParts(d).map((x) => [x.type, x.value])); return `${p.weekday}, ${p.month} ${p.day}${time ? `, ${p.hour}${p.minute !== "00" ? `:${p.minute}` : ""} ${p.dayPeriod}` : ""}`; };
+  const one = (zone) => { const p = Object.fromEntries(dtf("en-US", { timeZone: zone, weekday: "short", month: "short", day: "numeric", ...(time ? { hour: "numeric", minute: "2-digit" } : {}) }).formatToParts(d).map((x) => [x.type, x.value])); return `${p.weekday}, ${p.month} ${p.day}${time ? `, ${p.hour}${p.minute !== "00" ? `:${p.minute}` : ""} ${p.dayPeriod}` : ""}`; };
   const et = one(ET_ZONE), mine = one(tz);
   const z = time ? " ET" : "", s = mine === et ? `${et}${z}` : `${mine} your time (${et}${z})`;
   return o.rel ? `${s}, ${relWhen(epoch, o.now)}` : s;
@@ -171,8 +173,24 @@ const D = {};
 const KIT = { hooks: {}, on(n, f) { (this.hooks[n] ||= []).push(f); }, emit(n, ...a) { for (const f of this.hooks[n] || []) { try { f(...a); } catch (e) { console.error(n, e); } } }, lander: null };
 const JR = () => document.documentElement.dataset.journey || "curious";
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
+const API = (() => {
+  try {
+    const b = window.BoardBrain;
+    if (b && typeof b.url === "function") {
+      const u = b.url("");
+      if (u) return new URL(u).origin;
+    }
+    const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:");
+    return /^(https:\/\/leeroy-(?:board-api|brain)[\w.-]*\.workers\.dev|http:\/\/127\.0\.0\.1:\d+)$/.test(u.origin) ? u.origin : null;
+  } catch (e) { return null; }
+})();
+const apiFetch = (url, opt) => {
+  const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url);
+  const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null;
+  return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt);
+};
 const dataGet = (n) => {
-  const fallback = () => fetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); });
+  const fallback = () => apiFetch(`data/${n}.json`, { cache: "no-store" }).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); });
   if (n === "client") return fallback();
   const b = window.BoardBrain;
   if (b && typeof b.bootstrap === "function") return b.bootstrap().then((boot) => (boot && boot[n] != null ? boot[n] : fallback())).catch(fallback);
@@ -191,7 +209,7 @@ let clockTimer = null;
 function launchLine() {
   const e = D.timeline && D.timeline.events.find((x) => x.key === "launch");
   if (!e || !e.epoch) return "";
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
+  const parts = Object.fromEntries(dtf("en-US", { timeZone: "America/New_York", weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).formatToParts(new Date(e.epoch * 1000)).map((p) => [p.type, p.value]));
   return `${parts.weekday}, ${parts.month} ${parts.day}, ${parts.hour}${parts.minute !== "00" ? `:${parts.minute}` : ""} ${parts.dayPeriod} ET`;
 }
 const SUBTITLE = { timeline: "Dates and countdown", five: "Who plays what", roads: "Where each character starts", racials: "Each race's special abilities", legacy: "Points your whole account earns", buffs: "Spells that help the whole party", ledger: "What is settled, what is open", signups: "Answers for launch night", librarian: "Our Discord helper bot", library: "Every fact, searchable", decide: "Still open, by Blizzard's dates" };
@@ -261,7 +279,7 @@ function renderTimeline() {
 function renderCalendar(now) {
   const box = $("#cal-col"); if (!box) return;
   const t = D.timeline, dayKey = (d) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  const zday = (ts, tz = ET_ZONE) => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value])); return new Date(+p.year, p.month - 1, +p.day, 12); };
+  const zday = (ts, tz = ET_ZONE) => { const p = Object.fromEntries(dtf("en-US", { timeZone: tz, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date(ts * 1000)).map((x) => [x.type, x.value])); return new Date(+p.year, p.month - 1, +p.day, 12); };
   const local = (e) => zday(e.epoch === null ? Date.parse(`${e.date}T12:00:00Z`) / 1000 : e.epoch);
   const marks = {}; for (const e of t.events) marks[dayKey(local(e))] = e;
   const win = t.events.find((e) => e.until_epoch), wEnd = win && zday(win.until_epoch - 1, win.until_zone === "Pacific" ? "America/Los_Angeles" : ET_ZONE);
@@ -277,19 +295,19 @@ function renderCalendar(now) {
     const e = marks[dayKey(d)], w = inWin(d);
     const prev = new Date(d); prev.setDate(d.getDate() - 1);
     const isToday = dayKey(d) === today;
-    cells.push(h(e || isToday ? "button" : "div", { class: `cal-day${d.getMonth() !== mid.getMonth() ? " out" : ""}${w ? " win" : ""}${w && !inWin(prev) ? " first" : ""}${isToday ? " today" : ""}${e ? " has-emb" : ""}`, ...(e || isToday ? { type: "button", "data-ev": e ? e.key : "today", "data-day": dayKey(d), "aria-label": `${new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d)}${e ? `: ${e.label}` : ", today"}` } : { "data-day": dayKey(d) }), title: e ? e.label : null },
+    cells.push(h(e || isToday ? "button" : "div", { class: `cal-day${d.getMonth() !== mid.getMonth() ? " out" : ""}${w ? " win" : ""}${w && !inWin(prev) ? " first" : ""}${isToday ? " today" : ""}${e ? " has-emb" : ""}`, ...(e || isToday ? { type: "button", "data-ev": e ? e.key : "today", "data-day": dayKey(d), "aria-label": `${dtf("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d)}${e ? `: ${e.label}` : ", today"}` } : { "data-day": dayKey(d) }), title: e ? e.label : null },
       e ? emb(EMB_LABEL[e.key] || "seal") : null, h("span", { text: String(d.getDate()) })));
   }
-  const month = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(mid);
+  const month = dtf(undefined, { month: "long", year: "numeric" }).format(mid);
   const later = t.events.filter((e) => local(e) > end);
   const wideCal = matchMedia("(min-width: 1100px)").matches, wasOpen = box.querySelector("details.cal-wrap");
   const calOpen = wideCal || !!(wasOpen && wasOpen.open);
-  const fmtDay = (d) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d);
+  const fmtDay = (d) => dtf("en-US", { weekday: "long", month: "long", day: "numeric" }).format(d);
   box.replaceChildren(h("details", { class: "cal-wrap", ...(calOpen ? { open: "" } : {}) }, h("summary", { class: "cal-sum" }, "The month on a calendar"), h("div", { class: "cal", role: "group", "aria-label": `${month}, with the board's dates marked` },
     h("h4", { text: month }),
     h("div", { class: "cal-grid" }, ...["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((x) => h("span", { class: "dow", text: x })), ...cells)),
     h("div", { class: "cal-key" }, win ? h("span", {}, h("i", { class: "sw-win" }), `${win.label.split(":")[0]}: the window`) : null, h("span", {}, h("i", { class: "today-k" }), "today"),
-      ...later.map((e) => h("button", { type: "button", class: "cal-day cal-later", "data-ev": e.key, "data-day": dayKey(local(e)), "aria-label": `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}, ${fmtDay(local(e))}` }, emb(EMB_LABEL[e.key] || "seal"), h("span", { text: `${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}` }))))));
+      ...later.map((e) => h("button", { type: "button", class: "cal-day cal-later", "data-ev": e.key, "data-day": dayKey(local(e)), "aria-label": `${dtf(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}, ${fmtDay(local(e))}` }, emb(EMB_LABEL[e.key] || "seal"), h("span", { text: `${dtf(undefined, { month: "short", day: "numeric" }).format(local(e))}: ${e.label}` }))))));
 }
 function setClockLabel(kicker, event) {
   if ($("#clock-kicker").textContent !== kicker) $("#clock-kicker").textContent = kicker;
@@ -332,7 +350,7 @@ function tick() {
   const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").removeAttribute("aria-label"); }
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { mine: true });
   const mc = $("#mini-clock");
-  if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
+  if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? dtf("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
 }
 
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
@@ -452,9 +470,22 @@ function startGloss() {
   sceneHooks.push(() => glClose());
   const sc = $("#scene"); if (!sc || typeof MutationObserver !== "function") return;
   let queued = false;
-  const run = () => { queued = false; for (const p of sc.querySelectorAll(".panel:not([hidden]):not(#panel-library)")) { try { dotPanel(p); } catch (e) {} } };
-  new MutationObserver(() => { if (!queued) { queued = true; setTimeout(run, 40); } }).observe(sc, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "open", "inert"] });
-  sceneHooks.push((on) => { if (on) setTimeout(run, 40); });
+  let mo = null, all = true; const dirty = new Set();
+  const mark = (r) => {
+    const t = r.target && (r.target.nodeType === 1 ? r.target : r.target.parentElement), pn = t && t.closest ? t.closest(".panel") : null;
+    if (pn) { dirty.add(pn); return; }
+    if (r.type === "childList" && [...r.addedNodes, ...r.removedNodes].every((n) => n.nodeType !== 1 || n.classList.contains("warm-fx"))) return;
+    all = true;
+  };
+  const run = () => {
+    queued = false; const every = all; all = false;
+    const todo = [...sc.querySelectorAll(".panel:not([hidden]):not(#panel-library)")].filter((p) => every || dirty.has(p)); dirty.clear();
+    for (const p of todo) { if (p.closest("[inert]")) continue; try { dotPanel(p); } catch (e) {} }
+    if (mo) mo.takeRecords();
+  };
+  mo = new MutationObserver((recs) => { for (const r of recs) mark(r); if (!queued) { queued = true; setTimeout(run, 40); } });
+  mo.observe(sc, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "open", "inert"] });
+  sceneHooks.push((on) => { if (on) { all = true; setTimeout(run, 40); } });
 }
 function wholeClause(t, max) {
   const text = String(t || "").trim();
@@ -1044,11 +1075,14 @@ function renderBuffsDeep() {
   marks.querySelectorAll("button").forEach((b, i) => b.addEventListener("click", () => { set(B.marks[i]); const x = $("#buffs-deep .deep-marks button[aria-pressed=\"true\"]"); if (x) x.focus(); }));
   six.querySelector("input").addEventListener("change", (e) => { sfx("latch"); BD.sixth = e.target.checked; renderBuffsDeep(); const x = $("#deep-sixth"); if (x) x.focus(); });
   slider.addEventListener("input", () => { if (B.marks.includes(Number(slider.value))) sfx("detent"); });
-  const rowOf = (e) => { const li = e.target.closest && e.target.closest("li.bq[data-key]"); return li ? B.list.find((x) => x.key === li.dataset.key) : null; };
-  box.addEventListener("pointerover", (e) => wheelFlow(rowOf(e)));
-  box.addEventListener("pointerleave", () => wheelFlow(null));
-  box.addEventListener("focusin", (e) => wheelFlow(rowOf(e)));
-  box.addEventListener("focusout", () => wheelFlow(null));
+  if (!box.dataset.flowWired) {
+    box.dataset.flowWired = "1";
+    const rowOf = (e) => { const li = e.target.closest && e.target.closest("li.bq[data-key]"), L2 = D.client && D.client.buffs; return li && L2 ? L2.list.find((x) => x.key === li.dataset.key) : null; };
+    box.addEventListener("pointerover", (e) => wheelFlow(rowOf(e)));
+    box.addEventListener("pointerleave", () => wheelFlow(null));
+    box.addEventListener("focusin", (e) => wheelFlow(rowOf(e)));
+    box.addEventListener("focusout", () => wheelFlow(null));
+  }
 }
 function focusBuff(tokKey) {
   const key = String(tokKey).replace(/-/g, "_"), B = D.client && D.client.buffs;
@@ -2321,6 +2355,7 @@ function startWisps() {
   const GX = 32, GY = 18, REBUILD = 2000, REPEL = 120;
   const LAYERS = [{ r: 1.1, a: 0.3, v: 0.32 }, { r: 1.8, a: 0.48, v: 0.55 }, { r: 2.8, a: 0.72, v: 0.9 }];
   const COLORS = ["--c-mage", "--c-warlock", "--c-mage", "--c-warlock", "--c-mage", "--c-warlock", "--c-mage", "--brass"].map(cssVar);
+  const SCENE_FPS = 24; let held = SC.open !== null, wt = 0;
   let W = 0, H = 0, dpr = 1, raf = 0, parts = [], trail = [], covered = SC.open !== null && innerWidth < 700 , fA = null, fB = null, built = -1e9, gen = 0;
   const seed = Math.random() * 1000, pointer = { x: -1e4, y: -1e4 };
   const hash = (x, y, s) => { const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return v - Math.floor(v); };
@@ -2376,12 +2411,12 @@ function startWisps() {
     for (const p of trail) { p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy = p.vy * 0.96 - 0.02; draw(p, 0.9 * (1 - (t - p.born) / p.life)); }
     ctx.globalAlpha = 1;
     WS.frames++; WS.near = near;
-    if (live()) raf = requestAnimationFrame(frame);
+    if (live()) { if (held) wt = setTimeout(() => { wt = 0; if (live()) raf = requestAnimationFrame(frame); }, Math.max(0, 1000 / SCENE_FPS - 8)); else raf = requestAnimationFrame(frame); }
   };
   const live = () => !reduceMQ.matches && !document.hidden && !covered && !roomHas("room-wisps") && !roomHas("room-off") && !roomHas("play");
   addEventListener("board-room", () => { if (live()) run(); else { stop(); setTimeout(() => { if (!live()) ctx.clearRect(0, 0, W, H); }, roomHas("play") ? motionMs("move") : 0); } });
-  const run = () => { WS.running = live(); if (!raf && WS.running) raf = requestAnimationFrame(frame); };
-  const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; WS.running = false; };
+  const run = () => { WS.running = live(); if (!raf && !wt && WS.running) raf = requestAnimationFrame(frame); };
+  const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; clearTimeout(wt); wt = 0; WS.running = false; };
   size();
   let rs = 0;
   addEventListener("resize", () => { if (!rs) rs = requestAnimationFrame(() => { rs = 0; size(); }); }, { passive: true });
@@ -2395,7 +2430,7 @@ function startWisps() {
   addEventListener("pointerup", (e) => { if (e.pointerType === "touch") pointer.x = pointer.y = -1e4; }, { passive: true });
   document.documentElement.addEventListener("pointerleave", () => { pointer.x = pointer.y = -1e4; });
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : run()));
-  sceneHooks.push((on) => { covered = on && innerWidth < 700; if (covered) stop(); else run(); });
+  sceneHooks.push((on) => { covered = on && innerWidth < 700; held = !!on; if (!held) { clearTimeout(wt); wt = 0; } if (covered) stop(); else run(); });
   reduceMQ.addEventListener("change", () => { if (reduceMQ.matches) { stop(); ctx.clearRect(0, 0, W, H); } else run(); if (D.party) renderMap(); });
   run();
 }
@@ -2413,8 +2448,9 @@ function placeCrest(k) {
 function startArt() {
   const probe = (src, ok, bad) => { const im = new Image(); im.onload = ok; if (bad) im.onerror = bad; im.src = src; };
   for (const k of new Set(D.party.members.map((m) => m.class_key).filter(Boolean))) probe(`img/crests/${k}.png`, () => { ART.crest[k] = true; placeCrest(k); });
-  probe("img/map/zeppelin.png", () => { ART.zep = true; if (MAPW.drawn) renderMap(); });
-  probe("img/map/town.png", () => { ART.town = true; if (MAPW.drawn) renderMap(); });
+  let mapArt = 2; const mapArtDone = () => { if (--mapArt === 0 && MAPW.drawn && (ART.zep || ART.town)) renderMap(); };
+  probe("img/map/zeppelin.png", () => { ART.zep = true; mapArtDone(); }, mapArtDone);
+  probe("img/map/town.png", () => { ART.town = true; mapArtDone(); }, mapArtDone);
   probe("img/seal.png", () => { ART.seal = true; try { renderLedger(); } catch (e) { console.error(e); } });
   probe("img/beam.png", () => {
     ART.beam = true;
@@ -2480,7 +2516,7 @@ const libDay = (d) => (d ? dtShort.format(new Date(`${d}T12:00:00Z`)) : "undated
 const libFile = (url) => String(url || "").replace(/^(?:.*\/)?(?:data\/)?library\//, "");
 const libStamped = (url) => { const f = libFile(url), v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[f]; return v ? `${url}?v=${v}` : url; };
 const libFetch = (url, init) => {
-  const f = libFile(url), b = window.BoardBrain, api = b && typeof b.url === "function" ? b.url(`/library/${f}`) : "";
+  const f = libFile(url), b = window.BoardBrain, api = b && typeof b.url === "function" ? b.url(`/library/${f}`) : (API ? `${API}/api/library/${f}` : "");
   const fallback = () => fetch(libStamped(`data/library/${f}`), init).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
   return api ? fetch(libStamped(api), init).then((r) => (r.ok ? r.json() : fallback())).catch(fallback) : fallback();
 };
@@ -3261,7 +3297,7 @@ function meetP() {
 }
 function yourTime(T) {
   const l = T.events.find((e) => e.key === "launch"); if (!l || !l.epoch) return "";
-  const f = (tz) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", ...(tz ? { timeZone: tz } : {}) }).format(new Date(l.epoch * 1000)).replace(":00", "");
+  const f = (tz) => dtf("en-US", { hour: "numeric", minute: "2-digit", ...(tz ? { timeZone: tz } : {}) }).format(new Date(l.epoch * 1000)).replace(":00", "");
   const mine = f(), et = f("America/New_York");
   return mine === et ? "" : ` (${mine} your time)`;
 }
@@ -3421,7 +3457,8 @@ function warmNext() {
   if (document.hidden) { warmLater(); return; }
   if (!WARM.queue) {
     WARM.queue = SCENES.filter((k) => k !== "library").sort((a, b) => (a === "tonight") - (b === "tonight"));
-    for (const u of WARM_IMAGES) { const im = new Image(); im.decoding = "async"; im.src = u; if (im.decode) im.decode().catch(() => {}); WARM.keep = (WARM.keep || []).concat(im); }
+    const nc = (window.navigator || {}).connection;
+    if (!(nc && (nc.saveData || /2g$/.test(nc.effectiveType || "")))) for (const u of WARM_IMAGES) { const im = new Image(); im.decoding = "async"; im.src = u; if (im.decode) im.decode().catch(() => {}); WARM.keep = (WARM.keep || []).concat(im); }
   }
   const L = $("#scene");
   if (SC.want || L.classList.contains("closing") || performance.now() < (WARM.calm || 0)) { warmLater(); return; }
@@ -3504,7 +3541,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();
