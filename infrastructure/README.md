@@ -154,12 +154,12 @@ The frontend ([`js/brain.js`](../js/brain.js#L4)) validates that the write key (
 | `CLOUDFLARE_API_TOKEN` | **Yes** | Prod & PR | Cloudflare API token from Step 2 (`Workers Scripts: Edit`, `D1: Edit`, `Cloudflare Pages: Edit`, `Workers AI: Edit`, `Account Settings: Read`). |
 | `CLOUDFLARE_ACCOUNT_ID` | **Yes** | Prod & PR | Your 32-character Cloudflare Account ID from Step 1. |
 | `BOARD_ADMIN_TOKEN` | Recommended | Prod & PR | 22–64 char URL-safe token from Step 4 matched against `#k=<token>` in the browser or `Authorization: Bearer <token>` from the bot. |
-| `ANTHROPIC_API_KEY` | Optional* | Prod & PR | Site's Claude API key (`sk-ant-...` from Step 3F) for `provider = "claude"`. |
-| `GEMINI_API_KEY` | Optional* | Prod & PR | Google AI Studio Free-Tier API key (`AIzaSy...` from Step 3A) for `provider = "gemini"`. |
-| `GROQ_API_KEY` | Optional* | Prod & PR | GroqCloud Free-Tier API key (`gsk_...` from Step 3B) for `provider = "groq"`. |
-| `CEREBRAS_API_KEY` | Optional* | Prod & PR | Cerebras Free-Tier API key (`csk-...` from Step 3C) for `provider = "cerebras"`. |
-| `GITHUB_MODELS_TOKEN` | Optional* | Prod & PR | GitHub PAT with `models: read` (Step 3D) for `provider = "github"` (GPT-4o / GPT-4o-mini). |
-| `OPENROUTER_API_KEY` | Optional* | Prod & PR | OpenRouter Free-Tier API key (`sk-or-...` from Step 3E) for `provider = "openrouter"` (DeepSeek V3 `:free`). |
+| `ANTHROPIC_API_KEY` | Optional* | Prod only | Site's Claude API key (`sk-ant-...` from Step 3F) for `provider = "claude"` (omitted from PR previews). |
+| `GEMINI_API_KEY` | Optional* | Prod only | Google AI Studio Free-Tier API key (`AIzaSy...` from Step 3A) for `provider = "gemini"` (omitted from PR previews). |
+| `GROQ_API_KEY` | Optional* | Prod only | GroqCloud Free-Tier API key (`gsk_...` from Step 3B) for `provider = "groq"` (omitted from PR previews). |
+| `CEREBRAS_API_KEY` | Optional* | Prod only | Cerebras Free-Tier API key (`csk-...` from Step 3C) for `provider = "cerebras"` (omitted from PR previews). |
+| `GITHUB_MODELS_TOKEN` | Optional* | Prod only | GitHub PAT with `models: read` (Step 3D) for `provider = "github"` (GPT-4o / GPT-4o-mini, omitted from PR previews). |
+| `OPENROUTER_API_KEY` | Optional* | Prod only | OpenRouter Free-Tier API key (`sk-or-...` from Step 3E) for `provider = "openrouter"` (DeepSeek V3 `:free`, omitted from PR previews). |
 | `DISCORD_WEBHOOK_URL` | Optional | Prod only | Discord channel webhook URL for `#wow-forever` to mirror Leeroy's answers into Discord chat (excluded from PR previews). |
 | `DISCORD_PUBLIC_KEY` | Optional | Prod only | Public key from the Discord Developer Portal if using `POST /api/discord` as a serverless Discord Interactions Endpoint. |
 
@@ -168,7 +168,7 @@ The frontend ([`js/brain.js`](../js/brain.js#L4)) validates that the write key (
 2. **Enable GitHub Actions PR Comment Permissions (Required for PR Previews)**:
    - In your GitHub repository, go to **Settings -> Actions -> General**.
    - Scroll down to **Workflow permissions**, select **Read and write permissions**, and click **Save**. *(This allows `.github/workflows/pr-preview-cloudflare.yml` to post and update the sticky PR comment containing your live preview URLs.)*
-   - **Note on Fork PRs**: By default, GitHub does not pass repository `secrets.*` to `pull_request` workflows opened from an external fork. For PR preview environments to spin up automatically, either push feature branches directly to `Matt-Bloise/leeroy-board` (collaborator access) or enable **"Send write tokens to workflows from pull requests"** under **Settings -> Actions -> General -> Fork pull request workflows from outside collaborators**.
+   - **Note on Fork PRs**: Pull requests opened from forks do not spin up PR preview environments (preventing secret exfiltration and resource consumption) and cannot be merged directly into `master`. Fork PRs must target a non-master branch (e.g. an integration or feature branch).
 
 ---
 
@@ -233,11 +233,12 @@ The PR preview workflow ([`.github/workflows/pr-preview-cloudflare.yml`](../.git
 | **D1 SQLite Database** | `leeroy-board-db` | `leeroy-board-db-pr-<N>` |
 | **Cron Trigger** | Enabled (`*/15 * * * *`) | Stripped (preserves 5-cron Free-Tier account quota) |
 | **Discord Webhook** | Enabled (`#wow-forever`) | Omitted (prevents PR test queries from spamming Discord) |
+| **AI Model Provider** | Multi-Provider (Claude, Gemini, Groq, Cerebras, GitHub, OpenRouter, Workers AI) | **Cloudflare Workers AI ONLY** (zero external keys injected, locked to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`) |
 
 ### PR Preview Lifecycle & Limits
 1. **When a PR is Opened or Updated**:
    - Creates an isolated D1 database `leeroy-board-db-pr-<N>`, applies `schema.sql`, and seeds it from the PR branch's `data/*.json`.
-   - Deploys an isolated Worker `leeroy-brain-pr-<N>` + `BoardRoom` Durable Object and syncs all configured AI API keys + `BOARD_ADMIN_TOKEN`.
+   - Deploys an isolated Worker `leeroy-brain-pr-<N>` + `BoardRoom` Durable Object with **zero external AI API keys injected**, hardcoded to free native Cloudflare Workers AI (`AI_PROVIDER = "workers-ai"`, `IS_PR_PREVIEW = "true"`), and syncs `BOARD_ADMIN_TOKEN`.
    - Deploys the static site to `https://pr-<N>.leeroy-board.pages.dev` (pre-wired to `leeroy-brain-pr-<N>`) and posts a sticky comment on the PR with clickable links.
    - To test write actions on the PR preview, append your write key once: `https://pr-<N>.leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>`.
 2. **When the PR is Merged or Closed**:
@@ -257,6 +258,9 @@ You can switch Leeroy's AI model across all **7 supported providers** (`claude`,
 3. **Global Default (`AI_PROVIDER` in [`wrangler.toml`](./wrangler.toml#L31))**:
    - Set `AI_PROVIDER` in `infrastructure/wrangler.toml`.
    - If the requested provider's API key is not configured, [`resolveAiProvider()`](./worker/ai-models.js#L43-L59) automatically falls back to the first configured provider (ending with built-in `workers-ai`, which requires no external key).
+
+> [!IMPORTANT]
+> **PR Preview Environments Use Zero AI Keys**: In ephemeral PR preview environments (where `IS_PR_PREVIEW = "true"`), all external AI keys are completely excluded from deployment. The Worker is locked to free native Cloudflare Workers AI (`@cf/meta/llama-3.3-70b-instruct-fp8-fast`), and the frontend board UI disables external models in the dropdown.
 
 ---
 
