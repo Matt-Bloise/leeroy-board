@@ -12,7 +12,7 @@
 // `guided` coach voice, and `wiki-learn.mjs` automated D1 fact extraction.
 // =============================================================================
 
-import { broadcastToRoom, purgeWorkerCache } from "./index.js";
+import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -114,11 +114,15 @@ export function resolveAiProvider(env, requestedProvider) {
 
 function scorePageForQuestion(page, words) {
   let score = 0;
-  const hayTitle = `${page.id} ${page.title} ${page.blurb || ""}`.toLowerCase();
+  const hayTitle = `${page.id} ${page.category || ""} ${page.title} ${page.blurb || ""}`.toLowerCase();
+  const hayAliases = String(page.aliases_json || "").toLowerCase();
   const hayFacts = String(page.facts_json || "").toLowerCase();
+  const hayOpen = String(page.open_json || "").toLowerCase();
   for (const w of words) {
     if (hayTitle.includes(w)) score += 5;
+    if (hayAliases.includes(w)) score += 4;
     if (hayFacts.includes(w)) score += 2;
+    if (hayOpen.includes(w)) score += 2;
   }
   return score;
 }
@@ -350,10 +354,11 @@ export async function answerWithAi({
   const isCoach = journey === "guided" && share !== true;
 
   try {
-    // 1. Pull relevant library pages & party state from D1 for grounded RAG context
-    const [{ results: pages }, partyRow] = await Promise.all([
-      env.DB.prepare("SELECT id, category, title, as_of, blurb, facts_json, open_json FROM lib_pages").all(),
-      env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first(),
+    // 1. Pull relevant library pages & full party/schedule state from D1 for grounded RAG context
+    const [{ results: pages }, { results: stateRows }, partySheets] = await Promise.all([
+      env.DB.prepare("SELECT id, category, title, as_of, blurb, aliases_json, facts_json, open_json FROM lib_pages").all(),
+      env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
+      buildPartySheetsFromD1(env),
     ]);
 
     const words = question
@@ -370,14 +375,38 @@ export async function answerWithAi({
 
     const contextBlocks = ranked.map((p) => {
       let facts = [];
+      let openItems = [];
       try {
         facts = JSON.parse(p.facts_json || "[]");
       } catch {}
+      try {
+        openItems = JSON.parse(p.open_json || "[]");
+      } catch {}
       const lines = facts.slice(0, 25).map((f) => `  - [${p.id}~${f.key}]: ${f.value}`);
-      return `Page: ${p.title} (${p.id}, as of ${p.as_of || "current"})\n${lines.join("\n")}`;
+      const openLines = (Array.isArray(openItems) ? openItems : [])
+        .slice(0, 10)
+        .map((o) => `  - [${p.id}~open]: ${typeof o === "string" ? o : o && (o.text || o.question || JSON.stringify(o))}`);
+      return `Page: ${p.title} (${p.id}, as of ${p.as_of || "current"})${p.blurb ? ` — ${p.blurb}` : ""}\n${[
+        ...lines,
+        ...openLines,
+      ].join("\n")}`;
     });
 
-    const partySummary = partyRow ? partyRow.json : "{}";
+    const stateMap = {};
+    for (const r of stateRows || []) {
+      try {
+        stateMap[r.key] = JSON.parse(r.json);
+      } catch {
+        stateMap[r.key] = r.json;
+      }
+    }
+    const partySummary = JSON.stringify({
+      party: stateMap.party || {},
+      partySheets: (partySheets && partySheets.party) || [],
+      signups: stateMap.signups || {},
+      timeline: stateMap.timeline || {},
+      tonight: stateMap.tonight || {},
+    });
     const baseSystemPrompt = [
       "You are Leeroy Jenkins, the party librarian for the 'Dungeons and Drinking' WoW Classic Forever five-player Horde group (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward).",
       "Answer strictly using the verified library facts and party state below. Where the library does not know something yet, state plainly that it is not published yet.",
