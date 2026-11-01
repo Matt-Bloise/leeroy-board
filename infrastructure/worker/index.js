@@ -425,6 +425,75 @@ export default {
         return jsonResp({ proposals: results || [] }, 200, cors);
       }
 
+      // 1e. PUT /wiki/page -> Direct D1 wiki page authoring/editing (replaces editing markdown in `wow-mage`)
+      if (req.method === "PUT" && path === "/wiki/page") {
+        if (!isAuthorized(req, url, env)) {
+          return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+        }
+        const body = await req.json();
+        const pageId = String(body.id || "").trim();
+        const category = String(body.category || pageId.split("/")[0] || "").trim();
+        const title = String(body.title || pageId.split("/").pop() || "").trim();
+        if (!pageId || !category || !title) {
+          return jsonResp({ error: "Missing page id, category, or title" }, 400, cors);
+        }
+        const now = new Date().toISOString();
+        const today = now.slice(0, 10);
+        await env.DB.prepare(
+          `INSERT INTO lib_pages (id, category, title, confidence, status, as_of, checked, recheck_days, blurb, aliases_json, facts_json, open_json, related_json, history_json, snapshots_json, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             category = excluded.category,
+             title = excluded.title,
+             confidence = excluded.confidence,
+             status = excluded.status,
+             as_of = excluded.as_of,
+             checked = excluded.checked,
+             recheck_days = excluded.recheck_days,
+             blurb = excluded.blurb,
+             aliases_json = excluded.aliases_json,
+             facts_json = excluded.facts_json,
+             open_json = excluded.open_json,
+             related_json = excluded.related_json,
+             history_json = excluded.history_json,
+             snapshots_json = excluded.snapshots_json,
+             updated_at = excluded.updated_at`
+        )
+          .bind(
+            pageId,
+            category,
+            title,
+            body.confidence || "confirmed",
+            body.status || "current",
+            body.as_of || today,
+            body.checked || today,
+            Number(body.recheck_days) || 3,
+            body.blurb || "",
+            JSON.stringify(Array.isArray(body.aliases) ? body.aliases : []),
+            JSON.stringify(Array.isArray(body.facts) ? body.facts : []),
+            JSON.stringify(Array.isArray(body.open) ? body.open : []),
+            JSON.stringify(Array.isArray(body.related) ? body.related : []),
+            JSON.stringify(Array.isArray(body.history) ? body.history : []),
+            JSON.stringify(Array.isArray(body.snapshots) ? body.snapshots : []),
+            now
+          )
+          .run();
+
+        await recomputeCategoryAndIndex(env, category, {
+          date: today,
+          page: pageId,
+          text: `${title} updated in D1`,
+        });
+        await purgeWorkerCache(url.origin, [
+          "/api/library/index.json",
+          "/api/library/search.json",
+          "/api/library/open.json",
+          `/api/library/${category}.json`,
+        ]);
+        await broadcastToRoom(env, { type: "library", categories: [category], page: pageId });
+        return jsonResp({ ok: true, id: pageId, category, updated_at: now }, 200, cors);
+      }
+
       // 2. GET /bootstrap -> Single-roundtrip Edge-cached startup bundle
       if (req.method === "GET" && path === "/bootstrap") {
         const cache = caches.default;
@@ -484,15 +553,30 @@ export default {
         return resp;
       }
 
-      // 4. GET /data/:name or GET /atlas/:name -> Single document from D1 `kv_state`
-      if (req.method === "GET" && (path.startsWith("/data/") || path.startsWith("/atlas/"))) {
+      // 4. GET or PUT /data/:name or GET /atlas/:name -> Single document in D1 `kv_state`
+      if (path.startsWith("/data/") || path.startsWith("/atlas/")) {
         const raw = decodeURIComponent(path.split("/").pop() || "").replace(/\.json$/, "");
-        const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(raw).first();
-        if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
-        return jsonResp(row.json, 200, {
-          ...cors,
-          "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
-        });
+        if (req.method === "GET") {
+          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(raw).first();
+          if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
+          return jsonResp(row.json, 200, {
+            ...cors,
+            "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
+          });
+        }
+        if (req.method === "PUT") {
+          if (!isAuthorized(req, url, env)) {
+            return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+          }
+          const body = await req.json();
+          const now = new Date().toISOString();
+          await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
+            .bind(raw, JSON.stringify(body), now)
+            .run();
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/data/${raw}.json`]);
+          await broadcastToRoom(env, { type: "data", key: raw });
+          return jsonResp({ ok: true, key: raw, updated_at: now }, 200, cors);
+        }
       }
 
       // 5. POST /refresh or POST /intent -> Ask Leeroy, Signups (flat & nested), Journey, Launch, Fact Fix, or Refresh
@@ -706,6 +790,8 @@ export default {
           });
           await purgeWorkerCache(url.origin, [
             "/api/library/index.json",
+            "/api/library/search.json",
+            "/api/library/open.json",
             `/api/library/${pageRow.category}.json`,
           ]);
 

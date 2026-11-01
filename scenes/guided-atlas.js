@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 const K = window.__boardKit, D = document;
-if (!K || !D.head || !K.MEM || /[?&](render|brain)=/.test(String(location.search || ""))) return;
+if (!K || !D.head || !K.MEM || /[?&](render=|brain=off)/.test(String(location.search || ""))) return;
 const { $, h, MEM } = K, root = D.documentElement, VIEW = "board-view", JN = ["guided", "curious", "everything"];
 const G = { stopsOpen: false, more: innerWidth >= 1000 && innerHeight >= 640, layer: null, A: null, loading: null, data: null, dataP: null, failed: false, booted: false, shown: false, plan: null, stops: [], hi: -1, moved: false, tour: null };
 const ls = { get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
@@ -16,7 +16,8 @@ const sched = (f) => (typeof requestAnimationFrame === "function" ? requestAnima
 const focus = (el) => { try { if (el) el.focus({ preventScroll: true }); } catch (e) {} };
 
 function facts() {
-  return (G.dataP ||= fetch("data/guided-atlas.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((d) => { G.data = d; return d; }));
+  const u = (window.__brain && window.__brain.dataUrl && window.__brain.dataUrl("data/guided-atlas.json")) || "data/guided-atlas.json";
+  return (G.dataP ||= fetch(u, { cache: "no-cache" }).then((r) => (r && r.ok ? r : fetch("data/guided-atlas.json", { cache: "no-cache" }))).catch(() => fetch("data/guided-atlas.json", { cache: "no-cache" })).then((r) => (r && r.ok ? r.json() : null)).catch(() => null).then((d) => { G.data = d; return d; }));
 }
 const mine = () => { const m = MEM.member(), d = G.data; return m && d && d.classes ? d.classes[m.class_key] || null : null; };
 function meetLine() {

@@ -7,6 +7,7 @@
 
 import { broadcastToRoom, purgeWorkerCache } from "./index.js";
 import { extractWikiFactsWithAi } from "./ai-models.js";
+import { factHays, vocabIdf } from "./rank-core.js";
 
 async function sha8Hex(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -81,6 +82,59 @@ export async function recomputeCategoryAndIndex(env, categoryKey, changeEntry = 
     )
       .bind(`${categoryKey}.json`, nextCatStamp, nextCatJson, now)
       .run();
+
+    // 1b. Rebuild `search.json` (TF-IDF vocabulary over all facts) and `open.json` directly in D1
+    try {
+      const { results: allRows } = await env.DB.prepare(
+        "SELECT id, category, title, confidence, status, as_of, checked, recheck_days, blurb, aliases_json, facts_json, open_json FROM lib_pages ORDER BY id ASC"
+      ).all();
+      const allPages = (allRows || []).map((r) => ({
+        id: r.id,
+        category: r.category,
+        title: r.title,
+        confidence: r.confidence,
+        status: r.status,
+        as_of: r.as_of,
+        checked: r.checked,
+        recheck_days: r.recheck_days,
+        blurb: r.blurb,
+        aliases: JSON.parse(r.aliases_json || "[]"),
+        facts: JSON.parse(r.facts_json || "[]"),
+        open: JSON.parse(r.open_json || "[]"),
+      }));
+
+      const nextSearchJson = JSON.stringify({ generated: now, idf: vocabIdf(factHays(allPages)) });
+      const nextSearchStamp = await sha8Hex(nextSearchJson);
+      await env.DB.prepare(
+        "INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('search.json', ?, ?, ?) ON CONFLICT(name) DO UPDATE SET stamp = excluded.stamp, json = excluded.json, updated_at = excluded.updated_at"
+      )
+        .bind(nextSearchStamp, nextSearchJson, now)
+        .run();
+
+      const openRow = await env.DB.prepare("SELECT json FROM lib_blobs WHERE name = 'open.json'").first();
+      let existingOpen = { generated: now, gaps: [], internal_gaps: 0, open: [] };
+      if (openRow) {
+        try {
+          existingOpen = JSON.parse(openRow.json);
+        } catch {}
+      }
+      existingOpen.generated = now;
+      existingOpen.open = allPages.flatMap((p) =>
+        (Array.isArray(p.open) ? p.open : []).map((t) => ({
+          page: p.id,
+          text: typeof t === "string" ? t : t && (t.text || t.question || JSON.stringify(t)),
+        }))
+      );
+      const nextOpenJson = JSON.stringify(existingOpen);
+      const nextOpenStamp = await sha8Hex(nextOpenJson);
+      await env.DB.prepare(
+        "INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('open.json', ?, ?, ?) ON CONFLICT(name) DO UPDATE SET stamp = excluded.stamp, json = excluded.json, updated_at = excluded.updated_at"
+      )
+        .bind(nextOpenStamp, nextOpenJson, now)
+        .run();
+    } catch (e) {
+      console.error("Failed updating search.json / open.json blobs:", e);
+    }
   }
 
   // 2. Update `index.json` stamps, totals, and recent changes

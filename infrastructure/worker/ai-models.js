@@ -13,6 +13,7 @@
 // =============================================================================
 
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
+import { rank as rankWikiCore, factHays } from "./rank-core.js";
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -361,29 +362,51 @@ export async function answerWithAi({
       buildPartySheetsFromD1(env),
     ]);
 
-    const words = question
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, " ")
-      .split(/\s+/)
-      .filter((w) => w.length > 2);
+    const parsedPages = (pages || []).map((p) => {
+      let aliases = [],
+        facts = [],
+        open = [];
+      try {
+        aliases = JSON.parse(p.aliases_json || "[]");
+      } catch {}
+      try {
+        facts = JSON.parse(p.facts_json || "[]");
+      } catch {}
+      try {
+        open = JSON.parse(p.open_json || "[]");
+      } catch {}
+      return { ...p, aliases, facts, open };
+    });
 
-    const ranked = (pages || [])
-      .map((p) => ({ p, s: scorePageForQuestion(p, words) }))
+    // Score individual facts & open questions using `vendor/rank-core.js` (TF-IDF + stemming + synonyms + role/lead boosts)
+    const { words, hits } = rankWikiCore(question, parsedPages, { hays: factHays(parsedPages) });
+    const topFactHits = hits
+      .slice(0, 35)
+      .map((h) => `  - [${h.page}~${h.key}] (score ${h.score}): ${h.value}`);
+
+    const pageHitBonus = new Map();
+    for (const h of hits.slice(0, 50)) {
+      pageHitBonus.set(h.page, (pageHitBonus.get(h.page) || 0) + h.score);
+    }
+
+    const fallbackWords =
+      words && words.length
+        ? words
+        : question
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, " ")
+            .split(/\s+/)
+            .filter((w) => w.length > 2);
+
+    const ranked = parsedPages
+      .map((p) => ({ p, s: scorePageForQuestion(p, fallbackWords) + (pageHitBonus.get(p.id) || 0) }))
       .sort((a, b) => b.s - a.s)
       .slice(0, 12)
       .map((x) => x.p);
 
     const contextBlocks = ranked.map((p) => {
-      let facts = [];
-      let openItems = [];
-      try {
-        facts = JSON.parse(p.facts_json || "[]");
-      } catch {}
-      try {
-        openItems = JSON.parse(p.open_json || "[]");
-      } catch {}
-      const lines = facts.slice(0, 25).map((f) => `  - [${p.id}~${f.key}]: ${f.value}`);
-      const openLines = (Array.isArray(openItems) ? openItems : [])
+      const lines = (p.facts || []).slice(0, 25).map((f) => `  - [${p.id}~${f.key}]: ${f.value}`);
+      const openLines = (Array.isArray(p.open) ? p.open : [])
         .slice(0, 10)
         .map((o) => `  - [${p.id}~open]: ${typeof o === "string" ? o : o && (o.text || o.question || JSON.stringify(o))}`);
       return `Page: ${p.title} (${p.id}, as of ${p.as_of || "current"})${p.blurb ? ` — ${p.blurb}` : ""}\n${[
@@ -415,7 +438,9 @@ export async function answerWithAi({
     ].join(" ");
     const systemPrompt = isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
 
-    const userPrompt = `Party Context:\n${partySummary}\n\nLibrary Facts:\n${contextBlocks.join(
+    const userPrompt = `Party Context:\n${partySummary}\n\nTop Ranked Fact Hits:\n${topFactHits.join(
+      "\n"
+    )}\n\nLibrary Pages:\n${contextBlocks.join(
       "\n\n"
     )}\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
 
@@ -447,14 +472,17 @@ export async function answerWithAi({
         } catch {}
       }
       if (!rawAnswer) {
-        const topPages = ranked.slice(0, 3);
-        if (topPages.length > 0) {
+        if (hits && hits.length > 0) {
+          rawAnswer = hits
+            .slice(0, 3)
+            .map((h) => `${h.value} [${h.page}~${h.key}]`)
+            .join(" ");
+          provider = chosenProvider;
+          model = `${chosenProvider}-local-d1-rag`;
+        } else if (ranked.length > 0) {
           const snippets = [];
-          for (const p of topPages) {
-            let facts = [];
-            try {
-              facts = JSON.parse(p.facts_json || "[]");
-            } catch {}
+          for (const p of ranked.slice(0, 3)) {
+            const facts = p.facts || [];
             const topFact = facts[0]
               ? `${facts[0].value} [${p.id}~${facts[0].key}]`
               : `${p.blurb || p.title} [${p.id}]`;
