@@ -173,7 +173,9 @@ const D = {};
 const KIT = { hooks: {}, on(n, f) { (this.hooks[n] ||= []).push(f); }, emit(n, ...a) { for (const f of this.hooks[n] || []) { try { f(...a); } catch (e) { console.error(n, e); } } }, lander: null };
 const JR = () => document.documentElement.dataset.journey || "curious";
 const DATA_NAMES = ["party", "timeline", "client", "stats"];
-const dataGet = (n) => fetch(`data/${n}.json`, { cache: "no-cache" });
+const API = (() => { try { const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:"); return /^(https:\/\/leeroy-board-api[\w.-]*\.workers\.dev|http:\/\/127\.0\.0\.1:\d+)$/.test(u.origin) ? u.origin : null; } catch (e) { return null; } })();
+const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt); };
+const dataGet = (n) => apiFetch(`data/${n}.json`, { cache: "no-cache" });
 const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n).then((r) => { if (!r.ok) throw new Error(`data/${n}.json answered ${r.status}`); return r.json(); })), opt: ["signups", "tonight"].map((n) => dataGet(n).then((r) => (r.ok ? r.json() : null)).catch(() => null)) };
 DATA_P.need.forEach((p) => p.catch(() => {}));
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
@@ -2492,11 +2494,11 @@ const libFirst = () => (innerWidth < 700 ? 6 : LIB_FIRST_WIDE);
 const dtShort = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const libDay = (d) => (d ? dtShort.format(new Date(`${d}T12:00:00Z`)) : "undated");
 const libStamped = (url) => { const v = LIBD.index && LIBD.index.stamps && LIBD.index.stamps[url.replace(/^data\/library\//, "")]; return v ? `${url}?v=${v}` : url; };
-const libGet = (url) => libIndex().catch(() => null).then(() => fetch(libStamped(url))).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
+const libGet = (url) => libIndex().catch(() => null).then(() => apiFetch(libStamped(url))).then((r) => { if (!r.ok) throw new Error(`${url} answered ${r.status}`); return r.json(); });
 const libTitle = (id) => (LIBD.head[id] ? LIBD.head[id].title : id);
 const libCatTitle = (key) => { const c = LIBD.index && LIBD.index.categories.find((x) => x.key === key); return c ? c.title : key; };
 function libIndex() {
-  LIBD.indexP ||= fetch("data/library/index.json", { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(`the library index answered ${r.status}`); return r.json(); }).then((j) => {
+  LIBD.indexP ||= apiFetch("data/library/index.json", { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(`the library index answered ${r.status}`); return r.json(); }).then((j) => {
     LIBD.index = j; for (const p of j.pages) LIBD.head[p.id] = p;
     try { renderLibTile(); } catch (e) { console.error(e); }
     return j;
