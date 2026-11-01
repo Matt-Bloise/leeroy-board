@@ -21,7 +21,7 @@ import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
-import { timingSafeEqualStr } from "./crypto.js";
+import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
