@@ -1315,7 +1315,7 @@ function startDiscordPresence(sdk) {
     }
   };
   render([], "none");
-  poll();
+  Promise.race([import("../vendor/discord-auth.js?v=6ed8b65c34").then((m) => m.signIn(sdk)), new Promise((r) => setTimeout(r, 6000))]).catch(() => {}).then(poll);
   clearInterval(discordPoll);
   discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
   document.addEventListener("click", (e) => {
