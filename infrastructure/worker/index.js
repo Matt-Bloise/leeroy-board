@@ -12,6 +12,7 @@ import { BoardRoom } from "./room.js";
 import { answerWithAi, resolveAiProvider, isProviderConfigured, AI_PROVIDER_LABELS } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
+import { handleAccount } from "./account.js";
 
 export { BoardRoom };
 
@@ -30,8 +31,9 @@ function corsHeaders(req, env) {
   const allowed = !env.ALLOWED_ORIGINS || env.ALLOWED_ORIGINS === "*" ? "*" : origin;
   return {
     "Access-Control-Allow-Origin": allowed,
-    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Board-Key, Cache-Control, Pragma",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Board-Key, If-Match, Cache-Control, Pragma",
+    "Access-Control-Expose-Headers": "ETag",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -338,6 +340,17 @@ export default {
       }
 
       // 1a. POST /token -> Discord Embedded App SDK OAuth2 code-to-token exchange (`vendor/discord-auth.js`)
+      // 1b. Per-user settings and accounts (`/auth/discord`, `/me`, `/state/:doc`)
+      const accountRes = await handleAccount(req, env, {
+        path,
+        ip: req.headers.get("CF-Connecting-IP") || "127.0.0.1",
+        now: Date.now(),
+      });
+      if (accountRes) {
+        const [status, body, extra] = accountRes;
+        return jsonResp(body, status, { ...cors, ...extra, "Cache-Control": "no-store" });
+      }
+
       if (req.method === "POST" && path === "/token") {
         let body = {};
         try {

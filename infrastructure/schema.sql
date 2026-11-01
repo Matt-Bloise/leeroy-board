@@ -129,3 +129,24 @@ CREATE TABLE IF NOT EXISTS dispatches (
   ask_ids_json TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+-- 11. Discord OAuth2 session store for cross-device user state (sessions & user_state)
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY CHECK (length(token_hash) = 64),
+  user_key TEXT NOT NULL CHECK (length(user_key) = 64),
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_key);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+-- 12. Per-user saved settings documents (journey, prefs, walked, seen, signups-choice)
+CREATE TABLE IF NOT EXISTS user_state (
+  user_key TEXT NOT NULL CHECK (length(user_key) = 64),
+  doc TEXT NOT NULL CHECK (doc IN ('journey', 'prefs', 'walked', 'seen', 'signups-choice')),
+  etag TEXT NOT NULL,
+  json TEXT NOT NULL CHECK (length(json) <= 16384),
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_key, doc)
+);
