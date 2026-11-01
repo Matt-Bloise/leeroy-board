@@ -302,7 +302,6 @@ The Cloudflare Worker includes a native Discord HTTP Interactions endpoint in [`
 2. On the same **General Information** page, set **Interactions Endpoint URL** to:
    ```text
    https://api.leeroy.party/api/discord
-   # (or fallback: https://api.leeroy.party/api/discord)
    ```
    *(Discord will immediately send a signed `PING` request; the Worker verifies the `X-Signature-Ed25519` header using WebCrypto and responds with `PONG`.)*
 3. What `POST /api/discord` handles automatically:
