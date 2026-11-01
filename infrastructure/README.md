@@ -13,19 +13,19 @@ flowchart LR
   end
 
   subgraph Edge["Cloudflare Global Edge ($0 Free Tier)"]
-    Cache["Cloudflare Edge Cache\n(caches.default — ∞ free hits)"]
+    Cache["Cloudflare Edge Cache & L1 Isolate Cache\n(caches.default + ISOLATE_CACHE)"]
     Worker["Cloudflare Worker\n(leeroy-brain)"]
     WAI["Cloudflare Workers AI\n(Llama 3.3 70B — 0 keys needed)"]
-    DO["Hibernatable Durable Object\n(BoardRoom SQLite + WebSockets)"]
-    D1[("Cloudflare D1 SQLite\n(kv_state, lib_pages, lib_blobs,\nlib_sources, ask_turns, fact_fixes)")]
-    Cron["Cloudflare Cron Trigger\n(*/15 * * * *)"]
+    DO["Hibernatable Durable Object\n(BoardRoom WebSockets)"]
+    D1[("Cloudflare D1 SQLite\n(kv_state, lib_pages, lib_blobs,\nlib_sources, ask_turns, sheet_events,\nmembers, accounts, sessions)")]
+    Cron["Cloudflare Cron Trigger\n(0 */6 * * *)"]
   end
 
   subgraph External["External AI APIs & Discord"]
     Claude["Anthropic Claude API\n(Haiku 4.5 / Sonnet 4.5)"]
     Gemini["Google Gemini Free Tier\n(Gemini 2.5 Flash / Pro)"]
     FreeLLMs["Groq / Cerebras / GitHub / OpenRouter\n(Llama 3.3 70B / GPT-4o / DeepSeek V3)"]
-    Sources["Blizzard / Wowhead / Wiki\n(186 tracked URLs)"]
+    Sources["Blizzard / Wowhead / Wiki\n(31 tracked source URLs)"]
     Discord["Discord (#wow-forever)\nWebhook + /api/discord Interactions"]
   end
 
@@ -40,7 +40,7 @@ flowchart LR
   Worker -- "gemini" --> Gemini
   Worker -- "groq / cerebras / github / openrouter" --> FreeLLMs
   Worker <-->|"Slash commands, Sign-ups & Q&A"| Discord
-  Cron -- "Every 15m" --> Worker
+  Cron -- "Every 6h (0 */6 * * *)" --> Worker
   Worker -- "ETag / SHA-256 check" --> Sources
 ```
 
@@ -51,8 +51,8 @@ flowchart LR
 | **Workers Requests (`leeroy-brain`)** | **100,000 req / day** | ~500–3,000 req/day (Edge Cache absorbs >95% of reads) |
 | **Edge Cache (`caches.default`)** | **Unlimited (Unmetered)** | Serves `/api/bootstrap` and `/api/library/*.json` in 10–25 ms globally |
 | **D1 Serverless SQLite** | **5 GB storage, 5M row reads/day, 100k writes/day, 10 DBs** | ~3.5 MB total storage; 1 production DB + up to 9 concurrent PR preview DBs |
-| **Durable Objects (`BoardRoom`)** | **100,000 req/day, 13,000 GB-s/day, 5 GB SQLite** | Hibernates at 0 GB-s when idle; instant `<5ms` WebSocket fan-out |
-| **Cron Triggers** | **5 schedules / account** | 1 schedule (`*/15 * * * *` on production only) |
+| **Durable Objects (`BoardRoom`)** | **100,000 req/day, 13,000 GB-s/day, 5 GB SQLite** | Hibernates at 0 GB-s when idle; native ping/pong; instant `<5ms` WebSocket fan-out (storage resides in D1) |
+| **Cron Triggers** | **5 schedules / account** | 1 schedule (`0 */6 * * *` on production only, 4 runs/day keeping AI fact extraction strictly under the 10,000 Workers AI neuron/day free limit) |
 | **Cloudflare Workers AI (`workers-ai`)** | **10,000 Neurons / day ($0, zero keys)** | Built-in `@cf/meta/llama-3.3-70b-instruct-fp8-fast` binding (`env.AI`) |
 | **Google Gemini Free Tier (`gemini`)** | **15 RPM, 1,000,000 TPM, 1,500 req/day ($0)** | `gemini-2.5-flash` / `gemini-2.5-pro` via `GEMINI_API_KEY` |
 | **Groq / Cerebras Free Tier (`groq` / `cerebras`)** | **1,000–14,400 req/day, 1M tokens/day ($0)** | Sub-400ms `llama-3.3-70b` via `GROQ_API_KEY` / `CEREBRAS_API_KEY` |
@@ -64,14 +64,16 @@ flowchart LR
 
 | File | Purpose |
 | :--- | :--- |
-| [`wrangler.toml`](./wrangler.toml) | Cloudflare Worker configuration (`leeroy-brain`), D1 binding (`DB`), Workers AI binding (`AI`), SQLite Durable Object (`BoardRoom`), `AI_PROVIDER` config, and `*/15 * * * *` Cron Trigger. |
-| [`schema.sql`](./schema.sql) | Idempotent D1 SQLite schema (`kv_state`, `lib_pages`, `lib_blobs`, `lib_sources`, `ask_turns`, `fact_fixes`). |
-| [`scripts/seed-d1.mjs`](./scripts/seed-d1.mjs) | Compiles existing `../data/*.json`, `../data/library/*.json`, and `../data/atlas/{links,marks}.json` into SQL batches and seeds D1 via `wrangler d1 execute`. |
-| [`worker/index.js`](./worker/index.js) | Main Cloudflare Worker entry point (`/api/bootstrap`, `/api/library/:name`, `/api/data/:name`, `/api/atlas/:name`, `/api/intent`, `/api/ask`, `/api/signups`, `/api/discord`, `/api/sheet`, `/api/state`, `/api/live`). |
-| [`worker/room.js`](./worker/room.js) | `BoardRoom` Hibernatable WebSocket Durable Object class (SQLite-backed live state & sub-5ms WebSocket broadcast). |
-| [`worker/ai-models.js`](./worker/ai-models.js) | Multi-provider AI engine supporting **Claude**, **Gemini Free Tier**, **Cloudflare Workers AI**, **Groq**, **Cerebras**, **GitHub Models**, and **OpenRouter** with D1 RAG context retrieval and live WebSocket + Discord webhook push. |
+| [`wrangler.toml`](./wrangler.toml) | Cloudflare Worker configuration (`leeroy-brain`), D1 binding (`DB`), Workers AI binding (`AI`), Durable Object (`BoardRoom`), `AI_PROVIDER` config, and `0 */6 * * *` Cron Trigger (6-hour autonomous source sweep). |
+| [`schema.sql`](./schema.sql) | Idempotent baseline D1 SQLite schema (`kv_state`, `lib_pages`, `lib_blobs`, `lib_sources`, `lib_source_snapshots`, `wiki_proposals`, `ask_turns`, `fact_fixes`, `sheet_events`, `dispatches`, `members`, `sessions`, `user_state`) paired with incremental migrations in [`migrations/`](./migrations/). |
+| [`migrations/`](./migrations/) | Numbered D1 SQL migrations (`0001_initial_schema.sql` through `0004_ask_turns_share.sql`) auto-applied in CI/CD via `wrangler d1 migrations apply`. |
+| [`scripts/seed-d1.mjs`](./scripts/seed-d1.mjs) | Compiles 10 board JSON documents, 20 library blobs, 67 library pages, and 31 tracked source URLs into SQL batches and seeds D1 via `wrangler d1 execute`. |
+| [`scripts/export-d1.mjs`](./scripts/export-d1.mjs) | Exports live D1 tables and precomputed TF-IDF library search indexes back to repository JSON files or triggers local rebuilds. |
+| [`worker/index.js`](./worker/index.js) | Main Cloudflare Worker entry point (`/api/bootstrap`, `/api/library/:name`, `/api/data/:name`, `/api/atlas/:name`, `/api/intent`, `/api/ask`, `/api/signups`, `/api/discord`, `/api/sheet`, `/api/state`, `/api/live`) with L1 in-memory isolate caching and instant invalidation. |
+| [`worker/room.js`](./worker/room.js) | `BoardRoom` Hibernatable WebSocket Durable Object class (stateless live pub/sub router with native `WebSocketRequestResponsePair` ping/pong to preserve hibernation, and sub-5ms broadcast). |
+| [`worker/ai-models.js`](./worker/ai-models.js) | Multi-provider AI engine supporting **Claude**, **Gemini Free Tier**, **Cloudflare Workers AI**, **Groq**, **Cerebras**, **GitHub Models**, and **OpenRouter** with precomputed term vectors, compact prompt generation, and live WebSocket + Discord webhook push. |
 | [`worker/discord.js`](./worker/discord.js) | Native Discord HTTP Interactions endpoint (`POST /api/discord` with Ed25519 signature verification) and external bot signup sync (`POST /api/signups`). |
-| [`worker/scraper.js`](./worker/scraper.js) | 15-minute Cron Trigger source sweep (`ETag` / `If-Modified-Since` / `SHA-256`) and D1 library blob rebuilder + Edge Cache invalidator. |
+| [`worker/scraper.js`](./worker/scraper.js) | 6-hour Cron Trigger source sweep (`0 */6 * * *`) with `ETag` / `If-Modified-Since` / `SHA-256` change detection, incremental vocabulary updates, and D1 library blob rebuilder. |
 | [`.github/workflows/deploy-cloudflare.yml`](../.github/workflows/deploy-cloudflare.yml) | Live GitHub Actions workflow — deploys to **Production ONLY on new commits to `master`**. |
 | [`.github/workflows/pr-preview-cloudflare.yml`](../.github/workflows/pr-preview-cloudflare.yml) | Live GitHub Actions workflow — spins up isolated **Ephemeral PR Environments** (`Pages + Worker + DO + D1`) on PR open/sync and tears them down on PR merge/close. |
 
@@ -185,9 +187,9 @@ on:
 
 ### What Happens Automatically on Every `master` Push
 1. **D1 Database Provisioning (`leeroy-board-db`)**: Checks if `leeroy-board-db` exists in your Cloudflare account; creates it on the first run and patches its UUID into `infrastructure/wrangler.toml`.
-2. **Idempotent Schema Migration**: Runs [`infrastructure/schema.sql`](./schema.sql) (`CREATE TABLE IF NOT EXISTS ...`).
-3. **One-Time Initial Seeding**: Checks `SELECT COUNT(*) FROM kv_state`. If `0` (first deploy), runs [`scripts/seed-d1.mjs --remote`](./scripts/seed-d1.mjs) to load all 9 board JSON documents, 19 library blobs, 59 library pages, and 186 source URLs into D1. On all subsequent `master` commits, seeding is skipped so live party data in D1 is never overwritten.
-4. **Worker + Durable Object + Cron Deployment**: Deploys `leeroy-brain`, provisions the SQLite-backed `BoardRoom` Durable Object (`v1`), activates the `*/15 * * * *` Cron Trigger, and syncs all configured Worker secrets.
+2. **Idempotent Schema & Numbered Migrations**: Runs [`infrastructure/schema.sql`](./schema.sql) (`CREATE TABLE IF NOT EXISTS ...`) followed by `npx wrangler d1 migrations apply leeroy-board-db --remote` (applying all pending migrations in `infrastructure/migrations/`).
+3. **One-Time Initial Seeding**: Checks `SELECT COUNT(*) FROM kv_state`. If `0` (first deploy), runs [`scripts/seed-d1.mjs --remote`](./scripts/seed-d1.mjs) to load all 10 board JSON documents, 20 library blobs, 67 library pages, and 31 source URLs into D1. On all subsequent `master` commits, seeding is skipped so live party data in D1 is never overwritten.
+4. **Worker + Durable Object + Cron Deployment**: Deploys `leeroy-brain`, provisions the `BoardRoom` Durable Object (`v1`), activates the `0 */6 * * *` Cron Trigger, and syncs all configured Worker secrets.
 5. **Cloudflare Pages Production Deployment**: Stamps the production Worker URL into `.cloudflare-dist/js/brain.js`, creates the `leeroy-board` Cloudflare Pages project (`--production-branch=master`) if needed, and deploys the static site to `https://leeroy-board.pages.dev`.
 
 ### Production Verification Checklist (After First `master` Merge)
@@ -215,7 +217,7 @@ on:
    ```
 2. **Verify D1 Bootstrap & Library Blobs**:
    - Open `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/bootstrap` (returns `party`, `timeline`, `stats`, `signups`, `tonight`, `launch`, `marks`, `decide`).
-   - Open `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/library/index.json` (returns the 59-page library index).
+   - Open `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/library/index.json` (returns the 67-page library index).
 3. **Verify Production Site & Write Key**:
    - Open `https://leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>` in your browser.
    - Open the **Leeroy** tab, pick any model from the dropdown, and send a test question.
@@ -231,7 +233,7 @@ The PR preview workflow ([`.github/workflows/pr-preview-cloudflare.yml`](../.git
 | **Static Site (Pages)** | `https://leeroy-board.pages.dev` | `https://pr-<N>.leeroy-board.pages.dev` |
 | **Worker + Durable Object** | `leeroy-brain` | `leeroy-brain-pr-<N>` |
 | **D1 SQLite Database** | `leeroy-board-db` | `leeroy-board-db-pr-<N>` |
-| **Cron Trigger** | Enabled (`*/15 * * * *`) | Stripped (preserves 5-cron Free-Tier account quota) |
+| **Cron Trigger** | Enabled (`0 */6 * * *`) | Stripped (preserves 5-cron Free-Tier account quota) |
 | **Discord Webhook** | Enabled (`#wow-forever`) | Omitted (prevents PR test queries from spamming Discord) |
 | **AI Model Provider** | Multi-Provider (Claude, Gemini, Groq, Cerebras, GitHub, OpenRouter, Workers AI) | **Cloudflare Workers AI ONLY** (zero external keys injected, locked to `@cf/meta/llama-3.3-70b-instruct-fp8-fast`) |
 
@@ -389,13 +391,14 @@ You can run the entire Cloudflare Worker + D1 + Durable Objects stack locally on
 ```bash
 cd infrastructure
 
-# 1. Install Wrangler
+# 1. Install Wrangler and dependencies
 npm install
 
-# 2. Create local D1 SQLite tables
+# 2. Create local D1 SQLite tables & apply numbered migrations
 npm run d1:schema:local
+npm run d1:migrate:local
 
-# 3. Seed local D1 from ../data/*.json and ../data/library/*.json
+# 3. Seed local D1 from ../data/*.json, ../data/library/*.json, and ../data/atlas/
 npm run d1:seed:local
 
 # 4. Start local Worker + Durable Object + Cron emulator on http://localhost:8787
@@ -403,3 +406,82 @@ npm run dev
 ```
 
 To test the frontend against your local Worker, open the board with `?brain=http://localhost:8787` (or `?brain=local`).
+
+
+---
+
+## 10. End-to-End Migration Guide (Cutting Over from Legacy Architecture)
+
+This runbook guides you through a seamless, zero-downtime cutover from the legacy architecture (e.g. static site mirror of `wow-mage`, local Node.js daemon scripts, or Git-commit bots) to the 100% serverless Cloudflare stack.
+
+### Phase 1: Pre-Migration & Credentials Setup (10 Minutes)
+1. **Cloudflare Account ID & Workers Subdomain**:
+   - Verify your Cloudflare account has an active `*.workers.dev` subdomain under **Workers & Pages -> Overview** ([Step 1](#step-1-claim-your-workersdev-subdomain-in-cloudflare-one-time)).
+   - Note your 32-character Account ID.
+2. **Generate Cloudflare API Token**:
+   - Create a token with permissions for **Workers Scripts** (`Edit`), **D1** (`Edit`), **Cloudflare Pages** (`Edit`), **Workers AI** (`Edit`), and **Account Settings** (`Read`) ([Step 2](#step-2-create-a-cloudflare-api-token-cloudflare_api_token)).
+3. **Generate Admin Party Write Token**:
+   - Run `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"` ([Step 4](#step-4-generate-a-party-write-key-board_admin_token)).
+4. **Configure GitHub Secrets**:
+   - In GitHub repository **Settings -> Secrets and variables -> Actions**, add:
+     - `CLOUDFLARE_API_TOKEN` (Required)
+     - `CLOUDFLARE_ACCOUNT_ID` (Required)
+     - `BOARD_ADMIN_TOKEN` (Recommended)
+     - Optional AI keys: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`
+     - Optional Discord secrets: `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`
+5. **Ensure Workflow Permissions**:
+   - In **Settings -> Actions -> General -> Workflow permissions**, select **Read and write permissions**.
+
+### Phase 2: First-Time Automated Deployment to Production (5 Minutes)
+1. **Merge Migration Branch into `master`**:
+   - Open and merge the Pull Request containing the Cloudflare infrastructure into `master`.
+2. **Watch GitHub Actions Deploy**:
+   - Open the **Actions** tab in GitHub and inspect the `Deploy Living Board to Cloudflare` workflow.
+   - The workflow will automatically:
+     1. Provision the production D1 database (`leeroy-board-db`).
+     2. Apply `schema.sql` and run all numbered migrations in `infrastructure/migrations/`.
+     3. Seed the D1 database from `data/*.json` and `data/library/*.json` (10 KV documents, 20 blobs, 67 pages, 31 sources).
+     4. Deploy the `leeroy-brain` Worker, `BoardRoom` Durable Object, and `0 */6 * * *` Cron Trigger.
+     5. Build and publish the static site to Cloudflare Pages at `https://leeroy-board.pages.dev`.
+
+### Phase 3: Verification & Sanity Checks
+1. **API & AI Provider Health**:
+   ```bash
+   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/health
+   ```
+   Verify `"ok": true` and that active AI providers are reported correctly.
+2. **Bootstrap & Library Payloads**:
+   ```bash
+   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/bootstrap | jq '.party != null'
+   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/library/index.json | jq '.pages | length'
+   ```
+   Verify the bootstrap returns party state and the library returns 67 indexed pages.
+3. **Frontend & Write Key**:
+   - Open `https://leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>`.
+   - Verify that the green live connection indicator illuminates.
+   - In the **Leeroy** chamber tab, submit a test question to verify that streaming / instant Q&A answers with source citations.
+   - Test an RSVP or character sheet modification to verify sub-5ms WebSocket fan-out.
+
+### Phase 4: Discord Cutover (5 Minutes)
+1. **Update Discord Activity URL Mappings**:
+   - In the [Discord Developer Portal](https://discord.com/developers/applications/1561857940174938114) -> **Activities** -> **URL Mappings**:
+     - Route `/` to `leeroy-board.pages.dev`
+     - Route `/api` to `leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api`
+2. **Update Interactions Endpoint (Serverless Bot)**:
+   - If using the native serverless bot, set **Interactions Endpoint URL** to `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/discord`.
+3. **External Bot / Gateway Bot (Alternative)**:
+   - If keeping an existing Node.js bot script, point its outbound requests to `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/signups` and `/api/sheet`, passing `Authorization: Bearer <BOARD_ADMIN_TOKEN>`.
+
+### Phase 5: Decommissioning Legacy Infrastructure
+Once the production Cloudflare Pages site and Worker are active:
+1. **Stop Git-Commit Daemons**: Terminate any background cron jobs, Node.js scripts, or GitHub Actions that committed JSON files to Git on a timer or after Discord messages. All state is now cleanly managed in D1 SQLite.
+2. **Retire Legacy Host**: If running on GitHub Pages or an external VM, update DNS records or deprecate the old URL.
+3. **Backup / Export Anytime**: Run `npm run d1:export:remote` in `infrastructure/` whenever you want a local git-committable snapshot of the live D1 database.
+
+### Phase 6: (Optional) Custom Domain & Edge Caching
+If you own a custom domain (e.g. `yourdomain.com`):
+1. Add the domain zone to Cloudflare (Free Plan).
+2. Attach `api.yourdomain.com` as a Custom Domain on `leeroy-brain`.
+3. Attach `board.yourdomain.com` (or apex) as a Custom Domain on `leeroy-board` Pages.
+4. Add the domain to `ALLOWED_ORIGINS` in `infrastructure/wrangler.toml` and `WORKER` in `js/brain.js`.
+5. Enable **Tiered Cache** in the Cloudflare Dashboard to maximize global edge cache hits.
