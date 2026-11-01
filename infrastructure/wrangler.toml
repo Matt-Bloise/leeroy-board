@@ -4,9 +4,9 @@ compatibility_date = "2025-02-01"
 workers_dev = true
 
 # Custom Domain binding on Cloudflare Free Tier
-# Automatically provisions edge SSL and routes https://api.leeroy.party/* to this Worker
+# Automatically provisions edge SSL and routes https://api.leeroy.party to this Worker
 routes = [
-  { pattern = "api.leeroy.party/*", custom_domain = true }
+  { pattern = "api.leeroy.party", custom_domain = true }
 ]
 
 # 6-Hour autonomous source sweep (Blizzard news, Wowhead, Raidplan, Wiki)

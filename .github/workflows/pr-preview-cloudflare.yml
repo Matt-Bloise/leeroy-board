@@ -231,14 +231,20 @@ jobs:
         env:
           BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
         run: |
-          set -e
+          set +e
           # Deploy Worker once; pass BOARD_ADMIN_TOKEN directly to avoid double redeployment
           if [ -n "$BOARD_ADMIN_TOKEN" ]; then
             DEPLOY_OUT=$(npx wrangler deploy --var BOARD_ADMIN_TOKEN:"$BOARD_ADMIN_TOKEN" 2>&1)
           else
             DEPLOY_OUT=$(npx wrangler deploy 2>&1)
           fi
+          DEPLOY_EXIT=$?
           echo "$DEPLOY_OUT"
+          if [ $DEPLOY_EXIT -ne 0 ]; then
+            echo "::error::wrangler deploy failed with exit code $DEPLOY_EXIT"
+            exit $DEPLOY_EXIT
+          fi
+          set -e
           WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://${WORKER_NAME}\.[a-z0-9-]+\.workers\.dev" | head -n 1)
           if [ -z "$WORKER_URL" ]; then
             SUBDOMAIN=$(npx wrangler subdomain get 2>/dev/null | grep -oE '[a-z0-9-]+' | head -n 1 || true)

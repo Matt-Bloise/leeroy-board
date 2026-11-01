@@ -126,6 +126,45 @@ jobs:
           fi
           echo "✓ Cloudflare D1 permissions verified."
 
+          # 4. Test Zone permissions for leeroy.party (required for custom domain api.leeroy.party)
+          ZONE_CHECK=$(curl -s "https://api.cloudflare.com/client/v4/zones?name=leeroy.party" \
+            -H "Authorization: Bearer $CLEAN_TOKEN")
+          ZONE_SUCCESS=$(node -e '
+            try {
+              const j = JSON.parse(process.argv[1]);
+              console.log(j.success ? "true" : "false");
+            } catch(e) {
+              console.log("false");
+            }
+          ' "$ZONE_CHECK")
+          ZONE_COUNT=$(node -e '
+            try {
+              const j = JSON.parse(process.argv[1]);
+              console.log(j.result ? j.result.length : 0);
+            } catch(e) {
+              console.log("0");
+            }
+          ' "$ZONE_CHECK")
+
+          if [ "$ZONE_SUCCESS" != "true" ]; then
+            echo "::error::Token lacks Zone Read permissions for leeroy.party."
+            echo "Cloudflare response: $ZONE_CHECK"
+            echo ""
+            echo "Action Required to Fix:"
+            echo "In Cloudflare Dashboard -> My Profile -> API Tokens:"
+            echo "1. Edit the token used for CLOUDFLARE_API_TOKEN (e.g. 'Leeroy Dungeons and Drinking Key')."
+            echo "2. Under 'Permissions', click '+ Add more' and add: 'Zone' -> 'Zone' -> 'Read'."
+            echo "3. Under 'Zone Resources', ensure 'Include' -> 'Specific zone' includes 'leeroy.party' (or 'All zones')."
+            echo "4. Save token and re-run workflow."
+            exit 1
+          fi
+
+          if [ "$ZONE_COUNT" = "0" ]; then
+            echo "::warning::Zone 'leeroy.party' was not found in Cloudflare account '$TARGET_ACCOUNT_ID'."
+          else
+            echo "✓ Cloudflare Zone permissions verified for leeroy.party."
+          fi
+
       - name: Ensure D1 Database Exists & Patch wrangler.toml
         working-directory: infrastructure
         run: |
@@ -188,9 +227,15 @@ jobs:
         id: worker
         working-directory: infrastructure
         run: |
-          set -e
+          set +e
           DEPLOY_OUT=$(npx wrangler deploy 2>&1)
+          DEPLOY_EXIT=$?
           echo "$DEPLOY_OUT"
+          if [ $DEPLOY_EXIT -ne 0 ]; then
+            echo "::error::wrangler deploy failed with exit code $DEPLOY_EXIT"
+            exit $DEPLOY_EXIT
+          fi
+          set -e
           WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://api\.leeroy\.party" | head -n 1)
           if [ -z "$WORKER_URL" ]; then
             WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://leeroy-brain\.[a-z0-9-]+\.workers\.dev" | head -n 1)

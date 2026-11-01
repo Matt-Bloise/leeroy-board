@@ -407,7 +407,7 @@ Because **`leeroy.party`** is already registered and managed by Cloudflare, DNS 
 The Worker's custom domain is pre-configured in [`infrastructure/wrangler.toml`](./wrangler.toml):
 ```toml
 routes = [
-  { pattern = "api.leeroy.party/*", custom_domain = true }
+  { pattern = "api.leeroy.party", custom_domain = true }
 ]
 ```
 Running `npx wrangler deploy` automatically registers `api.leeroy.party` in your `leeroy.party` DNS zone, attaches the Worker route, and provisions a Cloudflare Universal SSL certificate.
@@ -539,6 +539,6 @@ Once the production Cloudflare Pages site and Worker are active:
 
 ### Phase 6: Custom Domain & Edge Caching Activation (`leeroy.party`)
 Since **`leeroy.party`** is managed in Cloudflare:
-1. **Worker API**: Deploying with `routes = [{ pattern = "api.leeroy.party/*", custom_domain = true }]` in `wrangler.toml` binds `api.leeroy.party` directly to `leeroy-brain` with automatic edge SSL.
+1. **Worker API**: Deploying with `routes = [{ pattern = "api.leeroy.party", custom_domain = true }]` in `wrangler.toml` binds `api.leeroy.party` directly to `leeroy-brain` with automatic edge SSL.
 2. **Pages Frontend**: In Cloudflare Dashboard -> **Workers & Pages** -> **leeroy-board** -> **Custom domains**, add `leeroy.party` and `www.leeroy.party`.
 3. **Tiered Cache**: In **leeroy.party** Zone -> **Caching** -> **Tiered Cache**, toggle to **Enabled** to maximize edge cache hits.
