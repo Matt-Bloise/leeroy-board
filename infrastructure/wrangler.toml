@@ -3,6 +3,12 @@ main = "worker/index.js"
 compatibility_date = "2025-02-01"
 workers_dev = true
 
+# Custom Domain binding on Cloudflare Free Tier
+# Automatically provisions edge SSL and routes https://api.leeroy.party/* to this Worker
+routes = [
+  { pattern = "api.leeroy.party/*", custom_domain = true }
+]
+
 # 6-Hour autonomous source sweep (Blizzard news, Wowhead, Raidplan, Wiki)
 # 4 runs/day keeps background AI fact extraction strictly under the 10,000 Workers AI neuron/day free limit.
 # Live on-demand refreshes remain available via UI and /intent { kind: "refresh" }.
@@ -45,6 +51,7 @@ CEREBRAS_MODEL = "llama-3.3-70b"
 GITHUB_MODEL_FAST = "gpt-4o-mini"
 GITHUB_MODEL_DEEP = "gpt-4o"
 OPENROUTER_MODEL = "deepseek/deepseek-chat-v3-0324:free"
-ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://1561857940174938114.discordsays.com,http://127.0.0.1:8080,http://localhost:8080"
+API_ORIGIN = "https://api.leeroy.party"
+ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://leeroy.party,https://www.leeroy.party,https://api.leeroy.party,https://1561857940174938114.discordsays.com,http://127.0.0.1:8080,http://localhost:8080"
 USER_SALT = "leeroy-board-user-state-salt-v1"
 KEY_SALT = "leeroy-board-member-key-salt-v1"

@@ -94,6 +94,7 @@ jobs:
             toml = toml.replace(/^name\s*=\s*".*"/m, `name = "${process.env.WORKER_NAME}"`);
             toml = toml.replace(/database_name\s*=\s*".*"/, `database_name = "${process.env.D1_DATABASE_NAME}"`);
             toml = toml.replace(/database_id\s*=\s*".*"/, `database_id = "${process.argv[1]}"`);
+            toml = toml.replace(/routes\s*=\s*\[[\s\S]*?\]\r?\n?/, "");
             toml = toml.replace(/\[triggers\][\s\S]*?crons\s*=\s*\[[^\]]*\]\r?\n?/, "");
             toml = toml.replace(/AI_PROVIDER\s*=\s*".*"/, `AI_PROVIDER = "workers-ai"`);
             const prOrigin = `https://${process.env.PAGES_BRANCH}.${process.env.PAGES_PROJECT_NAME}.pages.dev`;

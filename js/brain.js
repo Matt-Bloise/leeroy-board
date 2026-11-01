@@ -53,6 +53,9 @@ function baseFor() {
     return { http: `${prWorker}/api`, ws: `${prWorker.replace(/^https:/, "wss:")}/api/live` };
   }
   if (/\.discordsays\.com$/.test(host)) return { http: "/api", ws: `wss://${host}/api/live` };
+  if (host === "leeroy.party" || host.endsWith(".leeroy.party")) {
+    return { http: "https://api.leeroy.party/api", ws: "wss://api.leeroy.party/api/live" };
+  }
   if (host === "matt-bloise.github.io" || /\.pages\.dev$/.test(host)) return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };
   if ((host === "127.0.0.1" || host === "localhost") && /(^|[?&])brain=local(&|$)/.test(location.search || "")) return { http: "/api", ws: `ws://${location.host || host}/api/live` };
   if (location.protocol === "http:" || location.protocol === "https:") return { http: `${WORKER}/api`, ws: `${WORKER.replace(/^https:/, "wss:")}/api/live` };

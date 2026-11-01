@@ -1099,6 +1099,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(runScheduledSourceSweep(env, "https://leeroy-brain.jmattbloise.workers.dev"));
+    const origin = env.API_ORIGIN || "https://api.leeroy.party";
+    ctx.waitUntil(runScheduledSourceSweep(env, origin));
   },
 };

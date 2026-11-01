@@ -92,9 +92,12 @@ jobs:
           set -e
           DEPLOY_OUT=$(npx wrangler deploy 2>&1)
           echo "$DEPLOY_OUT"
-          WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://leeroy-brain\.[a-z0-9-]+\.workers\.dev" | head -n 1)
+          WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://api\.leeroy\.party" | head -n 1)
           if [ -z "$WORKER_URL" ]; then
-            WORKER_URL="https://leeroy-brain.jmattbloise.workers.dev"
+            WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://leeroy-brain\.[a-z0-9-]+\.workers\.dev" | head -n 1)
+          fi
+          if [ -z "$WORKER_URL" ]; then
+            WORKER_URL="https://api.leeroy.party"
           fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 

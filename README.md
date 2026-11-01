@@ -9,7 +9,7 @@ Previously a static export mirror of `Matt-Bloise/wow-mage`, `leeroy-board` now 
 ## Architecture Overview
 
 - **Frontend (`index.html`, `js/`, `scenes/`, `atlas/`, `room/`, `css/`)**:
-  - Hosted on **Cloudflare Pages** with automatic PR preview environments (`.github/workflows/`).
+  - Hosted on **Cloudflare Pages** at **`https://leeroy.party`** with automatic PR preview environments (`.github/workflows/`).
   - Connects to the `leeroy-brain` Cloudflare Worker via [`js/brain.js`](js/brain.js) for single-roundtrip `/api/bootstrap` state, live WebSocket synchronization (`/api/live`), character sheet editing (`/api/sheet`), and Leeroy Chamber Q&A (`/api/intent`).
 - **Serverless Edge Backend ([`infrastructure/`](infrastructure/README.md))**:
   - **[`infrastructure/worker/index.js`](infrastructure/worker/index.js)**: Edge-cached REST API (`/api/bootstrap`, `/api/state`, `/api/library/:name`, `/api/data/:name`, `/api/sheet`, `/api/vocab`, `/api/dispatch`, `/api/intent`, `/api/wiki/page`, `/api/wiki/snapshots`, `/api/wiki/proposals`).

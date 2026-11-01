@@ -9,7 +9,7 @@ This directory (`infrastructure/`) contains the complete Infrastructure-as-Code 
 ```mermaid
 flowchart LR
   subgraph Client["Browser / Discord Activity"]
-    UI["Living Board UI\n(Cloudflare Pages: leeroy-board)"]
+    UI["Living Board UI\n(leeroy.party / Cloudflare Pages)"]
   end
 
   subgraph Edge["Cloudflare Global Edge ($0 Free Tier)"]
@@ -144,7 +144,7 @@ The frontend ([`js/brain.js`](../js/brain.js#L4)) validates that the write key (
    - Anyone opening `https://leeroy-board.pages.dev` (or a PR preview `https://pr-<N>.leeroy-board.pages.dev`) can browse the entire board, library, and live WebSocket updates **without** a key.
    - To unlock write actions (**Ask Leeroy**, **Fact Fixes**, **Sign-ups**, and **Character Sheet edits**), open the board once with `#k=<YOUR_BOARD_ADMIN_TOKEN>` appended to the URL:
      ```text
-     https://leeroy-board.pages.dev/#k=<YOUR_BOARD_ADMIN_TOKEN>
+     https://leeroy.party/#k=<YOUR_BOARD_ADMIN_TOKEN>
      ```
    - `js/brain.js` automatically saves the key into `localStorage["board-key"]` and strips `#k=` from the address bar so the browser remembers you on all future visits.
 
@@ -195,7 +195,7 @@ on:
 ### Production Verification Checklist (After First `master` Merge)
 1. **Verify Worker & AI Providers Health**:
    ```bash
-   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/health
+   curl -s https://api.leeroy.party/api/health
    ```
    Expected response (shows which AI providers are active):
    ```json
@@ -279,8 +279,8 @@ To point the Discord Activity at your new Cloudflare deployment:
 
 | Prefix | Target | Purpose |
 | :--- | :--- | :--- |
-| `/` | `leeroy-board.pages.dev` | Serves the static board UI from Cloudflare Pages inside the Discord Activity iframe |
-| `/api` | `leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api` | Proxies all `/api/*` REST calls and `wss://.../api/live` WebSockets directly to the Cloudflare Worker |
+| `/` | `leeroy.party` (or `leeroy-board.pages.dev`) | Serves the static board UI from Cloudflare Pages inside the Discord Activity iframe |
+| `/api` | `api.leeroy.party/api` | Proxies all `/api/*` REST calls and `wss://.../api/live` WebSockets directly to the Cloudflare Worker |
 
 ### B. Outbound Answers to `#wow-forever` (`DISCORD_WEBHOOK_URL`)
 Whenever someone asks Leeroy a question from the web board (`POST /api/intent { kind: "ask" }`), [`worker/ai-models.js`](./worker/ai-models.js#L353-L364) automatically posts the question and cited answer to `#wow-forever` if `DISCORD_WEBHOOK_URL` is set:
@@ -295,7 +295,8 @@ The Cloudflare Worker includes a native Discord HTTP Interactions endpoint in [`
 1. In the [Discord Developer Portal](https://discord.com/developers/applications/1561857940174938114) -> **General Information**, copy the **Public Key** and add it as the `DISCORD_PUBLIC_KEY` secret in GitHub Actions.
 2. On the same **General Information** page, set **Interactions Endpoint URL** to:
    ```text
-   https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/discord
+   https://api.leeroy.party/api/discord
+   # (or fallback: https://api.leeroy.party/api/discord)
    ```
    *(Discord will immediately send a signed `PING` request; the Worker verifies the `X-Signature-Ed25519` header using WebCrypto and responds with `PONG`.)*
 3. What `POST /api/discord` handles automatically:
@@ -304,24 +305,24 @@ The Cloudflare Worker includes a native Discord HTTP Interactions endpoint in [`
 
 #### Option 2: Keeping an Existing Gateway Discord Bot Process
 If you already run a gateway bot script that listens to message events or reactions in `#wow-forever`, point its HTTP calls at the Worker instead of writing/committing JSON files to Git:
-- **Board Link in Bot Replies**: `https://leeroy-board.pages.dev`
+- **Board Link in Bot Replies**: `https://leeroy.party`
 - **Forwarding `/ask` from Bot to Worker**:
   ```bash
-  curl -X POST https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/intent \
+  curl -X POST https://api.leeroy.party/api/intent \
     -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"kind":"ask","by":"Mend","q":"When do dungeons unlock?","provider":"groq"}'
   ```
 - **Syncing `#wow-forever` Sign-up Card Tallies to Worker**:
   ```bash
-  curl -X POST https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/signups \
+  curl -X POST https://api.leeroy.party/api/signups \
     -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"name":"Mend","rsvp":"in","pack":"yes","meet":"Valley of Strength","when":"6pm"}'
   ```
 - **Syncing Character Sheet Changes to Worker**:
   ```bash
-  curl -X POST https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/sheet \
+  curl -X POST https://api.leeroy.party/api/sheet \
     -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" \
     -H "Content-Type: application/json" \
     -d '{"member":"mend","patch":{"race":"undead","spec":"holy"}}'
@@ -329,58 +330,86 @@ If you already run a gateway bot script that listens to message events or reacti
 
 ---
 
-## 8. Custom Domain Setup & Edge Caching Optimization (Cloudflare Free Tier)
+## 8. Custom Domain & Edge Caching Architecture (`leeroy.party`)
 
-Operating on a custom domain unlocks Cloudflare's full **Cache API (`caches.default`)** and **Tiered Cache** on the Free Tier ($0/month), reducing D1 database reads to near-zero and serving global requests in 10–30 ms.
+Operating on the custom domain **`leeroy.party`** (managed natively in Cloudflare) unlocks Cloudflare's full **Global Edge Cache API (`caches.default`)** and **Tiered Cache** on the Free Tier ($0/month), reducing D1 database reads to near-zero and serving global requests in 10–25 ms.
 
-### Why Attach a Custom Domain?
-* **Worker Subdomain Limitation**: On default `*.workers.dev` subdomains, Cloudflare's programmatic Cache API (`caches.default`) is disabled by platform policy. Requests rely on our L1 in-memory isolate cache (`ISOLATE_CACHE` in [`worker/index.js`](./worker/index.js)).
-* **Custom Domain Advantage**: Routing `leeroy-brain` through an apex domain or subdomain under an active Cloudflare Zone enables Cloudflare's global Edge Cache (`caches.default`) across all 300+ edge data centers. Edge responses for `/api/bootstrap`, `/api/state`, and `/api/library/*.json` are served with **zero D1 database queries**.
-* **Tiered Cache**: Enables Cloudflare's regional cache hubs to aggregate misses, yielding >90% edge cache hit rates for free.
+```mermaid
+flowchart LR
+  subgraph PublicZone["Cloudflare Zone: leeroy.party ($0 Free Tier)"]
+    Apex["leeroy.party / www.leeroy.party\n(Cloudflare Pages)"]
+    API["api.leeroy.party\n(Cloudflare Worker: leeroy-brain)"]
+    EdgeCache["caches.default + Tiered Cache\n(300+ Global Edge Points of Presence)"]
+    DO["BoardRoom\n(Hibernatable WebSockets)"]
+    D1[("Cloudflare D1\n(leeroy-board-db)")]
+  end
+
+  Client["Browser / Discord Activity"] -- "GET /" --> Apex
+  Client -- "GET /api/bootstrap\nGET /api/library/*" --> EdgeCache
+  EdgeCache -- "Hit (10-25ms)" --> Client
+  EdgeCache -- "Miss" --> API
+  API <--> D1
+  Client <-->|"wss://api.leeroy.party/api/live"| DO
+```
+
+### Why Operating on `leeroy.party` Maximizes Performance:
+* **Unmetered Edge Cache Activation**: On default `*.workers.dev` subdomains, Cloudflare's programmatic Cache API (`caches.default`) is disabled by platform policy. Routing `leeroy-brain` through **`api.leeroy.party`** (a hostname inside an active Cloudflare Zone) activates Cloudflare's global edge cache across all 300+ data centers.
+* **Tiered Cache**: Enables Cloudflare's regional data centers to act as reverse-proxy hubs, aggregating edge cache misses and shielding D1 from repetitive query load.
+* **Unified CORS & Cookie Boundaries**: Both the frontend (`https://leeroy.party`) and API (`https://api.leeroy.party`) share the root domain, making CORS preflight checks minimal and eliminating cross-site tracker blocking issues in modern browsers and Discord Activity iframes.
 
 ---
 
-### Step-by-Step Custom Domain Configuration ($0 Free Tier)
+### DNS & Hostname Routing Matrix (`leeroy.party`)
 
-#### Step 1: Add Your Domain to Cloudflare (Free Plan)
-1. In the [Cloudflare Dashboard](https://dash.cloudflare.com/), click **Add a site** and enter your apex domain (e.g. `yourdomain.com`).
-2. Select the **Free** plan ($0/mo).
-3. Update your domain registrar's nameservers to the two Cloudflare nameservers assigned to your zone.
+| Hostname | Target / Service | Managed By | Purpose |
+| :--- | :--- | :--- | :--- |
+| **`leeroy.party`** (Apex) | Cloudflare Pages (`leeroy-board`) | Pages Custom Domain | Primary web application frontend for party members |
+| **`www.leeroy.party`** | Cloudflare Pages (`leeroy-board`) | Pages Custom Domain | Web alias redirecting or mirroring apex |
+| **`api.leeroy.party`** | Cloudflare Worker (`leeroy-brain`) | Worker Custom Domain | Serverless API, Edge Cache, WebSockets, Discord bot interactions |
 
-#### Step 2: Attach Custom Subdomain to `leeroy-brain` Worker
-Route your API Worker to a dedicated subdomain, such as `api.yourdomain.com`:
+---
 
-* **Option A: Via Cloudflare Dashboard (Instant SSL & DNS)**:
-  1. Go to **Workers & Pages** -> **leeroy-brain** -> **Settings** -> **Domains & Routes**.
-  2. Click **Add** -> **Custom Domain**.
-  3. Enter `api.yourdomain.com` and click **Add Custom Domain**.
-  4. Cloudflare will automatically provision the edge SSL certificate and bind the DNS record.
+### Step-by-Step Custom Domain Activation
 
-* **Option B: Via `infrastructure/wrangler.toml`**:
-  Add a `routes` definition:
-  ```toml
-  routes = [
-    { pattern = "api.yourdomain.com/*", custom_domain = true }
-  ]
-  ```
+Because **`leeroy.party`** is already registered and managed by Cloudflare, DNS and SSL setup requires **zero external nameserver changes**:
 
-#### Step 3: Attach Custom Domain to `leeroy-board` Frontend (Cloudflare Pages)
-1. Go to **Workers & Pages** -> **leeroy-board** (Pages project) -> **Custom domains** -> **Set up a custom domain**.
-2. Enter your desired frontend host (e.g. `board.yourdomain.com` or apex `yourdomain.com`).
-3. Add the new origins to `ALLOWED_ORIGINS` in [`infrastructure/wrangler.toml`](./wrangler.toml):
-   ```toml
-   ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://board.yourdomain.com,https://yourdomain.com"
-   ```
-4. In [`js/brain.js`](../js/brain.js#L26), point `WORKER` to your custom API domain:
-   ```javascript
-   const WORKER = "https://api.yourdomain.com";
-   ```
+#### Step 1: Bind `api.leeroy.party` to the Worker
+The Worker's custom domain is pre-configured in [`infrastructure/wrangler.toml`](./wrangler.toml):
+```toml
+routes = [
+  { pattern = "api.leeroy.party/*", custom_domain = true }
+]
+```
+Running `npx wrangler deploy` automatically registers `api.leeroy.party` in your `leeroy.party` DNS zone, attaches the Worker route, and provisions a Cloudflare Universal SSL certificate.
 
-#### Step 4: Enable Tiered Cache in Cloudflare (Free)
-1. In the Cloudflare Dashboard, select your domain zone.
+*(Alternatively via Cloudflare Dashboard: Go to **Workers & Pages** -> **leeroy-brain** -> **Settings** -> **Domains & Routes** -> **Add** -> **Custom Domain** -> enter `api.leeroy.party` -> click **Add Custom Domain**).*
+
+#### Step 2: Attach `leeroy.party` and `www.leeroy.party` to Cloudflare Pages
+1. In the Cloudflare Dashboard, navigate to **Workers & Pages** -> **leeroy-board** (Pages project).
+2. Go to **Custom domains** tab -> click **Set up a custom domain**.
+3. Enter **`leeroy.party`** and click **Continue** -> **Activate domain**.
+   *(Cloudflare automatically configures the apex CNAME flattening record in your DNS).* 
+4. Repeat for **`www.leeroy.party`**.
+
+#### Step 3: Enable Tiered Cache (100% Free)
+1. In the Cloudflare Dashboard, select the **`leeroy.party`** zone.
 2. In the left navigation, go to **Caching** -> **Tiered Cache**.
 3. Toggle **Tiered Cache** to **Enabled**.
-4. **Result**: Cache misses at an edge data center check regional Cloudflare Tiered Cache hubs before hitting the Worker, keeping D1 database reads under 1% of total traffic.
+4. **Result**: Cache misses at an edge data center check regional Cloudflare Tiered Cache hubs before hitting D1, maintaining >95% cache hit rates globally.
+
+#### Step 4: Verification & Edge Cache Confirmation
+Run a test request against the API:
+```bash
+curl -I https://api.leeroy.party/api/bootstrap
+```
+Expected headers:
+```http
+HTTP/2 200
+content-type: application/json; charset=utf-8
+cf-cache-status: HIT
+x-edge-cache: HIT
+access-control-allow-origin: https://leeroy.party
+```
 
 ---
 
@@ -452,8 +481,8 @@ This runbook guides you through a seamless, zero-downtime cutover from the legac
    Verify `"ok": true` and that active AI providers are reported correctly.
 2. **Bootstrap & Library Payloads**:
    ```bash
-   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/bootstrap | jq '.party != null'
-   curl -s https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/library/index.json | jq '.pages | length'
+   curl -s https://api.leeroy.party/api/bootstrap | jq '.party != null'
+   curl -s https://api.leeroy.party/api/library/index.json | jq '.pages | length'
    ```
    Verify the bootstrap returns party state and the library returns 67 indexed pages.
 3. **Frontend & Write Key**:
@@ -465,8 +494,8 @@ This runbook guides you through a seamless, zero-downtime cutover from the legac
 ### Phase 4: Discord Cutover (5 Minutes)
 1. **Update Discord Activity URL Mappings**:
    - In the [Discord Developer Portal](https://discord.com/developers/applications/1561857940174938114) -> **Activities** -> **URL Mappings**:
-     - Route `/` to `leeroy-board.pages.dev`
-     - Route `/api` to `leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api`
+     - Route `/` to `leeroy.party`
+     - Route `/api` to `api.leeroy.party/api`
 2. **Update Interactions Endpoint (Serverless Bot)**:
    - If using the native serverless bot, set **Interactions Endpoint URL** to `https://leeroy-brain.<YOUR_SUBDOMAIN>.workers.dev/api/discord`.
 3. **External Bot / Gateway Bot (Alternative)**:
@@ -478,10 +507,8 @@ Once the production Cloudflare Pages site and Worker are active:
 2. **Retire Legacy Host**: If running on GitHub Pages or an external VM, update DNS records or deprecate the old URL.
 3. **Backup / Export Anytime**: Run `npm run d1:export:remote` in `infrastructure/` whenever you want a local git-committable snapshot of the live D1 database.
 
-### Phase 6: (Optional) Custom Domain & Edge Caching
-If you own a custom domain (e.g. `yourdomain.com`):
-1. Add the domain zone to Cloudflare (Free Plan).
-2. Attach `api.yourdomain.com` as a Custom Domain on `leeroy-brain`.
-3. Attach `board.yourdomain.com` (or apex) as a Custom Domain on `leeroy-board` Pages.
-4. Add the domain to `ALLOWED_ORIGINS` in `infrastructure/wrangler.toml` and `WORKER` in `js/brain.js`.
-5. Enable **Tiered Cache** in the Cloudflare Dashboard to maximize global edge cache hits.
+### Phase 6: Custom Domain & Edge Caching Activation (`leeroy.party`)
+Since **`leeroy.party`** is managed in Cloudflare:
+1. **Worker API**: Deploying with `routes = [{ pattern = "api.leeroy.party/*", custom_domain = true }]` in `wrangler.toml` binds `api.leeroy.party` directly to `leeroy-brain` with automatic edge SSL.
+2. **Pages Frontend**: In Cloudflare Dashboard -> **Workers & Pages** -> **leeroy-board** -> **Custom domains**, add `leeroy.party` and `www.leeroy.party`.
+3. **Tiered Cache**: In **leeroy.party** Zone -> **Caching** -> **Tiered Cache**, toggle to **Enabled** to maximize edge cache hits.
