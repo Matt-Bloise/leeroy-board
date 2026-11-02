@@ -10,7 +10,7 @@ const REST = PHONE_ORDER.filter((k) => !["tonight", "five", "librarian"].include
 const ICO = { tonight: "icons/tab-tonight.png", five: "icons/tab-five.png", sheet: "emblems/dates/scroll.webp", librarian: "icons/tab-librarian.png", more: "emblems/chips/seal.webp" };
 const raf = (f) => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(f) : setTimeout(f, 16));
 const HTML = document.documentElement;
-const S = { phone: false, built: false, saved: null, place: null, coinKey: null, spring: null, toastT: 0, scrollSp: null, pick: false };
+const S = { phone: false, built: false, saved: null, place: null, coinKey: null, spring: null, toastT: 0, scrollSp: null, pick: false, cl: false, menu: false, menuBtns: [] };
 const mm = (q) => { try { return matchMedia(q); } catch (e) { return { matches: false }; } };
 const reduced = () => !!(K.reduceMQ && K.reduceMQ.matches);
 const coarse = () => mm("(pointer: coarse)").matches;
@@ -19,6 +19,41 @@ const hap = (n) => { try { const H = window.BoardHaptics; if (H) H.fire(H.PAT &&
 const bar = () => $("#bottombar");
 const placeBtn = (p) => { const b = bar(); return b ? b.querySelector(`[data-place="${p}"]`) : null; };
 const moveMs = () => (K.MOTION && K.MOTION.move) || 520;
+
+/* firstrun.v2 (data/client.json flags): until the first value event (board:first-value, sent by the sheet scene when a sheet or the sample guild renders) the
+   ribbon, journeys, depth, Sensory and room toggles stay hidden and one Menu button stands in. On a phone the bottom bar is Next, My sheet, Menu. */
+const FV_KEY = "board-fv";
+const flagOn = () => !!(K.D && K.D.client && K.D.client.flags && K.D.client.flags["firstrun.v2"]);
+const fvSeen = () => { try { return localStorage.getItem(FV_KEY) === "1"; } catch (e) { return false; } };
+const collapsed = () => flagOn() && !fvSeen() && !(K.MEM && K.MEM.me && K.MEM.me());
+const PLACES_CL = ["tonight", "sheet", "more"];
+const places = () => (S.cl ? PLACES_CL : PLACES);
+function syncCollapse() {
+  const now = collapsed(); if (now === S.cl) return;
+  S.cl = now; if (!now) S.menu = false;
+  HTML.classList.toggle("nav-collapsed", now); HTML.classList.toggle("nav-open", now && S.menu);
+  if (S.phone && S.built) { teardown(); if (K.SC.open !== null) { build(); headFor(K.SC.open); raf(placeCoin); } }
+}
+function menuBtn(id) {
+  const b = h("button", { class: "nav-menu lib-tool", id, type: "button", "aria-expanded": "false", "aria-controls": "nav-menu-target", text: "Menu" });
+  b.addEventListener("click", onMenu); S.menuBtns.push(b); return b;
+}
+function onMenu() {
+  if (S.phone && K.SC.open !== null) { openMore(); return; }
+  S.menu = !S.menu; HTML.classList.toggle("nav-open", S.menu);
+  for (const b of S.menuBtns) b.setAttribute("aria-expanded", String(S.menu));
+}
+function mountMenu() {
+  if (S.menuBtns.length) return;
+  const top = $(".sheet-top"), close = $("#scene-close"), pres = $("#presence");
+  if (top) top.insertBefore(menuBtn("nav-menu"), close && close.parentNode === top ? close : null);
+  if (pres) pres.append(menuBtn("nav-menu-wall"));
+}
+function firstValue() {
+  try { localStorage.setItem(FV_KEY, "1"); } catch (e) {}
+  syncCollapse();
+}
+document.addEventListener("board:first-value", firstValue);
 
 const sheetView = () => { try { return !!(window.__sheet && window.__sheet.status().view === "sheet"); } catch (e) { return false; } };
 function placeFor(key) {
@@ -52,7 +87,7 @@ function refreshSheetIcon() {
 function build() {
   const b = bar(); if (!b || S.built) return;
   S.saved = [...b.children];
-  const pl = PLACES.map((p) => h("button", { class: "pl", type: "button", "data-place": p, "aria-current": "false", "aria-haspopup": p === "more" ? "dialog" : null, "aria-expanded": p === "more" ? "false" : null }, icon(p), h("span", { class: "pl-txt", text: LABEL[p] })));
+  const pl = places().map((p) => h("button", { class: "pl", type: "button", "data-place": p, "aria-current": "false", "aria-haspopup": p === "more" ? "dialog" : null, "aria-expanded": p === "more" ? "false" : null }, icon(p), h("span", { class: "pl-txt", text: p === "more" && S.cl ? "Menu" : LABEL[p] })));
   const coin = h("button", { class: "bb-coin off", id: "bb-coin", type: "button", "aria-label": "The scene's coin: press it as you would the seal" }, h("img", { class: "bb-coin-img", alt: "", width: 36, height: 36, decoding: "async" }));
   b.replaceChildren(...pl, coin);
   b.setAttribute("aria-label", "Places");
@@ -222,7 +257,7 @@ function apply() {
 function onKey(e) {
   const t = e && e.target; if (!t || !t.closest || !t.closest("[data-place]")) return;
   const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (!d) return;
-  const list = PLACES.map(placeBtn).filter(Boolean), i = list.indexOf(t.closest("[data-place]")); if (i < 0) return;
+  const list = places().map(placeBtn).filter(Boolean), i = list.indexOf(t.closest("[data-place]")); if (i < 0) return;
   e.preventDefault(); list[(i + d + list.length) % list.length].focus();
 }
 function onClick(e) {
@@ -233,6 +268,9 @@ function onClick(e) {
 
 sceneHooksInit();
 function sceneHooksInit() {
+  K.on("scene", () => { mountMenu(); syncCollapse(); });
+  K.on("rendered", () => { mountMenu(); syncCollapse(); });
+  K.on("forget", () => { try { localStorage.removeItem(FV_KEY); } catch (e) {} setTimeout(syncCollapse, 0); });
   K.sceneHooks.push((open) => { if (open && S.phone && !S.built) { build(); } });
   K.on("scene", (key) => { dockMine(); if (!S.phone) return; build(); headFor(key); markPlaces(); setTimeout(markPlaces, 0); raf(placeCoin); });
   const five = $("#panel-five"); if (five) five.addEventListener("click", () => { if (S.phone) setTimeout(markPlaces, 60); }, true);
@@ -247,13 +285,14 @@ for (const ev of ["resize", "orientationchange"]) addEventListener(ev, () => { a
 addEventListener("hashchange", () => { if (S.phone) markPlaces(); });
 for (const q of [...MQS, TAB_MQ]) { const m = mm(q); if (m && m.addEventListener) m.addEventListener("change", apply); }
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (S.phone) placeCoin(); }, () => {});
+mountMenu(); syncCollapse();
 apply();
 
 window.BoardShell = Object.freeze({
   phone: () => S.phone,
   ownsSwipe: () => S.phone && coarse() && !reduced(),
   place: () => S.place,
-  status: () => ({ phone: S.phone, place: S.place, coin: { key: S.coinKey }, more: !!(window.BoardSheets && window.BoardSheets.status().open === "more"), bar: S.built ? (bar() ? bar().querySelectorAll(".pl").length : 0) : 0 }),
+  status: () => ({ collapsed: S.cl, phone: S.phone, place: S.place, coin: { key: S.coinKey }, more: !!(window.BoardSheets && window.BoardSheets.status().open === "more"), bar: S.built ? (bar() ? bar().querySelectorAll(".pl").length : 0) : 0 }),
   PHONE_MQ,
 });
 })();

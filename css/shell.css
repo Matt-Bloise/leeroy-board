@@ -88,3 +88,15 @@ html.nx-tn:is(.nx-first, .nx-solo) .my-sheet { display: none; }
   .sheet-top:has(> .my-sheet) > .peek-btn { position: relative; inset: auto; margin: 0; order: -1; flex: none; }
   .sheet-top:has(> .my-sheet) > .sheet-name { flex: 1 1 auto; padding: 0; }
 }
+
+/* firstrun.v2: navigation collapsed until board:first-value (js/shell.js). One Menu button; on a phone the bottom bar is Next, My sheet, Menu. */
+.nav-menu { min-height: 44px; font-family: var(--font-sc); }
+#nav-menu-wall { display: none; }
+html.nav-collapsed:not(.scene-open) #nav-menu-wall { display: inline-flex; align-items: center; }
+html:not(.nav-collapsed) .nav-menu { display: none; }
+html.nav-collapsed:not(.nav-open) :is(#tabs, .tabs-wrap, .scene-hint, #journey, .journey-scene, #depth, #sound-box, #sense-btn, #sense-panel, #mode-btn, #mode-btn-scene, #scene-peek, #scene-settings, #open-settings, #tilt, .tonight-link, #scene .seal, .bb-coin, .my-sheet) { display: none !important; }
+html.nav-collapsed.phone-shell #nav-menu { display: none; }
+html.nav-collapsed.phone-shell:not(.scene-open) #nav-menu-wall { display: inline-flex; }
+/* Phone: the title never sits under the crest ribbon or the buttons beside it. */
+html.phone-shell #scene .sheet-name { padding-inline: 40px; box-sizing: border-box; }
+html.phone-shell #scene .sheet-name::before { right: 2px; }
