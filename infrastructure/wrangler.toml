@@ -16,6 +16,11 @@ routes = [
 crons = ["0 */6 * * *"]
 
 # Cloudflare D1 Serverless SQLite Database (Free Tier: 5 GB storage, 5M reads/day, 100k writes/day)
+# Workers Logs (free plan: 200,000 events a day, 3 days retention). Added so answer failures, provider fallbacks and delivery times are visible; console.log lines are captured as custom logs.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [[d1_databases]]
 binding = "DB"
 database_name = "leeroy-board-db"
@@ -58,4 +63,5 @@ API_ORIGIN = "https://api.leeroy.party"
 BOARD_PUBLIC_URL = "https://leeroy.party"
 WEB_LOGIN = "off" # Q18 web Discord login: "on" enables /api/auth/discord/start, /callback, /api/auth/logout and cookie sessions on GET /api/me
 DATA_RIGHTS = "off" # Q59 member data export and erase: "on" enables GET /api/me/export and POST /api/me/erase (404 while off)
+EVENTS_ENABLED = "off" # Discord scheduled events: "on" enables POST /api/admin/events/sync (404 while off); see docs/runbooks/scheduled-events.md
 ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://leeroy.party,https://www.leeroy.party,https://api.leeroy.party,https://1561857940174938114.discordsays.com"

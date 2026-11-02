@@ -1,0 +1,13 @@
+**Blizzard has not published a Forever earning guide, so the reliable early gold comes from Classic's usual mix of quest rewards, vendor trash, gathering professions, and the Auction House [systems/earning-gold~gold.earn.ways].**
+
+- Quest rewards · [systems/earning-gold~gold.earn.quests] pay a small amount of gold directly, plus items you can vendor or list.
+- Gathered materials · [systems/earning-gold~gold.earn.gathering] skinning, herbalism, mining, fishing and cloth farming supply what crafters buy.
+- Auction House and vendors · [systems/earning-gold~gold.earn.auction_house] list materials or crafted goods there, and sell grey items to vendors [systems/earning-gold~gold.earn.vendor].
+
+Street Rat knows all about earning gold, mostly by telling his paladin to pick up copper until the floor is clean.
+
+Worth a look next: dual spec at level 40 [systems/gold-and-riding~gold.dual_spec] once the early gold starts piling up.
+
+Sources: Earning gold [systems/earning-gold], Gold, riding and economy rules [systems/gold-and-riding]
+-# Sources: [systems/earning-gold], [systems/gold-and-riding]
+-# https://leeroy.party/#library.systems.earning-gold

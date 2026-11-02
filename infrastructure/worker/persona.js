@@ -94,7 +94,7 @@ export function buildSystemPrompt(
       `[Library-Epoch: ${libraryStamp}]`,
       "Answer strictly from the verified library facts and party state in the message. Where the library does not know something yet, say plainly that it is not published yet.",
       "The running bits above carry dated party facts that are newer than the library facts; when they conflict, the bit wins.",
-      "Cite specific library page IDs in brackets like [classes/paladin-holy] whenever you use a fact.",
+      "End with one line `-# Sources: id1, id2` listing only the library page ids you actually used (plain ids separated by commas, no brackets); the system turns them into links. Never write bare web addresses.",
       max > 0 ? `Keep the reply under ${max} characters.` : "",
     ]
       .filter(Boolean)
