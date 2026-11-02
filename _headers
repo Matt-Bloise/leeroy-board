@@ -6,7 +6,8 @@
 
 # Cache-Control. Non-overlapping path rules only: Pages joins the headers of every matching rule, so /* must never carry one.
 # HTML (/ and /index.html) gets no rule here and keeps the Pages default, max-age=0, must-revalidate, so new ?v= stamps are seen at once.
-# js, scenes, css, vendor: deliberately NOT cached as immutable. Their ?v= stamps do not always change when the file changes (see the PR audit).
+# js, scenes, css, vendor, cloth, next, room: immutable for a year. Every reference carries ?v=<sha256 first 10 hex of the file> and CI (tools/stamps.mjs --check) fails on a stale stamp, so a changed file is a new URL.
+# /atlas/* is NOT immutable: atlas/atlas.js loads panels.css and tiles by bare URL.
 
 /fonts/*
   Cache-Control: public, max-age=2592000
@@ -16,3 +17,24 @@
 
 /data/*
   Cache-Control: public, max-age=300, stale-while-revalidate=3600
+
+/js/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/scenes/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/css/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/cloth/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/next/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/room/*
+  Cache-Control: public, max-age=31536000, immutable

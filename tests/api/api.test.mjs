@@ -99,14 +99,19 @@ test("Pages: baseline security headers are served on the preview origin", async 
   await r.arrayBuffer();
 });
 
-test("Pages: cache lifetimes by path, HTML always revalidated, stamped code not immutable", async () => {
+test("Pages: cache lifetimes by path, HTML always revalidated, stamped code immutable, atlas and HTML not", async () => {
   const cc = async (path) => { const r = await fetch(`${PAGES}${path}`); assert.equal(r.status, 200, `${path} answered ${r.status}`); await r.arrayBuffer(); return r.headers.get("cache-control") || ""; };
   assert.match(await cc("/"), /max-age=0/);
   assert.match(await cc("/fonts/alegreya-latin.woff2"), /max-age=2592000/);
   assert.match(await cc("/img/tavern-plate.jpg"), /max-age=86400.*stale-while-revalidate=604800/);
   assert.match(await cc("/data/stats.json"), /max-age=300.*stale-while-revalidate=3600/);
-  const code = await cc("/js/board.js");
-  assert.doesNotMatch(code, /immutable/, "stamps are not yet content-verified, so code must not be immutable");
+  for (const p of ["/js/board.js", "/css/board.css", "/scenes/sheet.js"]) {
+    const v = await cc(p);
+    assert.match(v, /max-age=31536000/, `${p} must be cached for a year`);
+    assert.match(v, /immutable/, `${p} must be immutable`);
+  }
+  assert.doesNotMatch(await cc("/atlas/atlas.js"), /immutable/, "atlas has unstamped references, so it must not be immutable");
+  assert.doesNotMatch(await cc("/"), /immutable/, "HTML must stay revalidated");
 });
 
 // Public guests may only ask (Workers AI, 2 per hour per IP, PR 17). Every other write kind must still need a key. Never send kind "ask" here: that would spend AI.
