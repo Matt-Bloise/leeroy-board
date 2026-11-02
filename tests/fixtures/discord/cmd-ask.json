@@ -1,0 +1,40 @@
+{
+  "description": "/ask with a question and the private flag",
+  "expectType": 5,
+  "interaction": {
+    "id": "fixture-interaction-0001",
+    "application_id": "fixture-app-0001",
+    "token": "fixture-token-not-real",
+    "version": 1,
+    "guild_id": "fixture-guild-0001",
+    "channel_id": "fixture-channel-0001",
+    "locale": "en-US",
+    "member": {
+      "user": {
+        "id": "fixture-user-0001",
+        "username": "fixture_tester",
+        "global_name": "Fixture Tester"
+      },
+      "nick": null,
+      "roles": []
+    },
+    "type": 2,
+    "data": {
+      "id": "fixture-cmd-ask",
+      "name": "ask",
+      "type": 1,
+      "options": [
+        {
+          "name": "question",
+          "type": 3,
+          "value": "What is the first quest in Durotar?"
+        },
+        {
+          "name": "private",
+          "type": 5,
+          "value": true
+        }
+      ]
+    }
+  }
+}

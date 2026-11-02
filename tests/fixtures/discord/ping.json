@@ -1,0 +1,11 @@
+{
+  "description": "Discord PING health check",
+  "expectType": 1,
+  "interaction": {
+    "type": 1,
+    "id": "fixture-interaction-0001",
+    "application_id": "fixture-app-0001",
+    "token": "fixture-token-not-real",
+    "version": 1
+  }
+}
