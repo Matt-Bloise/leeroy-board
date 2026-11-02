@@ -41,6 +41,7 @@ import { guestIpKey } from "./guest-key.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
+import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -341,7 +342,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "POST /admin/eval",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "POST /admin/eval", "GET /admin/moments",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -542,6 +543,17 @@ export default {
         const roster = dry ? null : await loadConfigKey(env, "discord_roster");
         const { status, body } = await runSync({ env, dry, guildId: roster && /^[0-9]{5,25}$/.test(roster.guildId || "") ? roster.guildId : null });
         return jsonResp(body, status, cors);
+      }
+
+      // Admin only: timed-post schedule status for mission control. No channel ids, user ids, message ids or content.
+      if (req.method === "GET" && path === "/admin/moments") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const schedule = await loadConfigKey(env, "moments");
+        const shadow = momentsShadow(env);
+        const { state } = await d1Store(env, shadow ? MOMENTS_SHADOW_STATE_KEY : undefined).read();
+        const { state: led } = await d1Store(env, MOMENTS_LEDGER_KEY, "entries").read();
+        return jsonResp(momentsStatus({ schedule, state, now: Date.now(), enabled: momentsEnabled(env), shadow, dryRun: momentsDryRun(env), ledger: led.entries }), 200, cors);
       }
 
       // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.
@@ -1671,6 +1683,13 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
+    // The every-minute trigger runs only the timed posts; every other trigger is the source sweep. Timed posts are off until MOMENTS_ENABLED.
+    if (controller && controller.cron === MOMENTS_CRON) {
+      ctx.waitUntil(
+        runMoments(env, { loadSchedule: () => loadConfigKey(env, "moments") }).catch((err) => console.error("moments run failed:", String((err && err.message) || err)))
+      );
+      return;
+    }
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
     ctx.waitUntil(cleanupAnswerUx(env));

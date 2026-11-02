@@ -34,6 +34,7 @@ const TABLE = {
   "GET /admin/feedback": ADMIN,
   "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
   "POST /admin/eval": ADMIN, // 404 unless EVAL_ENABLED is on; model bake-off, read only
+  "GET /admin/moments": ADMIN, // timed-post schedule status, no ids or content
   "PUT /persona": ADMIN,
   "POST /dispatch": MEMBER,
   "GET /intents": ADMIN,
@@ -174,6 +175,7 @@ const CALLS = {
   "GET /admin/feedback": ["GET", "/api/admin/feedback"],
   "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
   "POST /admin/eval": ["POST", "/api/admin/eval", "{}"],
+  "GET /admin/moments": ["GET", "/api/admin/moments"],
   "PUT /persona": ["PUT", "/api/persona", "{}"],
   "POST /dispatch": ["POST", "/api/dispatch", "{}"],
   "GET /intents": ["GET", "/api/intents"],
