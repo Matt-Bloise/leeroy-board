@@ -35,6 +35,7 @@ Added to previews only by the workflow: `IS_PR_PREVIEW`, `WORKER_NAME` (`pr-prev
 | :--- | :--- | :--- |
 | `DISCORD_CLIENT_ID` | `account.js:81,93`; `index.js:863` | Not in `wrangler.toml` or any workflow. `account.js:81` returns 500 "worker not configured" when it is unset, while `index.js:863` has a built-in fallback. Whether it is set in the dashboard is unverified; if not, Discord login (`POST /auth/discord`) cannot work. |
 | `AI_DAILY_NEURON_CAP` | `budget.js:39` | Optional budget override |
+| `WEB_LOGIN` | `web-auth.js` (`webLoginOn`) | Plain var in `wrangler.toml`, default `"off"`. Q18 web Discord login: `"on"` enables `GET /api/auth/discord/start`, `GET /api/auth/discord/callback`, `POST /api/auth/logout` and cookie sessions on `GET /api/me`. While off, those routes answer 404 and cookies are ignored. |
 
 ### Cloudflare-side state with no repository record
 
@@ -80,3 +81,13 @@ Each row was verified against the file and line shown, or the live repository se
 | 10 | Secrets removed from GitHub stay in the Worker | `deploy-cloudflare.yml:265` | Revoked credentials may remain live | Delete with `wrangler secret delete` during rotation |
 
 Items 2, 3 and 4 combine: a branch push opens a PR, the PR workflow runs with production credentials, and nothing blocks a direct push to `master`. Treat 3 and 4 as the first fixes before onboarding any additional contributor with write access.
+
+## Owner steps to turn on web login (Q18)
+
+Nothing here is done by the PR; merging changes nothing live while `WEB_LOGIN = "off"`.
+
+1. Make sure `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` are set on the Worker (the secret is synced from the GitHub secret of the same name on deploy; the web routes read both from the environment and have no built-in fallback).
+2. In the Discord developer portal, OAuth2, Redirects: add `<API_ORIGIN>/api/auth/discord/callback` exactly (production: the `API_ORIGIN` value in `wrangler.toml` plus that path).
+3. Apply `infrastructure/migrations/0002_identity_tenancy.sql` to production D1 (adds `users` and `sessions_v2`). Without it the callback answers 503 and logs one warning; `/api/me` keeps working for board keys.
+4. Set `WEB_LOGIN = "on"` in `wrangler.toml` and deploy. Roll back by setting it back to `"off"`: all sessions stop being honoured at once; rows remain in `sessions_v2`.
+5. The cookie `__Host-sess` is scoped to the host that serves the API. A page on a different origin must call `/api/me` with `credentials: "include"`; the Worker then answers with `Access-Control-Allow-Credentials: true` for allow-listed origins only.

@@ -24,6 +24,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
+import { handleWebAuth, webSessionFrom } from "./web-auth.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
@@ -337,7 +338,7 @@ export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "PUT /persona", "POST /dispatch",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
-  "POST /token", "POST /auth/discord", "ANY /me", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
+  "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
   "GET /atlas/*", "PUT /atlas/*", "POST /intent", "POST /refresh", "GET /", "GET /health",
 ];
@@ -377,6 +378,12 @@ export default {
       if (req.method === "GET" && path === "/me") {
         const auth = await resolveMemberAuth(req, url, env);
         if (!auth.ok) {
+          // Q18: a web session cookie is accepted too, only when WEB_LOGIN is on. The legacy board key path is unchanged.
+          const ws = await webSessionFrom(req, env, Date.now());
+          if (ws) {
+            const credCors = cors["Access-Control-Allow-Origin"] ? { ...cors, "Access-Control-Allow-Credentials": "true" } : cors;
+            return jsonResp({ name: ws.name, discord_user_id: ws.discord_user_id, expires_at: ws.expires_at, via: "web-session", pending: [] }, 200, { ...credCors, "Cache-Control": "no-store" });
+          }
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         const m = auth.member;
@@ -855,6 +862,11 @@ export default {
 
       // 1a. POST /token -> Discord Embedded App SDK OAuth2 code-to-token exchange (`vendor/discord-auth.js`)
       // 1b. Per-user settings and accounts (`/auth/discord`, `/me`, `/state/:doc`)
+      const webRes = await handleWebAuth(req, env, { path, ip: req.headers.get("CF-Connecting-IP") || "127.0.0.1", now: Date.now() });
+      if (webRes) {
+        for (const [k, v] of Object.entries(cors)) if (!webRes.headers.has(k)) webRes.headers.set(k, v);
+        return webRes;
+      }
       const accountRes = await handleAccount(req, env, {
         path,
         ip: req.headers.get("CF-Connecting-IP") || "127.0.0.1",
