@@ -35,6 +35,7 @@ Added to previews only by the workflow: `IS_PR_PREVIEW`, `WORKER_NAME` (`pr-prev
 | :--- | :--- | :--- |
 | `DISCORD_CLIENT_ID` | `account.js:81,93`; `index.js:863` | Not in `wrangler.toml` or any workflow. `account.js:81` returns 500 "worker not configured" when it is unset, while `index.js:863` has a built-in fallback. Whether it is set in the dashboard is unverified; if not, Discord login (`POST /auth/discord`) cannot work. |
 | `AI_DAILY_NEURON_CAP` | `budget.js:39` | Optional budget override |
+| `DATA_RIGHTS` | `data-rights.js` (`dataRightsOn`) | Plain var in `wrangler.toml`, default `"off"`. Q59: `"on"` enables `GET /api/me/export` and `POST /api/me/erase` for a member key or a web session cookie. While off both answer 404. Needs `USER_SALT`. Roll back by setting it to `"off"`. |
 | `WEB_LOGIN` | `web-auth.js` (`webLoginOn`) | Plain var in `wrangler.toml`, default `"off"`. Q18 web Discord login: `"on"` enables `GET /api/auth/discord/start`, `GET /api/auth/discord/callback`, `POST /api/auth/logout` and cookie sessions on `GET /api/me`. While off, those routes answer 404 and cookies are ignored. |
 
 ### Cloudflare-side state with no repository record

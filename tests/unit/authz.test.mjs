@@ -16,6 +16,7 @@ const A = "anonymous", M = "member", D = "admin";
 const PUBLIC = [A, M, D];
 const MEMBER = [M, D]; // the admin token also resolves to a member (resolveMemberAuth), so admin is always a member too
 const ADMIN = [D];
+const MEMBER_OR_SESSION = [M];
 const SESSION = [M]; // per-user Discord session token (account.js): neither anonymous nor the admin token
 
 // route -> principals allowed through. Hand written on purpose; do not generate it from the code.
@@ -46,6 +47,8 @@ const TABLE = {
   "POST /auth/logout": PUBLIC, // Q18: acts on the caller's own cookie session only; needs an Origin header
   "ANY /me": SESSION, // DELETE and HEAD reach account.js (GET /me is the board key route above)
   "ANY /state/:doc": SESSION,
+  "GET /me/export": MEMBER_OR_SESSION, // Q59: 404 unless DATA_RIGHTS is on; then a member key or web session. The admin token is refused.
+  "POST /me/erase": MEMBER_OR_SESSION, // Q59: same, plus an Origin header and a confirm body
   "GET /ask": PUBLIC, // anonymous callers only see shared or visitor turns
   "GET /wiki/snapshots": ADMIN,
   "GET /wiki/proposals": ADMIN,
@@ -181,6 +184,8 @@ const CALLS = {
   "POST /auth/logout": ["POST", "/api/auth/logout", "{}"],
   "ANY /me": ["DELETE", "/api/me"],
   "ANY /state/:doc": ["GET", "/api/state/prefs"],
+  "GET /me/export": ["GET", "/api/me/export"],
+  "POST /me/erase": ["POST", "/api/me/erase", "{}"],
   "GET /ask": ["GET", "/api/ask"],
   "GET /wiki/snapshots": ["GET", "/api/wiki/snapshots"],
   "GET /wiki/proposals": ["GET", "/api/wiki/proposals"],
@@ -197,7 +202,7 @@ const CALLS = {
   "GET /health": ["GET", "/health"],
 };
 // Routes whose caller is not a board key (Discord signature, session token): only the anonymous refusal can be asserted here.
-const NOT_BOARD_KEY = new Set(["POST /discord", "POST /auth/discord", "ANY /me", "ANY /state/:doc", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout"]);
+const NOT_BOARD_KEY = new Set(["GET /me/export", "POST /me/erase", "POST /discord", "POST /auth/discord", "ANY /me", "ANY /state/:doc", "GET /me/export", "POST /me/erase", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout"]);
 
 async function call(env, route, principal, override) {
   const [method, path, body, extra] = override || CALLS[route];
@@ -258,6 +263,19 @@ test("web login routes (Q18): 404 with the flag off, and with it on never a 401 
       const res = await call(env, route, principal, [CALLS[route][0], CALLS[route][1], CALLS[route][2], { Origin: "https://leeroy.test" }]);
       assert.notEqual(res.status, 401, `${route} as ${principal}`);
       assert.ok(res.status < 500, `${route} as ${principal} answered ${res.status}`);
+    }
+  }
+});
+
+test("data rights routes (Q59): 404 for every principal with the flag off; with it on anonymous and the admin token are 401, a member key is not", async () => {
+  for (const route of ["GET /me/export", "POST /me/erase"]) {
+    for (const principal of [A, M, D]) {
+      assert.equal((await call(await makeEnv(), route, principal)).status, 404, `${route} as ${principal} with the flag off`);
+      const env = { ...(await makeEnv()), DATA_RIGHTS: "on", ALLOWED_ORIGINS: "https://leeroy.test" };
+      const extra = { Origin: "https://leeroy.test" };
+      const res = await call(env, route, principal, [CALLS[route][0], CALLS[route][1], CALLS[route][2], extra]);
+      if (principal === M) assert.notEqual(res.status, 401, `${route} as member`);
+      else assert.equal(res.status, 401, `${route} as ${principal}`);
     }
   }
 });
