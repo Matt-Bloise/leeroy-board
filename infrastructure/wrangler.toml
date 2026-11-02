@@ -40,6 +40,9 @@ binding = "AI"
 # Default AI provider ("claude", "gemini", "workers-ai", "groq", "cerebras", "github", or "openrouter")
 # Can also be switched per-question in the UI or Discord `/ask` command.
 AI_PROVIDER = "claude"
+AI_GATEWAY_ID = "leeroy-ai-gateway"
+AI_GATEWAY_CACHE_TTL = "21600" # 6 hours: aligned with the 6-hour cron sweep ("0 */6 * * *")
+CLOUDFLARE_ACCOUNT_ID = ""
 CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"
 CLAUDE_MODEL_DEEP = "claude-sonnet-4-5-20250929"
 GEMINI_MODEL_FAST = "gemini-2.5-flash"
