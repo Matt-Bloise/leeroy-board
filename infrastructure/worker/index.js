@@ -55,6 +55,18 @@ async function resolveMemberAuth(req, url, env) {
   return { ok: false, member: null };
 }
 
+// Admin-token-only gate (same pattern as PUT /persona): 503 if unset, 401 if missing or wrong. Returns a Response to send, or null to continue.
+function adminGate(req, url, env, cors) {
+  if (!env.BOARD_ADMIN_TOKEN) {
+    return jsonResp({ error: "Admin token not configured" }, 503, cors);
+  }
+  const adminKey = extractKey(req, url);
+  if (!adminKey || !timingSafeEqualStr(adminKey, env.BOARD_ADMIN_TOKEN)) {
+    return jsonResp({ error: "Unauthorized" }, 401, cors);
+  }
+  return null;
+}
+
 function corsHeaders(req, env) {
   const verdict = originVerdict(req, env);
   if (verdict.ok && verdict.origin) {
@@ -406,11 +418,10 @@ export default {
         }
       }
 
+      // Admin token only: a friend's member key must not rewrite the shared vocabulary.
       if (req.method === "PUT" && path === "/vocab") {
-        const auth = await resolveMemberAuth(req, url, env);
-        if (!auth.ok) {
-          return jsonResp({ error: "Unauthorized" }, 401, cors);
-        }
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
         const body = await req.json();
         const vocab = (body && body.vocab) || {};
         const now = new Date().toISOString();
@@ -480,6 +491,8 @@ export default {
 
       // 0e. GET /intents -> Shared brain intents mailbox polling for bot or consumer
       if (path === "/intents" && req.method === "GET") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
         const after = parseInt(url.searchParams.get("after") || "0", 10) || 0;
         const limit = Math.min(parseInt(url.searchParams.get("limit") || "100", 10) || 100, 500);
 
@@ -523,6 +536,8 @@ export default {
 
       // 0f. POST /ack -> Acknowledge and clear intents up to `upTo` sequence number
       if (path === "/ack" && req.method === "POST") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
         let body = {};
         try {
           body = (await req.json()) || {};
@@ -547,6 +562,8 @@ export default {
 
       // 0g. POST /answer -> Push answer to ask question into ask_turns & broadcast
       if (path === "/answer" && req.method === "POST") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
         let body = {};
         try {
           body = (await req.json()) || {};

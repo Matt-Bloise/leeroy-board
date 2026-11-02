@@ -82,6 +82,21 @@ test("GET /api/persona is not a public read (404 or 405)", async () => {
   await r.arrayBuffer();
 });
 
+// Admin-only routes: no key must be refused. Empty or harmless bodies only; nothing is written.
+test("GET /api/intents without a key is refused (401 or 403)", async () => {
+  const r = await fetch(`${API}/api/intents`, { headers: { Origin: PAGES } });
+  assert.ok([401, 403].includes(r.status), `got ${r.status}`);
+  await r.arrayBuffer();
+});
+
+for (const [method, path] of [["POST", "/api/ack"], ["POST", "/api/answer"], ["PUT", "/api/vocab"]]) {
+  test(`${method} ${path} without a key is refused (401 or 403)`, async () => {
+    const r = await fetch(`${API}${path}`, { method, headers: { "Content-Type": "application/json", Origin: PAGES }, body: "{}" });
+    assert.ok([401, 403].includes(r.status), `got ${r.status}`);
+    await r.arrayBuffer();
+  });
+}
+
 // The Discord interactions endpoint is not tested here: it cannot be attached to a PR environment (it would need the live Discord channel).
 
 test("library index JSON is reachable", async () => {
