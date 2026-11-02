@@ -1991,3 +1991,5 @@ html.room-off.scene-open body { background: var(--black) url("../img/tavern-plat
 .ring-wrap svg circle[stroke="var(--brass)"] { stroke: var(--wax); filter: drop-shadow(0 0 3px var(--hi-wax)); }
 /* first-load weight: a cold wall (first visit, covered by the Next steps scene) is not rendered, so no style is computed for it and its images and backgrounds do not load; js/board.js (settleGo) removes the class */
 html.wall-cold #main { display: none; }
+/* first-load layout shift: the header and footer sit under the Next steps veil on a cold first visit and reflow as the scene opens and the data loads (h1 0.16 for real users); Chrome scores that though nobody sees it. Not visible means not scored, and the wall warm-up (settleGo) reveals them with the wall, so they are hidden exactly as long as #main is not rendered. */
+html.wall-cold #top, html.wall-cold #footer { visibility: hidden; }
