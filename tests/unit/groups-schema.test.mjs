@@ -13,6 +13,7 @@ const MIGRATION = read("../../infrastructure/migrations/0003_groups_signups_enti
 const U = "100000000000000001", G = "200000000000000001";
 const NOW = "2026-01-01T00:00:00Z";
 const HASH = "b".repeat(64);
+const E1 = "300000000000000001";
 const NEW = ["groups", "group_slots", "signups_v2", "entitlements", "discord_events"];
 
 function freshDb() {
@@ -91,21 +92,37 @@ test("entitlements: status and source in set, plan non-empty, tenant must exist"
   rejects(db, sql, ["t1", "pro", "paused", "manual", null, NOW], CHECK);
   rejects(db, sql, ["t1", "pro", "active", "gift", null, NOW], CHECK);
   rejects(db, sql, ["nope", "pro", "active", "manual", null, NOW], FK);
-  accepts(db, sql, ["t1", "pro", "active", "processor", "2026-02-01T00:00:00Z", NOW]);
+  rejects(db, sql, ["t1", "pro", "active", "processor", "2026-02-01T00:00:00Z", NOW], CHECK);
   accepts(db, sql, ["t1", "pro", "canceled", "manual", null, NOW]);
+});
+
+test("entitlements: processor rows need a unique processor_event_id; manual rows may leave it NULL (repeatedly)", () => {
+  const db = freshDb();
+  const sql = "INSERT INTO entitlements (tenant_id, plan, status, source, processor_event_id, created_at) VALUES (?, ?, ?, ?, ?, ?)";
+  rejects(db, sql, ["t1", "pro", "active", "processor", null, NOW], CHECK);
+  accepts(db, sql, ["t1", "pro", "active", "processor", "evt_1", NOW]);
+  rejects(db, sql, ["t1", "pro", "active", "processor", "evt_1", NOW], UNIQUE);
+  accepts(db, sql, ["t1", "pro", "active", "processor", "evt_2", NOW]);
+  accepts(db, sql, ["t1", "pro", "active", "manual", null, NOW]);
+  accepts(db, sql, ["t1", "pro", "active", "manual", null, NOW]);
+  assert.equal(count(db, "entitlements"), 4);
 });
 
 test("discord_events: id unique for replay safety, payload hash is 64 lowercase hex, kind non-empty", () => {
   const db = freshDb();
   const sql = "INSERT INTO discord_events (id, tenant_id, kind, payload_hash, created_at) VALUES (?, ?, ?, ?, ?)";
   rejects(db, sql, ["", "t1", "k", HASH, NOW], CHECK);
-  rejects(db, sql, ["e1", "t1", "", HASH, NOW], CHECK);
-  rejects(db, sql, ["e1", "t1", "k", "short", NOW], CHECK);
-  rejects(db, sql, ["e1", "t1", "k", "B".repeat(64), NOW], CHECK);
-  rejects(db, sql, ["e1", "nope", "k", HASH, NOW], FK);
-  accepts(db, sql, ["e1", "t1", "k", HASH, NOW]);
-  rejects(db, sql, ["e1", "t1", "k", HASH, NOW], UNIQUE);
-  db.prepare("INSERT OR IGNORE INTO discord_events (id, tenant_id, kind, payload_hash, created_at) VALUES ('e1','t1','k',?,?)").run(HASH, NOW);
+  rejects(db, sql, ["e1", "t1", "k", HASH, NOW], CHECK);
+  rejects(db, sql, ["1".repeat(16), "t1", "k", HASH, NOW], CHECK);
+  rejects(db, sql, ["1".repeat(21), "t1", "k", HASH, NOW], CHECK);
+  rejects(db, sql, ["1".repeat(16) + "x", "t1", "k", HASH, NOW], CHECK);
+  rejects(db, sql, [E1, "t1", "", HASH, NOW], CHECK);
+  rejects(db, sql, [E1, "t1", "k", "short", NOW], CHECK);
+  rejects(db, sql, [E1, "t1", "k", "B".repeat(64), NOW], CHECK);
+  rejects(db, sql, [E1, "nope", "k", HASH, NOW], FK);
+  accepts(db, sql, [E1, "t1", "k", HASH, NOW]);
+  rejects(db, sql, [E1, "t1", "k", HASH, NOW], UNIQUE);
+  db.prepare("INSERT OR IGNORE INTO discord_events (id, tenant_id, kind, payload_hash, created_at) VALUES (?,'t1','k',?,?)").run(E1, HASH, NOW);
   assert.equal(count(db, "discord_events"), 1);
 });
 
@@ -137,28 +154,64 @@ test("ON DELETE SET NULL: deleting a character nulls the slot and sign-up refere
   assert.equal(count(db, "signups_v2"), 1);
 });
 
-test("ON DELETE RESTRICT: a tenant with groups, entitlements or events cannot be deleted", () => {
-  const cases = {
-    groups: null,
-    entitlements: "INSERT INTO entitlements (tenant_id, plan, status, source, created_at) VALUES ('t1', 'pro', 'active', 'manual', '" + NOW + "')",
-    discord_events: "INSERT INTO discord_events (id, tenant_id, kind, payload_hash, created_at) VALUES ('e1', 't1', 'k', '" + HASH + "', '" + NOW + "')",
-  };
-  for (const [table, ins] of Object.entries(cases)) {
-    const db = freshDb();
-    if (ins) {
-      db.exec(ins);
-      db.exec("DELETE FROM groups");
-    }
-    assert.throws(() => db.exec("DELETE FROM tenants WHERE id = 't1'"), FK, table);
-    assert.equal(count(db, "tenants"), 1, table);
-  }
+test("ON DELETE CASCADE from tenants: groups (with slots and sign-ups) and discord_events go with the tenant", () => {
+  const db = freshDb();
+  accepts(db, "INSERT INTO group_slots (group_id, slot_index, role, status) VALUES ('g1', 0, 'tank', 'open')");
+  accepts(db, "INSERT INTO signups_v2 (group_id, user_id, rsvp, updated_at) VALUES ('g1', ?, 'yes', ?)", [U, NOW]);
+  accepts(db, "INSERT INTO discord_events (id, tenant_id, kind, payload_hash, created_at) VALUES (?, 't1', 'k', ?, ?)", [E1, HASH, NOW]);
+  db.exec("DELETE FROM tenants WHERE id = 't1'");
+  for (const t of ["groups", "group_slots", "signups_v2", "discord_events", "characters"]) assert.equal(count(db, t), 0, t);
+  assert.equal(count(db, "users"), 1);
 });
 
-test("0002 cascade behaviour (previously untested): a tenant with no restricting rows cascades to memberships and characters", () => {
+test("ON DELETE SET NULL from tenants: entitlements survive a tenant purge with tenant_id NULL", () => {
+  const db = freshDb();
+  accepts(db, "INSERT INTO entitlements (tenant_id, plan, status, source, processor_event_id, created_at) VALUES ('t1', 'pro', 'active', 'processor', 'evt_1', ?)", [NOW]);
+  accepts(db, "INSERT INTO entitlements (tenant_id, plan, status, source, created_at) VALUES ('t1', 'pro', 'canceled', 'manual', ?)", [NOW]);
+  accepts(db, "INSERT INTO entitlements (tenant_id, plan, status, source, created_at) VALUES (NULL, 'pro', 'canceled', 'manual', ?)", [NOW]);
+  db.exec("DELETE FROM tenants WHERE id = 't1'");
+  assert.equal(count(db, "tenants"), 0);
+  const rows = db.prepare("SELECT tenant_id, processor_event_id FROM entitlements ORDER BY id").all();
+  assert.equal(rows.length, 3);
+  assert.ok(rows.every((r) => r.tenant_id === null));
+  assert.equal(rows[0].processor_event_id, "evt_1");
+});
+
+test("group_slots: deleting a character re-opens a filled or bench seat (trigger fires on the SET NULL cascade; a two-way CHECK would have blocked it)", () => {
+  const db = freshDb();
+  accepts(db, "INSERT INTO group_slots (group_id, slot_index, role, character_id, status) VALUES ('g1', 0, 'tank', 'c1', 'filled')");
+  accepts(db, "INSERT INTO group_slots (group_id, slot_index, role, character_id, status) VALUES ('g1', 1, 'dps', 'c1', 'bench')");
+  db.exec("DELETE FROM characters WHERE id = 'c1'");
+  const rows = db.prepare("SELECT character_id, status FROM group_slots ORDER BY slot_index").all();
+  assert.deepEqual(rows.map((r) => [r.character_id, r.status]), [[null, "open"], [null, "open"]]);
+});
+
+test("group_slots: the CHECK guards UPDATE (open with a character is rejected); the trigger re-opens a seat whose character_id is set to NULL", () => {
+  const db = freshDb();
+  accepts(db, "INSERT INTO group_slots (group_id, slot_index, role, status) VALUES ('g1', 0, 'tank', 'open')");
+  assert.throws(() => db.exec("UPDATE group_slots SET character_id = 'c1' WHERE slot_index = 0"), CHECK);
+  accepts(db, "UPDATE group_slots SET character_id = 'c1', status = 'filled' WHERE slot_index = 0");
+  assert.throws(() => db.exec("UPDATE group_slots SET status = 'open' WHERE slot_index = 0"), CHECK);
+  accepts(db, "UPDATE group_slots SET status = 'bench' WHERE slot_index = 0");
+  accepts(db, "UPDATE group_slots SET character_id = NULL WHERE slot_index = 0");
+  assert.equal(db.prepare("SELECT status FROM group_slots WHERE slot_index = 0").get().status, "open");
+  accepts(db, "UPDATE group_slots SET character_id = 'c1', status = 'filled' WHERE slot_index = 0");
+  accepts(db, "UPDATE group_slots SET character_id = NULL WHERE slot_index = 0");
+  assert.equal(db.prepare("SELECT status FROM group_slots WHERE slot_index = 0").get().status, "open");
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_group_slots_free'").get());
+});
+
+test("discord_events has an index on created_at for purging, and the planner uses it", () => {
+  const db = freshDb();
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_discord_events_created'").get());
+  const plan = db.prepare("EXPLAIN QUERY PLAN DELETE FROM discord_events WHERE created_at < '2026-01-01'").all().map((r) => r.detail).join(" ");
+  assert.match(plan, /idx_discord_events_created/);
+});
+
+test("0002 cascade behaviour: deleting a tenant cascades to memberships, characters and builds", () => {
   const db = freshDb();
   db.exec("INSERT INTO memberships (tenant_id, discord_user_id, joined_at) VALUES ('t1', '" + U + "', '" + NOW + "')");
   db.exec("INSERT INTO builds (id, character_id, source, created_at) VALUES ('b1', 'c1', 'web', '" + NOW + "')");
-  db.exec("DELETE FROM groups");
   db.exec("DELETE FROM tenants WHERE id = 't1'");
   assert.equal(count(db, "memberships"), 0);
   assert.equal(count(db, "characters"), 0);
