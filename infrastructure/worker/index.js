@@ -27,7 +27,7 @@ import { handleAccount } from "./account.js";
 import { handleWebAuth, webSessionFrom } from "./web-auth.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
-import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
+import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, validateConfigValue } from "./config.js";
@@ -1375,11 +1375,13 @@ export default {
 
           // Rate limit check for public guests: 2 questions per hour per IP
           let guestLeft = 6;
+          let guestHash = "";
           if (isGuest) {
             const missingSalt = saltProblems(env, ["USER_SALT"]);
             if (missingSalt.length) return jsonResp(saltErrorBody(missingSalt), 503, cors);
             const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
             const ipHash = await guestIpKey(clientIp, env.USER_SALT);
+            guestHash = ipHash;
             const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
 
             const limitRow = await env.DB.prepare(
@@ -1449,6 +1451,7 @@ export default {
           };
           await broadcastToRoom(env, { type: "intent", item: intentItem });
 
+          const askBudget = askBudgetKeys({ userPart: isGuest ? guestHash : await hashId(memberSlug), guest: isGuest });
           ctx.waitUntil(
             answerWithAi({
               env,
@@ -1460,6 +1463,7 @@ export default {
               deep: Boolean(body.deep || patch.deep),
               share,
               provider: activeProvider,
+              budget: askBudget,
             })
           );
 
