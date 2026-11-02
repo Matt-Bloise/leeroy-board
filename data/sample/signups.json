@@ -1,0 +1,47 @@
+{
+ "sample": true,
+ "updated": "2026-01-01T00:00:00.000Z",
+ "options": {
+  "meet": [
+   "Valley of Strength",
+   "The Crossroads"
+  ],
+  "when": [
+   "6pm",
+   "8pm",
+   "later"
+  ]
+ },
+ "entries": [
+  {
+   "name": "Brindle Oakhand",
+   "rsvp": "in",
+   "when": "8pm",
+   "meet": "Valley of Strength"
+  },
+  {
+   "name": "Pip Candlewick",
+   "rsvp": "in",
+   "when": "8pm",
+   "meet": "Valley of Strength"
+  },
+  {
+   "name": "Mossback Dunn",
+   "rsvp": "maybe",
+   "when": "6pm",
+   "meet": "Valley of Strength"
+  },
+  {
+   "name": "Wren Ashgrove",
+   "rsvp": "in",
+   "when": "8pm",
+   "meet": "Valley of Strength"
+  },
+  {
+   "name": "Tallow Vex",
+   "rsvp": "late",
+   "when": "later",
+   "meet": "Valley of Strength"
+  }
+ ]
+}

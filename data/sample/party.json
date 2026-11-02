@@ -1,0 +1,108 @@
+{
+ "sample": true,
+ "party": "The Tipsy Gryphons",
+ "faction": "Horde",
+ "note": "Made-up names, for showing what a sheet looks like.",
+ "members": [
+  {
+   "name": "Brindle Oakhand",
+   "class_key": "druid",
+   "class": "Druid",
+   "race": "Tauren",
+   "spec": "Feral, bear tank",
+   "role": "tank",
+   "color": "#ff7c0a",
+   "start_zone": "Mulgore",
+   "professions": [
+    {
+     "name": "Leatherworking",
+     "source": "board"
+    },
+    {
+     "name": "Skinning",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Pip Candlewick",
+   "class_key": "priest",
+   "class": "Priest",
+   "race": "Undead",
+   "spec": "Discipline",
+   "role": "healer",
+   "color": "#ffffff",
+   "start_zone": "Tirisfal Glades",
+   "professions": [
+    {
+     "name": "Tailoring",
+     "source": "board"
+    },
+    {
+     "name": "Enchanting",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Mossback Dunn",
+   "class_key": "paladin",
+   "class": "Paladin",
+   "race": "Human",
+   "spec": "Retribution to 40, then Holy",
+   "role": "healer",
+   "color": "#f48cba",
+   "start_zone": "Elwynn Forest",
+   "professions": [
+    {
+     "name": "Blacksmithing",
+     "source": "board"
+    },
+    {
+     "name": "Mining",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Wren Ashgrove",
+   "class_key": "hunter",
+   "class": "Hunter",
+   "race": "Orc",
+   "spec": "Beast Mastery",
+   "role": "damage",
+   "color": "#aad372",
+   "start_zone": "Durotar",
+   "professions": [
+    {
+     "name": "Engineering",
+     "source": "board"
+    },
+    {
+     "name": "Mining",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Tallow Vex",
+   "class_key": "rogue",
+   "class": "Rogue",
+   "race": "Troll",
+   "spec": "Combat",
+   "role": "damage",
+   "color": "#fff468",
+   "start_zone": "Durotar",
+   "professions": [
+    {
+     "name": "Herbalism",
+     "source": "board"
+    },
+    {
+     "name": "Alchemy",
+     "source": "board"
+    }
+   ]
+  }
+ ]
+}

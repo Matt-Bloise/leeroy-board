@@ -1,0 +1,65 @@
+{
+ "sample": true,
+ "builds": [
+  {
+   "name": "Brindle Oakhand",
+   "class_key": "druid",
+   "spec_path": "Feral",
+   "spec_at_40": "Feral",
+   "professions": [
+    "Leatherworking",
+    "Skinning"
+   ],
+   "level": 14,
+   "goals": "Keep every dungeon on time."
+  },
+  {
+   "name": "Pip Candlewick",
+   "class_key": "priest",
+   "spec_path": "Discipline",
+   "spec_at_40": "Discipline",
+   "professions": [
+    "Tailoring",
+    "Enchanting"
+   ],
+   "level": 12,
+   "goals": "Never run out of mana."
+  },
+  {
+   "name": "Mossback Dunn",
+   "class_key": "paladin",
+   "spec_path": "Retribution to 40",
+   "spec_at_40": "Holy",
+   "professions": [
+    "Blacksmithing",
+    "Mining"
+   ],
+   "level": 9,
+   "goals": "Learn to heal by 40."
+  },
+  {
+   "name": "Wren Ashgrove",
+   "class_key": "hunter",
+   "spec_path": "Beast Mastery",
+   "spec_at_40": "Beast Mastery",
+   "professions": [
+    "Engineering",
+    "Mining"
+   ],
+   "level": 15,
+   "goals": "Tame a wolf, then a bear."
+  },
+  {
+   "name": "Tallow Vex",
+   "class_key": "rogue",
+   "spec_path": "Combat",
+   "spec_at_40": "Combat",
+   "professions": [
+    "Herbalism",
+    "Alchemy"
+   ],
+   "level": 11,
+   "goals": "Find us a good cellar."
+  }
+ ]
+}
