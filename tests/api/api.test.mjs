@@ -198,3 +198,32 @@ test("GET /api/config/discord_roster is not a public read (404 or 405)", async (
   const r = await fetch(`${API}/api/config/discord_roster`, { headers: { Origin: PAGES } });
   assert.ok([404, 405].includes(r.status), `status ${r.status}`);
 });
+
+// Authorization clean-up: wiki reads and shared-document writes are admin-token only.
+// Bodies are empty or harmless and the requests carry no key, so nothing is written.
+for (const p of ["/api/wiki/snapshots", "/api/wiki/proposals"]) {
+  test(`GET ${p} without a key is refused (401 or 403)`, async () => {
+    const r = await fetch(`${API}${p}`, { headers: { Origin: PAGES } });
+    assert.ok([401, 403].includes(r.status), `status ${r.status}`);
+  });
+}
+
+for (const p of ["/api/wiki/snapshots", "/api/wiki/proposals"]) {
+  test(`GET ${p} with the admin token: 200`, async () => {
+    const r = await fetch(`${API}${p}`, { headers: authHeaders });
+    assert.equal(r.status, 200);
+    await json(r);
+  });
+}
+
+for (const p of ["/api/wiki/page", "/api/data/zz-auth-test", "/api/atlas/zz-auth-test"]) {
+  test(`PUT ${p} without a key is refused (401 or 403)`, async () => {
+    const r = await fetch(`${API}${p}`, { method: "PUT", headers: { "Content-Type": "application/json", Origin: PAGES }, body: "{}" });
+    assert.ok([401, 403].includes(r.status), `status ${r.status}`);
+  });
+}
+
+test("PUT /api/wiki/page with a bogus key is refused (401 or 403)", async () => {
+  const r = await fetch(`${API}/api/wiki/page`, { method: "PUT", headers: { "Content-Type": "application/json", Origin: PAGES, Authorization: "Bearer not-a-real-key" }, body: "{}" });
+  assert.ok([401, 403].includes(r.status), `status ${r.status}`);
+});

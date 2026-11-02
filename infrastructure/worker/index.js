@@ -26,6 +26,7 @@ import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
+import { extractKey } from "./request-key.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -50,7 +51,7 @@ async function resolveMemberAuth(req, url, env) {
   }
 
   // 2. Verified BOARD_ADMIN_TOKEN via constant-time comparison
-  const k = extractKey(req, url);
+  const k = extractKey(req);
   if (env.BOARD_ADMIN_TOKEN && k && timingSafeEqualStr(k, env.BOARD_ADMIN_TOKEN)) {
     return { ok: true, member: PARTY_MEMBERS[3] }; // Default admin to Bloise
   }
@@ -63,7 +64,7 @@ function adminGate(req, url, env, cors) {
   if (!env.BOARD_ADMIN_TOKEN) {
     return jsonResp({ error: "Admin token not configured" }, 503, cors);
   }
-  const adminKey = extractKey(req, url);
+  const adminKey = extractKey(req);
   if (!adminKey || !timingSafeEqualStr(adminKey, env.BOARD_ADMIN_TOKEN)) {
     return jsonResp({ error: "Unauthorized" }, 401, cors);
   }
@@ -87,15 +88,6 @@ function jsonResp(body, status = 200, extraHeaders = {}) {
       ...extraHeaders,
     },
   });
-}
-
-function extractKey(req, url) {
-  const auth = req.headers.get("Authorization") || "";
-  if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
-  if (auth.startsWith("Board ")) return auth.slice(6).trim();
-  const h = req.headers.get("X-Board-Key");
-  if (h) return h.trim();
-  return (url.searchParams.get("k") || "").trim();
 }
 
 // In-memory isolate L1 cache for sub-millisecond edge responses on *.workers.dev and custom domains
@@ -469,7 +461,7 @@ export default {
         if (!env.BOARD_ADMIN_TOKEN) {
           return jsonResp({ error: "Admin token not configured" }, 503, cors);
         }
-        const adminKey = extractKey(req, url);
+        const adminKey = extractKey(req);
         if (!adminKey || !timingSafeEqualStr(adminKey, env.BOARD_ADMIN_TOKEN)) {
           return jsonResp({ error: "Unauthorized" }, 401, cors);
         }
@@ -914,6 +906,8 @@ export default {
 
       // 1d. GET /wiki/snapshots & GET /wiki/proposals -> D1-backed source snapshots & AI fact proposals
       if (req.method === "GET" && path === "/wiki/snapshots") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
         const { results } = await env.DB.prepare(
           "SELECT id, source_id, url, sha8, substr(body_text, 1, 600) AS preview, fetched_at FROM lib_source_snapshots ORDER BY fetched_at DESC LIMIT 25"
         ).all();
@@ -921,6 +915,8 @@ export default {
       }
 
       if (req.method === "GET" && path === "/wiki/proposals") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
         const { results } = await env.DB.prepare(
           "SELECT * FROM wiki_proposals ORDER BY created_at DESC LIMIT 50"
         ).all();
@@ -929,10 +925,8 @@ export default {
 
       // 1e. PUT /wiki/page -> Direct D1 wiki page authoring/editing (replaces editing markdown in `wow-mage`)
       if (req.method === "PUT" && path === "/wiki/page") {
-        const auth = await resolveMemberAuth(req, url, env);
-        if (!auth.ok) {
-          return jsonResp({ error: "Unauthorized board key" }, 401, cors);
-        }
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
         const body = await req.json();
         const pageId = String(body.id || "").trim();
         const category = String(body.category || pageId.split("/")[0] || "").trim();
@@ -1086,10 +1080,8 @@ export default {
           return resp;
         }
         if (req.method === "PUT") {
-          const auth = await resolveMemberAuth(req, url, env);
-          if (!auth.ok) {
-            return jsonResp({ error: "Unauthorized board key" }, 401, cors);
-          }
+          const denied = adminGate(req, url, env, cors);
+          if (denied) return denied;
           const body = await req.json();
           const now = new Date().toISOString();
           await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
@@ -1471,7 +1463,7 @@ export default {
           at: new Date().toISOString(),
         };
         // Provider detail is for the admin token only; a request without it gets the minimal body, not a 401.
-        const healthKey = extractKey(req, url);
+        const healthKey = extractKey(req);
         if (env.BOARD_ADMIN_TOKEN && healthKey && timingSafeEqualStr(healthKey, env.BOARD_ADMIN_TOKEN)) {
           const providers = {};
           for (const k of Object.keys(AI_PROVIDER_LABELS)) {
