@@ -2,17 +2,29 @@ name: Security Scan
 
 # Report only. Nothing in this workflow can fail a pull request: every scan step uses
 # continue-on-error, the jobs end in `exit 0`, and the workflow is not a required check.
-# Triage: docs/runbooks/security-scan.md
+# Triage: docs/runbooks/security-scan.md. Cost model: docs/runbooks/ci-minutes.md.
+#
+# Semgrep runs on code PRs only: the path filter below skips the whole workflow when every changed file is under docs/ or tests/
+# (or is a root *.md file or an issue template). It also runs weekly on master.
+# ZAP no longer runs on every PR. It runs nightly against production (nightly-production.yml) and on a PR only when the PR carries BOTH
+# the label `security` and the label `ci-full` (the scan needs the PR preview, which exists only with `ci-full`).
+# Label events other than `labeled security` / `labeled ci-full` skip every job and never cancel a run in progress.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    paths-ignore:
+      - "docs/**"
+      - "tests/**"
+      - "*.md"
+      - ".github/ISSUE_TEMPLATE/**"
   schedule:
     - cron: "17 5 * * 1"
 
 concurrency:
-  group: security-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Label events wait behind a running scan instead of cancelling it (the Semgrep run of the push must finish).
+  cancel-in-progress: ${{ github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
 
 permissions:
   contents: read
@@ -22,8 +34,8 @@ permissions:
 jobs:
   semgrep:
     name: Semgrep (OSS rules, no login)
-    # Fork PRs get a read-only token and no secrets, so they are skipped.
-    if: github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository
+    # Fork PRs get a read-only token and no secrets, so they are skipped. Label events never re-run Semgrep.
+    if: github.event_name == 'schedule' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'labeled' && github.event.action != 'unlabeled')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -84,9 +96,40 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+      - name: Post or update the Semgrep comment
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require("fs");
+            let sg; try { sg = JSON.parse(fs.readFileSync("out/semgrep-summary.json", "utf8")); } catch (e) { sg = { status: "missing" }; }
+            const list = (a) => (a && a.length ? "\n```\n" + a.join("\n").slice(0, 1200) + "\n```" : "");
+            const text = sg.status === "ok"
+              ? `${sg.total} findings (error ${sg.error}, warning ${sg.warning}, info ${sg.info}).${list(sg.top)}`
+              : "No report was produced, see the run logs.";
+            const pr = context.payload.pull_request;
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "<!-- security-scan -->",
+              `### Security scan: Semgrep (report only, never blocks the merge) (\`${pr.head.sha.slice(0, 7)}\`)`,
+              "",
+              `**Semgrep** (p/javascript, p/owasp-top-ten): ${text}`,
+              "",
+              `OWASP ZAP runs nightly against production, and on this PR only with the labels \`security\` and \`ci-full\` (separate comment). Full report: artifact \`security-semgrep\` on [the run](${run}). Triage: \`docs/runbooks/security-scan.md\`.`,
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
+            const existing = comments.find((c) => c.body && c.body.includes("<!-- security-scan -->"));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
+
   zap:
-    name: OWASP ZAP baseline against the PR preview
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    name: OWASP ZAP baseline against the PR preview (label security + ci-full)
+    if: >-
+      github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'security') && contains(github.event.pull_request.labels.*.name, 'ci-full') &&
+      github.event.action != 'unlabeled' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'security' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -179,48 +222,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  comment:
-    name: Summary comment
-    needs: [semgrep, zap]
-    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Download summaries
-        continue-on-error: true
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
-        with:
-          path: summaries
-
-      - name: Post or update the summary comment
+      - name: Post or update the ZAP comment
+        if: always() && !cancelled()
         continue-on-error: true
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
             const fs = require("fs");
-            const load = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { return { status: "missing" }; } };
-            const sg = load("summaries/security-semgrep/out/semgrep-summary.json");
-            const zp = load("summaries/security-zap/out/zap-summary.json");
+            let zp; try { zp = JSON.parse(fs.readFileSync("out/zap-summary.json", "utf8")); } catch (e) { zp = { status: "missing" }; }
             const list = (a) => (a && a.length ? "\n```\n" + a.join("\n").slice(0, 1200) + "\n```" : "");
-            const semgrepText = sg.status === "ok"
-              ? `${sg.total} findings (error ${sg.error}, warning ${sg.warning}, info ${sg.info}).${list(sg.top)}`
-              : "No report was produced, see the run logs.";
-            const zapText = zp.status === "ok"
+            const text = zp.status === "ok"
               ? `high ${zp.high}, medium ${zp.medium}, low ${zp.low}, informational ${zp.info}.${list(zp.top)}`
               : zp.status === "no-preview" ? "Not run: no preview for this commit was found in time." : "No report was produced, see the run logs.";
             const pr = context.payload.pull_request;
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = [
-              "<!-- security-scan -->",
-              `### Security scan (report only, never blocks the merge) (\`${pr.head.sha.slice(0, 7)}\`)`,
+              "<!-- security-zap -->",
+              `### Security scan: OWASP ZAP baseline (report only, never blocks the merge) (\`${pr.head.sha.slice(0, 7)}\`)`,
               "",
-              `**Semgrep** (p/javascript, p/owasp-top-ten): ${semgrepText}`,
+              `**OWASP ZAP baseline** (passive, against the preview): ${text}`,
               "",
-              `**OWASP ZAP baseline** (passive, against the preview): ${zapText}`,
-              "",
-              `Full reports: artifacts \`security-semgrep\` and \`security-zap\` on [the run](${run}). Triage: \`docs/runbooks/security-scan.md\`.`,
+              `Full report: artifact \`security-zap\` on [the run](${run}). Triage: \`docs/runbooks/security-scan.md\`.`,
             ].join("\n");
             const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
-            const existing = comments.find((c) => c.body && c.body.includes("<!-- security-scan -->"));
+            const existing = comments.find((c) => c.body && c.body.includes("<!-- security-zap -->"));
             if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });

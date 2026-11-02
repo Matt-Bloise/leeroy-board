@@ -5,13 +5,16 @@ name: Lighthouse
 # Triggered by pull_request (not workflow_run), same-repo branches only, and waits for the preview
 # comment naming the head sha exactly like preview-tests.yml. Runbook: docs/runbooks/lighthouse.md
 
+# Runs only when the PR carries the label `ci-full` (it needs the PR preview) and, inside the job, only when site files changed (tools/ci-scope.mjs).
+# Label events other than `labeled ci-full` skip the job (0 minutes) and never cancel a run in progress. Cost model: docs/runbooks/ci-minutes.md
+
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 concurrency:
-  group: lighthouse-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full') }}
 
 permissions:
   contents: read
@@ -29,7 +32,9 @@ env:
 jobs:
   lighthouse:
     name: lighthouse (informational)
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci-full') &&
+      github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     continue-on-error: true
@@ -51,10 +56,11 @@ jobs:
           set -u
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt" || true
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt" || echo false)" >> "$GITHUB_OUTPUT"
+          echo "site_changed=$(node tools/ci-scope.mjs < "$RUNNER_TEMP/paths.txt" || echo true)" >> "$GITHUB_OUTPUT"
 
       - name: Find the preview URL in the PR comment
         id: urls
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.docs_only != 'true' && steps.scope.outputs.site_changed != 'false'
         continue-on-error: true
         run: |
           set -u
@@ -98,7 +104,8 @@ jobs:
           exit 0
 
       - name: Post or update the comment
-        if: always() && !cancelled()
+        # No comment when no site file changed: Lighthouse has nothing to measure.
+        if: always() && !cancelled() && steps.scope.outputs.site_changed != 'false'
         continue-on-error: true
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
