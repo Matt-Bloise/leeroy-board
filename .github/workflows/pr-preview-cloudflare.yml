@@ -18,6 +18,46 @@ permissions:
   issues: write
 
 jobs:
+  # Docs-only PRs (tools/docs-only.mjs) get no preview and no D1 database; Preview Tests runs unit and stamps only.
+  scope:
+    name: Classify the Changed Paths
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Classify the changed paths
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu -o pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
+          cat "$RUNNER_TEMP/paths.txt"
+          echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+
+      - name: Say that tests run without a preview
+        if: steps.classify.outputs.docs_only == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- cloudflare-pr-preview-skipped -->";
+            const prNumber = context.payload.pull_request.number;
+            const body = [marker, "### Cloudflare PR preview skipped (docs only)", "",
+              "This PR changes only `docs/**`, root `*.md` files or `.github/ISSUE_TEMPLATE/**`, so no preview environment (and no D1 database) was created. Preview Tests run only the unit and stamps suites."].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, per_page: 100 });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, body });
+
   validate-fork-pr:
     name: Enforce Fork PR Policy
     if: github.event.action != 'closed'
@@ -38,7 +78,8 @@ jobs:
 
   deploy-pr-preview:
     name: Spin Up Isolated PR Preview (Pages + Worker + D1 + DO)
-    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: scope
+    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && needs.scope.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -51,10 +92,10 @@ jobs:
 
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "22"
 
@@ -157,6 +198,7 @@ jobs:
           echo "✓ Cloudflare D1 permissions verified."
 
       - name: Provision Ephemeral D1 Database & Configure PR `wrangler.toml`
+        id: d1
         working-directory: infrastructure
         run: |
           set -e
@@ -170,8 +212,19 @@ jobs:
 
           if [ -z "$DB_ID" ]; then
             echo "Creating ephemeral D1 database '$D1_DATABASE_NAME'..."
-            CREATE_OUT=$(npx wrangler d1 create "$D1_DATABASE_NAME")
+            set +e
+            CREATE_OUT=$(npx wrangler d1 create "$D1_DATABASE_NAME" 2>&1)
+            CREATE_EXIT=$?
+            set -e
             echo "$CREATE_OUT"
+            if [ $CREATE_EXIT -ne 0 ]; then
+              # 7406 = "System limit reached: databases per account (10)". See docs/runbooks/preview-d1-limit.md.
+              if echo "$CREATE_OUT" | grep -qE '(^|[^0-9])7406([^0-9]|$)'; then
+                echo "limit_reached=true" >> "$GITHUB_OUTPUT"
+                echo "::error::Preview limit reached (D1 error 7406); a slot must free up before this PR gets a preview."
+              fi
+              exit $CREATE_EXIT
+            fi
             DB_ID=$(echo "$CREATE_OUT" | grep -oE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' | head -n 1)
           fi
 
@@ -200,6 +253,22 @@ jobs:
             }
             fs.writeFileSync("wrangler.toml", toml, "utf8");
           ' "$DB_ID"
+
+      - name: Say that the preview limit is reached
+        if: failure() && steps.d1.outputs.limit_reached == 'true'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const marker = "<!-- cloudflare-pr-preview-limit -->";
+            const prNumber = context.payload.pull_request.number;
+            const sha = context.payload.pull_request.head.sha.slice(0, 7);
+            const body = [marker, `### Preview limit reached (\`${sha}\`)`, "",
+              "Preview limit reached; will retry when a slot frees.",
+              "", "The Cloudflare Free plan allows 10 D1 databases per account and every open PR uses one (error 7406). When another PR is merged or closed, its slot is released and this PR's failed preview and test jobs are re-run automatically. See `docs/runbooks/preview-d1-limit.md`."].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, per_page: 100 });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, body });
 
       - name: Apply Unified D1 Schema (`schema.sql`), Migrations & Seed Ephemeral Database
         working-directory: infrastructure
@@ -306,7 +375,7 @@ jobs:
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
       - name: Post / Update Sticky PR Preview Comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
             const marker = "<!-- cloudflare-pr-preview -->";
@@ -335,6 +404,11 @@ jobs:
               repo: context.repo.repo,
               issue_number: prNumber,
             });
+            for (const stale of ["<!-- cloudflare-pr-preview-limit -->", "<!-- cloudflare-pr-preview-skipped -->"]) {
+              for (const c of comments.filter(c => c.body && c.body.includes(stale))) {
+                await github.rest.issues.deleteComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: c.id });
+              }
+            }
             const existing = comments.find(c => c.body && c.body.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({
@@ -367,10 +441,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "22"
 
@@ -416,7 +490,7 @@ jobs:
           '
 
       - name: Update Sticky PR Comment to Confirm Teardown
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
             const marker = "<!-- cloudflare-pr-preview -->";
@@ -444,4 +518,39 @@ jobs:
                 comment_id: existing.id,
                 body,
               });
+            }
+
+  retry-waiting-previews:
+    name: Retry Previews Waiting for a Free D1 Slot
+    needs: teardown-pr-preview
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      actions: write
+    steps:
+      - name: Re-run failed preview and test jobs of PRs that hit the limit
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const marker = "<!-- cloudflare-pr-preview-limit -->";
+            const closed = context.payload.pull_request.number;
+            const prs = await github.paginate(github.rest.pulls.list, { owner, repo, state: "open", per_page: 100 });
+            // Oldest first; each re-run needs one slot, and a PR that still finds none just posts the notice again.
+            prs.sort((a, b) => a.number - b.number);
+            for (const pr of prs) {
+              if (pr.number === closed || pr.head.repo.full_name !== `${owner}/${repo}`) continue;
+              const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: pr.number, per_page: 100 });
+              if (!comments.some(c => c.body && c.body.includes(marker) && c.body.includes(pr.head.sha.slice(0, 7)))) continue;
+              for (const wf of ["pr-preview-cloudflare.yml", "preview-tests.yml"]) {
+                const { data } = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: wf, event: "pull_request", head_sha: pr.head.sha, per_page: 5 });
+                const run = data.workflow_runs.find(r => r.status === "completed" && r.conclusion === "failure");
+                if (!run) continue;
+                console.log(`Re-running failed jobs of ${wf} run ${run.id} for PR #${pr.number}`);
+                await github.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: run.id });
+              }
+              break; // one PR per freed slot
             }
