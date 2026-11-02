@@ -131,6 +131,7 @@ jobs:
           name: visual-audit
           path: tests/visual-audit
           if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload logs
         if: always()
