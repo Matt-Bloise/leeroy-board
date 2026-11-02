@@ -1,0 +1,18 @@
+/* The group's votes: the Open votes card on Next steps and the Votes list in What to decide. Painted like the other parchment cards. */
+.vt-card { background: var(--parchment); color: var(--ink); --text: var(--ink); --text-dim: var(--ink-soft); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); border-top: 3px solid var(--wax); padding: 10px 16px 12px; margin: 0 0 12px; display: grid; gap: 10px; min-width: 0; }
+.vt-card[hidden] { display: none; }
+.vt-full { border-top-color: var(--brass-dim); }
+.vt-h, .vt-sub { margin: 0; font-family: var(--font-sc); font-size: 1.05rem; font-weight: 400; letter-spacing: 0.1em; color: var(--ink-soft); }
+.vt-sub { padding-top: 4px; border-top: 1px solid var(--parchment-2); }
+.vt-vote { display: grid; gap: 6px; min-width: 0; }
+.vt-title { margin: 0; font-family: var(--font-body); font-size: 1.1rem; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
+.vt-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.vt-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; align-items: baseline; font-family: var(--font-body); font-size: 1.05rem; line-height: 1.3; }
+.vt-label { overflow-wrap: anywhere; }
+.vt-count { font-family: var(--font-sc); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+.vt-bar { grid-column: 1 / -1; display: block; height: 8px; border-radius: 4px; background: var(--parchment-2); overflow: hidden; }
+.vt-fill { display: block; height: 100%; width: var(--vt-w, 0%); background: var(--brass-dim); border-radius: 4px; }
+.vt-row[data-lead="1"] .vt-fill { background: var(--wax); }
+.vt-meta, .vt-how, .vt-note { margin: 0; font-family: var(--font-body); font-size: 1rem; line-height: 1.35; color: var(--ink-soft); }
+.vt-vote[data-open="0"] .vt-title { font-weight: 400; }
+@media (prefers-reduced-motion: no-preference) { .vt-fill { transition: width 0.4s ease; } }
