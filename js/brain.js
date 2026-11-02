@@ -480,6 +480,29 @@ async function sendProbe(report) {
     return { ok: false, local: true, why: r.status === 404 ? "route" : r.status === 429 ? "busy" : "refused", status: r.status };
   } catch (e) { B.errors++; return { ok: false, local: true, why: "offline" }; }
 }
+/* Q08: inside the Discord mobile Activity, lock to portrait (PiP and grid stay free) and mirror orientation and layout mode into <html data-layout>. Every call is guarded: the web board must never break outside Discord. */
+const LAY = { o: "", m: "" }, LAY_MODES = { 0: "focused", 1: "pip", 2: "grid" }, LAY_ORIENT = { 0: "portrait", 1: "landscape" };
+function layoutPaint() {
+  try { const v = [LAY.o, LAY.m].filter(Boolean).join("-"); const d = document.documentElement.dataset; if (v) d.layout = v; else delete d.layout; } catch (e) {}
+}
+async function lockLayout(sdk) {
+  try {
+    if (!sdk) return false;
+    const plat = String(sdk.platform || "").toLowerCase();
+    if (plat !== "mobile" && plat !== "ios" && plat !== "android") return false;
+    try {
+      if (typeof sdk.subscribe === "function") {
+        const a = sdk.subscribe("ORIENTATION_UPDATE", (d) => { try { const o = LAY_ORIENT[d && d.screen_orientation]; if (o) { LAY.o = o; layoutPaint(); } } catch (e) {} });
+        const b = sdk.subscribe("ACTIVITY_LAYOUT_MODE_UPDATE", (d) => { try { const m = LAY_MODES[d && d.layout_mode]; if (m) { LAY.m = m; layoutPaint(); } } catch (e) {} });
+        if (a && a.catch) a.catch(() => {}); if (b && b.catch) b.catch(() => {});
+      }
+    } catch (e) {}
+    if (sdk.commands && typeof sdk.commands.setOrientationLockState === "function") {
+      await sdk.commands.setOrientationLockState({ lock_state: 2, picture_in_picture_lock_state: 1, grid_lock_state: 1 });
+    }
+    return true;
+  } catch (e) { return false; }
+}
 function start(handlers) {
   B.h = handlers || {};
   if (B.started) return status();
@@ -494,5 +517,5 @@ function start(handlers) {
   return status();
 }
 function forget() { clearTimeout(B.wsT); if (B.ws) { const w = B.ws; B.ws = null; clearInterval(B.pingT); try { w.close(); } catch (e) {} B.via = "poll"; schedulePoll(0); } store.set("board-key", null); B.key = null; B.me = null; B.keyBad = false; B.pend = {}; B.lPend = null; B.launchRefused = false; B.sheet = null; B.sheetOff = false; clearTimeout(AK.t); AK.st = "idle"; AK.ask = null; AK.err = ""; AK.since = 0; emit("me", null); emit("pending", {}); emit("launchPending", null); askEmit(); openWs(); }
-window.BoardBrain = Object.freeze({ start, on, status, url: apiUrl, bootstrap, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, getAiProvider, setAiProvider, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
+window.BoardBrain = Object.freeze({ start, lockLayout, on, status, url: apiUrl, bootstrap, setRsvp, setJourney, setLaunch, setWhen, setPack, setMeet, reportFact, refreshLibrary, cleanPlace, mineLocal: mineRead, sendProbe, _probeShape: PROBE, ask, askStatus, askRead, getAiProvider, setAiProvider, onAsk: (f) => { if (typeof f === "function") AK.h.push(f); }, forget, me, hasKey: () => !!B.key, mine: () => { const e = mine(); return e ? { ...e } : null; }, launch: () => B.launch.map((r) => ({ ...r })), mineLaunch: () => { const r = mineLaunch(); return r ? { ...r } : null; }, launchPending, sheetVocab, sheetRead, setSheet, sheet: sheetCopy, party: () => JSON.parse(JSON.stringify(B.party)), dispatch, _state: onState, _poll: pollOnce });
 })();
