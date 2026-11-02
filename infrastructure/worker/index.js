@@ -30,6 +30,7 @@ import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, validateConfigVal
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
+import { loadPublicVotes } from "./votes.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -348,6 +349,12 @@ export default {
       }
       if (req.method === "GET" && path === "/discord/commands") {
         return jsonResp({ commands: DISCORD_SLASH_COMMANDS_MANIFEST }, 200, cors);
+      }
+
+      // 0a. GET /votes -> public, read-only: id, title, choice counts, closes_at, open. Never voter ids or hashes.
+      if (req.method === "GET" && path === "/votes") {
+        const votes = await loadPublicVotes(env.DB, Date.now());
+        return jsonResp({ votes }, 200, { ...cors, "Cache-Control": "public, max-age=10, s-maxage=10" });
       }
 
       // 0b. GET /me -> Resolves board key to party member identity for `js/brain.js`
