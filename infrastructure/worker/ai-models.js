@@ -359,8 +359,8 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
     throw new Error("GEMINI_API_KEY secret is not configured on the Cloudflare Worker");
   }
   const model = deep
-    ? env.GEMINI_MODEL_DEEP || "gemini-2.5-pro"
-    : env.GEMINI_MODEL_FAST || "gemini-2.5-flash";
+    ? env.GEMINI_MODEL_DEEP || "gemini-3.8-pro"
+    : env.GEMINI_MODEL_FAST || "gemini-3.8-flash";
 
   const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
