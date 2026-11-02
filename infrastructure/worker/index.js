@@ -33,6 +33,7 @@ import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
+import { feedEnabled, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
@@ -1226,7 +1227,9 @@ export default {
           if (!allowed || isPrivateKvKey(raw)) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
           let resp = await getCachedResponse(url.origin, cachePath);
           if (!resp) {
-            const row = await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first();
+            // D1_FEED (default off): stats is computed from D1 and cached 5 minutes; null means serve the stored row as before.
+            const fed = path.startsWith("/data/") && feedEnabled(env) ? await serveFeedDoc(env, raw) : null;
+            const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first());
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
             const etag = `"${raw}-${row.updated_at || '1'}"`;
             let docJson = row.json;
