@@ -1,0 +1,40 @@
+{
+  "description": "/sheet updating a field",
+  "expectType": 4,
+  "interaction": {
+    "id": "fixture-interaction-0001",
+    "application_id": "fixture-app-0001",
+    "token": "fixture-token-not-real",
+    "version": 1,
+    "guild_id": "fixture-guild-0001",
+    "channel_id": "fixture-channel-0001",
+    "locale": "en-US",
+    "member": {
+      "user": {
+        "id": "fixture-user-0001",
+        "username": "fixture_tester",
+        "global_name": "Fixture Tester"
+      },
+      "nick": null,
+      "roles": []
+    },
+    "type": 2,
+    "data": {
+      "id": "fixture-cmd-sheet",
+      "name": "sheet",
+      "type": 1,
+      "options": [
+        {
+          "name": "field",
+          "type": 3,
+          "value": "race"
+        },
+        {
+          "name": "value",
+          "type": 3,
+          "value": "Orc"
+        }
+      ]
+    }
+  }
+}
