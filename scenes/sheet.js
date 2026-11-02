@@ -257,6 +257,28 @@ function mount() {
   panel.insertBefore(bar, panel.firstChild);
   panel.append(h("section", { class: "ps", id: "ps-sheet", "aria-label": "A sheet", hidden: true }), h("section", { class: "ps-party", id: "ps-party", "aria-label": "The party table", hidden: true }));
 }
+
+const SAMPLE_FILES = ["party", "signups", "builds"], RSVP = { in: "is in", maybe: "might come", late: "will be late", out: "is out" };
+let sampleP = null;
+const sampleLoad = () => (sampleP ||= Promise.all(SAMPLE_FILES.map((n) => fetch(`data/sample/${n}.json`).then((r) => { if (!r.ok) throw new Error(n); return r.json(); }))).then(([party, signups, builds]) => ({ party, signups, builds })).catch(() => null));
+function sampleView(S) {
+  const sig = (n) => (S.signups.entries || []).find((e) => e.name === n), bld = (n) => (S.builds.builds || []).find((b) => b.name === n) || {};
+  const go = () => { const c = $("#tn-change"); if (c) { c.click(); return; } if (K.goScene) K.goScene("tonight"); const f = $("#tn-me button, #tn-me a"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } };
+  return [h("h3", { class: "ps-sample-h", id: "ps-sample-h" }, h("span", { class: "ps-sample-tag", text: "Sample guild" }), ` ${S.party.party}, a sheet to look at`),
+    h("p", { class: "ps-sample-p", text: "Made-up names, so you can see what a sheet holds before you have one." }),
+    h("ul", { class: "ps-sample-l", "aria-label": "The sample guild, one line each" }, S.party.members.map((m) => { const b = bld(m.name), a = sig(m.name);
+      return h("li", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` }, h("b", { text: m.name }), h("span", { text: `${m.race} ${m.class}, ${m.role}. ${b.spec_path || m.spec}${b.level ? `, level ${b.level}` : ""}.` }), h("small", { text: `${K.andList(m.professions.map((p) => p.name))}.${a ? ` ${m.name.split(" ")[0]} ${RSVP[a.rsvp] || a.rsvp} on launch night.` : ""}${b.goals ? ` Goal: ${b.goals}` : ""}` })); })),
+    h("button", { type: "button", class: "lib-tool ps-sample-go", onclick: go }, "Make this for my guild")];
+}
+async function sampleSync() {
+  const panel = $("#panel-five"); if (!panel) return;
+  if (MEM.member() || !D.party) { const o = $("#ps-sample"); if (o) o.hidden = true; return; }
+  const S = await sampleLoad(); if (!S || MEM.member()) return;
+  let box = $("#ps-sample");
+  if (!box) { box = h("section", { class: "ps-sample", id: "ps-sample", "aria-labelledby": "ps-sample-h" }); const v = $("#ps-views"); panel.insertBefore(box, v ? v.nextSibling : panel.firstChild); }
+  if (!box.firstChild) box.replaceChildren(...sampleView(S));
+  box.hidden = false;
+}
 mount();
 function crests() {
   for (const card of document.querySelectorAll("#cards .card")) {
@@ -311,14 +333,14 @@ K.lander = (k, sub) => {
   if (k === "five" && PS.view !== "cards") show("cards");
   return lander0 ? lander0(k, sub) : null;
 };
-K.on("rendered", () => { crests(); mineLink(); ready().then(render); for (const t of [300, 1500, 4000]) setTimeout(crests, t); });
-K.on("tonight", mineLink);
-K.on("scene", (k) => { if (k === "five") { crests(); if (PS.view !== "cards") ready().then(render); } });
+K.on("rendered", () => { crests(); mineLink(); sampleSync(); ready().then(render); for (const t of [300, 1500, 4000]) setTimeout(crests, t); });
+K.on("tonight", () => { mineLink(); sampleSync(); });
+K.on("scene", (k) => { if (k === "five") { crests(); sampleSync(); if (PS.view !== "cards") ready().then(render); } });
 K.on("closed", (k) => { if (k === "five" && PS.view !== "cards") { PS.view = "cards"; PS.edit = null; PS.say = ""; render(); } });
 K.on("signups", () => { if (PS.view !== "cards") render(); });
 K.on("forget", () => { try { Object.keys(localStorage).filter((x) => x.startsWith("board-sheet-")).forEach((x) => localStorage.removeItem(x)); } catch (e) {} for (const m of members()) MEM.set(devKey(m), null); PS.edit = null; PS.say = ""; render(); });
 const B0 = BB();
 const later = (why, sig) => { if (sig !== undefined) { if (PS.sigs[why] === sig) return; PS.sigs[why] = sig; } if (PS.view === "cards") return; if (PS.edit) { PS.dirty = true; return; } render(); };
 if (B0 && B0.on) { B0.on("sheet", (x) => later("sheet", JSON.stringify(x))); B0.on("party", (x) => later("party", JSON.stringify(x))); B0.on("me", (x) => later("me", JSON.stringify(x))); }
-window.__sheet = Object.freeze({ show, openSheet, fieldsFor: (sl) => { const m = bySlug(sl); return m ? fieldsFor(m) : null; }, vocab: () => PS.voc, slugOf, status: () => ({ view: PS.view, who: PS.who, edit: PS.edit, say: PS.say }) });
+window.__sheet = Object.freeze({ sampleSync, show, openSheet, fieldsFor: (sl) => { const m = bySlug(sl); return m ? fieldsFor(m) : null; }, vocab: () => PS.voc, slugOf, status: () => ({ view: PS.view, who: PS.who, edit: PS.edit, say: PS.say }) });
 })();
