@@ -312,3 +312,23 @@ for (const name of ["marks", "links"]) {
     await r.arrayBuffer();
   });
 }
+
+// Q18: web login is behind WEB_LOGIN (off on previews and production until the owner sets it). Both outcomes are safe.
+test("GET /api/me without a key or cookie is refused (401)", async () => {
+  const r = await fetch(`${API}/api/me`, { headers: { Origin: PAGES } });
+  assert.equal(r.status, 401);
+});
+
+test("GET /api/me with a forged session cookie is refused (401)", async () => {
+  const r = await fetch(`${API}/api/me`, { headers: { Origin: PAGES, Cookie: `__Host-sess=${"A".repeat(43)}` } });
+  assert.equal(r.status, 401);
+});
+
+test("GET /api/auth/discord/start sets no session: 404 with the flag off, otherwise a redirect to Discord", async () => {
+  const r = await fetch(`${API}/api/auth/discord/start`, { redirect: "manual" });
+  assert.ok([404, 302, 503].includes(r.status), `got ${r.status}`);
+  const cookie = r.headers.get("set-cookie") || "";
+  assert.ok(!cookie.includes("__Host-sess"), "start must never set a session cookie");
+  if (r.status === 302) assert.ok((r.headers.get("location") || "").startsWith("https://discord.com/oauth2/authorize"));
+});
+
