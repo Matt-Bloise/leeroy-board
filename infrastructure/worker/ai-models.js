@@ -88,7 +88,7 @@ export function webBoardLinks(text) {
     .replace(/\{board:([^}]*)\}/g, (m, token) =>
       /^[a-z0-9.-]{1,80}$/.test(token) ? `https://leeroy.party/#${token}` : ""
     )
-    .replace(/[ 	]+$/gm, "")
+    .replace(/[ \t]+$/gm, "")
     .trim();
 }
 
