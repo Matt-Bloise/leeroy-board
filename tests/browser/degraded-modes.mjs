@@ -80,7 +80,7 @@ const CONDITIONS = [
   { id: "contrast-more", label: "prefers-contrast: more", setup: MEDIA([{ name: "prefers-contrast", value: "more" }]) },
   { id: "zoom-640x360", label: "zoom 200 percent of a laptop (640x360)", sizes: [["640x360", { viewport: { width: 640, height: 360 } }]] },
   { id: "zoom-480x270", label: "zoom 400 percent of a laptop (480x270)", sizes: [["480x270", { viewport: { width: 480, height: 270 } }]] },
-  { id: "text-200", label: "text scaled to 200 percent", after: (page) => page.evaluate(() => { document.documentElement.style.fontSize = "200%"; }) },
+  { id: "text-200", label: "text scaled to 200 percent", init: () => { const set = () => { if (document.documentElement) document.documentElement.style.fontSize = "200%"; }; set(); document.addEventListener("readystatechange", set); }, after: (page) => page.evaluate(() => { document.documentElement.style.fontSize = "200%"; }) }, /* set from the first byte, as a text-size setting is, and again once the page is up */
   { id: "slow-network", label: "400 kbps, 800 ms (a visible card in 3 s)", budget: 3000, paint: true, slow: true },
   { id: "stale-board", label: "stale index, board.js 404s", sw: "allow", setup: stale("board") },
   { id: "stale-shell", label: "stale index, shell.js 404s", sw: "allow", setup: stale("shell") },
@@ -106,11 +106,14 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
       if (p.len >= 40 && p.ctl >= 1 && (!cond.paint || p.paint.length > 0)) break;
       await sleep(250);
     }
-    if (cond.after) { await cond.after(page).catch(() => {}); await sleep(600); p = await page.evaluate(probe).catch(() => p); }
+    if (cond.after) { /* the change lands on a page that is up; give it the same budget to settle (a sheet may be mid-open) */
+      await cond.after(page).catch(() => {}); const t1 = Date.now();
+      do { await sleep(300); p = await page.evaluate(probe).catch(() => p); } while (!(p.len >= 40 && p.ctl >= 1) && Date.now() - t1 < budget);
+    }
     const detail = `${p.len} chars, ${p.ctl} controls${cond.paint ? `, paint ${p.paint.join("/") || "none"}` : ""}, text "${p.text}"`;
     ok(`${name} | usable screen`, p.len >= 40 && p.ctl >= 1 && (!cond.paint || p.paint.length > 0), detail);
     if (cond.noscript) {
-      const ns = await page.evaluate(() => { const a = document.querySelector("body a[href]"); return { text: document.body.innerText.replace(/\s+/g, " "), link: !!a && a.getBoundingClientRect().width > 0 }; }).catch(() => ({ text: "", link: false }));
+      const ns = await page.evaluate(() => { const link = [...document.querySelectorAll("body a[href]")].some((a) => a.getBoundingClientRect().width > 0 && !a.closest("[hidden]")); return { text: document.body.innerText.replace(/\s+/g, " "), link }; }).catch(() => ({ text: "", link: false }));
       ok(`${name} | the no-script note is visible, plain, and has a link`, /JavaScript|script/i.test(ns.text) && ns.link, ns.text.slice(0, 80));
     }
     if (cond.slow) { await sleep(Math.max(0, 15000 - (Date.now() - t0))); await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }); await nav; }
