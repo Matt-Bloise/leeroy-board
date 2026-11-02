@@ -1,0 +1,38 @@
+{
+  "ci": {
+    "collect": {
+      "numberOfRuns": 3,
+      "settings": {
+        "formFactor": "mobile",
+        "screenEmulation": { "mobile": true, "width": 390, "height": 844, "deviceScaleFactor": 2, "disabled": false },
+        "onlyCategories": ["performance"],
+        "chromeFlags": "--headless=new --no-sandbox"
+      }
+    },
+    "assert": {
+      "assertMatrix": [
+        {
+          "matchingUrlPattern": "^https://[^/]+/(#.*)?$",
+          "assertions": {
+            "largest-contentful-paint": ["warn", { "maxNumericValue": 25000 }],
+            "cumulative-layout-shift": ["warn", { "maxNumericValue": 0.1 }],
+            "total-byte-weight": ["warn", { "maxNumericValue": 8200000 }],
+            "resource-summary:script:size": ["warn", { "maxNumericValue": 355000 }],
+            "resource-summary:image:size": ["warn", { "maxNumericValue": 7400000 }]
+          }
+        },
+        {
+          "matchingUrlPattern": "/landing/",
+          "assertions": {
+            "largest-contentful-paint": ["warn", { "maxNumericValue": 2500 }],
+            "cumulative-layout-shift": ["warn", { "maxNumericValue": 0.1 }],
+            "total-byte-weight": ["warn", { "maxNumericValue": 60000 }],
+            "resource-summary:script:size": ["warn", { "maxNumericValue": 40000 }],
+            "resource-summary:image:size": ["warn", { "maxNumericValue": 100000 }]
+          }
+        }
+      ]
+    },
+    "upload": { "target": "filesystem", "outputDir": ".lighthouseci" }
+  }
+}
