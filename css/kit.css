@@ -57,6 +57,17 @@ html:not(#k) .tn-pick .tn-name{color:#f4e8c8;text-shadow:0 1px 2px #1a0f06}
 html:not(#k) :is(.dc-pill,.ps-view,.ics,.nx-trail,.jr-core .jr-more):not([aria-pressed="true"]){color:var(--cream)}
 html:not(#k) .rc-chip:not([aria-pressed="true"]){color:var(--ink)}
 html:not(#k) :is(.dc-pill,.ps-view,.ics,.nx-trail,.jr-core .jr-more,.tn-pick .tn-name):not([aria-pressed="true"]){background-color:var(--glass)}
+html:not(#k) :is(.page-head .lib-btn,.page-head .copy,.lib-front-col .lib-btn.strong,.more-hits-in,#lib-expert[aria-pressed="true"]){color:var(--ink);text-shadow:none}
+html:not(#k) #lib-expert:not([aria-pressed="true"]){color:var(--cream)}
+html:not(#k) .mine-opt:not([aria-pressed="true"]){color:var(--cream)}
+html:not(#k) .sense-fab{color:var(--cream)}
+html:not(#k) .nx-k{color:color-mix(in srgb,var(--wax) 72%,#000)}
+html:not(#k) a.tile-band .tile-go,html:not(#k) span.tile-band .tile-go{color:var(--ink)}
+html:not(#k) .clock .tile-go{color:var(--cream)}
+html:not(#k) .build-stamp{opacity:.9}
+html:not(#k) .fl-name{opacity:1}
+html:not(#k) #sheet-title{padding-bottom:.14em;margin-bottom:-.14em}
+@media(pointer:coarse){html:not(#k) .sense-fab{opacity:1}}
 html:not(#k) :is(.atlas-btn,.atlas-open,.atlas-fold,.ch-bring,.ch-leave,.ch-no,.ch-skip,.ps-back,.dc-all-btn,.ga-stopsbtn,.ga-team,.more-hits,.atlas-chip,.ch-chip){color:#2a1608;background-color:transparent}
 html:not(#k) :is(.ch-ask,.ch-post,.ch-start,.ps-save){color:var(--cream);background-color:transparent}
 html:not(#k) :is(.atlas-x,.bsheet-x,.lb-close,.gl-x){border-radius:50%}
