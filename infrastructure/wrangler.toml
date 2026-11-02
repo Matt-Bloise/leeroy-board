@@ -16,6 +16,11 @@ routes = [
 crons = ["0 */6 * * *"]
 
 # Cloudflare D1 Serverless SQLite Database (Free Tier: 5 GB storage, 5M reads/day, 100k writes/day)
+# Workers Logs (free plan: 200,000 events a day, 3 days retention). Added so answer failures, provider fallbacks and delivery times are visible; console.log lines are captured as custom logs.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [[d1_databases]]
 binding = "DB"
 database_name = "leeroy-board-db"
