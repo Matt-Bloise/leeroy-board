@@ -33,6 +33,7 @@ const TABLE = {
   "POST /admin/members": ADMIN,
   "GET /admin/feedback": ADMIN,
   "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
+  "GET /admin/moments": ADMIN, // timed-post schedule status, no ids or content
   "PUT /persona": ADMIN,
   "POST /dispatch": MEMBER,
   "GET /intents": ADMIN,
@@ -172,6 +173,7 @@ const CALLS = {
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],
   "GET /admin/feedback": ["GET", "/api/admin/feedback"],
   "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
+  "GET /admin/moments": ["GET", "/api/admin/moments"],
   "PUT /persona": ["PUT", "/api/persona", "{}"],
   "POST /dispatch": ["POST", "/api/dispatch", "{}"],
   "GET /intents": ["GET", "/api/intents"],
