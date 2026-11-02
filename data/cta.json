@@ -159,5 +159,54 @@
   "old": "Just looking",
   "new": "Just take a look",
   "flavour": "Just looking"
+ },
+ {
+  "id": "isyou-heading",
+  "file": "js/next.js",
+  "old": "",
+  "new": "Is this you, {name}?",
+  "flavour": "Is this you, {name}?"
+ },
+ {
+  "id": "isyou-yes",
+  "file": "js/next.js",
+  "old": "",
+  "new": "Yes, that's me",
+  "flavour": "Yes, that's me"
+ },
+ {
+  "id": "isyou-no",
+  "file": "js/next.js",
+  "old": "",
+  "new": "No, pick someone else",
+  "flavour": "No, pick someone else"
+ },
+ {
+  "id": "isyou-known",
+  "file": "js/next.js",
+  "old": "",
+  "new": "We have you down as {build}.",
+  "flavour": "We have you down as {build}."
+ },
+ {
+  "id": "isyou-empty-heading",
+  "file": "js/next.js",
+  "old": "",
+  "new": "Your sheet is empty so far",
+  "flavour": "Your sheet is empty so far"
+ },
+ {
+  "id": "isyou-empty-line",
+  "file": "js/next.js",
+  "old": "",
+  "new": "Run /build in Discord and your class, race and role show up here.",
+  "flavour": "Run /build in Discord and your class, race and role show up here."
+ },
+ {
+  "id": "isyou-back",
+  "file": "js/next.js",
+  "old": "",
+  "new": "Pick a name instead",
+  "flavour": "Pick a name instead"
  }
 ]
