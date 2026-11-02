@@ -190,6 +190,9 @@ function youLoad() {
   const A = window.__ACTIVITY__; if (A && typeof A === "object") youFrom(A.user && typeof A.user === "object" ? A.user : A);
   const B = brain(), u = B && B.url ? B.url("/me") : null;
   if (!u || typeof fetch !== "function") return null; /* the brain may not be loaded yet: ask again on the next pass */
+  /* a credentialed call to the API origin is cross-origin: only make it for someone who has just signed in on the web (marker board-wl), so nobody else triggers a CORS refusal */
+  let wl = false; try { wl = localStorage.getItem("board-wl") === "1"; } catch (e) {}
+  if (!wl) return null;
   YOU.p = fetch(u, { cache: "no-store", credentials: "include" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => { youFrom(j); firstRun(); });
   return YOU.p;
 }

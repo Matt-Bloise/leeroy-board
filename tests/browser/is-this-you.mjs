@@ -21,6 +21,7 @@ const FAKE_ID = "123456789012345678";
 async function open(browser, opts, body, status = 200) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" }), page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  await ctx.addInitScript(() => { try { localStorage.setItem("board-wl", "1"); } catch (e) {} });
   await page.route(/\/api\/me(\?|$)/, (route) => {
     const origin = route.request().headers().origin || "*", cors = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true", "Access-Control-Allow-Headers": "*" };
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
