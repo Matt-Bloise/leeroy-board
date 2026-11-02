@@ -1220,7 +1220,8 @@ function renderFooter() {
   const when = fmtWhen(Date.parse(stamp) / 1000);
   $("#footer").replaceChildren(
     h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
-    h("span", { text: window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click a tile to open it. Escape returns to the wall. Press ? for keys." : "Tap a tile to open it. The X at the top, or your phone's back gesture, returns to the wall." }));
+    h("span", { text: window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click a tile to open it. Escape returns to the wall. Press ? for keys." : "Tap a tile to open it. The X at the top, or your phone's back gesture, returns to the wall." }),
+    h("button", { class: "tr-foot-btn", id: "foot-trust", type: "button", text: "What we track and why", onclick: (e) => { if (window.BoardTrust) window.BoardTrust.open(e.currentTarget); } }));
   $("#lib-sources").replaceChildren(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),
@@ -1622,7 +1623,7 @@ function startBar() {
   const label = (k) => $(`#tab-${k}`).textContent.trim(), bar = $("#bottombar"), menu = $("#more-menu");
   const more = h("button", { class: "bb", type: "button", "data-go": "more", "aria-expanded": "false", "aria-controls": "more-menu", text: "More" });
   bar.replaceChildren(...BAR.map((k) => h("button", { class: "bb", type: "button", "data-go": k, "aria-label": BAR_LABEL[k] ? label(k) : null, text: BAR_LABEL[k] || label(k) })), more);
-  menu.replaceChildren(h("button", { type: "button", "data-go": "wall", text: "The wall" }), ...MORE.map((k) => h("button", { type: "button", "data-go": k, text: label(k) })), h("button", { type: "button", "data-go": "sound", "aria-pressed": String(AU.on), text: "Sound" }), h("button", { type: "button", "data-go": "room", id: "more-room", text: "Room: auto" }));
+  menu.replaceChildren(h("button", { type: "button", "data-go": "wall", text: "The wall" }), ...MORE.map((k) => h("button", { type: "button", "data-go": k, text: label(k) })), h("button", { type: "button", "data-go": "sound", "aria-pressed": String(AU.on), text: "Sound" }), h("button", { type: "button", "data-go": "room", id: "more-room", text: "Room: auto" }), h("button", { type: "button", "data-go": "trust", text: "What we track and why" }));
   const setMore = (on) => { menu.hidden = !on; more.setAttribute("aria-expanded", String(on)); };
   closeMore = (back) => { if (menu.hidden) return false; setMore(false); if (back !== false) more.focus(); return true; };
   const go = (e) => {
@@ -1631,6 +1632,7 @@ function startBar() {
     if (k === "more") { setMore(menu.hidden); if (!menu.hidden) menu.querySelector("button").focus(); return; }
     setMore(false);
     if (k === "room") return;
+    if (k === "trust") { if (window.BoardTrust) window.BoardTrust.open(more); return; }
     if (k === "sound") setSound(!AU.on); else if (k === "wall") requestClose(); else if (k === "search") LIBUI.focusSearch(); else { switchTab(k); b.focus(); }
   };
   bar.addEventListener("click", go); menu.addEventListener("click", go);

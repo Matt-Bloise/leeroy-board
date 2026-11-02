@@ -1,0 +1,14 @@
+/* What we track and why: a parchment card over the board, one column, readable at 390 px. */
+.tr-back { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; box-sizing: border-box; background: rgba(0, 0, 0, 0.55); overflow-y: auto; }
+.tr-card { background: var(--parchment); color: var(--ink); --text: var(--ink); --text-dim: var(--ink-soft); border-radius: 6px; border-top: 3px solid var(--wax); box-shadow: 0 20px 50px var(--shadow); width: min(32rem, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; box-sizing: border-box; padding: 14px 16px 16px; display: grid; gap: 10px; min-width: 0; }
+.tr-title { margin: 0; font-family: var(--font-sc); font-size: 1.2rem; font-weight: 400; letter-spacing: 0.08em; color: var(--ink); overflow-wrap: anywhere; }
+.tr-intro, .tr-what, .tr-why, .tr-erase { margin: 0; font-family: var(--font-body); font-size: 1.05rem; line-height: 1.4; overflow-wrap: anywhere; }
+.tr-intro, .tr-why { color: var(--ink-soft); }
+.tr-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.tr-line { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--parchment-2); min-width: 0; }
+.tr-label { margin: 0; font-family: var(--font-sc); font-size: 1rem; font-weight: 400; letter-spacing: 0.08em; color: var(--ink-soft); }
+.tr-whyk { font-weight: 600; }
+.tr-link { text-decoration: underline; text-decoration-style: dotted; color: var(--ink-soft); }
+.tr-soon { font-style: italic; color: var(--ink-soft); }
+.tr-close { justify-self: end; min-height: 44px; padding: 8px 18px; font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); background: var(--ink); border: 0; border-radius: 4px; cursor: pointer; }
+.tr-foot-btn { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
