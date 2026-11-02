@@ -379,20 +379,88 @@ export function applyVoiceGuards(text, opts = {}) {
   }
 }
 
+// ---- "More" and "Sources" split. With ctx.ux the model may end its reply with `---more---` and/or `---sources---`
+// markers, each on its own line. The channel keeps only the text before the first marker; the rest is stored for the buttons.
+
+const MARKER_RE = /^[ \t]*---(more|sources)---[ \t]*$/gim;
+export const MAX_DETAIL_CHARS = 7000;
+
+export function splitAnswerParts(raw) {
+  const text = String(raw == null ? "" : raw).replace(/\r\n?/g, "\n");
+  const marks = [...text.matchAll(MARKER_RE)];
+  if (!marks.length) return { main: text, more: "", sources: "" };
+  const parts = { more: [], sources: [] };
+  marks.forEach((m, i) => {
+    const end = i + 1 < marks.length ? marks[i + 1].index : text.length;
+    parts[m[1].toLowerCase()].push(text.slice(m.index + m[0].length, end).trim());
+  });
+  return {
+    main: text.slice(0, marks[0].index).trim(),
+    more: parts.more.filter(Boolean).join("\n\n"),
+    sources: parts.sources.filter(Boolean).join("\n"),
+  };
+}
+
+function tidyDetail(text) {
+  return String(text)
+    .split("\n")
+    .map((l) => tidy(l.replace(BRACKET_ID_RE, "")))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// Library ids become titled links; anything else is kept as a bullet with bare addresses wrapped so they do not embed.
+function renderSourcesDetail(raw, ctx) {
+  const byId = new Map();
+  for (const p of Array.isArray(ctx.pages) ? ctx.pages : []) if (p && typeof p.id === "string") byId.set(p.id, p);
+  const base = String(ctx.boardUrl || DEFAULT_BOARD).replace(/\/+$/, "");
+  const out = [];
+  for (const line of String(raw).split("\n")) {
+    const t = line.replace(/^\s*(?:-#\s*)?(?:[-*•]\s+)?/, "").trim();
+    if (!t) continue;
+    const s = SOURCES_RE.exec(t);
+    const body = s ? s[1] : t;
+    const ids = parseSourceIds(body).filter((id) => byId.has(id));
+    if (ids.length) {
+      for (const id of ids) out.push(`• [${cleanTitle(byId.get(id).title || id) || id}](<${base}/#library.${id.replace("/", ".")}>)`);
+      continue;
+    }
+    out.push(`• ${body.replace(BRACKET_ID_RE, "").replace(/(?<!<)(https?:\/\/[^\s<>)]+)/g, "<$1>")}`);
+  }
+  return [...new Set(out)].join("\n");
+}
+
+// { main, more, sources }. Without ctx.ux nothing is split or guarded and main is exactly what formatAnswer always returned.
+export function formatAnswerParts(raw, ctx = {}) {
+  if (typeof raw !== "string") return { main: raw, more: "", sources: "" };
+  const c = ctx && typeof ctx === "object" ? ctx : {};
+  try {
+    const guardOpts = { roster: c.roster, intentId: c.intentId, egg: c.egg, isCoach: Boolean(c.isCoach) || c.journey === "guided" };
+    const split = c.ux ? splitAnswerParts(raw) : { main: raw, more: "", sources: "" };
+    // A reply that is only a marker section still gets a channel body.
+    const mainRaw = split.main || split.more || split.sources || raw;
+    let main = format(mainRaw, c);
+    if (typeof main !== "string" || !main.length) main = raw;
+    if (c.ux) main = applyVoiceGuards(main, { ...guardOpts, full: true });
+    let more = "";
+    let sources = "";
+    if (c.ux) {
+      if (split.main) {
+        more = split.more ? applyVoiceGuards(tidyDetail(split.more), guardOpts).slice(0, MAX_DETAIL_CHARS) : "";
+        sources = split.sources ? applyVoiceGuards(renderSourcesDetail(split.sources, c), guardOpts).slice(0, MAX_DETAIL_CHARS) : "";
+      }
+    }
+    return { main, more, sources };
+  } catch {
+    return { main: raw, more: "", sources: "" };
+  }
+}
+
 export function formatAnswer(raw, ctx = {}) {
   if (typeof raw !== "string") return raw;
   try {
-    const c = ctx && typeof ctx === "object" ? ctx : {};
-    let out = format(raw, c);
-    if (c.ux && typeof out === "string" && out.length) {
-      out = applyVoiceGuards(out, {
-        full: true,
-        roster: c.roster,
-        intentId: c.intentId,
-        egg: c.egg,
-        isCoach: Boolean(c.isCoach) || c.journey === "guided",
-      });
-    }
+    const out = formatAnswerParts(raw, ctx).main;
     return typeof out === "string" && out.length ? out : raw;
   } catch {
     return raw;

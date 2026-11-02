@@ -29,6 +29,11 @@ Derived on 2026-11-02 from `infrastructure/schema.sql` (204 lines, 17 tables) an
 | `ask_turns` | `answer`, `cites_json` | Free text | AI reply and citations | May echo the question |
 | `ask_turns` | `share` | Links | Whether the turn is shared with the group | Default 1 (shared) |
 | `ask_turns` | `model`, `latency_ms`, `status`, `created_at`, `answered_at` | Links | Which AI vendor model answered, timing | `model` shows which vendor received the question |
+| `answer_details` | `more`, `sources` | Free text | Extra answer text behind the "More" and "Sources" buttons (ANSWER_UX) | Model output; may echo the question. Deleted after 30 days by the cron |
+| `answer_details` | `asker_hash` | Links | Salted hash (USER_SALT) of the asker, set only for private answers so only they can open the detail | Not a Discord id |
+| `answer_details` | `intent_id`, `message_id`, `created_at` | Links | Answer id (joins to `ask_turns`), Discord message id the buttons are bound to, time | |
+| `answer_feedback` | `user_hash` | Links | Salted hash (USER_SALT) of the person who clicked Helpful or Off; one row per person per answer | Not a Discord id; never returned by any route. Deleted after 90 days by the cron |
+| `answer_feedback` | `intent_id`, `vote`, `created_at` | Links | Which answer, +1 or -1, time | Joins to `ask_turns` for the admin report |
 | `fact_fixes` | `by_name` | Names | Who made a library edit | |
 | `fact_fixes` | `note` | Free text | Optional edit note | |
 | `fact_fixes` | `old_value`, `new_value`, `page_id`, `fact_key`, `created_at` | Links | The edit itself | |
