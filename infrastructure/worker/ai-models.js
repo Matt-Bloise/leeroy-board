@@ -15,6 +15,7 @@
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
+import { loadPersona, buildSystemPrompt } from "./persona.js";
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -611,7 +612,10 @@ export async function answerWithAi({
       "Display names only in full every time (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward; never real first names). Inform, never instruct: facts, options, and trade-offs.",
       "Keep answers concise (2 to 4 sentences), warm, plain-spoken, and cite specific library page IDs in brackets like [classes/paladin-holy] or [dungeons/overview] whenever you use a fact.",
     ].join(" ");
-    const systemPrompt = isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
+    const persona = await loadPersona(env);
+    const systemPrompt = persona
+      ? buildSystemPrompt(persona, { journey, question, partySummary, libraryStamp, isCoach, coachPrompt: COACH_PROMPT })
+      : isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
 
     const userPrompt = `Party Context:\n${partySummary}\n\nTop Library Facts:\n${topFactHits.join(
       "\n"

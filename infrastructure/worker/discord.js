@@ -25,6 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
+import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import {
   broadcastToRoom,
   purgeWorkerCache,
@@ -557,24 +558,32 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
         at: now,
       });
 
+      const persona = await loadPersona(env);
       ctx.waitUntil(
         (async () => {
           await answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate });
-          const row = await env.DB.prepare("SELECT answer FROM ask_turns WHERE id = ?").bind(intentId).first();
-          if (interaction.application_id && interaction.token && row && row.answer) {
+          const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
+          const text = row && row.status === "error" && persona ? pickLine(persona, "errorLines", intentId) : row && row.answer;
+          if (interaction.application_id && interaction.token && text) {
             await fetch(
               `https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`,
               {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ content: row.answer }),
+                body: JSON.stringify({ content: text }),
               }
             ).catch(() => {});
           }
         })()
       );
 
-      // Return Type 5 (Deferred Response)
+      // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
+      if (persona) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       return new Response(
         JSON.stringify({ type: 5, data: isPrivate ? { flags: 64 } : {} }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -1057,7 +1066,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     // 2n. `/help`
     if (cmd === "help") {
       const help = [
-        "**Leeroy Jenkins, party assistant.** Ask anything about WoW: Forever.",
+        helpIntro(await loadPersona(env), "**Leeroy Jenkins, party assistant.** Ask anything about WoW: Forever."),
         `**The Living Board:** [open it](<${boardUrl}>) in any browser, nothing to install.`,
         "**Ask:** `/ask <question>` plus your question, or set `private: True` to keep the answer to yourself.",
         "**Ask about a message:** computer, right-click it; phone, press and hold it. Then Apps -> **Ask Leeroy** (or **Fix this fact**).",
@@ -1087,7 +1096,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `No library page found for "${title}". Check \`/library\` for all available shelves.`,
+              content: `${pickLine(await loadPersona(env), "emptyLines", title, `No library page found for "${title}".`)} Check \`/library\` for all available shelves.`,
               flags: 64,
             },
           }),
@@ -1364,10 +1373,12 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
         at: now,
       });
 
+      const persona = await loadPersona(env);
       ctx.waitUntil(
         (async () => {
           await answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true });
-          const row = await env.DB.prepare("SELECT answer FROM ask_turns WHERE id = ?").bind(intentId).first();
+          const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
+          if (row && row.status === "error" && persona) row.answer = pickLine(persona, "errorLines", intentId);
           if (interaction.application_id && interaction.token && row && row.answer) {
             await fetch(
               `https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`,
@@ -1384,10 +1395,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
       );
 
       return new Response(
-        JSON.stringify({
-          type: 5,
-          data: {},
-        }),
+        JSON.stringify(persona ? { type: 4, data: { content: pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
