@@ -84,7 +84,7 @@ test("validator: accepts and rejects", () => {
 });
 
 test("spec covers exactly the documented public and member routes", () => {
-  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/atlas/{name}", "/api/bootstrap", "/api/data/{name}", "/api/health", "/api/me", "/api/signups", "/api/state"]);
+  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
 });
 
 // ---- routes ----------------------------------------------------------------------------------------------------
@@ -167,4 +167,123 @@ test("finding: an unknown route answers 404 with {error, path}", async () => {
   assert.equal(res.status, 404);
   assert.equal(typeof res.body.error, "string");
   assert.equal(res.body.path, "/zz-no-such-route", "path echoes the route without the /api prefix");
+});
+
+
+// ---- routes added after the first spec: web login, votes, admin writes, Discord interactions ---------------------
+// Nothing here sends a credential, a body that could change state, or a signed Discord request. The WEB_LOGIN flag is a
+// Worker var and may differ per environment, so each web-login test accepts the flag-off 404 and, when the flag is on, checks the
+// documented behaviour instead.
+async function raw(method, path, headers = {}, body) {
+  const r = await fetch(`${API}${path}`, { method, headers, body, redirect: "manual" });
+  const text = await r.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* not JSON */ }
+  return { status: r.status, headers: r.headers, text, json };
+}
+const documented = (path, method, status) => assert.ok(spec.paths[path][method].responses[String(status)], `${method} ${path}: ${status} is not documented`);
+const matchesError = (res, path, method) => {
+  assert.match(res.headers.get("content-type") || "", /^application\/json/, `${path}: content-type`);
+  const errs = validate(res.json, schemaFor(path, method, res.status));
+  assert.deepEqual(errs, [], `${path} (${res.status}): ${errs.join("; ")}`);
+};
+
+test("GET /api/votes matches the contract and exposes no ballots or hashes", async () => {
+  const res = await get("/api/votes", pub);
+  assert.equal(res.status, 200);
+  conforms(res);
+  assert.ok(!/ballots|voter|hash/i.test(JSON.stringify(res.body)), "private vote fields in the public listing");
+});
+
+test("GET /api/auth/discord/start: 404 Error with the flag off; with it on a 302 to Discord with only a state cookie, or a documented refusal", async () => {
+  const res = await raw("GET", "/api/auth/discord/start", pub);
+  documented("/api/auth/discord/start", "get", res.status);
+  if (res.status === 302) {
+    const loc = new URL(res.headers.get("location"));
+    assert.equal(loc.origin + loc.pathname, "https://discord.com/oauth2/authorize");
+    assert.equal(loc.searchParams.get("scope"), "identify");
+    assert.equal(loc.searchParams.get("code_challenge_method"), "S256");
+    assert.match(res.headers.get("set-cookie") || "", /^__Host-oauth=[\w-]{43}\.[\w-]{43}; .*Secure; HttpOnly/);
+    assert.ok(!/__Host-sess/.test(res.headers.get("set-cookie") || ""), "start must not set a session");
+  } else matchesError(res, "/api/auth/discord/start", "get");
+});
+
+test("GET /api/auth/discord/callback without a state cookie never creates a session", async () => {
+  const res = await raw("GET", "/api/auth/discord/callback?state=x&code=abcdef123", pub);
+  documented("/api/auth/discord/callback", "get", res.status);
+  assert.ok(!/__Host-sess=[\w-]{10,}/.test(res.headers.get("set-cookie") || ""), "a session cookie was set");
+  if (res.status === 302) assert.match(res.headers.get("location") || "", /\?login=state$/);
+  else matchesError(res, "/api/auth/discord/callback", "get");
+});
+
+test("POST /api/auth/logout without an Origin header: 404 with the flag off, 403 origin not allowed with it on", async () => {
+  const res = await raw("POST", "/api/auth/logout", {}, "{}");
+  documented("/api/auth/logout", "post", res.status);
+  assert.ok([404, 403].includes(res.status), `got ${res.status}`);
+  matchesError(res, "/api/auth/logout", "post");
+  if (res.status === 403) assert.equal(res.json.error, "origin not allowed");
+});
+
+test("POST /api/auth/logout with an allowed Origin and no cookie: 404 with the flag off, 200 {ok:true} with it on", async () => {
+  const res = await raw("POST", "/api/auth/logout", pub, "{}");
+  documented("/api/auth/logout", "post", res.status);
+  assert.ok([404, 200].includes(res.status), `got ${res.status}`);
+  matchesError(res, "/api/auth/logout", "post");
+});
+
+test("finding: the flag-off 404 on a web-login route has no path field, unlike the unknown-route 404", async () => {
+  const off = await raw("GET", "/api/auth/discord/start", pub);
+  if (off.status !== 404) return; // flag on in this environment
+  assert.deepEqual(off.json, { error: "not found" });
+  const unknown = await raw("GET", "/api/zz-no-such-route", pub);
+  assert.notDeepEqual(off.json, unknown.json, "the two 404 bodies differ, so the flag state can be told apart");
+});
+
+test("admin write routes refuse a request without the admin token (401) before reading the body", async () => {
+  const calls = [
+    ["POST", "/api/announce", "/api/announce", "post"],
+    ["PUT", "/api/config/name_map", "/api/config/{key}", "put"],
+    ["PUT", "/api/config/discord_roster", "/api/config/{key}", "put"],
+    ["PUT", "/api/persona", "/api/persona", "put"],
+  ];
+  for (const [method, path, specPath, m] of calls) {
+    const res = await raw(method, path, { ...pub, "Content-Type": "application/json" }, "{}");
+    assert.equal(res.status, 401, `${method} ${path}`);
+    matchesError(res, specPath, m);
+    assert.equal(res.json.error, "Unauthorized");
+  }
+});
+
+test("a wrong token is refused like a missing one on the admin write routes", async () => {
+  const res = await raw("PUT", "/api/persona", { ...pub, Authorization: "Bearer not-the-admin-token-0123456789", "Content-Type": "application/json" }, "{}");
+  assert.equal(res.status, 401);
+});
+
+test("finding: config and persona are write only; GET answers the generic 404 and echoes no private data", async () => {
+  for (const path of ["/api/config/name_map", "/api/config/discord_members", "/api/config/discord_roster", "/api/persona"]) {
+    for (const headers of [pub, admin]) {
+      const res = await raw("GET", path, headers);
+      assert.equal(res.status, 404, `${path} ${headers === admin ? "admin" : "anonymous"}`);
+      assert.deepEqual(Object.keys(res.json).sort(), ["error", "path"]);
+    }
+  }
+});
+
+test("POST /api/discord with a stale timestamp is 401 text/plain (500 only when the public key is not configured)", async () => {
+  const stale = String(Math.floor(Date.now() / 1000) - 3600);
+  for (const ts of [stale, "not-a-number", ""]) {
+    const res = await raw("POST", "/api/discord", { "X-Signature-Ed25519": "00".repeat(64), "X-Signature-Timestamp": ts, "Content-Type": "application/json" }, '{"type":1}');
+    documented("/api/discord", "post", res.status);
+    assert.ok([401, 500].includes(res.status), `ts=${JSON.stringify(ts)} got ${res.status}`);
+    if (res.status === 401) {
+      assert.match(res.headers.get("content-type") || "", /^text\/plain/);
+      assert.equal(res.text, "Stale or invalid request timestamp");
+    } else assert.equal(res.json.error, "DISCORD_PUBLIC_KEY not configured");
+  }
+});
+
+test("POST /api/discord with a fresh timestamp and a bad signature is 401 'Invalid request signature'", async () => {
+  const res = await raw("POST", "/api/discord", { "X-Signature-Ed25519": "00".repeat(64), "X-Signature-Timestamp": String(Math.floor(Date.now() / 1000)), "Content-Type": "application/json" }, '{"type":1}');
+  assert.ok([401, 500].includes(res.status), `got ${res.status}`);
+  if (res.status === 401) assert.equal(res.text, "Invalid request signature");
 });

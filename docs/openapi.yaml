@@ -9,7 +9,9 @@ info:
 
     Every route is also reachable without the /api prefix on the Worker origin; the site uses /api/*.
     A request whose Origin header is not allowed answers 403 with a text/plain body "Forbidden Origin" (not JSON).
-    Admin and write routes (PUT /api/data/{name}, intents, persona, config and so on) are out of scope here.
+    Admin and write routes (PUT /api/data/{name}, intents and so on) are out of scope here, except the ones documented below
+    (login, logout, announce, config, persona, votes, the Discord interactions endpoint). No response body that would reveal private
+    configuration (the persona pack, name_map, discord_members, discord_roster) is described: those routes are write-only.
     tests/api/contract.test.mjs reads this file and validates live preview responses against these schemas.
 servers:
   - url: https://api.leeroy.party
@@ -21,7 +23,19 @@ components:
     boardKey:
       type: http
       scheme: bearer
-      description: A member board key. Also accepted as `Authorization Board <key>` or the `X-Board-Key` header. The admin token resolves to the default admin member.
+      description: |
+        A member board key sent as `Authorization: Board <key>`. That is the only form that resolves a member key (auth.js keyFromRequest).
+        The admin token (BOARD_ADMIN_TOKEN) is accepted as `Authorization: Bearer <token>`, `Authorization: Board <token>` or the
+        `X-Board-Key` header, and resolves to a fixed default member (slug `bloise`).
+    adminToken:
+      type: http
+      scheme: bearer
+      description: BOARD_ADMIN_TOKEN only (same header forms as above). A member key is refused with 401. 503 when the Worker has no admin token configured.
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-sess
+      description: Web login session (Secure, HttpOnly, SameSite=Lax, 30 days). Only honoured while the WEB_LOGIN flag is on.
   schemas:
     Error:
       type: object
@@ -43,6 +57,10 @@ components:
           type: object
           description: Admin token only. Provider name to configured flag.
           additionalProperties: { type: boolean }
+        saltsMissing:
+          type: array
+          description: Admin token only. Names of unset or too short salt secrets (never values). A non-empty list means member keys or guest asks are refused.
+          items: { type: string }
         aiBudget:
           type: object
           description: Admin token only.
@@ -123,12 +141,79 @@ components:
         slug: { type: string, minLength: 1 }
         name: { type: string, minLength: 1 }
         pending: { type: array, items: {} }
+    SessionMe:
+      description: |
+        `GET /api/me` answered from a web session cookie (WEB_LOGIN on, no valid board key). Not the same shape as Me:
+        there is no `slug`, and the caller's own Discord user id is returned.
+      type: object
+      required: [name, discord_user_id, expires_at, via, pending]
+      properties:
+        name: { type: string, nullable: true, description: Discord display name captured at login. }
+        discord_user_id: { type: string, pattern: '^\d{17,20}$' }
+        expires_at: { type: string, format: date-time }
+        via: { type: string, enum: [web-session] }
+        pending: { type: array, items: {} }
+    Votes:
+      type: object
+      required: [votes]
+      properties:
+        votes:
+          type: array
+          description: Newest first, at most 50. Public view only; ballots and voter hashes never leave the Worker.
+          items:
+            type: object
+            required: [id, title, choices, closes_at, open]
+            properties:
+              id: { type: string, pattern: '^[a-f0-9]{8}$' }
+              title: { type: string }
+              choices:
+                type: array
+                items:
+                  type: object
+                  required: [label, count]
+                  properties:
+                    label: { type: string }
+                    count: { type: integer }
+              closes_at: { type: string, format: date-time }
+              open: { type: boolean }
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, enum: [true] }
+    AnnounceRequest:
+      type: object
+      required: [channel_key, text]
+      properties:
+        channel_key: { type: string, description: A name in the discord_roster channels map. Ids are never accepted from the request. }
+        text: { type: string, description: Clamped to 2000 characters. }
+        mention_role: { type: string, nullable: true, description: A name in the discord_roster roles map. Pings exactly that role, nothing else. }
+        button_label: { type: string, maxLength: 80, description: Required with button_url. }
+        button_url: { type: string, maxLength: 512, description: https only. }
+    PersonaPack:
+      type: object
+      required: [version, system]
+      description: Request body only. Write-only resource; no route returns it.
+      properties:
+        version: { type: number }
+        system: { type: string }
+      additionalProperties: true
     Document:
       description: A kv_state JSON document. Free-form; the shape depends on the document.
       type: object
       nullable: true
       additionalProperties: true
   responses:
+    Unauthorized:
+      description: Missing or wrong admin token.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotConfigured:
+      description: The Worker has no admin token (or no bot token for announce) configured.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Name is not on the allow list (public-docs.js) or no row exists. Both cases give the same body.
       content:
@@ -138,6 +223,7 @@ paths:
   /api/health:
     get:
       summary: Liveness. No key gives the minimal body; the admin token adds provider detail.
+      description: GET / on the Worker origin answers the same body. A wrong or member key gets the minimal body, never a 401.
       responses:
         "200":
           description: OK
@@ -173,17 +259,26 @@ paths:
               schema: { $ref: '#/components/schemas/State' }
   /api/me:
     get:
-      summary: Resolves a board key to a party member.
+      summary: Resolves a board key, or (WEB_LOGIN on) a web session cookie, to an identity.
+      description: |
+        Order: a valid board key or the admin token wins and gives the Me shape. Only when that fails and WEB_LOGIN is on is the
+        `__Host-sess` cookie tried, which gives the SessionMe shape (no-store, and Access-Control-Allow-Credentials when the Origin is allowed).
+        With the flag off the cookie is ignored. An `Authorization: Bearer <session token>` from the older /api/auth/discord login does not
+        reach the session handler on GET: it is a 401 here (HEAD and DELETE /api/me for that older session are out of scope).
       security:
         - boardKey: []
+        - sessionCookie: []
       responses:
         "200":
-          description: OK
+          description: OK. Me for a key, SessionMe for a cookie.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Me' }
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/Me' }
+                  - { $ref: '#/components/schemas/SessionMe' }
         "401":
-          description: No key, or an unknown key.
+          description: No key and no valid session, or an unknown key.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -220,3 +315,267 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Document' }
         "404": { $ref: '#/components/responses/NotFound' }
+  /api/votes:
+    get:
+      summary: Public vote listing (edge cached 10 s). Read only.
+      description: |
+        Votes are created and cast from Discord (slash command and buttons); there is no HTTP route to create or cast one.
+        Each vote exposes id, title, per-choice counts, closes_at and open. Voter ids, ballots and the salted voter hashes are never returned.
+      responses:
+        "200":
+          description: OK. An empty list when no vote exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Votes' }
+  /api/auth/discord/start:
+    get:
+      summary: Web login step 1. Sets a 10 minute pre-session cookie and redirects to Discord.
+      description: |
+        Behind the WEB_LOGIN flag (default off). With the flag off the answer is 404 `{"error":"not found"}`, for every method.
+        With it on: a random state and a PKCE (S256) verifier go into the `__Host-oauth` cookie as `<state>.<verifier>`
+        (Secure, HttpOnly, SameSite=Lax, Max-Age 600), then 302 to https://discord.com/oauth2/authorize with scope=identify,
+        prompt=none and redirect_uri https://api.leeroy.party/api/auth/discord/callback. Courtesy limit of 20 per IP per minute
+        per isolate. Any other method answers 405 with an Allow header (flag on only). No key is needed.
+      responses:
+        "302":
+          description: Redirect to Discord. Location is the authorize URL; Set-Cookie is `__Host-oauth`.
+          headers:
+            Location: { schema: { type: string } }
+            Set-Cookie: { schema: { type: string } }
+        "404":
+          description: WEB_LOGIN is off.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "429":
+          description: Rate limited. Retry-After 60.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503":
+          description: DISCORD_CLIENT_ID is not configured.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/auth/discord/callback:
+    get:
+      summary: Web login step 2. Checks the state cookie, exchanges the code, sets the session cookie.
+      description: |
+        Behind the WEB_LOGIN flag (404 when off). Every outcome clears `__Host-oauth`. Failures are not JSON errors but a 302 to
+        `<BOARD_PUBLIC_URL>/?login=<reason>` with reason one of state (cookie missing, malformed, mismatched or state replayed),
+        denied (Discord returned `error`), code, exchange (Discord refused, or no usable user id) or error (the session write failed).
+        Success is a 302 to `/?login=ok` with `__Host-sess` set. The Discord token is used once and discarded; only a sha256 of the
+        session token is stored. Authenticated by the state cookie plus Discord's code, not by a board key.
+      parameters:
+        - { name: state, in: query, schema: { type: string } }
+        - { name: code, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: Redirect to the board with a login reason. Set-Cookie clears `__Host-oauth`; on success also sets `__Host-sess`.
+          headers:
+            Location: { schema: { type: string } }
+        "404":
+          description: WEB_LOGIN is off.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "429":
+          description: Rate limited. Retry-After 60.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503":
+          description: Client id or secret not configured, or the sessions_v2 and users tables are missing.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/auth/logout:
+    post:
+      summary: Revokes the caller's own web session and clears `__Host-sess`.
+      description: |
+        Behind the WEB_LOGIN flag (404 when off). Acts only on the cookie the caller sends. Needs an Origin header: a request without one
+        is 403 `{"error":"origin not allowed"}` (JSON), while an Origin not on ALLOWED_ORIGINS is refused earlier with the text/plain
+        "Forbidden Origin". With an allowed Origin the answer is 200 `{ok:true}` with the cookie cleared, even if there was no session.
+        Other methods are 405 (flag on only).
+      security:
+        - sessionCookie: []
+        - {}
+      responses:
+        "200":
+          description: Session revoked (or none). Set-Cookie clears `__Host-sess`; Access-Control-Allow-Credentials true.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        "403":
+          description: No Origin header.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404":
+          description: WEB_LOGIN is off.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "500":
+          description: The session row could not be deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/announce:
+    post:
+      summary: Admin only. Posts one message to a Discord channel named in the discord_roster config.
+      description: |
+        Channel and role ids come from the discord_roster row, never from the request; unknown names are 400. The post carries
+        `allowed_mentions` that allow no mentions, or exactly the one named role. Checks run in this order: admin token (503/401),
+        bot token (503), JSON object body (400), channel_key (400), mention_role (400), text and button (400).
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnounceRequest' }
+      responses:
+        "200":
+          description: Discord accepted the post. `status` is Discord's HTTP status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, status]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  status: { type: integer }
+        "400":
+          description: Invalid body, unknown channel_key or mention_role, missing text, or a bad button.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "502":
+          description: Discord refused the post (`ok:false`, `status`, `error`) or the request to Discord failed (`error` only).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  ok: { type: boolean }
+                  status: { type: integer }
+                  error: { type: string }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/config/{key}:
+    put:
+      summary: Admin only. Replaces one private config row. Write only.
+      description: |
+        Keys: name_map, discord_members, discord_roster; any other key is 400. Body is JSON, at most 20000 bytes (413), validated per key (400).
+        The success body echoes only the key and an entry count, never the stored value. There is no GET route: a GET answers the
+        generic route 404. These rows are never served by /api/data/{name}.
+      security:
+        - adminToken: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string, enum: [name_map, discord_members, discord_roster] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, key, entries]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  key: { type: string }
+                  entries: { type: integer }
+        "400":
+          description: Unknown key, body not valid JSON, or the shape check failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "413":
+          description: Body over 20000 bytes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/persona:
+    put:
+      summary: Admin only. Replaces the persona pack. Write only.
+      description: |
+        Body is a JSON object with a numeric `version` and a string `system`, at most 200000 bytes. The pack is never returned by any route;
+        the success body carries only the version and the byte count.
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PersonaPack' }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, version, bytes]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  version: { type: number }
+                  bytes: { type: integer }
+        "400":
+          description: Not a JSON object with numeric version and string system.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "413":
+          description: Body over 200000 bytes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/discord:
+    post:
+      summary: Discord interactions endpoint. Called by Discord only; signed, not keyed.
+      description: |
+        Discord sends `X-Signature-Ed25519` (hex) and `X-Signature-Timestamp` (unix seconds) with the raw body. Order of checks:
+        DISCORD_PUBLIC_KEY unset gives 500 (before anything else); a timestamp that is not digits or is more than 300 seconds from now
+        (past or future) gives 401 "Stale or invalid request timestamp" (text/plain); a missing or bad Ed25519 signature over
+        `timestamp + body` gives 401 "Invalid request signature" (text/plain). A PING (type 1) is answered `{"type":1}`. Everything else
+        is an interaction response whose shape is Discord's and is not described here. A validly signed request cannot be made in a
+        preview; it is checked on production after merge. No board key is read.
+      parameters:
+        - { name: X-Signature-Ed25519, in: header, required: true, schema: { type: string } }
+        - { name: X-Signature-Timestamp, in: header, required: true, schema: { type: string, pattern: '^\d{1,15}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: PING gets `{type:1}`; other interactions get a Discord interaction response.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401":
+          description: Stale, future-dated or malformed timestamp, or an invalid or missing signature.
+          content:
+            text/plain:
+              schema: { type: string }
+        "500":
+          description: DISCORD_PUBLIC_KEY is not configured.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
