@@ -14,6 +14,7 @@
 
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays } from "./rank-core.js";
+import { sha256Hex } from "./crypto.js";
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -148,7 +149,52 @@ function scorePageForQuestion(page, words) {
   return score;
 }
 
-async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep }) {
+function resolveGatewayUrl(env, providerSlug, defaultEndpoint) {
+  const accountId = env && env.CLOUDFLARE_ACCOUNT_ID;
+  const gatewayId = env && env.AI_GATEWAY_ID;
+  if (!accountId || !gatewayId) return defaultEndpoint;
+  return `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${providerSlug}`;
+}
+
+async function fetchWithGatewayFallback({
+  env,
+  providerSlug,
+  defaultEndpoint,
+  headers = {},
+  body,
+  skipCache = false,
+  cacheKey = null,
+}) {
+  const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
+  const cacheHeaders = env && env.AI_GATEWAY_ID ? {
+    "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
+    "cf-aig-metadata": JSON.stringify({ app: "leeroy-board", service: "chamber" }),
+    ...(skipCache ? { "cf-aig-skip-cache": "true" } : {}),
+    ...(cacheKey ? { "cf-aig-cache-key": String(cacheKey) } : {}),
+  } : {};
+
+  if (gwUrl !== defaultEndpoint) {
+    try {
+      const resp = await fetch(gwUrl, {
+        method: "POST",
+        headers: { ...headers, ...cacheHeaders },
+        body,
+      });
+      // If gateway returns 404 (e.g. gateway not configured in CF dash), fall back to direct endpoint
+      if (resp.status !== 404) return resp;
+    } catch {
+      // Gateway network error, fall back to direct endpoint
+    }
+  }
+
+  return await fetch(defaultEndpoint, {
+    method: "POST",
+    headers,
+    body,
+  });
+}
+
+async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null }) {
   if (!env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY secret is not configured on the Cloudflare Worker");
   }
@@ -156,25 +202,32 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep }) {
     ? env.CLAUDE_MODEL_DEEP || "claude-sonnet-4-5-20250929"
     : env.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001";
 
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
+  const defaultEndpoint = "https://api.anthropic.com/v1/messages";
+  const body = JSON.stringify({
+    model,
+    max_tokens: 350,
+    system: [
+      {
+        type: "text",
+        text: systemPrompt,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
+    messages: [{ role: "user", content: userPrompt }],
+  });
+
+  const resp = await fetchWithGatewayFallback({
+    env,
+    providerSlug: "anthropic/v1/messages",
+    defaultEndpoint,
     headers: {
       "Content-Type": "application/json",
       "x-api-key": env.ANTHROPIC_API_KEY,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: 350,
-      system: [
-        {
-          type: "text",
-          text: systemPrompt,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [{ role: "user", content: userPrompt }],
-    }),
+    body,
+    skipCache,
+    cacheKey,
   });
 
   if (!resp.ok) {
@@ -192,7 +245,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep }) {
   return { answer, model, provider: "claude" };
 }
 
-async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep }) {
+async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null }) {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY secret is not configured on the Cloudflare Worker");
   }
@@ -200,28 +253,36 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep }) {
     ? env.GEMINI_MODEL_DEEP || "gemini-2.5-pro"
     : env.GEMINI_MODEL_FAST || "gemini-2.5-flash";
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+  const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
   )}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
 
-  const resp = await fetch(endpoint, {
-    method: "POST",
+  const body = JSON.stringify({
+    systemInstruction: {
+      parts: [{ text: systemPrompt }],
+    },
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: userPrompt }],
+      },
+    ],
+    generationConfig: {
+      maxOutputTokens: 350,
+      temperature: 0.3,
+    },
+  });
+
+  const resp = await fetchWithGatewayFallback({
+    env,
+    providerSlug: `google-ai-studio/v1beta/models/${encodeURIComponent(
+      model
+    )}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+    defaultEndpoint,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: systemPrompt }],
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userPrompt }],
-        },
-      ],
-      generationConfig: {
-        maxOutputTokens: 350,
-        temperature: 0.3,
-      },
-    }),
+    body,
+    skipCache,
+    cacheKey,
   });
 
   if (!resp.ok) {
@@ -248,19 +309,39 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep }) {
   return { answer, model, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
   const model = env.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-  const result = await env.AI.run(model, {
+  const inputs = {
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
     max_tokens: 350,
     temperature: 0.3,
-  });
+  };
+
+  let result = null;
+  if (env && env.AI_GATEWAY_ID) {
+    try {
+      result = await env.AI.run(model, inputs, {
+        gateway: {
+          id: env.AI_GATEWAY_ID,
+          skipCache: Boolean(skipCache),
+          cacheTtl: Number(env.AI_GATEWAY_CACHE_TTL) || 21600, // 6 hours: matches the cron update cycle
+        },
+      });
+    } catch {
+      // If gateway is not found or fails in Cloudflare, smoothly fallback to direct run
+      result = null;
+    }
+  }
+
+  if (!result) {
+    result = await env.AI.run(model, inputs);
+  }
 
   const answer = String(
     (result && (result.response || (result.choices && result.choices[0] && result.choices[0].message && result.choices[0].message.content))) || ""
@@ -270,27 +351,52 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt }) {
   return { answer, model, provider: "workers-ai" };
 }
 
-async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {} }) {
+async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, env, skipCache = false, cacheKey = null }) {
   if (!apiKey) {
     throw new Error(`API key secret for provider '${provider}' is not configured on the Cloudflare Worker`);
   }
-  const resp = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      ...extraHeaders,
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 350,
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
+  const body = JSON.stringify({
+    model,
+    max_tokens: 350,
+    temperature: 0.3,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
   });
+
+  const providerSlug = provider === "groq"
+    ? "groq/openai/v1/chat/completions"
+    : provider === "openrouter"
+    ? "openrouter/api/v1/chat/completions"
+    : null;
+
+  let resp;
+  if (providerSlug && env && env.AI_GATEWAY_ID) {
+    resp = await fetchWithGatewayFallback({
+      env,
+      providerSlug,
+      defaultEndpoint: endpoint,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        ...extraHeaders,
+      },
+      body,
+      skipCache,
+      cacheKey,
+    });
+  } else {
+    resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        ...extraHeaders,
+      },
+      body,
+    });
+  }
 
   if (!resp.ok) {
     const errTxt = await resp.text();
@@ -305,15 +411,15 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null }) {
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
   switch (provider) {
     case "gemini":
-      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep });
+      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -324,6 +430,9 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
           : env.GROQ_MODEL_FAST || "llama-3.3-70b-versatile",
         systemPrompt,
         userPrompt,
+        env,
+        skipCache,
+        cacheKey,
       });
     case "cerebras":
       return await callOpenAiCompatible({
@@ -333,6 +442,9 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         model: env.CEREBRAS_MODEL || "llama-3.3-70b",
         systemPrompt,
         userPrompt,
+        env,
+        skipCache,
+        cacheKey,
       });
     case "github":
       return await callOpenAiCompatible({
@@ -342,6 +454,9 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         model: deep ? env.GITHUB_MODEL_DEEP || "gpt-4o" : env.GITHUB_MODEL_FAST || "gpt-4o-mini",
         systemPrompt,
         userPrompt,
+        env,
+        skipCache,
+        cacheKey,
       });
     case "openrouter":
       return await callOpenAiCompatible({
@@ -355,10 +470,13 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
           "HTTP-Referer": env.BOARD_PUBLIC_URL || "https://leeroy.party",
           "X-Title": "Dungeons and Drinking Living Board",
         },
+        env,
+        skipCache,
+        cacheKey,
       });
     case "claude":
     default:
-      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep });
+      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey });
   }
 }
 
@@ -423,12 +541,15 @@ export async function answerWithAi({
   const isCoach = journey === "guided" && share !== true;
 
   try {
-    // 1. Pull relevant library pages & full party/schedule state from D1 for grounded RAG context
-    const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets] = await Promise.all([
+    // 1. Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
+    const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
       getParsedLibraryData(env),
       env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
       buildPartySheetsFromD1(env),
+      env.DB.prepare("SELECT stamp FROM lib_blobs WHERE name = 'index.json'").first(),
     ]);
+
+    const libraryStamp = (idxRow && idxRow.stamp) || "v1";
 
     // Score individual facts & open questions using precomputed cachedHays (TF-IDF + stemming + synonyms + role/lead boosts)
     const { words, hits } = rankWikiCore(question, parsedPages, { hays: cachedHays });
@@ -485,6 +606,7 @@ export async function answerWithAi({
 
     const baseSystemPrompt = [
       "You are Leeroy Jenkins, the party librarian for the 'Dungeons and Drinking' WoW Classic Forever five-player Horde group (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward).",
+      `[Library-Epoch: ${libraryStamp}]`,
       "Answer strictly using the verified library facts and party state below. Where the library does not know something yet, state plainly that it is not published yet.",
       "Display names only in full every time (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward; never real first names). Inform, never instruct: facts, options, and trade-offs.",
       "Keep answers concise (2 to 4 sentences), warm, plain-spoken, and cite specific library page IDs in brackets like [classes/paladin-holy] or [dungeons/overview] whenever you use a fact.",
@@ -503,6 +625,8 @@ export async function answerWithAi({
         ? reqClean
         : resolveAiProvider(env, requestedProvider);
     const activeProvider = resolveAiProvider(env, chosenProvider);
+    const qHash = (await sha256Hex(question)).slice(0, 16);
+    const cacheKey = `ask:${libraryStamp}:${chosenProvider}:${deep ? "deep" : "fast"}:${qHash}`;
     let rawAnswer, model, provider;
     try {
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
@@ -511,6 +635,7 @@ export async function answerWithAi({
         systemPrompt,
         userPrompt,
         deep,
+        cacheKey,
       }));
     } catch (providerErr) {
       if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
@@ -691,6 +816,7 @@ export async function extractWikiFactsWithAi({ env, source, cleanText }) {
       systemPrompt,
       userPrompt,
       deep: false,
+      skipCache: true, // Cron fact learner MUST run live inference on new content
     });
 
     const jsonMatch = answer.match(/\[[\s\S]*\]/);

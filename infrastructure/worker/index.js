@@ -1389,6 +1389,7 @@ export default {
             runtime: "cloudflare-workers-d1",
             isPrPreview,
             aiProvider: resolveAiProvider(env),
+            aiGateway: env.AI_GATEWAY_ID || null,
             providers,
           },
           200,

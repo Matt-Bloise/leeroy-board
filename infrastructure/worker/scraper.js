@@ -6,7 +6,7 @@
 // =============================================================================
 
 import { broadcastToRoom, purgeWorkerCache } from "./index.js";
-import { extractWikiFactsWithAi } from "./ai-models.js";
+import { extractWikiFactsWithAi, invalidatePagesCache } from "./ai-models.js";
 import { factHays, idfOf, stem } from "./rank-core.js";
 
 async function sha8Hex(text) {
@@ -293,6 +293,7 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
   }
 
   await recomputeCategoryAndIndex(env, null);
+  invalidatePagesCache();
   await purgeWorkerCache(origin, [
     "/api/library/index.json",
     "/api/library/refresh.json",
