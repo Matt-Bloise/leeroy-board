@@ -24,7 +24,7 @@
 //   21. Context menus — "Ask Leeroy" & "Fix this fact" on any Discord message
 // =============================================================================
 
-import { answerWithAi, resolveAiProvider } from "./ai-models.js";
+import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
@@ -460,6 +460,45 @@ function launchHype(toLaunch) {
   return `${days} days. Time to study your talents and prep your route.`;
 }
 
+// Run an answer and edit the placeholder (@original) with the result. The final edit is ALWAYS sent, exactly once:
+// the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
+// (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
+// stored by answerWithAi in ask_turns (the website shows it) and is never sent a second time.
+export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s }) {
+  const deadlineMs = Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS;
+  const work = Promise.resolve().then(answer).then(() => "done", () => "failed");
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve("deadline"), deadlineMs);
+  });
+  const outcome = await Promise.race([work, deadline]);
+  clearTimeout(timer);
+
+  let text = "";
+  if (outcome === "done") {
+    try {
+      const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
+      if (row && row.status !== "error" && row.answer) text = String(row.answer);
+    } catch {}
+  }
+  if (!text) {
+    const line = pickLine(persona, "errorLines", intentId);
+    text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+  }
+  if (interaction && interaction.application_id && interaction.token) {
+    try {
+      await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: clampContent(wrap(text)), allowed_mentions: ALLOWED_MENTIONS_NONE }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {}
+  }
+  // Keep the invocation alive so a late answer is still stored.
+  await work;
+}
+
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
   const res = await handleDiscordInteractionInner(req, env, ctx, origin);
@@ -693,21 +732,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
       const persona = await loadPersona(env);
       ctx.waitUntil(
-        (async () => {
-          await answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate, budget: askBudget });
-          const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
-          const text = row && row.status === "error" && persona ? pickLine(persona, "errorLines", intentId) : row && row.answer;
-          if (interaction.application_id && interaction.token && text) {
-            await fetch(
-              `https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ content: clampContent(text), allowed_mentions: ALLOWED_MENTIONS_NONE }),
-              }
-            ).catch(() => {});
-          }
-        })()
+        answerAndDeliver({
+          env,
+          interaction,
+          intentId,
+          persona,
+          answer: () => answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member) }),
+        })
       );
 
       // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
@@ -1508,24 +1539,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
       const persona = await loadPersona(env);
       ctx.waitUntil(
-        (async () => {
-          await answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }) });
-          const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
-          if (row && row.status === "error" && persona) row.answer = pickLine(persona, "errorLines", intentId);
-          if (interaction.application_id && interaction.token && row && row.answer) {
-            await fetch(
-              `https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  content: clampContent(`> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${row.answer}`),
-                  allowed_mentions: ALLOWED_MENTIONS_NONE,
-                }),
-              }
-            ).catch(() => {});
-          }
-        })()
+        answerAndDeliver({
+          env,
+          interaction,
+          intentId,
+          persona,
+          wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }), isMember: Boolean(member) }),
+        })
       );
 
       return new Response(

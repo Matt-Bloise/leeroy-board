@@ -1471,6 +1471,7 @@ export default {
               share,
               provider: activeProvider,
               budget: askBudget,
+              isMember: !isGuest,
             })
           );
 
