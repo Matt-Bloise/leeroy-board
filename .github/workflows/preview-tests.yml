@@ -110,6 +110,27 @@ jobs:
           set -o pipefail
           npm run test:browser -- --url "${{ steps.urls.outputs.pages }}/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
 
+      - name: Visual audit
+        id: audit
+        timeout-minutes: 12
+        continue-on-error: true
+        working-directory: tests
+        env:
+          PREVIEW_PAGES: ${{ steps.urls.outputs.pages }}
+          AUDIT_BUDGET_MIN: "10"
+          AUDIT_OUT: visual-audit
+        run: |
+          # Non-gating: measures image sizes, overflow, contrast, layout shift and more; never part of the pass or fail result.
+          node visual/audit.mjs 2>&1 | tee "$RUNNER_TEMP/visual-audit.log" || true
+
+      - name: Upload the visual audit
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: visual-audit
+          path: tests/visual-audit
+          if-no-files-found: ignore
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4.4.3
@@ -129,6 +150,7 @@ jobs:
           API_OUTCOME: ${{ steps.api.outcome }}
           BROWSER_OUTCOME: ${{ steps.browser.outcome }}
           PAGES_URL: ${{ steps.urls.outputs.pages }}
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
         with:
           script: |
             const fs = require("fs");
@@ -150,6 +172,15 @@ jobs:
             const pr = context.payload.pull_request;
             const sha = pr.head.sha.slice(0, 7);
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            // Visual audit: informational only, never part of `ok`.
+            let auditLine = "";
+            try {
+              if (process.env.AUDIT_OUTCOME && process.env.AUDIT_OUTCOME !== "skipped") {
+                const a = JSON.parse(fs.readFileSync("tests/visual-audit/visual-audit.json", "utf8")).summary;
+                const parts = Object.entries(a.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`);
+                auditLine = `\nVisual audit (not gating): ${a.total} findings${parts.length ? ` (${parts.join(", ")})` : ""}. Report: artifact \`visual-audit\` (visual-audit.md, visual-audit.json, screenshots/) on the run below.\n`;
+              }
+            } catch (e) { if (process.env.AUDIT_OUTCOME && process.env.AUDIT_OUTCOME !== "skipped") auditLine = "\nVisual audit (not gating): no report was produced, see the logs.\n"; }
             const body = [
               "<!-- preview-tests -->",
               `### Preview tests: ${ok ? "passed" : "FAILED"} (\`${sha}\`)`,
@@ -163,6 +194,7 @@ jobs:
               "",
               process.env.PAGES_URL ? `Preview: ${process.env.PAGES_URL}` : "No preview URL was found.",
               lines.length ? "\nFirst failures:\n```\n" + lines.join("\n").slice(0, 1500) + "\n```" : "",
+              auditLine,
               `[Logs and artifact](${run})`,
             ].join("\n");
             const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
