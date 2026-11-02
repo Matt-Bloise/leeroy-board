@@ -22,6 +22,7 @@ test("GET /api/health without a key: minimal body, no provider detail", async ()
   assert.ok(!("providers" in b), "providers must be absent without the admin token");
   assert.ok(!("aiProvider" in b), "aiProvider must be absent without the admin token");
   assert.ok(!("aiGateway" in b), "aiGateway must be absent without the admin token");
+  assert.ok(!("aiBudget" in b), "aiBudget must be absent without the admin token");
 });
 
 test("GET /api/health with the admin token: provider detail present", async () => {
@@ -31,6 +32,10 @@ test("GET /api/health with the admin token: provider detail present", async () =
   assert.equal(b.ok, true);
   assert.equal(b.aiProvider, "workers-ai");
   assert.ok(b.providers && typeof b.providers === "object", "providers missing");
+  assert.ok(b.aiBudget && typeof b.aiBudget === "object", "aiBudget missing");
+  assert.equal(typeof b.aiBudget.cap, "number");
+  assert.equal(typeof b.aiBudget.neurons, "number");
+  assert.match(b.aiBudget.day, /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test("GET /api/bootstrap: JSON, only workers-ai provider enabled", async () => {
