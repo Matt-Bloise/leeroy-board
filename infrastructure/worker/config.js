@@ -1,10 +1,11 @@
 import { isMemberId } from "./members.js";
+import { validateSchedule } from "./scheduled-events.js";
 
-// Admin-only config rows that live only in D1 (kv_state), never in the repo: name_map, discord_members, discord_roster and ai_budget_caps.
+// Admin-only config rows that live only in D1 (kv_state), never in the repo: name_map, discord_members, discord_roster, ai_budget_caps and events_schedule.
 // Written by PUT /api/config/<key>; there is no GET route. Cached 60 s per isolate; PUT invalidates the cache.
 // Every reader falls back to null when the row is missing, so an unseeded Worker refuses or no-ops safely.
 
-export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps"];
+export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps", "events_schedule"];
 export const CONFIG_MAX_BYTES = 20000;
 
 const TTL_MS = 60 * 1000;
@@ -71,6 +72,7 @@ export function validateConfigValue(key, value) {
     }
     return null;
   }
+  if (key === "events_schedule") return validateSchedule(value);
   if (key === "ai_budget_caps") {
     if (!value || typeof value !== "object" || Array.isArray(value)) return "ai_budget_caps must be a JSON object";
     for (const k of Object.keys(value)) {
@@ -104,7 +106,7 @@ export function buildThreadMention(person, roster) {
 
 // kv_state rows that hold configuration or private working data. GET /api/data/<key> must never serve them:
 // that route is public and serves any kv_state key. Exact keys plus prefixes; matching is case-insensitive.
-const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "vocab", "votes:index", "feed_posts"]);
+const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "events_schedule", "scheduled_events", "vocab", "votes:index", "feed_posts"]);
 const PRIVATE_PREFIXES = ["ai_budget:", "vote:", "votes:", "feed_", "private:", "config:", "secret"];
 export function isPrivateKvKey(key) {
   const k = String(key || "").trim().toLowerCase();

@@ -32,6 +32,7 @@ const TABLE = {
   "PUT /config/:key": ADMIN, // admin-gated config rows (name_map, discord_members, ...), write only
   "POST /admin/members": ADMIN,
   "GET /admin/feedback": ADMIN,
+  "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
   "PUT /persona": ADMIN,
   "POST /dispatch": MEMBER,
   "GET /intents": ADMIN,
@@ -170,6 +171,7 @@ const CALLS = {
   "PUT /config/:key": ["PUT", `/api/config/${CONFIG_KEYS[0]}`, "{}"],
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],
   "GET /admin/feedback": ["GET", "/api/admin/feedback"],
+  "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
   "PUT /persona": ["PUT", "/api/persona", "{}"],
   "POST /dispatch": ["POST", "/api/dispatch", "{}"],
   "GET /intents": ["GET", "/api/intents"],
