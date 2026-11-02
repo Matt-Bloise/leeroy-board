@@ -112,6 +112,7 @@ jobs:
 
       - name: Visual audit
         id: audit
+        if: contains(github.event.pull_request.labels.*.name, 'visual')
         timeout-minutes: 12
         continue-on-error: true
         working-directory: tests
@@ -124,7 +125,7 @@ jobs:
           node visual/audit.mjs 2>&1 | tee "$RUNNER_TEMP/visual-audit.log" || true
 
       - name: Upload the visual audit
-        if: always()
+        if: always() && contains(github.event.pull_request.labels.*.name, 'visual')
         uses: actions/upload-artifact@v4.4.3
         with:
           name: visual-audit
