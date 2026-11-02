@@ -3340,11 +3340,22 @@ function yourTime(T) {
   return mine === et ? "" : ` (${mine} your time)`;
 }
 function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `Launch: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
+/* the first screen for a visitor with no saved name: what the board is for, in four plain lines, and the one action that follows */
+const FIRST_RUN = Object.freeze({ go: "Show me what is next", purpose: Object.freeze(["This is the party board for our World of Warcraft: Forever group.", "It tells you what to do next, shows who is playing what, and collects the group's votes.", "Whatever you post in Discord (forms, build threads, votes) shows up here.", "Pick who you are below, or just look around."]) });
 function renderTonight() {
   const T = D.tonight, P = D.party, me = MEM.me(), member = MEM.member();
   const box = $("#tn-cards"), meBox = $("#tn-me"), act = $("#tn-actions"); if (!T || !P || !box) { if (box && P && !T) BF.fail(box, "the steps for tonight", reloadOpt); return; }
   const pick = (slug) => { MEM.setMe(slug); renderTonight(); markMe(); try { renderDiscordSignups(); renderWheel(); renderBuffsDeep(); } catch (e) {} };
-  if (!me) meBox.replaceChildren(h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", style: `--cc: ${classVar(m.class_key)}`, onclick: () => pick(MEM.slug(m.name)) }, crestMark(m), m.name)), h("button", { type: "button", class: "lib-tool tn-name", onclick: () => pick("just-looking") }, T.labels.looking)));
+  if (!me) {
+    const sel = { slug: null }, say = h("p", { class: "nx-say tn-first-say", id: "tn-first-say", role: "status", "aria-live": "polite" });
+    const names = P.members.map((m) => h("button", { type: "button", class: "lib-tool tn-name", "aria-pressed": "false", style: `--cc: ${classVar(m.class_key)}`, onclick: (e) => { sel.slug = MEM.slug(m.name); for (const b of meBox.querySelectorAll(".tn-name")) b.setAttribute("aria-pressed", String(b === e.currentTarget)); say.textContent = ""; } }, crestMark(m), m.name));
+    const show = h("button", { type: "button", class: "lib-btn strong", id: "nx-show", onclick: () => { if (sel.slug) pick(sel.slug); else { say.textContent = "Tap your name first, or tap Just looking."; sfx("chip"); } } }, FIRST_RUN.go);
+    const look = h("button", { type: "button", class: "lib-btn", id: "nx-looking", onclick: () => pick("just-looking") }, T.labels.looking);
+    meBox.replaceChildren(
+      h("section", { class: "nx nx-purpose", id: "nx-purpose", "aria-label": "What this board is for" }, ...FIRST_RUN.purpose.map((t, i) => h("p", { class: i ? "nx-p" : "nx-p nx-p-lead", text: t }))),
+      h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...names,
+        h("div", { class: "tn-first-act", role: "group", "aria-label": "Next" }, show, look), say));
+  }
   else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);

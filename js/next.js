@@ -131,9 +131,9 @@ function draw(out) {
   const panel = $("#panel-tonight"), meBox = $("#tn-me"); if (!panel || !meBox) return;
   const j = journey(), step = out && out.step, g = j === "guided";
   markSet();
-  if (!step) { NX.solo = false; markSet(); root.classList.remove("nx-on"); rm(NX.card); rm(NX.queue); rm(NX.lead); fold(panel, j, false); NX.buttons = 0; return; }
+  if (!step) { NX.solo = false; markSet(); root.classList.remove("nx-on", "nx-intro"); rm(NX.card); rm(NX.queue); rm(NX.lead); fold(panel, j, false); NX.buttons = 0; return; }
   NX.solo = true; markSet();
-  root.classList.add("nx-on");
+  root.classList.add("nx-on"); const intro = step.id === "pick-name"; root.classList.toggle("nx-intro", intro);
   if (NX.sayFor !== step.id) { NX.say = ""; NX.sayFor = step.id; }
   const card = NX.card || (NX.card = h("section", { class: "nx", id: "nx-card", "aria-labelledby": "nx-t" }));
   if (card.parentNode !== panel || (card.nextSibling !== meBox && card.nextSibling !== $("#nx-rest") && card.nextSibling !== NX.queue)) panel.insertBefore(card, meBox);
@@ -150,13 +150,13 @@ function draw(out) {
     h("p", { class: "nx-say", id: "nx-say", role: "status", "aria-live": "polite", text: NX.say }),
 
     NX.extFor === step.id && NX.say === NO_KEY && signupHref() ? h("div", { class: "nx-ext" }, h("a", { class: "tn-link", id: "nx-ext", href: signupHref(), target: "_blank", rel: "noopener" }, "Open the Sign-ups card in Discord")) : null,
-    links(g), week, deep && !all ? trails(step, out) : null, g ? null : tonightLine(out.tonight, false)].filter(Boolean));
+    links(g), week, deep && !all ? trails(step, out) : null, g || intro ? null : tonightLine(out.tonight, false)].filter(Boolean));
   rm(NX.lead); NX.lead = null;
-  if (g) { NX.lead = tonightLine(out.tonight, true); if (NX.lead) panel.insertBefore(NX.lead, card); }
+  if (g || intro) { NX.lead = tonightLine(out.tonight, true); if (NX.lead) panel.insertBefore(NX.lead, intro ? meBox.nextSibling : card); } /* first run: the countdown sits below the primary action */
   if (j === "everything") { const q = queueEl(out); rm(NX.queue); panel.insertBefore(q, card.nextSibling || null); NX.queue = q; }
   else { rm(NX.queue); NX.queue = null; }
-  fold(panel, j, true); restFold(panel, j);
-  if (g && !NX.open && NX.lead && words(card, false) + words(NX.lead, false) >= 44) { rm(NX.lead); NX.lead = null; }
+  fold(panel, j, true); restFold(panel, j); tabFold();
+  if (g && !intro && !NX.open && NX.lead && words(card, false) + words(NX.lead, false) >= 44) { rm(NX.lead); NX.lead = null; }
   const sq = $("#tn-seals .tn-seals-q"); if (sq) sq.textContent = "Change how much the board shows you.";
   for (const x of document.querySelectorAll("#tn-seals .wx-line, #tn-seals .tn-wall")) x.hidden = true;
   if (had) focus(document.getElementById(had));
@@ -213,11 +213,35 @@ function launchSet(k) {
 function snooze(id) { const o = snoozeMap(); o[id] = Date.now() + DAY; MEM.set("snooze", JSON.stringify(o)); NX.say = ""; sfx("page"); return render(); }
 function expand(on) { NX.open = on === undefined ? !NX.open : !!on; sfx("page"); markSet(); draw(NX.out); try { if (NX.open) $("#nx-trails").scrollIntoView({ block: "nearest" }); } catch (e) {} return NX.open; }
 
+
+/* Guided shows four ribbon tabs and a More tab; Curious and Everything keep all twelve. The open scene's tab, and any tab opened since the scene layer opened, stay in view. No scene is removed. */
+const CORE_TABS = ["tonight", "five", "signups", "librarian"], TB = { more: false, seen: new Set(), sig: null };
+function tabFold() {
+  const tabs = $("#tabs"); if (!tabs) return;
+  const g = journey() === "guided", open = K.SC && K.SC.open, ton = $("#tab-tonight"), ind = $("#tab-ind");
+  if (g && open && !CORE_TABS.includes(open)) TB.seen.add(open);
+  let more = $("#tab-more");
+  const els = Array.from(tabs.querySelectorAll(".tab[data-tab]"));
+  if (!g) {
+    for (const t of els) t.removeAttribute("data-nx-fold");
+    if (ton && ind && ton.nextElementSibling !== ind) tabs.insertBefore(ton, ind);
+    rm(more); TB.more = false;
+  } else {
+    if (ton && tabs.firstElementChild !== ton) tabs.insertBefore(ton, tabs.firstElementChild);
+    for (const t of els) { const k = t.getAttribute("data-tab"); t.toggleAttribute("data-nx-fold", !TB.more && !CORE_TABS.includes(k) && !TB.seen.has(k)); }
+    if (!more) { more = h("button", { type: "button", class: "lib-tool tabs-more", id: "tab-more", role: "tab", "aria-selected": "false", "aria-controls": "tabs", onclick: () => { TB.more = !TB.more; sfx("page"); tabFold(); } }); tabs.append(more); }
+    more.setAttribute("aria-expanded", String(TB.more)); more.textContent = TB.more ? "Fewer" : "More";
+  }
+  const sig = `${g}|${els.filter((t) => !t.hasAttribute("data-nx-fold")).length}`;
+  if (sig !== TB.sig) { const first = TB.sig === null; TB.sig = sig; if (!first) { try { window.dispatchEvent(new Event("resize")); } catch (e) {} } } /* the ribbons (cloth) and the tab indicator re-measure on resize */
+}
+
 markSet();
+tabFold();
 const tnOpen = (k) => root.classList.toggle("nx-tn", k === "tonight");
 tnOpen(K.SC && K.SC.open);
-K.on("scene", (k) => tnOpen(k));
-K.on("closed", () => tnOpen(null));
+K.on("scene", (k) => { tnOpen(k); tabFold(); });
+K.on("closed", () => { tnOpen(null); TB.seen.clear(); TB.more = false; tabFold(); });
 document.addEventListener("pointerdown", () => root.classList.add("nx-ptr"), true);
 document.addEventListener("keydown", () => root.classList.remove("nx-ptr"), true);
 K.on("tonight", () => { render(); });
@@ -228,7 +252,7 @@ const B0 = brain();
 if (B0 && typeof B0.on === "function") for (const n of ["launch", "party", "pending", "launchPending"]) B0.on(n, () => { if (NX.out) render(); });
 if (typeof MutationObserver === "function") {
   let was = journey();
-  new MutationObserver(() => { const j = journey(); if (j === was) return; was = j; if (j !== "guided") NX.open = false; render(); }).observe(root, { attributes: true, attributeFilter: ["data-journey"] });
+  new MutationObserver(() => { const j = journey(); if (j === was) return; was = j; if (j !== "guided") NX.open = false; tabFold(); render(); }).observe(root, { attributes: true, attributeFilter: ["data-journey"] });
 }
 window.__next = Object.freeze({ render, expand, input: buildInput, wall: () => { NX.wall = true; markSet(); },
   status: () => ({ journey: journey(), stepId: NX.out && NX.out.step ? NX.out.step.id : null, words: panelWords(), buttons: NX.buttons, open: NX.open, engine: NX.engine, snoozed: Object.keys(snoozeMap()) }) });
