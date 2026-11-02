@@ -20,6 +20,7 @@ import {
   webBoardLinksDeep,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
+import { feedbackReport, cleanupAnswerUx } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { manifestFor } from "./setup-command.js";
@@ -338,7 +339,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "PUT /persona", "POST /dispatch",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -664,6 +665,20 @@ export default {
           200,
           cors
         );
+      }
+
+      // Admin only: Helpful/Off counts and the latest 50 votes (question, first 160 chars of the answer, no user ids).
+      if (req.method === "GET" && path === "/admin/feedback") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const sinceRaw = url.searchParams.get("since");
+        const sinceMs = sinceRaw ? Date.parse(sinceRaw) : Date.now() - 30 * 86400000;
+        if (!Number.isFinite(sinceMs)) return jsonResp({ error: "since must be an ISO 8601 date" }, 400, cors);
+        try {
+          return jsonResp(await feedbackReport(env, new Date(sinceMs).toISOString()), 200, cors);
+        } catch {
+          return jsonResp({ error: "feedback_unavailable" }, 503, cors);
+        }
       }
 
       // 0f. POST /ack -> Acknowledge and clear intents up to `upTo` sequence number
@@ -1626,5 +1641,6 @@ export default {
   async scheduled(controller, env, ctx) {
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
+    ctx.waitUntil(cleanupAnswerUx(env));
   },
 };

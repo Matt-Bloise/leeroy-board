@@ -19,7 +19,7 @@ import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
-import { formatAnswer, answerFormatEnabled, answerUxEnabled, extractCitedIds } from "./answer-format.js";
+import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 
 // Alias -> display name for the voice guards. Only distinctive single-word aliases that sit inside a longer display name
@@ -719,6 +719,7 @@ export async function answerWithAi({
   provider: requestedProvider,
   budget = null, // optional { userKey, tenantKey, guest }; without it only the global soft cap applies
   isMember, // is the asker a party member? Defaults to "not the Visitor placeholder".
+  storeDetails = false, // ANSWER_UX: keep the ---more--- and ---sources--- text in answer_details for the Discord buttons
 }) {
   const t0 = Date.now();
   const nowIso = () => new Date().toISOString();
@@ -940,19 +941,29 @@ export async function answerWithAi({
     const known = new Set(libPages.map((p) => p.id));
     const cites = extractCitedIds(repaired).filter((id) => known.has(id));
     const chatMax = Number(persona && persona.format && persona.format.chatMaxChars);
-    const answer = answerFormatEnabled(env)
-      ? formatAnswer(repaired, {
+    const uxOn = answerUxEnabled(env);
+    const parts = answerFormatEnabled(env)
+      ? formatAnswerParts(repaired, {
           pages: libPages,
           asker: { name: by, isMember: askerIsMember },
           boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party",
           maxChars: chatMax > 0 ? chatMax : 1200,
-          ...(answerUxEnabled(env)
-            ? { ux: true, roster: rosterAliases(), intentId, isCoach, egg: persona && persona.egg }
-            : {}),
+          ...(uxOn ? { ux: true, roster: rosterAliases(), intentId, isCoach, egg: persona && persona.egg } : {}),
         })
-      : repaired;
+      : { main: repaired, more: "", sources: "" };
+    const answer = parts.main;
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
+    // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
+    if (uxOn && storeDetails && (parts.more || parts.sources)) {
+      try {
+        await env.DB.prepare("INSERT OR REPLACE INTO answer_details (intent_id, more, sources, asker_hash, message_id, created_at) VALUES (?, ?, ?, NULL, NULL, ?)")
+          .bind(String(intentId), parts.more || null, parts.sources || null, answeredAt)
+          .run();
+      } catch (e) {
+        console.error("answer_details write failed:", e && e.message);
+      }
+    }
 
     // 3. Save completed Q&A turn in D1 `ask_turns` and update `kv_state['stats']`
     await env.DB.prepare(

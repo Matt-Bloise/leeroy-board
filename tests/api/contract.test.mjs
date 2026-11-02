@@ -84,7 +84,7 @@ test("validator: accepts and rejects", () => {
 });
 
 test("spec covers exactly the documented public and member routes", () => {
-  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
+  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/feedback", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
 });
 
 // ---- routes ----------------------------------------------------------------------------------------------------
@@ -100,6 +100,16 @@ test("GET /api/health (admin token) matches the contract including provider deta
   assert.equal(res.status, 200);
   conforms(res);
   assert.ok(res.body.providers && res.body.aiBudget, "admin detail missing");
+});
+
+test("GET /api/admin/feedback: 401 without the admin token, contract match with it, no voter identity", async () => {
+  const denied = await get("/api/admin/feedback", pub);
+  assert.equal(denied.status, 401);
+  conforms(denied);
+  const res = await get("/api/admin/feedback", admin);
+  assert.equal(res.status, 200);
+  conforms(res);
+  assert.ok(!JSON.stringify(res.body).includes("user_hash"));
 });
 
 test("GET /api/bootstrap matches the contract", async () => {
