@@ -535,7 +535,7 @@ export const QUIZ_DATA = {
 };
 
 export const ACK_LINES_DATA = {
-  "_about": "Rolling ack lines (Matt, 2026-10-26): the bot's instant reply is '<hourglass> On it, <name>. <line>'. The line is picked at random from byUser[<authorId>] plus generic, never one of the last 15 used (state.recentAcks). The live brain adds lines over time; the file is read on every ack, so no restart is needed. Rules: game and chat behavior only, no real life, no slurs, never the word Skippy, never monkeys, under 90 characters.",
+  "_about": "Rolling ack lines (2026-10-26): the bot's instant reply is '<hourglass> On it, <name>. <line>'. The line is picked at random from byUser[<authorId>] plus generic, never one of the last 15 used (state.recentAcks). The live brain adds lines over time; the file is read on every ack, so no restart is needed. Rules: game and chat behavior only, no real life, no slurs, never the word Skippy, never monkeys, under 90 characters.",
   "generic": [
     "Library's open. Mind the sheep.",
     "Dusting off the shelf. Something fell on a gnome.",
@@ -607,56 +607,9 @@ export const ACK_LINES_DATA = {
 };
 
 export const ROSTER_DATA = [
-  {
-    "name": "Matt",
-    "display": "Bloise",
-    "aliases": [
-      "bloise",
-      "mage"
-    ],
-    "match": "bloise|matt",
-    "threadId": "1561784932077011045",
-    "nick": false
-  },
-  {
-    "name": "Ethan",
-    "display": "Street Rat",
-    "aliases": [
-      "street rat",
-      "rat",
-      "chaboes"
-    ],
-    "match": "ethan|street rat|chaboes",
-    "nick": false
-  },
-  {
-    "name": "Derek",
-    "display": "Handsome Squidward",
-    "aliases": [
-      "squidward",
-      "handsome squidward"
-    ],
-    "match": "derek|squidward",
-    "nick": false
-  },
-  {
-    "name": "Tony",
-    "display": "Bible Boi",
-    "aliases": [
-      "bible boi",
-      "bible"
-    ],
-    "match": "tony|bible",
-    "nick": false
-  },
-  {
-    "name": "Nick",
-    "display": "Santa",
-    "aliases": [
-      "santa",
-      "tank"
-    ],
-    "match": "nick|santa",
-    "nick": true
-  }
+  { "display": "Bloise", "aliases": ["bloise", "mage"], "threadId": "1561784932077011045" },
+  { "display": "Street Rat", "aliases": ["street rat", "rat"] },
+  { "display": "Handsome Squidward", "aliases": ["squidward", "handsome squidward"] },
+  { "display": "Bible Boi", "aliases": ["bible boi", "bible"] },
+  { "display": "Santa", "aliases": ["santa", "tank"] }
 ];

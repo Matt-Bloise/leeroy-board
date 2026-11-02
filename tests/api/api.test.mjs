@@ -124,3 +124,15 @@ test("GET /api/signups: 200 with an entries array", async () => {
   const b = await json(r);
   assert.ok(Array.isArray(b.entries), "entries is not an array");
 });
+
+for (const key of ["name_map", "discord_members"]) {
+  test(`PUT /api/config/${key} without a key is refused (401 or 403)`, async () => {
+    const r = await fetch(`${API}/api/config/${key}`, { method: "PUT", headers: { "Content-Type": "application/json", Origin: PAGES }, body: "{}" });
+    assert.ok([401, 403].includes(r.status), `status ${r.status}`);
+  });
+}
+
+test("GET /api/config/name_map is not a public read (404 or 405)", async () => {
+  const r = await fetch(`${API}/api/config/name_map`, { headers: { Origin: PAGES } });
+  assert.ok([404, 405].includes(r.status), `status ${r.status}`);
+});

@@ -26,6 +26,7 @@
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
+import { loadConfigKey } from "./config.js";
 import {
   broadcastToRoom,
   purgeWorkerCache,
@@ -227,11 +228,11 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
         type: 3,
         required: true,
         choices: [
-          { name: "Bloise (Matt · Mage)", value: "bloise" },
-          { name: "Street Rat (Ethan · Paladin)", value: "street-rat" },
-          { name: "Handsome Squidward (Derek · Warlock)", value: "handsome-squidward" },
-          { name: "Bible Boi (Tony · Priest)", value: "bible-boi" },
-          { name: "Santa (Nick · Druid)", value: "santa" },
+          { name: "Bloise", value: "bloise" },
+          { name: "Street Rat", value: "street-rat" },
+          { name: "Handsome Squidward", value: "handsome-squidward" },
+          { name: "Bible Boi", value: "bible-boi" },
+          { name: "Santa", value: "santa" },
         ],
       },
     ],
@@ -391,13 +392,13 @@ export async function recomputeSignupTallies(signupsDoc) {
   return signupsDoc;
 }
 
-function slugFromDisplayName(byName) {
+// members comes from the D1 config row 'discord_members' ([{ slug, name, match: [lowercase substrings] }]).
+// Returns null when nothing matches or no config is loaded.
+export function slugFromDisplayName(byName, members) {
   const low = String(byName || "").toLowerCase();
-  if (low.includes("santa") || low.includes("nick")) return { slug: "santa", name: "Santa" };
-  if (low.includes("bible") || low.includes("tony")) return { slug: "bible-boi", name: "Bible Boi" };
-  if (low.includes("street") || low.includes("ethan")) return { slug: "street-rat", name: "Street Rat" };
-  if (low.includes("squid") || low.includes("derek")) return { slug: "handsome-squidward", name: "Handsome Squidward" };
-  if (low.includes("bloise")) return { slug: "bloise", name: "Bloise" };
+  for (const m of Array.isArray(members) ? members : []) {
+    if (m && Array.isArray(m.match) && m.match.some((t) => t && low.includes(t))) return { slug: m.slug, name: m.name };
+  }
   // Unrecognised users are not the owner. Mapping Discord user ids to slugs needs a schema change (follow-up).
   return null;
 }
@@ -469,7 +470,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     user.global_name ||
     user.username ||
     "Guest";
-  const member = slugFromDisplayName(rawUser); // null when the user is not a recognised party member
+  const member = slugFromDisplayName(rawUser, await loadConfigKey(env, "discord_members")); // null when the user is not a recognised party member
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
@@ -1030,7 +1031,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     if (cmd === "build") {
       const who = getOpt("who").toLowerCase();
       const person = ROSTER_DATA.find(
-        (r) => r.name.toLowerCase() === who || r.aliases.some((a) => a.toLowerCase() === who)
+        (r) => r.display.toLowerCase().replace(/ /g, "-") === who || r.aliases.some((a) => a.toLowerCase() === who)
       );
 
       if (!person) {
@@ -1046,7 +1047,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
         );
       }
 
-      const content = `**${person.name}'s Build (${person.display})**: <#${person.threadId || "1561784932077011045"}>\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
+      const content = `**${person.display}'s Build**: <#${person.threadId || "1561784932077011045"}>\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
