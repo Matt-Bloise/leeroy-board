@@ -16,6 +16,7 @@ import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./ind
 import { rank as rankWikiCore, factHays } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
 import { loadPersona, buildSystemPrompt } from "./persona.js";
+import { loadConfigKey } from "./config.js";
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -25,14 +26,6 @@ export const AI_PROVIDER_LABELS = {
   cerebras: "Cerebras Free Tier (Llama 3.3 70B)",
   github: "GitHub Models (GPT-4o)",
   openrouter: "OpenRouter Free (DeepSeek V3)",
-};
-
-const FIRST_NAME_MAP = {
-  Nick: "Santa",
-  Tony: "Bible Boi",
-  Ethan: "Street Rat",
-  Derek: "Handsome Squidward",
-  Matt: "Bloise",
 };
 
 const ORDERS_RE = new RegExp(
@@ -47,8 +40,10 @@ export function repairHouseVoice(rawText, opts = {}) {
   let out = String(rawText || "").trim();
   if (!out) return out;
 
-  // 1. Replace real-life first names with party display names (wow-mage privacy rule)
-  for (const [first, display] of Object.entries(FIRST_NAME_MAP)) {
+  // 1. Replace real-life first names with party display names (privacy rule). The map comes from D1 config
+  // (opts.nameMap); with no map this step is a no-op.
+  for (const [first, display] of Object.entries(opts.nameMap || {})) {
+    if (!/^[\w .'-]+$/.test(first)) continue;
     out = out.replace(new RegExp(`\\b${first}\\b`, "g"), display);
   }
   out = out.replace(/\bSkippy\b/gi, "Leeroy");
@@ -697,7 +692,8 @@ export async function answerWithAi({
     }
 
     // Apply `wow-mage` house-voice & privacy guardrails (`precheck.mjs` parity)
-    const answer = repairHouseVoice(rawAnswer, { isCoach });
+    const nameMap = (await loadConfigKey(env, "name_map")) || {};
+    const answer = repairHouseVoice(rawAnswer, { isCoach, nameMap });
 
     // Extract cited page IDs like [classes/paladin-holy]
     const cites = [

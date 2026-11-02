@@ -23,6 +23,7 @@ import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMAND
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
+import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
@@ -430,6 +431,35 @@ export default {
           .bind(JSON.stringify(vocab), now)
           .run();
         return jsonResp({ ok: true, fields: Object.keys(vocab).length }, 200, cors);
+      }
+
+      // Admin-only config rows (name_map, discord_members) that live only in D1. Write-only: there is no GET route.
+      const configMatch = path.match(/^\/config\/([^/]+)$/);
+      if (req.method === "PUT" && configMatch) {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const key = configMatch[1];
+        if (!CONFIG_KEYS.includes(key)) {
+          return jsonResp({ error: "Unknown config key" }, 400, cors);
+        }
+        const raw = await req.text();
+        if (new TextEncoder().encode(raw).length > CONFIG_MAX_BYTES) {
+          return jsonResp({ error: "Config too large" }, 413, cors);
+        }
+        let value;
+        try {
+          value = JSON.parse(raw);
+        } catch {
+          return jsonResp({ error: "Body must be valid JSON" }, 400, cors);
+        }
+        const problem = validateConfigValue(key, value);
+        if (problem) return jsonResp({ error: problem }, 400, cors);
+        const now = new Date().toISOString();
+        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
+          .bind(key, JSON.stringify(value), now)
+          .run();
+        invalidateConfigCache(key);
+        return jsonResp({ ok: true, key, entries: Array.isArray(value) ? value.length : Object.keys(value).length }, 200, cors);
       }
 
       // The persona pack is curated content that lives only in D1. Write-only: there is no GET route for it.

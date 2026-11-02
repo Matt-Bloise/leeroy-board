@@ -19,7 +19,7 @@ test("three or more blank lines become one blank line", () => {
 });
 
 test("first name replaced", () => {
-  assert.match(repairHouseVoice("Nick brings the snacks to the dungeon run."), /^Santa brings/);
+  assert.match(repairHouseVoice("Alex brings the snacks to the dungeon run.", { nameMap: { Alex: "Red Fox" } }), /^Red Fox brings/);
 });
 
 test("Skippy replaced", () => {
