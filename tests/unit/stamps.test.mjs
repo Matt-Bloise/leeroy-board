@@ -84,3 +84,22 @@ test("the real repo is stamped (same check CI runs)", () => {
   const r = spawnSync(process.execPath, [TOOL, "--check"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stdout);
 });
+
+test("atlas style: a template-literal css href with a base prefix is stamped from the site root, and the importer's stamp follows", () => {
+  const root = fixture({
+    "atlas/panels.css": ".a{color:red}\n",
+    "atlas/atlas.js": 'const link = `${base}atlas/panels.css?v=0000000000`;\nexport default link;\n',
+    "js/hook.js": 'import("../atlas/atlas.js?v=0000000000");\n',
+  });
+  assert.equal(cli(root, "--check").status, 1);
+  assert.equal(cli(root, "--write").status, 0);
+  assert.equal(cli(root, "--check").status, 0);
+  const atlas = read(root, "atlas/atlas.js").toString();
+  assert.ok(atlas.includes("${base}atlas/panels.css?v=" + h10(read(root, "atlas/panels.css"))));
+  assert.ok(read(root, "js/hook.js").toString().includes("atlas/atlas.js?v=" + h10(read(root, "atlas/atlas.js"))));
+  fs.writeFileSync(path.join(root, "atlas/panels.css"), ".a{color:blue}\n");
+  const stale = cli(root, "--check");
+  assert.equal(stale.status, 1);
+  assert.match(stale.stdout, /atlas\/atlas\.js:1 atlas\/panels\.css has \?v=/);
+  assert.match(stale.stdout, /js\/hook\.js:1 atlas\/atlas\.js has \?v=/);
+});
