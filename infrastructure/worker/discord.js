@@ -397,7 +397,23 @@ function slugFromDisplayName(byName) {
   if (low.includes("bible") || low.includes("tony")) return { slug: "bible-boi", name: "Bible Boi" };
   if (low.includes("street") || low.includes("ethan")) return { slug: "street-rat", name: "Street Rat" };
   if (low.includes("squid") || low.includes("derek")) return { slug: "handsome-squidward", name: "Handsome Squidward" };
-  return { slug: "bloise", name: "Bloise" };
+  if (low.includes("bloise")) return { slug: "bloise", name: "Bloise" };
+  // Unrecognised users are not the owner. Mapping Discord user ids to slugs needs a schema change (follow-up).
+  return null;
+}
+
+// Short friendly refusal for commands that write to a member's rows when no member is identified.
+function unknownMemberResponse() {
+  return new Response(
+    JSON.stringify({
+      type: 4,
+      data: {
+        content: "I can't tell which party member you are, so I can't change anyone's sheet or sign-ups from here. Ask, page, tooltip, library, help, dates, countdown, tonight and quiz still work for everyone.",
+        flags: 64,
+      },
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
 }
 
 function splitDuration(ms) {
@@ -452,9 +468,10 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     (interaction.member && interaction.member.nick) ||
     user.global_name ||
     user.username ||
-    "Bloise";
-  const member = slugFromDisplayName(rawUser);
-  const byName = member.name;
+    "Guest";
+  const member = slugFromDisplayName(rawUser); // null when the user is not a recognised party member
+  const byName = member ? member.name : String(rawUser).slice(0, 80);
+  const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
 
   // 4. Autocomplete (Type 4) -> Application Command Autocomplete Result (Type 8)
@@ -551,7 +568,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
         .run();
 
       await insertIntent(env, {
-        slug: member.slug,
+        slug: intentSlug,
         kind: "ask",
         body: { id: intentId, question, by: byName, provider, private: isPrivate },
         ver: 1,
@@ -637,6 +654,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2c. `/sheet`
     if (cmd === "sheet") {
+      if (!member) return unknownMemberResponse();
       const field = getOpt("field");
       const value = getOpt("value");
       if (field && value) {
@@ -698,6 +716,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2d. `/launch`
     if (cmd === "launch") {
+      if (!member) return unknownMemberResponse();
       const state = getOpt("state");
       const now = new Date().toISOString();
       const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'launch'").first();
@@ -782,6 +801,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2f. `/signup`
     if (cmd === "signup") {
+      if (!member) return unknownMemberResponse();
       const pack = getOpt("pack");
       const meet = getOpt("meet");
       const place = getOpt("place");
@@ -1184,6 +1204,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2q. `/journey`
     if (cmd === "journey") {
+      if (!member) return unknownMemberResponse();
       const choice = getOpt("choice") || "curious";
       const effects = {
         guided: "Leeroy answers in two or three plain sentences and gives you one next step.",
@@ -1214,6 +1235,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2r. `/intents`
     if (cmd === "intents") {
+      if (!member) return unknownMemberResponse();
       const after = parseInt(getOpt("after") || "0", 10) || 0;
       const limit = Math.min(parseInt(getOpt("limit") || "10", 10) || 10, 50);
 
@@ -1261,6 +1283,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2s. `/ack`
     if (cmd === "ack") {
+      if (!member) return unknownMemberResponse();
       const upTo = parseInt(getOpt("up_to") || getOpt("upTo") || "0", 10);
       if (!upTo || upTo <= 0) {
         return new Response(
@@ -1290,6 +1313,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2t. `/answer`
     if (cmd === "answer") {
+      if (!member) return unknownMemberResponse();
       const id = getOpt("id");
       const answer = getOpt("answer");
       const sources = getOpt("sources");
@@ -1366,7 +1390,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
         .run();
 
       await insertIntent(env, {
-        slug: member.slug,
+        slug: intentSlug,
         kind: "ask",
         body: { id: intentId, question: text, by: byName, provider, messageId: targetId },
         ver: 1,
@@ -1409,7 +1433,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
         .run();
 
       await insertIntent(env, {
-        slug: member.slug,
+        slug: intentSlug,
         kind: "fix",
         body: { messageId: targetId, excerpt: text.slice(0, 200), reporter: byName },
         ver: 1,
@@ -1434,6 +1458,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     const customId = String(interaction.data.custom_id);
     const [, field, val] = customId.split(":");
     if (field && val) {
+      if (!member) return unknownMemberResponse();
       const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
       if (row) {
         const doc = JSON.parse(row.json);
