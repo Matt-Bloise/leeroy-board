@@ -117,3 +117,10 @@ test("WebSocket /api/live connects and delivers a first message within 10 s", as
   try { ws.close(); } catch {}
   assert.ok(first.length > 0);
 });
+
+test("GET /api/signups: 200 with an entries array", async () => {
+  const r = await fetch(`${API}/api/signups`, { headers: { Origin: PAGES } });
+  assert.equal(r.status, 200);
+  const b = await json(r);
+  assert.ok(Array.isArray(b.entries), "entries is not an array");
+});

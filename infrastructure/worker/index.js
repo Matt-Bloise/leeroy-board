@@ -605,8 +605,15 @@ export default {
           if (!resp) {
             const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
             const doc = row ? JSON.parse(row.json) : { entries: [], tallies: {} };
-            resp = jsonResp(doc, 200, cors, { "Cache-Control": "public, max-age=15, stale-while-revalidate=60" });
-            await putCachedResponse(url.origin, "/api/signups", resp);
+            resp = jsonResp(doc, 200, {
+              ...cors,
+              "Cache-Control": "public, max-age=15, stale-while-revalidate=60",
+            });
+            setCachedResponse(ctx, url.origin, "/api/signups", resp, 15000);
+          } else {
+            const headers = new Headers(resp.headers);
+            for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+            resp = new Response(resp.body, { status: resp.status, headers });
           }
           return resp;
         }
