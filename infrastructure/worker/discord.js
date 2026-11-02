@@ -1540,7 +1540,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   }
 
   // 3-modal. `/build` modal submit (Type 5): defer, save, then edit the deferred reply.
-  if (interaction.type === 5 && interaction.data && interaction.data.custom_id === BUILD_MODAL_ID) {
+  if (buildModalEnabled(env) && interaction.type === 5 && interaction.data && interaction.data.custom_id === BUILD_MODAL_ID) {
     const parsed = parseBuildSubmit(interaction.data.components);
     const edit = (body) =>
       interaction.application_id && interaction.token

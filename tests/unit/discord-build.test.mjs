@@ -109,7 +109,7 @@ test("BUILD_MODAL on with a non-snowflake id falls back to the existing reply", 
 
 test("modal submit: defers (type 5) then writes exact SQL and edits the reply with a board link", async () => {
   resetBuildModalWarning();
-  const { body, db } = await run(submit(GOOD));
+  const { body, db } = await run(submit(GOOD), { BUILD_MODAL: "1" });
   assert.equal(body.type, 5);
   assert.equal(body.data.flags, 64);
   assert.equal(db.log.length, 4);
@@ -147,7 +147,7 @@ test("modal submit with missing identity tables falls back to the existing behav
   console.warn = (m) => warns.push(m);
   try {
     for (let n = 0; n < 2; n++) {
-      const { body } = await run(submit(GOOD), {}, stubDb({ failWith: "D1_ERROR: no such table: tenants" }));
+      const { body } = await run(submit(GOOD), { BUILD_MODAL: "1" }, stubDb({ failWith: "D1_ERROR: no such table: tenants" }));
       assert.equal(body.type, 5);
     }
   } finally {
@@ -165,7 +165,7 @@ test("modal submit for a guild with no tenant row writes nothing", async () => {
   const realWarn = console.warn;
   console.warn = () => {};
   try {
-    const { db } = await run(submit(GOOD), {}, stubDb({ tenant: null }));
+    const { db } = await run(submit(GOOD), { BUILD_MODAL: "1" }, stubDb({ tenant: null }));
     assert.equal(db.log.length, 1, "only the tenant lookup ran");
   } finally {
     console.warn = realWarn;
@@ -179,4 +179,9 @@ test("parseBuildSubmit rejects unknown values and clamps notes to 1000", () => {
   const ok = parseBuildSubmit(rows({ ...GOOD, notes: "x".repeat(1500) }));
   assert.equal(ok.ok, true);
   assert.equal(ok.build.notes.length, 1000);
+});
+
+test("BUILD_MODAL off: a modal submit already open in a client writes nothing", async () => {
+  const { db } = await run(submit(GOOD));
+  assert.equal(db.log.length, 0, "no D1 statement runs when the flag is off");
 });
