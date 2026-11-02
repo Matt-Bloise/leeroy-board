@@ -195,6 +195,50 @@ function scorePageForQuestion(page, words) {
   return score;
 }
 
+const AI_TIMEOUT_MS = 20000;
+
+export class AiTimeoutError extends Error {
+  constructor(what) {
+    super(`${what} timed out after ${AI_TIMEOUT_MS}ms`);
+    this.name = "AiTimeoutError";
+    this.code = "ai_timeout";
+  }
+}
+
+function isAbortLike(err) {
+  return Boolean(err) && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
+// Every provider HTTP call goes through here so it carries a 20s abort signal.
+async function fetchWithTimeout(url, init, what = "AI provider request") {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+  } catch (err) {
+    if (isAbortLike(err)) throw new AiTimeoutError(what);
+    throw err;
+  }
+}
+
+async function runWorkersAiWithTimeout(env, model, inputs, options) {
+  const signal = AbortSignal.timeout(AI_TIMEOUT_MS);
+  let onAbort;
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(new AiTimeoutError("Workers AI call"));
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    const call = env.AI.run(model, inputs, { ...(options || {}), signal });
+    call.catch?.(() => {}); // a late rejection after the race is settled must not be unhandled
+    return await Promise.race([call, aborted]);
+  } catch (err) {
+    if (isAbortLike(err)) throw new AiTimeoutError("Workers AI call");
+    throw err;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 function resolveGatewayUrl(env, providerSlug, defaultEndpoint) {
   const accountId = env && env.CLOUDFLARE_ACCOUNT_ID;
   const gatewayId = env && env.AI_GATEWAY_ID;
@@ -221,7 +265,7 @@ async function fetchWithGatewayFallback({
 
   if (gwUrl !== defaultEndpoint) {
     try {
-      const resp = await fetch(gwUrl, {
+      const resp = await fetchWithTimeout(gwUrl, {
         method: "POST",
         headers: { ...headers, ...cacheHeaders },
         body,
@@ -233,7 +277,7 @@ async function fetchWithGatewayFallback({
     }
   }
 
-  return await fetch(defaultEndpoint, {
+  return await fetchWithTimeout(defaultEndpoint, {
     method: "POST",
     headers,
     body,
@@ -372,7 +416,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   let result = null;
   if (env && env.AI_GATEWAY_ID) {
     try {
-      result = await env.AI.run(model, inputs, {
+      result = await runWorkersAiWithTimeout(env, model, inputs, {
         gateway: {
           id: env.AI_GATEWAY_ID,
           skipCache: Boolean(skipCache),
@@ -386,7 +430,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   }
 
   if (!result) {
-    result = await env.AI.run(model, inputs);
+    result = await runWorkersAiWithTimeout(env, model, inputs);
   }
 
   const answer = String(
@@ -439,7 +483,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
       cacheKey,
     });
   } else {
-    resp = await fetch(endpoint, {
+    resp = await fetchWithTimeout(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -851,6 +895,7 @@ export async function answerWithAi({
     if (share && env.DISCORD_WEBHOOK_URL) {
       const label = AI_PROVIDER_LABELS[provider] || provider;
       await fetch(env.DISCORD_WEBHOOK_URL, {
+        signal: AbortSignal.timeout(AI_TIMEOUT_MS),
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
