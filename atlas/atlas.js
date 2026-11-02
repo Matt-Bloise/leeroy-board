@@ -36,7 +36,7 @@ export async function createAtlas(opts) {
   };
   let cssReady = null;
   if (doc.head && !doc.querySelector("#atlas-panels-css")) {
-    const link = doc.createElement("link"); link.setAttribute("rel", "stylesheet"); link.setAttribute("id", "atlas-panels-css"); link.setAttribute("href", `${base}atlas/panels.css`);
+    const link = doc.createElement("link"); link.setAttribute("rel", "stylesheet"); link.setAttribute("id", "atlas-panels-css"); link.setAttribute("href", `${base}atlas/panels.css?v=6f13665706`);
     if ("sheet" in link) cssReady = new Promise((res) => { link.onload = link.onerror = res; setTimeout(res, 400); });
     doc.head.appendChild(link);
   }

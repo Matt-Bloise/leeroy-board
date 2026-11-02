@@ -99,7 +99,7 @@ test("Pages: baseline security headers are served on the preview origin", async 
   await r.arrayBuffer();
 });
 
-test("Pages: cache lifetimes by path, HTML always revalidated, stamped code immutable, atlas and HTML not", async () => {
+test("Pages: cache lifetimes by path, HTML always revalidated, stamped code immutable (atlas code and css too), atlas tiles and HTML not", async () => {
   const cc = async (path) => { const r = await fetch(`${PAGES}${path}`); assert.equal(r.status, 200, `${path} answered ${r.status}`); await r.arrayBuffer(); return r.headers.get("cache-control") || ""; };
   assert.match(await cc("/"), /max-age=0/);
   assert.match(await cc("/fonts/alegreya-latin.woff2"), /max-age=2592000/);
@@ -110,7 +110,15 @@ test("Pages: cache lifetimes by path, HTML always revalidated, stamped code immu
     assert.match(v, /max-age=31536000/, `${p} must be cached for a year`);
     assert.match(v, /immutable/, `${p} must be immutable`);
   }
-  assert.doesNotMatch(await cc("/atlas/atlas.js"), /immutable/, "atlas has unstamped references, so it must not be immutable");
+  for (const p of ["/atlas/atlas.js", "/atlas/view.js", "/atlas/panels.css"]) {
+    const v = await cc(p);
+    assert.match(v, /^public, max-age=31536000, immutable$/, `${p} must be cached for a year and immutable, with no joined second value`);
+  }
+  for (const p of ["/atlas/tiles/index.json", "/atlas/tiles/0/0_0.webp"]) {
+    const v = await cc(p);
+    assert.doesNotMatch(v, /immutable/, `${p} is not code and must not be immutable`);
+    assert.match(v, /^public, max-age=86400, stale-while-revalidate=604800$/, `${p} gets the short image cache, not a joined value`);
+  }
   assert.doesNotMatch(await cc("/"), /immutable/, "HTML must stay revalidated");
 });
 

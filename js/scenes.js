@@ -15,7 +15,7 @@ const SCENES = {
   wide: () => [null, new URL("../scenes/wide.js?v=6cd88699fc", HERE)],
   settings: () => [new URL("../scenes/settings.css?v=f5cbd09225", HERE), new URL("../scenes/settings.js?v=5f638d5226", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=35a7bbfcac", HERE), new URL("../scenes/refresh.js?v=9c90f169ab", HERE)],
-  guided: () => [new URL("../scenes/guided-atlas.css?v=31b46fcf7b", HERE), new URL("../scenes/guided-atlas.js?v=583a03bf29", HERE)],
+  guided: () => [new URL("../scenes/guided-atlas.css?v=31b46fcf7b", HERE), new URL("../scenes/guided-atlas.js?v=7ea522e843", HERE)],
   tablet: () => [new URL("../scenes/tablet.css?v=a996a39582", HERE), new URL("../scenes/tablet.js?v=e3b0c44298", HERE)],
   foley: () => [null, new URL("../scenes/foley.js?v=135b19b8a4", HERE)],
   foleyfx: () => [null, new URL("../scenes/foley-fx.js?v=835f856b07", HERE)],
