@@ -67,6 +67,7 @@ const stale = (which) => async (ctx) => {
   });
 };
 const CONDITIONS = [
+  { id: "control", label: "no fault (control)" },
   { id: "api-abort", label: "API requests aborted", setup: failReq("abort") },
   { id: "api-500", label: "API answers 500", setup: failReq("500") },
   { id: "api-delay", label: "API held for 12 s", setup: failReq("delay") },
