@@ -58,6 +58,14 @@ export function validateConfigValue(key, value) {
         if (!k || !isId(v)) return `${field} values must be digit strings`;
       }
     }
+    for (const field of ["channels", "roles"]) {
+      const map = value[field];
+      if (map === undefined) continue;
+      if (!map || typeof map !== "object" || Array.isArray(map)) return `${field} must be a JSON object`;
+      for (const [k, v] of Object.entries(map)) {
+        if (!k || !isId(v)) return `${field} values must be digit strings`;
+      }
+    }
     return null;
   }
   return "unknown key";

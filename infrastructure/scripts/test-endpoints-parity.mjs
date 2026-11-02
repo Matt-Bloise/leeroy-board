@@ -17,6 +17,7 @@ import {
 console.log("=== Testing Discord Slash Commands Manifest ===");
 const expectedCommands = [
   "ask",
+  "start",
   "tonight",
   "sheet",
   "launch",
