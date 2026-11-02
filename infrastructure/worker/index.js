@@ -26,6 +26,7 @@ import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
+import { guestIpKey } from "./guest-key.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -862,7 +863,7 @@ export default {
         let limitLeft = 6;
         if (!auth.ok) {
           const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
-          const ipHash = await sha256Hex(`guest-ask:${clientIp}`);
+          const ipHash = await guestIpKey(clientIp, env.USER_SALT);
           const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
           const countRow = await env.DB.prepare(
             "SELECT COUNT(*) AS count FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ?"
@@ -1262,7 +1263,7 @@ export default {
           let guestLeft = 6;
           if (isGuest) {
             const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
-            const ipHash = await sha256Hex(`guest-ask:${clientIp}`);
+            const ipHash = await guestIpKey(clientIp, env.USER_SALT);
             const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
 
             const limitRow = await env.DB.prepare(
