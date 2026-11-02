@@ -82,7 +82,6 @@ Discord:
 2. Discord Developer Portal, the bot's page, Bot tab: enable **Message Content Intent** (privileged; for a bot in under 100 servers it is a toggle, no review).
 3. Allow-list channels (admin token), for example:
    `curl -X PUT https://api.leeroy.party/api/config/gateway_channels -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" -H "Content-Type: application/json" -d '["<channel id>"]'`
-   (Check the exact auth header form `extractKey` accepts.) Confirm `discord_roster.guildId` is set; without it everything is ignored.
 4. Set `GATEWAY_ENABLED = "on"` (in `wrangler.toml` or the dashboard), deploy, then `POST /api/admin/gateway/start`.
 5. Watch `GET /api/admin/gateway` for `state: "ready"`, and the Cloudflare dashboard Durable Objects duration for a full day. Target: well under 13,000 GB-s.
 6. Only then stop the PC bot.
