@@ -1,0 +1,311 @@
+{
+ "sample": true,
+ "note": "Made-up names and a made-up raid, for showing what the roster looks like. Shaped like the groups and group_slots tables (migration 0003).",
+ "group": {
+  "id": "sample-raid-1",
+  "name": "The Tipsy Gryphons, Thursday run",
+  "kind": "raid",
+  "size": 20,
+  "ruleset": null
+ },
+ "slots": [
+  {
+   "slot_index": 0,
+   "role": "tank",
+   "status": "filled",
+   "character": {
+    "id": "sample-c01",
+    "name": "Brindle Oakhand",
+    "class_key": "warrior",
+    "class": "Warrior",
+    "spec": "Protection",
+    "color": "#c79c6e"
+   }
+  },
+  {
+   "slot_index": 1,
+   "role": "tank",
+   "status": "filled",
+   "character": {
+    "id": "sample-c02",
+    "name": "Marrow Ironkettle",
+    "class_key": "paladin",
+    "class": "Paladin",
+    "spec": "Protection",
+    "color": "#f58cba"
+   }
+  },
+  {
+   "slot_index": 2,
+   "role": "healer",
+   "status": "filled",
+   "character": {
+    "id": "sample-c03",
+    "name": "Willow Thistledown",
+    "class_key": "priest",
+    "class": "Priest",
+    "spec": "Holy",
+    "color": "#d9d9d9"
+   }
+  },
+  {
+   "slot_index": 3,
+   "role": "healer",
+   "status": "filled",
+   "character": {
+    "id": "sample-c04",
+    "name": "Fennick Mossback",
+    "class_key": "druid",
+    "class": "Druid",
+    "spec": "Restoration",
+    "color": "#ff7d0a"
+   }
+  },
+  {
+   "slot_index": 4,
+   "role": "healer",
+   "status": "filled",
+   "character": {
+    "id": "sample-c05",
+    "name": "Odalys Brightmeadow",
+    "class_key": "paladin",
+    "class": "Paladin",
+    "spec": "Holy",
+    "color": "#f58cba"
+   }
+  },
+  {
+   "slot_index": 5,
+   "role": "healer",
+   "status": "filled",
+   "character": {
+    "id": "sample-c06",
+    "name": "Tamsin Riverbend",
+    "class_key": "shaman",
+    "class": "Shaman",
+    "spec": "Restoration",
+    "color": "#0070de"
+   }
+  },
+  {
+   "slot_index": 6,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c07",
+    "name": "Cinder Vexley",
+    "class_key": "mage",
+    "class": "Mage",
+    "spec": "Fire",
+    "color": "#69ccf0"
+   }
+  },
+  {
+   "slot_index": 7,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c08",
+    "name": "Pemberly Quickfoot",
+    "class_key": "rogue",
+    "class": "Rogue",
+    "spec": "Combat",
+    "color": "#fff569"
+   }
+  },
+  {
+   "slot_index": 8,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c09",
+    "name": "Rook Hollowell",
+    "class_key": "hunter",
+    "class": "Hunter",
+    "spec": "Marksmanship",
+    "color": "#abd473"
+   }
+  },
+  {
+   "slot_index": 9,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c10",
+    "name": "Sable Grimwick",
+    "class_key": "warlock",
+    "class": "Warlock",
+    "spec": "Destruction",
+    "color": "#9482c9"
+   }
+  },
+  {
+   "slot_index": 10,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c11",
+    "name": "Juniper Cragsworth",
+    "class_key": "mage",
+    "class": "Mage",
+    "spec": "Frost",
+    "color": "#69ccf0"
+   }
+  },
+  {
+   "slot_index": 11,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c12",
+    "name": "Nettle Ashgrove",
+    "class_key": "rogue",
+    "class": "Rogue",
+    "spec": "Assassination",
+    "color": "#fff569"
+   }
+  },
+  {
+   "slot_index": 12,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c13",
+    "name": "Barnaby Stonehinge",
+    "class_key": "hunter",
+    "class": "Hunter",
+    "spec": "Beast Mastery",
+    "color": "#abd473"
+   }
+  },
+  {
+   "slot_index": 13,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c14",
+    "name": "Ember Thornquill",
+    "class_key": "warlock",
+    "class": "Warlock",
+    "spec": "Affliction",
+    "color": "#9482c9"
+   }
+  },
+  {
+   "slot_index": 14,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c15",
+    "name": "Gaffer Dunmore",
+    "class_key": "warrior",
+    "class": "Warrior",
+    "spec": "Fury",
+    "color": "#c79c6e"
+   }
+  },
+  {
+   "slot_index": 15,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c16",
+    "name": "Lark Wildermoor",
+    "class_key": "shaman",
+    "class": "Shaman",
+    "spec": "Enhancement",
+    "color": "#0070de"
+   }
+  },
+  {
+   "slot_index": 16,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c17",
+    "name": "Pip Cobblestep",
+    "class_key": "mage",
+    "class": "Mage",
+    "spec": "Arcane",
+    "color": "#69ccf0"
+   }
+  },
+  {
+   "slot_index": 17,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c18",
+    "name": "Moss Underbough",
+    "class_key": "druid",
+    "class": "Druid",
+    "spec": "Balance",
+    "color": "#ff7d0a"
+   }
+  },
+  {
+   "slot_index": 18,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c19",
+    "name": "Thessaly Redfern",
+    "class_key": "priest",
+    "class": "Priest",
+    "spec": "Shadow",
+    "color": "#d9d9d9"
+   }
+  },
+  {
+   "slot_index": 19,
+   "role": "dps",
+   "status": "filled",
+   "character": {
+    "id": "sample-c20",
+    "name": "Crispin Deepwell",
+    "class_key": "rogue",
+    "class": "Rogue",
+    "spec": "Combat",
+    "color": "#fff569"
+   }
+  }
+ ],
+ "bench": [
+  {
+   "role": "dps",
+   "status": "bench",
+   "character": {
+    "id": "sample-c21",
+    "name": "Wren Lowgrove",
+    "class_key": "paladin",
+    "class": "Paladin",
+    "spec": "Retribution",
+    "color": "#f58cba"
+   }
+  },
+  {
+   "role": "healer",
+   "status": "bench",
+   "character": {
+    "id": "sample-c22",
+    "name": "Hob Marshwick",
+    "class_key": "priest",
+    "class": "Priest",
+    "spec": "Holy",
+    "color": "#d9d9d9"
+   }
+  },
+  {
+   "role": "tank",
+   "status": "bench",
+   "character": {
+    "id": "sample-c23",
+    "name": "Dilly Fernwhistle",
+    "class_key": "warrior",
+    "class": "Warrior",
+    "spec": "Protection",
+    "color": "#c79c6e"
+   }
+  }
+ ]
+}
