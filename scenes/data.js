@@ -50,7 +50,7 @@ const ST = { schema: null, index: null, pages: null, core: null, qm: null, hays:
 const get = (rel) => fetch(U(rel), { cache: "no-cache" }).then((r) => { if (!r.ok) throw new Error(rel); return r.json(); });
 async function load() {
   if (ST.pages) return;
-  const [schema, index, core, qm] = await Promise.all([get("data/library/schema.json"), get("data/library/index.json"), import(U("vendor/rank-core.js")), import(U("vendor/query.js"))]);
+  const [schema, index, core, qm] = await Promise.all([get("data/library/schema.json"), get("data/library/index.json"), import(U("vendor/rank-core.js?v=16d8a1283e")), import(U("vendor/query.js?v=9c0a11b495"))]);
   ST.schema = schema; ST.index = index; ST.core = core; ST.qm = qm; BUILD.v = index.build || schema.build || "";
   const cats = await Promise.all(index.categories.map((c) => get(`data/library/${c.key}.json`).catch(() => ({ pages: [] }))));
   ST.pages = cats.flatMap((c) => c.pages).map((p) => ({ ...p, aliases: p.aliases || [], open: p.open || [] }));

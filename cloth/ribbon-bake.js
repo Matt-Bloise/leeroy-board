@@ -1,4 +1,4 @@
-import { sdfLabel } from "./sdf-worker.js?v=07781af8ec";
+import { sdfLabel } from "./sdf-worker.js?v=63bdf05bcd";
 
 const FONT_URL = new URL("../fonts/alegreya-sans-sc-700-latin.woff2", import.meta.url).href;
 export function fontReady() { try { return !document.fonts || document.fonts.check('700 13px "Alegreya Sans SC"'); } catch (e) { return true; } }
@@ -17,7 +17,7 @@ export function createBaker(done) {
   const later = (j) => { q = q.filter((x) => x.id !== j.id); q.push(j); if (!busy) busy = idle(run); };
   try {
     if (typeof OffscreenCanvas === "function" && typeof Worker === "function") {
-      w = new Worker(new URL("./sdf-worker.js?v=07781af8ec", import.meta.url), { type: "module" });
+      w = new Worker(new URL("./sdf-worker.js?v=63bdf05bcd", import.meta.url), { type: "module" });
       w.onmessage = (e) => { const r = e.data || {}; sent.delete(r.id); if (!dead && !r.error) done(r); };
       w.onerror = () => { try { w.terminate(); } catch (x) {} w = null; for (const j of sent.values()) later(j); sent.clear(); };
     }
