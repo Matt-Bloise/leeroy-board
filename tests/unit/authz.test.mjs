@@ -28,6 +28,8 @@ const TABLE = {
   "POST /probe": PUBLIC,
   "ANY /sheet": MEMBER,
   "POST /announce": ADMIN,
+  "GET /admin/gateway": ADMIN, // Gateway DO state, no message content
+  "POST /admin/gateway/start": ADMIN,
   "PUT /vocab": ADMIN,
   "PUT /config/:key": ADMIN, // admin-gated config rows (name_map, discord_members, ...), write only
   "POST /admin/members": ADMIN,
@@ -165,6 +167,8 @@ const CALLS = {
   "POST /probe": ["POST", "/api/probe", "{}"],
   "ANY /sheet": ["GET", "/api/sheet"],
   "POST /announce": ["POST", "/api/announce", "{}"],
+  "GET /admin/gateway": ["GET", "/api/admin/gateway"],
+  "POST /admin/gateway/start": ["POST", "/api/admin/gateway/start", "{}"],
   "PUT /vocab": ["PUT", "/api/vocab", "{}"],
   "PUT /config/:key": ["PUT", `/api/config/${CONFIG_KEYS[0]}`, "{}"],
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],

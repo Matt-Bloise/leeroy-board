@@ -9,6 +9,7 @@
 // =============================================================================
 
 import { BoardRoom } from "./room.js";
+import { GatewayDO, gatewayEnabled, gatewayStatus, kickGateway } from "./gateway.js";
 import {
   answerWithAi,
   resolveAiProvider,
@@ -40,7 +41,7 @@ import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
-export { BoardRoom };
+export { BoardRoom, GatewayDO };
 
 const PARTY_MEMBERS = [
   { slug: "santa", name: "Santa", race: "tauren", class: "druid", spec_path: "feral-tank", professions: ["leatherworking", "skinning"], plan_zone: "mulgore" },
@@ -338,7 +339,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "PUT /persona", "POST /dispatch",
+  "POST /announce", "GET /admin/gateway", "POST /admin/gateway/start", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "PUT /persona", "POST /dispatch",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -486,6 +487,18 @@ export default {
         }
         await res.arrayBuffer().catch(() => {});
         return jsonResp({ ok: true, status: res.status }, 200, cors);
+      }
+
+      // Admin only: Gateway DO state (no message content, no token). Flag-off Workers answer {enabled:false}.
+      if (req.method === "GET" && path === "/admin/gateway") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        return jsonResp(await gatewayStatus(env), 200, cors);
+      }
+      if (req.method === "POST" && path === "/admin/gateway/start") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        return jsonResp(await kickGateway(env, url.searchParams.get("clear") === "1"), 200, cors);
       }
 
       // Admin token only: a friend's member key must not rewrite the shared vocabulary.
@@ -1625,5 +1638,7 @@ export default {
   async scheduled(controller, env, ctx) {
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
+    // Bootstrap only: the DO's own one-minute alarm keeps the Gateway alive; this restarts it if the alarm chain ever broke.
+    if (gatewayEnabled(env)) ctx.waitUntil(kickGateway(env).catch(() => {}));
   },
 };
