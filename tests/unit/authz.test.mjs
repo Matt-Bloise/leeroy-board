@@ -31,6 +31,7 @@ const TABLE = {
   "PUT /vocab": ADMIN,
   "PUT /config/:key": ADMIN, // admin-gated config rows (name_map, discord_members, ...), write only
   "POST /admin/members": ADMIN,
+  "POST /admin/cards/post": ADMIN, // CARDS_ENABLED; 404 while off. Posts or recreates a pinned card and records its message id
   "PUT /persona": ADMIN,
   "POST /dispatch": MEMBER,
   "GET /intents": ADMIN,
@@ -168,6 +169,7 @@ const CALLS = {
   "PUT /vocab": ["PUT", "/api/vocab", "{}"],
   "PUT /config/:key": ["PUT", `/api/config/${CONFIG_KEYS[0]}`, "{}"],
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],
+  "POST /admin/cards/post": ["POST", "/api/admin/cards/post", "{}"],
   "PUT /persona": ["PUT", "/api/persona", "{}"],
   "POST /dispatch": ["POST", "/api/dispatch", "{}"],
   "GET /intents": ["GET", "/api/intents"],

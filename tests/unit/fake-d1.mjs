@@ -8,7 +8,7 @@ export function fakeD1(seed = {}) {
     kv, ledger, log,
     prepare(sql) {
       let a = [];
-      const lit = /key = '([^']+)'/.exec(sql);
+      const lit = /key = '([^']+)'/.exec(sql) || /VALUES \('([^']+)'/.exec(sql);
       const o = {
         bind: (...x) => { a = x; return o; },
         async first() {

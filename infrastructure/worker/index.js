@@ -32,12 +32,15 @@ import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
-import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, validateConfigValue } from "./config.js";
+import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
+import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
+import { afterSignupChange } from "./cards-handler.js";
+import { flushBoardLines } from "./board-lines.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -338,7 +341,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "PUT /persona", "POST /dispatch",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "PUT /persona", "POST /dispatch",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -486,6 +489,30 @@ export default {
         }
         await res.arrayBuffer().catch(() => {});
         return jsonResp({ ok: true, status: res.status }, 200, cors);
+      }
+
+      // Admin only (CARDS_ENABLED): post a pinned card for the first time, or recreate one a person deleted, and record its message id in
+      // the cards row. The channel comes from discord_roster.channels, never from the request. Posting the first card is a deliberate act.
+      if (req.method === "POST" && path === "/admin/cards/post") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        if (!cardsEnabled(env)) return jsonResp({ error: "Cards are off" }, 404, cors);
+        if (!env.DISCORD_BOT_TOKEN && !cardsShadow(env)) return jsonResp({ error: "Discord bot token not configured" }, 503, cors);
+        let input;
+        try {
+          input = await req.json();
+        } catch {
+          return jsonResp({ error: "Body must be JSON" }, 400, cors);
+        }
+        if (!input || typeof input !== "object" || Array.isArray(input)) return jsonResp({ error: "Body must be a JSON object" }, 400, cors);
+        if (!CARD_NAMES.includes(input.card) || input.card === "party") return jsonResp({ error: "card must be signups or board" }, 400, cors);
+        const roster = await loadConfigKey(env, "discord_roster");
+        const channelId = lookupRosterId(roster, "channels", input.channel_key);
+        if (!channelId) return jsonResp({ error: "Unknown channel_key" }, 400, cors);
+        const out = await postCard(env, { card: input.card, channelId, replace: input.replace === true });
+        if (!out.ok) return jsonResp({ ok: false, error: out.error }, out.status || 400, cors);
+        invalidateConfigCache("cards");
+        return jsonResp(out.shadow ? { ok: true, card: out.card, shadow: true } : { ok: true, card: out.card, pinned: out.pinned }, 200, cors);
       }
 
       // Admin token only: a friend's member key must not rewrite the shared vocabulary.
@@ -928,6 +955,7 @@ export default {
         const body = await req.json();
         const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
         const doc = row ? JSON.parse(row.json) : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
+        const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
         if (Array.isArray(body.entries)) {
           doc.entries = body.entries;
         } else if (body.name) {
@@ -947,6 +975,7 @@ export default {
           .run();
         await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json"]);
         await broadcastToRoom(env, { type: "data", key: "signups" });
+        if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
         return jsonResp({ ok: true, signups: doc }, 200, cors);
       }
 
@@ -1625,5 +1654,7 @@ export default {
   async scheduled(controller, env, ctx) {
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
+    // CARDS_ENABLED: every tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).
+    if (cardsEnabled(env)) ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
   },
 };

@@ -519,7 +519,7 @@ paths:
     put:
       summary: Admin only. Replaces one private config row. Write only.
       description: |
-        Keys: name_map, discord_members, discord_roster; any other key is 400. Body is JSON, at most 20000 bytes (413), validated per key (400).
+        Keys: name_map, discord_members, discord_roster, ai_budget_caps, cards (pinned card channel and message ids, plus allowedChannels), noise (post budget: perDay, overrides by day, quiet hours); any other key is 400. Body is JSON, at most 20000 bytes (413), validated per key (400).
         The success body echoes only the key and an entry count, never the stored value. There is no GET route: a GET answers the
         generic route 404. These rows are never served by /api/data/{name}.
       security:
@@ -528,7 +528,7 @@ paths:
         - name: key
           in: path
           required: true
-          schema: { type: string, enum: [name_map, discord_members, discord_roster] }
+          schema: { type: string, enum: [name_map, discord_members, discord_roster, ai_budget_caps, cards, noise] }
       requestBody:
         required: true
         content:
@@ -557,6 +557,67 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/admin/cards/post:
+    post:
+      summary: Admin only. Posts a pinned card (sign-ups or party board) and records its message id; also recreates a card a person deleted.
+      description: |
+        Needs the Worker flag CARDS_ENABLED (404 while off). The channel comes from the discord_roster `channels` map by name, never from the
+        request. The message id is stored in the private kv row `cards` and is not echoed. Sign-up changes then edit that message in place
+        (at most one edit per 3 seconds); an edit that finds the message deleted marks the card deleted and stops, and this route recreates it.
+        With CARDS_SHADOW on nothing is sent to Discord (200 with `shadow: true`). Checks run in this order: admin token (401/503), flag (404),
+        bot token (503), JSON object body (400), card (400), channel_key (400), an existing live card without `replace: true` (409), Discord (502).
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card, channel_key]
+              properties:
+                card: { type: string, enum: [signups, board] }
+                channel_key: { type: string, description: A name in discord_roster.channels. }
+                replace: { type: boolean, description: Post a new message even if a live card is recorded. }
+      responses:
+        "200":
+          description: Posted (`pinned` says whether pinning worked; it is best effort) or, in shadow mode, counted only.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, card]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  card: { type: string }
+                  pinned: { type: boolean }
+                  shadow: { type: boolean }
+        "400":
+          description: Body not a JSON object, unknown card or channel_key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: Cards are off (CARDS_ENABLED is not on).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "409":
+          description: A live card is already recorded; send `replace` true to post another.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "502":
+          description: Discord refused the post.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string }
         "503": { $ref: '#/components/responses/NotConfigured' }
   /api/persona:
     put:
