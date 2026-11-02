@@ -1,89 +1,99 @@
 # Receiving Discord @mentions and replies on Cloudflare, with no PC
 
-Status: spike with a flag-off prototype (`infrastructure/worker/gateway.js`, class `GatewayDO`). Nothing here has talked to the real Discord Gateway.
+Status: **research only. This document is the whole deliverable; no code is added.** An earlier draft of this PR carried a prototype (`GatewayDO`, a `GATEWAY` binding and a `v2` migration, tests). It was removed on review: the duration billing, eviction and MESSAGE_CONTENT questions below must be settled on paper and by a soak test first. The prototype is not part of this change; it survives only in this PR's history at commit `5b2ab2f` and is **not for merge**.
 
-## Verdict
+## Verdict: alternative now, conditional go later
 
-**Conditional go on the free plan.** A Durable Object can hold the Gateway socket 24/7. It cannot hibernate while it does, so it is billed wall-clock duration all day. The arithmetic fits the free allowance, with about 17% to spare and a hard failure (not a bill) if it is exceeded:
+1. **Now: Interactions-only.** Keep `/ask` and the context-menu command "Ask Leeroy" (both already live on the Worker) as the way to ask. They need no Gateway, no always-on object and no privileged intent. Plain @mentions and replies are given up once the PC bot is retired.
+2. **Later, only if wanted: a Gateway Durable Object**, gated on the 24-hour soak test below passing. The arithmetic says it fits the free plan, but with thin margin and unverified assumptions, and a miss fails other Worker operations. That is not a risk to take on a guess.
 
-| | Per day | Free allowance | Share |
-|---|---|---|---|
-| Duration, one DO awake 24 h at the fixed 128 MB | 0.125 GB x 86,400 s = **10,800 GB-s** | 13,000 GB-s | **83%** |
-| Requests: one alarm a minute | 1,440 | 100,000 (shared with the whole Worker) | 1.4% |
-| Requests: Gateway events | unknown, see below | | |
+## How far to trust the numbers (read first)
 
-If the allowance runs out, Cloudflare fails further operations of that type until the daily reset (per the free-plan wording in the search summary of the pricing page). The Worker, `BoardRoom` and the slash commands could then fail too, so this is not harmless. Ship it off, trial it for one day with the dashboard open, and keep the fallback ready.
+`developers.cloudflare.com` and `discord.com` did not resolve from the sandbox that produced this. I could not fetch either primary source. On **2026-11-02** I used web-search summaries of the Cloudflare pages (marked **[search]**) and my recollection of the Discord docs (marked **[recall]**). Every claim below needs checking against the live page, and the access date should be re-stamped by whoever does that.
 
-**Fallback if the numbers are worse than 83%:** keep Interactions-only (the `/ask` slash command and the context-menu "Ask Leeroy", both live). Plain @mentions then stay unavailable once the PC bot is retired. Paid-plan estimate: the $5 Workers Paid base. Duration per month would be about 324,000 GB-s against 400,000 included, and requests are far below the 1,000,000 included, so overage should be $0 (figures from the pricing page as summarized by search; see "Sources and how far to trust them").
-
-## Sources and how far to trust them
-
-**Read this first.** In the session that wrote this, `developers.cloudflare.com` and `discord.com` did not resolve (the sandbox network allow-list blocked them), so I could not fetch either primary source. Everything below is from (a) web-search summaries of the Cloudflare pages, marked **[search]**, or (b) my recollection of the Discord docs, marked **[recall]**. Someone must open each link and confirm before the flag is turned on. Nothing here is verified by running it.
-
-Cloudflare:
-- Pricing and duration billing: https://developers.cloudflare.com/durable-objects/platform/pricing/
-- Lifecycle and hibernation conditions: https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/
+Cloudflare (access date 2026-11-02, via search summary, page not fetched):
+- Pricing and duration: https://developers.cloudflare.com/durable-objects/platform/pricing/
+- Lifecycle and hibernation: https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/
 - WebSockets / Hibernation API: https://developers.cloudflare.com/durable-objects/api/hibernatable-websockets-api/
 - Alarms: https://developers.cloudflare.com/durable-objects/api/alarms/
 - Workers limits: https://developers.cloudflare.com/workers/platform/limits/
-- workerd issue on outgoing sockets and hibernation: https://github.com/cloudflare/workerd/issues/4864
+- workerd issue (hibernation only for incoming sockets): https://github.com/cloudflare/workerd/issues/4864
 
-Discord:
-- Gateway (opcodes, heartbeat, identify, resume, close codes, rate limits): https://discord.com/developers/docs/events/gateway
-- Gateway events and intents: https://discord.com/developers/docs/events/gateway#gateway-intents
-- Message content intent: https://discord.com/developers/docs/events/gateway#message-content-intent
-- Create Message (REST): https://discord.com/developers/docs/resources/message#create-message
+Discord (recall, not fetched):
+- Gateway: https://discord.com/developers/docs/events/gateway
+- Intents and the message content intent: https://discord.com/developers/docs/events/gateway#message-content-intent
+- Privileged intent verification: https://support-dev.discord.com/hc/en-us/articles/6207308062871 (confirm the current URL)
 
-## Answers, with numbers
+## Free-plan duration math
 
-1. **Does an outbound WebSocket client in a DO prevent hibernation? Yes.** [search] Hibernation only works for sockets the DO accepts with `ctx.acceptWebSocket()`; a socket the DO opens itself to an external service (`fetch` with `Upgrade: websocket`, then `ws.accept()`) is not hibernatable, and the lifecycle page says active outbound connections keep the object in memory and incur duration charges. A pending `setTimeout`/`setInterval` also blocks hibernation, and the heartbeat is a timer. The same search summary quoted "up to 15 minutes per connection" for idle outbound connections; I could not read the context, and it does not matter here because the heartbeat keeps the object busy anyway.
-2. **What does the 24/7 DO cost on the FREE plan?** Billing is wall clock while active and not hibernatable, charged for the fixed 128 MB regardless of use [search]. So 0.125 GB x 86,400 s = **10,800 GB-s/day against 13,000 free**, 83% of the allowance, leaving 2,200 GB-s. `BoardRoom` is hibernatable and bills only while handling events, so it should fit in the remainder, but a busy night of live-board viewers eats the margin. Free plan Durable Objects must be SQLite-backed [search]; `GatewayDO` is declared that way (`new_sqlite_classes`).
-3. **Requests.** Free: 100,000 a day [search]. The prototype adds 1,440 alarm invocations a day. Heartbeat ACKs arrive every ~41 s (~2,100 a day). Whether inbound messages on an outbound socket count as requests, and at what ratio, I could not confirm (the hibernatable-socket 20:1 rule is the only ratio I know of, and it may not apply here). Worst case at 1:1 that is about 3,600 a day for protocol traffic. The unbounded part is `MESSAGE_CREATE`: with the GUILD_MESSAGES intent Discord sends every message in every channel the bot can see, not just the allow-listed ones (there is no server-side filter). A small private guild is likely hundreds a day; a busy one could be tens of thousands. **Check the guild's real volume before enabling.**
-4. **CPU.** Free Workers get 10 ms CPU per request [search]; network waiting does not count. Parsing a frame is microseconds. `answerWithAi` ranks library pages in process (the same code the Interactions path runs in `waitUntil`), so any CPU problem already exists there. Whether a DO socket event resets the CPU budget per message on the free plan: **unverified**.
-5. **Deploys and evictions.** A deploy or eviction replaces the instance: memory and the open socket are lost, and the constructor runs again. [search] says objects are restarted on occasional shutdowns; it did not confirm deploy behavior, but that is how DOs work. What survives: DO storage (`session_id`, `resume_gateway_url`, sequence) and the alarm. The alarm fires every minute, finds no socket, and reconnects with `RESUME` (op 6: token, session_id, seq) to `resume_gateway_url`. Discord replays missed events [recall], so the outage is bounded by the alarm (at most ~60 s plus backoff) as long as Discord still holds the session (a few minutes [recall]); after that `INVALID_SESSION` (not resumable) leads to a fresh `IDENTIFY`. The sequence is persisted about once per heartbeat (~41 s), so a resume can replay up to that many events; handled message ids are stored right when handled and replays are skipped, and the 20 s cooldown is stored at once.
-6. **Can the Workers free plan host this at all?** Yes, by the numbers above: Durable Objects are available on free (SQLite only), outbound WebSockets from a DO are allowed, and the 83% figure fits. It leaves little headroom.
+| Item | Number | Source |
+|---|---|---|
+| Free Durable Objects duration allowance | 13,000 GB-s per day | [search] pricing page |
+| Free requests | 100,000 per day, shared with the whole Worker | [search] |
+| Billed memory | fixed 128 MB (0.125 GB), regardless of use | [search] |
+| A DO kept awake 24 h | 0.125 x 86,400 = **10,800 GB-s/day = 83%** of the allowance | arithmetic |
+| Headroom | 2,200 GB-s/day, for everything else including `BoardRoom` | arithmetic |
+| Free-plan DOs | SQLite-backed only | [search] |
+| Over the free limit | further operations of that type fail until reset | [search] |
+| Paid fallback | $5 Workers Paid; ~324,000 GB-s/month used against 400,000 included, so about $5 total | [search] |
 
-## Gateway facts the code relies on [recall; confirm]
+**Does an outbound WebSocket prevent hibernation? Yes.** [search] Only sockets the DO accepts (`ctx.acceptWebSocket`) hibernate; one it opens itself to Discord does not, and the lifecycle page says outbound connections keep the object in memory and incur duration charges. A pending timer (the heartbeat) blocks hibernation too. So the object is billed continuously and the 83% figure is the real cost, not a worst case.
 
-- URL `wss://gateway.discord.gg/?v=10&encoding=json`. After `READY`, reconnect to `resume_gateway_url`.
-- `HELLO` (op 10) gives `heartbeat_interval`. First heartbeat after `interval x random(0..1)`, then every interval. Missing ACK (op 11) before the next beat means a zombied connection: close with a non-1000/1001 code and resume.
-- Server may send op 1 (heartbeat now), op 7 (reconnect, resume), op 9 (invalid session; `d` true means resumable; wait 1 to 5 s then IDENTIFY if not).
-- Close codes: 4004 auth failed, 4010 to 4014 are fatal (4013 invalid intents, 4014 disallowed intents). 4007 invalid seq and 4009 session timed out need a fresh IDENTIFY. 1000/1001 invalidate the session.
-- Intents: GUILDS 1<<0, GUILD_MESSAGES 1<<9, MESSAGE_CONTENT 1<<15 (privileged). Value used: 33281.
-- MESSAGE_CONTENT: without it message content is empty except in messages that mention the bot, DMs, and the bot's own messages. A plain reply without a ping would arrive empty, so turn the intent on.
-- Limits: 120 gateway events per 60 s per connection (we send ~1 beat per 41 s), 1,000 IDENTIFYs per 24 h (the prototype refuses beyond 900 a day and backs off 1 s doubling to 60 s with jitter).
-- REST reply: `POST /channels/{id}/messages` with `message_reference` and `allowed_mentions: { parse: [], replied_user: false }`.
+**Requests.** An alarm each minute is 1,440 a day and heartbeat ACKs about 2,100 a day. Whether inbound messages on an outbound socket count as requests, and at what ratio, is **unverified**. The big unknown is message volume: with the GUILD_MESSAGES intent Discord sends every message in every visible channel, with no server-side filter.
 
-## What the prototype does
+**CPU.** Free Workers get 10 ms CPU per request [search]. Whether each socket event on a free-plan DO gets a fresh budget is **unverified**. The ask path (library ranking) already runs under that limit on the Interactions side.
 
-- `GatewayDO` in `infrastructure/worker/gateway.js`; binding `GATEWAY` and migration tag `v2` in `wrangler.toml` (the existing `BoardRoom` and tag `v1` are untouched). `GATEWAY_ENABLED = "off"` by default.
-- The Worker cron (every 6 h) and `POST /api/admin/gateway/start` start it; after that the DO's own one-minute alarm keeps it alive.
-- Only `MESSAGE_CREATE` from a human, in the configured guild (`discord_roster.guildId`), in a channel in D1 `kv_state` key `gateway_channels`, that mentions the bot or replies to one of its messages. Bots, webhooks, DMs, other guilds and other channels are ignored; an empty allow-list ignores everything.
-- `handleGatewayAsk({ env, message })` inserts `ask_turns` with the same SQL as the Interactions path, runs `answerWithAi` unchanged, and replies over REST. It does not call `insertIntent` (that lives in `index.js`; importing it from here would be circular).
-- `GET /api/admin/gateway` (admin token): state, last heartbeat ack, reconnect count, last 20 event types and times. No message content, no token.
-- The token is `env.DISCORD_BOT_TOKEN`, the secret `POST /api/announce` already uses. It is never logged, stored or returned.
+## Deploys and eviction
 
-## Failure modes
+A deploy or eviction replaces the instance: memory and the open Discord socket are lost and the constructor runs again. Storage and any scheduled alarm survive. The design to settle on paper:
+- Store `session_id`, `resume_gateway_url` and the last sequence in DO storage (persist about once per heartbeat, ~41 s).
+- A one-minute alarm notices there is no socket and reconnects with RESUME (op 6: token, session_id, seq) to `resume_gateway_url`. Discord replays missed events [recall], so the gap is bounded by the alarm interval plus backoff, provided Discord still holds the session (a few minutes [recall]).
+- If the session is gone, INVALID_SESSION (not resumable) leads to a fresh IDENTIFY after 1 to 5 s. Cap IDENTIFY below Discord's 1,000 per 24 h (use 900) with exponential backoff, so a crash loop cannot burn the day's budget.
+- A resume can replay up to one heartbeat interval of events, so message ids already handled must be stored and skipped, and a per-user cooldown (default 20 s) stored at once, or a user gets two answers.
+- Fatal close codes (4004 auth failed, 4013 invalid intents, 4014 disallowed intents) must stop the retry loop, not spin.
+- Gateway facts used: heartbeat first at `interval x random(0..1)` then every interval, missed ACK means a zombied socket (close with a non-1000/1001 code and resume), 120 events per 60 s per connection. All [recall].
 
-| Failure | Behavior |
+## The MESSAGE_CONTENT privileged-intent gate
+
+[recall; confirm against the portal and the verification article above]
+- `MESSAGE_CONTENT` (1<<15) is privileged. Without it, message content arrives empty except when the message mentions the bot, is a DM, or is the bot's own. A plain reply to the bot's message, with no ping, would arrive empty.
+- **Under 100 servers:** the owner turns it on with a toggle in the Developer Portal (Bot tab). No review. The Leeroy bot lives in one guild, so this is the case that applies.
+- **100 or more servers:** the bot must be verified, and Discord must approve MESSAGE_CONTENT through the verification and privileged-intent application, with a stated use case. Without approval the Gateway closes with 4014 "disallowed intents". For a private party bot this is out of scope, but it is the gate if the bot is ever made public or run by tenants, and it is not something a feature flag can fix. Nothing in the product should depend on it silently.
+- Mentions-only would work without the intent. Replies without a ping would not, so "reply to the bot" support depends on the intent.
+
+## The alternative: Interactions-only UX
+
+Already live: `/ask` and the "Ask Leeroy" message context-menu command, answered by the Worker over HTTP Interactions. Properties: no Gateway, no always-on object, no privileged intent, no duration cost, deploys and evictions are irrelevant, signed requests, works on the free plan today. Costs: the user must use a slash command or right-click a message instead of just @mentioning; no thread-style "reply to continue" flow. Cheapest mitigations: put a pinned message and the `/ask` hint in the channel, and keep the context-menu command prominent. This is the recommendation until a soak test says otherwise.
+
+## 24-hour soak test plan (to run later, not now)
+
+Goal: measure, on the real free plan, whether holding the Gateway is affordable and survivable.
+1. **Prereqs:** verify every claim above against the live docs and re-stamp the access dates; confirm the guild is under 100 servers; turn on MESSAGE_CONTENT in the portal; use a throwaway test guild and a separate bot application first, never the production token. Decide an allow-list of one test channel.
+2. **Instrument:** a status endpoint (admin token only) reporting connection state, last heartbeat ack, reconnect count, identifies today, and the last 20 event types (never content or the token).
+3. **Run 24 h** with the flag on in a preview or staging Worker, not production. During the run: trigger two deploys and, if possible, one forced restart; send mentions and replies on a schedule from a test account; leave the channel idle for several hours.
+4. **Read the Cloudflare dashboard** for Durable Objects duration and requests each hour.
+5. **Pass criteria:** duration at or below 11,000 GB-s for the day (about 85%); total requests under 50% of the free limit; every deploy recovers within 90 s with RESUME (not IDENTIFY) when the session was alive; no duplicate answers across a resume; zero fatal-loop or IDENTIFY storms (under 20 IDENTIFYs); the rest of the Worker (health, `/ask`, live board) unaffected throughout.
+6. **Fail criteria:** any day over 13,000 GB-s or any free-plan operation failing; recovery over 5 min; duplicates; or message volume making requests the binding constraint. On fail, stay on Interactions-only, or price the $5 Workers Paid plan.
+7. **Record** the measured numbers back in this document with dates, then decide go or no-go.
+
+## Failure modes to design against
+
+| Failure | Needed behavior |
 |---|---|
-| Deploy or eviction | Reconnect within ~1 min via alarm; RESUME if the session is alive, else IDENTIFY. |
-| Zombie socket | No ACK by the next beat: close 4000, resume. |
-| Bad token / intent not enabled in the portal (4004, 4013, 4014) | Marked `fatal`, no retry, alarm stops. Fix, then `POST /api/admin/gateway/start?clear=1`. |
-| Reconnect storm | Backoff to 60 s; IDENTIFY capped at 900 a day. |
-| Daily free allowance exhausted | Cloudflare fails operations until reset; the Worker could be affected. Turn the flag off. |
-| Duplicate reply after a replay | Handled ids and a per-user cooldown (20 s, DO storage) make it unlikely, not impossible. |
-| AI slow or erroring | Same path as `/ask`: persona error line. The socket loop is not blocked by the AI call. |
-| Flag turned off | The next alarm closes the socket and stops re-arming. |
+| Deploy or eviction | Alarm reconnect within ~1 min; RESUME if alive, else IDENTIFY. |
+| Zombie socket | No ACK by next beat: close and resume. |
+| Token wrong or intent not enabled (4004, 4013, 4014) | Stop, report, do not loop. |
+| Crash loop | Backoff; IDENTIFY cap. |
+| Free allowance exhausted | Cloudflare fails operations until reset, possibly the whole Worker; a kill switch (flag off) must be tested. |
+| Replay after resume | Handled-id list and cooldown. |
+| Bot token exposure | Read only from the existing secret binding; never logged, stored or returned. |
 
-## What the owner or Josh must do to turn it on
+## What the owner or Josh would do if the soak test passes
 
-1. Open the confirm list above and verify the Cloudflare and Discord facts against the live docs.
-2. Discord Developer Portal, the bot's page, Bot tab: enable **Message Content Intent** (privileged; for a bot in under 100 servers it is a toggle, no review).
-3. Allow-list channels (admin token), for example:
-   `curl -X PUT https://api.leeroy.party/api/config/gateway_channels -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" -H "Content-Type: application/json" -d '["<channel id>"]'`
-4. Set `GATEWAY_ENABLED = "on"` (in `wrangler.toml` or the dashboard), deploy, then `POST /api/admin/gateway/start`.
-5. Watch `GET /api/admin/gateway` for `state: "ready"`, and the Cloudflare dashboard Durable Objects duration for a full day. Target: well under 13,000 GB-s.
-6. Only then stop the PC bot.
+1. Verify the sources and run the soak test above; record results here.
+2. Enable the MESSAGE_CONTENT intent in the Discord Developer Portal (Bot tab).
+3. Create the channel allow-list in D1 (`kv_state`, key `gateway_channels`, an array of channel ids; no ids in the repo) and confirm the roster guild id is set.
+4. Implement behind a default-off flag in a separate, reviewed PR, from commit `5b2ab2f` as a starting point if useful.
+5. Turn the flag on, watch a full day, then retire the PC bot.
 
-Rollback: set the flag to `off` (the DO closes within a minute), or revert the PR. The `v2` migration only adds an empty class.
+Rollback for the eventual feature: set the flag off; the object closes within a minute.

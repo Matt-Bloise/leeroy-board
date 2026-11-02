@@ -4,7 +4,7 @@ import { isMemberId } from "./members.js";
 // Written by PUT /api/config/<key>; there is no GET route. Cached 60 s per isolate; PUT invalidates the cache.
 // Every reader falls back to null when the row is missing, so an unseeded Worker refuses or no-ops safely.
 
-export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps", "gateway_channels"];
+export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps"];
 export const CONFIG_MAX_BYTES = 20000;
 
 const TTL_MS = 60 * 1000;
@@ -48,11 +48,6 @@ export function validateConfigValue(key, value) {
       }
       if (m.id !== undefined && !isMemberId(m.id)) return "member id must be a numeric string of 17 to 20 digits";
     }
-    return null;
-  }
-  if (key === "gateway_channels") {
-    if (!Array.isArray(value) || value.length > 50) return "gateway_channels must be a JSON array of at most 50 channel ids";
-    if (!value.every((v) => typeof v === "string" && /^[0-9]{5,25}$/.test(v))) return "gateway_channels entries must be digit strings";
     return null;
   }
   if (key === "discord_roster") {
@@ -109,7 +104,7 @@ export function buildThreadMention(person, roster) {
 
 // kv_state rows that hold configuration or private working data. GET /api/data/<key> must never serve them:
 // that route is public and serves any kv_state key. Exact keys plus prefixes; matching is case-insensitive.
-const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "gateway_channels", "vocab", "votes:index", "feed_posts"]);
+const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "vocab", "votes:index", "feed_posts"]);
 const PRIVATE_PREFIXES = ["ai_budget:", "vote:", "votes:", "feed_", "private:", "config:", "secret"];
 export function isPrivateKvKey(key) {
   const k = String(key || "").trim().toLowerCase();
