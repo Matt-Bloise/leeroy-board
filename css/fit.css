@@ -146,3 +146,20 @@
   #scene .sheet { margin-block-end: clamp(0px, calc((100svh - 58rem) / 3), 200px); }
   #scene .sheet-body { align-content: safe center; padding-top: 24px; }
 }
+
+/* Q21 portrait column: portrait windows under 1200 px (a portrait desktop, a tablet held upright) lay the first screen out as one centred column,
+   720 px at most and sized by its content, so the parchment ends with the last card instead of trailing off empty. The hanging banner ribbons give way to a
+   plain one-row tab strip (still the scene switcher), the moon sits in the flow below the content, and the phone shell (under 700 px) is left as it is. */
+@media (min-width: 700px) and (max-width: 1199px) and (min-height: 501px) and (orientation: portrait) {
+  #scene .sheet { width: min(720px, 100%); height: auto; max-height: calc(100svh - 2 * var(--fit-band)); margin-block-end: 0; margin-inline: auto; grid-template-rows: auto minmax(0, max-content); }
+  html.ribbons-on #scene .sheet-body, html #scene .sheet-body { contain: layout paint style; align-content: start; padding-top: 20px; padding-bottom: calc(var(--orn-w) + 36px); }
+  #scene { --orn-w: clamp(72px, 14vw, 110px); }
+  html.ribbons-on #scene #tabs { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; margin-bottom: 0; padding: 4px 0 8px; overflow: visible; }
+  html.ribbons-on #scene #tabs .tab { flex: 0 1 auto; flex-direction: row; justify-content: center; align-items: center; width: auto; height: auto; min-height: 44px; padding: 0 14px; color: var(--cream, #f4e6c8); font-size: 0.9375rem; white-space: nowrap; }
+  html.ribbons-on #scene #tabs .tab[aria-selected="true"] { color: #fff6e0; }
+  html.ribbons-on #scene #tabs .tab::before { display: none; }
+  html.ribbons-on #scene #tabs .tab[aria-selected="true"] { box-shadow: inset 0 -3px 0 var(--brass-hi, #f0cf84); }
+  html.ribbons-on #scene #tabs .tab .tab-ico { display: none; }
+  html.ribbons-on #scene #tab-cloth { display: none; }
+  html #scene .sheet-orn { display: block; position: absolute; left: 50%; right: auto; bottom: 18px; width: var(--orn-w); translate: -50% 0; }
+}

@@ -1,0 +1,222 @@
+openapi: 3.0.3
+info:
+  title: Leeroy board API (public and member routes)
+  version: "1.0.0"
+  description: |
+    Describes the routes as they behave today (infrastructure/worker/index.js). Documentation only: it does not
+    define new behaviour. The back-end architect owns the contract; where behaviour looks unintended, tests/api/contract.test.mjs
+    pins what is observed and the pull request lists it as a finding.
+
+    Every route is also reachable without the /api prefix on the Worker origin; the site uses /api/*.
+    A request whose Origin header is not allowed answers 403 with a text/plain body "Forbidden Origin" (not JSON).
+    Admin and write routes (PUT /api/data/{name}, intents, persona, config and so on) are out of scope here.
+    tests/api/contract.test.mjs reads this file and validates live preview responses against these schemas.
+servers:
+  - url: https://api.leeroy.party
+  - url: https://{preview}.workers.dev
+    variables:
+      preview: { default: leeroy-brain-pr-0.example }
+components:
+  securitySchemes:
+    boardKey:
+      type: http
+      scheme: bearer
+      description: A member board key. Also accepted as `Authorization Board <key>` or the `X-Board-Key` header. The admin token resolves to the default admin member.
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+    Health:
+      type: object
+      required: [ok, service, runtime, isPrPreview, at]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        service: { type: string, enum: [leeroy-brain] }
+        runtime: { type: string }
+        isPrPreview: { type: boolean }
+        at: { type: string, format: date-time }
+        aiProvider: { type: string, description: Admin token only. }
+        aiGateway: { type: string, nullable: true, description: Admin token only. }
+        providers:
+          type: object
+          description: Admin token only. Provider name to configured flag.
+          additionalProperties: { type: boolean }
+        aiBudget:
+          type: object
+          description: Admin token only.
+          required: [day, neurons, cap]
+          properties:
+            day: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$' }
+            neurons: { type: number }
+            cap: { type: number }
+            asks: { type: number }
+            cron: { type: number }
+    Sheet:
+      type: object
+      required: [slug, name, fields]
+      properties:
+        slug: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        fields:
+          type: object
+          additionalProperties: true
+        updated: { type: string, nullable: true }
+    Bootstrap:
+      type: object
+      required: [aiProvider, isPrPreview, providers, partySheets]
+      properties:
+        aiProvider: { type: string }
+        isPrPreview: { type: boolean }
+        providers:
+          type: object
+          additionalProperties: { type: boolean }
+        partySheets:
+          type: array
+          items: { $ref: '#/components/schemas/Sheet' }
+        party: { description: kv_state document, nullable: true }
+        timeline: { description: kv_state document, nullable: true }
+        stats: { description: kv_state document, nullable: true }
+        signups: { description: kv_state document, nullable: true }
+        tonight: { description: kv_state document, nullable: true }
+        launch: { description: kv_state document, nullable: true }
+        marks: { description: kv_state document, nullable: true }
+        decide: { description: kv_state document, nullable: true }
+    Signups:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              slug: { type: string }
+              name: { type: string }
+              updated: { type: string }
+            additionalProperties: true
+        tallies: { type: object, additionalProperties: true }
+        options: { type: object, additionalProperties: true }
+    State:
+      type: object
+      required: [type, ver, at, party, launch]
+      properties:
+        type: { type: string, enum: [state] }
+        ver: { type: integer }
+        at: { type: string, format: date-time }
+        party:
+          type: array
+          items: { $ref: '#/components/schemas/Sheet' }
+        signups: { nullable: true }
+        partyDoc: { nullable: true }
+        tonight: { nullable: true }
+        timeline: { nullable: true }
+        stats: { nullable: true }
+        decide: { nullable: true }
+        launch: { type: array, items: {} }
+    Me:
+      type: object
+      required: [slug, name, pending]
+      properties:
+        slug: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        pending: { type: array, items: {} }
+    Document:
+      description: A kv_state JSON document. Free-form; the shape depends on the document.
+      type: object
+      nullable: true
+      additionalProperties: true
+  responses:
+    NotFound:
+      description: Name is not on the allow list (public-docs.js) or no row exists. Both cases give the same body.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+paths:
+  /api/health:
+    get:
+      summary: Liveness. No key gives the minimal body; the admin token adds provider detail.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /api/bootstrap:
+    get:
+      summary: Single-roundtrip startup bundle (edge cached 60 s).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Bootstrap' }
+  /api/signups:
+    get:
+      summary: Signups document (edge cached 15 s). POST (member key) is not covered here.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Signups' }
+  /api/state:
+    get:
+      summary: Live state snapshot (edge cached 30 s). Public read. The WebSocket upgrade on /api/live is not covered here.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/State' }
+  /api/me:
+    get:
+      summary: Resolves a board key to a party member.
+      security:
+        - boardKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        "401":
+          description: No key, or an unknown key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/data/{name}:
+    get:
+      summary: One kv_state document. Allow list only. The name may carry a .json suffix.
+      description: |
+        Allowed names: party, timeline, client, stats, signups, tonight, launch, decide, guided-atlas.
+        A document the allow list permits but that has no row answers 404 too.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        "404": { $ref: '#/components/responses/NotFound' }
+  /api/atlas/{name}:
+    get:
+      summary: One atlas kv_state document. Allow list only (marks, links). The name may carry a .json suffix.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Document' }
+        "404": { $ref: '#/components/responses/NotFound' }

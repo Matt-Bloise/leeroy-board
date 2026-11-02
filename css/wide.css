@@ -65,3 +65,9 @@
 }
 @media (min-width: 2200px) and (min-height: 961px) { .wall { grid-auto-rows: 1fr; align-content: stretch; } }
 #panel-roads.wide-wait { visibility: hidden; }
+
+/* Q21 portrait column: cards stack in one column, whatever the container width the two-up rules measure */
+@media (min-width: 700px) and (max-width: 1199px) and (min-height: 501px) and (orientation: portrait) {
+  #scene #panel-tonight > .tn-cards, #scene #sheet-body .shelf { grid-template-columns: minmax(0, 1fr); max-width: 720px; margin-inline: auto; }
+  #scene #panel-tonight > .tn-cards > :first-child { grid-column: auto; }
+}
