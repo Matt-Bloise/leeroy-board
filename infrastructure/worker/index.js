@@ -21,7 +21,7 @@ import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
-import { timingSafeEqualStr } from "./crypto.js";
+import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -769,11 +769,24 @@ export default {
           ).bind(auth.member.name, auth.member.slug).first();
         } else {
           row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
+            "SELECT * FROM ask_turns WHERE share = 1 OR by_name = 'Visitor' ORDER BY created_at DESC LIMIT 1"
           ).first();
         }
+
+        let limitLeft = 6;
+        if (!auth.ok) {
+          const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
+          const ipHash = await sha256Hex(`guest-ask:${clientIp}`);
+          const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
+          const countRow = await env.DB.prepare(
+            "SELECT COUNT(*) AS count FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ?"
+          ).bind(ipHash, oneHourAgo).first();
+          const used = countRow ? Number(countRow.count) || 0 : 0;
+          limitLeft = Math.max(0, 2 - used);
+        }
+
         if (!row) {
-          return jsonResp({ ask: null, limit: { left: 6 }, isPrPreview, aiProvider: resolveAiProvider(env) }, 200, cors);
+          return jsonResp({ ask: null, limit: { left: limitLeft }, isPrPreview, aiProvider: auth.ok ? resolveAiProvider(env) : "workers-ai" }, 200, cors);
         }
         const status =
           row.status === "thinking" || row.status === "pending"
@@ -1005,17 +1018,22 @@ export default {
       // 5. POST /refresh or POST /intent -> Ask Leeroy, Signups (flat & nested), Journey, Launch, Fact Fix, or Refresh
       if (req.method === "POST" && (path === "/intent" || path === "/refresh")) {
         const auth = await resolveMemberAuth(req, url, env);
-        if (!auth.ok) {
-          return jsonResp({ error: "Unauthorized board key" }, 401, cors);
-        }
         let body = {};
         try {
           body = (await req.json()) || {};
         } catch {}
         const kind = path === "/refresh" ? "refresh" : String(body.kind || "");
-        const member = auth.member;
-        const by = member.name || member.slug;
-        const memberSlug = member.slug;
+
+        // If not authenticated, ONLY allow public guest asking
+        if (!auth.ok) {
+          if (kind !== "ask") {
+            return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+          }
+        }
+
+        const member = auth.member || null;
+        const by = member ? (member.name || member.slug) : "Visitor";
+        const memberSlug = member ? member.slug : "guest";
         const now = new Date().toISOString();
         const numericIntentId = Date.now();
         const intentId = String(numericIntentId);
@@ -1142,23 +1160,76 @@ export default {
         if (kind === "ask") {
           const patch = body.patch && typeof body.patch === "object" ? body.patch : {};
           const question = String(patch.text || body.q || body.text || "").trim();
-          const share = patch.share !== undefined ? Boolean(patch.share) : true;
+          const isGuest = !auth.ok;
           const isPrPreview = isPrPreviewEnv(env);
-          const requestedProvider = isPrPreview ? "workers-ai" : (patch.provider || body.provider || env.AI_PROVIDER);
-          const activeProvider = resolveAiProvider(env, requestedProvider);
+
+          // For public guests, strictly enforce Cloudflare Workers AI and no Discord broadcast
+          const requestedProvider = isGuest || isPrPreview ? "workers-ai" : (patch.provider || body.provider || env.AI_PROVIDER);
+          const activeProvider = isGuest || isPrPreview ? "workers-ai" : resolveAiProvider(env, requestedProvider);
+          const share = isGuest ? false : (patch.share !== undefined ? Boolean(patch.share) : true);
+          const askBy = isGuest ? "Visitor" : by;
+          const askSlug = isGuest ? "guest" : memberSlug;
 
           if (!question) return jsonResp({ error: "Missing question" }, 400, cors);
+
+          // Rate limit check for public guests: 2 questions per hour per IP
+          let guestLeft = 6;
+          if (isGuest) {
+            const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
+            const ipHash = await sha256Hex(`guest-ask:${clientIp}`);
+            const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
+
+            const limitRow = await env.DB.prepare(
+              "SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ?"
+            )
+              .bind(ipHash, oneHourAgo)
+              .first();
+
+            const guestCount = limitRow ? Number(limitRow.count) || 0 : 0;
+            if (guestCount >= 2) {
+              const oldestTime = limitRow && limitRow.oldest ? Date.parse(limitRow.oldest) : Date.now();
+              const retryAfterSec = Math.max(1, Math.ceil((oldestTime + 3600 * 1000 - Date.now()) / 1000));
+              return jsonResp(
+                {
+                  ok: false,
+                  why: "limited",
+                  error: "Public guest access is limited to 2 questions per hour.",
+                  retryAfter: retryAfterSec,
+                  left: 0,
+                },
+                429,
+                cors
+              );
+            }
+
+            // Record this guest question for rate limiting
+            await env.DB.prepare(
+              "INSERT INTO guest_rate_limits (ip_hash, created_at) VALUES (?, ?)"
+            )
+              .bind(ipHash, now)
+              .run();
+
+            // Asynchronously prune expired entries older than 2 hours
+            ctx.waitUntil(
+              env.DB.prepare("DELETE FROM guest_rate_limits WHERE created_at < ?")
+                .bind(new Date(Date.now() - 7200 * 1000).toISOString())
+                .run()
+                .catch(() => {})
+            );
+
+            guestLeft = Math.max(0, 2 - guestCount - 1);
+          }
 
           await env.DB.prepare(
             "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)"
           )
-            .bind(intentId, by, question, activeProvider, share ? 1 : 0, now)
+            .bind(intentId, askBy, question, activeProvider, share ? 1 : 0, now)
             .run();
 
           const { seq } = await insertIntent(env, {
-            slug: memberSlug,
+            slug: askSlug,
             kind: "ask",
-            body: { question, by, provider: activeProvider, share },
+            body: { question, by: askBy, provider: activeProvider, share },
             ver: 1,
             at: now,
           });
@@ -1166,8 +1237,8 @@ export default {
           const intentItem = {
             id: seq,
             kind: "ask",
-            by,
-            slug: memberSlug,
+            by: askBy,
+            slug: askSlug,
             q: question,
             provider: activeProvider,
             status: "thinking",
@@ -1180,8 +1251,8 @@ export default {
               env,
               origin: url.origin,
               intentId,
-              by,
-              memberSlug,
+              by: askBy,
+              memberSlug: askSlug,
               question,
               deep: Boolean(body.deep || patch.deep),
               share,
@@ -1197,8 +1268,8 @@ export default {
               status: "thinking",
               provider: activeProvider,
               at: now,
-              left: 5,
-              ask: { id: intentId, question, by, status: "thinking", model: activeProvider, at: now },
+              left: isGuest ? guestLeft : 5,
+              ask: { id: intentId, question, by: askBy, status: "thinking", model: activeProvider, at: now },
             },
             200,
             cors

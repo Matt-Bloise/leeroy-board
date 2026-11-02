@@ -418,15 +418,16 @@ async function mineFlush() {
 const getAiProvider = () => { if (B.isPrPreview) return "workers-ai"; const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
 const setAiProvider = (prov) => { if (B.isPrPreview) { B.aiProvider = "workers-ai"; return "workers-ai"; } if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
 const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
-const askStatus = () => ({ state: AK.st, provider: getAiProvider(), isPrPreview: !!B.isPrPreview, providers: B.providers || null, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : null });
+const askStatus = () => ({ state: AK.st, provider: !B.key ? "workers-ai" : getAiProvider(), isPrPreview: !!B.isPrPreview, isGuest: !B.key, providers: B.providers || null, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : (!B.key ? "Visitor" : null) });
 const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };
 const askAdopt = (a) => { AK.ask = a || null; AK.st = !a ? "idle" : a.status === "queued" ? "queued" : a.status === "answered" ? "answered" : "failed"; AK.err = ""; AK.retry = 0; if (AK.st === "queued") { if (!AK.since) AK.since = Date.now(); } else AK.since = 0; };
 async function askRead() {
   clearTimeout(AK.t);
-  if (!B.base || !B.key || AK.st === "sending") return;
+  if (!B.base || AK.st === "sending") return;
   let again = false;
   try {
-    const r = await call("GET", "/ask");
+    const askIdParam = AK.ask && AK.ask.id ? `?id=${encodeURIComponent(AK.ask.id)}` : "";
+    const r = await call("GET", `/ask${askIdParam}`);
     if (r.status === 200 && r.data) {
       if (r.data.isPrPreview) B.isPrPreview = true; if (r.data.limit) AK.left = r.data.limit.left;
       if (AK.st !== "sending") askAdopt(r.data.ask);
@@ -440,25 +441,32 @@ async function askRead() {
 }
 async function ask(text, share, provider) {
   const t = String(text == null ? "" : text).replace(/\s+/g, " ").trim(), n = Array.from(t).length;
-  const prov = B.isPrPreview ? "workers-ai" : (AI_PROVIDERS.includes(provider) ? provider : getAiProvider());
-  if (!B.base || !B.key) return { ok: false, why: B.key ? "nowhere" : "no key" };
+  const isGuest = !B.key;
+  const prov = isGuest || B.isPrPreview ? "workers-ai" : (AI_PROVIDERS.includes(provider) ? provider : getAiProvider());
+  if (!B.base) return { ok: false, why: "nowhere" };
   if (n < 3) return { ok: false, why: "short" };
   if (n > 280) return { ok: false, why: "long" };
   if (AK.st === "sending" || AK.st === "queued") return { ok: false, why: "busy" };
   AK.st = "sending"; AK.err = ""; AK.retry = 0; clearTimeout(AK.t); askEmit();
   try {
-    const r = await call("POST", "/intent", { kind: "ask", patch: { text: t, share: share === true, provider: prov } }); B.sent++;
+    const r = await call("POST", "/intent", { kind: "ask", patch: { text: t, share: !isGuest && share === true, provider: prov } }); B.sent++;
     if (r.status === 200 && r.data && r.data.ok) {
       AK.left = typeof r.data.left === "number" ? r.data.left : AK.left;
-      AK.ask = { id: r.data.id, status: "queued", text: t, share: share === true, provider: (r.data && r.data.provider) || prov, at: r.data.at, answer: null, sources: [] };
+      AK.ask = { id: r.data.id, status: "queued", text: t, share: !isGuest && share === true, provider: (r.data && r.data.provider) || prov, at: r.data.at, answer: null, sources: [] };
       AK.st = "queued"; AK.since = Date.now(); askEmit(); AK.t = setTimeout(askRead, 3000);
       return { ok: true, state: "queued" };
     }
     if (r.status === 409) { AK.st = "idle"; await askRead(); return { ok: false, why: "open" }; }
-    if (r.status === 429) { AK.st = "limited"; AK.retry = Math.max(1, Number(r.data && r.data.retryAfter) || 3600); AK.left = 0; }
-    else if (r.status === 401) { B.keyBad = true; AK.st = "error"; AK.err = "key"; }
+    if (r.status === 429) {
+      AK.st = "limited";
+      AK.retry = Math.max(1, Number(r.data && r.data.retryAfter) || 3600);
+      AK.left = 0;
+      AK.err = r.data && r.data.error ? r.data.error : "limited";
+    }
+    else if (r.status === 401 && B.key) { B.keyBad = true; AK.st = "error"; AK.err = "key"; }
+    else if (r.status === 401 && !B.key) { AK.st = "error"; AK.err = "no key"; }
     else if (r.status === 400) { AK.st = "error"; AK.err = "refused"; }
-    else { AK.st = "error"; AK.err = "busy"; }
+    else { AK.st = "error"; AK.err = (r.data && r.data.error) || "busy"; }
   } catch (e) { B.errors++; AK.st = "error"; AK.err = "offline"; }
   askEmit();
   return { ok: false, why: AK.st === "limited" ? "limited" : AK.err };

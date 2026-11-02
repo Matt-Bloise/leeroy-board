@@ -13,7 +13,7 @@ let hd = false;
 const bar = () => { if (hd) return; hd = true; try { const S = window.__scenes; if (S && S.load) Promise.resolve(S.load("hades")).catch(() => {}); } catch (e) {} };
 const buzz = (n) => { try { if (window.BoardHaptics && window.BoardHaptics.fire) window.BoardHaptics.fire(n); } catch (e) {} };
 const coarse = () => { try { return !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches); } catch (e) { return false; } };
-const liveOk = (st) => !!(st && st.base && st.key && !st.keyBad);
+const liveOk = (st) => !!(st && st.base && (st.key || st.isGuest) && !st.keyBad);
 const busyOk = (st) => !!st && (st.state === "sending" || st.state === "queued");
 const MOODS = ["smug", "delighted", "sheepish", "thinking"], ASK_ART = ["undead-mage", "undead-paladin", "undead-priest", "troll-warlock", "tauren-druid"];
 const ART = {};
@@ -44,9 +44,11 @@ function artImg(cls, url, alt) {
 }
 
 function asker() {
+  const askSt = B.askStatus ? B.askStatus() : null;
+  const isGuest = !askSt || askSt.isGuest || !askSt.key;
   const st = B.status(), me = st && st.me, ms = D.party ? D.party.members : [];
-  const m = (me && ms.find((x) => K.cleanName(x.name).toLowerCase() === K.cleanName(me.name).toLowerCase())) || MEM.member();
-  return { m: m || null, name: me && me.name ? K.cleanName(me.name) : m ? m.name : "You" };
+  const m = (!isGuest && ((me && ms.find((x) => K.cleanName(x.name).toLowerCase() === K.cleanName(me.name).toLowerCase())) || MEM.member())) || null;
+  return { m: m || null, name: me && me.name ? K.cleanName(me.name) : m ? m.name : (isGuest ? "Visitor" : "You") };
 }
 
 const file = { get: () => { try { return localStorage.getItem(STORE); } catch (e) { return null; } }, set: (v) => { try { if (v === null) localStorage.removeItem(STORE); else localStorage.setItem(STORE, v); } catch (e) {} } };
@@ -103,7 +105,7 @@ const BAR = "img/chamber/leeroy-bar-smug.webp";
 artLoad(BAR).then((good) => { if (!good) stillImg.classList.add("is-head"); stillImg.setAttribute("src", good ? BAR : moodUrl("smug")); });
 const STILL_LINES = ["Pull up a stool. I am not going anywhere.", "The tankard is full and the library is open. Ask whenever you like.", "Take the stool by the candle. I will keep your place.", "Quiet night at the bar. Good for questions about Forever."];
 const stillLine = (t) => STILL_LINES[Math.floor((t === undefined ? Date.now() : t) / 86400000) % STILL_LINES.length];
-const HOW = "To ask Leeroy from this box you need your own board link: it is the My board link button on the Sign-ups card in Discord. Without one you can still use /ask in #wow-forever or search the Library here.";
+const HOW = "Ask Leeroy questions about the guild and launch night. Public visitors can ask up to 2 questions per hour using Cloudflare Workers AI. Guild members can use their board link for full access.";
 const still = h("section", { class: "hades is-still", id: "ch-still", hidden: true, "aria-label": "Leeroy at the bar" },
   h("div", { class: "ch-still-stage" }, h("div", { class: "ch-still-bust" }, stillImg), h("div", { class: "ch-still-counter", "aria-hidden": "true" }), h("p", { class: "ch-still-line" })),
   h("p", { class: "ch-still-how", text: HOW }));
@@ -209,7 +211,11 @@ function draw(st) {
     else kids.push(bubble("Leeroy", "ch-a ch-gone", line(LINES.gone)));
   }
   if (st.state === "sending") { if (CH.pending) kids.push(askEl(who, CH.pending)); kids.push(waitEl()); }
-  if (st.state === "error" || st.state === "limited") kids.push(bubble("Leeroy", "ch-a", line(LINES[st.state])));
+  if (st.state === "error" || st.state === "limited") {
+    const isGuest = !!(st && st.isGuest);
+    const limMsg = isGuest ? "That is two questions in the last hour. I open up again soon." : LINES.limited;
+    kids.push(bubble("Leeroy", "ch-a", line(st.state === "limited" ? limMsg : LINES[st.state])));
+  }
   if (!kids.length) kids.push(bubble("Leeroy", "ch-a", line(K.JR && K.JR() === "guided" ? LINES.guided : LINES.idle)));
   log.replaceChildren(...kids);
   next.hidden = true;
@@ -265,8 +271,10 @@ function settle() {
   if (ans.length && CH.on && !busyOk(CH.cur)) follow(ans[ans.length - 1]);
 }
 function bringPaint() {
+  const st = B.askStatus ? B.askStatus() : null;
+  const isGuest = !!(st && st.isGuest);
   const ans = CH.turns.filter((t) => t.answer), open0 = ans.filter((t) => !t.dispatched);
-  bring.hidden = !ans.length || !!CH.typing;
+  bring.hidden = isGuest || !ans.length || !!CH.typing;
   bring.textContent = open0.length ? "Bring this to the party" : "Sent to the party";
   bring.setAttribute("aria-disabled", String(!open0.length));
 }
@@ -276,27 +284,52 @@ const noteText = () => { const n = $("#ask-note"); return (n && n.textContent.re
 const minutes = (s) => { const m = Math.max(1, Math.ceil((Number(s) || 3600) / 60)); return `${m} minute${m === 1 ? "" : "s"}`; };
 function refusal(r, st) {
   const why = r && r.why;
-  if (why === "limited" || st.state === "limited") return `That is six questions in the last hour. Leeroy opens up again in about ${minutes(st.retryAfter || (r && r.retryAfter))}.`;
+  const isGuest = !!(st && st.isGuest);
+  const maxQ = isGuest ? "two" : "six";
+  if (why === "limited" || st.state === "limited") return `That is ${maxQ} questions in the last hour. Leeroy opens up again in about ${minutes(st.retryAfter || (r && r.retryAfter))}.`;
   if (why === "short") return `A question needs at least ${MIN} characters.`;
   if (why === "long") return `That is over the ${MAX} character limit.`;
   if (why === "open" || (why === "busy" && st.state !== "error")) return "One question at a time: Leeroy is still on the last one.";
   if (why === "no key" || why === "nowhere" || why === "key") return noteText();
-  return ERR[why] || ERR[st.error] || ERR.busy;
+  return ERR[why] || ERR[st.error] || (typeof st.error === "string" && st.error) || ERR.busy;
 }
 function say(t) { if (sayEl.textContent !== t) sayEl.textContent = t; }
 function compose(st) {
   const live0 = liveOk(st), busy = busyOk(st);
-  if (st && st.isPrPreview) { for (const opt of Array.from(modelSel.options)) { if (opt.value !== "workers-ai") { opt.disabled = true; opt.hidden = true; } else { opt.textContent = "Model: Cloudflare Workers AI (Llama 3.3 70B · Free)"; } } modelSel.value = "workers-ai"; } else if (st && st.provider && modelSel.value !== st.provider) { modelSel.value = st.provider; }
+  const isGuest = !!(st && st.isGuest);
+  if (isGuest || (st && st.isPrPreview)) {
+    for (const opt of Array.from(modelSel.options)) {
+      if (opt.value !== "workers-ai") {
+        opt.disabled = true;
+        opt.hidden = true;
+      } else {
+        opt.textContent = isGuest ? "Model: Cloudflare Workers AI (2/hr limit)" : "Model: Cloudflare Workers AI (Llama 3.3 70B · Free)";
+      }
+    }
+    modelSel.value = "workers-ai";
+    modelSel.disabled = true;
+  } else {
+    for (const opt of Array.from(modelSel.options)) {
+      opt.disabled = false;
+      opt.hidden = false;
+    }
+    if (st && st.provider && modelSel.value !== st.provider) {
+      modelSel.value = st.provider;
+    }
+    modelSel.disabled = !live0 || busy;
+  }
   note.hidden = live0; if (!live0) note.textContent = noteText();
-  input.disabled = !live0 || busy; sendBtn.disabled = live0 && busy; shareBox.disabled = !live0 || busy; modelSel.disabled = !live0 || busy;
+  input.disabled = !live0 || busy; sendBtn.disabled = live0 && busy; shareBox.disabled = !live0 || busy || isGuest;
+  if (isGuest) shareBox.checked = false;
+  const shareLabel = form.querySelector(".ch-share"); if (shareLabel) shareLabel.hidden = isGuest;
   sendBtn.setAttribute("aria-disabled", String(!live0 || busy)); form.classList.toggle("ch-off", !live0);
-  const ph = !live0 ? "Ask in Discord or the Library" : busy ? "Leeroy is on your last question" : "Ask Leeroy about Forever";
+  const ph = !live0 ? "Ask in Discord or the Library" : busy ? "Leeroy is on your last question" : isGuest ? "Ask Leeroy (Cloudflare Workers AI · 2/hr)" : "Ask Leeroy about Forever";
   if (input.getAttribute("placeholder") !== ph) input.setAttribute("placeholder", ph);
   const shareRow = form.querySelector(".ch-row2"); if (shareRow) shareRow.hidden = !live0 && !sayEl.textContent;
   sendBtn.textContent = st.state === "sending" ? "Sending" : "Send";
   form.setAttribute("aria-busy", String(busy));
   const n = typeof st.left === "number" ? st.left : null;
-  left.hidden = !(live0 && n !== null && n < 3); left.textContent = n === null ? "" : `${n} left this hour`;
+  left.hidden = !(live0 && n !== null && (isGuest || n < 3)); left.textContent = n === null ? "" : `${n} left this hour`;
   chipsPaint(live0 && !busy);
   if (!live0 && sayEl.textContent) say("");
   if (CH.refocus && !input.disabled) { CH.refocus = false; if (!coarse()) { try { input.focus({ preventScroll: true }); } catch (e) {} } }
