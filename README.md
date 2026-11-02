@@ -1,50 +1,82 @@
 # Dungeons and Drinking: The Living Board (`leeroy-board`)
 
-Self-contained, serverless web application and Discord companion for the five-player **World of Warcraft: Forever** Horde group (**Santa**, **Bible Boi**, **Street Rat**, **Bloise**, **Handsome Squidward**).
+## What it is
 
-Previously a static export mirror of `Matt-Bloise/wow-mage`, `leeroy-board` now houses the entire runtime, database, multi-provider AI brain, source watcher, and Discord HTTP Interactions backend directly in this repository on the **Cloudflare Free Tier**.
+The Living Board is a small web app that a five-player World of Warcraft group uses to plan their nights: a shared party sheet, sign-ups, a library of game notes, and "Leeroy", an AI assistant that answers questions from that library. It runs in a browser at https://leeroy.party and as a Discord Activity, and Discord slash commands talk to the same back end over HTTP. Everything runs on the Cloudflare free tier: static files on Pages, one Worker with a Durable Object for live updates, and a D1 (SQLite) database; there is no server to maintain and no separate bot process.
 
----
+## Architecture
 
-## Architecture Overview
+```mermaid
+flowchart LR
+  subgraph Clients
+    B["Browser"]
+    A["Discord Activity (embedded browser)"]
+    DI["Discord slash commands and buttons"]
+  end
+  P["Cloudflare Pages<br/>static site (index.html, js/, scenes/)"]
+  W["api Worker (leeroy-brain)<br/>api.leeroy.party"]
+  DO["Durable Object BoardRoom<br/>WebSocket /api/live"]
+  D1[("D1 database<br/>leeroy-board-db")]
+  GW["Cloudflare AI Gateway"]
+  AI["AI providers<br/>Claude, Gemini, Groq, Cerebras,<br/>GitHub Models, OpenRouter"]
+  WAI["Workers AI binding"]
+  SRC["Public wiki and news sources"]
+  CRON["Cron trigger<br/>every 6 hours"]
 
-- **Frontend (`index.html`, `js/`, `scenes/`, `atlas/`, `room/`, `css/`)**:
-  - Hosted on **Cloudflare Pages** at **`https://leeroy.party`** (and `https://www.leeroy.party`) with automatic, isolated PR preview environments (`https://pr-<N>.leeroy-board.pages.dev`).
-  - Connects to the `leeroy-brain` Cloudflare Worker at **`https://api.leeroy.party`** via [`js/brain.js`](js/brain.js) for single-roundtrip `/api/bootstrap` state, live WebSocket synchronization (`wss://api.leeroy.party/api/live`), character sheet editing (`/api/sheet`), and Leeroy Chamber Q&A (`/api/intent`).
-- **Serverless Edge Backend ([`infrastructure/`](infrastructure/README.md))**:
-  - **[`infrastructure/worker/index.js`](infrastructure/worker/index.js)**: Edge-cached REST API at **`https://api.leeroy.party/api`** (`/api/bootstrap`, `/api/state`, `/api/library/:name`, `/api/data/:name`, `/api/sheet`, `/api/vocab`, `/api/dispatch`, `/api/intent`, `/api/signups`, `/api/intents`, `/api/ack`, `/api/answer`).
-  - **[`infrastructure/worker/room.js`](infrastructure/worker/room.js)**: Hibernatable WebSocket Durable Object (`BoardRoom`) at `wss://api.leeroy.party/api/live` for sub-second presence and live board updates.
-  - **[`infrastructure/worker/ai-models.js`](infrastructure/worker/ai-models.js)**: Multi-provider AI RAG engine supporting **7 providers** (`claude`, `gemini`, `workers-ai`, `groq`, `cerebras`, `github`, `openrouter`), ranked by [`vendor/rank-core.js`](vendor/rank-core.js) with `wow-mage` house-voice guardrails (`repairHouseVoice`) and automated wiki fact extraction (`extractWikiFactsWithAi`).
-  - **[`infrastructure/worker/scraper.js`](infrastructure/worker/scraper.js)**: 6-hour Cloudflare Cron Trigger (`0 */6 * * *`) that monitors canonical Blizzard/Wowhead/Warcraft Wiki sources (tracked in D1 lib_sources), archives stripped text snapshots in D1 (`lib_source_snapshots`), auto-learns updated facts (`wiki_proposals`), and rebuilds `search.json`, `open.json`, `index.json`, and category blobs in D1.
-  - **[`infrastructure/worker/discord.js`](infrastructure/worker/discord.js)**: Ed25519-verified Discord HTTP Interactions endpoint at `https://api.leeroy.party/api/discord` supporting all 20 slash commands (`/ask`, `/tonight`, `/sheet`, `/launch`, `/map`, `/signup`, `/countdown`, `/dates`, `/library`, `/quiz`, `/didyouknow`, `/build`, `/leeroy`, `/help`, `/page`, `/tooltip`, `/journey`, `/intents`, `/ack`, `/answer`) and interactive buttons linking to `https://leeroy.party`.
-
----
-
-## Common Workflows (No `wow-mage` Required)
-
-All development, content authoring, and database management happen directly in this repository:
-
-```bash
-cd infrastructure
-npm install
-
-# 1. Initialize & migrate local D1 SQLite database, then seed from data/
-npm run d1:schema:local
-npm run d1:migrate:local
-npm run d1:seed:local
-
-# 2. Create a new numbered D1 SQL migration (auto-applied on every CI/CD deploy)
-npm run d1:migrate:create -- add_new_column
-
-# 3. Run the Cloudflare Worker + D1 locally on http://127.0.0.1:8787
-npm run dev
-
-# 4. Rebuild data/library/{search,open,index}.json stamps & TF-IDF indexes locally
-npm run library:rebuild
-
-# 5. Export live D1 state (remote or local) back to data/*.json
-npm run d1:export:local
-npm run d1:export:remote
+  B --> P
+  A --> P
+  B -->|"REST and WebSocket"| W
+  A -->|"REST and WebSocket"| W
+  DI -->|"HTTP interactions,<br/>Ed25519 signature"| W
+  W <--> D1
+  W <-->|"broadcast, live"| DO
+  W --> GW --> AI
+  W --> WAI
+  CRON --> W
+  W -->|"source sweep"| SRC
 ```
 
-See [`infrastructure/README.md`](infrastructure/README.md) for complete setup, API routes, and secret configuration.
+- Frontend: `index.html`, `js/`, `scenes/`, `css/`, `atlas/`, `room/` (plain browser JavaScript, no build step). [`js/brain.js`](js/brain.js) is the client for the Worker API.
+- Back end: [`infrastructure/worker/index.js`](infrastructure/worker/index.js) is the single Worker entry point (REST routes, Discord interactions, cron handler). [`infrastructure/worker/room.js`](infrastructure/worker/room.js) is the `BoardRoom` Durable Object that fans out live events.
+- AI: [`infrastructure/worker/ai-models.js`](infrastructure/worker/ai-models.js) picks a provider and routes calls through AI Gateway only when both `AI_GATEWAY_ID` and `CLOUDFLARE_ACCOUNT_ID` are non-empty in the Worker environment (`wrangler.toml` ships the account id empty; whether CI fills it in at deploy time is not verified here). Workers AI is used through the `AI` binding.
+- Cron: [`infrastructure/worker/scraper.js`](infrastructure/worker/scraper.js) runs `0 */6 * * *`, snapshots the tracked sources into D1 and proposes wiki updates.
+
+Routes, D1 config keys, secrets and local development are in [`infrastructure/README.md`](infrastructure/README.md).
+
+## Environments
+
+| Environment | Site | API |
+| :--- | :--- | :--- |
+| Production | https://leeroy.party (also www) | https://api.leeroy.party |
+| Per-PR preview | `https://pr-<N>.leeroy-board.pages.dev` | `https://leeroy-brain-pr-<N>.<account-subdomain>.workers.dev` |
+
+- Merging to `master` deploys production (`.github/workflows/deploy-cloudflare.yml`).
+- Every pull request from a branch of this repository gets its own preview: a Pages deployment, a Worker named `leeroy-brain-pr-<N>`, and its own D1 database seeded from `data/`. The preview comment on the PR carries the URLs, and the preview is torn down when the PR is closed or merged.
+- The Cloudflare account has 9 preview environments in total, shared by everyone, so keep to one open PR per contributor.
+- Previews use Workers AI only (no provider keys are injected), have no cron trigger and no custom domain.
+- Previews cannot test Discord: the Discord secrets are not set there and Discord posts only to production. Discord behaviour is checked on production after merge.
+
+## Change process
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: one branch and one pull request per change, a risk rating in the PR, tests with back-end changes, and `node tools/stamps.mjs --write` after changing js, scenes or css.
+
+## Tests and CI
+
+The `Preview Tests` workflow (`.github/workflows/preview-tests.yml`) runs on every non-draft PR from this repository and posts one comment marked `<!-- preview-tests -->` with a result per suite for the head commit. No suite makes AI calls.
+
+| Suite | What it checks | Run locally |
+| :--- | :--- | :--- |
+| Unit | Pure functions: budget maths, ids, name handling, persona loader, text formatting, stamp tool | `node --test "tests/unit/*.test.mjs"` |
+| Stamps | Every `?v=` stamp equals the first 10 hex characters of the file's sha256 | `node tools/stamps.mjs --check` (fix with `--write`) |
+| API | Against the preview Worker: health, bootstrap, state, CORS, refusal of unauthenticated writes, library, WebSocket, headers | `cd tests && npm ci && npm run test:api` |
+| Browser | Playwright smoke checks in Chromium and WebKit, phone and desktop sizes, against the preview site | `cd tests && npm run test:browser -- --url "$PREVIEW_PAGES/"` |
+
+Unit and Stamps need only Node 22 and run offline. API and Browser need the preview URLs and `BOARD_ADMIN_TOKEN` in the environment; see [`tests/README.md`](tests/README.md). Run with Node 22 or newer.
+
+## Secrets and variables
+
+Names, locations and the planned move of `KEY_SALT` and `USER_SALT` are listed in [`infrastructure/README.md`](infrastructure/README.md#secrets-and-variables). No secret value belongs in this repository.
+
+## License
+
+All rights reserved; see [`LICENSE.md`](LICENSE.md).
