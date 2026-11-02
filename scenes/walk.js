@@ -5,7 +5,7 @@ const KEY = "board-walked", get = () => { try { return localStorage.getItem(KEY)
 const OFF = !!get() || D.documentElement.classList.contains("ga-one")  || !D.head || /[?&](render|brain)=/.test(location.search || "");
 const { $, h } = K, phone = () => D.documentElement.classList.contains("phone-shell");
 const CARDS = [
-  ["This board is the tavern for the five of you: start with who you are.", ["#tn-me"], "door"],
+  [`This board is the tavern for the ${K.pn ? K.pn.word() : "five"} of you: start with who you are.`, ["#tn-me"], "door"],
   ["Pick how deep you want to go; change it any time up here.", ["#journey-scene", ".journey-scene", "#journey"], "signpost"],
   ["Your next step lives on this card; one tap does it.", ["#nx-card", "#tn-cards"], "note"],
   ["Leeroy answers questions here, and in Discord.", ['.pl[data-place="librarian"]', "#tab-librarian"], "alcove"],

@@ -97,6 +97,8 @@ html:not(.nav-collapsed) .nav-menu { display: none; }
 html.nav-collapsed:not(.nav-open) :is(#tabs, .tabs-wrap, .scene-hint, #journey, .journey-scene, #depth, #sound-box, #sense-btn, #sense-panel, #mode-btn, #mode-btn-scene, #scene-peek, #scene-settings, #open-settings, #tilt, .tonight-link, #scene .seal, .bb-coin, .my-sheet) { display: none !important; }
 html.nav-collapsed.phone-shell #nav-menu { display: none; }
 html.nav-collapsed.phone-shell:not(.scene-open) #nav-menu-wall { display: inline-flex; }
+/* Laptop and desktop: the close button is absolutely placed at the right edge of the header, so the Menu button beside it needs its own room (layout-sweep head-overlap at 1280 wide and up). */
+html.nav-collapsed:not(.phone-shell) .sheet-top > .nav-menu { margin-right: 56px; }
 /* Phone: the title never sits under the crest ribbon or the buttons beside it. */
 html.phone-shell #scene .sheet-name { padding-inline: 40px; box-sizing: border-box; }
 html.phone-shell #scene .sheet-name::before { right: 2px; }
