@@ -271,9 +271,11 @@ export async function fetchWithGatewayFallback({
   cacheKey = null,
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
+  const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN || env.CLOUDFLARE_API_TOKEN)) || "";
   const cacheHeaders = env && env.AI_GATEWAY_ID ? {
     "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
     "cf-aig-metadata": JSON.stringify({ app: "leeroy-board", service: "chamber" }),
+    ...(aigToken ? { "cf-aig-authorization": `Bearer ${aigToken}` } : {}),
     ...(skipCache ? { "cf-aig-skip-cache": "true" } : {}),
     ...(cacheKey ? { "cf-aig-cache-key": String(cacheKey) } : {}),
   } : {};
@@ -285,9 +287,10 @@ export async function fetchWithGatewayFallback({
         headers: { ...headers, ...cacheHeaders },
         body,
       });
-      // If gateway returns 404 (e.g. gateway slug not configured), fall back to direct endpoint
-      if (resp.status !== 404) return resp;
-      console.warn(`[AI-Gateway] 404 from ${gwUrl}, falling back to direct endpoint`);
+      // If gateway returns success (2xx), return immediately
+      if (resp.ok) return resp;
+      // If gateway returns 401/403/404 or server error, fall back to direct endpoint
+      console.warn(`[AI-Gateway] HTTP ${resp.status} from ${gwUrl}, falling back to direct endpoint`);
     } catch (err) {
       console.warn(`[AI-Gateway] Error for ${gwUrl}: ${err.message}, falling back to direct endpoint`);
     }
@@ -383,7 +386,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
     env,
     providerSlug: `google-ai-studio/v1beta/models/${encodeURIComponent(
       model
-    )}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+    )}:generateContent`,
     defaultEndpoint,
     headers: {
       "Content-Type": "application/json",
