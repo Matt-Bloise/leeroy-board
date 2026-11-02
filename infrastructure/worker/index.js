@@ -39,6 +39,7 @@ import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
+import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -339,7 +340,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -529,6 +530,17 @@ export default {
           .run();
         invalidateConfigCache(key);
         return jsonResp({ ok: true, key, entries: Array.isArray(value) ? value.length : Object.keys(value).length }, 200, cors);
+      }
+
+      // Admin only, flag EVENTS_ENABLED=on: plan (default, no Discord call) or with ?dry=0 apply Discord scheduled events from the events_schedule row.
+      if (req.method === "POST" && path === "/admin/events/sync") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        if (!eventsEnabled(env)) return jsonResp({ error: "Not found" }, 404, cors);
+        const dry = url.searchParams.get("dry") !== "0";
+        const roster = dry ? null : await loadConfigKey(env, "discord_roster");
+        const { status, body } = await runSync({ env, dry, guildId: roster && /^[0-9]{5,25}$/.test(roster.guildId || "") ? roster.guildId : null });
+        return jsonResp(body, status, cors);
       }
 
       // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.

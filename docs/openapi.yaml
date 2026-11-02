@@ -181,6 +181,46 @@ components:
       required: [ok]
       properties:
         ok: { type: boolean, enum: [true] }
+    EventsSyncResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        dry: { type: boolean }
+        error: { type: string }
+        stopped: { type: string, enum: [forbidden, unauthorized, rate_limited] }
+        retry_after_ms: { type: integer }
+        deferred: { type: integer }
+        summary:
+          type: object
+          properties:
+            create: { type: integer }
+            update: { type: integer }
+            skipped: { type: integer }
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              action: { type: string, enum: [create, update] }
+              key: { type: string }
+              body: { type: object, additionalProperties: true }
+        skipped:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string, nullable: true }
+              reason: { type: string }
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              action: { type: string }
+              ok: { type: boolean }
+              status: { type: integer }
+              error: { type: string }
     AnnounceRequest:
       type: object
       required: [channel_key, text]
@@ -515,11 +555,57 @@ paths:
                   status: { type: integer }
                   error: { type: string }
         "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/admin/events/sync:
+    post:
+      summary: Admin only. Plans, or with dry=0 applies, Discord scheduled events from the events_schedule config row.
+      description: |
+        Needs EVENTS_ENABLED=on (default off); while off the answer is 404 after the admin check. By default this is a dry run: it
+        reads D1 and returns the plan without calling Discord, needs no bot token and writes nothing. `?dry=0` applies it: creates
+        events that are new and PATCHes only events recorded in the `scheduled_events` map. It never deletes an event and skips
+        events whose start is not in the future. Events are external (entity_type 3) with privacy_level 2. A 429 from Discord is
+        waited out when short, otherwise the run stops with 429 and `retry_after_ms`. A 403 means the bot lacks the Manage Events
+        or Create Events permission; the server owner grants it. See docs/runbooks/scheduled-events.md.
+      security:
+        - adminToken: []
+      parameters:
+        - name: dry
+          in: query
+          required: false
+          description: Anything but `0` is a dry run.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The plan (dry run) or the applied result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventsSyncResult' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "403":
+          description: Discord refused with 403 (`error` names the missing permission), or the origin is not allowed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventsSyncResult' }
+        "404":
+          description: EVENTS_ENABLED is off.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "429":
+          description: Discord rate limited the run for longer than the Worker will wait; run again after `retry_after_ms`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventsSyncResult' }
+        "502":
+          description: Discord refused an event, rejected the bot token, or could not be reached; `results` says which.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventsSyncResult' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
   /api/config/{key}:
     put:
       summary: Admin only. Replaces one private config row. Write only.
       description: |
-        Keys: name_map, discord_members, discord_roster; any other key is 400. Body is JSON, at most 20000 bytes (413), validated per key (400).
+        Keys: name_map, discord_members, discord_roster, ai_budget_caps, events_schedule; any other key is 400. Body is JSON, at most 20000 bytes (413), validated per key (400).
         The success body echoes only the key and an entry count, never the stored value. There is no GET route: a GET answers the
         generic route 404. These rows are never served by /api/data/{name}.
       security:
@@ -528,7 +614,7 @@ paths:
         - name: key
           in: path
           required: true
-          schema: { type: string, enum: [name_map, discord_members, discord_roster] }
+          schema: { type: string, enum: [name_map, discord_members, discord_roster, ai_budget_caps, events_schedule] }
       requestBody:
         required: true
         content:
