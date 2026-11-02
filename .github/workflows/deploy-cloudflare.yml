@@ -23,6 +23,20 @@ jobs:
       - name: Checkout master
         uses: actions/checkout@v4
 
+      - name: Require salt secrets before deploying
+        env:
+          USER_SALT: ${{ secrets.USER_SALT }}
+          KEY_SALT: ${{ secrets.KEY_SALT }}
+        run: |
+          # USER_SALT and KEY_SALT are Worker secrets, no longer wrangler.toml vars. Without them the Worker
+          # refuses guest asks, votes, Discord login and member keys, so stop before replacing the live Worker.
+          for N in USER_SALT KEY_SALT; do
+            if [ -z "${!N}" ]; then
+              echo "::error::Repository secret $N is missing. The owner must create it (same value as before, so existing hashes stay valid). See docs/runbooks/secrets.md."
+              exit 1
+            fi
+          done
+
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -259,8 +273,10 @@ jobs:
           DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
           DISCORD_CLIENT_SECRET: ${{ secrets.DISCORD_CLIENT_SECRET }}
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          USER_SALT: ${{ secrets.USER_SALT }}
+          KEY_SALT: ${{ secrets.KEY_SALT }}
         run: |
-          for SECRET_NAME in ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY BOARD_ADMIN_TOKEN DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY DISCORD_CLIENT_SECRET DISCORD_BOT_TOKEN; do
+          for SECRET_NAME in ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY BOARD_ADMIN_TOKEN DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY DISCORD_CLIENT_SECRET DISCORD_BOT_TOKEN USER_SALT KEY_SALT; do
             SECRET_VAL="${!SECRET_NAME}"
             if [ -n "$SECRET_VAL" ]; then
               printf "%s" "$SECRET_VAL" | npx wrangler secret put "$SECRET_NAME"

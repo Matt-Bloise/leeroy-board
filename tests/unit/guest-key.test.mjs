@@ -23,13 +23,12 @@ test("the legacy unsalted value differs from the salted one", async () => {
   assert.notEqual(await guestIpKey(ip, "salt-one-example"), legacy);
 });
 
-test("an unset salt falls back to the legacy unsalted value", async () => {
-  const legacy = await sha256Hex(`guest-ask:${ip}`);
-  assert.equal(await guestIpKey(ip, undefined), legacy);
-  assert.equal(await guestIpKey(ip, ""), legacy);
+test("an unset or short salt fails closed instead of using an unsalted value", async () => {
+  for (const bad of [undefined, null, "", "short"]) {
+    assert.throws(() => guestIpKey(ip, bad), { name: "SaltMissingError" });
+  }
 });
 
 test("output is 64 lowercase hex characters", async () => {
   assert.match(await guestIpKey(ip, "salt-one-example"), /^[0-9a-f]{64}$/);
-  assert.match(await guestIpKey(ip, undefined), /^[0-9a-f]{64}$/);
 });
