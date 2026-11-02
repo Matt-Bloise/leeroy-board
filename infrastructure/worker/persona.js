@@ -36,7 +36,7 @@ const STOPWORDS = new Set(
 function tokens(text) {
   const out = new Set();
   for (const w of String(text || "").toLowerCase().split(/[^a-z0-9]+/)) {
-    if (w.length > 2 && !STOPWORDS.has(w)) out.add(w);
+    if (w.length > 2 && !STOPWORDS.has(w)) out.add(w.length > 4 ? w.replace(/(ing|ed|es|s)$/, "") : w);
   }
   return out;
 }

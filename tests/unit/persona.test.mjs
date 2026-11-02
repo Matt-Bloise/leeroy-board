@@ -57,6 +57,10 @@ test("bits: keyword overlap only, skips unsafe, at most 2, stable order", () => 
   assert.equal(pickBits(persona, "tank polls gold").length, 2);
 });
 
+test("bits: light stemming matches tank to tanking", () => {
+  assert.deepEqual(pickBits(persona, "who is tanking for us right now?"), ["TANK BIT"]);
+});
+
 test("examples: same journey first, then overlap, at most 3", () => {
   const ex = pickExamples(persona, "riding gold", "curious");
   assert.equal(ex.length, 3);
