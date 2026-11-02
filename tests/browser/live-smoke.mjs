@@ -81,10 +81,20 @@ async function visit(browser, engine, size, opts, setup) {
     }
     ok(`${tag} the head toggle reaches Guided, Curious and Everything`, reach.every((r) => r.endsWith(":ok")), reach.join(" "));
     await page.waitForTimeout(800);
-    /* a name picker: the Tonight panel's chips; take the first member */
+    /* the first screen explains itself (first-run purpose card): four plain lines above the name picker, one primary action ("Show me what is next"), "Just looking" beside it, the countdown below them; on a desktop or tablet Guided shows four ribbon tabs plus More (a phone has its own bottom bar) */
+    const fr = await page.evaluate(() => {
+      const vis = (e) => !!e && e.offsetWidth > 0 && e.offsetHeight > 0, r = (e) => e.getBoundingClientRect(), P = document.querySelector("#nx-purpose"), chip = [...document.querySelectorAll("#tn-me .tn-name")].find(vis), go = document.querySelector("#nx-show"), look = document.querySelector("#nx-looking"), line = document.querySelector("#nx-tonight");
+      const tabs = [...document.querySelectorAll("#tabs .tab")].filter(vis).map((t) => t.textContent.trim()), more = document.querySelector("#tab-more");
+      return { lines: P ? [...P.querySelectorAll("p")].map((p) => p.textContent.trim()) : [], above: !!(P && chip && r(P).bottom <= r(chip).top + 1), go: vis(go) && /^Show me what is next$/.test(go.textContent.trim()), look: vis(look) && /^Just looking$/.test(look.textContent.trim()), tall: [go, look].filter(vis).every((b) => r(b).height >= 44), below: !line || !go || r(line).top >= r(go).bottom - 1, tabs, more: vis(more), wide: document.documentElement.scrollWidth <= innerWidth + 1 };
+    });
+    ok(`${tag} first visit: a purpose card of four lines sits above the name picker`, fr.lines.length === 4 && fr.above, `lines: ${fr.lines.length}, above: ${fr.above}`);
+    ok(`${tag} first visit: "Show me what is next" is the primary action and "Just looking" the secondary, both tall enough to tap`, fr.go && fr.look && fr.tall, `go: ${fr.go}, look: ${fr.look}, tall: ${fr.tall}`);
+    ok(`${tag} first visit: the countdown line is below the primary action, and the page does not scroll sideways`, fr.below && fr.wide, `below: ${fr.below}, no sideways scroll: ${fr.wide}`);
+    if (!opts.isMobile) ok(`${tag} first visit: Guided shows Next steps, The five, Sign-ups, Leeroy and More`, fr.tabs.join("|") === "Next steps|The five|Sign-ups|Leeroy" && fr.more, `tabs: ${fr.tabs.join("|")}, More: ${fr.more}`);
+    /* a name picker: the Tonight panel's chips; a chip selects, and "Show me what is next" opens that person's next steps (it used to open on the chip itself) */
     const picked = await page.evaluate(() => {
-      const b = [...document.querySelectorAll("#tn-me .tn-name")].find((x) => x.offsetWidth > 0 && !/just looking/i.test(x.textContent));
-      if (!b) return null; b.click(); return b.textContent.trim().slice(0, 30);
+      const b = [...document.querySelectorAll("#tn-me .tn-name")].find((x) => x.offsetWidth > 0);
+      if (!b) return null; b.click(); const g = document.querySelector("#nx-show"); if (g) g.click(); return b.textContent.trim().slice(0, 30);
     });
     ok(`${tag} a name can be picked`, !!picked, "no name chip visible");
     await page.waitForTimeout(2500);

@@ -120,7 +120,7 @@ export function createCloth(o) {
     if (destroyed || !checkLink()) return false;
     const cw = rail.clientWidth, ch = rail.clientHeight;
     if (!rail.offsetWidth || !cw || !ch) { ready = false; hid = true; return false; }
-    const k = [cw, ch, rail.scrollLeft, rail.offsetLeft, rail.offsetTop, sheet.clientWidth, sheet.clientHeight, window.devicePixelRatio].join();
+    const k = [cw, ch, rail.scrollLeft, rail.offsetLeft, rail.offsetTop, sheet.clientWidth, sheet.clientHeight, window.devicePixelRatio, B.reduce((n, b) => n + (b.el.offsetWidth ? 1 : 0), 0)].join(); /* the last term: a folded tab (display none) changes the layout */
     if (k !== lkey || !ready) {
       lkey = k; geometry();
       const sr = sheet.getBoundingClientRect(), rr = rail.getBoundingClientRect(); let any = false;

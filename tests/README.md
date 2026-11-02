@@ -3,7 +3,7 @@
 Automated checks that run against a pull request's preview environment (Cloudflare Pages + Worker). They make no AI calls at all (free Workers AI has a very low rate limit) and use no AI keys.
 
 - `api/api.test.mjs`: 8 checks with `node:test` and global `fetch` (health, bootstrap, state, CORS, auth refusal, Discord signature refusal, library index, WebSocket).
-- `browser/live-smoke.mjs`: 60 browser checks in Chromium and WebKit at 390x844 (touch) and 1366x768. Firefox is not used.
+- `browser/live-smoke.mjs`: 74 browser checks in Chromium and WebKit at 390x844 (touch) and 1366x768. Firefox is not used.
 - `browser/smoke-retry.mjs`: the retry decision. A check that fails once and passes on a second visit is a warning, not a failure.
 
 ## Run locally
