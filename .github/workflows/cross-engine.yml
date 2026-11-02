@@ -1,0 +1,124 @@
+name: Cross-engine QA
+
+# Daily read-only check of the live site in Chromium, WebKit and Firefox: tests/browser/live-smoke.mjs and tests/browser/layout-sweep.mjs.
+# It only loads the one URL below (default https://leeroy.party/) and never writes to the site. The only secret used is GITHUB_TOKEN.
+# A failed SCHEDULED run opens or updates one issue, "Cross-engine QA failing on production". Nothing is closed automatically.
+# Manual run: Actions > Cross-engine QA > Run workflow (optionally with another url). See tests/README.md.
+
+on:
+  schedule:
+    - cron: "15 7 * * *"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Site to check (read only)"
+        required: false
+        default: "https://leeroy.party/"
+        type: string
+
+concurrency:
+  group: cross-engine
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Pinned action SHAs (tag in the comment on each use), the same ones preview-tests.yml uses:
+  #   actions/checkout          11bd71901bbe5b1630ceea73d27597364c9af683 v4.2.2
+  #   actions/setup-node        39370e3970a6d050c480ffad4ff0ed4d3fdee5af v4.1.0
+  #   actions/upload-artifact   b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 v4.4.3
+  TARGET_URL: ${{ inputs.url || 'https://leeroy.party/' }}
+
+jobs:
+  qa:
+    name: ${{ matrix.engine }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [chromium, webkit, firefox]
+    steps:
+      - name: Check the URL
+        run: |
+          case "$TARGET_URL" in
+            https://*) ;;
+            *) echo "::error::url must start with https://"; exit 1 ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies and ${{ matrix.engine }}
+        working-directory: tests
+        run: |
+          sudo apt-get update
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps ${{ matrix.engine }}
+
+      - name: Live smoke
+        id: smoke
+        working-directory: tests
+        env:
+          ENGINE: ${{ matrix.engine }}
+          SMOKE_ALLOW_WEBKIT_NO_WEBGL: "1"
+        run: |
+          set -o pipefail
+          node browser/live-smoke.mjs --url "$TARGET_URL" --engine "$ENGINE" 2>&1 | tee "$RUNNER_TEMP/smoke-$ENGINE.log"
+
+      - name: Layout sweep
+        # Runs even when the smoke failed, so one run shows both.
+        if: ${{ !cancelled() }}
+        working-directory: tests
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          node browser/layout-sweep.mjs --url "$TARGET_URL" --engine "$ENGINE" --out "report-$ENGINE.json" --budget-min 20 2>&1 | tee "$RUNNER_TEMP/sweep-$ENGINE.log"
+
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: cross-engine-${{ matrix.engine }}
+          path: |
+            tests/report-${{ matrix.engine }}.json
+            ${{ runner.temp }}/smoke-${{ matrix.engine }}.log
+            ${{ runner.temp }}/sweep-${{ matrix.engine }}.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  issue:
+    name: issue
+    needs: qa
+    # Scheduled runs only: a manual run reports in its own log and never touches the issue list.
+    if: ${{ always() && github.event_name == 'schedule' && needs.qa.result == 'failure' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TITLE: Cross-engine QA failing on production
+    steps:
+      - name: Open the issue or add to the open one
+        run: |
+          set -eu -o pipefail
+          RUN="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          FAILED=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")' || true)
+          BODY=$(printf 'The scheduled cross-engine run failed for: %s.\n\nRun and reports (artifacts, 30 days): %s\nSite checked: %s\n\nThis issue is never closed automatically. Close it once a later run is green.' "${FAILED:-unknown}" "$RUN" "$TARGET_URL")
+          # Exact title match among open issues, so there is only ever one.
+          N=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --limit 100 --json number,title --jq "[.[] | select(.title == \"$TITLE\")] | sort_by(.number) | .[0].number // empty")
+          if [ -n "$N" ]; then
+            gh issue comment "$N" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            echo "Updated issue #$N"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+          fi

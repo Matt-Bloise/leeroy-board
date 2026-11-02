@@ -2,6 +2,7 @@
 //   node layout-sweep.mjs --url https://pr-N.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)
 //   options: --engine chromium|webkit|firefox (default chromium)   --out report.json   --budget-min 7   --concurrency 4
 //            --sizes 1024x768,390x844 (subset)   --states gate,looking,member   --scenes five,buffs
+//            --zoom-selftest   check the zoom-aware coordinate helper on the chosen engine against a built-in page and exit (no --url needed)
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
 // No AI call, nothing is sent: the only requests are the page's own. Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
 // Matrix: 18 viewport sizes (touch + isMobile under 700 wide) x 3 states (gate = first visit, looking = "Just take a look", member = name chip then "Show me what is next")
@@ -19,12 +20,15 @@
 //   body-last       after scrolling to the end, the last visible child sits inside #sheet-body and inside the viewport
 //   http-error      a same-origin response was 4xx or 5xx
 //   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
+// Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
+// multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
+// really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
-if (!BASE) { console.error("usage: node layout-sweep.mjs --url <pages origin> (or set PREVIEW_PAGES) [--engine chromium|webkit|firefox] [--out report.json]"); process.exit(2); }
+if (!BASE && !argv.includes("--zoom-selftest")) { console.error("usage: node layout-sweep.mjs --url <pages origin> (or set PREVIEW_PAGES) [--engine chromium|webkit|firefox] [--out report.json]"); process.exit(2); }
 // run.mjs runs every suite in this folder; CI runs this one in its own `layout` job, so the `browser` job sets LAYOUT_SWEEP_SKIP=1 rather than sweeping twice.
 if (process.env.LAYOUT_SWEEP_SKIP === "1") { console.log("layout-sweep: skipped (LAYOUT_SWEEP_SKIP=1; the layout job runs it)"); process.exit(0); }
 const ENGINE = arg("--engine", "chromium");
@@ -39,14 +43,35 @@ const pick = (k, all) => { const v = arg(k); if (!v) return all; const l = v.spl
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
 const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENES);
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
-const url = `${BASE.replace(/\/$/, "")}/?preview=1`;
-const ORIGIN = new URL(url).origin;
+const url = BASE ? `${BASE.replace(/\/$/, "")}/?preview=1` : "about:blank";
+const ORIGIN = BASE ? new URL(url).origin : "";
 // Known by-design exceptions, listed so they are visible and easy to delete. A member who has picked a name and opens #tonight lands on the wall: the app clears the hash and no scene opens.
 // Confirmed by hand on master (scene-open class off, #scene hidden, hash emptied); if the owner decides that deep link should open Next steps, delete the entry and the sweep will judge it.
 const NO_OPEN = new Set(["member/tonight"]);
 const failures = [];
 let skipped = 0, cells = 0, checks = 0, truncated = false;
 const fail = (c, state, scene, invariant, detail) => failures.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300) });
+
+// Runs in every page (addInitScript). window.__lz.rect(el) is el.getBoundingClientRect() in real viewport pixels; point(el) its centre. See the Zoom note at the top.
+function ZOOM_JS(isWebkit) {
+  const cum = (el) => { let z = 1; for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const v = parseFloat(getComputedStyle(e).zoom); if (v > 0) z *= v; } return z; };
+  let need = null;
+  const probe = () => { // does this engine report the unzoomed size of a zoom:2 box? Measured once per page, so a fixed WebKit is left alone.
+    if (need !== null) return need;
+    const d = document.createElement("div");
+    d.style.cssText = "position:absolute;left:0;top:0;width:100px;height:10px;zoom:2;visibility:hidden";
+    document.documentElement.append(d);
+    need = isWebkit && Math.abs(d.getBoundingClientRect().width - 100) < 1;
+    d.remove();
+    return need;
+  };
+  const factor = (el) => (probe() ? cum(el) : 1);
+  window.__lz = {
+    factor,
+    rect(el) { const r = el.getBoundingClientRect(), f = factor(el); return f === 1 ? r : { left: r.left * f, top: r.top * f, right: r.right * f, bottom: r.bottom * f, width: r.width * f, height: r.height * f }; },
+    point(el) { const r = window.__lz.rect(el); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
+  };
+}
 
 // Runs in the page: resolves once the sheet is opaque and the header controls have stopped moving (open animation, async tab arrows, fonts), or after 3.5 s.
 async function settle() {
@@ -66,7 +91,7 @@ function measure({ touch, w }) {
   const out = [];
   let n = 0;
   const bad = (invariant, detail) => out.push({ invariant, detail });
-  const R = (el) => el.getBoundingClientRect();
+  const R = (el) => window.__lz.rect(el);
   const fmt = (r) => `[${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}]`;
   const visible = (el) => {
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
@@ -158,14 +183,23 @@ function measure({ touch, w }) {
   return { out, n };
 }
 
+// WebKit under CSS zoom: a locator click aims at the unzoomed rect and times out, so click the zoom-aware centre of the element instead.
+async function press(page, locator, timeout = 8000) {
+  if (ENGINE !== "webkit") return locator.click({ timeout });
+  const el = await locator.elementHandle({ timeout });
+  await el.evaluate((e) => e.scrollIntoView({ block: "center", inline: "center" }));
+  const { x, y } = await el.evaluate((e) => window.__lz.point(e));
+  await page.mouse.click(x, y);
+}
+
 async function openState(page, state) {
   await page.goto(url, { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look", { state: "visible", timeout: 20000 });
   await page.waitForTimeout(500);
-  if (state !== "gate") await page.getByText("Just take a look", { exact: false }).first().click({ timeout: 8000 });
+  if (state !== "gate") await press(page, page.getByText("Just take a look", { exact: false }).first());
   if (state === "member") {
-    await page.getByRole("button", { name: /Bloise/ }).first().click({ timeout: 8000 });
-    await page.getByRole("button", { name: /Show me what is next/ }).first().click({ timeout: 8000 });
+    await press(page, page.getByRole("button", { name: /Bloise/ }).first());
+    await press(page, page.getByRole("button", { name: /Show me what is next/ }).first());
   }
   await page.waitForTimeout(state === "gate" ? 300 : 1200);
 }
@@ -174,6 +208,7 @@ async function cell(browser, size, state) {
   const opts = { viewport: { width: size.w, height: size.h }, serviceWorkers: "block", reducedMotion: "reduce" };
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
   const ctx = await browser.newContext(opts), page = await ctx.newPage();
+  await ctx.addInitScript(ZOOM_JS, ENGINE === "webkit");
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
@@ -216,6 +251,26 @@ async function cell(browser, size, state) {
 }
 
 const launch = { ...(process.env.PW_EXECUTABLE ? { executablePath: process.env.PW_EXECUTABLE } : {}) };
+if (argv.includes("--zoom-selftest")) {
+  // The helper must return the right element on every engine: at the rect centre (times the zoom, where the engine needs it) elementFromPoint finds the target, and a click lands on it.
+  const b = await pw[ENGINE].launch(launch);
+  const page = await (await b.newContext({ viewport: { width: 900, height: 700 } })).newPage();
+  await page.addInitScript(ZOOM_JS, ENGINE === "webkit");
+  await page.goto("about:blank");
+  await page.setContent('<style>body{margin:0}</style><div style="position:absolute;left:100px;top:80px;zoom:1.052"><div style="zoom:1.1;padding:30px"><button id=t style="width:120px;height:40px;margin:20px">t</button><button id=u style="width:120px;height:40px;margin:20px 0 0 200px">u</button></div></div>');
+  let bad = 0;
+  for (const id of ["t", "u"]) {
+    const r = await page.evaluate((i) => { const el = document.getElementById(i), p = window.__lz.point(el), hit = document.elementFromPoint(p.x, p.y); return { hit: hit && hit.id, f: window.__lz.factor(el) }; }, id);
+    const ok = r.hit === id; if (!ok) bad++;
+    console.log(`${ok ? "PASS" : "FAIL"} zoom-selftest ${ENGINE} elementFromPoint at helper centre of #${id}: ${r.hit || "nothing"} (factor ${r.f.toFixed(3)})`);
+  }
+  await page.evaluate(() => { window.__hit = ""; document.addEventListener("click", (e) => { window.__hit = e.target.id; }); });
+  await press(page, page.locator("#u"));
+  const clicked = await page.evaluate(() => window.__hit), okc = clicked === "u"; if (!okc) bad++;
+  console.log(`${okc ? "PASS" : "FAIL"} zoom-selftest ${ENGINE} click via helper reached #u: ${clicked || "nothing"}`);
+  await b.close();
+  process.exit(bad ? 1 : 0);
+}
 const browser = await pw[ENGINE].launch(launch);
 const jobs = [];
 for (const size of SIZES) for (const state of STATES) jobs.push([size, state]);

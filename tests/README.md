@@ -4,7 +4,7 @@ Automated checks that run against a pull request's preview environment (Cloudfla
 
 - `api/api.test.mjs`: 8 checks with `node:test` and global `fetch` (health, bootstrap, state, CORS, auth refusal, Discord signature refusal, library index, WebSocket).
 - `api/contract.test.mjs`: validates live responses of `/api/health`, `/api/bootstrap`, `/api/signups`, `/api/state`, `/api/me`, `/api/data/{name}` and `/api/atlas/{name}` against `docs/openapi.yaml` (read-only, a small JSON Schema validator, YAML parsed with the `yaml` devDependency).
-- `browser/live-smoke.mjs`: 74 browser checks in Chromium and WebKit at 390x844 (touch) and 1366x768. Firefox is not used.
+- `browser/live-smoke.mjs`: 74 browser checks in Chromium and WebKit at 390x844 (touch) and 1366x768. Firefox is not used unless asked: `--engine chromium|webkit|firefox` runs one engine alone.
 - `browser/votes-card.mjs`: 44 checks (Chromium, 390x844 and 1366x768) on the Votes card with `GET /api/votes` stubbed by route interception: render, inert text, empty and failing states, 60-second polling only while visible.
 - `browser/axe.mjs`: axe-core (`@axe-core/playwright`, WCAG 2 A and AA tags) on the first screen and the sheet (Next steps) in Chromium at 390x844 and 1366x768. Fails on serious or critical violations; minor and moderate ones print as WARN. Exclusions live in `EXCLUDE` at the top of the file, each with a reason.
 - `browser/smoke-retry.mjs`: the retry decision. A check that fails once and passes on a second visit is a warning, not a failure.
@@ -40,3 +40,7 @@ The browser run takes about a minute. Exit code 0 means every check passed.
 ## CI
 
 `.github/workflows/preview-tests.yml` runs on every pull request from a branch of this repository (not forks), drafts included, as jobs `unit`, `stamps`, `api` and `browser` (plus `scope`, `preview`, `report`). Docs-only PRs get no preview and run only `unit` and `stamps`; the comment then says `passed (docs only)`. It waits for the preview comment, waits for the preview to answer, runs the tests with the `BOARD_ADMIN_TOKEN` repository secret, uploads logs, and posts a summary comment marked `<!-- preview-tests -->`.
+
+## Cross-engine QA (scheduled)
+
+`.github/workflows/cross-engine.yml` runs `live-smoke.mjs` and `layout-sweep.mjs` against the live site (default `https://leeroy.party/`) in Chromium, WebKit and Firefox every day at 07:15 UTC, read only, and keeps the JSON reports as artifacts for 30 days. To run it by hand, open Actions > Cross-engine QA > Run workflow and optionally give another `url`; a manual run never touches issues. When a scheduled run fails it opens, or comments on, the one open issue titled "Cross-engine QA failing on production", naming the failing engines and linking the run; the issue is never closed automatically, so close it once a later run is green. On WebKit the sweep corrects for CSS `zoom` with a zoom-aware coordinate helper (`node browser/layout-sweep.mjs --zoom-selftest --engine <engine>` checks it).

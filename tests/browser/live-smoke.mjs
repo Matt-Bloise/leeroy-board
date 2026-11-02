@@ -5,7 +5,8 @@
 // readable name chips, the journey toggle, and one primary button after a name is picked. Reads only; presses the journey toggle and a name chip, both
 // on the fresh context's own localStorage, and never presses anything that sends.
 // A failed context is visited once more after 25 s (SMOKE_RETRY_MS overrides); fail-then-pass prints WARN transient, fail twice fails (smoke-retry.mjs).
-// Exit 0 when every check passes, 1 otherwise. Firefox is not used.
+// Option: --engine chromium|webkit|firefox runs that engine alone (default: Chromium and WebKit; Firefox only when asked, for the scheduled cross-engine run, .github/workflows/cross-engine.yml).
+// Exit 0 when every check passes, 1 otherwise.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +21,10 @@ const base = BASE, origin = new URL(base).origin;
 const WORKER_ORIGIN = (() => { try { if (process.env.PREVIEW_API) return new URL(process.env.PREVIEW_API).origin; const m = fs.readFileSync(path.join(here, "..", "..", "js", "brain.js"), "utf8").match(/const WORKER = "(https:\/\/[^"]+)"/); return m ? new URL(m[1]).origin : null; } catch (e) { return null; } })();
 if (!WORKER_ORIGIN) console.log("WARN worker origin not found in js/brain.js: every console error counts");
 const CTX = [["chromium", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["chromium", "1366x768", { viewport: { width: 1366, height: 768 } }],
-  ["webkit", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["webkit", "1366x768", { viewport: { width: 1366, height: 768 } }]];
+  ["webkit", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["webkit", "1366x768", { viewport: { width: 1366, height: 768 } }],
+  ["firefox", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["firefox", "1366x768", { viewport: { width: 1366, height: 768 } }]];
+const ei = argv.indexOf("--engine"), ENGINE = ei >= 0 ? argv[ei + 1] : null;
+if (ENGINE !== null && !["chromium", "webkit", "firefox"].includes(ENGINE)) { console.error(`unknown engine ${ENGINE}`); process.exit(2); }
 let pass = 0, fail = 0, warns = 0, transient = 0; const fails = [];
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; const l = `FAIL ${name}${extra ? `: ${extra}` : ""}`; fails.push(l); console.log(l); } };
 const bad = (t) => { if (/\[object Object\]/.test(String(t))) return "object Object"; const m = String(t).match(/(^|[^A-Za-z0-9_.\-])(null|undefined|NaN)(?![A-Za-z0-9_\-])/); return m ? m[2] : null; }; // + [object Object] and NaN (2026-10-30: the five's arrangement line)
@@ -152,7 +156,7 @@ async function one(browser, engine, size, opts, setup, fault = false) {
   }
   return { ...v, reloaded, retried };
 }
-for (const eng of ["chromium", "webkit"]) {
+for (const eng of ENGINE ? [ENGINE] : ["chromium", "webkit"]) {
   let browser; try { browser = await pw[eng].launch(); } catch (e) { ok(`${eng} launches`, false, String(e.message).split("\n")[0]); continue; }
   try { for (const [en, size, opts] of CTX.filter((c) => c[0] === eng)) for (const r of (await one(browser, en, size, opts)).rows) { ok(r[0], r[1], r[2]); if (r[3]) { transient++; console.log(`WARN transient ${r[0]}: failed on the first run, passed on the retry${r[2] ? ` (${String(r[2]).slice(0, 120)})` : ""}`); } } } finally { await browser.close().catch(() => {}); }
 }
