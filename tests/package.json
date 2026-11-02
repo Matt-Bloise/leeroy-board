@@ -5,7 +5,7 @@
   "description": "API and browser tests run against a PR preview environment. No AI keys, no secrets in this file.",
   "scripts": {
     "test:api": "node --test --test-reporter=spec api/api.test.mjs",
-    "test:browser": "node browser/live-smoke.mjs"
+    "test:browser": "node browser/run.mjs"
   },
   "devDependencies": {
     "playwright": "1.49.1"

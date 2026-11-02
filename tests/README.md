@@ -4,6 +4,8 @@ Automated checks that run against a pull request's preview environment (Cloudfla
 
 - `api/api.test.mjs`: 8 checks with `node:test` and global `fetch` (health, bootstrap, state, CORS, auth refusal, Discord signature refusal, library index, WebSocket).
 - `browser/live-smoke.mjs`: 60 browser checks in Chromium and WebKit at 390x844 (touch) and 1366x768. Firefox is not used.
+- `browser/votes-card.mjs`: 44 checks (Chromium, 390x844 and 1366x768) on the Votes card with `GET /api/votes` stubbed by route interception: render, inert text, empty and failing states, 60-second polling only while visible.
+- `browser/run.mjs`: runs `live-smoke.mjs` then `votes-card.mjs` with the same arguments (`npm run test:browser`).
 - `browser/smoke-retry.mjs`: the retry decision. A check that fails once and passes on a second visit is a warning, not a failure.
 
 ## Run locally
