@@ -2,7 +2,7 @@
 // Multi-Provider AI Integration & House-Voice Guardrails (`worker/ai-models.js`)
 // Supports switching seamlessly between:
 //   1. Anthropic Claude (`claude` — Haiku 4.5 / Sonnet 4.5 via `ANTHROPIC_API_KEY`)
-//   2. Google Gemini Free Tier (`gemini` — Gemini 2.5 Flash / Pro via `GEMINI_API_KEY`)
+//   2. Google Gemini Free Tier (`gemini` — Gemini 3.5 Flash-Lite / 3.8 Pro via `GEMINI_API_KEY`)
 //   3. Cloudflare Workers AI Free Tier (`workers-ai` — Llama 3.3 70B via `[ai]` binding, 0 keys needed)
 //   4. GroqCloud Free Tier (`groq` — Llama 3.3 70B Versatile via `GROQ_API_KEY`)
 //   5. Cerebras Free Tier (`cerebras` — Llama 3.3 70B via `CEREBRAS_API_KEY`)
@@ -360,7 +360,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   }
   const model = deep
     ? env.GEMINI_MODEL_DEEP || "gemini-3.8-pro"
-    : env.GEMINI_MODEL_FAST || "gemini-3.8-flash";
+    : env.GEMINI_MODEL_FAST || "gemini-3.5-flash-lite";
 
   const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
@@ -397,12 +397,35 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
     cacheKey,
   });
 
-  if (!resp.ok) {
-    const errTxt = await resp.text();
-    throw new Error(`Gemini API HTTP ${resp.status}: ${errTxt.slice(0, 200)}`);
+  let activeResp = resp;
+  let activeModel = model;
+  if (!activeResp.ok && (activeResp.status === 503 || activeResp.status === 429) && activeModel !== "gemini-3.5-flash-lite") {
+    console.warn(`[Gemini] ${activeModel} returned HTTP ${activeResp.status}, retrying with gemini-3.5-flash-lite`);
+    activeModel = "gemini-3.5-flash-lite";
+    activeResp = await fetchWithGatewayFallback({
+      env,
+      providerSlug: `google-ai-studio/v1beta/models/${encodeURIComponent(
+        activeModel
+      )}:generateContent`,
+      defaultEndpoint: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        activeModel
+      )}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": env.GEMINI_API_KEY,
+      },
+      body,
+      skipCache,
+      cacheKey,
+    });
   }
 
-  const data = await resp.json();
+  if (!activeResp.ok) {
+    const errTxt = await activeResp.text();
+    throw new Error(`Gemini API HTTP ${activeResp.status}: ${errTxt.slice(0, 200)}`);
+  }
+
+  const data = await activeResp.json();
   const parts =
     (data.candidates &&
       data.candidates[0] &&
@@ -418,7 +441,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
     throw new Error("Gemini API returned an empty response");
   }
 
-  return { answer, model, provider: "gemini" };
+  return { answer, model: activeModel, provider: "gemini" };
 }
 
 async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null }) {
@@ -797,6 +820,23 @@ export async function answerWithAi({
             deep,
           }));
         } catch {}
+      }
+      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai")) {
+        try {
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
+            provider: "workers-ai",
+            env,
+            systemPrompt,
+            userPrompt,
+            deep,
+            skipCache: false,
+            cacheKey,
+            budgetKind: "ask",
+            budgetKeys: budget,
+          }));
+        } catch (waiErr) {
+          console.warn("[AI-Failover] Workers AI fallback failed:", waiErr.message);
+        }
       }
       if (!rawAnswer) {
         if (hits && hits.length > 0) {
