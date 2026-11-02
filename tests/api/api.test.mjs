@@ -57,8 +57,9 @@ test("CORS: the preview Pages origin is allowed and echoed", async () => {
   await r.arrayBuffer();
 });
 
-test("write route without a key is refused (401 or 403)", async () => {
-  const r = await fetch(`${API}/api/intent`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "ask", q: "should not run" }) });
+// Public guests may only ask (Workers AI, 2 per hour per IP, PR 17). Every other write kind must still need a key. Never send kind "ask" here: that would spend AI.
+test("non-ask write route without a key is refused (401 or 403)", async () => {
+  const r = await fetch(`${API}/api/intent`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "signup", patch: {} }) });
   assert.ok([401, 403].includes(r.status), `got ${r.status}`);
   await r.arrayBuffer();
 });
