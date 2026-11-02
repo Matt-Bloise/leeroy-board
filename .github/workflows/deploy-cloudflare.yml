@@ -120,6 +120,7 @@ jobs:
 
           echo "CLOUDFLARE_API_TOKEN=$CLEAN_TOKEN" >> "$GITHUB_ENV"
           echo "CLOUDFLARE_ACCOUNT_ID=$TARGET_ACCOUNT_ID" >> "$GITHUB_ENV"
+          echo "TARGET_ACCOUNT_ID=$TARGET_ACCOUNT_ID" >> "$GITHUB_ENV"
 
           # 3. Test D1 permissions specifically
           D1_CHECK=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$TARGET_ACCOUNT_ID/d1/database" \
@@ -207,9 +208,18 @@ jobs:
           sed -i "s/00000000-0000-0000-0000-000000000000/$DB_ID/g" wrangler.toml
 
           # Inject CLOUDFLARE_ACCOUNT_ID into wrangler.toml [vars] for AI Gateway routing
-          if [ -n "$TARGET_ACCOUNT_ID" ]; then
-            echo "Patching CLOUDFLARE_ACCOUNT_ID in wrangler.toml..."
-            sed -i "s/CLOUDFLARE_ACCOUNT_ID = \"\"/CLOUDFLARE_ACCOUNT_ID = \"$TARGET_ACCOUNT_ID\"/g" wrangler.toml
+          TARGET_ACC="${CLOUDFLARE_ACCOUNT_ID:-$TARGET_ACCOUNT_ID}"
+          if [ -n "$TARGET_ACC" ]; then
+            echo "Patching CLOUDFLARE_ACCOUNT_ID in wrangler.toml with $TARGET_ACC..."
+            sed -i "s/CLOUDFLARE_ACCOUNT_ID = \"\"/CLOUDFLARE_ACCOUNT_ID = \"$TARGET_ACC\"/g" wrangler.toml
+            grep "CLOUDFLARE_ACCOUNT_ID" wrangler.toml
+            if grep -q 'CLOUDFLARE_ACCOUNT_ID = ""' wrangler.toml; then
+              echo "::error::Failed to patch CLOUDFLARE_ACCOUNT_ID in wrangler.toml!"
+              exit 1
+            fi
+          else
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is missing or empty in deploy step!"
+            exit 1
           fi
 
       - name: Apply Unified D1 Schema (`schema.sql`) & Pending Migrations
