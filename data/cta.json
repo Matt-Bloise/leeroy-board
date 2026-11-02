@@ -208,5 +208,110 @@
   "old": "",
   "new": "Pick a name instead",
   "flavour": "Pick a name instead"
+ },
+ {
+  "id": "nextstep-no-build-title",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "Your build is not on the board yet.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-no-build-why",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "The board reads your class, race and role from your build post. /build in Discord adds it; until then you can look through the options in the library.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-no-build-cta",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "Open Discord",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-no-group-title",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "You are not in a group yet.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-no-group-why",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "Groups form around a ruleset, a faction and the roles they need. The Sign-ups card shows which groups exist and how many seats are open.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-no-group-cta",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "See the groups",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-mismatch-title",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "Your {what} differs from the one {group} uses.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-mismatch-why",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "A group's ruleset and faction decide who can play together. Yours: {yours}. The group's: {theirs}. The glossary explains how that works.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-mismatch-cta",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "How groups match",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-rsvp-title",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "{group} has an open {role} seat.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-rsvp-why",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "Your answer tells the group how many are coming. In, tentative, running late and out are all fine answers.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-rsvp-cta",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "Answer the sign-up",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-event-soon-title",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "{group} meets {time}.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-event-soon-why",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "You answered in. The Tonight card has the time and the meeting place.",
+  "flavour": ""
+ },
+ {
+  "id": "nextstep-event-soon-cta",
+  "file": "js/nextstep.js",
+  "old": "",
+  "new": "See the time",
+  "flavour": ""
  }
 ]

@@ -162,6 +162,30 @@ function draw(out) {
   if (had) focus(document.getElementById(had));
   NX.buttons = card.querySelectorAll(".nx-act button").length;
 }
+/* nextstep.v2 (data/client.json flags, default false): js/nextstep.js (Q36) picks one card from the viewer's build, group and answer. When it returns a step it replaces the card below; when it returns null, or anything fails, the card above stays. Copy: data/cta.json (ids nextstep-*). The group is the sample roster until the groups API exists (same file scenes/roster.js reads). */
+const NS = { p: null };
+const nsFlag = () => !!(D.client && D.client.flags && D.client.flags["nextstep.v2"]);
+const nsJson = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+const nsLoad = () => (NS.p ||= Promise.all([import("./nextstep.js?v=bb23497925").catch(() => null), nsJson("data/cta.json"), nsJson("data/sample/roster.json")]).then(([mod, cta, roster]) => {
+  const copy = {}; if (Array.isArray(cta)) for (const e of cta) if (e && /^nextstep-/.test(e.id) && typeof e.new === "string") copy[e.id] = e.new;
+  return mod && typeof mod.nextStep === "function" ? { mod, copy, roster } : null;
+}));
+const NS_HREF = { "no-build": () => signupHref() || "#signups", "no-group": () => "#signups", mismatch: () => "#library", rsvp: () => "#signups", "event-soon": () => "#tonight" };
+function nsApply(out, N) {
+  const P = D.party, me = MEM.member(), just = MEM.get("me") === "just-looking";
+  if (!N || !out || !out.step || !P || (!me && !just)) return out;
+  const ro = N.roster && N.roster.group ? N.roster : null, slots = ro && Array.isArray(ro.slots) ? ro.slots : [], bench = ro && Array.isArray(ro.bench) ? ro.bench : [];
+  const mine = me && ro && slots.concat(bench).some((s) => s && s.character && s.character.name === me.name);
+  const sg = me && D.signups && Array.isArray(D.signups.entries) ? D.signups.entries.find((e) => e.name === me.name) : null;
+  let r = null;
+  try {
+    r = N.mod.nextStep({ build: me ? { class_key: me.class_key, role: me.role, faction: P.faction, ruleset: P.ruleset } : null,
+      group: mine ? { name: ro.group.name, ruleset: ro.group.ruleset, faction: ro.group.faction, slots, event_epoch: ro.group.event_epoch } : null,
+      signups: { rsvp: sg ? sg.rsvp : null }, now: Date.now(), copy: N.copy, fmt: (t) => K.fmtWhen(t, { rel: true }) });
+  } catch (e) { console.error("nextstep", e); }
+  const href = r && NS_HREF[r.id] ? NS_HREF[r.id]() : null; if (!r || !href) return out;
+  return { ...out, step: { id: `ns-${r.id}`, kind: "nextstep", title: r.title, fact: r.title, why: r.why, source: "board", minutes: 1, action: { label: r.cta, href } } };
+}
 function render() {
   const seq = ++NX.seq; firstRun();
   return rules().then((R) => {
@@ -169,7 +193,9 @@ function render() {
     NX.engine = !R ? "none" : R === window.__nextRules ? "injected" : "imported";
     let out = null;
     if (R && typeof R.nextSteps === "function" && D.party && D.timeline && D.tonight) { try { out = R.nextSteps(buildInput(), Date.now()); } catch (e) { console.error("next", e); } }
-    NX.out = out; draw(out); firstRun(); return out;
+    const done = (o) => { NX.out = o; draw(o); firstRun(); return o; };
+    if (!nsFlag() || !out) return done(out);
+    return nsLoad().then((N) => (seq !== NX.seq ? NX.out : done(nsApply(out, N))), () => done(out));
   });
 }
 
