@@ -28,6 +28,7 @@ import { answerWithAi, resolveAiProvider } from "./ai-models.js";
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
+import { saltProblems } from "./salts.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
@@ -1542,6 +1543,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (!isOpen(vote, nowMs)) return ephemeral("That vote is closed. No new votes are counted.");
     const discordId = String(user.id || "");
     if (!discordId) return ephemeral("I can't tell who you are, so I can't count that vote.");
+    if (saltProblems(env, ["USER_SALT"]).length) return ephemeral("Voting is unavailable: the Worker is missing its USER_SALT secret.");
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
     await saveVote(env.DB, result.vote, nowMs);

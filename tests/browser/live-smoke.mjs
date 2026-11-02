@@ -57,7 +57,9 @@ async function visit(browser, engine, size, opts, setup) {
   page.on("response", (r) => { try { const u = new URL(r.url()); if (r.status() >= 400) (u.origin === origin ? http : xo).push({ status: r.status(), method: r.request().method(), url: r.url().replace(/[?#].*$/, ""), origin: u.origin, route: u.pathname }); } catch (e) {} }); /* xo: other origins (the Worker), named next to a console error (2026-10-31: two ships logged a bare 503) */
   try {
     await page.goto(`${base}${base.includes("?") ? "&" : "?"}cb=${Date.now()}${Math.random().toString(36).slice(2, 6)}`, { waitUntil: "load", timeout: 45000 });
-    await page.waitForSelector("#tn-me .tn-name", { state: "visible", timeout: 12000 }).catch(() => {});
+    await page.waitForSelector("#tn-me .tn-name, #nx-fr2-look", { state: "visible", timeout: 12000 }).catch(() => {});
+    /* flag firstrun.v2: the first screen is purpose, one button, one quiet link (tests/browser/firstrun.mjs); the name grid checked below sits behind "Just take a look" */
+    if (await page.locator("#nx-fr2-look").isVisible().catch(() => false)) { await page.locator("#nx-fr2-look").click(); await page.waitForSelector("#tn-me .tn-name", { state: "visible", timeout: 12000 }).catch(() => {}); }
     await page.waitForTimeout(1500);
     const s = await page.evaluate(state);
     ok(`${tag} first visit: Guided is the default journey`, s.journey === "guided", `data-journey: ${s.journey || "-"}`);

@@ -2,6 +2,7 @@
 // Storage (no schema change): kv_state key `vote:<id>` holds one vote as JSON, `votes:index` holds { ids: [newest first] }.
 // A voter is stored only as a salted hash, never as the raw Discord user id, and the hash never leaves the Worker.
 import { sha256Hex } from "./crypto.js";
+import { requireSalt } from "./salts.js";
 
 export const VOTE_MIN_CHOICES = 2;
 export const VOTE_MAX_CHOICES = 5;
@@ -13,11 +14,10 @@ export const VOTE_MAX_HOURS = 720;
 export const VOTE_INDEX_MAX = 50;
 export const VOTE_ID_RE = /^[a-f0-9]{8}$/;
 
-// Per-vote, per-salt hash of a Discord user id. Without a salt it falls back to an unsalted form (like guestIpKey)
-// so a missing secret never breaks voting.
+// Per-vote, per-salt hash of a Discord user id. A missing salt throws SaltMissingError (no unsalted fallback).
 export function voterHash(discordId, voteId, salt) {
-  const hasSalt = salt !== undefined && salt !== null && String(salt) !== "";
-  return sha256Hex(hasSalt ? `${salt}:vote:${voteId}:${discordId}` : `vote:${voteId}:${discordId}`);
+  const s = requireSalt({ USER_SALT: salt }, "USER_SALT");
+  return sha256Hex(`${s}:vote:${voteId}:${discordId}`);
 }
 
 export function newVoteId(randomBytes) {

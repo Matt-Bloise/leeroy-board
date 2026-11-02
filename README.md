@@ -75,7 +75,7 @@ Unit and Stamps need only Node 22 and run offline. API and Browser need the prev
 
 ## Secrets and variables
 
-Names, locations and the planned move of `KEY_SALT` and `USER_SALT` are listed in [`infrastructure/README.md`](infrastructure/README.md#secrets-and-variables). No secret value belongs in this repository.
+Names and locations of secrets, including `KEY_SALT` and `USER_SALT` (Worker secrets), are listed in [`infrastructure/README.md`](infrastructure/README.md#secrets-and-variables). No secret value belongs in this repository.
 
 ## License
 

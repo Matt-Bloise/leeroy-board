@@ -33,6 +33,7 @@ import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, v
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
+import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
@@ -951,6 +952,8 @@ export default {
 
         let limitLeft = 6;
         if (!auth.ok) {
+          const missingSalt = saltProblems(env, ["USER_SALT"]);
+          if (missingSalt.length) return jsonResp(saltErrorBody(missingSalt), 503, cors);
           const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
           const ipHash = await guestIpKey(clientIp, env.USER_SALT);
           const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
@@ -1361,6 +1364,8 @@ export default {
           // Rate limit check for public guests: 2 questions per hour per IP
           let guestLeft = 6;
           if (isGuest) {
+            const missingSalt = saltProblems(env, ["USER_SALT"]);
+            if (missingSalt.length) return jsonResp(saltErrorBody(missingSalt), 503, cors);
             const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
             const ipHash = await guestIpKey(clientIp, env.USER_SALT);
             const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
@@ -1580,6 +1585,7 @@ export default {
           body.aiProvider = resolveAiProvider(env);
           body.aiGateway = env.AI_GATEWAY_ID || null;
           body.providers = providers;
+          body.saltsMissing = saltProblems(env); // names only; a non-empty list means member keys or guest asks are refused
           const budget = await loadBudget(env);
           body.aiBudget = { day: utcDayKey(), neurons: budget.neurons, cap: dailyCap(env), asks: budget.asks, cron: budget.cron };
         }

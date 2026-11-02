@@ -1,0 +1,41 @@
+{
+  "description": "Message context menu: Ask Leeroy",
+  "expectType": 5,
+  "interaction": {
+    "id": "fixture-interaction-0001",
+    "application_id": "fixture-app-0001",
+    "token": "fixture-token-not-real",
+    "version": 1,
+    "guild_id": "fixture-guild-0001",
+    "channel_id": "fixture-channel-0001",
+    "locale": "en-US",
+    "member": {
+      "user": {
+        "id": "fixture-user-0001",
+        "username": "fixture_tester",
+        "global_name": "Fixture Tester"
+      },
+      "nick": null,
+      "roles": []
+    },
+    "type": 2,
+    "data": {
+      "id": "fixture-ctx-Ask Leeroy",
+      "name": "Ask Leeroy",
+      "type": 3,
+      "target_id": "fixture-message-0003",
+      "resolved": {
+        "messages": {
+          "fixture-message-0003": {
+            "id": "fixture-message-0003",
+            "content": "Does the Crossroads have a flight path?",
+            "author": {
+              "id": "fixture-user-0002",
+              "username": "fixture_other"
+            }
+          }
+        }
+      }
+    }
+  }
+}

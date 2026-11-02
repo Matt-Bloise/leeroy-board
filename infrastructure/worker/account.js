@@ -5,6 +5,7 @@
 // user_key = sha256(USER_SALT ":user:" discord_id): the Discord id, email, name and tokens are never stored or logged.
 // Everything answers Cache-Control: no-store and is never put in the edge cache.
 import { sha256Hex, timingSafeEqualStr } from "./crypto.js";
+import { saltProblems, saltErrorBody } from "./salts.js";
 
 export const DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token";
 export const DISCORD_ME_URL = "https://discord.com/api/users/@me";
@@ -35,7 +36,7 @@ function hit(map, ip, now, max) {
 }
 const over = (map, ip, now, max) => (map.get(`${ip}:${Math.floor(now / 60000)}`) || 0) >= max;
 
-const saltOk = (env) => !!env.USER_SALT && String(env.USER_SALT).length >= 16;
+const saltOk = (env) => saltProblems(env, ["USER_SALT"]).length === 0;
 export const userKey = (env, discordId) => sha256Hex(`${env.USER_SALT}:user:${discordId}`);
 export const sessionHash = (token) => sha256Hex(`session:${token}`);
 const newToken = () => { const b = new Uint8Array(32); crypto.getRandomValues(b); return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
@@ -78,7 +79,8 @@ async function readBody(request, max) {
 
 async function login(request, env, ip, now, deps) {
   if (!request.headers.get("Origin")) return [403, { error: "origin not allowed" }];
-  if (!saltOk(env) || !env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) return [500, { error: "worker not configured" }];
+  if (!saltOk(env)) return [503, saltErrorBody(saltProblems(env, ["USER_SALT"]))];
+  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) return [500, { error: "worker not configured" }];
   if (hit(logins, ip, now, ACCOUNT.loginPerMin)) return [429, { error: "rate_limited" }, { "Retry-After": "60" }];
   const b = await readBody(request, ACCOUNT.bodyMax);
   if (b.error) return [b.status, { error: b.error }];
@@ -160,7 +162,7 @@ export async function handleAccount(request, env, { path, ip, now, deps = {} }) 
   }
   const state = /^\/state\/([a-z-]{1,32})$/.exec(path);
   if (path !== "/me" && !state) return null;
-  if (!saltOk(env)) return [500, { error: "worker not configured" }];
+  if (!saltOk(env)) return [503, saltErrorBody(saltProblems(env, ["USER_SALT"]))];
   if (over(fails, ip, now, ACCOUNT.failPerMin)) return [429, { error: "slow down" }, { "Retry-After": "60" }];
   const s = await sessionFrom(request, env, now);
   if (!s) { hit(fails, ip, now, ACCOUNT.failPerMin); return [401, { error: "unauthorized" }]; }

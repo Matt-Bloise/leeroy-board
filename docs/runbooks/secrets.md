@@ -17,13 +17,15 @@ Names only. Never put a value in the repository, an issue, a PR, a log or a chat
 
 Loop at `deploy-cloudflare.yml:263`, each skipped when empty (`:265`), set with `wrangler secret put` (`:266`):
 
-`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `BOARD_ADMIN_TOKEN`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`.
+`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `BOARD_ADMIN_TOKEN`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`, `USER_SALT`, `KEY_SALT`.
+
+The production deploy stops before replacing the Worker when the `USER_SALT` or `KEY_SALT` repository secret is empty. Previews get their own salts: `pr-preview-cloudflare.yml` sets each with `wrangler secret put`, derived as HMAC-SHA256 of the preview Worker name keyed by the repository secret (distinct per preview and from production; the repository secret itself is never copied). A missing salt makes the Worker answer 503 `salt_not_configured` on guest asks, votes and account routes, and refuse member keys; it does not crash. Admin `GET /api/health` lists `saltsMissing` (names only).
 
 Consumers in the Worker: AI keys `infrastructure/worker/ai-models.js:141-153`; admin token `index.js:61,70`; webhook `index.js:587`; public key `discord.js:475`; client secret `account.js:81`, `index.js:864`; bot token `index.js:432`.
 
-### Plain variables (public, committed) in `infrastructure/wrangler.toml` `[vars]` (lines 39-61)
+### Plain variables (public, committed) in `infrastructure/wrangler.toml` `[vars]` (lines 39-59)
 
-`AI_PROVIDER`, `AI_GATEWAY_ID`, `AI_GATEWAY_CACHE_TTL`, `CLOUDFLARE_ACCOUNT_ID` (empty), `CLAUDE_MODEL_FAST`, `CLAUDE_MODEL_DEEP`, `GEMINI_MODEL_FAST`, `GEMINI_MODEL_DEEP`, `WORKERS_AI_MODEL`, `GROQ_MODEL_FAST`, `GROQ_MODEL_DEEP`, `CEREBRAS_MODEL`, `GITHUB_MODEL_FAST`, `GITHUB_MODEL_DEEP`, `OPENROUTER_MODEL`, `API_ORIGIN`, `BOARD_PUBLIC_URL`, `ALLOWED_ORIGINS`, `USER_SALT`, `KEY_SALT`.
+`AI_PROVIDER`, `AI_GATEWAY_ID`, `AI_GATEWAY_CACHE_TTL`, `CLOUDFLARE_ACCOUNT_ID` (empty), `CLAUDE_MODEL_FAST`, `CLAUDE_MODEL_DEEP`, `GEMINI_MODEL_FAST`, `GEMINI_MODEL_DEEP`, `WORKERS_AI_MODEL`, `GROQ_MODEL_FAST`, `GROQ_MODEL_DEEP`, `CEREBRAS_MODEL`, `GITHUB_MODEL_FAST`, `GITHUB_MODEL_DEEP`, `OPENROUTER_MODEL`, `API_ORIGIN`, `BOARD_PUBLIC_URL`, `ALLOWED_ORIGINS`.
 
 Added to previews only by the workflow: `IS_PR_PREVIEW`, `WORKER_NAME` (`pr-preview-cloudflare.yml:198-200`), and `BOARD_ADMIN_TOKEN` as a deploy-time `--var` (`:236-237`).
 
@@ -54,7 +56,7 @@ General order: create the new value at the provider, update the GitHub Actions s
 | `DISCORD_PUBLIC_KEY` | Comes from the Discord developer portal; changes only if the application changes. | Interactions fail signature checks until it matches (`discord.js:475,485`) |
 | `DISCORD_CLIENT_SECRET` | Reset in the developer portal; update secret; deploy. | Login and Activity code exchange fail until deployed |
 | `DISCORD_BOT_TOKEN` | Reset in the developer portal; update secret; deploy. | `POST /announce` fails until deployed (`index.js:432`) |
-| `KEY_SALT`, `USER_SALT` | Do not rotate casually. Changing `KEY_SALT` invalidates every stored member key hash (`auth.js:15`); changing `USER_SALT` changes every derived per-user key (`account.js:38-39`), orphaning saved user state. A rotation needs a plan: new salt, re-issue member keys with `infrastructure/scripts/hash-key.mjs` (`KEY_SALT=... node hash-key.mjs <slug>`, key on stdin) and migrate or accept loss of `user_state`. | Plan it as a SEV2 change window. |
+| `KEY_SALT`, `USER_SALT` | Do not rotate casually. Set the new value as the GitHub repository secret and deploy; previews pick up a re-derived value on their next push. Changing `KEY_SALT` changes every member key hash (`auth.js:15`), so every member key stops working until it is re-issued: for each member run `KEY_SALT=<new> node infrastructure/scripts/hash-key.mjs <slug>` (key on stdin) and apply the INSERT it prints with `wrangler d1 execute`. Changing `USER_SALT` changes every derived per-user key (`account.js:38-39`), orphaning saved user state, and invalidates vote ballot hashes and guest rate-limit rows. Both must stay at least 16 characters or the Worker refuses the dependent routes. Never use the old public values (they were in git history). | Plan it as a SEV2 change window. Members are locked out until their hashes are replaced. |
 
 Caveat that matters for every row: syncing never deletes. If a GitHub secret is emptied or removed, the loop skips it (`deploy-cloudflare.yml:265`) and the old Worker secret stays. Remove it with `npx wrangler secret delete <NAME> --name leeroy-brain`.
 
@@ -66,7 +68,7 @@ Each row was verified against the file and line shown, or the live repository se
 
 | # | Weakness | Evidence | Impact | Suggested fix |
 | :-- | :--- | :--- | :--- | :--- |
-| 1 | `KEY_SALT` and `USER_SALT` are public plain variables | `infrastructure/wrangler.toml:60-61`; acknowledged `infrastructure/README.md:108` | A leak of `members` or `user_state` hashes can be attacked offline with a known salt | Move both to Worker secrets, keeping the same values so existing hashes stay valid |
+| 1 | `KEY_SALT` and `USER_SALT` were public plain variables (fixed in Q01) | They are now Worker secrets set by both deploy workflows. The previous values remain in git history and are public | Hashes made under the old values can be attacked offline with a known salt | Rotate both to fresh private values with the plan above when the owner chooses, which re-issues member keys |
 | 2 | Preview workflow passes `BOARD_ADMIN_TOKEN` as a plain `--var` | `pr-preview-cloudflare.yml:236-237` | The production admin value becomes a plaintext variable on every preview Worker (visibility in the dashboard is by Cloudflare behavior, unverified here), and wrangler may print binding values in the deploy log (unverified) | Use a distinct preview-only admin token, delivered with `wrangler secret put` |
 | 3 | Same-repository PR workflows can read production secrets | Trigger `pull_request` (`pr-preview-cloudflare.yml:3-9`); job `if` allows same-repo heads (`:41`); env uses `CLOUDFLARE_API_TOKEN` (`:44-45`); `preview-tests.yml:97` uses `BOARD_ADMIN_TOKEN`; PR code runs `npm install`, `seed-d1.mjs`, `wrangler.toml` from the branch (`:53-63,204-226`). `pull_request_target` is not used (searched `.github`). | Anyone who can push a branch to this repository can change workflow or script files in a PR and exfiltrate the Cloudflare token or admin token. Fork PRs do not receive secrets by GitHub default, which is the intended boundary | Restrict who has write access; use environments with required reviewers for production secrets; use a preview-only Cloudflare token scoped to preview resources |
 | 4 | No branch protection on `master` | `gh api repos/<owner>/leeroy-board/branches/master/protection` returned 404 "Branch not protected" | Anyone with write access can push to `master` and trigger a production deploy without review or tests. The "rated 6 or higher waits for the owner" rule in `CONTRIBUTING.md:7` is process only | Enable branch protection or a ruleset: required PR, required `Preview Tests` check, owner approval, no force-push |

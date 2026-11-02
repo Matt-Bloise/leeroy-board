@@ -112,7 +112,7 @@ test("hashing differs per salt, per vote, per user and hides the raw id", async 
   assert.notEqual(a, await voterHash("user-2", "0a1b2c3d", "salt-one-example"));
   assert.match(a, /^[a-f0-9]{64}$/);
   assert.ok(!a.includes("user-1"));
-  assert.notEqual(await voterHash("user-1", "0a1b2c3d", ""), a);
+  assert.throws(() => voterHash("user-1", "0a1b2c3d", ""), { name: "SaltMissingError" });
 });
 
 test("custom_id parsing", () => {

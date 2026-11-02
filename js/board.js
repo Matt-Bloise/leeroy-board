@@ -99,7 +99,7 @@ function startRoomLadder() {
     aim: () => LB, signal: flickAt, tiltOn: () => LB.tilt,
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  const bootRoom = () => import("../room/tier.js?v=c3f8bb008a").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  const bootRoom = () => import("../room/tier.js?v=3f01a01d71").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
@@ -921,7 +921,7 @@ function renderRaces() {
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
 const KIND_WORD = { toy: "a fun item with no stats", tabard: "a cloth crest worn over armor", pet: "a pet that follows you", mount: "a mount to ride" };
-const VF = (n, ...a) => import("../img/vector/vector.js?v=76e7d18cfa").then((m) => m[n](...a)).catch(() => {});
+const VF = (n, ...a) => import("../img/vector/vector.js?v=6c34440c09").then((m) => m[n](...a)).catch(() => {});
 function renderLegacy() {
   const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
@@ -1383,7 +1383,7 @@ function startDiscordPresence(sdk) {
     }
   };
   render([], "none");
-  Promise.race([import("../vendor/discord-auth.js?v=6ed8b65c34").then((m) => m.signIn(sdk)), new Promise((r) => setTimeout(r, 6000))]).catch(() => {}).then(poll);
+  Promise.race([import("../vendor/discord-auth.js?v=c327ee69cd").then((m) => m.signIn(sdk)), new Promise((r) => setTimeout(r, 6000))]).catch(() => {}).then(poll);
   clearInterval(discordPoll);
   discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
   document.addEventListener("click", (e) => {
@@ -2618,14 +2618,14 @@ const copyChip = (label, text, done) => h("button", { class: "copy", type: "butt
 const linkChip = (v) => { const l = libLink(v); return copyChip(v.kind === "page" ? "Copy link to this page" : v.kind === "results" ? "Copy link to this search" : "Copy link", l.text, l.framed ? "Copied the link token: add it after the board's address." : "Link copied."); };
 const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.");
 
-function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=16d8a1283e").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
+function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=c24a6bb221").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
 function libStart() {
   if (LIBS.state !== "idle") return;
   LIBS.state = "loading";
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=9ee32dfeb0", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=1edecee220", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);

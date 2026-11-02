@@ -15490,5 +15490,8 @@
     ]
    }
   ]
+ },
+ "flags": {
+  "firstrun.v2": true
  }
 }

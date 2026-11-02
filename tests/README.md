@@ -38,4 +38,4 @@ The browser run takes about a minute. Exit code 0 means every check passed.
 
 ## CI
 
-`.github/workflows/preview-tests.yml` runs both suites on every pull request from a branch of this repository (not forks). It waits for the preview comment, waits for the preview to answer, runs the tests with the `BOARD_ADMIN_TOKEN` repository secret, uploads logs, and posts a summary comment marked `<!-- preview-tests -->`.
+`.github/workflows/preview-tests.yml` runs on every pull request from a branch of this repository (not forks), drafts included, as jobs `unit`, `stamps`, `api` and `browser` (plus `scope`, `preview`, `report`). Docs-only PRs get no preview and run only `unit` and `stamps`; the comment then says `passed (docs only)`. It waits for the preview comment, waits for the preview to answer, runs the tests with the `BOARD_ADMIN_TOKEN` repository secret, uploads logs, and posts a summary comment marked `<!-- preview-tests -->`.

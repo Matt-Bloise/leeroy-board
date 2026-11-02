@@ -1,4 +1,4 @@
-import * as THREE from "../vendor/three.module.min.js?v=08fd7545d1";
+import * as THREE from "../vendor/three.module.min.js?v=8e71269b77";
 
 const rnd = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 const cv = (w, h) => { const c = typeof document === "undefined" ? new OffscreenCanvas(w, h) : document.createElement("canvas"); c.width = w; c.height = h; return [c, c.getContext("2d")]; };

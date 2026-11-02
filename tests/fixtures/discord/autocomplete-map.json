@@ -1,0 +1,36 @@
+{
+  "description": "Autocomplete on /map place",
+  "expectType": 8,
+  "interaction": {
+    "id": "fixture-interaction-0001",
+    "application_id": "fixture-app-0001",
+    "token": "fixture-token-not-real",
+    "version": 1,
+    "guild_id": "fixture-guild-0001",
+    "channel_id": "fixture-channel-0001",
+    "locale": "en-US",
+    "member": {
+      "user": {
+        "id": "fixture-user-0001",
+        "username": "fixture_tester",
+        "global_name": "Fixture Tester"
+      },
+      "nick": null,
+      "roles": []
+    },
+    "type": 4,
+    "data": {
+      "id": "fixture-cmd-map",
+      "name": "map",
+      "type": 1,
+      "options": [
+        {
+          "name": "place",
+          "type": 3,
+          "value": "oro",
+          "focused": true
+        }
+      ]
+    }
+  }
+}
