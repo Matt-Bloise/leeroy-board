@@ -6,6 +6,7 @@ import {
   LAUNCH_UTC,
   STRESS_UTC,
 } from "../worker/discord.js";
+import { manifestFor } from "../worker/setup-command.js";
 import {
   DATES_DATA,
   FACTS_DATA,
@@ -46,6 +47,10 @@ for (const cmd of expectedCommands) {
   assert(slashCmdNames.includes(cmd), `Missing slash command: ${cmd}`);
 }
 console.log(`✓ All ${expectedCommands.length} expected slash commands present in manifest.`);
+
+// /setup (Q43) is listed only while env SETUP_COMMAND is on.
+assert(!manifestFor({}, DISCORD_SLASH_COMMANDS_MANIFEST).some((c) => c.name === "setup"), "/setup must not be in the manifest when the flag is off");
+assert(manifestFor({ SETUP_COMMAND: "1" }, DISCORD_SLASH_COMMANDS_MANIFEST).some((c) => c.name === "setup"), "/setup must be in the manifest when the flag is on");
 
 assert(messageCmdNames.includes("Ask Leeroy"), "Missing context command: Ask Leeroy");
 assert(messageCmdNames.includes("Fix this fact"), "Missing context command: Fix this fact");

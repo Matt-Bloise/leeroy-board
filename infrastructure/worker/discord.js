@@ -31,6 +31,7 @@ import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { saltProblems } from "./salts.js";
 import { BUILD_MODAL_ID, buildModalEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
+import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-command.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
@@ -641,6 +642,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     // 2-start. `/start`: ephemeral, works for everyone (identified or not)
     if (cmd === "start") {
       return new Response(JSON.stringify({ type: 4, data: buildStartReply(`${boardUrl.replace(/\/+$/, "")}/`) }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // 2-setup. `/setup` (env SETUP_COMMAND, default off): guild admins bind this guild to a tenant. Always ephemeral.
+    if (cmd === SETUP_COMMAND_NAME) {
+      const data = setupCommandEnabled(env)
+        ? await runSetup(env, { interaction, discordUserId: String(user.id || ""), displayName: rawUser, boardUrl })
+        : { content: "That command isn't available yet.", flags: 64 };
+      return new Response(JSON.stringify({ type: 4, data: { ...data, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
