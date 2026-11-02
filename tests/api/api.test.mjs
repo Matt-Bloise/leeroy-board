@@ -261,3 +261,12 @@ test("GET /api/votes without a key: 200, votes array, no voter data", async () =
   assert.ok(!/voter/i.test(text), "response must not mention voter");
   assert.ok(!/hash/i.test(text), "response must not mention hash");
 });
+
+// Config and private working rows live in kv_state but must never be served by the public data route.
+for (const k of ["persona", "name_map", "discord_members", "discord_roster"]) {
+  test(`GET /api/data/${k} is not served (404)`, async () => {
+    const r = await fetch(`${API}/api/data/${k}`, { headers: { Origin: PAGES } });
+    assert.equal(r.status, 404, `status ${r.status}`);
+    await r.arrayBuffer();
+  });
+}
