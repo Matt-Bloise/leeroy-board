@@ -46,19 +46,19 @@ jobs:
         run: |
           # No --error flag, so findings never change the exit code. No login, no token.
           semgrep scan --config p/javascript --config p/owasp-top-ten \
-            --metrics=off --sarif --sarif-output=semgrep.sarif --json --json-output=semgrep.json \
+            --metrics=off --sarif --sarif-output=semgrep.sarif \
             --exclude node_modules --exclude 'tests/visual-audit' .
 
       - name: Summarise
         if: always()
         run: |
           mkdir -p out
-          if [ -s semgrep.json ]; then
-            jq '{status:"ok", total:(.results|length),
-                 error:([.results[]|select(.extra.severity=="ERROR")]|length),
-                 warning:([.results[]|select(.extra.severity=="WARNING")]|length),
-                 info:([.results[]|select(.extra.severity=="INFO")]|length),
-                 top:([.results[]|"\(.extra.severity) \(.check_id|split(".")|last) \(.path):\(.start.line)"]|.[0:10])}' semgrep.json > out/semgrep-summary.json || echo '{"status":"failed"}' > out/semgrep-summary.json
+          if [ -s semgrep.sarif ]; then
+            jq '[.runs[].results[]?] as $r | {status:"ok", total:($r|length),
+                 error:([$r[]|select(.level=="error")]|length),
+                 warning:([$r[]|select(.level=="warning")]|length),
+                 info:([$r[]|select(.level!="error" and .level!="warning")]|length),
+                 top:([$r[]|"\((.level // "note")|ascii_upcase) \(.ruleId|split(".")|last) \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"]|.[0:10])}' semgrep.sarif > out/semgrep-summary.json || echo '{"status":"failed"}' > out/semgrep-summary.json
           else
             echo '{"status":"failed"}' > out/semgrep-summary.json
           fi
@@ -80,7 +80,6 @@ jobs:
           name: security-semgrep
           path: |
             semgrep.sarif
-            semgrep.json
             out/semgrep-summary.json
           if-no-files-found: ignore
           retention-days: 30
