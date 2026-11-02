@@ -245,3 +245,10 @@ test("handleDataRights returns null for any other path", async () => {
   assert.equal(await handleDataRights(req("GET", "/api/me"), await makeEnv(), { path: "/me", now: NOW }), null);
   assert.equal(await handleDataRights(req("GET", "/api/me/exports"), await makeEnv(), { path: "/me/exports", now: NOW }), null);
 });
+
+test("erase source drops the member-key cache and discloses the account rows it leaves", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../../infrastructure/worker/data-rights.js", import.meta.url), "utf8");
+  assert.match(src, /invalidateMembersCache\(\);/);
+  assert.match(src, /accounts, account_keys/);
+});

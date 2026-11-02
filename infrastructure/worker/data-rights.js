@@ -12,7 +12,7 @@
 // and could collide with someone else's name, so it is never used to select rows.
 import { sha256Hex } from "./crypto.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
-import { authenticate } from "./auth.js";
+import { authenticate, invalidateMembersCache } from "./auth.js";
 import { userKey } from "./account.js";
 import { webSessionFrom, SESS_COOKIE } from "./web-auth.js";
 import { loadConfigKey } from "./config.js";
@@ -90,6 +90,7 @@ async function exportData(env, who, now) {
     not_included: [
       "Board documents in kv_state (signups, party, party_sheets, votes, feed_posts and similar) that may mention you by name.",
       "Cloudflare request logs and Discord-side data.",
+      "Account rows (accounts, account_keys: name, slug, label) are not part of this export; ask the owner for them.",
       ...(who.via === "web-session" ? ["Rows keyed only by a member slug or display name (sheet_events, dispatches, intents, ask_turns, fact_fixes): a web session cannot be tied to a slug."] : []),
       ...(!who.discordId ? ["Tenancy tables (users, characters, builds, signups_v2 and others): this member key has no linked Discord id."] : []),
     ],
@@ -126,10 +127,13 @@ async function eraseData(request, env, who, now) {
   const target = await sha256Hex(`${env.USER_SALT}:erase:${subject}`);
   st.push(db.prepare("INSERT INTO audit_log (tenant_id, actor_discord_user_id, action, target, detail_json, at) VALUES (NULL, NULL, 'erase', ?, '{}', ?)").bind(target, new Date(now).toISOString()));
   await db.batch(st);
+  // the member-key cache lives 15 minutes per isolate: drop it so an erased key stops authenticating at once
+  invalidateMembersCache();
   return respond(200, {
     erased: true,
     not_erased: [
       "Board documents in kv_state that mention you by name; ask the owner to review them.",
+      "Account rows (accounts, account_keys: name, slug, label) are not erased by this route; ask the owner to remove them.",
       ...(who.via === "web-session" ? ["Slug-keyed and name-keyed rows (sheet_events, dispatches, intents, ask_turns, fact_fixes) are erased only through a member-key request."] : []),
     ],
   }, {}, [clearSession]);
