@@ -120,3 +120,15 @@ test("link-only hosts have no stored long text (over 300 characters)", () => {
   }
   assert.deepEqual(fails, []);
 });
+
+// wago.tools robots.txt disallows crawling: it must never be cited, fetched or mirrored by library data or tooling.
+const NEVER = ["wago.tools"];
+test("no library file cites a crawl-disallowed host", () => {
+  const hits = [];
+  for (const f of fs.readdirSync(libDir).filter((n) => n.endsWith(".json"))) {
+    const text = fs.readFileSync(path.join(libDir, f), "utf8");
+    for (const h of NEVER) if (text.includes(h)) hits.push(`${f}: mentions ${h}`);
+  }
+  assert.deepEqual(hits, []);
+  for (const h of NEVER) assert.ok(!cfg.hosts[h] && !cfg.knownViolations.unlistedHosts.some((v) => v.host === h), `${h} must not be listed or tolerated`);
+});
