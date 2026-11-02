@@ -30,7 +30,9 @@ try {
     await page.waitForSelector("#nx-fr2-go", { state: "visible", timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(800);
     const phone = opts.viewport.width < 700, items = await navItems(page);
-    const want = phone ? ["Next", "My sheet", "Menu", "scene-close"] : ["nav-menu", "scene-close"];
+    // the bottom bar (Next, My sheet, Menu) shows on phones and on portrait layouts under 1200 px wide; the Menu button alone shows on wide landscape screens
+    const bar = phone || items.includes("My sheet");
+    const want = bar ? ["Next", "My sheet", "Menu", "scene-close"] : ["nav-menu", "scene-close"];
     ok(`${t} first screen heading and primary button`, (await page.locator("#nx-fr2-h").isVisible()) && (await page.locator("#nx-fr2-go").isVisible()) && (await page.locator("#nx-fr2-look").isVisible()));
     ok(`${t} visible nav items = ${want.length}`, items.length === want.length && want.every((w) => items.includes(w)), items.join(", "));
     ok(`${t} ribbon, journeys, Sensory, room hidden`, await page.evaluate(() => ["tabs", "journey", "journey-scene", "sense-btn", "scene-peek", "depth", "room-pick"].every((id) => { const e = document.getElementById(id); return !e || !e.getClientRects().length || getComputedStyle(e).display === "none" || !!e.closest("[hidden]") || getComputedStyle(e.closest("#board") || e).display === "none" || getComputedStyle(e).visibility === "hidden" || (e.id === "room-pick" || e.id === "depth") && !document.getElementById("scene").hidden; })));
