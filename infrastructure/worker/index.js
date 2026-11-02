@@ -17,8 +17,10 @@ import {
   invalidatePagesCache,
   AI_PROVIDER_LABELS,
   webBoardLinks,
+  webBoardLinksDeep,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
+import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
@@ -27,6 +29,7 @@ import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
+import { guestIpKey } from "./guest-key.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -182,7 +185,7 @@ export async function broadcastToRoom(env, payload) {
     await stub.fetch("https://room.internal/broadcast", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(webBoardLinksDeep(payload)),
     });
   } catch (err) {
     console.error("Failed to broadcast to BoardRoom:", err);
@@ -506,7 +509,8 @@ export default {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               username: "Leeroy Jenkins",
-              content: `📜 **${m.name}** shared ${ids.length} library note${ids.length === 1 ? "" : "s"} from the Leeroy Chamber with the party.`,
+              content: clampContent(`📜 **${m.name}** shared ${ids.length} library note${ids.length === 1 ? "" : "s"} from the Leeroy Chamber with the party.`),
+              allowed_mentions: ALLOWED_MENTIONS_NONE,
             }),
           }).catch(() => {});
         }
@@ -714,7 +718,7 @@ export default {
             }
             const now = new Date().toISOString();
             resp = jsonResp(
-              {
+              webBoardLinksDeep({
                 type: "state",
                 ver: 1,
                 at: now,
@@ -730,7 +734,7 @@ export default {
                   : map.launch && Array.isArray(map.launch.rows)
                   ? map.launch.rows
                   : [],
-              },
+              }),
               200,
               {
                 ...cors,
@@ -854,7 +858,7 @@ export default {
         let limitLeft = 6;
         if (!auth.ok) {
           const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
-          const ipHash = await sha256Hex(`guest-ask:${clientIp}`);
+          const ipHash = await guestIpKey(clientIp, env.USER_SALT);
           const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
           const countRow = await env.DB.prepare(
             "SELECT COUNT(*) AS count FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ?"
@@ -1019,7 +1023,7 @@ export default {
               bundle[row.key] = null;
             }
           }
-          resp = jsonResp(bundle, 200, {
+          resp = jsonResp(webBoardLinksDeep(bundle), 200, {
             ...cors,
             "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
           });
@@ -1066,7 +1070,13 @@ export default {
             const row = await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first();
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
             const etag = `"${raw}-${row.updated_at || '1'}"`;
-            resp = jsonResp(row.json, 200, {
+            let docJson = row.json;
+            if (typeof docJson === "string" && docJson.includes("{board:")) {
+              try {
+                docJson = JSON.stringify(webBoardLinksDeep(JSON.parse(docJson)));
+              } catch {}
+            }
+            resp = jsonResp(docJson, 200, {
               ...cors,
               ETag: etag,
               "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
@@ -1254,7 +1264,7 @@ export default {
           let guestLeft = 6;
           if (isGuest) {
             const clientIp = req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "0.0.0.0";
-            const ipHash = await sha256Hex(`guest-ask:${clientIp}`);
+            const ipHash = await guestIpKey(clientIp, env.USER_SALT);
             const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
 
             const limitRow = await env.DB.prepare(

@@ -138,3 +138,11 @@
 .stale-note { opacity: 0.75; font-size: 0.85em; }
 .retry-btn { min-height: 44px; margin: 0.3em 0.5em 0.3em 0; padding: 0 1.1em; border: 1px solid var(--wax); border-radius: 6px; background: transparent; color: var(--ink); font: inherit; cursor: pointer; }
 .retry-btn:disabled { opacity: 0.6; cursor: progress; }
+
+/* portrait pass: on a tall narrow window the sheet stops at a comfortable height and sits centred, so the parchment is not a mostly empty page.
+   The body already scrolls inside the sheet, so taller scenes keep working. */
+@media (min-width: 700px) and (min-height: 501px) and (orientation: portrait) {
+  #scene .sheet { height: min(calc(100vh - 2 * var(--fit-band)), 58rem); height: min(calc(100svh - 2 * var(--fit-band)), 58rem); }
+  #scene .sheet { margin-block-end: clamp(0px, calc((100svh - 58rem) / 3), 200px); }
+  #scene .sheet-body { align-content: safe center; padding-top: 24px; }
+}

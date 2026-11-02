@@ -26,6 +26,7 @@
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
+import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
 import {
   broadcastToRoom,
@@ -443,10 +444,30 @@ function launchHype(toLaunch) {
   return `${days} days. Time to study your talents and prep your route.`;
 }
 
+// Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
+  const res = await handleDiscordInteractionInner(req, env, ctx, origin);
+  if (res.status !== 200 || !(res.headers.get("Content-Type") || "").includes("application/json")) return res;
+  try {
+    const body = JSON.parse(await res.clone().text());
+    const hardened = hardenInteractionBody(body);
+    if (hardened === body) return res;
+    return new Response(JSON.stringify(hardened), { status: res.status, headers: res.headers });
+  } catch {
+    return res;
+  }
+}
+
+async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const rawBody = await req.text();
   if (!env.DISCORD_PUBLIC_KEY) {
     return new Response(JSON.stringify({ error: "DISCORD_PUBLIC_KEY not configured" }), { status: 500 });
+  }
+
+  // Reject stale, future-dated or malformed timestamps before any other work.
+  const tsHeader = req.headers.get("X-Signature-Timestamp") || "";
+  if (!isFreshTimestamp(tsHeader, Math.floor(Date.now() / 1000), DISCORD_MAX_AGE_SECONDS)) {
+    return new Response("Stale or invalid request timestamp", { status: 401 });
   }
 
   const valid = await verifyDiscordSignature(req, rawBody, env.DISCORD_PUBLIC_KEY);
@@ -588,7 +609,7 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
               {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ content: text }),
+                body: JSON.stringify({ content: clampContent(text), allowed_mentions: ALLOWED_MENTIONS_NONE }),
               }
             ).catch(() => {});
           }
@@ -1411,7 +1432,8 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  content: `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${row.answer}`,
+                  content: clampContent(`> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${row.answer}`),
+                  allowed_mentions: ALLOWED_MENTIONS_NONE,
                 }),
               }
             ).catch(() => {});
