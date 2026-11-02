@@ -122,7 +122,7 @@ async function posed(kind) {
   if (H.on && im.getAttribute("src") !== url) im.setAttribute("src", url);
 }
 function unpose() { const im = youImg(); if (im && im.dataset.base) im.setAttribute("src", im.dataset.base); }
-const field = room.querySelector(".ch-text");
+const field = document.getElementById("ch-text");
 if (field) {
   field.addEventListener("input", () => { if (H.on && !H.busy) swap(field.value.trim() ? "listening" : (room.dataset.mood || "smug")); });
   field.addEventListener("blur", () => { if (H.on && !H.busy && !field.value.trim()) swap(room.dataset.mood || "smug"); });
