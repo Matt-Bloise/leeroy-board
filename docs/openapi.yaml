@@ -698,6 +698,43 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /api/admin/eval:
+    post:
+      summary: Admin only, and only when EVAL_ENABLED is on. Runs a slice of a model bake-off.
+      description: |
+        Runs up to 6 model calls (under 25 seconds) through the production retrieval and prompt path and returns each answer with a
+        deterministic lint. Nothing is stored (apart from the shared daily Workers AI counter) and nothing is posted to Discord.
+        Loop on `nextCursor` until it is null. Returns 404 when EVAL_ENABLED is not on. Claude is never allowed (free providers only).
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvalRequest' }
+      responses:
+        "200":
+          description: Cells run in this request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvalResponse' }
+        "400":
+          description: Body failed validation (limits, unknown provider, model not on the allow-list).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: EVAL_ENABLED is not on.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "413":
+          description: Body over 100000 bytes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
   /api/persona:
     put:
       summary: Admin only. Replaces the persona pack. Write only.

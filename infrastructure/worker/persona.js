@@ -73,7 +73,7 @@ export function pickExamples(persona, question, journey, max = 3) {
 
 export function buildSystemPrompt(
   persona,
-  { journey = "curious", question = "", partySummary = "", libraryStamp = "v1", isCoach = false, coachPrompt = "" } = {}
+  { journey = "curious", question = "", partySummary = "", libraryStamp = "v1", isCoach = false, coachPrompt = "", maxExamples = 3 } = {}
 ) {
   const journeys = persona.journeys || {};
   const depth = journeys[journey] || journeys.curious || "";
@@ -83,7 +83,7 @@ export function buildSystemPrompt(
   if (bits.length) parts.push(`Running bits you may use if they fit (at most one, only when true and kind):\n${bits.map((b) => `- ${b}`).join("\n")}`);
   const avoid = Array.isArray(persona.avoid) ? persona.avoid : [];
   if (avoid.length) parts.push(`Never do:\n${avoid.map((a) => `- ${a}`).join("\n")}`);
-  const examples = pickExamples(persona, question, journey);
+  const examples = pickExamples(persona, question, journey, maxExamples);
   if (examples.length) {
     parts.push(examples.map((e) => `Example question: ${e.q}\nExample answer: ${e.a}`).join("\n\n"));
   }
