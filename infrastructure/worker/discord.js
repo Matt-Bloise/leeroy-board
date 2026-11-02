@@ -25,6 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
+import { buildStartReply } from "./announce.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
@@ -74,6 +75,10 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
       },
       { name: "private", description: "Only you see the answer (ephemeral)", type: 5, required: false },
     ],
+  },
+  {
+    name: "start",
+    description: "What the Leeroy board is and where to find it",
   },
   {
     name: "tonight",
@@ -610,6 +615,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       await saveVote(env.DB, made.vote, nowMs);
       await recordInIndex(env.DB, made.vote.id, nowMs);
       return new Response(JSON.stringify({ type: 4, data: renderMessage(made.vote, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    // 2-start. `/start`: ephemeral, works for everyone (identified or not)
+    if (cmd === "start") {
+      return new Response(JSON.stringify({ type: 4, data: buildStartReply(`${boardUrl.replace(/\/+$/, "")}/`) }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // 2a. `/ask`
