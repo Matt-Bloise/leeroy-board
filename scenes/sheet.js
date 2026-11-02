@@ -270,6 +270,7 @@ function sampleView(S) {
       return h("li", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` }, h("b", { text: m.name }), h("span", { text: `${m.race} ${m.class}, ${m.role}. ${b.spec_path || m.spec}${b.level ? `, level ${b.level}` : ""}.` }), h("small", { text: `${K.andList(m.professions.map((p) => p.name))}.${a ? ` ${m.name.split(" ")[0]} ${RSVP[a.rsvp] || a.rsvp} on launch night.` : ""}${b.goals ? ` Goal: ${b.goals}` : ""}` })); })),
     h("button", { type: "button", class: "lib-tool ps-sample-go", onclick: go }, "Make this for my guild")];
 }
+const firstValue = () => { if (SC.open !== "five") return; try { document.dispatchEvent(new CustomEvent("board:first-value")); } catch (e) {} };
 async function sampleSync() {
   const panel = $("#panel-five"); if (!panel) return;
   if (MEM.member() || !D.party) { const o = $("#ps-sample"); if (o) o.hidden = true; return; }
@@ -277,7 +278,7 @@ async function sampleSync() {
   let box = $("#ps-sample");
   if (!box) { box = h("section", { class: "ps-sample", id: "ps-sample", "aria-labelledby": "ps-sample-h" }); const v = $("#ps-views"); panel.insertBefore(box, v ? v.nextSibling : panel.firstChild); }
   if (!box.firstChild) box.replaceChildren(...sampleView(S));
-  box.hidden = false;
+  box.hidden = false; firstValue();
 }
 mount();
 function crests() {
@@ -309,7 +310,7 @@ function render() {
   for (const b of panel.querySelectorAll(".ps-view")) b.setAttribute("aria-pressed", String(b.dataset.view === PS.view));
   const sh = $("#ps-sheet"), pt = $("#ps-party"), m = PS.who ? bySlug(PS.who) : null;
   sh.hidden = PS.view !== "sheet" || !m; pt.hidden = PS.view !== "party";
-  if (!sh.hidden && PS.voc) sh.replaceChildren(sheetView(m));
+  if (!sh.hidden && PS.voc) { sh.replaceChildren(sheetView(m)); firstValue(); }
   if (!pt.hidden && PS.voc) pt.replaceChildren(tableView());
   if (SC.open === "five" && K.fitScene) { try { K.fitScene("five"); } catch (e) {} }
   if (again && !PS.edit) { const f = $(again); if (f && f !== document.activeElement) { try { f.focus({ preventScroll: true }); } catch (e) {} } }
