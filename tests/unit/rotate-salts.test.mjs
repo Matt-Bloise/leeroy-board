@@ -3,6 +3,7 @@
 // known, leaves what is not, is safe to run twice and reverses cleanly; no salt and no full hash reaches the screen; the inventory covers every
 // salted site in the Worker and every hash-like column in the schema. Run: node --test tests/unit/rotate-salts.test.mjs
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -17,7 +18,7 @@ import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const OLD_U = "old-user-salt-0123456789-abcdefghijklmnop", NEW_U = "N3w-Us3r-Salt-Qx7!Zm29-kLpT81vW5rYb04cD", OLD_K = "old-key-salt-0123456789-abcdefghijklmnopq", NEW_K = "N3w-K3y-Salt-Rw4#Hj62-mNqS90xZ7tVc18eF";
 const IDS = ["100000000000000001", "100000000000000002", "100000000000000003"], STRANGER = "100000000000000999";
-const TOOL = new URL("../../tools/rotate-salts.mjs", import.meta.url).pathname;
+const TOOL = fileURLToPath(new URL("../../tools/rotate-salts.mjs", import.meta.url));
 const SALTS = { USER: { old: OLD_U, neu: NEW_U }, KEY: { old: OLD_K, neu: NEW_K } };
 const ENV = { OLD_USER_SALT: OLD_U, NEW_USER_SALT: NEW_U, OLD_KEY_SALT: OLD_K, NEW_KEY_SALT: NEW_K };
 const VOTE = "0a1b2c3d";
@@ -184,7 +185,7 @@ test("nothing secret on the screen: no salt, no full 64-character hash, in text,
     const file = fs.readFileSync(sqlOut, "utf8");
     assert.match(file, /[0-9a-f]{64}/, "the file holds the full statements");
     for (const s of [OLD_U, NEW_U, OLD_K, NEW_K]) assert.equal(file.includes(s), false, "a salt reached the SQL file");
-    assert.equal(fs.statSync(sqlOut).mode & 0o777, 0o600);
+    if (process.platform !== "win32") assert.equal(fs.statSync(sqlOut).mode & 0o777, 0o600); // Windows has no POSIX modes
     // the SQL file runs as written
     const db = seed(); db.raw.exec(file.split("\n").filter((l) => !l.startsWith("--") && !/^SELECT/.test(l)).join("\n"));
     assert.equal(db.raw.prepare("SELECT COUNT(*) AS n FROM user_state WHERE user_key = ?").get(derive.userKey(NEW_U, IDS[1])).n, 2);

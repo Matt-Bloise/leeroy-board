@@ -2,6 +2,7 @@
 // refuses names that are not on the board. Fixtures are made up (tests/unit/fixtures/signups). No network (a stub stands in for the Worker), no AI.
 // Run: node --test tests/unit/import-signups.test.mjs
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,7 +13,7 @@ import { recomputeSignupTallies } from "../../infrastructure/worker/discord.js";
 
 const fx = (n) => JSON.parse(fs.readFileSync(new URL(`./fixtures/signups/${n}`, import.meta.url), "utf8"));
 const party = fx("party.json"), exportDoc = fx("export-doc.json"), exportIntents = fx("export-intents.json"), current = fx("current.json");
-const TOOL = new URL("../../tools/import-signups.mjs", import.meta.url).pathname;
+const TOOL = fileURLToPath(new URL("../../tools/import-signups.mjs", import.meta.url));
 const entry = (doc, name) => doc.entries.find((e) => e.name === name);
 
 test("matching ignores case and punctuation, and the roster refuses ambiguity", () => {
@@ -154,7 +155,7 @@ test("apply: reads the live document, saves a backup, PUTs once with the admin t
     assert.equal(calls[1][2], `Bearer ${TOKEN}`);
     assert.equal(calls[0][2], undefined, "the read sends no token");
     assert.deepEqual(JSON.parse(fs.readFileSync(backupPath, "utf8")), current);
-    assert.equal((fs.statSync(backupPath).mode & 0o777), 0o600);
+    if (process.platform !== "win32") assert.equal((fs.statSync(backupPath).mode & 0o777), 0o600); // Windows has no POSIX modes
     assert.equal(live.entries.length, 4);
     assert.equal(live.tallies.rsvp.late.count, 1);
     assert.equal(r1.log.join().includes(TOKEN), false, "the token is never printed");

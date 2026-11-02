@@ -2,6 +2,7 @@
 // through the real Worker route, load it into a second fresh SQLite, compare every count). No wrangler, no network, no AI, made-up data.
 // The same drill against a real local D1 is tests/local/restore-drill.mjs. Run: node --test tests/unit/restore-local.test.mjs
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import worker from "../../infrastructure/worker/index.js";
 import { EXCLUDED_TABLES } from "../../infrastructure/worker/export.js";
@@ -119,7 +120,7 @@ test("restore-local is local only and needs its inputs; pull-export keeps the fi
   assert.throws(() => parseArgv(["stray"]), /unexpected/);
   assert.deepEqual(parseArgv(["--in", "x", "--persist-to", "y", "--dry-run"]), { in: "x", "persist-to": "y", "dry-run": true });
   assert.throws(() => pullArgv(["--token", "x"]), /unknown option/);
-  assert.equal(insideRepo(new URL("../../x.ndjson", import.meta.url).pathname), true);
+  assert.equal(insideRepo(fileURLToPath(new URL("../../x.ndjson", import.meta.url))), true);
   assert.equal(insideRepo("/tmp/x.ndjson"), false);
 });
 
