@@ -1,8 +1,8 @@
-// Admin-only config rows that live only in D1 (kv_state), never in the repo: 'name_map' and 'discord_members'.
+// Admin-only config rows that live only in D1 (kv_state), never in the repo: 'name_map', 'discord_members' and 'discord_roster'.
 // Written by PUT /api/config/<key>; there is no GET route. Cached 60 s per isolate; PUT invalidates the cache.
 // Every reader falls back to null when the row is missing, so an unseeded Worker refuses or no-ops safely.
 
-export const CONFIG_KEYS = ["name_map", "discord_members"];
+export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster"];
 export const CONFIG_MAX_BYTES = 20000;
 
 const TTL_MS = 60 * 1000;
@@ -47,5 +47,37 @@ export function validateConfigValue(key, value) {
     }
     return null;
   }
+  if (key === "discord_roster") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return "discord_roster must be a JSON object";
+    if (value.guildId !== undefined && !isId(value.guildId)) return "guildId must be a digit string";
+    for (const field of ["buildThreads", "libraryThreads"]) {
+      const map = value[field];
+      if (map === undefined) continue;
+      if (!map || typeof map !== "object" || Array.isArray(map)) return `${field} must be a JSON object`;
+      for (const [k, v] of Object.entries(map)) {
+        if (!k || !isId(v)) return `${field} values must be digit strings`;
+      }
+    }
+    return null;
+  }
   return "unknown key";
+}
+
+function isId(v) {
+  return typeof v === "string" && /^[0-9]{5,25}$/.test(v);
+}
+
+// Pure helpers for the Discord handlers. Each returns a safe plain value when the roster row is missing.
+// Library shelf entry: a link when the roster has the guild and thread id for that title, plain text otherwise.
+export function libraryShelfLine(post, roster) {
+  const threadId = roster?.libraryThreads?.[post.title];
+  const guildId = roster?.guildId;
+  const label = isId(threadId) && isId(guildId) ? `[${post.title}](https://discord.com/channels/${guildId}/${threadId})` : post.title;
+  return `• ${label} (${post.short})`;
+}
+
+// Build thread mention for a roster entry, or null when no thread is configured.
+export function buildThreadMention(person, roster) {
+  const threadId = roster?.buildThreads?.[person.display];
+  return isId(threadId) ? `<#${threadId}>` : null;
 }

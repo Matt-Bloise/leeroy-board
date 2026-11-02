@@ -26,7 +26,7 @@
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
-import { loadConfigKey } from "./config.js";
+import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
 import {
   broadcastToRoom,
   purgeWorkerCache,
@@ -977,9 +977,8 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
 
     // 2i. `/library`
     if (cmd === "library") {
-      const posted = LIBRARY_DATA.posted
-        .map((p) => `• [${p.title}](https://discord.com/channels/782702097421565952/${p.id}) (${p.short})`)
-        .join("\n");
+      const roster = await loadConfigKey(env, "discord_roster");
+      const posted = LIBRARY_DATA.posted.map((p) => libraryShelfLine(p, roster)).join("\n");
       const coming = LIBRARY_DATA.coming.map((c) => `• ${c}`).join("\n");
 
       return new Response(
@@ -1047,7 +1046,8 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
         );
       }
 
-      const content = `**${person.display}'s Build**: <#${person.threadId || "1561784932077011045"}>\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
+      const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
+      const content = `**${person.display}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
