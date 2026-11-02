@@ -29,7 +29,11 @@ try {
     await page.goto(url, { waitUntil: "load" });
     await page.waitForSelector("#nx-fr2-go", { state: "visible", timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(800);
-    const phone = opts.viewport.width < 700, items = await navItems(page);
+    const phone = opts.viewport.width < 700;
+    // the layout settles after fonts and images load; poll up to 8 s for one of the two expected shapes before judging
+    const shapeOk = (it) => (it.length === 4 && ["Next", "My sheet", "Menu", "scene-close"].every((w) => it.includes(w))) || (it.length === 2 && ["nav-menu", "scene-close"].every((w) => it.includes(w)));
+    let items = await navItems(page);
+    for (let n = 0; n < 16 && !shapeOk(items); n++) { await page.waitForTimeout(500); items = await navItems(page); }
     // the bottom bar (Next, My sheet, Menu) shows on phones and on portrait layouts under 1200 px wide; the Menu button alone shows on wide landscape screens
     const bar = phone || items.includes("My sheet");
     const want = bar ? ["Next", "My sheet", "Menu", "scene-close"] : ["nav-menu", "scene-close"];
