@@ -20,6 +20,7 @@ import {
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
+import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
@@ -419,6 +420,46 @@ export default {
           });
           return jsonResp({ ok: true, id: seq, seq, at: now, field, value, visible }, 200, cors);
         }
+      }
+
+      // Admin only: post one message to a channel named in discord_roster.channels. Ids come from config, never the request.
+      if (req.method === "POST" && path === "/announce") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        if (!env.DISCORD_BOT_TOKEN) return jsonResp({ error: "Discord bot token not configured" }, 503, cors);
+        let input;
+        try {
+          input = await req.json();
+        } catch {
+          return jsonResp({ error: "Body must be JSON" }, 400, cors);
+        }
+        if (!input || typeof input !== "object" || Array.isArray(input)) return jsonResp({ error: "Body must be a JSON object" }, 400, cors);
+        const roster = await loadConfigKey(env, "discord_roster");
+        const channelId = lookupRosterId(roster, "channels", input.channel_key);
+        if (!channelId) return jsonResp({ error: "Unknown channel_key" }, 400, cors);
+        let roleId = null;
+        if (input.mention_role !== undefined && input.mention_role !== null) {
+          roleId = lookupRosterId(roster, "roles", input.mention_role);
+          if (!roleId) return jsonResp({ error: "Unknown mention_role" }, 400, cors);
+        }
+        const built = buildAnnounceBody({ text: input.text, roleId, buttonLabel: input.button_label, buttonUrl: input.button_url });
+        if (!built.ok) return jsonResp({ error: built.error }, 400, cors);
+        let res;
+        try {
+          res = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+            method: "POST",
+            headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
+            body: JSON.stringify(built.body),
+          });
+        } catch {
+          return jsonResp({ error: "Discord request failed" }, 502, cors);
+        }
+        if (!res.ok) {
+          await res.arrayBuffer().catch(() => {});
+          return jsonResp({ ok: false, status: res.status, error: "Discord refused the post" }, 502, cors);
+        }
+        await res.arrayBuffer().catch(() => {});
+        return jsonResp({ ok: true, status: res.status }, 200, cors);
       }
 
       // Admin token only: a friend's member key must not rewrite the shared vocabulary.

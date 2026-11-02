@@ -127,6 +127,12 @@ test("PUT /api/persona without a key is refused (401 or 403)", async () => {
   await r.arrayBuffer();
 });
 
+test("POST /api/announce without a key is refused (401 or 403), nothing is posted", async () => {
+  const r = await fetch(`${API}/api/announce`, { method: "POST", headers: { "Content-Type": "application/json", Origin: PAGES }, body: JSON.stringify({ channel_key: "none", text: "x" }) });
+  assert.ok([401, 403].includes(r.status), `got ${r.status}`);
+  await r.arrayBuffer();
+});
+
 test("PUT /api/persona with a key but an invalid body is refused (400), nothing is written", async () => {
   const r = await fetch(`${API}/api/persona`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders }, body: JSON.stringify({ system: 5 }) });
   assert.equal(r.status, 400);

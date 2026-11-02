@@ -25,6 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
+import { buildStartReply } from "./announce.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
 import {
@@ -72,6 +73,10 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
       },
       { name: "private", description: "Only you see the answer (ephemeral)", type: 5, required: false },
     ],
+  },
+  {
+    name: "start",
+    description: "What the Leeroy board is and where to find it",
   },
   {
     name: "tonight",
@@ -553,6 +558,14 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
       const o = opts.find((x) => x.name === n);
       return o ? String(o.value).trim() : "";
     };
+
+    // 2-start. `/start`: ephemeral, works for everyone (identified or not)
+    if (cmd === "start") {
+      return new Response(JSON.stringify({ type: 4, data: buildStartReply(`${boardUrl.replace(/\/+$/, "")}/`) }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // 2a. `/ask`
     if (cmd === "ask") {
