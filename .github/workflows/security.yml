@@ -1,0 +1,227 @@
+name: Security Scan
+
+# Report only. Nothing in this workflow can fail a pull request: every scan step uses
+# continue-on-error, the jobs end in `exit 0`, and the workflow is not a required check.
+# Triage: docs/runbooks/security-scan.md
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "17 5 * * 1"
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  semgrep:
+    name: Semgrep (OSS rules, no login)
+    # Fork PRs get a read-only token and no secrets, so they are skipped.
+    if: github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install semgrep
+        id: install
+        continue-on-error: true
+        run: pip install --no-input semgrep==1.183.0
+
+      - name: Run semgrep
+        id: scan
+        continue-on-error: true
+        env:
+          SEMGREP_SEND_METRICS: "off"
+          SEMGREP_ENABLE_VERSION_CHECK: "0"
+        run: |
+          # No --error flag, so findings never change the exit code. No login, no token.
+          semgrep scan --config p/javascript --config p/owasp-top-ten \
+            --metrics=off --sarif --sarif-output=semgrep.sarif --json --json-output=semgrep.json \
+            --exclude node_modules --exclude 'tests/visual-audit' .
+
+      - name: Summarise
+        if: always()
+        run: |
+          mkdir -p out
+          if [ -s semgrep.json ]; then
+            jq '{status:"ok", total:(.results|length),
+                 error:([.results[]|select(.extra.severity=="ERROR")]|length),
+                 warning:([.results[]|select(.extra.severity=="WARNING")]|length),
+                 info:([.results[]|select(.extra.severity=="INFO")]|length),
+                 top:([.results[]|"\(.extra.severity) \(.check_id|split(".")|last) \(.path):\(.start.line)"]|.[0:10])}' semgrep.json > out/semgrep-summary.json || echo '{"status":"failed"}' > out/semgrep-summary.json
+          else
+            echo '{"status":"failed"}' > out/semgrep-summary.json
+          fi
+          cat out/semgrep-summary.json
+
+      - name: Upload SARIF to code scanning
+        if: always() && hashFiles('semgrep.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@f09c1c0a94de965c15400f5634aa42fac8fb8f88 # v3.27.5
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+      - name: Upload artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: security-semgrep
+          path: |
+            semgrep.sarif
+            semgrep.json
+            out/semgrep-summary.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  zap:
+    name: OWASP ZAP baseline against the PR preview
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Find the preview URL in the PR comment
+        id: urls
+        continue-on-error: true
+        run: |
+          set -u
+          SHORT="${HEAD_SHA:0:7}"
+          for i in $(seq 1 48); do
+            BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '[.comments[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | last | .body // ""' || true)
+            # The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
+            if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
+              PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)
+              if [ -n "$PAGES" ]; then
+                echo "pages=$PAGES" >> "$GITHUB_OUTPUT"
+                echo "Preview found: $PAGES (commit $SHORT)"
+                exit 0
+              fi
+            fi
+            echo "Attempt $i/48: preview comment for $SHORT not ready, waiting 15 s"
+            sleep 15
+          done
+          echo "::warning::No preview comment for commit $SHORT within 12 minutes."
+          exit 1
+
+      - name: Wait for the preview to answer
+        id: wait
+        if: steps.urls.outcome == 'success'
+        continue-on-error: true
+        env:
+          PAGES: ${{ steps.urls.outputs.pages }}
+        run: |
+          for i in $(seq 1 40); do
+            P=$(curl -s -o /dev/null -w "%{http_code}" "$PAGES/" || echo 000)
+            echo "Attempt $i/40: pages $P"
+            if [ "$P" = "200" ]; then exit 0; fi
+            sleep 15
+          done
+          exit 1
+
+      - name: ZAP baseline scan
+        id: zap
+        if: steps.wait.outcome == 'success'
+        continue-on-error: true
+        env:
+          PAGES: ${{ steps.urls.outputs.pages }}
+        run: |
+          mkdir -p zap-out && chmod 777 zap-out
+          # -I: warnings and failures do not set the exit code. Passive scan only (baseline does not attack).
+          docker run --rm -v "$PWD/zap-out:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:2.16.0 \
+            zap-baseline.py -t "$PAGES" -J zap.json -r zap.html -I -m 5
+
+      - name: Summarise
+        if: always()
+        env:
+          URLS: ${{ steps.urls.outcome }}
+          WAIT: ${{ steps.wait.outcome }}
+          ZAP: ${{ steps.zap.outcome }}
+        run: |
+          mkdir -p out
+          if [ "$ZAP" = "success" ] && [ -s zap-out/zap.json ]; then
+            jq '{status:"ok",
+                 high:([.site[].alerts[]|select(.riskcode=="3")]|length),
+                 medium:([.site[].alerts[]|select(.riskcode=="2")]|length),
+                 low:([.site[].alerts[]|select(.riskcode=="1")]|length),
+                 info:([.site[].alerts[]|select(.riskcode=="0")]|length),
+                 top:([.site[].alerts[]|select(.riskcode!="0")|"\(.riskdesc|split(" ")[0]) \(.name)"]|.[0:10])}' zap-out/zap.json > out/zap-summary.json || echo '{"status":"failed"}' > out/zap-summary.json
+          elif [ "$URLS" != "success" ] || [ "$WAIT" != "success" ]; then
+            echo '{"status":"no-preview"}' > out/zap-summary.json
+          else
+            echo '{"status":"failed"}' > out/zap-summary.json
+          fi
+          cat out/zap-summary.json
+
+      - name: Upload artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: security-zap
+          path: |
+            zap-out/zap.json
+            zap-out/zap.html
+            out/zap-summary.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  comment:
+    name: Summary comment
+    needs: [semgrep, zap]
+    if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Download summaries
+        continue-on-error: true
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: summaries
+
+      - name: Post or update the summary comment
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const fs = require("fs");
+            const load = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { return { status: "missing" }; } };
+            const sg = load("summaries/security-semgrep/out/semgrep-summary.json");
+            const zp = load("summaries/security-zap/out/zap-summary.json");
+            const list = (a) => (a && a.length ? "\n```\n" + a.join("\n").slice(0, 1200) + "\n```" : "");
+            const semgrepText = sg.status === "ok"
+              ? `${sg.total} findings (error ${sg.error}, warning ${sg.warning}, info ${sg.info}).${list(sg.top)}`
+              : "No report was produced, see the run logs.";
+            const zapText = zp.status === "ok"
+              ? `high ${zp.high}, medium ${zp.medium}, low ${zp.low}, informational ${zp.info}.${list(zp.top)}`
+              : zp.status === "no-preview" ? "Not run: no preview for this commit was found in time." : "No report was produced, see the run logs.";
+            const pr = context.payload.pull_request;
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "<!-- security-scan -->",
+              `### Security scan (report only, never blocks the merge) (\`${pr.head.sha.slice(0, 7)}\`)`,
+              "",
+              `**Semgrep** (p/javascript, p/owasp-top-ten): ${semgrepText}`,
+              "",
+              `**OWASP ZAP baseline** (passive, against the preview): ${zapText}`,
+              "",
+              `Full reports: artifacts \`security-semgrep\` and \`security-zap\` on [the run](${run}). Triage: \`docs/runbooks/security-scan.md\`.`,
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
+            const existing = comments.find((c) => c.body && c.body.includes("<!-- security-scan -->"));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
