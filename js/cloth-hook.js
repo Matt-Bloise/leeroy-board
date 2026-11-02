@@ -29,7 +29,7 @@ function start() {
   if (ctl || loading || !allowed()) { show(); return; }
   loading = true; const my = ++gen;
   if (!canvas) { canvas = document.createElement("canvas"); canvas.setAttribute("id", "tab-cloth"); canvas.setAttribute("aria-hidden", "true"); canvas.style.pointerEvents = "none"; sheet.appendChild(canvas); }
-  const mod = window.__clothModule ? Promise.resolve(window.__clothModule) : import("../cloth/cloth.js?v=de29b13a1a");
+  const mod = window.__clothModule ? Promise.resolve(window.__clothModule) : import("../cloth/cloth.js?v=fdc76b7fe0");
   mod.then((m) => {
     loading = false; if (my !== gen || !allowed()) return;
     const c = m.createCloth({ canvas, rail, sheet, tabs: tabList(), onReady: relay, onLost: () => { ctl = null; show(); } });
