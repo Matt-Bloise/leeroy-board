@@ -99,6 +99,9 @@ jobs:
           set -o pipefail
           node tools/stamps.mjs --check 2>&1 | tee "$RUNNER_TEMP/stamps.log"
 
+      - name: Legal pages check
+        run: node tools/render-legal.mjs --check
+
   preview:
     name: preview
     needs: scope

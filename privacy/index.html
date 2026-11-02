@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Privacy notice for the Leeroy board and Discord guild companion.">
+<meta name="color-scheme" content="dark light">
+<title>Privacy notice - Leeroy board</title>
+<style>:root{--bg:#14100c;--text:#f3ead6;--dim:#d8caa8;--brass:#eecd8c;--line:#7a5a2c;--link:#eecd8c;--head:#2a2118}
+@media (prefers-color-scheme:light){:root{--bg:#f6efde;--text:#2b1d10;--dim:#46331f;--brass:#7a3a12;--line:#b79a62;--link:#7a3a12;--head:#e9dcbd}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;color-scheme:dark light}
+body{margin:0;background:var(--bg);color:var(--text);font:1rem/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.top,main,.foot{max-width:44rem;margin:0 auto;padding:0 16px}
+.top{padding-top:16px}
+.brand{margin:0}
+a{color:var(--link)}
+a:focus-visible{outline:3px solid var(--text);outline-offset:3px}
+.back{display:inline-block;min-height:44px;padding:10px 0;font-weight:700}
+h1{font-size:1.8rem;line-height:1.2;margin:1rem 0 .8rem;overflow-wrap:anywhere}
+h2{font-size:1.2rem;color:var(--brass);margin:2rem 0 .6rem}
+h3,h4{font-size:1.05rem;color:var(--brass);margin:1.4rem 0 .4rem}
+p,li{overflow-wrap:anywhere}
+ul,ol{padding-left:1.3rem}
+li{margin:.25rem 0}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;background:var(--head);padding:0 .25em;border-radius:3px}
+.tbl{overflow-x:auto;margin:1rem 0;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:30rem;font-size:.95rem}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{background:var(--head);color:var(--brass)}
+tr:last-child td{border-bottom:0}
+.foot{margin-top:2.5rem;padding-top:1rem;padding-bottom:2rem;border-top:1px solid var(--line);color:var(--dim);font-size:.95rem}
+@media (min-width:768px){h1{font-size:2.3rem}}</style>
+</head>
+<body>
+<header class="top"><a class="back" href="/">Back to the board</a></header>
+<main id="main">
+<h1>Privacy notice (draft)</h1>
+<p><strong>DRAFT. Every legal point here needs review by counsel before publication. Retention periods and some facts are marked (unverified) or (proposed) and need owner decisions.</strong> This is not legal advice. Reviewers: the owner and the back-end architect. The table-level source for this notice is <code>docs/data-inventory.md</code>.</p>
+<p>The Leeroy Living Board is an unofficial companion for guilds playing WoW Forever. It runs on Cloudflare. This notice says what we hold about you, why, who else sees it, and what you can do.</p>
+<h2>What we collect</h2>
+<div class="tbl"><table><thead><tr><th scope="col">Category</th><th scope="col">What</th><th scope="col">Where it comes from</th></tr></thead><tbody><tr><td>Discord id</td><td>Your numeric Discord user id</td><td>Discord login or a Discord interaction</td></tr><tr><td>Display name</td><td>Your Discord name, and a handle or nickname used on the board</td><td>Discord, and the guild admin</td></tr><tr><td>Avatar</td><td>Your Discord avatar image reference</td><td>Discord (unverified whether stored or only displayed)</td></tr><tr><td>Guild and roles</td><td>Which Discord guild you belong to and your roles there</td><td>Discord, guild admin</td></tr><tr><td>Builds</td><td>Characters, talents, gear and sheet fields you or your guild enter</td><td>You</td></tr><tr><td>Sign-ups</td><td>Raid and event attendance you set</td><td>You</td></tr><tr><td>Saved settings</td><td>Preferences and journey state</td><td>You</td></tr><tr><td>Questions to Leeroy</td><td>What you type into Ask, and the answer</td><td>You</td></tr><tr><td>Device logs</td><td>Technical data from your browser and device: IP address, request time, device and browser type, and the settings your device keeps locally</td><td>Your device (unverified exactly what is stored server-side)</td></tr></tbody></table></div>
+<p>Optional, only if you attach them: a Google account identifier; a Battle.net account identifier used to confirm a character is yours.</p>
+<p>We do not read or store Discord message content for the board, except where the next section says so.</p>
+<h2>Message content disclosure</h2>
+<p>The bot answers slash commands and other interactions sent to it over HTTP (<code>POST /discord</code>). It is not set up to read your channel messages (unverified; counsel and the owner should confirm no Message Content intent is enabled in the Discord developer portal). What you type into a command or into the Ask box is stored and sent to an AI vendor, so do not put anything private in it. If this changes the notice will change first.</p>
+<h2>Why we use it (purposes)</h2>
+<div class="tbl"><table><thead><tr><th scope="col">Purpose</th><th scope="col">Categories</th><th scope="col">Basis (counsel to confirm)</th></tr></thead><tbody><tr><td>Sign you in and keep you signed in</td><td>Discord id, display name, avatar, sessions</td><td>Contract / legitimate interests</td></tr><tr><td>Show your guild's board, builds and sign-ups</td><td>Guild and roles, builds, sign-ups</td><td>Contract / legitimate interests</td></tr><tr><td>Answer your questions with AI</td><td>Questions, answers</td><td>Contract / consent (counsel)</td></tr><tr><td>Protect the service: rate limits, abuse, debugging</td><td>Device logs, hashed IP</td><td>Legitimate interests</td></tr><tr><td>Verify character ownership and give Blizzard attribution</td><td>Battle.net identifier (optional)</td><td>Consent</td></tr></tbody></table></div>
+<p>We do not use your data for advertising or profiling.</p>
+<h2>Who receives it (recipients)</h2>
+<div class="tbl"><table><thead><tr><th scope="col">Recipient</th><th scope="col">Why</th><th scope="col">What</th></tr></thead><tbody><tr><td>Cloudflare</td><td>Hosting, database, Workers, Durable Objects, logs</td><td>Everything stored in the service</td></tr><tr><td>Discord</td><td>Login and bot</td><td>Your Discord id and the interactions you make</td></tr><tr><td>Blizzard</td><td>Attribution and, if you attach it, character verification. We use Blizzard game data and names under their terms; we are not affiliated</td><td>Battle.net identifier, only if attached (proposed)</td></tr><tr><td>Google</td><td>Only if you attach a Google identity</td><td>Google account identifier</td></tr><tr><td>AI vendor</td><td>Answering Ask</td><td>Your question and context. The vendor is whichever provider is configured (<code>worker/ai-models.js</code> lists several, among them Anthropic, Google, Groq, Cerebras, Cloudflare Workers AI and OpenRouter); see <code>docs/subprocessors.md</code></td></tr><tr><td>Your guild admins</td><td>Running your guild's board</td><td>Your name, roles, builds and sign-ups in that guild</td></tr></tbody></table></div>
+<p>Other members of your guild can see what the board shows about you. Ask answers marked shared are visible to the group (<code>ask_turns.share</code> defaults to shared).</p>
+<p><strong>We do not sell your data and we do not share it for advertising.</strong> Counsel to confirm wording for US state laws that define &quot;sale&quot; and &quot;sharing&quot; broadly.</p>
+<h2>Retention</h2>
+<p>All values are (proposed) unless stated and are not yet implemented in code. The owner decides; the architect confirms feasibility.</p>
+<div class="tbl"><table><thead><tr><th scope="col">Data</th><th scope="col">Proposed retention</th></tr></thead><tbody><tr><td>Account (Discord id, display name, avatar)</td><td>Until you delete your account or your guild is removed; then purge within 30 days</td></tr><tr><td>Sessions</td><td>Until expiry; expired rows purged. Maximum lifetime to be set (unverified current value)</td></tr><tr><td>Builds, sign-ups, saved settings</td><td>Until you delete them or your account</td></tr><tr><td>Questions and answers (Ask)</td><td>90 days, then deleted or anonymised</td></tr><tr><td>Hashed guest IP for rate limits</td><td>24 hours</td></tr><tr><td>Cloudflare and Worker logs</td><td>As set in Cloudflare (unverified; counsel to note)</td></tr><tr><td>Audit log of admin actions</td><td>12 months</td></tr><tr><td>Backups (D1 Time Travel)</td><td>Cloudflare's window (unverified; see <code>docs/runbooks/backup-restore.md</code>); deleted data can persist in backups until they expire</td></tr><tr><td>Guild data after the guild removes the bot</td><td>30 days, then purge</td></tr></tbody></table></div>
+<h2>Your rights</h2>
+<p>Depending on where you live (counsel to confirm which laws apply and the response time): access, correction, deletion, export, objection or restriction, withdrawal of consent, and complaint to your regulator. You can erase your account yourself with <code>DELETE /me</code>; what it removes was not checked against every table (see &quot;Known gaps&quot; in <code>docs/data-inventory.md</code>). Export and a fuller erase (<code>GET /api/me/export</code>, <code>POST /api/me/erase</code>) are built but stay switched off until counsel and the owner enable the <code>DATA_RIGHTS</code> flag. Until a contact is published, requests go to the owner at <strong>(contact to be added)</strong>.</p>
+<h2>Children</h2>
+<p>The service is not for anyone under 13, or under the age of digital consent where you live if higher. Discord requires users to be 13 or older. We do not knowingly collect data from children; if we learn we have, we delete it. (Counsel to confirm the threshold and any parental-consent duty.)</p>
+<h2>International transfers, security, changes</h2>
+<p>Cloudflare and the AI vendors may process data outside your country; counsel to confirm the transfer mechanism. Member keys and session tokens are stored only as salted hashes. No system is perfectly secure. We will update this notice with a date when it changes. Not yet decided: legal entity name, representative in the EU/UK (if required), and whether a data processing agreement is offered to guild admins.</p>
+</main>
+<footer class="foot">
+<p>Also: <a href="/terms/">Terms of use</a>. This page is generated from <code>docs/privacy.md</code> in the project repository. This site is not affiliated with or endorsed by Blizzard Entertainment.</p>
+</footer>
+</body>
+</html>
