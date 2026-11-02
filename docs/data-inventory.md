@@ -52,6 +52,27 @@ Derived on 2026-11-02 from `infrastructure/schema.sql` (204 lines, 17 tables) an
 | `kv_state` | `json` where `key` is `name_map` | Names | Name replacements for AI answers | Private |
 | `kv_state` | `json` where keys are `votes:*`, `vote:*`, `feed_posts` | Names or Free text | Votes and posts (unverified) | Private or board; not inspected |
 
+## Tenancy tables (migrations 0002 and 0003), added for Q59
+
+Added 2026-11-02. These tables were missing from the list above because it was derived from `schema.sql` before the tenancy migrations. All are keyed by the Discord user id (`users.discord_user_id`) and removed by `DELETE FROM users` through foreign-key cascade, except where noted. Export and erase: `GET /api/me/export`, `POST /api/me/erase` (`DATA_RIGHTS` flag, `worker/data-rights.js`).
+
+| Table | Column | Class | What it holds | Erase |
+| :--- | :--- | :--- | :--- | :--- |
+| `users` | `discord_user_id`, `display_name`, `created_at` | Names | Root identity | Deleted explicitly |
+| `identities` | `provider`, `provider_user_id`, `attached_at` | Names | Linked Battle.net, Twitch, Google, GitHub ids | Cascade |
+| `humans`, `human_members` | `id`, `human_id`, `added_at` | Links | Groups several Discord users as one person | Cascade; the `humans` row is deleted when this user was its only member |
+| `sessions_v2` | `token_hash` (never exported), `created_at`, `expires_at`, `last_seen_at` | Links | Web login sessions | Cascade |
+| `provider_tokens` | `access_token_enc`, `refresh_token_enc` (never exported), `scope`, `expires_at`, `updated_at` | Links | Encrypted OAuth tokens | Cascade |
+| `memberships` | `tenant_id`, `role`, `status`, `joined_at` | Links | Which guild the person belongs to | Cascade |
+| `characters` | `name`, `realm`, `region`, `class`, `spec` | Names / Free text | Characters typed by the member | Cascade |
+| `builds` | `title`, `data_json` | Free text | Builds for a character | Cascade through `characters` |
+| `group_slots` | `character_id` | Links | Seat a character fills | `SET NULL`; trigger re-opens the seat |
+| `signups_v2` | `group_id`, `user_id`, `character_id`, `rsvp` | Links | RSVP to a planned group | Cascade |
+| `audit_log` | `actor_discord_user_id`, `target`, `detail_json` | Links / Free text | Who did what | Actor `SET NULL`; rows remain. The erase row itself holds no personal data (actor NULL, salted hash of the id) |
+| `groups`, `tenants`, `tenant_config`, `thread_cursors`, `discord_events`, `entitlements` | tenant-level | None per person | Guild-level data (`discord_events` holds Discord snowflakes, not people) (judged from column names) | Not touched by a member erase |
+
+Not covered by export or erase: `kv_state` board documents (signups, party, party_sheets, votes and similar) that may name a member, Cloudflare logs, and Discord-side data. A web session is never used to match `by_name` or `slug` rows, because a Discord display name is chosen by its owner and could equal another member's name.
+
 ## Tables with no personal data
 
 `lib_pages`, `lib_blobs`, `lib_sources`, `lib_source_snapshots` and `wiki_proposals` hold game library content and source-monitoring data. `kv_state` rows `persona`, `vocab` and `ai_budget:*` are configuration and counters. `wiki_proposals` has no author column. (Judged from column names; contents not scanned.)
@@ -65,6 +86,6 @@ Derived on 2026-11-02 from `infrastructure/schema.sql` (204 lines, 17 tables) an
 
 ## Known gaps
 
-1. No table records consent, a deletion request or an export request. `DELETE /me` erases account data (`README.md:46`); what it removes was not verified against this list.
+1. No table records consent or an export request. `DELETE /me` erases account data (`README.md:46`); what it removes was not verified against this list. Erase requests are recorded only as an `audit_log` row with no personal data (Q59, behind `DATA_RIGHTS`).
 2. `by_name` and `slug` are free-form and not tied to one identity key, so erase and export need name matching today.
 3. `ask_turns.question` is unbounded personal text kept by default; retention is set in `docs/privacy.md` (draft).

@@ -25,6 +25,7 @@ import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMAND
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
 import { handleWebAuth, webSessionFrom } from "./web-auth.js";
+import { handleDataRights } from "./data-rights.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
@@ -338,7 +339,7 @@ export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "PUT /persona", "POST /dispatch",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
-  "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
+  "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
   "GET /atlas/*", "PUT /atlas/*", "POST /intent", "POST /refresh", "GET /", "GET /health",
 ];
@@ -866,6 +867,11 @@ export default {
       if (webRes) {
         for (const [k, v] of Object.entries(cors)) if (!webRes.headers.has(k)) webRes.headers.set(k, v);
         return webRes;
+      }
+      const rightsRes = await handleDataRights(req, env, { path, now: Date.now() });
+      if (rightsRes) {
+        for (const [k, v] of Object.entries(cors)) if (!rightsRes.headers.has(k)) rightsRes.headers.set(k, v);
+        return rightsRes;
       }
       const accountRes = await handleAccount(req, env, {
         path,

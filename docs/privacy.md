@@ -71,7 +71,7 @@ All values are (proposed) unless stated and are not yet implemented in code. The
 
 ## Your rights
 
-Depending on where you live (counsel to confirm which laws apply and the response time): access, correction, deletion, export, objection or restriction, withdrawal of consent, and complaint to your regulator. You can erase your account yourself with `DELETE /me`; what it removes was not checked against every table (see "Known gaps" in `docs/data-inventory.md`). Export is not built. Until a contact is published, requests go to the owner at **(contact to be added)**.
+Depending on where you live (counsel to confirm which laws apply and the response time): access, correction, deletion, export, objection or restriction, withdrawal of consent, and complaint to your regulator. You can erase your account yourself with `DELETE /me`; what it removes was not checked against every table (see "Known gaps" in `docs/data-inventory.md`). Export and a fuller erase (`GET /api/me/export`, `POST /api/me/erase`) are built but stay switched off until counsel and the owner enable the `DATA_RIGHTS` flag. Until a contact is published, requests go to the owner at **(contact to be added)**.
 
 ## Children
 

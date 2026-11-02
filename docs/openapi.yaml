@@ -282,6 +282,56 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /api/me/export:
+    get:
+      summary: Download everything held about the caller as one JSON file. Behind the DATA_RIGHTS flag.
+      description: |
+        404 while DATA_RIGHTS is off. The caller is a member key or, when WEB_LOGIN is on, a web session cookie. The admin token is not a caller (401).
+        The file has `format`, `generated_at`, `identified_by` (`member-key` or `web-session`), `legacy` (members, sheet_events, dispatches, intents,
+        ask_turns, fact_fixes for a member key; user_state and sessions metadata when a Discord id is known), `tenancy` (users, identities, human_members,
+        provider_tokens metadata, sessions_v2 metadata, memberships, characters, builds, group_slots, signups_v2, audit_log_as_actor; null when a member key has
+        no linked Discord id) and `not_included`. Token hashes, key hashes and encrypted provider tokens are never included. Answers no-store with
+        `Content-Disposition: attachment`. 503 when USER_SALT is missing or a table is missing.
+      security:
+        - boardKey: []
+        - sessionCookie: []
+      responses:
+        "200": { description: OK. A JSON file. }
+        "401":
+          description: No valid key or session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "404": { description: DATA_RIGHTS is off. }
+        "503": { description: USER_SALT or a table is missing. }
+  /api/me/erase:
+    post:
+      summary: Erase the caller's data. Behind the DATA_RIGHTS flag.
+      description: |
+        404 while DATA_RIGHTS is off. Needs an `Origin` header (403 without) and the body `{"confirm":"erase my data"}` (400 otherwise). Runs one atomic D1 batch:
+        legacy rows (user_state, sessions, sheet_events, dispatches, intents, ask_turns, fact_fixes, members), then the users row, whose cascade removes identities,
+        human_members, sessions_v2, provider_tokens, memberships, characters, builds and signups_v2; seats the person held are re-opened. One audit_log row is written
+        with actor NULL, action `erase` and a salted hash of the id. Name-keyed and slug-keyed legacy rows are erased only for a member key. Board documents in kv_state
+        are not edited. The response clears the `__Host-sess` cookie.
+      security:
+        - boardKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm: { type: string, enum: ["erase my data"] }
+      responses:
+        "200": { description: 'Erased. Body: { erased: true, not_erased: [string] }.' }
+        "400": { description: Missing or wrong confirm phrase. }
+        "401": { description: No valid key or session. }
+        "403": { description: No Origin header. }
+        "404": { description: DATA_RIGHTS is off. }
+        "503": { description: USER_SALT or a table is missing. }
   /api/data/{name}:
     get:
       summary: One kv_state document. Allow list only. The name may carry a .json suffix.
