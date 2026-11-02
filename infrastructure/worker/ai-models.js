@@ -19,7 +19,20 @@ import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
-import { formatAnswer, answerFormatEnabled, extractCitedIds } from "./answer-format.js";
+import { formatAnswer, answerFormatEnabled, answerUxEnabled, extractCitedIds } from "./answer-format.js";
+import { ROSTER_DATA } from "./bot-data.js";
+
+// Alias -> display name for the voice guards. Only distinctive single-word aliases that sit inside a longer display name
+// are used ("squidward" -> "Handsome Squidward"); short or common words such as "rat", "tank" or "mage" are never rewritten.
+export function rosterAliases() {
+  const map = {};
+  for (const r of ROSTER_DATA) {
+    for (const a of r.aliases || []) {
+      if (/^[a-z]{6,}$/i.test(a) && a.toLowerCase() !== r.display.toLowerCase() && r.display.toLowerCase().includes(a.toLowerCase())) map[a] = r.display;
+    }
+  }
+  return map;
+}
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -933,6 +946,9 @@ export async function answerWithAi({
           asker: { name: by, isMember: askerIsMember },
           boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party",
           maxChars: chatMax > 0 ? chatMax : 1200,
+          ...(answerUxEnabled(env)
+            ? { ux: true, roster: rosterAliases(), intentId, isCoach, egg: persona && persona.egg }
+            : {}),
         })
       : repaired;
     const latencyMs = Date.now() - t0;
