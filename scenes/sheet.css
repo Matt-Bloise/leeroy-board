@@ -110,3 +110,25 @@
 .ps-sample-go { justify-self: start; min-height: 44px; color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
 /* the guided journey folds every panel child but its summary card (css/v13d.css); the sample sheet is the point of this scene for a visitor, so it outranks that rule */
 html[data-journey="guided"] #sheet-body #panel-five #ps-sample#ps-sample#ps-sample#ps-sample#ps-sample:not([hidden]) { display: grid !important; }
+/* chars.v1 (Q37): the character switcher and the manual character form, inside the sheet card, under the header */
+.ps-chars { display: grid; gap: 8px; padding: 10px 12px; border-radius: 6px; background: var(--parchment-2); min-width: 0; }
+.ps-chars-h { margin: 0; font-family: var(--font-sc); font-size: var(--fs-label); letter-spacing: 0.08em; color: var(--ink-soft); }
+.ps-chars-row { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.ps-chb { box-sizing: border-box; min-height: 44px; display: inline-flex; align-items: center; max-width: 100%; padding: 2px 14px; overflow-wrap: anywhere; text-align: left; font-family: var(--font-ui); font-size: var(--fs-chip); letter-spacing: 0.06em; border: 1px solid var(--ink-soft); border-radius: 999px; cursor: pointer; }
+.ps-chb:focus-visible { outline: 3px solid var(--wax); outline-offset: 2px; }
+.ps-chb[aria-disabled="true"] { opacity: 0.6; cursor: default; }
+.ps-char, .ps-char-add, .ps-cf-cancel { color: var(--ink); background: var(--cream); border-color: var(--ink-soft); }
+.ps-chb.ps-cf-go { color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
+.ps-char[aria-pressed="true"] { color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
+.ps-char-add { justify-self: start; }
+.ps-char-now { margin: 0; font-family: var(--font-body); font-size: 1.05rem; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
+.ps-char-say { margin: 0; font-family: var(--font-body); font-size: 1.05rem; color: var(--ink); }
+.ps-char-say:empty { display: none; }
+.ps-cf { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding-top: 6px; border-top: 1px dotted var(--ink-soft); }
+.ps-cf-f { display: grid; gap: 4px; min-width: 0; }
+.ps-cf-l { font-family: var(--font-sc); font-size: var(--fs-label); letter-spacing: 0.08em; color: var(--ink-soft); }
+.ps-cf-c { width: 100%; box-sizing: border-box; font-size: max(1rem, 16px); }
+.ps-cf-c[aria-invalid="true"] { border-color: var(--wax); border-width: 2px; }
+.ps-cf-e { margin: 0; font-family: var(--font-body); font-size: 1rem; color: var(--wax); }
+.ps-cf-row { grid-column: 1 / -1; flex-wrap: wrap; }
+@media (min-width: 700px) { .ps-cf { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
