@@ -1,0 +1,15 @@
+{
+  "note": "Baseline for .github/workflows/terms-watch.yml. hash is the sha256 of the page's visible text; lines are sha256 prefixes (16 hex) of each visible line, used only to count added and removed lines. null means no baseline yet. URLs are editable here; confirm each one opens the right page before relying on it.",
+  "pages": {
+    "developer-api-terms": {
+      "url": "https://www.blizzard.com/en-us/legal/a2989b50-5f16-43b1-abec-2ae17cc09dd6/blizzard-developer-api-terms-of-use",
+      "hash": null,
+      "lines": []
+    },
+    "trademark-guidelines": {
+      "url": "https://www.blizzard.com/en-us/legal/trademark-guidelines",
+      "hash": null,
+      "lines": []
+    }
+  }
+}
