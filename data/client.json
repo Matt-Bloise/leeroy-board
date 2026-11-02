@@ -15494,6 +15494,7 @@
  "flags": {
   "firstrun.v2": true,
   "roster.v1": false,
-  "nextstep.v2": false
+  "nextstep.v2": false,
+  "chars.v1": false
  }
 }
