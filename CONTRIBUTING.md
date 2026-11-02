@@ -10,6 +10,7 @@ This repo is the home of the Leeroy board: the site (Cloudflare Pages), the Work
 5. Every PR states how to roll back: Pages previous deployment, `wrangler rollback`, D1 Time Travel, or a revert.
 6. Back-end changes (anything under `infrastructure/`) must include a test in `tests/api` (behaviour through the API) or `tests/unit` (pure functions).
    A back-end PR without a test in its diff is not merged.
+7. Run `node tools/stamps.mjs --write` before committing any js, scenes or css change. The `?v=` stamps are the first 10 hex characters of the sha256 of the file; CI fails on stale stamps.
 
 We accept a before and after number on a stated device (frame time, long animation frames, bytes, render counts) for performance changes. No secrets in the repo, and no first names or Discord ids in code or copy.
 
