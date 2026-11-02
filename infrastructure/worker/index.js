@@ -329,6 +329,18 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
   return { seq, at: now };
 }
 
+// Every route this Worker answers, as "METHOD pattern" (":name" is one path segment, a trailing "*" is a prefix, ANY is every
+// method). A description only: dispatch below does not read it. tests/unit/authz.test.mjs checks it against the handlers in
+// this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
+export const ROUTES = [
+  "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "PUT /persona", "POST /dispatch",
+  "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
+  "POST /token", "POST /auth/discord", "ANY /me", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
+  "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
+  "GET /atlas/*", "PUT /atlas/*", "POST /intent", "POST /refresh", "GET /", "GET /health",
+];
+
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
