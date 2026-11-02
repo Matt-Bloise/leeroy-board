@@ -11,13 +11,26 @@ const authHeaders = { Authorization: `Bearer ${TOKEN}`, Origin: PAGES };
 const json = async (r) => { const t = await r.text(); try { return JSON.parse(t); } catch { throw new Error(`not JSON (HTTP ${r.status}): ${t.slice(0, 120)}`); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-test("GET /api/health: ok, PR preview, workers-ai", async () => {
+test("GET /api/health without a key: minimal body, no provider detail", async () => {
   const r = await fetch(`${API}/api/health`);
   assert.equal(r.status, 200);
   const b = await json(r);
   assert.equal(b.ok, true);
+  assert.equal(b.service, "leeroy-brain");
   assert.equal(b.isPrPreview, true);
+  assert.equal(typeof b.at, "string");
+  assert.ok(!("providers" in b), "providers must be absent without the admin token");
+  assert.ok(!("aiProvider" in b), "aiProvider must be absent without the admin token");
+  assert.ok(!("aiGateway" in b), "aiGateway must be absent without the admin token");
+});
+
+test("GET /api/health with the admin token: provider detail present", async () => {
+  const r = await fetch(`${API}/api/health`, { headers: authHeaders });
+  assert.equal(r.status, 200);
+  const b = await json(r);
+  assert.equal(b.ok, true);
   assert.equal(b.aiProvider, "workers-ai");
+  assert.ok(b.providers && typeof b.providers === "object", "providers missing");
 });
 
 test("GET /api/bootstrap: JSON, only workers-ai provider enabled", async () => {
@@ -47,6 +60,20 @@ test("CORS: a foreign Origin is refused with 403 and no Allow-Origin", async () 
   const r = await fetch(`${API}/api/health`, { headers: { Origin: "https://evil.example" } });
   assert.equal(r.status, 403);
   assert.equal(r.headers.get("access-control-allow-origin"), null);
+  await r.arrayBuffer();
+});
+
+test("CORS: localhost:8080 is not an allowed origin", async () => {
+  const r = await fetch(`${API}/api/bootstrap`, { headers: { Origin: "http://localhost:8080" } });
+  assert.ok(r.status === 403 || r.headers.get("access-control-allow-origin") === null, "localhost origin must not be allowed");
+  assert.notEqual(r.headers.get("access-control-allow-origin"), "http://localhost:8080");
+  await r.arrayBuffer();
+});
+
+test("CORS: https://leeroy.party is allowed and echoed", async () => {
+  const r = await fetch(`${API}/api/bootstrap`, { headers: { Origin: "https://leeroy.party" } });
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("access-control-allow-origin"), "https://leeroy.party");
   await r.arrayBuffer();
 });
 
