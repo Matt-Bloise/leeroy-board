@@ -5,7 +5,7 @@
 // A missing baseline prints SKIP (no comparison). A diff ratio above WARN_RATIO prints WARN. Neither fails the run. Output: tests/browser/out/visual-baseline/
 // (actual/*.png, summary.json, summary.md). Animated regions (candle glow, canvases, clock/countdown, moon) are masked and CSS animations are disabled.
 // Baselines must come from the Linux CI image (see docs/runbooks/visual-baselines.md); local Windows or macOS font rendering will differ.
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +19,8 @@ if (!BASE) { console.log("WARN no --url or PREVIEW_PAGES; visual-baseline skippe
 const wi = argv.indexOf("--write-baselines");
 const WRITE = wi >= 0 ? path.resolve(argv[wi + 1] && !argv[wi + 1].startsWith("--") ? argv[wi + 1] : path.join(here, "baselines")) : null;
 const BASELINES = path.join(here, "baselines"), OUT = path.join(here, "out", "visual-baseline"), ACTUAL = path.join(OUT, "actual");
+// Nothing to compare against yet: skip every navigation so this suite adds no time to the browser job until baselines are committed.
+if (!WRITE && !(existsSync(BASELINES) && readdirSync(BASELINES).some((f) => f.endsWith(".png")))) { console.log("SKIP visual baselines: no PNG baselines committed (see docs/runbooks/visual-baselines.md)"); process.exit(0); }
 mkdirSync(ACTUAL, { recursive: true }); if (WRITE) mkdirSync(WRITE, { recursive: true });
 const WARN_RATIO = 0.01, PIXEL_TOLERANCE = 32; // a pixel differs when any channel differs by more than 32 of 255
 const ROOT = BASE.endsWith("/") ? BASE : BASE + "/";

@@ -41,6 +41,8 @@ jobs:
             *) echo "::error::pages_url must start with https://"; exit 1 ;;
           esac
           if printf '%s' "$PAGES_URL" | grep -qE '[^A-Za-z0-9./:_-]'; then echo "::error::pages_url has unexpected characters"; exit 1; fi
+          # only our own hosts: the production site or a PR preview on the Pages project
+          if ! printf '%s' "$PAGES_URL" | grep -qE '^https://(leeroy\.party|pr-[0-9]+\.leeroy-board\.pages\.dev|leeroy-board\.pages\.dev)/?$'; then echo "::error::pages_url must be https://leeroy.party or a leeroy-board.pages.dev preview"; exit 1; fi
 
       - name: Install test dependencies
         working-directory: tests
