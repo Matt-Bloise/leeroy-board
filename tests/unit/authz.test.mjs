@@ -41,6 +41,9 @@ const TABLE = {
   "GET /state": PUBLIC,
   "POST /token": PUBLIC, // Discord OAuth code exchange
   "POST /auth/discord": PUBLIC, // login, rate limited
+  "GET /auth/discord/start": PUBLIC, // Q18 web login, 404 unless WEB_LOGIN is on; sets only a short-lived state cookie
+  "GET /auth/discord/callback": PUBLIC, // Q18: authenticated by the state cookie plus Discord's code, not by a board key
+  "POST /auth/logout": PUBLIC, // Q18: acts on the caller's own cookie session only; needs an Origin header
   "ANY /me": SESSION, // DELETE and HEAD reach account.js (GET /me is the board key route above)
   "ANY /state/:doc": SESSION,
   "GET /ask": PUBLIC, // anonymous callers only see shared or visitor turns
@@ -173,6 +176,9 @@ const CALLS = {
   "GET /state": ["GET", "/api/state"],
   "POST /token": ["POST", "/api/token", "{}"],
   "POST /auth/discord": ["POST", "/api/auth/discord", "{}"],
+  "GET /auth/discord/start": ["GET", "/api/auth/discord/start"],
+  "GET /auth/discord/callback": ["GET", "/api/auth/discord/callback"],
+  "POST /auth/logout": ["POST", "/api/auth/logout", "{}"],
   "ANY /me": ["DELETE", "/api/me"],
   "ANY /state/:doc": ["GET", "/api/state/prefs"],
   "GET /ask": ["GET", "/api/ask"],
@@ -191,7 +197,7 @@ const CALLS = {
   "GET /health": ["GET", "/health"],
 };
 // Routes whose caller is not a board key (Discord signature, session token): only the anonymous refusal can be asserted here.
-const NOT_BOARD_KEY = new Set(["POST /discord", "POST /auth/discord", "ANY /me", "ANY /state/:doc"]);
+const NOT_BOARD_KEY = new Set(["POST /discord", "POST /auth/discord", "ANY /me", "ANY /state/:doc", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout"]);
 
 async function call(env, route, principal, override) {
   const [method, path, body, extra] = override || CALLS[route];
@@ -241,6 +247,24 @@ test("POST /auth/discord is open to every principal: a bad code is a 400, never 
     const res = await call(env, "POST /auth/discord", principal, ["POST", "/api/auth/discord", "{}", { Origin: "https://leeroy.test" }]);
     assert.equal(res.status, 400, principal);
   }
+});
+
+test("web login routes (Q18): 404 with the flag off, and with it on never a 401 for anonymous, member key or admin token", async () => {
+  const web = ["GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout"];
+  for (const route of web) {
+    for (const principal of [A, M, D]) {
+      assert.equal((await call(await makeEnv(), route, principal)).status, 404, `${route} as ${principal} with the flag off`);
+      const env = { ...(await makeEnv()), WEB_LOGIN: "on", DISCORD_CLIENT_ID: "x", DISCORD_CLIENT_SECRET: "y", ALLOWED_ORIGINS: "https://leeroy.test" };
+      const res = await call(env, route, principal, [CALLS[route][0], CALLS[route][1], CALLS[route][2], { Origin: "https://leeroy.test" }]);
+      assert.notEqual(res.status, 401, `${route} as ${principal}`);
+      assert.ok(res.status < 500, `${route} as ${principal} answered ${res.status}`);
+    }
+  }
+});
+
+test("GET /api/me with the web flag on and no cookie or key is 401 for anonymous", async () => {
+  const env = { ...(await makeEnv()), WEB_LOGIN: "on" };
+  assert.equal((await call(env, "GET /me", A)).status, 401);
 });
 
 test("POST /discord refuses an unsigned request from every principal", async () => {
