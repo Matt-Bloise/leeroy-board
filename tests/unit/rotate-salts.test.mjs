@@ -213,7 +213,7 @@ test("the tool cannot apply, takes no salt as an argument, needs ids, and keeps 
 // ---- the inventory must stay complete
 const WORKER = new URL("../../infrastructure/worker/", import.meta.url);
 test("every Worker file that uses a salt is one the inventory accounts for", () => {
-  const accounted = { "account.js": "user_state, sessions", "answer-ux.js": "answer_details, answer_feedback, button ids", "auth.js": "members", "data-rights.js": "audit_log erase targets", "discord.js": "vote ballots (votes.js)", "guest-key.js": "guest_rate_limits", "votes.js": "vote ballots", "salts.js": "the checks themselves", "index.js": "guest_rate_limits (guestIpKey)" };
+  const accounted = { "account.js": "user_state, sessions", "answer-ux.js": "answer_details, answer_feedback, button ids", "auth.js": "members", "data-rights.js": "audit_log erase targets", "discord.js": "vote ballots (votes.js)", "guest-key.js": "guest_rate_limits", "votes.js": "vote ballots", "salts.js": "the checks themselves", "moments.js": "moments_ledger hashes (diagnostic only)", "index.js": "guest_rate_limits (guestIpKey)" };
   const users = fs.readdirSync(WORKER).filter((f) => f.endsWith(".js") && /(USER_SALT|KEY_SALT)/.test(fs.readFileSync(new URL(f, WORKER), "utf8").replace(/^\s*\/\/.*$/gm, "")));
   assert.deepEqual(users.filter((f) => !accounted[f]), [], "a new file uses a salt: add it to INVENTORY and to this list");
 });

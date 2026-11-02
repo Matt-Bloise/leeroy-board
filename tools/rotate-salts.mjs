@@ -57,6 +57,7 @@ export const INVENTORY = [
   { salt: "USER_SALT", where: "audit_log.target (action 'erase')", scheme: "sha256(USER_SALT:erase:<subject>)", source: "worker/data-rights.js", rederive: "NO (the people were erased)", action: "none: opaque records, never looked up by hash" },
   { salt: "USER_SALT", where: "Discord button ids (not stored)", scheme: "HMAC-SHA256(USER_SALT, answer-ux:<kind>:<intent>:<message>)", source: "worker/answer-ux.js signButton", rederive: "NO (signed into messages already posted)", action: "none: More, Sources, Helpful and Off on old answers stop working" },
   { salt: "KEY_SALT", where: "members.key_hash", scheme: "sha256(KEY_SALT:<member key>)", source: "worker/auth.js hashKey", rederive: "NO (keys are never stored)", action: "RE-ISSUE a key per member (infrastructure/scripts/hash-key.mjs)" },
+  { salt: "KEY_SALT", where: "kv_state moments_ledger entries: channelHash, contentHash", scheme: "first 16 hex of sha256(KEY_SALT:<channel id or post text>)", source: "worker/moments.js shortHash", rederive: "NO (and not needed: diagnostic rows only)", action: "none: rows written after the flip use the new salt, so compare before and after the flip separately" },
   { salt: "KEY_SALT", where: "account_keys.key_hash", scheme: "unknown (no Worker code reads this table)", source: "schema.sql only", rederive: "NO", action: "re-issue or empty it; check whether anything still uses it first" },
 ];
 export const BREAKS = [

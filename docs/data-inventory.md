@@ -101,7 +101,7 @@ The route reads the database and writes nothing, answers no-store, and logs no r
 
 ## Salted hashes (what a salt rotation touches)
 
-Added 2026-11-02, for `docs/runbooks/rotate-salts.md` and `tools/rotate-salts.mjs`. `USER_SALT`: `user_state.user_key`, `sessions.user_key`, `answer_details.asker_hash`, `answer_feedback.user_hash`, ballot keys inside `kv_state` `vote:<id>`, `guest_rate_limits.ip_hash`, `audit_log.target` for erase events, and the signature in Discord answer buttons. `KEY_SALT`: `members.key_hash` and, by schema only, `account_keys.key_hash`. The tool keeps this list and a test fails if a new salted column or file is not on it.
+Added 2026-11-02, for `docs/runbooks/rotate-salts.md` and `tools/rotate-salts.mjs`. `USER_SALT`: `user_state.user_key`, `sessions.user_key`, `answer_details.asker_hash`, `answer_feedback.user_hash`, ballot keys inside `kv_state` `vote:<id>`, `guest_rate_limits.ip_hash`, `audit_log.target` for erase events, and the signature in Discord answer buttons. `KEY_SALT`: `members.key_hash`, the short channel and content hashes in the `moments_ledger` row (diagnostic), and, by schema only, `account_keys.key_hash`. The tool keeps this list and a test fails if a new salted column or file is not on it.
 
 ## Tables with no personal data
 
