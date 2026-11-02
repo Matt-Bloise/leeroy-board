@@ -29,6 +29,9 @@ Derived on 2026-11-02 from `infrastructure/schema.sql` (204 lines, 17 tables) an
 | `ask_turns` | `answer`, `cites_json` | Free text | AI reply and citations | May echo the question |
 | `ask_turns` | `share` | Links | Whether the turn is shared with the group | Default 1 (shared) |
 | `ask_turns` | `model`, `latency_ms`, `status`, `created_at`, `answered_at` | Links | Which AI vendor model answered, timing | `model` shows which vendor received the question |
+| `ask_turns` | `status`, `latency_ms`, `created_at`, `answered_at` | Links | Read as counts and timings only by the D1_FEED stats computation (default off): totals, median, p95, max, last 7 timings. `question`, `answer` and `by_name` are not read | Output is aggregates; the cache row holds no per-person data |
+| `lib_pages` | row count | Links | Read as a count (`wiki_pages`) by the D1_FEED stats computation | |
+| `kv_state` | `json` where `key` is `feed_cache:stats` | Links | D1_FEED cache of the computed stats document, rewritten at most every 5 minutes | Private (`feed_` prefix, not served by `/api/data`). Aggregates only. Not covered by erase because it holds no personal data |
 | `answer_details` | `more`, `sources` | Free text | Extra answer text behind the "More" and "Sources" buttons (ANSWER_UX) | Model output; may echo the question. Deleted after 30 days by the cron |
 | `answer_details` | `asker_hash` | Links | Salted hash (USER_SALT) of the asker, set only for private answers so only they can open the detail | Not a Discord id |
 | `answer_details` | `intent_id`, `message_id`, `created_at` | Links | Answer id (joins to `ask_turns`), Discord message id the buttons are bound to, time | |
