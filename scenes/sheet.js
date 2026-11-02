@@ -269,7 +269,7 @@ function sheetView(m) {
     h("header", { class: "ps-head" },
       h("span", { class: "ps-crest" }, h("img", { src: `img/crests/${m.class_key}.png`, alt: "", width: 72, height: 72, loading: "lazy", decoding: "async" })),
       h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${m.race} ${m.class}${m.role ? `, ${roleOf(m)}` : ""}` }), parity(m, F)),
-      h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, "Back to The five")),
+      h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn ? K.pn.title() : "The five"}`)),
     charsView(m),
     h("p", { class: "ps-how", text: how }),
     h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
@@ -308,7 +308,7 @@ function tableView() {
     ev ? h("li", {}, h("b", { text: "Next shared date: " }), `${ev.label}, ${K.fmtWhen(ev.epoch, { rel: true })}. `, h("a", { class: "tn-link", href: "#timeline", text: "Dates" })) : null,
   ].filter(Boolean);
   return h("div", { class: "ps-tablebox" },
-    h("p", { class: "ps-how ps-how-mark" }, h("img", { class: "ps-mark ps-mark-party", src: "img/marks/source-party.webp", alt: "", width: 40, height: 40, loading: "lazy", decoding: "async" }), "The five sheets folded into one view: the Party Board's records, with what each person changed on their own sheet and left visible."),
+    h("p", { class: "ps-how ps-how-mark" }, h("img", { class: "ps-mark ps-mark-party", src: "img/marks/source-party.webp", alt: "", width: 40, height: 40, loading: "lazy", decoding: "async" }), `The ${K.pn ? K.pn.word() : "five"} sheets folded into one view: the Party Board's records, with what each person changed on their own sheet and left visible.`),
     h("div", { class: "ps-scroll" }, h("table", { class: "ps-table" }, h("caption", { class: "sr-only", text: "The party table: role, race and class, spec plan, professions and what is still open, one row per person" }),
       h("thead", {}, h("tr", {}, ["Who", "Role", "Race and class", "Spec plan", "Professions", "Still deciding"].map((t) => h("th", { scope: "col", text: t })))),
       h("tbody", {}, rows))),
@@ -318,7 +318,7 @@ function tableView() {
 function mount() {
   const panel = $("#panel-five"); if (!panel || $("#ps-views")) return;
   const btn = (v, t) => h("button", { type: "button", class: "lib-tool ps-view", "data-view": v, "aria-pressed": String(v === "cards"), onclick: () => show(v, null, true) }, t);
-  const bar = h("div", { class: "ps-views", id: "ps-views", role: "group", "aria-label": "How to see the five" }, btn("cards", "The cards"), btn("party", "The party table"));
+  const bar = h("div", { class: "ps-views", id: "ps-views", role: "group", "aria-label": `How to see the ${K.pn ? K.pn.word() : "five"}` }, btn("cards", "The cards"), btn("party", "The party table"));
   panel.insertBefore(bar, panel.firstChild);
   panel.append(h("section", { class: "ps", id: "ps-sheet", "aria-label": "A sheet", hidden: true }), h("section", { class: "ps-party", id: "ps-party", "aria-label": "The party table", hidden: true }));
 }

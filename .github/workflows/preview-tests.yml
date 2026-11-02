@@ -1,7 +1,7 @@
 name: Preview Tests
 
 # Runs on draft and ready PRs from branches of this repository (not forks).
-# Jobs: scope -> preview -> api, browser; unit and stamps run at once; report posts the sticky comment.
+# Jobs: scope -> preview -> api, browser, layout; unit and stamps run at once; report posts the sticky comment.
 # A PR that changes only docs (tools/docs-only.mjs) gets no preview, so only unit and stamps run.
 
 on:
@@ -217,6 +217,7 @@ jobs:
           PREVIEW_API: ${{ needs.preview.outputs.worker }}
           SMOKE_ALLOW_WEBKIT_NO_WEBGL: "1"
           PAGES_URL: ${{ needs.preview.outputs.pages }}
+          LAYOUT_SWEEP_SKIP: "1"
         run: |
           set -o pipefail
           npm run test:browser -- --url "$PAGES_URL/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
@@ -227,6 +228,47 @@ jobs:
         with:
           name: preview-test-logs-browser
           path: ${{ runner.temp }}/browser.log
+          if-no-files-found: ignore
+
+  layout:
+    # Layout invariants sweep (tests/browser/layout-sweep.mjs): 18 viewport sizes x 3 visitor states x 12 scenes on Chromium, judged by DOM
+    # rules (close button inside the viewport and uncovered, no overlap in the header, title not cut, 44 px touch height, no sideways scroll, no 4xx/5xx).
+    # Gating: it is in the report's needs. The sweep stops itself at 7 minutes and fails if it did not finish; the job limit is 8.
+    name: layout
+    needs: preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Layout sweep
+        working-directory: tests
+        env:
+          PAGES_URL: ${{ needs.preview.outputs.pages }}
+        run: |
+          set -o pipefail
+          node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --budget-min 5 --out "$RUNNER_TEMP/layout-report.json" 2>&1 | tee "$RUNNER_TEMP/layout.log"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: preview-test-logs-layout
+          path: |
+            ${{ runner.temp }}/layout.log
+            ${{ runner.temp }}/layout-report.json
           if-no-files-found: ignore
 
   visual-audit:
@@ -273,7 +315,7 @@ jobs:
 
   report:
     name: report
-    needs: [scope, unit, stamps, preview, api, browser]
+    needs: [scope, unit, stamps, preview, api, browser, layout]
     # Not on cancel: a newer push cancels this run and its own run posts the result for the newer commit.
     if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
@@ -294,6 +336,7 @@ jobs:
           STAMPS_OUTCOME: ${{ needs.stamps.result }}
           API_OUTCOME: ${{ needs.api.result }}
           BROWSER_OUTCOME: ${{ needs.browser.result }}
+          LAYOUT_OUTCOME: ${{ needs.layout.result }}
           PAGES_URL: ${{ needs.preview.outputs.pages }}
         with:
           script: |
@@ -307,14 +350,15 @@ jobs:
             let bPass = num(/live-smoke: all (\d+) checks passed/, br), bFail = bPass === null ? null : 0;
             const bf = br.match(/live-smoke: (\d+) of (\d+) checks FAILED/);
             if (bf) { bFail = Number(bf[1]); bPass = Number(bf[2]) - bFail; }
+            const lay = read("layout.log"), lm = lay.match(/layout-sweep: .*?(\d+) failures/), lFail = lm ? Number(lm[1]) : null;
             const docsOnly = process.env.DOCS_ONLY === "true";
             const label = (outcome) => (outcome === "success" ? "pass" : outcome === "skipped" ? (docsOnly ? "not run (docs only)" : "not run") : "FAIL");
             const cell = (v) => (v === null ? "-" : String(v));
-            const failing = br.split("\n").filter((l) => l.startsWith("FAIL ")).slice(0, 10);
+            const failing = [...br.split("\n"), ...lay.split("\n")].filter((l) => l.startsWith("FAIL ")).slice(0, 10);
             const apiFailing = api.split("\n").filter((l) => /^\S+ .* \(\d/.test(l) && !/^\S*✔/.test(l) && /fail|✖/i.test(l)).slice(0, 10);
             const lines = [...apiFailing, ...failing];
             const ok = process.env.UNIT_OUTCOME === "success" && process.env.STAMPS_OUTCOME === "success" &&
-              (docsOnly || (process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success"));
+              (docsOnly || (process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success" && process.env.LAYOUT_OUTCOME === "success"));
             const pr = context.payload.pull_request;
             const sha = pr.head.sha.slice(0, 7);
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -329,6 +373,7 @@ jobs:
               `| Stamps | ${label(process.env.STAMPS_OUTCOME)} | - | - |`,
               `| API | ${label(process.env.API_OUTCOME)} | ${cell(aPass)} | ${cell(aFail)} |`,
               `| Browser smoke (Chromium + WebKit) | ${label(process.env.BROWSER_OUTCOME)} | ${cell(bPass)} | ${cell(bFail)} |`,
+              `| Layout sweep (Chromium) | ${label(process.env.LAYOUT_OUTCOME)} | - | ${cell(lFail)} |`,
               "",
               docsOnly ? "No preview (docs only)." : process.env.PAGES_URL ? `Preview: ${process.env.PAGES_URL}` : "No preview URL was found.",
               lines.length ? "\nFirst failures:\n```\n" + lines.join("\n").slice(0, 1500) + "\n```" : "",
@@ -342,11 +387,11 @@ jobs:
 
       - name: Fail the job if a suite failed
         env:
-          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }}
+          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }}
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
         run: |
           echo "$RESULTS (docs_only=$DOCS_ONLY)"
           for r in ${{ needs.unit.result }} ${{ needs.stamps.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
           if [ "$DOCS_ONLY" != "true" ]; then
-            for r in ${{ needs.api.result }} ${{ needs.browser.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
+            for r in ${{ needs.api.result }} ${{ needs.browser.result }} ${{ needs.layout.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
           fi

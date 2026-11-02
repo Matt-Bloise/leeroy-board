@@ -108,7 +108,7 @@ function personView(d, key) {
     h("div", { class: "dc-cards" }, p.decisions.map((x) => card(d, x))));
 }
 function allView(d) {
-  return h("div", { class: "dc-person", "data-who": "all" }, h("h3", { class: "dc-name", text: "All five" }), h("ul", { class: "dc-all" }, d.people.map((p) => {
+  return h("div", { class: "dc-person", "data-who": "all" }, h("h3", { class: "dc-name", text: `All ${K.pn ? K.pn.word() : "five"}` }), h("ul", { class: "dc-all" }, d.people.map((p) => {
     const m = byKey(p.class_key); if (!m) return null;
     return h("li", { class: "dc-row", style: `--cc: ${K.classVar(m.class_key)}` },
       h("button", { type: "button", class: "dc-open", "aria-label": `${m.name}: open their choices`, onclick: () => pick(m.class_key) }, crest(m), h("b", { text: m.name })),
@@ -137,7 +137,7 @@ function partyView(d) {
     nb(`Buffs nobody gives: a Shaman's (${P.nobody.buffs.length})`, P.nobody.buffs.map((b) => h("li", { class: "dc-line" }, h("b", { class: "dc-l", text: `${b.name}: ` }), h("span", { class: "dc-t", text: b.lands_text })))));
   const facts = h("div", { class: "dc-sect" }, h("h4", { class: "dc-h4", text: "Group sizes and tuning" }), h("ul", { class: "dc-lines" }, P.lines.map(lineEl)));
   const b0 = P.brackets[0], b1 = P.brackets[1];
-  const sumText = `${K.andList([`${b0.tank.length} tank`, `${b0.healer.length} ${b0.healer.length === 1 ? "healer" : "healers"}${b1 ? ` (${b1.healer.length} from ${b1.from})` : ""}`, `${b0.damage.length} damage`])}; ${P.buffs.length} buffs between the five; nobody for ${P.nobody.classes.length} classes.`;
+  const sumText = `${K.andList([`${b0.tank.length} tank`, `${b0.healer.length} ${b0.healer.length === 1 ? "healer" : "healers"}${b1 ? ` (${b1.healer.length} from ${b1.from})` : ""}`, `${b0.damage.length} damage`])}; ${P.buffs.length} buffs between the ${K.pn ? K.pn.word() : "five"}; nobody for ${P.nobody.classes.length} classes.`;
   const sec = (id, title, note, el) => (K.JR() === "everything" ? h("details", { class: "dc-sectd", "data-sec": id }, h("summary", {}, h("b", { text: title }), h("span", { class: "dc-n", text: note })), el) : el);
   const nN = P.nobody.classes.length + P.nobody.professions.length + P.nobody.secondaries.length + P.nobody.buffs.length;
   return h("details", { class: "dc-card dc-partyc", id: "dc-party-card" }, h("summary", { class: "dc-sumy" }, h("span", { class: "dc-title", text: "Party composition" }), h("span", { class: "dc-stext", text: sumText })), h("div", { class: "dc-body" },
@@ -149,7 +149,7 @@ function render() {
   const w = who();
   $("#dc-who").replaceChildren(h("b", { class: "dc-q", text: "Whose choices?" }),
     ...members().map((m) => h("button", { type: "button", class: "lib-tool dc-pill", "data-who": m.class_key, "aria-pressed": String(w === m.class_key), style: `--cc: ${K.classVar(m.class_key)}`, onclick: () => pick(m.class_key) }, crest(m), m.name)),
-    h("button", { type: "button", class: "lib-tool dc-pill", "data-who": "all", "aria-pressed": String(w === "all"), onclick: () => pick("all") }, "All five"));
+    h("button", { type: "button", class: "lib-tool dc-pill", "data-who": "all", "aria-pressed": String(w === "all"), onclick: () => pick("all") }, `All ${K.pn ? K.pn.word() : "five"}`));
   $("#dc-dates").replaceChildren(...dateLines(d));
   const main = $("#dc-main"); main.replaceChildren(w === "all" ? allView(d) : personView(d, w));
   $("#dc-party").replaceChildren(partyView(d));
@@ -211,13 +211,13 @@ function stepWho(by) {
   const B = window.BoardSeals, el = $("#seal"), m = next === "all" ? null : byKey(next), p = next === "all" ? null : d.people.find((x) => x.class_key === next);
   const openAll = d.people.reduce((n, x) => n + x.decisions.filter((y) => y.state === "open").length, 0);
   const openN = p ? p.decisions.filter((x) => x.state === "open").length : openAll;
-  const line = next === "all" ? `All five: ${openAll === 1 ? "one thing" : `${openAll} things`} still open on the Party Board between you.` : `${m.name}: ${summary(p)}`;
-  const btn = $("#seal .seal-btn"); if (btn) btn.setAttribute("aria-label", `${TITLE} seal, showing ${next === "all" ? "all five" : m.name}. Press for the next friend; arrow keys go either way.`);
+  const line = next === "all" ? `All ${K.pn ? K.pn.word() : "five"}: ${openAll === 1 ? "one thing" : `${openAll} things`} still open on the Party Board between you.` : `${m.name}: ${summary(p)}`;
+  const btn = $("#seal .seal-btn"); if (btn) btn.setAttribute("aria-label", `${TITLE} seal, showing ${next === "all" ? `all ${K.pn ? K.pn.word() : "five"}` : m.name}. Press for the next friend; arrow keys go either way.`);
   if (!B || !el) return;
   snd("latch");
   B.spin({ land: "back", mid: () => {
     const b = el.querySelector(".seal-b"), i2 = el.querySelector(".seal-i"), chip = el.querySelector(".seal-chip"), num = el.querySelector(".seal-n");
-    if (b) b.textContent = next === "all" ? "All five" : m.name;
+    if (b) b.textContent = next === "all" ? `All ${K.pn ? K.pn.word() : "five"}` : m.name;
     if (i2) i2.textContent = `${openN} open on the board`;
     if (chip) chip.hidden = true; if (num) num.textContent = "";
   } }).then(() => B.say(line));

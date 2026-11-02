@@ -141,6 +141,23 @@ const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, co
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
+/* party.n (data/client.json flags, default off): copy that said "five" says the real member count. Off, every string is the old one. Scene ids and hashes (#five) never change. */
+const PN_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+const pnOn = () => !!(D.client && D.client.flags && D.client.flags["party.n"] && D.party && Array.isArray(D.party.members) && D.party.members.length > 0);
+const pnCount = () => (D.party && D.party.members ? D.party.members.length : 5);
+const pnWord = () => { if (!pnOn()) return "five"; const n = pnCount(); return PN_WORDS[n] || String(n); };
+const pnTitle = () => (pnOn() ? "The party" : "The five");
+function partyCopy() {
+  if (!pnOn()) return;
+  const set = (sel, fn) => { const el = $(sel); if (el) fn(el); };
+  set("#tab-five", (el) => { const t = [...el.childNodes].find((n) => n.nodeType === 3); if (t) t.textContent = pnTitle(); });
+  set("#panel-five .swipe-hint", (el) => { el.textContent = `Swipe sideways for all ${pnWord()}.`; });
+  set("#tt-five", (el) => { el.textContent = pnTitle(); const w = el.parentNode && el.parentNode.querySelector(".word"); if (w) w.textContent = "Open the party"; });
+  set("#as", (el) => el.setAttribute("aria-label", "Which of the party are you"));
+  set("fieldset legend", (el) => { if (/Which of the five are you/.test(el.textContent)) el.textContent = "Which of the party are you?"; });
+  set(".gate-card p", (el) => { if (/for the five of us/.test(el.textContent)) el.textContent = el.textContent.replace("the five of us", `the ${pnWord()} of us`); });
+  if (SC.open === "five") set("#sheet-title", (el) => { el.textContent = pnTitle(); });
+}
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 function fmtMs(ms) {
@@ -419,19 +436,20 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function fill(key, ...kids) { const el = $(`#ts-${key}`); if (el) el.replaceChildren(...kids.flat().filter(Boolean)); }
 const LEEROY_HOW = "In #wow-forever, type /ask and your question, or tag Leeroy Jenkins.";
 function renderTiles() {
+  partyCopy();
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
   const count = (role) => p.members.filter((m) => (m.role_now || m.role) === role).length, later = p.members.filter((m) => m.role_from);
   fill("five",
     h("span", { class: "five-row" }, p.members.map((m) => h("span", { class: "fm", "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, roleGlyph(m.role), h("span", { class: "fm-n" }, m.name, h("small", { class: "fm-rc", text: `${m.race} ${m.class}` }))))),
-    h("span", { class: "tile-viz list five-viz" }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
+    h("span", { class: "tile-viz list five-viz", ...(pnOn() ? { style: `--party-n: ${p.members.length}` } : {}) }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${m.race} ${m.class}` })))),
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many], i) => [i ? ", " : "", h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`)]),
       later.length ? ` (${andList(later.map((m) => `${count(m.role_from.role) === 1 ? "a second" : "a"} ${m.role_from.role} from ${m.role_from.level}`))}).` : ".", " ",
-      h("span", { class: "strip-2" }, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : "All five have picked a spec."; })())));
+      h("span", { class: "strip-2" }, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : `All ${pnWord()} have picked a spec.`; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), `\u00a0${ms.length}`])),
     h("span", { class: "tile-line", text: `All ${zones.length === 3 ? "three" : zones.length} end in Orgrimmar.` }),
-    h("span", { class: "tile-viz roads-viz" }, miniRoads()), h("span", { class: "viz-cap", text: "Where each of the five starts" }));
+    h("span", { class: "tile-viz roads-viz" }, miniRoads()), h("span", { class: "viz-cap", text: `Where each of the ${pnWord()} starts` }));
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
@@ -442,7 +460,7 @@ function renderTiles() {
     h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
     minis([[p.members.length, "players"], [c.buffs ? c.buffs.list.filter((b) => !b.sixth).length : c.synergy.length, "buffs"]]),
-    h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: "Buff links between the five" }));
+    h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
@@ -995,7 +1013,7 @@ function renderWheel() {
   const keys = D.party.members.map((m) => m.class_key);
   const R = 112, pos = {};
   keys.forEach((k, i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / keys.length; pos[k] = [Math.cos(a) * R, Math.sin(a) * R]; });
-  const svg = s("svg", { viewBox: "-178 -178 356 356", role: "group", "aria-label": "Buff wheel between the five classes" });
+  const svg = s("svg", { viewBox: "-178 -178 356 356", role: "group", "aria-label": `Buff wheel between the ${pnWord()} classes` });
   const edges = [];
   D.client.synergy.forEach((b, bi) => {
     const delay = `--di: ${Math.max(0, keys.indexOf(b.from))}`;
@@ -1036,7 +1054,7 @@ function renderWheel() {
   nodes.forEach((n) => { n.addEventListener("click", () => setActive(n.dataset.k)); n.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(n.dataset.k); } }); });
   const wide = !window.matchMedia || window.matchMedia("(min-width: 700px)").matches;
   VF("wheel", svg);
-  wrap.append(h("details", { class: "wheel-svg", ...(wide ? { open: "" } : {}) }, h("summary", { text: "The wheel between the five" }), svg), h("details", { class: "wheel-links", id: "wheel-links" }, h("summary", { text: `The wheel's ${D.client.synergy.length} links, with sources` }), h("ul", { class: "buffs" }, items)));
+  wrap.append(h("details", { class: "wheel-svg", ...(wide ? { open: "" } : {}) }, h("summary", { text: `The wheel between the ${pnWord()}` }), svg), h("details", { class: "wheel-links", id: "wheel-links" }, h("summary", { text: `The wheel's ${D.client.synergy.length} links, with sources` }), h("ul", { class: "buffs" }, items)));
 }
 const BUFF_STATUS = { forever: "Forever", classic: "Classic baseline", unknown: "Unknown" };
 const BUFF_CAT = { arcane_intellect: "intellect", conjure: "mana", fortitude: "stamina", shadow_protection: "resistance", divine_spirit: "spirit", pw_shield: "armor", kings: "allstats", might: "attackpower", wisdom: "mana", salvation: "spirit", devotion: "armor", retribution: "thorns", concentration: "intellect", mark: "allstats", thorns: "thorns", innervate: "mana", rebirth: "healing", leader: "attackpower", soulstone: "healing", healthstone: "healing", summoning: "spirit", blood_pact: "stamina", strength_earth: "attackpower", grace_air: "attackpower", windfury: "attackpower", mana_spring: "mana", healing_stream: "healing" };
@@ -1520,7 +1538,7 @@ async function startRuntime() {
 }
 
 const SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "decide", "tonight"];
-const TITLES = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
+const TITLES = { tonight: "Next steps", timeline: "Dates", get five() { return pnTitle(); }, roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const PAGE_TITLE = { base: "" };
 function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
@@ -2059,7 +2077,7 @@ const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.
 const tabImg = (key) => h("img", { class: "emblem-img tab-img", src: `img/icons/tab-${key}.png`, alt: "", width: 48, height: 48, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
 function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); placeSideMedal(key); }
-const MEDAL = { tonight: "Next steps", timeline: "Dates", five: "The five", roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
+const MEDAL = { tonight: "Next steps", timeline: "Dates", get five() { return pnTitle(); }, roads: "Three roads", racials: "Race skills", legacy: "Bonuses", buffs: "Who buffs whom", ledger: "Ledger", signups: "Sign-ups", librarian: "Leeroy", library: "Library", decide: "What to decide" };
 const MEDAL_BACK = { tonight: "Your next step, the next date and who is coming.", timeline: "Every date that matters, from the Blizzard calendar.", five: "Who plays what, straight from the group's own words.", roads: "Where each character starts and how the roads meet.", racials: "What each race brings, from the game client.", legacy: "The bonuses Forever carries over.", buffs: "Every buff by level, who gives it, who gets it.", ledger: "Every decision, in order, with the date.", signups: "Who is in for which night.", librarian: "Leeroy: ask in chat or ask here.", library: "Every fact the group has researched, searchable.", decide: "What is still open for each of us, by Blizzard's dates, and what each option changes." };
 const medalImg = (key, cls) => h("img", { class: cls || "medal-img", src: `img/medal/${key}.webp`, alt: "", width: 640, height: 640, decoding: "async", loading: "lazy" });
 const MEDALS = {};
@@ -3633,7 +3651,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();

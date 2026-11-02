@@ -8,6 +8,7 @@ Automated checks that run against a pull request's preview environment (Cloudfla
 - `browser/votes-card.mjs`: 44 checks (Chromium, 390x844 and 1366x768) on the Votes card with `GET /api/votes` stubbed by route interception: render, inert text, empty and failing states, 60-second polling only while visible.
 - `browser/axe.mjs`: axe-core (`@axe-core/playwright`, WCAG 2 A and AA tags) on the first screen and the sheet (Next steps) in Chromium at 390x844 and 1366x768. Fails on serious or critical violations; minor and moderate ones print as WARN. Exclusions live in `EXCLUDE` at the top of the file, each with a reason.
 - `browser/smoke-retry.mjs`: the retry decision. A check that fails once and passes on a second visit is a warning, not a failure.
+- `browser/layout-sweep.mjs`: layout invariants engine. 18 viewport sizes x 3 visitor states (first visit, looking, member) x 12 scenes; judges DOM rules (close button inside the viewport and uncovered, no overlap in the header, title not cut from 960 wide, 44 px touch height, scrollable sheet body, no sideways scroll, no same-origin 4xx/5xx, no console errors). `--engine chromium|webkit|firefox`, `--out report.json`, `--sizes`, `--states`, `--scenes` for a subset. Runs in the `layout` CI job (Chromium); `LAYOUT_SWEEP_SKIP=1` skips it inside `run.mjs`.
 
 ## Run locally
 
