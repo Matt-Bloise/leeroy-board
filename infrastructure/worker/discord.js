@@ -27,6 +27,7 @@
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
 import { buildStartReply } from "./announce.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
+import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
 import {
@@ -278,6 +279,22 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
           { name: "Guided: walk me through it", value: "guided" },
           { name: "Curious: I'll click around (default)", value: "curious" },
           { name: "Everything: show me every number", value: "everything" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "vote",
+    description: "Start a vote the party can answer with buttons",
+    options: [
+      {
+        name: "start",
+        description: "Start a vote in this channel",
+        type: 1,
+        options: [
+          { name: "title", description: "What the vote is about", type: 3, required: true },
+          { name: "options", description: "2 to 5 choices separated by |", type: 3, required: true },
+          { name: "closes_in_hours", description: "Hours until it closes (default 72)", type: 4, required: false },
         ],
       },
     ],
@@ -579,6 +596,26 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const o = opts.find((x) => x.name === n);
       return o ? String(o.value).trim() : "";
     };
+
+    // 2a-vote. `/vote start`
+    if (cmd === "vote") {
+      const sub = opts.find((o) => o.type === 1 && o.name === "start");
+      const subOpts = (sub && sub.options) || [];
+      const subOpt = (n) => {
+        const o = subOpts.find((x) => x.name === n);
+        return o ? String(o.value).trim() : "";
+      };
+      const ephemeral = (content) =>
+        new Response(JSON.stringify({ type: 4, data: { content, flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (!sub) return ephemeral("Use `/vote start` with a title and 2 to 5 choices separated by |.");
+      if (!member) return ephemeral("I can't tell which party member you are, so only the party can start a vote. You can still press the buttons on one.");
+      const nowMs = Date.now();
+      const made = createVote({ id: newVoteId(), title: subOpt("title"), choices: subOpt("options"), hours: subOpt("closes_in_hours") || undefined, now: nowMs });
+      if (!made.ok) return ephemeral(made.error);
+      await saveVote(env.DB, made.vote, nowMs);
+      await recordInIndex(env.DB, made.vote.id, nowMs);
+      return new Response(JSON.stringify({ type: 4, data: renderMessage(made.vote, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
 
     // 2-start. `/start`: ephemeral, works for everyone (identified or not)
     if (cmd === "start") {
@@ -1127,6 +1164,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         "**Ask about a message:** computer, right-click it; phone, press and hold it. Then Apps -> **Ask Leeroy** (or **Fix this fact**).",
         "**Quick:** `/tonight` your launch night, `/countdown` the clock, `/dates` every date, `/signup` sign up, `/page` a library page, `/tooltip` a spell, `/map` the Atlas, `/library` the shelves.",
         "**Fun:** `/quiz` Pop Quiz, `/didyouknow` random facts, `/build` party builds, `/leeroy` the yell.",
+        "**Votes:** `/vote start` with a title and 2 to 5 choices separated by |; everyone presses buttons to vote.",
         "**Worker Mailbox:** `/intents` view pending mailbox changes, `/ack` clear intents, `/answer` answer an ask turn.",
         "-# Leeroy never pings anyone. At least he has chicken.",
       ].join("\n");
@@ -1487,6 +1525,36 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
+  }
+
+  // 3a. Vote buttons (`vote:<id>:<index>` and `vote:<id>:results`). Handled before the generic sign-up buttons below.
+  if (interaction.type === 3 && interaction.data && String(interaction.data.custom_id || "").startsWith("vote:")) {
+    const ephemeral = (content) =>
+      new Response(JSON.stringify({ type: 4, data: { content, flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    const parsed = parseVoteCustomId(interaction.data.custom_id);
+    if (!parsed) return ephemeral("That vote button is not valid.");
+    const vote = await loadVote(env.DB, parsed.id);
+    if (!vote) return ephemeral("That vote no longer exists.");
+    const nowMs = Date.now();
+    if (parsed.action === "results") return ephemeral(`**${vote.title}**\n${tallyLines(vote).join("\n")}`);
+    if (!isOpen(vote, nowMs)) return ephemeral("That vote is closed. No new votes are counted.");
+    const discordId = String(user.id || "");
+    if (!discordId) return ephemeral("I can't tell who you are, so I can't count that vote.");
+    const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
+    if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
+    await saveVote(env.DB, result.vote, nowMs);
+    const picked = result.vote.choices[parsed.index];
+    const note = result.changed ? `Changed your vote to **${picked}**.` : `Counted your vote for **${picked}**.`;
+    if (interaction.application_id && interaction.token) {
+      ctx.waitUntil(
+        fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: clampContent(note), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE }),
+        }).catch(() => {})
+      );
+    }
+    return new Response(JSON.stringify({ type: 7, data: renderMessage(result.vote, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
   // 3b. Message Component Buttons (Type 3): Sign-ups & Party card buttons (`signup:<field>:<value>`)

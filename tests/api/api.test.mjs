@@ -251,3 +251,13 @@ test("GET /api/bootstrap and /api/state carry no raw {board:...} token", async (
     assert.ok(!text.includes("{board:"), `${path} leaked a raw {board:} token`);
   }
 });
+
+test("GET /api/votes without a key: 200, votes array, no voter data", async () => {
+  const r = await fetch(`${API}/api/votes`, { headers: { Origin: PAGES } });
+  assert.equal(r.status, 200);
+  const text = await r.text();
+  const b = JSON.parse(text);
+  assert.ok(Array.isArray(b.votes), "votes is not an array");
+  assert.ok(!/voter/i.test(text), "response must not mention voter");
+  assert.ok(!/hash/i.test(text), "response must not mention hash");
+});
