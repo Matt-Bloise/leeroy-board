@@ -1,5 +1,5 @@
-import { VS, FS, RVS, RFS } from "./weave.glsl.js?v=10b15ba961";
-import { createBaker, fontReady } from "./ribbon-bake.js?v=0130fc4966";
+import { VS, FS, RVS, RFS } from "./weave.glsl.js?v=a95de18113";
+import { createBaker, fontReady } from "./ribbon-bake.js?v=df2db4c292";
 
 const COLS = 8, ROWS = 64, STEP = 1 / 120, MAX_AMP = 14;
 const KC = 40, CC = 6, KL = 180, CL = 22;
