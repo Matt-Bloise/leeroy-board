@@ -2003,7 +2003,7 @@ function startScenes() {
   $("#keys-close").addEventListener("click", () => showKeys(false));
   document.addEventListener("keydown", onKey);
   document.addEventListener("focusin", (e) => {
-    if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target) || senseBox().some((n) => n.contains(e.target))) return;
+    if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target) || ($("#roster") && $("#roster").contains(e.target)) || senseBox().some((n) => n.contains(e.target))) return;
     const first = sceneFocus()[0]; if (first) first.focus();
   });
   addEventListener("popstate", route);

@@ -20,6 +20,7 @@ const SCENES = {
   foley: () => [null, new URL("../scenes/foley.js?v=135b19b8a4", HERE)],
   foleyfx: () => [null, new URL("../scenes/foley-fx.js?v=835f856b07", HERE)],
   account: () => [null, new URL("../scenes/account.js?v=7d412cdb13", HERE)],
+  roster: () => [new URL("../scenes/roster.css?v=caaacbf083", HERE), new URL("../scenes/roster.js?v=64153a5f54", HERE)],
 };
 const NEEDS = { sheet: ["decide"] };
 NEEDS.hades = ["chamber"];
@@ -124,5 +125,15 @@ if (typeof document.addEventListener === "function") {
 }
 K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) afterPlay(() => setTimeout(() => afterPlay(() => { if (!P.place) load("place"); }), 4000)); });
 if (window.BoardSound && BoardSound.onState) BoardSound.onState((on) => { if (on) load("foley"); });
+/* roster.v1 (data/client.json flags): the officer roster is not in the ribbon. It opens at #roster and from a Menu entry, only while the flag is on. */
+const rosterOn = () => !!(K.D && K.D.client && K.D.client.flags && K.D.client.flags["roster.v1"]);
+const rosterOpen = (from) => load("roster").then((r) => { if (r.ok && window.BoardRoster) window.BoardRoster.open(from); });
+K.on("booted", () => {
+  if (!rosterOn()) return;
+  const set = K.$("#open-settings");
+  if (set && set.parentNode && !K.$("#open-roster")) set.parentNode.insertBefore(K.h("button", { class: "set-open", id: "open-roster", type: "button", text: "Raid roster", onclick: (e) => rosterOpen(e.currentTarget) }), set.nextSibling);
+  if (location.hash === "#roster") rosterOpen();
+});
+addEventListener("hashchange", () => { if (location.hash === "#roster" && rosterOn() && !P.roster) rosterOpen(); });
 window.__scenes = Object.freeze({ load, loaded: (n) => ok.includes(n), status: () => ({ loaded: ok.slice(), failed: bad.slice(), base: HERE }) });
 })();

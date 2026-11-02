@@ -229,6 +229,7 @@ function openMore() {
         row(roomTxt(), () => { const r = $("#more-room"); if (r) r.click(); }, "ornaments/tankard"),
         row("Sound and feel", () => { const r = $("#sense-btn"); if (r) r.click(); }, "chips/voice"),
         row("What this phone can do", () => { location.hash = "#probe"; }, "chips/question"),
+        ...(K.D && K.D.client && K.D.client.flags && K.D.client.flags["roster.v1"] ? [row("Raid roster", () => { if (window.__scenes) window.__scenes.load("roster").then((r) => { if (r.ok && window.BoardRoster) window.BoardRoster.open(mb); }); }, "ornaments/banner")] : []),
         row("What we track and why", () => { if (window.BoardTrust) window.BoardTrust.open(mb); }, "chips/lock"),
         row("Forget me on this browser", () => { const r = $("#lib-forget"); if (r) r.click(); }, "chips/lock"));
       body.append(list, util);
