@@ -153,6 +153,15 @@ html.nx-intro.phone-shell #panel-tonight { align-content: start; }
   .tn-first-act .lib-btn { flex: none !important; width: 100%; }
 }
 
+/* firstrun.v2 (js/next.js firstRun): purpose, one button, one quiet link; the name grid and everything below it wait behind "Just take a look" */
+html.nx-fr2 :is(#tn-me, #nx-card, #nx-tonight, #nx-queue, #nx-rest, #tn-cards, #tn-before, #tn-how, #tn-actions, #tn-left) { display: none !important; }
+.nx-fr2 { display: grid; justify-items: start; gap: var(--g1); max-width: var(--measure, 62ch); margin-bottom: var(--g2); }
+.nx-fr2 h2 { margin: 0; color: var(--ink); text-shadow: none; font-family: var(--font-display); font-weight: 700; font-size: var(--step-1); line-height: 1.2; }
+.nx-fr2-line { margin: 0; font-family: var(--font-body); font-size: var(--step-0); line-height: 1.4; }
+.nx-fr2 #nx-fr2-go { justify-content: center; min-height: 48px; padding: 8px 22px; font-size: var(--step-0); border-radius: 6px; }
+.nx-fr2 .nx-fr2-look { display: inline-flex; align-items: center; min-height: 44px; }
+@media (max-width: 699px) { .nx-fr2 { justify-items: stretch; } .nx-fr2 .nx-fr2-look { justify-content: center; } }
+
 /* Guided ribbon: four tabs and More; the rest are folded, never removed (js/next.js tabFold) */
 #tabs .tab[data-nx-fold] { display: none !important; }
 #tabs .tabs-more { color: #f4e8c8; text-shadow: 0 1px 2px #1a0f06; flex: none; align-self: flex-start; margin: 6px 0 0 8px; min-height: 44px; padding: 4px 16px; cursor: pointer; white-space: nowrap; }
