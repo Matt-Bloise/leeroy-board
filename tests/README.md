@@ -5,6 +5,7 @@ Automated checks that run against a pull request's preview environment (Cloudfla
 - `api/api.test.mjs`: 8 checks with `node:test` and global `fetch` (health, bootstrap, state, CORS, auth refusal, Discord signature refusal, library index, WebSocket).
 - `browser/live-smoke.mjs`: 74 browser checks in Chromium and WebKit at 390x844 (touch) and 1366x768. Firefox is not used.
 - `browser/votes-card.mjs`: 44 checks (Chromium, 390x844 and 1366x768) on the Votes card with `GET /api/votes` stubbed by route interception: render, inert text, empty and failing states, 60-second polling only while visible.
+- `browser/axe.mjs`: axe-core (`@axe-core/playwright`, WCAG 2 A and AA tags) on the first screen and the sheet (Next steps) in Chromium at 390x844 and 1366x768. Fails on serious or critical violations; minor and moderate ones print as WARN. Exclusions live in `EXCLUDE` at the top of the file, each with a reason.
 - `browser/smoke-retry.mjs`: the retry decision. A check that fails once and passes on a second visit is a warning, not a failure.
 
 ## Run locally
