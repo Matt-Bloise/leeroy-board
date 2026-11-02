@@ -240,6 +240,22 @@ export function formatAnswer(raw, ctx = {}) {
   }
 }
 
+// Page ids a raw or formatted answer cites: bracketed ids anywhere, plus ids on a Sources line (plain or linked).
+export function extractCitedIds(text) {
+  try {
+    const s = String(text || "");
+    const ids = [];
+    for (const m of s.matchAll(/\[([a-z0-9_-]+\/[a-z0-9_.-]+)(?:~[^\]]+)?\](?!\()/gi)) ids.push(m[1]);
+    for (const line of s.split(/\r?\n/)) {
+      const sm = SOURCES_RE.exec(line);
+      if (sm) ids.push(...parseSourceIds(sm[1]));
+    }
+    return [...new Set(ids)];
+  } catch {
+    return [];
+  }
+}
+
 export function answerFormatEnabled(env) {
   return String((env && env.ANSWER_FORMAT) || "on").toLowerCase().trim() !== "off";
 }

@@ -43,7 +43,8 @@ test("platform block keeps the machine rules", () => {
   const p = buildSystemPrompt(persona, ctx);
   assert.match(p, /\[Library-Epoch: stamp9\]/);
   assert.match(p, /strictly from the verified library facts and party state/);
-  assert.match(p, /\[classes\/paladin-holy\]/);
+  assert.match(p, /-# Sources: id1, id2/);
+  assert.doesNotMatch(p, /\[classes\/paladin-holy\]/);
   assert.match(p, /under 900 characters/);
   assert.match(p, /dated party facts that are newer/);
   assert.ok(p.indexOf("SYSTEM TEXT") < p.indexOf("PLATFORM RULES"));
