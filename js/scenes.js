@@ -13,7 +13,7 @@ const SCENES = {
   buffs: () => [new URL("../scenes/buffs.css?v=d7744ab4c3", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
   hades: () => [new URL("../scenes/hades.css?v=858a039a4a", HERE), new URL("../scenes/hades.js?v=a6de8f404c", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=6cd88699fc", HERE)],
-  settings: () => [new URL("../scenes/settings.css?v=f5cbd09225", HERE), new URL("../scenes/settings.js?v=9a667da775", HERE)],
+  settings: () => [new URL("../scenes/settings.css?v=f5cbd09225", HERE), new URL("../scenes/settings.js?v=5f638d5226", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=35a7bbfcac", HERE), new URL("../scenes/refresh.js?v=9c90f169ab", HERE)],
   guided: () => [new URL("../scenes/guided-atlas.css?v=31b46fcf7b", HERE), new URL("../scenes/guided-atlas.js?v=7ea522e843", HERE)],
   tablet: () => [new URL("../scenes/tablet.css?v=a996a39582", HERE), new URL("../scenes/tablet.js?v=e3b0c44298", HERE)],
