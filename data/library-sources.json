@@ -1,0 +1,313 @@
+{
+ "comment": "DRAFT for the owner and architect to confirm. Allow-list of hosts that library data/library/*.json may cite, with licence, attribution text and stored-text policy. storedText: link-only = cite the URL, never store the host's text; attribution-required = text may be stored with the attribution shown. Sources: docs/roadmap/research/notes-R5-ip-commercial.md section 3 and docs/compliance/blizzard-checklist.md rules 5 and 6. Licence fields marked 'not reviewed' were not read; treat them as all rights reserved. knownViolations lists what the data does today, with a reason each; it may only shrink (tests/unit/library-sources.test.mjs). Do not add a host to hosts or raise a count to silence the test.",
+ "version": 1,
+ "hosts": {
+  "worldofwarcraft.blizzard.com": {
+   "name": "Blizzard WoW site",
+   "licence": "Blizzard Entertainment proprietary; all rights reserved",
+   "licenceUrl": "",
+   "attribution": "Link only. Product text states it is not affiliated with or endorsed by Blizzard Entertainment.",
+   "storedText": "link-only",
+   "reviewed": "docs/compliance/blizzard-checklist.md rules 3 and 5; no stored copy of Blizzard pages"
+  },
+  "news.blizzard.com": {
+   "name": "Blizzard news",
+   "licence": "Blizzard Entertainment proprietary; all rights reserved",
+   "licenceUrl": "",
+   "attribution": "Link only. Product text states it is not affiliated with or endorsed by Blizzard Entertainment.",
+   "storedText": "link-only",
+   "reviewed": "docs/compliance/blizzard-checklist.md rules 3 and 5; no stored copy of Blizzard pages"
+  },
+  "us.forums.blizzard.com": {
+   "name": "Blizzard US forums",
+   "licence": "Blizzard Entertainment proprietary; all rights reserved",
+   "licenceUrl": "",
+   "attribution": "Link only. Product text states it is not affiliated with or endorsed by Blizzard Entertainment.",
+   "storedText": "link-only",
+   "reviewed": "docs/compliance/blizzard-checklist.md rules 3 and 5; no stored copy of Blizzard pages"
+  },
+  "eu.forums.blizzard.com": {
+   "name": "Blizzard EU forums",
+   "licence": "Blizzard Entertainment proprietary; all rights reserved",
+   "licenceUrl": "",
+   "attribution": "Link only. Product text states it is not affiliated with or endorsed by Blizzard Entertainment.",
+   "storedText": "link-only",
+   "reviewed": "docs/compliance/blizzard-checklist.md rules 3 and 5; no stored copy of Blizzard pages"
+  },
+  "us.shop.battle.net": {
+   "name": "Blizzard shop",
+   "licence": "Blizzard Entertainment proprietary; all rights reserved",
+   "licenceUrl": "",
+   "attribution": "Link only. Product text states it is not affiliated with or endorsed by Blizzard Entertainment.",
+   "storedText": "link-only",
+   "reviewed": "docs/compliance/blizzard-checklist.md rules 3 and 5; no stored copy of Blizzard pages"
+  },
+  "warcraft.wiki.gg": {
+   "name": "Warcraft Wiki",
+   "licence": "CC BY-SA 4.0 for text; images and audio per file page; Blizzard IP stays Blizzard's",
+   "licenceUrl": "https://warcraft.wiki.gg/wiki/Warcraft_Wiki:Copyrights",
+   "attribution": "Credit Warcraft Wiki (warcraft.wiki.gg) contributors, link the page, link the CC BY-SA 4.0 licence, state any change. Adapted text stays CC BY-SA. Never mirror images.",
+   "storedText": "attribution-required",
+   "reviewed": "docs/roadmap/research/notes-R5-ip-commercial.md 3.1 (2026-11-02); standard CC BY-SA terms not re-read"
+  },
+  "www.wowhead.com": {
+   "name": "Wowhead",
+   "licence": "Proprietary; no terms page retrieved (R5 3.2)",
+   "licenceUrl": "",
+   "attribution": "Link to the source page; do not store its text.",
+   "storedText": "link-only",
+   "reviewed": "R5 3.2: link out, never store page text"
+  },
+  "nether.wowhead.com": {
+   "name": "Wowhead Nether",
+   "licence": "Proprietary; no terms page retrieved (R5 3.2)",
+   "licenceUrl": "",
+   "attribution": "Link to the source page; do not store its text.",
+   "storedText": "link-only",
+   "reviewed": "R5 3.2: link out, never store page text"
+  },
+  "www.icy-veins.com": {
+   "name": "Icy Veins",
+   "licence": "Proprietary; copying needs credit plus a visible link, older terms say written approval (R5 3.4, conflicting)",
+   "licenceUrl": "",
+   "attribution": "Link to the source page; do not store its text.",
+   "storedText": "link-only",
+   "reviewed": "R5 3.4: write guides ourselves, never store guide text"
+  },
+  "www.method.gg": {
+   "name": "Method",
+   "licence": "Proprietary; terms not retrieved",
+   "licenceUrl": "",
+   "attribution": "Link to the source page; do not store its text.",
+   "storedText": "link-only",
+   "reviewed": "not reviewed"
+  },
+  "mobalytics.gg": {
+   "name": "Mobalytics",
+   "licence": "Proprietary; terms not retrieved",
+   "licenceUrl": "",
+   "attribution": "Link to the source page; do not store its text.",
+   "storedText": "link-only",
+   "reviewed": "not reviewed"
+  },
+  "www.warcrafttavern.com": {
+   "name": "Warcraft Tavern",
+   "licence": "Proprietary; terms not retrieved",
+   "licenceUrl": "",
+   "attribution": "Link to the source page; do not store its text.",
+   "storedText": "link-only",
+   "reviewed": "not reviewed"
+  },
+  "www.zockify.com": {
+   "name": "Zockify",
+   "licence": "Proprietary; terms not retrieved",
+   "licenceUrl": "",
+   "attribution": "Link to the source page; do not store its text.",
+   "storedText": "link-only",
+   "reviewed": "not reviewed"
+  }
+ },
+ "knownViolations": {
+  "unlistedHosts": [
+   {
+    "host": "wowforevertools.com",
+    "maxUrls": 144,
+    "reason": "Fan tool site; no licence reviewed."
+   },
+   {
+    "host": "wowforevertalents.com",
+    "maxUrls": 109,
+    "reason": "Fan talent site; no licence reviewed (CLAUDE.md allows fan talent sites only as cross-checks)."
+   },
+   {
+    "host": "www.wow-professions.com",
+    "maxUrls": 61,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "kami-labs.fr",
+    "maxUrls": 33,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "talentsforever.com",
+    "maxUrls": 30,
+    "reason": "Fan talent site; no licence reviewed."
+   },
+   {
+    "host": "conquestcapped.com",
+    "maxUrls": 29,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "wago.tools",
+    "maxUrls": 27,
+    "reason": "Datamined client data host; robots.txt disallows crawling and no licence found (R5 3.3); underlying data is Blizzard's. Highest-risk entry."
+   },
+   {
+    "host": "expcarry.com",
+    "maxUrls": 18,
+    "reason": "Boosting-service site; no licence reviewed."
+   },
+   {
+    "host": "wowforeverguides.com",
+    "maxUrls": 18,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "blizzardwatch.com",
+    "maxUrls": 15,
+    "reason": "Press site; no licence reviewed (link-only would apply)."
+   },
+   {
+    "host": "wowforeverbuilds.com",
+    "maxUrls": 15,
+    "reason": "Fan build site; no licence reviewed."
+   },
+   {
+    "host": "theforeverera.com",
+    "maxUrls": 15,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "foreverchanges.pro",
+    "maxUrls": 15,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "endgametools.com",
+    "maxUrls": 13,
+    "reason": "Tool site; no licence reviewed."
+   },
+   {
+    "host": "foreverdb.net",
+    "maxUrls": 11,
+    "reason": "Fan database; no licence reviewed."
+   },
+   {
+    "host": "wowforevertierlist.com",
+    "maxUrls": 9,
+    "reason": "Fan tier list; no licence reviewed."
+   },
+   {
+    "host": "metammo.com",
+    "maxUrls": 7,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "mmonster.co",
+    "maxUrls": 6,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "www.curseforge.com",
+    "maxUrls": 6,
+    "reason": "Addon host; terms not reviewed (link-only would apply)."
+   },
+   {
+    "host": "lfcarry.com",
+    "maxUrls": 4,
+    "reason": "Boosting-service site; no licence reviewed."
+   },
+   {
+    "host": "wofwforever.com",
+    "maxUrls": 4,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "wow-forever.gg",
+    "maxUrls": 4,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "wowhandbook.com",
+    "maxUrls": 4,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "guildorder.com",
+    "maxUrls": 3,
+    "reason": "Guild-tool site; no licence reviewed."
+   },
+   {
+    "host": "timesaver.gg",
+    "maxUrls": 3,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "wowdb.wiki",
+    "maxUrls": 3,
+    "reason": "Fan database; no licence reviewed."
+   },
+   {
+    "host": "warperia.com",
+    "maxUrls": 3,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "wow.gg",
+    "maxUrls": 2,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "wowf.io",
+    "maxUrls": 2,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "www.techradar.com",
+    "maxUrls": 2,
+    "reason": "Press site; no licence reviewed (link-only would apply)."
+   },
+   {
+    "host": "www.gamespot.com",
+    "maxUrls": 1,
+    "reason": "Press site; no licence reviewed (link-only would apply)."
+   },
+   {
+    "host": "guided.news",
+    "maxUrls": 1,
+    "reason": "News site; no licence reviewed."
+   },
+   {
+    "host": "wowtbc.gg",
+    "maxUrls": 1,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "rankedboost.com",
+    "maxUrls": 1,
+    "reason": "Guide site; no licence reviewed."
+   },
+   {
+    "host": "raidforever.com",
+    "maxUrls": 1,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "www.windowscentral.com",
+    "maxUrls": 1,
+    "reason": "Press site; no licence reviewed (link-only would apply)."
+   },
+   {
+    "host": "dving.net",
+    "maxUrls": 1,
+    "reason": "Fan site; no licence reviewed."
+   },
+   {
+    "host": "maxroll.gg",
+    "maxUrls": 1,
+    "reason": "Guide site; no licence reviewed (link-only would apply)."
+   }
+  ],
+  "linkOnlyLongText": [
+   {
+    "file": "tooltips.json",
+    "host": "www.wowhead.com",
+    "field": "lines",
+    "maxEntries": 69,
+    "reason": "Stores Wowhead in-game tooltip text (lines) for entries over 300 characters; Wowhead is link-only (R5 3.2). The tooltips file holds text for every entry, not only the long ones. Replace with link plus our own paraphrase, or get written permission."
+   }
+  ]
+ }
+}
