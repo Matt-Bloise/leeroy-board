@@ -7,6 +7,7 @@ const SCENES = {
   chamber: () => [new URL("../scenes/chamber.css?v=ba47e5cb41", HERE), new URL("../scenes/chamber.js?v=c8f5fc8fc6", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=67ef669934", HERE), new URL("../scenes/decide.js?v=1675a4a57a", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=c41750fabe", HERE), new URL("../scenes/probe.js?v=5d73e2299f", HERE)],
+  data: () => [new URL("../scenes/data.css?v=ee39216ed8", HERE), new URL("../scenes/data.js?v=d277db3cef", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=9a7fa09c43", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1280b387e0", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
@@ -91,6 +92,9 @@ K.on("scene", (k) => {
 K.on("tonight", () => { const me = K.MEM && K.MEM.me(); if (me && me !== "just-looking") load("sheet"); });
 const probeHash = () => { try { return decodeURIComponent(String(location.hash || "").slice(1)) === "probe"; } catch (e) { return false; } };
 if (probeHash()) load("probe");
+const dataHash = () => { try { return decodeURIComponent(String(location.hash || "").slice(1)) === "data"; } catch (e) { return false; } };
+if (dataHash()) load("data");
+addEventListener("hashchange", () => { if (dataHash()) load("data"); });
 try { const g = localStorage.getItem("board-journey"); if ((!g || g === "guided")) load("guided"); } catch (e) {}
 document.addEventListener("click", (e) => { const t = e.target; if (t && t.closest && t.closest('[data-journey="guided"]')) load("guided"); }, true);
 try { if (/^(roads|atlas)(\.|$)/.test(decodeURIComponent(String(location.hash || "").slice(1)))) load("wide"); } catch (e) {}
