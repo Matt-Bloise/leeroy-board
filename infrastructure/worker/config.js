@@ -1,10 +1,12 @@
 import { isMemberId } from "./members.js";
+import { validateCardsConfig } from "./cards.js";
+import { validateNoiseConfig } from "./noise.js";
 
-// Admin-only config rows that live only in D1 (kv_state), never in the repo: name_map, discord_members, discord_roster and ai_budget_caps.
+// Admin-only config rows that live only in D1 (kv_state), never in the repo: name_map, discord_members, discord_roster, ai_budget_caps, cards (pinned card message ids) and noise (post budget).
 // Written by PUT /api/config/<key>; there is no GET route. Cached 60 s per isolate; PUT invalidates the cache.
 // Every reader falls back to null when the row is missing, so an unseeded Worker refuses or no-ops safely.
 
-export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps"];
+export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps", "cards", "noise"];
 export const CONFIG_MAX_BYTES = 20000;
 
 const TTL_MS = 60 * 1000;
@@ -80,6 +82,8 @@ export function validateConfigValue(key, value) {
     if (value.tenantSharePct !== undefined && !(typeof value.tenantSharePct === "number" && value.tenantSharePct > 0 && value.tenantSharePct <= 100)) return "tenantSharePct must be a number above 0 and at most 100";
     return null;
   }
+  if (key === "cards") return validateCardsConfig(value);
+  if (key === "noise") return validateNoiseConfig(value);
   return "unknown key";
 }
 
@@ -104,7 +108,7 @@ export function buildThreadMention(person, roster) {
 
 // kv_state rows that hold configuration or private working data. GET /api/data/<key> must never serve them:
 // that route is public and serves any kv_state key. Exact keys plus prefixes; matching is case-insensitive.
-const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "vocab", "votes:index", "feed_posts"]);
+const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "vocab", "votes:index", "feed_posts", "cards", "cards_edit", "board_lines_pending", "noise"]);
 const PRIVATE_PREFIXES = ["ai_budget:", "vote:", "votes:", "feed_", "private:", "config:", "secret"];
 export function isPrivateKvKey(key) {
   const k = String(key || "").trim().toLowerCase();
