@@ -1,8 +1,11 @@
 // /build modal (Q19): payload, submit parsing and the D1 write. Pure apart from saveConfirmedBuild(), which takes env.DB.
 // Writes only tables from migration 0002 (users, tenants, characters, builds). Nothing here calls Blizzard or an AI.
 
+import { BAD_NAME } from "./member-model.js";
+
 export const BUILD_MODAL_ID = "build:modal";
 export const NOTES_MAX = 1000;
+export const HANDLE_MAX = 40;
 
 export const CLASSES = ["Warrior", "Paladin", "Hunter", "Rogue", "Priest", "Shaman", "Mage", "Warlock", "Druid"];
 export const FACTION_OF_RACE = {
@@ -25,6 +28,10 @@ export function buildModalEnabled(env) {
   return ["1", "true", "on", "yes"].includes(String((env && env.BUILD_MODAL) || "").trim().toLowerCase());
 }
 
+export function buildProjectEnabled(env) {
+  return ["1", "true", "on", "yes"].includes(String((env && env.BUILD_PROJECT) || "").trim().toLowerCase());
+}
+
 export function isSnowflake(id) {
   return SNOWFLAKE.test(String(id || ""));
 }
@@ -35,7 +42,9 @@ const select = (custom_id, label, values) => ({
   component: { type: 3, custom_id, placeholder: label, min_values: 1, max_values: 1, options: values.map((v) => ({ label: v, value: v })) },
 });
 
-// Discord allows 5 top-level modal components, so faction is not asked: it follows from the race.
+// Discord allows 5 top-level modal components. Faction is not asked (it follows from the race), and Ruleset was dropped to make room
+// for the handle: the ruleset is one setting for the whole party (the party document has it), so asking each person invites a
+// contradiction and nothing on the board reads a per-person value.
 export function buildModalResponse() {
   return {
     type: 9,
@@ -43,9 +52,13 @@ export function buildModalResponse() {
       custom_id: BUILD_MODAL_ID,
       title: "Your build",
       components: [
+        {
+          type: 18,
+          label: "Game handle (shown on the board)",
+          component: { type: 4, custom_id: "handle", style: 1, required: true, min_length: 2, max_length: HANDLE_MAX, placeholder: "A character name, never a real name" },
+        },
         select("class", "Class", CLASSES),
         select("race", "Race (sets your faction)", RACES),
-        select("ruleset", "Ruleset", RULESETS),
         select("role", "Role", ROLES),
         {
           type: 18,
@@ -73,20 +86,31 @@ export function readModalValues(components) {
   return out;
 }
 
-// Returns { ok: true, build } or { ok: false, error }.
+// The handle is the name the board shows, and the board finds people by name, so it is cleaned the same way planProjection cleans it.
+export function cleanHandle(raw) {
+  return typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
+}
+
+// Returns { ok: true, build, handle } or { ok: false, error }. The handle is returned beside the build, not inside it,
+// so builds.data_json keeps the shape it always had.
 export function parseBuildSubmit(components) {
   const v = readModalValues(components);
+  const handle = cleanHandle(v.handle);
+  if (!handle || handle.length > HANDLE_MAX) return { ok: false, error: `Enter your game handle (1 to ${HANDLE_MAX} characters).` };
+  if (BAD_NAME.test(handle)) return { ok: false, error: "Your handle must be a game handle: no @, links, slashes or publisher names." };
   if (!CLASSES.includes(v.class)) return { ok: false, error: "Pick a class." };
   if (!RACES.includes(v.race)) return { ok: false, error: "Pick a race." };
-  if (!RULESETS.includes(v.ruleset)) return { ok: false, error: "Pick a ruleset." };
+  // An older open modal may still send a ruleset; it is kept when valid and left out otherwise.
+  if (v.ruleset !== undefined && !RULESETS.includes(v.ruleset)) return { ok: false, error: "Pick a ruleset." };
   if (!ROLES.includes(v.role)) return { ok: false, error: "Pick a role." };
   return {
     ok: true,
+    handle,
     build: {
       class: v.class,
       race: v.race,
       faction: FACTION_OF_RACE[v.race],
-      ruleset: v.ruleset,
+      ...(v.ruleset !== undefined ? { ruleset: v.ruleset } : {}),
       role: v.role,
       notes: String(v.notes || "").slice(0, NOTES_MAX),
     },
@@ -100,7 +124,7 @@ export const SQL = {
     "ON CONFLICT(discord_user_id) DO UPDATE SET display_name = excluded.display_name",
   character:
     "INSERT INTO characters (id, tenant_id, discord_user_id, name, realm, region, class, spec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?) " +
-    "ON CONFLICT(id) DO UPDATE SET class = excluded.class",
+    "ON CONFLICT(id) DO UPDATE SET class = excluded.class, name = excluded.name",
   build:
     "INSERT INTO builds (id, character_id, source, status, title, data_json, created_at, confirmed_at) " +
     "VALUES (?, ?, 'modal', 'confirmed', ?, ?, ?, ?)",
@@ -119,8 +143,11 @@ export function resetBuildModalWarning() {
 // Result: { saved: true, buildId } or { saved: false, reason: "no-tables" | "no-tenant" | "bad-user" | "error" }.
 // The identities table is attach-only (battlenet, twitch, google, github) and never holds Discord itself,
 // so the Discord user id is recorded in users only.
-export async function saveConfirmedBuild(env, { discordUserId, displayName, guildId, build, now = new Date(), newId = () => crypto.randomUUID() }) {
-  if (!isSnowflake(discordUserId) || !isSnowflake(guildId)) return { saved: false, reason: "bad-user" };
+// characters.name holds the game handle (it held the Discord id before the handle field existed; a resubmit corrects such a row).
+export const buildTitle = (build) => `${build.class} ${build.role}${build.ruleset ? ` (${build.ruleset})` : ""}`;
+
+export async function saveConfirmedBuild(env, { discordUserId, displayName, guildId, build, handle, now = new Date(), newId = () => crypto.randomUUID() }) {
+  if (!isSnowflake(discordUserId) || !isSnowflake(guildId) || !cleanHandle(handle)) return { saved: false, reason: "bad-user" };
   try {
     const tenant = await env.DB.prepare(SQL.tenant).bind(String(guildId)).first();
     if (!tenant || !tenant.id) {
@@ -130,10 +157,10 @@ export async function saveConfirmedBuild(env, { discordUserId, displayName, guil
     const at = now.toISOString();
     const characterId = `${tenant.id}:${discordUserId}`;
     const buildId = newId();
-    const title = `${build.class} ${build.role} (${build.ruleset})`;
+    const title = buildTitle(build);
     await env.DB.batch([
       env.DB.prepare(SQL.user).bind(String(discordUserId), String(displayName || "").slice(0, 80) || null, at),
-      env.DB.prepare(SQL.character).bind(characterId, tenant.id, String(discordUserId), String(discordUserId), "unset", "us", build.class, at),
+      env.DB.prepare(SQL.character).bind(characterId, tenant.id, String(discordUserId), cleanHandle(handle), "unset", "us", build.class, at),
       env.DB.prepare(SQL.build).bind(buildId, characterId, title, JSON.stringify(build), at, at),
     ]);
     return { saved: true, buildId };

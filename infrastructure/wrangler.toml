@@ -64,3 +64,6 @@ BOARD_PUBLIC_URL = "https://leeroy.party"
 WEB_LOGIN = "off" # Q18 web Discord login: "on" enables /api/auth/discord/start, /callback, /api/auth/logout and cookie sessions on GET /api/me
 DATA_RIGHTS = "off" # Q59 member data export and erase: "on" enables GET /api/me/export and POST /api/me/erase (404 while off)
 ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://leeroy.party,https://www.leeroy.party,https://api.leeroy.party,https://1561857940174938114.discordsays.com"
+BUILD_MODAL = "off" # Q19 /build modal with a handle field, and /join (listed in the command manifest only while on). "on" enables it
+BUILD_PROJECT = "off" # needs BUILD_MODAL on. "on": a confirmed submit also writes the roster entry and the party document in one atomic batch, then purges and broadcasts
+JOIN_PROMPT = "off" # needs BUILD_MODAL on. "on": an unknown Discord user of /ask or /sheet gets one ephemeral hint with a Join button

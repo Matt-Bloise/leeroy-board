@@ -40,16 +40,9 @@ import { guestIpKey } from "./guest-key.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
+import { PARTY_MEMBERS, loadPartyMembers } from "./party-source.js";
 
 export { BoardRoom };
-
-const PARTY_MEMBERS = [
-  { slug: "santa", name: "Santa", race: "tauren", class: "druid", spec_path: "feral-tank", professions: ["leatherworking", "skinning"], plan_zone: "mulgore" },
-  { slug: "bible-boi", name: "Bible Boi", race: "undead", class: "priest", spec_path: "discipline", professions: ["mining", "engineering"], plan_zone: "tirisfal-glades" },
-  { slug: "street-rat", name: "Street Rat", race: "undead", class: "paladin", spec_path: "retribution", spec_at_40: "holy", professions: ["blacksmithing", "mining"], plan_zone: "tirisfal-glades" },
-  { slug: "bloise", name: "Bloise", race: "undead", class: "mage", spec_path: "frost", spec_at_40: "fire", professions: ["tailoring", "enchanting"], plan_zone: "tirisfal-glades" },
-  { slug: "handsome-squidward", name: "Handsome Squidward", race: "troll", class: "warlock", spec_path: "demonology", professions: ["enchanting", "tailoring"], plan_zone: "durotar" },
-];
 
 const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"];
 
@@ -59,6 +52,9 @@ async function resolveMemberAuth(req, url, env) {
   if (authWho && authWho.slug) {
     const found = PARTY_MEMBERS.find((m) => m.slug === authWho.slug);
     if (found) return { ok: true, member: found };
+    // Not one of the built-in five: the party document in D1 may know them (read only on this miss, so the five cost no extra query).
+    const fromDoc = (await loadPartyMembers(env)).find((m) => m.slug === authWho.slug);
+    if (fromDoc) return { ok: true, member: fromDoc };
     return { ok: true, member: { slug: authWho.slug, name: authWho.name || authWho.slug } };
   }
 
@@ -218,7 +214,7 @@ export async function buildPartySheetsFromD1(env) {
   // 2. Slow path / bootstrap fallback: Reconstruct from base + sheet_events
   const bySlug = new Map();
 
-  for (const m of PARTY_MEMBERS) {
+  for (const m of await loadPartyMembers(env)) {
     const fields = {};
     for (const f of SHEET_FIELDS) {
       if (m[f] !== undefined) {

@@ -27,12 +27,13 @@ const submit = (values) => {
   const i = withIds(fx("modal-submit.json"));
   i.data.custom_id = "build:modal";
   i.data.components = [
-    ...["class", "race", "ruleset", "role"].map((k) => ({ type: 18, component: { type: 3, custom_id: k, values: [values[k]] } })),
+    ...["class", "race", "role"].map((k) => ({ type: 18, component: { type: 3, custom_id: k, values: [values[k]] } })),
+    { type: 18, component: { type: 4, custom_id: "handle", value: values.handle } },
     { type: 18, component: { type: 4, custom_id: "notes", value: values.notes } },
   ];
   return i;
 };
-const GOOD = { class: "Mage", race: "Gnome", ruleset: "Roleplay PvP", role: "DPS", notes: "frost, then arcane" };
+const GOOD = { handle: "Fizzwick", class: "Mage", race: "Gnome", role: "DPS", notes: "frost, then arcane" };
 
 function stubDb({ tenant = { id: TENANT_ID }, failWith = null } = {}) {
   const log = [];
@@ -87,14 +88,16 @@ test("BUILD_MODAL off: /build keeps the existing reply (type 4, ephemeral)", asy
   assert.equal(body.data.flags & 64, 64);
 });
 
-test("BUILD_MODAL on: /build opens a modal with class, race, ruleset, role and a 1000 char notes input", async () => {
+test("BUILD_MODAL on: /build opens a modal with handle, class, race, role and a 1000 char notes input (ruleset was dropped for the handle)", async () => {
   const { body } = await run(withIds(fx("cmd-build.json")), { BUILD_MODAL: "1" });
   assert.equal(body.type, 9);
   assert.equal(body.data.custom_id, "build:modal");
   assert.ok(body.data.components.length <= 5, "Discord allows 5 top-level modal components");
   const inner = body.data.components.map((c) => c.component);
-  assert.deepEqual(inner.map((c) => c.custom_id), ["class", "race", "ruleset", "role", "notes"]);
-  assert.deepEqual(inner[2].options.map((o) => o.value), ["Normal", "PvP", "Roleplay", "Roleplay PvP"]);
+  assert.deepEqual(inner.map((c) => c.custom_id), ["handle", "class", "race", "role", "notes"]);
+  assert.equal(inner[0].type, 4);
+  assert.equal(inner[0].required, true);
+  assert.equal(inner[0].max_length, 40);
   assert.deepEqual(inner[3].options.map((o) => o.value), ["Tank", "Healer", "DPS"]);
   assert.equal(inner[4].type, 4);
   assert.equal(inner[4].max_length, 1000);
@@ -119,16 +122,16 @@ test("modal submit: defers (type 5) then writes exact SQL and edits the reply wi
   assert.deepEqual(u.args.slice(0, 2), [USER_ID, "Fixture Tester"]);
   assert.equal(
     c.sql,
-    "INSERT INTO characters (id, tenant_id, discord_user_id, name, realm, region, class, spec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?) ON CONFLICT(id) DO UPDATE SET class = excluded.class"
+    "INSERT INTO characters (id, tenant_id, discord_user_id, name, realm, region, class, spec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?) ON CONFLICT(id) DO UPDATE SET class = excluded.class, name = excluded.name"
   );
-  assert.deepEqual(c.args.slice(0, 7), [`${TENANT_ID}:${USER_ID}`, TENANT_ID, USER_ID, USER_ID, "unset", "us", "Mage"]);
+  assert.deepEqual(c.args.slice(0, 7), [`${TENANT_ID}:${USER_ID}`, TENANT_ID, USER_ID, "Fizzwick", "unset", "us", "Mage"]);
   assert.equal(
     b.sql,
     "INSERT INTO builds (id, character_id, source, status, title, data_json, created_at, confirmed_at) VALUES (?, ?, 'modal', 'confirmed', ?, ?, ?, ?)"
   );
   assert.equal(b.args[1], `${TENANT_ID}:${USER_ID}`);
-  assert.equal(b.args[2], "Mage DPS (Roleplay PvP)");
-  assert.deepEqual(JSON.parse(b.args[3]), { class: "Mage", race: "Gnome", faction: "Alliance", ruleset: "Roleplay PvP", role: "DPS", notes: "frost, then arcane" });
+  assert.equal(b.args[2], "Mage DPS");
+  assert.deepEqual(JSON.parse(b.args[3]), { class: "Mage", race: "Gnome", faction: "Alliance", role: "DPS", notes: "frost, then arcane" });
   assert.equal(b.args[4], b.args[5], "confirmed_at is set with created_at");
   assert.ok(db.log.every((e) => !/identities/.test(e.sql)), "identities is attach-only and never gets a Discord row");
 
@@ -176,6 +179,12 @@ test("parseBuildSubmit rejects unknown values and clamps notes to 1000", () => {
   const rows = (v) => Object.entries(v).map(([custom_id, value]) => ({ type: 1, components: [{ type: custom_id === "notes" ? 4 : 3, custom_id, ...(custom_id === "notes" ? { value } : { values: [value] }) }] }));
   assert.equal(parseBuildSubmit(rows({ ...GOOD, class: "Death Knight" })).ok, false);
   assert.equal(parseBuildSubmit(rows({ ...GOOD, role: "Support" })).ok, false);
+  assert.equal(parseBuildSubmit(rows({ ...GOOD, handle: "" })).ok, false, "a handle is required");
+  assert.equal(parseBuildSubmit(rows({ ...GOOD, handle: "x".repeat(41) })).ok, false);
+  for (const bad of ["a@b", "see https://x.test", "Blizzard Fan", "a/b"]) assert.equal(parseBuildSubmit(rows({ ...GOOD, handle: bad })).ok, false, bad);
+  assert.equal(parseBuildSubmit(rows({ ...GOOD, ruleset: "Hardcore" })).ok, false, "a ruleset an older open modal sends must still be valid");
+  assert.equal(parseBuildSubmit(rows({ ...GOOD, ruleset: "PvP" })).build.ruleset, "PvP");
+  assert.equal(parseBuildSubmit(rows({ ...GOOD, handle: "  Fizz   wick " })).handle, "Fizz wick");
   const ok = parseBuildSubmit(rows({ ...GOOD, notes: "x".repeat(1500) }));
   assert.equal(ok.ok, true);
   assert.equal(ok.build.notes.length, 1000);
