@@ -230,10 +230,169 @@ function format(raw, ctx) {
   return text;
 }
 
+// ---- Deterministic voice guards (ANSWER_UX=on). Pure and idempotent: applyVoiceGuards(applyVoiceGuards(x)) === applyVoiceGuards(x).
+
+const URL_SPLIT_RE = /(https?:\/\/[^\s<>)]+)/g;
+// Mention syntax that would ping: @everyone, @here, <@id>, <@!id>, <@&id>.
+const MENTION_RE = /@(?:everyone|here)\b|<@[!&]?\d+>/gi;
+const STOCK_OPENER_RE =
+  /(^|[.!?]["')*]*\s+|\n[ \t]*(?:•[ \t]+)?)(\*\*)?(honestly|on paper|the honest bit|the catch|short answer|great question)(\*\*)?(?:[ \t]*([,:;!.—–-]+))?(\*\*)?[ \t]*(\S)?/gi;
+// Openers that read as an adverb and are safe to drop with or without punctuation after them.
+const LOOSE_OPENERS = new Set(["honestly", "on paper"]);
+const EMOJI_RE =
+  /\p{Regional_Indicator}{2}|(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}️)\p{Emoji_Modifier}?(?:‍(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}️?)\p{Emoji_Modifier}?)*/gu;
+const SKIPPY_TEST_RE = /\bSkippy\b/i;
+const SKIPPY_ALL_RE = /\bSkippy\b/gi;
+// A sentence that, once renamed, says "Leeroy is not Leeroy" or "Leeroy, also known as Leeroy" cannot survive the rename.
+const SELF_REF_RE =
+  /\bLeeroy\b[^.!?\n]{0,40}?\b(?:and|or|vs\.?|versus|aka|a\.k\.a\.?|formerly|previously|not|isn't|is not|also known as|renamed|replaced|replaces)\b[^.!?\n]{0,40}?\bLeeroy\b|\bLeeroy\s*\((?:also |formerly |aka )?Leeroy\)/i;
+
+export const DEFAULT_EGG = Object.freeze({ line: "At least I have chicken.", oneIn: 12 });
+
+function eggHash(seed) {
+  let h = 2166136261;
+  for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  h ^= h >>> 15;
+  h = Math.imul(h, 2246822519) >>> 0;
+  h ^= h >>> 13;
+  return h >>> 0;
+}
+
+export function eggSettings(egg) {
+  const e = egg && typeof egg === "object" ? egg : {};
+  const line = typeof e.line === "string" && e.line.trim() && e.line.length <= 200 ? e.line.trim() : DEFAULT_EGG.line;
+  const n = Math.floor(Number(e.oneIn));
+  return { line, oneIn: n >= 1 && n <= 100000 ? n : DEFAULT_EGG.oneIn };
+}
+
+// Whether the chicken line goes on this intent. Deterministic from a hash of the intent id, never random.
+export function eggDue(intentId, egg) {
+  const id = String(intentId == null ? "" : intentId);
+  if (!id) return false;
+  return eggHash(id) % eggSettings(egg).oneIn === 0;
+}
+
+// Apply fn to the parts of a text that are not URLs, so links survive renames.
+function outsideUrls(text, fn) {
+  return text
+    .split(URL_SPLIT_RE)
+    .map((part, i) => (i % 2 === 1 ? part : fn(part)))
+    .join("");
+}
+
+function escapeRe(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function renameSkippy(text) {
+  if (!SKIPPY_TEST_RE.test(text)) return text;
+  const lines = text.split("\n").map((line) => {
+    if (!SKIPPY_TEST_RE.test(line)) return line;
+    const sentences = line.match(/[^.!?]+[.!?]*["')*]*\s*/g) || [line];
+    const kept = sentences.filter((sent) => !SKIPPY_TEST_RE.test(sent) || !SELF_REF_RE.test(sent.replace(SKIPPY_ALL_RE, "Leeroy")));
+    return kept.join("").replace(SKIPPY_ALL_RE, "Leeroy");
+  });
+  const out = lines.join("\n");
+  return out.trim() ? out : text.replace(SKIPPY_ALL_RE, "Leeroy");
+}
+
+function applyRoster(text, roster) {
+  if (!roster || typeof roster !== "object") return text;
+  const pairs = Object.entries(roster)
+    .filter(([alias, display]) => typeof alias === "string" && alias.trim() && typeof display === "string" && display.trim())
+    .map(([alias, display]) => [alias.trim(), display.trim()])
+    .filter(([alias, display]) => alias.toLowerCase() !== display.toLowerCase())
+    .sort((a, b) => b[0].length - a[0].length);
+  let out = text;
+  for (const [alias, display] of pairs) {
+    const at = display.toLowerCase().indexOf(alias.toLowerCase());
+    const pre = at > 0 ? display.slice(0, at) : "";
+    const post = at >= 0 ? display.slice(at + alias.length) : "";
+    const re = new RegExp(
+      `${pre ? `(?<!${escapeRe(pre)})` : ""}(?<![\\w-])${escapeRe(alias)}(?![\\w-])${post ? `(?!${escapeRe(post)})` : ""}`,
+      "gi"
+    );
+    out = outsideUrls(out, (part) => part.replace(re, display));
+  }
+  return out;
+}
+
+function stripOpeners(text) {
+  let out = text;
+  for (let i = 0; i < 6; i++) {
+    const next = out.replace(STOCK_OPENER_RE, (m, pre, boldOpen, opener, boldMid, punct, boldEnd, nextCh) => {
+      if (!punct && !LOOSE_OPENERS.has(String(opener).toLowerCase())) return m;
+      if (!nextCh) return m; // nothing follows: keep it rather than leave an empty sentence
+      const keepBold = boldOpen && !boldMid && !boldEnd ? "**" : "";
+      return `${pre}${keepBold}${nextCh.toUpperCase()}`;
+    });
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
+
+function limitBold(text) {
+  let seen = false;
+  return text.replace(/\*\*([^*\n]+)\*\*/g, (m, inner) => {
+    if (!seen) {
+      seen = true;
+      return m;
+    }
+    return inner;
+  });
+}
+
+function limitEmoji(text, max) {
+  let n = 0;
+  return text.replace(EMOJI_RE, (m) => (++n <= max ? m : ""));
+}
+
+// opts: roster ({ alias: display }), full (chat answers: also openers, bold, emoji and the chicken egg), intentId,
+// egg ({ line, oneIn }), isCoach (no egg).
+export function applyVoiceGuards(text, opts = {}) {
+  if (typeof text !== "string" || !text) return text;
+  try {
+    let out = text.replace(/\r\n?/g, "\n");
+    out = renameSkippy(out);
+    out = outsideUrls(out, (part) => part.replace(/\bMatt\b/g, "Bloise"));
+    out = applyRoster(out, opts.roster);
+    out = out.replace(MENTION_RE, "");
+    if (opts.full) {
+      out = stripOpeners(out);
+      out = limitBold(out);
+      out = limitEmoji(out, 3);
+    }
+    out = out
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/[ \t]+$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    if (!out) return text;
+    if (opts.full && !opts.isCoach && eggDue(opts.intentId, opts.egg)) {
+      const { line } = eggSettings(opts.egg);
+      if (!out.toLowerCase().includes(line.toLowerCase())) out = `${out}\n\n${line}`;
+    }
+    return out;
+  } catch {
+    return text;
+  }
+}
+
 export function formatAnswer(raw, ctx = {}) {
   if (typeof raw !== "string") return raw;
   try {
-    const out = format(raw, ctx && typeof ctx === "object" ? ctx : {});
+    const c = ctx && typeof ctx === "object" ? ctx : {};
+    let out = format(raw, c);
+    if (c.ux && typeof out === "string" && out.length) {
+      out = applyVoiceGuards(out, {
+        full: true,
+        roster: c.roster,
+        intentId: c.intentId,
+        egg: c.egg,
+        isCoach: Boolean(c.isCoach) || c.journey === "guided",
+      });
+    }
     return typeof out === "string" && out.length ? out : raw;
   } catch {
     return raw;
@@ -258,4 +417,8 @@ export function extractCitedIds(text) {
 
 export function answerFormatEnabled(env) {
   return String((env && env.ANSWER_FORMAT) || "on").toLowerCase().trim() !== "off";
+}
+
+export function answerUxEnabled(env) {
+  return String((env && env.ANSWER_UX) || "off").toLowerCase().trim() === "on";
 }
