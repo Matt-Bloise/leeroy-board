@@ -2,7 +2,7 @@
 // Run: node --test tests/unit/format.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { repairHouseVoice, webBoardLinks } from "../../infrastructure/worker/ai-models.js";
+import { repairHouseVoice, webBoardLinks, webBoardLinksDeep } from "../../infrastructure/worker/ai-models.js";
 
 test("newlines and blank lines survive", () => {
   const out = repairHouseVoice("**Lead line here for the answer.**\n\nSecond chunk of text.\nMage - ranged\nDruid - any role");
@@ -57,4 +57,27 @@ test("webBoardLinks removes an invalid token", () => {
 
 test("webBoardLinks passes null through", () => {
   assert.equal(webBoardLinks(null), null);
+});
+
+test("webBoardLinksDeep converts tokens nested in objects and arrays", () => {
+  const input = { stats: { recent: [{ a: "Hi\n-# {board:library.classes.mage}", q: "plain" }] }, n: 3, z: null };
+  const out = webBoardLinksDeep(input);
+  assert.equal(out.stats.recent[0].a, "Hi\n-# https://leeroy.party/#library.classes.mage");
+  assert.equal(out.stats.recent[0].q, "plain");
+  assert.equal(out.n, 3);
+  assert.equal(out.z, null);
+  assert.ok(!JSON.stringify(out).includes("{board:"));
+});
+
+test("webBoardLinksDeep drops malformed tokens and does not mutate its input", () => {
+  const input = { a: ["x {board:Bad Token!} y"] };
+  const out = webBoardLinksDeep(input);
+  assert.equal(out.a[0], "x  y");
+  assert.equal(input.a[0], "x {board:Bad Token!} y");
+});
+
+test("webBoardLinksDeep returns the same reference when nothing changes", () => {
+  const input = { a: [1, "two", { b: "three" }] };
+  assert.equal(webBoardLinksDeep(input), input);
+  assert.equal(webBoardLinksDeep("untouched  "), "untouched  ");
 });

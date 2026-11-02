@@ -88,6 +88,37 @@ export function webBoardLinks(text) {
     .trim();
 }
 
+// Website-only, recursive: run webBoardLinks over every string that carries a
+// {board:...} token inside a JSON-like value (objects, arrays). Returns a copy only
+// where something changed; everything else is passed through untouched. Used for
+// bootstrap/state/data responses and room broadcasts. Never applied to what is stored.
+export function webBoardLinksDeep(value) {
+  if (typeof value === "string") return value.includes("{board:") ? webBoardLinks(value) : value;
+  if (Array.isArray(value)) {
+    let out = null;
+    value.forEach((v, i) => {
+      const n = webBoardLinksDeep(v);
+      if (n !== v) {
+        if (!out) out = value.slice();
+        out[i] = n;
+      }
+    });
+    return out || value;
+  }
+  if (value && typeof value === "object") {
+    let out = null;
+    for (const k of Object.keys(value)) {
+      const n = webBoardLinksDeep(value[k]);
+      if (n !== value[k]) {
+        if (!out) out = { ...value };
+        out[k] = n;
+      }
+    }
+    return out || value;
+  }
+  return value;
+}
+
 export function isPrPreviewEnv(env) {
   if (!env) return false;
   return (
