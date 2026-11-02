@@ -174,13 +174,59 @@ function render() {
 }
 
 /* firstrun.v2 (data/client.json flags): a visitor with no saved name sees purpose, one button and one quiet link, never the list of names. "Just take a look" opens the old name grid. Strings: data/cta.json (ids firstrun-*). */
-const FR = { peek: false, cta: null, p: null };
+const FR = { peek: false, cta: null, p: null, you: null };
+/* Q28 "Is this you?": when the board knows the viewer's Discord display name (the Activity user, or the web session answer of /api/me), one confirmation card replaces the name grid. No Discord id is read or shown. */
+const YOU = { name: null, build: null, no: false, empty: false, p: null };
+const clip = (v) => (typeof v === "string" ? v.replace(/[ -<>]/g, "").trim().slice(0, 40) : "");
+function youFrom(o) {
+  if (!o || typeof o !== "object") return;
+  const n = clip(o.display_name) || clip(o.global_name) || clip(o.name) || clip(o.username);
+  if (n && !YOU.name) YOU.name = n;
+  const b = { class: clip(o.class || o.class_name), race: clip(o.race), role: clip(o.role) };
+  if (b.class || b.race || b.role) YOU.build = b;
+}
+function youLoad() {
+  if (YOU.p) return YOU.p;
+  const A = window.__ACTIVITY__; if (A && typeof A === "object") youFrom(A.user && typeof A.user === "object" ? A.user : A);
+  const B = brain(), u = B && B.url ? B.url("/me") : null;
+  if (!u || typeof fetch !== "function") return null; /* the brain may not be loaded yet: ask again on the next pass */
+  YOU.p = fetch(u, { cache: "no-store", credentials: "include" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => { youFrom(j); firstRun(); });
+  return YOU.p;
+}
+const youOn = () => !!(FR.you && YOU.name && !YOU.no);
+const youMember = () => {
+  const ms = (D.party && D.party.members) || [], n = K.cleanName(YOU.name).toLowerCase();
+  const byName = ms.filter((m) => K.cleanName(m.name).toLowerCase() === n);
+  return byName.length === 1 ? byName[0] : null; /* by name only: a shared class never makes someone else you */
+};
+const buildText = (b) => [b.race, b.class].filter(Boolean).join(" ") + (b.role ? `, ${b.role}` : "");
+function youYes() {
+  sfx("page"); const m = youMember();
+  if (!m) { YOU.empty = true; firstRun(); focus($("#nx-you-h")); return; }
+  const sl = MEM.slug(m.name);
+  if (!MEM.setMe(sl)) { YOU.empty = true; firstRun(); return; }
+  location.hash = `#tonight.${sl}`;
+  try { document.dispatchEvent(new CustomEvent("board:first-value")); } catch (err) {}
+  setTimeout(() => { firstRun(); render(); go(`five.sheet-${sl}`); }, 0);
+}
+function youNo() { YOU.no = true; FR.peek = true; sfx("page"); firstRun(); render(); }
+function youCard(el) {
+  const T = FR.you, nm = YOU.name, key = YOU.empty ? "e" : "c";
+  if (el && el.dataset.k === key) return el;
+  rm(el);
+  const kids = YOU.empty
+    ? [h("h2", { id: "nx-you-h", tabindex: "-1", text: T["isyou-empty-heading"] }), YOU.build ? h("p", { class: "nx-fr2-line", id: "nx-you-known", text: T["isyou-known"].replace("{build}", buildText(YOU.build)) }) : null, h("p", { class: "nx-fr2-line", id: "nx-you-empty", text: T["isyou-empty-line"] }),
+      h("a", { class: "nx-link", id: "nx-you-back", href: "#tonight", onclick: (e) => { e.preventDefault(); youNo(); } }, T["isyou-back"])]
+    : [h("h2", { id: "nx-you-h", tabindex: "-1", text: T["isyou-heading"].replace("{name}", nm) }), btn("lib-btn strong", T["isyou-yes"], youYes, { id: "nx-you-yes" }), btn("lib-btn", T["isyou-no"], youNo, { id: "nx-you-no" })];
+  return h("section", { class: "nx-fr2 nx-you", id: "nx-you", "data-k": key, "aria-labelledby": "nx-you-h" }, ...kids.filter(Boolean));
+}
 const FR_IDS = ["firstrun-heading", "firstrun-line", "firstrun-primary-activity", "firstrun-primary-discord", "firstrun-look"];
+const YOU_IDS = ["isyou-heading", "isyou-yes", "isyou-no", "isyou-known", "isyou-empty-heading", "isyou-empty-line", "isyou-back"];
 const inActivity = () => !!window.__ACTIVITY__ || /[?&](frame_id|instance_id)=/.test(location.search);
 const frFlag = () => !!(D.client && D.client.flags && D.client.flags["firstrun.v2"]);
 const frCta = () => (FR.p ||= fetch("data/cta.json").then((r) => (r.ok ? r.json() : null)).catch(() => null).then((list) => {
-  const m = {}; if (Array.isArray(list)) for (const e of list) if (e && FR_IDS.includes(e.id) && typeof e.new === "string") m[e.id] = e.new;
-  FR.cta = FR_IDS.every((k) => m[k]) ? m : false; firstRun();
+  const m = {}; if (Array.isArray(list)) for (const e of list) if (e && (FR_IDS.includes(e.id) || YOU_IDS.includes(e.id)) && typeof e.new === "string") m[e.id] = e.new;
+  FR.cta = FR_IDS.every((k) => m[k]) ? m : false; FR.you = YOU_IDS.every((k) => m[k]) ? m : false; firstRun();
 }));
 function frPrimary() {
   sfx("page");
@@ -190,9 +236,12 @@ function frPrimary() {
 function firstRun() {
   const panel = $("#panel-tonight"), meBox = $("#tn-me"), on = frFlag() && !MEM.me() && !FR.peek && FR.cta !== false && !!panel && !!meBox;
   root.classList.toggle("nx-fr2", on);
-  let el = $("#nx-fr2");
-  if (!on) { rm(el); return; }
+  let el = $("#nx-fr2"), yo = $("#nx-you");
+  if (!on) { rm(el); rm(yo); return; }
   if (!FR.cta) { frCta(); return; } /* names stay hidden while the strings load */
+  youLoad();
+  if (youOn()) { rm(el); yo = youCard(yo); if (yo.parentNode !== panel || yo.nextSibling !== meBox) panel.insertBefore(yo, meBox); return; }
+  rm(yo);
   if (!el) {
     el = h("section", { class: "nx-fr2", id: "nx-fr2", "aria-labelledby": "nx-fr2-h" }, h("h2", { id: "nx-fr2-h", text: FR.cta["firstrun-heading"] }), h("p", { class: "nx-fr2-line", text: FR.cta["firstrun-line"] }),
       btn("lib-btn strong", FR.cta[inActivity() ? "firstrun-primary-activity" : "firstrun-primary-discord"], frPrimary, { id: "nx-fr2-go" }),
@@ -276,7 +325,7 @@ document.addEventListener("keydown", () => root.classList.remove("nx-ptr"), true
 K.on("tonight", () => { render(); });
 document.addEventListener("click", (e) => { const t = e && e.target; if (!t || typeof t.closest !== "function" || !t.closest("[data-journey]")) return; setTimeout(() => { if (root.classList.contains("jr-set") !== JOURNEYS.includes(MEM.get("journey"))) render(); }, 0); }, true);
 K.on("signups", () => { render(); });
-K.on("forget", () => { MEM.set("snooze", null); NX.open = false; FR.peek = false; markSet(); firstRun(); });
+K.on("forget", () => { MEM.set("snooze", null); NX.open = false; FR.peek = false; YOU.no = false; YOU.empty = false; markSet(); firstRun(); });
 const B0 = brain();
 if (B0 && typeof B0.on === "function") for (const n of ["launch", "party", "pending", "launchPending"]) B0.on(n, () => { if (NX.out) render(); });
 if (typeof MutationObserver === "function") {
