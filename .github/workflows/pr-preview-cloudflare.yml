@@ -355,7 +355,7 @@ jobs:
         run: |
           set -e
           mkdir -p .cloudflare-dist
-          for item in index.html 404.html privacy terms _headers og-1200x630.jpg robots.txt atlas cloth css data fonts img js landing next room scenes vendor; do
+          for item in index.html 404.html privacy terms _headers og-1200x630.jpg robots.txt atlas cloth css data fonts img js landing rate next room scenes vendor; do
             if [ -e "$item" ]; then
               cp -R "$item" .cloudflare-dist/
             fi

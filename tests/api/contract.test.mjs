@@ -84,7 +84,7 @@ test("validator: accepts and rejects", () => {
 });
 
 test("spec covers exactly the documented public and member routes", () => {
-  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
+  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/eval", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
 });
 
 // ---- routes ----------------------------------------------------------------------------------------------------
@@ -286,4 +286,14 @@ test("POST /api/discord with a fresh timestamp and a bad signature is 401 'Inval
   const res = await raw("POST", "/api/discord", { "X-Signature-Ed25519": "00".repeat(64), "X-Signature-Timestamp": String(Math.floor(Date.now() / 1000)), "Content-Type": "application/json" }, '{"type":1}');
   assert.ok([401, 500].includes(res.status), `got ${res.status}`);
   if (res.status === 401) assert.equal(res.text, "Invalid request signature");
+});
+
+test("POST /api/admin/eval: refused without the admin token; with it, 404 while EVAL_ENABLED is off or 400 for an empty body (no AI call either way)", async () => {
+  const anon = await raw("POST", "/api/admin/eval", { ...pub, "Content-Type": "application/json" }, "{}");
+  documented("/api/admin/eval", "post", anon.status);
+  assert.equal(anon.status, 401);
+  const res = await raw("POST", "/api/admin/eval", { ...admin, "Content-Type": "application/json" }, "{}");
+  documented("/api/admin/eval", "post", res.status);
+  assert.ok([400, 404].includes(res.status), `got ${res.status}`);
+  matchesError(res, "/api/admin/eval", "post");
 });

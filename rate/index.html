@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Private blind rating tool for comparing answer styles. Runs in your browser; nothing is uploaded.">
+<meta name="color-scheme" content="dark light">
+<title>Blind answer rating</title>
+<link rel="stylesheet" href="rate.css">
+</head>
+<body>
+<header class="top"><p class="brand">Blind answer rating</p></header>
+<main id="main">
+  <section id="load" aria-labelledby="load-h">
+    <h1 id="load-h">Compare two answers, not their names</h1>
+    <p class="lede">Pick the results file from your own computer. You see two anonymous answers per question and choose the better one. Nothing is uploaded or sent anywhere; this page makes no network requests.</p>
+    <div class="row">
+      <label class="field" for="file">Results file(s) (.json)
+        <input id="file" type="file" accept=".json,application/json" multiple>
+      </label>
+      <label class="field" for="seed">Shuffle seed
+        <input id="seed" type="text" value="bake-off" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="field" for="per-q">Pairs per question
+        <select id="per-q"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+      </label>
+    </div>
+    <p id="load-msg" class="msg" role="status"></p>
+  </section>
+
+  <section id="rate" aria-labelledby="rate-h" hidden>
+    <h2 id="rate-h">Rate</h2>
+    <progress id="progress" value="0" max="1" aria-label="Rating progress"></progress>
+    <p id="progress-text" class="msg"></p>
+
+    <div id="pair">
+      <p class="qline"><span class="qid" id="q-id"></span> <span id="q-text"></span></p>
+      <div class="answers">
+        <article class="ans-card" aria-labelledby="a-h">
+          <h3 id="a-h">Answer A</h3>
+          <div id="ans-a" class="discord"></div>
+        </article>
+        <article class="ans-card" aria-labelledby="b-h">
+          <h3 id="b-h">Answer B</h3>
+          <div id="ans-b" class="discord"></div>
+        </article>
+      </div>
+      <div class="choices" role="group" aria-label="Your choice">
+        <button type="button" data-choice="a" aria-pressed="false">A is better <kbd>A</kbd></button>
+        <button type="button" data-choice="b" aria-pressed="false">B is better <kbd>B</kbd></button>
+        <button type="button" data-choice="tie" aria-pressed="false">Tie <kbd>T</kbd></button>
+        <button type="button" data-choice="bad" aria-pressed="false">Both bad <kbd>X</kbd></button>
+      </div>
+      <label class="field" for="note">Note (optional, saved with your next choice)
+        <textarea id="note" rows="2" maxlength="500"></textarea>
+      </label>
+      <p class="hint">Keys: A, B, T, X to choose; U to go back. Keys are off while you type in the note.</p>
+    </div>
+
+    <div class="actions">
+      <button type="button" id="back" class="secondary">Back <kbd>U</kbd></button>
+      <button type="button" id="summary-btn" class="secondary">Finish and show summary</button>
+      <button type="button" id="export-btn" class="secondary">Export ratings.json</button>
+    </div>
+    <p class="hint">The summary and the export reveal which candidate was which.</p>
+  </section>
+
+  <section id="summary" aria-labelledby="sum-h" hidden>
+    <h2 id="sum-h">Summary</h2>
+    <div class="table-wrap" role="region" aria-label="Summary table" tabindex="0">
+      <table>
+        <caption class="sr">Wins per candidate and Bradley-Terry strength</caption>
+        <thead><tr><th scope="col">Candidate</th><th scope="col">Wins</th><th scope="col">Losses</th><th scope="col">Ties</th><th scope="col">Both bad</th><th scope="col">Strength</th></tr></thead>
+        <tbody id="sum-body"></tbody>
+      </table>
+    </div>
+    <p id="sum-note" class="hint"></p>
+  </section>
+  <p id="live" class="sr" role="status" aria-live="polite"></p>
+</main>
+<script src="rate.js"></script>
+</body>
+</html>

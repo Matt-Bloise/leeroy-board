@@ -190,6 +190,67 @@ components:
         mention_role: { type: string, nullable: true, description: A name in the discord_roster roles map. Pings exactly that role, nothing else. }
         button_label: { type: string, maxLength: 80, description: Required with button_url. }
         button_url: { type: string, maxLength: 512, description: https only. }
+    EvalRequest:
+      type: object
+      required: [questions, candidates]
+      description: Request body only. At most 40 questions, 6 candidates and 120 cells (questions x candidates) per job.
+      properties:
+        jobId: { type: string, description: "Echoed back. 1 to 64 letters, digits, . _ : -" }
+        cursor: { type: integer, minimum: 0, description: "Cell to start at (question-major order). Use nextCursor of the previous response." }
+        maxCalls: { type: integer, minimum: 1, maximum: 6 }
+        questions:
+          type: array
+          items:
+            type: object
+            required: [id, text]
+            properties:
+              id: { type: string }
+              text: { type: string, maxLength: 1000 }
+              journey: { type: string }
+              asker: { type: string, enum: [member, visitor] }
+        candidates:
+          type: array
+          items:
+            type: object
+            required: [label, provider]
+            properties:
+              label: { type: string }
+              provider: { type: string, enum: [workers-ai, gemini, groq, cerebras, github, openrouter] }
+              model: { type: string, description: Must be on the per-provider allow-list in worker/ai-models.js. }
+              promptVariant: { type: string, enum: [production, plain, examples-6, format-reminder] }
+    EvalResponse:
+      type: object
+      required: [jobId, total, cursor, nextCursor, callsMade, stoppedForBudget, stoppedForTime, elapsedMs, results]
+      properties:
+        jobId: { type: string, nullable: true }
+        total: { type: integer }
+        cursor: { type: integer }
+        nextCursor: { type: integer, nullable: true, description: "null when the job is complete. Equal to cursor when the request could not run a cell (stopped for time or budget)." }
+        callsMade: { type: integer }
+        stoppedForBudget: { type: boolean, description: "The daily Workers AI allowance has less than 40 percent left (or is spent). Do not loop." }
+        stoppedForTime: { type: boolean }
+        elapsedMs: { type: integer }
+        results:
+          type: array
+          items:
+            type: object
+            required: [index, questionId, candidate, ok, ms, chars, answer, rawChars, lint]
+            properties:
+              index: { type: integer }
+              questionId: { type: string }
+              question: { type: string }
+              candidate: { type: string }
+              provider: { type: string }
+              model: { type: string, nullable: true }
+              promptVariant: { type: string }
+              ok: { type: boolean }
+              ms: { type: integer }
+              chars: { type: integer }
+              answer: { type: string }
+              rawChars: { type: integer }
+              error: { type: string }
+              rateLimited: { type: boolean }
+              lint: { type: object, nullable: true, additionalProperties: true }
     PersonaPack:
       type: object
       required: [version, system]
@@ -554,6 +615,43 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "413":
           description: Body over 20000 bytes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/admin/eval:
+    post:
+      summary: Admin only, and only when EVAL_ENABLED is on. Runs a slice of a model bake-off.
+      description: |
+        Runs up to 6 model calls (under 25 seconds) through the production retrieval and prompt path and returns each answer with a
+        deterministic lint. Nothing is stored (apart from the shared daily Workers AI counter) and nothing is posted to Discord.
+        Loop on `nextCursor` until it is null. Returns 404 when EVAL_ENABLED is not on. Claude is never allowed (free providers only).
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EvalRequest' }
+      responses:
+        "200":
+          description: Cells run in this request.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvalResponse' }
+        "400":
+          description: Body failed validation (limits, unknown provider, model not on the allow-list).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: EVAL_ENABLED is not on.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "413":
+          description: Body over 100000 bytes.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

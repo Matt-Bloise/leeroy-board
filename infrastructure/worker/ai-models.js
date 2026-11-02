@@ -31,6 +31,29 @@ export const AI_PROVIDER_LABELS = {
   openrouter: "OpenRouter Free (DeepSeek V3)",
 };
 
+// Models an admin evaluation may ask for per provider (POST /admin/eval). Free tiers only: no Claude. A model not listed here is
+// refused before any call. The first entry of each list is the provider's production default.
+export const EVAL_MODEL_ALLOWLIST = {
+  "workers-ai": [
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "@cf/meta/llama-3.1-8b-instruct-fp8",
+    "@cf/meta/llama-3.2-3b-instruct",
+    "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "@cf/mistralai/mistral-small-3.1-24b-instruct",
+    "@cf/google/gemma-3-12b-it",
+  ],
+  gemini: ["gemini-3.5-flash-lite", "gemini-3.8-pro"],
+  groq: ["llama-3.3-70b-versatile"],
+  cerebras: ["llama-3.3-70b"],
+  github: ["gpt-4o-mini", "gpt-4o"],
+  openrouter: ["deepseek/deepseek-chat-v3-0324:free"],
+};
+
+export function modelAllowed(provider, model) {
+  const list = EVAL_MODEL_ALLOWLIST[provider];
+  return Boolean(list && list.includes(model));
+}
+
 const ORDERS_RE = new RegExp(
   String.raw`(^|[.!?]\s+)(?:Don't|Do not|Make sure|Start with|Treat (?:it|this|that) as|Go with|Get it done|You should|Remember to|Be sure to)\b[^.!?\n]*[.!?]?`,
   "gm"
@@ -377,13 +400,13 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
   return { answer, model, provider: "claude" };
 }
 
-async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, deadlineAt = null }) {
+async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, deadlineAt = null, modelOverride = null }) {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY secret is not configured on the Cloudflare Worker");
   }
-  const model = deep
+  const model = modelOverride || (deep
     ? env.GEMINI_MODEL_DEEP || "gemini-3.8-pro"
-    : env.GEMINI_MODEL_FAST || "gemini-3.5-flash-lite";
+    : env.GEMINI_MODEL_FAST || "gemini-3.5-flash-lite");
 
   const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
@@ -423,7 +446,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
 
   let activeResp = resp;
   let activeModel = model;
-  if (!activeResp.ok && (activeResp.status === 503 || activeResp.status === 429) && activeModel !== "gemini-3.5-flash-lite") {
+  if (!modelOverride && !activeResp.ok && (activeResp.status === 503 || activeResp.status === 429) && activeModel !== "gemini-3.5-flash-lite") {
     console.warn(`[Gemini] ${activeModel} returned HTTP ${activeResp.status}, retrying with gemini-3.5-flash-lite`);
     activeModel = "gemini-3.5-flash-lite";
     activeResp = await fetchWithGatewayFallback({
@@ -469,11 +492,11 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model: activeModel, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, deadlineAt = null }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, deadlineAt = null, modelOverride = null }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
-  const model = env.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+  const model = modelOverride || env.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
   const inputs = {
     messages: [
       { role: "system", content: systemPrompt },
@@ -563,24 +586,27 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null }) {
+  if (modelOverride && !modelAllowed(provider, modelOverride)) {
+    throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
+  }
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
   const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
   switch (provider) {
     case "gemini":
-      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, deadlineAt });
+      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, deadlineAt, modelOverride });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, deadlineAt });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, deadlineAt, modelOverride });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
         endpoint: "https://api.groq.com/openai/v1/chat/completions",
         apiKey: env.GROQ_API_KEY,
-        model: deep
+        model: modelOverride || (deep
           ? env.GROQ_MODEL_DEEP || "llama-3.3-70b-versatile"
-          : env.GROQ_MODEL_FAST || "llama-3.3-70b-versatile",
+          : env.GROQ_MODEL_FAST || "llama-3.3-70b-versatile"),
         systemPrompt,
         userPrompt,
         env,
@@ -593,7 +619,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         provider: "cerebras",
         endpoint: "https://api.cerebras.ai/v1/chat/completions",
         apiKey: env.CEREBRAS_API_KEY,
-        model: env.CEREBRAS_MODEL || "llama-3.3-70b",
+        model: modelOverride || env.CEREBRAS_MODEL || "llama-3.3-70b",
         systemPrompt,
         userPrompt,
         env,
@@ -606,7 +632,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         provider: "github",
         endpoint: "https://models.inference.ai.azure.com/chat/completions",
         apiKey: env.GITHUB_MODELS_TOKEN,
-        model: deep ? env.GITHUB_MODEL_DEEP || "gpt-4o" : env.GITHUB_MODEL_FAST || "gpt-4o-mini",
+        model: modelOverride || (deep ? env.GITHUB_MODEL_DEEP || "gpt-4o" : env.GITHUB_MODEL_FAST || "gpt-4o-mini"),
         systemPrompt,
         userPrompt,
         env,
@@ -619,7 +645,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         provider: "openrouter",
         endpoint: "https://openrouter.ai/api/v1/chat/completions",
         apiKey: env.OPENROUTER_API_KEY,
-        model: env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324:free",
+        model: modelOverride || env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324:free",
         systemPrompt,
         userPrompt,
         extraHeaders: {
@@ -693,27 +719,16 @@ export function shortProviderError(err) {
     .slice(0, 60);
 }
 
-export async function answerWithAi({
-  env,
-  origin,
-  intentId,
-  by,
-  memberSlug,
-  question,
-  deep = false,
-  share = true,
-  journey = "curious",
-  provider: requestedProvider,
-  budget = null, // optional { userKey, tenantKey, guest }; without it only the global soft cap applies
-  isMember, // is the asker a party member? Defaults to "not the Visitor placeholder".
-}) {
-  const t0 = Date.now();
-  const nowIso = () => new Date().toISOString();
-  const isCoach = journey === "guided" && share !== true;
-  let budgetCode = null;
+// Retrieval, party state and prompt assembly for one question. Pure of side effects except D1 reads. Used by answerWithAi and by the
+// admin evaluation, so both run the same path. promptVariant (evaluation only) is one of PROMPT_VARIANTS; absent or "production" is
+// exactly what production sends.
+export const PROMPT_VARIANTS = ["production", "plain", "examples-6", "format-reminder"];
+const FORMAT_REMINDER =
+  "Format contract: the first line is one bold sentence that answers the question. Then at most a few short bullets (`- **Name** · value`). Then `-# Sources: id1, id2`. No emoji, no greeting, no filler opener, no bare web addresses.";
 
-  try {
-    // 1. Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
+export async function buildAnswerInputs(env, { question, by, journey = "curious", share = true, isMember, promptVariant = "production" }) {
+  const isCoach = journey === "guided" && share !== true;
+    // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
       getParsedLibraryData(env),
       env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
@@ -784,14 +799,65 @@ export async function answerWithAi({
       "Keep answers concise (2 to 4 sentences), warm and plain-spoken. End with one line `-# Sources: id1, id2` listing only the library page ids you actually used (plain ids separated by commas, no brackets); the system turns them into links. Never write bare web addresses.",
     ].join(" ");
     const persona = await loadPersona(env);
-    const systemPrompt = persona
-      ? buildSystemPrompt(persona, { journey, question, partySummary, libraryStamp, isCoach, coachPrompt: COACH_PROMPT })
+    const usePersona = persona && promptVariant !== "plain";
+    let systemPrompt = usePersona
+      ? buildSystemPrompt(persona, {
+          journey, question, partySummary, libraryStamp, isCoach, coachPrompt: COACH_PROMPT,
+          ...(promptVariant === "examples-6" ? { maxExamples: 6 } : {}),
+        })
       : isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
+    if (promptVariant === "format-reminder") systemPrompt = `${systemPrompt}\n\n${FORMAT_REMINDER}`;
 
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const userPrompt = `Party Context:\n${partySummary}\n\nTop Library Facts:\n${topFactHits.join(
       "\n"
     )}\n\nTop Matching Pages:\n${topPagesSummary}\n\nAsker: ${by} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
+
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach };
+}
+
+// Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona }) {
+    const nameMap = (await loadConfigKey(env, "name_map")) || {};
+    const repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
+    const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
+    const known = new Set(libPages.map((p) => p.id));
+    const cites = extractCitedIds(repaired).filter((id) => known.has(id));
+    const chatMax = Number(persona && persona.format && persona.format.chatMaxChars);
+    const answer = answerFormatEnabled(env)
+      ? formatAnswer(repaired, {
+          pages: libPages,
+          asker: { name: by, isMember: askerIsMember },
+          boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party",
+          maxChars: chatMax > 0 ? chatMax : 1200,
+        })
+      : repaired;
+    return { answer, cites };
+}
+
+export async function answerWithAi({
+  env,
+  origin,
+  intentId,
+  by,
+  memberSlug,
+  question,
+  deep = false,
+  share = true,
+  journey = "curious",
+  provider: requestedProvider,
+  budget = null, // optional { userKey, tenantKey, guest }; without it only the global soft cap applies
+  isMember, // is the asker a party member? Defaults to "not the Visitor placeholder".
+}) {
+  const t0 = Date.now();
+  const nowIso = () => new Date().toISOString();
+  const isCoach = journey === "guided" && share !== true;
+  let budgetCode = null;
+
+  try {
+    // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
+    const inputs = await buildAnswerInputs(env, { question, by, journey, share, isMember });
+    const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt } = inputs;
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -917,24 +983,8 @@ export async function answerWithAi({
       }
     }
 
-    // Apply `wow-mage` house-voice & privacy guardrails (`precheck.mjs` parity)
-    const nameMap = (await loadConfigKey(env, "name_map")) || {};
-    const repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
-
-    // Layout, link masking and visitor-safe addressing for every provider and surface (kill switch ANSWER_FORMAT=off).
-    // Cites are read from the unformatted text, because formatting replaces the ids with titled links.
-    const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
-    const known = new Set(libPages.map((p) => p.id));
-    const cites = extractCitedIds(repaired).filter((id) => known.has(id));
-    const chatMax = Number(persona && persona.format && persona.format.chatMaxChars);
-    const answer = answerFormatEnabled(env)
-      ? formatAnswer(repaired, {
-          pages: libPages,
-          asker: { name: by, isMember: askerIsMember },
-          boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party",
-          maxChars: chatMax > 0 ? chatMax : 1200,
-        })
-      : repaired;
+    // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
+    const { answer, cites } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
 
