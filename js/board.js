@@ -2947,7 +2947,7 @@ function libTipLead(i) {
   const cls = (L.find((l) => /^(?:Requires|Classes:) [A-Z]/.test(l) && !/level/i.test(l)) || "").replace(/^(?:Requires|Classes:)\s*/, "");
   const lvl = (L.find((l) => /^Requires level \d+/i.test(l)) || "").replace(/\D+/g, "");
   const what = t.kind === "item" ? "an item" : `a${cls ? ` ${cls}` : ""} spell`;
-  return h("p", { class: "answer-v answer-lead" }, `${t.name} is ${what}${lvl ? `, from level ${lvl}` : ""}. ${ttTextOn() ? "Here is what the game's own tooltip says." : "Here are its numbers; the full tooltip is on Wowhead."}`);
+  return h("p", { class: "answer-v answer-lead" }, `${t.name} is ${what}${lvl ? `, from level ${lvl}` : ""}. ${ttTextOn() && Array.isArray(t.desc_verbatim) && t.desc_verbatim.length ? "Here is what the game's own tooltip says." : "Here are its numbers; the full tooltip is on Wowhead."}`);
 }
 const LIB_CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
 function libBuffAnswer(key) {
