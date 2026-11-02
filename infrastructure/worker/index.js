@@ -28,7 +28,7 @@ import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
 import { upsertMember } from "./members.js";
-import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, validateConfigValue } from "./config.js";
+import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
@@ -1146,6 +1146,8 @@ export default {
         const raw = decodeURIComponent(path.split("/").pop() || "").replace(/\.json$/, "");
         const cachePath = `/api${path.startsWith("/") ? path : `/${path}`}`;
         if (req.method === "GET") {
+          // Config and private working rows live in the same table: never serve them from this public route.
+          if (isPrivateKvKey(raw)) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
           let resp = await getCachedResponse(url.origin, cachePath);
           if (!resp) {
             const row = await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first();

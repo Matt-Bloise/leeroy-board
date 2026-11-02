@@ -92,3 +92,14 @@ export function buildThreadMention(person, roster) {
   const threadId = roster?.buildThreads?.[person.display];
   return isId(threadId) ? `<#${threadId}>` : null;
 }
+
+// kv_state rows that hold configuration or private working data. GET /api/data/<key> must never serve them:
+// that route is public and serves any kv_state key. Exact keys plus prefixes; matching is case-insensitive.
+const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "vocab", "votes:index", "feed_posts"]);
+const PRIVATE_PREFIXES = ["ai_budget:", "vote:", "votes:", "feed_", "private:", "config:", "secret"];
+export function isPrivateKvKey(key) {
+  const k = String(key || "").trim().toLowerCase();
+  if (!k) return true;
+  if (PRIVATE_EXACT.has(k)) return true;
+  return PRIVATE_PREFIXES.some((p) => k.startsWith(p));
+}
