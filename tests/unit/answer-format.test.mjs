@@ -2,6 +2,7 @@
 // Run: node --test tests/unit/answer-format.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { formatAnswer, answerFormatEnabled } from "../../infrastructure/worker/answer-format.js";
 
 const pages = [
@@ -124,4 +125,43 @@ test("kill switch reads ANSWER_FORMAT", () => {
   assert.equal(answerFormatEnabled({ ANSWER_FORMAT: "off" }), false);
   assert.equal(answerFormatEnabled({ ANSWER_FORMAT: "OFF " }), false);
   assert.equal(answerFormatEnabled(undefined), true);
+});
+
+// ---- Real production sample: member path, two sources lines, inline fact ids ----
+const goldRaw = fs.readFileSync(new URL("./fixtures/answer-gold-early.txt", import.meta.url), "utf8");
+const goldPages = [
+  { id: "systems/earning-gold", category: "systems", title: "Earning gold" },
+  { id: "systems/gold-and-riding", category: "systems", title: "Gold, riding and economy rules" },
+];
+
+for (const asker of [{ name: "Matt", isMember: true }, visitor]) {
+  test(`gold-early fixture (${asker.name}): one sources line, one board link, clean text, idempotent`, () => {
+    const c = { pages: goldPages, asker };
+    const out = formatAnswer(goldRaw, c);
+    assert.ok(!/\[[a-z0-9_-]+\/[a-z0-9_.~-]+\](?!\()/i.test(out), "no bracket ids");
+    assert.ok(!/(^|\s)https?:\/\/[^\s<]/m.test(out.replace(/\(<https?:[^>]*>\)/g, "")), "no bare URL");
+    assert.equal(out.split("\n").filter((l) => l.startsWith("-# Sources:")).length, 1);
+    const src = out.split("\n").find((l) => l.startsWith("-# Sources:"));
+    const links = src.match(/\]\(<[^>]+>\)/g);
+    assert.equal(links.length, 2);
+    assert.equal(new Set(links).size, 2);
+    assert.equal(out.split("\n").filter((l) => l.startsWith("-# [Open on the board](")).length, 1);
+    assert.ok(out.length <= 1200);
+    assert.ok(!/ {2}/.test(out) && !/ [.,;:!?]/.test(out), "no double spaces or space before punctuation");
+    assert.equal(formatAnswer(out, c), out);
+  });
+}
+
+test("inline fact ids are removed with one adjacent space", () => {
+  const out = formatAnswer("**A.**\n\n- Quest rewards · [systems/earning-gold~gold.earn.quests] pay a bit, sell to vendors [systems/earning-gold~x]. Done [systems/earning-gold] .", { ...ctx(), pages: goldPages });
+  assert.equal(out, "**A.**\n\n• **Quest rewards** · pay a bit, sell to vendors. Done.");
+});
+
+test("every golden input is idempotent under both asker kinds", () => {
+  const inputs = [RAW, goldRaw, "**A.**\nWorth a look next: B.\nAt least I have chicken.", "**A.**\n\n-# Sources: [classes/paladin-holy]\nBye.", "**A.**\nhttps://leeroy.party/#library.raids", "**A.**\n\n\n\nSize - 40 players\nLevel - 60\n\n\n\nDone.", "Sources: a/b\n-# Sources: classes/paladin-holy\nSources: [classes/paladin-holy]"];
+  for (const raw of inputs) for (const asker of [visitor, member]) {
+    const c = { pages: [...pages, ...goldPages], asker };
+    const once = formatAnswer(raw, c);
+    assert.equal(formatAnswer(once, c), once, JSON.stringify(raw).slice(0, 60));
+  }
 });

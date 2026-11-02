@@ -171,7 +171,7 @@ function format(raw, ctx) {
       outParas.push([head]);
       if (bullets.length) outParas.push(bullets);
       if (k < para.length) outParas.push(para.slice(k));
-    } else if (para.length >= 2 && isFact.every(Boolean)) {
+    } else if ((para.length >= 2 || /^\s*[•*-]\s/.test(para[0])) && isFact.every(Boolean)) {
       outParas.push(isFact.map((f) => `• **${f.name}** · ${f.value}`));
     } else {
       outParas.push(para);
@@ -181,7 +181,7 @@ function format(raw, ctx) {
   // Footer block.
   const footer = [];
   if (sourceIds) {
-    const links = sourceIds
+    const links = [...new Set(sourceIds)]
       .filter((id) => byId.has(id))
       .map((id) => `[${cleanTitle(byId.get(id).title || id) || id}](<${base}/#library.${id.replace("/", ".")}>)`);
     if (links.length) footer.push(`-# Sources: ${links.join(" · ")}`);
