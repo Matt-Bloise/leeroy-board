@@ -25,9 +25,11 @@ for (const [size, opts] of CTX) {
   const errors = [], foreign = [], scripts = [];
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" });
   const page = await ctx.newPage();
-  page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text())) errors.push(m.text()); });
-  page.on("request", (r) => { const u = new URL(r.url()); if (u.origin !== new URL(BASE).origin) foreign.push(r.url()); if (r.resourceType() === "script") scripts.push(u.pathname); });
+  page.on("pageerror", (e) => { if (!/cloudflareinsights/.test(e.message)) errors.push(e.message); });
+  // Cloudflare Pages injects its Web Analytics beacon on the host; it is not part of the page, so ignore it in every check below.
+  const HOST_BEACON = /cloudflareinsights\.com|\/beacon\.min\.js/;
+  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text()) && !HOST_BEACON.test(m.text())) errors.push(m.text()); });
+  page.on("request", (r) => { if (HOST_BEACON.test(r.url())) return; const u = new URL(r.url()); if (u.origin !== new URL(BASE).origin) foreign.push(r.url()); if (r.resourceType() === "script") scripts.push(u.pathname); });
   const resp = await page.goto(BASE, { waitUntil: "load" });
   ok(`${tag} /landing/ answers 200`, resp && resp.status() === 200, String(resp && resp.status()));
   const h1 = (await page.locator("h1").innerText()).replace(/\s+/g, " ");
