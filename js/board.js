@@ -7,6 +7,12 @@ const ID1 = new Map();
 const $ = (s, r = document) => { if (r !== document || !/^#[\w-]+$/.test(s)) return r.querySelector(s); let e = ID1.get(s); if (e && e.isConnected) return e; e = r.querySelector(s); if (e) ID1.set(s, e); return e; };
 const SVGNS = "http://www.w3.org/2000/svg";
 function h(tag, attrs, ...kids) {
+  /* a lazy image made while the wall is cold gets its src on settle (a lazy image that is rendered but covered still loads) */
+  if (tag === "img" && attrs && attrs.loading === "lazy" && attrs.src && wallCold()) {
+    const { src, srcset, ...rest } = attrs, n = h(tag, rest, ...kids);
+    whenSettled(() => { if (srcset) n.setAttribute("srcset", srcset); n.setAttribute("src", src); });
+    return n;
+  }
   const svg = attrs && attrs.svg; const n = svg ? document.createElementNS(SVGNS, tag) : document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === "svg" || v === null || v === undefined || v === false) continue;
@@ -19,7 +25,35 @@ function h(tag, attrs, ...kids) {
   for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
   return n;
 }
-const s = (tag, attrs, ...kids) => h(tag, Object.assign({ svg: true }, attrs), ...kids);
+/* First-load weight: a first visit (no remembered name) opens on Next steps with the wall covered, so the wall is "cold": index.html ships
+   html.wall-cold, boot drops it at once for a remembered name, and it makes #main display:none
+   (css/board.css), so no style is computed for the wall and its images and backgrounds do not load; the warm-up waits too.
+   The wall warms on the first of: the scene closing, 0.3 s after the first touch or key press, 1.5 s after boot if it is in fact visible,
+   or 10 s after load. A visit that is not cold loads everything at once, as before. */
+const SETTLE = { done: false, q: [], armed: false, t: 0 }, SETTLE_EV = ["pointerdown", "touchstart", "keydown", "wheel"];
+const wallCold = () => document.documentElement.classList.contains("wall-cold");
+const wallSeen = () => { const m = document.getElementById("main"); return !!(m && !document.documentElement.classList.contains("scene-open") && m.getClientRects().length && getComputedStyle(m).visibility !== "hidden"); };
+function settleGo() { if (SETTLE.done) return; SETTLE.done = true; const was = wallCold(); document.documentElement.classList.remove("wall-cold"); if (was && document.getElementById("board") && !document.getElementById("board").hidden) requestAnimationFrame(() => dispatchEvent(new Event("resize"))); clearTimeout(SETTLE.t); try { SETTLE.mo.disconnect(); } catch (e) {} for (const e of SETTLE_EV) removeEventListener(e, settleSoon, true); for (const g of SETTLE.q.splice(0)) { try { g(); } catch (e) { console.error(e); } } }
+function settleSoon() { clearTimeout(SETTLE.t); SETTLE.t = setTimeout(settleGo, 300); }
+function settleCheck() { if (!SETTLE.done && wallSeen()) settleGo(); }
+function whenSettled(f) {
+  if (SETTLE.done || !wallCold()) { f(); return; }
+  SETTLE.q.push(f);
+  if (SETTLE.armed) return;
+  SETTLE.armed = true;
+  for (const e of SETTLE_EV) addEventListener(e, settleSoon, { capture: true, passive: true });
+  if (typeof MutationObserver === "function") { SETTLE.mo = new MutationObserver(() => { if (document.documentElement.classList.contains("scene-open")) SETTLE.covered = true; else if (SETTLE.covered) settleCheck(); }); SETTLE.mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] }); }
+  const arm = () => { if (!SETTLE.t) SETTLE.t = setTimeout(settleGo, 10000); };
+  if (document.readyState === "complete") arm(); else addEventListener("load", arm, { once: true });
+}
+/* SVG <image> has no loading="lazy": while the wall is covered its href is set on settle instead */
+const s = (tag, attrs, ...kids) => {
+  if (tag === "image" && attrs && attrs.href && wallCold()) {
+    const href = attrs.href, n = h(tag, Object.assign({ svg: true }, attrs, { href: null }), ...kids);
+    whenSettled(() => n.setAttribute("href", href)); return n;
+  }
+  return h(tag, Object.assign({ svg: true }, attrs), ...kids);
+};
 const ring = (cx, cy, r) => `M${cx} ${cy - r}a${r} ${r} 0 1 1-.01 0z`;
 const scallop = (cx, cy, r, n, amp) => { let d = ""; for (let i = 0; i <= n * 2; i++) { const a = (i * Math.PI) / n - Math.PI / 2, rr = i % 2 ? r - amp : r; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
 const gear = (cx, cy, r1, r2, n) => { let d = ""; for (let i = 0; i < n * 4; i++) { const a = (i * Math.PI * 2) / (n * 4), rr = (i % 4) < 2 ? r2 : r1; d += `${i ? "L" : "M"}${(cx + Math.cos(a) * rr).toFixed(2)} ${(cy + Math.sin(a) * rr).toFixed(2)}`; } return d + "z"; };
@@ -80,7 +114,7 @@ function emb(name, cls, label, dates) {
 }
 emb.svg = embSvg;
 emb.dates = (name, cls, label) => emb(name, cls, label, true);
-const crestMark = (m, cls = "crest-mark", title = m.name) => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, decoding: "async", title });
+const crestMark = (m, cls = "crest-mark", title = m.name) => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, loading: "lazy", decoding: "async", title });
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 const roomHas = (c) => document.documentElement.classList.contains(c);
 const RS = { tier: "low", why: "not started" };
@@ -921,7 +955,7 @@ function renderRaces() {
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
 const KIND_WORD = { toy: "a fun item with no stats", tabard: "a cloth crest worn over armor", pet: "a pet that follows you", mount: "a mount to ride" };
-const VF = (n, ...a) => import("../img/vector/vector.js?v=76e7d18cfa").then((m) => m[n](...a)).catch(() => {});
+const VF = (n, ...a) => { const go = () => import("../img/vector/vector.js?v=76e7d18cfa").then((m) => m[n](...a)).catch(() => {}); wallCold() ? whenSettled(go) : go(); };
 function renderLegacy() {
   const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
@@ -1132,7 +1166,7 @@ function setBuffView(v) {
 }
 
 const ART = { crest: {}, seal: false, beam: false, zep: false, town: false };
-const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, decoding: "async" }) : emb("seal"));
+const seal = () => h("span", { class: `seal${ART.seal ? " art" : ""}`, "aria-hidden": "true" }, ART.seal ? h("img", { src: "img/seal.png", alt: "", width: 64, height: 64, loading: "lazy", decoding: "async" }) : emb("seal"));
 const srcTag = (src) => h("span", { class: `label srctag ${src === "board" ? "board" : "notes"}` }, emb(src === "board" ? "seal" : "quill"), SRC_WORD[src] || src);
 const SRC_WORD = { board: "on the Party Board", chat: "said in chat", "group notes": "in the group notes" };
 function splitPolls() {
@@ -1721,7 +1755,7 @@ function placeOrnament(key) {
     try { const im = new Image(); im.src = src; if (im.decode) im.decode().then(show, show); else im.onload = show; } catch (e) { show(); }
     setTimeout(show, 1800);
   };
-  mark(document.querySelector(".wall-plate"), "img/board-wall.jpg");
+  whenSettled(() => mark(document.querySelector(".wall-plate"), "img/board-wall.jpg"));
   mark(document.querySelector(".hero-art img"), (document.querySelector(".hero-art img") || {}).currentSrc || "img/tavern-hero.jpg");
 })();
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
@@ -2020,7 +2054,7 @@ function startScenes() {
 }
 
 const ICONS = {}, GLYPHS = {};
-const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 192, height: 192, decoding: "async" });
+const iconImg = (key) => h("img", { class: "emblem-img", src: `img/icons/${key}.png`, alt: "", width: 192, height: 192, loading: "lazy", decoding: "async" });
 const tabImg = (key) => h("img", { class: "emblem-img tab-img", src: `img/icons/tab-${key}.png`, alt: "", width: 48, height: 48, decoding: "async" });
 const emblemFor = (key) => (ICONS[key] ? iconImg(key) : GLYPHS[key] ? GLYPHS[key].cloneNode(true) : null);
 function setSheetEmblem(key) { const box = $("#sheet-emblem"); if (box) box.replaceChildren(...[emblemFor(key)].filter(Boolean)); placeSideMedal(key); }
@@ -2097,9 +2131,7 @@ function startEmblems() {
     if (g) GLYPHS[key] = g.cloneNode(true);
     const tab = $(`#tab-${key} .tab-ico`);
     if (tab && GLYPHS[key]) tab.replaceChildren(GLYPHS[key].cloneNode(true));
-    const im = new Image();
-    im.onload = () => { ICONS[key] = true; placeIcon(key); };
-    im.src = `img/icons/${key}.png`;
+    whenSettled(() => { const im = new Image(); im.onload = () => { ICONS[key] = true; placeIcon(key); }; im.src = `img/icons/${key}.png`; });
   }
 }
 function pinTiles() {
@@ -2485,7 +2517,9 @@ function placeCrest(k) {
   if (node && !node.querySelector(".crest-node")) { node.classList.add("has-crest"); node.insertBefore(crestSvg(k, Number(node.dataset.x), Number(node.dataset.y)), node.querySelector("text")); }
 }
 function startArt() {
-  const probe = (src, ok, bad) => { const im = new Image(); im.onload = ok; if (bad) im.onerror = bad; im.src = src; };
+  const probe0 = (src, ok, bad) => { const im = new Image(); im.onload = ok; if (bad) im.onerror = bad; im.src = src; };
+  /* a cold wall (covered by the first-visit scene) probes once settled; otherwise at once */
+  const probe = (src, ok, bad) => whenSettled(() => probe0(src, ok, bad));
   for (const k of new Set(D.party.members.map((m) => m.class_key).filter(Boolean))) probe(`img/crests/${k}.png`, () => { ART.crest[k] = true; placeCrest(k); });
   let mapArt = 2; const mapArtDone = () => { if (--mapArt === 0 && MAPW.drawn && (ART.zep || ART.town)) renderMap(); };
   probe("img/map/zeppelin.png", () => { ART.zep = true; mapArtDone(); }, mapArtDone);
@@ -3539,6 +3573,7 @@ async function boot(mode, sdk) {
   $("#gate").hidden = true;
   $("#board").hidden = false;
   $("#hero-art").classList.remove("gate-mode");
+  try { if (MEM.me()) settleGo(); } catch (e) {}
   const wall = $("#wall");
   wall.classList.add("settle");
   setTimeout(() => wall.classList.remove("settle"), MOTION.stagger * 8 + MOTION.move * 2);
@@ -3550,8 +3585,8 @@ async function boot(mode, sdk) {
   try { startGloss(); } catch (e) { console.error(e); }
   startSubtitles();
   startMiniClock();
-  (window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => startLight(), { timeout: 1200 });
-  (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(() => medalsIdle(), { timeout: 2500 });
+  whenSettled(() => (window.requestIdleCallback || ((f) => setTimeout(f, 300)))(() => startLight(), { timeout: 1200 }));
+  whenSettled(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(() => medalsIdle(), { timeout: 2500 }));
   startSound();
   try { setBuffView(localStorage.getItem("board-buff-view") === "list" ? "list" : "wheel"); } catch (e) { setBuffView("wheel"); }
   try {
@@ -3590,13 +3625,14 @@ async function boot(mode, sdk) {
   if (!early) route();
   markNew(); startDepth();
   KIT.emit("booted", mode);
+  setTimeout(settleCheck, 1500);
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = PRESENCE_WEB;
   (window.requestIdleCallback || ((f) => setTimeout(f, 800)))(startRoomLadder, { timeout: 2500 });
-  if (typeof window.requestIdleCallback === "function") warmLater();
+  if (typeof window.requestIdleCallback === "function") whenSettled(warmLater);
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();

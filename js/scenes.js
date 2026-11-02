@@ -113,7 +113,7 @@ K.on("booted", () => {
   if (!HERE || /[?&](render|brain)=/.test(String(location.search || ""))) return;
   const idle = typeof requestIdleCallback === "function" ? (f) => requestIdleCallback(f, { timeout: 3000 }) : (f) => setTimeout(f, 250);
   const next = () => { if (playing()) { afterPlay(next); return; } const m = WARM.find((x) => !P[x] && (x !== "wide" || innerWidth >= 700)); if (m) load(m).then(() => idle(next)); };
-  afterPlay(() => setTimeout(() => idle(next), 1200));
+  afterPlay(() => (K.whenSettled || ((f) => f()))(() => setTimeout(() => idle(next), 1200)));
 });
 const intent = (e) => { const t = e && e.target; if (!t || typeof t.closest !== "function") return; const c = t.closest("[data-tab], [data-place]"); if (c) warm(PLACE[c.getAttribute("data-tab") || c.getAttribute("data-place")]); };
 if (typeof document.addEventListener === "function") for (const ev of ["pointerover", "focusin", "touchstart"]) document.addEventListener(ev, intent, { capture: true, passive: true });
