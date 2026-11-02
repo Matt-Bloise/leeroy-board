@@ -8,6 +8,8 @@ This repo is the home of the Leeroy board: the site (Cloudflare Pages), the Work
 3. Every PR gets its own preview environment and the `Preview Tests` workflow: a back-end suite (API input and output) and a front-end suite (layout, rendering, animation, display). New behaviour comes with tests in `tests/`.
 4. Tests make no AI calls (free Workers AI has a very low rate limit). Discord interactions cannot be tested in a preview and are checked on production after merge.
 5. Every PR states how to roll back: Pages previous deployment, `wrangler rollback`, D1 Time Travel, or a revert.
+6. Back-end changes (anything under `infrastructure/`) must include a test in `tests/api` (behaviour through the API) or `tests/unit` (pure functions).
+   A back-end PR without a test in its diff is not merged.
 
 We accept a before and after number on a stated device (frame time, long animation frames, bytes, render counts) for performance changes. No secrets in the repo, and no first names or Discord ids in code or copy.
 
