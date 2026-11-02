@@ -25,6 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
+import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
@@ -650,6 +651,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const question = getOpt("question") || getOpt("q") || String((opts[0] && opts[0].value) || "").trim();
       const provider = resolveAiProvider(env, getOpt("model") || getOpt("provider"));
       const isPrivate = Boolean(getOpt("private"));
+      const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
+      // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
+      if (askBudget && provider === "workers-ai") {
+        const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env));
+        if (verdict && verdict.code !== "budget_global") {
+          return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
       const intentId = String(Date.now());
       const now = new Date().toISOString();
 
@@ -670,7 +682,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const persona = await loadPersona(env);
       ctx.waitUntil(
         (async () => {
-          await answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate });
+          await answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate, budget: askBudget });
           const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
           const text = row && row.status === "error" && persona ? pickLine(persona, "errorLines", intentId) : row && row.answer;
           if (interaction.application_id && interaction.token && text) {
@@ -1485,7 +1497,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const persona = await loadPersona(env);
       ctx.waitUntil(
         (async () => {
-          await answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true });
+          await answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }) });
           const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
           if (row && row.status === "error" && persona) row.answer = pickLine(persona, "errorLines", intentId);
           if (interaction.application_id && interaction.token && row && row.answer) {

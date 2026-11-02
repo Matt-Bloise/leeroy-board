@@ -17,7 +17,7 @@ import { rank as rankWikiCore, factHays } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
 import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
-import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
+import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 
 export const AI_PROVIDER_LABELS = {
@@ -399,7 +399,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask" }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
@@ -443,7 +443,9 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   const usage = (result && result.usage) || {};
   const inTok = Number(usage.prompt_tokens) || tokensFromChars(systemPrompt.length + userPrompt.length);
   const outTok = Number(usage.completion_tokens) || tokensFromChars(answer.length);
-  await recordUsage(env, budgetKind, estimateNeurons(model, inTok, outTok));
+  const neurons = estimateNeurons(model, inTok, outTok);
+  await recordUsage(env, budgetKind, neurons);
+  if (budgetKind === "ask") await recordAttributed(env, budgetKeys, neurons);
   return { answer, model, provider: "workers-ai" };
 }
 
@@ -507,7 +509,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask" }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask", budgetKeys = null }) {
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
@@ -515,7 +517,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
     case "gemini":
       return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -631,10 +633,12 @@ export async function answerWithAi({
   share = true,
   journey = "curious",
   provider: requestedProvider,
+  budget = null, // optional { userKey, tenantKey, guest }; without it only the global soft cap applies
 }) {
   const t0 = Date.now();
   const nowIso = () => new Date().toISOString();
   const isCoach = journey === "guided" && share !== true;
+  let budgetCode = null;
 
   try {
     // 1. Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
@@ -728,15 +732,16 @@ export async function answerWithAi({
     const cacheKey = `ask:${libraryStamp}:${chosenProvider}:${deep ? "deep" : "fast"}:${qHash}`;
     // Daily Workers AI budget: past the soft cap, answer in voice without calling AI. Other providers are not capped.
     if (chosenProvider === "workers-ai") {
-      const budget = await loadBudget(env);
-      if (overCap(budget.neurons, dailyCap(env))) {
+      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null);
+      if (verdict) {
+        budgetCode = verdict.code;
         const limitedAt = nowIso();
-        const retryAfter = secondsToUtcMidnight();
+        const retryAfter = verdict.retryAfter;
         const limitText = pickLine(persona, "errorLines", intentId);
         await env.DB.prepare(
           "UPDATE ask_turns SET answer = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
         )
-          .bind(limitText, "workers-ai:daily-limit", Date.now() - t0, limitedAt, intentId)
+          .bind(limitText, budgetCode === "budget_global" ? "workers-ai:daily-limit" : `workers-ai:${budgetCode}`, Date.now() - t0, limitedAt, intentId)
           .run();
         await broadcastToRoom(env, {
           type: "ask",
@@ -756,11 +761,12 @@ export async function answerWithAi({
             ms: Date.now() - t0,
             status: "answered",
             why: "limited",
+            code: budgetCode,
             retryAfter,
             at: limitedAt,
           },
         });
-        return;
+        return { code: budgetCode };
       }
     }
 
@@ -773,6 +779,7 @@ export async function answerWithAi({
         userPrompt,
         deep,
         cacheKey,
+        budgetKeys: budget,
       }));
     } catch (providerErr) {
       if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
