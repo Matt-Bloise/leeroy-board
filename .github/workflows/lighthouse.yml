@@ -1,0 +1,197 @@
+name: Lighthouse
+
+# Informational only. Never fails or blocks a PR: every assertion is level "warn", the job has
+# continue-on-error, and the lhci step ends in "exit 0". Not in the Preview Tests report's needs.
+# Triggered by pull_request (not workflow_run), same-repo branches only, and waits for the preview
+# comment naming the head sha exactly like preview-tests.yml. Runbook: docs/runbooks/lighthouse.md
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: lighthouse-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  # Pinned action SHAs (tag in the comment on each use):
+  #   actions/checkout          11bd71901bbe5b1630ceea73d27597364c9af683 v4.2.2
+  #   actions/setup-node        39370e3970a6d050c480ffad4ff0ed4d3fdee5af v4.1.0
+  #   actions/upload-artifact   b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 v4.4.3
+  #   actions/github-script     60a0d83039c74a4aee543508d2ffcb1c3799cdea v7.0.1
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  lighthouse:
+    name: lighthouse (informational)
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Classify the changed paths
+        id: scope
+        continue-on-error: true
+        run: |
+          set -u
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt" || true
+          echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt" || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Find the preview URL in the PR comment
+        id: urls
+        if: steps.scope.outputs.docs_only != 'true'
+        continue-on-error: true
+        run: |
+          set -u
+          SHORT="${HEAD_SHA:0:7}"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 48); do
+            BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '[.comments[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | last | .body // ""' || true)
+            # Accept the comment only once it names this commit and is not the teardown notice.
+            if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
+              PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)
+              if [ -n "$PAGES" ]; then
+                for j in $(seq 1 40); do
+                  P=$(curl -s -o /dev/null -w "%{http_code}" "$PAGES/" || echo 000)
+                  echo "Attempt $j/40: pages $P"
+                  if [ "$P" = "200" ]; then
+                    echo "pages=$PAGES" >> "$GITHUB_OUTPUT"
+                    echo "found=true" >> "$GITHUB_OUTPUT"
+                    exit 0
+                  fi
+                  sleep 15
+                done
+                exit 0
+              fi
+            fi
+            echo "Attempt $i/48: preview comment for $SHORT not ready, waiting 15 s"
+            sleep 15
+          done
+          echo "No preview comment for $SHORT within 12 minutes."
+
+      - name: Lighthouse (mobile 390x844, 3 runs per URL)
+        id: lhci
+        if: steps.urls.outputs.found == 'true'
+        continue-on-error: true
+        env:
+          PAGES_URL: ${{ steps.urls.outputs.pages }}
+        run: |
+          set +e
+          npx --yes @lhci/cli@0.14.0 autorun --config=lighthouserc.json \
+            --collect.url="$PAGES_URL/" --collect.url="$PAGES_URL/landing/" 2>&1 | tee "$RUNNER_TEMP/lighthouse.log"
+          echo "lhci finished (exit status ignored on purpose)"
+          exit 0
+
+      - name: Post or update the comment
+        if: always() && !cancelled()
+        continue-on-error: true
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          DOCS_ONLY: ${{ steps.scope.outputs.docs_only }}
+          FOUND: ${{ steps.urls.outputs.found }}
+          PAGES_URL: ${{ steps.urls.outputs.pages }}
+        with:
+          script: |
+            const fs = require("fs");
+            const pr = context.payload.pull_request;
+            const sha = pr.head.sha.slice(0, 7);
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const rc = JSON.parse(fs.readFileSync("lighthouserc.json", "utf8")).ci.assert.assertMatrix;
+            const budgetFor = (url) => {
+              const m = rc.find((e) => new RegExp(e.matchingUrlPattern).test(url));
+              const o = {};
+              if (m) for (const [k, v] of Object.entries(m.assertions)) o[k] = v[1].maxNumericValue;
+              return o;
+            };
+            const kb = (n) => (n / 1000).toFixed(0) + " kB";
+            const fmt = {
+              "largest-contentful-paint": (n) => (n / 1000).toFixed(1) + " s",
+              "cumulative-layout-shift": (n) => n.toFixed(3),
+              "total-byte-weight": kb,
+              "resource-summary:script:size": kb,
+              "resource-summary:image:size": kb,
+            };
+            const names = {
+              "largest-contentful-paint": "LCP",
+              "cumulative-layout-shift": "CLS",
+              "total-byte-weight": "Total bytes",
+              "resource-summary:script:size": "JavaScript",
+              "resource-summary:image:size": "Images",
+            };
+            let out = [];
+            if (process.env.DOCS_ONLY === "true") out = ["Docs-only change: no preview, Lighthouse not run."];
+            else if (process.env.FOUND !== "true") out = ["No preview was found for this commit, so Lighthouse did not run."];
+            else {
+              let files = [];
+              try { files = fs.readdirSync(".lighthouseci").filter((f) => /^lhr-.*\.json$/.test(f)); } catch (e) {}
+              const byUrl = {};
+              for (const f of files) {
+                const r = JSON.parse(fs.readFileSync(`.lighthouseci/${f}`, "utf8"));
+                (byUrl[r.requestedUrl] = byUrl[r.requestedUrl] || []).push(r);
+              }
+              const urls = Object.keys(byUrl);
+              if (!urls.length) out = ["Lighthouse produced no results (see the run log)."];
+              for (const u of urls) {
+                const runs = byUrl[u].sort((a, b) => a.audits["largest-contentful-paint"].numericValue - b.audits["largest-contentful-paint"].numericValue);
+                const r = runs[Math.floor(runs.length / 2)]; // median run by LCP
+                const val = {
+                  "largest-contentful-paint": r.audits["largest-contentful-paint"].numericValue,
+                  "cumulative-layout-shift": r.audits["cumulative-layout-shift"].numericValue,
+                  "total-byte-weight": r.audits["total-byte-weight"].numericValue,
+                };
+                for (const it of r.audits["resource-summary"].details.items) {
+                  if (it.resourceType === "script") val["resource-summary:script:size"] = it.transferSize;
+                  if (it.resourceType === "image") val["resource-summary:image:size"] = it.transferSize;
+                }
+                const b = budgetFor(u);
+                const path = new URL(u).pathname;
+                out.push(`**\`${path}\`** (median of ${runs.length}, score ${Math.round(r.categories.performance.score * 100)})`, "", "| Metric | Measured | Budget | |", "| :--- | ---: | ---: | :--- |");
+                for (const k of Object.keys(names)) {
+                  const v = val[k];
+                  if (v === undefined) continue;
+                  const over = b[k] !== undefined && v > b[k];
+                  out.push(`| ${names[k]} | ${fmt[k](v)} | ${b[k] !== undefined ? fmt[k](b[k]) : "-"} | ${over ? "over budget" : "ok"} |`);
+                }
+                out.push("");
+              }
+            }
+            const body = [
+              "<!-- lighthouse -->",
+              `### Lighthouse, mobile 390x844 (\`${sha}\`): informational, never blocks`,
+              "",
+              ...out,
+              process.env.PAGES_URL ? `Preview: ${process.env.PAGES_URL}` : "",
+              "Lab numbers on a shared runner with simulated throttling; budgets are starting values, not targets. See docs/runbooks/lighthouse.md.",
+              `[Run log](${run})`,
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
+            const existing = comments.find((c) => c.body && c.body.includes("<!-- lighthouse -->"));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
+
+      - name: Upload the reports
+        if: always() && !cancelled()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: lighthouse
+          path: |
+            .lighthouseci
+            ${{ runner.temp }}/lighthouse.log
+          if-no-files-found: ignore
+          retention-days: 14
