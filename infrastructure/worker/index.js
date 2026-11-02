@@ -19,6 +19,7 @@ import {
   webBoardLinks,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
+import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
@@ -514,7 +515,8 @@ export default {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               username: "Leeroy Jenkins",
-              content: `📜 **${m.name}** shared ${ids.length} library note${ids.length === 1 ? "" : "s"} from the Leeroy Chamber with the party.`,
+              content: clampContent(`📜 **${m.name}** shared ${ids.length} library note${ids.length === 1 ? "" : "s"} from the Leeroy Chamber with the party.`),
+              allowed_mentions: ALLOWED_MENTIONS_NONE,
             }),
           }).catch(() => {});
         }

@@ -18,6 +18,7 @@ import { sha256Hex } from "./crypto.js";
 import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
+import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -823,7 +824,8 @@ export async function answerWithAi({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: `Leeroy (${label})`,
-          content: `**${by} asked:** ${question}\n${answer}`,
+          content: clampContent(`**${by} asked:** ${question}\n${answer}`),
+          allowed_mentions: ALLOWED_MENTIONS_NONE,
         }),
       }).catch(() => {});
     }
