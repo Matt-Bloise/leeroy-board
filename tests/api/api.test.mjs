@@ -94,6 +94,16 @@ test("Pages: baseline security headers are served on the preview origin", async 
   await r.arrayBuffer();
 });
 
+test("Pages: cache lifetimes by path, HTML always revalidated, stamped code not immutable", async () => {
+  const cc = async (path) => { const r = await fetch(`${PAGES}${path}`); assert.equal(r.status, 200, `${path} answered ${r.status}`); await r.arrayBuffer(); return r.headers.get("cache-control") || ""; };
+  assert.match(await cc("/"), /max-age=0/);
+  assert.match(await cc("/fonts/alegreya-latin.woff2"), /max-age=2592000/);
+  assert.match(await cc("/img/tavern-plate.jpg"), /max-age=86400.*stale-while-revalidate=604800/);
+  assert.match(await cc("/data/stats.json"), /max-age=300.*stale-while-revalidate=3600/);
+  const code = await cc("/js/board.js");
+  assert.doesNotMatch(code, /immutable/, "stamps are not yet content-verified, so code must not be immutable");
+});
+
 // Public guests may only ask (Workers AI, 2 per hour per IP, PR 17). Every other write kind must still need a key. Never send kind "ask" here: that would spend AI.
 test("non-ask write route without a key is refused (401 or 403)", async () => {
   const r = await fetch(`${API}/api/intent`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "signup", patch: {} }) });
