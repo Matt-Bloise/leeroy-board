@@ -9,6 +9,8 @@
 // and storage access itself throwing; analytics blocked (also: no console error from our code); reduced motion, forced colours, dark scheme, more contrast;
 // zoom equivalents (640x360, 480x270, text at 200 percent); a very slow network (400 kbps, 800 ms); a stale index.html whose script 404s.
 // Makes no AI call and sends nothing. Chromium only. Exit 0 when every check passes, 1 otherwise.
+// Late rejections from routes or pages that closed with the context are not test failures; anything else still fails the run.
+process.on("unhandledRejection", (e) => { if (/Target page, context or browser has been closed/.test(String(e && e.message || e))) return; console.error(e); process.exit(1); });
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -38,8 +40,9 @@ const probe = () => {
 /* conditions: id, label, optional ctx options, optional sizes, setup(ctx, page, cdp, state), after(page) once usable. */
 const MEDIA = (f) => async (ctx, page, cdp) => { await cdp.send("Emulation.setEmulatedMedia", { features: f }); };
 const failReq = (kind) => (ctx) => routeApi(ctx, async (route) => {
-  if (kind === "abort") return route.abort();
-  if (kind === "500") return route.fulfill({ status: 500, contentType: "application/json", body: "{\"error\":\"boom\"}" });
+  // A route can still be pending when the context closes; that rejects with TargetClosedError, which must not crash the suite (seen on PRs 130 and 131, Nov 2).
+  if (kind === "abort") return route.abort().catch(() => {});
+  if (kind === "500") return route.fulfill({ status: 500, contentType: "application/json", body: "{\"error\":\"boom\"}" }).catch(() => {});
   await sleep(12000); await route.abort().catch(() => {});
 });
 const STORAGE_METHODS = () => {
