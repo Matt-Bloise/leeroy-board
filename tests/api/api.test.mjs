@@ -275,3 +275,24 @@ for (const k of ["persona", "name_map", "discord_members", "discord_roster"]) {
     await r.arrayBuffer();
   });
 }
+
+// The data and atlas routes serve only documents the public site fetches (allow list in public-docs.js).
+for (const k of ["party", "timeline"]) {
+  test(`GET /api/data/${k} is served (200)`, async () => {
+    const r = await fetch(`${API}/api/data/${k}`, { headers: { Origin: PAGES } });
+    assert.equal(r.status, 200, `status ${r.status}`);
+    await json(r);
+  });
+}
+test("GET /api/data/party.json is served (200)", async () => {
+  const r = await fetch(`${API}/api/data/party.json`, { headers: { Origin: PAGES } });
+  assert.equal(r.status, 200, `status ${r.status}`);
+  await json(r);
+});
+for (const p of ["/api/data/zz-not-a-document", "/api/atlas/zz-not-a-document", "/api/atlas/party", "/api/data/marks", "/api/data/party_sheets", "/api/data/vocab"]) {
+  test(`GET ${p} is not served (404)`, async () => {
+    const r = await fetch(`${API}${p}`, { headers: { Origin: PAGES } });
+    assert.equal(r.status, 404, `status ${r.status}`);
+    await r.arrayBuffer();
+  });
+}
