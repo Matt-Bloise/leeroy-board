@@ -72,7 +72,24 @@ export function repairHouseVoice(rawText, opts = {}) {
     return inner;
   });
 
-  return out.replace(/\s{2,}/g, " ").trim();
+  // Collapse spaces and tabs only; newlines carry the answer's line structure.
+  return out
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// Website-only: turn a Discord deep-link token {board:<token>} into a plain link,
+// or drop it when the token is malformed. Stored answers keep the token.
+export function webBoardLinks(text) {
+  if (typeof text !== "string") return text;
+  return text
+    .replace(/\{board:([^}]*)\}/g, (m, token) =>
+      /^[a-z0-9.-]{1,80}$/.test(token) ? `https://leeroy.party/#${token}` : ""
+    )
+    .replace(/[ 	]+$/gm, "")
+    .trim();
 }
 
 export function isPrPreviewEnv(env) {

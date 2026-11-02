@@ -16,6 +16,7 @@ import {
   isPrPreviewEnv,
   invalidatePagesCache,
   AI_PROVIDER_LABELS,
+  webBoardLinks,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
@@ -864,7 +865,7 @@ export default {
               id: numericId,
               status,
               text: row.question,
-              answer: row.answer || null,
+              answer: webBoardLinks(row.answer) || null,
               sources,
               provider,
               model,
