@@ -15,7 +15,7 @@ This page ranks what the old PC-hosted bot did against what the Worker does toda
 | 4 | "More" and "Sources" buttons (private depth) | 69 | none | store the extra text in D1, button handler returns an ephemeral message | to build |
 | 5 | Sign-up card, states, write-in modal, tallies | 94 | RSVP buttons exist; card edit-in-place and states unverified | message edit over REST, D1 state | to verify, then build |
 | 6 | Pinned cards edited in place (Party Board, Sign-ups, Party card) | 85 ops | none | REST message edit from the Worker on data change, message ids in D1 | to build |
-| 7 | Image answers and `/page` `/tooltip` `/map` cards | 32 plus commands | text only | pure-Worker card renderer (SVG to PNG in WASM) or Browser Run | to spike |
+| 7 | Image answers and `/page` `/tooltip` `/map` cards | 32 plus commands | text only | pure-Worker card renderer (SVG to PNG in WASM) or Browser Run | spiked: no-go on Free, see [IMAGE-CARDS.md](IMAGE-CARDS.md) |
 | 8 | Launch-night moments (7, countdown card edited each minute) | scheduled | none | `scheduled` cron, D1 ledger (PR in flight, flag off) | in progress |
 | 9 | Feedback reactions and file | 18 | none | thumbs-up and thumbs-down as buttons, D1 table; also the evaluation signal | to build |
 | 10 | Thread replies and private follow-up threads | used | none | REST thread creation with the bot token | to build |
