@@ -136,9 +136,14 @@ export async function flushBoardLines(env, { now = Date.now(), fetchImpl = fetch
       await recordShadow(env.DB, "post", channel, day);
       return { status: "shadow", line };
     }
-    if (!env.DISCORD_BOT_TOKEN) { await restore(env.DB, raw, now); return { status: "unconfigured" }; }
+    if (!env.DISCORD_BOT_TOKEN) { await restore(env.DB, pending, now, 60 * 60 * 1000); return { status: "unconfigured" }; }
     const r = await discordRest(env, "POST", `/channels/${channel}/messages`, { content: line, flags: SUPPRESS_NOTIFICATIONS, allowed_mentions: { parse: [] } }, fetchImpl);
-    if (!r.ok) { await restore(env.DB, raw, now); return { status: "failed", http: r.status }; }
+    if (!r.ok) {
+      // Put the line back, but not for an immediate retry: every interaction flushes, so a refusing channel must not be hit each time.
+      const wait = r.status === 429 ? r.retryAfterMs || 60000 : r.status === 401 || r.status === 403 ? 60 * 60 * 1000 : 60000;
+      await restore(env.DB, pending, now, wait);
+      return { status: "failed", http: r.status, retryInMs: wait };
+    }
     await recordPost(env.DB, channel, day).catch(() => {});
     return { status: "posted", line };
   } catch {
@@ -146,7 +151,8 @@ export async function flushBoardLines(env, { now = Date.now(), fetchImpl = fetch
   }
 }
 
-// Put a claimed record back after a failed post, unless new changes already created a fresh one.
-async function restore(db, raw, now) {
-  await db.prepare("INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").bind(PENDING_KEY, raw, new Date(now).toISOString()).run();
+// Put a claimed record back after a failed post, held until now + waitMs, unless new changes already created a fresh one.
+async function restore(db, pending, now, waitMs) {
+  const next = { ...pending, notBefore: Math.max(pending.notBefore || 0, now + waitMs) };
+  await db.prepare("INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").bind(PENDING_KEY, JSON.stringify(next), new Date(now).toISOString()).run();
 }

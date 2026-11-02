@@ -305,3 +305,94 @@ test("post: Discord refusing the post leaves the cards row alone; unknown card i
   assert.deepEqual(await postCard(sh.env, { card: "signups", channelId: CH, fetchImpl: f2 }), { ok: true, shadow: true, card: "signups" });
   assert.equal(f2.calls.length, 0);
 });
+
+// ---- terminal and rate-limited Discord answers ----
+test("edit: 403 (and 401) is terminal: card marked errored, no retry, pendingSince not re-marked, never loops", async () => {
+  for (const status of [403, 401]) {
+    const s = setup();
+    const f = fakeFetch(() => ({ status, json: { code: 50013 } }));
+    const opts = { clock: s.clock, sleep: s.sleep, fetchImpl: f };
+    const r = await requestCardEdit(s.env, opts);
+    assert.equal(r.status, "edited", String(status));
+    assert.deepEqual(r.results, [{ card: "signups", status: "errored", http: status }]);
+    assert.equal(JSON.parse(s.DB.kv.get("cards")).signups.errored, true);
+    assert.equal(JSON.parse(s.DB.kv.get("cards_edit")).pendingSince, null, "pending is not re-marked");
+    for (let i = 0; i < 5; i++) {
+      s.tick(10_000);
+      assert.equal((await requestCardEdit(s.env, opts)).status, "no_card");
+      assert.equal((await requestCardEdit(s.env, { ...opts, dirty: false })).status, "no_card");
+    }
+    assert.equal(f.calls.length, 1, `exactly one Discord call after a ${status}`);
+  }
+});
+
+test("edit: an errored card is skipped but the other card keeps working; admin repost clears the error", async () => {
+  const s = setup({ cards: { signups: { channel: CH, message: MSG, errored: true }, board: { channel: CH, message: "200000000000000003" } } });
+  const f = fakeFetch(() => ({ status: 200, json: { id: "200000000000000088" } }));
+  const r = await requestCardEdit(s.env, { clock: s.clock, sleep: s.sleep, fetchImpl: f });
+  assert.deepEqual(r.results.map((x) => [x.card, x.status]), [["board", "edited"]]);
+  const post = await postCard(s.env, { card: "signups", channelId: CH, fetchImpl: f });
+  assert.equal(post.ok, true);
+  assert.equal(JSON.parse(s.DB.kv.get("cards")).signups.errored, undefined);
+});
+
+test("edit: 429 honours Retry-After (header, then body), backs off without calling Discord, then retries once", async () => {
+  const s = setup();
+  let limited = true;
+  const f = fakeFetch(() => (limited ? { status: 429, headers: { "retry-after": "30" }, json: { retry_after: 99 } } : { status: 200 }));
+  const opts = { clock: s.clock, sleep: s.sleep, fetchImpl: f };
+  const r = await requestCardEdit(s.env, opts);
+  assert.equal(r.status, "failed");
+  const st = JSON.parse(s.DB.kv.get("cards_edit"));
+  assert.equal(st.retryAt - st.lastEditAt, 30_000, "header wins over body");
+  assert.ok(st.pendingSince, "the change is still owed");
+  for (let i = 0; i < 6; i++) {
+    s.tick(4_000); // 24 s in total, still inside Retry-After
+    assert.equal((await requestCardEdit(s.env, opts)).status, "backoff");
+    assert.equal((await requestCardEdit(s.env, { ...opts, dirty: false })).status, "backoff");
+  }
+  assert.equal(f.calls.length, 1, "no Discord call while backing off");
+  limited = false;
+  s.tick(7_000); // past 30 s
+  assert.equal((await requestCardEdit(s.env, { ...opts, dirty: false })).status, "edited");
+  assert.equal(f.calls.length, 2);
+  assert.equal(JSON.parse(s.DB.kv.get("cards_edit")).retryAt, null);
+});
+
+test("edit: a change that arrives during a back-off is remembered, not dropped", async () => {
+  const s = setup();
+  const f = fakeFetch(() => ({ status: 429, headers: { "retry-after": "60" } }));
+  const opts = { clock: s.clock, sleep: s.sleep, fetchImpl: f };
+  await requestCardEdit(s.env, opts);
+  s.DB.kv.set("cards_edit", JSON.stringify({ lastEditAt: 1, pendingSince: null, retryAt: s.clock() + 60_000 }));
+  s.tick(1000);
+  assert.equal((await requestCardEdit(s.env, opts)).status, "backoff");
+  assert.ok(JSON.parse(s.DB.kv.get("cards_edit")).pendingSince);
+});
+
+test("retry-after parsing: header, body, default, cap", async () => {
+  const { retryAfterMs, MAX_BACKOFF_MS } = await import("../../infrastructure/worker/cards.js");
+  const h = (v) => ({ headers: { get: () => v } });
+  assert.equal(retryAfterMs(h("2"), {}), 2000);
+  assert.equal(retryAfterMs(h(null), { retry_after: 1.5 }), 1500);
+  assert.equal(retryAfterMs({}, {}), 5000);
+  assert.equal(retryAfterMs(h("999999"), {}), MAX_BACKOFF_MS);
+  assert.equal(retryAfterMs(h("0"), {}), 1000);
+});
+
+test("when options: custom ids stay under 100 characters and cannot inject a colon; bad options fall back", () => {
+  const hostile = ["x".repeat(300), "a:b", "8pm", " pad ", "tab\there", ""];
+  const card = renderSignupCard({ options: { when: hostile }, entries: [] });
+  const ids = card.components.flatMap((r) => r.components.map((c) => c.custom_id));
+  for (const id of ids) assert.ok(id.length <= 100, id);
+  const whenIds = ids.filter((i) => i.startsWith("signup:when:"));
+  assert.deepEqual(whenIds, ["signup:when:8pm"]);
+  for (const id of ids) assert.equal(id.split(":").length, 3, id);
+  assert.deepEqual(renderSignupCard({ options: { when: ["a:b"] }, entries: [] }).components[2].components.map((c) => c.custom_id), ["signup:when:6pm", "signup:when:8pm", "signup:when:later"]);
+  assert.equal(resolveChoice("when", "a:b", { when: ["a:b", "8pm"] }), null);
+  assert.equal(resolveChoice("when", "8pm", { when: ["a:b", "8pm"] }), "8pm");
+  const many = renderSignupCard({ options: { when: ["1", "2", "3", "4", "5", "6", "7"] }, entries: [] });
+  assert.equal(many.components[2].components.length, 5);
+  assert.equal(validateCardsConfig({ signups: { channel: CH, message: MSG, errored: true } }), null);
+  assert.ok(validateCardsConfig({ signups: { channel: CH, message: MSG, errored: "x" } }));
+});

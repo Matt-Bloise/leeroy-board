@@ -7,7 +7,7 @@
 import { readModalValues } from "./build-modal.js";
 import {
   RSVP_STATES, RSVP_LABEL, cardsEnabled, loadCards, loadSignups, channelAllowed, resolveChoice, sanitiseWriteIn, applySignupChange,
-  confirmationLine, describeChange, requestCardEdit, DEFAULT_MEET, DEFAULT_WHEN, WRITE_IN_MAX,
+  confirmationLine, describeChange, requestCardEdit, whenOptions, DEFAULT_MEET, WRITE_IN_MAX,
 } from "./cards.js";
 import { noteSignupChange } from "./board-lines.js";
 
@@ -36,7 +36,7 @@ const select = (custom_id, label, options, current) => ({
 export function signupSelectModal(doc, entry) {
   const e = entry || {};
   const meet = (Array.isArray(doc && doc.options && doc.options.meet) && doc.options.meet.length ? doc.options.meet : DEFAULT_MEET).slice(0, 5);
-  const when = (Array.isArray(doc && doc.options && doc.options.when) && doc.options.when.length ? doc.options.when : DEFAULT_WHEN).slice(0, 5);
+  const when = whenOptions(doc && doc.options);
   const meetValue = (m, i) => (m === "Valley of Strength" ? "vos" : m === "The Crossroads" ? "xroads" : `m${i}`);
   return {
     type: 9,
@@ -53,15 +53,21 @@ export function signupSelectModal(doc, entry) {
   };
 }
 
-// After any sign-up document change (slash command, button, modal, web form): queue a board line and redraw the card. Never throws.
-export async function afterSignupChange(env, ctx, before, after, now = Date.now()) {
-  if (!cardsEnabled(env)) return;
-  try {
+// Run follow-up work after the reply has gone out (Discord wants an answer within 3 s). With a Workers ctx it runs under waitUntil;
+// without one (tests, scripts) it is awaited. A failure here never fails the sign-up, which is already saved.
+async function defer(ctx, task) {
+  const p = Promise.resolve().then(task).catch(() => {});
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p);
+  else await p;
+}
+
+// After any sign-up document change (slash command, button, modal, web form): queue a board line, then redraw the card. All deferred.
+export function afterSignupChange(env, ctx, before, after, now = Date.now()) {
+  if (!cardsEnabled(env)) return Promise.resolve();
+  return defer(ctx, async () => {
     await noteSignupChange(env, before, after, now);
-    const p = requestCardEdit(env);
-    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p.catch(() => {}));
-    else await p.catch(() => {});
-  } catch { /* the sign-up is already saved; a card problem must not fail it */ }
+    await requestCardEdit(env);
+  });
 }
 
 // Apply patches ({ field, value }) for one person, persist, and fire the follow-ups. Returns the saved document.
@@ -74,11 +80,14 @@ async function applyAndSave({ env, ctx, member, byName, patches, deps, now }) {
     doc = r.doc;
   }
   await deps.recompute(doc);
+  // The only work before the reply is the save itself (one read above, one write here). Everything else follows under waitUntil.
   await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('signups', ?, ?)").bind(JSON.stringify(doc), new Date(now).toISOString()).run();
   const entry = doc.entries.find((e) => String(e.name || "").toLowerCase() === byName.toLowerCase());
-  await deps.insertIntent(env, { slug: member.slug, kind: "signup", body: { patch: Object.fromEntries(patches.map((p) => [p.field, p.value])), entry }, ver: 1, at: new Date(now).toISOString() });
-  await deps.purgeWorkerCache(deps.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
-  await deps.broadcastToRoom(env, { type: "data", key: "signups", data: doc });
+  await defer(ctx, async () => {
+    await deps.insertIntent(env, { slug: member.slug, kind: "signup", body: { patch: Object.fromEntries(patches.map((p) => [p.field, p.value])), entry }, ver: 1, at: new Date(now).toISOString() });
+    await deps.purgeWorkerCache(deps.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+    await deps.broadcastToRoom(env, { type: "data", key: "signups", data: doc });
+  });
   await afterSignupChange(env, ctx, before, doc, now);
   return doc;
 }

@@ -161,15 +161,26 @@ test("quiet hours: a change at 2 AM New York is held and goes out at 9 AM", asyn
   assert.equal((await flushBoardLines(s.env, { now: r.notBefore, fetchImpl: f })).status, "posted");
 });
 
-test("Discord failure puts the line back and nothing is counted", async () => {
+test("Discord failure puts the line back with a back-off, so every interaction does not hit a refusing channel", async () => {
   const s = setup();
-  let ok = false;
-  const f = fakeFetch(() => (ok ? { status: 200, json: {} } : { status: 500 }));
+  let status = 500;
+  const f = fakeFetch(() => (status === 200 ? { status, json: {} } : { status, headers: status === 429 ? { "retry-after": "120" } : {} }));
   await note(s, [], [["Ada", "in"]]);
-  assert.equal((await flushBoardLines(s.env, { now: T0 + 9e5, fetchImpl: f })).status, "failed");
+  const due = T0 + QUIET_WINDOW_MS;
+  const first = await flushBoardLines(s.env, { now: due, fetchImpl: f });
+  assert.deepEqual([first.status, first.http, first.retryInMs], ["failed", 500, 60000]);
   assert.equal(s.DB.ledger.size, 0);
-  ok = true;
-  assert.equal((await flushBoardLines(s.env, { now: T0 + 9e5 + 1000, fetchImpl: f })).status, "posted");
+  assert.equal((await flushBoardLines(s.env, { now: due + 30_000, fetchImpl: f })).status, "waiting");
+  assert.equal(f.calls.length, 1, "no second Discord call inside the back-off");
+  status = 429;
+  const limited = await flushBoardLines(s.env, { now: due + 60_000, fetchImpl: f });
+  assert.deepEqual([limited.status, limited.retryInMs], ["failed", 120_000]);
+  status = 403;
+  const forbidden = await flushBoardLines(s.env, { now: due + 60_000 + 120_000, fetchImpl: f });
+  assert.deepEqual([forbidden.status, forbidden.retryInMs], ["failed", 3_600_000]);
+  assert.equal((await flushBoardLines(s.env, { now: due + 600_000, fetchImpl: f })).status, "waiting");
+  status = 200;
+  assert.equal((await flushBoardLines(s.env, { now: due + 60_000 + 120_000 + 3_600_000, fetchImpl: f })).status, "posted");
 });
 
 test("no sign-ups channel known: nothing is posted and the changes stay queued", async () => {

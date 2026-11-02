@@ -25,7 +25,11 @@ function setup({ cards = { signups: { channel: CH, message: MSG } }, env = {} } 
   const waits = [];
   const ctx = { waitUntil: (p) => waits.push(p) };
   const e = { CARDS_ENABLED: "on", DB, ...env };
-  const run = (interaction) => handleCardInteraction({ interaction, env: e, ctx, member, byName: "Ada", deps, now: NOW });
+  const run = async (interaction) => {
+    const r = await handleCardInteraction({ interaction, env: e, ctx, member, byName: "Ada", deps, now: NOW });
+    await Promise.all(waits); // the deferred follow-ups (intent, cache, room, board line, card redraw)
+    return r;
+  };
   return { DB, deps, calls, ctx, waits, env: e, run };
 }
 const click = (custom_id, channel_id = CH, id = "300000000000000003") => ({ type: 3, id, channel_id, data: { custom_id } });
@@ -74,7 +78,7 @@ test("button: state saved, tallies recomputed, intent + cache + room, one epheme
   assert.deepEqual(doc.entries.find((e) => e.name === "Ada"), { name: "Ada", slug: "ada", rsvp: "maybe", updated: "2026-11-03T18:00:00.000Z" });
   assert.deepEqual([s.calls.recompute, s.calls.purged, s.calls.broadcast, s.calls.intents.length], [1, 1, 1, 1]);
   assert.deepEqual(s.calls.intents[0].body.patch, { rsvp: "maybe" });
-  assert.equal(s.waits.length, 1, "the card redraw is scheduled, not awaited");
+  assert.ok(s.waits.length >= 2, "intent/cache/room and the board line + redraw run under waitUntil, not before the reply");
 });
 
 test("all four states and the pack, meeting and arrival buttons", async () => {

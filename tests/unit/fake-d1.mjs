@@ -1,6 +1,6 @@
 // A tiny in-memory fake of the D1 statements the cards, board-line and noise code use. Not a SQL engine: each statement is matched by shape.
 // Helper only (not a test). Fictional data everywhere.
-export function fakeD1(seed = {}) {
+export function fakeD1(seed = {}, { lenient = false } = {}) {
   const kv = new Map(Object.entries(seed).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
   const ledger = new Map();
   const log = [];
@@ -15,6 +15,7 @@ export function fakeD1(seed = {}) {
           log.push(sql);
           if (/FROM kv_state/.test(sql)) { const k = lit ? lit[1] : a[0]; return kv.has(k) ? { json: kv.get(k) } : null; }
           if (/FROM noise_ledger/.test(sql)) { const n = ledger.get(`${a[0]}|${a[1]}`); return n === undefined ? null : { n }; }
+          if (lenient) return null;
           throw new Error(`fake D1: unhandled first(): ${sql}`);
         },
         async run() {
@@ -30,8 +31,11 @@ export function fakeD1(seed = {}) {
             kv.delete(a[0]); return { meta: { changes: 1 } };
           }
           if (/^INSERT INTO noise_ledger/.test(sql)) { const k = `${a[0]}|${a[1]}`; ledger.set(k, (ledger.get(k) || 0) + 1); return { meta: { changes: 1 } }; }
+          if (/^UPDATE kv_state SET json = \?, updated_at = \? WHERE key = '/.test(sql)) { kv.set(lit[1], a[0]); return { meta: { changes: 1 } }; }
+          if (lenient) return { meta: { changes: 1, last_row_id: 1 } };
           throw new Error(`fake D1: unhandled run(): ${sql}`);
         },
+        async all() { log.push(sql); if (lenient) return { results: [] }; throw new Error(`fake D1: unhandled all(): ${sql}`); },
       };
       return o;
     },
@@ -46,7 +50,8 @@ export function fakeFetch(handler) {
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ method: init.method || "GET", path, body, auth: init.headers && init.headers.Authorization });
     const r = (await handler(init.method || "GET", path, body)) || { status: 200, json: {} };
-    return { ok: r.status >= 200 && r.status < 300, status: r.status, json: async () => r.json ?? {} };
+    const headers = { get: (k) => (r.headers && r.headers[String(k).toLowerCase()]) ?? null };
+    return { ok: r.status >= 200 && r.status < 300, status: r.status, headers, json: async () => r.json ?? {} };
   };
   f.calls = calls;
   return f;

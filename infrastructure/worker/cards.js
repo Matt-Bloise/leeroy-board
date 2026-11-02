@@ -35,7 +35,14 @@ export const DEFAULT_MEET = ["Valley of Strength", "The Crossroads"];
 export const DEFAULT_WHEN = ["6pm", "8pm", "later"];
 
 const meetOptions = (options) => (Array.isArray(options && options.meet) && options.meet.length ? options.meet.map(String) : DEFAULT_MEET);
-const whenOptions = (options) => (Array.isArray(options && options.when) && options.when.length ? options.when.map(String) : DEFAULT_WHEN);
+// A `when` option ends up in a custom_id (`signup:when:<option>`, max 100 characters) and is split on ":" when clicked, so only short
+// printable options without a colon are accepted. Anything else is dropped; if nothing is left the defaults apply. At most 5 (one row).
+export const WHEN_OPTION_MAX = 40;
+const safeWhen = (w) => typeof w === "string" && w.length >= 1 && w.length <= WHEN_OPTION_MAX && !/[:\u0000-\u001f\u007f]/.test(w) && w.trim() === w;
+export const whenOptions = (options) => {
+  const ok = (Array.isArray(options && options.when) ? options.when : []).filter(safeWhen).slice(0, 5);
+  return ok.length ? ok : DEFAULT_WHEN;
+};
 const meetToken = (name, i) => (name === "Valley of Strength" ? "vos" : name === "The Crossroads" ? "xroads" : `m${i}`);
 
 // Remove control and zero-width characters, mention and markdown syntax, links; collapse spaces; cap by code points.
@@ -237,7 +244,9 @@ export function validateCardsConfig(value) {
       if (!Array.isArray(v) || v.length > 10 || !v.every(isId)) return "allowedChannels must be an array of up to 10 digit strings";
     } else if (CARD_NAMES.includes(k)) {
       if (!v || typeof v !== "object" || Array.isArray(v) || !isId(v.channel) || !isId(v.message)) return `${k} needs channel and message as digit strings`;
-      if (v.deleted !== undefined && typeof v.deleted !== "boolean") return `${k}.deleted must be true or false`;
+      for (const flagName of ["deleted", "errored"]) {
+        if (v[flagName] !== undefined && typeof v[flagName] !== "boolean") return `${k}.${flagName} must be true or false`;
+      }
     } else return "cards allows signups, board, party and allowedChannels only";
   }
   return null;
@@ -272,7 +281,7 @@ async function readEdit(db) {
   const row = await db.prepare("SELECT json FROM kv_state WHERE key = ?").bind(CARD_EDIT_KEY).first();
   const raw = row ? row.json : null;
   const s = raw ? parse(raw, {}) : {};
-  return { raw, state: { lastEditAt: Number.isFinite(s.lastEditAt) ? s.lastEditAt : null, pendingSince: Number.isFinite(s.pendingSince) ? s.pendingSince : null } };
+  return { raw, state: { lastEditAt: Number.isFinite(s.lastEditAt) ? s.lastEditAt : null, pendingSince: Number.isFinite(s.pendingSince) ? s.pendingSince : null, retryAt: Number.isFinite(s.retryAt) ? s.retryAt : null } };
 }
 
 // Compare-and-swap on the raw JSON string, so two Workers waking together cannot both claim the same edit.
@@ -294,7 +303,19 @@ export async function discordRest(env, method, path, body, fetchImpl = fetch) {
   });
   let json = null;
   try { json = await res.json(); } catch { /* empty body */ }
-  return { ok: res.ok, status: res.status, json };
+  const out = { ok: res.ok, status: res.status, json };
+  if (res.status === 429) out.retryAfterMs = retryAfterMs(res, json);
+  return out;
+}
+
+export const MAX_BACKOFF_MS = 60 * 60 * 1000;
+// Retry-After header (seconds), else the body's retry_after (seconds, may be fractional), else 5 s. Capped at one hour.
+export function retryAfterMs(res, json) {
+  const raw = res && res.headers && typeof res.headers.get === "function" ? res.headers.get("retry-after") : null;
+  const header = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
+  const body = Number(json && json.retry_after);
+  const sec = Number.isFinite(header) && header >= 0 ? header : Number.isFinite(body) && body >= 0 ? body : 5;
+  return Math.min(MAX_BACKOFF_MS, Math.max(1000, Math.ceil(sec * 1000)));
 }
 
 // Redraw every configured, live card from the current sign-ups. A 404 means a person deleted the message: mark it deleted and stop
@@ -304,10 +325,11 @@ export async function redrawCards(env, cards, { fetchImpl = fetch, now = Date.no
   state.boardUrl = env.BOARD_PUBLIC_URL ? `${String(env.BOARD_PUBLIC_URL).replace(/\/+$/, "")}/#signups` : undefined;
   const results = [];
   let marked = false;
+  let retryAfter = 0;
   const next = structuredClone(cards);
   for (const name of Object.keys(RENDERERS)) {
     const c = cards[name];
-    if (!c || c.deleted) continue;
+    if (!c || c.deleted || c.errored) continue;
     if (cardsShadow(env)) {
       await recordShadow(env.DB, "edit", c.channel, noiseDay(now, null)).catch(() => {});
       results.push({ card: name, status: "shadow" });
@@ -318,10 +340,18 @@ export async function redrawCards(env, cards, { fetchImpl = fetch, now = Date.no
       next[name].deleted = true;
       marked = true;
       results.push({ card: name, status: "deleted" });
+    } else if (r.status === 401 || r.status === 403) {
+      // The bot may not edit here (token revoked, permission removed). Retrying cannot help: stop until an admin reposts the card.
+      next[name].errored = true;
+      marked = true;
+      results.push({ card: name, status: "errored", http: r.status });
+    } else if (r.status === 429) {
+      retryAfter = Math.max(retryAfter, r.retryAfterMs || 0);
+      results.push({ card: name, status: "failed", http: 429 });
     } else results.push({ card: name, status: r.ok ? "edited" : "failed", http: r.status });
   }
   if (marked) await saveCards(env.DB, next, now);
-  return { ok: results.every((r) => r.status !== "failed"), results };
+  return { ok: results.every((r) => r.status !== "failed"), retryAfterMs: retryAfter, results };
 }
 
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -332,9 +362,14 @@ export async function requestCardEdit(env, { clock = Date.now, fetchImpl = fetch
   if (!cardsEnabled(env) || !env.DB) return { status: "off" };
   if (!cardsShadow(env) && !env.DISCORD_BOT_TOKEN) return { status: "unconfigured" };
   const cards = await loadCards(env.DB);
-  const live = cards && Object.keys(RENDERERS).some((n) => cards[n] && !cards[n].deleted);
+  const live = cards && Object.keys(RENDERERS).some((n) => cards[n] && !cards[n].deleted && !cards[n].errored);
   if (!live) return { status: "no_card" };
   let { raw, state } = await readEdit(env.DB);
+  // Discord said "slow down" (429): do nothing until Retry-After has passed. The pending mark stays, so a later tick retries.
+  if (state.retryAt !== null && clock() < state.retryAt) {
+    if (dirty && state.pendingSince === null) await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").bind(CARD_EDIT_KEY, JSON.stringify({ ...state, pendingSince: clock() }), new Date(clock()).toISOString()).run();
+    return { status: "backoff" };
+  }
   if (dirty && state.pendingSince === null) {
     const t = clock();
     const next = { ...state, pendingSince: t };
@@ -345,11 +380,12 @@ export async function requestCardEdit(env, { clock = Date.now, fetchImpl = fetch
     const plan = planCardEdit({ lastEditAt: state.lastEditAt, pendingSince: state.pendingSince, now: t });
     if (plan.action === "none") return { status: "coalesced" };
     if (plan.action === "wait") { await sleep(plan.waitMs); ({ raw, state } = await readEdit(env.DB)); continue; }
-    if (!(await casEdit(env.DB, raw, { lastEditAt: t, pendingSince: null }, t))) { ({ raw, state } = await readEdit(env.DB)); continue; }
+    if (!(await casEdit(env.DB, raw, { lastEditAt: t, pendingSince: null, retryAt: null }, t))) { ({ raw, state } = await readEdit(env.DB)); continue; }
     const out = await redrawCards(env, cards, { fetchImpl, now: t });
     if (!out.ok) {
-      // keep the mark so the next tick retries, but only after the gap
-      await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").bind(CARD_EDIT_KEY, JSON.stringify({ lastEditAt: t, pendingSince: t }), new Date(t).toISOString()).run();
+      // keep the mark so a later tick retries, after the 3 s gap or Discord's Retry-After, whichever is longer
+      const retryAt = out.retryAfterMs ? t + out.retryAfterMs : null;
+      await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").bind(CARD_EDIT_KEY, JSON.stringify({ lastEditAt: t, pendingSince: t, retryAt }), new Date(t).toISOString()).run();
       return { status: "failed", results: out.results };
     }
     return { status: "edited", results: out.results };
@@ -361,7 +397,7 @@ export async function requestCardEdit(env, { clock = Date.now, fetchImpl = fetch
 export async function postCard(env, { card, channelId, fetchImpl = fetch, now = Date.now(), replace = false }) {
   if (!RENDERERS[card]) return { ok: false, error: "card must be signups or board" };
   const cards = (await loadCards(env.DB)) || {};
-  if (cards[card] && !cards[card].deleted && !replace) return { ok: false, error: "card_exists", status: 409 };
+  if (cards[card] && !cards[card].deleted && !cards[card].errored && !replace) return { ok: false, error: "card_exists", status: 409 };
   const state = await loadSignups(env.DB);
   state.boardUrl = env.BOARD_PUBLIC_URL ? `${String(env.BOARD_PUBLIC_URL).replace(/\/+$/, "")}/#signups` : undefined;
   const body = RENDERERS[card](state);
