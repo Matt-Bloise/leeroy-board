@@ -1,0 +1,13 @@
+{
+ "title": "What we track and why",
+ "intro": "Four short answers, in plain words.",
+ "lines": [
+  { "id": "reads", "label": "What the board reads from Discord", "what": "Your display name, your avatar, your guild roles, and the builds you confirm.", "why": "To show you as yourself, put you in the right guild, and keep your build on your own sheet." },
+  { "id": "stores", "label": "What is stored", "what": "Your Discord id, your name, your builds, your sign-ups and your saved settings. Questions you ask Leeroy are kept too.", "why": "So the board remembers you between visits and your guild sees one up-to-date sheet." },
+  { "id": "sees", "label": "Who can see it", "what": "Members of your own guild see your name, builds and sign-ups. Guild admins run the board. Nobody sees it for ads, and we do not sell it.", "why": "A guild board only works if the guild can see who is coming and with what." },
+  { "id": "delete", "label": "How to delete it", "what": "You will be able to erase your data yourself, in one step.", "why": "It is your data, so you should be able to take it back.", "link": "Erase my data", "soon": "coming soon" }
+ ],
+ "menu": "What we track and why",
+ "footer": "What we track and why",
+ "close": "Close"
+}

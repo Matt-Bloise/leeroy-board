@@ -194,6 +194,7 @@ function openMore() {
         row(roomTxt(), () => { const r = $("#more-room"); if (r) r.click(); }, "ornaments/tankard"),
         row("Sound and feel", () => { const r = $("#sense-btn"); if (r) r.click(); }, "chips/voice"),
         row("What this phone can do", () => { location.hash = "#probe"; }, "chips/question"),
+        row("What we track and why", () => { if (window.BoardTrust) window.BoardTrust.open(mb); }, "chips/lock"),
         row("Forget me on this browser", () => { const r = $("#lib-forget"); if (r) r.click(); }, "chips/lock"));
       body.append(list, util);
     },
