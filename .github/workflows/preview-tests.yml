@@ -177,8 +177,8 @@ jobs:
             try {
               if (process.env.AUDIT_OUTCOME && process.env.AUDIT_OUTCOME !== "skipped") {
                 const a = JSON.parse(fs.readFileSync("tests/visual-audit/visual-audit.json", "utf8")).summary;
-                const parts = Object.entries(a.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`);
-                auditLine = `\nVisual audit (not gating): ${a.total} findings${parts.length ? ` (${parts.join(", ")})` : ""}. Report: artifact \`visual-audit\` (visual-audit.md, visual-audit.json, screenshots/) on the run below.\n`;
+                const parts = Object.entries(a.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${(a.distinct || {})[k] ?? n}`);
+                auditLine = `\nVisual audit (not gating): ${a.total} findings per page and context; distinct subjects by category: ${parts.length ? parts.join(", ") : "none"}. Report: artifact \`visual-audit\` (visual-audit.md, visual-audit.json, screenshots/) on the run below.\n`;
               }
             } catch (e) { if (process.env.AUDIT_OUTCOME && process.env.AUDIT_OUTCOME !== "skipped") auditLine = "\nVisual audit (not gating): no report was produced, see the logs.\n"; }
             const body = [

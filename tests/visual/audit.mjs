@@ -272,10 +272,12 @@ function summarise(contexts, findings) {
   const counts = Object.fromEntries(CATS.map((k) => [k, 0])), items = { ...counts };
   for (const f of findings) { counts[f.cat]++; items[f.cat] += f.count || 1; }
   const perCtx = Object.fromEntries(contexts.map((c) => [c.id, findings.filter((f) => f.ctx === c.id).length]));
+  /* distinct: unique subjects (an image path, a selector, a message) per category, so one hero image seen on 225 pages counts once */
+  const distinct = Object.fromEntries(CATS.map((k) => [k, new Set(findings.filter((f) => f.cat === k).flatMap((f) => f.subjects)).size]));
   const agg = new Map();
   for (const f of findings) for (const s of f.subjects) { const k = `${f.cat}|${s}`; const a = agg.get(k) || { cat: f.cat, subject: s, score: 0, ctx: new Set(), pages: new Set(), worst: f.detail, worstScore: -1 }; a.score += f.score; a.ctx.add(f.ctx); a.pages.add(f.page); if (f.score > a.worstScore) { a.worstScore = f.score; a.worst = f.detail; } agg.set(k, a); }
   const offenders = [...agg.values()].sort((a, b) => b.score - a.score).map((a) => ({ cat: a.cat, subject: a.subject, score: a.score, contexts: a.ctx.size, pages: a.pages.size, worst: a.worst }));
-  return { counts, items, total: findings.length, perContext: perCtx, offenders };
+  return { counts, items, distinct, total: findings.length, perContext: perCtx, offenders };
 }
 
 function markdown(meta, contexts, findings, summary) {
@@ -283,9 +285,9 @@ function markdown(meta, contexts, findings, summary) {
   const L = [];
   const usedCats = CATS.filter((k) => summary.counts[k]);
   L.push("# Visual quality audit", "", `Target: ${meta.base}`, `Run: ${meta.startedAt}, ${Math.round(meta.elapsedMs / 1000)} s of a ${Math.round(meta.budgetMs / 60000)} min budget. Non-gating: findings never fail CI. Method and thresholds: docs/visual-quality.md.`, "");
-  L.push("## Findings by category", "", "| Category | Findings | Items |", "| :--- | ---: | ---: |");
-  for (const k of usedCats) L.push(`| ${k} | ${summary.counts[k]} | ${summary.items[k]} |`);
-  if (!summary.total) L.push("| none | 0 | 0 |");
+  L.push("## Findings by category", "", "| Category | Distinct subjects | Findings (per page and context) | Items |", "| :--- | ---: | ---: | ---: |");
+  for (const k of usedCats) L.push(`| ${k} | ${summary.distinct[k]} | ${summary.counts[k]} | ${summary.items[k]} |`);
+  if (!summary.total) L.push("| none | 0 | 0 | 0 |");
   L.push("", `Total: ${summary.total} findings across ${contexts.filter((c) => c.phases.length).length} of ${contexts.length} contexts.`, "");
   L.push("## Worst offenders first", "", "| # | Category | Subject | Score | Contexts | Pages | Worst case |", "| ---: | :--- | :--- | ---: | ---: | ---: | :--- |");
   summary.offenders.slice(0, 30).forEach((o, i) => L.push(`| ${i + 1} | ${o.cat} | ${cell(o.subject)} | ${o.score} | ${o.contexts} | ${o.pages} | ${cell(o.worst)} |`));
@@ -327,11 +329,17 @@ async function main() {
   const findings = contexts.flatMap(findingsOf).sort((a, b) => b.score - a.score);
   const summary = summarise(contexts, findings);
   const ran = contexts.filter((c) => c.phases.length);
-  const json = { meta, summary: { counts: summary.counts, items: summary.items, total: summary.total, perContext: summary.perContext, offenders: summary.offenders.slice(0, 60) }, contexts, findings };
+  const json = { meta, summary: { counts: summary.counts, items: summary.items, distinct: summary.distinct, total: summary.total, perContext: summary.perContext, offenders: summary.offenders.slice(0, 60) }, contexts, findings };
   fs.writeFileSync(path.join(OUT, "visual-audit.json"), JSON.stringify(json, null, 1));
   fs.writeFileSync(path.join(OUT, "visual-audit.md"), markdown(meta, contexts, findings, summary));
   if (!ran.length) { console.error("crash: no context produced a page"); process.exit(1); }
   console.log(`visual-audit: ${summary.total} findings in ${ran.length} contexts (${Math.round(meta.elapsedMs / 1000)} s)`);
-  console.log(CATS.filter((k) => summary.counts[k]).map((k) => `${k}=${summary.counts[k]}`).join(" ") || "no findings");
+  console.log(CATS.filter((k) => summary.counts[k]).map((k) => `${k}=${summary.counts[k]} (${summary.distinct[k]} distinct)`).join(" ") || "no findings");
+  /* the head of the report, so it can be read from the CI log without the artifact */
+  console.log("\nTop offenders (category | subject | contexts | pages | worst case):");
+  summary.offenders.slice(0, 40).forEach((o, i) => console.log(`${i + 1}. ${o.cat} | ${o.subject.slice(0, 110)} | ${o.contexts} ctx | ${o.pages} pages | ${o.worst.slice(0, 150)}`));
+  console.log("\nEngine report (dynamic-range high | gamut p3 | rec2020 | depth):");
+  contexts.filter((c) => c.report).forEach((c) => console.log(`${c.id}: ${c.report.dynamicRangeHigh} | ${c.report.colorGamutP3} | ${c.report.colorGamutRec2020} | ${c.report.colorDepth}`));
+  console.log("\nContexts:"); contexts.forEach((c) => console.log(`${c.id}: ${c.status}, ${c.phases.length} pages, ${summary.perContext[c.id] ?? 0} findings`));
 }
 main().catch((e) => { console.error("crash:", e && e.stack ? e.stack : e); process.exit(1); });
