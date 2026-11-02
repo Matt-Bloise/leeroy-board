@@ -23,6 +23,7 @@ import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMAND
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
+import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
@@ -1479,6 +1480,8 @@ export default {
           body.aiProvider = resolveAiProvider(env);
           body.aiGateway = env.AI_GATEWAY_ID || null;
           body.providers = providers;
+          const budget = await loadBudget(env);
+          body.aiBudget = { day: utcDayKey(), neurons: budget.neurons, cap: dailyCap(env), asks: budget.asks, cron: budget.cron };
         }
         return jsonResp(body, 200, cors);
       }

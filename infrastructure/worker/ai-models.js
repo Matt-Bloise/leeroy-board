@@ -15,8 +15,9 @@
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
-import { loadPersona, buildSystemPrompt } from "./persona.js";
+import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
+import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -322,7 +323,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask" }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
@@ -361,6 +362,12 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   ).trim();
 
   if (!answer) throw new Error("Cloudflare Workers AI returned an empty response");
+
+  // Count neurons against the daily soft cap. Use the API usage when present, else estimate from text length.
+  const usage = (result && result.usage) || {};
+  const inTok = Number(usage.prompt_tokens) || tokensFromChars(systemPrompt.length + userPrompt.length);
+  const outTok = Number(usage.completion_tokens) || tokensFromChars(answer.length);
+  await recordUsage(env, budgetKind, estimateNeurons(model, inTok, outTok));
   return { answer, model, provider: "workers-ai" };
 }
 
@@ -424,7 +431,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask" }) {
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
@@ -432,7 +439,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
     case "gemini":
       return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -643,6 +650,44 @@ export async function answerWithAi({
     const activeProvider = resolveAiProvider(env, chosenProvider);
     const qHash = (await sha256Hex(question)).slice(0, 16);
     const cacheKey = `ask:${libraryStamp}:${chosenProvider}:${deep ? "deep" : "fast"}:${qHash}`;
+    // Daily Workers AI budget: past the soft cap, answer in voice without calling AI. Other providers are not capped.
+    if (chosenProvider === "workers-ai") {
+      const budget = await loadBudget(env);
+      if (overCap(budget.neurons, dailyCap(env))) {
+        const limitedAt = nowIso();
+        const retryAfter = secondsToUtcMidnight();
+        const limitText = pickLine(persona, "errorLines", intentId);
+        await env.DB.prepare(
+          "UPDATE ask_turns SET answer = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
+        )
+          .bind(limitText, "workers-ai:daily-limit", Date.now() - t0, limitedAt, intentId)
+          .run();
+        await broadcastToRoom(env, {
+          type: "ask",
+          slug: memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          ask: {
+            id: Number(String(intentId).replace(/\D/g, "").slice(0, 13)) || Date.now(),
+            kind: "ask",
+            by,
+            q: question,
+            text: question,
+            answer: limitText,
+            cites: [],
+            sources: [],
+            model: "daily-limit",
+            provider: "workers-ai",
+            share: false,
+            ms: Date.now() - t0,
+            status: "answered",
+            why: "limited",
+            retryAfter,
+            at: limitedAt,
+          },
+        });
+        return;
+      }
+    }
+
     let rawAnswer, model, provider;
     try {
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
@@ -827,6 +872,11 @@ export async function extractWikiFactsWithAi({ env, source, cleanText }) {
     )}\n\nExisting Facts:\n${JSON.stringify(pagesContext)}`;
 
     const provider = resolveAiProvider(env);
+    // Keep room for asks: the cron sweep skips Workers AI once usage is within the reserve of the cap.
+    if (provider === "workers-ai") {
+      const budget = await loadBudget(env);
+      if (overCap(budget.neurons, dailyCap(env), CRON_RESERVE)) return [];
+    }
     const { answer } = await dispatchToProvider({
       provider,
       env,
@@ -834,6 +884,7 @@ export async function extractWikiFactsWithAi({ env, source, cleanText }) {
       userPrompt,
       deep: false,
       skipCache: true, // Cron fact learner MUST run live inference on new content
+      budgetKind: "cron",
     });
 
     const jsonMatch = answer.match(/\[[\s\S]*\]/);
