@@ -3,7 +3,9 @@
   const $ = (q, r) => (r || document).querySelector(q);
   const WAXC = { guided: "red", curious: "amber", everything: "green", in: "green", maybe: "amber", late: "amber", out: "red" };
   const noArt = (e) => { e.target.style.display = "none"; if (e.target.parentNode) e.target.parentNode.classList.add("no-art"); };
-  const h = (t, a, ...kids) => { const e = document.createElement(t); for (const [k, v] of Object.entries(a || {})) { if (v == null || v === false) continue; if (k === "text") e.textContent = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v); } for (const c of kids.flat()) if (c != null && c !== false) e.append(c); return e; };
+  const h = (t, a, ...kids) => {
+    if (t === "img" && a && a.loading === "lazy" && a.src && K.wallCold && K.wallCold()) { const { src, srcset, ...rest } = a, d = h(t, rest, ...kids); K.whenSettled(() => { if (srcset) d.setAttribute("srcset", srcset); d.setAttribute("src", src); }); return d; } /* cold wall: lazy art waits (js/board.js whenSettled) */
+    const e = document.createElement(t); for (const [k, v] of Object.entries(a || {})) { if (v == null || v === false) continue; if (k === "text") e.textContent = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v); } for (const c of kids.flat()) if (c != null && c !== false) e.append(c); return e; };
   const mq = (q) => { try { return matchMedia(q); } catch (e) { return { matches: false, addEventListener() {} }; } };
   const reduceMQ = mq("(prefers-reduced-motion: reduce)"), coarse = mq("(hover: none)");
   const snd = (n) => { try { if (window.BoardSound) window.BoardSound.play(n); } catch (e) {} };
@@ -131,7 +133,7 @@
     if (!row) {
       row = h("div", { class: "tn-seals", id: "tn-seals", role: "group", "aria-label": "How much the board shows you" }, h("p", { class: "tn-seals-q", text: "Pick how much the board shows you." }),
         h("div", { class: "wx-row" }, ...Object.entries(JR).map(([j, [name, ico, line]]) => h("button", { class: "wx", type: "button", "data-journey": j, "aria-pressed": "false", onclick: () => stamp(j) },
-          h("span", { class: "wx-wax" }, h("img", { class: "wx-blob", src: `img/wax/${WAXC[j]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "wx-ring" }), h("img", { class: "wx-ico", src: `img/icons/${ico}.png`, alt: "", width: 192, height: 192, decoding: "async" }), h("span", { class: "wx-lit" })),
+          h("span", { class: "wx-wax" }, h("img", { class: "wx-blob", src: `img/wax/${WAXC[j]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "wx-ring" }), h("img", { class: "wx-ico", src: `img/icons/${ico}.png`, alt: "", width: 192, height: 192, loading: "lazy", decoding: "async" }), h("span", { class: "wx-lit" })),
           h("b", { class: "wx-name", text: name }), h("span", { class: "wx-line", text: line })))),
         h("button", { class: "lib-tool tn-wall", id: "tn-wall", type: "button", onclick: () => { if (window.__next && window.__next.wall) window.__next.wall(); K.requestClose(); } }, "Skip this and see the wall"));
       panel.append(row);

@@ -1989,3 +1989,5 @@ html.room-off.scene-open body { background: var(--black) url("../img/tavern-plat
 .ring-wrap svg { box-sizing: border-box; border: 7px solid transparent; background: radial-gradient(circle closest-side, transparent 54%, var(--oak-0) 55%, var(--oak-0) 72%, transparent 73%) padding-box, radial-gradient(circle at 34% 28%, var(--oak-3), var(--oak-2) 45%, var(--oak-1) 75%) padding-box, var(--mat-brass) border-box; box-shadow: inset 7px 9px 18px var(--shadow), inset -3px -4px 8px var(--edge-hi), inset 0 0 0 1px var(--brass-dim), 6px 12px 22px var(--shadow); }
 .ring-seg { filter: drop-shadow(1px 2px 1px var(--shadow)); }
 .ring-wrap svg circle[stroke="var(--brass)"] { stroke: var(--wax); filter: drop-shadow(0 0 3px var(--hi-wax)); }
+/* first-load weight: a cold wall (first visit, covered by the Next steps scene) is not rendered, so no style is computed for it and its images and backgrounds do not load; js/board.js (settleGo) removes the class */
+html.wall-cold #main { display: none; }
