@@ -1462,30 +1462,31 @@ export default {
 
       // 6. Health check
       if (req.method === "GET" && (path === "/" || path === "/health")) {
-        const isPrPreview = isPrPreviewEnv(env);
-        const providers = {};
-        for (const k of Object.keys(AI_PROVIDER_LABELS)) {
-          providers[k] = isProviderConfigured(env, k);
+        const body = {
+          ok: true,
+          service: "leeroy-brain",
+          runtime: "cloudflare-workers-d1",
+          isPrPreview: isPrPreviewEnv(env),
+          at: new Date().toISOString(),
+        };
+        // Provider detail is for the admin token only; a request without it gets the minimal body, not a 401.
+        const healthKey = extractKey(req, url);
+        if (env.BOARD_ADMIN_TOKEN && healthKey && timingSafeEqualStr(healthKey, env.BOARD_ADMIN_TOKEN)) {
+          const providers = {};
+          for (const k of Object.keys(AI_PROVIDER_LABELS)) {
+            providers[k] = isProviderConfigured(env, k);
+          }
+          body.aiProvider = resolveAiProvider(env);
+          body.aiGateway = env.AI_GATEWAY_ID || null;
+          body.providers = providers;
         }
-        return jsonResp(
-          {
-            ok: true,
-            service: "leeroy-brain",
-            runtime: "cloudflare-workers-d1",
-            isPrPreview,
-            aiProvider: resolveAiProvider(env),
-            aiGateway: env.AI_GATEWAY_ID || null,
-            providers,
-          },
-          200,
-          cors
-        );
+        return jsonResp(body, 200, cors);
       }
 
       return jsonResp({ error: "Not found", path }, 404, cors);
     } catch (err) {
-      console.error("Worker error:", err);
-      return jsonResp({ error: String((err && err.message) || err) }, 500, cors);
+      console.error("Worker error:", err, String((err && err.message) || err));
+      return jsonResp({ error: "Internal error" }, 500, cors);
     }
   },
 
