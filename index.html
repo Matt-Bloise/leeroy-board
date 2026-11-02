@@ -44,6 +44,20 @@
 <link rel="stylesheet" href="css/fit.css?v=28ae6b9457"><!-- companion N5: the layout pass, loaded last --><link rel="stylesheet" href="css/kit.css?v=0defd828c3">
 </head>
 <body>
+<div id="boot" role="status" hidden><div><p data-msg>Opening the board. This can take a moment on a slow connection.</p><p><a href="">Reload this page</a></p></div></div>
+<style>#boot{position:fixed;inset:0;z-index:9;box-sizing:border-box;display:grid;place-content:center;padding:16px;animation:boot-in .01s .8s both}#boot[hidden]{display:none}#boot>div{max-width:30em;padding:20px 24px;border:1px solid #3a2a1a;border-radius:8px;background:#1c130c;color:#eadfc4;font:18px/1.45 Georgia,serif}#boot p{margin:0 0 8px}#boot a{display:inline-block;padding:10px 0;color:#eadfc4;text-decoration:underline}@keyframes boot-in{from{opacity:0}to{opacity:1}}</style>
+<script>
+/* Opening card: shown only if the board has not started after 0.8 s (the animation delay), removed once the board or the gate shows. If a script or style fails to load,
+   or 15 s pass, it says so in plain words and keeps its reload link, so a visitor never waits on a blank screen. */
+(function () {
+  var boot = document.getElementById("boot"); if (!boot) return;
+  boot.hidden = false;
+  var msg = boot.querySelector("[data-msg]"), say = function (t) { if (msg) msg.textContent = t; };
+  var iv = setInterval(function () { var b = document.getElementById("board"), g = document.getElementById("gate"); if ((b && !b.hidden) || (g && !g.hidden)) { clearInterval(iv); boot.remove(); } }, 300);
+  window.addEventListener("error", function (e) { var t = e.target; if (t && (t.tagName === "SCRIPT" || t.tagName === "LINK")) say("Part of the board did not load. Reloading this page usually fixes it."); }, true);
+  setTimeout(function () { if (boot.isConnected) say("The board is taking longer than usual. Check your connection, then reload this page."); }, 15000);
+})();
+</script>
 <div class="hero-art gate-mode" id="hero-art" aria-hidden="true"><picture><source type="image/avif" srcset="img/tavern-hero.w640.avif 640w, img/tavern-hero.w1200.avif 1200w, img/tavern-hero.w1672.avif 1672w, img/tavern-hero-2816.w2816.avif 2816w" sizes="calc(100vw + 32px)"><source type="image/webp" srcset="img/tavern-hero.w640.webp 640w, img/tavern-hero.w1200.webp 1200w, img/tavern-hero.w1672.webp 1672w, img/tavern-hero-2816.webp 2816w" sizes="calc(100vw + 32px)"><img src="img/tavern-hero.jpg" srcset="img/tavern-hero.jpg 1672w, img/tavern-hero-2816.webp 2816w" sizes="calc(100vw + 32px)" alt="" width="1672" height="941" loading="eager" fetchpriority="high" decoding="async"></picture></div>
 <noscript><div style="position:fixed;inset:0;z-index:9;box-sizing:border-box;display:grid;place-content:center;padding:16px"><div style="max-width:30em;padding:20px 24px;border:1px solid #3a2a1a;border-radius:8px;background:#1c130c;color:#eadfc4;font:18px/1.45 Georgia,serif"><p style="margin:0 0 8px;font-size:22px;line-height:1.25">The board needs JavaScript</p><p style="margin:0 0 12px">Your browser has JavaScript turned off, so the board cannot show the group's dates, cards and library. Turn JavaScript on for this page, then reload it.</p><p style="margin:0"><a href="" style="display:inline-block;padding:10px 0;color:#eadfc4;text-decoration:underline">Reload this page</a></p></div></div></noscript>
 <div class="candle" aria-hidden="true"></div>
@@ -305,6 +319,7 @@
    #preview or ?preview=1 on claude.ai or a local host, and #review-<REVIEW_KEY> on any host. The key keeps strangers off; it is
    no secret. A pass is kept for the tab (sessionStorage) and the pass hash is replaced with the wall state. */
 const CLIENT_ID = "1561857940174938114";
+const startBoard = (mode, sdk) => { if (window.__board) window.__board.start(mode, sdk); }; /* a missing js/board.js leaves the opening card up with its message, not a script error */
 const REVIEW_KEY = "3bxfn6y72f4irkur6qqh";
 const host = location.hostname;
 const previewHost = host === "claude.ai" || host.endsWith(".claude.ai") || host.endsWith(".claudeusercontent.com") || host === "localhost" || host === "127.0.0.1";
@@ -320,12 +335,12 @@ const openWeb = window.top === window && (/\.(?:github\.io|pages\.dev)$/.test(ho
 if (reviewFlag || (previewHost && previewFlag) || remembered || openWeb) {
   try { if (reviewFlag) sessionStorage.setItem("board-pass", "review"); else if (previewHost && previewFlag) sessionStorage.setItem("board-pass", "preview"); } catch (e) {}
   if (reviewFlag || hash === "#preview") { try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {} }
-  window.__board.start("preview");
+  startBoard("preview");
 } else {
   /* V13b: the gate card shows only when the Discord check fails or takes over 4 s */
   const gate = () => { if (document.getElementById("board").hidden) document.getElementById("gate").hidden = false; };
   /* D12: no READY in 4 s starts the no-SDK mode */
-  const slow = setTimeout(() => { if (document.getElementById("board").hidden) window.__board.start("preview"); }, 4000);
+  const slow = setTimeout(() => { if (document.getElementById("board").hidden) startBoard("preview"); }, 4000);
   try {
     const { DiscordSDK } = await import("./vendor/embedded-app-sdk.mjs?v=4e7ce3845f");
     const sdk = new DiscordSDK(CLIENT_ID);
@@ -333,7 +348,7 @@ if (reviewFlag || (previewHost && previewFlag) || remembered || openWeb) {
     clearTimeout(slow);
     try { if (window.BoardBrain) window.BoardBrain.lockLayout(sdk); } catch (e) {}
     window.__sdk = sdk;
-    window.__board.start("discord", sdk);
+    startBoard("discord", sdk);
   } catch (e) {
     clearTimeout(slow); gate();
   }
