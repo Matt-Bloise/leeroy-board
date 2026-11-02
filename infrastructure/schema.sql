@@ -411,3 +411,11 @@ CREATE TABLE IF NOT EXISTS discord_events (
 );
 CREATE INDEX IF NOT EXISTS idx_discord_events_tenant ON discord_events(tenant_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_discord_events_created ON discord_events(created_at);
+
+-- Noise ledger (migration 0004): counts of free-standing Discord posts per local day and channel. No message text. Unused while CARDS_ENABLED is off.
+CREATE TABLE IF NOT EXISTS noise_ledger (
+  day TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0),
+  PRIMARY KEY (day, channel)
+);
