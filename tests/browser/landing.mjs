@@ -46,7 +46,7 @@ for (const [size, opts] of CTX) {
   ok(`${tag} the call to action uses BOARD_URL`, href === constUrl, `${href} vs ${constUrl}`);
   ok(`${tag} the call to action is at least 44px tall`, (await cta.boundingBox()).height >= 44);
   const foot = (await page.locator("footer").innerText()).replace(/\s+/g, " ");
-  ok(`${tag} footer references privacy, terms and what we track`, /docs\/privacy\.md/.test(foot) && /docs\/terms\.md/.test(foot) && /What we track/.test(foot));
+  ok(`${tag} footer references privacy, terms and what we track`, /Privacy notice/.test(foot) && /Terms of use/.test(foot) && /What we track/.test(foot));
   ok(`${tag} footer carries the non-affiliation sentence`, /not affiliated with or endorsed by Blizzard Entertainment/i.test(foot));
   const title = await page.title();
   ok(`${tag} the title carries no Blizzard mark`, !/wow|warcraft|blizzard/i.test(title), title);
