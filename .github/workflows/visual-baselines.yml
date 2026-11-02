@@ -1,0 +1,67 @@
+name: Visual Baselines
+
+# Manual only. Renders the first screen, the sample guild sheet and the landing page at 390x844 and 1366x768 on the Linux CI image
+# and uploads the PNGs as an artifact. It never commits: a maintainer downloads the artifact and commits the files to tests/browser/baselines/
+# (docs/runbooks/visual-baselines.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages_url:
+        description: "Origin to screenshot (https only), for example https://leeroy.party or a PR preview"
+        required: true
+        default: "https://leeroy.party"
+
+permissions:
+  contents: read
+
+jobs:
+  baselines:
+    name: baselines
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      # Pinned action SHAs: checkout 11bd71901bbe5b1630ceea73d27597364c9af683 v4.2.2, setup-node 39370e3970a6d050c480ffad4ff0ed4d3fdee5af v4.1.0,
+      # upload-artifact b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 v4.4.3
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Validate the URL
+        env:
+          PAGES_URL: ${{ inputs.pages_url }}
+        run: |
+          set -eu
+          case "$PAGES_URL" in
+            https://*) ;;
+            *) echo "::error::pages_url must start with https://"; exit 1 ;;
+          esac
+          if printf '%s' "$PAGES_URL" | grep -qE '[^A-Za-z0-9./:_-]'; then echo "::error::pages_url has unexpected characters"; exit 1; fi
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: |
+          sudo apt-get update
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Render the baselines
+        working-directory: tests
+        env:
+          PAGES_URL: ${{ inputs.pages_url }}
+        run: |
+          set -o pipefail
+          node browser/visual-baseline.mjs --url "$PAGES_URL" --write-baselines "$RUNNER_TEMP/baselines" 2>&1 | tee "$RUNNER_TEMP/baselines.log"
+          ls -l "$RUNNER_TEMP/baselines"
+
+      - name: Upload the PNGs
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: visual-baselines
+          path: ${{ runner.temp }}/baselines/*.png
+          if-no-files-found: error
+          retention-days: 14
