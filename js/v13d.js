@@ -77,12 +77,12 @@ const CORE = {
   timeline() { const l = evOf("launch"), r = evOf("raids"); return l && l.epoch ? { a: `Launch is ${K.relWhen(l.epoch)}, ${K.fmtWhen(l.epoch)}.${r && r.epoch ? ` Raids open ${K.fmtWhen(r.epoch)}.` : ""}`, go: ["Add launch to my calendar", () => saveIcs(l), "ics"] } : null; },
   five() {
     const P = D.party, me = MEM.member(); if (!P) return null;
-    const a = me ? `${me.name}: ${me.race} ${me.class}, ${typeof me.role_detail === "string" ? me.role_detail : me.role}. With you: ${K.andList(P.members.filter((x) => x !== me).map((x) => x.name))}.` : `Five of you: ${P.members.map((x) => `${x.name} (${x.race} ${x.class})`).join(", ")}.`;
+    const a = me ? `${me.name}: ${me.race} ${me.class}, ${typeof me.role_detail === "string" ? me.role_detail : me.role}. With you: ${K.andList(P.members.filter((x) => x !== me).map((x) => x.name))}.` : `${K.pn && K.pn.on() ? K.pn.word()[0].toUpperCase() + K.pn.word().slice(1) : "Five"} of you: ${P.members.map((x) => `${x.name} (${x.race} ${x.class})`).join(", ")}.`;
     return { a, go: ["Turn my card", () => unfold("five", me && MEM.slug(me.name))] };
   },
   roads() {
     const P = D.party, me = MEM.member(), meet = meetOf(); if (!P) return null;
-    const a = me && me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${roadHow(me.start_zone)} to Orgrimmar.` : `The five wake in ${K.andList([...new Set(P.members.map((x) => x.start_zone))])} and meet in Orgrimmar.`;
+    const a = me && me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${roadHow(me.start_zone)} to Orgrimmar.` : `The ${K.pn ? K.pn.word() : "five"} wake in ${K.andList([...new Set(P.members.map((x) => x.start_zone))])} and meet in Orgrimmar.`;
     return { a: `${a} Meeting point: ${meet || "not picked yet"}.`, go: meet ? ["Open the Atlas", `#atlas.plan.${MEM.slug(meet)}${me ? `~${me.class_key}` : ""}`] : ["Pick where we meet", "#signups"] };
   },
   racials() {
@@ -97,7 +97,7 @@ const CORE = {
   buffs() {
     const C = D.client, d = decideData(), me = MEM.member(); if (!C || !C.buffs) return null;
     const give = me ? C.buffs.list.filter((b) => !b.sixth && b.class === me.class_key).map((b) => b.name) : [], get = me && d && d.party ? d.party.buffs.filter((b) => b.giver !== me.class_key && (b.to || []).includes(me.class_key)).map((b) => b.name) : [];
-    return { a: me ? `${me.class} gives: ${give.length ? few(give) : "no group buffs"}. You get: ${get.length ? few(get) : "none from this party"}.` : `${C.buffs.list.filter((b) => !b.sixth).length} buffs pass between the five classes.`, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
+    return { a: me ? `${me.class} gives: ${give.length ? few(give) : "no group buffs"}. You get: ${get.length ? few(get) : "none from this party"}.` : `${C.buffs.list.filter((b) => !b.sixth).length} buffs pass between the ${K.pn ? K.pn.word() : "five"} classes.`, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
   },
   ledger() {
     const P = D.party, d = decideData(), me = MEM.member(), pe = d && me && d.people ? d.people.find((x) => x.class_key === me.class_key) : null; if (!P) return null;
