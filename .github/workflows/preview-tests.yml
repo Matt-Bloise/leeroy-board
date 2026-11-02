@@ -1,5 +1,9 @@
 name: Preview Tests
 
+# Runs on draft and ready PRs from branches of this repository (not forks).
+# Jobs: scope -> preview -> api, browser; unit and stamps run at once; report posts the sticky comment.
+# A PR that changes only docs (tools/docs-only.mjs) gets no preview, so only unit and stamps run.
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -12,37 +16,101 @@ permissions:
   contents: read
   pull-requests: write
 
+env:
+  # Pinned action SHAs (tag in the comment on each use):
+  #   actions/checkout          11bd71901bbe5b1630ceea73d27597364c9af683 v4.2.2
+  #   actions/setup-node        39370e3970a6d050c480ffad4ff0ed4d3fdee5af v4.1.0
+  #   actions/upload-artifact   b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 v4.4.3
+  #   actions/github-script     60a0d83039c74a4aee543508d2ffcb1c3799cdea v7.0.1
+  #   actions/download-artifact fa0a91b85d4f404e444e00e005971372dc801d16 v4.1.8
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
 jobs:
-  preview-tests:
-    name: API and browser tests against the PR preview
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+  scope:
+    name: scope
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    env:
-      GH_TOKEN: ${{ github.token }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    timeout-minutes: 5
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Classify the changed paths
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu -o pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
+          cat "$RUNNER_TEMP/paths.txt"
+          echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+
+  unit:
+    name: unit
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "22"
 
       - name: Unit tests
-        id: unit
         run: |
           set -o pipefail
           node --test "tests/unit/*.test.mjs" 2>&1 | tee "$RUNNER_TEMP/unit.log"
 
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: preview-test-logs-unit
+          path: ${{ runner.temp }}/unit.log
+          if-no-files-found: ignore
+
+  stamps:
+    name: stamps
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
       - name: Stamps check
-        id: stamps
         run: |
           set -o pipefail
           node tools/stamps.mjs --check 2>&1 | tee "$RUNNER_TEMP/stamps.log"
 
+  preview:
+    name: preview
+    needs: scope
+    if: needs.scope.outputs.docs_only != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      pages: ${{ steps.urls.outputs.pages }}
+      worker: ${{ steps.urls.outputs.worker }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
       - name: Find the preview URLs in the PR comment
         id: urls
         run: |
@@ -68,17 +136,70 @@ jobs:
           exit 1
 
       - name: Wait for the preview to answer
+        env:
+          WORKER_URL: ${{ steps.urls.outputs.worker }}
+          PAGES_URL: ${{ steps.urls.outputs.pages }}
         run: |
           set -u
           for i in $(seq 1 40); do
-            H=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.urls.outputs.worker }}/api/health" || echo 000)
-            P=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.urls.outputs.pages }}/" || echo 000)
+            H=$(curl -s -o /dev/null -w "%{http_code}" "$WORKER_URL/api/health" || echo 000)
+            P=$(curl -s -o /dev/null -w "%{http_code}" "$PAGES_URL/" || echo 000)
             echo "Attempt $i/40: worker health $H, pages $P"
             if [ "$H" = "200" ] && [ "$P" = "200" ]; then exit 0; fi
             sleep 15
           done
           echo "::error::Preview did not answer 200 in time."
           exit 1
+
+  api:
+    name: api
+    needs: preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: npm ci --no-audit --no-fund
+
+      - name: API tests
+        working-directory: tests
+        env:
+          PREVIEW_API: ${{ needs.preview.outputs.worker }}
+          PREVIEW_PAGES: ${{ needs.preview.outputs.pages }}
+          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
+        run: |
+          set -o pipefail
+          npm run test:api 2>&1 | tee "$RUNNER_TEMP/api.log"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: preview-test-logs-api
+          path: ${{ runner.temp }}/api.log
+          if-no-files-found: ignore
+
+  browser:
+    name: browser
+    needs: preview
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
 
       - name: Install test dependencies
         working-directory: tests
@@ -87,76 +208,94 @@ jobs:
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium webkit
 
-      - name: API tests
-        id: api
-        working-directory: tests
-        continue-on-error: true
-        env:
-          PREVIEW_API: ${{ steps.urls.outputs.worker }}
-          PREVIEW_PAGES: ${{ steps.urls.outputs.pages }}
-          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
-        run: |
-          set -o pipefail
-          npm run test:api 2>&1 | tee "$RUNNER_TEMP/api.log"
-
       - name: Browser smoke
-        id: browser
         working-directory: tests
-        continue-on-error: true
         env:
-          PREVIEW_API: ${{ steps.urls.outputs.worker }}
+          PREVIEW_API: ${{ needs.preview.outputs.worker }}
           SMOKE_ALLOW_WEBKIT_NO_WEBGL: "1"
+          PAGES_URL: ${{ needs.preview.outputs.pages }}
         run: |
           set -o pipefail
-          npm run test:browser -- --url "${{ steps.urls.outputs.pages }}/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
+          npm run test:browser -- --url "$PAGES_URL/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: preview-test-logs-browser
+          path: ${{ runner.temp }}/browser.log
+          if-no-files-found: ignore
+
+  visual-audit:
+    # Non-gating: measures image sizes, overflow, contrast, layout shift and more. Not in the report's needs,
+    # so it never changes the pass or fail result. Only runs for PRs labelled `visual`.
+    name: visual-audit
+    needs: preview
+    if: contains(github.event.pull_request.labels.*.name, 'visual')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: |
+          sudo apt-get update
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium webkit
 
       - name: Visual audit
-        id: audit
-        if: contains(github.event.pull_request.labels.*.name, 'visual')
-        timeout-minutes: 12
-        continue-on-error: true
         working-directory: tests
         env:
-          PREVIEW_PAGES: ${{ steps.urls.outputs.pages }}
+          PREVIEW_PAGES: ${{ needs.preview.outputs.pages }}
           AUDIT_BUDGET_MIN: "10"
           AUDIT_OUT: visual-audit
         run: |
-          # Non-gating: measures image sizes, overflow, contrast, layout shift and more; never part of the pass or fail result.
           node visual/audit.mjs 2>&1 | tee "$RUNNER_TEMP/visual-audit.log" || true
 
       - name: Upload the visual audit
-        if: always() && contains(github.event.pull_request.labels.*.name, 'visual')
-        uses: actions/upload-artifact@v4.4.3
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: visual-audit
           path: tests/visual-audit
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4.4.3
+  report:
+    name: report
+    needs: [scope, unit, stamps, preview, api, browser]
+    # Not on cancel: a newer push cancels this run and its own run posts the result for the newer commit.
+    if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download the logs
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
-          name: preview-test-logs
-          path: |
-            ${{ runner.temp }}/api.log
-            ${{ runner.temp }}/browser.log
-          if-no-files-found: ignore
+          pattern: preview-test-logs-*
+          path: ${{ runner.temp }}/logs
+          merge-multiple: true
 
       - name: Post or update the result comment
-        if: always()
-        uses: actions/github-script@v7.0.1
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
-          UNIT_OUTCOME: ${{ steps.unit.outcome }}
-          STAMPS_OUTCOME: ${{ steps.stamps.outcome }}
-          API_OUTCOME: ${{ steps.api.outcome }}
-          BROWSER_OUTCOME: ${{ steps.browser.outcome }}
-          PAGES_URL: ${{ steps.urls.outputs.pages }}
-          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+          DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
+          UNIT_OUTCOME: ${{ needs.unit.result }}
+          STAMPS_OUTCOME: ${{ needs.stamps.result }}
+          API_OUTCOME: ${{ needs.api.result }}
+          BROWSER_OUTCOME: ${{ needs.browser.result }}
+          PAGES_URL: ${{ needs.preview.outputs.pages }}
         with:
           script: |
             const fs = require("fs");
-            const read = (f) => { try { return fs.readFileSync(`${process.env.RUNNER_TEMP}/${f}`, "utf8"); } catch (e) { return ""; } };
+            const read = (f) => { try { return fs.readFileSync(`${process.env.RUNNER_TEMP}/logs/${f}`, "utf8"); } catch (e) { return ""; } };
             const unit = read("unit.log"), api = read("api.log"), br = read("browser.log");
             const num = (re, s) => { const m = s.match(re); return m ? Number(m[1]) : null; };
             // node:test summary lines read "<symbol> pass N" and "<symbol> fail N"
@@ -165,28 +304,22 @@ jobs:
             let bPass = num(/live-smoke: all (\d+) checks passed/, br), bFail = bPass === null ? null : 0;
             const bf = br.match(/live-smoke: (\d+) of (\d+) checks FAILED/);
             if (bf) { bFail = Number(bf[1]); bPass = Number(bf[2]) - bFail; }
-            const label = (outcome) => (outcome === "success" ? "pass" : outcome === "skipped" ? "not run" : "FAIL");
+            const docsOnly = process.env.DOCS_ONLY === "true";
+            const label = (outcome) => (outcome === "success" ? "pass" : outcome === "skipped" ? (docsOnly ? "not run (docs only)" : "not run") : "FAIL");
             const cell = (v) => (v === null ? "-" : String(v));
             const failing = br.split("\n").filter((l) => l.startsWith("FAIL ")).slice(0, 10);
             const apiFailing = api.split("\n").filter((l) => /^\S+ .* \(\d/.test(l) && !/^\S*✔/.test(l) && /fail|✖/i.test(l)).slice(0, 10);
             const lines = [...apiFailing, ...failing];
-            const ok = process.env.UNIT_OUTCOME === "success" && process.env.STAMPS_OUTCOME === "success" && process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success";
+            const ok = process.env.UNIT_OUTCOME === "success" && process.env.STAMPS_OUTCOME === "success" &&
+              (docsOnly || (process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success"));
             const pr = context.payload.pull_request;
             const sha = pr.head.sha.slice(0, 7);
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            // Visual audit: informational only, never part of `ok`.
-            let auditLine = "";
-            try {
-              if (process.env.AUDIT_OUTCOME && process.env.AUDIT_OUTCOME !== "skipped") {
-                const a = JSON.parse(fs.readFileSync("tests/visual-audit/visual-audit.json", "utf8")).summary;
-                const parts = Object.entries(a.counts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ${(a.distinct || {})[k] ?? n}`);
-                auditLine = `\nVisual audit (not gating): ${a.total} findings per page and context; distinct subjects by category: ${parts.length ? parts.join(", ") : "none"}. Report: artifact \`visual-audit\` (visual-audit.md, visual-audit.json, screenshots/) on the run below.\n`;
-              }
-            } catch (e) { if (process.env.AUDIT_OUTCOME && process.env.AUDIT_OUTCOME !== "skipped") auditLine = "\nVisual audit (not gating): no report was produced, see the logs.\n"; }
             const body = [
               "<!-- preview-tests -->",
               `### Preview tests: ${ok ? "passed" : "FAILED"} (\`${sha}\`)`,
               "",
+              ok && docsOnly ? "**passed (docs only)**: this PR changes only docs, so no preview was created and only the unit and stamps suites ran.\n" : "",
               "| Suite | Result | Passed | Failed |",
               "| :--- | :--- | ---: | ---: |",
               `| Unit | ${label(process.env.UNIT_OUTCOME)} | ${cell(uPass)} | ${cell(uFail)} |`,
@@ -194,9 +327,9 @@ jobs:
               `| API | ${label(process.env.API_OUTCOME)} | ${cell(aPass)} | ${cell(aFail)} |`,
               `| Browser smoke (Chromium + WebKit) | ${label(process.env.BROWSER_OUTCOME)} | ${cell(bPass)} | ${cell(bFail)} |`,
               "",
-              process.env.PAGES_URL ? `Preview: ${process.env.PAGES_URL}` : "No preview URL was found.",
+              docsOnly ? "No preview (docs only)." : process.env.PAGES_URL ? `Preview: ${process.env.PAGES_URL}` : "No preview URL was found.",
               lines.length ? "\nFirst failures:\n```\n" + lines.join("\n").slice(0, 1500) + "\n```" : "",
-              auditLine,
+              pr.labels.some((l) => l.name === "visual") ? "\nVisual audit (not gating): see artifact `visual-audit` on the run below." : "",
               `[Logs and artifact](${run})`,
             ].join("\n");
             const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
@@ -205,7 +338,12 @@ jobs:
             else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
 
       - name: Fail the job if a suite failed
-        if: steps.api.outcome != 'success' || steps.browser.outcome != 'success'
+        env:
+          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }}
+          DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
         run: |
-          echo "::error::Preview tests failed (api=${{ steps.api.outcome }}, browser=${{ steps.browser.outcome }})."
-          exit 1
+          echo "$RESULTS (docs_only=$DOCS_ONLY)"
+          for r in ${{ needs.unit.result }} ${{ needs.stamps.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
+          if [ "$DOCS_ONLY" != "true" ]; then
+            for r in ${{ needs.api.result }} ${{ needs.browser.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
+          fi

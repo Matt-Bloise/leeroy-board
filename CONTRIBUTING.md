@@ -3,9 +3,9 @@
 This repo is the home of the Leeroy board: the site (Cloudflare Pages), the Worker and Durable Object (`infrastructure/`), the D1 schema and the tests (`tests/`). Production is https://leeroy.party and https://api.leeroy.party. Every merge to master deploys.
 
 ## How a change goes in
-1. One branch per change, one pull request per branch. One open PR per contributor at a time (Cloudflare has 9 preview environments in total).
+1. One branch per change, one pull request per branch. One open PR per contributor at a time (Cloudflare has 9 preview environments in total; see `docs/runbooks/preview-d1-limit.md`).
 2. The PR states a risk rating from 0 to 10 (see the PR template). The rating sets the testing effort and who merges: 0 to 5 merges after the preview tests are green; 6 or higher waits for a manual merge by the owner. A rating is computed from the changed paths first and only ever raised.
-3. Every PR gets its own preview environment and the `Preview Tests` workflow: a back-end suite (API input and output) and a front-end suite (layout, rendering, animation, display). New behaviour comes with tests in `tests/`.
+3. Every PR gets its own preview environment and the `Preview Tests` workflow: a back-end suite (API input and output) and a front-end suite (layout, rendering, animation, display). Draft PRs are tested too. A PR that changes only `docs/**`, root `*.md` or `.github/ISSUE_TEMPLATE/**` gets no preview and runs only the unit and stamps jobs. New behaviour comes with tests in `tests/`.
 4. Tests make no AI calls (free Workers AI has a very low rate limit). Discord interactions cannot be tested in a preview and are checked on production after merge.
 5. Every PR states how to roll back: Pages previous deployment, `wrangler rollback`, D1 Time Travel, or a revert.
 6. Back-end changes (anything under `infrastructure/`) must include a test in `tests/api` (behaviour through the API) or `tests/unit` (pure functions).
