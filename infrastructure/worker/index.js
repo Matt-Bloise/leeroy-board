@@ -21,6 +21,7 @@ import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
+import { invalidatePersonaCache } from "./persona.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
@@ -417,6 +418,35 @@ export default {
           .bind(JSON.stringify(vocab), now)
           .run();
         return jsonResp({ ok: true, fields: Object.keys(vocab).length }, 200, cors);
+      }
+
+      // The persona pack is curated content that lives only in D1. Write-only: there is no GET route for it.
+      // Admin token only: a member key must not be able to rewrite the system prompt for every ask.
+      if (req.method === "PUT" && path === "/persona") {
+        if (!env.BOARD_ADMIN_TOKEN) {
+          return jsonResp({ error: "Admin token not configured" }, 503, cors);
+        }
+        const adminKey = extractKey(req, url);
+        if (!adminKey || !timingSafeEqualStr(adminKey, env.BOARD_ADMIN_TOKEN)) {
+          return jsonResp({ error: "Unauthorized" }, 401, cors);
+        }
+        const raw = await req.text();
+        if (new TextEncoder().encode(raw).length > 200000) {
+          return jsonResp({ error: "Persona pack too large" }, 413, cors);
+        }
+        let pack = null;
+        try {
+          pack = JSON.parse(raw);
+        } catch {}
+        if (!pack || typeof pack !== "object" || Array.isArray(pack) || typeof pack.version !== "number" || typeof pack.system !== "string") {
+          return jsonResp({ error: "Body must be a JSON object with a numeric version and a string system" }, 400, cors);
+        }
+        const now = new Date().toISOString();
+        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('persona', ?, ?)")
+          .bind(JSON.stringify(pack), now)
+          .run();
+        invalidatePersonaCache();
+        return jsonResp({ ok: true, version: pack.version, bytes: raw.length }, 200, cors);
       }
 
       if (req.method === "POST" && path === "/dispatch") {

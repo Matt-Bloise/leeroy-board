@@ -64,6 +64,24 @@ test("non-ask write route without a key is refused (401 or 403)", async () => {
   await r.arrayBuffer();
 });
 
+test("PUT /api/persona without a key is refused (401 or 403)", async () => {
+  const r = await fetch(`${API}/api/persona`, { method: "PUT", headers: { "Content-Type": "application/json", Origin: PAGES }, body: JSON.stringify({ version: 1, system: "x" }) });
+  assert.ok([401, 403].includes(r.status), `got ${r.status}`);
+  await r.arrayBuffer();
+});
+
+test("PUT /api/persona with a key but an invalid body is refused (400), nothing is written", async () => {
+  const r = await fetch(`${API}/api/persona`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders }, body: JSON.stringify({ system: 5 }) });
+  assert.equal(r.status, 400);
+  await r.arrayBuffer();
+});
+
+test("GET /api/persona is not a public read (404 or 405)", async () => {
+  const r = await fetch(`${API}/api/persona`, { headers: { Origin: PAGES } });
+  assert.ok([404, 405].includes(r.status), `got ${r.status}`);
+  await r.arrayBuffer();
+});
+
 // The Discord interactions endpoint is not tested here: it cannot be attached to a PR environment (it would need the live Discord channel).
 
 test("library index JSON is reachable", async () => {

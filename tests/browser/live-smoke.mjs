@@ -101,7 +101,9 @@ async function visit(browser, engine, size, opts, setup) {
       ok(`${tag} no stray value in visible text (${sc})`, !bs, bs && `found ${bs} near: ${ts.slice(Math.max(0, ts.indexOf(bs) - 50), ts.indexOf(bs) + 30).replace(/\s+/g, " ")}`);
     }
     const noGl = (e) => engine === "webkit" && process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1" && /Error creating WebGL context/.test(e.text); /* headless Linux WebKit in CI has no WebGL; the board still renders its fallback */
-    const hard = errs.filter((e) => !platform(e, workerRows(xo)) && !noGl(e)); /* a Worker 5xx's own line is a WARN (one()), every other console error counts */
+    const insights = errs.some((e) => /cloudflareinsights\.com/.test(e.text + " " + e.at)) || xo.some((r) => /cloudflareinsights\.com/.test(r.url)); /* Cloudflare Web Analytics beacon on a preview host is blocked by CORS: third-party, not our code */
+    const cfBeacon = (e) => /cloudflareinsights\.com/.test(e.text + " " + e.at) || (insights && /net::ERR_FAILED|not allowed by Access-Control-Allow-Origin/.test(e.text)); /* WebKit words the same failure without the URL */
+    const hard = errs.filter((e) => !platform(e, workerRows(xo)) && !noGl(e) && !cfBeacon(e)); /* a Worker 5xx's own line is a WARN (one()), every other console error counts */
     ok(`${tag} no same-origin 4xx/5xx`, !http.length, http.slice(0, 3).map(row).join(" | "));
     ok(`${tag} no console errors`, !hard.length, hard.slice(0, 3).map((e) => e.text).join(" | ") + (xo.length ? ` [from: ${xo.slice(0, 3).map(row).join(" | ")}]` : ""));
   } catch (e) {
