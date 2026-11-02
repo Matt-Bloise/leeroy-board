@@ -56,8 +56,7 @@ function ensureHosts() {
   const tp = $("#panel-tonight");
   if (tp && (!tonight || !tonight.isConnected)) {
     tonight = h("section", { class: "vt-card vt-tn", id: "vt-tonight", "aria-labelledby": "vt-tn-h", hidden: true });
-    const me = $("#tn-me");
-    if (me && me.parentNode === tp) tp.insertBefore(tonight, me.nextSibling); else tp.insertBefore(tonight, tp.firstChild);
+    tp.insertBefore(tonight, tp.firstChild);
   }
   const dp = $("#panel-decide");
   if (dp && (!full || !full.isConnected)) {

@@ -27,7 +27,7 @@ async function run(browser, size, opts) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await page.route(VOTES_RE, (route) => {
     hits.n++;
     if (mode === "fail") return route.fulfill({ status: 500, headers: cors, body: JSON.stringify({ error: "x" }) });
@@ -54,8 +54,8 @@ async function run(browser, size, opts) {
   ok(`${tag} user text is inert (no injected elements, no script run)`, (await card.locator("img, b").count()) === 0 && !(await page.evaluate(() => window.__votePwned)));
   ok(`${tag} card is inside the viewport width`, await card.evaluate((el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth + 0.5; }));
   ok(`${tag} no horizontal overflow on Next steps`, (await overflow()) <= 1, String(await overflow()));
-  const top = await card.evaluate((el) => el.getBoundingClientRect().top);
-  ok(`${tag} card sits near the top of Next steps`, top < 400, `top=${Math.round(top)}`);
+  const top = await card.evaluate((el) => el.getBoundingClientRect().top - el.parentElement.getBoundingClientRect().top - parseFloat(getComputedStyle(el.parentElement).paddingTop || 0));
+  ok(`${tag} card is the first thing on Next steps`, top < 300 && (await card.evaluate((el) => el.parentElement.firstElementChild === el)), `top=${Math.round(top)}`);
   await card.scrollIntoViewIfNeeded().catch(() => {});
   await page.screenshot({ path: `votes-card-${size}-next.png` }).catch(() => {});
 
@@ -93,7 +93,7 @@ async function run(browser, size, opts) {
   const ctx2 = await browser.newContext({ ...opts, serviceWorkers: "block" });
   const p2 = await ctx2.newPage(); const err2 = [];
   p2.on("pageerror", (e) => err2.push(`pageerror ${e.message}`));
-  p2.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text())) err2.push(m.text()); });
+  p2.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) err2.push(m.text()); });
   await p2.route(VOTES_RE, (route) => route.fulfill({ status: 500, headers: cors, body: "{}" }));
   await p2.goto(BASE, { waitUntil: "load" });
   await p2.evaluate(() => window.__boardKit.goScene("decide"));
