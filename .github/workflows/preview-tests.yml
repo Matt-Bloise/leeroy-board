@@ -34,6 +34,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      site_changed: ${{ steps.classify.outputs.site_changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -52,6 +53,7 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
           cat "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+          echo "site_changed=$(node tools/ci-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
   unit:
     name: unit
@@ -192,7 +194,9 @@ jobs:
 
   browser:
     name: browser
-    needs: preview
+    needs: [scope, preview]
+    # Skipped when no site file changed (Worker-only, test-only, docs-only): these are the slowest jobs and GitHub minutes are metered. tools/ci-scope.mjs decides.
+    if: needs.scope.outputs.site_changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -235,7 +239,9 @@ jobs:
     # rules (close button inside the viewport and uncovered, no overlap in the header, title not cut, 44 px touch height, no sideways scroll, no 4xx/5xx).
     # Gating: it is in the report's needs. The sweep stops itself at 7 minutes and fails if it did not finish; the job limit is 8.
     name: layout
-    needs: preview
+    needs: [scope, preview]
+    # Skipped when no site file changed (Worker-only, test-only, docs-only): these are the slowest jobs and GitHub minutes are metered. tools/ci-scope.mjs decides.
+    if: needs.scope.outputs.site_changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -332,6 +338,7 @@ jobs:
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
+          SITE_CHANGED: ${{ needs.scope.outputs.site_changed }}
           UNIT_OUTCOME: ${{ needs.unit.result }}
           STAMPS_OUTCOME: ${{ needs.stamps.result }}
           API_OUTCOME: ${{ needs.api.result }}
@@ -351,14 +358,14 @@ jobs:
             const bf = br.match(/live-smoke: (\d+) of (\d+) checks FAILED/);
             if (bf) { bFail = Number(bf[1]); bPass = Number(bf[2]) - bFail; }
             const lay = read("layout.log"), lm = lay.match(/layout-sweep: .*?(\d+) failures/), lFail = lm ? Number(lm[1]) : null;
-            const docsOnly = process.env.DOCS_ONLY === "true";
-            const label = (outcome) => (outcome === "success" ? "pass" : outcome === "skipped" ? (docsOnly ? "not run (docs only)" : "not run") : "FAIL");
+            const docsOnly = process.env.DOCS_ONLY === "true", siteChanged = process.env.SITE_CHANGED === "true";
+            const label = (outcome) => (outcome === "success" ? "pass" : outcome === "skipped" ? (docsOnly ? "not run (docs only)" : siteChanged ? "not run" : "not run (no site files changed)") : "FAIL");
             const cell = (v) => (v === null ? "-" : String(v));
             const failing = [...br.split("\n"), ...lay.split("\n")].filter((l) => l.startsWith("FAIL ")).slice(0, 10);
             const apiFailing = api.split("\n").filter((l) => /^\S+ .* \(\d/.test(l) && !/^\S*✔/.test(l) && /fail|✖/i.test(l)).slice(0, 10);
             const lines = [...apiFailing, ...failing];
             const ok = process.env.UNIT_OUTCOME === "success" && process.env.STAMPS_OUTCOME === "success" &&
-              (docsOnly || (process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success" && process.env.LAYOUT_OUTCOME === "success"));
+              (docsOnly || (process.env.API_OUTCOME === "success" && (!siteChanged || (process.env.BROWSER_OUTCOME === "success" && process.env.LAYOUT_OUTCOME === "success"))));
             const pr = context.payload.pull_request;
             const sha = pr.head.sha.slice(0, 7);
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -389,9 +396,13 @@ jobs:
         env:
           RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }}
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
+          SITE_CHANGED: ${{ needs.scope.outputs.site_changed }}
         run: |
           echo "$RESULTS (docs_only=$DOCS_ONLY)"
           for r in ${{ needs.unit.result }} ${{ needs.stamps.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
           if [ "$DOCS_ONLY" != "true" ]; then
-            for r in ${{ needs.api.result }} ${{ needs.browser.result }} ${{ needs.layout.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
+            [ "${{ needs.api.result }}" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }
+            if [ "$SITE_CHANGED" = "true" ]; then
+              for r in ${{ needs.browser.result }} ${{ needs.layout.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
+            fi
           fi
