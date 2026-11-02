@@ -204,7 +204,8 @@ async function cell(browser, size, state) {
           continue;
         }
       }
-      await page.evaluate(settle);
+      // a slow preview can still be opening the sheet after one settle window (seen once in CI: opacity 0 after 4 s); give it up to three before judging
+      for (let i = 0; i < 3 && !(await page.evaluate(settle)); i++);
       const { out, n } = await page.evaluate(measure, { touch: size.touch, w: size.w });
       checks += n;
       for (const f of out) once(f.invariant, f.detail);
