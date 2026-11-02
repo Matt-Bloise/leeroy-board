@@ -26,6 +26,7 @@
 
 import { answerWithAi, resolveAiProvider } from "./ai-models.js";
 import { buildStartReply } from "./announce.js";
+import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
@@ -88,6 +89,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     name: "sheet",
     description: "View or update a field on your character sheet on the Living Board",
     options: [
+      { name: "member", description: "Whose sheet to view (defaults to you)", type: 6, required: false },
       {
         name: "field",
         description: "Sheet field to update (omit to view your current sheet)",
@@ -229,19 +231,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     name: "build",
     description: "Link to someone's build thread in the party",
     options: [
-      {
-        name: "who",
-        description: "Party member",
-        type: 3,
-        required: true,
-        choices: [
-          { name: "Bloise", value: "bloise" },
-          { name: "Street Rat", value: "street-rat" },
-          { name: "Handsome Squidward", value: "handsome-squidward" },
-          { name: "Bible Boi", value: "bible-boi" },
-          { name: "Santa", value: "santa" },
-        ],
-      },
+      { name: "member", description: "Whose build thread (defaults to you)", type: 6, required: false },
     ],
   },
   {
@@ -513,7 +503,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     user.global_name ||
     user.username ||
     "Guest";
-  const member = slugFromDisplayName(rawUser, await loadConfigKey(env, "discord_members")); // null when the user is not a recognised party member
+  const membersConfig = await loadConfigKey(env, "discord_members");
+  const member = resolveMember(user.id, rawUser, membersConfig); // null when the user is not a recognised party member
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
@@ -595,6 +586,27 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     const getOpt = (n) => {
       const o = opts.find((x) => x.name === n);
       return o ? String(o.value).trim() : "";
+    };
+
+    // Target of /build and /sheet: the optional USER option (type 6), else the invoker. Id match first, then display name.
+    const memberOpt = opts.find((x) => x.name === "member" && x.type === 6);
+    let target = member;
+    let targetIsOther = false;
+    if (memberOpt) {
+      const tid = String(memberOpt.value);
+      const resolved = interaction.data.resolved || {};
+      const tu = (resolved.users && resolved.users[tid]) || {};
+      const tm = (resolved.members && resolved.members[tid]) || {};
+      target = resolveMember(tid, tm.nick || tu.global_name || tu.username || "", membersConfig);
+      targetIsOther = tid !== String(user.id || "");
+    }
+    const notOnRoster = async () => {
+      const line = pickLine(await loadPersona(env), "emptyLines", String(user.id || rawUser), "Not on the roster yet.");
+      const who = targetIsOther ? "That person is not on the roster yet. An admin can add them." : "You are not on the roster yet. An admin can add you.";
+      return new Response(
+        JSON.stringify({ type: 4, data: { content: `${line} ${who}`, flags: 64 } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
     };
 
     // 2a-vote. `/vote start`
@@ -726,14 +738,20 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
     // 2c. `/sheet`
     if (cmd === "sheet") {
-      if (!member) return unknownMemberResponse();
+      if (!target) return notOnRoster();
       const field = getOpt("field");
       const value = getOpt("value");
+      if (field && value && targetIsOther) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: "You can only change your own sheet. Leave out the member to update yours.", flags: 64 } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       if (field && value) {
         const now = new Date().toISOString();
         await recordSheetEventInD1(env, origin, {
-          slug: member.slug,
-          name: byName,
+          slug: target.slug,
+          name: target.name,
           field,
           value,
           visible: true,
@@ -741,7 +759,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           at: now,
         });
         await insertIntent(env, {
-          slug: member.slug,
+          slug: target.slug,
           kind: "sheet",
           body: { field, value, source: "discord" },
           ver: 1,
@@ -751,7 +769,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `Updated **${byName}**'s sheet (**${field}** → \`${value}\`). View on the board: ${boardUrl}/#five`,
+              content: `Updated **${target.name}**'s sheet (**${field}** → \`${value}\`). View on the board: ${boardUrl}/#five`,
               flags: 64,
             },
           }),
@@ -760,7 +778,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       const { party } = await buildPartySheetsFromD1(env);
-      const mine = party.find((p) => p.slug === member.slug);
+      const mine = party.find((p) => p.slug === target.slug);
       const fieldSummary = mine && mine.fields
         ? Object.entries(mine.fields)
             .map(([k, v]) => `• **${k}:** ${Array.isArray(v.value) ? v.value.join(", ") : v.value}`)
@@ -770,7 +788,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `**${byName}'s Party Sheet**\n${fieldSummary}\nOpen your sheet: ${boardUrl}/#five`,
+            content: `**${target.name}'s Party Sheet**\n${fieldSummary}\nOpen your sheet: ${boardUrl}/#five`,
             flags: 64,
             components: [
               {
@@ -1099,28 +1117,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
     // 2l. `/build`
     if (cmd === "build") {
-      const who = getOpt("who").toLowerCase();
-      const person = ROSTER_DATA.find(
-        (r) => r.display.toLowerCase().replace(/ /g, "-") === who || r.aliases.some((a) => a.toLowerCase() === who)
-      );
-
-      if (!person) {
-        return new Response(
-          JSON.stringify({
-            type: 4,
-            data: {
-              content: `Could not find party member "${who}". Available: Bloise, Street Rat, Handsome Squidward, Bible Boi, Santa.`,
-              flags: 64,
-            },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-
+      if (!target) return notOnRoster();
+      const person = ROSTER_DATA.find((r) => r.display.toLowerCase().replace(/ /g, "-") === target.slug) || { display: target.name };
       const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
-      const content = `**${person.display}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
+      const content = `**${target.name}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
       return new Response(
-        JSON.stringify({ type: 4, data: { content } }),
+        JSON.stringify({ type: 4, data: { content, flags: 64 } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
