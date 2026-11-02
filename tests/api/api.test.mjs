@@ -296,3 +296,19 @@ for (const p of ["/api/data/zz-not-a-document", "/api/atlas/zz-not-a-document", 
     await r.arrayBuffer();
   });
 }
+
+// Every public document the site fetches must still be served (a typo in the allow list would blank a page).
+for (const name of ["party", "timeline", "stats", "signups", "tonight", "launch", "decide", "guided-atlas"]) {
+  test(`GET /api/data/${name} is served (200)`, async () => {
+    const r = await fetch(`${API}/api/data/${name}`, { headers: { Origin: PAGES } });
+    assert.equal(r.status, 200, `status ${r.status}`);
+    await r.arrayBuffer();
+  });
+}
+for (const name of ["marks", "links"]) {
+  test(`GET /api/atlas/${name} is served (200)`, async () => {
+    const r = await fetch(`${API}/api/atlas/${name}`, { headers: { Origin: PAGES } });
+    assert.equal(r.status, 200, `status ${r.status}`);
+    await r.arrayBuffer();
+  });
+}
