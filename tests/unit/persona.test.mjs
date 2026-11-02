@@ -45,6 +45,7 @@ test("platform block keeps the machine rules", () => {
   assert.match(p, /strictly from the verified library facts and party state/);
   assert.match(p, /\[classes\/paladin-holy\]/);
   assert.match(p, /under 900 characters/);
+  assert.match(p, /dated party facts that are newer/);
   assert.ok(p.indexOf("SYSTEM TEXT") < p.indexOf("PLATFORM RULES"));
 });
 

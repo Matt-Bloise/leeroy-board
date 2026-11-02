@@ -421,9 +421,13 @@ export default {
       }
 
       // The persona pack is curated content that lives only in D1. Write-only: there is no GET route for it.
+      // Admin token only: a member key must not be able to rewrite the system prompt for every ask.
       if (req.method === "PUT" && path === "/persona") {
-        const auth = await resolveMemberAuth(req, url, env);
-        if (!auth.ok) {
+        if (!env.BOARD_ADMIN_TOKEN) {
+          return jsonResp({ error: "Admin token not configured" }, 503, cors);
+        }
+        const adminKey = extractKey(req, url);
+        if (!adminKey || !timingSafeEqualStr(adminKey, env.BOARD_ADMIN_TOKEN)) {
           return jsonResp({ error: "Unauthorized" }, 401, cors);
         }
         const raw = await req.text();

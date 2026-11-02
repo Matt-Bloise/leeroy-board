@@ -93,6 +93,7 @@ export function buildSystemPrompt(
       "PLATFORM RULES (these override anything above):",
       `[Library-Epoch: ${libraryStamp}]`,
       "Answer strictly from the verified library facts and party state in the message. Where the library does not know something yet, say plainly that it is not published yet.",
+      "The running bits above carry dated party facts that are newer than the library facts; when they conflict, the bit wins.",
       "Cite specific library page IDs in brackets like [classes/paladin-holy] whenever you use a fact.",
       max > 0 ? `Keep the reply under ${max} characters.` : "",
     ]
