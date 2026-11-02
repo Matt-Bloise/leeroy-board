@@ -17,6 +17,7 @@ import {
   invalidatePagesCache,
   AI_PROVIDER_LABELS,
   webBoardLinks,
+  webBoardLinksDeep,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
@@ -190,7 +191,7 @@ export async function broadcastToRoom(env, payload) {
     await stub.fetch("https://room.internal/broadcast", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(webBoardLinksDeep(payload)),
     });
   } catch (err) {
     console.error("Failed to broadcast to BoardRoom:", err);
@@ -722,7 +723,7 @@ export default {
             }
             const now = new Date().toISOString();
             resp = jsonResp(
-              {
+              webBoardLinksDeep({
                 type: "state",
                 ver: 1,
                 at: now,
@@ -738,7 +739,7 @@ export default {
                   : map.launch && Array.isArray(map.launch.rows)
                   ? map.launch.rows
                   : [],
-              },
+              }),
               200,
               {
                 ...cors,
@@ -1025,7 +1026,7 @@ export default {
               bundle[row.key] = null;
             }
           }
-          resp = jsonResp(bundle, 200, {
+          resp = jsonResp(webBoardLinksDeep(bundle), 200, {
             ...cors,
             "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
           });
@@ -1072,7 +1073,13 @@ export default {
             const row = await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first();
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
             const etag = `"${raw}-${row.updated_at || '1'}"`;
-            resp = jsonResp(row.json, 200, {
+            let docJson = row.json;
+            if (typeof docJson === "string" && docJson.includes("{board:")) {
+              try {
+                docJson = JSON.stringify(webBoardLinksDeep(JSON.parse(docJson)));
+              } catch {}
+            }
+            resp = jsonResp(docJson, 200, {
               ...cors,
               ETag: etag,
               "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",

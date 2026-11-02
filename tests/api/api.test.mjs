@@ -198,3 +198,13 @@ test("GET /api/config/discord_roster is not a public read (404 or 405)", async (
   const r = await fetch(`${API}/api/config/discord_roster`, { headers: { Origin: PAGES } });
   assert.ok([404, 405].includes(r.status), `status ${r.status}`);
 });
+
+test("GET /api/bootstrap and /api/state carry no raw {board:...} token", async () => {
+  for (const path of ["/api/bootstrap", "/api/state"]) {
+    const r = await fetch(`${API}${path}`, { headers: { Origin: PAGES } });
+    assert.equal(r.status, 200, path);
+    const text = await r.text();
+    JSON.parse(text);
+    assert.ok(!text.includes("{board:"), `${path} leaked a raw {board:} token`);
+  }
+});
