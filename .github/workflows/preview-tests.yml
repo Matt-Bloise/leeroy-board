@@ -1,0 +1,160 @@
+name: Preview Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: preview-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview-tests:
+    name: API and browser tests against the PR preview
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Find the preview URLs in the PR comment
+        id: urls
+        run: |
+          set -u
+          SHORT="${HEAD_SHA:0:7}"
+          for i in $(seq 1 48); do
+            BODY=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json comments --jq '[.comments[] | select(.body | contains("<!-- cloudflare-pr-preview -->"))] | last | .body // ""' || true)
+            # The comment is updated in place; accept it only once it names this commit and is not the teardown notice.
+            if echo "$BODY" | grep -q "$SHORT" && ! echo "$BODY" | grep -q "Torn Down"; then
+              PAGES=$(echo "$BODY" | grep -oE "https://pr-${PR_NUMBER}\.leeroy-board\.pages\.dev" | head -n 1 || true)
+              WORKER=$(echo "$BODY" | grep -oE "https://leeroy-brain-pr-${PR_NUMBER}\.[a-z0-9-]+\.workers\.dev" | head -n 1 || true)
+              if [ -n "$PAGES" ] && [ -n "$WORKER" ]; then
+                echo "pages=$PAGES" >> "$GITHUB_OUTPUT"
+                echo "worker=$WORKER" >> "$GITHUB_OUTPUT"
+                echo "Preview found: $PAGES and $WORKER (commit $SHORT)"
+                exit 0
+              fi
+            fi
+            echo "Attempt $i/48: preview comment for $SHORT not ready, waiting 15 s"
+            sleep 15
+          done
+          echo "::error::No preview comment for commit $SHORT within 12 minutes."
+          exit 1
+
+      - name: Wait for the preview to answer
+        run: |
+          set -u
+          for i in $(seq 1 40); do
+            H=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.urls.outputs.worker }}/api/health" || echo 000)
+            P=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.urls.outputs.pages }}/" || echo 000)
+            echo "Attempt $i/40: worker health $H, pages $P"
+            if [ "$H" = "200" ] && [ "$P" = "200" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "::error::Preview did not answer 200 in time."
+          exit 1
+
+      - name: Install test dependencies
+        working-directory: tests
+        run: |
+          sudo apt-get update
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium webkit
+
+      - name: API tests
+        id: api
+        working-directory: tests
+        continue-on-error: true
+        env:
+          PREVIEW_API: ${{ steps.urls.outputs.worker }}
+          PREVIEW_PAGES: ${{ steps.urls.outputs.pages }}
+          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
+        run: |
+          set -o pipefail
+          npm run test:api 2>&1 | tee "$RUNNER_TEMP/api.log"
+
+      - name: Browser smoke
+        id: browser
+        working-directory: tests
+        continue-on-error: true
+        env:
+          PREVIEW_API: ${{ steps.urls.outputs.worker }}
+          SMOKE_ALLOW_WEBKIT_NO_WEBGL: "1"
+        run: |
+          set -o pipefail
+          npm run test:browser -- --url "${{ steps.urls.outputs.pages }}/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: preview-test-logs
+          path: |
+            ${{ runner.temp }}/api.log
+            ${{ runner.temp }}/browser.log
+          if-no-files-found: ignore
+
+      - name: Post or update the result comment
+        if: always()
+        uses: actions/github-script@v7.0.1
+        env:
+          API_OUTCOME: ${{ steps.api.outcome }}
+          BROWSER_OUTCOME: ${{ steps.browser.outcome }}
+          PAGES_URL: ${{ steps.urls.outputs.pages }}
+        with:
+          script: |
+            const fs = require("fs");
+            const read = (f) => { try { return fs.readFileSync(`${process.env.RUNNER_TEMP}/${f}`, "utf8"); } catch (e) { return ""; } };
+            const api = read("api.log"), br = read("browser.log");
+            const num = (re, s) => { const m = s.match(re); return m ? Number(m[1]) : null; };
+            // node:test summary lines read "<symbol> pass N" and "<symbol> fail N"
+            const aPass = num(/^\S+ pass (\d+)$/m, api), aFail = num(/^\S+ fail (\d+)$/m, api);
+            let bPass = num(/live-smoke: all (\d+) checks passed/, br), bFail = bPass === null ? null : 0;
+            const bf = br.match(/live-smoke: (\d+) of (\d+) checks FAILED/);
+            if (bf) { bFail = Number(bf[1]); bPass = Number(bf[2]) - bFail; }
+            const label = (outcome) => (outcome === "success" ? "pass" : outcome === "skipped" ? "not run" : "FAIL");
+            const cell = (v) => (v === null ? "-" : String(v));
+            const failing = br.split("\n").filter((l) => l.startsWith("FAIL ")).slice(0, 10);
+            const apiFailing = api.split("\n").filter((l) => /^\S+ .* \(\d/.test(l) && !/^\S*✔/.test(l) && /fail|✖/i.test(l)).slice(0, 10);
+            const lines = [...apiFailing, ...failing];
+            const ok = process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success";
+            const pr = context.payload.pull_request;
+            const sha = pr.head.sha.slice(0, 7);
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              "<!-- preview-tests -->",
+              `### Preview tests: ${ok ? "passed" : "FAILED"} (\`${sha}\`)`,
+              "",
+              "| Suite | Result | Passed | Failed |",
+              "| :--- | :--- | ---: | ---: |",
+              `| API | ${label(process.env.API_OUTCOME)} | ${cell(aPass)} | ${cell(aFail)} |`,
+              `| Browser smoke (Chromium + WebKit) | ${label(process.env.BROWSER_OUTCOME)} | ${cell(bPass)} | ${cell(bFail)} |`,
+              "",
+              process.env.PAGES_URL ? `Preview: ${process.env.PAGES_URL}` : "No preview URL was found.",
+              lines.length ? "\nFirst failures:\n```\n" + lines.join("\n").slice(0, 1500) + "\n```" : "",
+              `[Logs and artifact](${run})`,
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
+            const existing = comments.find((c) => c.body && c.body.includes("<!-- preview-tests -->"));
+            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
+
+      - name: Fail the job if a suite failed
+        if: steps.api.outcome != 'success' || steps.browser.outcome != 'success'
+        run: |
+          echo "::error::Preview tests failed (api=${{ steps.api.outcome }}, browser=${{ steps.browser.outcome }})."
+          exit 1
