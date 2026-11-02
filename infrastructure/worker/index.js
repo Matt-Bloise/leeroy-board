@@ -22,6 +22,7 @@ import {
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
+import { manifestFor } from "./setup-command.js";
 import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
 import { handleWebAuth, webSessionFrom } from "./web-auth.js";
@@ -365,7 +366,7 @@ export default {
         return await handleDiscordInteraction(req, env, ctx, url.origin);
       }
       if (req.method === "GET" && path === "/discord/commands") {
-        return jsonResp({ commands: DISCORD_SLASH_COMMANDS_MANIFEST }, 200, cors);
+        return jsonResp({ commands: manifestFor(env, DISCORD_SLASH_COMMANDS_MANIFEST) }, 200, cors);
       }
 
       // 0a. GET /votes -> public, read-only: id, title, choice counts, closes_at, open. Never voter ids or hashes.
