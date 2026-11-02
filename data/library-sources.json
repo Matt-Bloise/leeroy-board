@@ -140,11 +140,6 @@
     "reason": "Guide site; no licence reviewed."
    },
    {
-    "host": "wago.tools",
-    "maxUrls": 27,
-    "reason": "Datamined client data host; robots.txt disallows crawling and no licence found (R5 3.3); underlying data is Blizzard's. Highest-risk entry."
-   },
-   {
     "host": "expcarry.com",
     "maxUrls": 18,
     "reason": "Boosting-service site; no licence reviewed."
