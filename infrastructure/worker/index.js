@@ -28,6 +28,8 @@ import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
 import { handleWebAuth, webSessionFrom } from "./web-auth.js";
 import { handleDataRights } from "./data-rights.js";
+import { charsOn, handleCharacters, listFor } from "./characters-api.js";
+import { handleExport } from "./export.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
@@ -342,9 +344,9 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "GET /admin/export", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
-  "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
+  "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
   "GET /atlas/*", "PUT /atlas/*", "POST /intent", "POST /refresh", "GET /", "GET /health",
 ];
@@ -388,12 +390,21 @@ export default {
           const ws = await webSessionFrom(req, env, Date.now());
           if (ws) {
             const credCors = cors["Access-Control-Allow-Origin"] ? { ...cors, "Access-Control-Allow-Credentials": "true" } : cors;
-            return jsonResp({ name: ws.name, discord_user_id: ws.discord_user_id, expires_at: ws.expires_at, via: "web-session", pending: [] }, 200, { ...credCors, "Cache-Control": "no-store" });
+            const me = { name: ws.name, discord_user_id: ws.discord_user_id, expires_at: ws.expires_at, via: "web-session", pending: [] };
+            if (charsOn(env)) Object.assign(me, await listFor(env, ws.discord_user_id)); // CHARS_V1: { characters, selected }
+            return jsonResp(me, 200, { ...credCors, "Cache-Control": "no-store" });
           }
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         const m = auth.member;
         return jsonResp({ slug: m.slug, name: m.name, pending: [] }, 200, cors);
+      }
+
+      // Admin only: NDJSON backup, one table page per request (see export.js for the exact exclusions).
+      if (req.method === "GET" && path === "/admin/export") {
+        const res = await handleExport(req, env, url);
+        for (const [k, v] of Object.entries(cors)) if (!res.headers.has(k)) res.headers.set(k, v);
+        return res;
       }
 
       // 0c. POST /probe -> Capability probe from `js/brain.js`
@@ -908,6 +919,11 @@ export default {
       if (webRes) {
         for (const [k, v] of Object.entries(cors)) if (!webRes.headers.has(k)) webRes.headers.set(k, v);
         return webRes;
+      }
+      const charsRes = await handleCharacters(req, env, { path, now: Date.now() });
+      if (charsRes) {
+        for (const [k, v] of Object.entries(cors)) if (!charsRes.headers.has(k)) charsRes.headers.set(k, v);
+        return charsRes;
       }
       const rightsRes = await handleDataRights(req, env, { path, now: Date.now() });
       if (rightsRes) {
