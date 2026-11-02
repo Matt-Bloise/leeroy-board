@@ -1,4 +1,4 @@
-// API tests against a PR preview Worker. Zero AI cost beyond ONE Workers AI ask (free neurons are limited; keep it to one).
+// API tests against a PR preview Worker. No AI calls: free Workers AI has a very low rate limit.
 // Env: PREVIEW_API (Worker origin), PREVIEW_PAGES (Pages origin, sent as Origin), BOARD_ADMIN_TOKEN (never printed).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -82,28 +82,4 @@ test("WebSocket /api/live connects and delivers a first message within 10 s", as
   });
   try { ws.close(); } catch {}
   assert.ok(first.length > 0);
-});
-
-// The ONLY AI call in the suite.
-test("one ask is answered by workers-ai within 30 s, mentions December, cites sources", { timeout: 60000 }, async () => {
-  const post = await fetch(`${API}/api/intent`, { method: "POST", headers: { ...authHeaders, "Content-Type": "application/json" }, body: JSON.stringify({ kind: "ask", q: "When do the new raids open?" }) });
-  assert.equal(post.status, 200, `POST /api/intent -> ${post.status}`);
-  const pb = await json(post);
-  assert.equal(pb.ok, true);
-  const askId = pb.ask && pb.ask.id;
-  assert.ok(askId, "no ask id returned");
-  const deadline = Date.now() + 30000;
-  let ask = null;
-  while (Date.now() < deadline) {
-    await sleep(2000);
-    const r = await fetch(`${API}/api/ask?id=${encodeURIComponent(askId)}`, { headers: authHeaders });
-    assert.equal(r.status, 200);
-    const b = await json(r);
-    if (b.ask && b.ask.status === "answered") { ask = b.ask; break; }
-    if (b.ask && b.ask.status === "failed") assert.fail(`ask failed: ${JSON.stringify(b.ask).slice(0, 200)}`);
-  }
-  assert.ok(ask, "not answered within 30 s");
-  assert.equal(ask.provider, "workers-ai");
-  assert.match(String(ask.answer), /december/i);
-  assert.ok(Array.isArray(ask.sources) && ask.sources.length > 0, "sources empty");
 });
