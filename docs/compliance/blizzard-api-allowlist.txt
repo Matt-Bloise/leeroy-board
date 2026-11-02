@@ -1,0 +1,5 @@
+# Files allowed to reference Blizzard API hosts (api.blizzard.com, *.api.blizzard.com,
+# battle.net/oauth, oauth.battle.net). One repo-relative path per line, "/" separators.
+# Empty today: the product makes no Blizzard API calls.
+# Adding a path here needs the owner's sign-off and a reviewed reading of the Blizzard
+# Developer API Terms of Use (see docs/compliance/blizzard-checklist.md).
