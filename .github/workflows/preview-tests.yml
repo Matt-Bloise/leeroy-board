@@ -31,6 +31,12 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Unit tests
+        id: unit
+        run: |
+          set -o pipefail
+          node --test "tests/unit/*.test.mjs" 2>&1 | tee "$RUNNER_TEMP/unit.log"
+
       - name: Find the preview URLs in the PR comment
         id: urls
         run: |
@@ -112,6 +118,7 @@ jobs:
         if: always()
         uses: actions/github-script@v7.0.1
         env:
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
           API_OUTCOME: ${{ steps.api.outcome }}
           BROWSER_OUTCOME: ${{ steps.browser.outcome }}
           PAGES_URL: ${{ steps.urls.outputs.pages }}
@@ -119,9 +126,10 @@ jobs:
           script: |
             const fs = require("fs");
             const read = (f) => { try { return fs.readFileSync(`${process.env.RUNNER_TEMP}/${f}`, "utf8"); } catch (e) { return ""; } };
-            const api = read("api.log"), br = read("browser.log");
+            const unit = read("unit.log"), api = read("api.log"), br = read("browser.log");
             const num = (re, s) => { const m = s.match(re); return m ? Number(m[1]) : null; };
             // node:test summary lines read "<symbol> pass N" and "<symbol> fail N"
+            const uPass = num(/^\S+ pass (\d+)$/m, unit), uFail = num(/^\S+ fail (\d+)$/m, unit);
             const aPass = num(/^\S+ pass (\d+)$/m, api), aFail = num(/^\S+ fail (\d+)$/m, api);
             let bPass = num(/live-smoke: all (\d+) checks passed/, br), bFail = bPass === null ? null : 0;
             const bf = br.match(/live-smoke: (\d+) of (\d+) checks FAILED/);
@@ -131,7 +139,7 @@ jobs:
             const failing = br.split("\n").filter((l) => l.startsWith("FAIL ")).slice(0, 10);
             const apiFailing = api.split("\n").filter((l) => /^\S+ .* \(\d/.test(l) && !/^\S*✔/.test(l) && /fail|✖/i.test(l)).slice(0, 10);
             const lines = [...apiFailing, ...failing];
-            const ok = process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success";
+            const ok = process.env.UNIT_OUTCOME === "success" && process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success";
             const pr = context.payload.pull_request;
             const sha = pr.head.sha.slice(0, 7);
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -141,6 +149,7 @@ jobs:
               "",
               "| Suite | Result | Passed | Failed |",
               "| :--- | :--- | ---: | ---: |",
+              `| Unit | ${label(process.env.UNIT_OUTCOME)} | ${cell(uPass)} | ${cell(uFail)} |`,
               `| API | ${label(process.env.API_OUTCOME)} | ${cell(aPass)} | ${cell(aFail)} |`,
               `| Browser smoke (Chromium + WebKit) | ${label(process.env.BROWSER_OUTCOME)} | ${cell(bPass)} | ${cell(bFail)} |`,
               "",
