@@ -75,7 +75,12 @@ function clearTraces() {
 }
 
 const S = { el: null, rows: {}, opener: null, say: null, errs: [] };
-const CHANNEL = "https://discord.com/channels/782702097421565952/1558663575495770193";
+function inviteUrl() {
+  try {
+    const m = document.querySelector('meta[name="discord-invite"]'), v = String((m && m.content) || window.__discordInvite || "").trim();
+    return /^https:\/\/(discord\.gg|discord\.com\/invite)\/[\w-]+$/.test(v) ? v : "";
+  } catch (e) { return ""; }
+}
 try { const ce = console.error; console.error = function () { try { S.errs.push(Array.prototype.map.call(arguments, String).join(" ").slice(0, 120)); S.errs = S.errs.slice(-3); } catch (e) {} return ce.apply(console, arguments); }; addEventListener("error", (e) => { S.errs.push(String(e && e.message || "error").slice(0, 120)); S.errs = S.errs.slice(-3); }); } catch (e) {}
 function feedback() {
   const mm = (q) => { try { return !!matchMedia(q).matches; } catch (e) { return false; } }, e = S.errs;
@@ -129,7 +134,7 @@ function build() {
   const clear = btn("Clear my traces and reload", () => clearTraces(), { id: "st-clear-b", "aria-describedby": "st-clear-n" });
   const fbText = h("pre", { class: "st-fb", id: "st-fb-text", text: feedback() });
   const fbCopy = btn("Copy this", () => { fbText.textContent = copyFeedback(); }, { id: "st-fb-copy" });
-  const fbLink = h("a", { class: "st-btn st-link", id: "st-fb-link", href: CHANNEL, target: "_blank", rel: "noopener noreferrer", text: "Open the Discord channel" });
+  const invite = inviteUrl(), fbLink = invite ? h("a", { class: "st-btn st-link", id: "st-fb-link", href: invite, target: "_blank", rel: "noopener noreferrer", text: "Open the Discord channel" }) : null;
   let fbRow;
   S.say = h("p", { class: "st-say", id: "st-say", role: "status", "aria-live": "polite" });
   const acct = K.api ? accountRow() : null;
