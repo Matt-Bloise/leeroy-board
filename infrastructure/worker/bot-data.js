@@ -267,43 +267,34 @@ export const FACTS_DATA = {
 };
 
 export const LIBRARY_DATA = {
-  "forumChannelId": "1558663630797541546",
-  "chatChannelId": "1558663575495770193",
   "posted": [
     {
       "title": "Pop Quiz: how much Forever do you actually know?",
-      "short": "Pop Quiz",
-      "id": "1561634718187790407"
+      "short": "Pop Quiz"
     },
     {
       "title": "Speak Fluent Azeroth: the Forever glossary, A to Z",
-      "short": "Glossary",
-      "id": "1561635366341976105"
+      "short": "Glossary"
     },
     {
       "title": "Previously on Forever: the beta in four builds",
-      "short": "Beta history",
-      "id": "1561635814679773204"
+      "short": "Beta history"
     },
     {
       "title": "Rage, Roots, Arrows and Axes: Warrior, Druid, Hunter and Rogue",
-      "short": "Warrior / Druid / Hunter / Rogue",
-      "id": "1561636529800093847"
+      "short": "Warrior / Druid / Hunter / Rogue"
     },
     {
       "title": "The Reading List: every Blizzard post in one place",
-      "short": "Reading List",
-      "id": "1561637425917202512"
+      "short": "Reading List"
     },
     {
       "title": "Buttons, Bars and the Big Server Squish (Oct 21)",
-      "short": "UI, addons, macros, stress test",
-      "id": "1561637906185981992"
+      "short": "UI, addons, macros, stress test"
     },
     {
       "title": "Level 60 Sneak Peek: raids, loot and honor",
-      "short": "Level 60 preview",
-      "id": "1561638970906124298"
+      "short": "Level 60 preview"
     }
   ],
   "coming": [
@@ -535,7 +526,7 @@ export const QUIZ_DATA = {
 };
 
 export const ACK_LINES_DATA = {
-  "_about": "Rolling ack lines (2026-10-26): the bot's instant reply is '<hourglass> On it, <name>. <line>'. The line is picked at random from byUser[<authorId>] plus generic, never one of the last 15 used (state.recentAcks). The live brain adds lines over time; the file is read on every ack, so no restart is needed. Rules: game and chat behavior only, no real life, no slurs, never the word Skippy, never monkeys, under 90 characters.",
+  "_about": "Rolling ack lines (2026-10-26): the bot's instant reply is '<hourglass> On it, <name>. <line>'. The line is picked at random from generic, never one of the last 15 used (state.recentAcks). The live brain adds lines over time; the file is read on every ack, so no restart is needed. Rules: game and chat behavior only, no real life, no slurs, never the word Skippy, never monkeys, under 90 characters.",
   "generic": [
     "Library's open. Mind the sheep.",
     "Dusting off the shelf. Something fell on a gnome.",
@@ -568,38 +559,6 @@ export const ACK_LINES_DATA = {
     "Interrupting a Hearthstone cast for this.",
     "Sharpening the quill on a Dire Maul key."
   ],
-  "byUser": {
-    "549319662731657219": [
-      "Second mage question of the hour. Rent is due, Bloise.",
-      "Sheeping the distractions. Frost shelf, then Fire at 40.",
-      "The Undead section is coldest. Fitting.",
-      "Tailoring aisle or Alchemy aisle? Checking both, as usual."
-    ],
-    "448331225757777930": [
-      "The crown gets priority shelving. Server owner privileges.",
-      "Ret shelf first, Holy shelf at 40. Bubble optional.",
-      "Undead Paladin: the library's favourite contradiction.",
-      "Polishing the Blacksmithing hammer while I read."
-    ],
-    "462769919658819584": [
-      "Shield first, scripture second. Disc priest protocol.",
-      "Reading quietly, so the Engineering bombs don't go off.",
-      "Mining the stacks for you. Pun intended.",
-      "Pulling the priest tomes. They are suspiciously tidy."
-    ],
-    "194302792649670656": [
-      "The Voidwalker is holding your place in line. Demoted, still useful.",
-      "Troll shelf, Berserking on. Reading at +10% cast speed.",
-      "First Troll Warlock in server history gets the fast lane.",
-      "Checking twice, since you asked twice last time."
-    ],
-    "218159598325071874": [
-      "Bear form engaged. The library has load-bearing walls.",
-      "Leatherworking aisle, mind the hides on the floor.",
-      "Tauren through the doorway in 3, 2, 1.",
-      "The tank's question tanks the queue. Reading."
-    ]
-  },
   "queue": {
     "one": "{ahead} asked first; you're next.",
     "many": "{ahead} are ahead; yours follows."
@@ -607,7 +566,7 @@ export const ACK_LINES_DATA = {
 };
 
 export const ROSTER_DATA = [
-  { "display": "Bloise", "aliases": ["bloise", "mage"], "threadId": "1561784932077011045" },
+  { "display": "Bloise", "aliases": ["bloise", "mage"] },
   { "display": "Street Rat", "aliases": ["street rat", "rat"] },
   { "display": "Handsome Squidward", "aliases": ["squidward", "handsome squidward"] },
   { "display": "Bible Boi", "aliases": ["bible boi", "bible"] },
