@@ -1,5 +1,11 @@
 name: PR Ephemeral Preview Environment (Cloudflare Free Tier)
 
+# The preview exists only while the PR carries the label `ci-full` (GitHub minutes are metered, docs/runbooks/ci-minutes.md):
+#   opened / synchronize / reopened / labeled ci-full, with the label present -> prep, then deploy (spin up or refresh the preview)
+#   closed, or unlabeled ci-full                                           -> teardown (one job; exits early when no preview D1 exists), frees a D1 slot
+# A PR without the label costs nothing here: every job is skipped. Label events other than ci-full skip every job and never cancel a running spin-up.
+# Teardown never depends on label history: it looks for the D1 database of this PR number.
+
 on:
   pull_request:
     types:
@@ -7,10 +13,12 @@ on:
       - synchronize
       - reopened
       - closed
+      - labeled
+      - unlabeled
 
 concurrency:
-  group: cloudflare-pr-preview-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full') }}
 
 permissions:
   contents: read
@@ -18,24 +26,45 @@ permissions:
   issues: write
 
 jobs:
-  # Docs-only PRs (tools/docs-only.mjs) get no preview and no D1 database; Preview Tests runs unit and stamps only.
-  scope:
-    name: Classify the Changed Paths
-    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+  # One cheap job for the three former tiny jobs: fork policy, path classification (docs-only PRs get no preview and no D1 database) and the docs-only note.
+  # Same-repo PRs without `ci-full` skip it (0 minutes); fork PRs only run the policy step.
+  prep:
+    name: Fork policy and classify
+    if: >-
+      (github.event.pull_request.head.repo.full_name != github.repository && contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action)) ||
+      (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'ci-full') &&
+       (contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action) || (github.event.action == 'labeled' && github.event.label.name == 'ci-full')))
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
     steps:
+      - name: Enforce the fork PR policy
+        run: |
+          IS_FORK="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          echo "Head repository: ${{ github.event.pull_request.head.repo.full_name }}"
+          echo "Base repository: ${{ github.repository }}"
+          echo "Base branch: $BASE_BRANCH"
+          echo "Is fork PR: $IS_FORK"
+          if [ "$IS_FORK" = "true" ] && [ "$BASE_BRANCH" = "master" ]; then
+            echo "::error::Fork pull requests cannot be merged directly into 'master'. Fork pull requests must target a non-master branch (e.g. an integration or feature branch)."
+            exit 1
+          fi
+
       - name: Checkout PR branch
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 22
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "22"
 
       - name: Classify the changed paths
         id: classify
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -58,28 +87,11 @@ jobs:
             if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, body });
 
-  validate-fork-pr:
-    name: Enforce Fork PR Policy
-    if: github.event.action != 'closed'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Fork PR Target Branch
-        run: |
-          IS_FORK="${{ github.event.pull_request.head.repo.full_name != github.repository }}"
-          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
-          echo "Head repository: ${{ github.event.pull_request.head.repo.full_name }}"
-          echo "Base repository: ${{ github.repository }}"
-          echo "Base branch: $BASE_BRANCH"
-          echo "Is fork PR: $IS_FORK"
-          if [ "$IS_FORK" = "true" ] && [ "$BASE_BRANCH" = "master" ]; then
-            echo "::error::Fork pull requests cannot be merged directly into 'master'. Fork pull requests must target a non-master branch (e.g. an integration or feature branch)."
-            exit 1
-          fi
-
   deploy-pr-preview:
     name: Spin Up Isolated PR Preview (Pages + Worker + D1 + DO)
-    needs: scope
-    if: github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository && needs.scope.outputs.docs_only != 'true'
+    needs: prep
+    # prep runs for same-repo PRs only with the label `ci-full` (and for forks, which never get a preview), so this is the single spin-up condition.
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -267,7 +279,7 @@ jobs:
             const sha = context.payload.pull_request.head.sha.slice(0, 7);
             const body = [marker, `### Preview limit reached (\`${sha}\`)`, "",
               "Preview limit reached; will retry when a slot frees.",
-              "", "The Cloudflare Free plan allows 10 D1 databases per account and every open PR uses one (error 7406). When another PR is merged or closed, its slot is released and this PR's failed preview and test jobs are re-run automatically. See `docs/runbooks/preview-d1-limit.md`."].join("\n");
+              "", "The Cloudflare Free plan allows 10 D1 databases per account and every open PR uses one (error 7406). When another PR is merged, closed or loses its `ci-full` label, its slot is released and this PR's failed preview and test jobs are re-run automatically. See `docs/runbooks/preview-d1-limit.md`."].join("\n");
             const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, per_page: 100 });
             const existing = comments.find(c => c.body && c.body.includes(marker));
             if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
@@ -399,7 +411,7 @@ jobs:
               `| **Database (Cloudflare D1)** | \`${dbName}\` | 🟢 Seeded & Isolated |`,
               `| **AI Model (Zero Keys)** | Cloudflare Workers AI (\`@cf/meta/llama-3.3-70b-instruct-fp8-fast\`) | 🟢 Free Tier (No External Keys) |`,
               "",
-              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, uses only the free native Cloudflare Workers AI model, and will be **automatically torn down** when this PR is merged or closed._"
+              "_This environment is 100% isolated from production, has **zero external AI API keys injected**, uses only the free native Cloudflare Workers AI model, and will be **automatically torn down** when this PR is merged, closed or loses the `ci-full` label._"
             ].join("\n");
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -429,10 +441,18 @@ jobs:
               });
             }
 
+  # One job: probe for this PR's preview D1 database first (a few seconds, no checkout, no npm install), exit early when there is none, otherwise tear down
+  # the Worker, D1 database and Pages deployments and re-run a waiting PR. Runs on closed and on unlabeled ci-full; it does not look at label history.
   teardown-pr-preview:
-    name: Tear Down Ephemeral PR Environment on Merge / Close
-    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    name: Tear Down Ephemeral PR Environment (closed or ci-full removed)
+    if: github.event.pull_request.head.repo.full_name == github.repository && (github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'ci-full'))
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      actions: write
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -443,31 +463,63 @@ jobs:
       PAGES_BRANCH: pr-${{ github.event.pull_request.number }}
 
     steps:
+      - name: Look for this PR's preview D1 database
+        id: probe
+        run: |
+          set -u
+          TOKEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '\r\n ')
+          ACC=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n ')
+          ANSWER=unknown
+          if [ -n "$TOKEN" ] && [ -n "$ACC" ]; then
+            RES=$(curl -sS --max-time 30 "https://api.cloudflare.com/client/v4/accounts/$ACC/d1/database?name=$D1_DATABASE_NAME&per_page=100" -H "Authorization: Bearer $TOKEN" || true)
+            ANSWER=$(node -e '
+              try {
+                const j = JSON.parse(process.argv[1]);
+                if (j.success === true && Array.isArray(j.result)) process.stdout.write(j.result.some((d) => d.name === process.env.D1_DATABASE_NAME) ? "yes" : "no");
+                else process.stdout.write("unknown");
+              } catch (e) { process.stdout.write("unknown"); }
+            ' "$RES")
+          fi
+          echo "Probe answer for $D1_DATABASE_NAME: $ANSWER"
+          # Only a clear "no" ends the job early. "unknown" (missing secrets, API error) falls through to the full teardown, which is idempotent.
+          if [ "$ANSWER" = "no" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No preview D1 database for PR $PR_NUMBER: nothing to tear down."
+          else
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
+        if: steps.probe.outputs.exists == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 22
+        if: steps.probe.outputs.exists == 'true'
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: "22"
 
       - name: Install Wrangler CLI
+        if: steps.probe.outputs.exists == 'true'
         working-directory: infrastructure
         run: npm install --no-audit --no-fund
 
       - name: Delete Ephemeral Cloudflare Worker & Durable Object (`leeroy-brain-pr-*`)
+        if: steps.probe.outputs.exists == 'true'
         working-directory: infrastructure
         run: |
           echo "Deleting ephemeral Worker '$WORKER_NAME'..."
           npx wrangler delete --name "$WORKER_NAME" --force || echo "Worker '$WORKER_NAME' already deleted or not found."
 
       - name: Delete Ephemeral Cloudflare D1 Database (`leeroy-board-db-pr-*`)
+        if: steps.probe.outputs.exists == 'true'
         working-directory: infrastructure
         run: |
           echo "Deleting ephemeral D1 database '$D1_DATABASE_NAME'..."
           npx wrangler d1 delete "$D1_DATABASE_NAME" --skip-confirmation || echo "D1 '$D1_DATABASE_NAME' already deleted or not found."
 
       - name: Delete Cloudflare Pages Preview Deployments for `pr-*`
+        if: steps.probe.outputs.exists == 'true'
         run: |
           node -e '
             (async () => {
@@ -493,15 +545,17 @@ jobs:
           '
 
       - name: Update Sticky PR Comment to Confirm Teardown
+        if: steps.probe.outputs.exists == 'true'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
             const marker = "<!-- cloudflare-pr-preview -->";
             const prNumber = context.payload.pull_request.number;
             const merged = Boolean(context.payload.pull_request.merged);
+            const why = context.payload.action === "unlabeled" ? "ci-full label removed" : merged ? "Merged" : "Closed";
             const body = [
               marker,
-              `### 🧹 Cloudflare Ephemeral PR Preview Torn Down (PR #${prNumber} ${merged ? "Merged" : "Closed"})`,
+              `### 🧹 Cloudflare Ephemeral PR Preview Torn Down (PR #${prNumber} ${why})`,
               "",
               "- 🗑️ Deleted Worker & Durable Object: `leeroy-brain-pr-" + prNumber + "`",
               "- 🗑️ Deleted D1 SQLite Database: `leeroy-board-db-pr-" + prNumber + "`",
@@ -523,18 +577,9 @@ jobs:
               });
             }
 
-  retry-waiting-previews:
-    name: Retry Previews Waiting for a Free D1 Slot
-    needs: teardown-pr-preview
-    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      issues: read
-      actions: write
-    steps:
-      - name: Re-run failed preview and test jobs of PRs that hit the limit
+      # Was the separate job `retry-waiting-previews`: a slot was just freed, so re-run the failed jobs of one PR that hit the D1 limit.
+      - name: Re-run failed preview and test jobs of a PR that hit the limit
+        if: steps.probe.outputs.exists == 'true'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           script: |
