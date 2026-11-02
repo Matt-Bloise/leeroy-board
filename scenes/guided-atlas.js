@@ -114,7 +114,7 @@ async function ensure() {
   if (!G.host.parentNode) G.map.appendChild(G.host);
   G.loading = (async () => {
     try {
-      const [m] = await Promise.all([import("../atlas/atlas.js?v=033cc284cc"), facts()]);
+      const [m] = await Promise.all([import("../atlas/atlas.js?v=1fa6b06eeb"), facts()]);
       G.A = await m.createAtlas({ host: G.host, base: "", kit: kit(), data: { party: K.D.party, signups: K.D.signups }, member: () => MEM.member(), sound: window.BoardSound || null, haptics: window.BoardHaptics || null, shapesNote: true, on: (t) => { if (t === "view") Z.place(); } });
       if (G.busy || !G.shown) { G.A.pause(); } else { G.A.resume(); }
       G.A.openToken("atlas", { animate: false });

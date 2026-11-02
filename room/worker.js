@@ -1,4 +1,4 @@
-import { startRoom } from "./room.js?v=54dd82dc31";
+import { startRoom } from "./room.js?v=8f0fc29708";
 
 const flickHash = (i) => { const v = Math.sin(i * 127.1 + 311.7 * 7.31) * 43758.5453; return (v - Math.floor(v)) * 2 - 1; };
 const flickOct = (x) => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return flickHash(i) * (1 - u) + flickHash(i + 1) * u; };

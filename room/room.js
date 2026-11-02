@@ -1,4 +1,4 @@
-import { createTavern } from "./tavern.js?v=b76811ffd9";
+import { createTavern } from "./tavern.js?v=2c24429d92";
 
 const TIERS = {
   medium: { dpr: 1, fps: 30, flicker: 0.6, air: 0, exposure: 1.9, budget: 33.3 },
