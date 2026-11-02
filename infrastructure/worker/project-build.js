@@ -11,13 +11,17 @@ import { planProjection } from "./projection.js";
 import { SQL as BUILD_SQL, buildTitle, cleanHandle, isSnowflake } from "./build-modal.js";
 import { SQL as SETUP_SQL } from "./setup-command.js";
 import { upsertMember } from "./members.js";
+import { PARTY_MEMBERS } from "./party-source.js";
+import { slugify } from "./member-model.js";
 import { validateConfigValue, loadConfigKey, invalidateConfigCache } from "./config.js";
 
 export const SQL = {
   tenantRow: "SELECT id, status FROM tenants WHERE discord_guild_id = ?",
   tenant: SETUP_SQL.tenant, // INSERT ... ON CONFLICT(discord_guild_id) DO UPDATE SET status = 'active' WHERE tenants.status != 'suspended'
-  kvRead: "SELECT json FROM kv_state WHERE key = ?",
-  kvWrite: "INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)",
+  kvRead: "SELECT json, updated_at FROM kv_state WHERE key = ?",
+  // Compare-and-swap: replace a document only if nobody wrote it since we read it (updated_at unchanged); a row that did not exist is created only if still absent.
+  kvCas: "UPDATE kv_state SET json = ?, updated_at = ? WHERE key = ? AND updated_at = ?",
+  kvCreate: "INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",
 };
 
 const SAFE = "Not saved. Nothing was changed; try again in a moment.";
@@ -30,8 +34,8 @@ function say(error) {
 
 async function readDoc(env, key) {
   const row = await env.DB.prepare(SQL.kvRead).bind(key).first();
-  if (!row || !row.json) return null;
-  return JSON.parse(row.json);
+  if (!row || !row.json) return { doc: null, at: null };
+  return { doc: JSON.parse(row.json), at: row.updated_at };
 }
 
 // Result: { ok: true, slug, created, duplicate, partyDoc } | { ok: false, reason, message }.
@@ -44,16 +48,17 @@ export async function projectBuild(env, { discordUserId, displayName, guildId, h
     if (!roster || String(roster.guildId || "") !== String(guildId)) return refuse("wrong-guild", "Not saved: this server is not connected to the board.");
 
     // Fresh reads, never the 60 s config cache: the plan must see the roster and party exactly as the batch will replace them.
-    const [tenant, partyDoc, members] = await Promise.all([
+    const [tenant, partyRead, membersRead] = await Promise.all([
       env.DB.prepare(SQL.tenantRow).bind(String(guildId)).first(),
       readDoc(env, "party"),
       readDoc(env, "discord_members"),
     ]);
+    const partyDoc = partyRead.doc, members = membersRead.doc;
     if (tenant && tenant.status === "suspended") return refuse("suspended", "Not saved: this server is suspended.");
     if (!partyDoc || !Array.isArray(partyDoc.members)) return refuse("no-party", "Not saved: the party document is missing on this board.");
     const rosterList = Array.isArray(members) ? members : [];
 
-    const plan = planProjection({ handle, build, discordUserId, partyDoc, roster: rosterList });
+    const plan = planProjection({ handle, build, discordUserId, partyDoc, roster: rosterList, reservedSlugs: PARTY_MEMBERS.map((m) => slugify(String(m.name))) });
     if (!plan.ok) return refuse("plan", say(plan.error));
 
     const up = upsertMember(rosterList, plan.rosterEntry);
@@ -73,14 +78,25 @@ export async function projectBuild(env, { discordUserId, displayName, guildId, h
     const tenantId = created ? newId() : tenant.id;
     const characterId = `${tenantId}:${discordUserId}`;
     const name = cleanHandle(handle);
-    await env.DB.batch([
+    // Roster first, party second: if one compare-and-swap loses a race, a retry converges (the roster entry alone does not block the same person).
+    const rosterStmt = membersRead.at
+      ? env.DB.prepare(SQL.kvCas).bind(JSON.stringify(up.members), at, "discord_members", membersRead.at)
+      : env.DB.prepare(SQL.kvCreate).bind("discord_members", JSON.stringify(up.members), at);
+    const partyStmt = env.DB.prepare(SQL.kvCas).bind(JSON.stringify(nextParty), at, "party", partyRead.at);
+    const results = await env.DB.batch([
       env.DB.prepare(SQL.tenant).bind(tenantId, String(guildId), `Guild ${guildId}`, at),
       env.DB.prepare(BUILD_SQL.user).bind(String(discordUserId), String(displayName || "").slice(0, 80) || null, at),
       env.DB.prepare(BUILD_SQL.character).bind(characterId, tenantId, String(discordUserId), name, "unset", "us", build.class, at),
       env.DB.prepare(BUILD_SQL.build).bind(newId(), characterId, buildTitle(build), JSON.stringify(build), at, at),
-      env.DB.prepare(SQL.kvWrite).bind("discord_members", JSON.stringify(up.members), at),
-      env.DB.prepare(SQL.kvWrite).bind("party", JSON.stringify(nextParty), at),
+      rosterStmt,
+      partyStmt,
     ]);
+    // A lost race writes 0 rows. (A result without meta.changes is a stub; real D1 always reports it.)
+    const lost = (r) => r && r.meta && typeof r.meta.changes === "number" && r.meta.changes !== 1;
+    if (lost(results[4]) || lost(results[5])) {
+      console.error("build-project: the board changed while saving; asked the person to try again");
+      return refuse("conflict", "Not saved: the board changed at the same moment. Try again in a moment.");
+    }
 
     invalidateConfigCache("discord_members");
     if (after) {

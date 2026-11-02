@@ -33,9 +33,10 @@ const ROSTER_SEED = PARTY.members.map((m) => {
 });
 
 // In-memory D1. Statements are recognised by their exact SQL, so a changed statement fails here.
-function stubDb({ failOn = null, party = PARTY, members = ROSTER_SEED } = {}) {
+function stubDb({ failOn = null, party = PARTY, members = ROSTER_SEED, race = null } = {}) {
   const state = {
     kv: { discord_roster: JSON.stringify({ guildId: GUILD }), ...(party ? { party: JSON.stringify(party) } : {}), ...(members ? { discord_members: JSON.stringify(members) } : {}) },
+    kvAt: { party: "2026-11-01T00:00:00.000Z", discord_members: "2026-11-01T00:00:00.000Z" },
     tenants: [], users: {}, characters: {}, builds: [],
   };
   const apply = (s, sql, a) => {
@@ -48,8 +49,13 @@ function stubDb({ failOn = null, party = PARTY, members = ROSTER_SEED } = {}) {
       if (clash) throw new Error("UNIQUE constraint failed: characters.tenant_id, characters.region, characters.realm, characters.name");
       s.characters[a[0]] = { id: a[0], tenant: a[1], user: a[2], name: a[3], class: a[6] };
     } else if (sql === BUILD_SQL.build) s.builds.push({ id: a[0], character: a[1], title: a[2], data: a[3] });
-    else if (sql === PROJECT_SQL.kvWrite) s.kv[a[0]] = a[1];
-    else throw new Error(`stub D1: unexpected write: ${sql}`);
+    else if (sql === PROJECT_SQL.kvCas) {
+      if (s.kvAt[a[2]] !== a[3]) return 0;
+      s.kv[a[2]] = a[0]; s.kvAt[a[2]] = a[1];
+    } else if (sql === PROJECT_SQL.kvCreate) {
+      if (s.kv[a[0]] !== undefined) return 0;
+      s.kv[a[0]] = a[1]; s.kvAt[a[0]] = a[2];
+    } else throw new Error(`stub D1: unexpected write: ${sql}`);
   };
   let n = 0;
   const prepare = (sql) => {
@@ -58,7 +64,7 @@ function stubDb({ failOn = null, party = PARTY, members = ROSTER_SEED } = {}) {
       bind: (...a) => ((args = a), st),
       first: async () => {
         if (sql === PROJECT_SQL.tenantRow) { const t = state.tenants.find((x) => x.guild === args[0]); return t ? { id: t.id, status: t.status } : null; }
-        if (sql === PROJECT_SQL.kvRead) return state.kv[args[0]] !== undefined ? { json: state.kv[args[0]] } : null;
+        if (/^SELECT json(, updated_at)? FROM kv_state WHERE key = \?$/.test(sql)) return state.kv[args[0]] !== undefined ? { json: state.kv[args[0]], updated_at: state.kvAt[args[0]] || null } : null; // projectBuild's reads and config.js's loader
         if (sql === BUILD_SQL.tenant) { const t = state.tenants.find((x) => x.guild === args[0] && x.status === "active"); return t ? { id: t.id } : null; }
         if (/FROM kv_state WHERE key = 'party'/.test(sql)) return state.kv.party !== undefined ? { json: state.kv.party } : null;
         return null;
@@ -71,14 +77,17 @@ function stubDb({ failOn = null, party = PARTY, members = ROSTER_SEED } = {}) {
     return st;
   };
   const batch = async (stmts) => {
+    if (race) race(state); // another writer slips in between our reads and our batch
     const draft = structuredClone(state);
+    const changes = [];
     stmts.forEach((st, i) => {
       if (failOn && failOn(st._sql, i, n)) throw new Error("D1_ERROR: injected failure");
-      apply(draft, st._sql, st._args());
+      const r = apply(draft, st._sql, st._args());
+      changes.push(r === 0 ? 0 : 1);
     });
     Object.assign(state, draft); // all or nothing
     n++;
-    return stmts.map(() => ({ success: true }));
+    return changes.map((c) => ({ success: true, meta: { changes: c } }));
   };
   return { prepare, batch, state };
 }
@@ -205,7 +214,7 @@ test("A7: a rename is refused and sends the person to an admin", async () => {
 });
 
 test("A7: a failure in the middle of the batch leaves nothing written, logs once, and says so", async () => {
-  const db = stubDb({ failOn: (sql) => sql === PROJECT_SQL.kvWrite });
+  const db = stubDb({ failOn: (sql) => sql === PROJECT_SQL.kvCas });
   const before = structuredClone(db.state);
   const { out, errs } = await quiet(() => run(submit(), { db }));
   assert.deepEqual(db.state, before, "no tenant, no user, no character, no build, same roster, same party");
@@ -345,4 +354,35 @@ test("A6: JOIN_PROMPT sends one ephemeral hint with a Join button to an unknown 
   const known = stubDb({ members: [{ slug: "fizzwick", name: "Fizzwick", match: ["fizzwick"], id: USER }] });
   await run(cmd("sheet"), { env: on, db: known });
   assert.equal(calls.length, 0, "a person on the roster never sees it");
+});
+
+test("advisor fix 1: a handle whose slug matches another member's is refused (Bible_Boi vs Bible Boi), and a built-in slug is never reused", async () => {
+  for (const handle of ["Bible_Boi", "Bible-Boi", "Street Rat!", "Santa"]) {
+    const db = stubDb();
+    const before = structuredClone(db.state);
+    const { out } = await quiet(() => run(submit({ handle }), { db }));
+    assert.deepEqual(db.state, before, `nothing written for ${handle}`);
+    assert.match(out.edits[0].content, /^Not saved: /, handle);
+  }
+});
+
+test("advisor fix 2: a write that lands between our read and our batch makes the save fail cleanly, with no lost update", async () => {
+  let landed = false;
+  const db = stubDb({
+    race: (st) => {
+      if (landed) return;
+      landed = true;
+      st.kv.party = JSON.stringify({ ...PARTY, members: [...PARTY.members, { name: "Someone Else" }] });
+      st.kvAt.party = "2026-11-02T00:00:00.000Z"; // PUT /data/party wrote in the meantime
+    },
+  });
+  const { out } = await quiet(() => run(submit(), { db }));
+  assert.match(out.edits[0].content, /changed at the same moment/);
+  assert.ok(JSON.parse(db.state.kv.party).members.some((m) => m.name === "Someone Else"), "the other writer's card survived");
+  assert.ok(!JSON.parse(db.state.kv.party).members.some((m) => m.name === "Fizzwick"), "our card was not forced in over it");
+  assert.equal(out.boardRoom.sent.length, 0, "no broadcast for a save that did not happen");
+  // the retry (no race now) converges and succeeds
+  const again = await quiet(() => run(submit(), { db }));
+  assert.match(again.out.edits[0].content, /Fizzwick|saved|on the board/i);
+  assert.ok(JSON.parse(db.state.kv.party).members.some((m) => m.name === "Fizzwick"));
 });

@@ -10,7 +10,7 @@ const fail = (error) => ({ ok: false, error });
 
 // { handle, build (parseBuildSubmit's .build), discordUserId, partyDoc, roster (array of { slug, name, match, id }) }
 // -> { ok, error?, slug, partyEntry, rosterEntry, duplicate }
-export function planProjection({ handle, build, discordUserId, partyDoc, roster } = {}) {
+export function planProjection({ handle, build, discordUserId, partyDoc, roster, reservedSlugs = [] } = {}) {
   const name = typeof handle === "string" ? handle.trim().replace(/\s+/g, " ") : "";
   if (!name || name.length > 40) return fail("handle must be 1 to 40 characters");
   if (BAD_NAME.test(name)) return fail("handle must be a game handle: no @, links, slashes or publisher marks");
@@ -36,6 +36,14 @@ export function planProjection({ handle, build, discordUserId, partyDoc, roster 
   if (mine && !sameName(mine.name)) return fail("ask an admin");
   const owner = entries.find((r) => r && (r.slug === slug || sameName(r.name)));
   if (owner && String(owner.id) !== id) return fail("that handle is taken by another member");
+
+  // Slug-level clash (advisor, Nov 2): "Bible_Boi" and "Bible-Boi" are different names but the same slug; the board and the roster key on the slug,
+  // so a second card with a taken slug would point Discord attribution at the wrong person. Only the id that owns the slug may reuse it.
+  const slugOwnedByMe = mine && slugify(String(mine.name)) === slug;
+  if (!slugOwnedByMe) {
+    if (members.some((m) => m && slugify(String(m.name)) === slug && !sameName(m.name))) return fail("that handle is too close to an existing member's");
+    if (Array.isArray(reservedSlugs) && reservedSlugs.includes(slug)) return fail("that handle is taken by another member");
+  }
 
   const existing = members.find((m) => sameName(m.name));
   if (existing && !mine) return fail("that handle is taken by another member");
