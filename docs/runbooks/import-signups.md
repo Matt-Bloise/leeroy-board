@@ -37,3 +37,7 @@ A newer dated entry wins over an older stored one and keeps its own date; an old
 ## Rollback
 
 `PUT /api/data/signups` with the backup file the tool printed: `curl -X PUT -H "Authorization: Bearer $BOARD_ADMIN_TOKEN" -H "Content-Type: application/json" --data @<backup> https://api.leeroy.party/api/data/signups`. The live read can be up to a minute old (edge cache), so wait a minute between an apply and a re-run if other people are signing up.
+
+## Data-loss window (review fix)
+
+`--apply` reads the public `signups` document, which is served from a cache that may be a few minutes old, and then replaces the whole document with a PUT that has no version check. A sign-up that lands between that read and the PUT is silently overwritten. Run `--apply` only when nobody is signing up (not around a raid-night poll), run the dry run immediately before, and re-check the board afterwards. A cache-bypass read or a conditional PUT is a tracked follow-up.

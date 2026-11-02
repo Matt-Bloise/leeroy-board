@@ -33,6 +33,7 @@ const TABLE = {
   "POST /admin/members": ADMIN,
   "GET /admin/feedback": ADMIN,
   "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
+  "POST /admin/eval": ADMIN, // 404 unless EVAL_ENABLED is on; model bake-off, read only
   "GET /admin/moments": ADMIN, // timed-post schedule status, no ids or content
   "GET /admin/export": ADMIN, // NDJSON backup, one table page per request; secrets are never exported (worker/export.js)
   "PUT /persona": ADMIN,
@@ -175,6 +176,7 @@ const CALLS = {
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],
   "GET /admin/feedback": ["GET", "/api/admin/feedback"],
   "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
+  "POST /admin/eval": ["POST", "/api/admin/eval", "{}"],
   "GET /admin/moments": ["GET", "/api/admin/moments"],
   "GET /admin/export": ["GET", "/api/admin/export"],
   "PUT /persona": ["PUT", "/api/persona", "{}"],

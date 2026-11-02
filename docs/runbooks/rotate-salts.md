@@ -41,6 +41,8 @@ Both salts were fixed constants committed to a repository that was once public (
 
 ## What the account owner runs
 
+**Freeze deploys first (review fix).** The moment the repository secrets change in step 1, any merge to master runs the production deploy and puts the new salts on the Worker before the member-key SQL is ready: members are locked out and nothing re-derived. So before step 1: stop all merges to master (the merge daemon, any auto-merge, Josh) and disable the deploy workflow (`gh workflow disable "Deploy Cloudflare" --repo Matt-Bloise/leeroy-board`, or the Actions page), and re-enable it only after step 3 and the Verify section pass. `cancel-in-progress: false` does not stop a deploy that has already started.
+
 The Worker secret and the GitHub repository secret are two copies of one value. **The production deploy sets every Worker secret from the repository secret on each run** (`deploy-cloudflare.yml`, the `wrangler secret put` loop), so a bare `wrangler secret put` is overwritten by the old value at the next deploy. Do both, in this order:
 
 1. Update the two GitHub repository secrets `USER_SALT` and `KEY_SALT` to the new values (repository settings, Secrets, Actions). Preview Workers derive their own salts from these on their next push, so previews rotate by themselves.
@@ -78,7 +80,7 @@ The next normal deploy is then harmless: it sets the same new values.
 Choose by how far it got.
 
 - **Before step 2:** nothing has changed. Stop.
-- **After step 2, member keys only:** put the old `KEY_SALT` back (repository secret first, then `wrangler secret put KEY_SALT`), and re-run the old hash statements. The old values are the ones in git history (public), so keep them in the password manager until the rotation is accepted.
+- **After step 2, member keys only:** put the old `KEY_SALT` back (repository secret first, then `wrangler secret put KEY_SALT`), and then restore the old member hashes. The old `members.key_hash` values are NOT in the export (excluded on purpose) and the new-hash SQL overwrites them, so they exist only in D1 Time Travel: the realistic rollback for member keys is the Time Travel restore below, or re-issuing keys again. The old values are the ones in git history (public), so keep them in the password manager until the rotation is accepted.
 - **Whole rotation:** put both old salts back (repository secrets first, then `wrangler secret put`), then either restore D1 to the bookmark (`npx wrangler d1 time-travel restore leeroy-board-db --bookmark=<bookmark>`; this also drops anything written since) or run the reverse plan: the same tool command with `--reverse` and the same four variables writes the SQL that renames new hashes back to old ones. Old member keys work again only if the old `members` hashes are back, which the Time Travel restore does.
 
 ## What breaks for users

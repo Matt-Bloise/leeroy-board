@@ -1,0 +1,13 @@
+{
+  "note": "Fictional sample for the model bake-off tooling. Not real messages from anyone. Real questions stay on the owner's computer.",
+  "questions": [
+    { "id": "s1", "text": "What is a good first dungeon for a new group of five?" },
+    { "id": "s2", "text": "Which night is best for our first run?", "journey": "guided" },
+    { "id": "s3", "text": "How do we split professions so the group covers the basics?" },
+    { "id": "s4", "text": "When does the next patch land?", "journey": "curious" },
+    { "id": "s5", "text": "What should I bring to a dungeon run?" },
+    { "id": "s6", "text": "Is the library up to date on the latest class changes?" },
+    { "id": "s7", "text": "Who is on the roster tonight?", "asker": "visitor" },
+    { "id": "s8", "text": "Explain how reputation works in two sentences.", "asker": "visitor" }
+  ]
+}
