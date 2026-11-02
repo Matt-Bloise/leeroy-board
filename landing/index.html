@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A guild companion that turns your Discord forms and threads into your group's next steps.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#14100c">
+<title>Guild companion for Discord groups</title>
+<link rel="stylesheet" href="landing.css">
+</head>
+<body>
+<header class="top"><p class="brand">Guild companion</p></header>
+<main id="main">
+  <section class="hero" aria-labelledby="h1">
+    <h1 id="h1">Your Discord forms and threads, turned into your group's next steps.</h1>
+    <p class="lede">A guild companion for groups that plan in Discord. It reads the sign-up forms and the threads your group already uses, and shows who is in, what is open and what comes next, on one page.</p>
+    <p><a class="cta" id="cta" href="../">Open the board</a></p>
+    <p class="fine">Opens in any browser. No sign-in to look around.</p>
+  </section>
+
+  <section class="sample" aria-labelledby="sample-h">
+    <h2 id="sample-h">What a card looks like</h2>
+    <div class="card" role="group" aria-label="Sample next-step card (example data)">
+      <p class="card-tag">Next step</p>
+      <p class="card-title">Pick a night for the first dungeon run</p>
+      <ul class="bars">
+        <li><span class="lbl">Friday</span><span class="bar"><span class="fill" style="width:75%"></span></span><span class="n">3</span></li>
+        <li><span class="lbl">Saturday</span><span class="bar"><span class="fill" style="width:25%"></span></span><span class="n">1</span></li>
+        <li><span class="lbl">Sunday</span><span class="bar"><span class="fill" style="width:0"></span></span><span class="n">0</span></li>
+      </ul>
+      <p class="card-foot">Closes in 5 hours. Example data.</p>
+    </div>
+  </section>
+
+  <section class="how" aria-labelledby="how-h">
+    <h2 id="how-h">How it works</h2>
+    <ol>
+      <li>Your group fills in a form or talks in a thread in Discord.</li>
+      <li>The companion gathers the answers into cards.</li>
+      <li>Everyone sees the same next steps, in their own time zone.</li>
+    </ol>
+  </section>
+</main>
+<footer class="foot">
+  <nav aria-label="Policies">
+    <ul>
+      <li>Privacy: <code>docs/privacy.md</code></li>
+      <li>Terms: <code>docs/terms.md</code></li>
+      <li>What we track: <code>docs/data-inventory.md</code></li>
+    </ul>
+  </nav>
+  <p>No tracking scripts run on this page. For players of World of Warcraft: Forever and other group games. This site is not affiliated with or endorsed by Blizzard Entertainment.</p>
+</footer>
+<script src="landing.js"></script>
+</body>
+</html>
