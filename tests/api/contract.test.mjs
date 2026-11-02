@@ -84,7 +84,7 @@ test("validator: accepts and rejects", () => {
 });
 
 test("spec covers exactly the documented public and member routes", () => {
-  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/feedback", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
+  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/events/sync", "/api/admin/feedback", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
 });
 
 // ---- routes ----------------------------------------------------------------------------------------------------
@@ -252,6 +252,7 @@ test("finding: the flag-off 404 on a web-login route has no path field, unlike t
 test("admin write routes refuse a request without the admin token (401) before reading the body", async () => {
   const calls = [
     ["POST", "/api/announce", "/api/announce", "post"],
+    ["POST", "/api/admin/events/sync", "/api/admin/events/sync", "post"],
     ["PUT", "/api/config/name_map", "/api/config/{key}", "put"],
     ["PUT", "/api/config/discord_roster", "/api/config/{key}", "put"],
     ["PUT", "/api/persona", "/api/persona", "put"],

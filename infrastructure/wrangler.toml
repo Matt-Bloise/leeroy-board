@@ -12,8 +12,10 @@ routes = [
 # 6-Hour autonomous source sweep (Blizzard news, Wowhead, Raidplan, Wiki)
 # 4 runs/day keeps background AI fact extraction strictly under the 10,000 Workers AI neuron/day free limit.
 # Live on-demand refreshes remain available via UI and /intent { kind: "refresh" }.
+# Plus "* * * * *": the timed Discord posts (worker/moments.js). It does nothing unless MOMENTS_ENABLED is on, and it reads no
+# D1 rows while off. Workers Free allows 5 cron triggers per account, so this is the second of five.
 [triggers]
-crons = ["0 */6 * * *"]
+crons = ["0 */6 * * *", "* * * * *"]
 
 # Cloudflare D1 Serverless SQLite Database (Free Tier: 5 GB storage, 5M reads/day, 100k writes/day)
 # Workers Logs (free plan: 200,000 events a day, 3 days retention). Added so answer failures, provider fallbacks and delivery times are visible; console.log lines are captured as custom logs.
@@ -63,6 +65,10 @@ API_ORIGIN = "https://api.leeroy.party"
 BOARD_PUBLIC_URL = "https://leeroy.party"
 WEB_LOGIN = "off" # Q18 web Discord login: "on" enables /api/auth/discord/start, /callback, /api/auth/logout and cookie sessions on GET /api/me
 DATA_RIGHTS = "off" # Q59 member data export and erase: "on" enables GET /api/me/export and POST /api/me/erase (404 while off)
+EVENTS_ENABLED = "off" # Discord scheduled events: "on" enables POST /api/admin/events/sync (404 while off); see docs/runbooks/scheduled-events.md
+MOMENTS_ENABLED = "off" # timed Discord posts (docs/runbooks/moments.md): "on" lets the every-minute cron post. The PC bot stays authoritative for launch night (Nov 3 to 4): leave off until after launch.
+MOMENTS_SHADOW = "off" # shadow mode: plans and writes would_post / would_edit rows to the D1 ledger, never calls Discord. Exclusive with MOMENTS_ENABLED (both on = nothing runs).
+MOMENTS_DRY_RUN = "off" # "on" logs what would be posted and posts nothing (works with MOMENTS_ENABLED off)
 ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://leeroy.party,https://www.leeroy.party,https://api.leeroy.party,https://1561857940174938114.discordsays.com"
 BUILD_MODAL = "off" # Q19 /build modal with a handle field, and /join (listed in the command manifest only while on). "on" enables it
 BUILD_PROJECT = "off" # needs BUILD_MODAL on. "on": a confirmed submit also writes the roster entry and the party document in one atomic batch, then purges and broadcasts
