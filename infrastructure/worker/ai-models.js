@@ -239,14 +239,29 @@ async function runWorkersAiWithTimeout(env, model, inputs, options) {
   }
 }
 
-function resolveGatewayUrl(env, providerSlug, defaultEndpoint) {
-  const accountId = env && env.CLOUDFLARE_ACCOUNT_ID;
-  const gatewayId = env && env.AI_GATEWAY_ID;
-  if (!accountId || !gatewayId) return defaultEndpoint;
+export function resolveGatewayUrl(env, providerSlug, defaultEndpoint) {
+  const accountId = (env && (env.CLOUDFLARE_ACCOUNT_ID || env.ACCOUNT_ID || env.CF_ACCOUNT_ID)) || "";
+  const gatewayId = (env && env.AI_GATEWAY_ID) || "leeroy-ai-gateway";
+  if (!accountId || !gatewayId || !providerSlug) return defaultEndpoint;
   return `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${providerSlug}`;
 }
 
-async function fetchWithGatewayFallback({
+export function getOpenAiProviderSlug(provider) {
+  switch (provider) {
+    case "groq":
+      return "groq/chat/completions";
+    case "cerebras":
+      return "cerebras/chat/completions";
+    case "openrouter":
+      return "openrouter/chat/completions";
+    case "github":
+      return "compat/chat/completions";
+    default:
+      return "compat/chat/completions";
+  }
+}
+
+export async function fetchWithGatewayFallback({
   env,
   providerSlug,
   defaultEndpoint,
@@ -270,10 +285,11 @@ async function fetchWithGatewayFallback({
         headers: { ...headers, ...cacheHeaders },
         body,
       });
-      // If gateway returns 404 (e.g. gateway not configured in CF dash), fall back to direct endpoint
+      // If gateway returns 404 (e.g. gateway slug not configured), fall back to direct endpoint
       if (resp.status !== 404) return resp;
-    } catch {
-      // Gateway network error, fall back to direct endpoint
+      console.warn(`[AI-Gateway] 404 from ${gwUrl}, falling back to direct endpoint`);
+    } catch (err) {
+      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${err.message}, falling back to direct endpoint`);
     }
   }
 
@@ -369,7 +385,10 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       model
     )}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
     defaultEndpoint,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": env.GEMINI_API_KEY,
+    },
     body,
     skipCache,
     cacheKey,
@@ -423,8 +442,8 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
           cacheTtl: Number(env.AI_GATEWAY_CACHE_TTL) || 21600, // 6 hours: matches the cron update cycle
         },
       });
-    } catch {
-      // If gateway is not found or fails in Cloudflare, smoothly fallback to direct run
+    } catch (gwErr) {
+      console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${gwErr.message}, falling back to direct run`);
       result = null;
     }
   }
@@ -463,38 +482,21 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
     ],
   });
 
-  const providerSlug = provider === "groq"
-    ? "groq/openai/v1/chat/completions"
-    : provider === "openrouter"
-    ? "openrouter/api/v1/chat/completions"
-    : null;
+  const providerSlug = getOpenAiProviderSlug(provider);
 
-  let resp;
-  if (providerSlug && env && env.AI_GATEWAY_ID) {
-    resp = await fetchWithGatewayFallback({
-      env,
-      providerSlug,
-      defaultEndpoint: endpoint,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        ...extraHeaders,
-      },
-      body,
-      skipCache,
-      cacheKey,
-    });
-  } else {
-    resp = await fetchWithTimeout(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        ...extraHeaders,
-      },
-      body,
-    });
-  }
+  const resp = await fetchWithGatewayFallback({
+    env,
+    providerSlug,
+    defaultEndpoint: endpoint,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      ...extraHeaders,
+    },
+    body,
+    skipCache,
+    cacheKey,
+  });
 
   if (!resp.ok) {
     const errTxt = await resp.text();

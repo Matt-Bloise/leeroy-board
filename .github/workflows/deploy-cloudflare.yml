@@ -206,6 +206,12 @@ jobs:
           echo "Resolved D1 database_id: $DB_ID"
           sed -i "s/00000000-0000-0000-0000-000000000000/$DB_ID/g" wrangler.toml
 
+          # Inject CLOUDFLARE_ACCOUNT_ID into wrangler.toml [vars] for AI Gateway routing
+          if [ -n "$TARGET_ACCOUNT_ID" ]; then
+            echo "Patching CLOUDFLARE_ACCOUNT_ID in wrangler.toml..."
+            sed -i "s/CLOUDFLARE_ACCOUNT_ID = \"\"/CLOUDFLARE_ACCOUNT_ID = \"$TARGET_ACCOUNT_ID\"/g" wrangler.toml
+          fi
+
       - name: Apply Unified D1 Schema (`schema.sql`) & Pending Migrations
         working-directory: infrastructure
         run: |
@@ -262,6 +268,7 @@ jobs:
       - name: Sync Worker Secrets (AI Providers, Admin Token, Discord)
         working-directory: infrastructure
         env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -276,7 +283,7 @@ jobs:
           USER_SALT: ${{ secrets.USER_SALT }}
           KEY_SALT: ${{ secrets.KEY_SALT }}
         run: |
-          for SECRET_NAME in ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY BOARD_ADMIN_TOKEN DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY DISCORD_CLIENT_SECRET DISCORD_BOT_TOKEN USER_SALT KEY_SALT; do
+          for SECRET_NAME in CLOUDFLARE_ACCOUNT_ID ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY BOARD_ADMIN_TOKEN DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY DISCORD_CLIENT_SECRET DISCORD_BOT_TOKEN USER_SALT KEY_SALT; do
             SECRET_VAL="${!SECRET_NAME}"
             if [ -n "$SECRET_VAL" ]; then
               printf "%s" "$SECRET_VAL" | npx wrangler secret put "$SECRET_NAME"

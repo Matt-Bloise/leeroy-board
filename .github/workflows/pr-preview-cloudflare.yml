@@ -248,6 +248,9 @@ jobs:
             const prOrigin = `https://${process.env.PAGES_BRANCH}.${process.env.PAGES_PROJECT_NAME}.pages.dev`;
             toml = toml.replace(/ALLOWED_ORIGINS\s*=\s*"([^"]*)"/, (m, orig) => `ALLOWED_ORIGINS = "${orig},${prOrigin}"`);
             toml = toml.replace(/BOARD_PUBLIC_URL\s*=\s*".*"/, `BOARD_PUBLIC_URL = "${prOrigin}"`);
+            if (process.env.CLOUDFLARE_ACCOUNT_ID) {
+              toml = toml.replace(/CLOUDFLARE_ACCOUNT_ID = ""/, `CLOUDFLARE_ACCOUNT_ID = "${process.env.CLOUDFLARE_ACCOUNT_ID}"`);
+            }
             if (!toml.includes("IS_PR_PREVIEW")) {
               toml = toml.replace(/\[vars\]/, `[vars]\nIS_PR_PREVIEW = "true"\nWORKER_NAME = "${process.env.WORKER_NAME}"`);
             }
