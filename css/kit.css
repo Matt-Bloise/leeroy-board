@@ -1,21 +1,20 @@
-html:not(#k) :is(.lib-btn,.copy,.tile-q-go){border-image:url("../img/kit/rt-sec-n.webp") 36 fill/12px/0 stretch;}
-@media(hover:hover){html:not(#k) :is(.lib-btn,.copy,.tile-q-go):hover{border-image-source:url("../img/kit/rt-sec-h.webp")}}
-html:not(#k) :is(.lib-btn,.copy,.tile-q-go):active{border-image-source:url("../img/kit/rt-sec-p.webp")}
-html:not(#k) :is(.lib-btn,.copy,.tile-q-go):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-sec-d.webp")}
+html:not(#k) :is(.lib-btn,.copy,.tile-q-go,.atlas-btn,.atlas-open,.atlas-fold,.ch-bring,.ch-leave,.ch-no,.ch-skip,.ps-back,.dc-all-btn,.ga-stopsbtn,.ga-team,.more-hits){border-image:url("../img/kit/rt-sec-n.webp") 36 fill/12px/0 stretch;}
+@media(hover:hover){html:not(#k) :is(.lib-btn,.copy,.tile-q-go,.atlas-btn,.atlas-open,.atlas-fold,.ch-bring,.ch-leave,.ch-no,.ch-skip,.ps-back,.dc-all-btn,.ga-stopsbtn,.ga-team,.more-hits):hover{border-image-source:url("../img/kit/rt-sec-h.webp")}}
+html:not(#k) :is(.lib-btn,.copy,.tile-q-go,.atlas-btn,.atlas-open,.atlas-fold,.ch-bring,.ch-leave,.ch-no,.ch-skip,.ps-back,.dc-all-btn,.ga-stopsbtn,.ga-team,.more-hits):active{border-image-source:url("../img/kit/rt-sec-p.webp")}
+html:not(#k) :is(.lib-btn,.copy,.tile-q-go,.atlas-btn,.atlas-open,.atlas-fold,.ch-bring,.ch-leave,.ch-no,.ch-skip,.ps-back,.dc-all-btn,.ga-stopsbtn,.ga-team,.more-hits):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-sec-d.webp")}
 html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button){border-image:url("../img/kit/rt-hdr-n.webp") 26 fill/9px/0 stretch;}
 @media(hover:hover){html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button):hover{border-image-source:url("../img/kit/rt-hdr-h.webp")}}
 html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button):active{border-image-source:url("../img/kit/rt-hdr-p.webp")}
 html:not(#k) :is(.lib-tool:not(.dial-btn),.peek-btn,.sense-fab,.nx-rest-s,.sense-panel button):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-hdr-d.webp")}
-html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]){border-image:url("../img/kit/rt-pri-n.webp") 36 fill/12px/0 stretch;}
-@media(hover:hover){html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]):hover{border-image-source:url("../img/kit/rt-pri-h.webp")}}
-html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]):active{border-image-source:url("../img/kit/rt-pri-p.webp")}
-html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"]):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-pri-d.webp")}
+html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"],.ch-ask,.ch-post,.ch-start,.ps-save){border-image:url("../img/kit/rt-pri-n.webp") 36 fill/12px/0 stretch;}
+@media(hover:hover){html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"],.ch-ask,.ch-post,.ch-start,.ps-save):hover{border-image-source:url("../img/kit/rt-pri-h.webp")}}
+html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"],.ch-ask,.ch-post,.ch-start,.ps-save):active{border-image-source:url("../img/kit/rt-pri-p.webp")}
+html:not(#k) :is(.lib-btn.strong,.ch-send,.act-btn,.mine-opt[aria-pressed="true"],.ch-ask,.ch-post,.ch-start,.ps-save):is(:disabled,[aria-disabled="true"]){border-image-source:url("../img/kit/rt-pri-d.webp")}
 html:not(#k) :is(.sense-panel button[aria-pressed="true"],.lib-tool[aria-pressed="true"]:not(.rc-chip,.deep-marks *)){border-image-source:url("../img/kit/rt-pri-s.webp");border-image-slice:34 fill}
-html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip){border-image:url("../img/kit/ch-par-n.webp") 36 40 fill/14px/0 stretch;}
-@media(hover:hover){html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip):hover{border-image-source:url("../img/kit/ch-par-a.webp")}}
-html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip):active{border-image-source:url("../img/kit/ch-par-p.webp")}
-html:not(#k) :is(.deep-marks .lib-tool[aria-pressed="true"],.rc-chip[aria-pressed="true"],.toggle button[aria-pressed="true"]){border-image:url("../img/kit/ch-oak-a.webp") 36 40 fill/14px/0 stretch}
-html:not(#k) .toggle button[aria-pressed="true"]{border-image-width:9px}
+html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip,.atlas-chip,.ch-chip){border-image:url("../img/kit/ch-par-n.webp") 36 40 fill/14px/0 stretch;}
+@media(hover:hover){html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip,.atlas-chip,.ch-chip):hover{border-image-source:url("../img/kit/ch-par-a.webp")}}
+html:not(#k) :is(.ex,.deep-marks .lib-tool,.tn-chip .lib-tool,.rc-chip,.atlas-chip,.ch-chip):active{border-image-source:url("../img/kit/ch-par-p.webp")}
+html:not(#k) :is(.deep-marks .lib-tool[aria-pressed="true"],.rc-chip[aria-pressed="true"]){border-image:url("../img/kit/ch-oak-a.webp") 36 40 fill/14px/0 stretch}
 html:not(#k) :is(.dial-btn[aria-label*="more"],.atlas-b.a-in,.m-btn.m-in){background:image-set(url("../img/kit/rb-plus-n-2x.webp") 2x,url("../img/kit/rb-plus-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
 @media(hover:hover){html:not(#k) :is(.dial-btn[aria-label*="more"],.atlas-b.a-in,.m-btn.m-in):hover{background-image:image-set(url("../img/kit/rb-plus-h-2x.webp") 2x,url("../img/kit/rb-plus-h-3x.webp") 3x)}}
 html:not(#k) :is(.dial-btn[aria-label*="more"],.atlas-b.a-in,.m-btn.m-in):active{background-image:image-set(url("../img/kit/rb-plus-p-2x.webp") 2x,url("../img/kit/rb-plus-p-3x.webp") 3x)}
@@ -24,20 +23,20 @@ html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out){bac
 @media(hover:hover){html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out):hover{background-image:image-set(url("../img/kit/rb-minus-h-2x.webp") 2x,url("../img/kit/rb-minus-h-3x.webp") 3x)}}
 html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out):active{background-image:image-set(url("../img/kit/rb-minus-p-2x.webp") 2x,url("../img/kit/rb-minus-p-3x.webp") 3x)}
 html:not(#k) :is(.dial-btn[aria-label*="fewer"],.atlas-b.a-out,.m-btn.m-out):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-minus-d-2x.webp") 2x,url("../img/kit/rb-minus-d-3x.webp") 3x)}
-html:not(#k) :is(.close){background:image-set(url("../img/kit/rb-cross-n-2x.webp") 2x,url("../img/kit/rb-cross-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
-@media(hover:hover){html:not(#k) :is(.close):hover{background-image:image-set(url("../img/kit/rb-cross-h-2x.webp") 2x,url("../img/kit/rb-cross-h-3x.webp") 3x)}}
-html:not(#k) :is(.close):active{background-image:image-set(url("../img/kit/rb-cross-p-2x.webp") 2x,url("../img/kit/rb-cross-p-3x.webp") 3x)}
-html:not(#k) :is(.close):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-cross-d-2x.webp") 2x,url("../img/kit/rb-cross-d-3x.webp") 3x)}
+html:not(#k) :is(.close,.atlas-x,.bsheet-x,.lb-close,.gl-x){background:image-set(url("../img/kit/rb-cross-n-2x.webp") 2x,url("../img/kit/rb-cross-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
+@media(hover:hover){html:not(#k) :is(.close,.atlas-x,.bsheet-x,.lb-close,.gl-x):hover{background-image:image-set(url("../img/kit/rb-cross-h-2x.webp") 2x,url("../img/kit/rb-cross-h-3x.webp") 3x)}}
+html:not(#k) :is(.close,.atlas-x,.bsheet-x,.lb-close,.gl-x):active{background-image:image-set(url("../img/kit/rb-cross-p-2x.webp") 2x,url("../img/kit/rb-cross-p-3x.webp") 3x)}
+html:not(#k) :is(.close,.atlas-x,.bsheet-x,.lb-close,.gl-x):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-cross-d-2x.webp") 2x,url("../img/kit/rb-cross-d-3x.webp") 3x)}
 html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset){background:image-set(url("../img/kit/rb-ring-n-2x.webp") 2x,url("../img/kit/rb-ring-n-3x.webp") 3x) center/100% 100% no-repeat;border-color:transparent;color:transparent;font-size:0}
 @media(hover:hover){html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):hover{background-image:image-set(url("../img/kit/rb-ring-h-2x.webp") 2x,url("../img/kit/rb-ring-h-3x.webp") 3x)}}
 html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):active{background-image:image-set(url("../img/kit/rb-ring-p-2x.webp") 2x,url("../img/kit/rb-ring-p-3x.webp") 3x)}
 html:not(#k) :is(.atlas-b.a-fit,.m-btn.m-reset):is(:disabled,[aria-disabled="true"]){background-image:image-set(url("../img/kit/rb-ring-d-2x.webp") 2x,url("../img/kit/rb-ring-d-3x.webp") 3x)}
-html:not(#k) :is(.close svg,.m-btn svg){opacity:0}
-html:not(#k) :is(.ch-text,.mine-place,.lib-q,.tile-q){border-image:url("../img/kit/in-text-n.webp") 18 fill/11px/0 stretch;border-radius:0}
+html:not(#k) :is(.close svg,.m-btn svg,.atlas-x svg,.bsheet-x svg,.lb-close svg,.gl-x svg){opacity:0}
+html:not(#k) :is(.ch-text,.mine-place){border-image:url("../img/kit/in-text-n.webp") 18 fill/11px/0 stretch;border-radius:0}
 html:not(#k) :is(.mine-note){border-image:url("../img/kit/in-multi-n.webp") 20 fill/11px/0 stretch}
-html:not(#k) :is(.ch-text,.mine-place,.lib-q,.tile-q):focus{border-image-source:url("../img/kit/in-text-f.webp")}
+html:not(#k) :is(.ch-text,.mine-place):focus{border-image-source:url("../img/kit/in-text-f.webp")}
 html:not(#k) :is(.mine-note):focus{border-image-source:url("../img/kit/in-multi-f.webp")}
-html:not(#k) :is(.ch-text,.mine-place,.mine-note,.lib-q,.tile-q):disabled{border-image-source:url("../img/kit/in-text-d.webp")}
+html:not(#k) :is(.ch-text,.mine-place,.mine-note):disabled{border-image-source:url("../img/kit/in-text-d.webp")}
 html:not(#k) :is(.sense-panel,.bsheet){border-image:url("../img/kit/oak-a.webp") 40 fill/16px/0 stretch}
 html:not(#k) :is(.tn-card,.tnh-card,.dc-card,.cal-card,.mine-card){border-image:url("../img/kit/par-a.webp") 40 fill/14px/0 stretch}
 html:not(#k) :is(.ttc,.seal-say){border-image:url("../img/kit/tt-dark.webp") 34 fill/12px/0 stretch}
@@ -69,3 +68,24 @@ html:not(#k) .build-stamp{opacity:.9}
 html:not(#k) .fl-name{opacity:1}
 html:not(#k) #sheet-title{padding-bottom:.14em;margin-bottom:-.14em}
 @media(pointer:coarse){html:not(#k) .sense-fab{opacity:1}}
+html:not(#k) :is(.atlas-btn,.atlas-open,.atlas-fold,.ch-bring,.ch-leave,.ch-no,.ch-skip,.ps-back,.dc-all-btn,.ga-stopsbtn,.ga-team,.more-hits,.atlas-chip,.ch-chip){color:#2a1608;background-color:transparent}
+html:not(#k) :is(.ch-ask,.ch-post,.ch-start,.ps-save){color:var(--cream);background-color:transparent}
+html:not(#k) :is(.atlas-x,.bsheet-x,.lb-close,.gl-x){border-radius:50%}
+html:not(#k) .toggle{border:0;padding:0;background:none;border-radius:0}
+html:not(#k) .toggle button{min-height:40px;padding:6px 18px;border-radius:0;color:var(--cream);background:url("../img/kit/seg-m-n.webp") 0 0/100% 100% no-repeat}
+html:not(#k) .toggle button:first-child{background-image:url("../img/kit/seg-l-n.webp")}
+html:not(#k) .toggle button:last-child{background-image:url("../img/kit/seg-r-n.webp")}
+html:not(#k) .toggle button[aria-pressed="true"]{background-image:url("../img/kit/seg-m-a.webp")}
+html:not(#k) .toggle button[aria-pressed="true"]:first-child{background-image:url("../img/kit/seg-l-a.webp")}
+html:not(#k) .toggle button[aria-pressed="true"]:last-child{background-image:url("../img/kit/seg-r-a.webp")}
+html:not(#k) .toggle button:disabled{background-image:url("../img/kit/seg-m-d.webp")}
+html:not(#k) .toggle button:disabled:first-child{background-image:url("../img/kit/seg-l-d.webp")}
+html:not(#k) .toggle button:disabled:last-child{background-image:url("../img/kit/seg-r-d.webp")}
+html:not(#k) :is(.lib-q,.tile-q){border-image:url("../img/kit/sf-n.webp") 24 20 24 94 fill/12px 10px 12px 47px/0 stretch;border-radius:0;padding-left:54px;background:none}
+html:not(#k) :is(.lib-q,.tile-q):focus{border-image-source:url("../img/kit/sf-f.webp")}
+html:not(#k) :is(.lib-q,.tile-q):disabled{border-image-source:url("../img/kit/sf-d.webp")}
+html:not(#k) :is(.tnb-sum,.tnh-sum,.cal-wrap>.cal-sum,.lh-check-sum){position:relative;list-style:none;box-sizing:border-box;min-height:44px;padding:8px 14px 8px 48px;color:var(--cream);text-decoration:none;border:1px solid transparent;border-image:url("../img/kit/dc-row-c.webp") 20 10 20 76 fill/10px 5px 10px 38px/0 stretch}
+html:not(#k) details[open]>:is(.tnb-sum,.tnh-sum,.cal-sum,.lh-check-sum){border-image-source:url("../img/kit/dc-row-l.webp")}
+html:not(#k) :is(.tnb-sum,.tnh-sum,.cal-wrap>.cal-sum,.lh-check-sum)::before{content:"";position:absolute;left:7px;top:50%;width:26px;height:26px;margin-top:-13px;background:url("../img/kit/dc-g-r.webp") center/contain no-repeat}
+html:not(#k) details[open]>:is(.tnb-sum,.tnh-sum,.cal-sum,.lh-check-sum)::before{background-image:url("../img/kit/dc-g-d.webp")}
+html:not(#k) :is(.tnb-sum,.tnh-sum,.cal-sum,.lh-check-sum)::-webkit-details-marker{display:none}

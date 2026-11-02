@@ -4,7 +4,7 @@ const K = window.__boardKit, C = window.__chamber; if (!K || !C || window.__hade
 const room = K.$("#chamber"); if (!room) return;
 const stage = room.querySelector(".ch-stage"), lee = room.querySelector(".ch-lee"), you = room.querySelector(".ch-you");
 const frame = lee && lee.querySelector(".ch-frame"); if (!stage || !frame || !you) return;
-const ALT = { greeting: "Leeroy at the bar, raising his tankard in welcome", smug: "Leeroy at the bar, pleased with himself", delighted: "Leeroy at the bar, laughing out loud", sheepish: "Leeroy at the bar, wincing with a crooked smile", thinking: "Leeroy at the bar, looking down at the counter" };
+const ALT = { greeting: "Leeroy at the bar, raising his tankard in welcome", smug: "Leeroy at the bar, pleased with himself", delighted: "Leeroy at the bar, laughing out loud", sheepish: "Leeroy at the bar, wincing with a crooked smile", thinking: "Leeroy at the bar, looking down at the counter", listening: "Leeroy at the bar, leaning in with a hand cupped to his ear" };
 const logEl = room.querySelector(".ch-log"), panel = room.parentNode;
 const H = { on: false, hold: false, grow: null, dead: false, front: 0, seq: 0, ent: 0, busy: false, scr: null, thunk: null, nod: null, bob: null };
 const WAIT_MS = 1200;
@@ -82,6 +82,7 @@ async function swap(m) {
   const my = ++H.seq, face = faceFor(m); let url = `img/chamber/leeroy-bar-${face}.webp`, head = false;
   if (imgs[H.front].getAttribute("src") === url && imgs[H.front].classList.contains("on")) return;
   if (face !== m && !(await probe(url))) url = `img/chamber/leeroy-bar-${m}.webp`;
+  if (m === "listening" && !(await probe(url))) { if (my === H.seq) swap(room.dataset.mood || "smug"); return; }
   if (!(await probe(url))) { url = `img/chamber/leeroy-${m}.webp`; head = true; if (!(await probe(url))) { if (my === H.seq) { H.dead = true; unstage(); } return; } }
   if (my !== H.seq || !H.on) return;
   const back = imgs[1 - H.front], was = imgs[H.front];
@@ -107,9 +108,25 @@ function state(st) {
   room.classList.toggle("is-thinking", busy);
   scratch(busy);
   if (H.busy && st === "answered") snd("page");
+  posed(st === "answered" ? "toast" : "rest");
   H.busy = busy;
 }
 
+const youImg = () => you.querySelector(".ch-art-you");
+async function posed(kind) {
+  const im = youImg(); if (!im) return;
+  const base = im.dataset.base || im.getAttribute("src") || ""; if (!base) return; im.dataset.base = base;
+  const stem = base.replace(/\.webp$/, "");
+  let url = `${stem}-${kind}.webp`;
+  if (!(await probe(url))) { url = `${stem}-rest.webp`; if (!(await probe(url))) url = base; }
+  if (H.on && im.getAttribute("src") !== url) im.setAttribute("src", url);
+}
+function unpose() { const im = youImg(); if (im && im.dataset.base) im.setAttribute("src", im.dataset.base); }
+const field = document.getElementById("ch-text");
+if (field) {
+  field.addEventListener("input", () => { if (H.on && !H.busy) swap(field.value.trim() ? "listening" : (room.dataset.mood || "smug")); });
+  field.addEventListener("blur", () => { if (H.on && !H.busy && !field.value.trim()) swap(room.dataset.mood || "smug"); });
+}
 function stagePut() {
   if (H.on || H.dead) return;
   H.on = true;
@@ -117,7 +134,7 @@ function stagePut() {
   if (pose.parentNode !== frame) frame.appendChild(pose);
   if (down.parentNode !== stage) { stage.appendChild(up); stage.appendChild(down); }
   fit(true); later();
-  you.classList.add("hd-card");
+  you.classList.add("hd-card"); posed("rest");
   room.classList.add("hades");
   const my = ++H.ent; room.classList.add("hd-wait");
   const first = swap(room.dataset.mood || "smug");
@@ -135,7 +152,7 @@ function unstage() {
   for (const k of ["scr", "thunk", "nod", "bob"]) { clearTimeout(H[k]); H[k] = null; }
   clearInterval(H.grow); H.grow = null;
   room.classList.remove("hades", "hd-wait", "is-thinking", "is-typing", "bob");
-  you.classList.remove("hd-card", "hd-nod");
+  you.classList.remove("hd-card", "hd-nod"); unpose();
   fit(false); down.hidden = true; up.hidden = true;
 }
 

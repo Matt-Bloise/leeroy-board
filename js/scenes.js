@@ -11,7 +11,7 @@ const SCENES = {
   walk: () => [new URL("../scenes/walk.css?v=66b809dee8", HERE), new URL("../scenes/walk.js?v=9a7fa09c43", HERE)],
   place: () => [new URL("../scenes/place.css?v=a890a4436f", HERE), new URL("../scenes/place.js?v=1280b387e0", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=0c35e116cb", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
-  hades: () => [new URL("../scenes/hades.css?v=0ed9bb5995", HERE), new URL("../scenes/hades.js?v=22bd5fa90f", HERE)],
+  hades: () => [new URL("../scenes/hades.css?v=0ed9bb5995", HERE), new URL("../scenes/hades.js?v=9f10ccb13c", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=ea2b5cab32", HERE)],
   settings: () => [new URL("../scenes/settings.css?v=24e368040c", HERE), new URL("../scenes/settings.js?v=1ffecdbbf0", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=f843425d4d", HERE), new URL("../scenes/refresh.js?v=9f3ce7b411", HERE)],
