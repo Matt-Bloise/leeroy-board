@@ -203,6 +203,11 @@ for (const key of ["name_map", "discord_members", "discord_roster"]) {
   });
 }
 
+test("POST /api/admin/members without a key is refused (401 or 403)", async () => {
+  const r = await fetch(`${API}/api/admin/members`, { method: "POST", headers: { "Content-Type": "application/json", Origin: PAGES }, body: JSON.stringify({ slug: "x", name: "X", id: "100000000000000001" }) });
+  assert.ok([401, 403].includes(r.status), `status ${r.status}`);
+});
+
 test("GET /api/config/name_map is not a public read (404 or 405)", async () => {
   const r = await fetch(`${API}/api/config/name_map`, { headers: { Origin: PAGES } });
   assert.ok([404, 405].includes(r.status), `status ${r.status}`);

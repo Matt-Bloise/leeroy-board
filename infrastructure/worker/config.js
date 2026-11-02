@@ -1,3 +1,5 @@
+import { isMemberId } from "./members.js";
+
 // Admin-only config rows that live only in D1 (kv_state), never in the repo: 'name_map', 'discord_members' and 'discord_roster'.
 // Written by PUT /api/config/<key>; there is no GET route. Cached 60 s per isolate; PUT invalidates the cache.
 // Every reader falls back to null when the row is missing, so an unseeded Worker refuses or no-ops safely.
@@ -44,6 +46,7 @@ export function validateConfigValue(key, value) {
       if (!m || typeof m.slug !== "string" || typeof m.name !== "string" || !Array.isArray(m.match) || !m.match.every((t) => typeof t === "string" && t === t.toLowerCase())) {
         return "each member needs slug, name and a match array of lowercase strings";
       }
+      if (m.id !== undefined && !isMemberId(m.id)) return "member id must be a numeric string of 17 to 20 digits";
     }
     return null;
   }

@@ -27,6 +27,7 @@ import { handleAccount } from "./account.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { loadBudget, dailyCap, utcDayKey } from "./budget.js";
+import { upsertMember } from "./members.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
@@ -504,6 +505,38 @@ export default {
           .run();
         invalidateConfigCache(key);
         return jsonResp({ ok: true, key, entries: Array.isArray(value) ? value.length : Object.keys(value).length }, 200, cors);
+      }
+
+      // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.
+      if (req.method === "POST" && path === "/admin/members") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const raw = await req.text();
+        if (new TextEncoder().encode(raw).length > 2000) return jsonResp({ error: "Body too large" }, 413, cors);
+        let entry;
+        try {
+          entry = JSON.parse(raw);
+        } catch {
+          return jsonResp({ error: "Body must be valid JSON" }, 400, cors);
+        }
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return jsonResp({ error: "member must be an object" }, 400, cors);
+        let current = [];
+        try {
+          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'discord_members'").first();
+          if (row && row.json) current = JSON.parse(row.json);
+        } catch {
+          return jsonResp({ error: "Could not read the roster" }, 500, cors);
+        }
+        const result = upsertMember(Array.isArray(current) ? current : [], entry);
+        if (result.error) return jsonResp({ error: result.error }, 400, cors);
+        const problem = validateConfigValue("discord_members", result.members);
+        if (problem) return jsonResp({ error: problem }, 400, cors);
+        const now = new Date().toISOString();
+        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
+          .bind("discord_members", JSON.stringify(result.members), now)
+          .run();
+        invalidateConfigCache("discord_members");
+        return jsonResp({ ok: true, slug: entry.slug, entries: result.members.length }, 200, cors);
       }
 
       // The persona pack is curated content that lives only in D1. Write-only: there is no GET route for it.
