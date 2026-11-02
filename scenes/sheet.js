@@ -9,6 +9,70 @@ const LAUNCH = { queue: "In the queue", in: "In the game", done: "Done for tonig
 const SRC = { board: "the Party Board", discord: "Discord", game: "the game", leeroy: "Leeroy" };
 const GOALS_MAX = 140;
 const PS = { view: "cards", who: null, data: null, voc: null, edit: null, say: "", sigs: {}, dirty: false };
+/* chars.v1 (data/client.json flags, default false): Q37 character switcher. CH.list comes from the "characters" of /me; the switcher shows only for the viewer's own sheet and only with 2 or more. */
+const CH = { list: [], active: null, mod: null, p: null, open: false, draft: {}, errors: {}, busy: false, say: "" };
+const chOn = () => !!(D.client && D.client.flags && D.client.flags["chars.v1"]);
+const chActiveKey = (m) => `char-active-${pslug(m)}`;
+function chLoad() {
+  if (CH.p || !chOn()) return CH.p;
+  const B = BB(), u = B && B.url ? B.url("/me") : null; if (!u || typeof fetch !== "function") return null;
+  /* the credentialed call goes only for someone who has signed in on the web (marker board-wl), as the Is-this-you card does */
+  let wl = false; try { wl = localStorage.getItem("board-wl") === "1"; } catch (e) {}
+  if (!wl) return null;
+  CH.p = Promise.all([import("../js/characters.js?v=89fcecd39c").catch(() => null), fetch(u, { cache: "no-store", credentials: "include" }).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
+    .then(([mod, j]) => { CH.mod = mod; CH.list = mod && j ? mod.list(j) : []; if (PS.view === "sheet") render(); }).catch(() => {});
+  return CH.p;
+}
+function chCurrent(m) {
+  let id = null; try { id = MEM.get(chActiveKey(m)); } catch (e) {}
+  return CH.list.find((c) => (c.id || CH.mod.keyOf(c)) === id) || CH.list[0] || null;
+}
+function chFocus(sel) { const n = $(sel); if (n) { try { n.focus({ preventScroll: true }); } catch (e) {} } }
+function chPick(m, c) {
+  MEM.set(chActiveKey(m), c.id || CH.mod.keyOf(c)); snd("page"); CH.say = `Showing ${c.name}.`; render();
+  chFocus('#ps-chars .ps-char[aria-pressed="true"]');
+}
+function chOpen(on) { CH.open = on; CH.errors = {}; if (on) CH.say = ""; PS.edit = on ? "@char" : null; render(); chFocus(on ? "#ps-cf-name" : "#ps-char-add"); }
+async function chSave(m) {
+  if (CH.busy) return;
+  const v = PS.voc ? PS.voc.labels : { class: {}, race: {} };
+  const r = CH.mod.validate(CH.draft, { classes: Object.values(v.class), races: Object.values(v.race), existing: CH.list });
+  CH.errors = r.errors;
+  if (!r.ok) { CH.say = "Some lines need another look."; render(); const k = Object.keys(r.errors)[0]; chFocus(`#ps-cf-${k}`); return; }
+  const B = BB(), u = B && B.url ? B.url("/me/characters") : null; CH.busy = true; let saved = null;
+  try { if (u) { const res = await fetch(u, { method: "POST", cache: "no-store", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(r.value) }); if (res.ok) { let j = null; try { j = await res.json(); } catch (e) {} saved = CH.mod.one(j && j.character ? j.character : j) || r.value; } } } catch (e) {}
+  CH.busy = false;
+  if (!saved) { CH.say = "Not added: this board could not save the character just now. Nothing was kept."; render(); return; }
+  CH.list = CH.mod.list([...CH.list, saved]); CH.draft = {}; CH.errors = {}; CH.open = false; PS.edit = null; CH.say = `Added ${saved.name}. You have ${CH.list.length}.`;
+  MEM.set(chActiveKey(m), saved.id || CH.mod.keyOf(saved)); snd("stamp"); render();
+  chFocus(`#ps-chars .ps-char[aria-pressed="true"]`);
+}
+function charsView(m) {
+  if (!chOn() || !CH.mod || !isMe(m) || CH.list.length < 2) return null;
+  const cur = chCurrent(m), keyOf = (c) => c.id || CH.mod.keyOf(c);
+  const voc = PS.voc ? PS.voc.labels : { class: {}, race: {} };
+  const btns = CH.list.map((c, i) => h("button", { type: "button", class: "ps-chb ps-char", "data-k": keyOf(c), "aria-pressed": String(c === cur), onclick: () => chPick(m, c),
+    onkeydown: (e) => { const to = CH.mod.nextIndex(i, CH.list.length, e.key); if (to !== i && to >= 0) { e.preventDefault(); const all = $("#ps-chars").querySelectorAll(".ps-char"); if (all[to]) all[to].focus(); } } }, c.name));
+  const field = (k, label, ctl) => h("div", { class: "ps-cf-f" }, h("label", { class: "ps-cf-l", for: `ps-cf-${k}`, text: label }), ctl, CH.errors[k] ? h("p", { class: "ps-cf-e", id: `ps-cf-${k}-e`, text: CH.errors[k] }) : null);
+  const bind = (k, ctl) => { ctl.value = CH.draft[k] || ""; ctl.addEventListener("input", () => { CH.draft[k] = ctl.value; }); if (CH.errors[k]) { ctl.setAttribute("aria-invalid", "true"); ctl.setAttribute("aria-describedby", `ps-cf-${k}-e`); } return ctl; };
+  const sel = (k, list) => { const s = h("select", { id: `ps-cf-${k}`, class: "ps-sel ps-cf-c", name: k }, h("option", { value: "" }, "Not chosen"), ...list.map((x) => h("option", { value: x }, x))); return bind(k, s); };
+  const lbl = (o) => Object.values(o).sort();
+  const form = CH.open ? h("form", { class: "ps-cf", id: "ps-cf", novalidate: "", "aria-label": "Add another character",
+    onsubmit: (e) => { e.preventDefault(); chSave(m); }, onkeydown: (e) => { if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); chOpen(false); } } },
+    field("name", "Name", bind("name", h("input", { id: "ps-cf-name", class: "ps-txt ps-cf-c", type: "text", name: "name", maxlength: "40", autocomplete: "off", spellcheck: "false", required: "" }))),
+    field("class", "Class", sel("class", lbl(voc.class))), field("race", "Race", sel("race", lbl(voc.race))),
+    field("ruleset", "Ruleset", bind("ruleset", h("input", { id: "ps-cf-ruleset", class: "ps-txt ps-cf-c", type: "text", name: "ruleset", maxlength: "24", autocomplete: "off", list: "ps-cf-rs", required: "" }))),
+    h("datalist", { id: "ps-cf-rs" }, ...[...new Set([D.party && D.party.ruleset, ...CH.list.map((c) => c.ruleset)].filter(Boolean))].map((x) => h("option", { value: x }))),
+    field("faction", "Faction", sel("faction", CH.mod.FACTIONS.slice())), field("region", "Region", sel("region", CH.mod.REGIONS.slice())),
+    h("span", { class: "ps-ed-row ps-cf-row" }, h("button", { type: "submit", class: "ps-chb ps-cf-go", "aria-disabled": CH.busy ? "true" : null }, "Add character"), h("button", { type: "button", class: "ps-chb ps-cf-cancel", onclick: () => chOpen(false) }, "Cancel"))) : null;
+  return h("section", { class: "ps-chars", id: "ps-chars", "aria-labelledby": "ps-chars-h" },
+    h("h4", { class: "ps-chars-h", id: "ps-chars-h", text: CH.mod.youHave(CH.list.length) }),
+    h("div", { class: "ps-chars-row", role: "group", "aria-label": "Your characters" }, btns),
+    cur ? h("p", { class: "ps-char-now", id: "ps-char-now", text: `${cur.name}: ${CH.mod.summary(cur) || "no details yet"}.` }) : null,
+    h("button", { type: "button", class: "ps-chb ps-char-add", id: "ps-char-add", "aria-expanded": String(CH.open), "aria-controls": "ps-cf", onclick: () => chOpen(!CH.open) }, "Add another character"),
+    form,
+    h("p", { class: "ps-char-say", id: "ps-char-say", role: "status", "aria-live": "polite", text: CH.say }));
+}
 const slugOf = (n) => String(n == null ? "" : n).toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/, "");
 const words = (sl) => String(sl || "").split("-").filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
 const members = () => (D.party ? D.party.members : []);
@@ -206,6 +270,7 @@ function sheetView(m) {
       h("span", { class: "ps-crest" }, h("img", { src: `img/crests/${m.class_key}.png`, alt: "", width: 72, height: 72, loading: "lazy", decoding: "async" })),
       h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${m.race} ${m.class}${m.role ? `, ${roleOf(m)}` : ""}` }), parity(m, F)),
       h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn ? K.pn.title() : "The five"}`)),
+    charsView(m),
     h("p", { class: "ps-how", text: how }),
     h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
     h("p", { class: "ps-say", id: "ps-say", role: "status", "aria-live": "polite", text: PS.say }));
@@ -316,7 +381,7 @@ function render() {
   if (again && !PS.edit) { const f = $(again); if (f && f !== document.activeElement) { try { f.focus({ preventScroll: true }); } catch (e) {} } }
 }
 function show(v, who, user) {
-  PS.view = v; if (v === "sheet") PS.who = who; else PS.edit = null;
+  PS.view = v; if (v === "sheet") { PS.who = who; chLoad(); } else { PS.edit = null; CH.open = false; }
   if (v !== "sheet") PS.say = "";
   ready().then(() => {
     render();
@@ -339,7 +404,7 @@ K.on("tonight", () => { mineLink(); sampleSync(); });
 K.on("scene", (k) => { if (k === "five") { crests(); sampleSync(); if (PS.view !== "cards") ready().then(render); } });
 K.on("closed", (k) => { if (k === "five" && PS.view !== "cards") { PS.view = "cards"; PS.edit = null; PS.say = ""; render(); } });
 K.on("signups", () => { if (PS.view !== "cards") render(); });
-K.on("forget", () => { try { Object.keys(localStorage).filter((x) => x.startsWith("board-sheet-")).forEach((x) => localStorage.removeItem(x)); } catch (e) {} for (const m of members()) MEM.set(devKey(m), null); PS.edit = null; PS.say = ""; render(); });
+K.on("forget", () => { try { Object.keys(localStorage).filter((x) => /^board-(sheet|char-active)-/.test(x)).forEach((x) => localStorage.removeItem(x)); } catch (e) {} for (const m of members()) MEM.set(devKey(m), null); PS.edit = null; PS.say = ""; render(); });
 const B0 = BB();
 const later = (why, sig) => { if (sig !== undefined) { if (PS.sigs[why] === sig) return; PS.sigs[why] = sig; } if (PS.view === "cards") return; if (PS.edit) { PS.dirty = true; return; } render(); };
 if (B0 && B0.on) { B0.on("sheet", (x) => later("sheet", JSON.stringify(x))); B0.on("party", (x) => later("party", JSON.stringify(x))); B0.on("me", (x) => later("me", JSON.stringify(x))); }

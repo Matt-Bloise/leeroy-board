@@ -9,7 +9,7 @@ const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 if (!BASE) { console.error("usage: node header-fit.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
-const SIZES = [["320x568", { viewport: { width: 320, height: 568 }, hasTouch: true, isMobile: true }], ["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["768x1024", { viewport: { width: 768, height: 1024 } }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
+const SIZES = [["320x568", { viewport: { width: 320, height: 568 }, hasTouch: true, isMobile: true }], ["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["768x1024", { viewport: { width: 768, height: 1024 } }], ["960x540", { viewport: { width: 960, height: 540 } }], ["1024x768", { viewport: { width: 1024, height: 768 } }], ["1280x720", { viewport: { width: 1280, height: 720 } }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
 const url = `${BASE.replace(/\/$/, "")}/?preview=1`;
 const lum = (c) => { const m = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]); };
 const browser = await pw.chromium.launch();
@@ -35,6 +35,17 @@ try {
     ok(`${t} title colour is light on the oak header`, lum(m.color) > 0.5, m.color);
     if (opts.viewport.width < 700) ok(`${t} last card clears the coin (padding-bottom >= 56)`, m.pb >= 56, `pb ${m.pb}`);
     if (m.settingsVisible && opts.viewport.width < 1200) ok(`${t} Settings draws a gear`, /2699/i.test(JSON.stringify(m.gear)) || m.gear.includes("\u2699"), m.gear);
+    // laptop sizes: the longest scene title ("Who buffs whom") must not be truncated or push the close button out of the sheet or under another element
+    await page.evaluate(() => { location.hash = "buffs"; }); await page.waitForTimeout(1200);
+    const q = await page.evaluate(() => {
+      const el = document.querySelector("#sheet-title"), cl = document.querySelector("#scene-close"), r = cl.getBoundingClientRect(), sh = document.querySelector(".sheet").getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { trunc: el.scrollWidth > el.clientWidth + 1, inView: r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0 && r.bottom <= innerHeight + 1, inSheet: r.right <= sh.right + 1, free: !!top && (top === cl || cl.contains(top)), hs: document.documentElement.scrollWidth <= innerWidth + 1 };
+    });
+    if (opts.viewport.width >= 960) ok(`${t} buffs: title not truncated`, !q.trunc); /* phones and tablets ellipsize by design */
+    ok(`${t} buffs: close button inside the viewport and the sheet`, q.inView && q.inSheet);
+    ok(`${t} buffs: close button is not covered`, q.free);
+    ok(`${t} buffs: no horizontal page scroll`, q.hs);
     await ctx.close();
   }
 } finally { await browser.close(); }

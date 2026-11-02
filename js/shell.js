@@ -238,7 +238,7 @@ function openMore() {
 }
 
 function dockMine() {
-  const sc = K.SC.open !== null, peek = $("#scene-peek"), pill = $("#sense-btn"), par = S.phone ? 0 : !sc ? $("#footer") : innerWidth >= 1024 && peek && peek.parentNode;
+  const sc = K.SC.open !== null, peek = $("#scene-peek"), pill = $("#sense-btn"), par = S.phone ? 0 : !sc ? $("#footer") : innerWidth >= 1200 && peek && peek.parentNode;
   let b = S.mine; if (!par) { if (b) b.remove(); return; }
   b = b || (S.mine = h("button", { class: "lib-tool my-sheet", type: "button", "aria-label": "Open my sheet", onclick: () => openMySheet() }, LABEL.sheet));
   const c = [...par.childNodes], nx = (n) => c[c.indexOf(n) + 1] || null, at = pill && pill.parentNode === par && (!sc || nx(peek) === pill) ? pill : sc && peek, ref = at ? nx(at) : c[0] || null;
