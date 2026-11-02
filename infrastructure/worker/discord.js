@@ -29,6 +29,7 @@ import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { saltProblems } from "./salts.js";
+import { BUILD_MODAL_ID, buildModalEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
@@ -509,6 +510,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
+  // Existing /build reply: link to the member's build thread.
+  const legacyBuildContent = async (t) => {
+    const person = ROSTER_DATA.find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
+    const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
+    return `**${t.name}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
+  };
 
   // 4. Autocomplete (Type 4) -> Application Command Autocomplete Result (Type 8)
   if (interaction.type === 4 && interaction.data) {
@@ -1118,10 +1125,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
     // 2l. `/build`
     if (cmd === "build") {
+      // Modal path (env BUILD_MODAL, default off): the invoker's own build only.
+      if (buildModalEnabled(env) && !targetIsOther && isSnowflake(user.id)) {
+        return new Response(JSON.stringify(buildModalResponse()), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (!target) return notOnRoster();
-      const person = ROSTER_DATA.find((r) => r.display.toLowerCase().replace(/ /g, "-") === target.slug) || { display: target.name };
-      const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
-      const content = `**${target.name}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
+      const content = await legacyBuildContent(target);
       return new Response(
         JSON.stringify({ type: 4, data: { content, flags: 64 } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -1528,6 +1537,33 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
+  }
+
+  // 3-modal. `/build` modal submit (Type 5): defer, save, then edit the deferred reply.
+  if (interaction.type === 5 && interaction.data && interaction.data.custom_id === BUILD_MODAL_ID) {
+    const parsed = parseBuildSubmit(interaction.data.components);
+    const edit = (body) =>
+      interaction.application_id && interaction.token
+        ? fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...body, content: clampContent(body.content), allowed_mentions: ALLOWED_MENTIONS_NONE }),
+          }).catch(() => {})
+        : Promise.resolve();
+    ctx.waitUntil(
+      (async () => {
+        if (!parsed.ok) return edit({ content: parsed.error });
+        const saved = await saveConfirmedBuild(env, { discordUserId: user.id, displayName: rawUser, guildId: interaction.guild_id, build: parsed.build });
+        if (saved.saved) {
+          return edit({
+            content: "Saved. Open your sheet",
+            components: [{ type: 1, components: [{ type: 2, style: 5, label: "Open your sheet", url: `${boardUrl}/#five` }] }],
+          });
+        }
+        return edit({ content: member ? await legacyBuildContent(member) : "Not saved: I can't tell which party member you are." });
+      })()
+    );
+    return new Response(JSON.stringify({ type: 5, data: { flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
   // 3a. Vote buttons (`vote:<id>:<index>` and `vote:<id>:results`). Handled before the generic sign-up buttons below.
