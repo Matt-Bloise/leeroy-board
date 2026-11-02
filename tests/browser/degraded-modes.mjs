@@ -128,7 +128,8 @@ const launchArgs = HOST_MAP ? [`--host-resolver-rules=MAP ${HOST_MAP.split("=")[
 const browser = await pw.chromium.launch({ args: launchArgs });
 const slug = await (async () => { try { const r = await fetch(`${BASE.replace(/\/$/, "")}/data/party.json`); const j = await r.json(); return String(j.members[0].name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); } catch (e) { return "just-looking"; } })();
 const jobs = [];
-for (const c of CONDITIONS) { if (ONLY && !c.id.includes(ONLY)) continue; for (const s of c.sizes || SIZES) for (const v of ["first", "repeat"]) jobs.push(() => runOne(browser, c, s, v, slug)); }
+const ONLY_LIST = ONLY ? ONLY.split(",").map((x) => x.trim()).filter(Boolean) : null; /* --only takes one id fragment or a comma list: "api-abort,api-500,no-js" */
+for (const c of CONDITIONS) { if (ONLY_LIST && !ONLY_LIST.some((o) => c.id.includes(o))) continue; for (const s of c.sizes || SIZES) for (const v of ["first", "repeat"]) jobs.push(() => runOne(browser, c, s, v, slug)); }
 try { await Promise.all(Array.from({ length: POOL }, async () => { while (jobs.length) await jobs.shift()(); })); }
 finally { await browser.close(); }
 lines.sort(); for (const l of lines) console.log(l);
