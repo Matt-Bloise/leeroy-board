@@ -4,11 +4,12 @@
   "type": "module",
   "description": "API and browser tests run against a PR preview environment. No AI keys, no secrets in this file.",
   "scripts": {
-    "test:api": "node --test --test-reporter=spec api/api.test.mjs",
+    "test:api": "node --test --test-reporter=spec api/api.test.mjs api/contract.test.mjs",
     "test:browser": "node browser/run.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
-    "playwright": "1.49.1"
+    "playwright": "1.49.1",
+    "yaml": "^2.6.1"
   }
 }
