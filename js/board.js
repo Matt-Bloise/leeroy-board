@@ -2947,7 +2947,7 @@ function libTipLead(i) {
   const cls = (L.find((l) => /^(?:Requires|Classes:) [A-Z]/.test(l) && !/level/i.test(l)) || "").replace(/^(?:Requires|Classes:)\s*/, "");
   const lvl = (L.find((l) => /^Requires level \d+/i.test(l)) || "").replace(/\D+/g, "");
   const what = t.kind === "item" ? "an item" : `a${cls ? ` ${cls}` : ""} spell`;
-  return h("p", { class: "answer-v answer-lead" }, `${t.name} is ${what}${lvl ? `, from level ${lvl}` : ""}. Here is what the game's own tooltip says.`);
+  return h("p", { class: "answer-v answer-lead" }, `${t.name} is ${what}${lvl ? `, from level ${lvl}` : ""}. ${ttTextOn() ? "Here is what the game's own tooltip says." : "Here are its numbers; the full tooltip is on Wowhead."}`);
 }
 const LIB_CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
 function libBuffAnswer(key) {
@@ -3154,6 +3154,17 @@ function richText(t, self) {
   return self === undefined ? parts.flatMap((x) => (typeof x === "string" ? glossText(x) : [x])) : parts;
 }
 const TT_COST = /^(\d[\d,]* (?:Mana|Rage|Energy|Focus)|\d+% of base mana)/, TT_CAST = /(?:sec cast|^Instant|^Channeled)/, TT_RANGE = /(?:yd range|Melee Range|Unlimited range)$/i, TT_CD = /cooldown$/i;
+/* tooltips.text (data/client.json flags, default off): off or absent, a card shows only numbers and a line we compose ourselves
+   (t.desc) plus a link to the full tooltip on Wowhead. On, a stored t.desc_verbatim (array of lines) is shown too; the shipped data has none. */
+const ttTextOn = () => !!(D.client && D.client.flags && D.client.flags["tooltips.text"]);
+function ttBody(t) {
+  const v = ttTextOn() && Array.isArray(t.desc_verbatim) && t.desc_verbatim.length ? t.desc_verbatim : null;
+  const out = [];
+  if (v) v.forEach((l) => out.push(h("div", { class: "ttc-line y" }, ...richText(l, t.name))));
+  else if (typeof t.desc === "string" && t.desc) out.push(h("div", { class: "ttc-line y", text: t.desc }));
+  if (!v) out.push(h("div", { class: "ttc-line w ttc-full" }, h("a", { href: t.url, target: "_blank", rel: "noopener noreferrer", text: "Full tooltip on Wowhead" })));
+  return h("div", { class: "ttc-body" }, ...out);
+}
 function ttCard(i) {
   const T = LIBD.tips, t = T.tooltips[i];
   const Q = ["--q-poor", "--q-common", "--q-uncommon", "--q-rare", "--q-epic", "--q-legendary"];
@@ -3172,6 +3183,7 @@ function ttCard(i) {
       const cls = green(l) ? "ttc-line g" : /^(Item Level|Requires|Sell Price|Durability|Classes:|Dropped by|Drop Chance|Binds|Unique)/.test(l) ? "ttc-line w" : t.kind === "spell" ? "ttc-line y" : "ttc-line w";
       return h("div", { class: cls }, ...richText(l, t.name));
     }),
+    ttBody(t),
     sibs.length > 1 ? h("div", { class: "ttc-ranks", role: "group", "aria-label": `${t.name} ranks` }, sibs.map(([x, j]) => h("button", { type: "button", class: "ttc-rk", "data-tt-rank": j, "aria-pressed": String(j === i), text: x.rank.replace("Rank ", "") }))) : null,
     h("div", { class: "ttc-src" }, h("a", { href: t.url, target: "_blank", rel: "noopener noreferrer", text: "Wowhead Forever" }), ` read ${libDay(T.captured)}`));
 }

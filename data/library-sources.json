@@ -300,14 +300,6 @@
     "reason": "Guide site; no licence reviewed (link-only would apply)."
    }
   ],
-  "linkOnlyLongText": [
-   {
-    "file": "tooltips.json",
-    "host": "www.wowhead.com",
-    "field": "lines",
-    "maxEntries": 69,
-    "reason": "Stores Wowhead in-game tooltip text (lines) for entries over 300 characters; Wowhead is link-only (R5 3.2). The tooltips file holds text for every entry, not only the long ones. Replace with link plus our own paraphrase, or get written permission."
-   }
-  ]
+  "linkOnlyLongText": []
  }
 }
