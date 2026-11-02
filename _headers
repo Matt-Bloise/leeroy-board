@@ -7,7 +7,8 @@
 # Cache-Control. Non-overlapping path rules only: Pages joins the headers of every matching rule, so /* must never carry one.
 # HTML (/ and /index.html) gets no rule here and keeps the Pages default, max-age=0, must-revalidate, so new ?v= stamps are seen at once.
 # js, scenes, css, vendor, cloth, next, room: immutable for a year. Every reference carries ?v=<sha256 first 10 hex of the file> and CI (tools/stamps.mjs --check) fails on a stale stamp, so a changed file is a new URL.
-# /atlas/* is NOT immutable: atlas/atlas.js loads panels.css and tiles by bare URL.
+# /atlas: only the 10 atlas js files and panels.css are immutable, listed one by one (every reference to them carries ?v=, enforced by stamps --check).
+# Tiles (/atlas/tiles/*) and plates (/atlas/plates/*) are binary and get the short /img-style cache; tiles/index.json is fetched no-store by atlas.js. These rules do not overlap the file rules.
 
 /fonts/*
   Cache-Control: public, max-age=2592000
@@ -37,4 +38,43 @@
   Cache-Control: public, max-age=31536000, immutable
 
 /room/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/tiles/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/atlas/plates/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/atlas/atlas.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/cards.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/foley.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/geo.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/gestures.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/layers.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/routes.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/shape.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/tokens.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/view.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/atlas/panels.css
   Cache-Control: public, max-age=31536000, immutable
