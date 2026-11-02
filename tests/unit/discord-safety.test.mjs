@@ -97,7 +97,7 @@ test("every JSON body fetched to a Discord webhook URL includes allowed_mentions
       found++;
     }
   }
-  assert.equal(found, 5, "expected 5 Discord webhook fetches: the shared answerAndDeliver PATCH (/ask and Ask Leeroy), the other follow-ups in discord.js, and one webhook post each in ai-models.js and index.js");
+  assert.equal(found, 6, "expected 6 Discord webhook fetches: the shared answerAndDeliver PATCH (/ask and Ask Leeroy), the answer-button follow-ups, the other follow-ups in discord.js, and one webhook post each in ai-models.js and index.js");
 });
 
 test("the interaction handler is wrapped by hardenInteractionBody and checks timestamp freshness first", () => {

@@ -49,7 +49,7 @@ We do not use your data for advertising or profiling.
 | AI vendor | Answering Ask | Your question and context. The vendor is whichever provider is configured (`worker/ai-models.js` lists several, among them Anthropic, Google, Groq, Cerebras, Cloudflare Workers AI and OpenRouter); see `docs/subprocessors.md` |
 | Your guild admins | Running your guild's board | Your name, roles, builds and sign-ups in that guild |
 
-Other members of your guild can see what the board shows about you. Ask answers marked shared are visible to the group (`ask_turns.share` defaults to shared).
+Other members of your guild can see what the board shows about you. Ask answers marked shared are visible to the group (`ask_turns.share` defaults to shared). If you click Helpful or Off on an answer, we keep a one-way hash of your Discord id with that vote so you can have one vote per answer; admins see counts and the question and answer, not who voted.
 
 **We do not sell your data and we do not share it for advertising.** Counsel to confirm wording for US state laws that define "sale" and "sharing" broadly.
 
@@ -64,6 +64,8 @@ All values are (proposed) unless stated and are not yet implemented in code. The
 | Builds, sign-ups, saved settings | Until you delete them or your account |
 | Questions and answers (Ask) | 90 days, then deleted or anonymised |
 | Hashed guest IP for rate limits | 24 hours |
+| Extra answer text behind the "More" and "Sources" buttons (`answer_details`) | 30 days, deleted by the scheduled job (when the answer buttons are switched on) |
+| Helpful / Off votes on answers (`answer_feedback`, a salted hash of who voted, never a Discord id) | 90 days, deleted by the scheduled job (when the answer buttons are switched on) |
 | Cloudflare and Worker logs | As set in Cloudflare (unverified; counsel to note) |
 | Audit log of admin actions | 12 months |
 | Backups (D1 Time Travel) | Cloudflare's window (unverified; see `docs/runbooks/backup-restore.md`); deleted data can persist in backups until they expire |

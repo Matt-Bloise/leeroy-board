@@ -558,6 +558,60 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/admin/feedback:
+    get:
+      summary: Admin only. Helpful/Off votes on Discord answers (ANSWER_UX).
+      description: |
+        Counts of Helpful (`up`) and Off (`down`) votes since a time, and the latest 50 votes with the question and the first 160 characters
+        of the answer. Voters are never identified: no user id and no hash is returned. One vote per user per answer; a second click changes it.
+        Votes are kept 90 days.
+      security:
+        - adminToken: []
+      parameters:
+        - name: since
+          in: query
+          required: false
+          description: ISO 8601 date-time. Defaults to 30 days ago.
+          schema: { type: string }
+      responses:
+        "200":
+          description: Counts and the latest votes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [since, counts, latest]
+                properties:
+                  since: { type: string, format: date-time }
+                  counts:
+                    type: object
+                    required: [up, down, total]
+                    properties:
+                      up: { type: integer }
+                      down: { type: integer }
+                      total: { type: integer }
+                  latest:
+                    type: array
+                    items:
+                      type: object
+                      required: [intent_id, vote, created_at]
+                      properties:
+                        intent_id: { type: string }
+                        vote: { type: string, enum: [up, down] }
+                        created_at: { type: string, format: date-time }
+                        question: { type: string, nullable: true }
+                        answer: { type: string, nullable: true }
+        "400":
+          description: since is not an ISO 8601 date.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "503":
+          description: Admin token not configured, or the feedback table is not migrated yet.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /api/persona:
     put:
       summary: Admin only. Replaces the persona pack. Write only.

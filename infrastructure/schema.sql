@@ -411,3 +411,25 @@ CREATE TABLE IF NOT EXISTS discord_events (
 );
 CREATE INDEX IF NOT EXISTS idx_discord_events_tenant ON discord_events(tenant_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_discord_events_created ON discord_events(created_at);
+
+-- Answer buttons (migration 0004): detail text for More/Sources, one Helpful/Off vote per user per answer. Retention 30 and 90 days.
+-- 40. Extra text split off an answer. One row per answer (intent_id is the ask_turns id).
+CREATE TABLE IF NOT EXISTS answer_details (
+  intent_id TEXT PRIMARY KEY CHECK (length(intent_id) > 0),
+  more TEXT,
+  sources TEXT,
+  asker_hash TEXT,
+  message_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_answer_details_created ON answer_details(created_at);
+
+-- 41. One Helpful/Off vote per user per answer. vote is 1 (Helpful) or -1 (Off); a second click replaces it.
+CREATE TABLE IF NOT EXISTS answer_feedback (
+  intent_id TEXT NOT NULL CHECK (length(intent_id) > 0),
+  user_hash TEXT NOT NULL CHECK (length(user_hash) > 0),
+  vote INTEGER NOT NULL CHECK (vote IN (-1, 1)),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (intent_id, user_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_answer_feedback_created ON answer_feedback(created_at);
