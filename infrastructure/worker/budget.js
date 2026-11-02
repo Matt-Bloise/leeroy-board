@@ -7,7 +7,7 @@ import { loadConfigKey } from "./config.js";
 export const DEFAULT_DAILY_CAP = 8000;
 export const CRON_RESERVE = 1500;
 export const DEFAULT_USER_DAILY_ASKS = 40; // member asks per user per UTC day (guests keep their own 2 per hour limit)
-export const DEFAULT_TENANT_SHARE_PCT = 70; // one tenant may use at most this share of the soft cap
+export const DEFAULT_TENANT_SHARE_PCT = 100; // one tenant may use at most this share of the soft cap
 export const DEFAULT_TENANT = "default";
 
 // Neurons per million tokens (Cloudflare Workers AI pricing). Unknown Workers AI models use the 70B rates.

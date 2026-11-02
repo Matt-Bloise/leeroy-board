@@ -82,13 +82,19 @@ test("per-user cap: 40 member asks by default, guests are exempt", async () => {
   assert.equal(await checkAskBudget(env, { ...keys, userKey: "user:other" }, null, NOW), null);
 });
 
-test("per-tenant share: 70 percent of the soft cap by default", async () => {
-  const env = fakeEnv({ seed: { "ai_budget:2026-11-02:tenant:t1": { neurons: 5599, asks: 30 }, "ai_budget:2026-11-02": { neurons: 5599, asks: 30, cron: 0 } } });
-  assert.equal(await checkAskBudget(env, keys, null, NOW), null);
+const P70 = resolveCaps({ tenantSharePct: 70 });
+test("per-tenant share: a configured 70 percent of the soft cap", async () => {
+  const env = fakeEnv({ seed: { ai_budget_caps: { tenantSharePct: 70 }, "ai_budget:2026-11-02:tenant:t1": { neurons: 5599, asks: 30 }, "ai_budget:2026-11-02": { neurons: 5599, asks: 30, cron: 0 } } });
+  assert.equal(await checkAskBudget(env, keys, P70, NOW), null);
   env.rows.set("ai_budget:2026-11-02:tenant:t1", JSON.stringify({ neurons: 5600, asks: 31 }));
-  assert.equal((await checkAskBudget(env, keys, null, NOW)).code, "budget_tenant");
+  assert.equal((await checkAskBudget(env, keys, P70, NOW)).code, "budget_tenant");
   const other = askBudgetKeys({ userPart: "ab12", tenantId: "t2" });
-  assert.equal(await checkAskBudget(env, other, null, NOW), null, "another tenant is unaffected");
+  assert.equal(await checkAskBudget(env, other, P70, NOW), null, "another tenant is unaffected");
+});
+
+test("per-tenant share defaults to 100 percent, so the single default tenant keeps the whole soft cap", async () => {
+  const env = fakeEnv({ seed: { "ai_budget:2026-11-02:tenant:default": { neurons: 5600, asks: 31 }, "ai_budget:2026-11-02": { neurons: 5600, asks: 31, cron: 0 } } });
+  assert.equal(await checkAskBudget(env, askBudgetKeys({ userPart: "ab12", tenantId: "default" }), null, NOW), null);
 });
 
 test("global wins over tenant and user", async () => {
