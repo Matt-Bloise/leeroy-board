@@ -51,3 +51,4 @@ td{text-align:right}
 .foot p{margin:0}
 .foot a{color:var(--link)}
 .foot a:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+@media (pointer:coarse){.foot a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}}
