@@ -8,6 +8,8 @@ import { webSessionHash, SESS_COOKIE } from "../../infrastructure/worker/web-aut
 import { userKey } from "../../infrastructure/worker/account.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
+import { userHash } from "../../infrastructure/worker/answer-ux.js";
+import { hashId } from "../../infrastructure/worker/budget.js";
 
 const ID = "100000000000000001"; // made-up snowflake
 const NOW = Date.now();
@@ -177,22 +179,31 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
   assert.equal((await res.json()).erased, true);
   assert.equal(batches, 1);
   assert.deepEqual(shape(env.executed), [
-    "DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM sheet_events", "DELETE FROM dispatches", "DELETE FROM intents",
+    "DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details",
+    "DELETE FROM kv_state", "DELETE FROM kv_state", "DELETE FROM answer_details",
+    "DELETE FROM sheet_events", "DELETE FROM dispatches", "DELETE FROM intents",
     "DELETE FROM ask_turns", "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM sessions_v2", "DELETE FROM humans",
     "DELETE FROM users", "INSERT INTO audit_log",
   ]);
-  assert.deepEqual(env.executed[0].args, [await userKey(env, ID)]);
-  assert.deepEqual(env.executed[2].args, ["red-fox"]);
-  assert.deepEqual(env.executed[10].args, [ID]);
+  const at = (table, n = 0) => env.executed.filter((e) => e.sql.startsWith(`DELETE FROM ${table}`))[n];
+  assert.deepEqual(at("user_state").args, [await userKey(env, ID)]);
+  assert.deepEqual(at("answer_feedback").args, [await userHash(env, ID)]);
+  assert.deepEqual(at("kv_state", 0).args, [`ai_budget:%:user:${await hashId(ID)}`]);
+  assert.deepEqual(at("kv_state", 1).args, [`ai_budget:%:user:${await hashId("red-fox")}`]);
+  assert.deepEqual(at("sheet_events").args, ["red-fox"]);
+  assert.deepEqual(at("users").args, [ID]);
 });
 
-test("the audit row holds no personal data: actor and tenant NULL, action erase, a salted hash target, empty detail", async () => {
+test("the audit row holds no personal data: actor and tenant NULL, action erase, a random target, empty detail", async () => {
   const env = await makeEnv();
   await erase(env, KEY);
   const a = env.executed.at(-1);
   assert.match(a.sql, /VALUES \(NULL, NULL, 'erase', \?, '\{\}', \?\)/);
   assert.match(a.args[0], /^[0-9a-f]{64}$/);
-  assert.equal(a.args[0], await sha256Hex(`${USER_SALT}:erase:discord:${ID}`));
+  for (const subject of [`discord:${ID}`, `slug:red-fox`]) assert.notEqual(a.args[0], await sha256Hex(`${USER_SALT}:erase:${subject}`), "target must not be derived from the person");
+  const env2 = await makeEnv();
+  await erase(env2, KEY);
+  assert.notEqual(env2.executed.at(-1).args[0], a.args[0], "two erases of the same person must not share a target");
   const flat = JSON.stringify(a);
   for (const s of [ID, "red-fox", "Red Fox", "Fox"]) assert.ok(!flat.includes(s), `audit row contains ${s}`);
 });
@@ -201,7 +212,7 @@ test("erase by web session: tenancy and user_state rows only, never a slug or na
   const env = await makeEnv();
   const res = await erase(env, COOKIE);
   assert.equal(res.status, 200);
-  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM sessions_v2", "DELETE FROM humans", "DELETE FROM users", "INSERT INTO audit_log"]);
+  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details", "DELETE FROM kv_state", "DELETE FROM sessions_v2", "DELETE FROM humans", "DELETE FROM users", "INSERT INTO audit_log"]);
   const sc = res.headers.get("Set-Cookie");
   assert.match(sc, new RegExp(`^${SESS_COOKIE}=; .*Max-Age=0`));
   assert.match(sc, /HttpOnly/);

@@ -1273,8 +1273,7 @@ function renderFooter() {
   $("#footer").replaceChildren(
     h("span", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("span", { text: window.matchMedia("(hover: hover) and (pointer: fine)").matches ? "Click a tile to open it. Escape returns to the wall. Press ? for keys." : "Tap a tile to open it. The X at the top, or your phone's back gesture, returns to the wall." }),
-    h("button", { class: "tr-foot-btn", id: "foot-trust", type: "button", text: "What we track and why", onclick: (e) => { if (window.BoardTrust) window.BoardTrust.open(e.currentTarget); } }),
-    h("a", { class: "tr-foot-btn", id: "foot-legal", href: "privacy/", text: "Privacy and terms" }));
+    h("button", { class: "tr-foot-btn", id: "foot-trust", type: "button", text: "What we track and why", onclick: (e) => { if (window.BoardTrust) window.BoardTrust.open(e.currentTarget); } }));
   $("#lib-sources").replaceChildren(
     h("p", {}, "Generated from the group's own records on ", h("span", { class: "num", text: when }), "."),
     h("p", { text: `Read from ${D.signups ? "five" : "four"} places: the Party Board, the game's client tables (build ${D.client.build.split(".").pop()}), Blizzard's dates, ${D.signups ? "the bot's log, and the Discord sign-up card" : "and the bot's log"}.` }),

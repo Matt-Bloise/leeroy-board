@@ -95,6 +95,14 @@ An erase (`POST /api/me/erase`) still removes the `users` cascade rows. It does 
 
 Not covered by export or erase: `kv_state` board documents (signups, party, party_sheets, votes and similar) that may name a member, Cloudflare logs, and Discord-side data. A web session is never used to match `by_name` or `slug` rows, because a Discord display name is chosen by its owner and could equal another member's name.
 
+## Erase and export coverage (2026-11-03)
+
+One table in `DATA_MAP` (`infrastructure/worker/data-rights.js`) names every table in `schema.sql`, what links a row to a person, how an erase clears it, and which section of `GET /api/me/export` carries it. `tests/unit/data-map.test.mjs` fails when a table is missing from it, seeds a member into every table, erases, and scans every column of every table for the member's Discord id, `user_key`, answer-button hash, budget hashes, ballot hash, slug and names: zero rows must remain (the bystander's rows must all survive). Since this change an erase also clears: `answer_feedback.user_hash`, `answer_details.asker_hash`, `answer_details` rows for the member's own Ask turns (member key), `kv_state` `ai_budget:<day>:user:<hash>` rows (hash of the Discord id and of the slug), and the member's ballot inside each `kv_state` `vote:<id>` document. The audit row written by an erase now has a random target, so nothing left behind can be tied to the person.
+
+Not cleared, and said so in the response: board documents (`party`, `signups`, the Discord roster `discord_members`), `accounts`/`account_keys`, `guest_rate_limits` (keyed by a hashed IP of a guest, not by a member), Cloudflare logs and AI Gateway cache, Discord and AI vendor copies, backups. Durable Object `BoardRoom` keeps no state (no `ctx.storage` calls; a test enforces it).
+
+The admin backup carries every table an erase touches except `sessions`, `sessions_v2` and `provider_tokens`, which hold only login secrets and timestamps; the member export carries those three with the secret columns removed.
+
 ## Backup export (`GET /api/admin/export`, admin token)
 
 Added 2026-11-02. Streams NDJSON of the whole database, one table page at a time, so the owner holds a copy outside Cloudflare (`tools/pull-export.mjs`, restore with `tools/restore-local.mjs`). The file therefore holds everything in the tables above that is personal data: names, Discord ids, ask questions and answers, saved preferences, and the pseudonymous hashes that act as keys (`user_state.user_key`, `answer_feedback.user_hash`, `answer_details.asker_hash`). Keep it private, outside the repository, and delete it after a drill.

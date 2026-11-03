@@ -8,6 +8,11 @@
 // then DELETE FROM users, which cascades to identities, human_members, sessions_v2, provider_tokens, memberships, characters
 // (-> builds; group_slots.character_id is SET NULL and the trigger re-opens the seat) and signups_v2. audit_log.actor is SET NULL
 // by the cascade. The audit row is written last. kv_state board documents (signups, party, party_sheets, ...) are NOT edited here.
+// Also cleared (everything keyed by a hash of the person): answer_feedback.user_hash and answer_details.asker_hash (answer-ux.js hash),
+// answer_details rows for the person's own Ask turns (the "More" / "Sources" answer text), kv_state ai_budget:<day>:user:<hashId> rows
+// (for the Discord id and for the slug) and the person's ballot inside each kv_state vote:<id> document. The audit row's target is a
+// random value, so no row left after an erase can be tied back to the person. DATA_MAP below lists every table and how it is handled;
+// tests/unit/data-map.test.mjs fails when a table in schema.sql is missing from it.
 // Name-keyed tables (ask_turns, fact_fixes) are matched only for a member-key caller: a web display name is chosen by its owner
 // and could collide with someone else's name, so it is never used to select rows.
 import { sha256Hex } from "./crypto.js";
@@ -16,9 +21,61 @@ import { authenticate, invalidateMembersCache } from "./auth.js";
 import { userKey } from "./account.js";
 import { webSessionFrom, SESS_COOKIE } from "./web-auth.js";
 import { loadConfigKey } from "./config.js";
+import { userHash } from "./answer-ux.js";
+import { hashId } from "./budget.js";
+import { voterHash, VOTE_ID_RE } from "./votes.js";
 
 export const CONFIRM_PHRASE = "erase my data";
 export const dataRightsOn = (env) => /^(1|on|true|yes)$/i.test(String((env && env.DATA_RIGHTS) || "").trim());
+
+// One entry per table in schema.sql: what links a row to a person, how an erase clears it, and where it shows up in the exports.
+//   links   what ties rows to one person (null: no per-person data)
+//   erase   how POST /api/me/erase clears it (null: not touched)
+//   member  section of GET /api/me/export that carries it (null: not in the member export)
+// The admin backup (export.js) carries every table except EXCLUDED_TABLES there; tests/unit/data-map.test.mjs checks both lists against this one.
+export const DATA_MAP = Object.freeze({
+  kv_state: { links: "board documents by name; ai_budget:<day>:user:<hash> rows; vote:<id> ballots keyed by a hash", erase: "ai_budget user rows deleted; the person's ballot removed from each vote document; board documents (party, signups, ...) NOT edited", member: "legacy.ai_budget, legacy.vote_ballots" },
+  lib_pages: { links: null, erase: null, member: null },
+  lib_blobs: { links: null, erase: null, member: null },
+  lib_sources: { links: null, erase: null, member: null },
+  lib_source_snapshots: { links: null, erase: null, member: null },
+  wiki_proposals: { links: null, erase: null, member: null },
+  ask_turns: { links: "by_name = slug or roster name (member-key caller only)", erase: "DELETE by by_name", member: "legacy.ask_turns" },
+  fact_fixes: { links: "by_name = slug or roster name (member-key caller only)", erase: "DELETE by by_name", member: "legacy.fact_fixes" },
+  sheet_events: { links: "slug", erase: "DELETE by slug", member: "legacy.sheet_events" },
+  dispatches: { links: "slug", erase: "DELETE by slug", member: "legacy.dispatches" },
+  members: { links: "slug", erase: "DELETE by slug", member: "legacy.members" },
+  accounts: { links: "name, slug (not tied to a Discord id)", erase: null, member: null },
+  account_keys: { links: "account_id", erase: null, member: null },
+  sessions: { links: "user_key = sha256(USER_SALT:user:<discord id>)", erase: "DELETE by user_key", member: "legacy.sessions" },
+  user_state: { links: "user_key", erase: "DELETE by user_key", member: "legacy.user_state" },
+  intents: { links: "slug", erase: "DELETE by slug", member: "legacy.intents" },
+  guest_rate_limits: { links: "ip_hash of a guest visitor (no member link)", erase: null, member: null },
+  users: { links: "discord_user_id", erase: "DELETE by discord_user_id (root of the cascade)", member: "tenancy.users" },
+  identities: { links: "discord_user_id", erase: "cascade from users", member: "tenancy.identities" },
+  humans: { links: "via human_members", erase: "DELETE when this user was its only member", member: null },
+  human_members: { links: "discord_user_id", erase: "cascade from users", member: "tenancy.human_members" },
+  sessions_v2: { links: "discord_user_id", erase: "DELETE by discord_user_id, then cascade", member: "tenancy.sessions_v2" },
+  provider_tokens: { links: "discord_user_id", erase: "cascade from users", member: "tenancy.provider_tokens" },
+  tenants: { links: null, erase: null, member: null },
+  tenant_config: { links: null, erase: null, member: null },
+  memberships: { links: "discord_user_id", erase: "cascade from users", member: "tenancy.memberships" },
+  characters: { links: "discord_user_id", erase: "cascade from users", member: "tenancy.characters" },
+  builds: { links: "via characters", erase: "cascade from characters", member: "tenancy.builds" },
+  thread_cursors: { links: null, erase: null, member: null },
+  audit_log: { links: "actor_discord_user_id", erase: "actor set to NULL by the cascade; the erase row itself has a random target", member: "tenancy.audit_log_as_actor" },
+  groups: { links: null, erase: null, member: null },
+  group_slots: { links: "character_id", erase: "character_id set to NULL, seat re-opened by trigger", member: "tenancy.group_slots" },
+  signups_v2: { links: "user_id", erase: "cascade from users", member: "tenancy.signups_v2" },
+  entitlements: { links: null, erase: null, member: null },
+  discord_events: { links: null, erase: null, member: null },
+  answer_details: { links: "asker_hash; intent_id of the person's own Ask turns", erase: "DELETE by asker_hash and by the person's intent ids", member: "legacy.answer_details" },
+  answer_feedback: { links: "user_hash = sha256(USER_SALT:answer-ux:<discord id>)", erase: "DELETE by user_hash", member: "legacy.answer_feedback" },
+  character_profiles: { links: "via characters", erase: "cascade from characters", member: "tenancy.character_profiles" },
+  noise_ledger: { links: null, erase: null, member: null },
+});
+// Durable Object state: BoardRoom (room.js) is a pure relay. It never touches ctx.storage and keeps no state between messages, so there is nothing to erase.
+export const DURABLE_OBJECT_STATE = Object.freeze({ BoardRoom: "none: relays live pushes to open sockets, no storage" });
 const missingTable = (e) => /no such table/i.test(String((e && e.message) || e));
 let warned = false;
 export function _resetDataRights() { warned = false; }
@@ -47,6 +104,39 @@ async function whoIs(request, env, now) {
 
 const rows = async (env, sql, ...args) => (await env.DB.prepare(sql).bind(...args).all()).results || [];
 
+
+const kvLike = (hash) => `ai_budget:%:user:${hash}`;
+
+// Every per-person key this Worker derives, for the caller. Nothing here is read from a request body.
+async function personalKeys(env, who) {
+  const k = { userKey: null, answerHash: null, budgetIds: [] };
+  if (who.discordId) {
+    k.userKey = await userKey(env, who.discordId);
+    k.answerHash = await userHash(env, who.discordId);
+    k.budgetIds.push(await hashId(who.discordId));
+  }
+  if (who.slug) k.budgetIds.push(await hashId(who.slug));
+  return k;
+}
+
+// -> [{ id, vote, choice }] for each vote document that holds a ballot from this Discord id. Reads at most the 50 ids in votes:index.
+async function ballotsOf(env, who) {
+  if (!who.discordId) return [];
+  let ids = [];
+  const idx = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'votes:index'").first();
+  try { if (idx) ids = JSON.parse(idx.json).ids; } catch (e) { ids = []; }
+  const out = [];
+  for (const id of (Array.isArray(ids) ? ids : []).filter((x) => VOTE_ID_RE.test(String(x)))) {
+    const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(`vote:${id}`).first();
+    let vote = null;
+    try { vote = row ? JSON.parse(row.json) : null; } catch (e) { vote = null; }
+    if (!vote || !vote.ballots || typeof vote.ballots !== "object") continue;
+    const h = await voterHash(who.discordId, id, env.USER_SALT);
+    if (Object.prototype.hasOwnProperty.call(vote.ballots, h)) out.push({ id, vote, hash: h, choice: vote.ballots[h] });
+  }
+  return out;
+}
+
 async function collect(env, who) {
   const out = { legacy: {}, tenancy: null };
   const id = who.discordId;
@@ -58,8 +148,16 @@ async function collect(env, who) {
     out.legacy.ask_turns = await rows(env, "SELECT id, by_name, question, answer, cites_json, model, status, share, latency_ms, created_at, answered_at FROM ask_turns WHERE by_name IN (?, ?)", who.slug, who.name);
     out.legacy.fact_fixes = await rows(env, "SELECT id, page_id, fact_key, old_value, new_value, note, by_name, created_at FROM fact_fixes WHERE by_name IN (?, ?)", who.slug, who.name);
   }
+  const pk = await personalKeys(env, who);
+  out.legacy.answer_details = who.slug || pk.answerHash
+    ? await rows(env, "SELECT intent_id, more, sources, message_id, created_at FROM answer_details WHERE asker_hash = ? OR intent_id IN (SELECT id FROM ask_turns WHERE by_name IN (?, ?))", pk.answerHash || "", who.slug || "", who.name || "")
+    : [];
+  out.legacy.ai_budget = [];
+  for (const b of pk.budgetIds) out.legacy.ai_budget.push(...await rows(env, "SELECT key, json, updated_at FROM kv_state WHERE key LIKE ?", kvLike(b)));
   if (id) {
     const uk = await userKey(env, id);
+    out.legacy.answer_feedback = await rows(env, "SELECT intent_id, vote, created_at FROM answer_feedback WHERE user_hash = ?", pk.answerHash);
+    out.legacy.vote_ballots = (await ballotsOf(env, who)).map((b) => ({ vote_id: b.id, title: b.vote.title, choice: b.choice }));
     out.legacy.user_state = await rows(env, "SELECT doc, json, updated_at FROM user_state WHERE user_key = ?", uk);
     out.legacy.sessions = await rows(env, "SELECT created_at, expires_at, last_seen FROM sessions WHERE user_key = ?", uk); // never token_hash
     const t = {};
@@ -92,7 +190,7 @@ async function exportData(env, who, now) {
     tenancy: data.tenancy,
     not_included: [
       "Board documents in kv_state (signups, party, party_sheets, votes, feed_posts and similar) that may mention you by name.",
-      "Cloudflare request logs and Discord-side data.",
+      "Cloudflare request logs, Cloudflare AI Gateway logs and cache, and Discord-side data.",
       "Account rows (accounts, account_keys: name, slug, label) are not part of this export; ask the owner for them.",
       ...(who.via === "web-session" ? ["Rows keyed only by a member slug or display name (sheet_events, dispatches, intents, ask_turns, fact_fixes): a web session cannot be tied to a slug."] : []),
       ...(!who.discordId ? ["Tenancy tables (users, characters, builds, signups_v2 and others): this member key has no linked Discord id."] : []),
@@ -108,12 +206,22 @@ async function eraseData(request, env, who, now) {
   if (!body || typeof body !== "object" || body.confirm !== CONFIRM_PHRASE) return respond(400, { error: `body must be {"confirm":"${CONFIRM_PHRASE}"}` });
   const id = who.discordId, db = env.DB;
   const st = [];
+  const pk = await personalKeys(env, who);
+  const ballots = await ballotsOf(env, who); // read before the batch; the rewrite below is a plain UPDATE of those documents
   if (id) {
-    const uk = await userKey(env, id);
-    st.push(db.prepare("DELETE FROM user_state WHERE user_key = ?").bind(uk));
-    st.push(db.prepare("DELETE FROM sessions WHERE user_key = ?").bind(uk));
+    st.push(db.prepare("DELETE FROM user_state WHERE user_key = ?").bind(pk.userKey));
+    st.push(db.prepare("DELETE FROM sessions WHERE user_key = ?").bind(pk.userKey));
+    st.push(db.prepare("DELETE FROM answer_feedback WHERE user_hash = ?").bind(pk.answerHash));
+    st.push(db.prepare("DELETE FROM answer_details WHERE asker_hash = ?").bind(pk.answerHash));
   }
+  for (const b of ballots) {
+    const { [b.hash]: _gone, ...rest } = b.vote.ballots;
+    st.push(db.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = ?").bind(JSON.stringify({ ...b.vote, ballots: rest }), new Date(now).toISOString(), `vote:${b.id}`));
+  }
+  for (const h of pk.budgetIds) st.push(db.prepare("DELETE FROM kv_state WHERE key LIKE ?").bind(kvLike(h)));
   if (who.slug) {
+    // the answer text behind "More" / "Sources" belongs to the Ask turn; it goes first, while the turn row can still be found
+    st.push(db.prepare("DELETE FROM answer_details WHERE intent_id IN (SELECT id FROM ask_turns WHERE by_name IN (?, ?))").bind(who.slug, who.name));
     st.push(db.prepare("DELETE FROM sheet_events WHERE slug = ?").bind(who.slug));
     st.push(db.prepare("DELETE FROM dispatches WHERE slug = ?").bind(who.slug));
     st.push(db.prepare("DELETE FROM intents WHERE slug = ?").bind(who.slug));
@@ -126,8 +234,8 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM humans WHERE id IN (SELECT human_id FROM human_members WHERE discord_user_id = ?) AND (SELECT COUNT(*) FROM human_members h WHERE h.human_id = humans.id) = 1").bind(id));
     st.push(db.prepare("DELETE FROM users WHERE discord_user_id = ?").bind(id));
   }
-  const subject = id ? `discord:${id}` : `slug:${who.slug}`;
-  const target = await sha256Hex(`${env.USER_SALT}:erase:${subject}`);
+  // A random target: the audit row proves an erase happened and when, and cannot be tied back to the person.
+  const target = await sha256Hex(`${env.USER_SALT}:erase:${crypto.randomUUID()}`);
   st.push(db.prepare("INSERT INTO audit_log (tenant_id, actor_discord_user_id, action, target, detail_json, at) VALUES (NULL, NULL, 'erase', ?, '{}', ?)").bind(target, new Date(now).toISOString()));
   await db.batch(st);
   // the member-key cache lives 15 minutes per isolate: drop it so an erased key stops authenticating at once
@@ -135,8 +243,9 @@ async function eraseData(request, env, who, now) {
   return respond(200, {
     erased: true,
     not_erased: [
-      "Board documents in kv_state that mention you by name; ask the owner to review them.",
+      "Board documents in kv_state that mention you by name (party, signups, the Discord roster and similar); ask the owner to review them.",
       "Account rows (accounts, account_keys: name, slug, label) are not erased by this route; ask the owner to remove them.",
+      "Copies held by Cloudflare (request logs, AI Gateway logs and its cached answers, up to 6 hours for the cache) and by Discord and the AI vendor; D1 backups (Time Travel) until they expire.",
       ...(who.via === "web-session" ? ["Slug-keyed and name-keyed rows (sheet_events, dispatches, intents, ask_turns, fact_fixes) are erased only through a member-key request."] : []),
     ],
   }, {}, [clearSession]);

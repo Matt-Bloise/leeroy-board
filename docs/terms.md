@@ -3,7 +3,7 @@
 **DRAFT. Every legal point here needs review by counsel before publication. Nothing below is legal advice or in force.** Reviewers: the owner and counsel. Items marked (decision) are open for the owner.
 
 ## 1. What this is
-The Leeroy Living Board ("the service") is a companion website and Discord bot for guilds playing WoW Forever. Operator: **(legal entity to be decided)**. Contact: **(to be added)**.
+The Leeroy Living Board ("the service") is a companion website and Discord bot for guilds playing WoW Forever. Operator: **(legal entity to be decided)**. Contact: open an issue at [github.com/matt-bloise/leeroy-board/issues](https://github.com/matt-bloise/leeroy-board/issues) (public, so keep personal data out of it) or ask a guild admin to pass your message on. A private role address is **(to be chosen by the owner)**.
 
 ## 2. Eligibility
 - You must be at least 13, or the age of digital consent where you live if higher, and old enough to hold a Discord account under Discord's terms.
@@ -11,7 +11,7 @@ The Leeroy Living Board ("the service") is a companion website and Discord bot f
 - You must not use the service if you have been banned from it.
 
 ## 3. Your account
-Sign-in uses Discord. You are responsible for activity under your account and for keeping your login safe. Tell us if you think it was misused.
+Sign-in, where it is switched on, uses Discord; the bot identifies you by your Discord account. You are responsible for activity under your account and for keeping your login safe. Tell us if you think it was misused.
 
 ## 4. Acceptable use
 You must not:
@@ -26,7 +26,7 @@ We may remove content, rate limit, or suspend access to protect the service or o
 ## 5. Guild admin responsibilities
 If you administer a guild on the service you:
 - decide who is a member and what roles they hold, and keep that accurate;
-- are responsible for what your guild posts and for telling your members that the board holds their data (link them to `docs/privacy.md`);
+- are responsible for what your guild posts and for telling your members that the board holds their data (link them to the [privacy notice](/privacy/));
 - must not add people who have not joined your Discord server, and must remove members who ask to leave;
 - are responsible for your own Discord server rules and moderation;
 - should keep at least one other admin so the guild is not stranded.
@@ -42,8 +42,8 @@ You keep ownership of what you submit. You give the operator a worldwide, royalt
 The service is provided as is and may change, pause or end. We may change these terms; the date on the page shows the version. Paid plans, if any, are (decision) and not covered here.
 
 ## 9. Termination
-- You can stop using the service and delete your account at any time (`DELETE /me`).
-- A guild admin can remove the bot, which ends service for that guild; data is then purged on the schedule in `docs/privacy.md` (proposed 30 days).
+- You can stop using the service at any time. To have your data erased, follow "Your rights" in the [privacy notice](/privacy/): today `DELETE /me` removes only your saved settings and sessions, and the full erase is built but switched off until the owner enables it, so until then you ask the owner.
+- A guild admin can remove the bot, which ends service for that guild; nothing purges the guild's data automatically yet, so ask the owner to delete it (a 30-day purge is proposed in the [privacy notice](/privacy/)).
 - We can suspend or end access for breach of these terms, legal need, or risk to the service, with notice where practical.
 - On termination, sections that by nature should survive (licence to material already shared, liability, disputes) continue.
 
@@ -57,4 +57,4 @@ To the extent the law allows: the service is provided "as is" without warranties
 **(Governing law, venue and dispute process to be decided with counsel.)**
 
 ## 13. Privacy
-See `docs/privacy.md` (draft). Sub-processors are in `docs/subprocessors.md` (draft).
+See the [privacy notice](/privacy/) (draft) for what is stored and what you can ask for. Sub-processors are in `docs/subprocessors.md` (draft).
