@@ -1,13 +1,13 @@
 # Lighthouse performance budget
 
-The `lighthouse` job in `.github/workflows/nightly-production.yml` runs Lighthouse (`@lhci/cli@0.14.0`, which bundles Lighthouse 12) **once a night against production** (`https://leeroy.party/` and `/landing/`). It no longer runs on pull requests: it used to run on every `ci-full` PR run (`lighthouse.yml`, removed), which cost GitHub minutes and Worker requests on every push for numbers that barely move. It is **informational**: it can never fail the night or block anything. Every assertion is level `warn`, the job is `continue-on-error`, the lhci step ends in `exit 0`, and the `notify` job does not wait for it.
+The `lighthouse` job in `.github/workflows/nightly-production.yml` runs Lighthouse (`@lhci/cli@0.14.0`, which bundles Lighthouse 12) **once a night against production** (`https://leeroy.party/` and `/landing/`). It does not run on pull requests and is not part of a `ci-full` run (the former `lighthouse.yml` workflow is deleted; `lighthouserc.json` and `tools/lighthouse-summary.mjs` are still used by the nightly job and stay), which cost GitHub minutes and Worker requests on every push for numbers that barely move. It is **informational**: it can never fail the night or block anything. Every assertion is level `warn`, the job is `continue-on-error`, the lhci step ends in `exit 0`, and the `notify` job does not wait for it.
 
 ## What it does
 
 1. Trigger: the nightly `schedule` (06:00 UTC) or "Run workflow" (`workflow_dispatch`) on `nightly-production.yml`. Scheduled workflows run only from `master`.
 2. It audits `https://leeroy.party/` and `https://leeroy.party/landing/`, three runs each, mobile emulation at 390x844 (deviceScaleFactor 2), performance category only.
 3. `tools/lighthouse-summary.mjs` writes the job summary: per URL the median run (by LCP): score, LCP, CLS, total bytes, JavaScript bytes, image bytes, each against its budget, and **how many Worker `/api/` requests the page loads made** (counted from Lighthouse's own request list). Reports are in the `nightly-lighthouse` artifact (14 days).
-4. To measure a pull request by hand: run the workflow with "Run workflow" from the PR branch only after the workflow file is on `master`; or locally, `npx @lhci/cli@0.14.0 autorun --config=lighthouserc.json --collect.url=<url>` and `node tools/lighthouse-summary.mjs`.
+4. A pull request is not measured by CI. To measure one by hand, run it locally against the PR preview URL (this spends Worker requests on that preview, about 21 for a whole run), `npx @lhci/cli@0.14.0 autorun --config=lighthouserc.json --collect.url=<url>` and `node tools/lighthouse-summary.mjs`.
 
 Permissions: `contents: read`. No secrets.
 
@@ -37,4 +37,4 @@ Not planned. It would need: `warn` changed to `error`, `exit 0` and `continue-on
 
 ## Rollback
 
-Delete the `lighthouse` job in `.github/workflows/nightly-production.yml`, `tools/lighthouse-summary.mjs`, `lighthouserc.json` and this file. Nothing else depends on them.
+Revert the PR that added it, or delete the `lighthouse` job in `.github/workflows/nightly-production.yml`, `tools/lighthouse-summary.mjs`, `lighthouserc.json` and this file. Nothing else depends on them.

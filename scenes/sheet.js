@@ -267,7 +267,7 @@ function sheetView(m) {
     : `What the party sees of ${m.name}'s sheet. Only ${m.name} changes it, from their own board.`;
   return h("article", { class: "ps-card", "data-who": pslug(m), style: `--cc: ${K.classVar(m.class_key)}`, "aria-labelledby": "ps-name" },
     h("header", { class: "ps-head" },
-      h("span", { class: "ps-crest" }, h("img", { src: `img/crests/${m.class_key}.png`, alt: "", width: 72, height: 72, loading: "lazy", decoding: "async" })),
+      h("span", { class: "ps-crest" }, window.BoardCrest.guard(h("img", { src: window.BoardCrest.src(m.class_key), alt: "", width: 72, height: 72, loading: "lazy", decoding: "async" }), m.class_key)),
       h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${m.race} ${m.class}${m.role ? `, ${roleOf(m)}` : ""}` }), parity(m, F)),
       h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn ? K.pn.title() : "The five"}`)),
     charsView(m),

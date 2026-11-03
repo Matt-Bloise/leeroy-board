@@ -1,7 +1,7 @@
 // =============================================================================
 // 6-Hour Cloudflare Cron Source Sweep, D1 Snapshot Archiver & AI Fact Learner
 // (`worker/scraper.js`)
-// Replaces `wow-mage/wiki/scripts/source-watch.mjs`, `wiki-ingest.mjs`,
+// Replaces the former wiki scripts `source-watch.mjs`, `wiki-ingest.mjs`,
 // and `wiki-learn.mjs` entirely inside Cloudflare Workers + D1.
 // =============================================================================
 

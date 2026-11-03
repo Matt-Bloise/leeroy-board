@@ -58,7 +58,7 @@ Produced by `tools/local-browser.sh` (see `tests/README.md`), which counts the `
 | layout-sweep mutation test (4 injected bugs) | n/a | 0 | 19 | 0 (now also a gating step in the `layout` job) |
 | visual audit (`visual`, 3-minute budget) | 172 | 0 | 180 | 0 |
 
-Before, a full run of the API suite plus all browser suites made about **1,490 Worker requests locally**. This is lower than the 8 to 10 thousand estimated on 2 November: the estimate was not reproduced by this measurement. Likely reasons for the gap (not measured): WebKit passes of `live-smoke`, retries and re-runs of the preview, a slower preview that makes pages poll more, Lighthouse and ZAP, and `ci-full` being re-run on every push.
+Before, a full run of the API suite plus all browser suites made about **1,490 Worker requests locally**. This is lower than the 8 to 10 thousand estimated on 2 November: the estimate was not reproduced by this measurement. Likely reasons for the gap (not measured): WebKit passes of `live-smoke`, retries and re-runs of the preview, a slower preview that makes pages poll more, ZAP, and `ci-full` being re-run on every push. (Lighthouse was another suspect when this was written; it now runs only nightly against production and is not part of a full run.)
 
 Notes on exit codes (all are local-environment or known flakes, not request counts):
 - `live-smoke` fails locally only on `webkit launches` (WebKit is not installed in this container); its Chromium checks pass. CI installs WebKit.

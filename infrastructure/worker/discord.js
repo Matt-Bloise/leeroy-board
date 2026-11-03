@@ -1,6 +1,6 @@
 // =============================================================================
 // Discord Bot & Serverless Interactions Integration (`worker/discord.js`)
-// Full serverless parity with `wow-mage/bot/`:
+// Full serverless parity with the PC bot (`leeroy-ops` repo, `bot-legacy/bot/`):
 //   1.  `/ask`        — Multi-Provider AI Q&A (Claude, Gemini, Workers AI, Groq, Cerebras, GitHub Models, OpenRouter)
 //   2.  `/tonight`    — Launch countdown, next steps, party members, and RSVP tallies
 //   3.  `/sheet`      — View or update character sheet fields in D1 (`sheet_events` + `party_sheets`)
