@@ -16,7 +16,7 @@ const fixtures = fs
   .sort()
   .map((f) => ({ file: f, ...JSON.parse(fs.readFileSync(path.join(DIR, f), "utf8")) }));
 
-const MEMBERS = [{ slug: "fixture-tester", name: "Fixture Tester", match: ["fixture tester"] }];
+const MEMBERS = [{ slug: "fixture-tester", name: "Fixture Tester", match: ["fixture tester"], id: "fixture-user-0001" }];
 const SEEDS = {
   discord_members: MEMBERS,
   signups: { entries: [{ slug: "fixture-tester", name: "Fixture Tester", rsvp: "in" }] },

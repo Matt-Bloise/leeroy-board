@@ -20,13 +20,15 @@ export function validateMemberEntry(m) {
   return null;
 }
 
-// Id match wins; the display-name substring match is the fallback. Returns { slug, name } or null.
+// Id match wins. When the caller carries a Discord user id the roster is searched by id only: a display name is chosen by its owner,
+// so it must never decide who someone is. The display-name substring match is kept only for callers with no Discord id at all.
+// Returns { slug, name } or null.
 export function resolveMember(userId, displayName, members) {
   const list = Array.isArray(members) ? members : [];
   if (userId !== undefined && userId !== null && String(userId)) {
     const uid = String(userId);
     const byId = list.find((m) => m && typeof m.id === "string" && m.id === uid);
-    if (byId) return { slug: byId.slug, name: byId.name };
+    return byId ? { slug: byId.slug, name: byId.name } : null;
   }
   const low = String(displayName || "").toLowerCase();
   for (const m of list) {

@@ -324,6 +324,13 @@ test("POST /intent: anonymous may only ask, any other kind needs a member", asyn
     const body = JSON.stringify({ kind });
     assert.equal((await call(env, "POST /intent", A, ["POST", "/api/intent", body])).status, 401, kind);
     const asMember = await call(env, "POST /intent", M, ["POST", "/api/intent", body]);
+    if (kind === "fix") {
+      // Fixes rewrite the AI's retrieval pages: admin token only, a member key is refused (403).
+      assert.equal(asMember.status, 403, `fix as member answered ${asMember.status}`);
+      const asAdmin = await call(env, "POST /intent", D, ["POST", "/api/intent", body]);
+      assert.equal(refused(asAdmin), false, `fix as admin answered ${asAdmin.status}`);
+      continue;
+    }
     assert.equal(refused(asMember), false, `${kind} as member answered ${asMember.status}`);
   }
   const ask = await call(env, "POST /intent", A, ["POST", "/api/intent", JSON.stringify({ kind: "ask", q: "hi" })]);

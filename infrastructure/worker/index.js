@@ -35,6 +35,7 @@ import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
+import { readJsonCapped, questionTooLong, pickSignupPatch, MAX_QUESTION_CHARS } from "./limits.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
 import { feedEnabled, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
@@ -95,6 +96,8 @@ function corsHeaders(req, env) {
   }
   return {};
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function jsonResp(body, status = 200, extraHeaders = {}) {
   const txt = typeof body === "string" ? body : JSON.stringify(body);
@@ -435,7 +438,9 @@ export default {
           );
         }
         if (req.method === "POST") {
-          const body = await req.json();
+          const read = await readJsonCapped(req);
+          if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+          const body = read.body;
           const field = String(body.field || "").trim();
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
@@ -677,7 +682,9 @@ export default {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         const m = auth.member;
-        const body = await req.json();
+        const read = await readJsonCapped(req);
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body;
         const ids = Array.isArray(body && body.ids) ? body.ids.slice(0, 3) : [];
         if (!ids.length || !body || body.yes !== true) {
           return jsonResp({ error: "Invalid dispatch payload" }, 400, cors);
@@ -849,12 +856,14 @@ export default {
             return jsonResp({ error: "Unauthorized board key" }, 401, cors);
           }
           const member = auth.member;
-          const body = (await req.json()) || {};
+          const read = await readJsonCapped(req);
+          if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+          const body = read.body;
           const now = new Date().toISOString();
 
-          const patch = body.patch && typeof body.patch === "object" ? { ...body.patch } : { ...body };
-          delete patch.token;
-          delete patch.key;
+          const picked = pickSignupPatch(body.patch && typeof body.patch === "object" ? body.patch : body);
+          if (picked.error || !Object.keys(picked.patch).length) return jsonResp({ error: picked.error || "No known sign-up field" }, 400, cors);
+          const patch = picked.patch;
 
           const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
           const doc = row
@@ -871,9 +880,7 @@ export default {
             doc.entries.push(entry);
           }
           for (const [k, v] of Object.entries(patch)) {
-            if (k !== "slug" && k !== "name") {
-              entry[k] = v === "vos" ? "Valley of Strength" : v === "xroads" ? "The Crossroads" : v;
-            }
+            entry[k] = v === "vos" ? "Valley of Strength" : v === "xroads" ? "The Crossroads" : v;
           }
           entry.updated = now;
           await recomputeSignupTallies(doc);
@@ -1024,7 +1031,9 @@ export default {
         if (!auth.ok) {
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
-        const body = await req.json();
+        const read = await readJsonCapped(req);
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body;
         const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
         const doc = row ? JSON.parse(row.json) : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
         const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
@@ -1059,6 +1068,10 @@ export default {
 
         let row = null;
         if (askId) {
+          // Old ids are millisecond timestamps (guessable): they need a member key, web session or the admin token.
+          // New ids are random UUIDs, so holding the id is the credential (a guest polls for their own answer with it).
+          const signedIn = auth.ok || Boolean(await webSessionFrom(req, env, Date.now()));
+          if (!signedIn && !UUID_RE.test(askId)) return jsonResp({ error: "Unauthorized board key" }, 401, cors);
           row = await env.DB.prepare("SELECT * FROM ask_turns WHERE id = ?").bind(askId).first();
         } else if (auth.ok && auth.member) {
           row = await env.DB.prepare(
@@ -1106,7 +1119,7 @@ export default {
         return jsonResp(
           {
             ask: {
-              id: numericId,
+              id: UUID_RE.test(String(row.id)) ? row.id : numericId, // a random id must come back whole so the page can poll it
               status,
               text: row.question,
               answer: webBoardLinks(row.answer) || null,
@@ -1329,10 +1342,9 @@ export default {
       // 5. POST /refresh or POST /intent -> Ask Leeroy, Signups (flat & nested), Journey, Launch, Fact Fix, or Refresh
       if (req.method === "POST" && (path === "/intent" || path === "/refresh")) {
         const auth = await resolveMemberAuth(req, url, env);
-        let body = {};
-        try {
-          body = (await req.json()) || {};
-        } catch {}
+        const read = await readJsonCapped(req);
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body;
         const kind = path === "/refresh" ? "refresh" : String(body.kind || "");
 
         // If not authenticated, ONLY allow public guest asking
@@ -1347,7 +1359,8 @@ export default {
         const memberSlug = member ? member.slug : "guest";
         const now = new Date().toISOString();
         const numericIntentId = Date.now();
-        const intentId = String(numericIntentId);
+        // New ask ids are unguessable (GET /api/ask?id= is open to whoever holds the id); other kinds keep the timestamp id.
+        const intentId = kind === "ask" ? crypto.randomUUID() : String(numericIntentId);
 
         // 5a. `signup` (nested `{ kind: "signup", patch: { rsvp } }` or flat `{ kind: "signup", field, value, place }`)
         if (kind === "signup") {
@@ -1366,6 +1379,8 @@ export default {
                 }
               : {};
 
+          const picked = pickSignupPatch(patch);
+          if (picked.error || !Object.keys(picked.patch).length) return jsonResp({ error: picked.error || "No known sign-up field" }, 400, cors);
           const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
           const doc = row
             ? JSON.parse(row.json)
@@ -1380,7 +1395,7 @@ export default {
             entry = { slug: member.slug, name: member.name };
             doc.entries.push(entry);
           }
-          for (const [k, v] of Object.entries(patch)) {
+          for (const [k, v] of Object.entries(picked.patch)) {
             entry[k] = v;
           }
           entry.updated = now;
@@ -1391,7 +1406,7 @@ export default {
           const { seq } = await insertIntent(env, {
             slug: member.slug,
             kind: "signup",
-            body: { patch, entry },
+            body: { patch: picked.patch, entry },
             ver: 1,
             at: now,
           });
@@ -1482,6 +1497,7 @@ export default {
           const askSlug = isGuest ? "guest" : memberSlug;
 
           if (!question) return jsonResp({ error: "Missing question" }, 400, cors);
+          if (questionTooLong(question)) return jsonResp({ error: `Question is too long (max ${MAX_QUESTION_CHARS} characters)` }, 400, cors);
 
           // Rate limit check for public guests: 2 questions per hour per IP
           let guestLeft = 6;
@@ -1596,6 +1612,8 @@ export default {
 
         // 5e. `fix` (flat `{ kind: "fix", page, key, note }` or nested `{ kind: "fix", patch: { page, key, note } }`)
         if (kind === "fix") {
+          // Fixes rewrite the pages the AI answers from, so a member key is not enough (lib_pages has no owner to check against).
+          if (adminGate(req, url, env, cors)) return jsonResp({ error: "Fact fixes need the admin token" }, 403, cors);
           const src = body.patch && typeof body.patch === "object" ? body.patch : body;
           const pageId = String(src.page || "").trim();
           const factKey = String(src.fact || src.key || "").trim();

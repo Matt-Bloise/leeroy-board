@@ -27,6 +27,7 @@
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid } from "./answer-ux.js";
+import { MAX_QUESTION_CHARS } from "./limits.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
@@ -766,9 +767,15 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const question = getOpt("question") || getOpt("q") || String((opts[0] && opts[0].value) || "").trim();
       const provider = resolveAiProvider(env, getOpt("model") || getOpt("provider"));
       const isPrivate = Boolean(getOpt("private"));
+      if (Array.from(question).length > MAX_QUESTION_CHARS) {
+        return new Response(JSON.stringify({ type: 4, data: { content: `That question is too long. Keep it under ${MAX_QUESTION_CHARS} characters.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
       // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
-      if (askBudget && provider === "workers-ai") {
+      if (askBudget) {
         const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env));
         if (verdict && verdict.code !== "budget_global") {
           return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
@@ -777,7 +784,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           });
         }
       }
-      const intentId = String(Date.now());
+      const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
       const now = new Date().toISOString();
 
       await env.DB.prepare(
@@ -1594,7 +1601,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         );
       }
 
-      const intentId = String(Date.now());
+      if (Array.from(text).length > MAX_QUESTION_CHARS) {
+        return new Response(JSON.stringify({ type: 4, data: { content: `That question is too long. Keep it under ${MAX_QUESTION_CHARS} characters.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const intentId = crypto.randomUUID();
       const provider = resolveAiProvider(env);
       await env.DB.prepare(
         "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', 1, ?)"
