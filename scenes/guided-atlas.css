@@ -1,7 +1,8 @@
 html.ga-pre #board { visibility: hidden; }
 html.ga-one #panel-tonight #tn-seals, html.ga-one #panel-tonight .nx-links { display: none; }
 html.ga-one #tn-me .tn-name { min-height: 48px; }
-html.ga-one #panel-tonight { align-content: center !important; }
+/* B44 (2026-11-03): the tonight panel can hold more content than its grid row (about 570px in a 40px row at 384x216, about 280px more than the row at 320x568). Plain center pushed that overflow above the scrollable area, and Firefox did not count the overflow when scrolling, so the fixed bottom bar covered the primary button "Show me what is next" and it could not be tapped. safe center keeps the start reachable and min-height: min-content makes the panel as tall as its content, so #sheet-body scrolls to the end in every engine. */
+html.ga-one #panel-tonight { align-content: safe center !important; min-height: min-content !important; }
 html.ga-on { overflow: hidden; }
 .ga { position: fixed; inset: 0; z-index: 18; display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--oak-0); color: var(--parchment); }
 .ga[hidden] { display: none; }
