@@ -3,6 +3,7 @@ import { validateCardsConfig } from "./cards.js";
 import { validateNoiseConfig } from "./noise.js";
 import { validateSchedule as validateEventsSchedule } from "./scheduled-events.js";
 import { validateSchedule as validateMomentsSchedule } from "./moments.js";
+import { PUBLIC_DATA_DOCS, PUBLIC_ATLAS_DOCS } from "./public-docs.js";
 
 // Admin-only config rows that live only in D1 (kv_state), never in the repo: name_map, discord_members, discord_roster, ai_budget_caps, events_schedule (Discord scheduled events), moments (the timed-post schedule; its run state, moments_state, is in the same table), cards (pinned card message ids) and noise (post budget).
 // Written by PUT /api/config/<key>; there is no GET route. Cached 60 s per isolate; PUT invalidates the cache.
@@ -114,9 +115,12 @@ export function buildThreadMention(person, roster) {
 // that route is public and serves any kv_state key. Exact keys plus prefixes; matching is case-insensitive.
 const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "events_schedule", "scheduled_events", "vocab", "votes:index", "feed_posts", "moments", "moments_state", "moments_shadow_state", "moments_ledger", "cards", "cards_edit", "board_lines_pending", "noise"]);
 const PRIVATE_PREFIXES = ["ai_budget:", "vote:", "votes:", "feed_", "private:", "config:", "secret"];
+const PUBLIC_KV_KEYS = new Set([...PUBLIC_DATA_DOCS, ...PUBLIC_ATLAS_DOCS, "party_sheets"]);
 export function isPrivateKvKey(key) {
   const k = String(key || "").trim().toLowerCase();
   if (!k) return true;
   if (PRIVATE_EXACT.has(k)) return true;
-  return PRIVATE_PREFIXES.some((p) => k.startsWith(p));
+  if (PRIVATE_PREFIXES.some((p) => k.startsWith(p))) return true;
+  // Private by default: a key is public only when it is on the allow list (the documents the public site fetches, plus party_sheets).
+  return !PUBLIC_KV_KEYS.has(k);
 }

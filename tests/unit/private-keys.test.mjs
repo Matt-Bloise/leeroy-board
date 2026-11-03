@@ -23,3 +23,8 @@ test("public board documents are not private", () => {
     assert.equal(isPrivateKvKey(k), false, k);
   }
 });
+test("unknown keys are private by default (allow list, not deny list)", () => {
+  for (const k of ["discord_tokens", "oauth_state", "admin_notes", "x", "Discord_Tokens", "partyy", "party "]) {
+    assert.equal(isPrivateKvKey(k), k === "party " ? false : true, JSON.stringify(k));
+  }
+});

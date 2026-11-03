@@ -5,6 +5,7 @@ import {
   voterHash, newVoteId, parseChoices, createVote, isOpen, castVote, tally, publicView,
   parseVoteCustomId, renderMessage, addToIndex, loadPublicVotes,
 } from "../../infrastructure/worker/votes.js";
+import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 
 const NOW = Date.UTC(2026, 10, 1, 12, 0, 0);
 const mk = (over = {}) => {
@@ -111,7 +112,14 @@ test("hashing differs per salt, per vote, per user and hides the raw id", async 
   assert.notEqual(a, await voterHash("user-1", "ffffffff", "salt-one-example"));
   assert.notEqual(a, await voterHash("user-2", "0a1b2c3d", "salt-one-example"));
   assert.match(a, /^[a-f0-9]{64}$/);
-  assert.ok(!a.includes("user-1"));
+  // The old check (!a.includes("user-1")) could never fail: a hex digest has no "u" or "-". Use a snowflake-shaped id, which is made of hex digits,
+  // and prove the digest is not just the id or an unsalted hash of it.
+  const id = "123456789012345678", h = await voterHash(id, "0a1b2c3d", "salt-one-example");
+  assert.ok(!h.includes(id) && !h.includes(id.slice(0, 8)) && !h.includes(id.slice(-8)), "digest must not contain the raw id");
+  assert.notEqual(h, await sha256Hex(id));
+  assert.notEqual(h, await sha256Hex(`vote:0a1b2c3d:${id}`));
+  assert.notEqual(h, await sha256Hex(`salt-one-example:${id}`));
+  assert.ok(h !== id && h.length === 64);
   assert.throws(() => voterHash("user-1", "0a1b2c3d", ""), { name: "SaltMissingError" });
 });
 

@@ -6,11 +6,12 @@ try { new PerformanceObserver((l) => { for (const e of l.getEntries()) LT.push({
 const ID1 = new Map();
 const $ = (s, r = document) => { if (r !== document || !/^#[\w-]+$/.test(s)) return r.querySelector(s); let e = ID1.get(s); if (e && e.isConnected) return e; e = r.querySelector(s); if (e) ID1.set(s, e); return e; };
 const SVGNS = "http://www.w3.org/2000/svg";
+const SAFE_URL = /^(https?:|\/|#|[a-z]+\/)/;
 function h(tag, attrs, ...kids) {
   /* a lazy image made while the wall is cold gets its src on settle (a lazy image that is rendered but covered still loads) */
   if (tag === "img" && attrs && attrs.loading === "lazy" && attrs.src && wallCold()) {
     const { src, srcset, ...rest } = attrs, n = h(tag, rest, ...kids);
-    whenSettled(() => { if (srcset) n.setAttribute("srcset", srcset); n.setAttribute("src", src); });
+    whenSettled(() => { if (srcset) n.setAttribute("srcset", srcset); if (SAFE_URL.test(String(src))) n.setAttribute("src", src); });
     return n;
   }
   const svg = attrs && attrs.svg; const n = svg ? document.createElementNS(SVGNS, tag) : document.createElement(tag);
@@ -20,6 +21,7 @@ function h(tag, attrs, ...kids) {
     else if (k === "text") n.textContent = v;
     else if (k === "style") n.setAttribute("style", v);
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if ((k === "href" || k === "src") && !SAFE_URL.test(String(v))) continue; /* data-driven links: drop javascript:, data: and anything else that is not http(s), absolute-path, hash or relative */
     else n.setAttribute(k, v === true ? "" : v);
   }
   for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c instanceof Node ? c : document.createTextNode(String(c)));
@@ -229,7 +231,12 @@ const API = (() => {
     const b = window.BoardBrain;
     if (b && typeof b.url === "function") {
       const u = b.url("");
-      if (u) return new URL(u).origin;
+      if (u) {
+        const o = new URL(u, location.href).origin;
+        /* BoardBrain.url must not bypass the ?api= allowlist below: only the page's own origin (Discord Activity), the production Worker, pr-N preview Workers and a local Worker */
+        if (o === location.origin || /^(https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.jmattbloise\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/.test(o)) return o;
+        return null;
+      }
     }
     const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:");
     return /^(https:\/\/leeroy-(?:board-api|brain)[\w.-]*\.workers\.dev|http:\/\/127\.0\.0\.1:\d+)$/.test(u.origin) ? u.origin : null;
@@ -238,6 +245,8 @@ const API = (() => {
 const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt); };
 const BF = (() => {
   const B = ((document.currentScript || {}).src || "").match(/[?&]v=([0-9a-f]+)/), stale = new Set(), file = (u) => String(u).split("?")[0], key = (u) => `bd:${B ? B[1] : "dev"}:${file(u)}`;
+  /* boot: drop cached copies stamped by an older build (their key is never read again) */
+  try { if (B) Object.keys(localStorage).filter((k) => k.startsWith("bd:") && !k.startsWith(`bd:${B[1]}:`)).forEach((k) => localStorage.removeItem(k)); } catch (e) {}
   const nap = (ms) => new Promise((r) => setTimeout(r, ms * (0.8 + Math.random() * 0.4)));
   const json = async (url, opt, raw) => {
     let err, soft = false;
@@ -3391,7 +3400,7 @@ const MEM = {
   setMe: (slug) => { const ok = slug === "just-looking" || (D.party ? D.party.members.some((x) => MEM.slug(x.name) === slug) : /^[a-z0-9-]{1,40}$/.test(slug)); if (ok) MEM.set("me", slug); return ok; },
   seenMap: () => { try { const m = JSON.parse(MEM.get("seen") || "{}"); return m && typeof m === "object" && !Array.isArray(m) ? m : {}; } catch (e) { return {}; } },
   seen: (k) => { const m = MEM.seenMap(); m[k] = Date.now(); MEM.set("seen", JSON.stringify(m)); },
-  forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } try { Object.keys(localStorage).filter((k) => k.startsWith("board-before-")).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
+  forget: () => { for (const k of MEM_KEYS) { try { localStorage.removeItem(k); } catch (e) {} } try { Object.keys(localStorage).filter((k) => /^(board-|bd:)/.test(k)).forEach((k) => localStorage.removeItem(k)); } catch (e) {} },
 };
 function tonightNext(T) { const now = Date.now() / 1000; const ts = (e) => (e.epoch !== null ? e.epoch : Date.parse(`${e.date}T23:59:59Z`) / 1000); const open = T.events.find((e) => e.until_epoch && e.epoch <= now && now < e.until_epoch); if (open) return { ...open, when: open.open_when || open.when, open: true }; return T.events.find((e) => ts(e) > now) || T.events[T.events.length - 1]; }
 function meetP() {

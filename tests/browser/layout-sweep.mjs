@@ -45,7 +45,7 @@ const OUT = arg("--out"), BUDGET_MS = Number(arg("--budget-min", "7")) * 60000, 
 const T0 = Date.now();
 
 const ALL_SIZES = ["1920x1080", "1536x864", "1440x900", "1366x768", "1280x720", "1280x600", "1024x768", "1024x576", "960x540", "800x600", "768x1024", "600x800", "430x932", "390x844", "360x640", "320x568", "568x320", "844x390",
-  "2560x1440", "3840x2160", "5120x2880", "7680x4320", "640x360", "384x216"]; /* the last six: large screens and browser zoom (zoomed-out and zoomed-in windows are just different CSS viewports) */
+  "2560x1440", "3840x2160", "5120x2880", "7680x4320", "640x360", "384x216", "3440x1440", "860x360"]; /* the last eight: large screens, an ultrawide, a short landscape window and browser zoom (zoomed-out and zoomed-in windows are just different CSS viewports) */
 const ALL_STATES = ["gate", "looking", "member"];
 const ALL_SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight", "decide"];
 const pick = (k, all) => { const v = arg(k); if (!v) return all; const l = v.split(",").filter(Boolean); const bad = l.filter((x) => !all.includes(x)); if (bad.length) { console.error(`${k}: unknown ${bad.join(",")}`); process.exit(2); } return l; };
