@@ -44,7 +44,7 @@ test("validator: accepts and rejects", () => {
 });
 
 test("spec covers exactly the documented public and member routes", () => {
-  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/cards/post", "/api/admin/eval", "/api/admin/events/sync", "/api/admin/export", "/api/admin/feedback", "/api/admin/requests", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/characters", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
+  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/cards/post", "/api/admin/eval", "/api/admin/events/sync", "/api/admin/export", "/api/admin/feedback", "/api/admin/requests", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/characters", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes", "/api/wiki/proposals/{id}", "/api/wiki/proposals/{id}/approve", "/api/wiki/proposals/{id}/reject"]);
 });
 
 // ---- routes ----------------------------------------------------------------------------------------------------

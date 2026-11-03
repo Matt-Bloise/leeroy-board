@@ -37,6 +37,7 @@ import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, MAX_QUESTION_CHARS } from "./limits.js";
+import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
 import { feedEnabled, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
@@ -356,7 +357,7 @@ export const ROUTES = [
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
-  "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
+  "GET /wiki/proposals", "GET /wiki/proposals/:id", "POST /wiki/proposals/:id/approve", "POST /wiki/proposals/:id/reject", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
   "GET /atlas/*", "PUT /atlas/*", "POST /intent", "POST /refresh", "GET /", "GET /health",
 ];
 
@@ -1170,6 +1171,45 @@ export default {
           "SELECT * FROM wiki_proposals ORDER BY created_at DESC LIMIT 50"
         ).all();
         return jsonResp({ proposals: results || [] }, 200, cors);
+      }
+
+      // 1d2. One proposal next to the live value, and the admin decisions on it (approve applies it to lib_pages, reject only closes it)
+      const propMatch = path.match(/^\/wiki\/proposals\/([A-Za-z0-9_.-]{1,80})(\/approve|\/reject)?$/);
+      if (propMatch && ((req.method === "GET" && !propMatch[2]) || (req.method === "POST" && propMatch[2]))) {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const propId = propMatch[1];
+        if (req.method === "GET") {
+          const r = await describeProposal(env, propId);
+          return jsonResp(r.body, r.status, cors);
+        }
+        const read = await readJsonCapped(req);
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body || {};
+        if (propMatch[2] === "/reject") {
+          const r = await rejectProposal(env, propId, { reason: body.reason });
+          return jsonResp(r.body, r.status, cors);
+        }
+        const r = await approveProposal(env, propId, { force: body.force === true });
+        if (r.refresh) {
+          // The row is already committed; a failure while rebuilding blobs must not hide that, so it is reported, not thrown.
+          const cats = [r.refresh.category];
+          try {
+            await recomputeCategoryAndIndex(env, r.refresh.category, { date: r.refresh.date, page: r.refresh.page, text: r.refresh.text });
+            invalidatePagesCache();
+            await purgeWorkerCache(url.origin, [
+              "/api/library/index.json",
+              "/api/library/search.json",
+              "/api/library/open.json",
+              `/api/library/${r.refresh.category}.json`,
+            ]);
+            await broadcastToRoom(env, { type: "library", categories: cats, page: r.refresh.page });
+          } catch (e) {
+            invalidatePagesCache();
+            return jsonResp({ ...r.body, refresh: "failed" }, r.status, cors);
+          }
+        }
+        return jsonResp(r.body, r.status, cors);
       }
 
       // 1e. PUT /wiki/page -> Direct D1 wiki page authoring/editing (replaces editing markdown in the `leeroy-ops` wiki)
