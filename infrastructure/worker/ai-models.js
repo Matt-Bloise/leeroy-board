@@ -827,9 +827,7 @@ export async function buildAnswerInputs(env, { question, by, journey = "curious"
     systemPrompt = `${systemPrompt}\n\n${FENCE_RULE}`;
 
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
-    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\nTop Library Facts:\n${topFactHits.join(
-      "\n"
-    )}\n\nTop Matching Pages:\n${topPagesSummary}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
+    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\nTop Library Facts and Pages:\n${fence("LIBRARY", `${topFactHits.join("\n")}\n\nTop Matching Pages:\n${topPagesSummary}`)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach };
 }
@@ -893,7 +891,9 @@ export async function answerWithAi({
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     {
-      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null);
+      let verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null);
+      // The global cap counts Workers AI neurons only: it must not lock members out of other providers.
+      if (verdict && verdict.code === "budget_global" && chosenProvider !== "workers-ai") verdict = null;
       if (verdict) {
         budgetCode = verdict.code;
         const limitedAt = nowIso();
@@ -904,29 +904,8 @@ export async function answerWithAi({
         )
           .bind(limitText, budgetCode === "budget_global" ? "workers-ai:daily-limit" : `workers-ai:${budgetCode}`, Date.now() - t0, limitedAt, intentId)
           .run();
-        await broadcastToRoom(env, {
-          type: "ask",
-          slug: memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-          ask: {
-            id: wireId(intentId),
-            kind: "ask",
-            by,
-            q: question,
-            text: question,
-            answer: limitText,
-            cites: [],
-            sources: [],
-            model: "daily-limit",
-            provider: "workers-ai",
-            share: false,
-            ms: Date.now() - t0,
-            status: "answered",
-            why: "limited",
-            code: budgetCode,
-            retryAfter,
-            at: limitedAt,
-          },
-        });
+        // No question or answer on the socket: the owner's page re-reads the turn with its own credentials.
+        await broadcastToRoom(env, { type: "ask", slug: memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-") });
         return { code: budgetCode };
       }
     }
@@ -1036,7 +1015,7 @@ export async function answerWithAi({
         const stats = JSON.parse(statsRow.json);
         stats.answers = (Number(stats.answers) || 0) + 1;
         stats.updated = answeredAt.slice(0, 10);
-        stats.recent = [
+        if (share) stats.recent = [
           {
             id: intentId,
             by,
@@ -1076,17 +1055,15 @@ export async function answerWithAi({
       status: "answered",
       at: answeredAt,
     };
-    await broadcastToRoom(env, {
-      type: "data",
-      key: "stats",
-      intent: completedItem,
-    });
+    // A private turn (share false: every guest ask, "private" asks) puts no question or answer on the shared socket or in stats.
+    // The bare "ask" message makes the owner's page re-read its turn with its own key or id.
     const broadcastSlug = memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    await broadcastToRoom(env, {
-      type: "ask",
-      slug: broadcastSlug,
-      ask: completedItem,
-    });
+    if (share) {
+      await broadcastToRoom(env, { type: "data", key: "stats", intent: completedItem });
+      await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, ask: completedItem });
+    } else {
+      await broadcastToRoom(env, { type: "ask", slug: broadcastSlug });
+    }
 
     // 5. Optional Discord Webhook post to #wow-forever
     if (share && env.DISCORD_WEBHOOK_URL) {

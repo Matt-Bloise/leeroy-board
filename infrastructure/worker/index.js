@@ -1070,9 +1070,14 @@ export default {
         if (askId) {
           // Old ids are millisecond timestamps (guessable): they need a member key, web session or the admin token.
           // New ids are random UUIDs, so holding the id is the credential (a guest polls for their own answer with it).
-          const signedIn = auth.ok || Boolean(await webSessionFrom(req, env, Date.now()));
-          if (!signedIn && !UUID_RE.test(askId)) return jsonResp({ error: "Unauthorized board key" }, 401, cors);
+          const ws = auth.ok ? null : await webSessionFrom(req, env, Date.now());
+          if (!auth.ok && !ws && !UUID_RE.test(askId)) return jsonResp({ error: "Unauthorized board key" }, 401, cors);
           row = await env.DB.prepare("SELECT * FROM ask_turns WHERE id = ?").bind(askId).first();
+          // A timestamp id can be guessed: even with a key it shows only shared turns and the caller's own (the admin sees all).
+          if (row && !UUID_RE.test(String(row.id)) && row.share !== 1 && adminGate(req, url, env, cors)) {
+            const mine = auth.ok ? [auth.member.name, auth.member.slug] : [ws.name];
+            if (!mine.includes(row.by_name)) row = null;
+          }
         } else if (auth.ok && auth.member) {
           row = await env.DB.prepare(
             "SELECT * FROM ask_turns WHERE by_name = ? OR by_name = ? OR share = 1 ORDER BY created_at DESC LIMIT 1"
@@ -1570,7 +1575,7 @@ export default {
             kind: "ask",
             by: askBy,
             slug: askSlug,
-            q: question,
+            ...(share ? { q: question } : {}), // a private question is never pushed to other sockets
             provider: activeProvider,
             status: "thinking",
             at: now,
@@ -1597,7 +1602,7 @@ export default {
           return jsonResp(
             {
               ok: true,
-              id: seq,
+              id: intentId, // the page polls GET /ask?id= with this, so it must be the ask id, not the intent seq
               seq,
               status: "thinking",
               provider: activeProvider,
