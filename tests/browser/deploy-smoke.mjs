@@ -30,7 +30,8 @@ for (const eng of ["chromium", "webkit"]) {
   catch (e) { if (eng === "webkit" && process.env.SMOKE_REQUIRE_ENGINES !== "1") { console.log(`WARN ${eng} is not installed here; its page load is skipped (${String(e.message).split("\n")[0].slice(0, 100)})`); continue; } ok(`${eng} launches`, false, String(e.message).split("\n")[0]); continue; }
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: eng !== "firefox", serviceWorkers: "block" }), page = await ctx.newPage();
   const errors = [], apiRows = [];
-  page.on("pageerror", (e) => errors.push(e.message));
+  // Cloudflare injects its analytics beacon into every Pages preview; WebKit reports it as a page error (access control checks). It is not our code, so it is not counted (degraded-modes.mjs does the same).
+  page.on("pageerror", (e) => { if (!/cloudflareinsights|cdn-cgi\/rum/.test(e.message)) errors.push(e.message); });
   page.on("response", (r) => { const u = new URL(r.url()); if (/^\/api\//.test(u.pathname)) apiRows.push({ path: u.pathname, status: r.status() }); });
   await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   const shown = await page.waitForSelector("#nx-fr2-look", { state: "visible", timeout: 25000 }).then(() => true, () => false);
