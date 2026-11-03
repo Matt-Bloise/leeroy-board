@@ -86,7 +86,7 @@ export function buildReport(i) {
     `### ${heading}: ${mode === "skipped" && pass ? "SKIPPED" : pass ? "passed" : "FAILED"} (\`${i.sha7}\`)`,
     "",
   ];
-  if (i.sha && i.runId) lines.splice(1, 0, markerLine(i.sha, i.runId));
+  if (i.sha && i.runId) lines.splice(2, 0, markerLine(i.sha, i.runId)); // AFTER the header: queue/gate.js reads line index 1 of the body as the header, so the header must stay there
   if (mode === "skipped") lines.push(
     pass
       ? "**SKIPPED**: the preview secrets (`CLOUDFLARE_PREVIEW_API_TOKEN`, `BOARD_PREVIEW_ADMIN_TOKEN`) are not configured, so no preview was created and only unit and stamps ran. This comment is not the merge gate. See docs/runbooks/ci-secrets.md.\n"

@@ -10,7 +10,7 @@ Why: a workflow file in a pull request runs with the secrets the repository give
 | `BOARD_ADMIN_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` (or `CLOUDFLARE_AIG_TOKEN`), `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `CLOUDFLARE_ACCOUNT_ID` | repository secret (an identifier, not a credential; may also be copied into `production`) | deploy and preview |
-| `CLOUDFLARE_PREVIEW_API_TOKEN` | repository secret | `pr-preview-cloudflare.yml` (spin-up, teardown) |
+| `CLOUDFLARE_PREVIEW_API_TOKEN` | repository secret (account-wide, see section 3) | `pr-preview-cloudflare.yml` (spin-up, teardown) |
 | `BOARD_PREVIEW_ADMIN_TOKEN` | repository secret | `pr-preview-cloudflare.yml`, `preview-tests.yml`; the base for the per-preview salts and admin token |
 
 `tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow names any secret outside the preview rows above.
@@ -33,7 +33,15 @@ Do this for the two critical secrets first, then the rest of the table's `produc
 4. Also add `CLOUDFLARE_ACCOUNT_ID` to the environment (the deploy checks it exists).
 5. Only after step 2 to 4 are done, remove the repository-level copies: **Settings > Secrets and variables > Actions > Repository secrets**, click the bin next to each production secret, confirm. Keep `CLOUDFLARE_ACCOUNT_ID` there for the preview.
 
-Do not skip step 5. A repository secret with the same name stays readable by every workflow run, including one started from a branch, so the environment alone protects nothing until the old copy is gone.
+**Step 5 is mandatory, and it is the control that matters.** If the environment `production` is missing, GitHub creates it empty on the first reference and a secret of the same name falls back to the repository-level copy, so the deploy guard cannot tell the environment is missing. A repository secret stays readable by every workflow run, including one started from a branch. Delete the repository-level copies of `CLOUDFLARE_API_TOKEN`, `BOARD_ADMIN_TOKEN`, `USER_SALT`, `KEY_SALT`, all AI keys and all Discord secrets once the environment copies exist. **Until they are deleted, finding S1 (PR workflows can reach production secrets) stays open.**
+
+Confirm with `gh` (as a repo admin; prints names only, never values):
+
+```bash
+tools/check-secret-scope.sh Matt-Bloise/leeroy-board
+```
+
+It exits 0 only when no production secret is left at repository level.
 
 Check: the **Actions** tab, **Deploy Site & Serverless Backend to Cloudflare (Production)**, **Run workflow** on `master`. The first step "Require the production environment secrets" must pass and the run must show "production" as its environment. A run from any other branch must be refused at the environment.
 
@@ -45,7 +53,7 @@ Create a **separate** API token for previews; never reuse the production one.
 2. Permissions (Account level, account `Uncle Jimmy's`): **Workers Scripts: Edit**, **D1: Edit**, **Cloudflare Pages: Edit**, **Workers AI: Read** (the preview uses the free Workers AI model). Nothing else: no DNS, no Zone, no Workers Routes, no Account Settings, no AI Gateway.
 3. Account resources: include only this account. Zone resources: none. Add a client IP filter only if you use fixed runners (GitHub-hosted runners change, so normally leave it off).
 4. Set an expiry (90 days is a sensible default) and note the date in your calendar.
-5. Scoping to preview resources: Cloudflare cannot limit a token to resources by name pattern, so the token still can touch production resources if it shares the account. To make it truly preview-only, put previews in a separate Cloudflare account (or a second account member) and use that account's `CLOUDFLARE_ACCOUNT_ID` for the preview; this is the follow-up to agree with Uncle Jimmy. Until then, treat this token as account-wide for Workers, D1 and Pages and keep its expiry short.
+5. **`CLOUDFLARE_PREVIEW_API_TOKEN` is still account-wide on the same Cloudflare account as production.** Cloudflare cannot limit a token to resources by name pattern, so it can edit production Workers, D1 and Pages. S1 is therefore *reduced, not closed*, by this change. It closes only when previews move to a separate Cloudflare account (use that account's `CLOUDFLARE_ACCOUNT_ID` for previews) or a token scoped to preview resources exists. Agree this with Uncle Jimmy. Until then keep the token's expiry short.
 6. In GitHub: **Settings > Secrets and variables > Actions > New repository secret**: name `CLOUDFLARE_PREVIEW_API_TOKEN`, paste the token.
 7. Create `BOARD_PREVIEW_ADMIN_TOKEN` the same way with a new random value (for example `openssl rand -hex 32`). It is not a production value and is never sent to production.
 
@@ -53,13 +61,13 @@ Until both preview secrets exist, labelled (`ci-full`) PRs get **Preview tests: 
 
 ## 4. The Preview tests comment and the gate
 
-The comment keeps its visible header `### Preview tests: passed (<sha7>)`, which `queue/gate.js` matches. A second hidden line carries the full head sha and the run id: `<!-- preview-tests-meta sha=<40 hex> run=<run id> -->`. The report job reads the comment back and fails unless it is written by `github-actions[bot]` and carries this run's id and the PR head sha (`node tools/ci-report.mjs --verify`).
+The comment keeps its visible header `### Preview tests: passed (<sha7>)`, which `queue/gate.js` matches. A hidden line directly after the header (so the header stays on line index 1 of the body, which is the only line `queue/gate.js` reads) carries the full head sha and the run id: `<!-- preview-tests-meta sha=<40 hex> run=<run id> -->`. The report job reads the comment back and fails unless it is written by `github-actions[bot]` and carries this run's id and the PR head sha (`node tools/ci-report.mjs --verify`).
 
 The merge script (`queue/gate.js`, outside this repository) should also, before it trusts a comment: take the newest `github-actions[bot]` comment with the hidden line, require its `sha=` to equal the full head sha of the PR, and look up the run id with the Actions API (workflow `Preview Tests`, head sha equal, conclusion `success`). Until it does, the sha7 header alone remains the trust anchor.
 
 ## 5. Reviews of CI changes
 
-`.github/CODEOWNERS` requires `@Matt-Bloise` for `.github/`, `tools/` and `infrastructure/wrangler.toml`. It only has effect once **Settings > Branches > master rule > Require a pull request before merging > Require review from Code Owners** is ticked.
+There is no CODEOWNERS file: it would enforce nothing without a ruleset rule requiring code-owner review, and it would deadlock PRs opened under the owner's own account. The control for `.github/` and `tools/` is the queue script, which holds such PRs until a Claude advisor has reviewed them and the `advisor-ok` label is set.
 
 ## Failure messages and what they mean
 

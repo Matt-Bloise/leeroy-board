@@ -14,8 +14,9 @@ const base = (over) => ({
 test("the full head sha and run id are embedded in a hidden marker, the visible header is unchanged", () => {
   const r = buildReport(base({}));
   assert.equal(r.body.split("\n")[0], "<!-- preview-tests -->");
-  assert.equal(r.body.split("\n")[1], `<!-- preview-tests-meta sha=${SHA} run=4242 -->`);
-  assert.match(r.body, new RegExp(`^### Preview tests: passed \\(\`${SHA7}\`\\)$`, "m"));
+  // queue/gate.js reads ONLY line index 1 as the header (same index as on master); the marker must come after it.
+  assert.equal(r.body.split("\n")[1], `### Preview tests: passed (\`${SHA7}\`)`);
+  assert.equal(r.body.split("\n")[2], `<!-- preview-tests-meta sha=${SHA} run=4242 -->`);
   assert.equal(matchesGate(r.body, SHA7), true);
   assert.deepEqual(parseMarker(r.body), { sha: SHA, runId: "4242" });
 });

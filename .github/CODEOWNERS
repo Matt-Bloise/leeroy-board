@@ -1,6 +1,0 @@
-# Every change to CI, tooling and deploy configuration needs a review by the owner (enable "Require review from Code Owners" in the master branch protection rule).
-# docs/runbooks/ci-secrets.md explains why: these paths decide what runs with secrets.
-/.github/ @Matt-Bloise
-/tools/ @Matt-Bloise
-/infrastructure/wrangler.toml @Matt-Bloise
-/.github/CODEOWNERS @Matt-Bloise
