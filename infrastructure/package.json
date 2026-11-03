@@ -19,6 +19,6 @@
     "library:rebuild": "node ./scripts/export-d1.mjs --rebuild"
   },
   "devDependencies": {
-    "wrangler": "3.114.17"
+    "wrangler": "4.148.0"
   }
 }

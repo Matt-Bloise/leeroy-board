@@ -34,7 +34,12 @@ Cloudflare dashboard, Flagship, app `leeroy-brain`, the flag, toggle **enabled**
 
 Every flag except `d1-feed` still reads `[vars]` directly. They are already in the manifest (created disabled), so migrating one is steps 2 and 3 above.
 
+## Wrangler 4
+
+The deploy pins wrangler 4.148.0 (exact, `infrastructure/package.json` and lockfile; Flagship binding support arrived in 4.82.x; needs Node 22 or newer, which every workflow that runs wrangler sets up). Its config schema has `[[flagship]]` with `binding`, `app_id` (optional) and `remote`. If `app_id` is omitted wrangler 4 can auto-provision a Flagship app; we keep the explicit ensure script as the source of truth because it also creates the flags and never edits an existing one. Auto-provisioning is a possible later simplification for the app only.
+
 ## Open points (verify on the first real deploy)
 
-- The request bodies of the flag create call are isolated in `appBody` / `flagBody` in `tools/flagship-ensure.mjs` and were not checked against the live API.
-- The pinned wrangler (`infrastructure/package.json`, 3.114.17) has no `flagship` binding in its config schema. Until wrangler is upgraded to a version that supports `[[flagship]]`, the appended block is ignored by wrangler and the Worker keeps using `[vars]`. Check the deploy log for a wrangler warning about an unexpected field and for `env.FLAGS` in the bindings list.
+- UNVERIFIED: the create-app body and the list-response envelope used by `tools/flagship-ensure.mjs` (`appBody`, `items()`); they are isolated there and marked in the code. The flag create body follows the documented flag shape.
+- `getBooleanValue` is called with two arguments (key, default); no evaluation context is passed.
+- A wrangler 3 to 4 note for older commands in the runbooks (`rollback.md`, `incident.md` quote 3.114.17 output): flags and output were confirmed on 3.114.17 and should be re-checked on 4.148.0 when next used.

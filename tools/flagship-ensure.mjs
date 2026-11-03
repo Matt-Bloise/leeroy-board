@@ -15,15 +15,20 @@ const API = "https://api.cloudflare.com/client/v4";
 
 export class PermissionError extends Error {}
 
-// UNVERIFIED against the live API (the sandbox could not read the docs): the only place the request bodies are defined.
-// Documented facts: a flag object has key, enabled, default_variation, variations, rules. The variations/rules encoding below is the assumed shape.
+// Request bodies, the ONLY place they are defined.
+// Flag body: follows the Cloudflare Flagship docs as read by the account owner (flag = key 1-64 chars, description optional max 512, enabled,
+// default_variation (must be a key of variations), variations (map of name to value, all one type, each at most 10KB), rules (array of
+// {conditions, priority >= 1, serve_variation, rollout?})). A boolean flag: {key, description, enabled: false, variations: {off: false, on: true},
+// default_variation: "off", rules: []}.
+// UNVERIFIED (not documented in anything the owner could read): the create-app body ({name}) and the list-response envelope
+// (assumed Cloudflare's usual {success, result}, with result an array or {items}; app id read from id or app_id; pagination not handled).
 export const appBody = (name) => ({ name });
 export const flagBody = (flag) => ({
   key: flag.key,
-  description: flag.description || "",
+  description: String(flag.description || "").slice(0, 512),
   enabled: false,
+  variations: { off: false, on: true },
   default_variation: "off",
-  variations: { off: { value: false }, on: { value: true } },
   rules: [],
 });
 
@@ -32,7 +37,7 @@ export function loadManifest(file) {
   if (!m || typeof m.app !== "string" || !m.app || !Array.isArray(m.flags)) throw new Error("manifest: need app (string) and flags (array)");
   const seen = new Set();
   for (const f of m.flags) {
-    if (!f || !/^[a-z0-9][a-z0-9-]*$/.test(f.key || "")) throw new Error(`manifest: bad flag key ${JSON.stringify(f && f.key)}`);
+    if (!f || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(f.key || "")) throw new Error(`manifest: bad flag key ${JSON.stringify(f && f.key)}`);
     if (seen.has(f.key)) throw new Error(`manifest: duplicate flag key ${f.key}`);
     if (f.default !== "off") throw new Error(`manifest: flag ${f.key} must default to "off"`);
     seen.add(f.key);

@@ -127,3 +127,20 @@ test("the production deploy runs the ensure script best-effort, before wrangler 
   assert.equal(steps[i]["continue-on-error"], true);
   assert.ok(steps.some((s) => /::warning/.test(s.run || "") && /flagship\.outcome/.test(s.if || "")), "a warning annotation when the ensure step fails");
 });
+
+// wrangler 4 needs Node >= 22: every workflow that runs wrangler must set up Node 22 or newer.
+test("every workflow that runs wrangler sets up Node 22 or newer", () => {
+  for (const w of workflows.filter((x) => /\bwrangler\b/.test(code(x.text)))) {
+    const versions = Object.values(w.doc.jobs).flatMap((j) => (j.steps || []).filter((s) => /actions\/setup-node/.test(s.uses || "")).map((s) => Number(String(s.with && s.with["node-version"]).split(".")[0])));
+    assert.ok(versions.length > 0, `${w.f} runs wrangler without setup-node`);
+    for (const v of versions) assert.ok(v >= 22, `${w.f}: setup-node ${v} is below wrangler 4's node >=22`);
+  }
+});
+
+test("wrangler is pinned to the exact version 4.148.0 in package.json and the lockfile", () => {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package.json", import.meta.url)), "utf8"));
+  const lock = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package-lock.json", import.meta.url)), "utf8"));
+  assert.equal(pkg.devDependencies.wrangler, "4.148.0");
+  assert.equal(lock.packages["node_modules/wrangler"].version, "4.148.0");
+  assert.equal(lock.packages[""].devDependencies.wrangler, "4.148.0");
+});

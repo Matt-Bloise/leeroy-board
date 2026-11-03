@@ -1,4 +1,4 @@
-// tools/flagship-ensure.mjs with a fake fetch. No network. The request bodies are UNVERIFIED against the live API; flagBody/appBody pin the assumed shape.
+// tools/flagship-ensure.mjs with a fake fetch. No network. flagBody follows the documented flag shape; appBody and the list envelope are UNVERIFIED against the live API.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
@@ -77,6 +77,15 @@ test("dry run sends nothing and lists the planned requests", async () => {
   assert.equal(sent, 0);
   assert.equal(r.planned.length, 2 + manifest.flags.length);
   assert.deepEqual(r.planned[2].body, flagBody(manifest.flags[0]));
+});
+
+test("flagBody is the documented boolean flag shape", () => {
+  const b = flagBody({ key: "d1-feed", description: "x" });
+  assert.deepEqual(b, { key: "d1-feed", description: "x", enabled: false, variations: { off: false, on: true }, default_variation: "off", rules: [] });
+  assert.ok(b.default_variation in b.variations);
+  assert.ok(b.key.length >= 1 && b.key.length <= 64);
+  assert.equal(flagBody({ key: "k", description: "y".repeat(600) }).description.length, 512);
+  for (const f of manifest.flags) assert.ok(f.key.length <= 64 && flagBody(f).description.length <= 512, f.key);
 });
 
 test("loadManifest rejects an on-by-default flag and a duplicate key", async () => {
