@@ -24,7 +24,9 @@
 //   21. Context menus — "Ask Leeroy" & "Fix this fact" on any Discord message
 // =============================================================================
 
-import { answerWithAi, resolveAiProvider } from "./ai-models.js";
+import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
+import { answerUxEnabled } from "./answer-format.js";
+import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid } from "./answer-ux.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
@@ -463,6 +465,75 @@ function launchHype(toLaunch) {
   return `${days} days. Time to study your talents and prep your route.`;
 }
 
+// Run an answer and edit the placeholder (@original) with the result. The final edit is ALWAYS sent, exactly once:
+// the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
+// (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
+// stored by answerWithAi in ask_turns (the website shows it) and is never sent a second time.
+export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "" }) {
+  const startedAt = Date.now();
+  const deadlineMs = Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS;
+  const work = Promise.resolve().then(answer).then(() => "done", () => "failed");
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve("deadline"), deadlineMs);
+  });
+  const outcome = await Promise.race([work, deadline]);
+  clearTimeout(timer);
+
+  let text = "";
+  let turn = null;
+  if (outcome === "done") {
+    try {
+      const row = await env.DB.prepare("SELECT answer, status, model FROM ask_turns WHERE id = ?").bind(intentId).first();
+      if (row && row.status !== "error" && row.answer) {
+        text = String(row.answer);
+        turn = row;
+      }
+    } catch {}
+  }
+  if (!text) {
+    const line = pickLine(persona, "errorLines", intentId);
+    text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+  }
+  // ANSWER_UX: More, Sources, Helpful and Off buttons on a real answer. Any failure here only means no buttons.
+  const ux = answerUxEnabled(env);
+  let components = [];
+  if (ux && turn) {
+    try {
+      components = await prepareAnswerButtons({ env, interaction, intentId, isPrivate, askerId });
+    } catch {}
+  }
+  if (ux) {
+    // One structured row per answer for Workers Logs. No question or answer text.
+    const modelField = String((turn && turn.model) || "");
+    const provider = modelField.split(":")[0] || "none";
+    const modelName = modelField.slice(provider.length + 1).replace(/\s*\(after .*$/, "").slice(0, 60);
+    console.log(
+      JSON.stringify({
+        evt: "answer",
+        reqid: newReqid(),
+        ms: Date.now() - startedAt,
+        provider,
+        model: modelName,
+        status: turn ? "answered" : outcome === "deadline" ? "deadline" : "error",
+        fallback: /\(after /.test(modelField),
+      })
+    );
+  }
+  if (interaction && interaction.application_id && interaction.token) {
+    try {
+      await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: clampContent(wrap(text)), allowed_mentions: ALLOWED_MENTIONS_NONE, ...(components.length ? { components } : {}) }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {}
+  }
+  // Keep the invocation alive so a late answer is still stored.
+  await work;
+}
+
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
   const res = await handleDiscordInteractionInner(req, env, ctx, origin);
@@ -514,7 +585,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const member = resolveMember(user.id, rawUser, membersConfig); // null when the user is not a recognised party member
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
-  // CARDS_ENABLED: flush a due board line and retry an unfinished card edit. Cheap D1 reads; the cron is only 6-hourly.
+  // CARDS_ENABLED: flush a due board line and retry an unfinished card edit. Cheap D1 reads; the scheduled ticks do the same.
   if (cardsEnabled(env) && ctx && typeof ctx.waitUntil === "function") {
     ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
   }
@@ -700,21 +771,15 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
       const persona = await loadPersona(env);
       ctx.waitUntil(
-        (async () => {
-          await answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate, budget: askBudget });
-          const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
-          const text = row && row.status === "error" && persona ? pickLine(persona, "errorLines", intentId) : row && row.answer;
-          if (interaction.application_id && interaction.token && text) {
-            await fetch(
-              `https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ content: clampContent(text), allowed_mentions: ALLOWED_MENTIONS_NONE }),
-              }
-            ).catch(() => {});
-          }
-        })()
+        answerAndDeliver({
+          env,
+          interaction,
+          intentId,
+          persona,
+          isPrivate,
+          askerId: String(user.id || ""),
+          answer: () => answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
+        })
       );
 
       // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
@@ -1522,24 +1587,15 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
       const persona = await loadPersona(env);
       ctx.waitUntil(
-        (async () => {
-          await answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }) });
-          const row = await env.DB.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").bind(intentId).first();
-          if (row && row.status === "error" && persona) row.answer = pickLine(persona, "errorLines", intentId);
-          if (interaction.application_id && interaction.token && row && row.answer) {
-            await fetch(
-              `https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  content: clampContent(`> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${row.answer}`),
-                  allowed_mentions: ALLOWED_MENTIONS_NONE,
-                }),
-              }
-            ).catch(() => {});
-          }
-        })()
+        answerAndDeliver({
+          env,
+          interaction,
+          intentId,
+          persona,
+          wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
+          askerId: String(user.id || ""),
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }), isMember: Boolean(member), storeDetails: true }),
+        })
       );
 
       return new Response(
@@ -1642,6 +1698,28 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       deps: { recompute: recomputeSignupTallies, insertIntent, purgeWorkerCache, broadcastToRoom, origin },
     });
     if (body) return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+
+  // 3a-2. Answer buttons (`leeroy:more|sources|fb:...`). Must run before the generic sign-up buttons, which would read them as fields.
+  if (interaction.type === 3 && interaction.data && isAnswerButtonId(interaction.data.custom_id)) {
+    const result = await handleAnswerButton({ env, interaction });
+    if (result.followups.length && interaction.application_id && interaction.token) {
+      ctx.waitUntil(
+        (async () => {
+          for (const part of result.followups) {
+            try {
+              await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ content: clampContent(part), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE }),
+                signal: AbortSignal.timeout(5000),
+              });
+            } catch {}
+          }
+        })()
+      );
+    }
+    return new Response(JSON.stringify(result.body), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
   // 3b. Message Component Buttons (Type 3): Sign-ups & Party card buttons (`signup:<field>:<value>`)

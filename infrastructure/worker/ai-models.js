@@ -19,6 +19,20 @@ import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
+import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds } from "./answer-format.js";
+import { ROSTER_DATA } from "./bot-data.js";
+
+// Alias -> display name for the voice guards. Only distinctive single-word aliases that sit inside a longer display name
+// are used ("squidward" -> "Handsome Squidward"); short or common words such as "rat", "tank" or "mage" are never rewritten.
+export function rosterAliases() {
+  const map = {};
+  for (const r of ROSTER_DATA) {
+    for (const a of r.aliases || []) {
+      if (/^[a-z]{6,}$/i.test(a) && a.toLowerCase() !== r.display.toLowerCase() && r.display.toLowerCase().includes(a.toLowerCase())) map[a] = r.display;
+    }
+  }
+  return map;
+}
 
 export const AI_PROVIDER_LABELS = {
   claude: "Claude",
@@ -29,6 +43,29 @@ export const AI_PROVIDER_LABELS = {
   github: "GitHub Models (GPT-4o)",
   openrouter: "OpenRouter Free (DeepSeek V3)",
 };
+
+// Models an admin evaluation may ask for per provider (POST /admin/eval). Free tiers only: no Claude. A model not listed here is
+// refused before any call. The first entry of each list is the provider's production default.
+export const EVAL_MODEL_ALLOWLIST = {
+  "workers-ai": [
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "@cf/meta/llama-3.1-8b-instruct-fp8",
+    "@cf/meta/llama-3.2-3b-instruct",
+    "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "@cf/mistralai/mistral-small-3.1-24b-instruct",
+    "@cf/google/gemma-3-12b-it",
+  ],
+  gemini: ["gemini-3.5-flash-lite", "gemini-3.8-pro"],
+  groq: ["llama-3.3-70b-versatile"],
+  cerebras: ["llama-3.3-70b"],
+  github: ["gpt-4o-mini", "gpt-4o"],
+  openrouter: ["deepseek/deepseek-chat-v3-0324:free"],
+};
+
+export function modelAllowed(provider, model) {
+  const list = EVAL_MODEL_ALLOWLIST[provider];
+  return Boolean(list && list.includes(model));
+}
 
 const ORDERS_RE = new RegExp(
   String.raw`(^|[.!?]\s+)(?:Don't|Do not|Make sure|Start with|Treat (?:it|this|that) as|Go with|Get it done|You should|Remember to|Be sure to)\b[^.!?\n]*[.!?]?`,
@@ -195,11 +232,16 @@ function scorePageForQuestion(page, words) {
   return score;
 }
 
+// Timeouts live here and nowhere else. AI_TIMEOUT_MS is the default for callers with no deadline (cron, tests).
+// The interactive ask path uses the shorter chosen/fallback budgets so the whole chain fits inside the Discord deadline.
 const AI_TIMEOUT_MS = 20000;
+export const ASK_CHOSEN_TIMEOUT_MS = 12000;
+export const ASK_FALLBACK_TIMEOUT_MS = 9000;
+export const ASK_DEADLINE_MS = 24000;
 
 export class AiTimeoutError extends Error {
-  constructor(what) {
-    super(`${what} timed out after ${AI_TIMEOUT_MS}ms`);
+  constructor(what, ms = AI_TIMEOUT_MS) {
+    super(`${what} timed out after ${ms}ms`);
     this.name = "AiTimeoutError";
     this.code = "ai_timeout";
   }
@@ -209,21 +251,26 @@ function isAbortLike(err) {
   return Boolean(err) && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-// Every provider HTTP call goes through here so it carries a 20s abort signal.
-async function fetchWithTimeout(url, init, what = "AI provider request") {
+// Every provider HTTP call goes through here so it carries an abort signal (20s by default).
+async function fetchWithTimeout(url, init, what = "AI provider request", ms = AI_TIMEOUT_MS) {
   try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(ms) });
   } catch (err) {
-    if (isAbortLike(err)) throw new AiTimeoutError(what);
+    if (isAbortLike(err)) throw new AiTimeoutError(what, ms);
     throw err;
   }
 }
 
-async function runWorkersAiWithTimeout(env, model, inputs, options) {
-  const signal = AbortSignal.timeout(AI_TIMEOUT_MS);
+// Time left before a provider call deadline (epoch ms), or the default when there is no deadline.
+function msLeft(deadlineAt) {
+  return deadlineAt ? Math.max(1000, deadlineAt - Date.now()) : AI_TIMEOUT_MS;
+}
+
+async function runWorkersAiWithTimeout(env, model, inputs, options, ms = AI_TIMEOUT_MS) {
+  const signal = AbortSignal.timeout(ms);
   let onAbort;
   const aborted = new Promise((_, reject) => {
-    onAbort = () => reject(new AiTimeoutError("Workers AI call"));
+    onAbort = () => reject(new AiTimeoutError("Workers AI call", ms));
     if (signal.aborted) onAbort();
     else signal.addEventListener("abort", onAbort, { once: true });
   });
@@ -232,7 +279,7 @@ async function runWorkersAiWithTimeout(env, model, inputs, options) {
     call.catch?.(() => {}); // a late rejection after the race is settled must not be unhandled
     return await Promise.race([call, aborted]);
   } catch (err) {
-    if (isAbortLike(err)) throw new AiTimeoutError("Workers AI call");
+    if (isAbortLike(err)) throw new AiTimeoutError("Workers AI call", ms);
     throw err;
   } finally {
     signal.removeEventListener("abort", onAbort);
@@ -269,6 +316,7 @@ export async function fetchWithGatewayFallback({
   body,
   skipCache = false,
   cacheKey = null,
+  deadlineAt = null,
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
   const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN || env.CLOUDFLARE_API_TOKEN)) || "";
@@ -282,11 +330,16 @@ export async function fetchWithGatewayFallback({
 
   if (gwUrl !== defaultEndpoint) {
     try {
-      const resp = await fetchWithTimeout(gwUrl, {
-        method: "POST",
-        headers: { ...headers, ...cacheHeaders },
-        body,
-      });
+      const resp = await fetchWithTimeout(
+        gwUrl,
+        {
+          method: "POST",
+          headers: { ...headers, ...cacheHeaders },
+          body,
+        },
+        "AI provider request",
+        deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS
+      );
       // If gateway returns success (2xx), return immediately
       if (resp.ok) return resp;
       // If gateway returns 401/403/404 or server error, fall back to direct endpoint
@@ -296,14 +349,19 @@ export async function fetchWithGatewayFallback({
     }
   }
 
-  return await fetchWithTimeout(defaultEndpoint, {
-    method: "POST",
-    headers,
-    body,
-  });
+  return await fetchWithTimeout(
+    defaultEndpoint,
+    {
+      method: "POST",
+      headers,
+      body,
+    },
+    "AI provider request",
+    msLeft(deadlineAt)
+  );
 }
 
-async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null }) {
+async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, deadlineAt = null }) {
   if (!env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY secret is not configured on the Cloudflare Worker");
   }
@@ -337,6 +395,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     body,
     skipCache,
     cacheKey,
+    deadlineAt,
   });
 
   if (!resp.ok) {
@@ -354,13 +413,13 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
   return { answer, model, provider: "claude" };
 }
 
-async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null }) {
+async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, deadlineAt = null, modelOverride = null }) {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY secret is not configured on the Cloudflare Worker");
   }
-  const model = deep
+  const model = modelOverride || (deep
     ? env.GEMINI_MODEL_DEEP || "gemini-3.8-pro"
-    : env.GEMINI_MODEL_FAST || "gemini-3.5-flash-lite";
+    : env.GEMINI_MODEL_FAST || "gemini-3.5-flash-lite");
 
   const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
@@ -395,11 +454,12 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
     body,
     skipCache,
     cacheKey,
+    deadlineAt,
   });
 
   let activeResp = resp;
   let activeModel = model;
-  if (!activeResp.ok && (activeResp.status === 503 || activeResp.status === 429) && activeModel !== "gemini-3.5-flash-lite") {
+  if (!modelOverride && !activeResp.ok && (activeResp.status === 503 || activeResp.status === 429) && activeModel !== "gemini-3.5-flash-lite") {
     console.warn(`[Gemini] ${activeModel} returned HTTP ${activeResp.status}, retrying with gemini-3.5-flash-lite`);
     activeModel = "gemini-3.5-flash-lite";
     activeResp = await fetchWithGatewayFallback({
@@ -417,6 +477,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       body,
       skipCache,
       cacheKey,
+      deadlineAt,
     });
   }
 
@@ -444,11 +505,11 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model: activeModel, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, deadlineAt = null, modelOverride = null }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
-  const model = env.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+  const model = modelOverride || env.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
   const inputs = {
     messages: [
       { role: "system", content: systemPrompt },
@@ -467,7 +528,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
           skipCache: Boolean(skipCache),
           cacheTtl: Number(env.AI_GATEWAY_CACHE_TTL) || 21600, // 6 hours: matches the cron update cycle
         },
-      });
+      }, deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
     } catch (gwErr) {
       console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${gwErr.message}, falling back to direct run`);
       result = null;
@@ -475,7 +536,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   }
 
   if (!result) {
-    result = await runWorkersAiWithTimeout(env, model, inputs);
+    result = await runWorkersAiWithTimeout(env, model, inputs, undefined, msLeft(deadlineAt));
   }
 
   const answer = String(
@@ -494,7 +555,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   return { answer, model, provider: "workers-ai" };
 }
 
-async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, env, skipCache = false, cacheKey = null }) {
+async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, env, skipCache = false, cacheKey = null, deadlineAt = null }) {
   if (!apiKey) {
     throw new Error(`API key secret for provider '${provider}' is not configured on the Cloudflare Worker`);
   }
@@ -522,6 +583,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
     body,
     skipCache,
     cacheKey,
+    deadlineAt,
   });
 
   if (!resp.ok) {
@@ -537,59 +599,66 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask", budgetKeys = null }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null }) {
+  if (modelOverride && !modelAllowed(provider, modelOverride)) {
+    throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
+  }
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
+  const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
   switch (provider) {
     case "gemini":
-      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey });
+      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, deadlineAt, modelOverride });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, deadlineAt, modelOverride });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
         endpoint: "https://api.groq.com/openai/v1/chat/completions",
         apiKey: env.GROQ_API_KEY,
-        model: deep
+        model: modelOverride || (deep
           ? env.GROQ_MODEL_DEEP || "llama-3.3-70b-versatile"
-          : env.GROQ_MODEL_FAST || "llama-3.3-70b-versatile",
+          : env.GROQ_MODEL_FAST || "llama-3.3-70b-versatile"),
         systemPrompt,
         userPrompt,
         env,
         skipCache,
         cacheKey,
+        deadlineAt,
       });
     case "cerebras":
       return await callOpenAiCompatible({
         provider: "cerebras",
         endpoint: "https://api.cerebras.ai/v1/chat/completions",
         apiKey: env.CEREBRAS_API_KEY,
-        model: env.CEREBRAS_MODEL || "llama-3.3-70b",
+        model: modelOverride || env.CEREBRAS_MODEL || "llama-3.3-70b",
         systemPrompt,
         userPrompt,
         env,
         skipCache,
         cacheKey,
+        deadlineAt,
       });
     case "github":
       return await callOpenAiCompatible({
         provider: "github",
         endpoint: "https://models.inference.ai.azure.com/chat/completions",
         apiKey: env.GITHUB_MODELS_TOKEN,
-        model: deep ? env.GITHUB_MODEL_DEEP || "gpt-4o" : env.GITHUB_MODEL_FAST || "gpt-4o-mini",
+        model: modelOverride || (deep ? env.GITHUB_MODEL_DEEP || "gpt-4o" : env.GITHUB_MODEL_FAST || "gpt-4o-mini"),
         systemPrompt,
         userPrompt,
         env,
         skipCache,
         cacheKey,
+        deadlineAt,
       });
     case "openrouter":
       return await callOpenAiCompatible({
         provider: "openrouter",
         endpoint: "https://openrouter.ai/api/v1/chat/completions",
         apiKey: env.OPENROUTER_API_KEY,
-        model: env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324:free",
+        model: modelOverride || env.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324:free",
         systemPrompt,
         userPrompt,
         extraHeaders: {
@@ -599,10 +668,11 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         env,
         skipCache,
         cacheKey,
+        deadlineAt,
       });
     case "claude":
     default:
-      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey });
+      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, deadlineAt });
   }
 }
 
@@ -650,26 +720,28 @@ export async function getParsedLibraryPages(env) {
   return pages;
 }
 
-export async function answerWithAi({
-  env,
-  origin,
-  intentId,
-  by,
-  memberSlug,
-  question,
-  deep = false,
-  share = true,
-  journey = "curious",
-  provider: requestedProvider,
-  budget = null, // optional { userKey, tenantKey, guest }; without it only the global soft cap applies
-}) {
-  const t0 = Date.now();
-  const nowIso = () => new Date().toISOString();
-  const isCoach = journey === "guided" && share !== true;
-  let budgetCode = null;
+// Short, secret-free reason a provider was skipped, for the stored model field.
+export function shortProviderError(err) {
+  const raw = String((err && (err.code === "ai_timeout" ? `timeout ${err.message}` : err.message)) || err || "error");
+  return raw
+    .replace(/[?&]key=[^\s&"]+/gi, "")
+    .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
+    .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
 
-  try {
-    // 1. Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
+// Retrieval, party state and prompt assembly for one question. Pure of side effects except D1 reads. Used by answerWithAi and by the
+// admin evaluation, so both run the same path. promptVariant (evaluation only) is one of PROMPT_VARIANTS; absent or "production" is
+// exactly what production sends.
+export const PROMPT_VARIANTS = ["production", "plain", "examples-6", "format-reminder"];
+const FORMAT_REMINDER =
+  "Format contract: the first line is one bold sentence that answers the question. Then at most a few short bullets (`- **Name** · value`). Then `-# Sources: id1, id2`. No emoji, no greeting, no filler opener, no bare web addresses.";
+
+export async function buildAnswerInputs(env, { question, by, journey = "curious", share = true, isMember, promptVariant = "production" }) {
+  const isCoach = journey === "guided" && share !== true;
+    // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
       getParsedLibraryData(env),
       env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
@@ -737,16 +809,71 @@ export async function answerWithAi({
       `[Library-Epoch: ${libraryStamp}]`,
       "Answer strictly using the verified library facts and party state below. Where the library does not know something yet, state plainly that it is not published yet.",
       "Display names only in full every time (Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward; never real first names). Inform, never instruct: facts, options, and trade-offs.",
-      "Keep answers concise (2 to 4 sentences), warm, plain-spoken, and cite specific library page IDs in brackets like [classes/paladin-holy] or [dungeons/overview] whenever you use a fact.",
+      "Keep answers concise (2 to 4 sentences), warm and plain-spoken. End with one line `-# Sources: id1, id2` listing only the library page ids you actually used (plain ids separated by commas, no brackets); the system turns them into links. Never write bare web addresses.",
     ].join(" ");
     const persona = await loadPersona(env);
-    const systemPrompt = persona
-      ? buildSystemPrompt(persona, { journey, question, partySummary, libraryStamp, isCoach, coachPrompt: COACH_PROMPT })
+    const usePersona = persona && promptVariant !== "plain";
+    let systemPrompt = usePersona
+      ? buildSystemPrompt(persona, {
+          journey, question, partySummary, libraryStamp, isCoach, coachPrompt: COACH_PROMPT,
+          ...(promptVariant === "examples-6" ? { maxExamples: 6 } : {}),
+        })
       : isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
+    if (promptVariant === "format-reminder") systemPrompt = `${systemPrompt}\n\n${FORMAT_REMINDER}`;
 
+    const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const userPrompt = `Party Context:\n${partySummary}\n\nTop Library Facts:\n${topFactHits.join(
       "\n"
-    )}\n\nTop Matching Pages:\n${topPagesSummary}\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
+    )}\n\nTop Matching Pages:\n${topPagesSummary}\n\nAsker: ${by} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
+
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach };
+}
+
+// Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId }) {
+    const nameMap = (await loadConfigKey(env, "name_map")) || {};
+    const repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
+    const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
+    const known = new Set(libPages.map((p) => p.id));
+    const cites = extractCitedIds(repaired).filter((id) => known.has(id));
+    const chatMax = Number(persona && persona.format && persona.format.chatMaxChars);
+    const uxOn = answerUxEnabled(env);
+    const parts = answerFormatEnabled(env)
+      ? formatAnswerParts(repaired, {
+          pages: libPages,
+          asker: { name: by, isMember: askerIsMember },
+          boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party",
+          maxChars: chatMax > 0 ? chatMax : 1200,
+          ...(uxOn ? { ux: true, roster: rosterAliases(), intentId, isCoach, egg: persona && persona.egg } : {}),
+        })
+      : { main: repaired, more: "", sources: "" };
+    return { answer: parts.main, cites, parts };
+}
+
+export async function answerWithAi({
+  env,
+  origin,
+  intentId,
+  by,
+  memberSlug,
+  question,
+  deep = false,
+  share = true,
+  journey = "curious",
+  provider: requestedProvider,
+  budget = null, // optional { userKey, tenantKey, guest }; without it only the global soft cap applies
+  isMember, // is the asker a party member? Defaults to "not the Visitor placeholder".
+  storeDetails = false, // ANSWER_UX: keep the ---more--- and ---sources--- text in answer_details for the Discord buttons
+}) {
+  const t0 = Date.now();
+  const nowIso = () => new Date().toISOString();
+  const isCoach = journey === "guided" && share !== true;
+  let budgetCode = null;
+
+  try {
+    // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
+    const inputs = await buildAnswerInputs(env, { question, by, journey, share, isMember });
+    const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt } = inputs;
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -799,6 +926,7 @@ export async function answerWithAi({
     }
 
     let rawAnswer, model, provider;
+    let fallbackNote = "";
     try {
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
@@ -808,8 +936,10 @@ export async function answerWithAi({
         deep,
         cacheKey,
         budgetKeys: budget,
+        timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
       }));
     } catch (providerErr) {
+      fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
       if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
@@ -818,10 +948,12 @@ export async function answerWithAi({
             systemPrompt,
             userPrompt,
             deep,
+            timeoutMs: ASK_FALLBACK_TIMEOUT_MS,
           }));
         } catch {}
       }
-      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai")) {
+      // Skip the last-resort Workers AI hop when the chain has already used most of the Discord deadline.
+      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai") && Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: "workers-ai",
@@ -833,6 +965,7 @@ export async function answerWithAi({
             cacheKey,
             budgetKind: "ask",
             budgetKeys: budget,
+            timeoutMs: ASK_FALLBACK_TIMEOUT_MS,
           }));
         } catch (waiErr) {
           console.warn("[AI-Failover] Workers AI fallback failed:", waiErr.message);
@@ -844,6 +977,7 @@ export async function answerWithAi({
             .slice(0, 3)
             .map((h) => `${h.value} [${h.page}~${h.key}]`)
             .join(" ");
+          rawAnswer += `\n-# Sources: ${[...new Set(hits.slice(0, 3).map((h) => h.page))].join(", ")}`;
           provider = chosenProvider;
           model = `${chosenProvider}-local-d1-rag`;
         } else if (ranked.length > 0) {
@@ -856,6 +990,7 @@ export async function answerWithAi({
             snippets.push(topFact);
           }
           rawAnswer = snippets.join(" ");
+          rawAnswer += `\n-# Sources: ${ranked.slice(0, 3).map((p) => p.id).join(", ")}`;
           provider = chosenProvider;
           model = `${chosenProvider}-local-d1-rag`;
         } else {
@@ -864,24 +999,27 @@ export async function answerWithAi({
       }
     }
 
-    // Apply `wow-mage` house-voice & privacy guardrails (`precheck.mjs` parity)
-    const nameMap = (await loadConfigKey(env, "name_map")) || {};
-    const answer = repairHouseVoice(rawAnswer, { isCoach, nameMap });
-
-    // Extract cited page IDs like [classes/paladin-holy]
-    const cites = [
-      ...new Set(
-        [...answer.matchAll(/\[([a-z0-9_-]+\/[a-z0-9_-]+)(?:~[^\]]+)?\]/gi)].map((m) => m[1])
-      ),
-    ];
+    // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
+    const uxOn = answerUxEnabled(env);
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
+    // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
+    if (uxOn && storeDetails && (parts.more || parts.sources)) {
+      try {
+        await env.DB.prepare("INSERT OR REPLACE INTO answer_details (intent_id, more, sources, asker_hash, message_id, created_at) VALUES (?, ?, ?, NULL, NULL, ?)")
+          .bind(String(intentId), parts.more || null, parts.sources || null, answeredAt)
+          .run();
+      } catch (e) {
+        console.error("answer_details write failed:", e && e.message);
+      }
+    }
 
     // 3. Save completed Q&A turn in D1 `ask_turns` and update `kv_state['stats']`
     await env.DB.prepare(
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}`, latencyMs, answeredAt, intentId)
+      .bind(answer, JSON.stringify(cites), `${provider}:${model}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
       .run();
 
     const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();

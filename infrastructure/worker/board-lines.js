@@ -4,7 +4,7 @@
 // The post is a free-standing post, so it goes through the noise budget (noise.js: perDay, quiet hours) like any unprompted post.
 // Flags: CARDS_ENABLED must be on; a real post also needs BOARD_LINES_ENABLED (default off); CARDS_SHADOW=1 only records "would post".
 // Pending state lives in kv_state `board_lines_pending`: display names and states, no ids. It is flushed on the next interaction and on
-// every scheduled tick (see the PR: wrangler.toml has only the 6-hourly cron, so a line can wait for the next interaction).
+// every scheduled tick, including the every-minute one in wrangler.toml, so a line goes out about a minute after its window.
 
 import { RSVP_STATES, RSVP_PHRASE, cleanName, cardsEnabled, cardsShadow, boardLinesEnabled, loadCards, discordRest } from "./cards.js";
 import { decidePost, noiseDay, readLedger, recordPost, recordShadow } from "./noise.js";

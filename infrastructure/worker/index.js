@@ -20,6 +20,7 @@ import {
   webBoardLinksDeep,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
+import { feedbackReport, cleanupAnswerUx } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { manifestFor } from "./setup-command.js";
@@ -29,6 +30,7 @@ import { handleWebAuth, webSessionFrom } from "./web-auth.js";
 import { handleDataRights } from "./data-rights.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
+import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
@@ -41,6 +43,8 @@ import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
 import { afterSignupChange } from "./cards-handler.js";
 import { flushBoardLines } from "./board-lines.js";
+import { eventsEnabled, runSync } from "./scheduled-events.js";
+import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -341,7 +345,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "PUT /persona", "POST /dispatch",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "POST /admin/eval", "GET /admin/moments",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -557,6 +561,28 @@ export default {
         return jsonResp({ ok: true, key, entries: Array.isArray(value) ? value.length : Object.keys(value).length }, 200, cors);
       }
 
+      // Admin only, flag EVENTS_ENABLED=on: plan (default, no Discord call) or with ?dry=0 apply Discord scheduled events from the events_schedule row.
+      if (req.method === "POST" && path === "/admin/events/sync") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        if (!eventsEnabled(env)) return jsonResp({ error: "Not found" }, 404, cors);
+        const dry = url.searchParams.get("dry") !== "0";
+        const roster = dry ? null : await loadConfigKey(env, "discord_roster");
+        const { status, body } = await runSync({ env, dry, guildId: roster && /^[0-9]{5,25}$/.test(roster.guildId || "") ? roster.guildId : null });
+        return jsonResp(body, status, cors);
+      }
+
+      // Admin only: timed-post schedule status for mission control. No channel ids, user ids, message ids or content.
+      if (req.method === "GET" && path === "/admin/moments") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const schedule = await loadConfigKey(env, "moments");
+        const shadow = momentsShadow(env);
+        const { state } = await d1Store(env, shadow ? MOMENTS_SHADOW_STATE_KEY : undefined).read();
+        const { state: led } = await d1Store(env, MOMENTS_LEDGER_KEY, "entries").read();
+        return jsonResp(momentsStatus({ schedule, state, now: Date.now(), enabled: momentsEnabled(env), shadow, dryRun: momentsDryRun(env), ledger: led.entries }), 200, cors);
+      }
+
       // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.
       if (req.method === "POST" && path === "/admin/members") {
         const denied = adminGate(req, url, env, cors);
@@ -587,6 +613,25 @@ export default {
           .run();
         invalidateConfigCache("discord_members");
         return jsonResp({ ok: true, slug: entry.slug, entries: result.members.length }, 200, cors);
+      }
+
+      // Admin only, and only when EVAL_ENABLED is on (default off; 404 otherwise). Model bake-off: runs a few cells of questions x
+      // candidates through the production retrieval and prompt path and returns answers plus deterministic lint. Stores nothing,
+      // posts nothing. At most 6 model calls and 25 seconds per request; the caller loops on nextCursor (see eval.js).
+      if (req.method === "POST" && path === "/admin/eval") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        if (!evalEnabled(env)) return jsonResp({ error: "Not found" }, 404, cors);
+        const raw = await req.text();
+        if (new TextEncoder().encode(raw).length > 100000) return jsonResp({ error: "Body too large" }, 413, cors);
+        let body = null;
+        try {
+          body = JSON.parse(raw);
+        } catch {}
+        const parsed = validateEvalRequest(body);
+        if (parsed.error) return jsonResp({ error: parsed.error }, 400, cors);
+        const out = await runEval(env, parsed);
+        return jsonResp(out, 200, { ...cors, "Cache-Control": "no-store" });
       }
 
       // The persona pack is curated content that lives only in D1. Write-only: there is no GET route for it.
@@ -691,6 +736,20 @@ export default {
           200,
           cors
         );
+      }
+
+      // Admin only: Helpful/Off counts and the latest 50 votes (question, first 160 chars of the answer, no user ids).
+      if (req.method === "GET" && path === "/admin/feedback") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const sinceRaw = url.searchParams.get("since");
+        const sinceMs = sinceRaw ? Date.parse(sinceRaw) : Date.now() - 30 * 86400000;
+        if (!Number.isFinite(sinceMs)) return jsonResp({ error: "since must be an ISO 8601 date" }, 400, cors);
+        try {
+          return jsonResp(await feedbackReport(env, new Date(sinceMs).toISOString()), 200, cors);
+        } catch {
+          return jsonResp({ error: "feedback_unavailable" }, 503, cors);
+        }
       }
 
       // 0f. POST /ack -> Acknowledge and clear intents up to `upTo` sequence number
@@ -1500,6 +1559,7 @@ export default {
               share,
               provider: activeProvider,
               budget: askBudget,
+              isMember: !isGuest,
             })
           );
 
@@ -1652,9 +1712,19 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
+    // The every-minute trigger runs only the timed posts; every other trigger is the source sweep. Timed posts are off until MOMENTS_ENABLED.
+    if (controller && controller.cron === MOMENTS_CRON) {
+      ctx.waitUntil(
+        runMoments(env, { loadSchedule: () => loadConfigKey(env, "moments") }).catch((err) => console.error("moments run failed:", String((err && err.message) || err)))
+      );
+      // CARDS_ENABLED: the every-minute tick also flushes a due board line and retries an unfinished card edit (no D1 read while the flag is off).
+      if (cardsEnabled(env)) ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
+      return;
+    }
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
-    // CARDS_ENABLED: every tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).
+    ctx.waitUntil(cleanupAnswerUx(env));
+    // CARDS_ENABLED: this tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).
     if (cardsEnabled(env)) ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
   },
 };

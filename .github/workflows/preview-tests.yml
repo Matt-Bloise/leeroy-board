@@ -1,16 +1,21 @@
 name: Preview Tests
 
-# Runs on draft and ready PRs from branches of this repository (not forks).
-# Jobs: scope -> preview -> api, browser, layout; unit and stamps run at once; report posts the sticky comment.
-# A PR that changes only docs (tools/docs-only.mjs) gets no preview, so only unit and stamps run.
+# Runs on draft and ready PRs from branches of this repository. Fork PRs get no job here, so they can never earn the gate phrase.
+# LIGHT by default (GitHub minutes are metered, see docs/runbooks/ci-minutes.md): every push runs only scope, unit, stamps and report.
+# The preview, api, browser and layout jobs run only when the PR carries the label `ci-full`; adding the label starts the full run (event `labeled`).
+# The comment `### Preview tests: passed (<sha7>)` is the merge gate; a light run posts `### Light checks: ...` instead, which never matches the gate.
+# A PR that changes only docs (tools/docs-only.mjs) gets no preview, so only unit and stamps run and the comment says `passed (docs only)`.
+# Label events other than `labeled ci-full` start a run whose jobs are all skipped (0 minutes) and never cancel a run in progress.
+# Removing `ci-full` is ignored here (a pass for the head sha stays valid); pr-preview-cloudflare.yml tears the preview down then.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
 concurrency:
-  group: preview-tests-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  # A real event cancels the older run. An unrelated label event (security, visual, ...) must not: it waits behind the run and skips every job.
+  cancel-in-progress: ${{ !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'ci-full') }}
 
 permissions:
   contents: read
@@ -29,11 +34,13 @@ env:
 jobs:
   scope:
     name: scope
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
+      site_changed: ${{ steps.classify.outputs.site_changed }}
+      full: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -52,10 +59,11 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/paths.txt"
           cat "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+          echo "site_changed=$(node tools/ci-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
   unit:
     name: unit
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -82,7 +90,7 @@ jobs:
 
   stamps:
     name: stamps
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -105,7 +113,8 @@ jobs:
   preview:
     name: preview
     needs: scope
-    if: needs.scope.outputs.docs_only != 'true'
+    # Only with the label `ci-full` (the spin-up in pr-preview-cloudflare.yml has the same condition) and never for docs-only PRs.
+    if: needs.scope.outputs.full == 'true' && needs.scope.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -192,7 +201,10 @@ jobs:
 
   browser:
     name: browser
-    needs: preview
+    needs: [scope, preview]
+    # Skipped when no site, tooling, workflow, config or dependency file changed (Worker-only, test-only, docs-only): tools/ci-scope.mjs decides.
+    # Also skipped when the preview is (no `ci-full`): a skipped needs-dependency skips the job.
+    if: needs.scope.outputs.site_changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -222,6 +234,13 @@ jobs:
           set -o pipefail
           npm run test:browser -- --url "$PAGES_URL/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
 
+      - name: Worker request summary
+        if: always()
+        run: |
+          # Report only. Every suite except deploy-smoke answers /api/ from tests/fixtures/api-snapshot and prints how many reads it served without touching the Worker;
+          # deploy-smoke is the live one (about 20 requests). See docs/runbooks/cloudflare-requests.md.
+          { echo "### Worker requests (browser job)"; grep -h "api-stub" "$RUNNER_TEMP/browser.log" | sort | uniq -c | sort -rn | head -30 || true; echo "Live suites: deploy-smoke only (about 20 requests)."; } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -235,7 +254,9 @@ jobs:
     # rules (close button inside the viewport and uncovered, no overlap in the header, title not cut, 44 px touch height, no sideways scroll, no 4xx/5xx).
     # Gating: it is in the report's needs. The sweep stops itself at 7 minutes and fails if it did not finish; the job limit is 8.
     name: layout
-    needs: preview
+    needs: [scope, preview]
+    # Skipped when no site, tooling, workflow, config or dependency file changed: tools/ci-scope.mjs decides. Also skipped without `ci-full` (no preview).
+    if: needs.scope.outputs.site_changed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -260,6 +281,11 @@ jobs:
         run: |
           set -o pipefail
           node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --budget-min 5 --out "$RUNNER_TEMP/layout-report.json" 2>&1 | tee "$RUNNER_TEMP/layout.log"
+
+      - name: Worker request summary
+        if: always()
+        run: |
+          { echo "### Worker requests (layout job)"; grep -h "api-stub" "$RUNNER_TEMP/layout.log" || true; echo "The sweep answers /api/ from tests/fixtures/api-snapshot: 0 requests to the Worker."; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report
         if: always()
@@ -313,73 +339,56 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+
   report:
     name: report
     needs: [scope, unit, stamps, preview, api, browser, layout]
     # Not on cancel: a newer push cancels this run and its own run posts the result for the newer commit.
-    if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository
+    # The comment is the merge gate, so skipped dependencies are judged by tools/ci-report.mjs, never by a blanket `!= 'failure'`.
+    if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
       - name: Download the logs
+        continue-on-error: true
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           pattern: preview-test-logs-*
           path: ${{ runner.temp }}/logs
           merge-multiple: true
 
+      - name: Build the result comment
+        id: build
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
+          SITE_CHANGED: ${{ needs.scope.outputs.site_changed }}
+          FULL: ${{ needs.scope.outputs.full }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          STAMPS_RESULT: ${{ needs.stamps.result }}
+          API_RESULT: ${{ needs.api.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+          LAYOUT_RESULT: ${{ needs.layout.result }}
+          PAGES_URL: ${{ needs.preview.outputs.pages }}
+          VISUAL: ${{ contains(github.event.pull_request.labels.*.name, 'visual') }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node tools/ci-report.mjs "$RUNNER_TEMP/report.md"
+
       - name: Post or update the result comment
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
-        env:
-          DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
-          UNIT_OUTCOME: ${{ needs.unit.result }}
-          STAMPS_OUTCOME: ${{ needs.stamps.result }}
-          API_OUTCOME: ${{ needs.api.result }}
-          BROWSER_OUTCOME: ${{ needs.browser.result }}
-          LAYOUT_OUTCOME: ${{ needs.layout.result }}
-          PAGES_URL: ${{ needs.preview.outputs.pages }}
         with:
           script: |
             const fs = require("fs");
-            const read = (f) => { try { return fs.readFileSync(`${process.env.RUNNER_TEMP}/logs/${f}`, "utf8"); } catch (e) { return ""; } };
-            const unit = read("unit.log"), api = read("api.log"), br = read("browser.log");
-            const num = (re, s) => { const m = s.match(re); return m ? Number(m[1]) : null; };
-            // node:test summary lines read "<symbol> pass N" and "<symbol> fail N"
-            const uPass = num(/^\S+ pass (\d+)$/m, unit), uFail = num(/^\S+ fail (\d+)$/m, unit);
-            const aPass = num(/^\S+ pass (\d+)$/m, api), aFail = num(/^\S+ fail (\d+)$/m, api);
-            let bPass = num(/live-smoke: all (\d+) checks passed/, br), bFail = bPass === null ? null : 0;
-            const bf = br.match(/live-smoke: (\d+) of (\d+) checks FAILED/);
-            if (bf) { bFail = Number(bf[1]); bPass = Number(bf[2]) - bFail; }
-            const lay = read("layout.log"), lm = lay.match(/layout-sweep: .*?(\d+) failures/), lFail = lm ? Number(lm[1]) : null;
-            const docsOnly = process.env.DOCS_ONLY === "true";
-            const label = (outcome) => (outcome === "success" ? "pass" : outcome === "skipped" ? (docsOnly ? "not run (docs only)" : "not run") : "FAIL");
-            const cell = (v) => (v === null ? "-" : String(v));
-            const failing = [...br.split("\n"), ...lay.split("\n")].filter((l) => l.startsWith("FAIL ")).slice(0, 10);
-            const apiFailing = api.split("\n").filter((l) => /^\S+ .* \(\d/.test(l) && !/^\S*✔/.test(l) && /fail|✖/i.test(l)).slice(0, 10);
-            const lines = [...apiFailing, ...failing];
-            const ok = process.env.UNIT_OUTCOME === "success" && process.env.STAMPS_OUTCOME === "success" &&
-              (docsOnly || (process.env.API_OUTCOME === "success" && process.env.BROWSER_OUTCOME === "success" && process.env.LAYOUT_OUTCOME === "success"));
+            const body = fs.readFileSync(`${process.env.RUNNER_TEMP}/report.md`, "utf8");
             const pr = context.payload.pull_request;
-            const sha = pr.head.sha.slice(0, 7);
-            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const body = [
-              "<!-- preview-tests -->",
-              `### Preview tests: ${ok ? "passed" : "FAILED"} (\`${sha}\`)`,
-              "",
-              ok && docsOnly ? "**passed (docs only)**: this PR changes only docs, so no preview was created and only the unit and stamps suites ran.\n" : "",
-              "| Suite | Result | Passed | Failed |",
-              "| :--- | :--- | ---: | ---: |",
-              `| Unit | ${label(process.env.UNIT_OUTCOME)} | ${cell(uPass)} | ${cell(uFail)} |`,
-              `| Stamps | ${label(process.env.STAMPS_OUTCOME)} | - | - |`,
-              `| API | ${label(process.env.API_OUTCOME)} | ${cell(aPass)} | ${cell(aFail)} |`,
-              `| Browser smoke (Chromium + WebKit) | ${label(process.env.BROWSER_OUTCOME)} | ${cell(bPass)} | ${cell(bFail)} |`,
-              `| Layout sweep (Chromium) | ${label(process.env.LAYOUT_OUTCOME)} | - | ${cell(lFail)} |`,
-              "",
-              docsOnly ? "No preview (docs only)." : process.env.PAGES_URL ? `Preview: ${process.env.PAGES_URL}` : "No preview URL was found.",
-              lines.length ? "\nFirst failures:\n```\n" + lines.join("\n").slice(0, 1500) + "\n```" : "",
-              pr.labels.some((l) => l.name === "visual") ? "\nVisual audit (not gating): see artifact `visual-audit` on the run below." : "",
-              `[Logs and artifact](${run})`,
-            ].join("\n");
             const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
             const existing = comments.find((c) => c.body && c.body.includes("<!-- preview-tests -->"));
             if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
@@ -387,11 +396,8 @@ jobs:
 
       - name: Fail the job if a suite failed
         env:
-          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }}
-          DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
+          OK: ${{ steps.build.outputs.ok }}
+          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }} full=${{ needs.scope.outputs.full }} docs_only=${{ needs.scope.outputs.docs_only }} site_changed=${{ needs.scope.outputs.site_changed }}
         run: |
-          echo "$RESULTS (docs_only=$DOCS_ONLY)"
-          for r in ${{ needs.unit.result }} ${{ needs.stamps.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
-          if [ "$DOCS_ONLY" != "true" ]; then
-            for r in ${{ needs.api.result }} ${{ needs.browser.result }} ${{ needs.layout.result }}; do [ "$r" = "success" ] || { echo "::error::Preview tests failed ($RESULTS)."; exit 1; }; done
-          fi
+          echo "$RESULTS"
+          [ "$OK" = "true" ] || { echo "::error::Checks failed ($RESULTS)."; exit 1; }

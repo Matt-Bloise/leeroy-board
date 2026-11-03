@@ -84,7 +84,7 @@ test("validator: accepts and rejects", () => {
 });
 
 test("spec covers exactly the documented public and member routes", () => {
-  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/cards/post", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
+  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/cards/post", "/api/admin/eval", "/api/admin/events/sync", "/api/admin/feedback", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
 });
 
 // ---- routes ----------------------------------------------------------------------------------------------------
@@ -100,6 +100,16 @@ test("GET /api/health (admin token) matches the contract including provider deta
   assert.equal(res.status, 200);
   conforms(res);
   assert.ok(res.body.providers && res.body.aiBudget, "admin detail missing");
+});
+
+test("GET /api/admin/feedback: 401 without the admin token, contract match with it, no voter identity", async () => {
+  const denied = await get("/api/admin/feedback", pub);
+  assert.equal(denied.status, 401);
+  conforms(denied);
+  const res = await get("/api/admin/feedback", admin);
+  assert.equal(res.status, 200);
+  conforms(res);
+  assert.ok(!JSON.stringify(res.body).includes("user_hash"));
 });
 
 test("GET /api/bootstrap matches the contract", async () => {
@@ -242,6 +252,7 @@ test("finding: the flag-off 404 on a web-login route has no path field, unlike t
 test("admin write routes refuse a request without the admin token (401) before reading the body", async () => {
   const calls = [
     ["POST", "/api/announce", "/api/announce", "post"],
+    ["POST", "/api/admin/events/sync", "/api/admin/events/sync", "post"],
     ["PUT", "/api/config/name_map", "/api/config/{key}", "put"],
     ["PUT", "/api/config/discord_roster", "/api/config/{key}", "put"],
     ["PUT", "/api/persona", "/api/persona", "put"],
@@ -286,4 +297,14 @@ test("POST /api/discord with a fresh timestamp and a bad signature is 401 'Inval
   const res = await raw("POST", "/api/discord", { "X-Signature-Ed25519": "00".repeat(64), "X-Signature-Timestamp": String(Math.floor(Date.now() / 1000)), "Content-Type": "application/json" }, '{"type":1}');
   assert.ok([401, 500].includes(res.status), `got ${res.status}`);
   if (res.status === 401) assert.equal(res.text, "Invalid request signature");
+});
+
+test("POST /api/admin/eval: refused without the admin token; with it, 404 while EVAL_ENABLED is off or 400 for an empty body (no AI call either way)", async () => {
+  const anon = await raw("POST", "/api/admin/eval", { ...pub, "Content-Type": "application/json" }, "{}");
+  documented("/api/admin/eval", "post", anon.status);
+  assert.equal(anon.status, 401);
+  const res = await raw("POST", "/api/admin/eval", { ...admin, "Content-Type": "application/json" }, "{}");
+  documented("/api/admin/eval", "post", res.status);
+  assert.ok([400, 404].includes(res.status), `got ${res.status}`);
+  matchesError(res, "/api/admin/eval", "post");
 });

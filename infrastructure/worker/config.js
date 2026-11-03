@@ -1,12 +1,14 @@
 import { isMemberId } from "./members.js";
 import { validateCardsConfig } from "./cards.js";
 import { validateNoiseConfig } from "./noise.js";
+import { validateSchedule as validateEventsSchedule } from "./scheduled-events.js";
+import { validateSchedule as validateMomentsSchedule } from "./moments.js";
 
-// Admin-only config rows that live only in D1 (kv_state), never in the repo: name_map, discord_members, discord_roster, ai_budget_caps, cards (pinned card message ids) and noise (post budget).
+// Admin-only config rows that live only in D1 (kv_state), never in the repo: name_map, discord_members, discord_roster, ai_budget_caps, events_schedule (Discord scheduled events), moments (the timed-post schedule; its run state, moments_state, is in the same table), cards (pinned card message ids) and noise (post budget).
 // Written by PUT /api/config/<key>; there is no GET route. Cached 60 s per isolate; PUT invalidates the cache.
 // Every reader falls back to null when the row is missing, so an unseeded Worker refuses or no-ops safely.
 
-export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps", "cards", "noise"];
+export const CONFIG_KEYS = ["name_map", "discord_members", "discord_roster", "ai_budget_caps", "events_schedule", "moments", "cards", "noise"];
 export const CONFIG_MAX_BYTES = 20000;
 
 const TTL_MS = 60 * 1000;
@@ -73,6 +75,8 @@ export function validateConfigValue(key, value) {
     }
     return null;
   }
+  if (key === "events_schedule") return validateEventsSchedule(value);
+  if (key === "moments") return validateMomentsSchedule(value);
   if (key === "ai_budget_caps") {
     if (!value || typeof value !== "object" || Array.isArray(value)) return "ai_budget_caps must be a JSON object";
     for (const k of Object.keys(value)) {
@@ -108,7 +112,7 @@ export function buildThreadMention(person, roster) {
 
 // kv_state rows that hold configuration or private working data. GET /api/data/<key> must never serve them:
 // that route is public and serves any kv_state key. Exact keys plus prefixes; matching is case-insensitive.
-const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "vocab", "votes:index", "feed_posts", "cards", "cards_edit", "board_lines_pending", "noise"]);
+const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "events_schedule", "scheduled_events", "vocab", "votes:index", "feed_posts", "moments", "moments_state", "moments_shadow_state", "moments_ledger", "cards", "cards_edit", "board_lines_pending", "noise"]);
 const PRIVATE_PREFIXES = ["ai_budget:", "vote:", "votes:", "feed_", "private:", "config:", "secret"];
 export function isPrivateKvKey(key) {
   const k = String(key || "").trim().toLowerCase();

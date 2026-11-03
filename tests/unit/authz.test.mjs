@@ -32,6 +32,10 @@ const TABLE = {
   "PUT /config/:key": ADMIN, // admin-gated config rows (name_map, discord_members, ...), write only
   "POST /admin/members": ADMIN,
   "POST /admin/cards/post": ADMIN, // CARDS_ENABLED; 404 while off. Posts or recreates a pinned card and records its message id
+  "GET /admin/feedback": ADMIN,
+  "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
+  "POST /admin/eval": ADMIN, // 404 unless EVAL_ENABLED is on; model bake-off, read only
+  "GET /admin/moments": ADMIN, // timed-post schedule status, no ids or content
   "PUT /persona": ADMIN,
   "POST /dispatch": MEMBER,
   "GET /intents": ADMIN,
@@ -170,6 +174,10 @@ const CALLS = {
   "PUT /config/:key": ["PUT", `/api/config/${CONFIG_KEYS[0]}`, "{}"],
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],
   "POST /admin/cards/post": ["POST", "/api/admin/cards/post", "{}"],
+  "GET /admin/feedback": ["GET", "/api/admin/feedback"],
+  "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
+  "POST /admin/eval": ["POST", "/api/admin/eval", "{}"],
+  "GET /admin/moments": ["GET", "/api/admin/moments"],
   "PUT /persona": ["PUT", "/api/persona", "{}"],
   "POST /dispatch": ["POST", "/api/dispatch", "{}"],
   "GET /intents": ["GET", "/api/intents"],

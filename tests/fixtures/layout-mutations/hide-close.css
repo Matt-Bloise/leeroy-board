@@ -1,0 +1,2 @@
+/* the close button disappears */
+#scene-close { display: none !important; }
