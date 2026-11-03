@@ -1,37 +1,31 @@
 # Answer cache key and gateway log labels
 
-Where: `infrastructure/worker/ai-models.js` (`buildAnswerCacheKey`, `gatewayMetadata`). Applies to the AI Gateway cache (6 hour TTL) used by `answerWithAi`.
+Where: `infrastructure/worker/ai-models.js` (`buildAnswerCacheKey`, `answerModelLabel`, `gatewayMetadata`). Applies to the AI Gateway cache (6 hour TTL) used by `answerWithAi` for every provider except Workers AI.
 
 ## Key format
 
 ```
-ask:<libraryStamp>:<provider>:<fast|deep>:<journey>[+coach]:<variant>:<tier>:<persona>:<asker>:<qHash>
+ask:<provider>:<model>:<fast|deep>:<variant>:<tier>:<promptHash>
 ```
 
-| Part | Meaning |
-|---|---|
-| `libraryStamp` | Library epoch; a library change misses. |
-| `provider`, `fast/deep` | Chosen provider and depth. |
-| `journey` (`+coach`) | Prompt journey; `+coach` for a private guided ask (coach prompt). |
-| `variant` | Prompt variant (`production` on the live path). |
-| `tier` | `member` or `guest`. |
-| `persona` | `<id>.v<version>.<8 hex>` of the persona pack, or `none`. The hex is a hash of the whole pack, so an edit that forgot to bump `version` still misses. |
-| `asker` | `m<12 hex>` = salted hash of a member slug; `anon` for guests. |
-| `qHash` | First 16 hex of SHA-256 of the question. |
+`promptHash` is the first 32 hex of SHA-256 over the final system prompt, a NUL byte, then the final user prompt. Everything that shapes the answer is in those two prompts: the asker's display name, member or visitor status, journey, coach mode, party state, retrieved library facts, library epoch, and the persona pack text. So anything that changes the prompt changes the key, and a persona deploy never serves the old voice for 6 hours.
 
-Raw names, slugs and ids never appear in the key.
+`provider`, `model`, depth, `variant` (`production` on the live path) and `tier` (`member` or `guest`) are repeated in readable form so gateway logs are easy to scan. `model` comes from `answerModelLabel`, which mirrors the model defaults in the provider calls; change both together.
+
+Raw names, slugs, ids and question text never appear in the key, only the digest.
 
 ## Why sharing is safe
 
-- Members: the prompt addresses a member by display name, so the answer is asker-specific and gets a per-member scope. Two members never share an entry.
-- Guests: the prompt tells the model to address only party members by name, so a guest answer carries no name. All guests share the single `anon` scope, and a guest never shares with a member.
-- Personas: a new pack (id, version or content) changes the key, so a persona deploy never serves the previous voice for up to 6 hours. Old rows simply miss once and expire.
-- Workers AI: its gateway cache keys on the request body (prompt text, which already holds the asker name and persona), not on this key.
+Two asks share a cached answer only when their prompts are identical byte for byte: same asker name and status, same journey, same persona text, same facts. The cost is a lower hit rate (two different askers of the same question no longer share), which is intended.
+
+## Workers AI
+
+Workers AI does not send this key. Its gateway cache keys on the request body, which is the same prompts. PR previews force Workers AI, so a preview or API-suite run can never exercise this key. The proof is `tests/unit/answer-cache-key.test.mjs`, which runs the real `answerWithAi` path with a stubbed fetch and reads the `cf-aig-cache-key` header.
 
 ## Gateway log labels (`cf-aig-metadata`)
 
-`{ app, service, variant, tier, journey }`. `tier` is `member` or `guest`; `journey` is `guided`, `curious`, `everything` or `other`. Fixed vocabulary only: never a name, slug, id or question text. In the AI Gateway logs, filter on these fields to split traffic.
+`{ app, service, variant, tier, journey }`. `tier` is `member` or `guest`; `journey` is `guided`, `curious`, `everything` or `other`. Fixed vocabulary only: never a name, slug, id or question text. Filter on these fields in the AI Gateway logs to split traffic.
 
 ## Rollback
 
-Revert the PR. Cached rows under the old key shape are never read again and expire on their own; the first ask after the revert misses once.
+Revert the PR. Cached rows under the other key shape are never read again and expire on their own; the first ask after deploy or revert misses once.

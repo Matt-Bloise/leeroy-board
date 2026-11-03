@@ -310,44 +310,33 @@ export function getOpenAiProviderSlug(provider) {
 }
 
 // ---- Answer cache key and gateway metadata -------------------------------------------------------------------------
-// The AI Gateway cache key decides which asks share one stored answer. It must change whenever the answer could differ:
-//   ask:<libraryStamp>:<provider>:<fast|deep>:<journey>:<variant>:<tier>:<persona>:<asker>:<qHash>
-// - persona: "<id>.v<version>.<8 hex of a hash of the whole pack>", or "none" with no pack. A new version, or an edit that
-//   forgot to bump it, therefore misses once instead of serving the old persona's voice for up to 6 hours.
-// - tier: "member" or "guest" (what the asker is allowed to be addressed as). variant: the prompt variant ("production" live).
-// - asker: members get "m" + a salted hash of their slug, because the prompt addresses a member by display name and the
-//   answer may repeat it. Guests (and anyone unknown) share only "anon": the prompt never uses a guest's name, so one guest's
-//   answer is safe for another guest and for nobody else. Raw names, slugs and ids never appear in the key.
-// Only characters [a-z0-9._:-] are produced so the key stays a plain header value.
-const keyPart = (v, fallback) => String(v || fallback).toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 24) || fallback;
+// The AI Gateway cache key decides which asks share one stored answer (6 hour TTL). The answer depends on the whole prompt: the
+// asker's display name, member or visitor status, journey, coach mode, party state, retrieved library facts and persona. Listing
+// those inputs one by one is how the old key (library stamp, provider, depth, question hash) went wrong, so the key now hashes the
+// final system prompt and user prompt themselves: anything that changes the prompt changes the key.
+//   ask:<provider>:<model>:<fast|deep>:<variant>:<tier>:<promptHash>
+// The readable parts only make gateway logs easy to scan. Raw names, slugs, ids and question text never appear in the key: the
+// prompt is reduced to a SHA-256 digest (32 hex). Two asks share an entry only when their prompts are byte for byte identical, which
+// means the same asker name, same status, same persona text and same facts, so sharing is safe by construction.
+const keyPart = (v, fallback) => String(v || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 40) || fallback;
 
-export async function personaCacheId(persona) {
-  if (!persona || typeof persona !== "object") return "none";
-  const digest = (await sha256Hex(JSON.stringify(persona))).slice(0, 8);
-  return `${keyPart(persona.id, "pack")}.v${keyPart(persona.version, "0")}.${digest}`;
+// The model name the provider call will use for this ask (same defaults as the call* functions below; env-overridable).
+export function answerModelLabel(env, provider, deep = false) {
+  const e = env || {};
+  switch (provider) {
+    case "gemini": return deep ? e.GEMINI_MODEL_DEEP || "gemini-3.8-pro" : e.GEMINI_MODEL_FAST || "gemini-3.5-flash-lite";
+    case "workers-ai": return e.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+    case "groq": return deep ? e.GROQ_MODEL_DEEP || "llama-3.3-70b-versatile" : e.GROQ_MODEL_FAST || "llama-3.3-70b-versatile";
+    case "cerebras": return e.CEREBRAS_MODEL || "llama-3.3-70b";
+    case "github": return deep ? e.GITHUB_MODEL_DEEP || "gpt-4o" : e.GITHUB_MODEL_FAST || "gpt-4o-mini";
+    case "openrouter": return e.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324:free";
+    default: return deep ? e.CLAUDE_MODEL_DEEP || "claude-sonnet-4-5-20250929" : e.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001";
+  }
 }
 
-export async function askerCacheScope({ memberSlug, isMember } = {}) {
-  const slug = String(memberSlug || "").trim().toLowerCase();
-  if (!isMember || !slug) return "anon";
-  return `m${(await sha256Hex(`ask-cache:${slug}`)).slice(0, 12)}`;
-}
-
-export async function buildAnswerCacheKey({ libraryStamp, provider, deep = false, question, journey = "curious", variant = "production", tier = "guest", persona = null, memberSlug = null, isMember = false, coach = false }) {
-  const qHash = (await sha256Hex(String(question))).slice(0, 16);
-  const asker = await askerCacheScope({ memberSlug, isMember });
-  return [
-    "ask",
-    libraryStamp,
-    provider,
-    deep ? "deep" : "fast",
-    `${keyPart(journey, "curious")}${coach ? "+coach" : ""}`,
-    keyPart(variant, "production"),
-    keyPart(tier, "guest"),
-    await personaCacheId(persona),
-    asker,
-    qHash,
-  ].join(":");
+export async function buildAnswerCacheKey({ provider, model, deep = false, variant = "production", tier = "guest", systemPrompt, userPrompt }) {
+  const promptHash = (await sha256Hex(`${String(systemPrompt)}\u0000${String(userPrompt)}`)).slice(0, 32);
+  return ["ask", keyPart(provider, "p"), keyPart(model, "m"), deep ? "deep" : "fast", keyPart(variant, "production"), keyPart(tier, "guest"), promptHash].join(":");
 }
 
 // cf-aig-metadata: labels for splitting gateway logs. Fixed vocabulary only; never a name, slug, id or question text.
@@ -952,7 +941,7 @@ export async function answerWithAi({
     const variant = "production"; // answerWithAi always runs the live prompt; the evaluation variants never reach the cache
     const tier = askerIsMember ? "member" : "guest";
     const metadata = { variant, tier, journey };
-    const cacheKey = await buildAnswerCacheKey({ libraryStamp, provider: chosenProvider, deep, question, journey, variant, tier, persona, memberSlug, isMember: askerIsMember, coach: isCoach });
+    const cacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant, tier, systemPrompt, userPrompt });
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     {
