@@ -45,7 +45,7 @@ binding = "AI"
 
 # Cloudflare Flagship feature flags. Flags are created and flipped in the Cloudflare dashboard (Compute, Flagship), never by CI.
 # The app_id is an identifier, not a secret. PR preview Workers must NOT bind to this production app: the PR preview deploy strips this block
-# (tools/strip-flagship-binding.mjs) so previews keep the legacy [vars] below. See docs/runbooks/flags.md.
+# (tools/strip-flagship-binding.mjs) so previews keep the legacy flag values declared in the vars table below. See docs/runbooks/flags.md.
 [[flagship]]
 binding = "FLAGS"
 app_id = "1f0b836c-4929-4728-8bee-6b8bde677e79"

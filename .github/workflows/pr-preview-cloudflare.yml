@@ -297,7 +297,7 @@ jobs:
               toml = toml.replace(/CLOUDFLARE_ACCOUNT_ID = ""/, `CLOUDFLARE_ACCOUNT_ID = "${process.env.CLOUDFLARE_ACCOUNT_ID}"`);
             }
             if (!toml.includes("IS_PR_PREVIEW")) {
-              toml = toml.replace(/\[vars\]/, `[vars]\nIS_PR_PREVIEW = "true"\nWORKER_NAME = "${process.env.WORKER_NAME}"`);
+              toml = toml.replace(/^\[vars\]/m, `[vars]\nIS_PR_PREVIEW = "true"\nWORKER_NAME = "${process.env.WORKER_NAME}"`);
             }
             fs.writeFileSync("wrangler.toml", toml, "utf8");
           ' "$DB_ID"

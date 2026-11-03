@@ -176,3 +176,34 @@ test("the repo has no wrangler.json or wrangler.jsonc next to infrastructure/wra
   assert.equal(fs.existsSync(path.join(ROOT, "infrastructure/wrangler.json")), false);
   assert.equal(fs.existsSync(path.join(ROOT, "infrastructure/wrangler.jsonc")), false);
 });
+
+// ---- the real preview patch script, run on the real wrangler.toml ----
+import { parse as parseYaml } from "yaml";
+
+test("the preview wrangler.toml patch (the workflow's own node script) leaves a well-formed file: IS_PR_PREVIEW sits directly under the [vars] header, once, and the strip then removes only the binding", () => {
+  const wf = parseYaml(read(".github/workflows/pr-preview-cloudflare.yml"));
+  const step = Object.values(wf.jobs).flatMap((j) => j.steps || []).find((s) => /^Provision Ephemeral D1/.test(s.name || ""));
+  assert.ok(step, "patch step found");
+  const seg = step.run.split("node -e '").find((x) => x.includes('readFileSync("wrangler.toml"'));
+  const m = seg && seg.match(/^\n([\s\S]*?)\n\s*' "\$DB_ID"/);
+  assert.ok(m, "node patch script found");
+  const dir = tmp(); const f = path.join(dir, "wrangler.toml");
+  fs.writeFileSync(f, toml);
+  const env = { ...process.env, WORKER_NAME: "leeroy-brain-pr-1", D1_DATABASE_NAME: "leeroy-board-db-pr-1", PAGES_BRANCH: "pr-1", PAGES_PROJECT_NAME: "leeroy-board", CLOUDFLARE_ACCOUNT_ID: "acc" };
+  execFileSync(process.execPath, ["-e", m[1], "00000000-0000-0000-0000-000000000001"], { cwd: dir, env, stdio: "pipe" });
+  assert.equal(execFileSync(process.execPath, [STRIP_CLI, f], { stdio: "pipe", cwd: dir }).length >= 0, true);
+  const out = fs.readFileSync(f, "utf8");
+  const lines = out.split("\n");
+  const at = lines.findIndex((l) => /^\[vars\]$/.test(l));
+  assert.ok(at > 0);
+  assert.equal(lines[at + 1], 'IS_PR_PREVIEW = "true"');
+  assert.equal(lines[at + 2], 'WORKER_NAME = "leeroy-brain-pr-1"');
+  assert.equal(out.split("IS_PR_PREVIEW").length - 1, 1);
+  assert.equal(hasFlagship(out), false);
+  for (const l of lines) if (/IS_PR_PREVIEW|WORKER_NAME/.test(l)) assert.ok(!l.trim().startsWith("#"), "the patch never lands inside a comment");
+  assert.match(out, /^name = "leeroy-brain-pr-1"$/m);
+});
+
+test("the first occurrence of the text [vars] in wrangler.toml is the real table header (the preview patch and others rely on it)", () => {
+  assert.equal(toml.indexOf("[vars]"), toml.search(/^\[vars\]/m));
+});
