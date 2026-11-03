@@ -1,5 +1,5 @@
-// Class crest art: all nine classes render a crest with zero broken images and zero 404s. Four of them (hunter, rogue, shaman, warrior) have no file in img/crests/, so the board draws
-// an inline SVG medallion (js/crest.js) instead of requesting one.
+// Class crest art: all nine classes render a painted crest with zero broken images and zero 404s. Every class has a file in img/crests/; the inline SVG medallion (js/crest.js) is only the
+// fallback for an unknown class or a crest that fails to load.
 //   node crest-art.mjs --url https://pr-N.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)
 // Stubbed: the Worker API is answered from tests/fixtures/api-snapshot (0 Worker requests), no AI call. The party document (static file data/party.json) is replaced in the browser by one
 // with nine members, one per class, so the real board code paths draw the crests (the first-screen medallions, the card deck, the sheet).
@@ -47,7 +47,7 @@ for (const [size, opts] of [["1366x768", { viewport: { width: 1366, height: 768 
     await new Promise((r) => setTimeout(r, 300));
     return { rows: imgs.map(([k, i]) => ({ k, w: i.naturalWidth, complete: i.complete, src: i.getAttribute("src").slice(0, 30) })), broken: { w: broken.naturalWidth, src: broken.getAttribute("src").slice(0, 30) } };
   }, NINE);
-  for (const r of res.rows) ok(`${tag} ${r.k}: crest image loaded (${r.src.startsWith("data:") ? "medallion" : "painted file"})`, r.complete && r.w > 0, JSON.stringify(r));
+  for (const r of res.rows) ok(`${tag} ${r.k}: painted crest file loaded`, r.complete && r.w > 0 && !r.src.startsWith("data:"), JSON.stringify(r));
   ok(`${tag} a crest file that is present but broken is swapped for the medallion`, res.broken.src.startsWith("data:image/svg+xml") && res.broken.w > 0, JSON.stringify(res.broken));
 
   /* the real board with nine members: every <img> and SVG <image> of a crest on the page is intact */
@@ -56,11 +56,11 @@ for (const [size, opts] of [["1366x768", { viewport: { width: 1366, height: 768 
     const broken = await page.evaluate(() => [...document.querySelectorAll("img")].filter((i) => i.currentSrc && !i.closest("#crest-test") && i.complete && i.naturalWidth === 0).map((i) => i.currentSrc.slice(-50)));
     ok(`${tag} #${hash || "wall"}: no broken <img> on the page`, broken.length === 0, broken.join(", "));
   }
-  const drawn = await page.evaluate(() => ({ cards: document.querySelectorAll("#cards .card[data-k]").length, warrior: document.querySelectorAll('[data-k="warrior"]').length, medallions: [...document.querySelectorAll("img, image")].filter((e) => /^data:image\/svg\+xml/.test(e.getAttribute("src") || e.getAttribute("href") || "")).length }));
+  const drawn = await page.evaluate(() => ({ cards: document.querySelectorAll("#cards .card[data-k]").length, warrior: document.querySelectorAll('[data-k="warrior"]').length, medallions: [...document.querySelectorAll("img, image")].filter((e) => !e.closest("#crest-test") && /^data:image\/svg\+xml/.test(e.getAttribute("src") || e.getAttribute("href") || "")).length }));
   ok(`${tag} the board drew all nine members (not the five of the fixture)`, drawn.cards === 9 && drawn.warrior > 0, JSON.stringify(drawn));
-  ok(`${tag} the board itself shows medallions for the classes with no art`, drawn.medallions >= 4, JSON.stringify(drawn));
-  const painted = crestReq.filter((u) => /crests\/(hunter|rogue|shaman|warrior)/.test(u));
-  ok(`${tag} no request was made for the four crests that have no file`, painted.length === 0, painted.join(", "));
+  ok(`${tag} the board itself shows no medallion stand-in: all nine classes use painted files`, drawn.medallions === 0, JSON.stringify(drawn));
+  const missing = ["hunter", "rogue", "shaman", "warrior"].filter((c) => !crestReq.some((u) => u.includes(`crests/${c}`)));
+  ok(`${tag} the four new crests (hunter, rogue, shaman, warrior) were requested and served`, missing.length === 0, "never requested: " + missing.join(", "));
   ok(`${tag} no 4xx on /img/crests or /img/vector`, bad.length === 0, bad.join(", "));
   ok(`${tag} no page errors`, errors.length === 0, errors.slice(0, 3).join(" | "));
   await ctx.close();

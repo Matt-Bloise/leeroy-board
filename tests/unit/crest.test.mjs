@@ -27,8 +27,9 @@ test("every class gets an address that cannot 404: a file that exists, or an inl
   }
 });
 
-test("the four classes with no art are exactly hunter, rogue, shaman, warrior", () => {
-  assert.deepEqual(NINE.filter((k) => !C.hasArt(k)).sort(), ["hunter", "rogue", "shaman", "warrior"]);
+test("all nine classes have painted art, each with a 320 px WebP variant and a pin", () => {
+  assert.deepEqual(NINE.filter((k) => !C.hasArt(k)), []);
+  for (const k of NINE) for (const f of [`img/crests/${k}.png`, `img/crests/${k}.w320.webp`, `img/vector/pin-${k}.webp`]) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
 });
 
 test("the medallion is a well-formed SVG with the class colour and initial, per class", () => {
