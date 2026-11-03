@@ -315,9 +315,12 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
         (x) => (x.name || "").toLowerCase() === name.toLowerCase()
       );
       if (m && value !== undefined && value !== null) {
-        if (field === "race") m.race = String(value);
-        if (field === "class") m.class = String(value);
-        if (field === "spec_path") m.spec = String(value);
+        // The party document is public (GET /data/party): a hidden field is never copied into it.
+        if (visible !== false) {
+          if (field === "race") m.race = String(value);
+          if (field === "class") m.class = String(value);
+          if (field === "spec_path") m.spec = String(value);
+        }
         batchStatements.push(
           env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'party'")
             .bind(JSON.stringify(partyDoc), now)
@@ -1523,32 +1526,36 @@ export default {
             guestHash = ipHash;
             const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
 
-            // Insert first, then count, so two parallel requests cannot both pass a count taken before either wrote.
-            // This request is allowed when it is among the first 2 inside the hour; a refused one removes its own row.
-            const ins = await env.DB.prepare("INSERT INTO guest_rate_limits (ip_hash, created_at) VALUES (?, ?)").bind(ipHash, now).run();
-            const myRowId = ins && ins.meta ? ins.meta.last_row_id : null;
-            const limitRow = await env.DB.prepare(
+            // 1. A plain read first: an IP already at 2 gets its 429 with no write at all (refused requests must cost no D1 writes).
+            const tooMany = (row) => {
+              const oldestTime = row && row.oldest ? Date.parse(row.oldest) : Date.now();
+              const retryAfterSec = Math.max(1, Math.ceil((oldestTime + 3600 * 1000 - Date.now()) / 1000));
+              return jsonResp(
+                { ok: false, why: "limited", error: "Public guest access is limited to 2 questions per hour.", retryAfter: retryAfterSec, left: 0 },
+                429,
+                cors
+              );
+            };
+            const seen = await env.DB.prepare(
               "SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ?"
             )
               .bind(ipHash, oneHourAgo)
               .first();
+            if ((seen ? Number(seen.count) || 0 : 0) >= 2) return tooMany(seen);
 
-            const guestCount = limitRow ? Number(limitRow.count) || 0 : 0; // includes this request
+            // 2. Passed: insert, then count the rows up to and including this one (by rowid). Parallel requests that all passed step 1
+            // rank themselves 1, 2, 3, ...: the first 2 are admitted, the rest remove their own row and are refused.
+            const ins = await env.DB.prepare("INSERT INTO guest_rate_limits (ip_hash, created_at) VALUES (?, ?)").bind(ipHash, now).run();
+            const myRowId = ins && ins.meta ? ins.meta.last_row_id : null;
+            const ranked = await env.DB.prepare(
+              "SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ? AND rowid <= ?"
+            )
+              .bind(ipHash, oneHourAgo, myRowId || 0)
+              .first();
+            const guestCount = ranked ? Number(ranked.count) || 0 : 0; // this request's place, 1-based
             if (guestCount > 2) {
               if (myRowId) await env.DB.prepare("DELETE FROM guest_rate_limits WHERE rowid = ?").bind(myRowId).run().catch(() => {});
-              const oldestTime = limitRow && limitRow.oldest ? Date.parse(limitRow.oldest) : Date.now();
-              const retryAfterSec = Math.max(1, Math.ceil((oldestTime + 3600 * 1000 - Date.now()) / 1000));
-              return jsonResp(
-                {
-                  ok: false,
-                  why: "limited",
-                  error: "Public guest access is limited to 2 questions per hour.",
-                  retryAfter: retryAfterSec,
-                  left: 0,
-                },
-                429,
-                cors
-              );
+              return tooMany(ranked);
             }
 
             // Asynchronously prune expired entries older than 2 hours

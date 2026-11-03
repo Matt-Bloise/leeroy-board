@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import worker, { purgeWorkerCache } from "../../infrastructure/worker/index.js";
 import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
 import { dispatchToProvider, extractWikiFactsWithAi } from "../../infrastructure/worker/ai-models.js";
-import { checkAskBudget, reserveNeurons } from "../../infrastructure/worker/budget.js";
+import { checkAskBudget, reserveNeurons, reconcileNeurons, recordUsage, budgetMessage } from "../../infrastructure/worker/budget.js";
 import { ipRateKey, guestIpKey } from "../../infrastructure/worker/guest-key.js";
 import { fetchSource, readCapped, acquireRefreshCooldown, MAX_SOURCE_BYTES } from "../../infrastructure/worker/scraper.js";
 import { purgeOldInteractions } from "../../infrastructure/worker/replay.js";
@@ -29,7 +29,7 @@ const ORIGIN = "https://api.test";
 const SANTA = "100000000000000001";
 const BOB = "100000000000000002";
 const ctx = { waitUntil() {}, passThroughOnException() {} };
-const MIGRATION_0007 = readFileSync(new URL("../../infrastructure/migrations/0007_discord_events_legacy_tenant.sql", import.meta.url), "utf8");
+const MIGRATION_0008 = readFileSync(new URL("../../infrastructure/migrations/0008_discord_events_legacy_tenant.sql", import.meta.url), "utf8");
 
 function roomStub() {
   const sent = [];
@@ -39,7 +39,7 @@ function roomStub() {
 
 async function makeEnv(extra = {}) {
   const DB = schemaDb();
-  DB.raw.exec(MIGRATION_0007);
+  DB.raw.exec(MIGRATION_0008);
   const hash = await sha256Hex(`${KEY_SALT}:${MEMBER_KEY}`);
   DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES ('santa', ?, '2026-11-01T00:00:00Z')").run(hash);
   const { sent, BOARD_ROOM } = roomStub();
@@ -185,8 +185,11 @@ test("C1. guest limit holds under parallel requests (insert first, then count)",
   };
   const results = await Promise.all([1, 2, 3, 4, 5, 6].map(() => guestAsk(env, "198.51.100.7")));
   const ok = results.filter((r) => r.status === 200).length;
-  assert.ok(ok <= 2, `at most 2 of 6 simultaneous guest asks are admitted (got ${ok})`);
+  assert.ok(ok >= 1 && ok <= 2, `a burst admits at least 1 and at most 2 (got ${ok})`);
   assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM guest_rate_limits").get().n, ok, "refused asks leave no row behind");
+  const env3 = await makeEnv();
+  const burst3 = await Promise.all([1, 2, 3].map(() => guestAsk(env3, "198.51.100.9")));
+  assert.equal(burst3.filter((r) => r.status === 200).length, 2, "a burst of 3 admits 2 and refuses 1");
   const env2 = await makeEnv();
   const seq = [];
   for (let i = 0; i < 3; i++) seq.push((await guestAsk(env2, "198.51.100.8")).status);
@@ -203,6 +206,22 @@ test("C2. an IPv6 guest is keyed by its /64: new addresses in the same /64 do no
   const statuses = [];
   for (const host of ["1", "2", "3"]) statuses.push((await guestAsk(env, `2001:db8:77:5::${host}`)).status);
   assert.deepEqual(statuses, [200, 200, 429]);
+});
+
+test("C3. a refused guest ask (already at 2) writes zero rows", async () => {
+  const env = await makeEnv();
+  assert.equal((await guestAsk(env, "198.51.100.20")).status, 200);
+  assert.equal((await guestAsk(env, "198.51.100.20")).status, 200);
+  await new Promise((r) => setTimeout(r, 50)); // let the admitted asks' background work (no AI here) finish
+  const writes = [];
+  const real = env.DB.prepare.bind(env.DB);
+  env.DB.prepare = (sql) => { if (/^\s*(INSERT|UPDATE|DELETE)/i.test(sql)) writes.push(sql); return real(sql); };
+  const turnsBefore = env.DB.raw.prepare("SELECT COUNT(*) AS n FROM ask_turns").get().n;
+  const res = await guestAsk(env, "198.51.100.20");
+  assert.equal(res.status, 429);
+  assert.deepEqual(writes, [], "no D1 write for a refused request");
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM guest_rate_limits").get().n, 2);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM ask_turns").get().n, turnsBefore);
 });
 
 // ---- D. Budget: reserve before the call ---------------------------------------------------------------------------------------
@@ -241,15 +260,37 @@ test("D3. a budget read error fails CLOSED for a Workers AI guest ask and open f
   const real = env.DB.prepare.bind(env.DB);
   env.DB.prepare = (sql) => { if (/kv_state/i.test(sql) && /ai_budget|\?1|json_set/i.test(sql + "?1")) throw new Error("d1 down"); return real(sql); };
   const guest = { userKey: "user:guest-ab", tenantKey: "tenant:default", guest: true };
-  await assert.rejects(dispatchWorkersAi(env, guest), (e) => e.code === "budget_global");
+  await assert.rejects(dispatchWorkersAi(env, guest), (e) => e.code === "budget_unavailable");
   assert.equal(env.calls, 0, "no model call for the guest");
   await dispatchWorkersAi(env, { userKey: "user:ab", tenantKey: "tenant:default", guest: false });
   assert.equal(env.calls, 1, "a member still gets an answer");
   // The pre-check: same rule.
   const throwing = { DB: { prepare() { throw new Error("d1 down"); } } };
-  assert.equal((await checkAskBudget(throwing, null, null, new Date(), { failClosed: true })).code, "budget_global");
+  const outage = await checkAskBudget(throwing, null, null, new Date(), { failClosed: true });
+  assert.equal(outage.code, "budget_unavailable", "an outage has its own code");
+  assert.ok(outage.retryAfter >= 30 && outage.retryAfter <= 60, `short retry, not midnight (${outage.retryAfter})`);
+  assert.match(budgetMessage("budget_unavailable"), /again in a minute/);
   assert.equal(await checkAskBudget(throwing, null, null, new Date()), null, "default stays fail open");
   assert.equal((await reserveNeurons(throwing, "ask", 10, 100)).error, true);
+});
+
+test("D4. a reservation settles against its own day row, and recordUsage adds atomically without wiping a reservation", async () => {
+  const env = await makeEnv();
+  const before = new Date("2026-11-03T23:59:59Z");
+  const after = new Date("2026-11-04T00:00:02Z");
+  const r = await reserveNeurons(env, "ask", 50, 1000, before);
+  assert.equal(r.key, "ai_budget:2026-11-03");
+  await reconcileNeurons(env, "ask", 50, 10, { counted: true, key: r.key }, after); // settles after midnight
+  const row = (k) => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(k).json);
+  assert.deepEqual({ n: row("ai_budget:2026-11-03").neurons, a: row("ai_budget:2026-11-03").asks }, { n: 10, a: 1 });
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM kv_state WHERE key = 'ai_budget:2026-11-04'").get().n, 0, "no stray row for the new day");
+  // recordUsage keeps an in-flight reservation (the old read-modify-replace could overwrite it)
+  await reserveNeurons(env, "ask", 70, 1000, before);
+  await Promise.all([1, 2, 3].map(() => recordUsage(env, "ask", 1, before)));
+  assert.equal(row("ai_budget:2026-11-03").neurons, 10 + 70 + 3);
+  assert.equal(row("ai_budget:2026-11-03").asks, 1 + 3);
+  await recordUsage(env, "cron", 2, before);
+  assert.equal(row("ai_budget:2026-11-03").cron, 1);
 });
 
 // ---- E. Scraper and learner ---------------------------------------------------------------------------------------------------
@@ -341,6 +382,27 @@ test("F. fields marked visible:false are stripped from GET /state, /bootstrap an
   assert.ok(!JSON.stringify(env.sent).includes("SECRET-"), `the socket never carries a hidden field: ${JSON.stringify(env.sent).slice(0, 400)}`);
 });
 
+test("F2. a hidden race/class/spec_path is not copied into the public party document", async () => {
+  const env = await makeEnv();
+  await resetCaches();
+  env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, 'x')").run(JSON.stringify({ members: [{ name: "santa", race: "Human", class: "Mage", spec: "Frost" }] }));
+  await api(env, "POST", "/sheet", "member", { field: "class", value: "Warlock-HIDDEN", visible: false });
+  assert.ok(!env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json.includes("HIDDEN"));
+  await api(env, "POST", "/sheet", "member", { field: "race", value: "Gnome", visible: true });
+  assert.ok(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json.includes("Gnome"), "a visible field still syncs");
+});
+
+test("F3. Discord /sheet for another member omits their hidden fields; the owner sees their own", async () => {
+  const env = await discordEnv();
+  const party = [{ slug: "bob", name: "Bob", updated: "x", fields: { class: { value: "Rogue", visible: true }, goals: { value: "BOB-SECRET-GOAL", visible: false } } }];
+  env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify(party));
+  const asSanta = await discord(env, slash("sheet", [{ name: "member", type: 6, value: BOB }], { user: SANTA }));
+  const text = JSON.stringify(asSanta.body);
+  assert.ok(text.includes("Rogue") && !text.includes("BOB-SECRET-GOAL"), text.slice(0, 300));
+  const asBob = await discord(env, slash("sheet", [], { user: BOB }));
+  assert.ok(JSON.stringify(asBob.body).includes("BOB-SECRET-GOAL"), "the owner still sees it");
+});
+
 // ---- G. GET /votes is cached --------------------------------------------------------------------------------------------------
 test("G. GET /votes: the second call within 10 seconds reads nothing from D1", async () => {
   const env = await makeEnv();
@@ -372,6 +434,8 @@ test("H. admin POST /answer: private ask is not broadcast, status answered, prov
   assert.equal(turn(env, "turn-h1").status, "answered", "not 'done'");
   assert.ok(!JSON.stringify(env.sent).includes("PRIVATE-ANSWER"), "nothing about a private answer reaches the sockets");
   assert.equal(env.DB.raw.prepare("SELECT sources FROM answer_details WHERE intent_id = 'turn-h1'").get().sources, "a/b");
+  const nudge = env.sent.find((m) => m.type === "ask");
+  assert.equal(nudge.slug, "santa", "the nudge names the asker (from the ask row), not the answering admin");
   env.sent.length = 0;
   await api(env, "POST", "/answer", "admin", { id: "turn-h2", answer: "Shared answer" });
   assert.ok(JSON.stringify(env.sent).includes("Shared answer"), "a shared ask is broadcast");

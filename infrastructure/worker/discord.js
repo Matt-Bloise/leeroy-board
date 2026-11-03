@@ -58,6 +58,7 @@ import {
 } from "./bot-data.js";
 import { loadRoster } from "./party-source.js";
 import { applyManualAnswer } from "./ask-answer.js";
+import { partyForMember } from "./sheet-privacy.js";
 import { canManageGuild } from "./setup-command.js";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 
@@ -936,7 +937,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       const { party } = await buildPartySheetsFromD1(env);
-      const mine = party.find((p) => p.slug === target.slug);
+      // Another member's fields marked visible:false stay hidden; the caller sees their own.
+      const mine = partyForMember(party, member ? member.slug : null).find((p) => p.slug === target.slug);
       const fieldSummary = mine && mine.fields
         ? Object.entries(mine.fields)
             .map(([k, v]) => `• **${k}:** ${Array.isArray(v.value) ? v.value.join(", ") : v.value}`)

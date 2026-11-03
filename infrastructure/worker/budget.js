@@ -67,7 +67,8 @@ export async function loadBudget(env, now = new Date(), { strict = false } = {})
 // Both start with the private "ai_budget:" prefix, so GET /api/data/<key> never serves them.
 // Every function here is a no-op (null verdict, no writes) when no keys are given.
 
-export const BUDGET_CODES = ["budget_user", "budget_tenant", "budget_global"];
+export const BUDGET_CODES = ["budget_user", "budget_tenant", "budget_global", "budget_unavailable"];
+export const BUDGET_UNAVAILABLE_RETRY_SECONDS = 45; // a budget read/write error is an outage, not "out for the day"
 
 const safeId = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
 
@@ -142,7 +143,7 @@ export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGl
     }
     return null;
   } catch {
-    return failClosed ? { code: "budget_global", retryAfter } : null;
+    return failClosed ? { code: "budget_unavailable", retryAfter: BUDGET_UNAVAILABLE_RETRY_SECONDS } : null;
   }
 }
 
@@ -150,6 +151,7 @@ export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGl
 export function budgetMessage(code) {
   if (code === "budget_user") return "You have used your questions for today. Leeroy is back at midnight UTC.";
   if (code === "budget_tenant") return "This server has used its share of today's questions so everyone gets a turn. Leeroy is back at midnight UTC.";
+  if (code === "budget_unavailable") return "Leeroy cannot check today's allowance right now. Try again in a minute.";
   return "Leeroy has used up today's questions. He is back at midnight UTC.";
 }
 
@@ -174,13 +176,16 @@ export async function recordAttributed(env, keys, neurons, now = new Date()) {
 // kind: "ask" or "cron". Read-modify-write without a transaction: concurrent asks can lose an update,
 // which is fine for a soft cap with 2000 neurons of headroom.
 export async function recordUsage(env, kind, neurons, now = new Date()) {
+  // One atomic add (no read-modify-replace), so it cannot wipe a reservation another request just made.
+  const add = Math.max(0, Math.round((Number(neurons) || 0) * 100) / 100);
+  const seed = JSON.stringify({ neurons: add, asks: kind === "cron" ? 0 : 1, cron: kind === "cron" ? 1 : 0 });
+  const field = kind === "cron" ? "cron" : "asks";
   try {
-    const b = await loadBudget(env, now);
-    b.neurons = Math.round((b.neurons + (Number(neurons) || 0)) * 100) / 100;
-    if (kind === "cron") b.cron += 1;
-    else b.asks += 1;
-    await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
-      .bind(keyFor(now), JSON.stringify(b), now.toISOString())
+    await env.DB.prepare(
+      "INSERT INTO kv_state (key, json, updated_at) VALUES (?1, ?2, ?3) " +
+        `ON CONFLICT(key) DO UPDATE SET json = json_set(kv_state.json, '$.neurons', ROUND(COALESCE(json_extract(kv_state.json, '$.neurons'), 0) + ?4, 2), '$.${field}', COALESCE(json_extract(kv_state.json, '$.${field}'), 0) + 1), updated_at = excluded.updated_at`
+    )
+      .bind(keyFor(now), seed, now.toISOString(), add)
       .run();
   } catch {
     // fail open
@@ -219,14 +224,15 @@ export async function reserveNeurons(env, kind, neurons, cap, now = new Date()) 
 }
 
 // Replaces a reservation with the real cost. counted: false gives the reservation back without counting an ask (the call failed).
-export async function reconcileNeurons(env, kind, reserved, actual, { counted = true } = {}, now = new Date()) {
+// key is the reservation's own record key (reserveNeurons returns it), so a reservation made before 00:00 UTC settles against the same row.
+export async function reconcileNeurons(env, kind, reserved, actual, { counted = true, key = null } = {}, now = new Date()) {
   const delta = Math.round(((Number(actual) || 0) - (Number(reserved) || 0)) * 100) / 100;
   const field = kind === "cron" ? "cron" : "asks";
   try {
     await env.DB.prepare(
       `UPDATE kv_state SET json = json_set(json, '$.neurons', MAX(0, ROUND(COALESCE(json_extract(json, '$.neurons'), 0) + ?1, 2)), '$.${field}', COALESCE(json_extract(json, '$.${field}'), 0) + ?2), updated_at = ?3 WHERE key = ?4`
     )
-      .bind(delta, counted ? 1 : 0, now.toISOString(), keyFor(now))
+      .bind(delta, counted ? 1 : 0, now.toISOString(), key || keyFor(now))
       .run();
   } catch {
     // fail open: the reservation stays, which only makes the soft cap slightly more careful

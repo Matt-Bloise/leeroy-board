@@ -1,7 +1,7 @@
 // Replay protection for signed Discord interactions. Discord signs each request but a captured one stays valid for as long as its
 // timestamp is fresh, so the interaction id is recorded in discord_events (migration 0003) and a second delivery is refused.
 // Only a hash of the payload is kept, never the payload. The row belongs to the guild's tenant, or to the reserved 'legacy' tenant
-// (migration 0007) for a guild that never ran /setup and for direct messages.
+// (migration 0008) for a guild that never ran /setup and for direct messages.
 import { sha256Hex } from "./crypto.js";
 
 export const REPLAY_WINDOW_MS = 10 * 60 * 1000;

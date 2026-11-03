@@ -577,8 +577,9 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   const estimate = estimateNeurons(model, tokensFromChars(systemPrompt.length + userPrompt.length), ANSWER_GEN_PARAMS.max_tokens);
   const reservation = await reserveNeurons(env, budgetKind, estimate, capFor(env, budgetKind), reserveAt);
   if (!reservation.ok) {
-    if (reservation.over || (reservation.error && budgetKeys && budgetKeys.guest)) {
-      throw Object.assign(new Error("Workers AI daily budget reached"), { code: "budget_global" });
+    if (reservation.over) throw Object.assign(new Error("Workers AI daily budget reached"), { code: "budget_global" });
+    if (reservation.error && budgetKeys && budgetKeys.guest) {
+      throw Object.assign(new Error("Workers AI budget unavailable"), { code: "budget_unavailable" }); // an outage: retry soon, not at midnight
     }
     // any other budget error: members and the cron fail open, as before
   }
@@ -619,12 +620,12 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
     const outTok = Number(usage.completion_tokens) || tokensFromChars(answer.length);
     const neurons = estimateNeurons(model, inTok, outTok);
     // The reservation becomes the real cost (and counts the ask). With no reservation (budget error, fail open) this adds the cost as before.
-    if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, neurons, { counted: true }, reserveAt);
+    if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, neurons, { counted: true, key: reservation.key }, reserveAt);
     else await recordUsage(env, budgetKind, neurons);
     if (budgetKind === "ask") await recordAttributed(env, budgetKeys, neurons);
   } catch (callErr) {
     if (!reservation.ok) throw callErr;
-    await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false }, reserveAt);
+    await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
     throw callErr;
   }
   return { answer, model, provider: "workers-ai" };

@@ -41,6 +41,6 @@ export async function applyManualAnswer(env, { id, answer, sources, failed, byNa
   const isShared = Number(row.share) !== 0;
   const broadcast = isShared
     ? { type: "ask", ask: { id: String(id), status, answer: answer || null, sources: src ? [src] : [], answered_at: now, failed: failed ? reason : null } }
-    : { type: "ask", slug: String(byName || row.by_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-") };
+    : { type: "ask", slug: String(row.by_name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-") };
   return { ok: true, status, share: isShared, broadcast };
 }
