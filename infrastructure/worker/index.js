@@ -39,7 +39,7 @@ import { upsertMember } from "./members.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, MAX_QUESTION_CHARS } from "./limits.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
 import { feedEnabled, serveFeedDoc } from "./feed.js";
-import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
+import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
@@ -1345,7 +1345,7 @@ export default {
           if (denied) return denied;
           // kv_state also holds the private config and working rows (persona, discord_members, budgets, votes, ...).
           // They have their own routes (PUT /config/:key, /persona, ...) with validation; this one never writes or broadcasts them.
-          if (isPrivateKvKey(raw)) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
+          if (isDeniedKvKey(raw)) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
           const body = await req.json();
           const now = new Date().toISOString();
           await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")

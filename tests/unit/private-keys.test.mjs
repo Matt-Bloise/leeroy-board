@@ -1,7 +1,7 @@
 // isPrivateKvKey: config and private rows must never be served by the public GET /api/data/<key> route.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isPrivateKvKey } from "../../infrastructure/worker/config.js";
+import { isPrivateKvKey, isDeniedKvKey } from "../../infrastructure/worker/config.js";
 
 test("config rows are private", () => {
   for (const k of ["persona", "name_map", "discord_members", "discord_roster", "vocab", "votes:index", "feed_posts"]) {
@@ -27,4 +27,9 @@ test("unknown keys are private by default (allow list, not deny list)", () => {
   for (const k of ["discord_tokens", "oauth_state", "admin_notes", "x", "Discord_Tokens", "partyy", "party "]) {
     assert.equal(isPrivateKvKey(k), k === "party " ? false : true, JSON.stringify(k));
   }
+});
+test("admin PUT keeps the deny list: a non-public working note is writable, but not readable publicly", () => {
+  assert.equal(isDeniedKvKey("zz-working-note"), false);
+  assert.equal(isPrivateKvKey("zz-working-note"), true);
+  for (const k of ["persona", "private:x", ""]) assert.equal(isDeniedKvKey(k), true, k);
 });
