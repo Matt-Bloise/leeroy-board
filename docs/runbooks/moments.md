@@ -16,17 +16,17 @@ It held a list of timed moments and posted each one once, in order: `names-1h`, 
 - Countdown: `at` is when the card is posted, `endsAt` is T-0 (default `at` + 60 minutes). **One edit per minute per message** ("Starts in 42m"), and at `endsAt` a final "Now." edit. If a tick is missed the next run makes a single catch-up edit showing the current time left, never two in a row. If the card is deleted in Discord the edit gets a 404; the moment is marked `deleted` in state and never edited again.
 
 ## Seed the schedule
-Fields per moment: `id`, `at` (ISO UTC, ends in `Z`), `channelId`, `kind` (`text`, `card` or `countdown`), `content` (Discord timestamp markup such as `<t:1793833200:F>` is fine), optional `imageUrl` (https, on `leeroy.party`), `boardToken` (becomes a board link, same helper as `{board:...}`), `ping` + `allowPing` (`launch-0` only), `lateCutoffMinutes`, `endsAt` (countdown only). Fictional example (ids are made up):
+Fields per moment: `id`, `at` (ISO UTC, ends in `Z`), `channelId`, `kind` (`text`, `card` or `countdown`), `content` (Discord timestamp markup such as `<t:1793833200:F>` is fine), optional `imageUrl` (https, on `leeroy.party`), `boardToken` (becomes a board link, same helper as `{board:...}`), `ping` + `allowPing` (`launch-0` only), `lateCutoffMinutes`, `endsAt` (countdown only). Fictional example (ids are made up; the times follow the real launch, 2026-11-04T23:00:00Z, so `launch-1h` is 22:00Z):
 
 ```json
 [
   { "id": "names-1h", "at": "2026-11-03T14:00:00Z", "channelId": "100000000000000001", "kind": "text",
     "content": "Name reservations open <t:1793887200:R> (<t:1793887200:F>)." },
-  { "id": "launch-24h", "at": "2026-11-03T20:00:00Z", "channelId": "100000000000000001", "kind": "card",
+  { "id": "launch-24h", "at": "2026-11-03T23:00:00Z", "channelId": "100000000000000001", "kind": "card",
     "content": "One day to go.", "imageUrl": "https://leeroy.party/img/example.png", "boardToken": "tonight" },
-  { "id": "launch-1h", "at": "2026-11-04T20:00:00Z", "channelId": "100000000000000001", "kind": "countdown",
-    "content": "Launch night.", "endsAt": "2026-11-04T21:00:00Z" },
-  { "id": "launch-0", "at": "2026-11-04T21:00:00Z", "channelId": "100000000000000001", "kind": "text",
+  { "id": "launch-1h", "at": "2026-11-04T22:00:00Z", "channelId": "100000000000000001", "kind": "countdown",
+    "content": "Launch night.", "endsAt": "2026-11-04T23:00:00Z" },
+  { "id": "launch-0", "at": "2026-11-04T23:00:00Z", "channelId": "100000000000000001", "kind": "text",
     "content": "We are live. <@200000000000000002>", "allowPing": true, "ping": ["200000000000000002"], "lateCutoffMinutes": 10 }
 ]
 ```

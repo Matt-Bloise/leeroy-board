@@ -57,6 +57,10 @@ import {
   QUIZ_DATA,
 } from "./bot-data.js";
 import { loadRoster } from "./party-source.js";
+import { applyManualAnswer } from "./ask-answer.js";
+import { partyForMember } from "./sheet-privacy.js";
+import { canManageGuild } from "./setup-command.js";
+import { recordInteraction, purgeOldInteractions } from "./replay.js";
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
@@ -551,6 +555,11 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
   }
 }
 
+// LIKE pattern for a typed search term: % and _ in the term match themselves (the queries say ESCAPE '\').
+export function likePattern(term) {
+  return `%${String(term ?? "").replace(/[\\%_]/g, "\\$&")}%`;
+}
+
 async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const rawBody = await req.text();
   if (!env.DISCORD_PUBLIC_KEY) {
@@ -569,6 +578,15 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   }
 
   const interaction = JSON.parse(rawBody);
+
+  // Replay: a signed interaction id is accepted once. PING carries no id and is exempt. Rows older than 10 minutes are purged.
+  if (interaction.type !== 1) {
+    if ((await recordInteraction(env, interaction, rawBody)) === "duplicate") {
+      return new Response(JSON.stringify({ error: "duplicate_interaction" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    }
+    // Purge on about one request in ten (by id), inline: a cheap indexed delete, and no extra waitUntil on every interaction.
+    if (Number(String(interaction.id || "").slice(-2)) % 10 === 0) await purgeOldInteractions(env);
+  }
 
   // 1. Discord PING (Type 1) -> PONG (Type 1)
   if (interaction.type === 1) {
@@ -611,15 +629,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       let choices = [];
       try {
         const rows = await env.DB.prepare(
-          "SELECT id, title FROM lib_pages WHERE title LIKE ? OR id LIKE ? LIMIT 25"
+          "SELECT id, title FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\' LIMIT 25"
         )
-          .bind(`%${query}%`, `%${query}%`)
+          .bind(likePattern(query), likePattern(query))
           .all();
         choices = (rows.results || []).map((r) => ({
           name: (r.title || r.id).slice(0, 100),
           value: r.id.slice(0, 100),
         }));
-      } catch {}
+      } catch (e) {
+        console.error("autocomplete /page failed:", e && e.message);
+      }
       return new Response(
         JSON.stringify({ type: 8, data: { choices } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -630,15 +650,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       let choices = [];
       try {
         const rows = await env.DB.prepare(
-          "SELECT id, title FROM lib_pages WHERE title LIKE ? OR page_json LIKE ? LIMIT 25"
+          "SELECT id, title FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 25"
         )
-          .bind(`%${query}%`, `%${query}%`)
+          .bind(likePattern(query), likePattern(query), likePattern(query))
           .all();
         choices = (rows.results || []).map((r) => ({
           name: (r.title || r.id).slice(0, 100),
           value: (r.title || r.id).slice(0, 100),
         }));
-      } catch {}
+      } catch (e) {
+        console.error("autocomplete /tooltip failed:", e && e.message);
+      }
       return new Response(
         JSON.stringify({ type: 8, data: { choices } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -739,6 +761,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const made = createVote({ id: newVoteId(), title: subOpt("title"), choices: subOpt("options"), hours: subOpt("closes_in_hours") || undefined, now: nowMs });
       if (!made.ok) return ephemeral(made.error);
       await saveVote(env.DB, made.vote, nowMs);
+      await purgeWorkerCache(origin, ["/api/votes"]);
       await recordInIndex(env.DB, made.vote.id, nowMs);
       return new Response(JSON.stringify({ type: 4, data: renderMessage(made.vote, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
@@ -914,7 +937,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       const { party } = await buildPartySheetsFromD1(env);
-      const mine = party.find((p) => p.slug === target.slug);
+      // Another member's fields marked visible:false stay hidden; the caller sees their own.
+      const mine = partyForMember(party, member ? member.slug : null).find((p) => p.slug === target.slug);
       const fieldSummary = mine && mine.fields
         ? Object.entries(mine.fields)
             .map(([k, v]) => `• **${k}:** ${Array.isArray(v.value) ? v.value.join(", ") : v.value}`)
@@ -1326,9 +1350,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (cmd === "page") {
       const title = getOpt("title");
       const row = await env.DB.prepare(
-        "SELECT id, category, title, page_json FROM lib_pages WHERE id = ? OR title LIKE ? LIMIT 1"
+        "SELECT id, category, title, blurb, facts_json FROM lib_pages WHERE id = ? OR title LIKE ? ESCAPE '\\' LIMIT 1"
       )
-        .bind(title, `%${title}%`)
+        .bind(title, likePattern(title))
         .first();
 
       if (!row) {
@@ -1346,9 +1370,11 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
       let facts = [];
       try {
-        const parsed = JSON.parse(row.page_json || "{}");
-        facts = Array.isArray(parsed.facts) ? parsed.facts.slice(0, 5) : [];
-      } catch {}
+        const parsed = JSON.parse(row.facts_json || "[]");
+        facts = Array.isArray(parsed) ? parsed.filter((f) => f && f.key).slice(0, 5) : [];
+      } catch (e) {
+        console.error("/page facts_json unreadable:", e && e.message);
+      }
 
       const factLines = facts.map((f) => `• **${f.key}:** ${f.value}`).join("\n");
       const pageUrl = `${boardUrl}/#lib.${row.id}`;
@@ -1361,7 +1387,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
               {
                 color: GOLD,
                 title: row.title,
-                description: `**Category:** \`${row.category}\`\n\n${factLines || "Open page to view all verified facts."}`,
+                description: `**Category:** \`${row.category}\`\n\n${factLines || row.blurb || "Open page to view all verified facts."}`,
                 url: pageUrl,
                 footer: { text: "WoW: Forever Verified Library" },
               },
@@ -1385,9 +1411,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (cmd === "tooltip") {
       const name = getOpt("name");
       const row = await env.DB.prepare(
-        "SELECT id, category, title, page_json FROM lib_pages WHERE title LIKE ? OR page_json LIKE ? LIMIT 1"
+        "SELECT id, category, title FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
       )
-        .bind(`%${name}%`, `%${name}%`)
+        .bind(likePattern(name), likePattern(name), likePattern(name))
         .first();
 
       if (!row) {
@@ -1515,7 +1541,11 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         );
       }
 
-      const res = await env.DB.prepare("DELETE FROM intents WHERE seq <= ?").bind(upTo).run();
+      // Only a server admin clears the whole mailbox; any other roster member clears their own intents.
+      const adminCaller = canManageGuild(interaction.member && interaction.member.permissions);
+      const res = adminCaller
+        ? await env.DB.prepare("DELETE FROM intents WHERE seq <= ?").bind(upTo).run()
+        : await env.DB.prepare("DELETE FROM intents WHERE seq <= ? AND slug = ?").bind(upTo, member.slug).run();
       const countRow = await env.DB.prepare("SELECT COUNT(*) AS count FROM intents").first();
       const deleted = (res.meta && res.meta.changes) || 0;
 
@@ -1539,7 +1569,6 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const sources = getOpt("sources");
       const failed = getOpt("failed");
       const now = new Date().toISOString();
-      const status = failed ? "failed" : "done";
 
       if (!id || !answer) {
         return new Response(
@@ -1551,28 +1580,35 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         );
       }
 
-      await env.DB.prepare(
-        "UPDATE ask_turns SET answer = ?, sources = ?, status = ?, answered_at = ? WHERE id = ?"
-      )
-        .bind(answer, sources ? JSON.stringify([sources]) : null, status, now, id)
-        .run();
-
-      const askItem = {
+      const applied = await applyManualAnswer(env, {
         id,
-        status,
         answer,
-        sources: sources ? [sources] : [],
-        answered_at: now,
-        failed: failed || null,
-      };
-      await broadcastToRoom(env, { type: "ask", ask: askItem });
+        sources,
+        failed,
+        byName,
+        isAdmin: canManageGuild(interaction.member && interaction.member.permissions),
+        now,
+      });
+      if (!applied.ok) {
+        return new Response(
+          JSON.stringify({
+            type: 4,
+            data: {
+              content: applied.code === "forbidden" ? "You can only answer your own questions." : `No question found with id **${id}**.`,
+              flags: 64,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      await broadcastToRoom(env, applied.broadcast);
       await purgeWorkerCache(origin, ["/api/bootstrap", `/api/ask?id=${id}`]);
 
       return new Response(
         JSON.stringify({
           type: 4,
           data: {
-            content: `✅ Answer recorded for question **#${id}** and broadcast to the Living Board.`,
+            content: `✅ Answer recorded for question **#${id}**${applied.share ? " and sent to the Living Board" : " (private, not broadcast)"}.`,
             flags: 64,
           },
         }),
@@ -1742,6 +1778,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
     await saveVote(env.DB, result.vote, nowMs);
+    await purgeWorkerCache(origin, ["/api/votes"]);
     const picked = result.vote.choices[parsed.index];
     const note = result.changed ? `Changed your vote to **${picked}**.` : `Counted your vote for **${picked}**.`;
     if (interaction.application_id && interaction.token) {

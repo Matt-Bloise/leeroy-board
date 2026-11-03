@@ -19,7 +19,7 @@ import {
   webBoardLinks,
   webBoardLinksDeep,
 } from "./ai-models.js";
-import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
+import { runScheduledSourceSweep, recomputeCategoryAndIndex, acquireRefreshCooldown } from "./scraper.js";
 import { feedbackReport, cleanupAnswerUx } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
@@ -43,6 +43,8 @@ import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, l
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
+import { applyManualAnswer } from "./ask-answer.js";
+import { publicParty, partyForMember } from "./sheet-privacy.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
@@ -314,9 +316,12 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
         (x) => (x.name || "").toLowerCase() === name.toLowerCase()
       );
       if (m && value !== undefined && value !== null) {
-        if (field === "race") m.race = String(value);
-        if (field === "class") m.class = String(value);
-        if (field === "spec_path") m.spec = String(value);
+        // The party document is public (GET /data/party): a hidden field is never copied into it.
+        if (visible !== false) {
+          if (field === "race") m.race = String(value);
+          if (field === "class") m.class = String(value);
+          if (field === "spec_path") m.spec = String(value);
+        }
         batchStatements.push(
           env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'party'")
             .bind(JSON.stringify(partyDoc), now)
@@ -327,7 +332,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
 
   await env.DB.batch(batchStatements);
   await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
-  await broadcastToRoom(env, { type: "state", party: currentParty });
+  await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
   return { party: currentParty, at: now };
 }
 
@@ -383,8 +388,18 @@ export default {
 
       // 0a. GET /votes -> public, read-only: id, title, choice counts, closes_at, open. Never voter ids or hashes.
       if (req.method === "GET" && path === "/votes") {
-        const votes = await loadPublicVotes(env.DB, Date.now());
-        return jsonResp({ votes }, 200, { ...cors, "Cache-Control": "public, max-age=10, s-maxage=10" });
+        // loadPublicVotes is the index row plus up to 50 vote rows (51 D1 reads): cached for 10 seconds, shared by every caller.
+        let resp = await getCachedResponse(url.origin, "/api/votes");
+        if (!resp) {
+          const votes = await loadPublicVotes(env.DB, Date.now());
+          resp = jsonResp({ votes }, 200, { ...cors, "Cache-Control": "public, max-age=10, s-maxage=10" });
+          setCachedResponse(ctx, url.origin, "/api/votes", resp, 10000);
+        } else {
+          const headers = new Headers(resp.headers);
+          for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+          resp = new Response(resp.body, { status: resp.status, headers });
+        }
+        return resp;
       }
 
       // 0b. GET /me -> Resolves board key to party member identity for `js/brain.js`
@@ -435,7 +450,7 @@ export default {
               slug: m.slug,
               name: m.name,
               sheet: { fields: mine.fields, updated: mine.updated },
-              party,
+              party: partyForMember(party, m.slug), // other members' hidden fields stay hidden
               seq,
             },
             200,
@@ -810,27 +825,17 @@ export default {
         if (!id) {
           return jsonResp({ error: "Missing ask turn id" }, 400, cors);
         }
-        const now = new Date().toISOString();
-        const failed = body.failed || null;
-        const status = failed ? "failed" : "done";
-        const answer = body.answer || null;
-        const sources = body.sources ? (typeof body.sources === "string" ? body.sources : JSON.stringify(body.sources)) : null;
-
-        await env.DB.prepare(
-          "UPDATE ask_turns SET answer = ?, sources = ?, status = ?, answered_at = ? WHERE id = ?"
-        )
-          .bind(answer, sources, status, now, id)
-          .run();
-
-        const askItem = {
+        const applied = await applyManualAnswer(env, {
           id,
-          status,
-          answer,
-          sources: body.sources || [],
-          answered_at: now,
-          failed,
-        };
-        await broadcastToRoom(env, { type: "ask", ask: askItem });
+          answer: body.answer ? String(body.answer) : null,
+          sources: body.sources,
+          failed: body.failed || null,
+          byName: "",
+          isAdmin: true, // adminGate above
+        });
+        if (!applied.ok) return jsonResp({ error: "Ask turn not found" }, 404, cors);
+        const status = applied.status;
+        await broadcastToRoom(env, applied.broadcast);
         await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/ask?id=${id}`]);
 
         return jsonResp({ ok: true, id, status }, 200, cors);
@@ -932,7 +937,7 @@ export default {
                 type: "state",
                 ver: 1,
                 at: now,
-                party,
+                party: publicParty(party), // the cached body is public: hidden sheet fields never enter it
                 signups: map.signups || null,
                 partyDoc: map.party || null,
                 tonight: map.tonight || null,
@@ -1254,7 +1259,7 @@ export default {
             aiProvider: resolveAiProvider(env),
             isPrPreview,
             providers,
-            partySheets,
+            partySheets: publicParty(partySheets), // the cached body is public: hidden sheet fields never enter it
           };
           for (const row of results || []) {
             try {
@@ -1338,13 +1343,19 @@ export default {
         if (req.method === "PUT") {
           const denied = adminGate(req, url, env, cors);
           if (denied) return denied;
+          // kv_state also holds the private config and working rows (persona, discord_members, budgets, votes, ...).
+          // They have their own routes (PUT /config/:key, /persona, ...) with validation; this one never writes or broadcasts them.
+          if (isPrivateKvKey(raw)) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
           const body = await req.json();
           const now = new Date().toISOString();
           await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
             .bind(raw, JSON.stringify(body), now)
             .run();
-          await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/data/${raw}.json`]);
-          await broadcastToRoom(env, { type: "data", key: raw, data: body });
+          const area = path.startsWith("/atlas/") ? "atlas" : "data";
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/${area}/${raw}.json`, `/api/${area}/${raw}`]);
+          const isPublicDoc = area === "atlas" ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw);
+          // Only a public document's content goes to the sockets; any other key announces the change without its data.
+          await broadcastToRoom(env, isPublicDoc ? { type: "data", key: raw, data: body } : { type: "data", key: raw });
           return jsonResp({ ok: true, key: raw, updated_at: now }, 200, cors);
         }
       }
@@ -1520,35 +1531,37 @@ export default {
             guestHash = ipHash;
             const oneHourAgo = new Date(Date.now() - 3600 * 1000).toISOString();
 
-            const limitRow = await env.DB.prepare(
+            // 1. A plain read first: an IP already at 2 gets its 429 with no write at all (refused requests must cost no D1 writes).
+            const tooMany = (row) => {
+              const oldestTime = row && row.oldest ? Date.parse(row.oldest) : Date.now();
+              const retryAfterSec = Math.max(1, Math.ceil((oldestTime + 3600 * 1000 - Date.now()) / 1000));
+              return jsonResp(
+                { ok: false, why: "limited", error: "Public guest access is limited to 2 questions per hour.", retryAfter: retryAfterSec, left: 0 },
+                429,
+                cors
+              );
+            };
+            const seen = await env.DB.prepare(
               "SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ?"
             )
               .bind(ipHash, oneHourAgo)
               .first();
+            if ((seen ? Number(seen.count) || 0 : 0) >= 2) return tooMany(seen);
 
-            const guestCount = limitRow ? Number(limitRow.count) || 0 : 0;
-            if (guestCount >= 2) {
-              const oldestTime = limitRow && limitRow.oldest ? Date.parse(limitRow.oldest) : Date.now();
-              const retryAfterSec = Math.max(1, Math.ceil((oldestTime + 3600 * 1000 - Date.now()) / 1000));
-              return jsonResp(
-                {
-                  ok: false,
-                  why: "limited",
-                  error: "Public guest access is limited to 2 questions per hour.",
-                  retryAfter: retryAfterSec,
-                  left: 0,
-                },
-                429,
-                cors
-              );
-            }
-
-            // Record this guest question for rate limiting
-            await env.DB.prepare(
-              "INSERT INTO guest_rate_limits (ip_hash, created_at) VALUES (?, ?)"
+            // 2. Passed: insert, then count the rows up to and including this one (by rowid). Parallel requests that all passed step 1
+            // rank themselves 1, 2, 3, ...: the first 2 are admitted, the rest remove their own row and are refused.
+            const ins = await env.DB.prepare("INSERT INTO guest_rate_limits (ip_hash, created_at) VALUES (?, ?)").bind(ipHash, now).run();
+            const myRowId = ins && ins.meta ? ins.meta.last_row_id : null;
+            const ranked = await env.DB.prepare(
+              "SELECT COUNT(*) AS count, MIN(created_at) AS oldest FROM guest_rate_limits WHERE ip_hash = ? AND created_at > ? AND rowid <= ?"
             )
-              .bind(ipHash, now)
-              .run();
+              .bind(ipHash, oneHourAgo, myRowId || 0)
+              .first();
+            const guestCount = ranked ? Number(ranked.count) || 0 : 0; // this request's place, 1-based
+            if (guestCount > 2) {
+              if (myRowId) await env.DB.prepare("DELETE FROM guest_rate_limits WHERE rowid = ?").bind(myRowId).run().catch(() => {});
+              return tooMany(ranked);
+            }
 
             // Asynchronously prune expired entries older than 2 hours
             ctx.waitUntil(
@@ -1558,7 +1571,7 @@ export default {
                 .catch(() => {})
             );
 
-            guestLeft = Math.max(0, 2 - guestCount - 1);
+            guestLeft = Math.max(0, 2 - guestCount);
           }
 
           await env.DB.prepare(
@@ -1701,6 +1714,13 @@ export default {
 
         // 5f. `refresh` (`POST /api/refresh` or `POST /api/intent { kind: "refresh" }`)
         if (kind === "refresh") {
+          // One sweep per 15 minutes for the whole board (each changed source costs an AI call).
+          const lock = await acquireRefreshCooldown(env);
+          if (!lock.ok) {
+            return lock.error
+              ? jsonResp({ error: "Refresh unavailable, try again later" }, 503, cors)
+              : jsonResp({ ok: false, why: "cooldown", error: "A refresh ran recently. Try again later.", retryAfter: lock.retryAfter }, 429, { ...cors, "Retry-After": String(lock.retryAfter) });
+          }
           const { seq } = await insertIntent(env, {
             slug: member.slug,
             kind: "refresh",
