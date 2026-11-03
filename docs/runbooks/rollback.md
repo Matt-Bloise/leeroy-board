@@ -10,6 +10,15 @@ Every push to `master` runs one job (`deploy-cloudflare.yml:3-6,13`) that, in or
 
 Requirements for every command below: run from `infrastructure/` after `npm install`, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` set in the shell (the same names the workflow uses, `deploy-cloudflare.yml:17-18`). Never paste token values into an issue, PR or log.
 
+## Deploy safety (what the deploy refuses to do)
+
+Added after the Nov 3 red-team review. `deploy-cloudflare.yml` now fails closed:
+
+- **No silent database creation.** If the D1 lookup (`wrangler d1 list --json`) fails, or `leeroy-board-db` is not in the account, the job stops with `::error::` and changes nothing. Likely causes: wrong `CLOUDFLARE_ACCOUNT_ID`, a token for another account, or a Cloudflare outage. Fix the cause and re-run. Only for a true first-time setup, start the workflow by hand (Actions, Run workflow, `allow_create_database` ticked); that is the only way a database is ever created, and it seeds from the repository JSON. A push to `master` never creates one.
+- **No deploy token in the Worker.** `AI_GATEWAY_TOKEN` comes only from the repository secrets `AI_GATEWAY_TOKEN` or `CLOUDFLARE_AIG_TOKEN`. If neither is set the step prints a `::warning::` and skips it. `CLOUDFLARE_API_TOKEN` is never written to the Worker. If an earlier deploy already stored it, delete the Worker secret and rotate the token (`docs/runbooks/secrets.md`): `npx wrangler secret list` then `npx wrangler secret delete CLOUDFLARE_API_TOKEN`.
+- **Post-deploy health check.** The last step calls `https://api.leeroy.party/api/health` up to 5 times, 10 s apart, and needs HTTP 200 JSON with `ok: true` and `db: "ok"` (the Worker runs `SELECT 1` on D1; on failure it answers 503 `db: "error"`). If it fails, the Worker or D1 is unhealthy: use section 2 below to roll the Worker back, or revert the PR that deployed it.
+- A manual run only deploys from `master` (job `if`).
+
 ## 1. Pages (static site)
 
 Dashboard (docs: https://developers.cloudflare.com/pages/configuration/rollbacks/): Workers & Pages, project `leeroy-board`, Deployments, open the menu on the target production deployment, "Rollback to this deployment", confirm. Only successfully built production deployments are valid targets; previews are not. It takes effect immediately.

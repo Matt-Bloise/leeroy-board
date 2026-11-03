@@ -18,6 +18,7 @@ test("GET /api/health without a key: minimal body, no provider detail", async ()
   assert.equal(b.ok, true);
   assert.equal(b.service, "leeroy-brain");
   assert.equal(b.isPrPreview, true);
+  assert.equal(b.db, "ok", "health runs a trivial D1 query");
   assert.equal(typeof b.at, "string");
   assert.ok(!("providers" in b), "providers must be absent without the admin token");
   assert.ok(!("aiProvider" in b), "aiProvider must be absent without the admin token");

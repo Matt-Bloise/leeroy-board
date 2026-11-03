@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
+    inputs:
+      allow_create_database:
+        description: "Manual first-time setup only: allow creating an EMPTY D1 database when none named leeroy-board-db exists. Never needed for a normal deploy. See docs/runbooks/rollback.md, Deploy safety."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +22,8 @@ jobs:
   deploy-production:
     name: Deploy Worker, D1 & Static Site to Cloudflare Production
     runs-on: ubuntu-latest
+    # A manual run may be started from any branch; production only ever deploys from master.
+    if: github.ref == 'refs/heads/master'
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -185,25 +193,41 @@ jobs:
 
       - name: Ensure D1 Database Exists & Patch wrangler.toml
         working-directory: infrastructure
+        env:
+          ALLOW_CREATE_DB: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_create_database && 'true' || 'false' }}
         run: |
           set -e
           echo "Checking for existing D1 database '$D1_DATABASE_NAME'..."
-          LIST_JSON=$(npx wrangler d1 list --json)
-          DB_ID=$(node -e '
-            const list = JSON.parse(process.argv[1] || "[]");
+          # A failed lookup is never treated as "database not found": that would risk an empty production database.
+          if ! LIST_JSON=$(npx wrangler d1 list --json); then
+            echo "::error::'wrangler d1 list --json' failed, so the existing D1 database '$D1_DATABASE_NAME' could not be looked up. Nothing was created or changed. Check the token's D1 permission and Cloudflare status, then re-run. See docs/runbooks/rollback.md (Deploy safety)."
+            exit 1
+          fi
+          if ! DB_ID=$(node -e '
+            const list = JSON.parse(process.argv[1]);
+            if (!Array.isArray(list)) throw new Error("not a list");
             const found = list.find(d => d.name === process.env.D1_DATABASE_NAME);
             if (found) process.stdout.write(found.uuid);
-          ' "$LIST_JSON")
-
-          if [ -z "$DB_ID" ]; then
-            echo "Creating D1 database '$D1_DATABASE_NAME'..."
-            CREATE_OUT=$(npx wrangler d1 create "$D1_DATABASE_NAME")
-            echo "$CREATE_OUT"
-            DB_ID=$(echo "$CREATE_OUT" | grep -oE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' | head -n 1)
+          ' "$LIST_JSON"); then
+            echo "::error::Could not read the D1 database list from wrangler (unexpected output). Nothing was created or changed. See docs/runbooks/rollback.md (Deploy safety)."
+            exit 1
           fi
 
           if [ -z "$DB_ID" ]; then
-            echo "ERROR: Could not resolve D1 database_id"
+            # Creating a database is a manual first-time action only. On push to master it never happens.
+            if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$ALLOW_CREATE_DB" = "true" ]; then
+              echo "::warning::Creating a NEW EMPTY D1 database '$D1_DATABASE_NAME' (manual run with allow_create_database=true). It will be seeded from the repository JSON."
+              CREATE_OUT=$(npx wrangler d1 create "$D1_DATABASE_NAME")
+              echo "$CREATE_OUT"
+              DB_ID=$(echo "$CREATE_OUT" | grep -oE '[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}' | head -n 1)
+            else
+              echo "::error::D1 database '$D1_DATABASE_NAME' was not found in this Cloudflare account. Refusing to create an empty one: production would run on an empty database. Check CLOUDFLARE_ACCOUNT_ID and the token's account. If this really is a first-time setup, run this workflow manually (workflow_dispatch) with allow_create_database=true. See docs/runbooks/rollback.md (Deploy safety)."
+              exit 1
+            fi
+          fi
+
+          if [ -z "$DB_ID" ]; then
+            echo "::error::Could not resolve D1 database_id"
             exit 1
           fi
 
@@ -281,7 +305,8 @@ jobs:
       - name: Sync Worker Secrets (AI Providers, Admin Token, Discord)
         working-directory: infrastructure
         env:
-          AI_GATEWAY_TOKEN: ${{ secrets.AI_GATEWAY_TOKEN || secrets.CLOUDFLARE_AIG_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          # Dedicated AI Gateway secrets only. The account-wide CLOUDFLARE_API_TOKEN must never become a Worker secret.
+          AI_GATEWAY_TOKEN: ${{ secrets.AI_GATEWAY_TOKEN || secrets.CLOUDFLARE_AIG_TOKEN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -300,6 +325,8 @@ jobs:
             SECRET_VAL="${!SECRET_NAME}"
             if [ -n "$SECRET_VAL" ]; then
               printf "%s" "$SECRET_VAL" | npx wrangler secret put "$SECRET_NAME"
+            elif [ "$SECRET_NAME" = "AI_GATEWAY_TOKEN" ]; then
+              echo "::warning::Neither AI_GATEWAY_TOKEN nor CLOUDFLARE_AIG_TOKEN is set; skipping the AI Gateway token secret. The deploy token is never used as a fallback. See docs/runbooks/secrets.md."
             fi
           done
 
@@ -339,3 +366,22 @@ jobs:
               echo "Custom domain $DOMAIN configuration (HTTP $HTTP_CODE): $BODY"
             done
           fi
+
+      - name: Post-deploy health check (api.leeroy.party/api/health)
+        run: |
+          # At most 5 requests, 10 s apart. Needs HTTP 200, a JSON body, ok true and db "ok" (a trivial D1 query in the Worker).
+          URL="https://api.leeroy.party/api/health"
+          for ATTEMPT in 1 2 3 4 5; do
+            CODE=$(curl -s -o health.json -w '%{http_code}' --max-time 15 -H 'Accept: application/json' "$URL" || true)
+            if [ "$CODE" = "200" ] && node -e '
+              const b = JSON.parse(require("fs").readFileSync("health.json", "utf8"));
+              process.exit(b && b.ok === true && b.db === "ok" ? 0 : 1);
+            ' 2>/dev/null; then
+              echo "Health check passed on attempt $ATTEMPT (HTTP 200, ok true, db ok)."
+              exit 0
+            fi
+            echo "Health attempt $ATTEMPT of 5 failed (HTTP ${CODE:-none}); body (first 200 chars): $(head -c 200 health.json 2>/dev/null | tr -d '\r\n')"
+            [ "$ATTEMPT" -lt 5 ] && sleep 10
+          done
+          echo "::error::Post-deploy health check failed: $URL did not return HTTP 200 JSON with ok true and db ok after 5 tries. The Worker or its D1 database may be broken. Roll back: docs/runbooks/rollback.md."
+          exit 1

@@ -50,6 +50,7 @@ components:
         service: { type: string, enum: [leeroy-brain] }
         runtime: { type: string }
         isPrPreview: { type: boolean }
+        db: { type: string, enum: [ok], description: Result of a trivial D1 query. On failure the route answers 503 with db error instead. }
         at: { type: string, format: date-time }
         aiProvider: { type: string, description: Admin token only. }
         aiGateway: { type: string, nullable: true, description: Admin token only. }
@@ -286,6 +287,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Health' }
+        "503":
+          description: The D1 query failed. Body is `{ok:false, service, db:"error", at}`, no detail.
   /api/bootstrap:
     get:
       summary: Single-roundtrip startup bundle (edge cached 60 s).
