@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // =============================================================================
 // D1 Snapshot Exporter & Local Library Index Rebuilder (`scripts/export-d1.mjs`)
-// Replaces `wow-mage/board/build-data.mjs` and `wow-mage/scripts/board-publish.mjs`
-// so `leeroy-board` is 100% self-contained after retiring `wow-mage`:
+// Replaces the earlier board build and publish scripts (now in the `leeroy-ops` repo)
+// so `leeroy-board` is 100% self-contained after the old bot repo was retired:
 //   - `node scripts/export-d1.mjs --rebuild`: Rebuilds `data/library/search.json`,
 //     `data/library/open.json`, and `data/library/index.json` stamps/totals from
 //     `data/library/<category>.json` using `vendor/rank-core.js`.

@@ -41,7 +41,7 @@ export function userHash(env, discordId) {
   return sha256Hex(`${env.USER_SALT}:answer-ux:${discordId}`);
 }
 
-// Who asked an Ask turn, for erase and export (table ask_turn_askers, migration 0007). A Discord id wins; a board key has only its slug.
+// Who asked an Ask turn, for erase and export (table ask_turn_askers, migration 0009). A Discord id wins; a board key has only its slug.
 // The Discord form is the same hash as userHash, so it also matches answer_feedback and answer_details.asker_hash.
 export const slugAskerHash = (env, slug) => sha256Hex(`${env.USER_SALT}:answer-ux:slug:${slug}`);
 export async function askerHash(env, { discordId, slug } = {}) {

@@ -120,7 +120,7 @@ function placeCoin() {
 }
 function face(img, key) {
   if (!key.startsWith("sheet")) { K.medalSet(img, key); return; }
-  const m = K.MEM.member(); img.removeAttribute("data-medal"); img.setAttribute("src", m ? `img/crests/${m.class_key}.png` : `img/${ICO.sheet}`);
+  const m = K.MEM.member(); img.removeAttribute("data-medal"); img.setAttribute("src", m ? K.crestSrc(m.class_key) : `img/${ICO.sheet}`);
 }
 function setCoin(key0) {
   const c = $("#bb-coin"), img = coinImg(); if (!c || !img || !key0) return;

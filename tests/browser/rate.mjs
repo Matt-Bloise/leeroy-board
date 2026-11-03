@@ -45,7 +45,7 @@ for (const scheme of ["dark", "light"]) {
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: scheme, acceptDownloads: true, serviceWorkers: "block", hasTouch: w < 768, isMobile: w < 768 });
     const page = await ctx.newPage();
     page.on("pageerror", (e) => { if (!HOST_BEACON.test(e.message)) errors.push(e.message); });
-    page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text()) && !HOST_BEACON.test(m.text())) errors.push(m.text()); });
+    page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource/.test(m.text()) && !HOST_BEACON.test(m.text())) errors.push(m.text()); });
     page.on("request", (r) => { if (HOST_BEACON.test(r.url()) || r.url().startsWith("data:") || r.url().startsWith("blob:")) return; const u = new URL(r.url()); requested.push(u.pathname); if (u.origin !== new URL(BASE).origin) foreign.push(r.url()); });
     const resp = await page.goto(BASE, { waitUntil: "load" });
     ok(`${tag} /rate/ answers 200`, resp && resp.status() === 200, String(resp && resp.status()));

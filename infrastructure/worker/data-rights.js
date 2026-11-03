@@ -40,7 +40,7 @@ export const DATA_MAP = Object.freeze({
   lib_sources: { links: null, erase: null, member: null },
   lib_source_snapshots: { links: null, erase: null, member: null },
   wiki_proposals: { links: null, erase: null, member: null },
-  ask_turns: { links: "ask_turn_askers.asker_hash; rows older than migration 0007 only by_name = slug or roster name (member-key caller only)", erase: "DELETE by asker hash; legacy rows with no asker row by by_name", member: "legacy.ask_turns" },
+  ask_turns: { links: "ask_turn_askers.asker_hash; rows older than migration 0009 only by_name = slug or roster name (member-key caller only)", erase: "DELETE by asker hash; legacy rows with no asker row by by_name", member: "legacy.ask_turns" },
   ask_turn_askers: { links: "asker_hash", erase: "DELETE by asker_hash", member: null },
   fact_fixes: { links: "by_name = slug or roster name (member-key caller only)", erase: "DELETE by by_name", member: "legacy.fact_fixes" },
   sheet_events: { links: "slug", erase: "DELETE by slug", member: "legacy.sheet_events" },
@@ -74,6 +74,7 @@ export const DATA_MAP = Object.freeze({
   answer_feedback: { links: "user_hash = sha256(USER_SALT:answer-ux:<discord id>)", erase: "DELETE by user_hash", member: "legacy.answer_feedback" },
   character_profiles: { links: "via characters", erase: "cascade from characters", member: "tenancy.character_profiles" },
   noise_ledger: { links: null, erase: null, member: null },
+  request_gauge: { links: null, erase: null, member: null }, // Worker requests per UTC day, counts only (migration 0008)
 });
 // Durable Object state: BoardRoom (room.js) is a pure relay. It never touches ctx.storage and keeps no state between messages, so there is nothing to erase.
 export const DURABLE_OBJECT_STATE = Object.freeze({ BoardRoom: "none: relays live pushes to open sockets, no storage" });
@@ -125,7 +126,7 @@ async function personalKeys(env, who) {
   return k;
 }
 
-// An ask_turns row is this person's when its asker row holds one of their hashes. Rows written before migration 0007 have no asker row;
+// An ask_turns row is this person's when its asker row holds one of their hashes. Rows written before migration 0009 have no asker row;
 // those (and only those) are matched by name, so a nickname that equals this person's name cannot pull in a row that has an asker row.
 const MINE_ASK = "(id IN (SELECT intent_id FROM ask_turn_askers WHERE asker_hash IN (?, ?)) OR (by_name IN (?, ?) AND id NOT IN (SELECT intent_id FROM ask_turn_askers)))";
 const askArgs = (pk, who) => [pk.askerHashes[0], pk.askerHashes[1], who.slug || null, who.name || null];
@@ -262,7 +263,7 @@ async function eraseData(request, env, who, now) {
       "Your display name, your question and the party's names and builds were sent to the AI vendor; AI Gateway request logs may keep the full request. This service cannot erase those.",
       "A member key that was already checked by another running copy of the Worker can still be accepted for read requests for up to 15 minutes; write requests re-check the database.",
       "Questions asked on Discord by someone who is not on the roster are kept under the Discord nickname and cannot be found by key; a nickname is never matched to a person.",
-      ...(who.via === "web-session" ? ["Rows filed only under a handle or name (sheet_events, dispatches, intents, fact_fixes, and ask_turns written before migration 0007) are erased only through a member-key request."] : []),
+      ...(who.via === "web-session" ? ["Rows filed only under a handle or name (sheet_events, dispatches, intents, fact_fixes, and ask_turns written before migration 0009) are erased only through a member-key request."] : []),
     ],
   }, {}, [clearSession]);
 }
@@ -281,7 +282,7 @@ export async function handleDataRights(request, env, { path, now }) {
     return path === "/me/export" ? await exportData(env, who, now) : await eraseData(request, env, who, now);
   } catch (e) {
     if (missingTable(e)) {
-      if (!warned) { warned = true; console.warn("data-rights: a table is missing; apply infrastructure/migrations 0002, 0003 and 0007"); }
+      if (!warned) { warned = true; console.warn("data-rights: a table is missing; apply infrastructure/migrations 0002, 0003 and 0009"); }
       return respond(503, { error: "data rights not available" });
     }
     console.error("data-rights: failed");

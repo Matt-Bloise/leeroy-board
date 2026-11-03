@@ -58,12 +58,32 @@ Produced by `tools/local-browser.sh` (see `tests/README.md`), which counts the `
 | layout-sweep mutation test (4 injected bugs) | n/a | 0 | 19 | 0 (now also a gating step in the `layout` job) |
 | visual audit (`visual`, 3-minute budget) | 172 | 0 | 180 | 0 |
 
-Before, a full run of the API suite plus all browser suites made about **1,490 Worker requests locally**. This is lower than the 8 to 10 thousand estimated on 2 November: the estimate was not reproduced by this measurement. Likely reasons for the gap (not measured): WebKit passes of `live-smoke`, retries and re-runs of the preview, a slower preview that makes pages poll more, Lighthouse and ZAP, and `ci-full` being re-run on every push.
+Before, a full run of the API suite plus all browser suites made about **1,490 Worker requests locally**. This is lower than the 8 to 10 thousand estimated on 2 November: the estimate was not reproduced by this measurement. Likely reasons for the gap (not measured): WebKit passes of `live-smoke`, retries and re-runs of the preview, a slower preview that makes pages poll more, ZAP, and `ci-full` being re-run on every push. (Lighthouse was another suspect when this was written; it now runs only nightly against production and is not part of a full run.)
 
 Notes on exit codes (all are local-environment or known flakes, not request counts):
 - `live-smoke` fails locally only on `webkit launches` (WebKit is not installed in this container); its Chromium checks pass. CI installs WebKit.
 - `nightly` fails 2 of 144 checks (`API held for 12 s ... repeat visit ... usable screen`), the same timing-sensitive family as before this change (2 of 144 failed with the live API too, `docs/runbooks/ci-minutes.md`).
 - `nextstep` passed standalone (32 of 32) and crashed once inside the long run on `window.__next` being undefined; see the pull request for the rerun result.
+
+## Request gauge (flag `REQUEST_GAUGE`, default off)
+
+Free plan has no usage alert, so the Worker can count itself. **Cloudflare's dashboard "Requests today" (Workers & Pages, Overview) is the source of truth. The gauge is an approximation and under-counts.**
+
+- Turn on: set `REQUEST_GAUGE = "on"` in `infrastructure/wrangler.toml` (migration 0008 creates the table `request_gauge`; `schema.sql` has it too). Off by default; while off a request does one string comparison and no D1 access, and `GET /api/admin/requests` is a 404 for the admin token (401 for everyone else, flag on or off).
+- Read it (admin token): `GET /api/admin/requests` returns `{"utcDay":"2026-11-03","count":4210,"limit":100000,"pct":4.21}`.
+- How it counts: every Worker `fetch` (including OPTIONS, refused origins and 401s) adds 1 to a counter in memory. About every 25 requests, or after 60 seconds, one upsert adds the delta to the row of the UTC day, inside the same request through `ctx.waitUntil`: no extra Worker request, about 1 D1 row written per 25 requests (4 %; D1 Free allows 100,000 row writes a day). The instance that answers the gauge adds its own not-yet-written count, so it is exact about itself. It first waits for its own in-flight writes to be acknowledged and then reads the row, so a write that D1 has committed but not yet acknowledged is never counted twice (unit test `no double count`); if a new write starts during that read, the number can be low by at most 24, never high.
+- Stored: `day` and `n`. No IP address, user id, path, header or key is read into it (unit test `tests/unit/request-gauge.test.mjs` sends requests with an address, a key and a user agent and searches the table).
+- **What it misses (all under-count):** (1) the unflushed delta of an instance that is evicted: at most 24 requests per eviction; (2) cron triggers (1,444 a day with the two crons; whether Cloudflare counts them toward the 100,000 is unverified); (3) every other Worker on the account: the per-PR preview Workers have their own database and are not in this number, and on 2 November they were most of the overage; (4) a flush that fails and is not retried before the instance dies.
+- So: if the gauge says 15 % and the dashboard says 100 %, believe the dashboard and look for the other Worker (see "When the quota is hit"). The gauge is useful for the production Worker's own trend, not as a guard for the account.
+
+Measured locally (`node tests/local/gauge-measure.mjs`, `wrangler dev --local`, 3 November 2026):
+
+| Case | Sent | Gauge counted | Error |
+| :--- | ---: | ---: | ---: |
+| One instance that lives the whole run (1,000 probes + 1 gauge read) | 1,001 | 1,001 (the wrangler log also shows 1,001) | 0 (0.00 %) |
+| 37 probes, then `SIGKILL` of the Worker (an eviction with no chance to flush), restart on the same database, 1 gauge read | 38 | 23 | -15 requests (15 of the 38 in that burst; the cap is 24) |
+
+The first row is the best case. The second is the worst case a single eviction can produce (up to 24 lost). How often production Workers are evicted is not measurable locally, so the production error is **unknown**; compare the gauge with the dashboard once on the first day it is on and write the difference here.
 
 ## Working locally (the rule)
 

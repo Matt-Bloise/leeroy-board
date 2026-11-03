@@ -102,7 +102,7 @@ export async function createAtlas(opts) {
     loadSprite("pin", `${base}img/map/pin-blank.webp`);
     loadSprite("grain", `${base}img/paper-baked.jpg`);
     loadSprite("zeppelin", art("travellers-zeppelin-frame-1"), `${base}img/map/zeppelin.png`);
-    for (const m of party.members || []) loadSprite(`crest-${m.class_key}`, `${base}img/crests/${m.class_key}.png`);
+    for (const m of party.members || []) { const bc = window.BoardCrest, cs = bc ? bc.src(m.class_key) : `img/crests/${m.class_key}.png`; loadSprite(`crest-${m.class_key}`, cs.startsWith("data:") ? cs : `${base}${cs}`, bc ? bc.fallback(m.class_key) : undefined); }
   };
 
   const dprNow = (w, hh) => backingDpr(window.devicePixelRatio, w, hh); // the screen's, up to 3 (polish E3: phones were capped at 2, 0.67 texel)

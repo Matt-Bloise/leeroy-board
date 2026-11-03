@@ -5,8 +5,21 @@
 }
 @media (min-width: 2000px) {
   #scene .sheet { width: min(85vw, 1700px); }
-  #scene .sheet:has(:is(#panel-roads, #panel-buffs, #panel-library, #panel-five):not([hidden], .warm, .leaving)) { width: 85vw; }
+  /* the wide scenes use 85vw, but capped: on a 5120x1440 screen 85vw is 4352px, a sheet nobody can read across with a few cards lost in it (QA, ultra-wide) */
+  #scene .sheet:has(:is(#panel-roads, #panel-buffs, #panel-library, #panel-five):not([hidden], .warm, .leaving)) { width: min(85vw, 2800px); }
 }
+
+/* Very large screens: the first-visit card kept its laptop size inside a sheet that grows with the screen (2.7 to 5 percent of the parchment at 4K). Scale it in steps by window height so the card, its type, buttons and gaps grow together; the top step stops at 3.2 and the card spans the panel's three columns instead of the first 355px one. */
+@media (min-width: 2400px) and (min-height: 1300px) { #scene .nx-fr2 { zoom: 1.85; grid-column: 1 / -1; justify-self: center; width: max-content; max-width: 100%; } }
+@media (min-width: 2400px) and (min-height: 1900px) { #scene .nx-fr2 { zoom: 2.3; } }
+@media (min-width: 2400px) and (min-height: 2600px) { #scene .nx-fr2 { zoom: 2.8; } }
+@media (min-width: 2400px) and (min-height: 3800px) { #scene .nx-fr2 { zoom: 3.2; } }
+
+/* Wall tiles: the call to action ("Read the decisions list", "Ask Leeroy a question") was a no-wrap line wider than its tile between about 1100 and 1370px wide, so the tile cut it off. Let it wrap inside the tile. */
+.tile-go { display: block; max-width: 100%; line-height: 1.25; letter-spacing: 0.06em; }
+.tile-go .word { overflow-wrap: anywhere; }
+.tile-go i { margin-left: 4px; }
+.tile .rk-n { white-space: normal; }
 
 @media (min-width: 700px) and (min-height: 501px) {
   #scene { --seal: clamp(72px, 6.5vh, 112px); }

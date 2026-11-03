@@ -18,3 +18,6 @@
 .legal-foot nav { display: flex; flex-wrap: wrap; gap: 0 14px; }
 .legal-foot a { color: inherit; text-decoration: underline; }
 .legal-foot a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* touch targets: the footer links were 95x19 px. On a coarse pointer each is at least 44x44 (WCAG 2.5.8 asks 24, the sweep and the header use 44). */
+@media (pointer: coarse) { .tr-foot-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; } }

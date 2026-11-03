@@ -100,7 +100,7 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
     if (cond.init) await ctx.addInitScript(cond.init);
     const page = await ctx.newPage(), cdp = await ctx.newCDPSession(page);
     page.on("pageerror", (e) => errs.push(String(e.message).slice(0, 140)));
-    page.on("console", (m) => { if (m.type() === "error") { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} cons.push({ text: m.text().slice(0, 140), at }); } });
+    page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} cons.push({ text: m.text().slice(0, 140), at }); } });
     if (cond.setup) await cond.setup(ctx, page, cdp);
     if (cond.slow) { await cdp.send("Network.enable"); await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 800, downloadThroughput: (400 * 1024) / 8, uploadThroughput: (400 * 1024) / 8 }); }
     if (cond.sw === "allow") { await page.goto(url, { waitUntil: "load", timeout: 45000 }).catch(() => {}); await page.goto(url, { waitUntil: "load", timeout: 45000 }).catch(() => {}); await page.unrouteAll?.({ behavior: "ignoreErrors" }).catch(() => {}); }

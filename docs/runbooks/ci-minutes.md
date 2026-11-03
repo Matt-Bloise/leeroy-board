@@ -6,7 +6,7 @@ Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `secu
 
 - This repo is private, so GitHub Actions is metered: **$0.006 per Linux minute**. The owner set a **$20 hard-stop budget**, which is about 3,300 minutes. Any free minutes included in the plan are used first and are not counted on here.
 - **Every job is rounded up to a whole minute.** A 10-second job bills 1 minute; a job that is skipped bills 0; a workflow run whose jobs are all skipped bills 0. Many small jobs cost more than one job doing the same work, which is why the former tiny jobs were folded.
-- Every push to a PR starts runs. Measured on 2 November 2026 (validated against GitHub's meter within 4 percent): Preview Tests 8.3 min per run, PR Ephemeral Preview 3.2 min per run over 275 runs, Security Scan 6.2, Lighthouse 3.4, about 21 minutes per push in total. Of 97 Preview Tests runs only 42 ended green, 28 were cancelled mid-run and 21 failed, 18 of them in the browser job (timing-sensitive degraded-modes checks such as "API held 12 s" on a slow preview).
+- Every push to a PR starts runs. Measured on 2 November 2026 (validated against GitHub's meter within 4 percent): Preview Tests 8.3 min per run, PR Ephemeral Preview 3.2 min per run over 275 runs, Security Scan 6.2, Lighthouse 3.4 (Lighthouse has since moved to the nightly run against production; the total below is the figure measured at the time), about 21 minutes per push in total. Of 97 Preview Tests runs only 42 ended green, 28 were cancelled mid-run and 21 failed, 18 of them in the browser job (timing-sensitive degraded-modes checks such as "API held 12 s" on a slow preview).
 
 ## Light by default, heavy on request
 

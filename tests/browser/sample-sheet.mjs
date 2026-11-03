@@ -19,7 +19,7 @@ for (const [size, opts] of CTX) {
   const tag = `[${size}]`, errors = [];
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" }), page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await page.goto(BASE, { waitUntil: "load" });
   await page.evaluate(() => { const b = document.getElementById("board"); if (b && b.hidden && window.__board) window.__board.start("preview"); }); // the open-web hosts start on their own; a local static server does not
   await page.waitForFunction(() => window.__boardKit && window.__boardKit.D && window.__boardKit.D.party, null, { timeout: 20000 }).catch(() => {});

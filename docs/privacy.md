@@ -26,6 +26,26 @@ Cloudflare, which hosts the service, sees and logs request details such as your 
 
 Parts of the board are public. The documents behind the wall (`party`, `signups`, `timeline`, `tonight` and a few more) are served to anyone who asks the API, with no sign-in: if your handle, character or sign-up appears there, anyone can read it.
 
+## Your member key and what your browser keeps
+
+- Your member key is stored **raw** (not hashed) in your browser's localStorage under the name `board-key`. The server keeps only a salted hash of it, but your browser keeps the key itself, so anyone who can open your browser profile, or any script that runs on this site, can read it.
+- The key reaches the board in a link ending in `#k=<key>`. The page saves it and removes it from the address bar. The part after `#` is not sent to the server, but it can sit in your browser history and in anything you copy or share before it is removed. Treat a link with `#k=` like a password.
+- The key is sent in an `Authorization` header only to the board's own service (`api.leeroy.party`, a preview copy of it, or a service on your own computer). It is not sent anywhere else.
+- The board also keeps other settings in localStorage under names that start `board-` (such as your name, where you were and what you have seen) and short-lived copies of its data files under names that start `bd:`. "Forget me on this browser" removes every name that starts `board-` or `bd:`, including `board-key`.
+
+## The device check (`/probe`)
+
+The device check page reads what your browser reports and shows it to you first ("Nothing has been sent"). Only if you press Send does the board send it, to `POST /probe`, together with your member key in the `Authorization` header, so the report can be tied to your member. The report is 39 fields: a type tag (`kind`) and a version number (`v`), plus 37 readings:
+
+- Browser and platform: engine, platform, whether it runs inside Discord, whether it has a Discord user agent, whether it is framed, whether it is installed as an app.
+- Vibration and haptics: whether the vibration API exists and ran, whether the switch haptic works, the vibration route used, and the strength you said you felt.
+- Motion sensors: whether the orientation and motion APIs exist, whether motion needs permission, the permission result, and how many orientation and motion events arrived in 3 seconds.
+- Input: number of touch points, coarse pointer, no-hover, pointer events.
+- Screen: screen width and height, window width and height, pixel ratio (times 100), visual viewport support, and the four safe-area insets (top, right, bottom, left).
+- Preferences and display: reduced motion, data saver, HDR screen, wide-gamut screen, battery API, screen wake lock.
+
+Each value is a yes/no or a small number. No name, no Discord id and no free text is in the report. At the time of writing the service acknowledges the report and does not store it (unverified: Cloudflare request logs may still show that the request was made).
+
 ## Message content disclosure
 
 The bot answers slash commands and other interactions sent to it over HTTP (`POST /discord`). It does not listen to your channel messages (unverified; counsel and the owner should confirm no Message Content intent is enabled in the Discord developer portal). What you type into a command or into the Ask box is stored and sent to an AI vendor, so do not put anything private in it.
@@ -70,6 +90,7 @@ What the code does today, row by row. "Not deleted automatically" means nothing 
 | Guest IP hash (`guest_rate_limits`) | Rows older than 2 hours are deleted the next time any guest asks, so a row can outlast 2 hours when no guest asks |
 | Extra answer text behind "More" and "Sources" (`answer_details`) | 30 days, deleted by the scheduled job (only when the answer buttons are switched on) |
 | Helpful / Off votes (`answer_feedback`) | 90 days, deleted by the scheduled job (only when the answer buttons are switched on) |
+| Discord replay guard (`discord_events`) | The Discord interaction id and a one-way hash of the request body, about 10 minutes, deleted as new interactions arrive. The body itself is not kept |
 | Votes and daily AI counters (`kv_state`) | Not deleted automatically |
 | Audit log (`audit_log`) | Not deleted automatically (12 months is proposed) |
 | Cloudflare request logs and AI Gateway logs and cached answers | Set by Cloudflare, not by this service (unverified; counsel to note). AI Gateway may cache an answer for up to 6 hours |

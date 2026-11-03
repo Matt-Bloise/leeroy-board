@@ -263,7 +263,7 @@ test("nickname collision: a stranger who asked under the name Red Fox is neither
   r.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, created_at) VALUES ('q-stranger', ?, 'stranger question', 'stranger answer', 'answered', ?)").run(NAME, NOWISO);
   r.prepare("INSERT INTO ask_turn_askers (intent_id, asker_hash) VALUES ('q-stranger', ?)").run(ids.otherAnswerHash);
   r.prepare("INSERT INTO answer_details (intent_id, more, created_at) VALUES ('q-stranger', 'stranger detail', ?)").run(NOWISO);
-  // a row written before migration 0007 has no asker row, so only the name can find it
+  // a row written before migration 0009 has no asker row, so only the name can find it
   r.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, created_at) VALUES ('q-legacy', ?, 'legacy question', 'legacy answer', 'answered', ?)").run(NAME, NOWISO);
   r.prepare("INSERT INTO answer_details (intent_id, more, created_at) VALUES ('q-legacy', 'legacy detail', ?)").run(NOWISO);
 

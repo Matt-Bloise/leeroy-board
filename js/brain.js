@@ -40,12 +40,15 @@ function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
   try { history.replaceState(null, "", `${location.pathname}${location.search || ""}${keep ? `#${keep}` : ""}`); } catch (e) {}
 })();
 
+/* The only origins the board key may ever be sent to (and ?brain= may point at): the production Worker, the pr-N preview Workers, and a local Worker. */
+const BRAIN_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/;
+function brainOrigin(u) { try { const x = new URL(String(u), location.href); return BRAIN_OK.test(x.origin) ? x.origin : null; } catch (e) { return null; } }
 function baseFor() {
   const host = location.hostname || "";
   const q = new URLSearchParams(location.search || "").get("brain");
   if (q && /^https?:\/\//i.test(q)) {
-    const clean = q.replace(/\/+$/, "").replace(/\/api$/, "");
-    return { http: `${clean}/api`, ws: `${clean.replace(/^http/i, "ws")}/api/live` };
+    const o = brainOrigin(q);
+    if (o) return { http: `${o}/api`, ws: `${o.replace(/^http/i, "ws")}/api/live` };
   }
   const pr = host.match(/^pr-(\d+)\.leeroy-board\.pages\.dev$/i);
   if (pr) {
@@ -167,7 +170,9 @@ function safe(body, route) {
 }
 async function call(method, route, body) {
   const headers = {};
-  if (B.key && (route === "/me" || route === "/intent" || route === "/ask" || route === "/probe" || route === "/sheet" || route === "/dispatch")) headers.Authorization = `Board ${B.key}`;
+  /* the key goes only to an allowlisted origin or the page's own origin (the Discord Activity proxy answers /api there), never anywhere else */
+  const keyOk = B.base && (B.base.http.startsWith("/") || brainOrigin(B.base.http));
+  if (B.key && keyOk && (route === "/me" || route === "/intent" || route === "/ask" || route === "/probe" || route === "/sheet" || route === "/dispatch")) headers.Authorization = `Board ${B.key}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const payload = body === undefined ? undefined : JSON.stringify(safe(body, route));
   let r, data = null;
