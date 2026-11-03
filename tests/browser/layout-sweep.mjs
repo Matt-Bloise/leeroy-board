@@ -7,7 +7,7 @@
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
 // No AI call, nothing is sent. By default every /api/ call is fulfilled by Playwright from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs): the sweep judges layout, not the API,
 // and a full sweep made 1,056 Worker requests before this (measured locally, docs/runbooks/cloudflare-requests.md). An API path the snapshot lacks fails the run (invariant stub-miss). Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
-// Matrix: 18 viewport sizes (touch + isMobile under 700 wide) x 3 states (gate = first visit, looking = "Just take a look", member = name chip then "Show me what is next")
+// Matrix: 24 viewport sizes (touch + isMobile under 700 wide) x 3 states (gate = first visit, looking = "Just take a look", member = name chip then "Show me what is next")
 // x 12 scenes (set through location.hash). Each scene must really open (html.scene-open, #scene not hidden) or that is a failure of its own.
 // Invariants per cell (name in the report):
 //   scene-open      the hash opened the scene
@@ -20,6 +20,10 @@
 //   touch-height    on touch sizes every visible button, link and tab in the header and bottom bar is at least 44 px tall
 //   body-scroll     #sheet-body scrolls (overflow-y auto/scroll) when its content is taller
 //   body-last       after scrolling to the end, the last visible child sits inside #sheet-body and inside the viewport
+//   doc-fit         first visit, desktop sizes (700 wide and up), before any click: documentElement scrollHeight <= innerHeight and scrollWidth <= innerWidth
+//   wheel-still     first visit, desktop: a wheel event leaves scrollY at 0
+//   one-scroller    REPORT ONLY (listed in the summary, never fails): first visit, no more than one scrolling box
+//   fill            REPORT ONLY: first visit, the card fills at least 25 percent of its parchment (area ratio)
 //   http-error      a same-origin response was 4xx or 5xx
 //   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
 // Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
@@ -40,7 +44,8 @@ if (!["chromium", "webkit", "firefox"].includes(ENGINE) || !pw[ENGINE]) { consol
 const OUT = arg("--out"), BUDGET_MS = Number(arg("--budget-min", "7")) * 60000, CONC = Math.max(1, Number(arg("--concurrency", "4")));
 const T0 = Date.now();
 
-const ALL_SIZES = ["1920x1080", "1536x864", "1440x900", "1366x768", "1280x720", "1280x600", "1024x768", "1024x576", "960x540", "800x600", "768x1024", "600x800", "430x932", "390x844", "360x640", "320x568", "568x320", "844x390"];
+const ALL_SIZES = ["1920x1080", "1536x864", "1440x900", "1366x768", "1280x720", "1280x600", "1024x768", "1024x576", "960x540", "800x600", "768x1024", "600x800", "430x932", "390x844", "360x640", "320x568", "568x320", "844x390",
+  "2560x1440", "3840x2160", "5120x2880", "7680x4320", "640x360", "384x216"]; /* the last six: large screens and browser zoom (zoomed-out and zoomed-in windows are just different CSS viewports) */
 const ALL_STATES = ["gate", "looking", "member"];
 const ALL_SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight", "decide"];
 const pick = (k, all) => { const v = arg(k); if (!v) return all; const l = v.split(",").filter(Boolean); const bad = l.filter((x) => !all.includes(x)); if (bad.length) { console.error(`${k}: unknown ${bad.join(",")}`); process.exit(2); } return l; };
@@ -52,7 +57,7 @@ const ORIGIN = BASE ? new URL(url).origin : "";
 // Known by-design exceptions, listed so they are visible and easy to delete. A member who has picked a name and opens #tonight lands on the wall: the app clears the hash and no scene opens.
 // Confirmed by hand on master (scene-open class off, #scene hidden, hash emptied); if the owner decides that deep link should open Next steps, delete the entry and the sweep will judge it.
 const NO_OPEN = new Set(["member/tonight"]);
-const failures = [];
+const failures = [], notes = [];
 let skipped = 0, cells = 0, checks = 0, truncated = false;
 const fail = (c, state, scene, invariant, detail) => failures.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300) });
 
@@ -188,7 +193,7 @@ function measure({ touch, w }) {
 }
 
 // WebKit under CSS zoom: a locator click aims at the unzoomed rect and times out, so click the zoom-aware centre of the element instead.
-async function press(page, locator, timeout = 8000) {
+async function press(page, locator, timeout = 20000) {
   if (ENGINE !== "webkit") return locator.click({ timeout });
   const el = await locator.elementHandle({ timeout });
   await el.evaluate((e) => e.scrollIntoView({ block: "center", inline: "center" }));
@@ -208,6 +213,29 @@ async function openState(page, state) {
   await page.waitForTimeout(state === "gate" ? 300 : 1200);
 }
 
+
+// First-visit checks, run on the gate state BEFORE any click. doc-fit and wheel-still fail the run (desktop sizes only); one-scroller and fill only report.
+async function gateChecks(page, size, once) {
+  const m = await page.evaluate(() => {
+    const de = document.documentElement, card = document.querySelector("#nx-fr2");
+    const scrollers = [...document.querySelectorAll("body *")].filter((e) => { const s = getComputedStyle(e); return /auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1 && s.display !== "none" && e.getClientRects().length; }).map((e) => e.id || e.className || e.tagName);
+    const box = card && (card.closest(".sheet") || card.closest("#sheet-body") || card.parentElement), cr = card && card.getBoundingClientRect(), br = box && box.getBoundingClientRect();
+    return { sh: de.scrollHeight, sw: de.scrollWidth, ih: innerHeight, iw: innerWidth, docScrolls: de.scrollHeight > innerHeight + 1, scrollers, fill: cr && br && br.width * br.height > 0 ? (cr.width * cr.height) / (br.width * br.height) : null };
+  });
+  if (!size.touch) {
+    checks += 2;
+    if (m.sh > m.ih || m.sw > m.iw) once("doc-fit", `document ${m.sw}x${m.sh} in a ${m.iw}x${m.ih} window`);
+    await page.mouse.move(Math.round(size.w / 2), Math.round(size.h / 2));
+    await page.mouse.wheel(0, 400); await page.waitForTimeout(150);
+    const y = await page.evaluate(() => scrollY);
+    if (y !== 0) once("wheel-still", `scrollY ${y} after a wheel event`);
+  }
+  const n = m.scrollers.length + (m.docScrolls ? 1 : 0);
+  if (n > 1) notes.push({ w: size.w, h: size.h, invariant: "one-scroller", detail: `${n} scrolling boxes: ${m.docScrolls ? "document, " : ""}${m.scrollers.slice(0, 3).join(", ")}` });
+  if (m.fill === null) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: "no first-visit card found" });
+  else if (m.fill < 0.25) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: `card fills ${(m.fill * 100).toFixed(1)}% of its parchment (want 25%)` });
+}
+
 async function cell(browser, size, state) {
   const opts = { viewport: { width: size.w, height: size.h }, serviceWorkers: "block", reducedMotion: "reduce" };
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
@@ -222,6 +250,7 @@ async function cell(browser, size, state) {
   page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   try {
     await openState(page, state);
+    if (state === "gate") { scene = "gate"; await gateChecks(page, size, once); }
     for (const sc of state === "gate" ? ["gate", ...SCENES.slice(0, 0)] : SCENES) {
       scene = sc;
       cells++;
@@ -243,8 +272,8 @@ async function cell(browser, size, state) {
           continue;
         }
       }
-      // a slow preview can still be opening the sheet after one settle window (seen once in CI: opacity 0 after 4 s); give it up to three before judging
-      for (let i = 0; i < 3 && !(await page.evaluate(settle)); i++);
+      // a slow preview can still be opening the sheet after one settle window (seen once in CI: opacity 0 after 4 s); give it up to eight before judging (the 4K and 8K sizes render in software and are slower still when four cells run at once)
+      for (let i = 0; i < 8 && !(await page.evaluate(settle)); i++);
       const { out, n } = await page.evaluate(measure, { touch: size.touch, w: size.w });
       checks += n;
       for (const f of out) once(f.invariant, f.detail);
@@ -293,7 +322,7 @@ await browser.close();
 failures.sort((a, b) => b.w - a.w || b.h - a.h || a.state.localeCompare(b.state) || a.scene.localeCompare(b.scene) || a.invariant.localeCompare(b.invariant));
 const byInv = {}, bySize = {}, byScene = {};
 for (const f of failures) { byInv[f.invariant] = (byInv[f.invariant] || 0) + 1; const s = `${f.w}x${f.h}`; bySize[s] = (bySize[s] || 0) + 1; byScene[f.scene] = (byScene[f.scene] || 0) + 1; }
-const summary = { url: BASE, engine: ENGINE, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, apiMode: LIVE_API ? "live" : "stub", apiReadsStubbed: stubReport ? stubReport.served : 0, byInvariant: byInv, bySize, byScene, skippedCells: skipped, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
+const summary = { url: BASE, engine: ENGINE, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, apiMode: LIVE_API ? "live" : "stub", apiReadsStubbed: stubReport ? stubReport.served : 0, byInvariant: byInv, bySize, byScene, skippedCells: skipped, reportOnly: notes, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
 if (OUT) writeFileSync(OUT, JSON.stringify({ summary, failures }, null, 1));
 
 if (failures.length) {
@@ -309,5 +338,10 @@ if (failures.length) {
 }
 for (const f of failures.slice(0, 20)) console.log(`FAIL ${f.w}x${f.h} ${f.engine} ${f.state}/${f.scene} ${f.invariant}: ${f.detail}`);
 if (truncated) console.log(`FAIL time budget of ${BUDGET_MS / 60000} min ran out after ${cells} cells; the sweep is incomplete`);
+if (notes.length) {
+  const by = {}; for (const x of notes) (by[x.invariant] ||= []).push(x);
+  console.log("\nreport-only (not failures; the next packages tighten these):");
+  for (const [k, l] of Object.entries(by)) { console.log(`  ${k}: ${l.length} of ${SIZES.length} sizes`); for (const x of l.slice(0, 6)) console.log(`    ${x.w}x${x.h} ${x.detail}`); }
+}
 console.log(`layout-sweep: ${ENGINE}, ${cells} cells, ${checks} invariant checks, ${failures.length} failures${truncated ? " (INCOMPLETE)" : ""} in ${summary.seconds}s`);
 process.exit(failures.length || truncated ? 1 : 0);

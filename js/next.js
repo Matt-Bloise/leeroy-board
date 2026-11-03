@@ -264,7 +264,7 @@ function frPrimary() {
 }
 function firstRun() {
   const panel = $("#panel-tonight"), meBox = $("#tn-me"), on = frFlag() && !MEM.me() && !FR.peek && FR.cta !== false && !!panel && !!meBox;
-  root.classList.toggle("nx-fr2", on);
+  root.classList.toggle("nx-first-run", on);
   let el = $("#nx-fr2"), yo = $("#nx-you");
   if (!on) { rm(el); rm(yo); return; }
   if (!FR.cta) { frCta(); return; } /* names stay hidden while the strings load */
