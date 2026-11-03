@@ -89,3 +89,90 @@ test("strip tool CLI rewrites the file, and fails on an inline flagship key it c
   assert.equal(r.status, 1);
   assert.match(r.stderr, /still present/);
 });
+
+// ---- timeout (a slow Flagship must not stall requests) ----
+import { FLAG_TIMEOUT_MS } from "../../infrastructure/worker/flags.js";
+
+test("a binding that never resolves answers false within the timeout, even when the legacy var says on", async () => {
+  const t0 = Date.now();
+  assert.equal(await flagOn({ D1_FEED: "on", FLAGS: bind(() => new Promise(() => {})) }, "D1_FEED"), false);
+  const ms = Date.now() - t0;
+  assert.ok(ms >= FLAG_TIMEOUT_MS - 15 && ms < FLAG_TIMEOUT_MS + 700, `answered after ${ms} ms`);
+});
+
+test("a binding that resolves true quickly answers true without waiting for the timeout", async () => {
+  const t0 = Date.now();
+  assert.equal(await flagOn({ FLAGS: bind(() => new Promise((r) => setTimeout(() => r(true), 10))) }, "D1_FEED"), true);
+  assert.ok(Date.now() - t0 < FLAG_TIMEOUT_MS, "did not wait for the timeout");
+});
+
+test("a binding that answers after the timeout loses the race (false); a late rejection is not an unhandled rejection", async () => {
+  const seen = [];
+  const onUnhandled = (e) => seen.push(e);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    assert.equal(await flagOn({ FLAGS: bind(() => new Promise((_, rej) => setTimeout(() => rej(new Error("late")), FLAG_TIMEOUT_MS + 80))) }, "D1_FEED"), false);
+    assert.equal(await flagOn({ FLAGS: bind(() => new Promise((r) => setTimeout(() => r(true), FLAG_TIMEOUT_MS + 80))) }, "D1_FEED"), false);
+    await new Promise((r) => setTimeout(r, FLAG_TIMEOUT_MS + 250));
+    assert.deepEqual(seen, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
+// ---- strip tool: env blocks, dotted keys, wrangler.json(c) ----
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "strip-"));
+const STRIP_CLI = path.join(ROOT, "tools/strip-flagship-binding.mjs");
+const runCli = (f) => spawnSync(process.execPath, [STRIP_CLI, f], { encoding: "utf8" });
+
+test("strip removes [[env.NAME.flagship]], [env.NAME.flagship], quoted and sub-table forms, and keeps the neighbours", () => {
+  const src = [
+    'name = "w"', "",
+    "[[env.staging.flagship]]", 'binding = "FLAGS"', 'app_id = "a"', "",
+    "[env.staging.vars]", 'X = "1"', "",
+    '[[env."my env".flagship]]', 'binding = "FLAGS"', "",
+    "[env.prod.flagship]", 'binding = "FLAGS"', "",
+    "[flagship.extra]", 'k = "v"', "",
+    "[vars]", 'D1_FEED = "off"', "",
+  ].join("\n");
+  assert.equal(hasFlagship(src), true);
+  const out = stripFlagship(src);
+  assert.equal(hasFlagship(out), false);
+  assert.match(out, /\[env\.staging\.vars\]\nX = "1"/);
+  assert.match(out, /\[vars\]\nD1_FEED = "off"/);
+  assert.equal(/FLAGS|app_id/.test(out), false);
+});
+
+test("hasFlagship detects dotted and inline keys; the CLI refuses them and leaves the file untouched", () => {
+  for (const line of ['flagship.binding = "FLAGS"', 'flagship = [ { binding = "FLAGS", app_id = "a" } ]', 'env.staging.flagship = [ { binding = "FLAGS" } ]', '"flagship" = []', "[env.x]\nflagship = []"]) {
+    assert.equal(hasFlagship(`name = "x"\n${line}\n`), true, line);
+    const dir = tmp(); const f = path.join(dir, "wrangler.toml"); const src = `name = "x"\n${line}\n`;
+    fs.writeFileSync(f, src);
+    const r = runCli(f);
+    assert.equal(r.status, 1, line);
+    assert.equal(fs.readFileSync(f, "utf8"), src, "file untouched on failure");
+  }
+});
+
+test("a comment or an unrelated name that merely contains the word is not a flagship binding", () => {
+  assert.equal(hasFlagship('# [[flagship]] is stripped for previews\n[vars]\nFLAGSHIP_NOTE = "x"\nNAME = "flagship"\n'), false);
+});
+
+test("the CLI fails when wrangler.json or wrangler.jsonc sits next to wrangler.toml, and succeeds without them", () => {
+  for (const n of ["wrangler.json", "wrangler.jsonc"]) {
+    const dir = tmp(); const f = path.join(dir, "wrangler.toml");
+    fs.writeFileSync(f, toml); fs.writeFileSync(path.join(dir, n), "{}");
+    const r = runCli(f);
+    assert.equal(r.status, 1, n);
+    assert.ok(r.stderr.includes(n));
+    assert.equal(fs.readFileSync(f, "utf8"), toml, "toml untouched");
+  }
+  const dir = tmp(); const f = path.join(dir, "wrangler.toml"); fs.writeFileSync(f, toml);
+  assert.equal(runCli(f).status, 0);
+  assert.equal(hasFlagship(fs.readFileSync(f, "utf8")), false);
+});
+
+test("the repo has no wrangler.json or wrangler.jsonc next to infrastructure/wrangler.toml", () => {
+  assert.equal(fs.existsSync(path.join(ROOT, "infrastructure/wrangler.json")), false);
+  assert.equal(fs.existsSync(path.join(ROOT, "infrastructure/wrangler.jsonc")), false);
+});

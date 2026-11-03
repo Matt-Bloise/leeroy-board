@@ -157,3 +157,20 @@ test("wrangler is pinned to the exact version 4.148.0 in package.json and the lo
   assert.equal(lock.packages["node_modules/wrangler"].version, "4.148.0");
   assert.equal(lock.packages[""].devDependencies.wrangler, "4.148.0");
 });
+
+// D1 seed decision: fail closed. An unparsed/unexpected wrangler output must never read as 0 rows (the seed does INSERT OR REPLACE over kv_state).
+test("the production and preview seed steps read the row count with tools/d1-row-count.mjs, fail the step on error, and never default to 0", () => {
+  for (const f of ["deploy-cloudflare.yml", "pr-preview-cloudflare.yml"]) {
+    const w = workflows.find((x) => x.f === f);
+    const c = code(w.text);
+    assert.match(c, /ROW_COUNT=\$\(node \.\.\/tools\/d1-row-count\.mjs "\$COUNT_JSON"\) \|\| \{[^}]*exit 1;?\s*\}/, `${f}: row count must come from the fail-closed tool and exit 1 on error`);
+    assert.equal(/\?\?\s*0\b/.test(c), false, `${f}: no "?? 0" default for the row count`);
+  }
+});
+
+test("the preview workflow does not use `wrangler subdomain get` (gone in wrangler 4) and does not guess a workers.dev account subdomain", () => {
+  const c = code(workflows.find((x) => x.f === "pr-preview-cloudflare.yml").text);
+  assert.equal(/subdomain get/.test(c), false);
+  assert.equal(/jmattbloise\.workers\.dev/.test(c), false);
+  assert.match(c, /Could not read the preview Worker URL/);
+});

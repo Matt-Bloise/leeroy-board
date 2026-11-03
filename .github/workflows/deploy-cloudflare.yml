@@ -291,11 +291,8 @@ jobs:
         run: |
           set -e
           COUNT_JSON=$(npx wrangler d1 execute "$D1_DATABASE_NAME" --remote --command="SELECT COUNT(*) AS n FROM kv_state;" --json)
-          ROW_COUNT=$(node -e '
-            const res = JSON.parse(process.argv[1] || "[]");
-            const n = res?.[0]?.results?.[0]?.n ?? 0;
-            process.stdout.write(String(n));
-          ' "$COUNT_JSON")
+          # Fail closed: an unexpected output shape must stop the deploy, never read as 0 rows (that would seed over live kv_state).
+          ROW_COUNT=$(node ../tools/d1-row-count.mjs "$COUNT_JSON") || { echo "::error::Could not read the kv_state row count from wrangler. Nothing was seeded."; exit 1; }
 
           echo "Current kv_state row count in D1: $ROW_COUNT"
           if [ "$ROW_COUNT" = "0" ]; then
