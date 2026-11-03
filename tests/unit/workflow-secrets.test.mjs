@@ -107,25 +107,38 @@ test("BOARD_ADMIN_TOKEN and the other production secrets are never available to 
   }
 });
 
-// Flagship: the ensure script and the Flagship setup run in the production deploy only. A PR workflow must never run them or see their secrets.
-test("no pull_request workflow references the Flagship ensure script or Flagship secrets", () => {
+// Flagship: production binds to the production Flagship app through [[flagship]] in wrangler.toml. A PR preview Worker is built from the same
+// file and must NOT: the preview deploy strips the block (tools/strip-flagship-binding.mjs), so previews read the legacy [vars].
+const STRIP = "strip-flagship-binding.mjs";
+test("every non-production job that runs `wrangler deploy` strips the Flagship binding first, in the same job", () => {
+  let seen = 0;
+  for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) {
+    for (const [name, job] of Object.entries(w.doc.jobs)) {
+      const steps = job.steps || [];
+      steps.forEach((s, i) => {
+        if (!/\bwrangler deploy\b/.test(code(s.run || ""))) return;
+        seen++;
+        const strip = steps.findIndex((t) => (t.run || "").includes(STRIP));
+        assert.ok(strip >= 0 && strip <= i, `${w.f} job ${name}: step ${i} runs wrangler deploy without stripping the [[flagship]] binding first`);
+      });
+    }
+  }
+  assert.ok(seen >= 1, "the preview deploy step must be found");
+});
+
+test("the preview strips the binding AFTER it patches wrangler.toml, and no PR-triggered workflow can add a Flagship binding", () => {
+  const prev = workflows.find((x) => x.f === "pr-preview-cloudflare.yml");
+  const step = Object.values(prev.doc.jobs).flatMap((j) => j.steps || []).find((t) => (t.run || "").includes(STRIP));
+  assert.ok(step, "the preview patch step runs the strip tool");
+  assert.ok(step.run.indexOf(STRIP) > step.run.indexOf('writeFileSync("wrangler.toml"'), "strip runs after the patched file is written");
   for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) {
-    const c = code(w.text);
-    assert.equal(/flagship-ensure/i.test(c), false, `${w.f} references tools/flagship-ensure.mjs`);
-    assert.equal(/flagship/i.test(c), false, `${w.f} mentions Flagship`);
-    assert.equal(/(?<![\w.\/-])secrets\.[A-Za-z0-9_]*FLAGSHIP[A-Za-z0-9_]*/i.test(c), false, `${w.f} reads a Flagship secret`);
+    assert.equal(/flagship/i.test(code(w.text).split(STRIP).join("")), false, `${w.f} mentions Flagship in code other than the strip tool`);
   }
 });
 
-test("the production deploy runs the ensure script best-effort, before wrangler deploy, and the binding is appended at deploy time", () => {
+test("the production deploy keeps the binding: it does not strip it and does not touch Flagship", () => {
   const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
-  const steps = w.doc.jobs["deploy-production"].steps;
-  const i = steps.findIndex((s) => /flagship-ensure\.mjs/.test(s.run || ""));
-  const d = steps.findIndex((s) => /wrangler deploy/.test(s.run || ""));
-  const b = steps.findIndex((s) => /\[\[flagship\]\]/.test(s.run || ""));
-  assert.ok(i >= 0 && b > i && d > b, "order: ensure, add binding, deploy");
-  assert.equal(steps[i]["continue-on-error"], true);
-  assert.ok(steps.some((s) => /::warning/.test(s.run || "") && /flagship\.outcome/.test(s.if || "")), "a warning annotation when the ensure step fails");
+  assert.equal(/flagship/i.test(code(w.text)), false);
 });
 
 // wrangler 4 needs Node >= 22: every workflow that runs wrangler must set up Node 22 or newer.

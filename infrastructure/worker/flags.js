@@ -1,9 +1,12 @@
-// Feature flags. Flagship (env.FLAGS, the [[flagship]] binding) when the deploy attached it; otherwise the legacy wrangler.toml [vars] value.
-// Local dev, unit tests and PR preview Workers have no binding, so they keep reading [vars] exactly as before.
-// Flag key "d1-feed" maps to the legacy var D1_FEED (upper case, dashes to underscores). Manifest: infrastructure/flags.json.
-// With a binding, ANY throw or non-true answer means OFF; the legacy var is not consulted (the dashboard is the single switch).
-export const legacyVarName = (key) => String(key).toUpperCase().replace(/-/g, "_");
-export const legacyOn = (env, key) => String((env && env[legacyVarName(key)]) || "").trim().toLowerCase() === "on";
+// Feature flags. Cloudflare Flagship (env.FLAGS, the [[flagship]] binding in wrangler.toml) when the Worker has it; otherwise the legacy
+// wrangler.toml [vars] value of the same name. Local dev, unit tests and PR preview Workers have no binding (the preview deploy strips it),
+// so they keep reading [vars] exactly as before.
+//
+// The flag key is the legacy var name, spelled exactly: flagOn(env, "D1_FEED") asks Flagship for the flag D1_FEED, or reads env.D1_FEED without a binding.
+// Every flag must be a BOOLEAN flag in Flagship with the variations on (true) and off (false), default variation off.
+// With a binding: a missing flag, a disabled flag, any throw or any answer other than true means OFF; the [vars] value is not consulted.
+// Flags are created and flipped in the Cloudflare dashboard (Compute, Flagship), never by CI. See docs/runbooks/flags.md.
+export const legacyOn = (env, key) => String((env && env[key]) || "").trim().toLowerCase() === "on";
 
 export async function flagOn(env, key, evalContext) {
   const b = env && env.FLAGS;

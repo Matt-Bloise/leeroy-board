@@ -77,7 +77,7 @@ If the reverted change added a migration file: reverting the file does not drop 
 
 ## Feature flags (Flagship)
 
-A flag that lives in Cloudflare Flagship is rolled back by **flipping it off in the dashboard**: no deploy, no revert. Details and the fallback to `wrangler.toml` `[vars]` when the binding is missing: docs/runbooks/flags.md. A failed Flagship step never blocks a code deploy, so a rollback of the code (sections 1 to 4) is unaffected.
+A flag that lives in Cloudflare Flagship is rolled back by **flipping it off in the dashboard**: no deploy, no revert. Details, the `[[flagship]]` binding and the fallback to `wrangler.toml` `[vars]` when the binding is missing: docs/runbooks/flags.md. A code rollback (sections 1 to 4) does not change a flag's state; the flag stays as set in the dashboard.
 
 ## Decision table by symptom
 

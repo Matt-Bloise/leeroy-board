@@ -305,34 +305,6 @@ jobs:
             echo "D1 already contains live state ($ROW_COUNT rows). Skipping seed to preserve live edits."
           fi
 
-      - name: Ensure Flagship app and flags (best effort, never blocks the deploy)
-        id: flagship
-        # Production only (this job runs on master in the environment production). continue-on-error: a Flagship outage or a missing
-        # token permission must never block a code deploy; the Worker then runs without the binding and reads wrangler.toml [vars].
-        continue-on-error: true
-        run: |
-          # stdout of the script is the app_id and nothing else; its messages go to stderr. No token value is printed.
-          APP_ID=$(node tools/flagship-ensure.mjs)
-          case "$APP_ID" in
-            ''|*[!A-Za-z0-9_-]*) echo "::error::flagship-ensure returned an unusable app id"; exit 1 ;;
-          esac
-          echo "app_id=$APP_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Warn when Flagship was not set up
-        if: steps.flagship.outcome != 'success'
-        run: |
-          echo "::warning title=Flagship not set up::tools/flagship-ensure.mjs failed. The Worker is deployed WITHOUT the FLAGS binding and falls back to wrangler.toml [vars] for every flag. Check the token has Flagship Write and Flagship Read, then re-run. See docs/runbooks/flags.md."
-
-      - name: Add the Flagship binding to the deploy-time wrangler config
-        if: steps.flagship.outcome == 'success' && steps.flagship.outputs.app_id != ''
-        working-directory: infrastructure
-        env:
-          FLAGSHIP_APP_ID: ${{ steps.flagship.outputs.app_id }}
-        run: |
-          # The app_id is only known at deploy time, so it is appended to the CI checkout's wrangler.toml and never committed.
-          printf '\n[[flagship]]\nbinding = "FLAGS"\napp_id = "%s"\n' "$FLAGSHIP_APP_ID" >> wrangler.toml
-          tail -n 4 wrangler.toml
-
       - name: Deploy Cloudflare Worker + Durable Object + Cron Trigger
         id: worker
         working-directory: infrastructure

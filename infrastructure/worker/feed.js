@@ -30,7 +30,7 @@ import { flagOn } from "./flags.js";
 
 // Legacy [vars] reader, kept for tests and local use. The route uses feedOn (Flagship first, then this var).
 export const feedEnabled = (env) => String((env && env.D1_FEED) || "").trim().toLowerCase() === "on";
-export const feedOn = (env) => flagOn(env, "d1-feed");
+export const feedOn = (env) => flagOn(env, "D1_FEED");
 export const isFeedDoc = (name) => FEED_DOCS.includes(name);
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);

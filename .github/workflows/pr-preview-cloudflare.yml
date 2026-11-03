@@ -302,6 +302,10 @@ jobs:
             fs.writeFileSync("wrangler.toml", toml, "utf8");
           ' "$DB_ID"
 
+          # A preview must never bind to the PRODUCTION Flagship app: remove the [[flagship]] block (previews then read the legacy [vars]).
+          # The tool fails the step if any flagship binding is left.
+          node ../tools/strip-flagship-binding.mjs wrangler.toml
+
       - name: Say that the preview limit is reached
         if: failure() && steps.d1.outputs.limit_reached == 'true'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
