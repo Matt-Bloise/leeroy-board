@@ -83,4 +83,4 @@ BOARD_LINES_ENABLED = "off" # needs CARDS_ENABLED too: the first real board deci
 SETUP_COMMAND = "off" # "on" lists and answers the Discord /setup command (worker/setup-command.js)
 EVAL_ENABLED = "off" # "on" (or "true", "1") opens the admin model bake-off route (docs/runbooks/model-bake-off.md); it is 404 while off
 # Read by the Worker but deliberately NOT declared here: ANSWER_FORMAT (defaults ON when unset; set "off" to turn it off), AI_DAILY_NEURON_CAP and ASK_DEADLINE_MS (optional numbers, the code has defaults),
-# CLOUDFLARE_ACCOUNT_ID alternates ACCOUNT_ID / CF_ACCOUNT_ID, PR_NUMBER / WORKER_NAME / IS_PR_PREVIEW (set by the preview deploy), and the secrets and bindings listed in tests/unit/wrangler-flags.test.mjs.
+# CLOUDFLARE_ACCOUNT_ID alternates ACCOUNT_ID / CF_ACCOUNT_ID, the preview-only names (set by the preview deploy, which looks for one of them in this file, so do not write it here), and the secrets and bindings listed in tests/unit/wrangler-flags.test.mjs.

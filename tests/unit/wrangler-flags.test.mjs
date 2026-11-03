@@ -48,3 +48,7 @@ test("a flag is not both declared and listed as undeclared", () => {
 test("ANSWER_FORMAT stays undeclared because unset means on", () => {
   assert.ok(!declared.has("ANSWER_FORMAT"));
 });
+
+test("wrangler.toml never mentions the preview-only names: the PR preview deploy skips injecting IS_PR_PREVIEW if that word appears anywhere in the file", () => {
+  for (const k of DOCUMENTED.preview) assert.ok(!toml.includes(k), `${k} must not appear in wrangler.toml (not even in a comment)`);
+});
