@@ -13,7 +13,7 @@ import worker from "../../infrastructure/worker/index.js";
 import { DATA_MAP, DURABLE_OBJECT_STATE, CONFIRM_PHRASE } from "../../infrastructure/worker/data-rights.js";
 import { EXCLUDED_TABLES } from "../../infrastructure/worker/export.js";
 import { userKey } from "../../infrastructure/worker/account.js";
-import { userHash } from "../../infrastructure/worker/answer-ux.js";
+import { userHash, slugAskerHash, insertAskTurn } from "../../infrastructure/worker/answer-ux.js";
 import { hashId } from "../../infrastructure/worker/budget.js";
 import { voterHash } from "../../infrastructure/worker/votes.js";
 import { webSessionHash, SESS_COOKIE } from "../../infrastructure/worker/web-auth.js";
@@ -187,6 +187,7 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
 test("web session erase: everything keyed by the Discord id or its hashes is gone; rows found only by name stay (stated)", async () => {
   const { db, ids } = await seeded(), e = env(db);
   db.raw.prepare("INSERT INTO ask_turns (id, by_name, question, status, created_at) VALUES ('q-legacy', ?, 'legacy question', 'answered', ?)").run(NAME, NOWISO); // no asker row
+  db.raw.prepare("INSERT INTO ask_turn_legacy (intent_id) VALUES ('q-legacy')").run(); // existed when migration 0009 ran
   const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asCookie }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
   assert.equal(res.status, 200);
   const byId = [ME, ids.userKey, ids.answerHash, ids.budgetId, ids.ballot, DISPLAY, "ciphertext-me", "gh-me"];
@@ -256,7 +257,7 @@ test("the Durable Object keeps no state: no storage call anywhere in room.js, an
 });
 
 // ---- (3) a nickname that equals a member's name must not pull in, or delete, someone else's questions
-test("nickname collision: a stranger who asked under the name Red Fox is neither exported nor erased; a legacy row with no asker row still is", async () => {
+test("nickname collision: a stranger who asked under the name Red Fox is neither exported nor erased; a legacy row (existed before migration 0009) still is", async () => {
   const { db, ids } = await seeded(), e = env(db);
   const r = db.raw;
   // a non-roster Discord user whose nickname is "Red Fox": their question carries their own asker hash
@@ -265,6 +266,7 @@ test("nickname collision: a stranger who asked under the name Red Fox is neither
   r.prepare("INSERT INTO answer_details (intent_id, more, created_at) VALUES ('q-stranger', 'stranger detail', ?)").run(NOWISO);
   // a row written before migration 0009 has no asker row, so only the name can find it
   r.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, created_at) VALUES ('q-legacy', ?, 'legacy question', 'legacy answer', 'answered', ?)").run(NAME, NOWISO);
+  r.prepare("INSERT INTO ask_turn_legacy (intent_id) VALUES ('q-legacy')").run();
   r.prepare("INSERT INTO answer_details (intent_id, more, created_at) VALUES ('q-legacy', 'legacy detail', ?)").run(NOWISO);
 
   const exp = await (await call(e, "GET", "/api/me/export", asKey)).text();
@@ -323,4 +325,80 @@ test("a member key erased elsewhere is refused on a write at once; reads keep th
   assert.equal(await authenticate(mk("POST"), e), null, "a write must re-check the table");
   assert.equal(await authenticate(mk("GET"), e), null, "the re-check refreshed the cache");
   assert.equal(await authenticate(mk("DELETE"), e), null);
+});
+
+// ---- (1) ownership must not fail open: a new question whose hash was not written is never matched by name
+const OWNER = { Origin: "https://leeroy.test" }, CONFIRM = JSON.stringify({ confirm: CONFIRM_PHRASE });
+test("a new question without an asker row (hash write failed or skipped) is neither exported nor erased by a same-name member", async () => {
+  const { db } = await seeded(), e = env(db);
+  // as if the hash write had failed: a NEW row, same name as the member, no asker row, and not in ask_turn_legacy
+  db.raw.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, created_at) VALUES ('q-unowned', ?, 'unowned question', 'unowned answer', 'answered', ?)").run(NAME, NOWISO);
+  db.raw.prepare("INSERT INTO answer_details (intent_id, more, created_at) VALUES ('q-unowned', 'unowned detail', ?)").run(NOWISO);
+  const exp = await (await call(e, "GET", "/api/me/export", asKey)).text();
+  assert.ok(!exp.includes("unowned question") && !exp.includes("unowned detail"), "a same-name member's export reached a new unowned question");
+  assert.equal((await call(e, "POST", "/api/me/erase", { ...OWNER, ...asKey }, CONFIRM)).status, 200);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-unowned'"), 1, "a same-name member's erase deleted a new unowned question");
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM answer_details WHERE intent_id = 'q-unowned'"), 1);
+});
+
+test("insertAskTurn: the question and its asker rows are one batch; if the hash write fails the question is not stored either", async () => {
+  const { db } = await seeded();
+  const e = { ...env(db) };
+  const real = db.prepare;
+  e.DB = { ...db, prepare: (sql) => { const st = real(sql); return /INSERT OR IGNORE INTO ask_turn_askers/.test(sql) ? { ...st, bind: () => ({ _run: () => { throw new Error("D1_ERROR: disk I/O error"); }, run: async () => { throw new Error("disk I/O error"); } }) } : st; } };
+  await assert.rejects(insertAskTurn(e, { id: "q-atomic", byName: NAME, question: "x", provider: "p", share: true, createdAt: NOWISO }, { discordId: ME, slug: SLUG }), /disk I\/O/);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-atomic'"), 0, "the ask row must roll back with the failed hash write");
+});
+
+test("insertAskTurn: no migration yet (table missing) still stores the question, as a row that is never matched by name; a visitor is stored alone", async () => {
+  const { db } = await seeded(), e = env(db);
+  db.raw.exec("DROP TABLE ask_turn_askers");
+  const log = console.error; console.error = () => {};
+  try { await insertAskTurn(e, { id: "q-nomig", byName: NAME, question: "x", provider: "p", share: true, createdAt: NOWISO }, { discordId: ME, slug: SLUG }); } finally { console.error = log; }
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-nomig'"), 1);
+  await insertAskTurn(e, { id: "q-visitor", byName: "Visitor", question: "x", provider: "p", share: true, createdAt: NOWISO }, {});
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-visitor'"), 1);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turn_legacy"), 0, "new rows are never marked legacy");
+});
+
+// ---- (2) a roster member's Discord questions are found with the board key, whichever credential asked
+test("a Discord question by a roster member carries both hashes and is found by a board key whose roster entry has no Discord id", async () => {
+  const { db, ids } = await seeded(), e = env(db);
+  db.raw.prepare("UPDATE kv_state SET json = ? WHERE key = 'discord_members'").run(JSON.stringify([{ slug: SLUG, name: NAME, match: [] }, { slug: OTHER_SLUG, name: OTHER_NAME, match: [], id: OTHER }])); // no id: the key cannot derive the Discord hash
+  await insertAskTurn(e, { id: "q-discord", byName: NAME, question: "asked on discord", provider: "p", share: true, createdAt: NOWISO }, { discordId: ME, slug: SLUG });
+  const hashes = db.raw.prepare("SELECT asker_hash FROM ask_turn_askers WHERE intent_id = 'q-discord' ORDER BY asker_hash").all().map((r) => r.asker_hash);
+  assert.deepEqual(hashes, [ids.answerHash, await slugAskerHash({ USER_SALT }, SLUG)].sort());
+  const exp = await (await call(e, "GET", "/api/me/export", asKey)).json();
+  assert.ok(exp.legacy.ask_turns.some((q) => q.id === "q-discord"), "the board key did not find the Discord question");
+  assert.equal(exp.tenancy, null, "this key has no Discord id, so only the handle hash can find it");
+  assert.equal((await call(e, "POST", "/api/me/erase", { ...OWNER, ...asKey }, CONFIRM)).status, 200);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-discord'"), 0);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turn_askers WHERE intent_id = 'q-discord'"), 0);
+});
+
+test("a Discord question by someone not on the roster carries their Discord-id hash, so a web sign-in finds it; nothing else does", async () => {
+  const { db, ids } = await seeded(), e = env(db);
+  await insertAskTurn(e, { id: "q-nonroster", byName: "SomeNick", question: "from a non-roster user", provider: "p", share: true, createdAt: NOWISO }, { discordId: ME, slug: null });
+  const web = await (await call(e, "GET", "/api/me/export", asCookie)).json();
+  assert.ok(web.legacy.ask_turns.some((q) => q.id === "q-nonroster"));
+  const other = await (await call(e, "GET", "/api/me/export", { Authorization: `Board ${OTHER_KEY}` })).text();
+  assert.ok(!other.includes("from a non-roster user"));
+});
+
+// ---- (3) the work to find a member's ballots does not grow with every vote they never joined
+test("erase and export look for ballots 40 votes per query and read or edit only the votes the member voted in", async () => {
+  const { db, ids } = await seeded(), e = env(db);
+  for (let i = 0; i < 130; i++) db.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(`vote:${(i + 0x1000).toString(16).padStart(8, "0")}`, JSON.stringify({ id: "x", title: "old", choices: ["a"], ballots: { [`h${i}`]: 0 } }), NOWISO);
+  const sqls = [], real = e.DB.prepare;
+  e.DB = { ...e.DB, prepare: (sql) => { sqls.push(sql); return real(sql); } };
+  const exp = await (await call(e, "GET", "/api/me/export", asKey)).json();
+  assert.deepEqual(exp.legacy.vote_ballots, [{ vote_id: "aaaa1111", title: "Pick", choice: 0 }]);
+  const probes = sqls.filter((q) => /^SELECT key FROM kv_state WHERE \(key = \?/.test(q));
+  assert.equal(probes.length, Math.ceil(131 / 40), "one probe per 40 votes");
+  assert.equal(sqls.filter((q) => /^SELECT json FROM kv_state WHERE key = \?$/.test(q)).length <= 2, true, "documents are read only for the votes the member joined (plus the auth roster read)");
+  sqls.length = 0;
+  assert.equal((await call(e, "POST", "/api/me/erase", { ...OWNER, ...asKey }, CONFIRM)).status, 200);
+  assert.equal(sqls.filter((q) => /json_remove/.test(q)).length, 1, "one edit, for the one vote the member joined");
+  const left = JSON.parse(db.raw.prepare("SELECT json FROM kv_state WHERE key = 'vote:aaaa1111'").get().json);
+  assert.deepEqual(left.ballots, { [ids.otherBallot]: 1 });
 });

@@ -41,22 +41,32 @@ export function userHash(env, discordId) {
   return sha256Hex(`${env.USER_SALT}:answer-ux:${discordId}`);
 }
 
-// Who asked an Ask turn, for erase and export (table ask_turn_askers, migration 0009). A Discord id wins; a board key has only its slug.
-// The Discord form is the same hash as userHash, so it also matches answer_feedback and answer_details.asker_hash.
+// Who asked an Ask turn, for erase and export (tables ask_turn_askers and ask_turn_legacy, migration 0009).
+// Every hash this asker is known by is stored, so either credential finds the question later: the Discord-id hash (the same as userHash, so
+// it also matches answer_feedback and answer_details.asker_hash) and the member-handle hash.
 export const slugAskerHash = (env, slug) => sha256Hex(`${env.USER_SALT}:answer-ux:slug:${slug}`);
-export async function askerHash(env, { discordId, slug } = {}) {
-  if (!saltReady(env)) return null;
-  if (discordId) return userHash(env, String(discordId));
-  if (slug) return slugAskerHash(env, String(slug));
-  return null; // a web guest: nothing identifies them, so nothing is stored
+export async function askerHashes(env, { discordId, slug } = {}) {
+  if (!saltReady(env)) return [];
+  const out = [];
+  if (discordId) out.push(await userHash(env, String(discordId)));
+  if (slug) out.push(await slugAskerHash(env, String(slug)));
+  return out; // a web visitor: nothing identifies them, so nothing is stored
 }
-// Never fails an ask: a missing table or salt only means that turn is found by name (older rows) or not at all.
-export async function recordAsker(env, intentId, who) {
+// Writes the ask_turns row and its asker rows in ONE batch: both land or neither does, so a new question can never exist without the hashes
+// we could compute for it. No identifiable asker (a web visitor, or no salt): the row is written alone and, not being legacy, is never matched by name.
+// Only a missing ask_turn_askers table (migration not applied yet) falls back to the plain insert; any other failure fails the ask.
+export async function insertAskTurn(env, row, who) {
+  const ins = env.DB.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)")
+    .bind(row.id, row.byName, row.question, row.provider, row.share ? 1 : 0, row.createdAt);
+  const hashes = await askerHashes(env, who);
+  if (!hashes.length) { await ins.run(); return; }
   try {
-    const h = await askerHash(env, who);
-    if (!h) return;
-    await env.DB.prepare("INSERT OR REPLACE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").bind(String(intentId), h).run();
-  } catch (e) { console.error("ask_turn_askers write failed"); }
+    await env.DB.batch([ins, ...hashes.map((h) => env.DB.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").bind(String(row.id), h))]);
+  } catch (e) {
+    if (!/no such table/i.test(String((e && e.message) || e))) throw e;
+    console.error("ask_turn_askers missing: apply migration 0009");
+    await ins.run();
+  }
 }
 
 // Components for the final @original edit. Empty when there is nothing to show, no salt, or no message id to bind to.

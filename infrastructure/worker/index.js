@@ -20,7 +20,7 @@ import {
   webBoardLinksDeep,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex, acquireRefreshCooldown } from "./scraper.js";
-import { feedbackReport, cleanupAnswerUx, recordAsker } from "./answer-ux.js";
+import { feedbackReport, cleanupAnswerUx, insertAskTurn } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { manifestFor } from "./setup-command.js";
@@ -1575,12 +1575,7 @@ export default {
             guestLeft = Math.max(0, 2 - guestCount);
           }
 
-          await env.DB.prepare(
-            "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)"
-          )
-            .bind(intentId, askBy, question, activeProvider, share ? 1 : 0, now)
-            .run();
-          if (!isGuest) await recordAsker(env, intentId, { slug: memberSlug });
+          await insertAskTurn(env, { id: intentId, byName: askBy, question, provider: activeProvider, share, createdAt: now }, isGuest ? {} : { slug: memberSlug });
 
           const { seq } = await insertIntent(env, {
             slug: askSlug,

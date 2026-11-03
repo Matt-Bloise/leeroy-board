@@ -26,7 +26,7 @@
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
 import { answerUxEnabled } from "./answer-format.js";
-import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, recordAsker } from "./answer-ux.js";
+import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
@@ -810,12 +810,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
       const now = new Date().toISOString();
 
-      await env.DB.prepare(
-        "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)"
-      )
-        .bind(intentId, byName, question, provider, isPrivate ? 0 : 1, now)
-        .run();
-      await recordAsker(env, intentId, { discordId: user.id, slug: member && member.slug });
+      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
 
       await insertIntent(env, {
         slug: intentSlug,
@@ -1646,12 +1641,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
       const intentId = crypto.randomUUID();
       const provider = resolveAiProvider(env);
-      await env.DB.prepare(
-        "INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', 1, ?)"
-      )
-        .bind(intentId, byName, text, provider, now)
-        .run();
-      await recordAsker(env, intentId, { discordId: user.id, slug: member && member.slug });
+      await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now }, { discordId: user.id, slug: member && member.slug });
 
       await insertIntent(env, {
         slug: intentSlug,

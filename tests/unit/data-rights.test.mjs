@@ -180,7 +180,7 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
   assert.equal(batches, 1);
   assert.deepEqual(shape(env.executed), [
     "DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details",
-    "DELETE FROM kv_state", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers",
+    "DELETE FROM kv_state", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_legacy",
     "DELETE FROM sheet_events", "DELETE FROM dispatches", "DELETE FROM intents",
     "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM sessions_v2", "DELETE FROM humans",
     "DELETE FROM users", "INSERT INTO audit_log",
@@ -193,7 +193,7 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
   assert.deepEqual(at("sheet_events").args, ["red-fox"]);
   // questions are found by the asker hash first; the name only for rows that have no asker row
   assert.deepEqual(at("ask_turns").args, [await userHash(env, ID), await slugAskerHash(env, "red-fox"), "red-fox", "Red Fox"]);
-  assert.match(at("ask_turns").sql, /id NOT IN \(SELECT intent_id FROM ask_turn_askers\)/);
+  assert.match(at("ask_turns").sql, /id IN \(SELECT intent_id FROM ask_turn_legacy\)/); // the name fallback is for legacy rows only
   assert.deepEqual(at("users").args, [ID]);
 });
 
@@ -215,7 +215,7 @@ test("erase by web session: tenancy and user_state rows only, never a slug or na
   const env = await makeEnv();
   const res = await erase(env, COOKIE);
   assert.equal(res.status, 200);
-  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM sessions_v2", "DELETE FROM humans", "DELETE FROM users", "INSERT INTO audit_log"]);
+  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_askers", "DELETE FROM ask_turn_legacy", "DELETE FROM sessions_v2", "DELETE FROM humans", "DELETE FROM users", "INSERT INTO audit_log"]);
   const sc = res.headers.get("Set-Cookie");
   assert.match(sc, new RegExp(`^${SESS_COOKIE}=; .*Max-Age=0`));
   assert.match(sc, /HttpOnly/);

@@ -40,8 +40,9 @@ export const DATA_MAP = Object.freeze({
   lib_sources: { links: null, erase: null, member: null },
   lib_source_snapshots: { links: null, erase: null, member: null },
   wiki_proposals: { links: null, erase: null, member: null },
-  ask_turns: { links: "ask_turn_askers.asker_hash; rows older than migration 0009 only by_name = slug or roster name (member-key caller only)", erase: "DELETE by asker hash; legacy rows with no asker row by by_name", member: "legacy.ask_turns" },
-  ask_turn_askers: { links: "asker_hash", erase: "DELETE by asker_hash", member: null },
+  ask_turns: { links: "ask_turn_askers.asker_hash; only rows listed in ask_turn_legacy (older than migration 0009) by_name = slug or roster name (member-key caller only)", erase: "DELETE by asker hash; legacy rows by by_name", member: "legacy.ask_turns" },
+  ask_turn_askers: { links: "asker_hash (Discord-id hash and/or member-handle hash)", erase: "DELETE by asker_hash", member: null },
+  ask_turn_legacy: { links: "intent_id of a question that existed before migration 0009 (no hash; the only rows matched by name)", erase: null, member: null },
   fact_fixes: { links: "by_name = slug or roster name (member-key caller only)", erase: "DELETE by by_name", member: "legacy.fact_fixes" },
   sheet_events: { links: "slug", erase: "DELETE by slug", member: "legacy.sheet_events" },
   dispatches: { links: "slug", erase: "DELETE by slug", member: "legacy.dispatches" },
@@ -126,28 +127,42 @@ async function personalKeys(env, who) {
   return k;
 }
 
-// An ask_turns row is this person's when its asker row holds one of their hashes. Rows written before migration 0009 have no asker row;
-// those (and only those) are matched by name, so a nickname that equals this person's name cannot pull in a row that has an asker row.
-const MINE_ASK = "(id IN (SELECT intent_id FROM ask_turn_askers WHERE asker_hash IN (?, ?)) OR (by_name IN (?, ?) AND id NOT IN (SELECT intent_id FROM ask_turn_askers)))";
+// An ask_turns row is this person's when one of its asker rows holds one of their hashes. Only the rows that existed when migration 0009 ran
+// (ask_turn_legacy, which cannot have a hash) may be matched by name. Any later row is found by hash or not at all, so a skipped hash write
+// can never let a same-name person's erase or export reach a new question.
+const MINE_ASK = "(id IN (SELECT intent_id FROM ask_turn_askers WHERE asker_hash IN (?, ?)) OR (by_name IN (?, ?) AND id IN (SELECT intent_id FROM ask_turn_legacy)))";
 const askArgs = (pk, who) => [pk.askerHashes[0], pk.askerHashes[1], who.slug || null, who.name || null];
 
-// Ids of every stored vote (kv_state vote:<id>), not just the 50 in votes:index, so an old vote keeps no ballot behind.
+// Ids of every stored vote (kv_state vote:<id>), keys only, not the documents.
 async function voteIds(env) {
   return (await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%'")).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id));
 }
 const ballotPath = (hash) => `$.ballots."${hash}"`; // hex only, quoted because a key may start with a digit
+const VOTE_CHUNK = 40; // two bound values per vote, and D1 allows 100 per statement
 
-// -> [{ id, vote, hash, choice }] for each vote document that holds a ballot from this Discord id (export only; erase never reads the documents).
+// -> [{ id, hash }] for the votes that hold a ballot from this Discord id. A ballot key is a hash of the vote id and the person, so the
+// hashes are computed here (cheap) and the database is asked, 40 votes per query, which of those exact ballots exist: the query returns only
+// matching keys, and only those votes are read or edited afterwards. Votes the person never joined cost no document read and no statement.
+async function callerVotes(env, discordId) {
+  if (!discordId) return [];
+  const ids = await voteIds(env), out = [];
+  for (let i = 0; i < ids.length; i += VOTE_CHUNK) {
+    const chunk = ids.slice(i, i + VOTE_CHUNK), hashes = await Promise.all(chunk.map((id) => voterHash(discordId, id, env.USER_SALT)));
+    const cond = chunk.map(() => "(key = ? AND CASE WHEN json_valid(json) THEN json_extract(json, ?) END IS NOT NULL)").join(" OR ");
+    const hit = new Set((await rows(env, `SELECT key FROM kv_state WHERE ${cond}`, ...chunk.flatMap((id, j) => [`vote:${id}`, ballotPath(hashes[j])]))).map((r) => r.key));
+    chunk.forEach((id, j) => { if (hit.has(`vote:${id}`)) out.push({ id, hash: hashes[j] }); });
+  }
+  return out;
+}
+
+// -> [{ id, vote, hash, choice }] for export: callerVotes, then one read per vote the person actually voted in.
 async function ballotsOf(env, who) {
-  if (!who.discordId) return [];
   const out = [];
-  for (const id of await voteIds(env)) {
+  for (const { id, hash } of await callerVotes(env, who.discordId)) {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(`vote:${id}`).first();
     let vote = null;
     try { vote = row ? JSON.parse(row.json) : null; } catch (e) { vote = null; }
-    if (!vote || !vote.ballots || typeof vote.ballots !== "object") continue;
-    const h = await voterHash(who.discordId, id, env.USER_SALT);
-    if (Object.prototype.hasOwnProperty.call(vote.ballots, h)) out.push({ id, vote, hash: h, choice: vote.ballots[h] });
+    if (vote && vote.ballots && Object.prototype.hasOwnProperty.call(vote.ballots, hash)) out.push({ id, vote, hash, choice: vote.ballots[hash] });
   }
   return out;
 }
@@ -225,16 +240,20 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM sessions WHERE user_key = ?").bind(pk.userKey));
     st.push(db.prepare("DELETE FROM answer_feedback WHERE user_hash = ?").bind(pk.answerHash));
     st.push(db.prepare("DELETE FROM answer_details WHERE asker_hash = ?").bind(pk.answerHash));
-    // One in-database edit per vote: json_remove on the ballot key. Nothing is read first, so a ballot cast by someone else at the same moment is not overwritten.
-    for (const vid of await voteIds(env)) {
-      st.push(db.prepare("UPDATE kv_state SET json = json_remove(json, ?), updated_at = ? WHERE key = ? AND json_valid(json)").bind(ballotPath(await voterHash(id, vid, env.USER_SALT)), new Date(now).toISOString(), `vote:${vid}`));
+    // One in-database edit per vote the person voted in: json_remove on the ballot key. The document is never read and rewritten, so a ballot cast by someone else at the same moment is not overwritten.
+    for (const v of await callerVotes(env, id)) {
+      st.push(db.prepare("UPDATE kv_state SET json = json_remove(json, ?), updated_at = ? WHERE key = ? AND json_valid(json)").bind(ballotPath(v.hash), new Date(now).toISOString(), `vote:${v.id}`));
     }
   }
   for (const h of pk.budgetIds) st.push(db.prepare("DELETE FROM kv_state WHERE key LIKE ?").bind(kvLike(h)));
   // the answer text behind "More" / "Sources" belongs to the Ask turn; it goes first, while the turn row can still be found
   st.push(db.prepare(`DELETE FROM answer_details WHERE intent_id IN (SELECT id FROM ask_turns WHERE ${MINE_ASK})`).bind(...askArgs(pk, who)));
   st.push(db.prepare(`DELETE FROM ask_turns WHERE ${MINE_ASK}`).bind(...askArgs(pk, who)));
+  // the asker rows of the questions just deleted (a question can carry a hash the caller cannot derive, e.g. a Discord-id hash on a key with no roster id),
+  // then any row of the caller's own hashes, then legacy marks whose question is gone
+  st.push(db.prepare("DELETE FROM ask_turn_askers WHERE intent_id NOT IN (SELECT id FROM ask_turns)").bind());
   st.push(db.prepare("DELETE FROM ask_turn_askers WHERE asker_hash IN (?, ?)").bind(pk.askerHashes[0], pk.askerHashes[1]));
+  st.push(db.prepare("DELETE FROM ask_turn_legacy WHERE intent_id NOT IN (SELECT id FROM ask_turns)").bind());
   if (who.slug) {
     st.push(db.prepare("DELETE FROM sheet_events WHERE slug = ?").bind(who.slug));
     st.push(db.prepare("DELETE FROM dispatches WHERE slug = ?").bind(who.slug));

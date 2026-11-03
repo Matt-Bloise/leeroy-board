@@ -1,7 +1,7 @@
-1. source database: 41 tables from schema.sql, seeded with 465 fixture statements
-2. export: 36 tables exported, 5 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens), 582 lines
+1. source database: 42 tables from schema.sql, seeded with 465 fixture statements
+2. export: 37 tables exported, 5 never exported (account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens), 585 lines
    no secret value in the export file (6 checked)
-3. checksums of the source: 36 tables, 464 rows
+3. checksums of the source: 37 tables, 464 rows
 4. wipe: the database is deleted
 5. restore: a fresh database is built from schema.sql and loaded from the export
 6. diff, table by table (rows and sha256 of the exported columns; source vs restored)
@@ -17,11 +17,11 @@
    ok   character_profiles     rows    1 ->    1   sha256 d2605a4ada78aaff == d2605a4ada78aaff
    ok   noise_ledger           rows    1 ->    1   sha256 c723059cfe4e6bc7 == c723059cfe4e6bc7
    ok   request_gauge          rows    2 ->    2   sha256 fa6be4c23ff9abc3 == fa6be4c23ff9abc3
-   ok   24 tables are empty in the fixtures (0 -> 0, nothing to compare, not tested): lib_pages, lib_blobs, lib_sources, lib_source_snapshots, wiki_proposals, fact_fixes, sheet_events, dispatches, accounts, identities, humans, human_members, tenant_config, memberships, thread_cursors, audit_log, groups, group_slots, signups_v2, entitlements, discord_events, answer_details, answer_feedback, ask_turn_askers
+   ok   25 tables are empty in the fixtures (0 -> 0, nothing to compare, not tested): lib_pages, lib_blobs, lib_sources, lib_source_snapshots, wiki_proposals, fact_fixes, sheet_events, dispatches, accounts, identities, humans, human_members, tenant_config, memberships, thread_cursors, audit_log, groups, group_slots, signups_v2, entitlements, discord_events, answer_details, answer_feedback, ask_turn_askers, ask_turn_legacy
    ok   account_keys           rows    0 ->    0   never exported: comes back empty (by design)
    ok   sessions               rows    1 ->    0   never exported: comes back empty (by design)
    ok   guest_rate_limits      rows    1 ->    0   never exported: comes back empty (by design)
    ok   sessions_v2            rows    1 ->    0   never exported: comes back empty (by design)
    ok   provider_tokens        rows    1 ->    0   never exported: comes back empty (by design)
 
-RESTORE DRILL PASSED: 36 tables, 464 rows, every count and checksum matches
+RESTORE DRILL PASSED: 37 tables, 464 rows, every count and checksum matches
