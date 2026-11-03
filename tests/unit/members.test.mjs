@@ -13,9 +13,17 @@ test("id match wins over a conflicting display name", () => {
   assert.deepEqual(resolveMember("100000000000000001", "Blue Owl fan", members), { slug: "red-fox", name: "Red Fox" });
 });
 
-test("display-name fallback works when the id is unknown or missing", () => {
-  assert.deepEqual(resolveMember("100000000000000099", "the OWL", members), { slug: "blue-owl", name: "Blue Owl" });
+test("display-name fallback only applies to callers with no Discord id at all", () => {
   assert.deepEqual(resolveMember(undefined, "owl", members), { slug: "blue-owl", name: "Blue Owl" });
+  assert.deepEqual(resolveMember(null, "the OWL", members), { slug: "blue-owl", name: "Blue Owl" });
+  assert.deepEqual(resolveMember("", "the OWL", members), { slug: "blue-owl", name: "Blue Owl" });
+});
+
+test("a caller with a Discord id is matched by id only: a guest named after a member is not that member", () => {
+  assert.equal(resolveMember("100000000000000099", "the OWL", members), null);
+  assert.equal(resolveMember("100000000000000099", "Red Fox (not really)", members), null);
+  // The real owner still resolves by id, whatever their display name says.
+  assert.deepEqual(resolveMember("100000000000000001", "someone else", members), { slug: "red-fox", name: "Red Fox" });
 });
 
 test("unknown user resolves to null, including with no config", () => {

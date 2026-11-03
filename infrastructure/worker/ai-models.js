@@ -21,6 +21,7 @@ import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttrib
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
+import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 
 // Alias -> display name for the voice guards. Only distinctive single-word aliases that sit inside a longer display name
 // are used ("squidward" -> "Handsome Squidward"); short or common words such as "rat", "tank" or "mage" are never rewritten.
@@ -739,6 +740,9 @@ export const PROMPT_VARIANTS = ["production", "plain", "examples-6", "format-rem
 const FORMAT_REMINDER =
   "Format contract: the first line is one bold sentence that answers the question. Then at most a few short bullets (`- **Name** · value`). Then `-# Sources: id1, id2`. No emoji, no greeting, no filler opener, no bare web addresses.";
 
+// Timestamp ids go to the page as numbers, random (UUID) ids whole, so the page can poll GET /api/ask?id= with them.
+const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
+
 export async function buildAnswerInputs(env, { question, by, journey = "curious", share = true, isMember, promptVariant = "production" }) {
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
@@ -820,11 +824,10 @@ export async function buildAnswerInputs(env, { question, by, journey = "curious"
         })
       : isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
     if (promptVariant === "format-reminder") systemPrompt = `${systemPrompt}\n\n${FORMAT_REMINDER}`;
+    systemPrompt = `${systemPrompt}\n\n${FENCE_RULE}`;
 
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
-    const userPrompt = `Party Context:\n${partySummary}\n\nTop Library Facts:\n${topFactHits.join(
-      "\n"
-    )}\n\nTop Matching Pages:\n${topPagesSummary}\n\nAsker: ${by} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${by} (journey: ${journey}): ${question}`;
+    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\nTop Library Facts and Pages:\n${fence("LIBRARY", `${topFactHits.join("\n")}\n\nTop Matching Pages:\n${topPagesSummary}`)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach };
 }
@@ -885,9 +888,11 @@ export async function answerWithAi({
     const activeProvider = resolveAiProvider(env, chosenProvider);
     const qHash = (await sha256Hex(question)).slice(0, 16);
     const cacheKey = `ask:${libraryStamp}:${chosenProvider}:${deep ? "deep" : "fast"}:${qHash}`;
-    // Daily Workers AI budget: past the soft cap, answer in voice without calling AI. Other providers are not capped.
-    if (chosenProvider === "workers-ai") {
-      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null);
+    // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
+    // so choosing a different model does not skip the caps.
+    {
+      // The global cap counts Workers AI neurons only, so it is skipped for other providers; the user and tenant caps still apply.
+      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai" });
       if (verdict) {
         budgetCode = verdict.code;
         const limitedAt = nowIso();
@@ -898,29 +903,8 @@ export async function answerWithAi({
         )
           .bind(limitText, budgetCode === "budget_global" ? "workers-ai:daily-limit" : `workers-ai:${budgetCode}`, Date.now() - t0, limitedAt, intentId)
           .run();
-        await broadcastToRoom(env, {
-          type: "ask",
-          slug: memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-          ask: {
-            id: Number(String(intentId).replace(/\D/g, "").slice(0, 13)) || Date.now(),
-            kind: "ask",
-            by,
-            q: question,
-            text: question,
-            answer: limitText,
-            cites: [],
-            sources: [],
-            model: "daily-limit",
-            provider: "workers-ai",
-            share: false,
-            ms: Date.now() - t0,
-            status: "answered",
-            why: "limited",
-            code: budgetCode,
-            retryAfter,
-            at: limitedAt,
-          },
-        });
+        // No question or answer on the socket: the owner's page re-reads the turn with its own credentials.
+        await broadcastToRoom(env, { type: "ask", slug: memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-") });
         return { code: budgetCode };
       }
     }
@@ -938,6 +922,8 @@ export async function answerWithAi({
         budgetKeys: budget,
         timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
       }));
+      // Workers AI records its own use; any other provider counts as one ask (no neurons) so the per-user cap still fills up.
+      if (chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
       fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
       if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
@@ -1028,7 +1014,7 @@ export async function answerWithAi({
         const stats = JSON.parse(statsRow.json);
         stats.answers = (Number(stats.answers) || 0) + 1;
         stats.updated = answeredAt.slice(0, 10);
-        stats.recent = [
+        if (share) stats.recent = [
           {
             id: intentId,
             by,
@@ -1052,9 +1038,8 @@ export async function answerWithAi({
     }
 
     // 4. Broadcast live completion over WebSockets to all connected browsers
-    const numericId = Number(String(intentId).replace(/\D/g, "").slice(0, 13)) || Date.now();
     const completedItem = {
-      id: numericId,
+      id: wireId(intentId),
       kind: "ask",
       by,
       q: question,
@@ -1069,17 +1054,15 @@ export async function answerWithAi({
       status: "answered",
       at: answeredAt,
     };
-    await broadcastToRoom(env, {
-      type: "data",
-      key: "stats",
-      intent: completedItem,
-    });
+    // A private turn (share false: every guest ask, "private" asks) puts no question or answer on the shared socket or in stats.
+    // The bare "ask" message makes the owner's page re-read its turn with its own key or id.
     const broadcastSlug = memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    await broadcastToRoom(env, {
-      type: "ask",
-      slug: broadcastSlug,
-      ask: completedItem,
-    });
+    if (share) {
+      await broadcastToRoom(env, { type: "data", key: "stats", intent: completedItem });
+      await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, ask: completedItem });
+    } else {
+      await broadcastToRoom(env, { type: "ask", slug: broadcastSlug });
+    }
 
     // 5. Optional Discord Webhook post to #wow-forever
     if (share && env.DISCORD_WEBHOOK_URL) {
@@ -1104,7 +1087,10 @@ export async function answerWithAi({
       .catch(() => {});
     await broadcastToRoom(env, {
       type: "intent",
-      item: { id: intentId, kind: "ask", by, q: question, status: "error", error: msg, at: failedAt },
+      // A private turn shows no name, question or error text to other sockets.
+      item: share
+        ? { id: intentId, kind: "ask", by, q: question, status: "error", error: msg, at: failedAt }
+        : { id: intentId, kind: "ask", status: "error", at: failedAt },
     });
   }
 }

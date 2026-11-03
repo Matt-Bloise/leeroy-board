@@ -27,7 +27,7 @@ function world({ flags = {}, kv = {} } = {}) {
   invalidateConfigCache();
   outbound.length = 0;
   const DB = fakeD1({
-    discord_members: [{ slug: "ada", name: "Ada", match: ["ada"] }],
+    discord_members: [{ slug: "ada", name: "Ada", match: ["ada"], id: USER }],
     signups: doc(),
     cards: { signups: { channel: CH, message: "200000000000000002" } },
     ...kv,
