@@ -87,11 +87,44 @@ jobs:
             if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
             else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: prNumber, body });
 
+  # Preview secrets are optional. This job only reads whether both exist and never uses them. If either is missing the preview jobs are skipped with a notice:
+  # no failure. Previews use CLOUDFLARE_API_TOKEN by decision of the Cloudflare account owner (no second token); the preview admin token never falls back to a production secret.
+  # See docs/runbooks/ci-secrets.md.
+  preview-guard:
+    name: Check preview secrets
+    needs: prep
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: none
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    env:
+      PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PREVIEW_ADMIN_TOKEN: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
+      PREVIEW_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check CLOUDFLARE_API_TOKEN, BOARD_PREVIEW_ADMIN_TOKEN and CLOUDFLARE_ACCOUNT_ID
+        id: check
+        run: |
+          MISSING=""
+          [ -n "$PREVIEW_API_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_API_TOKEN"
+          [ -n "$PREVIEW_ADMIN_TOKEN" ] || MISSING="$MISSING BOARD_PREVIEW_ADMIN_TOKEN"
+          [ -n "$PREVIEW_ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$MISSING" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Preview skipped::No preview was created because these repository secrets are missing:$MISSING. The preview admin token never falls back to a production secret. The Preview tests comment will say SKIPPED and is not the merge gate. See docs/runbooks/ci-secrets.md."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy-pr-preview:
     name: Spin Up Isolated PR Preview (Pages + Worker + D1 + DO)
-    needs: prep
+    needs: [prep, preview-guard]
     # prep runs for same-repo PRs only with the label `ci-full` (and for forks, which never get a preview), so this is the single spin-up condition.
-    if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true'
+    # Missing preview secrets skip this job (preview-guard), they never fail it.
+    if: github.event.pull_request.head.repo.full_name == github.repository && needs.prep.outputs.docs_only != 'true' && needs.preview-guard.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -113,7 +146,7 @@ jobs:
 
       - name: Install Wrangler CLI
         working-directory: infrastructure
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Verify Cloudflare Credentials & Scope Diagnostics
         working-directory: infrastructure
@@ -126,7 +159,7 @@ jobs:
           CLEAN_ACC=$(echo "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n ' | sed -e 's/^["\x27]//' -e 's/["\x27]$//')
 
           if [ -z "$CLEAN_TOKEN" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN is empty or missing in GitHub Secrets."
+            echo "::error::CLOUDFLARE_API_TOKEN is empty or missing (previews share the production Cloudflare token by decision of the account owner; docs/runbooks/ci-secrets.md)."
             exit 1
           fi
 
@@ -338,20 +371,18 @@ jobs:
       - name: Set Preview Salt Secrets (derived per preview)
         working-directory: infrastructure
         env:
-          USER_SALT: ${{ secrets.USER_SALT }}
-          KEY_SALT: ${{ secrets.KEY_SALT }}
-          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
+          PREVIEW_BASE: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: |
           set -e
-          # BOARD_ADMIN_TOKEN is derived the same way (the api tests derive it too). Each preview gets its own salts: HMAC-SHA256 of the Worker name keyed by the repository secret.
-          # The preview value differs from production and from every other preview, and the repository secret is never copied.
-          # If a repository secret is missing the Worker fails closed (503 salt_not_configured); the preview still deploys.
+          # Every value is derived from the preview-only secret BOARD_PREVIEW_ADMIN_TOKEN, never from a production secret (USER_SALT, KEY_SALT and BOARD_ADMIN_TOKEN
+          # are production secrets in the GitHub environment `production`; a PR run cannot read them). The api tests derive BOARD_ADMIN_TOKEN the same way.
+          # Each preview gets its own values: HMAC-SHA256 of the Worker name keyed by BOARD_PREVIEW_ADMIN_TOKEN. They differ per preview and the base is never copied.
+          if [ -z "$PREVIEW_BASE" ]; then
+            echo "::error::BOARD_PREVIEW_ADMIN_TOKEN is missing. The preview-guard job should have skipped this job; refusing to continue, and there is no fallback to a production secret."
+            exit 1
+          fi
           for SECRET_NAME in USER_SALT KEY_SALT BOARD_ADMIN_TOKEN; do
-            BASE="${!SECRET_NAME}"
-            if [ -z "$BASE" ]; then
-              echo "::warning::Repository secret $SECRET_NAME is missing: preview $WORKER_NAME will refuse salt-dependent requests."
-              continue
-            fi
+            BASE="$PREVIEW_BASE"
             DERIVED=$(printf '%s' "preview:$SECRET_NAME:$WORKER_NAME" | openssl dgst -sha256 -hmac "$BASE" -r | cut -d' ' -f1)
             echo "::add-mask::$DERIVED"
             printf '%s' "$DERIVED" | npx wrangler secret put "$SECRET_NAME" >/dev/null
@@ -466,7 +497,11 @@ jobs:
           TOKEN=$(printf '%s' "$CLOUDFLARE_API_TOKEN" | tr -d '\r\n ')
           ACC=$(printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n ')
           ANSWER=unknown
-          if [ -n "$TOKEN" ] && [ -n "$ACC" ]; then
+          if [ -z "$TOKEN" ] || [ -z "$ACC" ]; then
+            # No preview token (or account id): no preview could have been created by this workflow, and the production token is never used here. Skip, do not fail.
+            ANSWER=no
+            echo "::notice title=Teardown skipped::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is missing, so there is no preview to tear down. See docs/runbooks/ci-secrets.md."
+          else
             RES=$(curl -sS --max-time 30 "https://api.cloudflare.com/client/v4/accounts/$ACC/d1/database?name=$D1_DATABASE_NAME&per_page=100" -H "Authorization: Bearer $TOKEN" || true)
             ANSWER=$(node -e '
               try {
@@ -498,7 +533,7 @@ jobs:
       - name: Install Wrangler CLI
         if: steps.probe.outputs.exists == 'true'
         working-directory: infrastructure
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Delete Ephemeral Cloudflare Worker & Durable Object (`leeroy-brain-pr-*`)
         if: steps.probe.outputs.exists == 'true'

@@ -114,11 +114,42 @@ jobs:
       - name: Legal pages check
         run: node tools/render-legal.mjs --check
 
+  # Preview secrets are optional and never fall back to production secrets (those live in the GitHub environment `production`, restricted to master).
+  # Missing secrets skip preview, api, browser and layout with a notice; the report then says SKIPPED (not the merge gate). See docs/runbooks/ci-secrets.md.
+  preview-secrets:
+    name: preview-secrets
+    needs: scope
+    if: needs.scope.outputs.full == 'true' && needs.scope.outputs.docs_only != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: none
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    env:
+      PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PREVIEW_ADMIN_TOKEN: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
+      PREVIEW_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check CLOUDFLARE_API_TOKEN, BOARD_PREVIEW_ADMIN_TOKEN and CLOUDFLARE_ACCOUNT_ID
+        id: check
+        run: |
+          MISSING=""
+          [ -n "$PREVIEW_API_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_API_TOKEN"
+          [ -n "$PREVIEW_ADMIN_TOKEN" ] || MISSING="$MISSING BOARD_PREVIEW_ADMIN_TOKEN"
+          [ -n "$PREVIEW_ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$MISSING" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Preview tests skipped::Preview, api, browser and layout were skipped because these repository secrets are missing:$MISSING. The preview admin token never falls back to a production secret. The comment says SKIPPED and is not the merge gate. See docs/runbooks/ci-secrets.md."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
   preview:
     name: preview
-    needs: scope
-    # Only with the label `ci-full` (the spin-up in pr-preview-cloudflare.yml has the same condition) and never for docs-only PRs.
-    if: needs.scope.outputs.full == 'true' && needs.scope.outputs.docs_only != 'true'
+    needs: [scope, preview-secrets]
+    # Only with the label `ci-full` (the spin-up in pr-preview-cloudflare.yml has the same condition), never for docs-only PRs, and only with the preview secrets.
+    if: needs.scope.outputs.full == 'true' && needs.scope.outputs.docs_only != 'true' && needs.preview-secrets.outputs.enabled == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -190,14 +221,18 @@ jobs:
         env:
           PREVIEW_API: ${{ needs.preview.outputs.worker }}
           PREVIEW_PAGES: ${{ needs.preview.outputs.pages }}
-          PROD_BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
+          PREVIEW_ADMIN_BASE: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
         run: |
           set -o pipefail
-          # The preview Worker holds a per-PR derived admin token (see pr-preview-cloudflare.yml), never the production one.
-          BOARD_ADMIN_TOKEN=$(printf '%s' "preview:BOARD_ADMIN_TOKEN:leeroy-brain-pr-$PR_NUMBER" | openssl dgst -sha256 -hmac "$PROD_BOARD_ADMIN_TOKEN" -r | cut -d' ' -f1)
+          # The preview Worker holds a per-PR token derived from the preview-only secret (see pr-preview-cloudflare.yml), never a production one.
+          if [ -z "$PREVIEW_ADMIN_BASE" ]; then
+            echo "::error::BOARD_PREVIEW_ADMIN_TOKEN is missing. The preview-secrets job should have skipped this job; there is no fallback to a production secret."
+            exit 1
+          fi
+          BOARD_ADMIN_TOKEN=$(printf '%s' "preview:BOARD_ADMIN_TOKEN:leeroy-brain-pr-$PR_NUMBER" | openssl dgst -sha256 -hmac "$PREVIEW_ADMIN_BASE" -r | cut -d' ' -f1)
           echo "::add-mask::$BOARD_ADMIN_TOKEN"
           export BOARD_ADMIN_TOKEN
-          unset PROD_BOARD_ADMIN_TOKEN
+          unset PREVIEW_ADMIN_BASE
           npm run test:api 2>&1 | tee "$RUNNER_TEMP/api.log"
 
       - name: Upload logs
@@ -369,7 +404,7 @@ jobs:
 
   report:
     name: report
-    needs: [scope, unit, stamps, preview, api, browser, layout]
+    needs: [scope, unit, stamps, preview-secrets, preview, api, browser, layout]
     # Not on cancel: a newer push cancels this run and its own run posts the result for the newer commit.
     # The comment is the merge gate, so skipped dependencies are judged by tools/ci-report.mjs, never by a blanket `!= 'failure'`.
     if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
@@ -404,6 +439,8 @@ jobs:
           API_RESULT: ${{ needs.api.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           LAYOUT_RESULT: ${{ needs.layout.result }}
+          PREVIEW_SECRETS: ${{ needs.preview-secrets.outputs.enabled }}
+          RUN_ID: ${{ github.run_id }}
           PAGES_URL: ${{ needs.preview.outputs.pages }}
           VISUAL: ${{ contains(github.event.pull_request.labels.*.name, 'visual') }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -417,9 +454,21 @@ jobs:
             const body = fs.readFileSync(`${process.env.RUNNER_TEMP}/report.md`, "utf8");
             const pr = context.payload.pull_request;
             const { data: comments } = await github.rest.issues.listComments({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, per_page: 100 });
-            const existing = comments.find((c) => c.body && c.body.includes("<!-- preview-tests -->"));
-            if (existing) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body });
-            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
+            // Only a comment written by this workflow's bot is ever updated; a lookalike from anyone else is ignored.
+            const existing = comments.find((c) => c.user && c.user.login === "github-actions[bot]" && c.user.type === "Bot" && c.body && c.body.includes("<!-- preview-tests -->"));
+            const { data: posted } = existing
+              ? await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body })
+              : await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: pr.number, body });
+            // Read it back so the next step checks what GitHub stored, not what we sent.
+            const { data: stored } = await github.rest.issues.getComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: posted.id });
+            if (stored.user.login !== "github-actions[bot]" || stored.user.type !== "Bot") core.setFailed(`The result comment was written by ${stored.user.login}, not github-actions[bot].`);
+            fs.writeFileSync(`${process.env.RUNNER_TEMP}/posted.md`, stored.body, "utf8");
+
+      - name: Verify the comment is from this run and this commit
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: node tools/ci-report.mjs --verify "$RUNNER_TEMP/posted.md"
 
       - name: Fail the job if a suite failed
         env:

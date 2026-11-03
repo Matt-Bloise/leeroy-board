@@ -1,5 +1,7 @@
 # Runbook: secrets and variables
 
+> Where each secret lives (GitHub environment `production` vs repository) and how to move them: [ci-secrets.md](ci-secrets.md).
+
 Names only. Never put a value in the repository, an issue, a PR, a log or a chat. Last checked: 2026-11-02. Citations are `file:line`, or marked (unverified). "Owner" means the repository and Cloudflare account owner; who actually holds those admin rights is unverified.
 
 ## Inventory
