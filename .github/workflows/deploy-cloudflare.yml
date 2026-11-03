@@ -326,7 +326,7 @@ jobs:
             if [ -n "$SECRET_VAL" ]; then
               printf "%s" "$SECRET_VAL" | npx wrangler secret put "$SECRET_NAME"
             elif [ "$SECRET_NAME" = "AI_GATEWAY_TOKEN" ]; then
-              echo "::warning::Neither AI_GATEWAY_TOKEN nor CLOUDFLARE_AIG_TOKEN is set; skipping the AI Gateway token secret. The deploy token is never used as a fallback. See docs/runbooks/secrets.md."
+              echo "::warning::Neither AI_GATEWAY_TOKEN nor CLOUDFLARE_AIG_TOKEN is set; not updating the AI Gateway token secret. Any existing Worker value is kept. The deploy token is never used as a fallback. See docs/runbooks/secrets.md."
             fi
           done
 

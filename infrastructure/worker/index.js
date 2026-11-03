@@ -1718,7 +1718,7 @@ export default {
 
       // 6. Health check
       if (req.method === "GET" && (path === "/" || path === "/health")) {
-        // One trivial D1 query so a deploy that left the Worker on a missing or empty-of-schema database is caught. The error is never echoed.
+        // One trivial D1 query so a deploy that left the Worker on a missing DB binding or an unreachable D1 is caught (SELECT 1 also succeeds on an empty database, so it does not prove the schema or data). The error is never echoed.
         let dbOk = true;
         try {
           await env.DB.prepare("SELECT 1").first();
