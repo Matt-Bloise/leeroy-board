@@ -5,7 +5,8 @@
 }
 @media (min-width: 2000px) {
   #scene .sheet { width: min(85vw, 1700px); }
-  #scene .sheet:has(:is(#panel-roads, #panel-buffs, #panel-library, #panel-five):not([hidden], .warm, .leaving)) { width: 85vw; }
+  /* the wide scenes use 85vw, but capped: on a 5120x1440 screen 85vw is 4352px, a sheet nobody can read across with a few cards lost in it (QA, ultra-wide) */
+  #scene .sheet:has(:is(#panel-roads, #panel-buffs, #panel-library, #panel-five):not([hidden], .warm, .leaving)) { width: min(85vw, 2800px); }
 }
 
 @media (min-width: 700px) and (min-height: 501px) {
