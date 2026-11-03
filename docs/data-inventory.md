@@ -29,6 +29,9 @@ Derived on 2026-11-02 from `infrastructure/schema.sql` (204 lines, 17 tables) an
 | `ask_turns` | `answer`, `cites_json` | Free text | AI reply and citations | May echo the question |
 | `ask_turns` | `share` | Links | Whether the turn is shared with the group | Default 1 (shared) |
 | `ask_turns` | `model`, `latency_ms`, `status`, `created_at`, `answered_at` | Links | Which AI vendor model answered, timing | `model` shows which vendor received the question |
+| `ask_turns` | `status`, `latency_ms`, `created_at`, `answered_at` | Links | Read as counts and timings only by the D1_FEED stats computation (default off): totals, median, p95, max, last 7 timings. `question`, `answer` and `by_name` are not read | Output is aggregates; the cache row holds no per-person data |
+| `lib_pages` | row count | Links | Read as a count (`wiki_pages`) by the D1_FEED stats computation | |
+| `kv_state` | `json` where `key` is `feed_cache:stats` | Links | D1_FEED cache of the computed stats document, rewritten at most every 5 minutes | Private (`feed_` prefix, not served by `/api/data`). Aggregates only. Not covered by erase because it holds no personal data |
 | `answer_details` | `more`, `sources` | Free text | Extra answer text behind the "More" and "Sources" buttons (ANSWER_UX) | Model output; may echo the question. Deleted after 30 days by the cron |
 | `answer_details` | `asker_hash` | Links | Salted hash (USER_SALT) of the asker, set only for private answers so only they can open the detail | Not a Discord id |
 | `answer_details` | `intent_id`, `message_id`, `created_at` | Links | Answer id (joins to `ask_turns`), Discord message id the buttons are bound to, time | |
@@ -71,6 +74,7 @@ Added 2026-11-02. These tables were missing from the list above because it was d
 | `memberships` | `tenant_id`, `role`, `status`, `joined_at` | Links | Which guild the person belongs to | Cascade |
 | `characters` | `name`, `realm`, `region`, `class`, `spec` | Names / Free text | Characters typed by the member. `name` is the game handle from the /build and /join form (it held the Discord id for rows written before the handle field existed; a resubmit corrects it) | Cascade |
 | `builds` | `title`, `data_json` | Free text | Builds for a character | Cascade through `characters` |
+| `character_profiles` | `race`, `faction`, `ruleset`, `region_label`, `selected` | Free text | What the member typed for a character they added on the web (migration 0005, `CHARS_V1`). Written only by `POST /api/me/characters`. Included in `GET /api/me/export` | Cascade through `characters` |
 | `group_slots` | `character_id` | Links | Seat a character fills | `SET NULL`; trigger re-opens the seat |
 | `signups_v2` | `group_id`, `user_id`, `character_id`, `rsvp` | Links | RSVP to a planned group | Cascade |
 | `audit_log` | `actor_discord_user_id`, `target`, `detail_json` | Links / Free text | Who did what | Actor `SET NULL`; rows remain. The erase row itself holds no personal data (actor NULL, salted hash of the id) |
@@ -90,6 +94,27 @@ Added 2026-11-02. These tables were missing from the list above because it was d
 An erase (`POST /api/me/erase`) still removes the `users` cascade rows. It does not edit the `party` or `discord_members` documents (already listed below as not covered); an admin removes the card and roster entry by hand (see the runbook's Rollback).
 
 Not covered by export or erase: `kv_state` board documents (signups, party, party_sheets, votes and similar) that may name a member, Cloudflare logs, and Discord-side data. A web session is never used to match `by_name` or `slug` rows, because a Discord display name is chosen by its owner and could equal another member's name.
+
+## Backup export (`GET /api/admin/export`, admin token)
+
+Added 2026-11-02. Streams NDJSON of the whole database, one table page at a time, so the owner holds a copy outside Cloudflare (`tools/pull-export.mjs`, restore with `tools/restore-local.mjs`). The file therefore holds everything in the tables above that is personal data: names, Discord ids, ask questions and answers, saved preferences, and the pseudonymous hashes that act as keys (`user_state.user_key`, `answer_feedback.user_hash`, `answer_details.asker_hash`). Keep it private, outside the repository, and delete it after a drill.
+
+Never exported (list in `infrastructure/worker/export.js`, checked against `schema.sql` by `tests/unit/export.test.mjs`):
+
+| What | Why |
+| :--- | :--- |
+| Table `sessions`, table `sessions_v2` | Session token hashes |
+| Table `provider_tokens` | Encrypted OAuth access and refresh tokens |
+| Table `account_keys` | Account key hashes |
+| Table `guest_rate_limits` | Hashed visitor addresses, short-lived counters |
+| Column `members.key_hash` | Salted hash of the member key; a restore brings members back without a working key and keys are re-issued |
+| `kv_state` rows whose key starts with `secret` or `feed_cache:` | Never served by the Worker; a derived cache |
+
+The route reads the database and writes nothing, answers no-store, and logs no row data. Admin token only.
+
+## Salted hashes (what a salt rotation touches)
+
+Added 2026-11-02, for `docs/runbooks/rotate-salts.md` and `tools/rotate-salts.mjs`. `USER_SALT`: `user_state.user_key`, `sessions.user_key`, `answer_details.asker_hash`, `answer_feedback.user_hash`, ballot keys inside `kv_state` `vote:<id>`, `guest_rate_limits.ip_hash`, `audit_log.target` for erase events, and the signature in Discord answer buttons. `KEY_SALT`: `members.key_hash`, the short channel and content hashes in the `moments_ledger` row (diagnostic), and, by schema only, `account_keys.key_hash`. The tool keeps this list and a test fails if a new salted column or file is not on it.
 
 ## Tables with no personal data
 

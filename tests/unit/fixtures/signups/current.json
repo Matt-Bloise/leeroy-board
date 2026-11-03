@@ -1,0 +1,11 @@
+{
+  "generated": "2026-10-31T00:00:00.000Z",
+  "present": true,
+  "updated": "2026-10-29T02:42:02.549Z",
+  "options": { "meet": ["Valley of Strength", "The Crossroads"], "when": ["6pm", "8pm", "later"] },
+  "entries": [
+    { "name": "=Mossy Pete=", "pack": "no", "meet": null, "rsvp": "in", "when": "6pm", "updated": "2026-10-20T00:00:00.000Z" },
+    { "name": "Tobble Wick", "pack": null, "meet": null, "rsvp": "out", "when": null, "updated": "2026-10-31T00:00:00.000Z" }
+  ],
+  "tallies": {}
+}

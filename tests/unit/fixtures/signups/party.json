@@ -1,0 +1,9 @@
+{
+  "party": "Fixture Party",
+  "members": [
+    { "name": "Mossy Pete" },
+    { "name": "Quillfeather" },
+    { "name": "Dame Ember" },
+    { "name": "Tobble Wick" }
+  ]
+}
