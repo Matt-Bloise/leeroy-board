@@ -3,7 +3,7 @@
 **DRAFT. Every legal point here needs review by counsel before publication. Nothing below is legal advice or in force.** Reviewers: the owner and counsel. Items marked (decision) are open for the owner.
 
 ## 1. What this is
-The Leeroy Living Board ("the service") is a companion website and Discord bot for guilds playing WoW Forever. Operator: **(legal entity to be decided)**. Contact: email [privacy@leeroy.party](mailto:privacy@leeroy.party) or ask a guild admin to pass your message on. A private role address is **(to be chosen by the owner)**.
+The Leeroy Living Board ("the service") is a companion website and Discord bot for guilds playing WoW Forever. Operator: **(legal entity to be decided)**. Contact: email [privacy@leeroy.party](mailto:privacy@leeroy.party) or ask a guild admin to pass your message on.
 
 ## 2. Eligibility
 - You must be at least 13, or the age of digital consent where you live if higher, and old enough to hold a Discord account under Discord's terms.
