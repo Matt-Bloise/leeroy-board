@@ -24,7 +24,7 @@
 //   doc-fit         first visit, desktop sizes (700 wide and up), before any click: documentElement scrollHeight <= innerHeight and scrollWidth <= innerWidth
 //   wheel-still     first visit, desktop: a wheel event leaves scrollY at 0
 //   one-scroller    REPORT ONLY (listed in the summary, never fails): first visit, no more than one scrolling box
-//   fill            REPORT ONLY: first visit, the card fills at least 25 percent of its parchment (area ratio)
+//   fill            first visit, the card fills at least 25 percent of its parchment (area ratio). FAILS at 3440x1440, 3840x2160 and 5120x1440 (FILL_ENFORCED); report only at every other size
 //   http-error      a same-origin response was 4xx or 5xx
 //   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
 // Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
@@ -50,6 +50,9 @@ const ALL_SIZES = ["1920x1080", "1536x864", "1440x900", "1366x768", "1280x720", 
 const ALL_STATES = ["gate", "looking", "member"];
 const ALL_SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight", "decide"];
 const pick = (k, all) => { const v = arg(k); if (!v) return all; const l = v.split(",").filter(Boolean); const bad = l.filter((x) => !all.includes(x)); if (bad.length) { console.error(`${k}: unknown ${bad.join(",")}`); process.exit(2); } return l; };
+ALL_SIZES.push("5120x1440"); /* 34 inch ultra-wide at double width: a very wide, not very tall window */
+// fill is enforced (a failure) at these sizes: the first-visit card must fill at least 25 percent of its parchment. Elsewhere it only reports.
+const FILL_ENFORCED = new Set(["3440x1440", "3840x2160", "5120x1440"]);
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
 const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENES);
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
@@ -216,14 +219,17 @@ async function openState(page, state) {
 }
 
 
-// First-visit checks, run on the gate state BEFORE any click. doc-fit and wheel-still fail the run (desktop sizes only); one-scroller and fill only report.
+// First-visit checks, run on the gate state BEFORE any click. doc-fit and wheel-still fail the run (desktop sizes only); one-scroller only reports; fill reports except at the three FILL_ENFORCED sizes.
 async function gateChecks(page, size, once, A) {
-  const m = await page.evaluate(() => {
+  const measureGate = () => page.evaluate(() => {
     const de = document.documentElement, card = document.querySelector("#nx-fr2");
     const scrollers = [...document.querySelectorAll("body *")].filter((e) => { const s = getComputedStyle(e); return /auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1 && s.display !== "none" && e.getClientRects().length; }).map((e) => e.id || e.className || e.tagName);
     const box = card && (card.closest(".sheet") || card.closest("#sheet-body") || card.parentElement), cr = card && card.getBoundingClientRect(), br = box && box.getBoundingClientRect();
     return { sh: de.scrollHeight, sw: de.scrollWidth, ih: innerHeight, iw: innerWidth, docScrolls: de.scrollHeight > innerHeight + 1, scrollers, fill: cr && br && br.width * br.height > 0 ? (cr.width * cr.height) / (br.width * br.height) : null };
   });
+  let m = await measureGate();
+  // the card is scaled by CSS and the scene fit runs on a timer: on a busy machine the first reading can come before it settles, so at the enforced sizes look again (up to 8 x 400 ms) before judging fill
+  for (let i = 0; i < 8 && FILL_ENFORCED.has(`${size.w}x${size.h}`) && (m.fill === null || m.fill < 0.25); i++) { await page.waitForTimeout(400); m = await measureGate(); }
   if (!size.touch) {
     A.checks += 2;
     if (m.sh > m.ih || m.sw > m.iw) once("doc-fit", `document ${m.sw}x${m.sh} in a ${m.iw}x${m.ih} window`);
@@ -234,7 +240,9 @@ async function gateChecks(page, size, once, A) {
   }
   const n = m.scrollers.length + (m.docScrolls ? 1 : 0);
   if (n > 1) notes.push({ w: size.w, h: size.h, invariant: "one-scroller", detail: `${n} scrolling boxes: ${m.docScrolls ? "document, " : ""}${m.scrollers.slice(0, 3).join(", ")}` });
-  if (m.fill === null) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: "no first-visit card found" });
+  const fillDetail = m.fill === null ? "no first-visit card found" : m.fill < 0.25 ? `card fills ${(m.fill * 100).toFixed(1)}% of its parchment (want 25%)` : null;
+  if (FILL_ENFORCED.has(`${size.w}x${size.h}`)) { A.checks++; if (fillDetail) once("fill", fillDetail); }
+  else if (m.fill === null) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: "no first-visit card found" });
   else if (m.fill < 0.25) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: `card fills ${(m.fill * 100).toFixed(1)}% of its parchment (want 25%)` });
 }
 
