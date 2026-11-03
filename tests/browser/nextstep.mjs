@@ -74,7 +74,10 @@ try {
   ];
   for (const c of CASES) {
     const t = `[390x844 ${c.tag}]`, s = await open(browser, c, who);
-    const st = await s.page.evaluate(() => window.__next.status());
+    // window.__next can lag the load on a busy runner (seen as `Cannot read properties of undefined (reading 'status')` on PRs 112 and 123, Nov 2): wait for it, and report a clear failure instead of crashing the run.
+    await s.page.waitForFunction(() => !!window.__next, null, { timeout: 15000 }).catch(() => {});
+    const st = await s.page.evaluate(() => (window.__next ? window.__next.status() : null));
+    if (!st) { ok(`${t} next-step module is present`, false, "window.__next is missing"); continue; }
     if (c.id) {
       ok(`${t} step id`, st.stepId === c.id, String(st.stepId));
       const title = (await s.page.locator("#nx-t").textContent({ timeout: 3000 }).catch(() => "")), why = (await s.page.locator("#nx-card .nx-why").textContent({ timeout: 3000 }).catch(() => ""));

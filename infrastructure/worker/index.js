@@ -28,12 +28,15 @@ import { buildAnnounceBody, lookupRosterId } from "./announce.js";
 import { handleAccount } from "./account.js";
 import { handleWebAuth, webSessionFrom } from "./web-auth.js";
 import { handleDataRights } from "./data-rights.js";
+import { charsOn, handleCharacters, listFor } from "./characters-api.js";
+import { handleExport } from "./export.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
+import { feedEnabled, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
@@ -46,16 +49,9 @@ import { flushBoardLines } from "./board-lines.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
+import { PARTY_MEMBERS, loadPartyMembers } from "./party-source.js";
 
 export { BoardRoom };
-
-const PARTY_MEMBERS = [
-  { slug: "santa", name: "Santa", race: "tauren", class: "druid", spec_path: "feral-tank", professions: ["leatherworking", "skinning"], plan_zone: "mulgore" },
-  { slug: "bible-boi", name: "Bible Boi", race: "undead", class: "priest", spec_path: "discipline", professions: ["mining", "engineering"], plan_zone: "tirisfal-glades" },
-  { slug: "street-rat", name: "Street Rat", race: "undead", class: "paladin", spec_path: "retribution", spec_at_40: "holy", professions: ["blacksmithing", "mining"], plan_zone: "tirisfal-glades" },
-  { slug: "bloise", name: "Bloise", race: "undead", class: "mage", spec_path: "frost", spec_at_40: "fire", professions: ["tailoring", "enchanting"], plan_zone: "tirisfal-glades" },
-  { slug: "handsome-squidward", name: "Handsome Squidward", race: "troll", class: "warlock", spec_path: "demonology", professions: ["enchanting", "tailoring"], plan_zone: "durotar" },
-];
 
 const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"];
 
@@ -65,6 +61,9 @@ async function resolveMemberAuth(req, url, env) {
   if (authWho && authWho.slug) {
     const found = PARTY_MEMBERS.find((m) => m.slug === authWho.slug);
     if (found) return { ok: true, member: found };
+    // Not one of the built-in five: the party document in D1 may know them (read only on this miss, so the five cost no extra query).
+    const fromDoc = (await loadPartyMembers(env)).find((m) => m.slug === authWho.slug);
+    if (fromDoc) return { ok: true, member: fromDoc };
     return { ok: true, member: { slug: authWho.slug, name: authWho.name || authWho.slug } };
   }
 
@@ -224,7 +223,7 @@ export async function buildPartySheetsFromD1(env) {
   // 2. Slow path / bootstrap fallback: Reconstruct from base + sheet_events
   const bySlug = new Map();
 
-  for (const m of PARTY_MEMBERS) {
+  for (const m of await loadPartyMembers(env)) {
     const fields = {};
     for (const f of SHEET_FIELDS) {
       if (m[f] !== undefined) {
@@ -345,9 +344,9 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "POST /admin/eval", "GET /admin/moments",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
-  "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
+  "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
   "GET /atlas/*", "PUT /atlas/*", "POST /intent", "POST /refresh", "GET /", "GET /health",
 ];
@@ -391,12 +390,21 @@ export default {
           const ws = await webSessionFrom(req, env, Date.now());
           if (ws) {
             const credCors = cors["Access-Control-Allow-Origin"] ? { ...cors, "Access-Control-Allow-Credentials": "true" } : cors;
-            return jsonResp({ name: ws.name, discord_user_id: ws.discord_user_id, expires_at: ws.expires_at, via: "web-session", pending: [] }, 200, { ...credCors, "Cache-Control": "no-store" });
+            const me = { name: ws.name, discord_user_id: ws.discord_user_id, expires_at: ws.expires_at, via: "web-session", pending: [] };
+            if (charsOn(env)) Object.assign(me, await listFor(env, ws.discord_user_id)); // CHARS_V1: { characters, selected }
+            return jsonResp(me, 200, { ...credCors, "Cache-Control": "no-store" });
           }
           return jsonResp({ error: "Unauthorized board key" }, 401, cors);
         }
         const m = auth.member;
         return jsonResp({ slug: m.slug, name: m.name, pending: [] }, 200, cors);
+      }
+
+      // Admin only: NDJSON backup, one table page per request (see export.js for the exact exclusions).
+      if (req.method === "GET" && path === "/admin/export") {
+        const res = await handleExport(req, env, url);
+        for (const [k, v] of Object.entries(cors)) if (!res.headers.has(k)) res.headers.set(k, v);
+        return res;
       }
 
       // 0c. POST /probe -> Capability probe from `js/brain.js`
@@ -955,6 +963,11 @@ export default {
         for (const [k, v] of Object.entries(cors)) if (!webRes.headers.has(k)) webRes.headers.set(k, v);
         return webRes;
       }
+      const charsRes = await handleCharacters(req, env, { path, now: Date.now() });
+      if (charsRes) {
+        for (const [k, v] of Object.entries(cors)) if (!charsRes.headers.has(k)) charsRes.headers.set(k, v);
+        return charsRes;
+      }
       const rightsRes = await handleDataRights(req, env, { path, now: Date.now() });
       if (rightsRes) {
         for (const [k, v] of Object.entries(cors)) if (!rightsRes.headers.has(k)) rightsRes.headers.set(k, v);
@@ -1275,7 +1288,9 @@ export default {
           if (!allowed || isPrivateKvKey(raw)) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
           let resp = await getCachedResponse(url.origin, cachePath);
           if (!resp) {
-            const row = await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first();
+            // D1_FEED (default off): stats is computed from D1 and cached 5 minutes; null means serve the stored row as before.
+            const fed = path.startsWith("/data/") && feedEnabled(env) ? await serveFeedDoc(env, raw) : null;
+            const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first());
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
             const etag = `"${raw}-${row.updated_at || '1'}"`;
             let docJson = row.json;

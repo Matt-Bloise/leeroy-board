@@ -434,7 +434,18 @@ CREATE TABLE IF NOT EXISTS answer_feedback (
 );
 CREATE INDEX IF NOT EXISTS idx_answer_feedback_created ON answer_feedback(created_at);
 
--- Noise ledger (migration 0005): counts of free-standing Discord posts per local day and channel. No message text. Unused while CARDS_ENABLED is off.
+-- Character profiles (migration 0005): race, faction, ruleset, region label and the selected flag for a character the member added on the web.
+CREATE TABLE IF NOT EXISTS character_profiles (
+  character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+  race TEXT,
+  faction TEXT CHECK (faction IS NULL OR faction IN ('Alliance', 'Horde')),
+  ruleset TEXT,
+  region_label TEXT CHECK (region_label IS NULL OR region_label IN ('Americas', 'EU', 'KR', 'TW', 'ANZ')),
+  selected INTEGER NOT NULL DEFAULT 0 CHECK (selected IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS idx_character_profiles_selected ON character_profiles(selected);
+
+-- Noise ledger (migration 0006): counts of free-standing Discord posts per local day and channel. No message text. Unused while CARDS_ENABLED is off.
 CREATE TABLE IF NOT EXISTS noise_ledger (
   day TEXT NOT NULL,
   channel TEXT NOT NULL,

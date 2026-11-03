@@ -32,7 +32,9 @@ import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { saltProblems } from "./salts.js";
-import { BUILD_MODAL_ID, buildModalEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
+import { BUILD_MODAL_ID, buildModalEnabled, buildProjectEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
+import { projectBuild } from "./project-build.js";
+import { JOIN_COMMAND_NAME, JOIN_BUTTON_ID, shouldHint, joinHintBody } from "./join.js";
 import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-command.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
@@ -52,8 +54,8 @@ import {
   FACTS_DATA,
   LIBRARY_DATA,
   QUIZ_DATA,
-  ROSTER_DATA,
 } from "./bot-data.js";
+import { loadRoster } from "./party-source.js";
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
@@ -592,7 +594,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
   // Existing /build reply: link to the member's build thread.
   const legacyBuildContent = async (t) => {
-    const person = ROSTER_DATA.find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
+    const person = (await loadRoster(env)).find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
     const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
     return `**${t.name}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
   };
@@ -696,6 +698,29 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     };
+
+    // 2-join. `/join` (needs BUILD_MODAL): the /build modal for anyone not on the board yet.
+    if (cmd === JOIN_COMMAND_NAME && buildModalEnabled(env)) {
+      const json = (data, type = 4) => new Response(JSON.stringify({ type, data }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (!isSnowflake(user.id) || !isSnowflake(interaction.guild_id)) return json({ content: "Use /join inside the server.", flags: 64 });
+      if (member) return json({ content: `You are already on the board as **${member.name}**. Use /build to update your build.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE });
+      return json(buildModalResponse().data, 9);
+    }
+
+    // First contact (JOIN_PROMPT, default off): someone the board does not know uses /ask or /sheet. The normal reply is untouched;
+    // an ephemeral hint with a Join button follows it. The short wait lets Discord receive the first response before the follow-up.
+    if (buildModalEnabled(env) && shouldHint(env, { cmd, member, userId: user.id }) && interaction.application_id && interaction.token) {
+      ctx.waitUntil(
+        (async () => {
+          await new Promise((r) => setTimeout(r, 1500));
+          await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...joinHintBody(), content: clampContent(joinHintBody().content), allowed_mentions: ALLOWED_MENTIONS_NONE }),
+          }).catch(() => {});
+        })()
+      );
+    }
 
     // 2a-vote. `/vote start`
     if (cmd === "vote") {
@@ -1647,7 +1672,26 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     ctx.waitUntil(
       (async () => {
         if (!parsed.ok) return edit({ content: parsed.error });
-        const saved = await saveConfirmedBuild(env, { discordUserId: user.id, displayName: rawUser, guildId: interaction.guild_id, build: parsed.build });
+        if (buildProjectEnabled(env)) {
+          // BUILD_PROJECT: one atomic write of the model-B rows, the roster entry and the party document, then purge and broadcast.
+          const done = await projectBuild(env, {
+            discordUserId: user.id,
+            displayName: rawUser,
+            guildId: interaction.guild_id,
+            handle: parsed.handle,
+            build: parsed.build,
+            after: async ({ partyDoc }) => {
+              await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json"]);
+              await broadcastToRoom(env, { type: "data", key: "party", data: partyDoc });
+            },
+          });
+          if (!done.ok) return edit({ content: done.message });
+          return edit({
+            content: "Saved. You are on the board.",
+            components: [{ type: 1, components: [{ type: 2, style: 5, label: "Open the board", url: `${boardUrl}/#five` }] }],
+          });
+        }
+        const saved = await saveConfirmedBuild(env, { discordUserId: user.id, displayName: rawUser, guildId: interaction.guild_id, handle: parsed.handle, build: parsed.build });
         if (saved.saved) {
           return edit({
             content: "Saved. Open your sheet",
@@ -1658,6 +1702,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       })()
     );
     return new Response(JSON.stringify({ type: 5, data: { flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+
+  // 3-join. The Join button from the first-contact hint opens the same modal. Before the generic sign-up buttons, which would read it as a field.
+  if (interaction.type === 3 && interaction.data && interaction.data.custom_id === JOIN_BUTTON_ID && buildModalEnabled(env)) {
+    if (!isSnowflake(user.id) || !isSnowflake(interaction.guild_id)) {
+      return new Response(JSON.stringify({ type: 4, data: { content: "Use /join inside the server.", flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify(buildModalResponse()), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
   // 3a. Vote buttons (`vote:<id>:<index>` and `vote:<id>:results`). Handled before the generic sign-up buttons below.

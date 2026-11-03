@@ -70,6 +70,9 @@ async function collect(env, who) {
     t.sessions_v2 = await rows(env, "SELECT created_at, expires_at, last_seen_at FROM sessions_v2 WHERE discord_user_id = ?", id); // never token_hash
     t.memberships = await rows(env, "SELECT m.tenant_id, t.name AS tenant_name, m.role, m.status, m.joined_at FROM memberships m LEFT JOIN tenants t ON t.id = m.tenant_id WHERE m.discord_user_id = ?", id);
     t.characters = await rows(env, "SELECT id, tenant_id, name, realm, region, class, spec, created_at FROM characters WHERE discord_user_id = ?", id);
+    try { // character_profiles comes from migration 0005; before it is applied there is nothing to include
+      t.character_profiles = await rows(env, "SELECT p.character_id, p.race, p.faction, p.ruleset, p.region_label, p.selected FROM character_profiles p JOIN characters c ON c.id = p.character_id WHERE c.discord_user_id = ?", id);
+    } catch (e) { if (!missingTable(e)) throw e; t.character_profiles = []; }
     t.builds = await rows(env, "SELECT b.id, b.character_id, b.source, b.status, b.title, b.data_json, b.created_at, b.confirmed_at FROM builds b JOIN characters c ON c.id = b.character_id WHERE c.discord_user_id = ?", id);
     t.group_slots = await rows(env, "SELECT s.group_id, s.slot_index, s.role, s.character_id, s.status FROM group_slots s JOIN characters c ON c.id = s.character_id WHERE c.discord_user_id = ?", id);
     t.signups_v2 = await rows(env, "SELECT group_id, user_id, character_id, rsvp, updated_at FROM signups_v2 WHERE user_id = ?", id);

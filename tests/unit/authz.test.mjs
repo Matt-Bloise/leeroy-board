@@ -36,6 +36,7 @@ const TABLE = {
   "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
   "POST /admin/eval": ADMIN, // 404 unless EVAL_ENABLED is on; model bake-off, read only
   "GET /admin/moments": ADMIN, // timed-post schedule status, no ids or content
+  "GET /admin/export": ADMIN, // NDJSON backup, one table page per request; secrets are never exported (worker/export.js)
   "PUT /persona": ADMIN,
   "POST /dispatch": MEMBER,
   "GET /intents": ADMIN,
@@ -54,6 +55,7 @@ const TABLE = {
   "ANY /state/:doc": SESSION,
   "GET /me/export": MEMBER_OR_SESSION, // Q59: 404 unless DATA_RIGHTS is on; then a member key or web session. The admin token is refused.
   "POST /me/erase": MEMBER_OR_SESSION, // Q59: same, plus an Origin header and a confirm body
+  "POST /me/characters": SESSION, // CHARS_V1: 404 unless the flag is on; then a web session cookie only (a board key and the admin token are refused), plus an Origin header
   "GET /ask": PUBLIC, // anonymous callers only see shared or visitor turns
   "GET /wiki/snapshots": ADMIN,
   "GET /wiki/proposals": ADMIN,
@@ -178,6 +180,7 @@ const CALLS = {
   "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
   "POST /admin/eval": ["POST", "/api/admin/eval", "{}"],
   "GET /admin/moments": ["GET", "/api/admin/moments"],
+  "GET /admin/export": ["GET", "/api/admin/export"],
   "PUT /persona": ["PUT", "/api/persona", "{}"],
   "POST /dispatch": ["POST", "/api/dispatch", "{}"],
   "GET /intents": ["GET", "/api/intents"],
@@ -196,6 +199,7 @@ const CALLS = {
   "ANY /state/:doc": ["GET", "/api/state/prefs"],
   "GET /me/export": ["GET", "/api/me/export"],
   "POST /me/erase": ["POST", "/api/me/erase", "{}"],
+  "POST /me/characters": ["POST", "/api/me/characters", "{}"],
   "GET /ask": ["GET", "/api/ask"],
   "GET /wiki/snapshots": ["GET", "/api/wiki/snapshots"],
   "GET /wiki/proposals": ["GET", "/api/wiki/proposals"],
@@ -212,7 +216,7 @@ const CALLS = {
   "GET /health": ["GET", "/health"],
 };
 // Routes whose caller is not a board key (Discord signature, session token): only the anonymous refusal can be asserted here.
-const NOT_BOARD_KEY = new Set(["GET /me/export", "POST /me/erase", "POST /discord", "POST /auth/discord", "ANY /me", "ANY /state/:doc", "GET /me/export", "POST /me/erase", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout"]);
+const NOT_BOARD_KEY = new Set(["GET /me/export", "POST /me/erase", "POST /discord", "POST /auth/discord", "ANY /me", "ANY /state/:doc", "GET /me/export", "POST /me/erase", "POST /me/characters", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout"]);
 
 async function call(env, route, principal, override) {
   const [method, path, body, extra] = override || CALLS[route];
@@ -385,5 +389,24 @@ test("PUT /api/config/<key> is admin only for every config key, and there is no 
       const res = await call(await makeEnv(), "PUT /config/:key", principal, ["GET", `/api/config/${key}`]);
       assert.equal(res.status, 404, `GET ${key} as ${principal}`);
     }
+  }
+});
+
+// ---- character switcher (CHARS_V1): a web session cookie only; neither a board key nor the admin token is a session
+test("POST /api/me/characters: 404 for everyone while CHARS_V1 is off; with it on, no principal without a session cookie gets past 401 (and none is let in by a board key)", async () => {
+  const body = JSON.stringify({ name: "Pip Fizzwick", class: "Mage", race: "Gnome", ruleset: "Normal", faction: "Alliance", region: "Americas" });
+  for (const principal of [A, M, D]) {
+    const off = await call({ ...(await makeEnv()), ALLOWED_ORIGINS: "https://leeroy.test" }, "POST /me/characters", principal, ["POST", "/api/me/characters", body, { Origin: "https://leeroy.test" }]);
+    assert.equal(off.status, 404, `${principal} with the flag off`);
+    const env = { ...(await makeEnv()), CHARS_V1: "on", WEB_LOGIN: "on", ALLOWED_ORIGINS: "https://leeroy.test" };
+    const on = await call(env, "POST /me/characters", principal, ["POST", "/api/me/characters", body, { Origin: "https://leeroy.test" }]);
+    assert.equal(on.status, 401, `${principal} with the flag on`);
+  }
+});
+
+test("GET /api/admin/export is admin only: anonymous and a member key are 401, the admin token is let in", async () => {
+  for (const [principal, want] of [[A, 401], [M, 401], [D, 200]]) {
+    const res = await call(await makeEnv(), "GET /admin/export", principal);
+    assert.equal(res.status, want, principal);
   }
 });
