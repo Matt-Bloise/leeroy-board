@@ -147,10 +147,10 @@ test("flag off through the Worker: 30 requests write nothing to request_gauge", 
   assert.deepEqual(stored(db), []);
 });
 
-test("schema.sql and migration 0007 define the same table", () => {
+test("schema.sql and migration 0008 define the same table", () => {
   const norm = (t) => /CREATE TABLE IF NOT EXISTS request_gauge \([^;]*\);/.exec(t)[0].replace(/\s+/g, " ");
   const schema = readFileSync(new URL("../../infrastructure/schema.sql", import.meta.url), "utf8");
-  const mig = readFileSync(new URL("../../infrastructure/migrations/0007_request_gauge.sql", import.meta.url), "utf8");
+  const mig = readFileSync(new URL("../../infrastructure/migrations/0008_request_gauge.sql", import.meta.url), "utf8");
   assert.equal(norm(schema), norm(mig));
 });
 
@@ -159,4 +159,55 @@ test("handleGauge reads the clock it is given (UTC day, not local)", async () =>
   db.raw.prepare("INSERT INTO request_gauge (day, n) VALUES ('2026-11-03', 5), ('2026-11-04', 9)").run();
   const res = await handleGauge(new Request("https://api.test/api/admin/requests", { headers: bearer }), e, {}, Date.parse("2026-11-03T23:30:00-05:00"), createGauge());
   assert.equal((await res.json()).count, 9, "23:30 at UTC-5 is already 2026-11-04 in UTC");
+});
+
+// ---- fix round: no double count while a flush is committed but not yet acknowledged; a gauge failure never fails a request -----------------
+test("no double count: a flush that D1 committed but has not acknowledged yet is not added twice", async () => {
+  const real = schemaDb(); let release;
+  const gate = new Promise((r) => { release = r; });
+  // The write really lands in SQLite at once, but its promise resolves only when the gate opens: committed, acknowledgement still on its way.
+  const db = { raw: real.raw, batch: real.batch, prepare(sql) {
+    const st = real.prepare(sql);
+    if (!/^INSERT INTO request_gauge/.test(sql)) return st;
+    return { bind: (...a) => ({ run: async () => { const r = await st.bind(...a).run(); await gate; return r; } }) };
+  } };
+  const g = createGauge(), ctx = mkCtx(), e = env(db);
+  for (let i = 0; i < 30; i++) g.hit(e, ctx, T0 + i); // one flush of 25 starts, 5 stay pending
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(stored(real), [{ day: "2026-11-03", n: 25 }], "the 25 are in the row already");
+  assert.equal(g.hasInflight(), true, "and the flush is still in flight");
+  setTimeout(release, 20);
+  const r = await readGauge(e, T0 + 100, g);
+  assert.equal(r.count, 30, "25 in the row + 5 pending, not 25 + 25 + 5");
+  assert.equal(g.hasInflight(), false);
+});
+
+test("a flush that fails while the gauge waits for it loses nothing and double counts nothing", async () => {
+  const real = schemaDb(); let release;
+  const gate = new Promise((r) => { release = r; });
+  const db = { raw: real.raw, batch: real.batch, prepare(sql) {
+    if (!/^INSERT INTO request_gauge/.test(sql)) return real.prepare(sql);
+    return { bind: () => ({ run: async () => { await gate; throw new Error("d1 down"); } }) };
+  } };
+  const g = createGauge(), ctx = mkCtx(), e = env(db);
+  for (let i = 0; i < 30; i++) g.hit(e, ctx, T0 + i);
+  setTimeout(release, 20);
+  assert.equal((await readGauge(e, T0 + 100, g)).count, 30, "the failed 25 went back to pending: 0 in the row + 30");
+});
+
+test("a gauge failure never fails a request: a broken D1 binding, a throwing statement", async () => {
+  const boom = { prepare() { throw new Error("no such binding"); }, batch: async () => [] };
+  const e = env(boom), ctx = mkCtx();
+  for (let i = 0; i < 60; i++) {
+    const res = await worker.fetch(new Request("https://api.test/api/probe", { method: "POST" }), e, ctx);
+    assert.equal(res.status, 200, `request ${i}`);
+  }
+  await ctx.done();
+});
+
+test("a gauge that throws inside hit() is caught by fetch (the request is still answered)", async () => {
+  const e = env(schemaDb(), { REQUEST_GAUGE: "on" });
+  Object.defineProperty(e, "DB", { get() { throw new Error("getter throws"); }, configurable: true });
+  const res = await worker.fetch(new Request("https://api.test/api/probe", { method: "POST" }), e, mkCtx());
+  assert.equal(res.status, 200);
 });

@@ -1,5 +1,5 @@
 // bot-data.js: verified WoW: Forever static reference data for Discord slash commands
-// Bundled from wow-mage/bot/data/*.json
+// Bundled from the PC bot data (`leeroy-ops` repo, `bot-legacy/bot/data/*.json`)
 
 export const DATES_DATA = {
   "source": "notes/WHAT-IS-WOW-FOREVER.md (verified 2026-10-18) + party/LIBRARY/00 and 24; raids updated 2026-10-25 from Blizzard's raid preview",

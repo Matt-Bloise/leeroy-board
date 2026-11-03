@@ -75,4 +75,13 @@ ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,
 BUILD_MODAL = "off" # Q19 /build modal with a handle field, and /join (listed in the command manifest only while on). "on" enables it
 BUILD_PROJECT = "off" # needs BUILD_MODAL on. "on": a confirmed submit also writes the roster entry and the party document in one atomic batch, then purges and broadcasts
 JOIN_PROMPT = "off" # needs BUILD_MODAL on. "on": an unknown Discord user of /ask or /sheet gets one ephemeral hint with a Join button
-REQUEST_GAUGE = "off" # "on" counts this Worker's requests per UTC day (in memory, flushed to D1 table request_gauge about every 25 requests) and enables GET /api/admin/requests (404 while off); needs migration 0007. An approximation: the Cloudflare dashboard stays the source of truth (docs/runbooks/cloudflare-requests.md)
+# Flags the Worker reads that were not declared here. All default off (the code treats unset the same as "off"); declaring them makes the off state visible and reviewable. Behaviour is unchanged.
+ANSWER_UX = "off" # "on" adds the Helpful/Off vote buttons and the More / Sources detail buttons under Discord answers (worker/answer-ux.js; unset reads as off)
+CARDS_ENABLED = "off" # sign-up cards, buttons, modals and card edits (docs/runbooks/cards.md); "1", "true", "on" or "yes" turns it on
+CARDS_SHADOW = "off" # with CARDS_ENABLED: count would-edit / would-post rows in noise_ledger, never call Discord
+BOARD_LINES_ENABLED = "off" # needs CARDS_ENABLED too: the first real board decision line
+SETUP_COMMAND = "off" # "on" lists and answers the Discord /setup command (worker/setup-command.js)
+EVAL_ENABLED = "off" # "on" (or "true", "1") opens the admin model bake-off route (docs/runbooks/model-bake-off.md); it is 404 while off
+# Read by the Worker but deliberately NOT declared here: ANSWER_FORMAT (defaults ON when unset; set "off" to turn it off), AI_DAILY_NEURON_CAP and ASK_DEADLINE_MS (optional numbers, the code has defaults),
+# CLOUDFLARE_ACCOUNT_ID alternates ACCOUNT_ID / CF_ACCOUNT_ID, the preview-only names (set by the preview deploy, which looks for one of them in this file, so do not write it here), and the secrets and bindings listed in tests/unit/wrangler-flags.test.mjs.
+REQUEST_GAUGE = "off" # "on" counts this Worker's requests per UTC day (in memory, flushed to D1 table request_gauge about every 25 requests) and enables GET /api/admin/requests (404 while off); needs migration 0008. An approximation: the Cloudflare dashboard stays the source of truth (docs/runbooks/cloudflare-requests.md)

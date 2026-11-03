@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Dungeons & Drinking Living Board — Cloudflare D1 Schema (SQLite)
--- Complete Unified Baseline Schema (Full parity with wow-mage)
+-- Complete Unified Baseline Schema (Full parity with the PC bot, now in the `leeroy-ops` repo)
 -- Contains: kv_state, lib_pages, lib_blobs, lib_sources, lib_source_snapshots,
 --           wiki_proposals, ask_turns, fact_fixes, sheet_events, dispatches,
 --           members, accounts, account_keys, sessions, user_state, intents
@@ -453,7 +453,7 @@ CREATE TABLE IF NOT EXISTS noise_ledger (
   PRIMARY KEY (day, channel)
 );
 
--- Request gauge (migration 0007): Worker requests counted per UTC day, flushed in batches. Counts only: no IP, no user id, no path. Unused while REQUEST_GAUGE is off.
+-- Request gauge (migration 0008): Worker requests counted per UTC day, flushed in batches. Counts only: no IP, no user id, no path. Unused while REQUEST_GAUGE is off.
 CREATE TABLE IF NOT EXISTS request_gauge (
   day TEXT PRIMARY KEY CHECK (length(day) = 10),
   n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0)

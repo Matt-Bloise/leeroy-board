@@ -103,3 +103,15 @@ test("atlas style: a template-literal css href with a base prefix is stamped fro
   assert.match(stale.stdout, /atlas\/atlas\.js:1 atlas\/panels\.css has \?v=/);
   assert.match(stale.stdout, /js\/hook\.js:1 atlas\/atlas\.js has \?v=/);
 });
+
+test("an all-zero placeholder stamp (any length) is stale, not ignored; --write replaces it with the real stamp", () => {
+  for (const zero of ["00000000", "0000000000", "0"]) {
+    const root = fixture({ "css/t.css": "a{}\n", "index.html": `<link rel="stylesheet" href="css/t.css?v=${zero}">\n` });
+    const bad = cli(root, "--check");
+    assert.equal(bad.status, 1, `?v=${zero} must fail --check`);
+    assert.match(bad.stdout, /all-zero placeholder/);
+    assert.equal(cli(root, "--write").status, 0);
+    assert.equal(cli(root, "--check").status, 0);
+    assert.ok(read(root, "index.html").toString().includes("css/t.css?v=" + h10(read(root, "css/t.css"))));
+  }
+});

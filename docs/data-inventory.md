@@ -75,7 +75,7 @@ Added 2026-11-02. These tables were missing from the list above because it was d
 | `characters` | `name`, `realm`, `region`, `class`, `spec` | Names / Free text | Characters typed by the member. `name` is the game handle from the /build and /join form (it held the Discord id for rows written before the handle field existed; a resubmit corrects it) | Cascade |
 | `builds` | `title`, `data_json` | Free text | Builds for a character | Cascade through `characters` |
 | `character_profiles` | `race`, `faction`, `ruleset`, `region_label`, `selected` | Free text | What the member typed for a character they added on the web (migration 0005, `CHARS_V1`). Written only by `POST /api/me/characters`. Included in `GET /api/me/export` | Cascade through `characters` |
-| `request_gauge` | `day`, `n` | None | How many Worker requests a UTC day had (migration 0007, `REQUEST_GAUGE`). One row per day. No address, user id, path or header is read into it. Exported (counts only) | None |
+| `request_gauge` | `day`, `n` | None | How many Worker requests a UTC day had (migration 0008, `REQUEST_GAUGE`). One row per day. No address, user id, path or header is read into it. Exported (counts only) | None |
 | `group_slots` | `character_id` | Links | Seat a character fills | `SET NULL`; trigger re-opens the seat |
 | `signups_v2` | `group_id`, `user_id`, `character_id`, `rsvp` | Links | RSVP to a planned group | Cascade |
 | `audit_log` | `actor_discord_user_id`, `target`, `detail_json` | Links / Free text | Who did what | Actor `SET NULL`; rows remain. The erase row itself holds no personal data (actor NULL, salted hash of the id) |

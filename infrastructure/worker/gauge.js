@@ -24,12 +24,18 @@ export const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 // The state is per isolate. createGauge exists so tests get a fresh one; the Worker uses the shared instance below.
 export function createGauge({ flushEvery = FLUSH_EVERY, flushMs = FLUSH_MS } = {}) {
-  const s = { day: null, pending: 0, lastFlush: 0, inflight: 0 };
+  const s = { day: null, pending: 0, lastFlush: 0, inflight: new Set() }; // inflight: the promises of flushes started and not yet acknowledged
   const flush = (env, ctx, day, n) => {
-    s.inflight += n;
-    const p = env.DB.prepare("INSERT INTO request_gauge (day, n) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET n = n + excluded.n").bind(day, n).run()
-      .then(() => { s.inflight -= n; })
-      .catch(() => { s.inflight -= n; if (s.day === day) s.pending += n; }); // keep the count for the next flush; the error text is not logged (nothing to leak, nothing useful)
+    let p;
+    try {
+      p = env.DB.prepare("INSERT INTO request_gauge (day, n) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET n = n + excluded.n").bind(day, n).run()
+        .catch(() => { if (s.day === day) s.pending += n; }) // keep the count for the next flush; the error text is not logged (nothing to leak, nothing useful)
+        .then(() => { s.inflight.delete(p); });
+    } catch (e) { // a synchronous failure (no D1 binding, a broken statement) is handled like a failed write
+      if (s.day === day) s.pending += n;
+      return Promise.resolve();
+    }
+    s.inflight.add(p);
     if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(p);
     return p;
   };
@@ -50,18 +56,29 @@ export function createGauge({ flushEvery = FLUSH_EVERY, flushMs = FLUSH_MS } = {
         flush(env, ctx, day, n);
       }
     },
-    // Not yet written, in this isolate: pending plus writes in flight. Added to the stored count so the isolate that answers the gauge is exact about itself.
-    unflushed(day) { return s.day === day ? s.pending + s.inflight : 0; },
+    // Counted but not yet handed to D1, in this isolate. Added to the stored count so the isolate that answers the gauge is exact about itself.
+    // Writes in flight are NOT added: the stored row may or may not hold them yet, so adding them could count a delta twice. readGauge waits for them instead.
+    pendingCount(day) { return s.day === day ? s.pending : 0; },
+    hasInflight() { return s.inflight.size > 0; },
+    settled() { return Promise.allSettled([...s.inflight]); },
     _state: s,
   };
 }
 export const gauge = createGauge();
 
-// -> { utcDay, count, limit, pct } for the day of `now`. count = stored row + this isolate's unflushed requests (including the one asking).
+// -> { utcDay, count, limit, pct } for the day of `now`. count = stored row + this isolate's pending requests (including the one asking).
+// No double count: a flush that D1 has committed but whose acknowledgement has not reached this isolate is in the row AND still "in flight", so in-flight
+// writes are never added; the read waits for them to settle first (up to 3 rounds). If a new flush still starts during the read, the count can be low by
+// that flush (at most FLUSH_EVERY - 1 requests) and never high.
 export async function readGauge(env, now = Date.now(), g = gauge) {
   const day = utcDay(now);
-  const row = await env.DB.prepare("SELECT n FROM request_gauge WHERE day = ?").bind(day).first();
-  const count = (row ? Number(row.n) : 0) + g.unflushed(day);
+  let row = null;
+  for (let i = 0; i < 3; i++) {
+    await g.settled();
+    row = await env.DB.prepare("SELECT n FROM request_gauge WHERE day = ?").bind(day).first();
+    if (!g.hasInflight()) break;
+  }
+  const count = (row ? Number(row.n) : 0) + g.pendingCount(day);
   return { utcDay: day, count, limit: GAUGE_LIMIT, pct: Math.round((count / GAUGE_LIMIT) * 10000) / 100 };
 }
 

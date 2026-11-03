@@ -8,7 +8,7 @@
 //   5. Cerebras Free Tier (`cerebras` — Llama 3.3 70B via `CEREBRAS_API_KEY`)
 //   6. GitHub Models Free Tier (`github` — OpenAI GPT-4o-mini / GPT-4o via `GITHUB_MODELS_TOKEN`)
 //   7. OpenRouter Free Tier (`openrouter` — DeepSeek V3 `:free` via `OPENROUTER_API_KEY`)
-// Includes `wow-mage/bot/tools/api-brain.mjs` + `precheck.mjs` house-voice guardrails,
+// Includes `api-brain.mjs` + `precheck.mjs` house-voice guardrails,
 // `guided` coach voice, and `wiki-learn.mjs` automated D1 fact extraction.
 // =============================================================================
 
