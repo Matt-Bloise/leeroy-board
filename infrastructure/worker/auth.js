@@ -19,15 +19,16 @@ export async function hashKey(env, key) {
 let cachedMembers = null;
 let cachedMembersAt = 0;
 const MEMBERS_TTL_MS = 15 * 60 * 1000; // 15 minutes in-memory isolate cache
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 export function invalidateMembersCache() {
   cachedMembers = null;
   cachedMembersAt = 0;
 }
 
-export async function getMembers(env) {
+export async function getMembers(env, { fresh = false } = {}) {
   const now = Date.now();
-  if (cachedMembers && now - cachedMembersAt < MEMBERS_TTL_MS) {
+  if (!fresh && cachedMembers && now - cachedMembersAt < MEMBERS_TTL_MS) {
     return cachedMembers;
   }
   const { results } = await env.DB.prepare("SELECT slug, key_hash FROM members").all();
@@ -43,7 +44,9 @@ export async function authenticate(request, env) {
   const key = keyFromRequest(request);
   if (!key) return null;
   const h = await hashKey(env, key);
-  const members = await getMembers(env);
+  // The cache can outlive an erase done in another isolate by up to MEMBERS_TTL_MS. A request that changes something reads the table again
+  // (one small read, and it refreshes the cache); reads keep the cache, so the window stays for reads only.
+  const members = await getMembers(env, { fresh: !SAFE_METHODS.has(String(request.method || "GET").toUpperCase()) });
   let slug = null;
   for (const row of members) {
     const same = timingSafeEqualStr(row.key_hash, h);

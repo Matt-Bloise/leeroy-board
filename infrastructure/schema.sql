@@ -452,3 +452,10 @@ CREATE TABLE IF NOT EXISTS noise_ledger (
   n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0),
   PRIMARY KEY (day, channel)
 );
+
+-- 22. Who asked an ask_turns row, as a salted hash (migration 0007). Lets erase and export find a person's questions without matching on a name.
+CREATE TABLE IF NOT EXISTS ask_turn_askers (
+  intent_id TEXT PRIMARY KEY CHECK (length(intent_id) > 0),
+  asker_hash TEXT NOT NULL CHECK (length(asker_hash) = 64)
+);
+CREATE INDEX IF NOT EXISTS idx_ask_turn_askers_hash ON ask_turn_askers(asker_hash);

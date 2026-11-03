@@ -41,6 +41,24 @@ export function userHash(env, discordId) {
   return sha256Hex(`${env.USER_SALT}:answer-ux:${discordId}`);
 }
 
+// Who asked an Ask turn, for erase and export (table ask_turn_askers, migration 0007). A Discord id wins; a board key has only its slug.
+// The Discord form is the same hash as userHash, so it also matches answer_feedback and answer_details.asker_hash.
+export const slugAskerHash = (env, slug) => sha256Hex(`${env.USER_SALT}:answer-ux:slug:${slug}`);
+export async function askerHash(env, { discordId, slug } = {}) {
+  if (!saltReady(env)) return null;
+  if (discordId) return userHash(env, String(discordId));
+  if (slug) return slugAskerHash(env, String(slug));
+  return null; // a web guest: nothing identifies them, so nothing is stored
+}
+// Never fails an ask: a missing table or salt only means that turn is found by name (older rows) or not at all.
+export async function recordAsker(env, intentId, who) {
+  try {
+    const h = await askerHash(env, who);
+    if (!h) return;
+    await env.DB.prepare("INSERT OR REPLACE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").bind(String(intentId), h).run();
+  } catch (e) { console.error("ask_turn_askers write failed"); }
+}
+
 // Components for the final @original edit. Empty when there is nothing to show, no salt, or no message id to bind to.
 export async function buildAnswerComponents(env, { intentId, messageId, hasMore, hasSources }) {
   if (!intentId || !messageId || !saltReady(env)) return [];

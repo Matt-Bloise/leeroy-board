@@ -17,7 +17,7 @@ import { userHash } from "../../infrastructure/worker/answer-ux.js";
 import { hashId } from "../../infrastructure/worker/budget.js";
 import { voterHash } from "../../infrastructure/worker/votes.js";
 import { webSessionHash, SESS_COOKIE } from "../../infrastructure/worker/web-auth.js";
-import { invalidateMembersCache } from "../../infrastructure/worker/auth.js";
+import { invalidateMembersCache, authenticate } from "../../infrastructure/worker/auth.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 import { BoardRoom } from "../../infrastructure/worker/room.js";
@@ -81,6 +81,7 @@ async function seeded() {
     run("INSERT INTO ask_turns (id, by_name, question, answer, status, created_at) VALUES (?, ?, ?, ?, 'answered', ?)", `q-${slug}`, name, `What should ${name} play?`, `${name} should try a mage.`, NOWISO);
     run("INSERT INTO answer_details (intent_id, more, sources, asker_hash, created_at) VALUES (?, ?, ?, NULL, ?)", `q-${slug}`, `More for ${name}`, `Sources for ${name}`, NOWISO);
   }
+  run("INSERT INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?), (?, ?)", `q-${SLUG}`, ids.answerHash, `q-${OTHER_SLUG}`, ids.otherAnswerHash);
   // answer buttons: one detail row bound to the person as asker (private answer), a vote by each person
   run("INSERT INTO answer_details (intent_id, more, asker_hash, created_at) VALUES ('q-private-me', 'private', ?, ?), ('q-private-other', 'private', ?, ?)", ids.answerHash, NOWISO, ids.otherAnswerHash, NOWISO);
   run("INSERT INTO answer_feedback (intent_id, user_hash, vote, created_at) VALUES ('q-x', ?, 1, ?), ('q-x', ?, -1, ?)", ids.answerHash, NOWISO, ids.otherAnswerHash, NOWISO);
@@ -130,7 +131,7 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
   const before = scan(db, needles(ids));
   assert.ok(before.length >= 20, `the seed must reach many tables, got ${before.length}`);
   const hitTables = new Set(before.map((h) => h.split(".")[0]));
-  for (const t of ["users", "identities", "sessions_v2", "provider_tokens", "memberships", "characters", "signups_v2", "audit_log", "members", "sheet_events", "dispatches", "intents", "fact_fixes", "ask_turns", "answer_details", "answer_feedback", "user_state", "sessions", "kv_state"]) assert.ok(hitTables.has(t), `seed misses ${t}`);
+  for (const t of ["ask_turn_askers", "users", "identities", "sessions_v2", "provider_tokens", "memberships", "characters", "signups_v2", "audit_log", "members", "sheet_events", "dispatches", "intents", "fact_fixes", "ask_turns", "answer_details", "answer_feedback", "user_state", "sessions", "kv_state"]) assert.ok(hitTables.has(t), `seed misses ${t}`);
 
   const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
   assert.equal(res.status, 200);
@@ -173,6 +174,7 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
     ["SELECT COUNT(*) AS c FROM builds WHERE character_id = 'c-other'"], ["SELECT COUNT(*) AS c FROM character_profiles WHERE character_id = 'c-other'"],
     ["SELECT COUNT(*) AS c FROM group_slots WHERE character_id = 'c-other'"],
     ["SELECT COUNT(*) AS c FROM user_state WHERE user_key = ?", ids.otherUserKey], ["SELECT COUNT(*) AS c FROM sessions WHERE user_key = ?", ids.otherUserKey],
+    ["SELECT COUNT(*) AS c FROM ask_turn_askers WHERE asker_hash = ?", ids.otherAnswerHash],
     ["SELECT COUNT(*) AS c FROM answer_feedback WHERE user_hash = ?", ids.otherAnswerHash], ["SELECT COUNT(*) AS c FROM answer_details WHERE asker_hash = ?", ids.otherAnswerHash],
     ["SELECT COUNT(*) AS c FROM kv_state WHERE key = ?", `ai_budget:2026-11-01:user:${ids.otherBudget}`], ["SELECT COUNT(*) AS c FROM kv_state WHERE key = 'ai_budget:2026-11-01'"],
     ["SELECT COUNT(*) AS c FROM members WHERE slug = ?", OTHER_SLUG], ["SELECT COUNT(*) AS c FROM ask_turns WHERE by_name = ?", OTHER_NAME],
@@ -182,15 +184,17 @@ test("member key erase: zero rows keyed by this member's ids or hashes in any co
   for (const [sql, ...a] of keep) assert.equal(count(db, sql, ...a), 1, sql);
 });
 
-test("web session erase: everything keyed by the Discord id or its hashes is gone; name-keyed legacy rows stay (stated)", async () => {
+test("web session erase: everything keyed by the Discord id or its hashes is gone; rows found only by name stay (stated)", async () => {
   const { db, ids } = await seeded(), e = env(db);
+  db.raw.prepare("INSERT INTO ask_turns (id, by_name, question, status, created_at) VALUES ('q-legacy', ?, 'legacy question', 'answered', ?)").run(NAME, NOWISO); // no asker row
   const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asCookie }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
   assert.equal(res.status, 200);
   const byId = [ME, ids.userKey, ids.answerHash, ids.budgetId, ids.ballot, DISPLAY, "ciphertext-me", "gh-me"];
   assert.deepEqual(scan(db, byId, { skipKv: UNTOUCHED_KV }), []);
   // a web session cannot be tied to a slug, so the slug-keyed rows are still there and the response says so
   assert.equal(count(db, "SELECT COUNT(*) AS c FROM sheet_events WHERE slug = ?", SLUG), 1);
-  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE by_name = ?", NAME), 1);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-legacy'"), 1);
+  assert.equal(count(db, "SELECT COUNT(*) AS c FROM ask_turns WHERE id = ?", `q-${SLUG}`), 0, "the question with the asker hash is found without a name");
   assert.ok((await res.json()).not_erased.some((x) => /member-key request/.test(x)));
 });
 
@@ -249,4 +253,74 @@ test("the Durable Object keeps no state: no storage call anywhere in room.js, an
   const res = await room.fetch(new Request("https://room.internal/broadcast", { method: "POST", body: JSON.stringify({ type: "ask" }) }));
   assert.equal(res.status, 200);
   assert.deepEqual(sent, ['{"type":"ask"}']);
+});
+
+// ---- (3) a nickname that equals a member's name must not pull in, or delete, someone else's questions
+test("nickname collision: a stranger who asked under the name Red Fox is neither exported nor erased; a legacy row with no asker row still is", async () => {
+  const { db, ids } = await seeded(), e = env(db);
+  const r = db.raw;
+  // a non-roster Discord user whose nickname is "Red Fox": their question carries their own asker hash
+  r.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, created_at) VALUES ('q-stranger', ?, 'stranger question', 'stranger answer', 'answered', ?)").run(NAME, NOWISO);
+  r.prepare("INSERT INTO ask_turn_askers (intent_id, asker_hash) VALUES ('q-stranger', ?)").run(ids.otherAnswerHash);
+  r.prepare("INSERT INTO answer_details (intent_id, more, created_at) VALUES ('q-stranger', 'stranger detail', ?)").run(NOWISO);
+  // a row written before migration 0007 has no asker row, so only the name can find it
+  r.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, created_at) VALUES ('q-legacy', ?, 'legacy question', 'legacy answer', 'answered', ?)").run(NAME, NOWISO);
+  r.prepare("INSERT INTO answer_details (intent_id, more, created_at) VALUES ('q-legacy', 'legacy detail', ?)").run(NOWISO);
+
+  const exp = await (await call(e, "GET", "/api/me/export", asKey)).text();
+  assert.ok(exp.includes("legacy question"), "a row with no asker row is still exported by name");
+  assert.ok(exp.includes(`What should ${NAME} play?`), "the member's own hashed question is exported");
+  assert.ok(!exp.includes("stranger question") && !exp.includes("stranger detail"), "the stranger's rows leaked into the member's export");
+
+  const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
+  assert.equal(res.status, 200);
+  const has = (sql, ...a) => count(db, sql, ...a);
+  assert.equal(has("SELECT COUNT(*) AS c FROM ask_turns WHERE id = 'q-stranger'"), 1, "the stranger's question was erased");
+  assert.equal(has("SELECT COUNT(*) AS c FROM answer_details WHERE intent_id = 'q-stranger'"), 1, "the stranger's answer text was erased");
+  assert.equal(has("SELECT COUNT(*) AS c FROM ask_turn_askers WHERE intent_id = 'q-stranger'"), 1);
+  assert.equal(has("SELECT COUNT(*) AS c FROM ask_turns WHERE id IN ('q-legacy', ?)", `q-${SLUG}`), 0);
+  assert.equal(has("SELECT COUNT(*) AS c FROM answer_details WHERE intent_id IN ('q-legacy', ?)", `q-${SLUG}`), 0);
+  assert.ok((await res.json()).not_erased.some((x) => /not on the roster/.test(x)));
+});
+
+test("a web session finds the member's questions by asker hash (no name needed)", async () => {
+  const { db } = await seeded(), e = env(db);
+  const body = await (await call(e, "GET", "/api/me/export", asCookie)).json();
+  assert.deepEqual(body.legacy.ask_turns.map((x) => x.id), [`q-${SLUG}`]);
+});
+
+// ---- (4) the ballot is removed inside the database, so a vote cast at the same moment is not overwritten
+test("erase does not lose a ballot cast between its read and its write (json_remove, not a rewrite of the document)", async () => {
+  const { db, ids } = await seeded(), e = env(db);
+  const batch = e.DB.batch;
+  e.DB.batch = async (list) => { // another request lands just before the erase batch runs
+    db.raw.prepare("UPDATE kv_state SET json = json_set(json, '$.ballots.late', 1) WHERE key = 'vote:aaaa1111'").run();
+    return batch(list);
+  };
+  const res = await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
+  assert.equal(res.status, 200);
+  const vote = JSON.parse(db.raw.prepare("SELECT json FROM kv_state WHERE key = 'vote:aaaa1111'").get().json);
+  assert.deepEqual(vote.ballots, { [ids.otherBallot]: 1, late: 1 });
+  const src = readFileSync(new URL("../../infrastructure/worker/data-rights.js", import.meta.url), "utf8");
+  assert.match(src, /json_remove\(json, \?\)/);
+});
+
+test("votes that left votes:index are cleaned too", async () => {
+  const { db, ids } = await seeded(), e = env(db);
+  db.raw.prepare("DELETE FROM kv_state WHERE key = 'votes:index'").run();
+  await call(e, "POST", "/api/me/erase", { Origin: "https://leeroy.test", ...asKey }, JSON.stringify({ confirm: CONFIRM_PHRASE }));
+  const vote = JSON.parse(db.raw.prepare("SELECT json FROM kv_state WHERE key = 'vote:aaaa1111'").get().json);
+  assert.deepEqual(vote.ballots, { [ids.otherBallot]: 1 });
+});
+
+// ---- (5) an erased key stops working for writes at once, even in another running copy of the Worker
+test("a member key erased elsewhere is refused on a write at once; reads keep the 15 minute cache and the response says so", async () => {
+  const { db } = await seeded(), e = env(db);
+  const mk = (method) => new Request("https://api.test/api/intent", { method, headers: asKey });
+  assert.deepEqual(await authenticate(mk("GET"), e), { slug: SLUG }); // primes this isolate's cache
+  db.raw.prepare("DELETE FROM members WHERE slug = ?").run(SLUG); // the erase happened in another isolate
+  assert.deepEqual(await authenticate(mk("GET"), e), { slug: SLUG }, "reads still use the cache (the stated window)");
+  assert.equal(await authenticate(mk("POST"), e), null, "a write must re-check the table");
+  assert.equal(await authenticate(mk("GET"), e), null, "the re-check refreshed the cache");
+  assert.equal(await authenticate(mk("DELETE"), e), null);
 });

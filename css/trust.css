@@ -18,4 +18,3 @@
 .legal-foot nav { display: flex; flex-wrap: wrap; gap: 0 14px; }
 .legal-foot a { color: inherit; text-decoration: underline; }
 .legal-foot a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
-html.room-on .legal-foot { color: var(--cream); }

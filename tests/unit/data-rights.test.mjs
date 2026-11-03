@@ -8,7 +8,7 @@ import { webSessionHash, SESS_COOKIE } from "../../infrastructure/worker/web-aut
 import { userKey } from "../../infrastructure/worker/account.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
-import { userHash } from "../../infrastructure/worker/answer-ux.js";
+import { userHash, slugAskerHash } from "../../infrastructure/worker/answer-ux.js";
 import { hashId } from "../../infrastructure/worker/budget.js";
 
 const ID = "100000000000000001"; // made-up snowflake
@@ -130,7 +130,7 @@ test("export by web session: tenancy and user_state only, no name-keyed rows, wi
   assert.equal(b.identified_by, "web-session");
   assert.equal(b.tenancy.users.length, 1);
   assert.equal(b.legacy.sheet_events, undefined);
-  assert.equal(b.legacy.ask_turns, undefined);
+  assert.ok(Array.isArray(b.legacy.ask_turns), "a web session finds its own questions by asker hash, never by name");
   assert.ok(b.not_included.some((s) => /cannot be tied to a slug/.test(s)));
 });
 
@@ -180,9 +180,9 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
   assert.equal(batches, 1);
   assert.deepEqual(shape(env.executed), [
     "DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details",
-    "DELETE FROM kv_state", "DELETE FROM kv_state", "DELETE FROM answer_details",
+    "DELETE FROM kv_state", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers",
     "DELETE FROM sheet_events", "DELETE FROM dispatches", "DELETE FROM intents",
-    "DELETE FROM ask_turns", "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM sessions_v2", "DELETE FROM humans",
+    "DELETE FROM fact_fixes", "DELETE FROM members", "DELETE FROM sessions_v2", "DELETE FROM humans",
     "DELETE FROM users", "INSERT INTO audit_log",
   ]);
   const at = (table, n = 0) => env.executed.filter((e) => e.sql.startsWith(`DELETE FROM ${table}`))[n];
@@ -191,6 +191,9 @@ test("erase by member key: one atomic batch in the safe order, then the audit ro
   assert.deepEqual(at("kv_state", 0).args, [`ai_budget:%:user:${await hashId(ID)}`]);
   assert.deepEqual(at("kv_state", 1).args, [`ai_budget:%:user:${await hashId("red-fox")}`]);
   assert.deepEqual(at("sheet_events").args, ["red-fox"]);
+  // questions are found by the asker hash first; the name only for rows that have no asker row
+  assert.deepEqual(at("ask_turns").args, [await userHash(env, ID), await slugAskerHash(env, "red-fox"), "red-fox", "Red Fox"]);
+  assert.match(at("ask_turns").sql, /id NOT IN \(SELECT intent_id FROM ask_turn_askers\)/);
   assert.deepEqual(at("users").args, [ID]);
 });
 
@@ -212,7 +215,7 @@ test("erase by web session: tenancy and user_state rows only, never a slug or na
   const env = await makeEnv();
   const res = await erase(env, COOKIE);
   assert.equal(res.status, 200);
-  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details", "DELETE FROM kv_state", "DELETE FROM sessions_v2", "DELETE FROM humans", "DELETE FROM users", "INSERT INTO audit_log"]);
+  assert.deepEqual(shape(env.executed), ["DELETE FROM user_state", "DELETE FROM sessions", "DELETE FROM answer_feedback", "DELETE FROM answer_details", "DELETE FROM kv_state", "DELETE FROM answer_details", "DELETE FROM ask_turns", "DELETE FROM ask_turn_askers", "DELETE FROM sessions_v2", "DELETE FROM humans", "DELETE FROM users", "INSERT INTO audit_log"]);
   const sc = res.headers.get("Set-Cookie");
   assert.match(sc, new RegExp(`^${SESS_COOKIE}=; .*Max-Age=0`));
   assert.match(sc, /HttpOnly/);

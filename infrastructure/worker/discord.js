@@ -26,7 +26,7 @@
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
 import { answerUxEnabled } from "./answer-format.js";
-import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid } from "./answer-ux.js";
+import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, recordAsker } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
@@ -792,6 +792,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       )
         .bind(intentId, byName, question, provider, isPrivate ? 0 : 1, now)
         .run();
+      await recordAsker(env, intentId, { discordId: user.id, slug: member && member.slug });
 
       await insertIntent(env, {
         slug: intentSlug,
@@ -1614,6 +1615,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       )
         .bind(intentId, byName, text, provider, now)
         .run();
+      await recordAsker(env, intentId, { discordId: user.id, slug: member && member.slug });
 
       await insertIntent(env, {
         slug: intentSlug,

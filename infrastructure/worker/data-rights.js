@@ -21,7 +21,7 @@ import { authenticate, invalidateMembersCache } from "./auth.js";
 import { userKey } from "./account.js";
 import { webSessionFrom, SESS_COOKIE } from "./web-auth.js";
 import { loadConfigKey } from "./config.js";
-import { userHash } from "./answer-ux.js";
+import { userHash, slugAskerHash } from "./answer-ux.js";
 import { hashId } from "./budget.js";
 import { voterHash, VOTE_ID_RE } from "./votes.js";
 
@@ -40,7 +40,8 @@ export const DATA_MAP = Object.freeze({
   lib_sources: { links: null, erase: null, member: null },
   lib_source_snapshots: { links: null, erase: null, member: null },
   wiki_proposals: { links: null, erase: null, member: null },
-  ask_turns: { links: "by_name = slug or roster name (member-key caller only)", erase: "DELETE by by_name", member: "legacy.ask_turns" },
+  ask_turns: { links: "ask_turn_askers.asker_hash; rows older than migration 0007 only by_name = slug or roster name (member-key caller only)", erase: "DELETE by asker hash; legacy rows with no asker row by by_name", member: "legacy.ask_turns" },
+  ask_turn_askers: { links: "asker_hash", erase: "DELETE by asker_hash", member: null },
   fact_fixes: { links: "by_name = slug or roster name (member-key caller only)", erase: "DELETE by by_name", member: "legacy.fact_fixes" },
   sheet_events: { links: "slug", erase: "DELETE by slug", member: "legacy.sheet_events" },
   dispatches: { links: "slug", erase: "DELETE by slug", member: "legacy.dispatches" },
@@ -69,7 +70,7 @@ export const DATA_MAP = Object.freeze({
   signups_v2: { links: "user_id", erase: "cascade from users", member: "tenancy.signups_v2" },
   entitlements: { links: null, erase: null, member: null },
   discord_events: { links: null, erase: null, member: null },
-  answer_details: { links: "asker_hash; intent_id of the person's own Ask turns", erase: "DELETE by asker_hash and by the person's intent ids", member: "legacy.answer_details" },
+  answer_details: { links: "asker_hash; intent_id of the person's own Ask turns (by asker hash, or legacy name match)", erase: "DELETE by asker_hash and by the person's intent ids", member: "legacy.answer_details" },
   answer_feedback: { links: "user_hash = sha256(USER_SALT:answer-ux:<discord id>)", erase: "DELETE by user_hash", member: "legacy.answer_feedback" },
   character_profiles: { links: "via characters", erase: "cascade from characters", member: "tenancy.character_profiles" },
   noise_ledger: { links: null, erase: null, member: null },
@@ -108,25 +109,38 @@ const rows = async (env, sql, ...args) => (await env.DB.prepare(sql).bind(...arg
 const kvLike = (hash) => `ai_budget:%:user:${hash}`;
 
 // Every per-person key this Worker derives, for the caller. Nothing here is read from a request body.
+// askerHashes: the two forms an ask_turn_askers row can hold for this caller (Discord id, board-key slug); null when not applicable.
 async function personalKeys(env, who) {
-  const k = { userKey: null, answerHash: null, budgetIds: [] };
+  const k = { userKey: null, answerHash: null, budgetIds: [], askerHashes: [null, null] };
   if (who.discordId) {
     k.userKey = await userKey(env, who.discordId);
     k.answerHash = await userHash(env, who.discordId);
+    k.askerHashes[0] = k.answerHash;
     k.budgetIds.push(await hashId(who.discordId));
   }
-  if (who.slug) k.budgetIds.push(await hashId(who.slug));
+  if (who.slug) {
+    k.askerHashes[1] = await slugAskerHash(env, who.slug);
+    k.budgetIds.push(await hashId(who.slug));
+  }
   return k;
 }
 
-// -> [{ id, vote, choice }] for each vote document that holds a ballot from this Discord id. Reads at most the 50 ids in votes:index.
+// An ask_turns row is this person's when its asker row holds one of their hashes. Rows written before migration 0007 have no asker row;
+// those (and only those) are matched by name, so a nickname that equals this person's name cannot pull in a row that has an asker row.
+const MINE_ASK = "(id IN (SELECT intent_id FROM ask_turn_askers WHERE asker_hash IN (?, ?)) OR (by_name IN (?, ?) AND id NOT IN (SELECT intent_id FROM ask_turn_askers)))";
+const askArgs = (pk, who) => [pk.askerHashes[0], pk.askerHashes[1], who.slug || null, who.name || null];
+
+// Ids of every stored vote (kv_state vote:<id>), not just the 50 in votes:index, so an old vote keeps no ballot behind.
+async function voteIds(env) {
+  return (await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%'")).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id));
+}
+const ballotPath = (hash) => `$.ballots."${hash}"`; // hex only, quoted because a key may start with a digit
+
+// -> [{ id, vote, hash, choice }] for each vote document that holds a ballot from this Discord id (export only; erase never reads the documents).
 async function ballotsOf(env, who) {
   if (!who.discordId) return [];
-  let ids = [];
-  const idx = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'votes:index'").first();
-  try { if (idx) ids = JSON.parse(idx.json).ids; } catch (e) { ids = []; }
   const out = [];
-  for (const id of (Array.isArray(ids) ? ids : []).filter((x) => VOTE_ID_RE.test(String(x)))) {
+  for (const id of await voteIds(env)) {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(`vote:${id}`).first();
     let vote = null;
     try { vote = row ? JSON.parse(row.json) : null; } catch (e) { vote = null; }
@@ -145,13 +159,11 @@ async function collect(env, who) {
     out.legacy.sheet_events = await rows(env, "SELECT id, slug, name, field, value_json, visible, source, created_at FROM sheet_events WHERE slug = ?", who.slug);
     out.legacy.dispatches = await rows(env, "SELECT id, slug, name, ask_ids_json, created_at FROM dispatches WHERE slug = ?", who.slug);
     out.legacy.intents = await rows(env, "SELECT seq, at, slug, kind, body, ver FROM intents WHERE slug = ?", who.slug);
-    out.legacy.ask_turns = await rows(env, "SELECT id, by_name, question, answer, cites_json, model, status, share, latency_ms, created_at, answered_at FROM ask_turns WHERE by_name IN (?, ?)", who.slug, who.name);
     out.legacy.fact_fixes = await rows(env, "SELECT id, page_id, fact_key, old_value, new_value, note, by_name, created_at FROM fact_fixes WHERE by_name IN (?, ?)", who.slug, who.name);
   }
   const pk = await personalKeys(env, who);
-  out.legacy.answer_details = who.slug || pk.answerHash
-    ? await rows(env, "SELECT intent_id, more, sources, message_id, created_at FROM answer_details WHERE asker_hash = ? OR intent_id IN (SELECT id FROM ask_turns WHERE by_name IN (?, ?))", pk.answerHash || "", who.slug || "", who.name || "")
-    : [];
+  out.legacy.ask_turns = await rows(env, `SELECT id, by_name, question, answer, cites_json, model, status, share, latency_ms, created_at, answered_at FROM ask_turns WHERE ${MINE_ASK}`, ...askArgs(pk, who));
+  out.legacy.answer_details = await rows(env, `SELECT intent_id, more, sources, message_id, created_at FROM answer_details WHERE asker_hash = ? OR intent_id IN (SELECT id FROM ask_turns WHERE ${MINE_ASK})`, pk.answerHash, ...askArgs(pk, who));
   out.legacy.ai_budget = [];
   for (const b of pk.budgetIds) out.legacy.ai_budget.push(...await rows(env, "SELECT key, json, updated_at FROM kv_state WHERE key LIKE ?", kvLike(b)));
   if (id) {
@@ -207,25 +219,25 @@ async function eraseData(request, env, who, now) {
   const id = who.discordId, db = env.DB;
   const st = [];
   const pk = await personalKeys(env, who);
-  const ballots = await ballotsOf(env, who); // read before the batch; the rewrite below is a plain UPDATE of those documents
   if (id) {
     st.push(db.prepare("DELETE FROM user_state WHERE user_key = ?").bind(pk.userKey));
     st.push(db.prepare("DELETE FROM sessions WHERE user_key = ?").bind(pk.userKey));
     st.push(db.prepare("DELETE FROM answer_feedback WHERE user_hash = ?").bind(pk.answerHash));
     st.push(db.prepare("DELETE FROM answer_details WHERE asker_hash = ?").bind(pk.answerHash));
-  }
-  for (const b of ballots) {
-    const { [b.hash]: _gone, ...rest } = b.vote.ballots;
-    st.push(db.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = ?").bind(JSON.stringify({ ...b.vote, ballots: rest }), new Date(now).toISOString(), `vote:${b.id}`));
+    // One in-database edit per vote: json_remove on the ballot key. Nothing is read first, so a ballot cast by someone else at the same moment is not overwritten.
+    for (const vid of await voteIds(env)) {
+      st.push(db.prepare("UPDATE kv_state SET json = json_remove(json, ?), updated_at = ? WHERE key = ? AND json_valid(json)").bind(ballotPath(await voterHash(id, vid, env.USER_SALT)), new Date(now).toISOString(), `vote:${vid}`));
+    }
   }
   for (const h of pk.budgetIds) st.push(db.prepare("DELETE FROM kv_state WHERE key LIKE ?").bind(kvLike(h)));
+  // the answer text behind "More" / "Sources" belongs to the Ask turn; it goes first, while the turn row can still be found
+  st.push(db.prepare(`DELETE FROM answer_details WHERE intent_id IN (SELECT id FROM ask_turns WHERE ${MINE_ASK})`).bind(...askArgs(pk, who)));
+  st.push(db.prepare(`DELETE FROM ask_turns WHERE ${MINE_ASK}`).bind(...askArgs(pk, who)));
+  st.push(db.prepare("DELETE FROM ask_turn_askers WHERE asker_hash IN (?, ?)").bind(pk.askerHashes[0], pk.askerHashes[1]));
   if (who.slug) {
-    // the answer text behind "More" / "Sources" belongs to the Ask turn; it goes first, while the turn row can still be found
-    st.push(db.prepare("DELETE FROM answer_details WHERE intent_id IN (SELECT id FROM ask_turns WHERE by_name IN (?, ?))").bind(who.slug, who.name));
     st.push(db.prepare("DELETE FROM sheet_events WHERE slug = ?").bind(who.slug));
     st.push(db.prepare("DELETE FROM dispatches WHERE slug = ?").bind(who.slug));
     st.push(db.prepare("DELETE FROM intents WHERE slug = ?").bind(who.slug));
-    st.push(db.prepare("DELETE FROM ask_turns WHERE by_name IN (?, ?)").bind(who.slug, who.name));
     st.push(db.prepare("DELETE FROM fact_fixes WHERE by_name IN (?, ?)").bind(who.slug, who.name));
     st.push(db.prepare("DELETE FROM members WHERE slug = ?").bind(who.slug));
   }
@@ -246,7 +258,11 @@ async function eraseData(request, env, who, now) {
       "Board documents in kv_state that mention you by name (party, signups, the Discord roster and similar); ask the owner to review them.",
       "Account rows (accounts, account_keys: name, slug, label) are not erased by this route; ask the owner to remove them.",
       "Copies held by Cloudflare (request logs, AI Gateway logs and its cached answers, up to 6 hours for the cache) and by Discord and the AI vendor; D1 backups (Time Travel) until they expire.",
-      ...(who.via === "web-session" ? ["Slug-keyed and name-keyed rows (sheet_events, dispatches, intents, ask_turns, fact_fixes) are erased only through a member-key request."] : []),
+      "The Discord roster entry (kv_state discord_members) stays, so the bot still treats you as a member until an admin edits the roster.",
+      "Your display name, your question and the party's names and builds were sent to the AI vendor; AI Gateway request logs may keep the full request. This service cannot erase those.",
+      "A member key that was already checked by another running copy of the Worker can still be accepted for read requests for up to 15 minutes; write requests re-check the database.",
+      "Questions asked on Discord by someone who is not on the roster are kept under the Discord nickname and cannot be found by key; a nickname is never matched to a person.",
+      ...(who.via === "web-session" ? ["Rows filed only under a handle or name (sheet_events, dispatches, intents, fact_fixes, and ask_turns written before migration 0007) are erased only through a member-key request."] : []),
     ],
   }, {}, [clearSession]);
 }
@@ -265,7 +281,7 @@ export async function handleDataRights(request, env, { path, now }) {
     return path === "/me/export" ? await exportData(env, who, now) : await eraseData(request, env, who, now);
   } catch (e) {
     if (missingTable(e)) {
-      if (!warned) { warned = true; console.warn("data-rights: a table is missing; apply infrastructure/migrations 0002 and 0003"); }
+      if (!warned) { warned = true; console.warn("data-rights: a table is missing; apply infrastructure/migrations 0002, 0003 and 0007"); }
       return respond(503, { error: "data rights not available" });
     }
     console.error("data-rights: failed");

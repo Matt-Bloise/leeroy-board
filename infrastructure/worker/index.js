@@ -20,7 +20,7 @@ import {
   webBoardLinksDeep,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex } from "./scraper.js";
-import { feedbackReport, cleanupAnswerUx } from "./answer-ux.js";
+import { feedbackReport, cleanupAnswerUx, recordAsker } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { manifestFor } from "./setup-command.js";
@@ -1561,6 +1561,7 @@ export default {
           )
             .bind(intentId, askBy, question, activeProvider, share ? 1 : 0, now)
             .run();
+          if (!isGuest) await recordAsker(env, intentId, { slug: memberSlug });
 
           const { seq } = await insertIntent(env, {
             slug: askSlug,
