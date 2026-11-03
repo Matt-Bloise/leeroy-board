@@ -141,9 +141,9 @@ test("flag: off unless exactly on; cache key is private and not a public doc", (
   assert.ok(!isPublicDataDoc(cacheKey("stats")));
 });
 
-test("wrangler.toml ships D1_FEED off; the route calls the feed only behind the flag", () => {
+test("wrangler.toml declares D1_FEED as exactly on or off (2026-11-03: on for the rollback drill, see docs/runbooks/rollback.md); the route calls the feed only behind the flag", () => {
   const toml = fs.readFileSync(path.join(DATA, "..", "infrastructure", "wrangler.toml"), "utf8");
-  assert.match(toml, /^D1_FEED = "off"/m);
+  assert.match(toml, /^D1_FEED = "(on|off)"/m);
   const src = fs.readFileSync(path.join(DATA, "..", "infrastructure", "worker", "index.js"), "utf8");
   assert.match(src, /path\.startsWith\("\/data\/"\) && feedEnabled\(env\) \? await serveFeedDoc\(env, raw\) : null/);
 });
