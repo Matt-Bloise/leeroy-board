@@ -453,6 +453,18 @@ CREATE TABLE IF NOT EXISTS noise_ledger (
   PRIMARY KEY (day, channel)
 );
 
+-- 22. Who asked an ask_turns row, as salted hashes (migration 0009). Lets erase and export find a person's questions without matching on a name.
+-- ask_turn_legacy (rows that existed before the migration; the only ones that may be matched by name) is filled by the migration, not here.
+CREATE TABLE IF NOT EXISTS ask_turn_askers (
+  intent_id TEXT NOT NULL CHECK (length(intent_id) > 0),
+  asker_hash TEXT NOT NULL CHECK (length(asker_hash) = 64),
+  PRIMARY KEY (intent_id, asker_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_ask_turn_askers_hash ON ask_turn_askers(asker_hash);
+CREATE TABLE IF NOT EXISTS ask_turn_legacy (
+  intent_id TEXT PRIMARY KEY CHECK (length(intent_id) > 0)
+);
+
 -- Request gauge (migration 0008): Worker requests counted per UTC day, flushed in batches. Counts only: no IP, no user id, no path. Unused while REQUEST_GAUGE is off.
 CREATE TABLE IF NOT EXISTS request_gauge (
   day TEXT PRIMARY KEY CHECK (length(day) = 10),

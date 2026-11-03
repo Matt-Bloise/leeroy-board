@@ -26,11 +26,11 @@ test("the drill passes on the fixtures and prints exactly the expected report", 
 
 test("it wipes and restores for real: the numbers in the report", async () => {
   const text = EXPECTED;
-  assert.match(text, /^1\. source database: 40 tables from schema\.sql, seeded with 465 fixture statements$/m);
-  assert.match(text, /^2\. export: 35 tables exported, 5 never exported \(account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens\)/m);
+  assert.match(text, /^1\. source database: 42 tables from schema\.sql, seeded with 465 fixture statements$/m);
+  assert.match(text, /^2\. export: 37 tables exported, 5 never exported \(account_keys, sessions, guest_rate_limits, sessions_v2, provider_tokens\)/m);
   assert.match(text, /^   ok   intents {16}rows {2}450 -> {2}450 /m);
   assert.match(text, /^   ok   sessions {15}rows {4}1 -> {4}0 {3}never exported/m);
-  assert.match(text, /^RESTORE DRILL PASSED: 35 tables, 464 rows, every count and checksum matches$/m);
+  assert.match(text, /^RESTORE DRILL PASSED: 37 tables, 464 rows, every count and checksum matches$/m);
 });
 
 test("it is deterministic: two runs give the same report", async () => {
@@ -91,7 +91,7 @@ test("the report never contains a secret fixture value, and the fixtures hold th
 test("every table of schema.sql is either in the report or named never exported (a new table cannot be forgotten)", async () => {
   const schema = readFileSync(new URL("../../infrastructure/schema.sql", import.meta.url), "utf8");
   const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)].map((m) => m[1]);
-  assert.equal(tables.length, 40);
+  assert.equal(tables.length, 42);
   for (const t of tables) assert.match(EXPECTED, new RegExp(`\\b${t}\\b`), `${t} is missing from the expected report`);
 });
 
@@ -99,7 +99,7 @@ test("CLI: --backend sqlite exits 0, prints the report and matches --expect; a w
   const run = (...a) => spawnSync(process.execPath, ["--no-warnings", TOOL, ...a], { encoding: "utf8" });
   const ok = run("--backend", "sqlite", "--expect", fileURLToPath(new URL("../fixtures/restore-drill.expected.txt", import.meta.url)));
   assert.equal(ok.status, 0, ok.stderr);
-  assert.match(ok.stdout, /RESTORE DRILL PASSED: 35 tables, 464 rows/);
+  assert.match(ok.stdout, /RESTORE DRILL PASSED: 37 tables, 464 rows/);
   assert.match(ok.stdout, /report matches/);
   const bad = run("--backend", "sqlite", "--expect", TOOL);
   assert.equal(bad.status, 1);

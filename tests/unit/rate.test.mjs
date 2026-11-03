@@ -173,7 +173,8 @@ test("the fixture is fictional and shaped like an eval request; real data stays 
   // The page picks a local file; it never names a results path or a URL to fetch.
   const html = read("rate/index.html");
   assert.ok(/type="file"/.test(html));
-  assert.equal(/https?:\/\/(?!www\.w3\.org)/.test(html.replace(/<meta[^>]*>/g, "")), false, "no external URLs in the page");
+  // The one outside address is the footer's Contact link: a plain anchor, never fetched by the page (the browser suite checks the page makes no request to it).
+  assert.equal(/https?:\/\/(?!www\.w3\.org)/.test(html.replace(/<meta[^>]*>/g, "").replace(/<a href="https:\/\/github\.com\/matt-bloise\/leeroy-board\/issues" rel="noopener">Contact<\/a>/, "")), false, "no external URLs in the page");
   assert.ok(/noindex/.test(html));
   assert.ok(/Disallow: \/rate\//.test(read("robots.txt")));
 });

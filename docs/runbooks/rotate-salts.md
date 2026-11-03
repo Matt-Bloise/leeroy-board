@@ -17,7 +17,8 @@ Both salts were fixed constants committed to a repository that was once public (
 | `USER_SALT` | `answer_details.asker_hash`, `answer_feedback.user_hash` | Yes | Rename (rows expire after 30 and 90 days anyway) |
 | `USER_SALT` | `kv_state` `vote:<id>`, keys of `ballots` | Yes, for known ids and listed vote ids | Re-key each ballot, keep the choice |
 | `USER_SALT` | `guest_rate_limits.ip_hash` | **No**: visitor addresses are not stored | Delete all rows (short-lived counters) |
-| `USER_SALT` | `audit_log.target` of erase events | **No**: those people were erased | Leave; never looked up by hash |
+| `USER_SALT` | `audit_log.target` of erase events | **No**: it is a hash of a random value, tied to nobody | Leave; never looked up by hash |
+| `USER_SALT` | `ask_turn_askers.asker_hash` (Discord-id hash and handle hash, one row each) | Yes, for known ids and handles | UPDATE old to new; without it an old question is no longer found by erase and export |
 | `USER_SALT` | Discord button ids on answers already posted (HMAC) | **No**: signed into the messages | Nothing to do; those buttons stop working |
 | `KEY_SALT` | `members.key_hash` | **No**: keys are never stored | **Re-issue a key for every member** |
 | `KEY_SALT` | `kv_state` `moments_ledger`, `channelHash` and `contentHash` | **No**, and not needed | Leave. Diagnostic rows only (`moments.md`); rows written after the flip use the new salt, so compare before and after separately |
