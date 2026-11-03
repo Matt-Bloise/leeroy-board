@@ -309,6 +309,54 @@ export function getOpenAiProviderSlug(provider) {
   }
 }
 
+// Output-affecting generation params sent to every provider; they are part of the cache key payload.
+const ANSWER_GEN_PARAMS = { max_tokens: 350, temperature: 0.3 };
+
+// ---- Answer cache key and gateway metadata -------------------------------------------------------------------------
+// The AI Gateway cache key decides which asks share one stored answer (6 hour TTL). The answer depends on the whole prompt: the
+// asker's display name, member or visitor status, journey, coach mode, party state, retrieved library facts and persona. Listing
+// those inputs one by one is how the old key (library stamp, provider, depth, question hash) went wrong, so the key now hashes the
+// final system prompt and user prompt themselves: anything that changes the prompt changes the key.
+//   ask:<provider>:<model>:<fast|deep>:<variant>:<tier>:<promptHash>
+// The readable parts only make gateway logs easy to scan. Raw names, slugs, ids and question text never appear in the key: the
+// prompt is reduced to a SHA-256 digest (32 hex). Two asks share an entry only when their prompts are byte for byte identical, which
+// means the same asker name, same status, same persona text and same facts, so sharing is safe by construction.
+const keyPart = (v, fallback) => String(v || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 40) || fallback;
+
+// The model name the provider call will use for this ask (same defaults as the call* functions below; env-overridable).
+export function answerModelLabel(env, provider, deep = false) {
+  const e = env || {};
+  switch (provider) {
+    case "gemini": return deep ? e.GEMINI_MODEL_DEEP || "gemini-3.8-pro" : e.GEMINI_MODEL_FAST || "gemini-3.5-flash-lite";
+    case "workers-ai": return e.WORKERS_AI_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+    case "groq": return deep ? e.GROQ_MODEL_DEEP || "llama-3.3-70b-versatile" : e.GROQ_MODEL_FAST || "llama-3.3-70b-versatile";
+    case "cerebras": return e.CEREBRAS_MODEL || "llama-3.3-70b";
+    case "github": return deep ? e.GITHUB_MODEL_DEEP || "gpt-4o" : e.GITHUB_MODEL_FAST || "gpt-4o-mini";
+    case "openrouter": return e.OPENROUTER_MODEL || "deepseek/deepseek-chat-v3-0324:free";
+    default: return deep ? e.CLAUDE_MODEL_DEEP || "claude-sonnet-4-5-20250929" : e.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001";
+  }
+}
+
+export async function buildAnswerCacheKey({ provider, model, deep = false, variant = "production", tier = "guest", systemPrompt, userPrompt }) {
+  // JSON.stringify of an array is an unambiguous encoding (no separator character can be forged by prompt text). The exact model id
+  // and the output-affecting params are hashed too, so a model or params change misses; the 40 char label below is for reading only.
+  const payload = JSON.stringify([String(model), ANSWER_GEN_PARAMS.max_tokens, ANSWER_GEN_PARAMS.temperature, String(systemPrompt), String(userPrompt)]);
+  const promptHash = (await sha256Hex(payload)).slice(0, 32);
+  return ["ask", keyPart(provider, "p"), keyPart(model, "m"), deep ? "deep" : "fast", keyPart(variant, "production"), keyPart(tier, "guest"), promptHash].join(":");
+}
+
+// cf-aig-metadata: labels for splitting gateway logs. Fixed vocabulary only; never a name, slug, id or question text.
+const META_TIERS = new Set(["member", "guest"]);
+const META_JOURNEYS = new Set(["guided", "curious", "everything"]);
+export function gatewayMetadata(input) {
+  const { variant, tier, journey } = input || {};
+  const meta = { app: "leeroy-board", service: "chamber" };
+  if (variant !== undefined) meta.variant = PROMPT_VARIANTS.includes(variant) ? variant : "other";
+  if (tier !== undefined) meta.tier = META_TIERS.has(tier) ? tier : "guest";
+  if (journey !== undefined) meta.journey = META_JOURNEYS.has(journey) ? journey : "other";
+  return JSON.stringify(meta);
+}
+
 export async function fetchWithGatewayFallback({
   env,
   providerSlug,
@@ -317,13 +365,14 @@ export async function fetchWithGatewayFallback({
   body,
   skipCache = false,
   cacheKey = null,
+  metadata = null,
   deadlineAt = null,
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
   const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
   const cacheHeaders = env && env.AI_GATEWAY_ID ? {
     "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
-    "cf-aig-metadata": JSON.stringify({ app: "leeroy-board", service: "chamber" }),
+    "cf-aig-metadata": gatewayMetadata(metadata),
     ...(aigToken ? { "cf-aig-authorization": `Bearer ${aigToken}` } : {}),
     ...(skipCache ? { "cf-aig-skip-cache": "true" } : {}),
     ...(cacheKey ? { "cf-aig-cache-key": String(cacheKey) } : {}),
@@ -362,7 +411,7 @@ export async function fetchWithGatewayFallback({
   );
 }
 
-async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, deadlineAt = null }) {
+async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null }) {
   if (!env.ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY secret is not configured on the Cloudflare Worker");
   }
@@ -373,7 +422,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
   const defaultEndpoint = "https://api.anthropic.com/v1/messages";
   const body = JSON.stringify({
     model,
-    max_tokens: 350,
+    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
     system: [
       {
         type: "text",
@@ -396,6 +445,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     body,
     skipCache,
     cacheKey,
+    metadata,
     deadlineAt,
   });
 
@@ -414,7 +464,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
   return { answer, model, provider: "claude" };
 }
 
-async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, deadlineAt = null, modelOverride = null }) {
+async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, modelOverride = null }) {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY secret is not configured on the Cloudflare Worker");
   }
@@ -437,8 +487,8 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       },
     ],
     generationConfig: {
-      maxOutputTokens: 350,
-      temperature: 0.3,
+      maxOutputTokens: ANSWER_GEN_PARAMS.max_tokens,
+      temperature: ANSWER_GEN_PARAMS.temperature,
     },
   });
 
@@ -455,6 +505,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
     body,
     skipCache,
     cacheKey,
+    metadata,
     deadlineAt,
   });
 
@@ -477,7 +528,8 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       },
       body,
       skipCache,
-      cacheKey,
+      cacheKey: null, // never reuse the first model's key for the lighter model: it would store or serve the wrong model's answer
+      metadata,
       deadlineAt,
     });
   }
@@ -506,7 +558,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model: activeModel, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, deadlineAt = null, modelOverride = null }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
@@ -516,8 +568,8 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    max_tokens: 350,
-    temperature: 0.3,
+    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
+    temperature: ANSWER_GEN_PARAMS.temperature,
   };
 
   let result = null;
@@ -527,6 +579,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
         gateway: {
           id: env.AI_GATEWAY_ID,
           skipCache: Boolean(skipCache),
+          metadata: JSON.parse(gatewayMetadata(metadata)),
           cacheTtl: Number(env.AI_GATEWAY_CACHE_TTL) || 21600, // 6 hours: matches the cron update cycle
         },
       }, deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
@@ -556,14 +609,14 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   return { answer, model, provider: "workers-ai" };
 }
 
-async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, env, skipCache = false, cacheKey = null, deadlineAt = null }) {
+async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, env, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null }) {
   if (!apiKey) {
     throw new Error(`API key secret for provider '${provider}' is not configured on the Cloudflare Worker`);
   }
   const body = JSON.stringify({
     model,
-    max_tokens: 350,
-    temperature: 0.3,
+    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
+    temperature: ANSWER_GEN_PARAMS.temperature,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
@@ -584,6 +637,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
     body,
     skipCache,
     cacheKey,
+    metadata,
     deadlineAt,
   });
 
@@ -600,7 +654,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null }) {
   if (modelOverride && !modelAllowed(provider, modelOverride)) {
     throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
   }
@@ -610,9 +664,9 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
   const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
   switch (provider) {
     case "gemini":
-      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, deadlineAt, modelOverride });
+      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, modelOverride });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, deadlineAt, modelOverride });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -626,6 +680,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         env,
         skipCache,
         cacheKey,
+        metadata,
         deadlineAt,
       });
     case "cerebras":
@@ -639,6 +694,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         env,
         skipCache,
         cacheKey,
+        metadata,
         deadlineAt,
       });
     case "github":
@@ -652,6 +708,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         env,
         skipCache,
         cacheKey,
+        metadata,
         deadlineAt,
       });
     case "openrouter":
@@ -669,11 +726,12 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         env,
         skipCache,
         cacheKey,
+        metadata,
         deadlineAt,
       });
     case "claude":
     default:
-      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, deadlineAt });
+      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt });
   }
 }
 
@@ -886,8 +944,10 @@ export async function answerWithAi({
         ? reqClean
         : resolveAiProvider(env, requestedProvider);
     const activeProvider = resolveAiProvider(env, chosenProvider);
-    const qHash = (await sha256Hex(question)).slice(0, 16);
-    const cacheKey = `ask:${libraryStamp}:${chosenProvider}:${deep ? "deep" : "fast"}:${qHash}`;
+    const variant = "production"; // answerWithAi always runs the live prompt; the evaluation variants never reach the cache
+    const tier = askerIsMember ? "member" : "guest";
+    const metadata = { variant, tier, journey };
+    const cacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant, tier, systemPrompt, userPrompt });
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     {
@@ -919,6 +979,7 @@ export async function answerWithAi({
         userPrompt,
         deep,
         cacheKey,
+        metadata,
         budgetKeys: budget,
         timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
       }));
@@ -934,6 +995,7 @@ export async function answerWithAi({
             systemPrompt,
             userPrompt,
             deep,
+            metadata,
             timeoutMs: ASK_FALLBACK_TIMEOUT_MS,
           }));
         } catch {}
@@ -949,6 +1011,7 @@ export async function answerWithAi({
             deep,
             skipCache: false,
             cacheKey,
+            metadata,
             budgetKind: "ask",
             budgetKeys: budget,
             timeoutMs: ASK_FALLBACK_TIMEOUT_MS,
