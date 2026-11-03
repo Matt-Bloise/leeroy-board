@@ -27,11 +27,17 @@ PAGES_PORT="${PAGES_PORT:-8080}"; API_PORT="${API_PORT:-8787}"
 PAGES="http://127.0.0.1:$PAGES_PORT"; API="http://127.0.0.1:$API_PORT"
 [ -d "$ROOT/infrastructure/node_modules/wrangler" ] || { echo "local-browser: run 'npm install' in infrastructure/ first" >&2; exit 2; }
 [ -d "$ROOT/tests/node_modules/playwright" ] || { echo "local-browser: run 'npm ci' in tests/ first" >&2; exit 2; }
+# Windows (Git Bash) has no setsid and no process groups: run the command directly (exec keeps the PID) and stop it with its children by Windows PID.
+if ! command -v setsid >/dev/null 2>&1; then
+  setsid() { exec "$@"; }
+  WINKILL="$(cd "$(dirname "$0")" && pwd)/win-kill-tree.ps1"
+  winkill() { local w; w="$(cat "/proc/$1/winpid" 2>/dev/null)"; [ -n "$w" ] && powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$WINKILL")" "$w" >/dev/null 2>&1; }
+fi
 inuse() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 for p in "$PAGES_PORT" "$API_PORT"; do inuse "$p" && { echo "local-browser: port $p is already in use; stop that process or set PAGES_PORT / API_PORT" >&2; exit 2; }; done
 
 TMP="$(mktemp -d)"; PIDS=()
-stop() { for p in "${PIDS[@]}"; do kill -- "-$p" 2>/dev/null || kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 -- "-$p" 2>/dev/null; done; rm -rf "$TMP"; }
+stop() { if type winkill >/dev/null 2>&1; then for p in "${PIDS[@]}"; do winkill "$p"; done; fi; for p in "${PIDS[@]}"; do kill -- "-$p" 2>/dev/null || kill "$p" 2>/dev/null; done; sleep 1; for p in "${PIDS[@]}"; do kill -9 -- "-$p" 2>/dev/null; done; rm -rf "$TMP"; }
 trap stop EXIT; trap 'exit 130' INT TERM
 
 # the real allow list from wrangler.toml (the API tests check that leeroy.party is allowed and localhost is not) plus the local page origin
