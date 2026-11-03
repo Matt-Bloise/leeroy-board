@@ -1,0 +1,2 @@
+/* the page becomes wider than the screen */
+body { min-width: 3000px !important; }

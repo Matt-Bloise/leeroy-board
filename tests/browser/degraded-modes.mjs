@@ -11,12 +11,14 @@
 // Makes no AI call and sends nothing. Chromium only. Exit 0 when every check passes, 1 otherwise.
 // Late rejections from routes or pages that closed with the context are not test failures; anything else still fails the run.
 process.on("unhandledRejection", (e) => { if (/Target page, context or browser has been closed/.test(String(e && e.message || e))) return; console.error(e); process.exit(1); });
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 if (!BASE) { console.error("usage: node degraded-modes.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
 const HOST_MAP = arg("--host-map"), ONLY = arg("--only"), POOL = +(arg("--pool") || 3);
-const url = `${BASE.replace(/\/$/, "")}/?preview=1`, origin = new URL(BASE).origin;
+const url = pageUrl(BASE, { params: { preview: "1" } }), origin = originOf(BASE);
 const API_ORIGIN = (() => { try { return process.env.PREVIEW_API ? new URL(process.env.PREVIEW_API).origin : null; } catch (e) { return null; } })();
 let pass = 0, fail = 0; const lines = [];
 const ok = (name, cond, extra = "") => { if (cond) pass++; else fail++; lines.push(`${cond ? "PASS" : "FAIL"} ${name}${!cond && extra ? `: ${extra}` : ""}`); };
@@ -128,8 +130,8 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
 }
 
 const launchArgs = HOST_MAP ? [`--host-resolver-rules=MAP ${HOST_MAP.split("=")[0]} ${HOST_MAP.split("=")[1]}`, "--no-proxy-server", "--disable-features=PrivateNetworkAccessChecks,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests"] /* a mapped loopback host: no proxy, and a served-by-route page may still fetch its own files */ : [];
-const browser = await pw.chromium.launch({ args: launchArgs });
-const slug = await (async () => { try { const r = await fetch(`${BASE.replace(/\/$/, "")}/data/party.json`); const j = await r.json(); return String(j.members[0].name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); } catch (e) { return "just-looking"; } })();
+const browser = stubbed(await pw.chromium.launch({ args: launchArgs }));
+const slug = await (async () => { try { const r = await fetch(new URL("data/party.json", dirOf(BASE))); const j = await r.json(); return String(j.members[0].name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); } catch (e) { return "just-looking"; } })();
 const jobs = [];
 const ONLY_LIST = ONLY ? ONLY.split(",").map((x) => x.trim()).filter(Boolean) : null; /* --only takes one id fragment or a comma list: "api-abort,api-500,no-js" */
 for (const c of CONDITIONS) { if (ONLY_LIST && !ONLY_LIST.some((o) => c.id.includes(o))) continue; for (const s of c.sizes || SIZES) for (const v of ["first", "repeat"]) jobs.push(() => runOne(browser, c, s, v, slug)); }

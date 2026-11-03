@@ -30,6 +30,7 @@ import { handleWebAuth, webSessionFrom } from "./web-auth.js";
 import { handleDataRights } from "./data-rights.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
+import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
@@ -40,6 +41,7 @@ import { guestIpKey } from "./guest-key.js";
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
+import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
 
 export { BoardRoom };
@@ -340,7 +342,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "GET /admin/feedback", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "POST /admin/eval", "GET /admin/moments",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -543,6 +545,17 @@ export default {
         return jsonResp(body, status, cors);
       }
 
+      // Admin only: timed-post schedule status for mission control. No channel ids, user ids, message ids or content.
+      if (req.method === "GET" && path === "/admin/moments") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const schedule = await loadConfigKey(env, "moments");
+        const shadow = momentsShadow(env);
+        const { state } = await d1Store(env, shadow ? MOMENTS_SHADOW_STATE_KEY : undefined).read();
+        const { state: led } = await d1Store(env, MOMENTS_LEDGER_KEY, "entries").read();
+        return jsonResp(momentsStatus({ schedule, state, now: Date.now(), enabled: momentsEnabled(env), shadow, dryRun: momentsDryRun(env), ledger: led.entries }), 200, cors);
+      }
+
       // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.
       if (req.method === "POST" && path === "/admin/members") {
         const denied = adminGate(req, url, env, cors);
@@ -573,6 +586,25 @@ export default {
           .run();
         invalidateConfigCache("discord_members");
         return jsonResp({ ok: true, slug: entry.slug, entries: result.members.length }, 200, cors);
+      }
+
+      // Admin only, and only when EVAL_ENABLED is on (default off; 404 otherwise). Model bake-off: runs a few cells of questions x
+      // candidates through the production retrieval and prompt path and returns answers plus deterministic lint. Stores nothing,
+      // posts nothing. At most 6 model calls and 25 seconds per request; the caller loops on nextCursor (see eval.js).
+      if (req.method === "POST" && path === "/admin/eval") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        if (!evalEnabled(env)) return jsonResp({ error: "Not found" }, 404, cors);
+        const raw = await req.text();
+        if (new TextEncoder().encode(raw).length > 100000) return jsonResp({ error: "Body too large" }, 413, cors);
+        let body = null;
+        try {
+          body = JSON.parse(raw);
+        } catch {}
+        const parsed = validateEvalRequest(body);
+        if (parsed.error) return jsonResp({ error: parsed.error }, 400, cors);
+        const out = await runEval(env, parsed);
+        return jsonResp(out, 200, { ...cors, "Cache-Control": "no-store" });
       }
 
       // The persona pack is curated content that lives only in D1. Write-only: there is no GET route for it.
@@ -1651,6 +1683,13 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
+    // The every-minute trigger runs only the timed posts; every other trigger is the source sweep. Timed posts are off until MOMENTS_ENABLED.
+    if (controller && controller.cron === MOMENTS_CRON) {
+      ctx.waitUntil(
+        runMoments(env, { loadSchedule: () => loadConfigKey(env, "moments") }).catch((err) => console.error("moments run failed:", String((err && err.message) || err)))
+      );
+      return;
+    }
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
     ctx.waitUntil(cleanupAnswerUx(env));

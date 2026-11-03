@@ -3,8 +3,10 @@
 //   options: --engine chromium|webkit|firefox (default chromium)   --out report.json   --budget-min 7   --concurrency 4
 //            --sizes 1024x768,390x844 (subset)   --states gate,looking,member   --scenes five,buffs
 //            --zoom-selftest   check the zoom-aware coordinate helper on the chosen engine against a built-in page and exit (no --url needed)
+//            --live-api   use the real API the page points at (default: the Worker API is answered from tests/fixtures/api-snapshot, so the sweep sends no request to the Worker)
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
-// No AI call, nothing is sent: the only requests are the page's own. Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
+// No AI call, nothing is sent. By default every /api/ call is fulfilled by Playwright from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs): the sweep judges layout, not the API,
+// and a full sweep made 1,056 Worker requests before this (measured locally, docs/runbooks/cloudflare-requests.md). An API path the snapshot lacks fails the run (invariant stub-miss). Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
 // Matrix: 18 viewport sizes (touch + isMobile under 700 wide) x 3 states (gate = first visit, looking = "Just take a look", member = name chip then "Show me what is next")
 // x 12 scenes (set through location.hash). Each scene must really open (html.scene-open, #scene not hidden) or that is a failure of its own.
 // Invariants per cell (name in the report):
@@ -24,6 +26,8 @@
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
+import { pageUrl } from "../helpers/page-url.mjs";
+import { stubbed, LIVE_API } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -43,7 +47,7 @@ const pick = (k, all) => { const v = arg(k); if (!v) return all; const l = v.spl
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
 const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENES);
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
-const url = BASE ? `${BASE.replace(/\/$/, "")}/?preview=1` : "about:blank";
+const url = BASE ? pageUrl(BASE, { params: { preview: "1" } }) : "about:blank";
 const ORIGIN = BASE ? new URL(url).origin : "";
 // Known by-design exceptions, listed so they are visible and easy to delete. A member who has picked a name and opens #tonight lands on the wall: the app clears the hash and no scene opens.
 // Confirmed by hand on master (scene-open class off, #scene hidden, hash emptied); if the owner decides that deep link should open Next steps, delete the entry and the sweep will judge it.
@@ -271,7 +275,7 @@ if (argv.includes("--zoom-selftest")) {
   await b.close();
   process.exit(bad ? 1 : 0);
 }
-const browser = await pw[ENGINE].launch(launch);
+const browser = stubbed(await pw[ENGINE].launch(launch), { label: "layout-sweep api-stub" });
 const jobs = [];
 for (const size of SIZES) for (const state of STATES) jobs.push([size, state]);
 let next = 0;
@@ -282,12 +286,14 @@ await Promise.all(Array.from({ length: CONC }, async () => {
     await cell(browser, size, state);
   }
 }));
+const stubReport = browser.apiStubReport ? browser.apiStubReport() : null;
+if (stubReport) for (const m of stubReport.misses) fail({ w: 0, h: 0 }, "-", "-", "stub-miss", `the page asked for ${m}, which tests/fixtures/api-snapshot does not have: re-record it (tools/local-browser.sh record-fixtures) or run with --live-api`);
 await browser.close();
 
 failures.sort((a, b) => b.w - a.w || b.h - a.h || a.state.localeCompare(b.state) || a.scene.localeCompare(b.scene) || a.invariant.localeCompare(b.invariant));
 const byInv = {}, bySize = {}, byScene = {};
 for (const f of failures) { byInv[f.invariant] = (byInv[f.invariant] || 0) + 1; const s = `${f.w}x${f.h}`; bySize[s] = (bySize[s] || 0) + 1; byScene[f.scene] = (byScene[f.scene] || 0) + 1; }
-const summary = { url: BASE, engine: ENGINE, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, byInvariant: byInv, bySize, byScene, skippedCells: skipped, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
+const summary = { url: BASE, engine: ENGINE, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, apiMode: LIVE_API ? "live" : "stub", apiReadsStubbed: stubReport ? stubReport.served : 0, byInvariant: byInv, bySize, byScene, skippedCells: skipped, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
 if (OUT) writeFileSync(OUT, JSON.stringify({ summary, failures }, null, 1));
 
 if (failures.length) {

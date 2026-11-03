@@ -8,6 +8,8 @@
 // the form validates (named errors, aria-invalid, focus on the first bad line), a 201 adds a fourth, a 404 keeps the form open with a plain message, Escape closes and returns focus;
 // no horizontal scroll, every control at least 44px tall, the title never overlaps the switcher or Back; axe finds no serious or critical violations; no console or page errors.
 // Exit 0 when every check passes, 1 otherwise.
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -46,7 +48,7 @@ async function open(browser, opts, c) {
   await ctx.route("**/api/**", (route) => route.abort());
   await ctx.route("**/api/me", (route) => (route.request().method() === "GET" ? json(route, { user: "abcd1234", expires_at: 4102444800, characters: c.chars }) : route.abort()));
   await ctx.route("**/api/me/characters", (route) => { posts.push(route.request().postDataJSON()); return c.post === 404 ? json(route, { error: "not found" }, 404) : json(route, { character: { id: "t-new", ...route.request().postDataJSON() } }, 201); });
-  await page.goto(`${BASE.replace(/\/?$/, "/")}?brain=local&preview=1`, { waitUntil: "load" });
+  await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
   await openSheet(page, c.me);
   return { ctx, page, errors, posts };
 }
@@ -58,8 +60,8 @@ const tall = (page, sel) => page.locator(sel).evaluateAll((els) => els.filter((e
 const box = (page, sel) => page.locator(sel).first().boundingBox();
 const apart = (a, b) => !!a && !!b && (a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5 || a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5);
 
-const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {});
-const first = await (await fetch(new URL("data/party.json", BASE.replace(/\/?$/, "/")))).json();
+const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
+const first = await (await fetch(new URL("data/party.json", dirOf(BASE)))).json();
 const me = slug(first.members[0].name);
 
 /* off, signed out, one character: nothing new */

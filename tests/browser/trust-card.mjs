@@ -3,6 +3,7 @@
 // No AI call, nothing sent. Contexts: Chromium at 390x844 (touch) and 1366x768.
 // Checks: More then the menu entry opens the card (2 clicks); the footer entry opens it (1 click); four lines each with a Why; the erase line is marked coming soon and is not a link;
 // no horizontal overflow, card inside the viewport; Escape closes it and returns focus; no console or page errors. Exit 0 when every check passes, 1 otherwise.
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -59,7 +60,7 @@ async function run(browser, size, opts) {
   await ctx.close();
 }
 
-const browser = await pw.chromium.launch();
+const browser = stubbed(await pw.chromium.launch());
 try { for (const [size, opts] of CTX) await run(browser, size, opts); } finally { await browser.close(); }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
