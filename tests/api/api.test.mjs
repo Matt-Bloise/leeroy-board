@@ -236,6 +236,14 @@ for (const p of ["/api/wiki/snapshots", "/api/wiki/proposals"]) {
   });
 }
 
+// Approving or rejecting an AI fact proposal is an admin write: without the admin token it is refused before any lookup, so nothing is written.
+for (const a of ["approve", "reject"]) {
+  test(`POST /api/wiki/proposals/:id/${a} without a key is refused (401 or 403)`, async () => {
+    const r = await fetch(`${API}/api/wiki/proposals/prop_zz_auth_test/${a}`, { method: "POST", headers: { "Content-Type": "application/json", Origin: PAGES }, body: "{}" });
+    assert.ok([401, 403].includes(r.status), `status ${r.status}`);
+  });
+}
+
 for (const p of ["/api/wiki/page", "/api/data/zz-auth-test", "/api/atlas/zz-auth-test"]) {
   test(`PUT ${p} without a key is refused (401 or 403)`, async () => {
     const r = await fetch(`${API}${p}`, { method: "PUT", headers: { "Content-Type": "application/json", Origin: PAGES }, body: "{}" });

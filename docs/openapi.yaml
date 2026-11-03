@@ -975,6 +975,168 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/wiki/proposals/{id}:
+    get:
+      summary: Admin only. One AI-proposed library fact next to the value the library holds now.
+      description: |
+        `proposal` is the stored row (`old_value` is what the library said when the learner proposed it). `current_value` is what the
+        page says now (null when the page lacks that fact). `problems` lists what approving would trip over: `empty_key`, `empty_value`,
+        `key_too_long` (over 80), `value_too_long` (over 300) can never be overridden; `looks_like_prompt_injection` and `contains_url`
+        need `force:true` on approve. Runbook: docs/runbooks/wiki-proposals.md.
+      security:
+        - adminToken: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [proposal, page_exists, current_value, changed_since_proposed, problems, needs_force]
+                properties:
+                  proposal: { type: object }
+                  page: { type: object, nullable: true, properties: { id: { type: string }, category: { type: string }, title: { type: string } } }
+                  page_exists: { type: boolean }
+                  current_value: { type: string, nullable: true }
+                  changed_since_proposed: { type: boolean }
+                  problems: { type: array, items: { type: string } }
+                  needs_force: { type: boolean }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: No such proposal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/wiki/proposals/{id}/approve:
+    post:
+      summary: Admin only. Applies a pending proposal to the library page.
+      description: |
+        One D1 batch writes the page (`facts_json`, `history_json`, `checked`, `updated_at`), sets the proposal to `approved` and adds an
+        `audit_log` row (`wiki.proposal.approve`); if any statement fails nothing changes and the proposal stays `pending` (500
+        `apply_failed`). Afterwards the category blob, search/open blobs and index stamps are rebuilt, the page cache cleared and the
+        room told (`refresh:"failed"` in the body if that step threw; the approval itself stands). Approving an approved proposal is a
+        200 no-op (`already:true`). A rejected or legacy `applied` proposal is 409. A missing page is 409 `page_missing` and nothing is
+        written. A page edited between read and write is 409 `page_changed`; look again and retry. Body: optional `{"force":true}`
+        (boolean only) to approve a proposal that contains a URL or looks like a prompt-injection payload; length caps cannot be forced.
+      security:
+        - adminToken: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force: { type: boolean }
+      responses:
+        "200":
+          description: Approved now, or already approved (`already:true`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, id, status]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  id: { type: string }
+                  status: { type: string, enum: [approved] }
+                  already: { type: boolean }
+                  page_id: { type: string }
+                  fact_key: { type: string }
+                  old_value: { type: string, nullable: true }
+                  new_value: { type: string }
+                  refresh: { type: string, enum: [failed] }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: No such proposal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "409":
+          description: Not pending (rejected or applied), the page no longer exists (`page_missing`) or changed meanwhile (`page_changed`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "413":
+          description: Body over 16 KB.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "422":
+          description: Key or value too long or empty (`problems`), or URL / injection text without `force:true` (`needs_force:true`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, problems]
+                properties:
+                  error: { type: string }
+                  problems: { type: array, items: { type: string } }
+                  needs_force: { type: boolean }
+        "500":
+          description: The batch failed; nothing was changed (`code:apply_failed`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/wiki/proposals/{id}/reject:
+    post:
+      summary: Admin only. Closes a pending proposal without touching the library.
+      description: |
+        Sets the proposal to `rejected` and adds an `audit_log` row (`wiki.proposal.reject`, reason in `detail_json`) in one batch.
+        Rejecting a rejected proposal is a 200 no-op (`already:true`); an approved or applied one is 409. The library is never written.
+      security:
+        - adminToken: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Rejected now, or already rejected (`already:true`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, id, status]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  id: { type: string }
+                  status: { type: string, enum: [rejected] }
+                  already: { type: boolean }
+        "400":
+          description: "The reason is not text or is longer than 200 characters."
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: No such proposal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "409":
+          description: The proposal is approved or applied.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "500":
+          description: The batch failed; the proposal is still pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
   /api/discord:
     post:
       summary: Discord interactions endpoint. Called by Discord only; signed, not keyed.

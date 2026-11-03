@@ -60,6 +60,9 @@ const TABLE = {
   "GET /ask": PUBLIC, // anonymous callers only see shared or visitor turns
   "GET /wiki/snapshots": ADMIN,
   "GET /wiki/proposals": ADMIN,
+  "GET /wiki/proposals/:id": ADMIN,
+  "POST /wiki/proposals/:id/approve": ADMIN, // applies a pending AI fact proposal to lib_pages
+  "POST /wiki/proposals/:id/reject": ADMIN,
   "PUT /wiki/page": ADMIN,
   "GET /bootstrap": PUBLIC,
   "GET /library/*": PUBLIC,
@@ -205,6 +208,9 @@ const CALLS = {
   "GET /ask": ["GET", "/api/ask"],
   "GET /wiki/snapshots": ["GET", "/api/wiki/snapshots"],
   "GET /wiki/proposals": ["GET", "/api/wiki/proposals"],
+  "GET /wiki/proposals/:id": ["GET", "/api/wiki/proposals/prop_x"],
+  "POST /wiki/proposals/:id/approve": ["POST", "/api/wiki/proposals/prop_x/approve", "{}"],
+  "POST /wiki/proposals/:id/reject": ["POST", "/api/wiki/proposals/prop_x/reject", "{}"],
   "PUT /wiki/page": ["PUT", "/api/wiki/page", "{}"],
   "GET /bootstrap": ["GET", "/api/bootstrap"],
   "GET /library/*": ["GET", "/api/library/index.json"],
