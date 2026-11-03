@@ -3,6 +3,7 @@
 // Fails on serious or critical violations only; minor and moderate ones are printed as WARN. Reads only, nothing is sent.
 // Exclusions are listed in EXCLUDE below, each with a reason and a narrow selector. Add none without a reason.
 // Exit 0 when every check passes, 1 otherwise.
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -25,7 +26,7 @@ async function scan(page, label, tag) {
   ok(`${tag} ${label}: no serious or critical axe violations`, hit.length === 0, hit.map(brief).join("; "));
 }
 
-const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {});
+const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
 for (const [size, opts] of CTX) {
   const tag = `[${size}]`;
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" });

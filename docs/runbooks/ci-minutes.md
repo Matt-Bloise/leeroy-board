@@ -110,3 +110,7 @@ The $20 budget is about 3,333 minutes. Alerts at 75, 90 and 100 percent:
 ## What to look at when these workflows first run
 
 They were not run before the pull request that introduced them was opened (actionlint and unit tests only). See the PR body for the list.
+
+## Worker requests (added with batch C)
+
+CI minutes are not the only meter: the Workers Free plan allows 100,000 Worker requests a day for the whole account, and a `ci-full` run used to spend about 1,500 of them locally measured (the layout sweep alone 1,056). Browser suites now answer `/api/` from recorded fixtures (`tests/fixtures/api-snapshot`), so a full run is about 150 Worker requests (the API suite and `deploy-smoke`). The nightly `degraded-modes` run also answers from the fixtures (0 requests). Numbers, rules and the local workflow: `docs/runbooks/cloudflare-requests.md`.

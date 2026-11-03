@@ -3,6 +3,8 @@
 // No AI call, nothing sent. Viewports: 320x568, 390x844, 768x1024, 1366x768. Per viewport: first-run gate title colour is light, then after "Just take a look" the title is one line,
 // at least 60 px wide, does not overlap the close button, and has a light colour; on a phone the last card has bottom padding for the floating coin; under 1200 px a visible Settings button draws a gear.
 // Exit 0 when every check passes, 1 otherwise.
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -10,9 +12,9 @@ if (!BASE) { console.error("usage: node header-fit.mjs --url <pages origin> (or 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const SIZES = [["320x568", { viewport: { width: 320, height: 568 }, hasTouch: true, isMobile: true }], ["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["768x1024", { viewport: { width: 768, height: 1024 } }], ["960x540", { viewport: { width: 960, height: 540 } }], ["1024x768", { viewport: { width: 1024, height: 768 } }], ["1280x720", { viewport: { width: 1280, height: 720 } }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
-const url = `${BASE.replace(/\/$/, "")}/?preview=1`;
+const url = pageUrl(BASE, { params: { preview: "1" } });
 const lum = (c) => { const m = (c.match(/[\d.]+/g) || []).slice(0, 3).map(Number); const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]); };
-const browser = await pw.chromium.launch();
+const browser = stubbed(await pw.chromium.launch());
 try {
   for (const [tag, opts] of SIZES) {
     const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" }), page = await ctx.newPage(), t = `[${tag}]`;

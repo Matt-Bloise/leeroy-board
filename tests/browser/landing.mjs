@@ -4,12 +4,13 @@
 // the policy references, the non-affiliation footer, no external requests or tracking scripts, no horizontal overflow, no console errors,
 // and no serious or critical axe violations (minor and moderate print as WARN).
 // Exit 0 when every check passes, 1 otherwise.
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const ORIGIN = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
 if (!ORIGIN) { console.error("usage: node landing.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
-const BASE = new URL("landing/", ORIGIN.endsWith("/") ? ORIGIN : ORIGIN + "/").href;
+const BASE = new URL("landing/", dirOf(ORIGIN)).href;
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const CTX = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];

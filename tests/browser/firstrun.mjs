@@ -5,6 +5,8 @@
 // (five names); a Discord Activity query (?frame_id=) changes the primary label to "Show me my group". Exit 0 when every check passes, 1 otherwise.
 import os from "node:os";
 import path from "node:path";
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -13,7 +15,7 @@ const SHOTS = arg("--shots") || os.tmpdir();
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const SIZES = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1080x1920", { viewport: { width: 1080, height: 1920 } }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
-const url = (q) => `${BASE.replace(/\/$/, "")}/?preview=1${q || ""}`;
+const url = (q) => { const u = new URL(pageUrl(BASE, { params: { preview: "1" } })); for (const [k, v] of new URLSearchParams(q || "")) u.searchParams.set(k, v); return u.href; };
 
 async function open(browser, opts, q) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" }), page = await ctx.newPage(), errors = [];
@@ -24,7 +26,7 @@ async function open(browser, opts, q) {
 }
 const visibleNames = (page) => page.evaluate(() => Array.from(document.querySelectorAll(".tn-name")).filter((b) => b.getClientRects().length && getComputedStyle(b).visibility !== "hidden").length);
 
-const browser = await pw.chromium.launch();
+const browser = stubbed(await pw.chromium.launch());
 try {
   for (const [tag, opts] of SIZES) {
     const { ctx, page, errors } = await open(browser, opts);
