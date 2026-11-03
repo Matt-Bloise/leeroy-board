@@ -14,7 +14,10 @@ const workflows = files.map(load);
 // Triggers that run code from a pull request (or its fork). `workflow_run` is included: it can be started by a PR workflow and read secrets with the PR's artifacts.
 const PR_TRIGGERS = ["pull_request", "pull_request_target", "pull_request_review", "pull_request_review_comment", "workflow_run"];
 // The only secrets a PR-triggered workflow may name. GITHUB_TOKEN is per run; CLOUDFLARE_ACCOUNT_ID is an identifier, not a credential.
+// CLOUDFLARE_API_TOKEN is allowed ONLY as the fallback of CLOUDFLARE_PREVIEW_API_TOKEN (FALLBACK below): by decision of the Cloudflare account owner,
+// previews share the production Cloudflare token. BOARD_ADMIN_TOKEN and every other production secret stay forbidden.
 const PR_ALLOWED = new Set(["GITHUB_TOKEN", "CLOUDFLARE_PREVIEW_API_TOKEN", "BOARD_PREVIEW_ADMIN_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
+const FALLBACK = /secrets\.CLOUDFLARE_PREVIEW_API_TOKEN \|\| secrets\.CLOUDFLARE_API_TOKEN/g;
 // Production secrets: deploy-cloudflare.yml reads these from the environment `production` only.
 const PRODUCTION = ["CLOUDFLARE_API_TOKEN", "BOARD_ADMIN_TOKEN", "USER_SALT", "KEY_SALT", "AI_GATEWAY_TOKEN", "CLOUDFLARE_AIG_TOKEN", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
   "GROQ_API_KEY", "CEREBRAS_API_KEY", "GITHUB_MODELS_TOKEN", "OPENROUTER_API_KEY", "DISCORD_WEBHOOK_URL", "DISCORD_PUBLIC_KEY", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN"];
@@ -22,7 +25,8 @@ const PRODUCTION = ["CLOUDFLARE_API_TOKEN", "BOARD_ADMIN_TOKEN", "USER_SALT", "K
 const triggers = (doc) => { const on = doc.on ?? doc[true]; return typeof on === "string" ? [on] : Array.isArray(on) ? on : Object.keys(on || {}); };
 // Comments are not code: strip `# ...` so a runbook pointer in a comment is not read as a reference.
 const code = (text) => text.split("\n").map((l) => l.replace(/(^|\s)#.*$/, "$1")).join("\n");
-const secretNames = (text) => [...code(text).matchAll(/(?<![\w.\/-])secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
+// The sanctioned fallback expression is removed first, so any OTHER use of secrets.CLOUDFLARE_API_TOKEN (alone, or in a different expression) is still reported.
+const secretNames = (text) => [...code(text).replace(FALLBACK, "secrets.CLOUDFLARE_PREVIEW_API_TOKEN").matchAll(/(?<![\w.\/-])secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
 
 test("the workflow directory is found and parsed", () => {
   assert.ok(workflows.length >= 5);
@@ -34,7 +38,8 @@ for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.
     const bad = secretNames(w.text).filter((n) => !PR_ALLOWED.has(n));
     assert.deepEqual([...new Set(bad)], [], `${w.f} references secrets a pull request must not read`);
     const c = code(w.text);
-    for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(c), false, `${w.f} reads production secret ${n}`);
+    const stripped = c.replace(FALLBACK, "");
+    for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(stripped), false, `${w.f} reads production secret ${n}`);
     assert.equal(/(?<![\w.\/-])secrets\s*\[/.test(c), false, "indexed secrets access hides the name");
     assert.equal(/toJSON\(\s*secrets\s*\)/.test(c), false, "toJSON(secrets) exposes every secret");
     assert.equal(/secrets:\s*inherit/.test(c), false, "secrets: inherit passes every secret to a called workflow");
@@ -57,7 +62,7 @@ test("the production deploy runs in the environment production and is not PR-tri
 
 test("only the production deploy reads production secrets", () => {
   for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) {
-    const bad = secretNames(w.text).filter((n) => PRODUCTION.includes(n));
+    const bad = secretNames(w.text).filter((n) => PRODUCTION.includes(n)); // the sanctioned fallback is already stripped by secretNames; PR-triggered files are checked above
     assert.deepEqual([...new Set(bad)], [], `${w.f} reads production secrets outside the production environment`);
   }
 });
@@ -78,4 +83,19 @@ test("preview jobs skip, not fail, when the preview secrets are absent", () => {
   assert.ok([].concat(prev.jobs["deploy-pr-preview"].needs).includes("preview-guard"));
   const tests = workflows.find((x) => x.f === "preview-tests.yml").doc;
   assert.match(tests.jobs.preview.if, /preview-secrets\.outputs\.enabled == 'true'/);
+});
+
+test("the Cloudflare token fallback exists exactly where decided, in the preview, teardown and preview-secrets steps, and nowhere else", () => {
+  const count = (f) => (code(workflows.find((x) => x.f === f).text).match(FALLBACK) || []).length;
+  assert.equal(count("pr-preview-cloudflare.yml"), 3, "guard job, spin-up env, teardown env");
+  assert.equal(count("preview-tests.yml"), 1, "preview-secrets job");
+  for (const w of workflows.filter((x) => !["pr-preview-cloudflare.yml", "preview-tests.yml"].includes(x.f))) assert.equal(count(w.f), 0, w.f);
+});
+
+test("the production Cloudflare token is never reached through any other expression in a PR-triggered workflow", () => {
+  for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) {
+    const rest = code(w.text).replace(FALLBACK, "");
+    assert.equal(/secrets\.CLOUDFLARE_API_TOKEN\b/.test(rest), false, `${w.f}: CLOUDFLARE_API_TOKEN only as the fallback of CLOUDFLARE_PREVIEW_API_TOKEN`);
+    assert.equal(/secrets\.BOARD_ADMIN_TOKEN\b/.test(rest), false, `${w.f}: BOARD_ADMIN_TOKEN is never available to a PR workflow`);
+  }
 });

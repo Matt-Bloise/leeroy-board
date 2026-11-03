@@ -127,20 +127,20 @@ jobs:
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
     env:
-      PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN }}
+      PREVIEW_API_TOKEN: ${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
       PREVIEW_ADMIN_TOKEN: ${{ secrets.BOARD_PREVIEW_ADMIN_TOKEN }}
       PREVIEW_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      - name: Check CLOUDFLARE_PREVIEW_API_TOKEN, BOARD_PREVIEW_ADMIN_TOKEN and CLOUDFLARE_ACCOUNT_ID
+      - name: Check the Cloudflare token (CLOUDFLARE_PREVIEW_API_TOKEN or CLOUDFLARE_API_TOKEN), BOARD_PREVIEW_ADMIN_TOKEN and CLOUDFLARE_ACCOUNT_ID
         id: check
         run: |
           MISSING=""
-          [ -n "$PREVIEW_API_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_PREVIEW_API_TOKEN"
+          [ -n "$PREVIEW_API_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_PREVIEW_API_TOKEN-or-CLOUDFLARE_API_TOKEN"
           [ -n "$PREVIEW_ADMIN_TOKEN" ] || MISSING="$MISSING BOARD_PREVIEW_ADMIN_TOKEN"
           [ -n "$PREVIEW_ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$MISSING" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Preview tests skipped::Preview, api, browser and layout were skipped because these repository secrets are missing:$MISSING. There is no fallback to production secrets. The comment says SKIPPED and is not the merge gate. See docs/runbooks/ci-secrets.md."
+            echo "::notice title=Preview tests skipped::Preview, api, browser and layout were skipped because these repository secrets are missing:$MISSING. The preview admin token never falls back to a production secret. The comment says SKIPPED and is not the merge gate. See docs/runbooks/ci-secrets.md."
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi

@@ -6,8 +6,9 @@ set -u
 REPO="${1:-Matt-Bloise/leeroy-board}"
 # MUST be environment-only. USER_SALT, KEY_SALT (not credentials of a third party) and AI_GATEWAY_TOKEN (Uncle Jimmy's) deliberately stay at repository level: a job with
 # environment: production still reads repository secrets the environment does not have, and the deploy keeps the existing Worker value when a secret is empty.
-ACCEPTED="USER_SALT KEY_SALT AI_GATEWAY_TOKEN"
-PROD="CLOUDFLARE_API_TOKEN BOARD_ADMIN_TOKEN CLOUDFLARE_AIG_TOKEN ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY DISCORD_CLIENT_SECRET DISCORD_BOT_TOKEN"
+# CLOUDFLARE_API_TOKEN stays at repository level because the Cloudflare account owner decided previews share the production Cloudflare token (it is the fallback of CLOUDFLARE_PREVIEW_API_TOKEN).
+ACCEPTED="USER_SALT KEY_SALT AI_GATEWAY_TOKEN CLOUDFLARE_API_TOKEN"
+PROD="BOARD_ADMIN_TOKEN CLOUDFLARE_AIG_TOKEN ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY DISCORD_CLIENT_SECRET DISCORD_BOT_TOKEN"
 command -v gh >/dev/null || { echo "gh is not installed" >&2; exit 2; }
 if ! REPO_NAMES=$(gh api --paginate "repos/$REPO/actions/secrets" --jq '.secrets[].name'); then echo "Could not list repository secrets (needs admin access)." >&2; exit 2; fi
 echo "Repository-level secrets in $REPO:"; echo "${REPO_NAMES:-  (none)}" | sed 's/^/  /'
