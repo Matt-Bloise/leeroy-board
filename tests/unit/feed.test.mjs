@@ -141,6 +141,14 @@ test("flag: off unless exactly on; cache key is private and not a public doc", (
   assert.ok(!isPublicDataDoc(cacheKey("stats")));
 });
 
+test("production shape (read 2026-11-03): the stored row has 15 keys, the computed document exactly 13; updated and recent are dropped on purpose", () => {
+  const prod = ["generated", "answers", "replies", "noreply", "median_s", "p95_s", "max_s", "miss_threshold_s", "misses", "last7", "wiki_pages", "wiki_facts", "index_generated", "updated", "recent"];
+  const base = Object.fromEntries(prod.map((k) => [k, k === "recent" ? [{ by: "Someone", q: "SECRET QUESTION", a: "SECRET ANSWER" }] : k === "last7" ? [] : 1]));
+  const out = buildStats(base, { totals: { replies: 3, noreply: 1 }, window: turns(SECS), wikiPages: 5 }, "2026-11-03T00:00:00.000Z");
+  assert.deepEqual(Object.keys(out).sort(), prod.filter((k) => k !== "updated" && k !== "recent").sort());
+  assert.deepEqual(prod.filter((k) => !(k in out)).sort(), ["recent", "updated"]);
+  assert.equal(out.answers, 4, "answers is replies + noreply counted from ask_turns, not the stored running counter");
+});
 test("wrangler.toml declares D1_FEED as exactly on or off (2026-11-03: on for the rollback drill, see docs/runbooks/rollback.md); the route calls the feed only behind the flag", () => {
   const toml = fs.readFileSync(path.join(DATA, "..", "infrastructure", "wrangler.toml"), "utf8");
   assert.match(toml, /^D1_FEED = "(on|off)"/m);
