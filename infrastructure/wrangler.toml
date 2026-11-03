@@ -72,3 +72,6 @@ MOMENTS_DRY_RUN = "off" # "on" logs what would be posted and posts nothing (work
 D1_FEED = "off" # "on" computes GET /api/data/stats from D1 (cached 5 minutes in kv_state, falls back to the stored document on error); timeline and tonight have no D1 source yet
 CHARS_V1 = "off" # "on" returns characters in GET /api/me for a web session and enables POST /api/me/characters (add, rename, select); needs migration 0005; 404 while off
 ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,https://leeroy.party,https://www.leeroy.party,https://api.leeroy.party,https://1561857940174938114.discordsays.com"
+BUILD_MODAL = "off" # Q19 /build modal with a handle field, and /join (listed in the command manifest only while on). "on" enables it
+BUILD_PROJECT = "off" # needs BUILD_MODAL on. "on": a confirmed submit also writes the roster entry and the party document in one atomic batch, then purges and broadcasts
+JOIN_PROMPT = "off" # needs BUILD_MODAL on. "on": an unknown Discord user of /ask or /sheet gets one ephemeral hint with a Join button

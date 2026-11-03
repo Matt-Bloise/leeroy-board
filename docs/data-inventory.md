@@ -72,13 +72,26 @@ Added 2026-11-02. These tables were missing from the list above because it was d
 | `sessions_v2` | `token_hash` (never exported), `created_at`, `expires_at`, `last_seen_at` | Links | Web login sessions | Cascade |
 | `provider_tokens` | `access_token_enc`, `refresh_token_enc` (never exported), `scope`, `expires_at`, `updated_at` | Links | Encrypted OAuth tokens | Cascade |
 | `memberships` | `tenant_id`, `role`, `status`, `joined_at` | Links | Which guild the person belongs to | Cascade |
-| `characters` | `name`, `realm`, `region`, `class`, `spec` | Names / Free text | Characters typed by the member | Cascade |
+| `characters` | `name`, `realm`, `region`, `class`, `spec` | Names / Free text | Characters typed by the member. `name` is the game handle from the /build and /join form (it held the Discord id for rows written before the handle field existed; a resubmit corrects it) | Cascade |
 | `builds` | `title`, `data_json` | Free text | Builds for a character | Cascade through `characters` |
 | `character_profiles` | `race`, `faction`, `ruleset`, `region_label`, `selected` | Free text | What the member typed for a character they added on the web (migration 0005, `CHARS_V1`). Written only by `POST /api/me/characters`. Included in `GET /api/me/export` | Cascade through `characters` |
 | `group_slots` | `character_id` | Links | Seat a character fills | `SET NULL`; trigger re-opens the seat |
 | `signups_v2` | `group_id`, `user_id`, `character_id`, `rsvp` | Links | RSVP to a planned group | Cascade |
 | `audit_log` | `actor_discord_user_id`, `target`, `detail_json` | Links / Free text | Who did what | Actor `SET NULL`; rows remain. The erase row itself holds no personal data (actor NULL, salted hash of the id) |
 | `groups`, `tenants`, `tenant_config`, `thread_cursors`, `discord_events`, `entitlements` | tenant-level | None per person | Guild-level data (`discord_events` holds Discord snowflakes, not people) (judged from column names) | Not touched by a member erase |
+
+### Added with the /join and /build handle batch (flags BUILD_MODAL, BUILD_PROJECT, JOIN_PROMPT, all off)
+
+| Where | New read or write | Class | Note |
+| :--- | :--- | :--- | :--- |
+| `characters.name` | Written with the handle the person typed (before: their Discord id) | Names | Refused if it holds `@`, a link, a slash or a publisher mark (same rule as the admin script). Game handles only, never a real name |
+| `tenants` | One row, written once, for the guild named in `discord_roster.guildId` (written by the Worker on the first confirmed submit; `/setup` also writes it) | None per person | Guild id only. Never created for any other guild |
+| `kv_state` `discord_members` | Read and written by the Worker on a confirmed submit (before: admin routes only). Adds the person's Discord id, slug and handle | Names, Links | Still private, still no read route. Written in the same batch as the party document |
+| `kv_state` `party` | Read and written by the Worker on a confirmed submit: the person's card (handle, class, race, role) is added or refreshed | Names | Public document (`GET /api/data/party`). Same fields the admin script wrote |
+| `kv_state` `party`, `discord_members` | Read (no write) by `/build` and the sheet code to learn who is in the party, with the built-in five as fallback | Names | A read only; nothing new is stored |
+| In memory only | `/ask` or `/sheet` by someone not on the roster (flag JOIN_PROMPT): the Discord id is remembered in the Worker's memory to show the hint once | Links | Never stored; lost when the Worker restarts |
+
+An erase (`POST /api/me/erase`) still removes the `users` cascade rows. It does not edit the `party` or `discord_members` documents (already listed below as not covered); an admin removes the card and roster entry by hand (see the runbook's Rollback).
 
 Not covered by export or erase: `kv_state` board documents (signups, party, party_sheets, votes and similar) that may name a member, Cloudflare logs, and Discord-side data. A web session is never used to match `by_name` or `slug` rows, because a Discord display name is chosen by its owner and could equal another member's name.
 

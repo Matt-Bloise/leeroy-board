@@ -3,6 +3,8 @@
 // Permission comes only from interaction.member.permissions, which Discord sets and signs; no option or client field is trusted.
 // The tenants table has no created_by column, so the creator is recorded as the tenant's 'owner' membership and in audit_log.
 
+import { JOIN_COMMAND_DEFINITION } from "./join.js";
+
 export const SETUP_COMMAND_NAME = "setup";
 export const CONFIG_KEY_ANNOUNCE = "announce_channel_id";
 export const CONFIG_KEY_OPTIN_ROLE = "optin_role_id";
@@ -29,7 +31,9 @@ export function setupCommandEnabled(env) {
 
 // The manifest served at GET /api/discord/commands: /setup is listed only while the flag is on.
 export function manifestFor(env, baseManifest) {
-  return setupCommandEnabled(env) ? [...baseManifest, SETUP_COMMAND_DEFINITION] : baseManifest;
+  const on = (v) => ["1", "true", "on", "yes"].includes(String(v || "").trim().toLowerCase());
+  const extra = [...(setupCommandEnabled(env) ? [SETUP_COMMAND_DEFINITION] : []), ...(on(env && env.BUILD_MODAL) ? [JOIN_COMMAND_DEFINITION] : [])];
+  return extra.length ? [...baseManifest, ...extra] : baseManifest;
 }
 
 export function isSnowflake(id) {
