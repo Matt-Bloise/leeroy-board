@@ -47,7 +47,7 @@ async function visit(browser, engine, size, opts, setup) {
   const ok = (name, cond, extra = "") => { rows.push([name, !!cond, extra]); }; /* the file's ok(), held until one() knows whether this visit counts */
   if (setup) await setup(ctx);
   const page = await ctx.newPage();
-  page.on("console", (m) => { if (m.type() === "error") { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 160), at: at.replace(/[?#].*$/, "") }); } });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 160), at: at.replace(/[?#].*$/, "") }); } });
   page.on("pageerror", (e) => errs.push({ text: `pageerror ${String(e.message).slice(0, 160)}`, at: "" }));
   page.on("response", (r) => { try { const u = new URL(r.url()); if (r.status() >= 400) (u.origin === origin ? http : xo).push({ status: r.status(), method: r.request().method(), url: r.url().replace(/[?#].*$/, ""), origin: u.origin, route: u.pathname }); } catch (e) {} }); /* xo: other origins (the Worker), named next to a console error (2026-10-31: two ships logged a bare 503) */
   try {

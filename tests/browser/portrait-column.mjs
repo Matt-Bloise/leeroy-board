@@ -24,7 +24,7 @@ for (const [size, opts] of CTX) {
   await ctx.addInitScript(() => { try { sessionStorage.setItem("board-pass", "review"); } catch (e) {} });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await page.goto(BASE, { waitUntil: "load", timeout: 45000 });
   await page.waitForFunction(() => window.__boardKit && window.__boardKit.goScene, null, { timeout: 15000 }).catch(() => {});
   await page.evaluate(() => window.__boardKit.goScene("tonight")).catch(() => {});

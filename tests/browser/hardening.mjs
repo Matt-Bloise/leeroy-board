@@ -16,7 +16,7 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const here = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "testkeytestkeytestkey12";
-const ALLOWED = /^(https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.jmattbloise\.workers\.dev|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
+const ALLOWED = /^(https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*", "content-type": "application/json" };
 const isLocal = (u) => /^(127\.0\.0\.1|localhost)$/.test(new URL(u).hostname);
 
@@ -50,6 +50,7 @@ const EVIL = [
   "https://evil.example", "https://evil.example/api", "http://evil.example:8787", "https://api.leeroy.party.evil.example",
   "https://api.leeroy.party@evil.example", "http://127.0.0.1.evil.example", "https://leeroy-brain-pr-1.jmattbloise.workers.dev.evil.example",
   "https://leeroy-brain-pr-x.jmattbloise.workers.dev", "https://jmattbloise.workers.dev", "https://leeroy-brain-pr-1.evil.workers.dev",
+  "https://leeroy-brain-pr-1.joshbblaine.workers.dev.evil.example", "https://leeroy-brain-pr-1.other-account.workers.dev",
 ];
 for (const evil of EVIL) {
   const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: evil }, hash: `k=${KEY}` }));
@@ -85,6 +86,15 @@ for (const [how, evil] of [["?api=", "https://leeroy-brain-evil.workers.dev"], [
   await page.waitForTimeout(2500);
   ok("F3 control: ?api=http://127.0.0.1:8787 is still used for /api/data/*", seen.some((x) => x.origin === "http://127.0.0.1:8787" && /\/api\/data\//.test(x.url)), seen.filter((x) => /api\/data/.test(x.url)).length + " api/data requests");
   await ctx.close();
+}
+
+{ /* control: the real PR preview Worker (account subdomain taken from wrangler's output, currently joshbblaine) is an allowed ?brain= origin, as CI passes it to every browser suite */
+  for (const host of ["https://leeroy-brain-pr-151.joshbblaine.workers.dev", "https://leeroy-brain-pr-151.jmattbloise.workers.dev"]) {
+    const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: host }, hash: `k=${KEY}` }));
+    await page.waitForTimeout(2500);
+    ok(`F1 control: ?brain=${host} (a PR preview Worker) is honoured and gets the key on /api/me`, seen.some((x) => x.origin === host && x.auth && /\/api\/me$/.test(new URL(x.url).pathname)), JSON.stringify(seen.filter((x) => /workers\.dev/.test(x.url)).slice(0, 3)));
+    await ctx.close();
+  }
 }
 
 /* F2. h() drops an href/src that is not https(s)://, a one-slash path, # or a relative path with a folder. Every evil value below is rendered as its own poll link, so every one is reached. */

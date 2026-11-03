@@ -41,7 +41,7 @@ function on(n, f) { if (typeof f === "function") (B.subs[n] ||= []).push(f); }
 })();
 
 /* The only origins the board key may ever be sent to (and ?brain= may point at): the production Worker, the pr-N preview Workers, and a local Worker. */
-const BRAIN_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.jmattbloise\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/;
+const BRAIN_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/;
 function brainOrigin(u) { try { const x = new URL(String(u), location.href); return BRAIN_OK.test(x.origin) ? x.origin : null; } catch (e) { return null; } }
 function baseFor() {
   const host = location.hostname || "";

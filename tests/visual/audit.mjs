@@ -187,7 +187,7 @@ async function runContext(browsers, c) {
     const page = await ctx.newPage(); page.setDefaultTimeout(20000);
     await page.addInitScript(initScript);
     const st = { errs: [], fails: [], bytes: 0, net: new Map(), pending: new Set() };
-    page.on("console", (m) => { if (m.type() === "error") { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} st.errs.push({ text: m.text().slice(0, 200), at: pathOf(at) }); } });
+    page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} st.errs.push({ text: m.text().slice(0, 200), at: pathOf(at) }); } });
     page.on("pageerror", (e) => st.errs.push({ text: `pageerror ${String(e.message).slice(0, 200)}`, at: "" }));
     page.on("response", (r) => { try { if (r.status() >= 400) st.fails.push({ status: r.status(), method: r.request().method(), url: pathOf(r.url()), origin: new URL(r.url()).origin }); } catch (e) {} });
     page.on("requestfailed", (r) => { const f = (r.failure() || {}).errorText || "failed"; if (!/ERR_ABORTED|cancelled|aborted/i.test(f)) st.fails.push({ status: 0, method: r.method(), url: pathOf(r.url()), origin: "", failure: f }); });

@@ -7,7 +7,7 @@ const ID1 = new Map();
 const $ = (s, r = document) => { if (r !== document || !/^#[\w-]+$/.test(s)) return r.querySelector(s); let e = ID1.get(s); if (e && e.isConnected) return e; e = r.querySelector(s); if (e) ID1.set(s, e); return e; };
 const SVGNS = "http://www.w3.org/2000/svg";
 const SAFE_URL = /^(https?:\/\/|\/(?![\/\\])|#|[a-z0-9_.-]+\/)/; /* https(s) URL, one-slash absolute path (not protocol-relative //host or /\host), hash, or relative path with a folder */
-const API_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.jmattbloise\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/; /* same origins as BRAIN_OK in js/brain.js: our own Worker, our own pr-N previews, a local Worker */
+const API_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/; /* same origins as BRAIN_OK in js/brain.js: our own Worker, our own pr-N previews, a local Worker */
 function h(tag, attrs, ...kids) {
   /* a lazy image made while the wall is cold gets its src on settle (a lazy image that is rendered but covered still loads) */
   if (tag === "img" && attrs && attrs.loading === "lazy" && attrs.src && wallCold()) {

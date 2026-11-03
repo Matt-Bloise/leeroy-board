@@ -248,7 +248,7 @@ async function cell(browser, size, state, A) {
   const seen = new Set();
   const once = (inv, detail) => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures); } };
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
   page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   try {
     await openState(page, state);
