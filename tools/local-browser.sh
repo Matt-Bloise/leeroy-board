@@ -7,6 +7,7 @@
 #              api      the API suite (npm run test:api), the only suite that needs the real Worker
 #              all      every browser suite, one after the other (degraded-modes with 3 conditions as in CI; DEGRADED_FULL=1 for all)
 #              nightly  degraded-modes with all conditions, as nightly-production.yml runs it
+#              visual   the visual audit (tests/visual/audit.mjs), stubbed; AUDIT_BUDGET_MIN (default 10) bounds it, the report goes to a temp folder
 #              mutation        proves the layout sweep still fails on injected layout bugs (tests/helpers/layout-sweep-mutation.mjs)
 #              record-fixtures re-records tests/fixtures/api-snapshot from the local Worker
 #     Your own --url <pages url> replaces the default http://127.0.0.1:8080/?preview=1&brain=http://127.0.0.1:8787
@@ -21,7 +22,7 @@
 # First time: (cd infrastructure && npm install) and (cd tests && npm ci && npx playwright install chromium).
 set -u
 SUITE="${1:-}"; [ $# -gt 0 ] && shift
-[ -n "$SUITE" ] || { sed -n "2,21p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ -n "$SUITE" ] || { sed -n "2,22p" "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PAGES_PORT="${PAGES_PORT:-8080}"; API_PORT="${API_PORT:-8787}"
 PAGES="http://127.0.0.1:$PAGES_PORT"; API="http://127.0.0.1:$API_PORT"
@@ -72,6 +73,7 @@ run_one() {
   case "$s" in
     api)     PREVIEW_PAGES="$PAGES" node --test --test-reporter=spec api/api.test.mjs api/contract.test.mjs "$@"; rc=$? ;;
     nightly) PREVIEW_PAGES="$URL" node browser/degraded-modes.mjs --url "$URL" "$@"; rc=$? ;;
+    visual)  PREVIEW_PAGES="$URL" AUDIT_OUT="$TMP/visual-audit" node visual/audit.mjs "$URL" "$@"; rc=$? ;;
     mutation) node helpers/layout-sweep-mutation.mjs --url "$URL" "$@"; rc=$? ;;
     record-fixtures) node helpers/record-api-snapshot.mjs --url "$URL" "$@"; rc=$? ;;
     *)       [ -f "browser/$s.mjs" ] || { echo "local-browser: no suite tests/browser/$s.mjs" >&2; return 2; }

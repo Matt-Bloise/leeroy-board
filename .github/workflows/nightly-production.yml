@@ -2,7 +2,10 @@ name: Nightly Production Checks
 
 # Moved out of the per-PR run to save GitHub minutes (docs/runbooks/ci-minutes.md):
 #   degraded    tests/browser/degraded-modes.mjs, all 144 checks, Chromium, against https://leeroy.party/ (the timing-sensitive suite)
-#   zap         OWASP ZAP baseline (passive), against https://leeroy.party/
+#   zap         OWASP ZAP baseline (passive), against https://leeroy.party/ (the job summary prints how many URLs it crawled and how many are Worker /api/ paths)
+#   lighthouse  Lighthouse (mobile 390x844, 3 runs per URL, budgets in lighthouserc.json) against https://leeroy.party/ and /landing/. INFORMATIONAL: continue-on-error,
+#               never in the notify job's needs, never fails the night. It used to run on every `ci-full` PR run (lighthouse.yml, removed); the job summary prints the
+#               Worker /api/ requests its page loads made (counted from Lighthouse's own request list). Run it by hand with "Run workflow" (workflow_dispatch).
 #   notify      after two consecutive failed runs, opens ONE issue labelled `nightly` (or comments on the open one). Never closes it.
 # Report only: nothing here blocks a merge or a deploy.
 #
@@ -73,7 +76,8 @@ jobs:
           mkdir -p zap-out out && chmod 777 zap-out
           # -I: warnings and failures do not set the exit code. Passive scan only (baseline does not attack).
           docker run --rm -v "$PWD/zap-out:/zap/wrk:rw" ghcr.io/zaproxy/zaproxy:2.16.0 \
-            zap-baseline.py -t "$TARGET" -J zap.json -r zap.html -I -m 5
+            zap-baseline.py -t "$TARGET" -J zap.json -r zap.html -I -m 5 2>&1 | tee zap-out/zap.log
+          exit "${PIPESTATUS[0]}"
 
       - name: Summarise
         id: summary
@@ -98,6 +102,9 @@ jobs:
             echo '```json'
             cat out/zap-summary.json
             echo '```'
+            # Request count (measured, not a limit): ZAP prints "Total of N URLs" for its crawl; the instances it reports under /api/ are the ones the Worker served.
+            echo "ZAP crawl: $(grep -o 'Total of [0-9]* URLs' zap-out/zap.log 2>/dev/null | tail -1 || true)"
+            echo "ZAP alert instances on Worker paths (/api/): $(jq '[.site[].alerts[].instances[]?.uri | select(test("^https?://[^/]+/api/"))] | length' zap-out/zap.json 2>/dev/null || echo n/a)"
           } >> "$GITHUB_STEP_SUMMARY"
           # A high-risk alert fails the nightly (so the two-in-a-row rule can open an issue). Medium and below, and a scan that did not run, are reported only.
           HIGH=$(jq -r '.high // 0' out/zap-summary.json)
@@ -112,9 +119,54 @@ jobs:
           path: |
             zap-out/zap.json
             zap-out/zap.html
+            zap-out/zap.log
             out/zap-summary.json
           if-no-files-found: ignore
           retention-days: 30
+
+  lighthouse:
+    name: Lighthouse (production, informational)
+    # Informational only. Never fails the night: the job has continue-on-error, every assertion in lighthouserc.json is level "warn", the lhci step ends in "exit 0",
+    # and the notify job does not wait for it. Runbook: docs/runbooks/lighthouse.md
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Lighthouse (mobile 390x844, 3 runs per URL)
+        id: lhci
+        continue-on-error: true
+        run: |
+          set +e
+          # Production pages in a real browser: their /api/ calls reach the production Worker (counted in the summary below, about 3 x 2 page loads a night).
+          npx --yes @lhci/cli@0.14.0 autorun --config=lighthouserc.json \
+            --collect.url="$TARGET" --collect.url="${TARGET}landing/" 2>&1 | tee "$RUNNER_TEMP/lighthouse.log"
+          echo "lhci finished (exit status ignored on purpose)"
+          exit 0
+
+      - name: Summary (budgets and Worker requests)
+        if: always() && !cancelled()
+        continue-on-error: true
+        run: node tools/lighthouse-summary.mjs --target "$TARGET" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the reports
+        if: always() && !cancelled()
+        continue-on-error: true
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-lighthouse
+          path: |
+            .lighthouseci
+            ${{ runner.temp }}/lighthouse.log
+          if-no-files-found: ignore
+          retention-days: 14
 
   notify:
     name: issue after two failures in a row

@@ -1,7 +1,7 @@
 // Live deploy smoke: the ONLY browser suite that talks to the real Worker API of the environment under test (the other suites answer from tests/fixtures/api-snapshot).
 //   node deploy-smoke.mjs --url https://pr-N.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)   API origin: env PREVIEW_API, else the ?brain= value of --url
 // Proves a preview (or a local stack) is really wired together: GET /api/health, /api/bootstrap and /api/state answer 200 with the expected shape, then ONE page load per
-// engine (Chromium, WebKit) renders the first screen with the live API and the Worker answers its calls without a 5xx. About 3 + 2 x 7 = 20 Worker requests in total.
+// engine (Chromium, WebKit) renders the first screen with the live API and the Worker answers its calls without a 5xx. Worker requests, measured with tools/local-browser.sh: 3 API checks + 6 for one page load per engine = 9 with Chromium alone; WebKit adds the same 6 (not installed in the measuring container), so 3 + 2 x 6 = 15 in CI.
 // WebKit is skipped with a WARN when it is not installed locally; set SMOKE_REQUIRE_ENGINES=1 (CI does not need to) to make that a failure. No AI call, nothing is written, no secret is used.
 // Exit 0 when every check passes, 1 otherwise.
 import { pageUrl } from "../helpers/page-url.mjs";

@@ -22,7 +22,11 @@ A request is counted when it reaches a Worker: every `/api/...` call of a page, 
 
 At 6 full runs a day that is about 900 a day, under the 2,000 law. Each extra run costs about 150. Nightly production checks: `degraded-modes` (all 144 checks) now answers from the fixtures, 0 Worker requests (it was 181 measured locally); the ZAP baseline crawls Pages HTML only and was not measured (cannot be measured locally).
 
-Not measured, so not in the total: Lighthouse (`lighthouse.yml`, loads preview pages in a real browser) and ZAP against a preview (labels `security` + `ci-full`). Both load pages whose API calls reach the preview Worker. Treat them as the first suspects if the daily count is still high.
+Lighthouse is no longer part of a full run: it runs once a night against production (`lighthouse` job in `nightly-production.yml`). Measured locally (3 November 2026, `@lhci/cli@0.14.0`, 3 runs on `/` and 3 on `/landing/`): 21 Worker requests in the Worker log for the whole run (Lighthouse's own request list counts 15 `/api/` requests: 5 per load of `/`, 0 for `/landing/`; the rest are lhci's health check). Before this change that was spent on every `ci-full` push against the preview Worker; now it is about 21 a night against production. The job summary prints the count every night (`tools/lighthouse-summary.mjs`).
+
+ZAP (nightly against production, and on a PR with labels `security` + `ci-full`) cannot be measured locally (no Docker daemon in the measuring container). The nightly job summary now prints ZAP's own crawl size ("Total of N URLs") and how many alert instances sit on Worker `/api/` paths, so the real number appears after the first night. Until then ZAP against a preview stays the first suspect if the daily count is high.
+
+The visual audit (`visual-audit` job, label `visual`) now answers `/api/` from the fixtures like the browser suites: 172 Worker requests locally with the live API (6 contexts, 3-minute budget) before, 0 now.
 
 ## Measured raw material (local `wrangler dev`, seeded D1, 3 November 2026)
 
@@ -31,7 +35,7 @@ Produced by `tools/local-browser.sh` (see `tests/README.md`), which counts the `
 | Suite | Before (live API) | After (default) | Seconds (after) | Exit (after) |
 | :--- | ---: | ---: | ---: | :---: |
 | api (`api` + `contract`) | 117 | 117 (live, kept) | 11 | 0 |
-| deploy-smoke (new, live) | n/a | 9 | 3 | 0 |
+| deploy-smoke (new, live) | n/a | 9 (Chromium alone; 15 with WebKit in CI: 3 + 2 x 6) | 3 | 0 |
 | layout-sweep (18 x 3 x 12) | 1,056 | 0 | 145 | 0 |
 | is-this-you | 58 | 0 | 34 | 0 |
 | nextstep | 57 | 0 | 28 | see note |
@@ -51,7 +55,8 @@ Produced by `tools/local-browser.sh` (see `tests/README.md`), which counts the `
 | degraded-modes (3 conditions, per PR) | 0 | 0 | 4 | 0 |
 | entry-points, landing, rate, visual-baseline | 0 | 0 | 1 to 9 | 0 |
 | nightly: degraded-modes, all 144 checks | 181 | 0 | 53 | see note |
-| layout-sweep mutation test (4 injected bugs) | n/a | 0 | 19 | 0 |
+| layout-sweep mutation test (4 injected bugs) | n/a | 0 | 19 | 0 (now also a gating step in the `layout` job) |
+| visual audit (`visual`, 3-minute budget) | 172 | 0 | 180 | 0 |
 
 Before, a full run of the API suite plus all browser suites made about **1,490 Worker requests locally**. This is lower than the 8 to 10 thousand estimated on 2 November: the estimate was not reproduced by this measurement. Likely reasons for the gap (not measured): WebKit passes of `live-smoke`, retries and re-runs of the preview, a slower preview that makes pages poll more, Lighthouse and ZAP, and `ci-full` being re-run on every push.
 
@@ -73,4 +78,4 @@ Production answers errors until 00:00 UTC. Do not push or relabel PRs until the 
 
 ## Re-recording the fixtures
 
-`tools/local-browser.sh record-fixtures` rewrites `tests/fixtures/api-snapshot/snapshot.json` from the local Worker and seeded D1 (bootstrap, state, votes; the `data`, `library` and `atlas` documents are served from the repo's `data/` folder, byte for byte what the Worker serves). Do it when a response shape changes. A stubbed suite prints a WARN, and the layout sweep fails with `stub-miss`, for any API path the snapshot lacks. `--live-api` on a suite uses the real API instead (spends requests).
+`tools/local-browser.sh record-fixtures` rewrites `tests/fixtures/api-snapshot/snapshot.json` from the local Worker and seeded D1 (bootstrap, state, votes; the `data`, `library` and `atlas` documents are served from the repo's `data/` folder, byte for byte what the Worker serves). Do it when a response shape changes. A stubbed suite FAILS (exit 1, `FAIL not in the snapshot`) for any API path the snapshot lacks; `API_STUB_ALLOW_MISS=1` makes it a WARN for one run. `tests/unit/api-snapshot-contract.test.mjs` ties the snapshot to `docs/openapi.yaml`. `--live-api` on a suite uses the real API instead (spends requests).

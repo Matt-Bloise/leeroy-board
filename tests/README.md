@@ -7,7 +7,7 @@ Automated checks that run against a pull request's preview environment (Cloudfla
 - `browser/live-smoke.mjs`: 74 browser checks in Chromium and WebKit at 390x844 (touch) and 1366x768. Firefox is not used unless asked: `--engine chromium|webkit|firefox` runs one engine alone.
 - `browser/votes-card.mjs`: 44 checks (Chromium, 390x844 and 1366x768) on the Votes card with `GET /api/votes` stubbed by route interception: render, inert text, empty and failing states, 60-second polling only while visible.
 - `browser/axe.mjs`: axe-core (`@axe-core/playwright`, WCAG 2 A and AA tags) on the first screen and the sheet (Next steps) in Chromium at 390x844 and 1366x768. Fails on serious or critical violations; minor and moderate ones print as WARN. Exclusions live in `EXCLUDE` at the top of the file, each with a reason.
-- `browser/deploy-smoke.mjs`: the live smoke (about 20 Worker requests): health, bootstrap, state, then one page per engine with the real API. Every other browser suite answers `/api/` from `fixtures/api-snapshot`.
+- `browser/deploy-smoke.mjs`: the live smoke (15 Worker requests): health, bootstrap, state, then one page per engine with the real API. Every other browser suite answers `/api/` from `fixtures/api-snapshot`.
 - `browser/smoke-retry.mjs`: the retry decision. A check that fails once and passes on a second visit is a warning, not a failure.
 - `browser/layout-sweep.mjs`: layout invariants engine. 18 viewport sizes x 3 visitor states (first visit, looking, member) x 12 scenes; judges DOM rules (close button inside the viewport and uncovered, no overlap in the header, title not cut from 960 wide, 44 px touch height, scrollable sheet body, no sideways scroll, no same-origin 4xx/5xx, no console errors). `--engine chromium|webkit|firefox`, `--out report.json`, `--sizes`, `--states`, `--scenes` for a subset, `--live-api` to use the real API (default: recorded fixtures, zero Worker requests). Runs in the `layout` CI job (Chromium); `LAYOUT_SWEEP_SKIP=1` skips it inside `run.mjs`.
 
@@ -36,14 +36,14 @@ The browser suites judge layout and client behaviour, not the API. By default ev
 
 | Suite | API | Why |
 | :--- | :--- | :--- |
-| `deploy-smoke.mjs` | **live** | the one smoke job that proves a preview is wired: `GET /api/health`, `/api/bootstrap`, `/api/state`, then one page load per engine (Chromium, WebKit); about 20 requests |
+| `deploy-smoke.mjs` | **live** | the one smoke job that proves a preview is wired: `GET /api/health`, `/api/bootstrap`, `/api/state`, then one page load per engine (Chromium, WebKit); 15 requests (3 + 2 x 6; 9 measured with Chromium alone) |
 | `api/api.test.mjs`, `api/contract.test.mjs` | **live** | the API is what is under test (117 to 124 requests) |
 | `layout-sweep`, `header-fit`, `nav-collapse`, `portrait-column`, `firstrun`, `sample-sheet`, `trust-card`, `roster`, `axe`, `first-load-weight`, `visual-baseline`, `live-smoke` | fixtures | layout, contrast, weight and rendering of data the page already has |
 | `char-switcher`, `is-this-you`, `nextstep`, `six-members`, `votes-card` | fixtures plus their own scenario routes | they already stub the endpoint under test (`/api/me`, `/api/votes`, sign-ups); the rest comes from the snapshot |
 | `degraded-modes` | fixtures plus its own failure routes | the API being slow, aborted or 500 is injected by route interception in the browser; the healthy case needs no live server |
 | `entry-points`, `landing`, `rate` | none | static pages, no API call |
 
-Re-record the snapshot after the API shape changes: `tools/local-browser.sh record-fixtures` (local Worker and seeded D1 only; the recorder refuses any URL that is not 127.0.0.1 or localhost). A stubbed run prints `N API reads answered from tests/fixtures/api-snapshot ... 0 sent to the Worker` and warns about any API path the snapshot lacks (the sweep fails on it).
+Re-record the snapshot after the API shape changes: `tools/local-browser.sh record-fixtures` (local Worker and seeded D1 only; the recorder refuses any URL that is not 127.0.0.1 or localhost). A stubbed run prints `N API reads answered from tests/fixtures/api-snapshot ... 0 sent to the Worker` and **fails the suite** on any API path the snapshot lacks (`API_STUB_ALLOW_MISS=1` turns that into a WARN for one run). `tests/unit/api-snapshot-contract.test.mjs` checks the snapshot against `docs/openapi.yaml`, so a drifted fixture fails in the unit job. The visual audit (`tests/visual/audit.mjs`, label `visual`) is stubbed the same way (`tools/local-browser.sh visual`).
 
 ## Run against a preview (smoke test, spends Worker requests)
 

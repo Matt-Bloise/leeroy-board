@@ -31,7 +31,7 @@
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
 import { pageUrl } from "../helpers/page-url.mjs";
-import { stubbed, LIVE_API } from "../helpers/browser-stub.mjs";
+import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -316,7 +316,7 @@ await Promise.all(Array.from({ length: CONC }, async () => {
   }
 }));
 const stubReport = browser.apiStubReport ? browser.apiStubReport() : null;
-if (stubReport) for (const m of stubReport.misses) fail({ w: 0, h: 0 }, "-", "-", "stub-miss", `the page asked for ${m}, which tests/fixtures/api-snapshot does not have: re-record it (tools/local-browser.sh record-fixtures) or run with --live-api`);
+if (stubReport && !ALLOW_MISS) for (const m of stubReport.misses) fail({ w: 0, h: 0 }, "-", "-", "stub-miss", `the page asked for ${m}, which tests/fixtures/api-snapshot does not have: re-record it (tools/local-browser.sh record-fixtures) or run with --live-api`);
 await browser.close();
 
 failures.sort((a, b) => b.w - a.w || b.h - a.h || a.state.localeCompare(b.state) || a.scene.localeCompare(b.scene) || a.invariant.localeCompare(b.invariant));

@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { gotoRetry } from "../helpers/goto-retry.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -47,7 +48,7 @@ async function open(browser, c, who) {
     if (c.rsvp) sg.entries.push({ name: who.name, rsvp: c.rsvp, when: "8pm", meet: null, pack: null });
     await json(route, j);
   });
-  await page.goto(pageUrl(BASE, { params: { preview: "1" }, hash: "tonight" }), { waitUntil: "load" });
+  await gotoRetry(page, pageUrl(BASE, { params: { preview: "1" }, hash: "tonight" }), { waitUntil: "load" }, { label: `nextstep [${c.tag}]` });
   await page.waitForFunction(() => window.__next && window.__next.status().stepId, null, { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(1200);
   return { ctx, page, errors };
@@ -56,7 +57,7 @@ async function open(browser, c, who) {
 const browser = stubbed(await pw.chromium.launch());
 try {
   const probe = await browser.newContext({ ...OPTS, serviceWorkers: "block" }), pp = await probe.newPage();
-  await pp.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
+  await gotoRetry(pp, pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" }, { label: "nextstep probe" });
   await pp.waitForFunction(() => window.__next && window.__next.input().party, null, { timeout: 20000 }).catch(() => {});
   const who = await pp.evaluate(() => { try { const m = window.__next.input().party.members[0]; return { name: m.name, role: m.role }; } catch (e) { return null; } });
   await probe.close();
@@ -77,7 +78,7 @@ try {
     // window.__next can lag the load on a busy runner (seen as `Cannot read properties of undefined (reading 'status')` on PRs 112 and 123, Nov 2): wait for it, and report a clear failure instead of crashing the run.
     await s.page.waitForFunction(() => !!window.__next, null, { timeout: 15000 }).catch(() => {});
     const st = await s.page.evaluate(() => (window.__next ? window.__next.status() : null));
-    if (!st) { ok(`${t} next-step module is present`, false, "window.__next is missing"); continue; }
+    if (!st) { ok(`${t} next-step module is present`, false, `window.__next is missing (tab url ${s.page.url()})`); continue; }
     if (c.id) {
       ok(`${t} step id`, st.stepId === c.id, String(st.stepId));
       const title = (await s.page.locator("#nx-t").textContent({ timeout: 3000 }).catch(() => "")), why = (await s.page.locator("#nx-card .nx-why").textContent({ timeout: 3000 }).catch(() => ""));

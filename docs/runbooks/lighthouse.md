@@ -1,16 +1,15 @@
 # Lighthouse performance budget
 
-`.github/workflows/lighthouse.yml` runs Lighthouse (`@lhci/cli@0.14.0`, which bundles Lighthouse 12) against each PR preview and posts one comment, marked `<!-- lighthouse -->`, updated in place. It is **informational**: it can never fail or block a PR. Every assertion is level `warn`, the job is `continue-on-error`, the lhci step ends in `exit 0`, and the Preview Tests report does not depend on it.
+The `lighthouse` job in `.github/workflows/nightly-production.yml` runs Lighthouse (`@lhci/cli@0.14.0`, which bundles Lighthouse 12) **once a night against production** (`https://leeroy.party/` and `/landing/`). It no longer runs on pull requests: it used to run on every `ci-full` PR run (`lighthouse.yml`, removed), which cost GitHub minutes and Worker requests on every push for numbers that barely move. It is **informational**: it can never fail the night or block anything. Every assertion is level `warn`, the job is `continue-on-error`, the lhci step ends in `exit 0`, and the `notify` job does not wait for it.
 
 ## What it does
 
-1. Trigger: `pull_request` (opened, synchronize, reopened, ready_for_review), same-repository branches only. Not `workflow_run`.
-2. Docs-only PRs (`tools/docs-only.mjs`) have no preview, so the job posts a note and stops.
-3. It waits up to 12 minutes for the `<!-- cloudflare-pr-preview -->` comment that names the head sha (same pattern as `preview-tests.yml`), then until the preview answers 200.
-4. It audits `<preview>/` and `<preview>/landing/`, three runs each, mobile emulation at 390x844 (deviceScaleFactor 2), performance category only.
-5. The comment shows the median run (by LCP): score, LCP, CLS, total bytes, JavaScript bytes, image bytes, each against its budget. Reports are in the `lighthouse` artifact (14 days).
+1. Trigger: the nightly `schedule` (06:00 UTC) or "Run workflow" (`workflow_dispatch`) on `nightly-production.yml`. Scheduled workflows run only from `master`.
+2. It audits `https://leeroy.party/` and `https://leeroy.party/landing/`, three runs each, mobile emulation at 390x844 (deviceScaleFactor 2), performance category only.
+3. `tools/lighthouse-summary.mjs` writes the job summary: per URL the median run (by LCP): score, LCP, CLS, total bytes, JavaScript bytes, image bytes, each against its budget, and **how many Worker `/api/` requests the page loads made** (counted from Lighthouse's own request list). Reports are in the `nightly-lighthouse` artifact (14 days).
+4. To measure a pull request by hand: run the workflow with "Run workflow" from the PR branch only after the workflow file is on `master`; or locally, `npx @lhci/cli@0.14.0 autorun --config=lighthouserc.json --collect.url=<url>` and `node tools/lighthouse-summary.mjs`.
 
-Permissions: `contents: read`, `pull-requests: write`. No secrets.
+Permissions: `contents: read`. No secrets.
 
 ## Budgets
 
@@ -38,4 +37,4 @@ Not planned. It would need: `warn` changed to `error`, `exit 0` and `continue-on
 
 ## Rollback
 
-Delete `.github/workflows/lighthouse.yml`, `lighthouserc.json` and this file. Nothing else depends on them.
+Delete the `lighthouse` job in `.github/workflows/nightly-production.yml`, `tools/lighthouse-summary.mjs`, `lighthouserc.json` and this file. Nothing else depends on them.
