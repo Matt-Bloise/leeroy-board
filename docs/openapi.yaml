@@ -981,8 +981,8 @@ paths:
       description: |
         `proposal` is the stored row (`old_value` is what the library said when the learner proposed it). `current_value` is what the
         page says now (null when the page lacks that fact). `problems` lists what approving would trip over: `empty_key`, `empty_value`,
-        `key_too_long` (over 80), `value_too_long` (over 300) can never be overridden; `looks_like_prompt_injection` and `contains_url`
-        need `force:true` on approve. Runbook: docs/runbooks/wiki-proposals.md.
+        `key_too_long` (over 80), `value_too_long` (over 300) can never be overridden; `looks_like_prompt_injection`, `contains_url` and
+        `changed_since_proposed` (the page's value is no longer the proposal's `old_value`) need `force:true` on approve. Runbook: docs/runbooks/wiki-proposals.md.
       security:
         - adminToken: []
       parameters:
@@ -1019,8 +1019,10 @@ paths:
         `apply_failed`). Afterwards the category blob, search/open blobs and index stamps are rebuilt, the page cache cleared and the
         room told (`refresh:"failed"` in the body if that step threw; the approval itself stands). Approving an approved proposal is a
         200 no-op (`already:true`). A rejected or legacy `applied` proposal is 409. A missing page is 409 `page_missing` and nothing is
-        written. A page edited between read and write is 409 `page_changed`; look again and retry. Body: optional `{"force":true}`
-        (boolean only) to approve a proposal that contains a URL or looks like a prompt-injection payload; length caps cannot be forced.
+        written. A page whose facts or history were edited between read and write is 409 `page_changed`; look again and retry. If the page's
+        current value for the fact differs from the proposal's `old_value` (a later fix) the answer is 409 `stale_proposal` with `old_value`,
+        `current_value`, `proposed_value`. Body: optional `{"force":true}` (boolean only) to approve a stale proposal, or one that contains a
+        URL or looks like a prompt-injection payload; length caps cannot be forced.
       security:
         - adminToken: []
       parameters:
@@ -1058,7 +1060,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         "409":
-          description: Not pending (rejected or applied), the page no longer exists (`page_missing`) or changed meanwhile (`page_changed`).
+          description: Not pending (rejected or applied), the page no longer exists (`page_missing`), changed meanwhile (`page_changed`), or the live value differs from the proposal's old_value (`stale_proposal`, `needs_force`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

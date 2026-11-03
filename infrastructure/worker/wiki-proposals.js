@@ -64,12 +64,14 @@ export async function describeProposal(env, id) {
   const page = await env.DB.prepare("SELECT id, category, title, facts_json FROM lib_pages WHERE id = ?").bind(p.page_id).first();
   const fact = page ? safeJson(page.facts_json, []).find((f) => f && f.key === p.fact_key) : null;
   const { hard, soft } = checkProposal(p);
+  const changed = (fact ? fact.value : null) !== (p.old_value ?? null);
+  if (changed && p.status === "pending" && page) soft.push("changed_since_proposed");
   return reply(200, {
     proposal: p,
     page: page ? { id: page.id, category: page.category, title: page.title } : null,
     page_exists: !!page,
     current_value: fact ? fact.value : null, // what the library says now; old_value is what it said when the learner proposed
-    changed_since_proposed: (fact ? fact.value : null) !== (p.old_value ?? null),
+    changed_since_proposed: changed,
     problems: [...hard, ...soft],
     needs_force: soft.length > 0 && hard.length === 0,
   });
@@ -95,6 +97,14 @@ export async function approveProposal(env, id, { force = false, now = new Date()
   const history = safeJson(page.history_json, []);
   const existing = facts.find((f) => f && f.key === p.fact_key);
   const oldValue = existing ? existing.value : null;
+  // A proposal was made against old_value. If the library says something else now (an admin fixed it, or another source was
+  // approved), the proposal is stale: applying it would silently undo that later change. Only force:true overrides.
+  if (oldValue !== (p.old_value ?? null) && force !== true) {
+    return reply(409, {
+      error: "The library value changed since this was proposed; check it, then approve with force:true to overwrite",
+      code: "stale_proposal", needs_force: true, old_value: p.old_value ?? null, current_value: oldValue, proposed_value: p.proposed_value,
+    });
+  }
   if (existing) {
     existing.value = p.proposed_value;
   } else {
@@ -105,8 +115,9 @@ export async function approveProposal(env, id, { force = false, now = new Date()
   const today = iso.slice(0, 10);
   history.unshift({ date: today, text: `${p.fact_key} updated from ${p.source_id} (approved)` });
 
-  // The page write is guarded twice: the proposal must still be pending and the facts must be what we just read, so a concurrent
-  // approve or an edit through PUT /wiki/page turns this into a no-op instead of overwriting. The two statements after it run
+  // The page write is guarded twice: the proposal must still be pending and every column we read and rewrite (facts_json and
+  // history_json) must still be what we read, so a concurrent approve or an edit through PUT /wiki/page turns this into a no-op
+  // instead of overwriting. The two statements after it run
   // only if the one before changed a row (changes()), so nothing half-applies. The audit row is the last statement: if it fails
   // the whole batch rolls back and the proposal stays pending.
   const detail = JSON.stringify({ page: p.page_id, fact_key: p.fact_key, source: p.source_id, old: oldValue, force: force === true });
@@ -114,8 +125,8 @@ export async function approveProposal(env, id, { force = false, now = new Date()
   try {
     results = await env.DB.batch([
       env.DB.prepare(
-        "UPDATE lib_pages SET facts_json = ?, history_json = ?, checked = ?, updated_at = ? WHERE id = ? AND facts_json = ? AND EXISTS (SELECT 1 FROM wiki_proposals WHERE id = ? AND status = 'pending')"
-      ).bind(JSON.stringify(facts), JSON.stringify(history), today, iso, p.page_id, page.facts_json, id),
+        "UPDATE lib_pages SET facts_json = ?, history_json = ?, checked = ?, updated_at = ? WHERE id = ? AND facts_json = ? AND history_json IS ? AND EXISTS (SELECT 1 FROM wiki_proposals WHERE id = ? AND status = 'pending')"
+      ).bind(JSON.stringify(facts), JSON.stringify(history), today, iso, p.page_id, page.facts_json, page.history_json, id),
       env.DB.prepare("UPDATE wiki_proposals SET status = 'approved' WHERE id = ? AND status = 'pending' AND changes() > 0").bind(id),
       env.DB.prepare("INSERT INTO audit_log (tenant_id, actor_discord_user_id, action, target, detail_json, at) SELECT NULL, NULL, 'wiki.proposal.approve', ?, ?, ? WHERE changes() > 0")
         .bind(`wiki_proposals:${id}`, detail, iso),

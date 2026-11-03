@@ -268,6 +268,82 @@ test("atomicity: a page edited after the proposal was read is not overwritten (p
   assert.equal(audits(env).length, 0);
 });
 
+test("atomicity: a history-only edit between the read and the batch is not overwritten (page_changed, newer history kept)", async () => {
+  const env = await makeEnv();
+  const id = seedProposal(env);
+  const newer = JSON.stringify([{ date: "2026-11-03", text: "hand edit by an admin" }]);
+  const realBatch = env.DB.batch;
+  env.DB.batch = async (list) => { // only history_json changes; facts_json is exactly what we read
+    env.DB.raw.prepare("UPDATE lib_pages SET history_json = ? WHERE id = 'classes/paladin-holy'").run(newer);
+    return realBatch(list);
+  };
+  const r = await api(env, "POST", `/wiki/proposals/${id}/approve`, "admin", {});
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, "page_changed");
+  assert.equal(status(env, id), "pending");
+  assert.equal(page(env).history_json, newer, "the newer history survives");
+  assert.equal(facts(env)[0].value, "Old value");
+  assert.equal(audits(env).length, 0);
+});
+
+// ---- stale proposals ------------------------------------------------------------------------------------------------------------
+test("stale: the live value differs from the proposal's old_value -> 409 stale_proposal, nothing written, still pending", async () => {
+  const env = await makeEnv();
+  const id = seedProposal(env);
+  env.DB.raw.prepare("UPDATE lib_pages SET facts_json = ? WHERE id = 'classes/paladin-holy'").run(JSON.stringify([{ key: "paladin.heal", value: "Admin fixed this" }]));
+  const before = page(env);
+  const r = await api(env, "POST", `/wiki/proposals/${id}/approve`, "admin", {});
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, "stale_proposal");
+  assert.equal(r.body.needs_force, true);
+  assert.deepEqual([r.body.old_value, r.body.current_value, r.body.proposed_value], ["Old value", "Admin fixed this", "New value"]);
+  assert.equal(status(env, id), "pending");
+  assert.deepEqual(page(env), before);
+  assert.equal(audits(env).length, 0);
+  // force must be the boolean true
+  assert.equal((await api(env, "POST", `/wiki/proposals/${id}/approve`, "admin", { force: "true" })).status, 409);
+});
+
+test("stale: force:true overwrites the later fix and the audit row says so", async () => {
+  const env = await makeEnv();
+  const id = seedProposal(env);
+  env.DB.raw.prepare("UPDATE lib_pages SET facts_json = ? WHERE id = 'classes/paladin-holy'").run(JSON.stringify([{ key: "paladin.heal", value: "Admin fixed this" }]));
+  const r = await api(env, "POST", `/wiki/proposals/${id}/approve`, "admin", { force: true });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.old_value, "Admin fixed this");
+  assert.equal(facts(env)[0].value, "New value");
+  assert.equal(status(env, id), "approved");
+  const d = JSON.parse(audits(env)[0].detail_json);
+  assert.deepEqual([d.old, d.force], ["Admin fixed this", true]);
+});
+
+test("stale: an unchanged live value needs no force (including a new fact still absent)", async () => {
+  const env = await makeEnv();
+  const same = seedProposal(env);
+  assert.equal((await api(env, "POST", `/wiki/proposals/${same}/approve`, "admin", {})).status, 200);
+  const fresh = seedProposal(env, { fact_key: "paladin.new", old_value: null, proposed_value: "Brand new" });
+  assert.equal((await api(env, "POST", `/wiki/proposals/${fresh}/approve`, "admin", {})).status, 200);
+});
+
+test("stale: a fact proposed as new but added meanwhile, or removed meanwhile, is stale", async () => {
+  const env = await makeEnv();
+  const added = seedProposal(env, { fact_key: "paladin.mana", old_value: null, proposed_value: "Mine" });
+  env.DB.raw.prepare("UPDATE lib_pages SET facts_json = ? WHERE id = 'classes/paladin-holy'").run(JSON.stringify([{ key: "paladin.heal", value: "Old value" }, { key: "paladin.mana", value: "Theirs" }]));
+  assert.equal((await api(env, "POST", `/wiki/proposals/${added}/approve`, "admin", {})).body.code, "stale_proposal");
+  const removed = seedProposal(env); // proposed against "Old value" for paladin.heal
+  env.DB.raw.prepare("UPDATE lib_pages SET facts_json = '[]' WHERE id = 'classes/paladin-holy'").run();
+  assert.equal((await api(env, "POST", `/wiki/proposals/${removed}/approve`, "admin", {})).body.code, "stale_proposal");
+  assert.equal(facts(env).length, 0);
+});
+
+test("stale: the read endpoint flags it and asks for force", async () => {
+  const env = await makeEnv();
+  const id = seedProposal(env);
+  env.DB.raw.prepare("UPDATE lib_pages SET facts_json = ? WHERE id = 'classes/paladin-holy'").run(JSON.stringify([{ key: "paladin.heal", value: "Later" }]));
+  const r = await api(env, "GET", `/wiki/proposals/${id}`);
+  assert.deepEqual([r.body.problems, r.body.needs_force], [["changed_since_proposed"], true]);
+});
+
 // ---- reject ---------------------------------------------------------------------------------------------------------------------
 test("reject: sets rejected, stores the reason in the audit row, leaves the library alone", async () => {
   const env = await makeEnv();
@@ -327,7 +403,7 @@ test("read: GET /wiki/proposals/:id shows old, proposed and the live value, and 
   assert.equal(r.body.proposal.proposed_value, "see https://x.test");
   assert.equal(r.body.current_value, "Edited since");
   assert.equal(r.body.changed_since_proposed, true);
-  assert.deepEqual(r.body.problems, ["contains_url"]);
+  assert.deepEqual(r.body.problems, ["contains_url", "changed_since_proposed"]);
   assert.equal(r.body.needs_force, true);
   assert.equal(r.body.page.title, "Holy Paladin");
   assert.equal((await api(env, "GET", "/wiki/proposals/prop_nope")).status, 404);
