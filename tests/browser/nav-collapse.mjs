@@ -4,6 +4,8 @@
 // selects, ranges outside the first-run card); desktop shows only Menu and Close, a phone shows the bottom bar Next, My sheet, Menu and Close. Then fires
 // board:first-value and checks the ribbon (tabs) is back and the Menu button is gone. On a phone the title must not overlap any control beside it.
 // Exit 0 when every check passes, 1 otherwise.
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -11,7 +13,7 @@ if (!BASE) { console.error("usage: node nav-collapse.mjs --url <pages origin> (o
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const SIZES = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1080x1920", { viewport: { width: 1080, height: 1920 } }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
-const url = `${BASE.replace(/\/$/, "")}/?preview=1`;
+const url = pageUrl(BASE, { params: { preview: "1" } });
 
 const navItems = (page) => page.evaluate(() => {
   const vis = (e) => { const r = e.getBoundingClientRect(); if (!r.width || !r.height) return false; for (let n = e; n && n.nodeType === 1; n = n.parentElement) { const c = getComputedStyle(n); if (c.display === "none" || c.visibility === "hidden" || parseFloat(c.opacity) < 0.1) return false; } return true; };
@@ -21,7 +23,7 @@ const navItems = (page) => page.evaluate(() => {
     .map((e) => (e.id || (e.textContent || "").trim() || e.tagName).slice(0, 30));
 });
 
-const browser = await pw.chromium.launch();
+const browser = stubbed(await pw.chromium.launch());
 try {
   for (const [tag, opts] of SIZES) {
     const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" }), page = await ctx.newPage(), errors = [], t = `[${tag}]`;

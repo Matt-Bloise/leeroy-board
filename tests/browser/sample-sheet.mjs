@@ -2,6 +2,7 @@
 //   node sample-sheet.mjs --url https://pr-13.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)
 // Fictional data comes from static files under data/sample/. No AI call, nothing sent. Chromium at 390x844 (touch) and 1366x768.
 // Checks: label, five fictional lines, the one button, no horizontal overflow, no console errors, hidden once an identity is set. Saves a screenshot per size to tests/browser/out/.
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { mkdirSync } from "node:fs";
 import path from "node:path";
@@ -13,7 +14,7 @@ const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "out"); mkdi
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const CTX = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
-const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}));
 for (const [size, opts] of CTX) {
   const tag = `[${size}]`, errors = [];
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" }), page = await ctx.newPage();

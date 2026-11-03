@@ -234,6 +234,13 @@ jobs:
           set -o pipefail
           npm run test:browser -- --url "$PAGES_URL/" 2>&1 | tee "$RUNNER_TEMP/browser.log"
 
+      - name: Worker request summary
+        if: always()
+        run: |
+          # Report only. Every suite except deploy-smoke answers /api/ from tests/fixtures/api-snapshot and prints how many reads it served without touching the Worker;
+          # deploy-smoke is the live one (about 20 requests). See docs/runbooks/cloudflare-requests.md.
+          { echo "### Worker requests (browser job)"; grep -h "api-stub" "$RUNNER_TEMP/browser.log" | sort | uniq -c | sort -rn | head -30 || true; echo "Live suites: deploy-smoke only (about 20 requests)."; } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -274,6 +281,11 @@ jobs:
         run: |
           set -o pipefail
           node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --budget-min 5 --out "$RUNNER_TEMP/layout-report.json" 2>&1 | tee "$RUNNER_TEMP/layout.log"
+
+      - name: Worker request summary
+        if: always()
+        run: |
+          { echo "### Worker requests (layout job)"; grep -h "api-stub" "$RUNNER_TEMP/layout.log" || true; echo "The sweep answers /api/ from tests/fixtures/api-snapshot: 0 requests to the Worker."; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report
         if: always()

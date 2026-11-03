@@ -12,6 +12,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const finish = (code = 0) => process.exit(code); // never gate: crashes below also exit 0
 process.on("uncaughtException", (e) => { console.log(`WARN visual-baseline crashed: ${e && e.message}`); finish(0); });
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => null);
 if (!pw) { console.log("WARN playwright not found; run npm ci in tests/. visual-baseline skipped."); finish(0); }
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -23,14 +25,14 @@ const BASELINES = path.join(here, "baselines"), OUT = path.join(here, "out", "vi
 if (!WRITE && !(existsSync(BASELINES) && readdirSync(BASELINES).some((f) => f.endsWith(".png")))) { console.log("SKIP visual baselines: no PNG baselines committed (see docs/runbooks/visual-baselines.md)"); process.exit(0); }
 mkdirSync(ACTUAL, { recursive: true }); if (WRITE) mkdirSync(WRITE, { recursive: true });
 const WARN_RATIO = 0.01, PIXEL_TOLERANCE = 32; // a pixel differs when any channel differs by more than 32 of 255
-const ROOT = BASE.endsWith("/") ? BASE : BASE + "/";
+const ROOT = dirOf(BASE);
 const SIZES = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
 const MASK = [".candle", "canvas", "#clock", "#mini-clock", ".clock-digits", "[class*=moon]", "[id*=moon]", "[class*=countdown]", "[id*=countdown]"];
 const FREEZE = "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}";
 
 const SCREENS = {
   async first(page) {
-    await page.goto(`${ROOT}?preview=1`, { waitUntil: "load" });
+    await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
     await page.waitForSelector("#nx-fr2-go", { state: "visible", timeout: 20000 });
   },
   async sample(page) {
@@ -60,7 +62,7 @@ async function compare(helper, a, b) {
 }
 
 const rows = [];
-const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {});
+const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
 try {
   const helper = await (await browser.newContext()).newPage(); await helper.setContent("<!doctype html><title>diff</title>");
   for (const [size, opts] of SIZES) for (const [name, go] of Object.entries(SCREENS)) {

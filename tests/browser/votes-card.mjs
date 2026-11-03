@@ -4,6 +4,7 @@
 // Checks: the card renders title, per-choice counts, a bar per choice and "Closes in N hours"; user text is inert (textContent); no horizontal overflow;
 // no console or page errors; the empty state; a failing route does not break the page; polling runs every 60 s while the card is visible and stops when it is not.
 // Exit 0 when every check passes, 1 otherwise.
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -108,7 +109,7 @@ async function run(browser, size, opts) {
   await ctx.close();
 }
 
-const browser = await pw.chromium.launch();
+const browser = stubbed(await pw.chromium.launch());
 try { for (const [size, opts] of CTX) await run(browser, size, opts); } catch (e) { fail++; fails.push(`FAIL votes-card crashed: ${e.message}`); console.log(`FAIL votes-card crashed: ${e.message}`); }
 await browser.close();
 if (fail) { console.log(`votes-card: ${fail} of ${pass + fail} checks FAILED`); process.exit(1); }
