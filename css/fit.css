@@ -176,3 +176,5 @@
   html.ribbons-on #scene #tab-cloth { display: none; }
   html #scene .sheet-orn { display: block; position: absolute; left: 50%; right: auto; bottom: 18px; width: var(--orn-w); translate: -50% 0; }
 }
+/* the legal strip is one more line under the wall footer; in a window this short the wall already fits to the pixel, so take its height back from the 16px gap above it and the board bottom padding (it stays visible and keyboard reachable) */
+@media (max-height: 450px) { #board > .legal-foot { margin-top: -16px; line-height: 1.1; } #board { padding-bottom: 0; } }
