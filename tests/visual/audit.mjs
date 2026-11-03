@@ -5,10 +5,13 @@
 // Per context (15: chromium + webkit; viewports 390x844 to 3840x2160; DPR 1/2/3; light/dark; reduced motion; forced colors once) and per page
 // (first visit + 14 scene hashes): overflow, console errors, failed requests, tap targets, small text, text contrast, CLS, LCP, long animation frames,
 // bytes, infinite animations under reduced motion, image efficiency (img + CSS backgrounds). Writes visual-audit.json, visual-audit.md, screenshots/.
-// Exit 0 whatever it finds; exit 1 only on a crash (no browser could run, or the script itself threw). Tests make no AI calls and send nothing.
+// Exit 0 whatever it finds; exit 1 only on a crash (no browser could run, or the script itself threw) or a stub miss (see below). Tests make no AI calls and send nothing.
+// API: every /api/ call is answered from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs), so an audit sends ZERO requests to the Worker; --live-api (or LIVE_API=1) uses the real API.
+// A path the snapshot lacks fails the run like in every browser suite (opt out: API_STUB_ALLOW_MISS=1). The audit judges the page, not the API.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stubbed } from "../helpers/browser-stub.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (n) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -314,7 +317,7 @@ async function main() {
   const browsers = {}, launchErrors = {};
   for (const eng of ["chromium", "webkit"]) {
     if (!CONTEXTS.some((c) => c.engine === eng)) continue;
-    try { browsers[eng] = await pw[eng].launch(eng === "chromium" && process.env.AUDIT_CHROMIUM_PATH ? { executablePath: process.env.AUDIT_CHROMIUM_PATH, args: ["--no-sandbox"] } : {}); } catch (e) { launchErrors[eng] = String(e.message || e).split("\n")[0]; console.log(`WARN ${eng} did not launch: ${launchErrors[eng]}`); }
+    try { browsers[eng] = stubbed(await pw[eng].launch(eng === "chromium" && process.env.AUDIT_CHROMIUM_PATH ? { executablePath: process.env.AUDIT_CHROMIUM_PATH, args: ["--no-sandbox"] } : {}), { label: `visual api-stub (${eng})` }); } catch (e) { launchErrors[eng] = String(e.message || e).split("\n")[0]; console.log(`WARN ${eng} did not launch: ${launchErrors[eng]}`); }
   }
   meta.launchErrors = launchErrors;
   if (!Object.keys(browsers).length) { console.error("crash: no browser could be launched"); process.exit(1); }

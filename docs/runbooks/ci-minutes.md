@@ -1,6 +1,6 @@
 # Runbook: CI minutes (lean by default)
 
-Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `security.yml`, `lighthouse.yml`, `nightly-production.yml`. `deploy-cloudflare.yml` is unchanged (about 1 minute per merge).
+Scope: `.github/workflows/preview-tests.yml`, `pr-preview-cloudflare.yml`, `security.yml`, `nightly-production.yml` (Lighthouse moved there from `lighthouse.yml`, removed). `deploy-cloudflare.yml` is unchanged (about 1 minute per merge).
 
 ## Cost model
 
@@ -18,7 +18,7 @@ Every push runs only `scope`, `unit`, `stamps` and `report` (Preview Tests). Eve
 | preview environment (Worker, D1, Pages) | label `ci-full`, PR not docs-only | `pr-preview-cloudflare.yml` |
 | api | label `ci-full`, PR not docs-only | `preview-tests.yml` |
 | browser, layout | label `ci-full` AND `tools/ci-scope.mjs` says "full" (site, tools, `.github`, wrangler, `package*.json` change) | `preview-tests.yml` |
-| Lighthouse | label `ci-full` AND the same scope rule | `lighthouse.yml` |
+| Lighthouse (informational) | nightly and "Run workflow", against production; no longer per PR | `nightly-production.yml` |
 | Semgrep | code PRs: at least one changed file outside `docs/`, `tests/`, root `*.md`, `.github/ISSUE_TEMPLATE/`; also weekly on master | `security.yml` |
 | ZAP baseline against the preview | PR has BOTH labels `security` and `ci-full` | `security.yml` |
 | ZAP baseline against production | nightly | `nightly-production.yml` |
@@ -87,13 +87,13 @@ Estimates from the job list with each job rounded up to a whole minute. Duration
 | Light push, code PR | scope 1, unit 1, stamps 1, report 1, Semgrep about 3 (assumed) | about 7 |
 | Light push, docs-only or tests-only PR | scope 1, unit 1, stamps 1, report 1; Semgrep skipped by the path filter | 4 |
 | Label event other than `ci-full` | every job skipped | 0 |
-| Full run, site files changed | light jobs 4, prep 1, spin-up about 4, preview wait about 4, api about 5, browser about 7, layout about 6, Lighthouse about 4, Semgrep about 3 (all assumed) | about 38 |
-| Full run, no site files changed (Worker or test change) | light jobs 4, prep 1, spin-up about 4, preview wait about 4, api about 5, Semgrep about 3; browser, layout, Lighthouse skipped | about 21 |
+| Full run, site files changed | light jobs 4, prep 1, spin-up about 4, preview wait about 4, api about 5, browser about 7, layout about 6, Semgrep about 3 (all assumed; Lighthouse moved to the nightly) | about 34 |
+| Full run, no site files changed (Worker or test change) | light jobs 4, prep 1, spin-up about 4, preview wait about 4, api about 5, Semgrep about 3; browser, layout skipped | about 21 |
 | `security` label on a `ci-full` PR | ZAP about 6 plus the preview wait | about 8 |
 | Teardown, no preview exists | one probe job | 1 |
 | Teardown, preview exists | probe, wrangler install, deletes, retry step | about 2 |
 | Production deploy per merge | unchanged | 1 |
-| Nightly | degraded about 9, ZAP about 7, notify 1 (assumed) | about 17 (about $0.10 per night, about $3 per month) |
+| Nightly | degraded about 9, ZAP about 7, Lighthouse about 4 (the former per-PR figure, assumed), notify 1 | about 21 (about $0.13 per night, about $4 per month) |
 
 Typical PR: five light pushes (about 35), one full run (about 38), one teardown (about 2) is about 75 minutes, about $0.45, against about 127 minutes for six pushes at the measured baseline. The saving comes from fewer heavy runs and from not cancelling or failing them mid-way, not from a cheaper heavy run.
 

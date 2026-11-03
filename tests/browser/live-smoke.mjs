@@ -1,32 +1,26 @@
 // Browser smoke: loads a deployed board in fresh Chromium and WebKit contexts (390x844 touch, 1366x768) and fails on the defects a ship can leave behind.
 //   node live-smoke.mjs --url https://pr-13.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)
-// Optional env: PREVIEW_API = the Worker origin, used to tell a Worker 5xx (WARN, platform) from a page defect.
+// API: stubbed like every browser suite (tests/fixtures/api-snapshot, zero Worker requests), so this suite judges the PAGE; a Worker 5xx cannot happen here and any 4xx/5xx or console error is a failure.
+// The live check of the deployed Worker is tests/browser/deploy-smoke.mjs. With --live-api (spends requests) a Worker 5xx is a plain failure, retried once after 25 s like any other.
 // Checks per context: same-origin 4xx/5xx, console errors, literal "null"/"undefined"/NaN/[object Object] in visible text, Guided as the default journey,
 // readable name chips, the journey toggle, and one primary button after a name is picked. Reads only; presses the journey toggle and a name chip, both
 // on the fresh context's own localStorage, and never presses anything that sends.
 // A failed context is visited once more after 25 s (SMOKE_RETRY_MS overrides); fail-then-pass prints WARN transient, fail twice fails (smoke-retry.mjs).
 // Option: --engine chromium|webkit|firefox runs that engine alone (default: Chromium and WebKit; Firefox only when asked, for the scheduled cross-engine run, .github/workflows/cross-engine.yml).
 // Exit 0 when every check passes, 1 otherwise.
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { needsRetry, mergeRuns, RETRY_DELAY_MS } from "./smoke-retry.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
 if (!BASE) { console.error("usage: node live-smoke.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
-const here = path.dirname(fileURLToPath(import.meta.url));
 const base = BASE, origin = new URL(base).origin;
-/* the Worker's origin: PREVIEW_API, else js/brain.js const WORKER; not found: no row is the Worker's */
-const WORKER_ORIGIN = (() => { try { if (process.env.PREVIEW_API) return new URL(process.env.PREVIEW_API).origin; const m = fs.readFileSync(path.join(here, "..", "..", "js", "brain.js"), "utf8").match(/const WORKER = "(https:\/\/[^"]+)"/); return m ? new URL(m[1]).origin : null; } catch (e) { return null; } })();
-if (!WORKER_ORIGIN) console.log("WARN worker origin not found in js/brain.js: every console error counts");
 const CTX = [["chromium", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["chromium", "1366x768", { viewport: { width: 1366, height: 768 } }],
   ["webkit", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["webkit", "1366x768", { viewport: { width: 1366, height: 768 } }],
   ["firefox", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["firefox", "1366x768", { viewport: { width: 1366, height: 768 } }]];
 const ei = argv.indexOf("--engine"), ENGINE = ei >= 0 ? argv[ei + 1] : null;
 if (ENGINE !== null && !["chromium", "webkit", "firefox"].includes(ENGINE)) { console.error(`unknown engine ${ENGINE}`); process.exit(2); }
-let pass = 0, fail = 0, warns = 0, transient = 0; const fails = [];
+let pass = 0, fail = 0, transient = 0; const fails = [];
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; const l = `FAIL ${name}${extra ? `: ${extra}` : ""}`; fails.push(l); console.log(l); } };
 const bad = (t) => { if (/\[object Object\]/.test(String(t))) return "object Object"; const m = String(t).match(/(^|[^A-Za-z0-9_.\-])(null|undefined|NaN)(?![A-Za-z0-9_\-])/); return m ? m[2] : null; }; // + [object Object] and NaN (2026-10-30: the five's arrangement line)
 const visibleText = () => document.body.innerText;
@@ -46,10 +40,6 @@ const state = () => {
   };
 };
 const row = (r) => `${r.status} ${r.method} ${r.url}`;
-/* a Worker 5xx: a cross-origin row from the Worker's origin with a 5xx status. Its "Failed to load resource" line names the address in the console
-   location (Chromium does); with no address there, the status in the text has to match one of the Worker's 5xx rows */
-const workerRows = (xo) => (WORKER_ORIGIN ? xo.filter((r) => r.origin === WORKER_ORIGIN && r.status >= 500) : []);
-const platform = (e, w5) => /^Failed to load resource/.test(e.text) && w5.some((r) => (e.at ? e.at === r.url : (e.text.match(/status of (\d{3})/) || [])[1] === String(r.status)));
 /* one first visit; its checks come back as rows for one() to judge */
 async function visit(browser, engine, size, opts, setup) {
   /* Firefox has no isMobile (Playwright refuses the context); its phone context is the viewport and touch alone (2026-10-31, the cross-engine run) */
@@ -120,31 +110,19 @@ async function visit(browser, engine, size, opts, setup) {
     const noGl = (e) => engine === "webkit" && process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1" && /Error creating WebGL context/.test(e.text); /* headless Linux WebKit in CI has no WebGL; the board still renders its fallback */
     const insights = errs.some((e) => /cloudflareinsights\.com/.test(e.text + " " + e.at)) || xo.some((r) => /cloudflareinsights\.com/.test(r.url)); /* Cloudflare Web Analytics beacon on a preview host is blocked by CORS: third-party, not our code */
     const cfBeacon = (e) => /cloudflareinsights\.com/.test(e.text + " " + e.at) || (insights && /net::ERR_FAILED|not allowed by Access-Control-Allow-Origin/.test(e.text)); /* WebKit words the same failure without the URL */
-    const hard = errs.filter((e) => !platform(e, workerRows(xo)) && !noGl(e) && !cfBeacon(e)); /* a Worker 5xx's own line is a WARN (one()), every other console error counts */
+    const hard = errs.filter((e) => !noGl(e) && !cfBeacon(e)); /* every other console error counts */
     ok(`${tag} no same-origin 4xx/5xx`, !http.length, http.slice(0, 3).map(row).join(" | "));
     ok(`${tag} no console errors`, !hard.length, hard.slice(0, 3).map((e) => e.text).join(" | ") + (xo.length ? ` [from: ${xo.slice(0, 3).map(row).join(" | ")}]` : ""));
   } catch (e) {
     ok(`${tag} run completed`, false, String((e && e.message) || e).split("\n")[0].slice(0, 200));
   } finally { await ctx.close().catch(() => {}); }
-  return { rows, w5: workerRows(xo) };
+  return { rows };
 }
-/* one context's result. A Worker 5xx is the platform, not the page (G4): each Worker route that answered 5xx prints WARN worker 5xx <route>,
-   and the context is visited again 5 s later; that second visit's checks are its result, and the first visit's are only counted in an INFO
-   line. The reload is a second first visit in a fresh context rather than page.reload(): the first visit pressed Guided and picked a name,
-   which a reload keeps in localStorage, and the first-visit checks need it empty. A 5xx on the second visit warns again; there is no third. */
-const warn = (tag, w5, when) => { const by = new Map(); for (const r of w5) (by.get(r.route) || by.set(r.route, []).get(r.route)).push(`${r.status} ${r.method}`); for (const [route, hits] of by) { warns++; console.log(`WARN worker 5xx ${route} (${[...new Set(hits)].join(", ")}${hits.length > 1 ? ` x${hits.length}` : ""}; ${tag}${when})`); } };
+/* one context's result: a failed context is visited once more (below), and the pure mergeRuns judges the two runs. */
 const retryMs = () => Number(process.env.SMOKE_RETRY_MS) || RETRY_DELAY_MS;
 async function one(browser, engine, size, opts, setup, fault = false) {
   const tag = `${engine} ${size}`;
-  let v = await visit(browser, engine, size, opts, setup), reloaded = false;
-  if (v.w5.length) {
-    warn(tag, v.w5, "");
-    const f = v.rows.filter((r) => !r[1]);
-    console.log(`INFO ${tag} the Worker answered 5xx: visiting again in 5 s, and that visit's checks are this context's result (set aside: ${v.rows.length - f.length} passed, ${f.length} failed${f.length ? `: ${f.map((r) => r[0].slice(tag.length + 1)).join("; ")}` : ""})`);
-    await new Promise((r) => setTimeout(r, 5000));
-    v = await visit(browser, engine, size, opts, setup); reloaded = true;
-    if (v.w5.length) warn(tag, v.w5, ", second visit");
-  }
+  let v = await visit(browser, engine, size, opts, setup);
   /* a failed check: one more visit in a fresh context after 25 s; the pure mergeRuns judges the two runs */
   let retried = false;
   if (needsRetry(v.rows, { fault })) {
@@ -155,11 +133,11 @@ async function one(browser, engine, size, opts, setup, fault = false) {
     if (v2.w5.length) warn(tag, v2.w5, ", retry");
     v = { ...v2, rows: mergeRuns(v.rows, v2.rows) };
   }
-  return { ...v, reloaded, retried };
+  return { ...v, retried };
 }
 for (const eng of ENGINE ? [ENGINE] : ["chromium", "webkit"]) {
   let browser; try { browser = stubbed(await pw[eng].launch()); } catch (e) { ok(`${eng} launches`, false, String(e.message).split("\n")[0]); continue; }
   try { for (const [en, size, opts] of CTX.filter((c) => c[0] === eng)) for (const r of (await one(browser, en, size, opts)).rows) { ok(r[0], r[1], r[2]); if (r[3]) { transient++; console.log(`WARN transient ${r[0]}: failed on the first run, passed on the retry${r[2] ? ` (${String(r[2]).slice(0, 120)})` : ""}`); } } } finally { await browser.close().catch(() => {}); }
 }
-console.log(`${fail ? `live-smoke: ${fail} of ${pass + fail} checks FAILED` : `live-smoke: all ${pass} checks passed`}${warns ? ` (${warns} worker 5xx WARN)` : ""}${transient ? ` (${transient} transient WARN)` : ""}`);
+console.log(`${fail ? `live-smoke: ${fail} of ${pass + fail} checks FAILED` : `live-smoke: all ${pass} checks passed`}${transient ? ` (${transient} transient WARN)` : ""}`);
 process.exit(fail ? 1 : 0);
