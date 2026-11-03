@@ -185,7 +185,7 @@
     lede.parentNode.insertBefore(form, lede.nextSibling);
     ms.forEach((m) => {
       const b = h("button", { class: "fc", type: "button", "data-name": m.name, "data-k": m.class_key, "aria-pressed": "false", style: `--cc: ${K.classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.class}. Turn the card over. Arrow keys move between lanes.` },
-        h("span", { class: "fc-in" }, h("span", { class: "fc-face fc-f" }, h("img", { src: `img/crests/${m.class_key}.png`, alt: "", width: 320, height: 320, decoding: "async" }), h("span", { class: "fc-nm", text: m.name })), h("span", { class: "fc-face fc-b" }, h("b", { text: m.class }), h("i", { text: "spells" }))));
+        h("span", { class: "fc-in" }, h("span", { class: "fc-face fc-f" }, window.BoardCrest.guard(h("img", { src: window.BoardCrest.src(m.class_key), alt: "", width: 320, height: 320, decoding: "async" }), m.class_key), h("span", { class: "fc-nm", text: m.name })), h("span", { class: "fc-face fc-b" }, h("b", { text: m.class }), h("i", { text: "spells" }))));
       coinInput(b, m); F.lane[m.name] = roleNow(m); $(`.fl[data-role="${roleNow(m)}"] .fl-tray`, form).append(b);
     });
     fiveSum();

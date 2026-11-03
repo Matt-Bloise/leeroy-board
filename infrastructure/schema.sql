@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Dungeons & Drinking Living Board — Cloudflare D1 Schema (SQLite)
--- Complete Unified Baseline Schema (Full parity with wow-mage)
+-- Complete Unified Baseline Schema (Full parity with the PC bot, now in the `leeroy-ops` repo)
 -- Contains: kv_state, lib_pages, lib_blobs, lib_sources, lib_source_snapshots,
 --           wiki_proposals, ask_turns, fact_fixes, sheet_events, dispatches,
 --           members, accounts, account_keys, sessions, user_state, intents

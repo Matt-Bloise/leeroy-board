@@ -1,6 +1,6 @@
 // =============================================================================
 // Cloudflare Worker Entry Point (`leeroy-brain`)
-// Full parity with `wow-mage`:
+// Full parity with the PC bot (`leeroy-ops` repo, `bot-legacy/`):
 //   - Edge-cached D1 state (`kv_state`), library blobs (`lib_blobs`), & source snapshots
 //   - Event-sourced Party Character Sheets (`GET/POST /api/sheet`, `PUT /api/vocab`)
 //   - Chamber Letter Dispatches (`POST /api/dispatch`)
@@ -415,7 +415,7 @@ export default {
         return jsonResp({ ok: true, at: new Date().toISOString() }, 200, cors);
       }
 
-      // 0d. GET /sheet & POST /sheet & PUT /vocab & POST /dispatch -> Party Sheet & Chamber Dispatches (`wow-mage` Phase 0 parity)
+      // 0d. GET /sheet & POST /sheet & PUT /vocab & POST /dispatch -> Party Sheet & Chamber Dispatches (PC bot Phase 0 parity; the bot lives in the `leeroy-ops` repo)
       if (path === "/sheet") {
         const auth = await resolveMemberAuth(req, url, env);
         if (!auth.ok) {
@@ -1162,7 +1162,7 @@ export default {
         return jsonResp({ proposals: results || [] }, 200, cors);
       }
 
-      // 1e. PUT /wiki/page -> Direct D1 wiki page authoring/editing (replaces editing markdown in `wow-mage`)
+      // 1e. PUT /wiki/page -> Direct D1 wiki page authoring/editing (replaces editing markdown in the `leeroy-ops` wiki)
       if (req.method === "PUT" && path === "/wiki/page") {
         const denied = adminGate(req, url, env, cors);
         if (denied) return denied;
