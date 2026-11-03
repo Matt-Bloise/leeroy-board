@@ -104,7 +104,7 @@ html.phone-shell #scene .sheet-name { padding-inline: 40px; box-sizing: border-b
 html.phone-shell #scene .sheet-name::before { right: 2px; }
 
 /* UX pass 2026-11-02 (header fit). Phone: the title stays on one line with room beside the ribbon, Settings leaves the header (it lives in Menu), and the last card clears the floating coin. Tablet: Settings is a gear, not a second eye. First-run: the header title is parchment on oak, not ink. */
-html.nx-fr2 #sheet-title { color: var(--parchment); }
+html.nx-first-run #sheet-title { color: var(--parchment); }
 html.phone-shell #scene .sheet-top #sheet-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 html.phone-shell #scene .sheet-name { padding-inline: 4px 40px; }
 html.phone-shell #scene .sheet-top > #scene-settings { display: none; }
