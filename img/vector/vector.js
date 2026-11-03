@@ -13,7 +13,7 @@ const B = { hi: "var(--brass-hi)", mid: "var(--brass)", lo: "var(--brass-dim)", 
 const stop = (o, c, op) => mk("stop", { offset: o, style: `stop-color:${c}` + (op == null ? "" : `;stop-opacity:${op}`) });
 const lin = (id, a, stops, o) => mk("linearGradient", { id, ...(o || {}), x1: a[0], y1: a[1], x2: a[2], y2: a[3] }, ...stops.map((s) => stop(...s)));
 const rad = (id, a, stops) => mk("radialGradient", { id, ...a }, ...stops.map((s) => stop(...s)));
-const CLASSES = ["druid", "priest", "paladin", "mage", "warlock"];
+const CLASSES = ["druid", "priest", "paladin", "mage", "warlock", "hunter", "rogue", "shaman", "warrior"];
 /* The paintings (assets/board/ai/tavern, baked by tools/art/vfbake.py into img/vector/*.webp). paint(name, fn) runs fn only once the file has loaded, so a
    missing or broken image leaves the procedural drawing below it untouched: every painted surface keeps its stand-in nodes and hides them (display none)
    only inside fn. */
@@ -251,7 +251,7 @@ export function pins(root) {
     paint("pin-" + k, (u) => { pi.setAttribute("href", u); hide([L]); im.setAttribute("x", -8.5); im.setAttribute("y", -40.5); im.setAttribute("width", 17); im.setAttribute("height", 17); });
   }
 }
-const PIN_W = { mage: 0.615, priest: 0.63, paladin: 0.615, warlock: 0.615, druid: 0.61 };
+const PIN_W = { mage: 0.615, priest: 0.63, paladin: 0.615, warlock: 0.615, druid: 0.61, hunter: 0.615, rogue: 0.615, shaman: 0.615, warrior: 0.615 };
 
 /* THE WALL TILES' SMALL RING AND WHEEL (shown in Curious and Everything). Same language at 100 units: the ring on the dial face (F = 48, track at
    F / phi = 29.7, 5.8 wide, the number on the wood), the wheel in a brass bezel with a bezel round each crest. */
