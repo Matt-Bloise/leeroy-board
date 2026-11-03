@@ -41,7 +41,7 @@ export function buildReport(i) {
     mode = "light";
     pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout);
     ran = "unit, stamps";
-    notRun = "preview, api, browser, layout, Lighthouse (full suite not requested)";
+    notRun = "preview, api, browser, layout (full suite not requested)";
   }
   const heading = mode === "light" ? "Light checks" : "Preview tests";
   const gate = pass && mode !== "light";

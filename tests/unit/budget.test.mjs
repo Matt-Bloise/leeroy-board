@@ -7,6 +7,8 @@ import {
   loadBudget, recordUsage, DEFAULT_DAILY_CAP, CRON_RESERVE,
 } from "../../infrastructure/worker/budget.js";
 
+import { schemaDb } from "../helpers/sqlite-d1.mjs";
+
 const M70 = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 // Tiny in-memory stand-in for env.DB covering prepare/bind/first/run on kv_state.
@@ -81,14 +83,15 @@ test("loadBudget returns zeros when nothing is stored", async () => {
   assert.deepEqual(await loadBudget(fakeEnv(), new Date("2026-11-02T10:00:00Z")), { neurons: 0, asks: 0, cron: 0 });
 });
 
+// recordUsage is now one atomic SQL add (json_set), so this test runs on real SQLite instead of the key/value stand-in.
 test("recordUsage accumulates per kind and per UTC day", async () => {
-  const env = fakeEnv();
+  const env = { DB: schemaDb() };
   const d1 = new Date("2026-11-02T10:00:00Z");
   await recordUsage(env, "ask", 120.5, d1);
   await recordUsage(env, "ask", 100, d1);
   await recordUsage(env, "cron", 300, d1);
   assert.deepEqual(await loadBudget(env, d1), { neurons: 520.5, asks: 2, cron: 1 });
-  assert.ok(env.rows.has("ai_budget:2026-11-02"));
+  assert.ok(env.DB.raw.prepare("SELECT 1 FROM kv_state WHERE key = 'ai_budget:2026-11-02'").get());
   assert.deepEqual(await loadBudget(env, new Date("2026-11-03T00:00:01Z")), { neurons: 0, asks: 0, cron: 0 });
 });
 

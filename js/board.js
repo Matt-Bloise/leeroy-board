@@ -116,7 +116,10 @@ function emb(name, cls, label, dates) {
 }
 emb.svg = embSvg;
 emb.dates = (name, cls, label) => emb(name, cls, label, true);
-const crestMark = (m, cls = "crest-mark", title = m.name) => h("img", { class: cls, src: `img/crests/${m.class_key}.png`, alt: "", width: 56, height: 56, loading: "lazy", decoding: "async", title });
+/* Class crests: js/crest.js. A class with no painted crest (hunter, rogue, shaman, warrior) gets an inline SVG medallion instead of a 404, and any crest that fails to load is swapped for it. */
+const crestSrc = (k) => (window.BoardCrest ? window.BoardCrest.src(k) : `img/crests/${k}.png`);
+const crestGuard = (el, k) => (window.BoardCrest ? window.BoardCrest.guard(el, k) : el);
+const crestMark = (m, cls = "crest-mark", title = m.name) => crestGuard(h("img", { class: cls, src: crestSrc(m.class_key), alt: "", width: 56, height: 56, loading: "lazy", decoding: "async", title }), m.class_key);
 const reduceMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
 const roomHas = (c) => document.documentElement.classList.contains(c);
 const RS = { tier: "low", why: "not started" };
@@ -611,7 +614,7 @@ function miniRoads() {
       const tx = z.x + (i - (ms.length - 1) / 2) * 60, ty = z.y + 20;
       svg.append(s("g", { class: "mm-pin", transform: `translate(${tx} ${ty}) scale(1.7)`, style: `--cc: ${classVar(m.class_key)}`, "data-land": `roads.${MEM.slug(zone)}` },
         s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
-        s("image", { href: `img/crests/${m.class_key}.png`, x: -13, y: -39, width: 26, height: 26 })));
+        crestGuard(s("image", { href: crestSrc(m.class_key), x: -13, y: -39, width: 26, height: 26 }), m.class_key)));
     });
   }
   VF("pins", svg); return svg;
@@ -636,7 +639,7 @@ function miniWheel() {
     if (to === b.from || !pos[to] || !pos[b.from]) continue;
     svg.append(s("line", { class: "viz-thin", x1: pos[b.from][0], y1: pos[b.from][1], x2: pos[to][0], y2: pos[to][1], stroke: classVar(b.from) }));
   }
-  for (const k of keys) svg.append(s("image", { href: `img/crests/${k}.png`, x: pos[k][0] - 10, y: pos[k][1] - 10, width: 20, height: 20, "data-land": `buffs.${k}` }));
+  for (const k of keys) svg.append(crestGuard(s("image", { href: crestSrc(k), x: pos[k][0] - 10, y: pos[k][1] - 10, width: 20, height: 20, "data-land": `buffs.${k}` }), k));
   VF("mini", svg); return svg;
 }
 function miniSpark(vals) {
@@ -845,7 +848,7 @@ function renderMap() {
       const tx = x0 + i * step, ty = z.y + 12;
       const pin = s("g", { class: "map-pin", transform: `translate(${tx} ${ty})`, style: `--cc: ${classVar(m.class_key)}; --di: ${zi + i}` },
         s("path", { class: "pin-body", d: "M0 0c-7-8-15-16-15-26a15 15 0 1 1 30 0c0 10-8 18-15 26z" }),
-        s("image", { href: `img/crests/${m.class_key}.png`, x: -13, y: -39, width: 26, height: 26 }),
+        crestGuard(s("image", { href: crestSrc(m.class_key), x: -13, y: -39, width: 26, height: 26 }), m.class_key),
         s("title", { text: `${m.name}, ${m.race} ${m.class}` }));
       g.append(pin);
       boxes.push({ x: tx - 15, y: ty - 42, w: 30, h: 42 });
@@ -897,7 +900,7 @@ function renderMap() {
         s("path", { class: "walk-reveal", d: r.d, pathLength: 1 }, s("animate", { attributeName: "stroke-dashoffset", values: "1;0;0", keyTimes: "0;0.8;1", dur, begin, repeatCount: "indefinite" }))));
       const ln = lines[ROADS.indexOf(r)];
       ln.append(s("path", { class: "map-trail", d: r.d, pathLength: 1, mask: `url(#walk-${r.key})` }));
-      const walker = s("g", { class: "map-walker" }, s("image", { href: `img/crests/${ms[k % ms.length].class_key}.png`, x: -11, y: -11, width: 22, height: 22 }));
+      const walker = s("g", { class: "map-walker" }, crestGuard(s("image", { href: crestSrc(ms[k % ms.length].class_key), x: -11, y: -11, width: 22, height: 22 }), ms[k % ms.length].class_key));
       const am = s("animateMotion", { dur, begin, repeatCount: "indefinite", keyPoints: "0;1;1", keyTimes: "0;0.8;1", calcMode: "linear" }); am.append(s("mpath", { href: `#path-${r.key}` }));
       walker.append(am); ln.append(walker);
     };
@@ -1473,7 +1476,7 @@ function renderSeats(S) {
   ms.forEach((m, i) => {
     const x = 40 + step * (i + 0.5), a = ans(m), state = a && a.rsvp ? a.rsvp : "none";
     const mug = s("image", { class: `seat-mug ${state}`, href: `img/pints/${state}@2x.png`, x: x - 18, y: 78, width: 36, height: 36 });
-    svg.append(s("image", { href: `img/crests/${m.class_key}.png`, x: x - 24, y: 14, width: 48, height: 48 }), mug,
+    svg.append(crestGuard(s("image", { href: crestSrc(m.class_key), x: x - 24, y: 14, width: 48, height: 48 }), m.class_key), mug,
       s("text", { class: "seat-name", x, y: 192, text: m.name }),
       s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : "no answer yet" }));
   });
@@ -1911,7 +1914,10 @@ const tileFocus = (t) => {
   let f = t.matches("a, button, main") ? t : t.querySelector("a[href]");
   if (f && f.getClientRects && !f.getClientRects().length) f = $("#main");
   if (!f) f = $("#main");
-  if (f) f.focus({ preventScroll: true });
+  if (!f) return;
+  f.focus({ preventScroll: true });
+  /* closing the first-visit card with Escape: the page is still settling when this runs, the call is ignored, the scene layer then hides and focus drops to <body>. Try again on the next frames while focus is still on <body> or inside the closing scene layer, and never take it from anything else. */
+  if (document.activeElement !== f) { let n = 0; const again = () => { const a = document.activeElement; if ((a && a !== document.body && !a.closest("#scene")) || !f.isConnected) return; f.focus({ preventScroll: true }); if (document.activeElement !== f && ++n < 40) requestAnimationFrame(again); }; requestAnimationFrame(again); }
 };
 function hideScene(o) {
   o = o || SC.how; SC.how = null; const glided = !!(o && o.glided);
@@ -2534,8 +2540,8 @@ function startWisps() {
   run();
 }
 
-const crestImg = (k, c = "crest") => h("img", { class: c, src: `img/crests/${k}.png`, alt: "", width: 56, height: 56, loading: "lazy", decoding: "async" });
-const crestSvg = (k, x, y) => s("image", { class: "crest-node", href: `img/crests/${k}.png`, x: x - 28, y: y - 28, width: 56, height: 56 });
+const crestImg = (k, c = "crest") => crestGuard(h("img", { class: c, src: crestSrc(k), alt: "", width: 56, height: 56, loading: "lazy", decoding: "async" }), k);
+const crestSvg = (k, x, y) => crestGuard(s("image", { class: "crest-node", href: crestSrc(k), x: x - 28, y: y - 28, width: 56, height: 56 }), k);
 function placeCrest(k) {
   const front = document.querySelector(`#cards .card[data-k="${k}"] .front`);
   if (front && !front.querySelector(".crest")) front.prepend(crestImg(k));
@@ -2548,7 +2554,7 @@ function startArt() {
   const probe0 = (src, ok, bad) => { const im = new Image(); im.onload = ok; if (bad) im.onerror = bad; im.src = src; };
   /* a cold wall (covered by the first-visit scene) probes once settled; otherwise at once */
   const probe = (src, ok, bad) => whenSettled(() => probe0(src, ok, bad));
-  for (const k of new Set(D.party.members.map((m) => m.class_key).filter(Boolean))) probe(`img/crests/${k}.png`, () => { ART.crest[k] = true; placeCrest(k); });
+  for (const k of new Set(D.party.members.map((m) => m.class_key).filter(Boolean))) { if (window.BoardCrest && !window.BoardCrest.hasArt(k)) { ART.crest[k] = true; placeCrest(k); } else probe(`img/crests/${k}.png`, () => { ART.crest[k] = true; placeCrest(k); }); }
   let mapArt = 2; const mapArtDone = () => { if (--mapArt === 0 && MAPW.drawn && (ART.zep || ART.town)) renderMap(); };
   probe("img/map/zeppelin.png", () => { ART.zep = true; mapArtDone(); }, mapArtDone);
   probe("img/map/town.png", () => { ART.town = true; mapArtDone(); }, mapArtDone);
@@ -3672,7 +3678,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();

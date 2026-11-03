@@ -4,6 +4,7 @@
 //            --sizes 1024x768,390x844 (subset)   --states gate,looking,member   --scenes five,buffs
 //            --zoom-selftest   check the zoom-aware coordinate helper on the chosen engine against a built-in page and exit (no --url needed)
 //            --live-api   use the real API the page points at (default: the Worker API is answered from tests/fixtures/api-snapshot, so the sweep sends no request to the Worker)
+//            --no-retry   do not run a failed (size, state) cell a second time in a fresh page (default: retry once, print WARN when it passed only on the retry)
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
 // No AI call, nothing is sent. By default every /api/ call is fulfilled by Playwright from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs): the sweep judges layout, not the API,
 // and a full sweep made 1,056 Worker requests before this (measured locally, docs/runbooks/cloudflare-requests.md). An API path the snapshot lacks fails the run (invariant stub-miss). Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
@@ -58,8 +59,9 @@ const ORIGIN = BASE ? new URL(url).origin : "";
 // Confirmed by hand on master (scene-open class off, #scene hidden, hash emptied); if the owner decides that deep link should open Next steps, delete the entry and the sweep will judge it.
 const NO_OPEN = new Set(["member/tonight"]);
 const failures = [], notes = [];
-let skipped = 0, cells = 0, checks = 0, truncated = false;
-const fail = (c, state, scene, invariant, detail) => failures.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300) });
+let skipped = 0, cells = 0, checks = 0, truncated = false, retried = 0;
+// One (size, state) cell keeps its own tally while it runs so a failed attempt can be thrown away and run again in a fresh page; the tally of the attempt that counts is merged into the totals.
+const fail = (c, state, scene, invariant, detail, sink = failures) => sink.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300) });
 
 // Runs in every page (addInitScript). window.__lz.rect(el) is el.getBoundingClientRect() in real viewport pixels; point(el) its centre. See the Zoom note at the top.
 function ZOOM_JS(isWebkit) {
@@ -215,7 +217,7 @@ async function openState(page, state) {
 
 
 // First-visit checks, run on the gate state BEFORE any click. doc-fit and wheel-still fail the run (desktop sizes only); one-scroller and fill only report.
-async function gateChecks(page, size, once) {
+async function gateChecks(page, size, once, A) {
   const m = await page.evaluate(() => {
     const de = document.documentElement, card = document.querySelector("#nx-fr2");
     const scrollers = [...document.querySelectorAll("body *")].filter((e) => { const s = getComputedStyle(e); return /auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1 && s.display !== "none" && e.getClientRects().length; }).map((e) => e.id || e.className || e.tagName);
@@ -223,7 +225,7 @@ async function gateChecks(page, size, once) {
     return { sh: de.scrollHeight, sw: de.scrollWidth, ih: innerHeight, iw: innerWidth, docScrolls: de.scrollHeight > innerHeight + 1, scrollers, fill: cr && br && br.width * br.height > 0 ? (cr.width * cr.height) / (br.width * br.height) : null };
   });
   if (!size.touch) {
-    checks += 2;
+    A.checks += 2;
     if (m.sh > m.ih || m.sw > m.iw) once("doc-fit", `document ${m.sw}x${m.sh} in a ${m.iw}x${m.ih} window`);
     await page.mouse.move(Math.round(size.w / 2), Math.round(size.h / 2));
     await page.mouse.wheel(0, 400); await page.waitForTimeout(150);
@@ -236,7 +238,7 @@ async function gateChecks(page, size, once) {
   else if (m.fill < 0.25) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: `card fills ${(m.fill * 100).toFixed(1)}% of its parchment (want 25%)` });
 }
 
-async function cell(browser, size, state) {
+async function cell(browser, size, state, A) {
   const opts = { viewport: { width: size.w, height: size.h }, serviceWorkers: "block", reducedMotion: "reduce" };
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
   const ctx = await browser.newContext(opts), page = await ctx.newPage();
@@ -244,42 +246,42 @@ async function cell(browser, size, state) {
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
-  const once = (inv, detail) => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail); } };
+  const once = (inv, detail) => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures); } };
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
   page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   try {
     await openState(page, state);
-    if (state === "gate") { scene = "gate"; await gateChecks(page, size, once); }
+    if (state === "gate") { scene = "gate"; await gateChecks(page, size, once, A); }
     for (const sc of state === "gate" ? ["gate", ...SCENES.slice(0, 0)] : SCENES) {
       scene = sc;
-      cells++;
+      A.cells++;
       if (sc !== "gate") {
-        if (NO_OPEN.has(`${state}/${sc}`)) { skipped++; continue; }
+        if (NO_OPEN.has(`${state}/${sc}`)) { A.skipped++; continue; }
         await page.evaluate((h) => { location.hash = h; }, sc);
         // really opened: html.scene-open, #scene shown, and the scene's own panel (when it has one) is the visible one
         const isOpen = (k) => document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden && (() => { const p = document.querySelector(`#panel-${k}`); return !p || !p.hidden; })();
         let opened = await page.waitForFunction(isOpen, sc, { timeout: 5000 }).then(() => true, () => false);
         if (opened) { await page.waitForTimeout(450); opened = await page.evaluate(isOpen, sc); } // still open after the open animation settles
-        checks++;
-        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden)`); continue; }
+        A.checks++;
+        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden)`, A.failures); continue; }
       } else {
         const opened = await page.evaluate(() => document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden);
         if (!opened) { // the gate is not a scene sheet: only the document-level invariant applies
           const sw = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
-          checks++;
-          if (sw[0] > sw[1] + 1) fail(size, state, sc, "hscroll", `document ${sw[0]} > viewport ${sw[1]}`);
+          A.checks++;
+          if (sw[0] > sw[1] + 1) fail(size, state, sc, "hscroll", `document ${sw[0]} > viewport ${sw[1]}`, A.failures);
           continue;
         }
       }
       // a slow preview can still be opening the sheet after one settle window (seen once in CI: opacity 0 after 4 s); give it up to eight before judging (the 4K and 8K sizes render in software and are slower still when four cells run at once)
       for (let i = 0; i < 8 && !(await page.evaluate(settle)); i++);
       const { out, n } = await page.evaluate(measure, { touch: size.touch, w: size.w });
-      checks += n;
+      A.checks += n;
       for (const f of out) once(f.invariant, f.detail);
     }
   } catch (e) {
-    fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`);
+    fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`, A.failures);
   } finally { await ctx.close().catch(() => {}); }
 }
 
@@ -304,6 +306,19 @@ if (argv.includes("--zoom-selftest")) {
   await b.close();
   process.exit(bad ? 1 : 0);
 }
+/* The huge sizes (5120x2880, 7680x4320) render in software on a CI runner and fail now and then for no layout reason. A cell (one size in one state, all its scenes) that fails is thrown away and
+   run once more in a fresh browser context; only the retry counts. A cell that passed only on the retry prints a WARN, so a real flake stays visible. --no-retry turns this off. */
+async function runCell(browser, size, state) {
+  const attempt = () => { const a = { cells: 0, checks: 0, skipped: 0, failures: [] }; return cell(browser, size, state, a).then(() => a); };
+  let a = await attempt();
+  if (a.failures.length && !argv.includes("--no-retry")) {
+    const first = a.failures.length, kinds = [...new Set(a.failures.map((f) => f.invariant))].join(",");
+    const b = await attempt(); retried++;
+    if (!b.failures.length) console.log(`WARN ${size.w}x${size.h} ${state}: failed once (${first} failures: ${kinds}) and passed on retry in a fresh page`);
+    a = b;
+  }
+  cells += a.cells; checks += a.checks; skipped += a.skipped; failures.push(...a.failures);
+}
 const browser = stubbed(await pw[ENGINE].launch(launch), { label: "layout-sweep api-stub" });
 const jobs = [];
 for (const size of SIZES) for (const state of STATES) jobs.push([size, state]);
@@ -312,7 +327,7 @@ await Promise.all(Array.from({ length: CONC }, async () => {
   while (next < jobs.length) {
     if (Date.now() - T0 > BUDGET_MS) { truncated = true; return; }
     const [size, state] = jobs[next++];
-    await cell(browser, size, state);
+    await runCell(browser, size, state);
   }
 }));
 const stubReport = browser.apiStubReport ? browser.apiStubReport() : null;
@@ -322,7 +337,7 @@ await browser.close();
 failures.sort((a, b) => b.w - a.w || b.h - a.h || a.state.localeCompare(b.state) || a.scene.localeCompare(b.scene) || a.invariant.localeCompare(b.invariant));
 const byInv = {}, bySize = {}, byScene = {};
 for (const f of failures) { byInv[f.invariant] = (byInv[f.invariant] || 0) + 1; const s = `${f.w}x${f.h}`; bySize[s] = (bySize[s] || 0) + 1; byScene[f.scene] = (byScene[f.scene] || 0) + 1; }
-const summary = { url: BASE, engine: ENGINE, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, apiMode: LIVE_API ? "live" : "stub", apiReadsStubbed: stubReport ? stubReport.served : 0, byInvariant: byInv, bySize, byScene, skippedCells: skipped, reportOnly: notes, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
+const summary = { url: BASE, engine: ENGINE, retriedCells: retried, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, apiMode: LIVE_API ? "live" : "stub", apiReadsStubbed: stubReport ? stubReport.served : 0, byInvariant: byInv, bySize, byScene, skippedCells: skipped, reportOnly: notes, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
 if (OUT) writeFileSync(OUT, JSON.stringify({ summary, failures }, null, 1));
 
 if (failures.length) {
@@ -343,5 +358,5 @@ if (notes.length) {
   console.log("\nreport-only (not failures; the next packages tighten these):");
   for (const [k, l] of Object.entries(by)) { console.log(`  ${k}: ${l.length} of ${SIZES.length} sizes`); for (const x of l.slice(0, 6)) console.log(`    ${x.w}x${x.h} ${x.detail}`); }
 }
-console.log(`layout-sweep: ${ENGINE}, ${cells} cells, ${checks} invariant checks, ${failures.length} failures${truncated ? " (INCOMPLETE)" : ""} in ${summary.seconds}s`);
+console.log(`layout-sweep: ${ENGINE}, ${cells} cells, ${checks} invariant checks, ${failures.length} failures, ${retried} cells retried${truncated ? " (INCOMPLETE)" : ""} in ${summary.seconds}s`);
 process.exit(failures.length || truncated ? 1 : 0);

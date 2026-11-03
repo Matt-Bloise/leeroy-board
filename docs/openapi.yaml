@@ -757,6 +757,35 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/admin/requests:
+    get:
+      summary: Admin only. Worker requests counted today (UTC), an approximation. 404 while REQUEST_GAUGE is off.
+      description: |
+        `count` is the Worker's own count of requests since 00:00 UTC (stored per day, flushed in batches, plus this instance's unflushed requests). It under-counts: it misses
+        requests lost when an instance is evicted, cron triggers, and every other Worker on the account (preview Workers). `limit` is the Workers Free daily limit, 100000.
+        `pct` is count / limit as a percentage with two decimals. Cloudflare's dashboard "Requests today" is the source of truth. No IP and no user id is stored or returned.
+      security:
+        - adminToken: []
+      responses:
+        "200":
+          description: Today's aggregate.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [utcDay, count, limit, pct]
+                properties:
+                  utcDay: { type: string, description: 'UTC date, YYYY-MM-DD.' }
+                  count: { type: integer, minimum: 0 }
+                  limit: { type: integer, enum: [100000] }
+                  pct: { type: number, minimum: 0 }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: REQUEST_GAUGE is off.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
   /api/admin/feedback:
     get:
       summary: Admin only. Helpful/Off votes on Discord answers (ANSWER_UX).

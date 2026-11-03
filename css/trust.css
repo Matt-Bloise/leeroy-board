@@ -12,3 +12,5 @@
 .tr-soon { font-style: italic; color: var(--ink-soft); }
 .tr-close { justify-self: end; min-height: 44px; padding: 8px 18px; font-family: var(--font-ui); letter-spacing: 0.05em; color: var(--parchment); background: var(--ink); border: 0; border-radius: 4px; cursor: pointer; }
 .tr-foot-btn { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+/* touch targets: the footer links were 95x19 px. On a coarse pointer each is at least 44x44 (WCAG 2.5.8 asks 24, the sweep and the header use 44). */
+@media (pointer: coarse) { .tr-foot-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; } }
