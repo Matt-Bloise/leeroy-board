@@ -75,6 +75,10 @@ Before any restore: note the current bookmark, and take an export as a second co
 
 If the reverted change added a migration file: reverting the file does not drop the table or column it created, and `wrangler d1 migrations apply` records applied names in D1 (unverified detail: the `d1_migrations` table). Write a new forward migration instead (`schema-source-of-truth.md`).
 
+## Feature flags (Flagship)
+
+A flag that lives in Cloudflare Flagship is rolled back by **flipping it off in the dashboard**: no deploy, no revert. Details and the fallback to `wrangler.toml` `[vars]` when the binding is missing: docs/runbooks/flags.md. A failed Flagship step never blocks a code deploy, so a rollback of the code (sections 1 to 4) is unaffected.
+
 ## Decision table by symptom
 
 | Symptom | First action | Then |

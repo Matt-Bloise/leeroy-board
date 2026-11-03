@@ -1,0 +1,114 @@
+{
+  "app": "leeroy-brain",
+  "_note": "Flagship flag manifest. tools/flagship-ensure.mjs creates a missing flag (default OFF) and never modifies an existing one. See docs/runbooks/flags.md.",
+  "flags": [
+    {
+      "key": "d1-feed",
+      "description": "computes GET /api/data/stats from D1 (cached 5 minutes)",
+      "legacy_var": "D1_FEED",
+      "default": "off"
+    },
+    {
+      "key": "web-login",
+      "description": "web Discord login",
+      "legacy_var": "WEB_LOGIN",
+      "default": "off"
+    },
+    {
+      "key": "data-rights",
+      "description": "member data export and erase",
+      "legacy_var": "DATA_RIGHTS",
+      "default": "off"
+    },
+    {
+      "key": "events-enabled",
+      "description": "Discord scheduled events sync",
+      "legacy_var": "EVENTS_ENABLED",
+      "default": "off"
+    },
+    {
+      "key": "moments-enabled",
+      "description": "timed Discord posts",
+      "legacy_var": "MOMENTS_ENABLED",
+      "default": "off"
+    },
+    {
+      "key": "moments-shadow",
+      "description": "moments shadow mode (ledger only)",
+      "legacy_var": "MOMENTS_SHADOW",
+      "default": "off"
+    },
+    {
+      "key": "moments-dry-run",
+      "description": "moments dry run (log only)",
+      "legacy_var": "MOMENTS_DRY_RUN",
+      "default": "off"
+    },
+    {
+      "key": "chars-v1",
+      "description": "characters in /api/me",
+      "legacy_var": "CHARS_V1",
+      "default": "off"
+    },
+    {
+      "key": "build-modal",
+      "description": "/build modal and /join",
+      "legacy_var": "BUILD_MODAL",
+      "default": "off"
+    },
+    {
+      "key": "build-project",
+      "description": "build submit writes roster and party",
+      "legacy_var": "BUILD_PROJECT",
+      "default": "off"
+    },
+    {
+      "key": "join-prompt",
+      "description": "join prompt for unknown Discord users",
+      "legacy_var": "JOIN_PROMPT",
+      "default": "off"
+    },
+    {
+      "key": "answer-ux",
+      "description": "Helpful/Off vote buttons and detail views",
+      "legacy_var": "ANSWER_UX",
+      "default": "off"
+    },
+    {
+      "key": "cards-enabled",
+      "description": "sign-up cards",
+      "legacy_var": "CARDS_ENABLED",
+      "default": "off"
+    },
+    {
+      "key": "cards-shadow",
+      "description": "cards shadow counting",
+      "legacy_var": "CARDS_SHADOW",
+      "default": "off"
+    },
+    {
+      "key": "board-lines-enabled",
+      "description": "board decision lines",
+      "legacy_var": "BOARD_LINES_ENABLED",
+      "default": "off"
+    },
+    {
+      "key": "setup-command",
+      "description": "Discord /setup command",
+      "legacy_var": "SETUP_COMMAND",
+      "default": "off"
+    },
+    {
+      "key": "eval-enabled",
+      "description": "admin model bake-off route",
+      "legacy_var": "EVAL_ENABLED",
+      "default": "off"
+    },
+    {
+      "key": "request-gauge",
+      "description": "per-day request counter",
+      "legacy_var": "REQUEST_GAUGE",
+      "default": "off"
+    }
+  ]
+}
