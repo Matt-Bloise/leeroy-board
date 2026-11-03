@@ -32,6 +32,9 @@ await page.waitForTimeout(WINDOW_MS);
 await Promise.all(pending);
 await browser.close();
 
+// The same image can be reported twice (two requests for one URL in the window; the browser cache serves real visitors once), so each path counts once. Measured Nov 3: the run reported tonight.webp (133 KB) twice and a lantern twice, so the raw total sat 168 bytes under the budget and one extra duplicate failed PR 135.
+const seen = new Set();
+for (let i = rows.length - 1; i >= 0; i--) { if (seen.has(rows[i].path)) rows.splice(i, 1); else seen.add(rows[i].path); }
 rows.sort((a, b) => b.bytes - a.bytes);
 const total = rows.reduce((n, r) => n + r.bytes, 0);
 for (const r of rows) console.log(`${String(r.bytes).padStart(8)}  ${r.path}`);
