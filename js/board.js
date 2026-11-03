@@ -7,12 +7,15 @@ const ID1 = new Map();
 const $ = (s, r = document) => { if (r !== document || !/^#[\w-]+$/.test(s)) return r.querySelector(s); let e = ID1.get(s); if (e && e.isConnected) return e; e = r.querySelector(s); if (e) ID1.set(s, e); return e; };
 const SVGNS = "http://www.w3.org/2000/svg";
 const SAFE_URL = /^(https?:\/\/|\/(?![\/\\])|#|[a-z0-9_.-]+\/)/; /* https(s) URL, one-slash absolute path (not protocol-relative //host or /\host), hash, or relative path with a folder */
+const IMG_DATA = /^data:image\/(?:png|webp|jpeg|gif);base64,[A-Za-z0-9+\/=]+$/; /* a small raster picture is allowed on <img>/<source> src (never on a link, never svg or text/html); the one svg exception is the board's own crest medallion, matched exactly by BoardCrest.isOwn */
+const ownSvg = (v) => !!(window.BoardCrest && window.BoardCrest.isOwn && window.BoardCrest.isOwn(v));
+const okSrc = (tag, k, v) => SAFE_URL.test(v) || ((tag === "img" || tag === "source") && k === "src" && (IMG_DATA.test(v) || ownSvg(v))) || (tag === "image" && k === "href" && ownSvg(v));
 const API_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/; /* same origins as BRAIN_OK in js/brain.js: our own Worker, our own pr-N previews, a local Worker */
 function h(tag, attrs, ...kids) {
   /* a lazy image made while the wall is cold gets its src on settle (a lazy image that is rendered but covered still loads) */
   if (tag === "img" && attrs && attrs.loading === "lazy" && attrs.src && wallCold()) {
     const { src, srcset, ...rest } = attrs, n = h(tag, rest, ...kids);
-    whenSettled(() => { if (srcset) n.setAttribute("srcset", srcset); if (SAFE_URL.test(String(src))) n.setAttribute("src", src); });
+    whenSettled(() => { if (srcset) n.setAttribute("srcset", srcset); if (okSrc("img", "src", String(src))) n.setAttribute("src", src); });
     return n;
   }
   const svg = attrs && attrs.svg; const n = svg ? document.createElementNS(SVGNS, tag) : document.createElement(tag);
@@ -22,7 +25,7 @@ function h(tag, attrs, ...kids) {
     else if (k === "text") n.textContent = v;
     else if (k === "style") n.setAttribute("style", v);
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
-    else if ((k === "href" || k === "src") && !SAFE_URL.test(String(v))) continue; /* data-driven links: drop javascript:, data: and anything else that is not http(s), absolute-path, hash or relative */
+    else if ((k === "href" || k === "src") && !okSrc(tag, k, String(v))) continue; /* data-driven links: drop javascript:, data: and anything else that is not http(s), absolute-path, hash or relative */
     else n.setAttribute(k, v === true ? "" : v);
   }
   for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c instanceof Node ? c : document.createTextNode(String(c)));

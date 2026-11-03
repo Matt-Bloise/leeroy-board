@@ -41,7 +41,7 @@ async function open(url, { init, mutateBootstrap } = {}) {
     /* the page's own site, the local Worker and the allowlisted Workers (a PR preview Worker in CI) are "ours": the API stub answers them. Everything else is answered here and goes nowhere. */
     const origin = new URL(u).origin;
     const proxied = PROXY.get(origin); /* a page origin served from another place (the virtual local origin, or the rehearsal of the deployed preview): fetch the same path there */
-    if (proxied && r.method() === "GET") { const res = await route.fetch({ url: proxied + u.slice(origin.length) }); return route.fulfill({ response: res }); }
+    if (proxied && r.method() === "GET") { try { const res = await route.fetch({ url: proxied + u.slice(origin.length) }); return await route.fulfill({ response: res }); } catch (e) { return; /* the page was closed while this file was in flight */ } }
     const ours = origin === PAGE_ORIGIN || PROXY.has(origin) || isLocal(u) || ALLOWED.test(origin);
     if (!ours) return r.method() === "OPTIONS" ? route.fulfill({ status: 204, headers: cors }) : route.fulfill({ status: 200, headers: cors, body: "{}" });
     { const d = /^\/api\/data\/([a-z0-9-]+)$/.exec(new URL(u).pathname); /* apiFetch asks for /api/data/<name> without .json; the recorded snapshot only has the files by their repo name */
@@ -76,14 +76,14 @@ for (const evil of EVIL) {
   ok(`F1 ?brain=${evil}: the board sends nothing to that origin at all (BoardBrain.url cannot bypass the ?api= allowlist)`, toEvil.length === 0, toEvil.slice(0, 3).map((x) => x.url).join(", "));
   const stored = await page.evaluate(() => { try { return localStorage.getItem("board-key"); } catch (e) { return null; } });
   ok(`F1 ?brain=${evil}: the key is still captured and stored (the fix filters the destination, not the key)`, stored === KEY);
-  await ctx.close();
+  await ctx.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {}); await ctx.close();
 }
 { /* positive control: with the allowlisted local Worker the key IS sent, so the checks above are not vacuous */
   const { ctx, page, seen } = await open(pageUrl(BASE, { hash: `k=${KEY}` }));
   await page.waitForTimeout(2500);
   const sent = seen.filter((x) => x.auth && ALLOWED.test(x.origin));
   ok("F1 control: an allowlisted origin (local Worker) still gets the Authorization header on /api/me", sent.some((x) => /\/api\/me$/.test(new URL(x.url).pathname)), JSON.stringify(seen.filter((x) => /\/api\//.test(x.url)).slice(0, 4)));
-  await ctx.close();
+  await ctx.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {}); await ctx.close();
 }
 
 /* F3b. The ?api= / board-api fallback accepts only our own origins: a third-party leeroy-brain*.workers.dev must not be read as board data. ?brain= is set to a refused value so BoardBrain.url is empty and the ?api= path is the one used. */
@@ -94,18 +94,18 @@ for (const [how, evil] of [["?api=", "https://leeroy-brain-evil.workers.dev"], [
   const host = new URL(evil).origin, hit = seen.filter((x) => x.origin === host);
   ok(`F3 ${how} ${evil}: no request goes to a third-party workers.dev`, hit.length === 0, hit.slice(0, 3).map((x) => x.url).join(", "));
   ok(`F3 ${how} ${evil}: the board still loads its data (falls back to the static files)`, seen.some((x) => x.origin === VIRTUAL && /\/data\/(party|timeline)\.json/.test(x.url)), `${seen.length} requests`);
-  await ctx.close();
+  await ctx.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {}); await ctx.close();
 }
 { /* control: a local Worker via ?api= is still honoured (so the check above is not vacuous); the stub answers it, no live Worker */
   const { ctx, page, seen } = await open(pageUrl(VIRTUAL, { params: { preview: "1", brain: "https://evil.example", api: "http://127.0.0.1:8787" } }));
   await page.waitForTimeout(2500);
   ok("F3 control: ?api=http://127.0.0.1:8787 is still used for /api/data/*", seen.some((x) => x.origin === "http://127.0.0.1:8787" && /\/api\/data\//.test(x.url)), seen.filter((x) => /api\/data/.test(x.url)).length + " api/data requests");
-  await ctx.close();
+  await ctx.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {}); await ctx.close();
 }
 
 /* F2. h() drops an href/src that is not https(s)://, a one-slash path, # or a relative path with a folder. Every evil value below is rendered as its own poll link, so every one is reached. */
 {
-  const EVIL_HREF = ["javascript:window.__pwned=1", "JaVaScRiPt:window.__pwned=1", " javascript:window.__pwned=1", "data:text/html,<script>window.__pwned=1</script>", "vbscript:x",
+  const EVIL_HREF = ["javascript:window.__pwned=1", "JaVaScRiPt:window.__pwned=1", " javascript:window.__pwned=1", "data:text/html,<script>window.__pwned=1</script>", "vbscript:x", "data:image/svg+xml,%3Csvg%20onload%3D%22window.__pwned%3D1%22%2F%3E",
     "//evil.example/x", "//evil.example", "/\\evil.example/x", "///evil.example", "http:evil", "x.png"];
   const good = "https://discord.com/channels/1/2/3";
   const { ctx, page } = await open(pageUrl(BASE), {
@@ -127,8 +127,10 @@ for (const [how, evil] of [["?api=", "https://leeroy-brain-evil.workers.dev"], [
   const hrefs = await page.evaluate(() => [...document.querySelectorAll("[href],[src]")].map((n) => ({ tag: n.tagName, v: n.getAttribute("href") ?? n.getAttribute("src") })));
   const bad = hrefs.filter((x) => x.tag !== "LINK" /* the static data: favicon in <head> is not data-driven */ && (/^\s*(javascript|data|vbscript):/i.test(x.v || "") || /^(\/[\/\\]|http:evil)/.test(x.v || "")));
   ok("F2 no element anywhere (poll links and the open items' links included) has an unsafe href/src", bad.length === 0, JSON.stringify(bad.slice(0, 3)));
+  const crest = await page.evaluate(async () => { const i = window.__boardKit.crestMark({ class_key: "zz-no-art", name: "x" }); window.dispatchEvent(new Event("pointerdown")); /* a first touch warms the wall, which gives a lazy image its src */ for (let n = 0; n < 40 && !i.getAttribute("src"); n++) await new Promise((r) => setTimeout(r, 100)); /* a lazy image made while the wall is cold gets its src on settle */ return i.getAttribute("src"); });
+  ok("F2 control: the inline crest medallion (data:image/svg+xml) is still allowed on an <img src>, only there", typeof crest === "string" && /^data:image\/svg\+xml,/.test(crest), String(crest).slice(0, 60));
   ok("F2 nothing ran", !(await page.evaluate(() => window.__pwned)));
-  await ctx.close();
+  await ctx.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {}); await ctx.close();
 }
 
 /* F4. Forget removes every board-* and bd:* key; boot prunes bd: entries stamped by another build. */
@@ -151,7 +153,7 @@ for (const [how, evil] of [["?api=", "https://leeroy-brain-evil.workers.dev"], [
   const left = keys.filter((k) => /^(board-|bd:)/.test(k));
   ok("F4 Forget removes every board-* and bd:* key", left.length === 0, left.join(", "));
   ok("F4 Forget leaves keys that are not the board's", keys.includes("unrelated-key"));
-  await ctx.close();
+  await ctx.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {}); await ctx.close();
 }
 
 await browser.close();
