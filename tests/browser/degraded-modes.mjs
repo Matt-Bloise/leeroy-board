@@ -105,7 +105,10 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
     if (cond.slow) { await cdp.send("Network.enable"); await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 800, downloadThroughput: (400 * 1024) / 8, uploadThroughput: (400 * 1024) / 8 }); }
     if (cond.sw === "allow") { await page.goto(url, { waitUntil: "load", timeout: 45000 }).catch(() => {}); await page.goto(url, { waitUntil: "load", timeout: 45000 }).catch(() => {}); await page.unrouteAll?.({ behavior: "ignoreErrors" }).catch(() => {}); }
     const t0 = Date.now(); let nav = page.goto(url, { waitUntil: "commit", timeout: 60000 }).catch(() => {});
-    if (!cond.slow) await nav;
+    if (!cond.slow) {
+      await nav; /* a tab left on about:blank after the navigation (tests/helpers/goto-retry.mjs): load it again, at most twice, and say so; a slow-network run is still on its way and is left alone */
+      for (let i = 1; i <= 2 && page.url() === "about:blank"; i++) { console.log(`WARN ${name}: the tab was left on about:blank; loading it again (${i} of 2)`); nav = page.goto(url, { waitUntil: "commit", timeout: 60000 }).catch(() => {}); await nav; }
+    }
     const budget = cond.budget || 6000; let p = { len: 0, ctl: 0, paint: [], text: "" };
     while (Date.now() - t0 < budget) {
       p = await page.evaluate(probe).catch(() => p);
@@ -116,7 +119,7 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
       await cond.after(page).catch(() => {}); const t1 = Date.now();
       do { await sleep(300); p = await page.evaluate(probe).catch(() => p); } while (!(p.len >= 40 && p.ctl >= 1) && Date.now() - t1 < budget);
     }
-    const detail = `${p.len} chars, ${p.ctl} controls${cond.paint ? `, paint ${p.paint.join("/") || "none"}` : ""}, text "${p.text}"`;
+    const detail = `${p.len} chars, ${p.ctl} controls${cond.paint ? `, paint ${p.paint.join("/") || "none"}` : ""}, text "${p.text}", tab url ${page.url()}`;
     ok(`${name} | usable screen`, p.len >= 40 && p.ctl >= 1 && (!cond.paint || p.paint.length > 0), detail);
     if (cond.noscript) {
       const ns = await page.evaluate(() => { const link = [...document.querySelectorAll("body a[href]")].some((a) => a.getBoundingClientRect().width > 0 && !a.closest("[hidden]")); return { text: document.body.innerText.replace(/\s+/g, " "), link }; }).catch(() => ({ text: "", link: false }));
