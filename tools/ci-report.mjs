@@ -11,10 +11,28 @@ export const gateRegex = (sha7) => new RegExp("^### Preview tests: passed \\(`?"
 export const GATE_RE_SOURCE = "^### Preview tests: passed \\(`?<sha7>`?\\)[ \\t]*\\r?$";
 export const matchesGate = (body, sha7) => /^[0-9a-f]{7}$/.test(String(sha7)) && gateRegex(sha7).test(String(body));
 
+// Hidden marker line (second line of the comment). The visible header above is what queue/gate.js matches; this line lets a reader prove which commit and which workflow run wrote the comment.
+// Format: <!-- preview-tests-meta sha=<40 hex head sha> run=<run id> -->
+export const markerLine = (sha, runId) => `<!-- preview-tests-meta sha=${sha} run=${runId} -->`;
+export const MARKER_RE = /^<!-- preview-tests-meta sha=([0-9a-f]{40}) run=(\d+) -->[ \t]*\r?$/m;
+export const parseMarker = (body) => {
+  const m = MARKER_RE.exec(String(body));
+  return m ? { sha: m[1], runId: m[2] } : null;
+};
+// Fails closed: no marker, a different sha or a different run id is a mismatch. `want` = { sha: <full head sha>, runId }.
+export function verifyComment(body, want) {
+  if (!/^[0-9a-f]{40}$/.test(String(want && want.sha)) || !/^\d+$/.test(String(want && want.runId))) return { ok: false, reason: "expected full head sha or run id is missing or malformed" };
+  const m = parseMarker(body);
+  if (!m) return { ok: false, reason: "the comment has no preview-tests-meta marker" };
+  if (m.sha !== want.sha) return { ok: false, reason: `the comment marker is for sha ${m.sha}, expected ${want.sha}` };
+  if (m.runId !== String(want.runId)) return { ok: false, reason: `the comment marker is from run ${m.runId}, expected run ${want.runId}` };
+  return { ok: true, reason: "" };
+}
+
 const ok = (r) => r === "success";
 const skipped = (r) => r === "skipped";
 
-// in: { sha7, docsOnly, siteChanged, full, results: {unit, stamps, api, browser, layout}, counts: {uPass,uFail,aPass,aFail,bPass,bFail,lFail}, pagesUrl, failing, visual, runUrl }
+// in: { sha7, sha (full head sha), runId, previewSkipped (full run, preview secrets absent), docsOnly, siteChanged, full, results: {unit, stamps, api, browser, layout}, counts: {uPass,uFail,aPass,aFail,bPass,bFail,lFail}, pagesUrl, failing, visual, runUrl }
 // out: { body, pass, gate }  (gate: the body carries the merge-gate phrase)
 export function buildReport(i) {
   const r = i.results;
@@ -25,6 +43,12 @@ export function buildReport(i) {
     pass = unitStamps;
     ran = "unit, stamps";
     notRun = "preview, api, browser, layout (docs only: nothing a visitor or the Worker runs changed)";
+  } else if (i.full && i.previewSkipped) {
+    // Preview secrets are absent (docs/runbooks/ci-secrets.md): preview, api, browser and layout were skipped on purpose. Never a gate pass.
+    mode = "skipped";
+    pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout);
+    ran = "unit, stamps";
+    notRun = "preview, api, browser, layout (preview secrets are not configured)";
   } else if (i.full) {
     mode = "full";
     if (i.siteChanged) {
@@ -44,12 +68,13 @@ export function buildReport(i) {
     notRun = "preview, api, browser, layout, Lighthouse (full suite not requested)";
   }
   const heading = mode === "light" ? "Light checks" : "Preview tests";
-  const gate = pass && mode !== "light";
+  const gate = pass && mode !== "light" && mode !== "skipped";
   const label = (outcome, name) => {
     if (outcome === "success") return "pass";
     if (outcome === "skipped") {
       if (mode === "docs") return "not run (docs only)";
       if (mode === "light") return "not run (full suite not requested)";
+      if (mode === "skipped") return "not run (preview secrets missing)";
       return name === "browser" || name === "layout" ? (i.siteChanged ? "not run" : "not run (scope rule)") : "not run";
     }
     return "FAIL";
@@ -58,9 +83,15 @@ export function buildReport(i) {
   const c = i.counts || {};
   const lines = [
     "<!-- preview-tests -->",
-    `### ${heading}: ${pass ? "passed" : "FAILED"} (\`${i.sha7}\`)`,
+    `### ${heading}: ${mode === "skipped" && pass ? "SKIPPED" : pass ? "passed" : "FAILED"} (\`${i.sha7}\`)`,
     "",
   ];
+  if (i.sha && i.runId) lines.splice(1, 0, markerLine(i.sha, i.runId));
+  if (mode === "skipped") lines.push(
+    pass
+      ? "**SKIPPED**: the preview secrets (`CLOUDFLARE_PREVIEW_API_TOKEN`, `BOARD_PREVIEW_ADMIN_TOKEN`) are not configured, so no preview was created and only unit and stamps ran. This comment is not the merge gate. See docs/runbooks/ci-secrets.md.\n"
+      : "Unit or stamps failed, and the preview secrets are not configured, so no preview was created. This comment is not the merge gate.\n"
+  );
   if (mode === "docs" && pass) lines.push("**passed (docs only)**: this PR changes only docs, so no preview was created and only the unit and stamps suites ran.", "");
   if (mode === "light") {
     lines.push(
@@ -104,11 +135,21 @@ function parseLogs(dir) {
   return { counts, failing: [...apiFailing, ...failing] };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
+if (import.meta.url === pathToFileURL(process.argv[1] || "").href && process.argv[2] === "--verify") {
+  // node tools/ci-report.mjs --verify <comment-body-file>   env: HEAD_SHA (full), RUN_ID. Exit 1 unless the posted comment carries this head sha and this run id.
+  const v = verifyComment(readFileSync(process.argv[3], "utf8"), { sha: process.env.HEAD_SHA, runId: process.env.RUN_ID });
+  if (!v.ok) { console.error(`::error::Preview tests comment check failed: ${v.reason}.`); process.exit(1); }
+  console.log("Preview tests comment carries this head sha and this run id.");
+} else if (import.meta.url === pathToFileURL(process.argv[1] || "").href) {
   const e = process.env;
+  if (!/^[0-9a-f]{40}$/.test(String(e.HEAD_SHA || "")) || !/^\d+$/.test(String(e.RUN_ID || ""))) {
+    console.error("::error::HEAD_SHA (40 hex characters) and RUN_ID (digits) are required.");
+    process.exit(1);
+  }
   const { counts, failing } = parseLogs(`${e.RUNNER_TEMP || "."}/logs`);
   const out = buildReport({
-    sha7: String(e.HEAD_SHA || "").slice(0, 7),
+    sha7: String(e.HEAD_SHA || "").slice(0, 7), sha: e.HEAD_SHA, runId: e.RUN_ID,
+    previewSkipped: e.PREVIEW_SECRETS === "false",
     docsOnly: e.DOCS_ONLY === "true",
     siteChanged: e.SITE_CHANGED === "true",
     full: e.FULL === "true",

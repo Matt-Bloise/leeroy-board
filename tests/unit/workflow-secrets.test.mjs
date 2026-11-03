@@ -1,0 +1,81 @@
+// Guard for docs/runbooks/ci-secrets.md: a workflow that a pull request can trigger must never reference a production secret,
+// and the production deploy must run in the GitHub environment `production`. Needs the `yaml` package (tests/package.json).
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { parse } from "yaml";
+
+const DIR = fileURLToPath(new URL("../../.github/workflows/", import.meta.url));
+const files = readdirSync(DIR).filter((f) => /\.ya?ml$/.test(f));
+const load = (f) => { const text = readFileSync(DIR + f, "utf8"); return { f, text, doc: parse(text) }; };
+const workflows = files.map(load);
+
+// Triggers that run code from a pull request (or its fork). `workflow_run` is included: it can be started by a PR workflow and read secrets with the PR's artifacts.
+const PR_TRIGGERS = ["pull_request", "pull_request_target", "pull_request_review", "pull_request_review_comment", "workflow_run"];
+// The only secrets a PR-triggered workflow may name. GITHUB_TOKEN is per run; CLOUDFLARE_ACCOUNT_ID is an identifier, not a credential.
+const PR_ALLOWED = new Set(["GITHUB_TOKEN", "CLOUDFLARE_PREVIEW_API_TOKEN", "BOARD_PREVIEW_ADMIN_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
+// Production secrets: deploy-cloudflare.yml reads these from the environment `production` only.
+const PRODUCTION = ["CLOUDFLARE_API_TOKEN", "BOARD_ADMIN_TOKEN", "USER_SALT", "KEY_SALT", "AI_GATEWAY_TOKEN", "CLOUDFLARE_AIG_TOKEN", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
+  "GROQ_API_KEY", "CEREBRAS_API_KEY", "GITHUB_MODELS_TOKEN", "OPENROUTER_API_KEY", "DISCORD_WEBHOOK_URL", "DISCORD_PUBLIC_KEY", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN"];
+
+const triggers = (doc) => { const on = doc.on ?? doc[true]; return typeof on === "string" ? [on] : Array.isArray(on) ? on : Object.keys(on || {}); };
+// Comments are not code: strip `# ...` so a runbook pointer in a comment is not read as a reference.
+const code = (text) => text.split("\n").map((l) => l.replace(/(^|\s)#.*$/, "$1")).join("\n");
+const secretNames = (text) => [...code(text).matchAll(/(?<![\w.\/-])secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
+
+test("the workflow directory is found and parsed", () => {
+  assert.ok(workflows.length >= 5);
+  assert.ok(workflows.some((w) => w.f === "preview-tests.yml") && workflows.some((w) => w.f === "pr-preview-cloudflare.yml"));
+});
+
+for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) {
+  test(`${w.f} (PR-triggered) names no production secret`, () => {
+    const bad = secretNames(w.text).filter((n) => !PR_ALLOWED.has(n));
+    assert.deepEqual([...new Set(bad)], [], `${w.f} references secrets a pull request must not read`);
+    const c = code(w.text);
+    for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(c), false, `${w.f} reads production secret ${n}`);
+    assert.equal(/(?<![\w.\/-])secrets\s*\[/.test(c), false, "indexed secrets access hides the name");
+    assert.equal(/toJSON\(\s*secrets\s*\)/.test(c), false, "toJSON(secrets) exposes every secret");
+    assert.equal(/secrets:\s*inherit/.test(c), false, "secrets: inherit passes every secret to a called workflow");
+    assert.equal(/\benvironment\s*:\s*production\b/.test(c), false, "a PR-triggered workflow must not use the production environment");
+  });
+}
+
+test("no workflow uses pull_request_target", () => {
+  for (const w of workflows) assert.equal(triggers(w.doc).includes("pull_request_target"), false, `${w.f} uses pull_request_target`);
+});
+
+test("the production deploy runs in the environment production and is not PR-triggered", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  assert.ok(w);
+  assert.equal(triggers(w.doc).some((t) => PR_TRIGGERS.includes(t)), false);
+  const job = w.doc.jobs["deploy-production"];
+  assert.equal(job.environment, "production");
+  assert.equal(job.if, "github.ref == 'refs/heads/master'");
+});
+
+test("only the production deploy reads production secrets", () => {
+  for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) {
+    const bad = secretNames(w.text).filter((n) => PRODUCTION.includes(n));
+    assert.deepEqual([...new Set(bad)], [], `${w.f} reads production secrets outside the production environment`);
+  }
+});
+
+test("the deploy installs wrangler from the lockfile, with an exact version", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  assert.match(code(w.text), /npm ci --no-audit --no-fund/);
+  assert.equal(/npm install\b/.test(code(w.text)), false);
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package.json", import.meta.url)), "utf8"));
+  assert.match(pkg.devDependencies.wrangler, /^\d+\.\d+\.\d+$/, "wrangler must be an exact version, no ^ or ~");
+  const lock = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package-lock.json", import.meta.url)), "utf8"));
+  assert.equal(lock.packages["node_modules/wrangler"].version, pkg.devDependencies.wrangler);
+});
+
+test("preview jobs skip, not fail, when the preview secrets are absent", () => {
+  const prev = workflows.find((x) => x.f === "pr-preview-cloudflare.yml").doc;
+  assert.match(prev.jobs["deploy-pr-preview"].if, /preview-guard\.outputs\.enabled == 'true'/);
+  assert.ok([].concat(prev.jobs["deploy-pr-preview"].needs).includes("preview-guard"));
+  const tests = workflows.find((x) => x.f === "preview-tests.yml").doc;
+  assert.match(tests.jobs.preview.if, /preview-secrets\.outputs\.enabled == 'true'/);
+});

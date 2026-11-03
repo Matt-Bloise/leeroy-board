@@ -24,6 +24,9 @@ jobs:
     runs-on: ubuntu-latest
     # A manual run may be started from any branch; production only ever deploys from master.
     if: github.ref == 'refs/heads/master'
+    # Production secrets live ONLY in the GitHub environment `production` (deployment branches: master only). PR workflows cannot read them.
+    # Delete the repository-level copies too (docs/runbooks/ci-secrets.md), otherwise a run of any branch could still read them.
+    environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -33,6 +36,22 @@ jobs:
     steps:
       - name: Checkout master
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Require the production environment secrets
+        env:
+          DEPLOY_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
+          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # Fail before anything is changed. There is no fallback: if the environment `production` does not hold these, stop.
+          MISSING=""
+          [ -n "$DEPLOY_TOKEN" ] || MISSING="$MISSING CLOUDFLARE_API_TOKEN"
+          [ -n "$ADMIN_TOKEN" ] || MISSING="$MISSING BOARD_ADMIN_TOKEN"
+          [ -n "$ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Production secrets missing:$MISSING. They must be secrets of the GitHub environment 'production' (restricted to master). Nothing was deployed. See docs/runbooks/ci-secrets.md."
+            exit 1
+          fi
 
       - name: Require salt secrets before deploying
         env:
@@ -55,7 +74,13 @@ jobs:
 
       - name: Install Wrangler CLI
         working-directory: infrastructure
-        run: npm install --no-audit --no-fund
+        run: |
+          # Exact, locked install: package.json pins wrangler without a range and the lockfile fixes the whole tree. npm ci fails if they disagree.
+          npm ci --no-audit --no-fund
+          WANT=$(node -p "require('./package-lock.json').packages['node_modules/wrangler'].version")
+          HAVE=$(node -p "require('./node_modules/wrangler/package.json').version")
+          echo "wrangler locked $WANT, installed $HAVE"
+          [ -n "$WANT" ] && [ "$WANT" = "$HAVE" ] || { echo "::error::Installed wrangler ($HAVE) does not match the lockfile ($WANT)."; exit 1; }
 
       - name: Verify Cloudflare Credentials & Scope Diagnostics
         working-directory: infrastructure
