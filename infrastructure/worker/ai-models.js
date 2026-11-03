@@ -309,6 +309,9 @@ export function getOpenAiProviderSlug(provider) {
   }
 }
 
+// Output-affecting generation params sent to every provider; they are part of the cache key payload.
+const ANSWER_GEN_PARAMS = { max_tokens: 350, temperature: 0.3 };
+
 // ---- Answer cache key and gateway metadata -------------------------------------------------------------------------
 // The AI Gateway cache key decides which asks share one stored answer (6 hour TTL). The answer depends on the whole prompt: the
 // asker's display name, member or visitor status, journey, coach mode, party state, retrieved library facts and persona. Listing
@@ -335,7 +338,10 @@ export function answerModelLabel(env, provider, deep = false) {
 }
 
 export async function buildAnswerCacheKey({ provider, model, deep = false, variant = "production", tier = "guest", systemPrompt, userPrompt }) {
-  const promptHash = (await sha256Hex(`${String(systemPrompt)}\u0000${String(userPrompt)}`)).slice(0, 32);
+  // JSON.stringify of an array is an unambiguous encoding (no separator character can be forged by prompt text). The exact model id
+  // and the output-affecting params are hashed too, so a model or params change misses; the 40 char label below is for reading only.
+  const payload = JSON.stringify([String(model), ANSWER_GEN_PARAMS.max_tokens, ANSWER_GEN_PARAMS.temperature, String(systemPrompt), String(userPrompt)]);
+  const promptHash = (await sha256Hex(payload)).slice(0, 32);
   return ["ask", keyPart(provider, "p"), keyPart(model, "m"), deep ? "deep" : "fast", keyPart(variant, "production"), keyPart(tier, "guest"), promptHash].join(":");
 }
 
@@ -345,7 +351,7 @@ const META_JOURNEYS = new Set(["guided", "curious", "everything"]);
 export function gatewayMetadata(input) {
   const { variant, tier, journey } = input || {};
   const meta = { app: "leeroy-board", service: "chamber" };
-  if (variant !== undefined) meta.variant = keyPart(variant, "production");
+  if (variant !== undefined) meta.variant = PROMPT_VARIANTS.includes(variant) ? variant : "other";
   if (tier !== undefined) meta.tier = META_TIERS.has(tier) ? tier : "guest";
   if (journey !== undefined) meta.journey = META_JOURNEYS.has(journey) ? journey : "other";
   return JSON.stringify(meta);
@@ -416,7 +422,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
   const defaultEndpoint = "https://api.anthropic.com/v1/messages";
   const body = JSON.stringify({
     model,
-    max_tokens: 350,
+    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
     system: [
       {
         type: "text",
@@ -481,8 +487,8 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       },
     ],
     generationConfig: {
-      maxOutputTokens: 350,
-      temperature: 0.3,
+      maxOutputTokens: ANSWER_GEN_PARAMS.max_tokens,
+      temperature: ANSWER_GEN_PARAMS.temperature,
     },
   });
 
@@ -522,7 +528,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       },
       body,
       skipCache,
-      cacheKey,
+      cacheKey: null, // never reuse the first model's key for the lighter model: it would store or serve the wrong model's answer
       metadata,
       deadlineAt,
     });
@@ -562,8 +568,8 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    max_tokens: 350,
-    temperature: 0.3,
+    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
+    temperature: ANSWER_GEN_PARAMS.temperature,
   };
 
   let result = null;
@@ -609,8 +615,8 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   }
   const body = JSON.stringify({
     model,
-    max_tokens: 350,
-    temperature: 0.3,
+    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
+    temperature: ANSWER_GEN_PARAMS.temperature,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },

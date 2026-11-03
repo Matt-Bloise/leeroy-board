@@ -8,9 +8,9 @@ Where: `infrastructure/worker/ai-models.js` (`buildAnswerCacheKey`, `answerModel
 ask:<provider>:<model>:<fast|deep>:<variant>:<tier>:<promptHash>
 ```
 
-`promptHash` is the first 32 hex of SHA-256 over the final system prompt, a NUL byte, then the final user prompt. Everything that shapes the answer is in those two prompts: the asker's display name, member or visitor status, journey, coach mode, party state, retrieved library facts, library epoch, and the persona pack text. So anything that changes the prompt changes the key, and a persona deploy never serves the old voice for 6 hours.
+`promptHash` is the first 32 hex of SHA-256 over `JSON.stringify([modelId, max_tokens, temperature, systemPrompt, userPrompt])`: an unambiguous encoding (no separator can be forged by prompt text), with the exact model id and the output-affecting params included. Everything that shapes the answer is in those two prompts: the asker's display name, member or visitor status, journey, coach mode, party state, retrieved library facts, library epoch, and the persona pack text. So anything that changes the prompt changes the key, and a persona deploy never serves the old voice for 6 hours.
 
-`provider`, `model`, depth, `variant` (`production` on the live path) and `tier` (`member` or `guest`) are repeated in readable form so gateway logs are easy to scan. `model` comes from `answerModelLabel`, which mirrors the model defaults in the provider calls; change both together.
+`provider`, `model`, depth, `variant` (`production` on the live path) and `tier` (`member` or `guest`) are repeated in readable form so gateway logs are easy to scan. `model` in the readable part is a 40 character label from `answerModelLabel`, which mirrors the model defaults in the provider calls (change both together); the full id is inside the hash. The Gemini 429/503 retry on the lighter model sends no cache key, so the first model's key is never reused for another model.
 
 Raw names, slugs, ids and question text never appear in the key, only the digest.
 
@@ -24,7 +24,7 @@ Workers AI does not send this key. Its gateway cache keys on the request body, w
 
 ## Gateway log labels (`cf-aig-metadata`)
 
-`{ app, service, variant, tier, journey }`. `tier` is `member` or `guest`; `journey` is `guided`, `curious`, `everything` or `other`. Fixed vocabulary only: never a name, slug, id or question text. Filter on these fields in the AI Gateway logs to split traffic.
+`{ app, service, variant, tier, journey }` (5 keys, the gateway limit). `variant` is one of `production`, `plain`, `examples-6`, `format-reminder`, else `other`. `tier` is `member` or `guest`; `journey` is `guided`, `curious`, `everything` or `other`. Fixed vocabulary only: never a name, slug, id or question text. Filter on these fields in the AI Gateway logs to split traffic.
 
 ## Rollback
 
