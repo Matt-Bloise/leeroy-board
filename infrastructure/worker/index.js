@@ -30,6 +30,7 @@ import { handleWebAuth, webSessionFrom } from "./web-auth.js";
 import { handleDataRights } from "./data-rights.js";
 import { charsOn, handleCharacters, listFor } from "./characters-api.js";
 import { handleExport } from "./export.js";
+import { gauge, handleGauge } from "./gauge.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
@@ -347,7 +348,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -356,6 +357,7 @@ export const ROUTES = [
 
 export default {
   async fetch(req, env, ctx) {
+    gauge.hit(env, ctx); // REQUEST_GAUGE (default off): one in-memory add, a batched D1 write every 25 requests; see worker/gauge.js
     const url = new URL(req.url);
     const verdict = originVerdict(req, env);
     if (!verdict.ok) {
@@ -409,6 +411,9 @@ export default {
         for (const [k, v] of Object.entries(cors)) if (!res.headers.has(k)) res.headers.set(k, v);
         return res;
       }
+
+      // Admin only: Worker requests counted today (approximation; the Cloudflare dashboard is the source of truth). 404 while REQUEST_GAUGE is off.
+      if (req.method === "GET" && path === "/admin/requests") return await handleGauge(req, env, cors);
 
       // 0c. POST /probe -> Capability probe from `js/brain.js`
       if (req.method === "POST" && path === "/probe") {

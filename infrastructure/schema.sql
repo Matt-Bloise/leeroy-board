@@ -452,3 +452,9 @@ CREATE TABLE IF NOT EXISTS noise_ledger (
   n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0),
   PRIMARY KEY (day, channel)
 );
+
+-- Request gauge (migration 0007): Worker requests counted per UTC day, flushed in batches. Counts only: no IP, no user id, no path. Unused while REQUEST_GAUGE is off.
+CREATE TABLE IF NOT EXISTS request_gauge (
+  day TEXT PRIMARY KEY CHECK (length(day) = 10),
+  n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0)
+);

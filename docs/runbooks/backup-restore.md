@@ -86,7 +86,7 @@ node tools/restore-local.mjs --in <private path>/export.ndjson --persist-to <pri
 
 This is a second line of defence next to Time Travel, not a replacement: it is a copy you hold, and it restores into a scratch database, not into production. Restoring into production remains a Time Travel restore (below) or a reviewed import.
 
-The drill is automated: `node --test tests/unit/restore-local.test.mjs` exports a seeded in-memory SQLite through the real route and restores it into a fresh one; `node tests/local/restore-drill.mjs` does the same with a real local D1 (`wrangler dev --local` and `wrangler d1 execute --local`, needs `npm install` in `infrastructure/`; nothing leaves the machine). The local drill ran on 2026-11-02 and every table count matched (the counts are in the pull request). It has not been run against the production database; do that once with the three commands above and record the date here.
+The drill with checksums, wipe and exact expected output is `docs/runbooks/restore-drill.md` (`node tools/restore-drill.mjs`). The drill is automated: `node --test tests/unit/restore-local.test.mjs` exports a seeded in-memory SQLite through the real route and restores it into a fresh one; `node tests/local/restore-drill.mjs` does the same with a real local D1 (`wrangler dev --local` and `wrangler d1 execute --local`, needs `npm install` in `infrastructure/`; nothing leaves the machine). The local drill ran on 2026-11-02 and every table count matched (the counts are in the pull request). It has not been run against the production database; do that once with the three commands above and record the date here.
 
 ## After a bad migration
 

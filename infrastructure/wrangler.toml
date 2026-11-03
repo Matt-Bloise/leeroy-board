@@ -75,3 +75,4 @@ ALLOWED_ORIGINS = "https://matt-bloise.github.io,https://leeroy-board.pages.dev,
 BUILD_MODAL = "off" # Q19 /build modal with a handle field, and /join (listed in the command manifest only while on). "on" enables it
 BUILD_PROJECT = "off" # needs BUILD_MODAL on. "on": a confirmed submit also writes the roster entry and the party document in one atomic batch, then purges and broadcasts
 JOIN_PROMPT = "off" # needs BUILD_MODAL on. "on": an unknown Discord user of /ask or /sheet gets one ephemeral hint with a Join button
+REQUEST_GAUGE = "off" # "on" counts this Worker's requests per UTC day (in memory, flushed to D1 table request_gauge about every 25 requests) and enables GET /api/admin/requests (404 while off); needs migration 0007. An approximation: the Cloudflare dashboard stays the source of truth (docs/runbooks/cloudflare-requests.md)
