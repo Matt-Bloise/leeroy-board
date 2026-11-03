@@ -269,7 +269,9 @@ async function cell(browser, size, state, A) {
         await page.evaluate((h) => { location.hash = h; }, sc);
         // really opened: html.scene-open, #scene shown, and the scene's own panel (when it has one) is the visible one
         const isOpen = (k) => document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden && (() => { const p = document.querySelector(`#panel-${k}`); return !p || !p.hidden; })();
-        let opened = await page.waitForFunction(isOpen, sc, { timeout: 5000 }).then(() => true, () => false);
+        // software-rendered WebKit needs 2 to 3 s per frame at 5120x2880 (measured: the page opens in under 100 ms, but the check only gets a turn after the next frame, 5 to 8 s after the hash change), so the wait scales with the pixel count; 5 s up to 2.5 megapixels
+        const OPEN_MS = Math.max(5000, Math.round((size.w * size.h) / 1e6) * 4000);
+        let opened = await page.waitForFunction(isOpen, sc, { timeout: OPEN_MS }).then(() => true, () => false);
         if (opened) { await page.waitForTimeout(450); opened = await page.evaluate(isOpen, sc); } // still open after the open animation settles
         A.checks++;
         if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden)`, A.failures); continue; }
