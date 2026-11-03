@@ -92,7 +92,7 @@ tr:last-child td{border-bottom:0}
 .foot nav{display:flex;flex-wrap:wrap;gap:.2rem 1.2rem;margin:0 0 .5rem}@media (pointer:coarse){.foot nav a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}}.foot{margin-top:2.5rem;padding-top:1rem;padding-bottom:2rem;border-top:1px solid var(--line);color:var(--dim);font-size:.95rem}
 @media (min-width:768px){h1{font-size:2.3rem}}`;
 
-export const CONTACT_URL = "https://github.com/matt-bloise/leeroy-board/issues";
+export const CONTACT_URL = "mailto:privacy@leeroy.party";
 
 export function page({ title, docTitle, body, other }) {
   return `<!doctype html>

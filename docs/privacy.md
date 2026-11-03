@@ -118,7 +118,7 @@ Depending on where you live (counsel to confirm which laws apply and the respons
 
 ## Contact
 
-Open an issue at [github.com/matt-bloise/leeroy-board/issues](https://github.com/matt-bloise/leeroy-board/issues) or ask a guild admin to pass your request on. Issues are public: do not put personal data or secrets in one; say that you want to use your data rights and a maintainer will arrange a private way. A private role address for the service is **(to be chosen by the owner)**.
+Email [privacy@leeroy.party](mailto:privacy@leeroy.party) or ask a guild admin to pass your request on. Say that you want to use your data rights (access, export or erasure) and what the request is about; it is read by the service operator and answered privately. Do not put secrets in the message.
 
 ## Children
 
