@@ -92,7 +92,7 @@ function fakeDb() {
     };
     return stmt;
   };
-  return { prepare, batch: async (s) => s.map(() => ({ success: true, meta: { changes: 1 } })), turns, details, feedback, writes };
+  return { prepare, batch: async (s) => { const out = []; for (const x of s) out.push(await x.run()); return out; }, turns, details, feedback, writes }; // a real batch runs every statement
 }
 
 const signer = createDiscordSigner();

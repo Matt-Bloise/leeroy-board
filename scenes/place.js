@@ -263,7 +263,7 @@ function roads(M) {
   const fill = (id) => {
     const b = body(id);
     card.style.setProperty("--rc", b.rc);
-    card.replaceChildren(h("div", { class: "pc-top" }, b.crest ? h("img", { src: `img/crests/${b.crest}.png`, alt: "", width: 28, height: 28 }) : null, h("b", { text: b.title }), b.sub ? h("span", { text: b.sub }) : null), ...b.lines.filter(Boolean).map((l) => h("p", { text: l })));
+    card.replaceChildren(h("div", { class: "pc-top" }, b.crest ? window.BoardCrest.guard(h("img", { src: window.BoardCrest.src(b.crest), alt: "", width: 28, height: 28 }), b.crest) : null, h("b", { text: b.title }), b.sub ? h("span", { text: b.sub }) : null), ...b.lines.filter(Boolean).map((l) => h("p", { text: l })));
   };
   const place = (t) => {
     const svg = RM.M.svg;

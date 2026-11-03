@@ -226,7 +226,7 @@ test("every hash-like column in schema.sql is accounted for: salted (inventory) 
     const t = /^CREATE TABLE IF NOT EXISTS (\w+) \(/.exec(l); if (t) { table = t[1]; continue; }
     const c = /^\s+(\w*(?:hash|user_key|_enc)\w*)\s+(?:TEXT|INTEGER)/i.exec(l); if (c && table) found.add(`${table}.${c[1]}`);
   }
-  const salted = new Set(["user_state.user_key", "sessions.user_key", "answer_details.asker_hash", "answer_feedback.user_hash", "guest_rate_limits.ip_hash", "members.key_hash", "account_keys.key_hash"]);
+  const salted = new Set(["user_state.user_key", "sessions.user_key", "answer_details.asker_hash", "ask_turn_askers.asker_hash", "answer_feedback.user_hash", "guest_rate_limits.ip_hash", "members.key_hash", "account_keys.key_hash"]);
   const unsalted = new Set(["sessions.token_hash", "sessions_v2.token_hash", "discord_events.payload_hash", "provider_tokens.access_token_enc", "provider_tokens.refresh_token_enc"]);
   const unknown = [...found].filter((f) => !salted.has(f) && !unsalted.has(f));
   assert.deepEqual(unknown, [], "a new hash-like column: decide whether it is salted and add it to INVENTORY");

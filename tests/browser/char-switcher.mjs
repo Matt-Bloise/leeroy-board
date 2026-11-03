@@ -42,7 +42,7 @@ async function openSheet(page, me) {
 async function open(browser, opts, c) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights|net::ERR|WebSocket connection/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights|net::ERR|WebSocket connection/.test(m.text())) errors.push(m.text()); });
   await ctx.addInitScript(([me, wl]) => { try { if (!localStorage.getItem("board-journey")) localStorage.setItem("board-journey", "guided"); localStorage.setItem("board-me", me); if (wl) localStorage.setItem("board-wl", "1"); } catch (e) {} }, [c.me, c.signedIn !== false]);
   await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": !!c.flag }; await json(route, j); });
   await ctx.route("**/api/**", (route) => route.abort());

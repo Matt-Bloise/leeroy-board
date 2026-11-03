@@ -89,8 +89,10 @@ table{border-collapse:collapse;width:100%;min-width:30rem;font-size:.95rem}
 th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
 th{background:var(--head);color:var(--brass)}
 tr:last-child td{border-bottom:0}
-.foot{margin-top:2.5rem;padding-top:1rem;padding-bottom:2rem;border-top:1px solid var(--line);color:var(--dim);font-size:.95rem}
+.foot nav{display:flex;flex-wrap:wrap;gap:.2rem 1.2rem;margin:0 0 .5rem}@media (pointer:coarse){.foot nav a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}}.foot{margin-top:2.5rem;padding-top:1rem;padding-bottom:2rem;border-top:1px solid var(--line);color:var(--dim);font-size:.95rem}
 @media (min-width:768px){h1{font-size:2.3rem}}`;
+
+export const CONTACT_URL = "https://github.com/matt-bloise/leeroy-board/issues";
 
 export function page({ title, docTitle, body, other }) {
   return `<!doctype html>
@@ -109,7 +111,8 @@ export function page({ title, docTitle, body, other }) {
 ${body}
 </main>
 <footer class="foot">
-<p>Also: <a href="${esc(other.href)}">${esc(other.label)}</a>. This page is generated from <code>${esc(other.src)}</code> in the project repository. This site is not affiliated with or endorsed by Blizzard Entertainment.</p>
+<nav aria-label="Legal"><a href="/privacy/">Privacy</a> <a href="/terms/">Terms</a> <a href="${CONTACT_URL}">Contact</a></nav>
+<p>Fan project. Not affiliated with or endorsed by Blizzard Entertainment. This page is generated from <code>${esc(other.src)}</code> in the project repository.</p>
 </footer>
 </body>
 </html>

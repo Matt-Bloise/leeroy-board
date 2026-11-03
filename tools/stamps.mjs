@@ -6,6 +6,7 @@
 //
 // Rule: the stamp of a file is the first 10 hex chars of the sha256 of its exact bytes.
 // A reference is a string  <path>.js|.mjs|.css ?v=<10 hex>  that resolves to an existing file.
+// An all-zero stamp of any length (?v=00000000) is a placeholder, never a real stamp: it is reported as stale and --write replaces it.
 // Path styles found in this repo, all resolved the same way:
 //   "./geo.js?v="            relative to the importing file (imports, new URL(..., import.meta.url))
 //   "../scenes/x.js?v="      relative to the importing file (js/scenes.js map: new URL(.., HERE))
@@ -21,7 +22,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-const REF = /(?<![A-Za-z0-9_./:@-])([A-Za-z0-9_./-]+\.(?:js|mjs|css))\?v=([0-9a-f]{10})/g;
+const REF = /(?<![A-Za-z0-9_./:@-])([A-Za-z0-9_./-]+\.(?:js|mjs|css))\?v=(0+|[0-9a-f]{10})(?![0-9a-f])/g;
 const BARE = /(?<!=)["'`]((?:js|scenes|css|vendor|cloth|room|next)\/[A-Za-z0-9_./-]+\.(?:js|mjs|css))["'`]/g;
 const SCAN_DIRS = ["js", "scenes", "css", "vendor", "cloth", "room", "next", "atlas", "img"];
 const SCAN_EXT = /\.(?:js|mjs|css|html)$/;
@@ -127,7 +128,7 @@ function main(argv) {
     console.log(`stamps: rewrote ${r.changedRefs} references in ${r.changedFiles.length} files`);
     return 0;
   }
-  for (const m of r.mismatches) console.log(`STALE ${m.file}:${m.line} ${m.target} has ?v=${m.have}, expected ?v=${m.want}`);
+  for (const m of r.mismatches) console.log(`STALE ${m.file}:${m.line} ${m.target} has ?v=${m.have}, expected ?v=${m.want}` + (/^0+$/.test(m.have) ? " (all-zero placeholder)" : ""));
   console.log(r.mismatches.length ? `stamps: ${r.mismatches.length} stale references. Run: node tools/stamps.mjs --write` : "stamps: all references current");
   return r.mismatches.length ? 1 : 0;
 }

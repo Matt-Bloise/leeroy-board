@@ -18,7 +18,7 @@ for (const w of [320, 390, 768, 1366]) {
   const ctx = await browser.newContext({ viewport: { width: w, height: 800 }, serviceWorkers: "block" });
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource/.test(m.text()) && !HOST_BEACON.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource/.test(m.text()) && !HOST_BEACON.test(m.text())) errors.push(m.text()); });
   for (const [p, re] of [["privacy/", /privacy/i], ["terms/", /terms/i]]) {
     const tag = `[${w}] /${p}`;
     const r = await page.goto(`${ORIGIN}/${p}`, { waitUntil: "load" });

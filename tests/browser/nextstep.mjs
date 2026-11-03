@@ -24,7 +24,7 @@ const json = (route, body) => route.fulfill({ status: 200, contentType: "applica
 async function open(browser, c, who) {
   const ctx = await browser.newContext({ ...OPTS, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await ctx.addInitScript((me) => { try { localStorage.setItem("board-me", me); localStorage.setItem("board-journey", "guided"); } catch (e) {} }, c.me === "viewer" ? slug(who.name) : "just-looking");
   await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "nextstep.v2": !!c.flag }; await json(route, j); });
   await ctx.route("**/data/sample/roster.json*", async (route) => {

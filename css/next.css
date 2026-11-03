@@ -1,6 +1,7 @@
 
 html.nx-tn.nx-solo #tn-change { display: none; }
-html.nx-ptr #sheet-body .panel:focus-visible, html.nx-solo #panel-tonight:focus-visible { outline: none; box-shadow: none; }
+/* A panel is a Tab stop (tabindex 0): keep a visible keyboard focus ring (it was removed, leaving a Tab stop with no indicator). Inset, so the sheet does not clip it. */
+html.nx-ptr #sheet-body .panel:focus-visible, html.nx-solo #panel-tonight:focus-visible { outline: 2px solid var(--ink-soft); outline-offset: -4px; box-shadow: none; }
 html.nx-on[data-journey="guided"] #tn-cards,
 html.nx-on[data-journey="guided"] #tn-before,
 html.nx-on[data-journey="guided"] #tn-how,
