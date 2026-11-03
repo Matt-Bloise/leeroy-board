@@ -17,6 +17,111 @@ async function sha8Hex(text) {
     .join("");
 }
 
+// ---- Fetching a monitored source ----
+// A source row names a page on one host (lib_sources.host). The fetch must stay on that host: redirects are followed by hand and only
+// to the same host over https, it has a 10 second limit, and reading stops at 256 KB, so a hostile or broken page cannot redirect the
+// Worker to an internal address, hang the sweep or fill memory.
+export const SOURCE_FETCH_TIMEOUT_MS = 10000;
+export const MAX_SOURCE_BYTES = 256 * 1024;
+const MAX_SOURCE_REDIRECTS = 3;
+
+export function sourceHostAllowed(src, urlText) {
+  try {
+    const u = new URL(urlText);
+    if (u.protocol !== "https:") return false;
+    const want = String((src && src.host) || new URL(src.url).hostname).toLowerCase();
+    // lib_sources.host is the site's registered name ("icy-veins.com"); its pages live on it or a subdomain ("www.icy-veins.com").
+    const host = want.replace(/:\d+$/, "");
+    const got = u.hostname.toLowerCase();
+    return got === host || got.endsWith(`.${host}`);
+  } catch {
+    return false;
+  }
+}
+
+// Reads at most maxBytes of a response body, then cancels the rest. Returns { text, truncated }.
+export async function readCapped(resp, maxBytes = MAX_SOURCE_BYTES) {
+  if (!resp.body || typeof resp.body.getReader !== "function") {
+    const full = await resp.text();
+    return { text: full.slice(0, maxBytes), truncated: full.length > maxBytes };
+  }
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let total = 0;
+  let truncated = false;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    chunks.push(value);
+    if (total >= maxBytes) {
+      truncated = total > maxBytes || truncated;
+      await reader.cancel().catch(() => {});
+      break;
+    }
+  }
+  const all = new Uint8Array(Math.min(total, maxBytes));
+  let off = 0;
+  for (const c of chunks) {
+    const take = Math.min(c.byteLength, all.length - off);
+    if (take <= 0) break;
+    all.set(c.subarray(0, take), off);
+    off += take;
+  }
+  return { text: new TextDecoder().decode(all), truncated };
+}
+
+// Returns { resp, text } (text is "" for a 304 or an error status), or { blocked: "host" | "redirects" }.
+export async function fetchSource(src, headers, fetchFn = fetch) {
+  let target = src.url;
+  for (let hop = 0; hop <= MAX_SOURCE_REDIRECTS; hop++) {
+    if (!sourceHostAllowed(src, target)) return { blocked: "host" };
+    const resp = await fetchFn(target, { method: "GET", headers, redirect: "manual", signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS) });
+    if (resp.status >= 300 && resp.status < 400 && resp.status !== 304) {
+      const loc = resp.headers.get("Location");
+      if (!loc) return { resp, text: "" };
+      try {
+        target = new URL(loc, target).toString();
+      } catch {
+        return { blocked: "host" };
+      }
+      continue;
+    }
+    if (resp.status === 304 || !resp.ok) return { resp, text: "" };
+    const { text } = await readCapped(resp);
+    return { resp, text };
+  }
+  return { blocked: "redirects" };
+}
+
+// ---- Manual refresh cooldown ----
+// POST /api/refresh starts a sweep that calls the AI for each changed source. One sweep per 15 minutes for the whole board, taken with a
+// single compare-and-set statement on a private kv_state row, so two parallel requests cannot both pass.
+export const REFRESH_COOLDOWN_MS = 15 * 60 * 1000;
+export const REFRESH_LOCK_KEY = "private:refresh_lock";
+
+// Returns { ok: true } when this call took the lock, { ok: false, retryAfter } during the cooldown, { ok: false, error: true } on a D1 error.
+export async function acquireRefreshCooldown(env, nowMs = Date.now()) {
+  try {
+    const at = new Date(nowMs).toISOString();
+    const cutoff = new Date(nowMs - REFRESH_COOLDOWN_MS).toISOString();
+    const res = await env.DB.prepare(
+      "INSERT INTO kv_state (key, json, updated_at) VALUES (?1, ?2, ?3) " +
+        "ON CONFLICT(key) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at WHERE kv_state.updated_at <= ?4"
+    )
+      .bind(REFRESH_LOCK_KEY, JSON.stringify({ at }), at, cutoff)
+      .run();
+    if (res && res.meta && res.meta.changes === 0) {
+      const row = await env.DB.prepare("SELECT updated_at FROM kv_state WHERE key = ?").bind(REFRESH_LOCK_KEY).first();
+      const last = row ? Date.parse(row.updated_at) : nowMs;
+      return { ok: false, retryAfter: Math.max(1, Math.ceil((last + REFRESH_COOLDOWN_MS - nowMs) / 1000)) };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: true };
+  }
+}
+
 export function stripHtmlToText(rawHtml) {
   return String(rawHtml || "")
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -210,7 +315,14 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
       if (src.etag) headers["If-None-Match"] = src.etag;
       if (src.last_modified) headers["If-Modified-Since"] = src.last_modified;
 
-      const resp = await fetch(src.url, { method: "GET", headers });
+      const fetched = await fetchSource(src, headers);
+      if (fetched.blocked) {
+        await env.DB.prepare("UPDATE lib_sources SET checked_at = ?, status = ? WHERE id = ?")
+          .bind(now, `blocked_${fetched.blocked}`, src.id)
+          .run();
+        continue;
+      }
+      const resp = fetched.resp;
       if (resp.status === 304) {
         await env.DB.prepare("UPDATE lib_sources SET checked_at = ?, status = '304' WHERE id = ?")
           .bind(now, src.id)
@@ -224,7 +336,7 @@ export async function runScheduledSourceSweep(env, origin, opts = {}) {
         continue;
       }
 
-      const rawHtml = await resp.text();
+      const rawHtml = fetched.text;
       const cleanText = stripHtmlToText(rawHtml);
       const newSha8 = await sha8Hex(cleanText || rawHtml);
       const isFirstSnapshot = !src.sha8;

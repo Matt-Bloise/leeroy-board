@@ -1,6 +1,7 @@
 // Daily Workers AI neuron budget (soft cap). Pure helpers plus two small D1 helpers on kv_state.
 // Free plan: 10,000 neurons per day, resets 00:00 UTC; past that Workers AI calls fail. We stop earlier.
-// Every D1 touch here fails open: a budget error never blocks an answer.
+// D1 touches here fail open (a budget error never blocks an answer), except for a Workers AI guest ask, which fails closed:
+// checkAskBudget({ failClosed }) and reserveNeurons both report a read or write error so the caller can refuse.
 
 import { loadConfigKey } from "./config.js";
 
@@ -49,13 +50,14 @@ const keyFor = (now) => `ai_budget:${utcDayKey(now)}`;
 const empty = () => ({ neurons: 0, asks: 0, cron: 0 });
 
 // Returns { neurons, asks, cron } for the UTC day; zeros if absent or on any error.
-export async function loadBudget(env, now = new Date()) {
+export async function loadBudget(env, now = new Date(), { strict = false } = {}) {
   try {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(keyFor(now)).first();
     if (!row) return empty();
     const b = JSON.parse(row.json);
     return { neurons: Number(b.neurons) || 0, asks: Number(b.asks) || 0, cron: Number(b.cron) || 0 };
-  } catch {
+  } catch (e) {
+    if (strict) throw e;
     return empty();
   }
 }
@@ -86,13 +88,14 @@ export function askBudgetKeys({ userPart, tenantId, guest = false } = {}) {
 
 const rowKey = (now, key) => `${keyFor(now)}:${key}`;
 
-async function loadRow(env, key, now) {
+async function loadRow(env, key, now, { strict = false } = {}) {
   try {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(rowKey(now, key)).first();
     if (!row) return { neurons: 0, asks: 0 };
     const b = JSON.parse(row.json);
     return { neurons: Number(b.neurons) || 0, asks: Number(b.asks) || 0 };
-  } catch {
+  } catch (e) {
+    if (strict) throw e;
     return { neurons: 0, asks: 0 };
   }
 }
@@ -119,17 +122,18 @@ export async function loadAskCaps(env) {
 // Returns null when the ask may proceed, else { code, retryAfter }. Fails open on any error.
 // keys: { userKey, tenantKey, guest } or null. With no keys only the global soft cap is checked (the old behaviour).
 // opts.skipGlobal: leave out the global (Workers AI neurons) cap but still enforce the user and tenant caps.
-export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGlobal = false } = {}) {
+// opts.failClosed: a read error refuses the ask (budget_global) instead of letting it through. Used for Workers AI guest asks.
+export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGlobal = false, failClosed = false } = {}) {
+  const retryAfter = secondsToUtcMidnight(now);
   try {
-    const retryAfter = secondsToUtcMidnight(now);
     if (!skipGlobal) {
-      const global = await loadBudget(env, now);
+      const global = await loadBudget(env, now, { strict: failClosed });
       if (overCap(global.neurons, dailyCap(env))) return { code: "budget_global", retryAfter };
     }
     if (!keys) return null;
     const c = caps || resolveCaps(null);
     if (keys.tenantKey) {
-      const t = await loadRow(env, keys.tenantKey, now);
+      const t = await loadRow(env, keys.tenantKey, now, { strict: failClosed });
       if (t.neurons >= (dailyCap(env) * c.tenantSharePct) / 100) return { code: "budget_tenant", retryAfter };
     }
     if (keys.userKey && !keys.guest) {
@@ -138,7 +142,7 @@ export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGl
     }
     return null;
   } catch {
-    return null;
+    return failClosed ? { code: "budget_global", retryAfter } : null;
   }
 }
 
@@ -180,5 +184,51 @@ export async function recordUsage(env, kind, neurons, now = new Date()) {
       .run();
   } catch {
     // fail open
+  }
+}
+
+// ---- Reserve, then reconcile (global Workers AI neuron record) ----
+// The old flow read the day's total, called the model, then added the real cost afterwards: parallel asks all passed the same
+// read and together overshot the cap. Now an estimated cost is added to the day's record BEFORE the call, in one statement that
+// only succeeds while the total stays within the cap (the check and the add are one atomic UPDATE in D1), and the difference to
+// the real cost is added afterwards. A failed call gives the whole reservation back.
+
+// Cap for a kind: asks may use the whole soft cap; the cron sweep (and anything else) leaves CRON_RESERVE for asks.
+export function capFor(env, kind) {
+  return kind === "ask" ? dailyCap(env) : dailyCap(env) - CRON_RESERVE;
+}
+
+// Returns { ok: true, key } when reserved, { ok: false, over: true } when it would pass the cap, { ok: false, error: true } on a D1 error.
+export async function reserveNeurons(env, kind, neurons, cap, now = new Date()) {
+  const est = Math.max(0, Math.round((Number(neurons) || 0) * 100) / 100);
+  try {
+    if (est > cap) return { ok: false, over: true };
+    const seed = JSON.stringify({ neurons: est, asks: 0, cron: 0 });
+    const res = await env.DB.prepare(
+      "INSERT INTO kv_state (key, json, updated_at) VALUES (?1, ?2, ?3) " +
+        "ON CONFLICT(key) DO UPDATE SET json = json_set(kv_state.json, '$.neurons', ROUND(COALESCE(json_extract(kv_state.json, '$.neurons'), 0) + ?4, 2)), updated_at = excluded.updated_at " +
+        "WHERE COALESCE(json_extract(kv_state.json, '$.neurons'), 0) + ?4 <= ?5"
+    )
+      .bind(keyFor(now), seed, now.toISOString(), est, cap)
+      .run();
+    const changes = res && res.meta ? res.meta.changes : undefined;
+    return changes === 0 ? { ok: false, over: true } : { ok: true, key: keyFor(now), reserved: est };
+  } catch {
+    return { ok: false, error: true };
+  }
+}
+
+// Replaces a reservation with the real cost. counted: false gives the reservation back without counting an ask (the call failed).
+export async function reconcileNeurons(env, kind, reserved, actual, { counted = true } = {}, now = new Date()) {
+  const delta = Math.round(((Number(actual) || 0) - (Number(reserved) || 0)) * 100) / 100;
+  const field = kind === "cron" ? "cron" : "asks";
+  try {
+    await env.DB.prepare(
+      `UPDATE kv_state SET json = json_set(json, '$.neurons', MAX(0, ROUND(COALESCE(json_extract(json, '$.neurons'), 0) + ?1, 2)), '$.${field}', COALESCE(json_extract(json, '$.${field}'), 0) + ?2), updated_at = ?3 WHERE key = ?4`
+    )
+      .bind(delta, counted ? 1 : 0, now.toISOString(), keyFor(now))
+      .run();
+  } catch {
+    // fail open: the reservation stays, which only makes the soft cap slightly more careful
   }
 }
