@@ -28,7 +28,7 @@ async function run(browser, size, opts) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await page.route(VOTES_RE, (route) => {
     hits.n++;
     if (mode === "fail") return route.fulfill({ status: 500, headers: cors, body: JSON.stringify({ error: "x" }) });
@@ -94,7 +94,7 @@ async function run(browser, size, opts) {
   const ctx2 = await browser.newContext({ ...opts, serviceWorkers: "block" });
   const p2 = await ctx2.newPage(); const err2 = [];
   p2.on("pageerror", (e) => err2.push(`pageerror ${e.message}`));
-  p2.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) err2.push(m.text()); });
+  p2.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) err2.push(m.text()); });
   await p2.route(VOTES_RE, (route) => route.fulfill({ status: 500, headers: cors, body: "{}" }));
   await p2.goto(BASE, { waitUntil: "load" });
   await p2.evaluate(() => window.__boardKit.goScene("decide"));

@@ -31,7 +31,7 @@ async function run(browser, size, opts, flagOn) {
   await flagged(ctx, flagOn);
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await page.goto(BASE, { waitUntil: "load" });
   await page.waitForTimeout(2000);
   const dlg = page.locator("#roster");

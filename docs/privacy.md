@@ -22,6 +22,26 @@ Optional, only if you attach them: a Google account identifier; a Battle.net acc
 
 We do not read or store Discord message content for the board, except where the next section says so.
 
+## Your member key and what your browser keeps
+
+- Your member key is stored **raw** (not hashed) in your browser's localStorage under the name `board-key`. The server keeps only a salted hash of it, but your browser keeps the key itself, so anyone who can open your browser profile, or any script that runs on this site, can read it.
+- The key reaches the board in a link ending in `#k=<key>`. The page saves it and removes it from the address bar. The part after `#` is not sent to the server, but it can sit in your browser history and in anything you copy or share before it is removed. Treat a link with `#k=` like a password.
+- The key is sent in an `Authorization` header only to the board's own service (`api.leeroy.party`, a preview copy of it, or a service on your own computer). It is not sent anywhere else.
+- The board also keeps other settings in localStorage under names that start `board-` (such as your name, where you were and what you have seen) and short-lived copies of its data files under names that start `bd:`. "Forget me on this browser" removes every name that starts `board-` or `bd:`, including `board-key`.
+
+## The device check (`/probe`)
+
+The device check page reads what your browser reports and shows it to you first ("Nothing has been sent"). Only if you press Send does the board send it, to `POST /probe`, together with your member key in the `Authorization` header, so the report can be tied to your member. The report is 39 fields: a type tag (`kind`) and a version number (`v`), plus 37 readings:
+
+- Browser and platform: engine, platform, whether it runs inside Discord, whether it has a Discord user agent, whether it is framed, whether it is installed as an app.
+- Vibration and haptics: whether the vibration API exists and ran, whether the switch haptic works, the vibration route used, and the strength you said you felt.
+- Motion sensors: whether the orientation and motion APIs exist, whether motion needs permission, the permission result, and how many orientation and motion events arrived in 3 seconds.
+- Input: number of touch points, coarse pointer, no-hover, pointer events.
+- Screen: screen width and height, window width and height, pixel ratio (times 100), visual viewport support, and the four safe-area insets (top, right, bottom, left).
+- Preferences and display: reduced motion, data saver, HDR screen, wide-gamut screen, battery API, screen wake lock.
+
+Each value is a yes/no or a small number. No name, no Discord id and no free text is in the report. At the time of writing the service acknowledges the report and does not store it (unverified: Cloudflare request logs may still show that the request was made).
+
 ## Message content disclosure
 
 The bot answers slash commands and other interactions sent to it over HTTP (`POST /discord`). It is not set up to read your channel messages (unverified; counsel and the owner should confirm no Message Content intent is enabled in the Discord developer portal). What you type into a command or into the Ask box is stored and sent to an AI vendor, so do not put anything private in it. If this changes the notice will change first.

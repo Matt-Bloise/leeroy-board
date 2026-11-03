@@ -47,7 +47,7 @@ async function visit(browser, engine, size, opts, setup) {
   const ok = (name, cond, extra = "") => { rows.push([name, !!cond, extra]); }; /* the file's ok(), held until one() knows whether this visit counts */
   if (setup) await setup(ctx);
   const page = await ctx.newPage();
-  page.on("console", (m) => { if (m.type() === "error") { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 160), at: at.replace(/[?#].*$/, "") }); } });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 160), at: at.replace(/[?#].*$/, "") }); } });
   page.on("pageerror", (e) => errs.push({ text: `pageerror ${String(e.message).slice(0, 160)}`, at: "" }));
   page.on("response", (r) => { try { const u = new URL(r.url()); if (r.status() >= 400) (u.origin === origin ? http : xo).push({ status: r.status(), method: r.request().method(), url: r.url().replace(/[?#].*$/, ""), origin: u.origin, route: u.pathname }); } catch (e) {} }); /* xo: other origins (the Worker), named next to a console error (2026-10-31: two ships logged a bare 503) */
   try {
@@ -110,7 +110,8 @@ async function visit(browser, engine, size, opts, setup) {
     const noGl = (e) => engine === "webkit" && process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1" && /Error creating WebGL context/.test(e.text); /* headless Linux WebKit in CI has no WebGL; the board still renders its fallback */
     const insights = errs.some((e) => /cloudflareinsights\.com/.test(e.text + " " + e.at)) || xo.some((r) => /cloudflareinsights\.com/.test(r.url)); /* Cloudflare Web Analytics beacon on a preview host is blocked by CORS: third-party, not our code */
     const cfBeacon = (e) => /cloudflareinsights\.com/.test(e.text + " " + e.at) || (insights && /net::ERR_FAILED|not allowed by Access-Control-Allow-Origin/.test(e.text)); /* WebKit words the same failure without the URL */
-    const hard = errs.filter((e) => !noGl(e) && !cfBeacon(e)); /* every other console error counts */
+    const csp = (e) => /^\[Report Only\]|Content Security Policy/i.test(e.text); /* _headers ships the CSP as Report-Only (not enforced): its violation lines are noise, in WebKit worded without the [Report Only] prefix. Remove this when the policy is enforced. */
+    const hard = errs.filter((e) => !noGl(e) && !cfBeacon(e) && !csp(e)); /* every other console error counts */
     ok(`${tag} no same-origin 4xx/5xx`, !http.length, http.slice(0, 3).map(row).join(" | "));
     ok(`${tag} no console errors`, !hard.length, hard.slice(0, 3).map((e) => e.text).join(" | ") + (xo.length ? ` [from: ${xo.slice(0, 3).map(row).join(" | ")}]` : ""));
   } catch (e) {
@@ -127,10 +128,10 @@ async function one(browser, engine, size, opts, setup, fault = false) {
   let retried = false;
   if (needsRetry(v.rows, { fault })) {
     const names = v.rows.filter((r) => !r[1]).map((r) => r[0].slice(tag.length + 1));
-    console.log(`INFO ${tag} ${names.length} check(s) failed (${names.slice(0, 3).join("; ")}): retrying once in a fresh context in ${Math.round(retryMs() / 1000)} s`);
+    console.log(`INFO ${tag} ${names.length} check(s) failed (${names.slice(0, 3).join("; ")}): ${String((v.rows.find((r) => !r[1]) || [])[2] || "").slice(0, 300)} retrying once in a fresh context in ${Math.round(retryMs() / 1000)} s`);
     await new Promise((r) => setTimeout(r, retryMs()));
     const v2 = await visit(browser, engine, size, opts, setup); retried = true;
-    if (v2.w5.length) warn(tag, v2.w5, ", retry");
+    if (v2 && v2.w5 && v2.w5.length) warn(tag, v2.w5, ", retry"); /* visit() returns only rows: this line threw on every retry */
     v = { ...v2, rows: mergeRuns(v.rows, v2.rows) };
   }
   return { ...v, retried };

@@ -38,5 +38,8 @@ function guard(el, key) {
   el.addEventListener("error", () => { const f = fallback(key); if (el.tagName && el.tagName.toLowerCase() === "image") el.setAttribute("href", f); else el.src = f; }, { once: true });
   return el;
 }
-window.BoardCrest = Object.freeze({ src, fallback, medallion, hasArt, guard, ART: Object.freeze(ART.slice()), CLASS_KEYS: Object.freeze(Object.keys(CLASSES)) });
+// Is this exactly one of the inline medallions this file makes (one per class, plus the neutral one)? js/board.js h() drops every other data: address from data, and lets only these through on an <img src>.
+let OWN = null;
+const isOwn = (v) => { if (typeof v !== "string" || v.slice(0, 19) !== "data:image/svg+xml,") return false; OWN ||= new Set([...Object.keys(CLASSES), ""].map(fallback)); return OWN.has(v); };
+window.BoardCrest = Object.freeze({ src, fallback, isOwn, medallion, hasArt, guard, ART: Object.freeze(ART.slice()), CLASS_KEYS: Object.freeze(Object.keys(CLASSES)) });
 })();

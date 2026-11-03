@@ -18,7 +18,7 @@ async function run(browser, size, opts) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   const card = page.locator("#trust-card .tr-card");
   const shown = async () => { await card.waitFor({ state: "visible", timeout: 8000 }).catch(() => {}); return card.isVisible(); };
   await page.goto(BASE, { waitUntil: "load" });
