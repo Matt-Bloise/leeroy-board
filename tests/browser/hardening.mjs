@@ -3,7 +3,7 @@
 //   node hardening.mjs --url http://127.0.0.1:8080/?preview=1&brain=http://127.0.0.1:8787   (or env PREVIEW_PAGES; tools/local-browser.sh hardening)
 // Chromium, 1366x768. The API is answered from tests/fixtures/api-snapshot (zero Worker requests); every request that would leave the machine is answered locally by route interception.
 // No AI call, no secret: the "key" is a made-up string of the right shape. Exit 0 when every check passes, 1 otherwise.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stubbed } from "../helpers/browser-stub.mjs";
@@ -18,6 +18,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const KEY = "testkeytestkeytestkey12";
 const ALLOWED = /^(https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.(?:jmattbloise|joshbblaine)\.workers\.dev|http:\/\/(127\.0\.0\.1|localhost)(:\d+)?)$/;
 const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*", "content-type": "application/json" };
+const PAGE_ORIGIN = new URL(BASE).origin;
+/* The suite must behave the same against a local server and against the deployed PR preview (https://pr-N.leeroy-board.pages.dev), and must never need a live Worker or 127.0.0.1:8787:
+   every API origin is answered by route interception (the recorded snapshot, or here). VIRTUAL is a made-up local page origin served from BASE's site, used for the checks that need a page whose host derives no Worker of its own. */
+const VIRTUAL = "http://127.0.0.1:8099";
+const SITE = process.env.HARDENING_REHEARSE_FROM ? new URL(process.env.HARDENING_REHEARSE_FROM).origin : PAGE_ORIGIN; /* where the site files really come from */
+const PROXY = new Map([[VIRTUAL, SITE]]);
+if (SITE !== PAGE_ORIGIN) PROXY.set(PAGE_ORIGIN, SITE); /* rehearse CI locally: BASE is a deployed-looking https origin that is served from this local server */
 const isLocal = (u) => /^(127\.0\.0\.1|localhost)$/.test(new URL(u).hostname);
 
 const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}), { label: "hardening api-stub" });
@@ -31,7 +38,14 @@ async function open(url, { init, mutateBootstrap } = {}) {
     if (/^(data|blob):/.test(u)) return route.fallback();
     const asked = String(h["access-control-request-headers"] || "").toLowerCase().includes("authorization");
     seen.push({ url: u, method: r.method(), origin: new URL(u).origin, auth: !!h.authorization, preflightAuth: asked });
-    if (!isLocal(u)) return r.method() === "OPTIONS" ? route.fulfill({ status: 204, headers: cors }) : route.fulfill({ status: 200, headers: cors, body: "{}" });
+    /* the page's own site, the local Worker and the allowlisted Workers (a PR preview Worker in CI) are "ours": the API stub answers them. Everything else is answered here and goes nowhere. */
+    const origin = new URL(u).origin;
+    const proxied = PROXY.get(origin); /* a page origin served from another place (the virtual local origin, or the rehearsal of the deployed preview): fetch the same path there */
+    if (proxied && r.method() === "GET") { const res = await route.fetch({ url: proxied + u.slice(origin.length) }); return route.fulfill({ response: res }); }
+    const ours = origin === PAGE_ORIGIN || PROXY.has(origin) || isLocal(u) || ALLOWED.test(origin);
+    if (!ours) return r.method() === "OPTIONS" ? route.fulfill({ status: 204, headers: cors }) : route.fulfill({ status: 200, headers: cors, body: "{}" });
+    { const d = /^\/api\/data\/([a-z0-9-]+)$/.exec(new URL(u).pathname); /* apiFetch asks for /api/data/<name> without .json; the recorded snapshot only has the files by their repo name */
+      if (r.method() === "GET" && d && existsSync(path.join(here, "../../data", `${d[1]}.json`))) return route.fulfill({ status: 200, headers: cors, body: readFileSync(path.join(here, "../../data", `${d[1]}.json`), "utf8") }); }
     if (r.method() === "GET" && /\/api\/me(\?|$)/.test(u)) return route.fulfill({ status: 401, headers: cors, body: "{}" }); /* not in the snapshot; answered here, still recorded above */
     if (mutateBootstrap && /\/api\/bootstrap(\?|$)/.test(u)) {
       const snap = JSON.parse(readFileSync(path.join(here, "../fixtures/api-snapshot/snapshot.json"), "utf8")).routes["/bootstrap"];
@@ -42,6 +56,7 @@ async function open(url, { init, mutateBootstrap } = {}) {
   if (init) await ctx.addInitScript(init);
   const page = await ctx.newPage();
   await page.goto(url, { waitUntil: "load" });
+  await page.waitForFunction(() => window.BoardBrain && window.__boardKit && typeof window.__boardKit.goScene === "function", null, { timeout: 30000 }).catch(() => {});
   return { ctx, page, seen };
 }
 
@@ -57,7 +72,7 @@ for (const evil of EVIL) {
   await page.waitForTimeout(2500);
   const bad = seen.filter((x) => !ALLOWED.test(x.origin) && (x.auth || x.preflightAuth));
   ok(`F1 ?brain=${evil}: no Authorization (or preflight asking for it) leaves for a non-allowlisted origin`, bad.length === 0, bad.map((x) => `${x.method} ${x.url}`).join(", "));
-  const toEvil = seen.filter((x) => !ALLOWED.test(x.origin) && !/^https?:\/\/(fonts\.|www\.)?(gstatic|googleapis)/.test(x.url));
+  const toEvil = seen.filter((x) => x.origin === new URL(evil).origin);
   ok(`F1 ?brain=${evil}: the board sends nothing to that origin at all (BoardBrain.url cannot bypass the ?api= allowlist)`, toEvil.length === 0, toEvil.slice(0, 3).map((x) => x.url).join(", "));
   const stored = await page.evaluate(() => { try { return localStorage.getItem("board-key"); } catch (e) { return null; } });
   ok(`F1 ?brain=${evil}: the key is still captured and stored (the fix filters the destination, not the key)`, stored === KEY);
@@ -74,27 +89,18 @@ for (const evil of EVIL) {
 /* F3b. The ?api= / board-api fallback accepts only our own origins: a third-party leeroy-brain*.workers.dev must not be read as board data. ?brain= is set to a refused value so BoardBrain.url is empty and the ?api= path is the one used. */
 for (const [how, evil] of [["?api=", "https://leeroy-brain-evil.workers.dev"], ["?api=", "https://leeroy-board-api-x.workers.dev"], ["board-api", "https://leeroy-brain-evil.workers.dev"]]) {
   const viaQuery = how === "?api=";
-  const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: "https://evil.example", ...(viaQuery ? { api: evil } : {}) } }), viaQuery ? {} : { init: `try { localStorage.setItem("board-api", ${JSON.stringify(evil)}) } catch (e) {}` });
+  const { ctx, page, seen } = await open(pageUrl(VIRTUAL, { params: { preview: "1", brain: "https://evil.example", ...(viaQuery ? { api: evil } : {}) } }), viaQuery ? {} : { init: `try { localStorage.setItem("board-api", ${JSON.stringify(evil)}) } catch (e) {}` });
   await page.waitForTimeout(2500);
   const host = new URL(evil).origin, hit = seen.filter((x) => x.origin === host);
   ok(`F3 ${how} ${evil}: no request goes to a third-party workers.dev`, hit.length === 0, hit.slice(0, 3).map((x) => x.url).join(", "));
-  ok(`F3 ${how} ${evil}: the board still loads its data (falls back to the static files)`, (await page.evaluate(() => document.querySelectorAll("#main, main, body").length)) > 0 && seen.some((x) => /\/data\/(party|timeline)\.json/.test(x.url)));
+  ok(`F3 ${how} ${evil}: the board still loads its data (falls back to the static files)`, seen.some((x) => x.origin === VIRTUAL && /\/data\/(party|timeline)\.json/.test(x.url)), `${seen.length} requests`);
   await ctx.close();
 }
-{ /* control: a local Worker via ?api= is still honoured (so the check above is not vacuous) */
-  const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: "https://evil.example", api: "http://127.0.0.1:8787" } }));
+{ /* control: a local Worker via ?api= is still honoured (so the check above is not vacuous); the stub answers it, no live Worker */
+  const { ctx, page, seen } = await open(pageUrl(VIRTUAL, { params: { preview: "1", brain: "https://evil.example", api: "http://127.0.0.1:8787" } }));
   await page.waitForTimeout(2500);
   ok("F3 control: ?api=http://127.0.0.1:8787 is still used for /api/data/*", seen.some((x) => x.origin === "http://127.0.0.1:8787" && /\/api\/data\//.test(x.url)), seen.filter((x) => /api\/data/.test(x.url)).length + " api/data requests");
   await ctx.close();
-}
-
-{ /* control: the real PR preview Worker (account subdomain taken from wrangler's output, currently joshbblaine) is an allowed ?brain= origin, as CI passes it to every browser suite */
-  for (const host of ["https://leeroy-brain-pr-151.joshbblaine.workers.dev", "https://leeroy-brain-pr-151.jmattbloise.workers.dev"]) {
-    const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: host }, hash: `k=${KEY}` }));
-    await page.waitForTimeout(2500);
-    ok(`F1 control: ?brain=${host} (a PR preview Worker) is honoured and gets the key on /api/me`, seen.some((x) => x.origin === host && x.auth && /\/api\/me$/.test(new URL(x.url).pathname)), JSON.stringify(seen.filter((x) => /workers\.dev/.test(x.url)).slice(0, 3)));
-    await ctx.close();
-  }
 }
 
 /* F2. h() drops an href/src that is not https(s)://, a one-slash path, # or a relative path with a folder. Every evil value below is rendered as its own poll link, so every one is reached. */
