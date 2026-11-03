@@ -41,7 +41,7 @@ Stale text found: `infrastructure/README.md:62` says `GET /data/:name` has no al
 | Secret values | No | The repo does not and must not store them. Keep the originals in the owner's password manager. Whether Cloudflare can show a Worker secret back is unverified; assume not. |
 | Anything older than the Time Travel window with no export | No | Not recoverable |
 
-Recommended gap fill (not implemented here): a scheduled `d1 export` to private storage outside the repository, at least weekly, stored encrypted because exports contain `members`, `sessions` and `user_state`.
+Recommended gap fill (still not scheduled): a weekly export to private storage outside the repository, stored encrypted. `GET /api/admin/export` plus `tools/pull-export.mjs` (below) leaves out member key hashes and session tokens; a raw `wrangler d1 export` contains them.
 
 ## Restore drill (scratch database)
 
@@ -68,6 +68,25 @@ Pass criteria: the table list matches `schema.sql` (17 tables, see `schema-sourc
 Status: the drill was not executed while writing this document (it needs a Cloudflare token). The option names were checked with `--help`; that a D1 export re-imports cleanly through `d1 execute --file` is unverified. Run the drill once and amend this file with the result.
 
 Safer read-only check: `npx wrangler d1 time-travel info leeroy-board-db --timestamp=<recent>` only reads a bookmark. Restore cannot target a scratch database; cloning is not supported (docs, same page).
+
+## A backup you own: export route and local restore (added 2026-11-02)
+
+`GET /api/admin/export` (admin token) streams the database as NDJSON, one table page per request, so it stays inside the free plan (`worker/export.js`; each page is one indexed read of at most 1000 rows, default 200). **Never exported:** tables `sessions`, `sessions_v2`, `provider_tokens`, `account_keys`, `guest_rate_limits`; the column `members.key_hash`; `kv_state` rows whose key starts with `secret` or `feed_cache:`. Everything else is, so the file holds personal data: keep it outside the repository (`pull-export.mjs` refuses a path inside it), mode 600, and delete it after a drill. The private `kv_state` rows listed above (`persona`, `name_map`, `discord_members`, ...) are included: they are the least recoverable data.
+
+```bash
+# 1. pull (read only); the token comes from the environment
+BOARD_ADMIN_TOKEN=... node tools/pull-export.mjs --api https://api.leeroy.party --out <private path>/export.ndjson
+# 2. check the file without loading anything
+node tools/restore-local.mjs --in <private path>/export.ndjson --dry-run
+# 3. restore into a NEW local database and compare every table count (local only: there is no --remote option)
+node tools/restore-local.mjs --in <private path>/export.ndjson --persist-to <private path>/restored-d1
+```
+
+`restore-local` refuses a partial export (a table whose last page says more follows), a row that does not match its page, and a `--persist-to` folder that already holds data (unless `--reuse`). It exits 0 only when every count matches. **Members come back without a working key** (a placeholder hash that matches nothing): re-issue keys with `infrastructure/scripts/hash-key.mjs`. Sessions, OAuth tokens and rate-limit counters are not in the export, so signed-in people sign in again.
+
+This is a second line of defence next to Time Travel, not a replacement: it is a copy you hold, and it restores into a scratch database, not into production. Restoring into production remains a Time Travel restore (below) or a reviewed import.
+
+The drill is automated: `node --test tests/unit/restore-local.test.mjs` exports a seeded in-memory SQLite through the real route and restores it into a fresh one; `node tests/local/restore-drill.mjs` does the same with a real local D1 (`wrangler dev --local` and `wrangler d1 execute --local`, needs `npm install` in `infrastructure/`; nothing leaves the machine). The local drill ran on 2026-11-02 and every table count matched (the counts are in the pull request). It has not been run against the production database; do that once with the three commands above and record the date here.
 
 ## After a bad migration
 

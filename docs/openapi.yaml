@@ -153,6 +153,22 @@ components:
         expires_at: { type: string, format: date-time }
         via: { type: string, enum: [web-session] }
         pending: { type: array, items: {} }
+        characters:
+          type: array
+          description: Only while CHARS_V1 is on. The caller's own characters, oldest first, at most 12. Empty when migration 0005 is missing or no board is set up for them.
+          items: { $ref: '#/components/schemas/Character' }
+        selected: { type: string, nullable: true, description: Only while CHARS_V1 is on. The id of the selected character, or null. }
+    Character:
+      type: object
+      required: [id, name, class, race, ruleset, faction, region]
+      properties:
+        id: { type: string }
+        name: { type: string, minLength: 2, maxLength: 40 }
+        class: { type: string }
+        race: { type: string }
+        ruleset: { type: string }
+        faction: { type: string, enum: [Alliance, Horde] }
+        region: { type: string, enum: [Americas, EU, KR, TW, ANZ] }
     Votes:
       type: object
       required: [votes]
@@ -322,6 +338,65 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+  /api/me/characters:
+    post:
+      summary: Add, rename or select one of the caller's characters. Behind the CHARS_V1 flag (client flag chars.v1).
+      description: |
+        404 while CHARS_V1 is off. The caller is a web session cookie only (WEB_LOGIN on): a board key and the admin token are not sessions (401).
+        An `Origin` header is required (403 without). The owner is always the session's own Discord id; a body cannot name another user, and unknown fields are a 400.
+        Without `action` (or `"action": "add"`) the body is exactly `{ name, class, race, ruleset, faction, region }` and the answer is 201 `{ character, selected }`:
+        the new character becomes the selected one. `{ "action": "rename", "id", "name" }` answers 200 `{ character }`; `{ "action": "select", "id" }` answers 200 `{ selected }`.
+        Identity is region + ruleset + name, ignoring case (409 on a repeat); at most 12 characters per person (409). A character that is not the caller's is a 404.
+        Storage: `characters` (migration 0002) plus `character_profiles` (migration 0005); 503 if 0005 is missing. Answers no-store with Access-Control-Allow-Credentials.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: { type: string, enum: [add, rename, select] }
+                id: { type: string }
+                name: { type: string }
+                class: { type: string }
+                race: { type: string }
+                ruleset: { type: string }
+                faction: { type: string, enum: [Alliance, Horde] }
+                region: { type: string, enum: [Americas, EU, KR, TW, ANZ] }
+      responses:
+        "201":
+          description: Added. The new character is selected.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [character, selected]
+                properties:
+                  character: { $ref: '#/components/schemas/Character' }
+                  selected: { type: string }
+        "200": { description: 'Renamed ({ character }) or selected ({ selected }).' }
+        "400":
+          description: Invalid body; `errors` names each bad field.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401":
+          description: No valid web session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "403": { description: No Origin header. }
+        "404":
+          description: CHARS_V1 is off, or the character is not the caller's.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "405": { description: Not a POST. }
+        "409": { description: Duplicate, more than 12 characters, or no board set up for this person. }
+        "413": { description: Body over 2 KB. }
+        "503": { description: Migration 0005 is missing. }
   /api/me/export:
     get:
       summary: Download everything held about the caller as one JSON file. Behind the DATA_RIGHTS flag.
@@ -640,6 +715,41 @@ paths:
         "401": { $ref: '#/components/responses/Unauthorized' }
         "413":
           description: Body over 20000 bytes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/admin/export:
+    get:
+      summary: Admin only. Backup export as NDJSON, one table page per request.
+      description: |
+        No `table`: a manifest, one JSON object per line: `manifest`, then `table` (name, exported `columns`, `excluded_columns`, row `filter`) for every exported
+        table and `excluded_table` for every table that is never exported. With `table`: a page of rows with rowid greater than `after`, oldest first, at most `limit`
+        (default 200, maximum 1000): a `page` line, one `row` line per row (`{ t: row, table, r }`), then an `end` line `{ rows, next }` where `next` is the cursor for the
+        following page or null at the end. One indexed D1 read per page, so a full export stays inside the free plan; `tools/pull-export.mjs` loops over the pages.
+        Never exported: tables `sessions`, `sessions_v2`, `provider_tokens`, `account_keys`, `guest_rate_limits`; column `members.key_hash`; `kv_state` rows whose key starts
+        with `secret` or `feed_cache:`. The exact list is `EXCLUDED_TABLES`, `EXCLUDED_COLUMNS` and `ROW_FILTERS` in `infrastructure/worker/export.js`. Read only, no-store.
+        Restore it with `tools/restore-local.mjs` (docs/runbooks/backup-restore.md).
+      security:
+        - adminToken: []
+      parameters:
+        - { name: table, in: query, required: false, description: A table named in the manifest. Anything else, including an excluded table, is a 404., schema: { type: string } }
+        - { name: after, in: query, required: false, description: 'Cursor from the previous page (rowid). Default 0.', schema: { type: integer, minimum: 0 } }
+        - { name: limit, in: query, required: false, description: 'Rows per page, 1 to 1000. Default 200.', schema: { type: integer, minimum: 1, maximum: 1000 } }
+      responses:
+        "200":
+          description: NDJSON (application/x-ndjson).
+          content:
+            application/x-ndjson:
+              schema: { type: string }
+        "400":
+          description: after or limit is not a whole number in range.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: Unknown or excluded table.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

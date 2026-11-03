@@ -84,7 +84,7 @@ test("validator: accepts and rejects", () => {
 });
 
 test("spec covers exactly the documented public and member routes", () => {
-  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/eval", "/api/admin/events/sync", "/api/admin/feedback", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
+  assert.deepEqual(Object.keys(spec.paths).sort(), ["/api/admin/eval", "/api/admin/events/sync", "/api/admin/export", "/api/admin/feedback", "/api/announce", "/api/atlas/{name}", "/api/auth/discord/callback", "/api/auth/discord/start", "/api/auth/logout", "/api/bootstrap", "/api/config/{key}", "/api/data/{name}", "/api/discord", "/api/health", "/api/me", "/api/me/characters", "/api/me/erase", "/api/me/export", "/api/persona", "/api/signups", "/api/state", "/api/votes"]);
 });
 
 // ---- routes ----------------------------------------------------------------------------------------------------
@@ -110,6 +110,48 @@ test("GET /api/admin/feedback: 401 without the admin token, contract match with 
   assert.equal(res.status, 200);
   conforms(res);
   assert.ok(!JSON.stringify(res.body).includes("user_hash"));
+});
+
+// Backup export (admin only, NDJSON). Read only. The preview is seeded, so the manifest and one small page are enough to pin the shape.
+test("GET /api/admin/export: 401 without the admin token; with it an NDJSON manifest that names the exclusions and never lists key_hash", async () => {
+  const denied = await get("/api/admin/export", pub);
+  assert.equal(denied.status, 401);
+  conforms(denied);
+  const r = await fetch(`${API}/api/admin/export`, { headers: admin });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("content-type") || "", /^application\/x-ndjson/);
+  assert.equal(r.headers.get("cache-control"), "no-store");
+  const lines = (await r.text()).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(lines[0].t, "manifest");
+  const excluded = lines.filter((l) => l.t === "excluded_table").map((l) => l.table);
+  for (const t of ["sessions", "sessions_v2", "provider_tokens", "account_keys", "guest_rate_limits"]) assert.ok(excluded.includes(t), `${t} must be excluded`);
+  const members = lines.find((l) => l.t === "table" && l.table === "members");
+  assert.ok(members && !members.columns.includes("key_hash") && members.excluded_columns.includes("key_hash"));
+  assert.ok(!lines.some((l) => l.t === "table" && excluded.includes(l.table)));
+});
+
+test("GET /api/admin/export?table=: a page ends with an end line, a secret table is a 404, a bad cursor is a 400", async () => {
+  const r = await fetch(`${API}/api/admin/export?table=kv_state&limit=2`, { headers: admin });
+  assert.equal(r.status, 200);
+  const lines = (await r.text()).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  assert.equal(lines[0].t, "page");
+  assert.equal(lines[lines.length - 1].t, "end");
+  assert.ok(lines.filter((l) => l.t === "row").length <= 2);
+  assert.ok(!lines.some((l) => l.t === "row" && /^(secret|feed_cache:)/.test(l.r.key)));
+  const secret = await get("/api/admin/export?table=sessions", admin, "/api/admin/export");
+  assert.equal(secret.status, 404);
+  conforms(secret);
+  const bad = await get("/api/admin/export?table=kv_state&after=-1", admin, "/api/admin/export");
+  assert.equal(bad.status, 400);
+  conforms(bad);
+});
+
+// Character switcher (CHARS_V1, default off). The preview has no web session, so only the refusals can be pinned here.
+test("POST /api/me/characters without a web session is refused: 404 while CHARS_V1 is off, 401 when on", async () => {
+  const r = await fetch(`${API}/api/me/characters`, { method: "POST", headers: { ...pub, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Pip Fizzwick", class: "Mage", race: "Gnome", ruleset: "Normal", faction: "Alliance", region: "Americas" }) });
+  assert.ok([401, 404].includes(r.status), `got ${r.status}`);
+  const body = await r.json();
+  conforms({ status: r.status, body, specPath: "/api/me/characters" }, "post");
 });
 
 test("GET /api/bootstrap matches the contract", async () => {

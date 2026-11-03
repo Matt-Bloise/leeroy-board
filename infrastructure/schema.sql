@@ -433,3 +433,14 @@ CREATE TABLE IF NOT EXISTS answer_feedback (
   PRIMARY KEY (intent_id, user_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_answer_feedback_created ON answer_feedback(created_at);
+
+-- Character profiles (migration 0005): race, faction, ruleset, region label and the selected flag for a character the member added on the web.
+CREATE TABLE IF NOT EXISTS character_profiles (
+  character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
+  race TEXT,
+  faction TEXT CHECK (faction IS NULL OR faction IN ('Alliance', 'Horde')),
+  ruleset TEXT,
+  region_label TEXT CHECK (region_label IS NULL OR region_label IN ('Americas', 'EU', 'KR', 'TW', 'ANZ')),
+  selected INTEGER NOT NULL DEFAULT 0 CHECK (selected IN (0, 1))
+);
+CREATE INDEX IF NOT EXISTS idx_character_profiles_selected ON character_profiles(selected);
