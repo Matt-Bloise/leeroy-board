@@ -93,3 +93,6 @@ Nothing here is done by the PR; merging changes nothing live while `WEB_LOGIN = 
 3. Apply `infrastructure/migrations/0002_identity_tenancy.sql` to production D1 (adds `users` and `sessions_v2`). Without it the callback answers 503 and logs one warning; `/api/me` keeps working for board keys.
 4. Set `WEB_LOGIN = "on"` in `wrangler.toml` and deploy. Roll back by setting it back to `"off"`: all sessions stop being honoured at once; rows remain in `sessions_v2`.
 5. The cookie `__Host-sess` is scoped to the host that serves the API. A page on a different origin must call `/api/me` with `credentials: "include"`; the Worker then answers with `Access-Control-Allow-Credentials: true` for allow-listed origins only.
+
+## Deploy token never reaches the Worker
+`deploy-cloudflare.yml` syncs `AI_GATEWAY_TOKEN` only from the repository secret `AI_GATEWAY_TOKEN` or `CLOUDFLARE_AIG_TOKEN`; the `CLOUDFLARE_API_TOKEN` fallback was removed, and `ai-models.js` no longer reads `env.CLOUDFLARE_API_TOKEN`. With neither dedicated secret set, the deploy warns and does not run `secret put`; a value already in the Worker is kept, not deleted. Check for a leftover Worker secret named `CLOUDFLARE_API_TOKEN` or `AI_GATEWAY_TOKEN` with `npx wrangler secret list` and remove it with `npx wrangler secret delete <name>` after rotating the deploy token. See `rollback.md`, Deploy safety.

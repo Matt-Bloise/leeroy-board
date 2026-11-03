@@ -320,7 +320,7 @@ export async function fetchWithGatewayFallback({
   deadlineAt = null,
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
-  const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN || env.CLOUDFLARE_API_TOKEN)) || "";
+  const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
   const cacheHeaders = env && env.AI_GATEWAY_ID ? {
     "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
     "cf-aig-metadata": JSON.stringify({ app: "leeroy-board", service: "chamber" }),
