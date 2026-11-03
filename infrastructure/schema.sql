@@ -444,3 +444,11 @@ CREATE TABLE IF NOT EXISTS character_profiles (
   selected INTEGER NOT NULL DEFAULT 0 CHECK (selected IN (0, 1))
 );
 CREATE INDEX IF NOT EXISTS idx_character_profiles_selected ON character_profiles(selected);
+
+-- Noise ledger (migration 0006): counts of free-standing Discord posts per local day and channel. No message text. Unused while CARDS_ENABLED is off.
+CREATE TABLE IF NOT EXISTS noise_ledger (
+  day TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0),
+  PRIMARY KEY (day, channel)
+);

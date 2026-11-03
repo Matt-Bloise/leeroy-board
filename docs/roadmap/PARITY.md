@@ -13,14 +13,14 @@ This page ranks what the old PC-hosted bot did against what the Worker does toda
 | 2 | Reliable reply (placeholder replaced by the answer, never stuck) | every question | could stay on the placeholder | 24 s guaranteed final reply (PR 113), then a Queue consumer | in progress |
 | 3 | @mentions and replies to the bot | 261 filed | none (needs the Gateway) | Durable Object Gateway client (spike), or context menu and slash only | spike running |
 | 4 | "More" and "Sources" buttons (private depth) | 69 | none | store the extra text in D1, button handler returns an ephemeral message | to build |
-| 5 | Sign-up card, states, write-in modal, tallies | 94 | RSVP buttons exist; card edit-in-place and states unverified | message edit over REST, D1 state | to verify, then build |
-| 6 | Pinned cards edited in place (Party Board, Sign-ups, Party card) | 85 ops | none | REST message edit from the Worker on data change, message ids in D1 | to build |
+| 5 | Sign-up card, states, write-in modal, tallies | 94 | RSVP buttons exist; card edit-in-place and states unverified | message edit over REST, D1 state | built behind `CARDS_ENABLED` (off), not verified on live Discord; the PC bot stays authoritative until after launch |
+| 6 | Pinned cards edited in place (Party Board, Sign-ups, Party card) | 85 ops | none | REST message edit from the Worker on data change, message ids in D1 | built behind `CARDS_ENABLED` (off); see `docs/runbooks/cards.md` |
 | 7 | Image answers and `/page` `/tooltip` `/map` cards | 32 plus commands | text only | pure-Worker card renderer (SVG to PNG in WASM) or Browser Run | spiked: no-go on Free, see [IMAGE-CARDS.md](IMAGE-CARDS.md) |
 | 8 | Launch-night moments (7, countdown card edited each minute) | scheduled | none | `scheduled` cron, D1 ledger (PR in flight, flag off) | in progress |
 | 9 | Feedback reactions and file | 18 | none | thumbs-up and thumbs-down as buttons, D1 table; also the evaluation signal | to build |
 | 10 | Thread replies and private follow-up threads | used | none | REST thread creation with the bot token | to build |
-| 11 | Board decision lines (silent, batched, display names) | 4 | none | post from the Worker when a sign-up changes, 5-minute window in D1 | to build |
-| 12 | Noise budget and quiet hours | every post | none | D1 ledger checked before any unprompted post | to build with 8 and 11 |
+| 11 | Board decision lines (silent, batched, display names) | 4 | none | post from the Worker when a sign-up changes, 5-minute window in D1 | built behind `BOARD_LINES_ENABLED` (off) |
+| 12 | Noise budget and quiet hours | every post | none | D1 ledger checked before any unprompted post | built (`noise.js`), used by board lines; moments should use it too |
 | 13 | Deterministic voice guards (never "Skippy", "Matt" to "Bloise", display names only, stock openers stripped, the 1-in-12 chicken egg) | every answer | not enforced in code | extend `answer-format.js` | to build |
 | 14 | News watch and library refresh; daily digest | off live | scrape cron, no digest | cron, report to the board, digest post behind a flag | later |
 | 15 | Discord Scheduled Events; quiz and didyouknow; dates, countdown, help | light | quiz, dates, countdown, help exist | REST for events | later |

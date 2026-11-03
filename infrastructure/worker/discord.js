@@ -39,6 +39,9 @@ import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-comma
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
+import { cardsEnabled, requestCardEdit } from "./cards.js";
+import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
+import { flushBoardLines } from "./board-lines.js";
 import {
   broadcastToRoom,
   purgeWorkerCache,
@@ -584,6 +587,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const member = resolveMember(user.id, rawUser, membersConfig); // null when the user is not a recognised party member
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
+  // CARDS_ENABLED: flush a due board line and retry an unfinished card edit. Cheap D1 reads; the scheduled ticks do the same.
+  if (cardsEnabled(env) && ctx && typeof ctx.waitUntil === "function") {
+    ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
+  }
   const boardUrl = env.BOARD_PUBLIC_URL || "https://leeroy.party";
   // Existing /build reply: link to the member's build thread.
   const legacyBuildContent = async (t) => {
@@ -1035,6 +1042,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       if (Object.keys(patch).length > 0) {
         const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
         const doc = row ? JSON.parse(row.json) : { entries: [] };
+        const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
         doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
         let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
         if (!entry) {
@@ -1061,6 +1069,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
         await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
         await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
+        if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
 
         const summary = Object.entries(patch).map(([k, v]) => `**${k}**: \`${v}\``).join(", ");
         return new Response(
@@ -1079,6 +1088,11 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
       const doc = row ? JSON.parse(row.json) : { entries: [] };
       const myEntry = (doc.entries || []).find((e) => (e.name || "").toLowerCase() === byName.toLowerCase()) || {};
+
+      // CARDS_ENABLED: a select modal instead of the status panel (the card shows the status).
+      if (cardsEnabled(env)) {
+        return new Response(JSON.stringify(signupSelectModal(doc, myEntry)), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
 
       const statusText = [
         `**${byName}'s Sign-up Status:**`,
@@ -1727,6 +1741,15 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       );
     }
     return new Response(JSON.stringify({ type: 7, data: renderMessage(result.vote, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+
+  // 3a. CARDS_ENABLED: sign-up card buttons (type 3) and the write-in / select modals (type 5). Replaces 3b for `signup:` ids.
+  if (cardsEnabled(env) && (interaction.type === 3 || interaction.type === 5) && String((interaction.data && interaction.data.custom_id) || "").startsWith("signup:")) {
+    const body = await handleCardInteraction({
+      interaction, env, ctx, member, byName,
+      deps: { recompute: recomputeSignupTallies, insertIntent, purgeWorkerCache, broadcastToRoom, origin },
+    });
+    if (body) return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
   // 3a-2. Answer buttons (`leeroy:more|sources|fb:...`). Must run before the generic sign-up buttons, which would read them as fields.
