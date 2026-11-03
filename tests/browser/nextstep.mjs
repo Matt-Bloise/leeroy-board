@@ -7,6 +7,8 @@
 // Per case: the card carries the expected step id and title text, its button is inside the viewport, the page does not scroll sideways, no page or console errors.
 import os from "node:os";
 import path from "node:path";
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -45,16 +47,16 @@ async function open(browser, c, who) {
     if (c.rsvp) sg.entries.push({ name: who.name, rsvp: c.rsvp, when: "8pm", meet: null, pack: null });
     await json(route, j);
   });
-  await page.goto(`${BASE.replace(/\/$/, "")}/?preview=1#tonight`, { waitUntil: "load" });
+  await page.goto(pageUrl(BASE, { params: { preview: "1" }, hash: "tonight" }), { waitUntil: "load" });
   await page.waitForFunction(() => window.__next && window.__next.status().stepId, null, { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(1200);
   return { ctx, page, errors };
 }
 
-const browser = await pw.chromium.launch();
+const browser = stubbed(await pw.chromium.launch());
 try {
   const probe = await browser.newContext({ ...OPTS, serviceWorkers: "block" }), pp = await probe.newPage();
-  await pp.goto(`${BASE.replace(/\/$/, "")}/?preview=1`, { waitUntil: "load" });
+  await pp.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   await pp.waitForFunction(() => window.__next && window.__next.input().party, null, { timeout: 20000 }).catch(() => {});
   const who = await pp.evaluate(() => { try { const m = window.__next.input().party.members[0]; return { name: m.name, role: m.role }; } catch (e) { return null; } });
   await probe.close();

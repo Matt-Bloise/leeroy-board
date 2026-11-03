@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { needsRetry, mergeRuns, RETRY_DELAY_MS } from "./smoke-retry.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -153,7 +154,7 @@ async function one(browser, engine, size, opts, setup, fault = false) {
   return { ...v, reloaded, retried };
 }
 for (const eng of ["chromium", "webkit"]) {
-  let browser; try { browser = await pw[eng].launch(); } catch (e) { ok(`${eng} launches`, false, String(e.message).split("\n")[0]); continue; }
+  let browser; try { browser = stubbed(await pw[eng].launch()); } catch (e) { ok(`${eng} launches`, false, String(e.message).split("\n")[0]); continue; }
   try { for (const [en, size, opts] of CTX.filter((c) => c[0] === eng)) for (const r of (await one(browser, en, size, opts)).rows) { ok(r[0], r[1], r[2]); if (r[3]) { transient++; console.log(`WARN transient ${r[0]}: failed on the first run, passed on the retry${r[2] ? ` (${String(r[2]).slice(0, 120)})` : ""}`); } } } finally { await browser.close().catch(() => {}); }
 }
 console.log(`${fail ? `live-smoke: ${fail} of ${pass + fail} checks FAILED` : `live-smoke: all ${pass} checks passed`}${warns ? ` (${warns} worker 5xx WARN)` : ""}${transient ? ` (${transient} transient WARN)` : ""}`);

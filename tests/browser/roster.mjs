@@ -4,6 +4,8 @@
 // Checks: flag off = no Menu entry and #roster does nothing; flag on = Menu entry opens it; three role columns with the right seat counts; one-line summary text;
 // bench strip; no horizontal overflow; arrow keys move focus between seats; Escape closes and returns focus; axe finds no serious or critical violations; no console or page errors.
 // Exit 0 when every check passes, 1 otherwise.
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -36,7 +38,7 @@ async function run(browser, size, opts, flagOn) {
   const phone = size.startsWith("390");
 
   if (!flagOn) {
-    await page.goto(`${BASE}#roster`, { waitUntil: "load" }); await page.waitForTimeout(2000);
+    await page.goto(pageUrl(BASE, { hash: "roster" }), { waitUntil: "load" }); await page.waitForTimeout(2000);
     ok(`${tag} #roster does nothing`, (await dlg.count()) === 0 || !(await dlg.isVisible()));
     if (phone) { await page.locator('#bottombar [data-place="more"]').click({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(500); }
     ok(`${tag} no Menu entry`, (await page.locator("#open-roster").count()) === 0 && (await page.getByRole("button", { name: "Raid roster" }).count()) === 0);
@@ -114,7 +116,7 @@ async function run(browser, size, opts, flagOn) {
   await ctx.close();
 }
 
-const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {});
+const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
 for (const [size, opts] of CTX) { await run(browser, size, opts, false); await run(browser, size, opts, true); }
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);

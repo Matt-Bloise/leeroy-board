@@ -1,0 +1,2 @@
+/* the close button is pulled over the title and tabs in the header */
+#scene-close { position: absolute !important; left: 24px !important; top: 8px !important; right: auto !important; }
