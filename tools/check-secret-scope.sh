@@ -6,7 +6,7 @@ set -u
 REPO="${1:-Matt-Bloise/leeroy-board}"
 # MUST be environment-only. USER_SALT, KEY_SALT (not credentials of a third party) and AI_GATEWAY_TOKEN (Uncle Jimmy's) deliberately stay at repository level: a job with
 # environment: production still reads repository secrets the environment does not have, and the deploy keeps the existing Worker value when a secret is empty.
-# CLOUDFLARE_API_TOKEN stays at repository level because the Cloudflare account owner decided previews share the production Cloudflare token (it is the fallback of CLOUDFLARE_PREVIEW_API_TOKEN).
+# CLOUDFLARE_API_TOKEN stays at repository level because the Cloudflare account owner decided previews share the production Cloudflare token (the preview, teardown and preview-secrets steps read it).
 ACCEPTED="USER_SALT KEY_SALT AI_GATEWAY_TOKEN CLOUDFLARE_API_TOKEN"
 PROD="BOARD_ADMIN_TOKEN CLOUDFLARE_AIG_TOKEN ANTHROPIC_API_KEY GEMINI_API_KEY GROQ_API_KEY CEREBRAS_API_KEY GITHUB_MODELS_TOKEN OPENROUTER_API_KEY DISCORD_WEBHOOK_URL DISCORD_PUBLIC_KEY DISCORD_CLIENT_SECRET DISCORD_BOT_TOKEN"
 command -v gh >/dev/null || { echo "gh is not installed" >&2; exit 2; }

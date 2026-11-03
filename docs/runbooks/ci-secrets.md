@@ -1,22 +1,22 @@
-# CI secrets: production environment and preview token
+# CI secrets: production environment and preview secrets
 
-Why: a workflow file in a pull request runs with the secrets the repository gives it. Production secrets (the Cloudflare deploy token, `BOARD_ADMIN_TOKEN`, salts, AI keys) therefore live only in a GitHub **environment** named `production` that only `master` can use. Pull request workflows use a preview-only admin token and derived salts. The Cloudflare token is the one exception, by decision of the account owner (see "Previews share the production Cloudflare token"). If the preview secrets are missing the preview jobs skip with a notice; the admin token never falls back to a production secret.
+Why: a workflow file in a pull request runs with the secrets the repository gives it. Production secrets (the Cloudflare deploy token, `BOARD_ADMIN_TOKEN`, salts, AI keys) therefore live only in a GitHub **environment** named `production` that only `master` can use. Pull request workflows use a preview-only admin token and derived salts. The Cloudflare token is the one exception: by decision of the account owner, previews use the production `CLOUDFLARE_API_TOKEN` (see "Previews share the production Cloudflare token"). If a preview secret is missing the preview jobs skip with a notice; the admin token never falls back to a production secret.
 
 ## Secret map
 
 | Secret | Where it lives | Used by |
 | :--- | :--- | :--- |
-| `CLOUDFLARE_API_TOKEN` | **repository level, deliberately** (see "Previews share the production Cloudflare token") | `deploy-cloudflare.yml`, and as the fallback of `CLOUDFLARE_PREVIEW_API_TOKEN` in the preview, teardown and preview-secrets steps |
+| `CLOUDFLARE_API_TOKEN` | **repository level, deliberately** (see "Previews share the production Cloudflare token") | `deploy-cloudflare.yml`, and the preview spin-up, preview teardown and preview-secrets steps of `pr-preview-cloudflare.yml` / `preview-tests.yml` |
 | `BOARD_ADMIN_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | **repository level, deliberately** (see below) | `deploy-cloudflare.yml` only (no PR workflow references them) |
 | `CLOUDFLARE_AIG_TOKEN`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `CLOUDFLARE_ACCOUNT_ID` | repository secret (an identifier, not a credential; may also be copied into `production`) | deploy and preview |
-| `CLOUDFLARE_PREVIEW_API_TOKEN` | optional repository secret; not set by decision (see below) | `pr-preview-cloudflare.yml`, `preview-tests.yml`: used first when set, otherwise `CLOUDFLARE_API_TOKEN` |
+| ~~`CLOUDFLARE_PREVIEW_API_TOKEN`~~ | **not used.** Delete it if it still exists (the value that was pasted is invalid) | nothing |
 | `BOARD_PREVIEW_ADMIN_TOKEN` | repository secret | `pr-preview-cloudflare.yml`, `preview-tests.yml`; the base for the per-preview salts and admin token |
 
 ## Previews share the production Cloudflare token (decision of the account owner)
 
-Uncle Jimmy, who owns the Cloudflare account, decided that there is **no second token**: previews use the same Cloudflare token as production. The workflows read `${{ secrets.CLOUDFLARE_PREVIEW_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}` in exactly three places (preview spin-up, preview teardown, and the `preview-guard` / `preview-secrets` checks). With `CLOUDFLARE_PREVIEW_API_TOKEN` unset, they use `CLOUDFLARE_API_TOKEN`. The token must therefore exist as a **repository** secret, and a copy in the environment `production` alone is not enough for previews. An invalid copy in either place must be deleted so the fallback resolves to the working one. If a Cloudflare token is set at neither level, the preview jobs skip with a notice.
+Uncle Jimmy, who owns the Cloudflare account, decided that there is **no second token**: previews use the same Cloudflare token as production, `CLOUDFLARE_API_TOKEN`. There is no `CLOUDFLARE_PREVIEW_API_TOKEN` in the design. The token must exist as a **repository** secret: a copy only in the environment `production` is not read by preview jobs. It is read in exactly four places: the preview spin-up job and the `preview-guard` job of `pr-preview-cloudflare.yml`, its teardown job, and the `preview-secrets` job of `preview-tests.yml` (the unit test counts them). If it, `BOARD_PREVIEW_ADMIN_TOKEN` or `CLOUDFLARE_ACCOUNT_ID` is missing, the preview jobs skip with a notice.
 
 What this does protect:
 - The admin token: `BOARD_ADMIN_TOKEN` never falls back. Previews use `BOARD_PREVIEW_ADMIN_TOKEN` and per-preview derived salts, so a preview Worker never holds the production admin token or salts.
@@ -26,11 +26,11 @@ What this does protect:
 What this does **not** protect:
 - Any workflow run from a branch of this repository, including one whose workflow file the PR itself edited, can read the production Cloudflare token and use it to change or delete production Workers, D1 databases (including the live data) and Pages. The environment gate does not apply to repository-level secrets.
 - So S1 stays **open** for the Cloudflare token. The only controls are review: the queue script holds PRs that touch `.github/` or `tools/` for an advisor, and `tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow uses the token in any form other than that fallback. Neither is enforced by GitHub itself.
-- It closes only with a separate Cloudflare account (or a token scoped to preview resources) for previews: create `CLOUDFLARE_PREVIEW_API_TOKEN` as in section 3 and the workflows use it first, with no further change.
+- It closes only with a separate Cloudflare account (or a token scoped to preview resources) for previews. That needs a design change (a new secret name in the workflows, the test and this runbook); it is not a switch that exists today.
 
 **Accepted residual risk.** As configured by the owner, the environment `production` holds `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BOARD_ADMIN_TOKEN`, `GEMINI_API_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_SECRET` and `DISCORD_PUBLIC_KEY`. `USER_SALT` and `KEY_SALT` (ours, not third-party credentials) and `AI_GATEWAY_TOKEN` (Uncle Jimmy's) stay at repository level on purpose: a job with `environment: production` still reads repository secrets the environment lacks, and the deploy keeps the existing Worker value when a secret is empty. Consequence: a workflow run from any branch could read those three by editing its own workflow file. No PR workflow in this repository references them (the preview derives its salts from `BOARD_PREVIEW_ADMIN_TOKEN`), and the guard test enforces that, but this is a protection by review, not by GitHub. S1 stays partly open for these three until they move into the environment.
 
-`tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow names any secret outside the preview rows above.
+`tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow names any secret outside `CLOUDFLARE_API_TOKEN` (only in the four places above), `BOARD_PREVIEW_ADMIN_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `GITHUB_TOKEN`, or mentions `CLOUDFLARE_PREVIEW_API_TOKEN`.
 
 ## 1. Create the `production` environment (Matt)
 
@@ -58,23 +58,19 @@ Confirm with `gh` (as a repo admin; prints names only, never values):
 tools/check-secret-scope.sh Matt-Bloise/leeroy-board
 ```
 
-It exits 0 only when no production credential other than the three accepted ones is left at repository level.
+It exits 0 only when no production credential other than the four accepted ones (`USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN`, `CLOUDFLARE_API_TOKEN`) is left at repository level.
 
 Check: the **Actions** tab, **Deploy Site & Serverless Backend to Cloudflare (Production)**, **Run workflow** on `master`. The first step "Require the production environment secrets" must pass and the run must show "production" as its environment. A run from any other branch must be refused at the environment.
 
-## 3. Preview token scope (Matt, with Uncle Jimmy's Cloudflare account)
+## 3. Preview admin token (Matt)
 
-Only needed if previews ever get their own token (not the case today, see the decision above). Create a **separate** API token for previews.
+There is no separate Cloudflare token for previews (see the decision above). Only `BOARD_PREVIEW_ADMIN_TOKEN` is new:
 
-1. Cloudflare dashboard, **My Profile > API Tokens > Create Token > Create Custom Token**. Name it `leeroy-board-preview-ci`.
-2. Permissions (Account level, account `Uncle Jimmy's`): **Workers Scripts: Edit**, **D1: Edit**, **Cloudflare Pages: Edit**, **Workers AI: Read** (the preview uses the free Workers AI model). Nothing else: no DNS, no Zone, no Workers Routes, no Account Settings, no AI Gateway.
-3. Account resources: include only this account. Zone resources: none. Add a client IP filter only if you use fixed runners (GitHub-hosted runners change, so normally leave it off).
-4. Set an expiry (90 days is a sensible default) and note the date in your calendar.
-5. **Not done by decision of the account owner: this section is only for the day previews get their own token.** Until then `CLOUDFLARE_PREVIEW_API_TOKEN` stays unset (delete the invalid one that was pasted) and previews use `CLOUDFLARE_API_TOKEN`. A preview token on the same account would still be account-wide: Cloudflare cannot limit a token to resources by name pattern, so it can edit production Workers, D1 and Pages. S1 is therefore *reduced, not closed*, by this change. It closes only when previews move to a separate Cloudflare account (use that account's `CLOUDFLARE_ACCOUNT_ID` for previews) or a token scoped to preview resources exists. Agree this with Uncle Jimmy. Until then keep the token's expiry short.
-6. In GitHub: **Settings > Secrets and variables > Actions > New repository secret**: name `CLOUDFLARE_PREVIEW_API_TOKEN`, paste the token.
-7. Create `BOARD_PREVIEW_ADMIN_TOKEN` the same way with a new random value (for example `openssl rand -hex 32`). It is not a production value and is never sent to production.
+1. **Settings > Secrets and variables > Actions > New repository secret**: name `BOARD_PREVIEW_ADMIN_TOKEN`, value a new random string (for example `openssl rand -hex 32`). It is not a production value and is never sent to production. It is the base for each preview's derived admin token and salts.
+2. If a repository secret `CLOUDFLARE_PREVIEW_API_TOKEN` still exists, delete it (unused).
+3. Keep the repository-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; if the token is invalid, previews fail at the pre-flight check with Cloudflare error 1000. Replace it with a working one.
 
-Until a Cloudflare token (either one) and `BOARD_PREVIEW_ADMIN_TOKEN` exist, labelled (`ci-full`) PRs get **Preview tests: SKIPPED** and a notice in the run; the comment is not the merge gate, so a full pass is impossible without them.
+Until `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `BOARD_PREVIEW_ADMIN_TOKEN` all exist, labelled (`ci-full`) PRs get **Preview tests: SKIPPED** and a notice in the run; the comment is not the merge gate, so a full pass is impossible without them.
 
 ## 4. The Preview tests comment and the gate
 
