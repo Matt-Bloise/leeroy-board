@@ -1084,7 +1084,7 @@ export default {
           ).bind(auth.member.name, auth.member.slug).first();
         } else {
           row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE share = 1 OR by_name = 'Visitor' ORDER BY created_at DESC LIMIT 1"
+            "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
           ).first();
         }
 

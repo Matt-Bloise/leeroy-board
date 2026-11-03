@@ -776,7 +776,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
       // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
       if (askBudget) {
-        const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env));
+        const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
         if (verdict && verdict.code !== "budget_global") {
           return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
             status: 200,

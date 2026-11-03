@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import worker from "../../infrastructure/worker/index.js";
 import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
 import { buildAnswerInputs, answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
-import { askBudgetKeys, hashId, recordAttributed, DEFAULT_USER_DAILY_ASKS } from "../../infrastructure/worker/budget.js";
+import { askBudgetKeys, hashId, recordAttributed, recordUsage, checkAskBudget, DEFAULT_USER_DAILY_ASKS } from "../../infrastructure/worker/budget.js";
 import { resolveMember } from "../../infrastructure/worker/members.js";
 import { fence, stripFence, FENCE_RULE } from "../../infrastructure/worker/prompt-fence.js";
 import { MAX_BODY_BYTES, MAX_QUESTION_CHARS, pickSignupPatch } from "../../infrastructure/worker/limits.js";
@@ -276,4 +276,52 @@ test("M2. a private ask does not push its question in the intent broadcast", asy
   await api(env, "POST", "/intent", "anon", { kind: "ask", q: "SECRET-QUESTION-7" });
   assert.ok(sent.length > 0);
   assert.doesNotMatch(sent.join(""), /SECRET-QUESTION-7/);
+});
+
+// ---- advisor re-review ----------------------------------------------------------------------------------------------------------
+test("R1. the failure path of a private turn broadcasts no name, question or error text", async () => {
+  invalidatePagesCache();
+  const env = await makeEnv();
+  const sent = [];
+  env.BOARD_ROOM = { idFromName: () => "r", get: () => ({ fetch: async (_u, init) => (sent.push(String(init && init.body)), new Response("ok")) }) };
+  env.DB.raw.exec("DROP TABLE lib_pages"); // makes retrieval throw, so the catch block runs
+  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES ('f1', 'Mallory', 'SECRET-QUESTION-9', 'workers-ai', 'thinking', 0, 'x')").run();
+  const silence = console.error; console.error = () => {};
+  try { await answerWithAi({ env, origin: "https://worker.test", intentId: "f1", by: "Mallory", question: "SECRET-QUESTION-9", provider: "workers-ai", share: false, isMember: false }); } finally { console.error = silence; }
+  assert.equal(env.DB.raw.prepare("SELECT status FROM ask_turns WHERE id = 'f1'").get().status, "error");
+  const all = sent.join("\n");
+  assert.match(all, /"status":"error"/, "the failure is still announced");
+  assert.doesNotMatch(all, /SECRET-QUESTION-9|Mallory|no such table/);
+});
+
+test("R2. GET /ask with no id and no key returns null after a guest ask (guest asks are private)", async () => {
+  const env = await makeEnv();
+  await api(env, "POST", "/intent", "anon", { kind: "ask", q: "SECRET-GUEST-QUESTION" });
+  seedTurn(env, "1762000000009", { by: "Santa" }); // share = 0
+  const res = await api(env, "GET", "/ask", "anon");
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.ask, null);
+  assert.doesNotMatch(JSON.stringify(body), /SECRET-GUEST-QUESTION/);
+});
+
+test("R3. with the global cap hit, a user over their own cap is still refused on claude; others are not", async () => {
+  const env = await makeEnv();
+  await recordUsage(env, "ask", 999999); // global (Workers AI neurons) cap exceeded
+  const over = askBudgetKeys({ userPart: await hashId("100000000000000050") });
+  for (let i = 0; i < DEFAULT_USER_DAILY_ASKS; i++) await recordAttributed(env, over, 0);
+  const fresh = askBudgetKeys({ userPart: await hashId("100000000000000051") });
+  assert.equal((await checkAskBudget(env, over, null, new Date(), { skipGlobal: false })).code, "budget_global");
+  assert.equal((await checkAskBudget(env, over, null, new Date(), { skipGlobal: true })).code, "budget_user");
+  assert.equal(await checkAskBudget(env, fresh, null, new Date(), { skipGlobal: true }), null, "global cap does not lock out other providers");
+
+  // End to end through answerWithAi with provider claude: refused for the user over cap, no provider call.
+  env.ANTHROPIC_API_KEY = "test-key-not-real";
+  env.BOARD_ROOM = { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) };
+  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES ('c1', 'U', 'q', 'claude', 'thinking', 1, 'x')").run();
+  const before = outbound;
+  const out = await answerWithAi({ env, origin: "https://worker.test", intentId: "c1", by: "U", question: "when is onyxia", provider: "claude", share: true, budget: over, isMember: true });
+  assert.equal(out.code, "budget_user");
+  assert.equal(outbound, before, "claude was not called");
+  assert.match(env.DB.raw.prepare("SELECT model FROM ask_turns WHERE id = 'c1'").get().model, /budget_user/);
 });

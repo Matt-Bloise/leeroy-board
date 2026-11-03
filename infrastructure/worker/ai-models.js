@@ -891,9 +891,8 @@ export async function answerWithAi({
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     {
-      let verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null);
-      // The global cap counts Workers AI neurons only: it must not lock members out of other providers.
-      if (verdict && verdict.code === "budget_global" && chosenProvider !== "workers-ai") verdict = null;
+      // The global cap counts Workers AI neurons only, so it is skipped for other providers; the user and tenant caps still apply.
+      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai" });
       if (verdict) {
         budgetCode = verdict.code;
         const limitedAt = nowIso();
@@ -1088,7 +1087,10 @@ export async function answerWithAi({
       .catch(() => {});
     await broadcastToRoom(env, {
       type: "intent",
-      item: { id: intentId, kind: "ask", by, q: question, status: "error", error: msg, at: failedAt },
+      // A private turn shows no name, question or error text to other sockets.
+      item: share
+        ? { id: intentId, kind: "ask", by, q: question, status: "error", error: msg, at: failedAt }
+        : { id: intentId, kind: "ask", status: "error", at: failedAt },
     });
   }
 }

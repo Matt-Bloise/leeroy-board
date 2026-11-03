@@ -118,11 +118,14 @@ export async function loadAskCaps(env) {
 
 // Returns null when the ask may proceed, else { code, retryAfter }. Fails open on any error.
 // keys: { userKey, tenantKey, guest } or null. With no keys only the global soft cap is checked (the old behaviour).
-export async function checkAskBudget(env, keys, caps, now = new Date()) {
+// opts.skipGlobal: leave out the global (Workers AI neurons) cap but still enforce the user and tenant caps.
+export async function checkAskBudget(env, keys, caps, now = new Date(), { skipGlobal = false } = {}) {
   try {
     const retryAfter = secondsToUtcMidnight(now);
-    const global = await loadBudget(env, now);
-    if (overCap(global.neurons, dailyCap(env))) return { code: "budget_global", retryAfter };
+    if (!skipGlobal) {
+      const global = await loadBudget(env, now);
+      if (overCap(global.neurons, dailyCap(env))) return { code: "budget_global", retryAfter };
+    }
     if (!keys) return null;
     const c = caps || resolveCaps(null);
     if (keys.tenantKey) {
