@@ -129,3 +129,5 @@
 @media (max-width: 699px) { #top #launch-hero.is-live .clock { display: none; } }
 @media (max-width: 699px) { #top #launch-hero .clock-unit b { font-size: clamp(1.5rem, 6.4vw, 2.2rem); } .lh-count { aspect-ratio: 1.93; padding: 23% 4% 14%; } .lh-plate img { left: -22.5%; width: 145%; } .lh-glow { display: none; } }
 @media (forced-colors: active) { .lh-plate { display: none; } }
+/* B49: while the first-visit sheet is open the board behind it is only a backdrop. From T-24h #launch-hero (about 1600px tall in a short window) sits in #top in normal flow, so the document grew far taller than the window and doc-fit failed. Clamp the board to the window while that sheet is open; the hero stays laid out (its clock and digits keep measuring), it is just clipped. Scoped to the first-visit sheet so a scrolled board keeps its scroll position under other scenes. */
+html.nx-first-run.scene-open #board { max-height: 100vh; max-height: 100svh; overflow: clip; }
