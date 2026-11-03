@@ -462,8 +462,12 @@ test("I. PUT /data/:name refuses private keys (no write, no broadcast) and never
   assert.equal((await api(env, "PUT", "/data/party", "admin", { members: [] })).status, 200);
   assert.ok(env.sent.some((m) => m.type === "data" && m.key === "party" && m.data), "a public document still broadcasts");
   env.sent.length = 0;
-  assert.equal((await api(env, "PUT", "/data/zz-working-note", "admin", { note: "NOT-PUBLIC" })).status, 200);
+  // write allowlist: a key that is neither private nor a published document is refused too (a new internal kv_state key must not be overwritable here)
+  assert.equal((await api(env, "PUT", "/data/zz-working-note", "admin", { note: "NOT-PUBLIC" })).status, 403);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM kv_state WHERE key = 'zz-working-note'").get().n, 0, "not written");
   assert.ok(!JSON.stringify(env.sent).includes("NOT-PUBLIC"), "a non-public document's content is not broadcast");
+  assert.equal((await api(env, "PUT", "/atlas/zz-working-note", "admin", { note: "NOT-PUBLIC" })).status, 403, "the atlas route has the same write allowlist");
+  assert.equal((await api(env, "PUT", "/atlas/marks", "admin", { marks: {} })).status, 200, "a published atlas document is still writable");
 });
 
 // ---- J. Replay ----------------------------------------------------------------------------------------------------------------

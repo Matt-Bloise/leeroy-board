@@ -1345,7 +1345,8 @@ export default {
           if (denied) return denied;
           // kv_state also holds the private config and working rows (persona, discord_members, budgets, votes, ...).
           // They have their own routes (PUT /config/:key, /persona, ...) with validation; this one never writes or broadcasts them.
-          if (isDeniedKvKey(raw)) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
+          // Write allowlist: only the documents the board publishes (public-docs.js). A new internal kv_state key is therefore not writable here by default.
+          if (isDeniedKvKey(raw) || !(path.startsWith("/atlas/") ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw))) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
           const body = await req.json();
           const now = new Date().toISOString();
           await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")

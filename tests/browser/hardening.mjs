@@ -70,28 +70,47 @@ for (const evil of EVIL) {
   await ctx.close();
 }
 
-/* F2. h() drops an href/src that is not http(s):, /, # or a relative path with a folder; javascript: and data: fixtures reach the ledger from the bootstrap. */
+/* F3b. The ?api= / board-api fallback accepts only our own origins: a third-party leeroy-brain*.workers.dev must not be read as board data. ?brain= is set to a refused value so BoardBrain.url is empty and the ?api= path is the one used. */
+for (const [how, evil] of [["?api=", "https://leeroy-brain-evil.workers.dev"], ["?api=", "https://leeroy-board-api-x.workers.dev"], ["board-api", "https://leeroy-brain-evil.workers.dev"]]) {
+  const viaQuery = how === "?api=";
+  const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: "https://evil.example", ...(viaQuery ? { api: evil } : {}) } }), viaQuery ? {} : { init: `try { localStorage.setItem("board-api", ${JSON.stringify(evil)}) } catch (e) {}` });
+  await page.waitForTimeout(2500);
+  const host = new URL(evil).origin, hit = seen.filter((x) => x.origin === host);
+  ok(`F3 ${how} ${evil}: no request goes to a third-party workers.dev`, hit.length === 0, hit.slice(0, 3).map((x) => x.url).join(", "));
+  ok(`F3 ${how} ${evil}: the board still loads its data (falls back to the static files)`, (await page.evaluate(() => document.querySelectorAll("#main, main, body").length)) > 0 && seen.some((x) => /\/data\/(party|timeline)\.json/.test(x.url)));
+  await ctx.close();
+}
+{ /* control: a local Worker via ?api= is still honoured (so the check above is not vacuous) */
+  const { ctx, page, seen } = await open(pageUrl(BASE, { params: { brain: "https://evil.example", api: "http://127.0.0.1:8787" } }));
+  await page.waitForTimeout(2500);
+  ok("F3 control: ?api=http://127.0.0.1:8787 is still used for /api/data/*", seen.some((x) => x.origin === "http://127.0.0.1:8787" && /\/api\/data\//.test(x.url)), seen.filter((x) => /api\/data/.test(x.url)).length + " api/data requests");
+  await ctx.close();
+}
+
+/* F2. h() drops an href/src that is not https(s)://, a one-slash path, # or a relative path with a folder. Every evil value below is rendered as its own poll link, so every one is reached. */
 {
-  const evilHref = ["javascript:window.__pwned=1", "JaVaScRiPt:window.__pwned=1", " javascript:window.__pwned=1", "data:text/html,<script>window.__pwned=1</script>", "vbscript:x", "//evil.example/x"];
+  const EVIL_HREF = ["javascript:window.__pwned=1", "JaVaScRiPt:window.__pwned=1", " javascript:window.__pwned=1", "data:text/html,<script>window.__pwned=1</script>", "vbscript:x",
+    "//evil.example/x", "//evil.example", "/\\evil.example/x", "///evil.example", "http:evil", "x.png"];
   const good = "https://discord.com/channels/1/2/3";
   const { ctx, page } = await open(pageUrl(BASE), {
     mutateBootstrap: (b) => {
       const far = Math.floor(Date.now() / 1000) + 86400 * 30, p = b.party;
-      p.polls = [{ ...p.polls_closed?.[0], ...(p.polls[0] || {}), title: "Guild name", text: "poll closes soon. Add names in chat.", closes_epoch: far, url: evilHref[0] },
-        { title: "Second poll", text: "poll closes soon.", closes_epoch: far, url: good }, { title: "Third poll", text: "poll closes soon.", closes_epoch: far, url: evilHref[3] }];
+      p.polls = [...EVIL_HREF.map((u, i) => ({ title: `Evil poll ${i}`, text: "poll closes soon.", closes_epoch: far, url: u })), { title: "Good poll", text: "poll closes soon.", closes_epoch: far, url: good }];
       p.polls_closed = [];
-      for (const o of p.open) o.links = (o.links || []).map((l, i) => ({ ...l, url: evilHref[i % evilHref.length] }));
+      let n = 0; /* one running counter over ALL links of ALL open items, so the list is walked in order and not only for items with 6+ links */
+      for (const o of p.open) o.links = (o.links || []).map((l) => ({ ...l, url: EVIL_HREF[n++ % EVIL_HREF.length] }));
       return b;
     },
   });
   await page.evaluate(() => window.__boardKit.goScene("ledger"));
   await page.waitForTimeout(1500);
+  const polls = await page.evaluate(() => [...document.querySelectorAll("#ledger-slip .poll")].map((d) => [...d.querySelectorAll("a")].map((a) => a.getAttribute("href"))));
+  ok(`F2 every fixture was rendered: ${EVIL_HREF.length + 1} poll cards, each with its link element`, polls.length === EVIL_HREF.length + 1 && polls.every((l) => l.length === 1), JSON.stringify(polls).slice(0, 200));
+  ok("F2 each of the evil poll links has NO href (javascript:, data:, vbscript:, //host, /\\host, ///host, http:x, bare file all dropped)", polls.slice(0, EVIL_HREF.length).every((l) => l[0] === null), JSON.stringify(polls.slice(0, EVIL_HREF.length)));
+  ok("F2 control: the https poll link in the same data keeps its href", polls[EVIL_HREF.length] && polls[EVIL_HREF.length][0] === good, JSON.stringify(polls[EVIL_HREF.length]));
   const hrefs = await page.evaluate(() => [...document.querySelectorAll("[href],[src]")].map((n) => ({ tag: n.tagName, v: n.getAttribute("href") ?? n.getAttribute("src") })));
-  const bad = hrefs.filter((x) => x.tag !== "LINK" /* the static data: favicon in <head> is not data-driven */ && /^\s*(javascript|data|vbscript):/i.test(x.v || "") || /^\/\/evil/.test(x.v || ""));
-  ok("F2 no element has a javascript:, vbscript:, data: or protocol-relative href/src from data", bad.length === 0, JSON.stringify(bad.slice(0, 3)));
-  ok("F2 control: the https poll link from the same data is kept", hrefs.some((x) => x.tag === "A" && x.v === good), `${hrefs.filter((x) => x.tag === "A").length} anchors`);
-  const slip = await page.evaluate(() => document.querySelectorAll("#ledger-slip a").length);
-  ok("F2 control: the ledger rendered its links (the fixture really reached h())", slip >= 1, String(slip));
+  const bad = hrefs.filter((x) => x.tag !== "LINK" /* the static data: favicon in <head> is not data-driven */ && (/^\s*(javascript|data|vbscript):/i.test(x.v || "") || /^(\/[\/\\]|http:evil)/.test(x.v || "")));
+  ok("F2 no element anywhere (poll links and the open items' links included) has an unsafe href/src", bad.length === 0, JSON.stringify(bad.slice(0, 3)));
   ok("F2 nothing ran", !(await page.evaluate(() => window.__pwned)));
   await ctx.close();
 }

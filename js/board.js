@@ -6,7 +6,8 @@ try { new PerformanceObserver((l) => { for (const e of l.getEntries()) LT.push({
 const ID1 = new Map();
 const $ = (s, r = document) => { if (r !== document || !/^#[\w-]+$/.test(s)) return r.querySelector(s); let e = ID1.get(s); if (e && e.isConnected) return e; e = r.querySelector(s); if (e) ID1.set(s, e); return e; };
 const SVGNS = "http://www.w3.org/2000/svg";
-const SAFE_URL = /^(https?:|\/|#|[a-z]+\/)/;
+const SAFE_URL = /^(https?:\/\/|\/(?![\/\\])|#|[a-z0-9_.-]+\/)/; /* https(s) URL, one-slash absolute path (not protocol-relative //host or /\host), hash, or relative path with a folder */
+const API_OK = /^(?:https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.jmattbloise\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/; /* same origins as BRAIN_OK in js/brain.js: our own Worker, our own pr-N previews, a local Worker */
 function h(tag, attrs, ...kids) {
   /* a lazy image made while the wall is cold gets its src on settle (a lazy image that is rendered but covered still loads) */
   if (tag === "img" && attrs && attrs.loading === "lazy" && attrs.src && wallCold()) {
@@ -237,12 +238,12 @@ const API = (() => {
       if (u) {
         const o = new URL(u, location.href).origin;
         /* BoardBrain.url must not bypass the ?api= allowlist below: only the page's own origin (Discord Activity), the production Worker, pr-N preview Workers and a local Worker */
-        if (o === location.origin || /^(https:\/\/api\.leeroy\.party|https:\/\/leeroy-brain-pr-\d+\.jmattbloise\.workers\.dev|http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?)$/.test(o)) return o;
+        if (o === location.origin || API_OK.test(o)) return o;
         return null;
       }
     }
     const u = new URL(new URLSearchParams(location.search).get("api") || localStorage.getItem("board-api") || "x:");
-    return /^(https:\/\/leeroy-(?:board-api|brain)[\w.-]*\.workers\.dev|http:\/\/127\.0\.0\.1:\d+)$/.test(u.origin) ? u.origin : null;
+    return API_OK.test(u.origin) ? u.origin : null;
   } catch (e) { return null; }
 })();
 const apiFetch = (url, opt) => { const m = API && /^data\/(library\/)?([a-z0-9.-]+)\.json/.exec(url); const to = m ? `${API}/api/${m[1] ? "library" : "data"}/${m[2]}` : null; return to ? fetch(to, { ...opt, mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r : fetch(url, opt)), () => fetch(url, opt)) : fetch(url, opt); };
