@@ -62,7 +62,7 @@ Set three environment variables. Use the preview URLs from the `cloudflare-pr-pr
 | :--- | :--- |
 | `PREVIEW_API` | Worker origin, for example `https://leeroy-brain-pr-13.<account>.workers.dev` |
 | `PREVIEW_PAGES` | Pages origin, for example `https://pr-13.leeroy-board.pages.dev` |
-| `BOARD_ADMIN_TOKEN` | The admin token the preview Worker was deployed with. Take it from your secret store. Never commit it or paste it into a file. |
+| `BOARD_ADMIN_TOKEN` | The admin token of the preview Worker: the per-PR derived value, hex HMAC-SHA256 of `preview:BOARD_ADMIN_TOKEN:leeroy-brain-pr-<PR number>` keyed by the production token (CI computes it in the `api` job). It is never the production token itself. Never commit it or paste it into a file. |
 
 Then:
 
@@ -85,7 +85,7 @@ It runs the unit tests, builds a throwaway local D1 (schema, migrations, seed), 
 
 ## CI
 
-`.github/workflows/preview-tests.yml` runs on every pull request from a branch of this repository (not forks), drafts included, as jobs `unit`, `stamps`, `api` and `browser` (plus `scope`, `preview`, `report`). Docs-only PRs get no preview and run only `unit` and `stamps`; the comment then says `passed (docs only)`. It waits for the preview comment, waits for the preview to answer, runs the tests with the `BOARD_ADMIN_TOKEN` repository secret, uploads logs, and posts a summary comment marked `<!-- preview-tests -->`.
+`.github/workflows/preview-tests.yml` runs on every pull request from a branch of this repository (not forks), drafts included, as jobs `unit`, `stamps`, `api` and `browser` (plus `scope`, `preview`, `report`). Docs-only PRs get no preview and run only `unit` and `stamps`; the comment then says `passed (docs only)`. It waits for the preview comment, waits for the preview to answer, derives the per-PR preview admin token from the `BOARD_ADMIN_TOKEN` repository secret and runs the tests with it, uploads logs, and posts a summary comment marked `<!-- preview-tests -->`.
 
 ## Cross-engine QA (scheduled)
 
