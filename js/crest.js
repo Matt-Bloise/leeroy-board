@@ -1,10 +1,10 @@
-// Class crests with a fallback that needs no network. Painted crests (img/crests/<class>.png) exist for five classes only; the other four
-// (hunter, rogue, shaman, warrior) used to be a 404 and a hole. For a class with no art, and for any crest image that fails to load, BoardCrest
+// Class crests with a fallback that needs no network. Painted crests (img/crests/<class>.png) exist for all nine classes (the last four, hunter, rogue, shaman and warrior,
+// were added after the first five and used to be a 404 and a hole). For a class with no art, and for any crest image that fails to load, BoardCrest
 // draws an inline SVG medallion instead: the same round frame as the painted crests (brass bezel, dark lip, four points) with the class colour
 // as the enamel and the class initial in the middle. It is a data: URI, so it makes no request. Pure functions; no DOM is touched except in guard().
 (() => {
 "use strict";
-const ART = ["druid", "priest", "paladin", "mage", "warlock"]; // the classes with a painted crest in img/crests/ (keep in step with that folder; tests/unit/crest.test.mjs checks)
+const ART = ["druid", "priest", "paladin", "mage", "warlock", "hunter", "rogue", "shaman", "warrior"]; // the classes with a painted crest in img/crests/ (keep in step with that folder; tests/unit/crest.test.mjs checks)
 // Class colours: the game's own (the same as the --c-<class> custom properties in css/board.css).
 const CLASSES = {
   druid: ["#ff7c0a", "D"], priest: ["#ffffff", "P"], paladin: ["#f48cba", "P"], mage: ["#3fc7eb", "M"], warlock: ["#8788ee", "W"],
