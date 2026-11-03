@@ -8,10 +8,13 @@ Why: a workflow file in a pull request runs with the secrets the repository give
 | :--- | :--- | :--- |
 | `CLOUDFLARE_API_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `BOARD_ADMIN_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
-| `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` (or `CLOUDFLARE_AIG_TOKEN`), `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
+| `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | **repository level, deliberately** (see below) | `deploy-cloudflare.yml` only (no PR workflow references them) |
+| `CLOUDFLARE_AIG_TOKEN`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `CLOUDFLARE_ACCOUNT_ID` | repository secret (an identifier, not a credential; may also be copied into `production`) | deploy and preview |
 | `CLOUDFLARE_PREVIEW_API_TOKEN` | repository secret (account-wide, see section 3) | `pr-preview-cloudflare.yml` (spin-up, teardown) |
 | `BOARD_PREVIEW_ADMIN_TOKEN` | repository secret | `pr-preview-cloudflare.yml`, `preview-tests.yml`; the base for the per-preview salts and admin token |
+
+**Accepted residual risk.** As configured by the owner, the environment `production` holds `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BOARD_ADMIN_TOKEN`, `GEMINI_API_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_SECRET` and `DISCORD_PUBLIC_KEY`. `USER_SALT` and `KEY_SALT` (ours, not third-party credentials) and `AI_GATEWAY_TOKEN` (Uncle Jimmy's) stay at repository level on purpose: a job with `environment: production` still reads repository secrets the environment lacks, and the deploy keeps the existing Worker value when a secret is empty. Consequence: a workflow run from any branch could read those three by editing its own workflow file. No PR workflow in this repository references them (the preview derives its salts from `BOARD_PREVIEW_ADMIN_TOKEN`), and the guard test enforces that, but this is a protection by review, not by GitHub. S1 stays partly open for these three until they move into the environment.
 
 `tests/unit/workflow-secrets.test.mjs` fails if a PR-triggered workflow names any secret outside the preview rows above.
 
@@ -33,7 +36,7 @@ Do this for the two critical secrets first, then the rest of the table's `produc
 4. Also add `CLOUDFLARE_ACCOUNT_ID` to the environment (the deploy checks it exists).
 5. Only after step 2 to 4 are done, remove the repository-level copies: **Settings > Secrets and variables > Actions > Repository secrets**, click the bin next to each production secret, confirm. Keep `CLOUDFLARE_ACCOUNT_ID` there for the preview.
 
-**Step 5 is mandatory, and it is the control that matters.** If the environment `production` is missing, GitHub creates it empty on the first reference and a secret of the same name falls back to the repository-level copy, so the deploy guard cannot tell the environment is missing. A repository secret stays readable by every workflow run, including one started from a branch. Delete the repository-level copies of `CLOUDFLARE_API_TOKEN`, `BOARD_ADMIN_TOKEN`, `USER_SALT`, `KEY_SALT`, all AI keys and all Discord secrets once the environment copies exist. **Until they are deleted, finding S1 (PR workflows can reach production secrets) stays open.**
+**Step 5 is mandatory, and it is the control that matters.** If the environment `production` is missing, GitHub creates it empty on the first reference and a secret of the same name falls back to the repository-level copy, so the deploy guard cannot tell the environment is missing. A repository secret stays readable by every workflow run, including one started from a branch. Delete the repository-level copies of `CLOUDFLARE_API_TOKEN`, `BOARD_ADMIN_TOKEN`, the AI keys (`GEMINI_API_KEY` and any other) and all Discord secrets once the environment copies exist. `USER_SALT`, `KEY_SALT` and `AI_GATEWAY_TOKEN` are the accepted exception (see the secret map). **Until the others are deleted, finding S1 (PR workflows can reach production secrets) stays open.**
 
 Confirm with `gh` (as a repo admin; prints names only, never values):
 
@@ -41,7 +44,7 @@ Confirm with `gh` (as a repo admin; prints names only, never values):
 tools/check-secret-scope.sh Matt-Bloise/leeroy-board
 ```
 
-It exits 0 only when no production secret is left at repository level.
+It exits 0 only when no production credential other than the three accepted ones is left at repository level.
 
 Check: the **Actions** tab, **Deploy Site & Serverless Backend to Cloudflare (Production)**, **Run workflow** on `master`. The first step "Require the production environment secrets" must pass and the run must show "production" as its environment. A run from any other branch must be refused at the environment.
 
