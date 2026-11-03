@@ -47,6 +47,15 @@ test("the policy allows what normal pages use, so a report-only policy stays qui
   for (const h of ["https://*.joshbblaine.workers.dev", "wss://*.joshbblaine.workers.dev", "https://*.jmattbloise.workers.dev", "wss://*.jmattbloise.workers.dev"]) assert.ok(c.includes(h), h);
   assert.ok(!c.includes("*") && !c.includes("https:") && !c.includes("https://*.workers.dev"), "no blanket origin");
 });
+test("the Cloudflare Web Analytics beacon is allowed by exact host only: script host in script-src, report endpoint in connect-src, nothing wider", () => {
+  const s = dir("script-src"), c = dir("connect-src");
+  assert.ok(s.includes("https://static.cloudflareinsights.com"), "script-src allows the beacon script host");
+  assert.ok(c.includes("https://cloudflareinsights.com"), "connect-src allows the beacon report endpoint");
+  assert.ok(!s.some((x) => /cloudflareinsights/.test(x) && x !== "https://static.cloudflareinsights.com"), "script-src names only the beacon host");
+  assert.ok(![...s, ...c].some((x) => /\*/.test(x) && /cloudflare/.test(x)), "no wildcard on the beacon hosts");
+  assert.ok(!s.includes("'unsafe-inline'") && !s.includes("https:") && !s.includes("*"), "script-src is not widened");
+  for (const d of ["default-src", "img-src", "font-src", "worker-src"]) assert.ok(!dir(d).some((x) => /cloudflareinsights/.test(x)), `${d} is untouched`);
+});
 test("a changed host-redirect script would no longer match (the check is not vacuous)", () => {
   const m = /<script id="host-redirect">([\s\S]*?)<\/script>/.exec(html);
   const other = `'sha256-${crypto.createHash("sha256").update(`${m[1]} `).digest("base64")}'`;
