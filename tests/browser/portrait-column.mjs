@@ -5,6 +5,7 @@
 // last card, and the sheet is at least 60 percent of the height or ends with the card), the cloth banner ribbons are gone, the tabs sit in one strip,
 // the Next steps cards stack, and the decorative moon is below the content.
 // Exit 0 when every check passes, 1 otherwise.
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -16,7 +17,7 @@ const CTX = [
   ["1080x1920", { viewport: { width: 1080, height: 1920 } }],
   ["3440x1440", { viewport: { width: 3440, height: 1440 } }],
 ];
-const browser = await pw.chromium.launch();
+const browser = stubbed(await pw.chromium.launch());
 for (const [size, opts] of CTX) {
   const tag = `[${size}]`, errors = [];
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" });

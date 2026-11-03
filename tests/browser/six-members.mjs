@@ -8,6 +8,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -36,7 +38,7 @@ async function setup(browser, width, flagOn) {
   });
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`${BASE.replace(/\/$/, "")}/?preview=1`, { waitUntil: "load" });
+  await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 20000 }).catch(() => {});
   const look = page.locator("#nx-fr2-look");
   if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
@@ -66,7 +68,7 @@ const fiveCopy = (page) => page.evaluate(() => {
   return hits;
 });
 
-const browser = await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
+const browser = stubbed(await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}));
 try {
   ok("fixture has six made-up members", NAMES.length === 6 && new Set(NAMES).size === 6, NAMES.join(", "));
   for (const width of WIDTHS) {
@@ -81,7 +83,7 @@ try {
     const front = await fiveCopy(page);
     ok(`${t} first screen: no copy says "five"`, front.length === 0, front.join(" || "));
     ok(`${t} the front tile shows six medallions`, (await page.locator("#ts-five .med").count()) === 6, String(await page.locator("#ts-five .med").count()));
-    await page.goto(`${BASE.replace(/\/$/, "")}/?preview=1#five`, { waitUntil: "load" });
+    await page.goto(pageUrl(BASE, { params: { preview: "1" }, hash: "five" }), { waitUntil: "load" });
     await page.waitForSelector("#cards .card", { state: "attached", timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(1200);
     ok(`${t} the roster shows six cards`, (await page.locator("#cards .card").count()) === 6, String(await page.locator("#cards .card").count()));

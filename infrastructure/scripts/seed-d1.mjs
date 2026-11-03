@@ -154,6 +154,8 @@ for (let b = 0; b < totalBatches; b++) {
       isRemote ? "--remote" : "--local",
       `--file=${outSqlPath}`,
     ];
+    // tools/local-browser.sh keeps its throwaway database in its own folder: D1_PERSIST_TO=<dir> makes the --local run use it.
+    if (process.env.D1_PERSIST_TO && !isRemote) args.push("--persist-to", process.env.D1_PERSIST_TO);
     console.log(`[Batch ${b + 1}/${totalBatches}] Executing ${batch.length} statements...`);
     execFileSync("npx", args, { cwd: INFRA_DIR, stdio: "inherit", shell: true });
   } finally {
