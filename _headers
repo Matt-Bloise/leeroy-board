@@ -3,7 +3,9 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Content-Security-Policy-Report-Only: default-src 'self' https://api.leeroy.party https://*.discordsays.com https://static.cloudflareinsights.com; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://api.leeroy.party https://*.discordsays.com https://cloudflareinsights.com; frame-ancestors https://discord.com https://*.discordsays.com
 
+# Content-Security-Policy-Report-Only is NOT enforced (nothing is blocked); promote it to Content-Security-Policy only after the console shows no violations.
 # Cache-Control. Non-overlapping path rules only: Pages joins the headers of every matching rule, so /* must never carry one.
 # HTML (/ and /index.html) gets no rule here and keeps the Pages default, max-age=0, must-revalidate, so new ?v= stamps are seen at once.
 # js, scenes, css, vendor, cloth, next, room: immutable for a year. Every reference carries ?v=<sha256 first 10 hex of the file> and CI (tools/stamps.mjs --check) fails on a stale stamp, so a changed file is a new URL.

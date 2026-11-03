@@ -312,16 +312,11 @@ jobs:
       - name: Deploy Ephemeral PR Worker & Durable Object (Single Deploy)
         id: worker
         working-directory: infrastructure
-        env:
-          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
         run: |
           set +e
-          # Deploy Worker once; pass BOARD_ADMIN_TOKEN directly to avoid double redeployment
-          if [ -n "$BOARD_ADMIN_TOKEN" ]; then
-            DEPLOY_OUT=$(npx wrangler deploy --var BOARD_ADMIN_TOKEN:"$BOARD_ADMIN_TOKEN" 2>&1)
-          else
-            DEPLOY_OUT=$(npx wrangler deploy 2>&1)
-          fi
+          # The production BOARD_ADMIN_TOKEN is never passed to the preview (a --var is plain text in the Worker settings).
+          # The preview gets a derived admin secret in the next step.
+          DEPLOY_OUT=$(npx wrangler deploy 2>&1)
           DEPLOY_EXIT=$?
           echo "$DEPLOY_OUT"
           if [ $DEPLOY_EXIT -ne 0 ]; then
@@ -345,12 +340,13 @@ jobs:
         env:
           USER_SALT: ${{ secrets.USER_SALT }}
           KEY_SALT: ${{ secrets.KEY_SALT }}
+          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
         run: |
           set -e
-          # Each preview gets its own salts: HMAC-SHA256 of the Worker name keyed by the repository secret.
+          # BOARD_ADMIN_TOKEN is derived the same way (the api tests derive it too). Each preview gets its own salts: HMAC-SHA256 of the Worker name keyed by the repository secret.
           # The preview value differs from production and from every other preview, and the repository secret is never copied.
           # If a repository secret is missing the Worker fails closed (503 salt_not_configured); the preview still deploys.
-          for SECRET_NAME in USER_SALT KEY_SALT; do
+          for SECRET_NAME in USER_SALT KEY_SALT BOARD_ADMIN_TOKEN; do
             BASE="${!SECRET_NAME}"
             if [ -z "$BASE" ]; then
               echo "::warning::Repository secret $SECRET_NAME is missing: preview $WORKER_NAME will refuse salt-dependent requests."

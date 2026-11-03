@@ -423,7 +423,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
 
   const defaultEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
-  )}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`;
+  )}:generateContent`;
 
   const body = JSON.stringify({
     systemInstruction: {
@@ -469,7 +469,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       )}:generateContent`,
       defaultEndpoint: `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
         activeModel
-      )}:generateContent?key=${encodeURIComponent(env.GEMINI_API_KEY)}`,
+      )}:generateContent`,
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": env.GEMINI_API_KEY,

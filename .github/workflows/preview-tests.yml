@@ -186,9 +186,14 @@ jobs:
         env:
           PREVIEW_API: ${{ needs.preview.outputs.worker }}
           PREVIEW_PAGES: ${{ needs.preview.outputs.pages }}
-          BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
+          PROD_BOARD_ADMIN_TOKEN: ${{ secrets.BOARD_ADMIN_TOKEN }}
         run: |
           set -o pipefail
+          # The preview Worker holds a per-PR derived admin token (see pr-preview-cloudflare.yml), never the production one.
+          BOARD_ADMIN_TOKEN=$(printf '%s' "preview:BOARD_ADMIN_TOKEN:leeroy-brain-pr-$PR_NUMBER" | openssl dgst -sha256 -hmac "$PROD_BOARD_ADMIN_TOKEN" -r | cut -d' ' -f1)
+          echo "::add-mask::$BOARD_ADMIN_TOKEN"
+          export BOARD_ADMIN_TOKEN
+          unset PROD_BOARD_ADMIN_TOKEN
           npm run test:api 2>&1 | tee "$RUNNER_TEMP/api.log"
 
       - name: Upload logs
