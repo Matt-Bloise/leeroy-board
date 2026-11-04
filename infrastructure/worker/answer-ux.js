@@ -4,7 +4,7 @@
 // A click whose message id differs from the one signed is rejected. No new secret: USER_SALT is the existing per-user hash salt.
 // Users are stored only as sha256(USER_SALT:answer-ux:<discord id>). Reactions are never used: the Worker cannot see them.
 import { toHex, timingSafeEqualStr, sha256Hex } from "./crypto.js";
-import { saltProblems } from "./salts.js";
+import { saltProblems, SaltMissingError } from "./salts.js";
 import { ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 
 export const MORE_LABEL = "More if you want it";
@@ -55,7 +55,10 @@ export async function askerHashes(env, { discordId, slug } = {}) {
 // Writes the ask_turns row and its asker rows in ONE batch: both land or neither does, so a new question can never exist without the hashes
 // we could compute for it. No identifiable asker (a web visitor, or no salt): the row is written alone and, not being legacy, is never matched by name.
 // Only a missing ask_turn_askers table (migration not applied yet) falls back to the plain insert; any other failure fails the ask.
+// An identifiable asker (a Discord id or a member handle) with no usable USER_SALT is refused with SaltMissingError BEFORE anything is written:
+// the row would carry no hashes, could never be found by an export or an erase, and the person could not be told. A visitor is unaffected.
 export async function insertAskTurn(env, row, who) {
+  if (who && (who.discordId || who.slug) && !saltReady(env)) throw new SaltMissingError(["USER_SALT"]);
   const ins = env.DB.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, ?, 'thinking', ?, ?)")
     .bind(row.id, row.byName, row.question, row.provider, row.share ? 1 : 0, row.createdAt);
   const hashes = await askerHashes(env, who);
