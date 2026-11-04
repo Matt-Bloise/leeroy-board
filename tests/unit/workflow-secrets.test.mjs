@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { stripComments as code } from "../helpers/yaml-comments.mjs";
 
 const DIR = fileURLToPath(new URL("../../.github/workflows/", import.meta.url));
 const files = readdirSync(DIR).filter((f) => /\.ya?ml$/.test(f));
@@ -27,8 +28,7 @@ const PRODUCTION = ["BOARD_ADMIN_TOKEN", "USER_SALT", "KEY_SALT", "AI_GATEWAY_TO
   "GROQ_API_KEY", "CEREBRAS_API_KEY", "GITHUB_MODELS_TOKEN", "OPENROUTER_API_KEY", "DISCORD_WEBHOOK_URL", "DISCORD_PUBLIC_KEY", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN"];
 
 const triggers = (doc) => { const on = doc.on ?? doc[true]; return typeof on === "string" ? [on] : Array.isArray(on) ? on : Object.keys(on || {}); };
-// Comments are not code: strip `# ...` so a runbook pointer in a comment is not read as a reference.
-const code = (text) => text.split("\n").map((l) => l.replace(/(^|\s)#.*$/, "$1")).join("\n");
+// Comments are not code: `code` (tests/helpers/yaml-comments.mjs) strips `# ...` comments, but not a # inside quotes or ${{ }}, so a runbook pointer in a comment is not read as a reference.
 const secretNames = (text) => [...code(text).matchAll(/(?<![\w.\/-])secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
 
 test("the workflow directory is found and parsed", () => {
@@ -214,4 +214,26 @@ test("the subcommand check itself rejects enable, disable, update, delete, split
   assert.deepEqual(forbiddenFlagshipSubcommands("run: wrangler flagship flags \\\n  enable APP KEY"), ["enable"], "line continuation");
   assert.deepEqual(forbiddenFlagshipSubcommands("run: wrangler flagship flags create APP KEY --disabled"), []);
   assert.deepEqual(forbiddenFlagshipSubcommands("# wrangler flagship flags enable is done by the owner\nrun: wrangler flagship flags create A K"), [], "comments are not code");
+});
+
+// B46: the comment stripper must not treat a # inside quotes or ${{ }} as a comment start (that would hide a secret that follows it).
+test("the comment stripper keeps a secret that follows a quoted # (cases the guard must catch)", () => {
+  assert.deepEqual(secretNames('run: echo "#" "${{ secrets.X }}"'), ["X"], "double-quoted #");
+  assert.deepEqual(secretNames("run: echo '#' \"${{ secrets.X }}\""), ["X"], "single-quoted #");
+  assert.deepEqual(secretNames("run: echo '# ${{ secrets.X }}'"), ["X"], "secret inside single quotes after #");
+  assert.deepEqual(secretNames('run: echo "a \\" # \" ${{ secrets.X }}"'), ["X"], "escaped quote inside double quotes");
+  assert.deepEqual(secretNames("run: echo ${{ format('#{0}', secrets.X) }}"), ["X"], "# inside a ${{ }} expression");
+  assert.deepEqual(secretNames('env: { A: "x #y", B: ${{ secrets.X }} }'), ["X"], "secret after a quoted # on the same line");
+  assert.deepEqual(secretNames('run: echo "#" # real comment\nrun: ${{ secrets.Y }}'), ["Y"], "a real comment after a quoted # still ends that line");
+});
+
+test("the comment stripper still ignores real comments (cases that must pass)", () => {
+  assert.deepEqual(secretNames("# uses secrets.X for the deploy"), [], "plain comment line");
+  assert.deepEqual(secretNames("    # secrets.X is read in the production job"), [], "indented comment line");
+  assert.deepEqual(secretNames("run: make build # never uses secrets.X"), [], "trailing comment naming secrets");
+  assert.deepEqual(secretNames('run: echo "done" # see secrets.X'), [], "trailing comment after a quoted string");
+  assert.deepEqual(secretNames("run: echo ${{ github.sha }} # secrets.X"), [], "trailing comment after an expression");
+  assert.equal(code("a: b # c").trimEnd(), "a: b", "the code before the comment is kept");
+  assert.equal(code('a: "b # c"'), 'a: "b # c"', "a quoted # is kept");
+  assert.equal(code("url: http://x/y#frag"), "url: http://x/y#frag", "# not preceded by whitespace is not a comment");
 });
