@@ -24,3 +24,17 @@ export function expectedHero(date) {
   if (t < LAUNCH_MS - DAY || t >= LAUNCH_MS + DAY) return "";
   return t < LAUNCH_MS ? "soon" : "live";
 }
+
+// A faked-clock run must really be in the state it claims. Returns null when the page matches expectedHero(date), else a message: html[data-launch] and #launch-hero are the
+// expected phase (or both absent outside the window) and, after launch, #launch-hero carries is-live (before it, not). The same check layout-sweep.mjs makes.
+export async function heroStateProblem(page, date, timeout = 8000) {
+  const want = expectedHero(date), at = date.toISOString();
+  const got = await page.waitForFunction((w) => (document.documentElement.dataset.launch || "") === w && !!document.querySelector("#launch-hero") === !!w, want, { timeout }).then(() => true, () => false);
+  if (!got) {
+    const seen = await page.evaluate(() => ({ phase: document.documentElement.dataset.launch || "", hero: !!document.querySelector("#launch-hero") }));
+    return `--clock ${at}: expected the launch hero ${want ? `up (${want})` : "absent"}, found data-launch="${seen.phase}" and #launch-hero ${seen.hero ? "present" : "missing"}`;
+  }
+  if (!want) return null;
+  const live = await page.evaluate(() => document.querySelector("#launch-hero").classList.contains("is-live"));
+  return live === (want === "live") ? null : `--clock ${at}: #launch-hero ${live ? "has" : "lacks"} the is-live class, expected ${want === "live" ? "live" : "the countdown"}`;
+}
