@@ -34,7 +34,7 @@ jobs:
   qa:
     name: ${{ matrix.engine }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -82,6 +82,33 @@ jobs:
           set -o pipefail
           node browser/layout-sweep.mjs --url "$TARGET_URL" --engine "$ENGINE" --out "report-$ENGINE.json" --budget-min 20 2>&1 | tee "$RUNNER_TEMP/sweep-$ENGINE.log"
 
+      - name: Layout sweep at the launch times
+        # B49: the launch hero appears 24 h before launch (Nov 4 2026 23:00Z), so the first-visit screen is swept at three faked clocks: before it, with the hero up, after launch.
+        # First-visit gate only (the other states do not change with the clock); the API is answered from tests/fixtures/api-snapshot, so this sends nothing to the Worker.
+        if: ${{ !cancelled() }}
+        working-directory: tests
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          set -o pipefail
+          rc=0
+          for clock in 2026-11-03T22:10:00Z 2026-11-04T10:00:00Z 2026-11-05T14:00:00Z; do
+            node browser/layout-sweep.mjs --url "$TARGET_URL" --engine "$ENGINE" --states gate --clock "$clock" --out "report-$ENGINE-${clock//:/}.json" --budget-min 2 2>&1 | tee -a "$RUNNER_TEMP/sweep-clock-$ENGINE.log" || rc=1
+          done
+          exit $rc
+
+      - name: First-load weight at the launch times
+        # B49: no covered-wall art may load before the first tap even while the launch hero is up (Chromium only; the suite starts its own Chromium).
+        if: ${{ !cancelled() && matrix.engine == 'chromium' }}
+        working-directory: tests
+        run: |
+          set -o pipefail
+          rc=0
+          for clock in 2026-11-03T22:10:00Z 2026-11-04T10:00:00Z 2026-11-05T14:00:00Z; do
+            node browser/first-load-weight.mjs --url "$TARGET_URL" --clock "$clock" 2>&1 | tee -a "$RUNNER_TEMP/sweep-clock-chromium.log" || rc=1
+          done
+          exit $rc
+
       - name: Upload reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -89,6 +116,8 @@ jobs:
           name: cross-engine-${{ matrix.engine }}
           path: |
             tests/report-${{ matrix.engine }}.json
+            tests/report-${{ matrix.engine }}-*.json
+            ${{ runner.temp }}/sweep-clock-${{ matrix.engine }}.log
             ${{ runner.temp }}/smoke-${{ matrix.engine }}.log
             ${{ runner.temp }}/sweep-${{ matrix.engine }}.log
           if-no-files-found: ignore

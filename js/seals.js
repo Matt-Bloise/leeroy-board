@@ -399,7 +399,8 @@
     const key = o.key || "timeline", d = makeDisc(), el = h("div", { class: "seal seal-free", "data-k": key });
     const btn = h("button", { class: "seal-btn", type: "button", "aria-label": o.label || `${o.title || "Dates"} seal. Press it to turn it over.` }, h("span", { class: "seal-cast" }), d);
     el.append(btn);
-    if (K.medalSet) K.medalSet($(".seal-img", el), key); else $(".seal-img", el).setAttribute("src", `img/medal/${key}.webp`);
+    const putMedal = () => { if (K.medalSet) K.medalSet($(".seal-img", el), key); else $(".seal-img", el).setAttribute("src", `img/medal/${key}.webp`); };
+    if (K.wallCold && K.wallCold() && K.whenSettled) K.whenSettled(putMedal); else putMedal(); /* B49: a coin made while the wall is covered (the launch hero's, from T-24h) gets its medal when the wall warms, like every other covered-wall picture (tests/browser/first-load-weight.mjs) */
     const C = { ang: 0, n: 0 };
     const face = (title, line) => { $(".seal-b", el).textContent = title || ""; $(".seal-i", el).textContent = line || ""; };
     face(o.title, o.back);

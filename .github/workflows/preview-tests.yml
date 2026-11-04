@@ -297,14 +297,14 @@ jobs:
   layout:
     # Layout invariants sweep (tests/browser/layout-sweep.mjs): 18 viewport sizes x 3 visitor states x 12 scenes on Chromium, judged by DOM
     # rules (close button inside the viewport and uncovered, no overlap in the header, title not cut, 44 px touch height, no sideways scroll, no 4xx/5xx).
-    # Gating: it is in the report's needs. The sweep stops itself at 5 minutes (--budget-min) and fails if it did not finish; the mutation test after it takes about 20 s
-    # (tests/helpers/layout-sweep-mutation.mjs: proves the sweep still FAILS on 4 injected layout bugs, 0 Worker requests); the job limit is 10.
+    # Gating: it is in the report's needs. The sweep stops itself at 9 minutes (--budget-min) and fails if it did not finish; the mutation test after it takes about 20 s
+    # (tests/helpers/layout-sweep-mutation.mjs: proves the sweep still FAILS on 4 injected layout bugs, 0 Worker requests); the job limit is 20 and the full sweep budget 9 min (with the launch hero up, 6.8 min of work: the 5 min budget ran out at 588 of 675 cells on PR 163; B49 also added three gate-only sweeps at faked clocks, about 45 s each).
     name: layout
     needs: [scope, preview]
     # Skipped when no site, tooling, workflow, config or dependency file changed: tools/ci-scope.mjs decides. Also skipped without `ci-full` (no preview).
     if: needs.scope.outputs.site_changed == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -326,7 +326,22 @@ jobs:
           PAGES_URL: ${{ needs.preview.outputs.pages }}
         run: |
           set -o pipefail
-          node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --budget-min 5 --out "$RUNNER_TEMP/layout-report.json" 2>&1 | tee "$RUNNER_TEMP/layout.log"
+          node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --budget-min 9 --out "$RUNNER_TEMP/layout-report.json" 2>&1 | tee "$RUNNER_TEMP/layout.log"
+
+      - name: Layout sweep at the launch times (gating)
+        # B49: the launch hero shows from 24 h before launch (Nov 4 2026 23:00Z) to 24 h after. The first-visit screen must still fit, and no covered-wall art may load before the first tap (first-load-weight), at a faked clock before it, with it, and after launch.
+        # First-visit gate only, ~40 s each on Chromium; the API comes from tests/fixtures/api-snapshot, 0 requests to the Worker.
+        working-directory: tests
+        env:
+          PAGES_URL: ${{ needs.preview.outputs.pages }}
+        run: |
+          set -o pipefail
+          rc=0
+          for clock in 2026-11-03T22:10:00Z 2026-11-04T10:00:00Z 2026-11-05T14:00:00Z; do
+            node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --states gate --clock "$clock" --budget-min 2 2>&1 | tee -a "$RUNNER_TEMP/layout-clock.log" || rc=1
+            node browser/first-load-weight.mjs --url "$PAGES_URL/" --clock "$clock" 2>&1 | tee -a "$RUNNER_TEMP/layout-clock.log" || rc=1
+          done
+          exit $rc
 
       - name: Layout sweep mutation test (gating)
         # The sweep must still FAIL on injected layout bugs (tests/fixtures/layout-mutations), otherwise a green sweep proves nothing. Gating: a failing step fails the job.
@@ -340,7 +355,7 @@ jobs:
       - name: Worker request summary
         if: always()
         run: |
-          { echo "### Worker requests (layout job)"; grep -h "api-stub" "$RUNNER_TEMP/layout.log" || true; echo "The sweep and the mutation test answer /api/ from tests/fixtures/api-snapshot: 0 requests to the Worker."; grep -h "layout-sweep-mutation" "$RUNNER_TEMP/layout-mutation.log" || true; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### Worker requests (layout job)"; grep -h "api-stub" "$RUNNER_TEMP/layout.log" "$RUNNER_TEMP/layout-clock.log" || true; echo "The sweep and the mutation test answer /api/ from tests/fixtures/api-snapshot: 0 requests to the Worker."; grep -h "layout-sweep-mutation" "$RUNNER_TEMP/layout-mutation.log" || true; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload report
         if: always()

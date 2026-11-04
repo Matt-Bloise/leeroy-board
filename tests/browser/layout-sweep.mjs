@@ -5,6 +5,7 @@
 //            --zoom-selftest   check the zoom-aware coordinate helper on the chosen engine against a built-in page and exit (no --url needed)
 //            --live-api   use the real API the page points at (default: the Worker API is answered from tests/fixtures/api-snapshot, so the sweep sends no request to the Worker)
 //            --no-retry   do not run a failed (size, state) cell a second time in a fresh page (default: retry once, print WARN when it passed only on the retry)
+//            --clock 2026-11-04T10:00:00Z   load every page with its clock set to that instant (it keeps running), to check a time-dependent screen such as the launch hero without waiting (tests/helpers/clock-arg.mjs)
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
 // No AI call, nothing is sent. By default every /api/ call is fulfilled by Playwright from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs): the sweep judges layout, not the API,
 // and a full sweep made 1,056 Worker requests before this (measured locally, docs/runbooks/cloudflare-requests.md). An API path the snapshot lacks fails the run (invariant stub-miss). Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
@@ -32,6 +33,7 @@
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
 import { pageUrl } from "../helpers/page-url.mjs";
+import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
@@ -40,6 +42,8 @@ const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 if (!BASE && !argv.includes("--zoom-selftest")) { console.error("usage: node layout-sweep.mjs --url <pages origin> (or set PREVIEW_PAGES) [--engine chromium|webkit|firefox] [--out report.json]"); process.exit(2); }
 // run.mjs runs every suite in this folder; CI runs this one in its own `layout` job, so the `browser` job sets LAYOUT_SWEEP_SKIP=1 rather than sweeping twice.
 if (process.env.LAYOUT_SWEEP_SKIP === "1") { console.log("layout-sweep: skipped (LAYOUT_SWEEP_SKIP=1; the layout job runs it)"); process.exit(0); }
+let CLOCK = null;
+try { CLOCK = parseClock(argv); } catch (e) { console.error(e.message); process.exit(2); }
 const ENGINE = arg("--engine", "chromium");
 if (!["chromium", "webkit", "firefox"].includes(ENGINE) || !pw[ENGINE]) { console.error(`unknown engine ${ENGINE}`); process.exit(2); }
 const OUT = arg("--out"), BUDGET_MS = Number(arg("--budget-min", "7")) * 60000, CONC = Math.max(1, Number(arg("--concurrency", "4")));
@@ -227,6 +231,20 @@ async function gateChecks(page, size, once, A) {
     const box = card && (card.closest(".sheet") || card.closest("#sheet-body") || card.parentElement), cr = card && card.getBoundingClientRect(), br = box && box.getBoundingClientRect();
     return { sh: de.scrollHeight, sw: de.scrollWidth, ih: innerHeight, iw: innerWidth, docScrolls: de.scrollHeight > innerHeight + 1, scrollers, fill: cr && br && br.width * br.height > 0 ? (cr.width * cr.height) / (br.width * br.height) : null };
   });
+  // a faked-clock run must really be in the state it claims: the launch hero is up (html[data-launch] and #launch-hero, with its live class after launch) or absent
+  if (CLOCK) {
+    const want = expectedHero(CLOCK);
+    A.checks++;
+    const got = await page.waitForFunction((w) => (document.documentElement.dataset.launch || "") === w && !!document.querySelector("#launch-hero") === !!w, want, { timeout: 8000 }).then(() => true, () => false);
+    if (!got) {
+      const seen = await page.evaluate(() => ({ phase: document.documentElement.dataset.launch || "", hero: !!document.querySelector("#launch-hero") }));
+      once("clock-state", `--clock ${CLOCK.toISOString()}: expected the launch hero ${want ? `up (${want})` : "absent"}, found data-launch="${seen.phase}" and #launch-hero ${seen.hero ? "present" : "missing"}`);
+    } else if (want) {
+      A.checks++;
+      const live = await page.evaluate(() => document.querySelector("#launch-hero").classList.contains("is-live"));
+      if (live !== (want === "live")) once("clock-state", `--clock ${CLOCK.toISOString()}: #launch-hero ${live ? "has" : "lacks"} the is-live class, expected ${want === "live" ? "live" : "the countdown"}`);
+    }
+  }
   let m = await measureGate();
   // the card is scaled by CSS and the scene fit runs on a timer: on a busy machine the first reading can come before it settles, so at the enforced sizes look again (up to 8 x 400 ms) before judging fill
   for (let i = 0; i < 8 && FILL_ENFORCED.has(`${size.w}x${size.h}`) && (m.fill === null || m.fill < 0.25); i++) { await page.waitForTimeout(400); m = await measureGate(); }
@@ -251,6 +269,7 @@ async function cell(browser, size, state, A) {
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
   const ctx = await browser.newContext(opts), page = await ctx.newPage();
   await ctx.addInitScript(ZOOM_JS, ENGINE === "webkit");
+  await applyClock(page, CLOCK);
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
@@ -347,7 +366,7 @@ await browser.close();
 failures.sort((a, b) => b.w - a.w || b.h - a.h || a.state.localeCompare(b.state) || a.scene.localeCompare(b.scene) || a.invariant.localeCompare(b.invariant));
 const byInv = {}, bySize = {}, byScene = {};
 for (const f of failures) { byInv[f.invariant] = (byInv[f.invariant] || 0) + 1; const s = `${f.w}x${f.h}`; bySize[s] = (bySize[s] || 0) + 1; byScene[f.scene] = (byScene[f.scene] || 0) + 1; }
-const summary = { url: BASE, engine: ENGINE, retriedCells: retried, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, apiMode: LIVE_API ? "live" : "stub", apiReadsStubbed: stubReport ? stubReport.served : 0, byInvariant: byInv, bySize, byScene, skippedCells: skipped, reportOnly: notes, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
+const summary = { url: BASE, engine: ENGINE, clock: CLOCK ? CLOCK.toISOString() : null, retriedCells: retried, sizes: SIZES.length, states: STATES.length, scenes: SCENES.length, cells, invariantChecks: checks, failures: failures.length, apiMode: LIVE_API ? "live" : "stub", apiReadsStubbed: stubReport ? stubReport.served : 0, byInvariant: byInv, bySize, byScene, skippedCells: skipped, reportOnly: notes, truncated, seconds: Math.round((Date.now() - T0) / 1000) };
 if (OUT) writeFileSync(OUT, JSON.stringify({ summary, failures }, null, 1));
 
 if (failures.length) {
@@ -368,5 +387,5 @@ if (notes.length) {
   console.log("\nreport-only (not failures; the next packages tighten these):");
   for (const [k, l] of Object.entries(by)) { console.log(`  ${k}: ${l.length} of ${SIZES.length} sizes`); for (const x of l.slice(0, 6)) console.log(`    ${x.w}x${x.h} ${x.detail}`); }
 }
-console.log(`layout-sweep: ${ENGINE}, ${cells} cells, ${checks} invariant checks, ${failures.length} failures, ${retried} cells retried${truncated ? " (INCOMPLETE)" : ""} in ${summary.seconds}s`);
+console.log(`layout-sweep: ${ENGINE}, ${cells} cells, ${checks} invariant checks, ${failures.length} failures, ${retried} cells retried${CLOCK ? `, clock faked to ${CLOCK.toISOString()}` : ""}${truncated ? " (INCOMPLETE)" : ""} in ${summary.seconds}s`);
 process.exit(failures.length || truncated ? 1 : 0);
