@@ -7,9 +7,11 @@
 // on the fresh context's own localStorage, and never presses anything that sends.
 // A failed context is visited once more after 25 s (SMOKE_RETRY_MS overrides); fail-then-pass prints WARN transient, fail twice fails (smoke-retry.mjs).
 // Option: --engine chromium|webkit|firefox runs that engine alone (default: Chromium and WebKit; Firefox only when asked, for the scheduled cross-engine run, .github/workflows/cross-engine.yml).
+// Option: --clock <iso> loads every page with its clock set to that instant (tests/helpers/clock-arg.mjs), e.g. 2026-11-04T10:00:00Z to see the launch hero today.
 // Exit 0 when every check passes, 1 otherwise.
 import { needsRetry, mergeRuns, RETRY_DELAY_MS } from "./smoke-retry.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { parseClock, applyClock } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -20,6 +22,8 @@ const CTX = [["chromium", "390x844", { viewport: { width: 390, height: 844 }, ha
   ["firefox", "390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["firefox", "1366x768", { viewport: { width: 1366, height: 768 } }]];
 const ei = argv.indexOf("--engine"), ENGINE = ei >= 0 ? argv[ei + 1] : null;
 if (ENGINE !== null && !["chromium", "webkit", "firefox"].includes(ENGINE)) { console.error(`unknown engine ${ENGINE}`); process.exit(2); }
+let CLOCK = null;
+try { CLOCK = parseClock(argv); } catch (e) { console.error(e.message); process.exit(2); }
 let pass = 0, fail = 0, transient = 0; const fails = [];
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; const l = `FAIL ${name}${extra ? `: ${extra}` : ""}`; fails.push(l); console.log(l); } };
 const bad = (t) => { if (/\[object Object\]/.test(String(t))) return "object Object"; const m = String(t).match(/(^|[^A-Za-z0-9_.\-])(null|undefined|NaN)(?![A-Za-z0-9_\-])/); return m ? m[2] : null; }; // + [object Object] and NaN (2026-10-30: the five's arrangement line)
@@ -47,6 +51,7 @@ async function visit(browser, engine, size, opts, setup) {
   const ok = (name, cond, extra = "") => { rows.push([name, !!cond, extra]); }; /* the file's ok(), held until one() knows whether this visit counts */
   if (setup) await setup(ctx);
   const page = await ctx.newPage();
+  await applyClock(page, CLOCK);
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 160), at: at.replace(/[?#].*$/, "") }); } });
   page.on("pageerror", (e) => errs.push({ text: `pageerror ${String(e.message).slice(0, 160)}`, at: "" }));
   page.on("response", (r) => { try { const u = new URL(r.url()); if (r.status() >= 400) (u.origin === origin ? http : xo).push({ status: r.status(), method: r.request().method(), url: r.url().replace(/[?#].*$/, ""), origin: u.origin, route: u.pathname }); } catch (e) {} }); /* xo: other origins (the Worker), named next to a console error (2026-10-31: two ships logged a bare 503) */

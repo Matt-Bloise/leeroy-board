@@ -68,7 +68,7 @@
     turn("back", () => face(live ? "Live" : "Launch", live ? `since ${hourOf(L0)}` : K.relWhen(L0))).then(() => say(words));
   }
   const plate = () => h("div", { class: "lh-plate", "aria-hidden": "true" },
-    h("img", { class: "lh-art", src: "img/launch/hero-960.webp", srcset: "img/launch/hero-640.webp 640w, img/launch/hero-960.webp 960w, img/launch/hero-1534.webp 1534w", sizes: "(max-width: 699px) 145vw, 760px", alt: "", decoding: "async", draggable: "false" }),
+    h("img", { class: "lh-art", src: "img/launch/hero-960.webp", srcset: "img/launch/hero-640.webp 640w, img/launch/hero-960.webp 960w, img/launch/hero-1534.webp 1534w", sizes: "(max-width: 699px) 145vw, 760px", alt: "", decoding: "async", loading: "lazy", draggable: "false" }),
     h("span", { class: "lh-glow lh-glow-l" }), h("span", { class: "lh-glow lh-glow-r" }));
   function build() {
     const el = h("section", { class: "lh", id: "launch-hero", "aria-labelledby": "lh-title", "data-phase": L.phase });
