@@ -86,11 +86,12 @@ const SCENES = [...TOP.slice(0, 3), ...party.members.map((m) => `five.${slugOf(m
 const copyOf = (page, mode) => page.evaluate((mode) => {
   const out = [];
   const shown = (el) => {
-    for (let e = el; e; e = e.parentElement) { if (e.tagName === "OPTION" || e.tagName === "SELECT") continue; if (e.hasAttribute && e.hasAttribute("hidden")) return false; const cs = getComputedStyle(e); if (cs.display === "none" || cs.visibility === "hidden") return false; }
+    // Walk every ancestor: [hidden], inert, aria-hidden="true" (a closed or off-stage panel is often marked that way and may still have a box), display:none, visibility:hidden, opacity:0.
+    for (let e = el; e; e = e.parentElement) { if (e.tagName === "OPTION" || e.tagName === "SELECT") continue; if (e.hasAttribute && (e.hasAttribute("hidden") || e.hasAttribute("inert") || e.getAttribute("aria-hidden") === "true")) return false; const cs = getComputedStyle(e); if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false; }
     if (el.closest("select")) return true;
     // The same test in every engine: the spec'd Element.checkVisibility() where the engine has it (Chromium 105+, Firefox 106+, WebKit 17.4+: false for display:none, content-visibility:hidden
     // and the closed <details> content), AND the computed-style walk above, AND a real box with a size: no engine-specific shortcut decides on its own.
-    if (typeof el.checkVisibility === "function" && !el.checkVisibility({ checkVisibilityCSS: true, contentVisibilityAuto: true })) return false;
+    if (typeof el.checkVisibility === "function" && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true })) return false;
     return Array.from(el.getClientRects()).some((r) => r.width > 0 && r.height > 0);
   };
   const all = mode === "all";
@@ -103,7 +104,7 @@ const copyOf = (page, mode) => page.evaluate((mode) => {
 
 // Opens a scene and says what it found: { ok, why }. The expected #panel-<name> MUST exist and be visible (a missing panel fails), and for a member route (five.<slug>)
 // that member's card in the panel must exist and carry the board's "landed" mark, so a route that ignores its hash cannot pass on the top-level panel alone.
-async function openScene(page, hash) {
+async function openScene(page, hash, state = {}) {
   const [top, sub] = hash.split(".");
   const once = async () => {
     await page.evaluate((h) => { location.hash = h; }, hash);
@@ -118,14 +119,17 @@ async function openScene(page, hash) {
   if (sub && MEMBER_SLUGS.has(sub)) {
     // Wait for the member CARDS of the panel this assertion reads (all N of them, DOM only, bounded by 10 s): the board can re-render the party after the scene opened, which replaces
     // the cards and drops the "landed" mark. If the mark is gone once the cards are all there, open the route once more, then judge.
-    const cardsUp = () => page.waitForFunction(([k, want]) => document.querySelectorAll(`#panel-${k} .card[data-slug]`).length === want, [top, MEMBER_SLUGS.size], { timeout: 10000, polling: 250 }).then(() => true, () => false);
     const landedNow = (ms) => page.waitForFunction(([k, sl]) => { const c = document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`); return !!c && c.classList.contains("landed"); }, [top, sub], { timeout: ms }).then(() => true, () => false);
+    const SEL = `#panel-${top} .card[data-slug]`;
+    const cardsUp = () => page.waitForFunction(([sel, want]) => document.querySelectorAll(sel).length === want, [SEL, MEMBER_SLUGS.size], { timeout: state.cardsGaveUp ? 1500 : 10000, polling: 250 }).then(() => true, () => false);
     const allCards = await cardsUp();
+    if (!allCards) state.cardsGaveUp = true; // one bounded wait per context, not one per member route
     let landed = await landedNow(allCards ? 1500 : 3000);
     if (!landed && allCards) { await page.evaluate(() => { location.hash = ""; }); await page.waitForTimeout(500); await page.evaluate((h) => { location.hash = h; }, hash); landed = await landedNow(6000); }
     if (!landed) {
-      const have = await page.evaluate(([k, sl]) => ({ card: !!document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`), n: document.querySelectorAll(`#panel-${k} .card[data-slug]`).length }), [top, sub]).catch(() => ({ card: false, n: 0 }));
-      return { ok: false, why: have.card ? `the route did not land on ${sub}'s card (no "landed" mark)` : `${sub} has no card in #panel-${top} (${have.n} of ${MEMBER_SLUGS.size} cards there after 10 s)` };
+      const have = await page.evaluate(([k, sl]) => { const p = document.querySelector(`#panel-${k}`); return { card: !!document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`), n: document.querySelectorAll(`#panel-${k} .card[data-slug]`).length, cards: document.querySelectorAll(`#panel-${k} .card`).length, named: p ? p.innerText.toLowerCase().includes(sl.split("-")[0]) : false, slugs: Array.from(document.querySelectorAll(`#panel-${k} .card[data-slug]`)).map((c) => c.getAttribute("data-slug")).join(",") }; }, [top, sub]).catch(() => ({ card: false, n: 0, cards: 0, named: false, slugs: "" }));
+      const facts = `selector \`${SEL}\`: ${have.n} of ${MEMBER_SLUGS.size} found (slugs: ${have.slugs || "none"}); \`#panel-${top} .card\`: ${have.cards}; "${sub.split("-")[0]}" appears in the panel text: ${have.named}`;
+      return { ok: false, why: have.card ? `the route did not land on ${sub}'s card (no "landed" mark) [${facts}]` : `${sub} has no card in #panel-${top} [${facts}]` };
     }
   }
   await page.waitForTimeout(600);
@@ -140,6 +144,23 @@ async function settleChips(page, n) {
   await page.waitForFunction((want) => Array.from(document.querySelectorAll(".tn-name")).filter((b) => b.getClientRects().length).length === want, n, { timeout: 10000, polling: 250 }).then(() => page.waitForTimeout(500), () => {});
   return page.evaluate(countChips);
 }
+
+// Self-explaining failures. When a visible string is judged wrong, say WHERE it is and why this engine considers it visible, so a run in an engine I cannot reproduce locally
+// (Firefox, WebKit) shows the cause instead of only the symptom.
+const explainStrings = (page, wanted) => page.evaluate((wanted) => {
+  const out = [];
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = w.nextNode(); n && out.length < wanted.length; n = w.nextNode()) {
+    const t = n.nodeValue.replace(/\s+/g, " ").trim(); if (!t || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(n.parentElement.tagName)) continue;
+    const hit = wanted.find((x) => t.includes(x.slice(0, 40))); if (!hit) continue;
+    const el = n.parentElement, cs = getComputedStyle(el), r = el.getBoundingClientRect();
+    const path = []; for (let e = el; e && path.length < 5; e = e.parentElement) path.push(`${e.tagName.toLowerCase()}${e.id ? `#${e.id}` : ""}${e.className && typeof e.className === "string" ? `.${e.className.trim().split(/\s+/)[0]}` : ""}`);
+    const flags = []; for (let e = el; e; e = e.parentElement) { if (e.hasAttribute("hidden")) flags.push("hidden"); if (e.hasAttribute("inert")) flags.push("inert"); if (e.getAttribute("aria-hidden") === "true") flags.push("aria-hidden"); }
+    out.push(`"${hit.slice(0, 50)}" in ${path.join(" < ")}: display ${cs.display}, visibility ${cs.visibility}, opacity ${cs.opacity}, box ${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.left)},${Math.round(r.top)}, checkVisibility ${typeof el.checkVisibility === "function" ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true }) : "n/a"}, ancestors flagged: ${flags.length ? [...new Set(flags)].join("+") : "none"}`);
+  }
+  return out;
+}, wanted);
+const chipFacts = (page, n) => page.evaluate((n) => { const all = Array.from(document.querySelectorAll(".tn-name")); return `selector ".tn-name": ${all.length} elements, ${all.filter((b) => b.getClientRects().length).length} with a box; names: ${all.map((b) => b.textContent.trim()).filter(Boolean).slice(0, 12).join(", ") || "none"} (wanted ${n})`; }, n).catch(() => "no DOM facts");
 
 // The copy that counts the party ("The five", "Open the five") is re-rendered by the board a moment after the chips, and in some engines later than in others. Before the first
 // party-size judgement of a scene, poll the DOM (visible text only, no API request) until no visible string states the wrong count; bounded. If a wait ever runs out the copy is
@@ -166,7 +187,7 @@ async function probeOne(browser, engine, vp) {
   const page = await ctx.newPage();
   let insightsFailed = false;
   page.on("pageerror", (e) => errs.push({ text: `uncaught: ${String(e.message).slice(0, 160)}`, at: "" }));
-  page.on("console", (m) => { if (m.type() !== "error") return; let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 160), at: at.replace(/[?#].*$/, "") }); });
+  page.on("console", (m) => { if (m.type() !== "error") return; let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 4000), at: at.replace(/[?#].*$/, "") }); });
   const ours = (u) => { try { const o = new URL(u).origin; return o === SITE || o === API; } catch (e) { return false; } };
   const warned = [];
   page.on("response", (r) => {
@@ -190,16 +211,16 @@ async function probeOne(browser, engine, vp) {
   } catch (e) { fail(tag, `the page did not load: ${String(e.message).split("\n")[0]}`); }
   if (chips >= 0 && !budget.exceeded) {
     const bad = memberCountProblem(chips, N);
-    bad.length ? bad.forEach((b) => fail(tag, b)) : pass(`${tag} the board shows ${chips} members, the party has ${N}`);
+    if (bad.length) { const facts = await chipFacts(page, N); bad.forEach((b) => fail(tag, `${b} [DOM: ${facts}]`)); } else pass(`${tag} the board shows ${chips} members, the party has ${N}`);
   }
-  const visible = [], vtext = [], everything = [], copyState = { gaveUp: false };
+  const visible = [], vtext = [], everything = [], copyState = { gaveUp: false }, sceneState = { cardsGaveUp: false };
   if (chips >= 0) {
     await settleCopy(page, N, 10000, copyState);
     visible.push(...(await copyOf(page, "visible").catch(() => [])).map((t) => ["first screen", t]));
     vtext.push(...(await copyOf(page, "text").catch(() => [])).map((t) => ["first screen", t]));
     for (const hash of SCENES) {
       if (budget.exceeded) break; // nothing else starts once the budget is spent
-      const up = await openScene(page, hash).catch((e) => ({ ok: false, why: String(e.message).split("\n")[0] }));
+      const up = await openScene(page, hash, sceneState).catch((e) => ({ ok: false, why: String(e.message).split("\n")[0] }));
       if (!up.ok) { fail(tag, `scene #${hash} did not open: ${up.why}`); continue; }
       const top = hash.split(".")[0];
       await settleCopy(page, N, 5000, copyState);
@@ -218,12 +239,13 @@ async function probeOne(browser, engine, vp) {
   // for a later copy-fix PR: reported as information, never a failure.
   const wc = wrongCountCopy(vt, N);
   for (const w of wc) fail(tag, `copy states the wrong party size: ${w}`);
+  if (wc.length) for (const line of (await explainStrings(page, wc.map((w) => (w.match(/^"(.*)" \(the party has/) || [])[1] || w)).catch(() => [])).slice(0, 8)) console.log(`DIAG ${tag}: ${line}`);
   if (!wc.length) pass(`${tag} no visible copy states a wrong party size (${vt.length} visible strings, party ${N})`);
   const seenVisible = new Set(wc);
   for (const h of wrongCountCopy(uniq(everything.map((p) => p[1])), N)) if (!seenVisible.has(h)) hiddenCopy.add(h);
   for (const a of exemptedAdvisories(errs)) advisories.add(`${engine}: ${a}`);
   const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsRequestFailed: insightsFailed, budgetSpent: budget.exceeded });
-  hard.length ? hard.slice(0, 5).forEach((e) => fail(tag, `console error: ${e.text}${e.at ? ` [${e.at}]` : ""}`)) : pass(`${tag} no console errors`);
+  hard.length ? hard.slice(0, 5).forEach((e) => fail(tag, `console error: ${e.text.length > 200 ? `${e.text.slice(0, 200)}... (${e.text.length} chars)` : e.text}${e.at ? ` [${e.at}]` : ""}`)) : pass(`${tag} no console errors`);
   for (const w of uniq(warned).slice(0, 8)) console.log(`WARN ${tag}: API 4xx (not a failure off /api/bootstrap and /api/state): ${w}\n::warning title=Production probe::${tag}: API 4xx ${w}`);
   http.length ? uniq(http).slice(0, 8).forEach((h) => fail(tag, `HTTP error (site 4xx/5xx, API 5xx, or API 4xx on bootstrap/state): ${h}`)) : pass(`${tag} no 4xx/5xx from the site or its API`);
   failed.length ? uniq(failed).slice(0, 5).forEach((h) => fail(tag, `request failed: ${h}`)) : pass(`${tag} no failed requests`);

@@ -144,3 +144,11 @@ test("Firefox as Playwright reports it: the wrapped (Report-Only policy) eval no
     "[JavaScript Error: \"TypeError: x\" {file: \"https://leeroy.party/js/Content-Security-Policy: (Report-Only policy)\"}]",
   ]) assert.equal(consoleFailures([bad]).length, 1, bad);
 });
+
+test("a long WebKit advisory whose report-only wording lies beyond 160 characters is exempt when the text is kept whole", () => {
+  const policy = "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.leeroy.party";
+  const full = `The Content Security Policy '${policy}' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect.`;
+  assert.ok(full.indexOf("report-only") > 160);
+  assert.deepEqual(consoleFailures([full]), []);
+  assert.equal(consoleFailures([full.slice(0, 160)]).length, 1, "cut at 160 characters the wording is gone, which is why the probe must keep the whole text");
+});
