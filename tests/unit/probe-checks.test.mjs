@@ -132,3 +132,15 @@ test("report-only advisories are exempt by wording per engine; an enforced block
   // the exempted ones are listed for the report
   assert.deepEqual(exemptedAdvisories([ff, wk, "[Report Only] Refused to load x", { text: "TypeError: x", at: "" }]).length, 3);
 });
+
+test("Firefox as Playwright reports it: the wrapped (Report-Only policy) eval notice is exempt, anchored right after the wrapper; wrapped enforced blocks still fail", () => {
+  const exact = "[JavaScript Error: \"Content-Security-Policy: (Report-Only policy) The page's settings would block a JavaScript eval (script-src) from being executed because it violates the following directive: \\\"script-src 'self'\\\"\" {file: \"https://leeroy.party/js/board.js\" line: 12}]";
+  assert.deepEqual(consoleFailures([exact, exact.toLowerCase()]), []);
+  assert.equal(isCspAdvisory(exact), true);
+  for (const bad of [
+    "[JavaScript Error: \"Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/x.js (default-src) (Report-Only policy)\" {file: \"https://leeroy.party/js/board.js\" line: 3}]",
+    "[JavaScript Error: \"Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/(Report-Only policy).js (default-src)\"]",
+    "[JavaScript Error: \"ReferenceError: x is not defined (Report-Only policy)\"]",
+    "[JavaScript Error: \"TypeError: x\" {file: \"https://leeroy.party/js/Content-Security-Policy: (Report-Only policy)\"}]",
+  ]) assert.equal(consoleFailures([bad]).length, 1, bad);
+});

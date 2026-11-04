@@ -57,6 +57,9 @@ async function tearDown(page, ctx, browser, srv) {
   await srv.close();
   await new Promise((r) => setTimeout(r, 200)); // anything that rejects late still lands while `tearingDown` is set
 }
+// Engines under test: chromium by default (the only one installed in most places); `--engines chromium,firefox,webkit` runs every probe case in each engine that is installed here
+// (an engine that is not installed is skipped by the probe with a WARN), so the hidden-versus-visible and wording cases can be run under every engine the machine has.
+const ENGINES = argv.includes("--engines") ? argv[argv.indexOf("--engines") + 1] : "chromium";
 const L = ["--viewports", "laptop"];
 const CASES = [
   ["green", 0, null, []],
@@ -68,11 +71,16 @@ const CASES = [
   ["csp-enforced", 1, /console error: Refused to load the image .*Content Security Policy/, L],
   ["csp-report-only", 0, null, L],
   ["delayed-render", 0, null, L],
-  ["csp-advisory", 0, null, L, null, [["lists the exempted advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n\s+- chromium: The Content Security Policy/]]],
-  ["csp-firefox", 0, null, L, null, [["lists the Firefox advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n\s+- chromium: Content-Security-Policy: \(Report-Only policy\)/]]],
+  ["csp-advisory", 0, null, L, null, [["lists the exempted advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n\s+- \w+: The Content Security Policy/]]],
+  ["csp-firefox", 0, null, L, null, [["lists the Firefox advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n\s+- \w+: Content-Security-Policy: \(Report-Only policy\)/]]],
   ["csp-mention", 1, /console error: The Content Security Policy .*blocked the resource https:\/\/evil\.example\/report-only\.js/, L],
   ["csp-mention-firefox", 1, /console error: Content-Security-Policy: The page's settings blocked/, L],
-  ["hidden-five", 0, null, L, null, [["lists the hidden copy as information, not a failure", /INFO hidden copy that still says the wrong party size[^\n]*\n(?:\s+- [^\n]*\n)*\s+- "?All five have picked a spec\./], ["lists the template text too", /- "?Where each of the five starts/], ["lists the display:none text too", /- "?Buff links between the five/]]],
+  ["hidden-five", 0, null, L, null, [["lists the hidden copy as information, not a failure", /INFO hidden copy that still says the wrong party size[^\n]*\n(?:\s+- [^\n]*\n)*\s+- "?All five have picked a spec\./], ["lists the template text too", /- "?Where each of the five starts/], ["lists the display:none text too", /- "?Buff links between the five/], ["lists the visibility:hidden text", /- "?Open the five/], ["lists the closed <details> text", /- "?Where the five start/], ["lists the zero-size text", /- "?Swipe sideways for all five\./], ["lists the content-visibility:hidden text", /- "?The five of us/]]],
+  ["delayed-copy", 0, null, L],
+  ["late-cards", 0, null, L],
+  ["late-look", 0, null, L],
+  ["csp-firefox-js-error", 0, null, L, null, [["lists the wrapped Firefox advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n(?:\s+- [^\n]*\n)*\s+- \w+: \[JavaScript Error: "Content-Security-Policy: \(Report-Only policy\)/]]],
+  ["csp-firefox-js-mention", 1, /console error: \[JavaScript Error: "Content-Security-Policy: The page's settings blocked/, L],
   ["visible-five", 1, /copy states the wrong party size: "Which of the five are you\?"/, L],
   ["csp-nonadvisory", 1, /console error: The Content Security Policy .*blocked the resource/, L],
   ["state-fail", 1, /Aborting before any browser is launched/, L],
@@ -83,7 +91,7 @@ const CASES = [
 
 async function runCase([mode, want, re, extra, label, musts]) {
   const srv = await startFixtureServer({ mode });
-  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", "chromium"]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env } });
+  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", ENGINES]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env } });
   let out = ""; child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (out += d));
   const code = await new Promise((r) => child.on("close", r));
   await srv.close();

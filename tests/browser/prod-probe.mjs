@@ -16,7 +16,8 @@
 //   - a blank scene (under 20 characters of text after opening it), a scene whose #panel-<name> does not exist, and a member route (five.<slug>) that does not land on that
 //     member's card (the card must exist and carry the board's "landed" mark)
 //   - the member count: the board's name chips must equal the number of members in /api/state partyDoc (read once, by Node, at the start); the probe first WAITS (DOM polling only, up to 10 s)
-//     for the chips to reach that number, because the board finishes rendering them a little after the first paint
+//     for the chips to reach that number, because the board finishes rendering them a little after the first paint; before the first party-size judgement of a scene it also
+//     waits (bounded, visible text only) for the copy that counts the party to catch up, and before a member route it waits for all the member cards
 //   - wrong-count copy: when the real party has MORE than five members, no VISIBLE copy (the text a visitor can read in the scene they are in) may say "five" (the phrases in NOT_PARTY, which are about five of
 //     something else, are the only exceptions), "the other four" and the like, or "all/the <wrong count word> of us/you/them". With five members "five" is correct and allowed.
 //
@@ -87,6 +88,9 @@ const copyOf = (page, mode) => page.evaluate((mode) => {
   const shown = (el) => {
     for (let e = el; e; e = e.parentElement) { if (e.tagName === "OPTION" || e.tagName === "SELECT") continue; if (e.hasAttribute && e.hasAttribute("hidden")) return false; const cs = getComputedStyle(e); if (cs.display === "none" || cs.visibility === "hidden") return false; }
     if (el.closest("select")) return true;
+    // The same test in every engine: the spec'd Element.checkVisibility() where the engine has it (Chromium 105+, Firefox 106+, WebKit 17.4+: false for display:none, content-visibility:hidden
+    // and the closed <details> content), AND the computed-style walk above, AND a real box with a size: no engine-specific shortcut decides on its own.
+    if (typeof el.checkVisibility === "function" && !el.checkVisibility({ checkVisibilityCSS: true, contentVisibilityAuto: true })) return false;
     return Array.from(el.getClientRects()).some((r) => r.width > 0 && r.height > 0);
   };
   const all = mode === "all";
@@ -112,10 +116,16 @@ async function openScene(page, hash) {
     return { ok: false, why: has ? "its panel stayed hidden" : `there is no #panel-${top} in the page` };
   }
   if (sub && MEMBER_SLUGS.has(sub)) {
-    const landed = await page.waitForFunction(([k, sl]) => { const c = document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`); return !!c && c.classList.contains("landed"); }, [top, sub], { timeout: 10000 }).then(() => true, () => false);
+    // Wait for the member CARDS of the panel this assertion reads (all N of them, DOM only, bounded by 10 s): the board can re-render the party after the scene opened, which replaces
+    // the cards and drops the "landed" mark. If the mark is gone once the cards are all there, open the route once more, then judge.
+    const cardsUp = () => page.waitForFunction(([k, want]) => document.querySelectorAll(`#panel-${k} .card[data-slug]`).length === want, [top, MEMBER_SLUGS.size], { timeout: 10000, polling: 250 }).then(() => true, () => false);
+    const landedNow = (ms) => page.waitForFunction(([k, sl]) => { const c = document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`); return !!c && c.classList.contains("landed"); }, [top, sub], { timeout: ms }).then(() => true, () => false);
+    const allCards = await cardsUp();
+    let landed = await landedNow(allCards ? 1500 : 3000);
+    if (!landed && allCards) { await page.evaluate(() => { location.hash = ""; }); await page.waitForTimeout(500); await page.evaluate((h) => { location.hash = h; }, hash); landed = await landedNow(6000); }
     if (!landed) {
-      const card = await page.evaluate(([k, sl]) => !!document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`), [top, sub]).catch(() => false);
-      return { ok: false, why: card ? `the route did not land on ${sub}'s card (no "landed" mark)` : `${sub} has no card in #panel-${top}` };
+      const have = await page.evaluate(([k, sl]) => ({ card: !!document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`), n: document.querySelectorAll(`#panel-${k} .card[data-slug]`).length }), [top, sub]).catch(() => ({ card: false, n: 0 }));
+      return { ok: false, why: have.card ? `the route did not land on ${sub}'s card (no "landed" mark)` : `${sub} has no card in #panel-${top} (${have.n} of ${MEMBER_SLUGS.size} cards there after 10 s)` };
     }
   }
   await page.waitForTimeout(600);
@@ -129,6 +139,20 @@ const countChips = () => Array.from(document.querySelectorAll(".tn-name")).filte
 async function settleChips(page, n) {
   await page.waitForFunction((want) => Array.from(document.querySelectorAll(".tn-name")).filter((b) => b.getClientRects().length).length === want, n, { timeout: 10000, polling: 250 }).then(() => page.waitForTimeout(500), () => {});
   return page.evaluate(countChips);
+}
+
+// The copy that counts the party ("The five", "Open the five") is re-rendered by the board a moment after the chips, and in some engines later than in others. Before the first
+// party-size judgement of a scene, poll the DOM (visible text only, no API request) until no visible string states the wrong count; bounded. If a wait ever runs out the copy is
+// really stale: the failure is then reported, and later scenes are not waited for again (one bounded wait, not one per scene).
+async function settleCopy(page, n, ms, state) {
+  if (!(n > 5) || state.gaveUp) return;
+  const end = Date.now() + ms;
+  for (;;) {
+    const texts = await copyOf(page, "text").catch(() => []);
+    if (!wrongCountCopy(uniq(texts), n).length) return;
+    if (Date.now() >= end) { state.gaveUp = true; return; }
+    await page.waitForTimeout(400);
+  }
 }
 
 async function probeOne(browser, engine, vp) {
@@ -156,7 +180,9 @@ async function probeOne(browser, engine, vp) {
     try { await page.goto(target, { waitUntil: "load", timeout: 45000 }); }
     catch (e) { console.log(`WARN ${tag}: first load failed (${String(e.message).split("\n")[0]}); loading once more`); await page.goto(target, { waitUntil: "load", timeout: 45000 }); } // the one retry
     if (page.url() === "about:blank") { console.log(`WARN ${tag}: tab left on about:blank; loading once more`); await page.goto(target, { waitUntil: "load", timeout: 45000 }); }
+    // "Just take a look" can appear a moment after the chips' container is attached (Firefox, phones): wait for the link itself (bounded), click it, then wait for the chips.
     await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 25000 }).catch(() => {});
+    await page.waitForSelector("#nx-fr2-look", { state: "visible", timeout: 8000 }).catch(() => {});
     const look = page.locator("#nx-fr2-look");
     if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
     await page.waitForSelector(".tn-name", { state: "visible", timeout: 25000 }).catch(() => {});
@@ -166,8 +192,9 @@ async function probeOne(browser, engine, vp) {
     const bad = memberCountProblem(chips, N);
     bad.length ? bad.forEach((b) => fail(tag, b)) : pass(`${tag} the board shows ${chips} members, the party has ${N}`);
   }
-  const visible = [], vtext = [], everything = [];
+  const visible = [], vtext = [], everything = [], copyState = { gaveUp: false };
   if (chips >= 0) {
+    await settleCopy(page, N, 10000, copyState);
     visible.push(...(await copyOf(page, "visible").catch(() => [])).map((t) => ["first screen", t]));
     vtext.push(...(await copyOf(page, "text").catch(() => [])).map((t) => ["first screen", t]));
     for (const hash of SCENES) {
@@ -175,6 +202,7 @@ async function probeOne(browser, engine, vp) {
       const up = await openScene(page, hash).catch((e) => ({ ok: false, why: String(e.message).split("\n")[0] }));
       if (!up.ok) { fail(tag, `scene #${hash} did not open: ${up.why}`); continue; }
       const top = hash.split(".")[0];
+      await settleCopy(page, N, 5000, copyState);
       const text = await page.evaluate((k) => { const p = document.querySelector(`#panel-${k}`) || document.querySelector("#scene"); return p ? p.innerText.replace(/\s+/g, " ").trim() : ""; }, top).catch(() => "");
       if (text.length < 20) fail(tag, `scene #${hash} is blank (${text.length} characters)`); else pass(`${tag} scene #${hash} has content`);
       visible.push(...(await copyOf(page, "visible").catch(() => [])).map((t) => [`#${hash}`, t]));

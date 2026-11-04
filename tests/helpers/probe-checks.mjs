@@ -73,7 +73,8 @@ export const isReportOnlyCsp = (t) => /^(\[Report Only\]|Content-Security-Policy
 export const isCspAdvisory = (t) => {
   t = String(t);
   return (/^The Content Security Policy\b/.test(t) && /\breport-only\b/i.test(t) && !/\b(?:blocked|refused|violat\w*|denied)\b/i.test(t))
-    || /^Content[- ]Security[- ]Policy:\s*\(Report-Only policy\)/i.test(t);
+    // Firefox: Playwright hands the console message over as `[JavaScript Error: "Content-Security-Policy: (Report-Only policy) ..." {file: ...}]`; the marker must still come right after that wrapper/prefix.
+    || /^(?:\[JavaScript Error: ")?Content[- ]Security[- ]Policy:\s*\(Report-Only policy\)/i.test(t);
 };
 const hostOf = (u) => { try { return new URL(u).hostname; } catch (e) { return ""; } };
 export const isInsightsHost = (u) => /(^|\.)cloudflareinsights\.com$/i.test(hostOf(u));
