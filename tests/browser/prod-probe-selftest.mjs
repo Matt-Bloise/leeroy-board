@@ -13,6 +13,9 @@
 //   state-redirect   the reference /api/state answers a redirect                -> exit 1, not followed, no browser launched
 //   cf-text          a console error that only mentions cloudflareinsights.com -> exit 1 (the exemption is by location, not by text)
 //   budget-spent     --budget 20 with two engines                           -> exit 1, one budget failure, no scene noise, the second engine never started, server saw <= 20
+//   delayed-render   the sixth name chip appears 5 s after load                   -> exit 0 (the probe waits for the chips; fails without the settle wait)
+//   csp-advisory     WebKit's "The Content Security Policy ... report-only" error -> exit 0 (exempt)
+//   csp-nonadvisory  "The Content Security Policy ... blocked the resource" error  -> exit 1 (not the advisory)
 //   state-fail       the reference /api/state answers 500                   -> exit 1, no browser launched, at most 1 API request
 //   budget           a page that reconnects a socket and refetches 20 times with a budget of 5 -> the server sees at most 5 Worker requests
 import { spawn } from "node:child_process";
@@ -62,6 +65,9 @@ const CASES = [
   ["ignored-hash", 1, /did not open: the route did not land on .*'s card/, L],
   ["csp-enforced", 1, /console error: Refused to load the image .*Content Security Policy/, L],
   ["csp-report-only", 0, null, L],
+  ["delayed-render", 0, null, L],
+  ["csp-advisory", 0, null, L],
+  ["csp-nonadvisory", 1, /console error: The Content Security Policy .*blocked the resource/, L],
   ["state-fail", 1, /Aborting before any browser is launched/, L],
   ["green", 1, /budget: more than 20 Worker requests/, ["--viewports", "laptop,phone", "--budget", "20", "--engines", "chromium,firefox"], "budget-spent"],
   ["state-redirect", 1, /Aborting before any browser is launched/, L],

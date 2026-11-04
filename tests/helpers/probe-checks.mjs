@@ -64,6 +64,9 @@ export const uniq = (a) => [...new Set(a.map((s) => String(s).replace(/\s+/g, " 
 // beacon host was seen failing, the generic network wording a browser uses for it without a URL (the live-smoke.mjs rule). Message text that merely mentions a host or
 // "report-only" in the middle is NOT an exemption, and neither is an enforced CSP violation.
 export const isReportOnlyCsp = (t) => /^(\[Report Only\]|Content-Security-Policy-Report-Only)/i.test(String(t));
+// WebKit's advisory that a policy is report-only: a console ERROR that starts "The Content Security Policy" and says "report-only". Exactly that and nothing wider: any other
+// console error, and any enforced-policy violation (which does not say report-only), still fails.
+export const isCspAdvisory = (t) => /^The Content Security Policy/.test(String(t)) && /report-only/i.test(String(t));
 const hostOf = (u) => { try { return new URL(u).hostname; } catch (e) { return ""; } };
 export const isInsightsHost = (u) => /(^|\.)cloudflareinsights\.com$/i.test(hostOf(u));
 // Once the request budget is spent the probe refuses further /api requests (route.abort("blockedbyclient"), helpers/probe-budget.mjs) and the page logs each refused
@@ -75,7 +78,7 @@ export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = fals
   return errors.filter((e) => {
     const text = typeof e === "string" ? e : e.text, at = typeof e === "string" ? "" : e.at || "";
     if (engine === "webkit" && allowWebkitNoWebgl && /Error creating WebGL context/.test(text)) return false;
-    if (isReportOnlyCsp(text)) return false;
+    if (isReportOnlyCsp(text) || isCspAdvisory(text)) return false;
     if (isInsightsHost(at)) return false;
     if (budgetSpent && isBudgetRefusal(text, at)) return false;
     if (insightsRequestFailed && !/https?:\/\//.test(text) && /^(Failed to load resource|.*net::ERR_FAILED|.*Access-Control-Allow-Origin)/i.test(text)) return false;

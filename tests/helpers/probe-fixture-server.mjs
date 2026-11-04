@@ -15,6 +15,10 @@
 //   cf-text      the page logs a console error that merely MENTIONS cloudflareinsights.com (location: the page itself): must fail, the exemption is not by message text
 // Any mode also serves /api/hop?n=0..11: a 12-hop redirect chain, to prove the probe's context never lets the browser follow redirects on its own.
 //   state-fail   a plain (non-browser) GET /api/state answers 500: the probe must stop at once and launch no browser
+//   delayed-render the sixth name chip is hidden for the first 5 s after load (the board finishing its render late): the probe's /api/state read says six. Read at once the board
+//                shows five and a probe without the settle wait fails; with it the probe waits for six and passes.
+//   csp-advisory WebKit's advisory: a console error "The Content Security Policy 'default-src ...' was delivered via a <meta> element ... report-only ...": must be exempt (pass)
+//   csp-nonadvisory an error that starts with "The Content Security Policy" but is NOT the report-only advisory (an enforced block): must still fail
 // seen.api counts HTTP requests under /api/, seen.ws the WebSocket upgrades on /api/live (the Worker requests the probe's budget stands for).
 import http from "node:http";
 import fs from "node:fs";
@@ -42,6 +46,9 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     "ignored-hash": `new MutationObserver((ms) => { for (const m of ms) if (m.target.classList && m.target.classList.contains("landed")) m.target.classList.remove("landed"); }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"], subtree: true });`,
     "csp-enforced": `setTimeout(() => console.error("Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
     "cf-text": `setTimeout(() => console.error("TypeError: cannot read properties of undefined (reading x) at https://static.cloudflareinsights.com/beacon.min.js"), 1500);`,
+    "delayed-render": `(() => { const hide = () => document.querySelectorAll(".tn-name").forEach((e, i) => { if (i >= 5 && !e.dataset.late) { e.dataset.late = "1"; e.style.display = "none"; } }); const obs = new MutationObserver(hide); obs.observe(document.documentElement, { childList: true, subtree: true }); hide(); setTimeout(() => { obs.disconnect(); document.querySelectorAll(".tn-name[data-late]").forEach((e) => { e.style.display = ""; delete e.dataset.late; }); }, 5000); })();`,
+    "csp-advisory": `setTimeout(() => console.error("The Content Security Policy 'default-src 'self'' was delivered via a <meta> element and is report-only: it has no report-uri, so violations are not reported."), 1500);`,
+    "csp-nonadvisory": `setTimeout(() => console.error("The Content Security Policy 'default-src 'self'' blocked the resource https://evil.example/x.js"), 1500);`,
     "csp-report-only": `setTimeout(() => console.error("[Report Only] Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
   };
   const seen = { api: 0, ws: 0, static: 0 };

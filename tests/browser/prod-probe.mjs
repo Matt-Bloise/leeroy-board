@@ -15,7 +15,8 @@
 //   - junk text in what is visible: undefined, NaN, [object Object], Infinity, unfilled {{ }}, raw ids (Discord snowflakes, UUIDs, long hex)
 //   - a blank scene (under 20 characters of text after opening it), a scene whose #panel-<name> does not exist, and a member route (five.<slug>) that does not land on that
 //     member's card (the card must exist and carry the board's "landed" mark)
-//   - the member count: the board's name chips must equal the number of members in /api/state partyDoc (read once, by Node, at the start)
+//   - the member count: the board's name chips must equal the number of members in /api/state partyDoc (read once, by Node, at the start); the probe first WAITS (DOM polling only, up to 10 s)
+//     for the chips to reach that number, because the board finishes rendering them a little after the first paint
 //   - wrong-count copy: when the real party has MORE than five members, no visible or hidden copy may say "five" (the phrases in NOT_PARTY, which are about five of
 //     something else, are the only exceptions), "the other four" and the like, or "all/the <wrong count word> of us/you/them". With five members "five" is correct and allowed.
 //
@@ -104,7 +105,7 @@ async function openScene(page, hash) {
     return { ok: false, why: has ? "its panel stayed hidden" : `there is no #panel-${top} in the page` };
   }
   if (sub && MEMBER_SLUGS.has(sub)) {
-    const landed = await page.waitForFunction(([k, sl]) => { const c = document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`); return !!c && c.classList.contains("landed"); }, [top, sub], { timeout: 4000 }).then(() => true, () => false);
+    const landed = await page.waitForFunction(([k, sl]) => { const c = document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`); return !!c && c.classList.contains("landed"); }, [top, sub], { timeout: 10000 }).then(() => true, () => false);
     if (!landed) {
       const card = await page.evaluate(([k, sl]) => !!document.querySelector(`#panel-${k} .card[data-slug="${sl}"]`), [top, sub]).catch(() => false);
       return { ok: false, why: card ? `the route did not land on ${sub}'s card (no "landed" mark)` : `${sub} has no card in #panel-${top}` };
@@ -112,6 +113,15 @@ async function openScene(page, hash) {
   }
   await page.waitForTimeout(600);
   return { ok: true };
+}
+
+// The board renders its member chips (and the copy that counts them) a little after the first paint, and a phone can be slower than a laptop. Before ANY member-count, scene or
+// party-size assertion, wait until the number of visible name chips equals the partyDoc count (the DOM is polled in the page every 250 ms, no API request is made), then let it
+// stay put for half a second. After 10 s the count it last saw is returned and the caller fails with both numbers.
+const countChips = () => Array.from(document.querySelectorAll(".tn-name")).filter((b) => b.getClientRects().length).length;
+async function settleChips(page, n) {
+  await page.waitForFunction((want) => Array.from(document.querySelectorAll(".tn-name")).filter((b) => b.getClientRects().length).length === want, n, { timeout: 10000, polling: 250 }).then(() => page.waitForTimeout(500), () => {});
+  return page.evaluate(countChips);
 }
 
 async function probeOne(browser, engine, vp) {
@@ -143,8 +153,7 @@ async function probeOne(browser, engine, vp) {
     const look = page.locator("#nx-fr2-look");
     if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
     await page.waitForSelector(".tn-name", { state: "visible", timeout: 25000 }).catch(() => {});
-    await page.waitForTimeout(900);
-    chips = await page.evaluate(() => Array.from(document.querySelectorAll(".tn-name")).filter((b) => b.getClientRects().length).length);
+    chips = await settleChips(page, N);
   } catch (e) { fail(tag, `the page did not load: ${String(e.message).split("\n")[0]}`); }
   if (chips >= 0 && !budget.exceeded) {
     const bad = memberCountProblem(chips, N);

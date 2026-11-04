@@ -1,7 +1,7 @@
 // The judging rules of the production probe (tests/browser/prod-probe.mjs), without a browser.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { junkIn, wrongCountCopy, memberCountProblem, slugOf, classifyHttp, consoleFailures, isReportOnlyCsp } from "../helpers/probe-checks.mjs";
+import { junkIn, wrongCountCopy, memberCountProblem, slugOf, classifyHttp, consoleFailures, isReportOnlyCsp, isCspAdvisory } from "../helpers/probe-checks.mjs";
 import fs from "node:fs";
 
 test("member count: equal passes, any difference fails", () => {
@@ -98,4 +98,17 @@ test("HTTP statuses: site 4xx/5xx fail; API 5xx fails; API 4xx warns except on b
   assert.equal(classifyHttp("https://third.example/x", 500, S, A), "ok", "someone else's host is not ours");
   assert.equal(classifyHttp("http://127.0.0.1:1/api/me", 401, "http://127.0.0.1:1", "http://127.0.0.1:1"), "warn", "local: site and API share an origin, /api/ still counts as the API");
   assert.equal(classifyHttp("http://127.0.0.1:1/css/x.css", 404, "http://127.0.0.1:1", "http://127.0.0.1:1"), "fail");
+});
+
+test("WebKit's report-only advisory is exempt, exactly: it must start with \"The Content Security Policy\" AND say report-only; nothing wider", () => {
+  const advisory = "The Content Security Policy 'default-src 'self'' was delivered via a <meta> element and is report-only: it has no report-uri.";
+  assert.equal(isCspAdvisory(advisory), true);
+  assert.equal(isCspAdvisory(advisory.toUpperCase().replace("THE CONTENT SECURITY POLICY", "The Content Security Policy")), true, "report-only is matched case-insensitively");
+  assert.deepEqual(consoleFailures([advisory]), []);
+  // an enforced block that starts the same way, no report-only: fails
+  assert.equal(consoleFailures(["The Content Security Policy 'default-src 'self'' blocked the resource https://evil.example/x.js"]).length, 1);
+  // report-only somewhere but not starting that way: fails
+  assert.equal(consoleFailures(["Refused to load https://x/y.js: the Content Security Policy is not report-only here"]).length, 1);
+  assert.equal(consoleFailures(["Uncaught TypeError: x. The Content Security Policy report-only note"]).length, 1);
+  assert.equal(consoleFailures(["Failed to load resource: the server responded with a status of 500"]).length, 1);
 });
