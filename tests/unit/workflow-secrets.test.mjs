@@ -106,3 +106,71 @@ test("BOARD_ADMIN_TOKEN and the other production secrets are never available to 
     for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(code(w.text)), false, `${w.f}: ${n}`);
   }
 });
+
+// Flagship: production binds to the production Flagship app through [[flagship]] in wrangler.toml. A PR preview Worker is built from the same
+// file and must NOT: the preview deploy strips the block (tools/strip-flagship-binding.mjs), so previews read the legacy [vars].
+const STRIP = "strip-flagship-binding.mjs";
+test("every non-production job that runs `wrangler deploy` strips the Flagship binding first, in the same job", () => {
+  let seen = 0;
+  for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) {
+    for (const [name, job] of Object.entries(w.doc.jobs)) {
+      const steps = job.steps || [];
+      steps.forEach((s, i) => {
+        if (!/\bwrangler deploy\b/.test(code(s.run || ""))) return;
+        seen++;
+        const strip = steps.findIndex((t) => (t.run || "").includes(STRIP));
+        assert.ok(strip >= 0 && strip <= i, `${w.f} job ${name}: step ${i} runs wrangler deploy without stripping the [[flagship]] binding first`);
+      });
+    }
+  }
+  assert.ok(seen >= 1, "the preview deploy step must be found");
+});
+
+test("the preview strips the binding AFTER it patches wrangler.toml, and no PR-triggered workflow can add a Flagship binding", () => {
+  const prev = workflows.find((x) => x.f === "pr-preview-cloudflare.yml");
+  const step = Object.values(prev.doc.jobs).flatMap((j) => j.steps || []).find((t) => (t.run || "").includes(STRIP));
+  assert.ok(step, "the preview patch step runs the strip tool");
+  assert.ok(step.run.indexOf(STRIP) > step.run.indexOf('writeFileSync("wrangler.toml"'), "strip runs after the patched file is written");
+  for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) {
+    assert.equal(/flagship/i.test(code(w.text).split(STRIP).join("")), false, `${w.f} mentions Flagship in code other than the strip tool`);
+  }
+});
+
+test("the production deploy keeps the binding: it does not strip it and does not touch Flagship", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  assert.equal(/flagship/i.test(code(w.text)), false);
+});
+
+// wrangler 4 needs Node >= 22: every workflow that runs wrangler must set up Node 22 or newer.
+test("every workflow that runs wrangler sets up Node 22 or newer", () => {
+  for (const w of workflows.filter((x) => /\bwrangler\b/.test(code(x.text)))) {
+    const versions = Object.values(w.doc.jobs).flatMap((j) => (j.steps || []).filter((s) => /actions\/setup-node/.test(s.uses || "")).map((s) => Number(String(s.with && s.with["node-version"]).split(".")[0])));
+    assert.ok(versions.length > 0, `${w.f} runs wrangler without setup-node`);
+    for (const v of versions) assert.ok(v >= 22, `${w.f}: setup-node ${v} is below wrangler 4's node >=22`);
+  }
+});
+
+test("wrangler is pinned to the exact version 4.148.0 in package.json and the lockfile", () => {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package.json", import.meta.url)), "utf8"));
+  const lock = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package-lock.json", import.meta.url)), "utf8"));
+  assert.equal(pkg.devDependencies.wrangler, "4.148.0");
+  assert.equal(lock.packages["node_modules/wrangler"].version, "4.148.0");
+  assert.equal(lock.packages[""].devDependencies.wrangler, "4.148.0");
+});
+
+// D1 seed decision: fail closed. An unparsed/unexpected wrangler output must never read as 0 rows (the seed does INSERT OR REPLACE over kv_state).
+test("the production and preview seed steps read the row count with tools/d1-row-count.mjs, fail the step on error, and never default to 0", () => {
+  for (const f of ["deploy-cloudflare.yml", "pr-preview-cloudflare.yml"]) {
+    const w = workflows.find((x) => x.f === f);
+    const c = code(w.text);
+    assert.match(c, /ROW_COUNT=\$\(node \.\.\/tools\/d1-row-count\.mjs "\$COUNT_JSON"\) \|\| \{[^}]*exit 1;?\s*\}/, `${f}: row count must come from the fail-closed tool and exit 1 on error`);
+    assert.equal(/\?\?\s*0\b/.test(c), false, `${f}: no "?? 0" default for the row count`);
+  }
+});
+
+test("the preview workflow does not use `wrangler subdomain get` (gone in wrangler 4) and does not guess a workers.dev account subdomain", () => {
+  const c = code(workflows.find((x) => x.f === "pr-preview-cloudflare.yml").text);
+  assert.equal(/subdomain get/.test(c), false);
+  assert.equal(/jmattbloise\.workers\.dev/.test(c), false);
+  assert.match(c, /Could not read the preview Worker URL/);
+});

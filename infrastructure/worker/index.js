@@ -39,7 +39,7 @@ import { upsertMember } from "./members.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
-import { feedEnabled, serveFeedDoc } from "./feed.js";
+import { feedOn, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
@@ -1357,7 +1357,7 @@ export default {
           let resp = await getCachedResponse(url.origin, cachePath);
           if (!resp) {
             // D1_FEED (default off): stats is computed from D1 and cached 5 minutes; null means serve the stored row as before.
-            const fed = path.startsWith("/data/") && feedEnabled(env) ? await serveFeedDoc(env, raw) : null;
+            const fed = path.startsWith("/data/") && (await feedOn(env)) ? await serveFeedDoc(env, raw) : null;
             const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first());
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
             const etag = `"${raw}-${row.updated_at || '1'}"`;

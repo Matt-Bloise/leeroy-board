@@ -2,7 +2,7 @@
 
 Scope: production at https://leeroy.party (Pages) and https://api.leeroy.party (Worker `leeroy-brain`, Durable Object `BoardRoom`, D1 `leeroy-board-db`). Names come from `infrastructure/wrangler.toml:1,8-10,19-23,26-28` and `.github/workflows/deploy-cloudflare.yml:19-20`.
 
-Last checked: 2026-11-02. Claims marked (docs) cite Cloudflare documentation read that day; (cli) means `npx wrangler <cmd> --help` on wrangler 3.114.17, the version `infrastructure/package.json:22` (`^3.109.0`) resolves to today; (unverified) means not confirmed.
+Last checked: 2026-11-02 (CLI claims below were confirmed on wrangler 3.114.17; the repo now pins 4.148.0, re-check `--help` output when you next use a command). Claims marked (docs) cite Cloudflare documentation read that day; (cli) means `npx wrangler <cmd> --help` on wrangler 3.114.17, the version `infrastructure/package.json:22` (`^3.109.0`) resolves to today; (unverified) means not confirmed.
 
 ## What a deploy touches
 
@@ -74,6 +74,10 @@ Before any restore: note the current bookmark, and take an export as a second co
 4. A revert never undoes data. If the bad commit changed D1 (a migration, a seed, a write path), also use section 3.
 
 If the reverted change added a migration file: reverting the file does not drop the table or column it created, and `wrangler d1 migrations apply` records applied names in D1 (unverified detail: the `d1_migrations` table). Write a new forward migration instead (`schema-source-of-truth.md`).
+
+## Feature flags (Flagship)
+
+A flag that lives in Cloudflare Flagship is rolled back by **flipping it off in the dashboard**: no deploy, no revert. Details, the `[[flagship]]` binding and the fallback to `wrangler.toml` `[vars]` when the binding is missing: docs/runbooks/flags.md. A code rollback (sections 1 to 4) does not change a flag's state; the flag stays as set in the dashboard.
 
 ## Decision table by symptom
 
