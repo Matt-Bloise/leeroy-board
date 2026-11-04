@@ -40,7 +40,7 @@ import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-comma
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
-import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX } from "./cards.js";
+import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { flushBoardLines } from "./board-lines.js";
 import {
@@ -378,13 +378,14 @@ export function validateSignupField(field, value, options, { freeText = false } 
   if (field === "meet") {
     const token = resolveChoice("meet", value, options);
     if (token) return { ok: true, value: token };
-    const listed = Array.isArray(options && options.meet) && options.meet.length ? options.meet.map(String) : ["Valley of Strength", "The Crossroads"];
+    // The slash command's static choices are always valid, whatever custom options the document carries.
+    const listed = [...DEFAULT_MEET, ...(Array.isArray(options && options.meet) ? options.meet.map(String) : [])];
     if (listed.includes(value)) return { ok: true, value };
     if (!freeText) return { ok: false, error: "value" };
     const clean = sanitiseWriteIn(value, WRITE_IN_MAX);
     return clean ? { ok: true, value: clean } : { ok: false, error: "value" };
   }
-  if (field === "when" && whenOptions(options).includes(value)) return { ok: true, value };
+  if (field === "when" && (DEFAULT_WHEN.includes(value) || whenOptions(options).includes(value))) return { ok: true, value };
   const v = resolveChoice(field, value, options);
   return v ? { ok: true, value: v } : { ok: false, error: "value" };
 }

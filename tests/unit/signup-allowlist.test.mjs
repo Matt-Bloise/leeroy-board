@@ -136,3 +136,26 @@ test("manifest: place and value options declare max_length 40", () => {
   const signup = DISCORD_SLASH_COMMANDS_MANIFEST.find((c) => c.name === "signup");
   for (const n of ["place", "value"]) assert.equal(signup.options.find((o) => o.name === n).max_length, 40);
 });
+
+test("custom document options do not lock out the static slash choices, and indexed meet tokens resolve", async () => {
+  const custom = seedsWith({
+    signups: { options: { meet: ["Org Bank", "Stormwind"], when: ["7pm"] }, entries: [{ slug: "fixture-tester", name: "Fixture Tester" }] },
+  });
+  assert.equal((await run(slash([["meet", "Valley of Strength"]]), custom)).entry.meet, "Valley of Strength");
+  assert.equal((await run(slash([["when", "8pm"]]), custom)).entry.when, "8pm");
+  assert.equal((await run(slash([["when", "7pm"]]), custom)).entry.when, "7pm");
+  assert.equal((await run(slash([["meet", "Stormwind"]]), custom)).entry.meet, "Stormwind");
+  assert.equal((await run(button("signup:meet:m1"), custom)).entry.meet, "Stormwind");
+  assert.ok(rejected(await run(button("signup:meet:m9"), custom)));
+  assert.ok(rejected(await run(button("signup:when:midnight"), custom)));
+  assert.ok(rejected(await run(slash([["meet", "Not Listed"]]), custom)), "a non-listed choice-style meet value is still refused");
+});
+
+test("defaults only: with no configured options the static slash choices are accepted", async () => {
+  assert.equal((await run(slash([["meet", "The Crossroads"]]))).entry.meet, "The Crossroads");
+  assert.equal((await run(slash([["when", "later"]]))).entry.when, "later");
+  assert.equal((await run(button("signup:meet:xroads"))).entry.meet, "The Crossroads");
+  assert.equal((await run(button("signup:when:6pm"))).entry.when, "6pm");
+  assert.equal((await run(button("signup:meet:m0"))).entry.meet, "Valley of Strength", "m0 is the first default");
+  assert.ok(rejected(await run(button("signup:meet:m5"))), "an out-of-range index is refused");
+});
