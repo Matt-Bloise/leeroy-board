@@ -15493,6 +15493,7 @@
  },
  "flags": {
   "firstrun.v2": true,
+  "party.n": true,
   "roster.v1": false,
   "nextstep.v2": false,
   "chars.v1": false,
