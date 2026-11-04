@@ -16,6 +16,8 @@
 //   delayed-render   the sixth name chip appears 5 s after load                   -> exit 0 (the probe waits for the chips; fails without the settle wait)
 //   csp-advisory     WebKit's "The Content Security Policy ... report-only" error -> exit 0 (exempt)
 //   csp-nonadvisory  "The Content Security Policy ... blocked the resource" error  -> exit 1 (not the advisory)
+//   hidden-five      hidden text says five with six members              -> exit 0 and listed as information; visible-five -> exit 1
+//   csp-firefox      Firefox's (Report-Only policy) eval message          -> exit 0 and listed; csp-mention / csp-mention-firefox (enforced block that mentions report-only) -> exit 1
 //   state-fail       the reference /api/state answers 500                   -> exit 1, no browser launched, at most 1 API request
 //   budget           a page that reconnects a socket and refetches 20 times with a budget of 5 -> the server sees at most 5 Worker requests
 import { spawn } from "node:child_process";
@@ -66,7 +68,12 @@ const CASES = [
   ["csp-enforced", 1, /console error: Refused to load the image .*Content Security Policy/, L],
   ["csp-report-only", 0, null, L],
   ["delayed-render", 0, null, L],
-  ["csp-advisory", 0, null, L],
+  ["csp-advisory", 0, null, L, null, [["lists the exempted advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n\s+- chromium: The Content Security Policy/]]],
+  ["csp-firefox", 0, null, L, null, [["lists the Firefox advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n\s+- chromium: Content-Security-Policy: \(Report-Only policy\)/]]],
+  ["csp-mention", 1, /console error: The Content Security Policy .*blocked the resource https:\/\/evil\.example\/report-only\.js/, L],
+  ["csp-mention-firefox", 1, /console error: Content-Security-Policy: The page's settings blocked/, L],
+  ["hidden-five", 0, null, L, null, [["lists the hidden copy as information, not a failure", /INFO hidden copy that still says the wrong party size[^\n]*\n(?:\s+- [^\n]*\n)*\s+- "?All five have picked a spec\./], ["lists the template text too", /- "?Where each of the five starts/], ["lists the display:none text too", /- "?Buff links between the five/]]],
+  ["visible-five", 1, /copy states the wrong party size: "Which of the five are you\?"/, L],
   ["csp-nonadvisory", 1, /console error: The Content Security Policy .*blocked the resource/, L],
   ["state-fail", 1, /Aborting before any browser is launched/, L],
   ["green", 1, /budget: more than 20 Worker requests/, ["--viewports", "laptop,phone", "--budget", "20", "--engines", "chromium,firefox"], "budget-spent"],
@@ -74,7 +81,7 @@ const CASES = [
   ["cf-text", 1, /console error: TypeError: cannot read properties of undefined .*cloudflareinsights/, L],
 ].filter(([m, , , , label]) => !only || only.includes(label || m));
 
-async function runCase([mode, want, re, extra, label]) {
+async function runCase([mode, want, re, extra, label, musts]) {
   const srv = await startFixtureServer({ mode });
   const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", "chromium"]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env } });
   let out = ""; child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (out += d));
@@ -82,13 +89,14 @@ async function runCase([mode, want, re, extra, label]) {
   await srv.close();
   const lines = out.split("\n");
   const m = out.match(/Worker requests this run: (\d+) of (\d+)/);
-  return { mode: label || mode, want, re, code, out, lines, m, srv };
+  return { mode: label || mode, want, re, code, out, lines, m, srv, musts };
 }
 const results = [];
 for (let i = 0; i < CASES.length; i += 3) results.push(...(await Promise.all(CASES.slice(i, i + 3).map(runCase))));
-for (const { mode, want, re, code, out, lines, m, srv } of results) {
+for (const { mode, want, re, code, out, lines, m, srv, musts } of results) {
   ok(`[${mode}] probe exits ${want}`, code === want, `exit ${code}; ${lines.filter((l) => /^FAIL|Worker requests/.test(l)).slice(0, 4).join(" | ")}`);
   if (re) ok(`[${mode}] the failure names the problem`, re.test(out), lines.filter((l) => /^FAIL|Aborting/.test(l)).slice(0, 3).join(" | "));
+  for (const [what, rx] of musts || []) ok(`[${mode}] ${what}`, rx.test(out), lines.filter((l) => /^INFO|^  - /.test(l)).slice(0, 5).join(" | "));
   ok(`[${mode}] the request count is printed and within the budget`, !!m && Number(m[1]) <= Number(m[2]), m ? m[0] : "no count line");
   if (mode === "budget-spent") {
     ok("[budget-spent] nothing else started: exactly one FAIL line (the budget), no scene or member-count noise, the second engine never launched", lines.filter((l) => /^FAIL/.test(l)).length === 1 && !/engine firefox is not available/.test(out) && /firefox not run \(budget spent\)/.test(out), lines.filter((l) => /^FAIL|Engines/.test(l)).slice(0, 4).join(" | "));

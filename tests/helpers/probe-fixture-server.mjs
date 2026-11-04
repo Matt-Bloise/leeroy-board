@@ -17,7 +17,12 @@
 //   state-fail   a plain (non-browser) GET /api/state answers 500: the probe must stop at once and launch no browser
 //   delayed-render the sixth name chip is hidden for the first 5 s after load (the board finishing its render late): the probe's /api/state read says six. Read at once the board
 //                shows five and a probe without the settle wait fails; with it the probe waits for six and passes.
-//   csp-advisory WebKit's advisory: a console error "The Content Security Policy 'default-src ...' was delivered via a <meta> element ... report-only ...": must be exempt (pass)
+//   csp-advisory WebKit's advisory (its real wording): "The Content Security Policy '...' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect ...": must be exempt (pass)
+//   hidden-five  hidden text (a [hidden] div, a <template>, a display:none paragraph) says "five" with six members: the probe must PASS and list it as information
+//   visible-five a VISIBLE paragraph says "Which of the five are you?" with six members: must fail
+//   csp-firefox  Firefox's report-only eval message "Content-Security-Policy: (Report-Only policy) The page's settings would block a JavaScript eval ...": exempt (pass), listed
+//   csp-mention  an ENFORCED block that merely mentions report-only elsewhere (in the resource URL): must still fail
+//   csp-mention-firefox  Firefox-style ENFORCED block with "(Report-Only policy)" at the END of the message: must still fail
 //   csp-nonadvisory an error that starts with "The Content Security Policy" but is NOT the report-only advisory (an enforced block): must still fail
 // seen.api counts HTTP requests under /api/, seen.ws the WebSocket upgrades on /api/live (the Worker requests the probe's budget stands for).
 import http from "node:http";
@@ -47,8 +52,13 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     "csp-enforced": `setTimeout(() => console.error("Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
     "cf-text": `setTimeout(() => console.error("TypeError: cannot read properties of undefined (reading x) at https://static.cloudflareinsights.com/beacon.min.js"), 1500);`,
     "delayed-render": `(() => { const hide = () => document.querySelectorAll(".tn-name").forEach((e, i) => { if (i >= 5 && !e.dataset.late) { e.dataset.late = "1"; e.style.display = "none"; } }); const obs = new MutationObserver(hide); obs.observe(document.documentElement, { childList: true, subtree: true }); hide(); setTimeout(() => { obs.disconnect(); document.querySelectorAll(".tn-name[data-late]").forEach((e) => { e.style.display = ""; delete e.dataset.late; }); }, 5000); })();`,
-    "csp-advisory": `setTimeout(() => console.error("The Content Security Policy 'default-src 'self'' was delivered via a <meta> element and is report-only: it has no report-uri, so violations are not reported."), 1500);`,
+    "csp-advisory": `setTimeout(() => console.error("The Content Security Policy 'default-src 'self'' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect. Please either add a 'report-uri' directive, or deliver the policy via the 'Content-Security-Policy' header."), 1500);`,
     "csp-nonadvisory": `setTimeout(() => console.error("The Content Security Policy 'default-src 'self'' blocked the resource https://evil.example/x.js"), 1500);`,
+    "hidden-five": `(() => { const d = document.createElement("div"); d.hidden = true; d.textContent = "All five have picked a spec."; document.body.append(d); const t = document.createElement("template"); t.innerHTML = "<p>Where each of the five starts</p>"; document.body.append(t); const z = document.createElement("p"); z.style.display = "none"; z.textContent = "Buff links between the five"; document.body.append(z); })();`,
+    "visible-five": `(() => { const p = document.createElement("p"); p.textContent = "Which of the five are you?"; p.style.cssText = "position:fixed;left:0;bottom:0;z-index:1;background:#fff;color:#000;padding:4px"; document.body.append(p); })();`,
+    "csp-firefox": `setTimeout(() => console.error("Content-Security-Policy: (Report-Only policy) The page's settings would block a JavaScript eval (script-src) from being executed because it violates the following directive: \\"script-src 'self'\\""), 1500);`,
+    "csp-mention": `setTimeout(() => console.error("The Content Security Policy 'default-src 'self'' blocked the resource https://evil.example/report-only.js"), 1500);`,
+    "csp-mention-firefox": `setTimeout(() => console.error("Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/x.js (default-src) (Report-Only policy)"), 1500);`,
     "csp-report-only": `setTimeout(() => console.error("[Report Only] Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
   };
   const seen = { api: 0, ws: 0, static: 0 };
