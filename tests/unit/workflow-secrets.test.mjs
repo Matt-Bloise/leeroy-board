@@ -43,7 +43,7 @@ const scanText = (w) => w.text + "\n" + parsedText(w);
 // `${a#b}` and `a#b` are kept), and a backslash escapes the next character. `$'...'` honours backslash escapes. A heredoc body (`<<EOF`, `<<-EOF`, `<<'EOF'`) is copied verbatim up to its
 // delimiter line, with no quote or comment handling, so an apostrophe in it cannot unbalance the quote state; text in a heredoc body is data that counts as present (a known gap: it is not run).
 const stripShellComments = (script) => {
-  let out = "", q = "", brace = 0;
+  let out = "", q = "", brace = 0, arith = 0;
   const pending = [];
   for (let i = 0; i < script.length; i++) {
     const c = script[i];
@@ -66,13 +66,17 @@ const stripShellComments = (script) => {
     if (c === "$" && script[i + 1] === "'" && !q) { q = "$'"; out += "$'"; i++; continue; }
     if (c === "'" && q !== '"') { q = "'"; out += c; continue; }
     if (c === '"') { q = q === '"' ? "" : '"'; out += c; continue; }
-    if (!q && c === "<" && script[i + 1] === "<" && script[i + 2] !== "<" && script[i - 1] !== "<") {
-      const m = /^<<(-?)[ \t]*(['"]?)([A-Za-z_]\w*)\2/.exec(script.slice(i));
-      if (m) { pending.push({ tag: m[3], dash: m[1] === "-" }); out += m[0]; i += m[0].length - 1; continue; }
+    if (!q && (script.startsWith("$((", i) || (script.startsWith("((", i) && (i === 0 || /[\s;&|(]/.test(script[i - 1]))))) { arith++; const n = script[i] === "$" ? 3 : 2; out += script.slice(i, i + n); i += n - 1; continue; }
+    if (!q && arith && script.startsWith("))", i)) { arith--; out += "))"; i++; continue; }
+    if (!q && !arith && c === "<" && script[i + 1] === "<" && script[i + 2] !== "<" && script[i - 1] !== "<") {
+      // The delimiter word may be quoted or escaped in parts (<<'EOF', <<"EOF", <<\EOF, <<E'OF'); the tag is the word with the quoting removed.
+      const m = /^<<(-?)[ \t]*((?:\\[^\n]|'[^']*'|"[^"]*"|[^\s;|&<>()'"\\])+)/.exec(script.slice(i));
+      const tag = m && m[2].replace(/\\([^\n])/g, "$1").replace(/'([^']*)'/g, "$1").replace(/"([^"]*)"/g, "$1");
+      if (m && tag) { pending.push({ tag, dash: m[1] === "-" }); out += m[0]; i += m[0].length - 1; continue; }
     }
     if (c === "$" && script[i + 1] === "{") { brace++; out += "${"; i++; continue; }
     if (brace && c === "}") { brace--; out += c; continue; }
-    if (c === "#" && !q && !brace && (i === 0 || /[\s;&|()]/.test(script[i - 1]))) { while (i < script.length && script[i] !== "\n") i++; if (i < script.length) out += "\n"; continue; }
+    if (c === "#" && !q && !brace && (i === 0 || /[\s;&|()]/.test(script[i - 1]))) { while (i + 1 < script.length && script[i + 1] !== "\n") i++; continue; }
     out += c;
   }
   return out;
@@ -98,9 +102,21 @@ for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.
 }
 
 // B60: the broad-exposure rules run on EVERY workflow file, PR-triggered or not (a production deploy has no reason to enumerate secrets either; it names each one).
+// Expressions: every `${{ ... }}` in the raw text and in the parsed strings, plus every parsed `if:` value (which Actions evaluates as an expression without the wrapper). String literals are
+// blanked first. Inside an expression the identifier `secrets` is fine only when it is followed by `.NAME` (a named secret); anything else (`toJSON((secrets))`, `true && secrets`,
+// `secrets || github`, `format('{0}', secrets)`, `secrets[...]`, `secrets.*`) hands over the whole context or hides the name.
+const expressions = (w) => {
+  const found = [], seen = new Set();
+  const add = (e) => { if (!seen.has(e)) { seen.add(e); found.push(e); } };
+  for (const t of [w.text, parsedText(w)]) for (const m of t.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) add(m[1]);
+  (function walk(v) { if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) { if (k === "if" && typeof x === "string") add(x.replace(/^\s*\$\{\{([\s\S]*)\}\}\s*$/, "$1")); walk(x); } })(w.doc);
+  return found;
+};
+const bareSecrets = (w) => expressions(w).map((e) => e.replace(/'(?:[^']|'')*'/g, "''")).filter((e) => /(?<![\w.\-])secrets\b(?!\s*\.\s*[A-Za-z_])/i.test(e));
 const BROAD = [
   ["indexed secrets access hides the name", (w) => /(?<![\w.\/-])secrets\s*\[/i.test(scanText(w))],
   ["toJSON(secrets) exposes every secret", (w) => /toJSON\(\s*secrets\s*\)/i.test(scanText(w))],
+  ["the whole secrets context is passed on (a bare `secrets` in an expression)", (w) => bareSecrets(w).length > 0],
   ["secrets.* exposes every secret", (w) => /(?<![\w.\/-])secrets\s*\.\s*\*/i.test(scanText(w))],
   // Raw text first; then the PARSED document, which resolves quoting (`secrets: "inherit"`), quoted keys, tags (`!!str inherit`) and aliases (`secrets: *a`) that a raw-text regex cannot see.
   ["secrets: inherit passes every secret to a called workflow", (w) => /(?<![\w.\/-])secrets\s*:\s*inherit\b/i.test(w.text) || inheritsSecrets(w.doc)],
@@ -114,18 +130,33 @@ test("no workflow file has indexed secrets access, toJSON(secrets), secrets.* or
 });
 
 test("the broad-exposure rules each catch their pattern (revert-failing: dropping a rule fails here)", () => {
+  // Each case names the rule that must fire; other rules may overlap (a bare `secrets` also fires on toJSON(secrets)), so the NAMED rule is asserted, not the count.
   const cases = {
-    "indexed single quote": "run: echo ${{ secrets['BOARD_ADMIN_TOKEN'] }}",
-    "indexed with spaces": "run: echo ${{ secrets [ 'X' ] }}",
-    "toJSON": "env:\n  ALL: ${{ toJSON(secrets) }}",
-    "toJSON spaced and lower case": "env:\n  ALL: ${{ tojson( secrets ) }}",
-    "secrets.*": "run: echo ${{ join(secrets.*, ' ') }}",
-    "secrets.* spaced": "run: echo ${{ join(secrets . * , ' ') }}",
-    "secrets: inherit": "jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    secrets: inherit",
-    "secrets : inherit spaced": "    secrets  :  inherit",
+    "indexed single quote": ["indexed secrets access", "run: echo ${{ secrets['BOARD_ADMIN_TOKEN'] }}"],
+    "indexed with spaces": ["indexed secrets access", "run: echo ${{ secrets [ 'X' ] }}"],
+    "toJSON": ["toJSON(secrets)", "env:\n  ALL: ${{ toJSON(secrets) }}"],
+    "toJSON spaced and lower case": ["toJSON(secrets)", "env:\n  ALL: ${{ tojson( secrets ) }}"],
+    "secrets.*": ["secrets.* exposes", "run: echo ${{ join(secrets.*, ' ') }}"],
+    "secrets.* spaced": ["secrets.* exposes", "run: echo ${{ join(secrets . * , ' ') }}"],
+    "secrets: inherit": ["secrets: inherit", "jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    secrets: inherit"],
+    "secrets : inherit spaced": ["secrets: inherit", "    secrets  :  inherit"],
   };
-  for (const [name, text] of Object.entries(cases)) assert.equal(broadSecretUse(bw(text)).length, 1, name);
+  for (const [name, [rule, text]] of Object.entries(cases)) assert.ok(broadSecretUse(bw(text)).some((x) => x.includes(rule)), name);
   for (const ok of ["run: echo ${{ secrets.GITHUB_TOKEN }}", "secrets:\n  X: ${{ secrets.X }}", "run: echo secrets_inherit", "run: echo mysecrets[0]"]) assert.deepEqual(broadSecretUse(bw(ok)), [], ok);
+  const wholeContext = {
+    "double parentheses": "run: echo ${{ toJSON((secrets)) }}",
+    "and-expression": "run: echo ${{ toJSON(true && secrets) }}",
+    "or-expression": "run: echo ${{ toJSON(secrets || github) }}",
+    "format": "run: echo ${{ format('{0}', secrets) }}",
+    "in an if: without the wrapper": "jobs:\n  a:\n    if: toJSON(secrets) != ''\n    steps:\n      - run: echo hi\n",
+    "line continuation in a double-quoted scalar": String.raw`run: "echo §{{ toJSON((sec\
+        rets)) }}"`,
+  };
+  for (const [name, text] of Object.entries(wholeContext)) {
+    const found = broadSecretUse(bw(text));
+    assert.ok(found.some((x) => /whole secrets context/.test(x)), name);
+  }
+  for (const ok of ["run: echo ${{ secrets.X }} ${{ github.token }}", "run: echo ${{ secrets . X }}", "run: echo ${{ format('{0}', 'secrets') }}", "run: echo ${{ inputs.secrets }}", "run: echo ${{ github.event.secrets }}", "run: echo secrets"]) assert.deepEqual(bareSecrets(bw(ok)), [], ok);
   // Forms a raw-text regex misses; only the parsed-document check sees them.
   const call = (v, pre = "") => `${pre}jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    secrets: ${v}\n`;
   const parsedOnly = {
@@ -137,13 +168,13 @@ test("the broad-exposure rules each catch their pattern (revert-failing: droppin
   };
   for (const [name, text] of Object.entries(parsedOnly)) {
     const w = bw(text);
-    assert.deepEqual(broadSecretUse(w), ["secrets: inherit passes every secret to a called workflow"], name);
+    assert.ok(broadSecretUse(w).includes("secrets: inherit passes every secret to a called workflow"), name);
   }
   assert.deepEqual(broadSecretUse(bw(call("{ X: ${{ secrets.X }} }"))), [], "a mapping of named secrets is fine");
   // Not limited to PR-triggered workflows: a push-only workflow is flagged. broadFindings is what the real-workflow test runs.
   const pushOnly = fx("push.yml", "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${{ secrets['X'] }}\n");
   assert.equal(triggers(pushOnly.doc).some((t) => PR_TRIGGERS.includes(t)), false);
-  assert.deepEqual(broadFindings([pushOnly]), ["push.yml: indexed secrets access hides the name"]);
+  assert.ok(broadFindings([pushOnly]).includes("push.yml: indexed secrets access hides the name"));
   const folded = fx("f.yml", String.raw`jobs:
   a:
     steps:
@@ -151,7 +182,7 @@ test("the broad-exposure rules each catch their pattern (revert-failing: droppin
           secrets) }}"
 `);
   assert.equal(/toJSON\(\s*secrets\s*\)/i.test(folded.text), false, "the fixture hides toJSON(secrets) from the raw text");
-  assert.deepEqual(broadSecretUse(folded), ["toJSON(secrets) exposes every secret"], "the parsed strings catch it");
+  assert.ok(broadSecretUse(folded).includes("toJSON(secrets) exposes every secret"), "the parsed strings catch it");
 });
 
 test("no workflow uses pull_request_target", () => {
@@ -463,6 +494,13 @@ test("stripShellComments keeps quoted #, $#, ${#x}, ${x#y} and escaped \\#, and 
   const heredoc = "cat <<EOF\nit's a heredoc\nEOF\n# real comment\nnpm ci";
   assert.equal(stripShellComments(heredoc), "cat <<EOF\nit's a heredoc\nEOF\n\nnpm ci", "an apostrophe in a heredoc body does not unbalance the quotes");
   assert.equal(stripShellComments("cat <<-'EOF'\n\tx\n\tEOF\n# c\nok"), "cat <<-'EOF'\n\tx\n\tEOF\n\nok");
+  for (const [name, hd] of Object.entries({ "backslash": "cat <<\\EOF", "mid-word quote": "cat <<E'OF'", "double quotes": 'cat <<"EOF"', "dash and tab": "cat <<-EOF" })) {
+    const script = `${hd}\nit's data\nEOF\n# comment\nnpm ci`;
+    assert.equal(stripShellComments(script), `${hd}\nit's data\nEOF\n\nnpm ci`, name);
+  }
+  assert.equal(stripShellComments("cat <<EOF # why\n# kept: body\nEOF\n# gone\nok"), "cat <<EOF \n# kept: body\nEOF\n\nok", "a comment on the heredoc start line does not skip the body");
+  assert.equal(stripShellComments("echo $((1<<n)) # a\n# npm ci\nok"), "echo $((1<<n)) \n\nok", "a shift in $(( )) is not a heredoc (the next comment line is still a comment)");
+  assert.equal(stripShellComments("(( x = 1<<n )) # a\n# npm ci\nok"), "(( x = 1<<n )) \n\nok", "nor in a (( )) command");
   assert.equal(stripShellComments("echo <<< \"a # b\" # c"), "echo <<< \"a # b\" ");
 });
 
