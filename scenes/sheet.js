@@ -269,7 +269,7 @@ function sheetView(m) {
     h("header", { class: "ps-head" },
       h("span", { class: "ps-crest" }, window.BoardCrest.guard(h("img", { src: window.BoardCrest.src(m.class_key), alt: "", width: 72, height: 72, loading: "lazy", decoding: "async" }), m.class_key)),
       h("span", { class: "ps-id" }, h("h3", { class: "ps-name", id: "ps-name", text: `${m.name}'s sheet` }), h("span", { class: "ps-what", text: `${m.race} ${m.class}${m.role ? `, ${roleOf(m)}` : ""}` }), parity(m, F)),
-      h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn ? K.pn.title() : "The five"}`)),
+      h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn.title()}`)),
     charsView(m),
     h("p", { class: "ps-how", text: how }),
     h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
@@ -281,7 +281,6 @@ function tableView() {
   const take = {};
   for (const { m, F } of all) for (const pr of Array.isArray(F.professions.value) ? F.professions.value : []) (take[pr] ||= []).push(m);
   const two = Object.entries(take).filter(([, l]) => l.length > 1).sort((a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1));
-  const NUM = ["", "one", "two", "three", "four", "five"];
   const deciding = ({ m, F, p }) => {
     const out = [], pr = p && p.decisions.find((x) => x.key === "professions"), und = (m.professions || []).find((x) => x.status === "undecided");
     if (pr && pr.state === "open") out.push(und ? `a profession (${und.name})` : "a profession");
@@ -297,7 +296,7 @@ function tableView() {
       cell("Role", m.role ? roleOf(m) : "not on the board"),
       cell("Race and class", `${F.race.text || m.race} ${F.class.text || m.class}`),
       cell("Spec plan", F.spec_path.text ? `${F.spec_path.text}${F.spec_at_40.text && F.spec_at_40.value !== F.spec_path.value ? `, then ${F.spec_at_40.text} at 40` : ", no change at 40 on record"}` : "not on the board"),
-      cell("Professions", profs.length ? h("span", {}, ...profs.flatMap((pr, i) => [i ? " and " : "", labelOf("professions", pr), take[pr] && take[pr].length > 1 ? h("span", { class: "ps-two-t", text: ` (${NUM[take[pr].length] || take[pr].length} takers)` }) : ""])) : "none on the board", F.professions.note ? h("small", { class: "ps-note", text: ` ${F.professions.note}` }) : null),
+      cell("Professions", profs.length ? h("span", {}, ...profs.flatMap((pr, i) => [i ? " and " : "", labelOf("professions", pr), take[pr] && take[pr].length > 1 ? h("span", { class: "ps-two-t", text: ` (${K.pn.say(take[pr].length)} takers)` }) : ""])) : "none on the board", F.professions.note ? h("small", { class: "ps-note", text: ` ${F.professions.note}` }) : null),
       cell("Still deciding", open.length ? K.andList(open) : "nothing open on the record"));
   });
   const ev = K.nextEvent ? K.nextEvent(Date.now() / 1000) : null;
@@ -308,7 +307,7 @@ function tableView() {
     ev ? h("li", {}, h("b", { text: "Next shared date: " }), `${ev.label}, ${K.fmtWhen(ev.epoch, { rel: true })}. `, h("a", { class: "tn-link", href: "#timeline", text: "Dates" })) : null,
   ].filter(Boolean);
   return h("div", { class: "ps-tablebox" },
-    h("p", { class: "ps-how ps-how-mark" }, h("img", { class: "ps-mark ps-mark-party", src: "img/marks/source-party.webp", alt: "", width: 40, height: 40, loading: "lazy", decoding: "async" }), `The ${K.pn ? K.pn.word() : "five"} sheets folded into one view: the Party Board's records, with what each person changed on their own sheet and left visible.`),
+    h("p", { class: "ps-how ps-how-mark" }, h("img", { class: "ps-mark ps-mark-party", src: "img/marks/source-party.webp", alt: "", width: 40, height: 40, loading: "lazy", decoding: "async" }), `The ${K.pn.word()} sheets folded into one view: the Party Board's records, with what each person changed on their own sheet and left visible.`),
     h("div", { class: "ps-scroll" }, h("table", { class: "ps-table" }, h("caption", { class: "sr-only", text: "The party table: role, race and class, spec plan, professions and what is still open, one row per person" }),
       h("thead", {}, h("tr", {}, ["Who", "Role", "Race and class", "Spec plan", "Professions", "Still deciding"].map((t) => h("th", { scope: "col", text: t })))),
       h("tbody", {}, rows))),
@@ -318,7 +317,7 @@ function tableView() {
 function mount() {
   const panel = $("#panel-five"); if (!panel || $("#ps-views")) return;
   const btn = (v, t) => h("button", { type: "button", class: "lib-tool ps-view", "data-view": v, "aria-pressed": String(v === "cards"), onclick: () => show(v, null, true) }, t);
-  const bar = h("div", { class: "ps-views", id: "ps-views", role: "group", "aria-label": `How to see the ${K.pn ? K.pn.word() : "five"}` }, btn("cards", "The cards"), btn("party", "The party table"));
+  const bar = h("div", { class: "ps-views", id: "ps-views", role: "group", "aria-label": `How to see the ${K.pn.word()}` }, btn("cards", "The cards"), btn("party", "The party table"));
   panel.insertBefore(bar, panel.firstChild);
   panel.append(h("section", { class: "ps", id: "ps-sheet", "aria-label": "A sheet", hidden: true }), h("section", { class: "ps-party", id: "ps-party", "aria-label": "The party table", hidden: true }));
 }

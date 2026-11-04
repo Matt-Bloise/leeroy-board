@@ -138,7 +138,7 @@
       row("Meeting point", meet.length ? meet.join("; ") : notAgreed()),
       row("Getting on", when.length ? when.join("; ") : "nobody has said yet"),
       row("In tonight", ins.length ? [ins.join("; "), ". ", h("a", { class: "tn-link", href: "#signups", text: "Sign-ups" })] : ["nobody has answered yet. ", h("a", { class: "tn-link", href: "#signups", text: "Sign-ups" })]),
-      row(`Where the ${K.pn ? K.pn.word() : "five"} start`, starts.length ? starts.join("; ") : "not on the board yet"));
+      row(`Where the ${K.pn.word()} start`, starts.length ? starts.join("; ") : "not on the board yet"));
   }
   const meSlug = () => { const m = K.MEM.member(); return m ? K.MEM.slug(m.name) : "just-looking"; };
   const localState = () => { const v = K.MEM.get(`launch-${meSlug()}`); return STATES.some(([k]) => k === v) ? v : null; };
@@ -199,7 +199,7 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
     const ms = LJ && Array.isArray(LJ.moments) ? LJ.moments.filter((m) => m && m.epoch).slice().sort((a, b) => a.epoch - b.epoch) : [];
     box.hidden = !ms.length;
     const now = nowS();
-    ol.replaceChildren(...ms.map((m) => h("li", { class: "lh-moment", "data-past": m.epoch <= now ? "1" : "0" }, h("time", { class: "lh-m-when", datetime: new Date(m.epoch * 1000).toISOString(), text: hourOf(m.epoch) }), " ", h("span", { class: "lh-m-title", text: m.title }), m.ping === "all" ? h("span", { class: "lh-m-note", text: ` (pings the ${K.pn ? K.pn.word() : "five"})` }) : m.kind === "countdown" ? h("span", { class: "lh-m-note", text: " (a card that counts down)" }) : null)));
+    ol.replaceChildren(...ms.map((m) => h("li", { class: "lh-moment", "data-past": m.epoch <= now ? "1" : "0" }, h("time", { class: "lh-m-when", datetime: new Date(m.epoch * 1000).toISOString(), text: hourOf(m.epoch) }), " ", h("span", { class: "lh-m-title", text: m.title }), m.ping === "all" ? h("span", { class: "lh-m-note", text: ` (pings the ${K.pn.word()})` }) : m.kind === "countdown" ? h("span", { class: "lh-m-note", text: " (a card that counts down)" }) : null)));
   }
   function renderAsk() {
     const p = $("#lh-ask"); if (!p) return;

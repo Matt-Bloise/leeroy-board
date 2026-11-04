@@ -13,8 +13,11 @@ import { needsRetry, mergeRuns, RETRY_DELAY_MS } from "./smoke-retry.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 import { parseClock, applyClock } from "../helpers/clock-arg.mjs";
 import fs from "node:fs";
-/* The party tab is named by the client flag party.n (data/client.json): "The party" when on, "The five" when off. The page under test serves the same data file. */
-const PARTY_TAB = JSON.parse(fs.readFileSync(new URL("../../data/client.json", import.meta.url), "utf8")).flags["party.n"] ? "The party" : "The five";
+/* The party tab is named by the client flag party.n (data/client.json) AND the size of the party: "The five" when the flag is off or the party has exactly five members, "The party" otherwise (the rule of
+   js/board.js K.pn.title()). The size is the number of distinct members in the fixture this suite answers the API from (tests/fixtures/api-snapshot/snapshot.json, /bootstrap party.members), not read from the page. */
+const PARTY_FLAG = !!JSON.parse(fs.readFileSync(new URL("../../data/client.json", import.meta.url), "utf8")).flags["party.n"];
+const FIXTURE_MEMBERS = new Set(JSON.parse(JSON.parse(fs.readFileSync(new URL("../fixtures/api-snapshot/snapshot.json", import.meta.url), "utf8")).routes["/bootstrap"].body).party.members.map((m) => m.name)).size;
+const PARTY_TAB = PARTY_FLAG && FIXTURE_MEMBERS !== 5 ? "The party" : "The five";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;

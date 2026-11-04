@@ -731,7 +731,7 @@
    "board": [
     {
      "scene": "five",
-     "control": "The five cards #cards",
+     "control": "The cards #cards",
      "file": "index.html",
      "proof": "id=\"cards\""
     }

@@ -4,7 +4,7 @@ const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const { $, h } = K;
 const MQS = ["(max-width: 699px)", "(max-height: 500px) and (orientation: landscape) and (pointer: coarse)"], PHONE_MQ = `${MQS[0]}, (${MQS[1]})`;
 const PLACES = ["tonight", "five", "sheet", "librarian", "more"];
-const LABEL = { tonight: "Next", get five() { return window.__boardKit && window.__boardKit.pn ? window.__boardKit.pn.title() : "The five"; }, sheet: "My sheet", librarian: "Leeroy", more: "More" };
+const LABEL = { tonight: "Next", get five() { return K.pn.title(); }, sheet: "My sheet", librarian: "Leeroy", more: "More" };
 const PHONE_ORDER = ["tonight", "five", "signups", "librarian", "timeline", "roads", "racials", "legacy", "buffs", "ledger", "decide", "library"];
 const REST = PHONE_ORDER.filter((k) => !["tonight", "five", "librarian"].includes(k));
 const ICO = { tonight: "icons/tab-tonight.png", five: "icons/tab-five.png", sheet: "emblems/dates/scroll.webp", librarian: "icons/tab-librarian.png", more: "emblems/chips/seal.webp" };

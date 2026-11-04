@@ -12,8 +12,8 @@ const RSVP_LINE = { in: "in", maybe: "tentative", late: "running late", out: "ou
 const LAUNCH_STATES = ["queue", "in", "done"];
 const LAUNCH_SAY = { queue: "in the queue", in: "in the game", done: "done for tonight" };
 const STEPS = { spec: "Choose your spec.", choose: "Choose {x}." };
-const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
-const countWord = (n) => (Number.isInteger(n) && n > 0 ? NUM[n] || String(n) : "five");
+/* The words for the party size come in with the input (js/next.js asks K.pn in js/board.js, the one place a count becomes words); with none given the card keeps its old five wording. */
+const partyWords = (I) => { const ok = (v, d) => (typeof v === "string" && /^[a-z]{2,12}$/i.test(v) ? v : d); return { partyWord: ok(I.partyWord, "five"), partyOther: ok(I.partyOther, "four"), partyNoun: ok(I.partyNoun, "five"), say: typeof I.say === "function" ? (n) => String(I.say(n)) : (n) => String(n) }; };
 
 const str = (v) => (typeof v === "string" ? v : "");
 const arr = (v) => (Array.isArray(v) ? v : []);
@@ -29,7 +29,6 @@ const fit = (s, max) => {
 const fitLabel = (s) => (s.length < 16 ? s : s.slice(0, 15).trim());
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1);
-const numberWord = (n) => NUM[n] || String(n);
 const unchosen = (o) => /nothing chosen|not chosen/i.test(str(o && o.status));
 
 function events(timeline) {
@@ -73,7 +72,7 @@ function norm(input, nowMs) {
     party: obj(I.party) || { members: [], open: [], polls: [] }, timeline: obj(I.timeline) || { events: [] }, tonight: obj(I.tonight),
     signups: obj(I.signups), decide: obj(I.decide), launch: arr(I.launch).filter(obj), partyRows: arr(I.partyRows).filter(obj),
     me: obj(I.me), journey: JOURNEYS.includes(I.journey) ? I.journey : "curious", key: I.key === true,
-    ticks: arr(I.ticks).filter((x) => typeof x === "string"), snoozed: obj(I.snoozed) || {}, library: I.library, clean: cleanSafe,
+    ticks: arr(I.ticks).filter((x) => typeof x === "string"), snoozed: obj(I.snoozed) || {}, library: I.library, clean: cleanSafe, ...partyWords(I),
   };
 }
 const sameName = (a, b, clean) => a != null && b != null && clean(a).toLowerCase() === clean(b).toLowerCase();
@@ -115,12 +114,12 @@ export function candidates(input, nowMs) {
   const mine = me ? entries.find((e) => isPerson(e, me.names, me.slugs, N.clean)) || null : null;
   const member = me && me.member;
 
-  if (!me) add("pick-name", "pick-name", { kind: "do", title: "Pick your name", fact: "No name is picked on this device yet", why: `Each of the ${countWord(N.partyCount)} has their own next step, shown once a name is picked here or Just looking.`, label: "Pick your name from the five", href: "#tn-me", source: "board" });
+  if (!me) add("pick-name", "pick-name", { kind: "do", title: "Pick your name", fact: "No name is picked on this device yet", why: `Each of the ${N.partyWord} has their own next step, shown once a name is picked here or Just looking.`, label: `Pick your name from the ${N.partyNoun}`, href: "#tn-me", source: "board" });
 
   if (lw.live) {
     const row = me ? N.launch.find((r) => isPerson(r, me.names, me.slugs, N.clean)) || N.partyRows.find((r) => isPerson(r, me.names, me.slugs, N.clean) && obj(r.fields) && r.fields.launch_state) : null;
     const state = row ? (LAUNCH_STATES.includes(row.state) ? row.state : row.fields && LAUNCH_STATES.includes(row.fields.launch_state) ? row.fields.launch_state : null) : null;
-    add("launch-state", "launch-state", { kind: "party", title: "Launch night: say where you are", fact: `Launch night: each of the ${countWord(N.partyCount)} marks where they are`, why: `${state ? `Now: ${LAUNCH_SAY[state]}. ` : ""}The ${countWord(N.partyCount)} see who is in the queue, in the game or done.`, due: lw.epoch, label: "Where I am", write: { client: "setLaunch", value: LAUNCH_STATES.slice() }, source: "board" });
+    add("launch-state", "launch-state", { kind: "party", title: "Launch night: say where you are", fact: `Launch night: each of the ${N.partyWord} marks where they are`, why: `${state ? `Now: ${LAUNCH_SAY[state]}. ` : ""}The ${N.partyWord} see who is in the queue, in the game or done.`, due: lw.epoch, label: "Where I am", write: { client: "setLaunch", value: LAUNCH_STATES.slice() }, source: "board" });
   }
 
   if (me) {
@@ -137,7 +136,7 @@ export function candidates(input, nowMs) {
       const places = arr(N.signups && obj(N.signups.options) && N.signups.options.meet).filter((x) => typeof x === "string" && x);
       const zones = new Set(arr(P.members).map((m) => obj(m) && str(m.start_zone)).filter(Boolean)).size;
       const orList = (l) => (l.length < 2 ? l.join("") : `${l.slice(0, -1).join(", ")} or ${l[l.length - 1]}`);
-      const named = places.length ? `On the table: ${orList(places)}` : "", from = zones ? `; the party walks there from ${numberWord(zones)} start zone${zones === 1 ? "" : "s"}` : "";
+      const named = places.length ? `On the table: ${orList(places)}` : "", from = zones ? `; the party walks there from ${N.say(zones)} start zone${zones === 1 ? "" : "s"}` : "";
       const why = named && `${named}${from}.`.length < 110 ? `${named}${from}.` : named ? `${named}.` : "Nothing is chosen on the board yet.";
       add("meet", "meet", { kind: "party", title: "Pick where to meet on launch night", fact: "Meeting point: not picked yet", why, due: launchEpoch, label: "Pick a place", href: "#signups", write: { client: "setMeet", value: places.length ? places : null }, source: "discord" });
     }
@@ -185,7 +184,7 @@ export function candidates(input, nowMs) {
     const meetItem = arr(P.open).find((o) => obj(o) && /meeting point/i.test(str(o.title))), meetSet = meetItem && !unchosen(meetItem) && str(meetItem.status) ? meetItem.status : null;
     if (place) add("train-10", "train-10", { kind: "learn", title: `Visit your first trainer: ${place.replace(/\.$/, "")}`, fact: `Your first trainer: ${place.replace(/\.$/, "")}`, why: "The trainer is where new spells come from.", label: "Open my class page", href: me.class_key ? `#library.classes.${slug(me.class_key)}` : null, source: "library", weight: WEEK_WEIGHTS["train-10"] });
     if (dungeon) add("first-dungeon", "first-dungeon", { kind: "learn", title: `Plan the first dungeon run: ${dungeon.replace(/\.$/, "")}`, fact: `The first dungeon run: ${dungeon.replace(/\.$/, "")}`, why: null, label: "Read it", href: "#library.dungeons.overview", source: "library", weight: WEEK_WEIGHTS["first-dungeon"] });
-    if (meetSet) add("meet-again", "meet-again", { kind: "party", title: `Meet the other ${countWord((N.partyCount || 5) - 1)} at the meeting point`, fact: `Where the ${countWord(N.partyCount)} meet after day one: ${meetSet}`, why: null, label: "Open the roads", href: "#roads", source: "discord", weight: WEEK_WEIGHTS["meet-again"] });
+    if (meetSet) add("meet-again", "meet-again", { kind: "party", title: `Meet the other ${N.partyOther} at the meeting point`, fact: `Where the ${N.partyWord} meet after day one: ${meetSet}`, why: null, label: "Open the roads", href: "#roads", source: "discord", weight: WEEK_WEIGHTS["meet-again"] });
   }
 
   if (me && me.class_key && libraryHas(N.library, `classes/${me.class_key}`)) {

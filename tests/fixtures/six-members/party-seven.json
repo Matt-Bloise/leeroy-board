@@ -1,0 +1,458 @@
+{
+ "generated": "2026-01-01T00:00:00.000Z",
+ "party": "Dungeons and Drinking",
+ "faction": "Horde",
+ "ruleset": "Normal",
+ "members": [
+  {
+   "name": "Brindle Oakhand",
+   "class_key": "druid",
+   "class": "Druid",
+   "race": "Tauren",
+   "spec": "Feral, bear tank",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "tank",
+   "role_detail": null,
+   "color": "#ff7c0a",
+   "start_zone": "Mulgore",
+   "board_line": "Tauren Feral Druid, bear tank",
+   "professions": [
+    {
+     "name": "Leatherworking",
+     "source": "board"
+    },
+    {
+     "name": "Skinning",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Pip Candlewick",
+   "class_key": "priest",
+   "class": "Priest",
+   "race": "Undead",
+   "spec": "Discipline",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "healer",
+   "role_detail": null,
+   "color": "#ffffff",
+   "start_zone": "Tirisfal Glades",
+   "board_line": "Undead Disc Priest",
+   "professions": [
+    {
+     "name": "Mining",
+     "source": "chat"
+    },
+    {
+     "name": "Engineering",
+     "source": "chat"
+    }
+   ]
+  },
+  {
+   "name": "Mossback Dunn",
+   "class_key": "paladin",
+   "class": "Paladin",
+   "race": "Undead",
+   "spec": "Retribution to 40, then Ret/Holy",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "healer",
+   "role_detail": "damage until 40, healer from level 40",
+   "color": "#f48cba",
+   "start_zone": "Tirisfal Glades",
+   "board_line": "Undead Paladin: Ret to 40, then Ret/Holy",
+   "professions": [
+    {
+     "name": "Blacksmithing",
+     "source": "board"
+    },
+    {
+     "name": "Mining",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Ember Quillfeather",
+   "class_key": "mage",
+   "class": "Mage",
+   "race": "Undead",
+   "spec": "Frost, Fire at 40",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "damage",
+   "role_detail": null,
+   "color": "#3fc7eb",
+   "start_zone": "Tirisfal Glades",
+   "board_line": "Undead Frost Mage, Fire at 40",
+   "professions": [
+    {
+     "name": "Tailoring",
+     "source": "chat"
+    },
+    {
+     "name": "Enchanting or Alchemy",
+     "source": "board",
+     "status": "undecided"
+    }
+   ]
+  },
+  {
+   "name": "Hobb Cinderwick",
+   "class_key": "warlock",
+   "class": "Warlock",
+   "race": "Troll",
+   "spec": "Demonology",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "damage",
+   "role_detail": null,
+   "color": "#8788ee",
+   "start_zone": "Durotar",
+   "board_line": "Troll Demo Warlock",
+   "professions": [
+    {
+     "name": "Enchanting",
+     "source": "chat"
+    },
+    {
+     "name": "Tailoring",
+     "source": "chat"
+    }
+   ]
+  },
+  {
+   "name": "Tallow Vex",
+   "class_key": "rogue",
+   "class": "Rogue",
+   "race": "Orc",
+   "spec": "Combat",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "damage",
+   "role_detail": null,
+   "color": "#fff468",
+   "start_zone": "Durotar",
+   "board_line": "Orc Combat Rogue",
+   "professions": [
+    {
+     "name": "Leatherworking",
+     "source": "board"
+    },
+    {
+     "name": "Skinning",
+     "source": "board"
+    }
+   ]
+  },
+  {
+   "name": "Wick Ashgrove",
+   "class_key": "shaman",
+   "class": "Shaman",
+   "race": "Troll",
+   "spec": "Restoration",
+   "spec_status": {
+    "status": "declared",
+    "source": "board"
+   },
+   "role": "healer",
+   "role_detail": null,
+   "color": "#0070dd",
+   "start_zone": "Durotar",
+   "board_line": "Troll Restoration Shaman",
+   "professions": [
+    {
+     "name": "Herbalism",
+     "source": "board"
+    },
+    {
+     "name": "Alchemy",
+     "source": "board"
+    }
+   ]
+  }
+ ],
+ "settled": [
+  {
+   "text": "Faction: Horde (Ember Quillfeather, Oct 26)",
+   "source": "board"
+  },
+  {
+   "text": "Ruleset: Normal (poll, Oct 25)",
+   "source": "board"
+  },
+  {
+   "text": "Tank: Brindle Oakhand · Healers: Pip Candlewick, plus Mossback Dunn from level 40",
+   "source": "board"
+  }
+ ],
+ "settled_extra": [
+  {
+   "text": "Raids open Dec 9: Barrow Deeps 10, Hyjal 20, Onyxia 40",
+   "source": "group notes"
+  }
+ ],
+ "open": [
+  {
+   "title": "Guild name",
+   "text": "poll closes on Thu, Oct 29, 2:37 PM ET. Add names in chat.",
+   "links": [
+    {
+     "label": "poll",
+     "url": "https://discord.com/channels/0/0/0"
+    }
+   ],
+   "source": "board"
+  },
+  {
+   "title": "Professions",
+   "text": "the options. Gap: Alchemy.",
+   "links": [
+    {
+     "label": "the options",
+     "url": "https://discord.com/channels/0/0/0"
+    }
+   ],
+   "source": "board"
+  },
+  {
+   "title": "Launch-night meeting point",
+   "status": "nothing chosen",
+   "detail": "Three starting zones, one square. Classic habit: Orgrimmar's Valley of Strength; at 10, the Crossroads.",
+   "links": [],
+   "source": "group notes"
+  },
+  {
+   "title": "Who holds a pack",
+   "status": "nobody listed",
+   "detail": "Pack holders create and name up to three characters each, open since Oct 27 4 PM ET, until Nov 3 (Pacific).",
+   "links": [],
+   "source": "group notes"
+  },
+  {
+   "title": "Launch night",
+   "status": "the event",
+   "detail": "Wed Nov 4, 6 PM ET, voice in Fellowship. Who's on?",
+   "links": [
+    {
+     "label": "the event",
+     "url": "https://discord.com/events/0/0"
+    }
+   ],
+   "source": "group notes"
+  }
+ ],
+ "polls": [
+  {
+   "title": "Guild name",
+   "url": "https://discord.com/channels/0/0/0",
+   "text": "poll closes on Thu, Oct 29, 2:37 PM ET. Add names in chat.",
+   "closes_epoch": 1793299053
+  }
+ ],
+ "channel_url": "https://discord.com/channels/0/0/0",
+ "signup_url": "https://discord.com/channels/0/0/0",
+ "play": {
+  "text": "To play from launch: a subscription or Game Time (the Epic pack adds 30 days from Nov 4)",
+  "source": "board"
+ },
+ "glossary": [
+  {
+   "term": "racial",
+   "forms": [
+    "racial",
+    "racials",
+    "racial ability",
+    "racial abilities"
+   ],
+   "def": "A special ability every character of one race gets for free, like a Troll's faster attacks."
+  },
+  {
+   "term": "spec",
+   "forms": [
+    "spec",
+    "specs",
+    "specialization"
+   ],
+   "def": "The way a character focuses its class, for example a Mage who studies Frost rather than Fire."
+  },
+  {
+   "term": "talent",
+   "forms": [
+    "talent",
+    "talents",
+    "talent tree",
+    "talent trees"
+   ],
+   "def": "Points a character earns while levelling and spends on upgrades that shape its spec."
+  },
+  {
+   "term": "cooldown",
+   "forms": [
+    "cooldown",
+    "cooldowns"
+   ],
+   "def": "The wait before a spell or ability can be used again."
+  },
+  {
+   "term": "challenge",
+   "forms": [
+    "challenge",
+    "challenges"
+   ],
+   "def": "One of 65 account-wide goals, each worth one legacy point, such as reaching level 25 with a class or 150 skill in a crafting profession."
+  },
+  {
+   "term": "tabard",
+   "forms": [
+    "tabard",
+    "tabards"
+   ],
+   "def": "A cloth worn over armor that shows a design."
+  },
+  {
+   "term": "legacy points",
+   "forms": [
+    "legacy points",
+    "legacy point",
+    "Legacy"
+   ],
+   "def": "Account-wide points earned by finishing challenges, spent on rewards for any character."
+  },
+  {
+   "term": "pack",
+   "forms": [
+    "pack",
+    "packs",
+    "Epic pack",
+    "Heroic pack"
+   ],
+   "def": "A paid bundle that includes the game time and extras, and lets its owner reserve names early."
+  },
+  {
+   "term": "Game Time",
+   "forms": [
+    "Game Time",
+    "game time",
+    "subscription"
+   ],
+   "def": "Paid time to play: a monthly subscription or a block of Game Time; the game needs one of them from launch."
+  },
+  {
+   "term": "stats",
+   "forms": [
+    "stats",
+    "Stamina",
+    "Spirit",
+    "Intellect"
+   ],
+   "def": "Numbers that shape a character: Stamina adds health, Intellect adds mana, Spirit refills health and mana faster."
+  },
+  {
+   "term": "Valley of Strength",
+   "forms": [
+    "Valley of Strength"
+   ],
+   "def": "A big open square inside Orgrimmar, the Horde's main city, where groups often meet."
+  },
+  {
+   "term": "Normal ruleset",
+   "forms": [
+    "Normal ruleset",
+    "Normal realm",
+    "ruleset"
+   ],
+   "def": "A server type where players only fight each other if they choose to."
+  },
+  {
+   "term": "class",
+   "forms": [
+    "class",
+    "classes"
+   ],
+   "def": "A character's job, such as Mage, Priest or Warlock; it sets the spells, the armor and whether it can tank, heal or deal damage. Forever has nine."
+  },
+  {
+   "term": "race",
+   "forms": [
+    "race",
+    "races"
+   ],
+   "def": "A character's people, such as Undead, Troll or Tauren; it sets the look, a few special abilities and which classes are open."
+  },
+  {
+   "term": "faction",
+   "forms": [
+    "faction",
+    "factions"
+   ],
+   "def": "One of the two sides, Horde or Alliance; players of different sides cannot group together, and each race belongs to one side."
+  },
+  {
+   "term": "guild",
+   "forms": [
+    "guild",
+    "guilds"
+   ],
+   "def": "A named club of players who chat and play together; in Forever its members need the same ruleset and the same side to group."
+  },
+  {
+   "term": "gold",
+   "forms": [
+    "gold",
+    "silver",
+    "copper",
+    "money"
+   ],
+   "def": "The game's money, counted in gold, silver and copper; it pays for spells from trainers, riding, repairs and items other players sell."
+  },
+  {
+   "term": "Names open",
+   "forms": [
+    "Names open",
+    "name reservation",
+    "Early Name Reservation"
+   ],
+   "def": "The name reservation window: pack holders can make up to three characters and keep their names, from Oct 27 until the end of Nov 3 Pacific (3 AM ET Nov 4)."
+  },
+  {
+   "term": "Fellowship",
+   "forms": [
+    "Fellowship"
+   ],
+   "def": "The name of the group's voice channel on its Discord server."
+  },
+  {
+   "term": "Classic habit",
+   "forms": [
+    "Classic habit",
+    "Classic habits"
+   ],
+   "def": "What players usually did in World of Warcraft Classic, the older version of the game; a habit, not a Forever rule."
+  },
+  {
+   "term": "rank cap",
+   "forms": [
+    "rank cap",
+    "rank caps"
+   ],
+   "def": "The level where one rank of a spell stops getting stronger; past it, only the next rank, learned from a trainer, hits harder."
+  }
+ ]
+}
