@@ -39,6 +39,12 @@ test("the launch hero is not rendered while the wall is cold, and its coin and p
   assert.match(read("js", "seals.js"), /K\.wallCold && K\.wallCold\(\) && K\.whenSettled\) K\.whenSettled\(putMedal\)/, "a coin made while the wall is cold loads its medal on settle");
 });
 
+test("the checklist summary has a real dark background under its cream text, so axe measures the plank the visitor sees", () => {
+  const css = read("css", "v15.css").split(/\r?\n/);
+  assert.ok(css.includes(".lh-check-sum { background-color: var(--oak-2); background-clip: content-box; }"), "dark colour under the text only");
+  assert.match(read("css", "kit.css"), /\.lh-check-sum\)\{[^}]*color:var\(--cream\)[^}]*border-image:url\("\.\.\/img\/kit\/dc-row-c\.webp"\) 20 10 20 76 fill/, "kit.css still paints the summary as a dark plank with cream text (the colour sits under its fill)");
+});
+
 test("expectedHero follows the hero window (T-24h to T+24h)", () => {
   for (const [iso, want] of [["2026-11-03T22:59:59Z", ""], ["2026-11-03T23:00:00Z", "soon"], ["2026-11-04T22:59:59Z", "soon"], ["2026-11-04T23:00:00Z", "live"], ["2026-11-05T22:59:59Z", "live"], ["2026-11-05T23:00:00Z", ""]]) assert.equal(expectedHero(new Date(iso)), want, iso);
   assert.deepEqual(Object.values(LAUNCH_CLOCKS).map((v) => expectedHero(new Date(v))), ["", "soon", "live"]);
