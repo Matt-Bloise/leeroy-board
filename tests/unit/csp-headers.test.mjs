@@ -22,12 +22,16 @@ test("the /* rule carries a Content-Security-Policy (Report-Only is allowed, and
 test("the policy has the agreed directives", () => {
   assert.deepEqual(dir("default-src"), ["'self'"]);
   assert.deepEqual(dir("connect-src").slice(0, 3), ["'self'", "https://api.leeroy.party", "wss://api.leeroy.party"]);
-  assert.deepEqual(dir("frame-ancestors"), ["'self'", "https://discord.com", "https://*.discordsays.com"]);
   assert.deepEqual(dir("object-src"), ["'none'"]);
   assert.deepEqual(dir("base-uri"), ["'none'"]);
   const s = dir("script-src");
   assert.equal(s[0], "'self'");
   assert.ok(!s.includes("'unsafe-inline'") && !s.includes("'unsafe-eval'") && !s.includes("*"), "no unsafe-inline, unsafe-eval or wildcard in script-src");
+});
+test("frame-ancestors is not in the report-only line (browsers ignore it there; WebKit logs a console error on every page)", () => {
+  assert.ok(/Report-Only/i.test(line), "the /* policy is the report-only header");
+  assert.ok(!/frame-ancestors/i.test(line), "frame-ancestors must not be on the Content-Security-Policy-Report-Only line");
+  assert.deepEqual(dir("frame-ancestors"), []);
 });
 test("script-src carries the sha256 of EVERY inline script in index.html (host-redirect, the second inline script, the module)", () => {
   const scripts = [...html.matchAll(/<script(?![^>]*\ssrc=)([^>]*)>([\s\S]*?)<\/script>/g)];
