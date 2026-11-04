@@ -6,6 +6,7 @@
 //            --live-api   use the real API the page points at (default: the Worker API is answered from tests/fixtures/api-snapshot, so the sweep sends no request to the Worker)
 //            --no-retry   do not run a failed (size, state) cell a second time in a fresh page (default: retry once, print WARN when it passed only on the retry)
 //            --clock 2026-11-04T10:00:00Z   load every page with its clock set to that instant (it keeps running), to check a time-dependent screen such as the launch hero without waiting (tests/helpers/clock-arg.mjs)
+//            --inject-js file.js   runs a script in every page after DOMContentLoaded (self-test only: proves the console-error detail names the workers and cross-origin fetches)
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
 // No AI call, nothing is sent. By default every /api/ call is fulfilled by Playwright from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs): the sweep judges layout, not the API,
 // and a full sweep made 1,056 Worker requests before this (measured locally, docs/runbooks/cloudflare-requests.md). An API path the snapshot lacks fails the run (invariant stub-miss). Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
@@ -30,7 +31,7 @@
 //   tile-clip       looking and member, the wall before any scene opens: no wall tile clips its own text (a clipping box shorter than its content, or text outside its tile)
 //   http-error      a same-origin response was 4xx or 5xx
 //   xorigin-http    a request to another origin (Worker API, font host) answered 4xx/5xx or failed; the failure names the URL (the Cloudflare insights beacon is ignored)
-//   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
+//   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored). WebKit's CORS line carries no URL, so the failure adds the message's source, the Workers started and the cross-origin fetches seen (B55b)
 // Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
@@ -38,6 +39,7 @@
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
+import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -62,6 +64,7 @@ ALL_SIZES.push("5120x1440"); /* 34 inch ultra-wide at double width: a very wide,
 const FILL_ENFORCED = new Set(["3440x1440", "3840x2160", "5120x1440"]);
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
 const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENES);
+const INJECT_JS = arg("--inject-js") ? readFileSync(arg("--inject-js"), "utf8") : "";
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
 const url = BASE ? pageUrl(BASE, { params: { preview: "1" } }) : "about:blank";
 const ORIGIN = BASE ? new URL(url).origin : "";
@@ -71,7 +74,7 @@ const NO_OPEN = new Set(["member/tonight"]);
 const failures = [], notes = [];
 let skipped = 0, cells = 0, checks = 0, truncated = false, retried = 0;
 // One (size, state) cell keeps its own tally while it runs so a failed attempt can be thrown away and run again in a fresh page; the tally of the attempt that counts is merged into the totals.
-const fail = (c, state, scene, invariant, detail, sink = failures) => sink.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300) });
+const fail = (c, state, scene, invariant, detail, sink = failures, diag = "") => { const f = { w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300), ...(diag ? { diag: String(diag) } : {}) }; sink.push(f); return f; }; /* diag is kept apart from detail: the 300-character cut on detail must not discard the URLs a diagnostic exists to show */
 
 // Runs in every page (addInitScript). window.__lz.rect(el) is el.getBoundingClientRect() in real viewport pixels; point(el) its centre. See the Zoom note at the top.
 function ZOOM_JS(isWebkit) {
@@ -352,16 +355,26 @@ async function cell(browser, size, state, A) {
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
   const ctx = await browser.newContext(opts), page = await ctx.newPage();
   await ctx.addInitScript(ZOOM_JS, ENGINE === "webkit");
+  await ctx.addInitScript(XR_JS);
+  if (INJECT_JS) await ctx.addInitScript((js) => { addEventListener("DOMContentLoaded", () => { (0, eval)(js); }); }, INJECT_JS);
   await applyClock(page, CLOCK);
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
-  const once = (inv, detail) => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures); } };
+  const pending = new Set(); /* diagnostics still being read from the page; awaited before the cell closes */
+  const once = (inv, detail, diag = "") => { const k = `${scene}|${inv}|${detail}`; if (seen.has(k)) return null; seen.add(k); return fail(size, state, scene, inv, detail, A.failures, diag); };
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
-  page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
+  page.on("response", (r) => { const u = r.url(); if (sameOrigin(u, ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
+  /* B55b: WebKit's CORS line ("Origin ... is not allowed by Access-Control-Allow-Origin. Status code: 404") names no URL and WebKit raises no response/requestfailed event for it (run 41829291747: no xorigin-http line). So the detail adds what the engine does know: the console message's own source (WebKit puts the resource URL there), every Worker the page started and every cross-origin fetch the page made with its status (XR_JS below). A request made inside a worker shows up in none of the events; the worker list then names the suspects. */
+  page.on("worker", (w) => { (page.__workers ||= []).push(w.url()); });
+  page.on("console", (m) => {
+    if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) return;
+    if (!/Access-Control-Allow-Origin|access control/i.test(m.text())) { once("console-error", m.text()); return; }
+    let loc = null; try { loc = m.location(); } catch (e) {}
+    captureConsoleError({ text: m.text(), loc, record: (t) => once("console-error", t), evaluate: () => page.evaluate(() => ({ xr: window.__xr || [], wk: window.__wk || [] })), workers: () => page.__workers || [], pending });
+  });
   /* xorigin-http: a request to ANOTHER origin (the Worker API, a font host) that answered 4xx/5xx or failed. WebKit logs such a 404 as "Origin <site> is not allowed by Access-Control-Allow-Origin. Status code: 404" without the URL (production QA run 41807379587), so the console-error line alone cannot be traced; this names the URL. The Cloudflare insights beacon is ignored. */
-  const xo = (u) => /^https?:/.test(u) && !u.startsWith(ORIGIN) && !/cloudflareinsights/.test(u);
+  const xo = (u) => /^https?:/.test(u) && !sameOrigin(u, ORIGIN) && !/cloudflareinsights/.test(u);
   page.on("response", (r) => { const u = r.url(); if (xo(u) && r.status() >= 400) once("xorigin-http", `${r.status()} ${u}`); });
   page.on("requestfailed", (r) => { const u = r.url(); if (xo(u)) once("xorigin-http", `failed ${r.method()} ${u} ${(r.failure() || {}).errorText || ""}`); });
   try {
@@ -379,9 +392,10 @@ async function cell(browser, size, state, A) {
         // software-rendered WebKit needs 2 to 3 s per frame at 5120x2880 (measured: the page opens in under 100 ms, but the check only gets a turn after the next frame, 5 to 8 s after the hash change), so the wait scales with the pixel count; 5 s up to 2.5 megapixels
         const OPEN_MS = Math.max(5000, Math.round((size.w * size.h) / 1e6) * 4000);
         let opened = await page.waitForFunction(isOpen, sc, { timeout: OPEN_MS }).then(() => true, () => false);
+        const everOpened = opened; // true when the scene did open at least once, so a failure below can say "opened, then closed again" or "never opened"
         if (opened) { await page.waitForTimeout(450); opened = await page.evaluate(isOpen, sc); } // still open after the open animation settles
         A.checks++;
-        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden)`, A.failures); continue; }
+        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden); ${everOpened ? "it opened once, then closed again" : "it never opened"}`, A.failures); continue; }
       } else {
         const opened = await page.evaluate(() => document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden);
         if (!opened) { // the gate is not a scene sheet: only the document-level invariant applies
@@ -400,7 +414,7 @@ async function cell(browser, size, state, A) {
     }
   } catch (e) {
     fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`, A.failures);
-  } finally { await ctx.close().catch(() => {}); }
+  } finally { await Promise.allSettled([...pending]); await ctx.close().catch(() => {}); }
 }
 
 const launch = { ...(process.env.PW_EXECUTABLE ? { executablePath: process.env.PW_EXECUTABLE } : {}) };
@@ -409,6 +423,7 @@ if (argv.includes("--zoom-selftest")) {
   const b = await pw[ENGINE].launch(launch);
   const page = await (await b.newContext({ viewport: { width: 900, height: 700 } })).newPage();
   await page.addInitScript(ZOOM_JS, ENGINE === "webkit");
+  await page.addInitScript(XR_JS);
   await page.goto("about:blank");
   await page.setContent('<style>body{margin:0}</style><div style="position:absolute;left:100px;top:80px;zoom:1.052"><div style="zoom:1.1;padding:30px"><button id=t style="width:120px;height:40px;margin:20px">t</button><button id=u style="width:120px;height:40px;margin:20px 0 0 200px">u</button></div></div>');
   let bad = 0;
@@ -469,7 +484,7 @@ if (failures.length) {
     console.log(`    e.g. ${g.ex}`);
   }
 }
-for (const f of failures.slice(0, 20)) console.log(`FAIL ${f.w}x${f.h} ${f.engine} ${f.state}/${f.scene} ${f.invariant}: ${f.detail}`);
+for (const f of failures.slice(0, 20)) console.log(`FAIL ${f.w}x${f.h} ${f.engine} ${f.state}/${f.scene} ${f.invariant}: ${f.detail}${f.diag ? `\n     diag: ${f.diag}` : ""}`);
 if (truncated) console.log(`FAIL time budget of ${BUDGET_MS / 60000} min ran out after ${cells} cells; the sweep is incomplete`);
 if (notes.length) {
   const by = {}; for (const x of notes) (by[x.invariant] ||= []).push(x);
