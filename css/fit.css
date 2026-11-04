@@ -178,3 +178,6 @@
 }
 /* the legal strip is one more line under the wall footer; in a window this short the wall already fits to the pixel, so take its height back from the 16px gap above it and the board bottom padding (it stays visible and keyboard reachable) */
 @media (max-height: 450px) { #board > .legal-foot { margin-top: -16px; line-height: 1.1; } #board { padding-bottom: 0; } }
+/* wall tiles must not shave their own text: the title is a clipped (overflow hidden, ellipsis) box whose line is 1.02 tall, shorter than the glyphs, so descenders and accents were cut; the tile lines are clamped boxes that shaved the outline and underline of the glossary buttons inside them. Give each clipping box a little padding to hold the ink and take the same margin back, so no tile changes size. */
+.wall .tile-title { padding-block: 0.24em; margin-block: -0.24em; }
+.wall .tile-line { padding-block: 3px; margin-block: -3px; }

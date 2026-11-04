@@ -26,6 +26,7 @@
 //   wheel-still     first visit, desktop: a wheel event leaves scrollY at 0
 //   one-scroller    REPORT ONLY (listed in the summary, never fails): first visit, no more than one scrolling box
 //   fill            first visit, the card fills at least 25 percent of its parchment (area ratio). FAILS at 3440x1440, 3840x2160 and 5120x1440 (FILL_ENFORCED); report only at every other size
+//   tile-clip       looking and member, the wall before any scene opens: no wall tile clips its own text (a clipping box shorter than its content, or text outside its tile)
 //   http-error      a same-origin response was 4xx or 5xx
 //   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
 // Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
@@ -264,6 +265,37 @@ async function gateChecks(page, size, once, A) {
   else if (m.fill < 0.25) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: `card fills ${(m.fill * 100).toFixed(1)}% of its parchment (want 25%)` });
 }
 
+// Wall tiles must not clip their own content. In a cell that shows the wall (looking, member; before any scene opens) every text-bearing element inside a visible #board .tile that clips
+// (overflow hidden or clip) must hold its content: scrollHeight <= clientHeight + 1 and scrollWidth <= clientWidth + 1. That catches a nowrap title cut mid-word, a descender or a button
+// outline shaved off by a line box that is shorter than the text, and a clamp box that is too small. It also fails when text sits outside its tile's own rectangle. Needs 9 tiles on screen.
+async function wallChecks(page, size, once, A) {
+  A.checks++;
+  const r = await page.evaluate(() => {
+    const tiles = [...document.querySelectorAll("#board .tile")].filter((t) => t.getClientRects().length);
+    const bad = [];
+    for (const t of tiles) {
+      const tr = t.getBoundingClientRect(), name = t.closest("li")?.className.split(/\s+/)[0] || t.dataset.scene;
+      for (const e of t.querySelectorAll("*")) {
+        const cs = getComputedStyle(e);
+        if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
+        const rc = e.getBoundingClientRect();
+        if (!rc.width || !rc.height || ![...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+        const cut = /hidden|clip/.test(cs.overflowX) || /hidden|clip/.test(cs.overflowY);
+        const what = `${name} ${(typeof e.className === "string" && e.className.trim().split(/\s+/)[0]) || e.tagName.toLowerCase()} "${e.textContent.trim().slice(0, 18)}"`;
+        // a line-clamp box hides whole lines on purpose (the ellipsis says so); only a sliver shorter than a line is ink being shaved
+        const lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2, extra = e.scrollHeight - e.clientHeight;
+        if (cut && cs.webkitLineClamp !== "none" && extra >= lh * 0.9) continue;
+        if (cut && e.scrollHeight > e.clientHeight + 1) bad.push(`${what}: content ${e.scrollHeight}px tall in a ${e.clientHeight}px clipping box`);
+        else if (cut && e.scrollWidth > e.clientWidth + 1) bad.push(`${what}: content ${e.scrollWidth}px wide in a ${e.clientWidth}px clipping box`);
+        else if (rc.bottom > tr.bottom + 1 || rc.right > tr.right + 1 || rc.left < tr.left - 1 || rc.top < tr.top - 1) bad.push(`${what}: text sits outside its tile`);
+      }
+    }
+    return { n: tiles.length, bad };
+  });
+  if (r.n < 9) once("tile-clip", `only ${r.n} wall tiles on screen (want 9)`);
+  else if (r.bad.length) once("tile-clip", `${r.bad.length} clipped: ${r.bad.slice(0, 3).join(" | ")}`);
+}
+
 async function cell(browser, size, state, A) {
   const opts = { viewport: { width: size.w, height: size.h }, serviceWorkers: "block", reducedMotion: "reduce" };
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
@@ -280,6 +312,7 @@ async function cell(browser, size, state, A) {
   try {
     await openState(page, state);
     if (state === "gate") { scene = "gate"; await gateChecks(page, size, once, A); }
+    else { scene = "wall"; await wallChecks(page, size, once, A); }
     for (const sc of state === "gate" ? ["gate", ...SCENES.slice(0, 0)] : SCENES) {
       scene = sc;
       A.cells++;
