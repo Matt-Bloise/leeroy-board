@@ -82,9 +82,10 @@ test("flag off: the old button path (3b) answers exactly as before and schedules
   assert.equal(w.waits.length, 0, "no waitUntil with the flag off");
   assert.deepEqual([...w.DB.kv.keys()].filter((k) => ["cards_edit", "board_lines_pending"].includes(k)), []);
   assert.equal(outbound.length, 0);
-  // the pre-existing behaviour this PR deliberately leaves alone (tracked in a separate issue): any field name is accepted
+  // issue #126: an unknown field is refused and nothing is stored (full cases in signup-allowlist.test.mjs)
   const odd = await w.send(button("signup:nickname:Zed"));
-  assert.match(odd.data.content, /Recorded \*\*nickname: Zed\*\*/);
+  assert.match(odd.data.content, /not recorded/);
+  assert.equal(saved(w).entries.find((e) => e.name === "Ada").nickname, undefined);
 });
 
 test("flag on: /signup without options opens the select modal; flag off keeps the status panel", async () => {
