@@ -147,12 +147,19 @@ const tooManyVotes = (e) => respond(413, { error: "too_many_votes", max_votes: M
 const hasVoteBallots = async (env) => (await rows(env, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vote_ballots'")).length > 0; // feature detect: migration 0010 may not be applied yet
 const ballotPath = (hash) => `$.ballots."${hash}"`; // hex only, quoted because a key may start with a digit
 
-// Ids of every stored vote (kv_state vote:<id>), keys only. The id shape is checked IN SQL (8 lowercase hex characters, like VOTE_ID_RE) so the
-// LIMIT counts votes only: a stray 'vote:...' key can never push a real vote out of the first MAX_VOTES + 1 rows. Throws TooManyVotes past the maximum.
-async function voteIds(env) {
-  const ids = (await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%' AND length(key) = 13 AND substr(key, 6) NOT GLOB '*[^0-9a-f]*' LIMIT ?", MAX_VOTES + 1)).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id));
-  if (ids.length > MAX_VOTES) throw new TooManyVotes(ids.length);
-  return ids;
+// Ids of every vote a ballot could belong to, and whether vote_ballots exists: the vote documents (kv_state vote:<id>) UNION the vote ids that
+// still have ballot rows, so a row whose document was deleted is found too. The id shape is checked IN SQL (8 lowercase hex characters, like
+// VOTE_ID_RE) so each LIMIT counts votes only: a stray 'vote:...' key can never push a real vote out of the first MAX_VOTES + 1 rows.
+// More than MAX_VOTES distinct ids throws TooManyVotes.
+async function voteScope(env) {
+  const ids = new Set((await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%' AND length(key) = 13 AND substr(key, 6) NOT GLOB '*[^0-9a-f]*' LIMIT ?", MAX_VOTES + 1)).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id)));
+  if (ids.size > MAX_VOTES) throw new TooManyVotes(ids.size);
+  const hasRows = await hasVoteBallots(env);
+  if (hasRows) {
+    for (const r of await rows(env, "SELECT DISTINCT vote_id FROM vote_ballots WHERE length(vote_id) = 8 AND vote_id NOT GLOB '*[^0-9a-f]*' LIMIT ?", MAX_VOTES + 1)) if (VOTE_ID_RE.test(String(r.vote_id))) ids.add(String(r.vote_id));
+    if (ids.size > MAX_VOTES) throw new TooManyVotes(ids.size);
+  }
+  return { ids: [...ids], hasRows };
 }
 const hashesFor = async (env, discordId, ids) => new Map(await Promise.all(ids.map(async (id) => [id, await voterHash(discordId, id, env.USER_SALT)])));
 const chunks = (list, n) => { const out = []; for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n)); return out; };
@@ -173,7 +180,7 @@ async function callerVotes(env, discordId, ids) {
 
 // -> [{ vote_id, title, choice }] for export: vote documents read with IN(...) lists (the ballot looked up here), then, when vote_ballots exists,
 // its rows for the person's hashes, also in IN(...) lists. A vote seen in both places is listed once.
-async function ballotsOf(env, who, ids) {
+async function ballotsOf(env, who, { ids, hasRows }) {
   if (!who.discordId) return [];
   const hashOf = await hashesFor(env, who.discordId, ids), byId = new Map(), titles = new Map();
   for (const chunk of chunks(ids, IN_CHUNK)) {
@@ -186,12 +193,12 @@ async function ballotsOf(env, who, ids) {
       if (vote.ballots && Object.prototype.hasOwnProperty.call(vote.ballots, hashOf.get(id))) byId.set(id, { vote_id: id, title: vote.title, choice: vote.ballots[hashOf.get(id)] });
     }
   }
-  if (ids.length && await hasVoteBallots(env)) {
+  if (ids.length && hasRows) {
     const idOf = new Map([...hashOf].map(([id, h]) => [h, id]));
     for (const chunk of chunks([...idOf.keys()], IN_CHUNK)) {
       for (const r of await rows(env, `SELECT vote_id, voter_hash, choice FROM vote_ballots WHERE voter_hash IN (${inList(chunk.length)})`, ...chunk)) {
         const id = idOf.get(String(r.voter_hash));
-        if (id && !byId.has(id)) byId.set(id, { vote_id: id, title: titles.has(id) ? titles.get(id) : null, choice: r.choice });
+        if (id) byId.set(id, { vote_id: id, title: titles.has(id) ? titles.get(id) : null, choice: r.choice }); // the row is the newer write: it wins over a stale document choice
       }
     }
   }
@@ -216,7 +223,7 @@ async function collect(env, who) {
   if (id) {
     const uk = await userKey(env, id);
     out.legacy.answer_feedback = await rows(env, "SELECT intent_id, vote, created_at FROM answer_feedback WHERE user_hash = ?", pk.answerHash);
-    out.legacy.vote_ballots = await ballotsOf(env, who, await voteIds(env));
+    out.legacy.vote_ballots = await ballotsOf(env, who, await voteScope(env));
     out.legacy.user_state = await rows(env, "SELECT doc, json, updated_at FROM user_state WHERE user_key = ?", uk);
     out.legacy.sessions = await rows(env, "SELECT created_at, expires_at, last_seen FROM sessions WHERE user_key = ?", uk); // never token_hash
     const t = {};
@@ -272,12 +279,12 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM answer_feedback WHERE user_hash = ?").bind(pk.answerHash));
     st.push(db.prepare("DELETE FROM answer_details WHERE asker_hash = ?").bind(pk.answerHash));
     // One in-database edit per vote the person voted in: json_remove on the ballot key. The document is never read and rewritten, so a ballot cast by someone else at the same moment is not overwritten.
-    const ids = await voteIds(env); // throws TooManyVotes past MAX_VOTES: refused before anything is changed
+    const { ids, hasRows } = await voteScope(env); // throws TooManyVotes past MAX_VOTES: refused before anything is changed
     for (const v of await callerVotes(env, id, ids)) {
       st.push(db.prepare("UPDATE kv_state SET json = json_remove(json, ?), updated_at = ? WHERE key = ? AND json_valid(json)").bind(ballotPath(v.hash), new Date(now).toISOString(), `vote:${v.id}`));
     }
     // ballots kept as rows (vote_ballots, migration 0010): deleted by the person's per-vote hashes in the same batch; skipped when the table does not exist yet
-    if (ids.length && await hasVoteBallots(env)) {
+    if (ids.length && hasRows) {
       for (const chunk of chunks([...(await hashesFor(env, id, ids)).values()], IN_CHUNK)) st.push(db.prepare(`DELETE FROM vote_ballots WHERE voter_hash IN (${inList(chunk.length)})`).bind(...chunk));
     }
   }

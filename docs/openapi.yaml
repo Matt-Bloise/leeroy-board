@@ -449,7 +449,7 @@ paths:
               properties:
                 confirm: { type: string, enum: ["erase my data"] }
       responses:
-        "200": { description: 'Erased. Body: { erased: true, erased_includes: [string], not_erased: [string] }. 413 { error: too_many_votes, max_votes } when more than 720 votes exist; nothing is changed.' }
+        "200": { description: 'Erased. Body: { erased: true, erased_includes: [string], not_erased: [string] }.' }
         "413":
           description: "More than 720 votes exist, which is more than one request can search for the caller's ballots. Body {error: too_many_votes, max_votes, message}. Nothing is changed."
           content:

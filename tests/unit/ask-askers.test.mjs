@@ -237,13 +237,29 @@ test("erase only edits the votes the person joined", async () => {
 // ---- voteIds: the limit is applied to vote keys only
 test("a non-vote key that looks like one cannot hide a real vote from the maximum", async () => {
   const { MAX_VOTES } = await import("../../infrastructure/worker/data-rights.js");
-  const r = await voteRig({ votes: MAX_VOTES + 1, mine: [0] });
-  for (let i = 0; i < 5; i++) r.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, '{}', 'x')").run(`vote:-junk-${i}`);
+  const r = await voteRig({ votes: MAX_VOTES + 1, table: false }); // no vote_ballots table: the document keys alone decide
+  for (let i = 0; i < 5; i++) r.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, '{}', 'x')").run(`vote:-${String(i).padStart(7, "0")}`); // 13 characters, not hex: only the GLOB half of the predicate rejects them
+  for (let i = 0; i < 5; i++) r.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, '{}', 'x')").run(`vote:000000000${i}`); // all hex but 9 characters: only the length half rejects them
   const res = await r.call("/api/me/export");
   assert.equal(res.status, 413, "721 real votes plus junk keys must still be over the maximum");
-  const under = await voteRig({ votes: 3, mine: [0] });
-  for (let i = 0; i < MAX_VOTES + 5; i++) under.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, '{}', 'x')").run(`vote:-zz-${i}`);
+  const under = await voteRig({ votes: 3, table: false, docBallotFor: [0] });
+  for (let i = 0; i < MAX_VOTES + 5; i++) under.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, '{}', 'x')").run(`vote:-${String(i).padStart(7, "0")}`);
   const ok = await under.call("/api/me/export");
   assert.equal(ok.status, 200, "junk keys are not votes and must not push a small board over the maximum");
   assert.equal((await ok.json()).legacy.vote_ballots.length, 1);
+});
+
+test("ballot rows whose vote document was deleted are still exported and erased", async () => {
+  const r = await voteRig({ votes: 3, mine: [0, 1] });
+  r.raw.prepare("DELETE FROM kv_state WHERE key = ?").run(`vote:${r.ids[0]}`);
+  const exp = await (await r.call("/api/me/export")).json();
+  assert.deepEqual(exp.legacy.vote_ballots.map((b) => [b.vote_id, b.title, b.choice]).sort(), [[r.ids[0], null, 2], [r.ids[1], "Vote 1", 2]]);
+  assert.equal((await r.call("/api/me/erase", "POST")).status, 200);
+  assert.equal(r.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, 3, "only the bystander's rows remain, including the one under the deleted document");
+});
+
+test("a re-vote after migration 0010 (row) wins over the older choice in the document", async () => {
+  const r = await voteRig({ votes: 1, mine: [0], docBallotFor: [0] }); // document says 1, row says 2
+  const exp = await (await r.call("/api/me/export")).json();
+  assert.deepEqual(exp.legacy.vote_ballots.map((b) => b.choice), [2]);
 });
