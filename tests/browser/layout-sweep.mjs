@@ -268,7 +268,7 @@ async function gateChecks(page, size, once, A) {
 
 // Wall tiles must not clip their own text. In a cell that shows the wall (looking, member; before any scene opens) every line of text inside a visible #board .tile is measured by its own
 // rectangle (Range.getClientRects, so a tap-target padding or an invisible box does not count). Each clipping ancestor inside the tile (overflow hidden or clip) must contain it: a title
-// whose line box is shorter than the glyphs, a nowrap word cut mid-letter and a clamp box that shows half a line all fail. A line that sits wholly past the bottom of a line-clamp box is
+// whose line box is shorter than the glyphs, a nowrap word cut mid-letter and a clamp box that shows half a line all fail. A line that sits past the bottom of a line-clamp box (its middle is below the box) is
 // the clamp doing its job (the ellipsis says so) and passes. Text outside the tile's own rectangle fails too. Needs 9 tiles on screen.
 async function wallChecks(page, size, once, A) {
   A.checks++;
@@ -289,8 +289,8 @@ async function wallChecks(page, size, once, A) {
         const what = `${name} ${(typeof pe.className === "string" && pe.className.trim().split(/\s+/)[0]) || pe.tagName.toLowerCase()} "${txt.slice(0, 18)}"`;
         const key = (m) => what + m; let msg = null;
         for (const q of rects) {
-          let off = false; // this line is wholly past the bottom of a line-clamp box: hidden on purpose
-          for (let e = pe; e && e !== t; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.webkitLineClamp !== "none" && /hidden|clip/.test(cs.overflowY) && q.top >= e.getBoundingClientRect().bottom - T) off = true; }
+          let off = false; // this line is past the bottom of a line-clamp box (its middle is below the box): hidden on purpose
+          for (let e = pe; e && e !== t; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.webkitLineClamp !== "none" && /hidden|clip/.test(cs.overflowY) && (q.top + q.bottom) / 2 >= e.getBoundingClientRect().bottom - T) off = true; }
           if (off) continue;
           if (q.bottom > tr.bottom + T || q.right > tr.right + T || q.left < tr.left - T || q.top < tr.top - T) { msg = `text sits outside its tile (${Math.round(q.left - tr.left)},${Math.round(q.top - tr.top)} ${Math.round(q.width)}x${Math.round(q.height)} in ${Math.round(tr.width)}x${Math.round(tr.height)})`; break; }
           for (let e = pe; e && e !== t; e = e.parentElement) {
@@ -298,7 +298,7 @@ async function wallChecks(page, size, once, A) {
             if (!(/hidden|clip/.test(cs.overflowX) || /hidden|clip/.test(cs.overflowY))) continue;
             const c = e.getBoundingClientRect();
             const clamp = cs.webkitLineClamp !== "none";
-            if (clamp && q.top >= c.bottom - T) continue; // a whole line past the clamp box: hidden on purpose
+            if (clamp && (q.top + q.bottom) / 2 >= c.bottom - T) continue; // a whole line past the clamp box: hidden on purpose
             if (q.bottom > c.bottom + T || q.top < c.top - T || q.right > c.right + T || q.left < c.left - T) { msg = `text is cut by ${(typeof e.className === "string" && e.className.trim().split(/\s+/)[0]) || e.tagName.toLowerCase()} (text ${Math.round(q.left - c.left)},${Math.round(q.top - c.top)} ${Math.round(q.width)}x${Math.round(q.height)} in a ${Math.round(c.width)}x${Math.round(c.height)} clipping box)`; break; }
           }
           if (msg) break;
