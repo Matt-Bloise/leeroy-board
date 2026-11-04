@@ -14,6 +14,8 @@ const MUTATIONS = [
   { css: "cover-close.css", expect: ["close-hit"] },
   { css: "overlap-header.css", expect: ["head-overlap", "close-hit", "close-viewport"] },
   { css: "sideways-scroll.css", expect: ["hscroll"] },
+  { css: "clip-tile-title.css", expect: ["tile-clip"] },
+  { css: "hide-tiles.css", expect: ["tile-clip"] },
 ];
 const tmp = mkdtempSync(path.join(os.tmpdir(), "sweep-mutation-"));
 let bad = 0;

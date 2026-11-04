@@ -1,0 +1,2 @@
+/* the tile title is a one-line box shorter than its glyphs: its ink is cut (what PR 177 fixed) */
+.wall .tile-title { overflow: hidden !important; line-height: 0.3 !important; height: 0.3em !important; display: block !important; }

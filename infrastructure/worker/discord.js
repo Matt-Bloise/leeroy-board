@@ -32,7 +32,7 @@ import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } fro
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
-import { saltProblems } from "./salts.js";
+import { saltProblems, SaltMissingError } from "./salts.js";
 import { BUILD_MODAL_ID, buildModalEnabled, buildProjectEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
 import { projectBuild } from "./project-build.js";
 import { JOIN_COMMAND_NAME, JOIN_BUTTON_ID, shouldHint, joinHintBody } from "./join.js";
@@ -810,7 +810,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
       const now = new Date().toISOString();
 
-      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      try {
+        await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      } catch (e) {
+        if (!(e instanceof SaltMissingError)) throw e;
+        return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
 
       await insertIntent(env, {
         slug: intentSlug,
@@ -1641,7 +1646,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
       const intentId = crypto.randomUUID();
       const provider = resolveAiProvider(env);
-      await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      try {
+        await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      } catch (e) {
+        if (!(e instanceof SaltMissingError)) throw e;
+        return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
 
       await insertIntent(env, {
         slug: intentSlug,

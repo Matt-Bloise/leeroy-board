@@ -158,7 +158,7 @@ async function runAsk({ providerDelayMs, providerStatus = 200, deadlineMs = 60, 
     }
     return new Response("{}", { status: 200 });
   };
-  const env = baseEnv(db, { DISCORD_PUBLIC_KEY: signer.publicKeyHex, ANTHROPIC_API_KEY: "test-key", ASK_DEADLINE_MS: String(deadlineMs), USER_SALT: "fixture-salt" });
+  const env = baseEnv(db, { DISCORD_PUBLIC_KEY: signer.publicKeyHex, ANTHROPIC_API_KEY: "test-key", ASK_DEADLINE_MS: String(deadlineMs), USER_SALT: "fixture-salt-0123456789" });
   const pending = [];
   const res = await handleDiscordInteraction(signer.signedRequest(askInteraction), env, { waitUntil: (p) => pending.push(p) }, "https://worker.test");
   const ack = await res.json();

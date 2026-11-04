@@ -1,6 +1,7 @@
 // Living Board library search worker (V4-SPEC 3.3). A module worker: it loads every category file of data/library/ and
 // search.json off the page's thread, then answers { id, q, cap, full, cat, more } with the ranked hits, scored by rank-core.js (the wiki's
 // own ranker, copied by build-data.mjs), so typing never blocks a frame. Hits carry what a result row shows.
+// Cache note: /vendor/* is cached for a year (immutable), headers included, so a copy cached before PR 168 kept serving a Content-Security-Policy-Report-Only with frame-ancestors, which WebKit logs as a console error when it starts this worker. This edit gives the worker a new ?v= URL, so the next load fetches fresh headers.
 import { rank, factHays } from "./rank-core.js?v=16d8a1283e";
 let pages = [], hays = [], idf = null, ready = null, apiBase = "";
 /* V11 cache stamps: index.json loads with "no-cache" and names every other file's stamp, which rides on its URL */

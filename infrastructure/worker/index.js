@@ -46,7 +46,7 @@ import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { publicParty, partyForMember } from "./sheet-privacy.js";
-import { saltProblems, saltErrorBody } from "./salts.js";
+import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
 import { afterSignupChange } from "./cards-handler.js";
@@ -1615,7 +1615,12 @@ export default {
             guestLeft = Math.max(0, 2 - guestCount);
           }
 
-          await insertAskTurn(env, { id: intentId, byName: askBy, question, provider: activeProvider, share, createdAt: now }, isGuest ? {} : { slug: memberSlug });
+          try {
+            await insertAskTurn(env, { id: intentId, byName: askBy, question, provider: activeProvider, share, createdAt: now }, isGuest ? {} : { slug: memberSlug });
+          } catch (e) {
+            if (!(e instanceof SaltMissingError)) throw e;
+            return jsonResp(saltErrorBody(e.missing), 503, cors);
+          }
 
           const { seq } = await insertIntent(env, {
             slug: askSlug,

@@ -26,7 +26,10 @@
 //   wheel-still     first visit, desktop: a wheel event leaves scrollY at 0
 //   one-scroller    REPORT ONLY (listed in the summary, never fails): first visit, no more than one scrolling box
 //   fill            first visit, the card fills at least 25 percent of its parchment (area ratio). FAILS at 3440x1440, 3840x2160 and 5120x1440 (FILL_ENFORCED); report only at every other size
+//   close-hit-tour  every scene: with the guided tour veil (.walk > .walk-veil) up, the close button is still the top element at its centre
+//   tile-clip       looking and member, the wall before any scene opens: no wall tile clips its own text (a clipping box shorter than its content, or text outside its tile)
 //   http-error      a same-origin response was 4xx or 5xx
+//   xorigin-http    a request to another origin (Worker API, font host) answered 4xx/5xx or failed; the failure names the URL (the Cloudflare insights beacon is ignored)
 //   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
 // Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
@@ -228,7 +231,7 @@ async function gateChecks(page, size, once, A) {
   const measureGate = () => page.evaluate(() => {
     const de = document.documentElement, card = document.querySelector("#nx-fr2");
     const scrollers = [...document.querySelectorAll("body *")].filter((e) => { const s = getComputedStyle(e); return /auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1 && s.display !== "none" && e.getClientRects().length; }).map((e) => e.id || e.className || e.tagName);
-    const box = card && (card.closest(".sheet") || card.closest("#sheet-body") || card.parentElement), cr = card && card.getBoundingClientRect(), br = box && box.getBoundingClientRect();
+    const box = card && (card.closest(".sheet") || card.closest("#sheet-body") || card.parentElement), cr = card && window.__lz.rect(card), br = box && window.__lz.rect(box); /* zoom-aware: WebKit reports a box under CSS zoom (the fitted panel, the old card zoom) at its unzoomed size, which read the card as 2.9 to 5.7 percent of the parchment in production run 41817101970 */
     return { sh: de.scrollHeight, sw: de.scrollWidth, ih: innerHeight, iw: innerWidth, docScrolls: de.scrollHeight > innerHeight + 1, scrollers, fill: cr && br && br.width * br.height > 0 ? (cr.width * cr.height) / (br.width * br.height) : null };
   });
   // a faked-clock run must really be in the state it claims: the launch hero is up (html[data-launch] and #launch-hero, with its live class after launch) or absent
@@ -264,6 +267,86 @@ async function gateChecks(page, size, once, A) {
   else if (m.fill < 0.25) notes.push({ w: size.w, h: size.h, invariant: "fill", detail: `card fills ${(m.fill * 100).toFixed(1)}% of its parchment (want 25%)` });
 }
 
+// Wall tiles must not clip their own text. In a cell that shows the wall (looking, member; before any scene opens) every line of text inside a visible #board .tile is measured by its own
+// rectangle (Range.getClientRects, so a tap-target padding or an invisible box does not count). Each clipping ancestor inside the tile (overflow hidden or clip) must contain it: a title
+// whose line box is shorter than the glyphs, a nowrap word cut mid-letter and a clamp box that shows half a line all fail. A line that sits past the bottom of a line-clamp box (its middle is below the box) is
+// the clamp doing its job (the ellipsis says so) and passes. Text outside the tile's own rectangle fails too. Needs 9 tiles on screen.
+async function wallChecks(page, size, once, A) {
+  A.checks++;
+  // The wall is laid out a moment after the click that shows it (a cold first-visit wall warms 0.3 s after the first press, js/board.js settleGo), and a slower engine on a touch-sized window (Firefox, QA run 41817101970)
+  // can still be under display:none when the 1.2 s of openState are over. Wait for nine laid-out tiles (up to 10 s, the wall's own last-resort warm-up) before judging; a wall that never shows them still fails below.
+  await page.waitForFunction(() => [...document.querySelectorAll("#board .tile")].filter((t) => t.getClientRects().length).length >= 9, null, { timeout: 10000 }).catch(() => {});
+  const r = await page.evaluate(() => {
+    const tiles = [...document.querySelectorAll("#board .tile")].filter((t) => t.getClientRects().length);
+    const bad = [], seen = new Set();
+    const T = 1;
+    for (const t of tiles) {
+      const tr = t.getBoundingClientRect(), name = t.closest("li")?.className.split(/\s+/)[0] || t.dataset.scene;
+      const w = document.createTreeWalker(t, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        const txt = n.textContent.trim(); if (!txt) continue;
+        const pe = n.parentElement; let hidden = false;
+        for (let e = pe; e && e !== t.parentElement; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) { hidden = true; break; } }
+        if (hidden) continue;
+        const rg = document.createRange(); rg.selectNodeContents(n);
+        const rects = [...rg.getClientRects()].filter((q) => q.width > 0 && q.height > 0); if (!rects.length) continue;
+        const what = `${name} ${(typeof pe.className === "string" && pe.className.trim().split(/\s+/)[0]) || pe.tagName.toLowerCase()} "${txt.slice(0, 18)}"`;
+        const key = (m) => what + m; let msg = null;
+        for (const q of rects) {
+          let off = false; // this line is past the bottom of a line-clamp box (its middle is below the box): hidden on purpose
+          for (let e = pe; e && e !== t; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.webkitLineClamp !== "none" && /hidden|clip/.test(cs.overflowY) && (q.top + q.bottom) / 2 >= e.getBoundingClientRect().bottom - T) off = true; }
+          if (off) continue;
+          if (q.bottom > tr.bottom + T || q.right > tr.right + T || q.left < tr.left - T || q.top < tr.top - T) { msg = `text sits outside its tile (${Math.round(q.left - tr.left)},${Math.round(q.top - tr.top)} ${Math.round(q.width)}x${Math.round(q.height)} in ${Math.round(tr.width)}x${Math.round(tr.height)})`; break; }
+          for (let e = pe; e && e !== t; e = e.parentElement) {
+            const cs = getComputedStyle(e);
+            if (!(/hidden|clip/.test(cs.overflowX) || /hidden|clip/.test(cs.overflowY))) continue;
+            const c = e.getBoundingClientRect();
+            const clamp = cs.webkitLineClamp !== "none";
+            if (clamp && (q.top + q.bottom) / 2 >= c.bottom - T) continue; // a whole line past the clamp box: hidden on purpose
+            if (q.bottom > c.bottom + T || q.top < c.top - T || q.right > c.right + T || q.left < c.left - T) { msg = `text is cut by ${(typeof e.className === "string" && e.className.trim().split(/\s+/)[0]) || e.tagName.toLowerCase()} (text ${Math.round(q.left - c.left)},${Math.round(q.top - c.top)} ${Math.round(q.width)}x${Math.round(q.height)} in a ${Math.round(c.width)}x${Math.round(c.height)} clipping box)`; break; }
+          }
+          if (msg) break;
+        }
+        if (msg && !seen.has(key(msg))) { seen.add(key(msg)); bad.push(`${what}: ${msg}`); }
+      }
+    }
+    return { n: tiles.length, bad };
+  });
+  // On phones (under 700 wide, one column) two tiles already run a few pixels past their own bottom edge (ledger 2 px at 390, a race name 12 px at 320): that part only reports there. A cut is enforced everywhere.
+  const over = r.bad.filter((b) => / sits outside its tile/.test(b)), cut = r.bad.filter((b) => !over.includes(b)), soft = size.touch ? over : [];
+  const hard = [...cut, ...(size.touch ? [] : over)];
+  if (r.n < 9) {
+    // say why: the first hidden box above a tile, and the page state that hides the wall
+    const why = await page.evaluate(() => {
+      const t = document.querySelector("#board .tile"); let h = "no #board .tile in the document";
+      if (t) { h = "all tiles laid out"; for (let e = t; e; e = e.parentElement) { if (getComputedStyle(e).display === "none") { h = `hidden by display:none on ${e.tagName.toLowerCase()}${e.id ? "#" + e.id : ""}${typeof e.className === "string" && e.className.trim() ? "." + e.className.trim().split(/\s+/)[0] : ""}`; break; } } }
+      return `${h}; html class "${document.documentElement.className}"`;
+    }).catch(() => "page state unreadable");
+    once("tile-clip", `only ${r.n} wall tiles on screen (want 9): ${why}`);
+  }
+  else if (hard.length) once("tile-clip", `${hard.length} clipped: ${hard.slice(0, 3).join(" | ")}`);
+  if (soft.length) notes.push({ w: size.w, h: size.h, invariant: "tile-overflow", detail: soft.join(" | ").slice(0, 200) });
+}
+
+// The guided tour (scenes/walk.js) puts a full-sheet veil over the open scene: .walk > .walk-veil + .walk-card, appended to .sheet. A real tour can start while a scene is open (two seconds after boot,
+// and a slow 4K or 5K render makes that likely; the WebKit QA run saw div.walk-veil on top of the close button at 3840x2160 and 5120x2880). The tour is only ever shown once, so a sweep cannot
+// count on meeting it: this builds the same markup (classes and structure of begin() in walk.js) in the open scene and requires the close button's centre to still be the top element there.
+async function tourVeilCheck(page, size, once, A) {
+  A.checks++;
+  const r = await page.evaluate(() => {
+    const sheet = document.querySelector("#scene .sheet"), close = document.querySelector("#scene-close");
+    if (!sheet || !close) return null;
+    const w = document.createElement("div"); w.className = "walk"; w.id = "walk-probe";
+    const veil = document.createElement("div"); veil.className = "walk-veil"; const card = document.createElement("section"); card.className = "walk-card";
+    w.append(veil, card); sheet.appendChild(w);
+    try {
+      const rc = window.__lz.rect(close), x = rc.left + rc.width / 2, y = rc.top + rc.height / 2, top = document.elementFromPoint(x, y);
+      return { ok: !!top && (top === close || close.contains(top)), top: top ? `${top.tagName.toLowerCase()}${top.id ? "#" + top.id : ""}${typeof top.className === "string" && top.className ? "." + top.className.trim().split(/\s+/)[0] : ""}` : "nothing" };
+    } finally { w.remove(); }
+  });
+  if (r && !r.ok) once("close-hit-tour", `with the guided tour veil up, the close button is covered by ${r.top}`);
+}
+
 async function cell(browser, size, state, A) {
   const opts = { viewport: { width: size.w, height: size.h }, serviceWorkers: "block", reducedMotion: "reduce" };
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
@@ -277,9 +360,14 @@ async function cell(browser, size, state, A) {
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
   page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
+  /* xorigin-http: a request to ANOTHER origin (the Worker API, a font host) that answered 4xx/5xx or failed. WebKit logs such a 404 as "Origin <site> is not allowed by Access-Control-Allow-Origin. Status code: 404" without the URL (production QA run 41807379587), so the console-error line alone cannot be traced; this names the URL. The Cloudflare insights beacon is ignored. */
+  const xo = (u) => /^https?:/.test(u) && !u.startsWith(ORIGIN) && !/cloudflareinsights/.test(u);
+  page.on("response", (r) => { const u = r.url(); if (xo(u) && r.status() >= 400) once("xorigin-http", `${r.status()} ${u}`); });
+  page.on("requestfailed", (r) => { const u = r.url(); if (xo(u)) once("xorigin-http", `failed ${r.method()} ${u} ${(r.failure() || {}).errorText || ""}`); });
   try {
     await openState(page, state);
     if (state === "gate") { scene = "gate"; await gateChecks(page, size, once, A); }
+    else { scene = "wall"; await wallChecks(page, size, once, A); }
     for (const sc of state === "gate" ? ["gate", ...SCENES.slice(0, 0)] : SCENES) {
       scene = sc;
       A.cells++;
@@ -308,6 +396,7 @@ async function cell(browser, size, state, A) {
       const { out, n } = await page.evaluate(measure, { touch: size.touch, w: size.w });
       A.checks += n;
       for (const f of out) once(f.invariant, f.detail);
+      if (sc !== "gate") await tourVeilCheck(page, size, once, A);
     }
   } catch (e) {
     fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`, A.failures);

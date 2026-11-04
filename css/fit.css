@@ -9,11 +9,18 @@
   #scene .sheet:has(:is(#panel-roads, #panel-buffs, #panel-library, #panel-five):not([hidden], .warm, .leaving)) { width: min(85vw, 2800px); }
 }
 
-/* Very large screens: the first-visit card kept its laptop size inside a sheet that grows with the screen (2.7 to 5 percent of the parchment at 4K). Scale it in steps by window height so the card, its type, buttons and gaps grow together; the top step stops at 3.2 and the card spans the panel's three columns instead of the first 355px one. */
-@media (min-width: 2400px) and (min-height: 1300px) { #scene .nx-fr2 { zoom: 1.85; grid-column: 1 / -1; justify-self: center; width: max-content; max-width: 100%; } }
-@media (min-width: 2400px) and (min-height: 1900px) { #scene .nx-fr2 { zoom: 2.3; } }
-@media (min-width: 2400px) and (min-height: 2600px) { #scene .nx-fr2 { zoom: 2.8; } }
-@media (min-width: 2400px) and (min-height: 3800px) { #scene .nx-fr2 { zoom: 3.2; } }
+/* Very large screens: the first-visit card kept its laptop size inside a sheet that grows with the screen (2.7 to 5 percent of the parchment at 4K). Scale it in steps by window height so the card, its type, buttons and gaps grow together; the top step stops at 3.2 and the card spans the panel's three columns instead of the first 355px one.
+   The scale is a multiplier (--gz) applied to the card's own type, gaps and control sizes, NOT CSS zoom: WebKit (Safari 18.2) reports a zoomed box at its unzoomed size, so the sweep measured the card as 2.9 to 5.7 percent of the parchment at 3440x1440, 3840x2160 and 5120x1440 even though it was drawn larger (production QA run 41817101970). Real sizes measure the same in every engine. */
+@media (min-width: 2400px) and (min-height: 1300px) {
+  #scene .nx-fr2 { --gz: 1.85; --step-0: calc(1.0625rem * var(--gz)); --step-1: calc(1.3rem * var(--gz)); --g1: calc(0.618rem * var(--gz)); --g2: calc(1rem * var(--gz)); grid-column: 1 / -1; justify-self: center; width: max-content; max-width: 100%; }
+  #scene .nx-fr2 h2 { max-width: calc(var(--measure, 65ch) * var(--gz)); }
+  #scene .nx-fr2 .nx-fr2-line { max-width: calc(var(--measure, 65ch) * var(--gz)); }
+  #scene .nx-fr2 #nx-fr2-go { min-height: calc(48px * var(--gz)); padding: calc(8px * var(--gz)) calc(22px * var(--gz)); border-radius: calc(6px * var(--gz)); }
+  #scene .nx-fr2 .nx-fr2-look { min-height: calc(44px * var(--gz)); }
+}
+@media (min-width: 2400px) and (min-height: 1900px) { #scene .nx-fr2 { --gz: 2.3; } }
+@media (min-width: 2400px) and (min-height: 2600px) { #scene .nx-fr2 { --gz: 2.8; } }
+@media (min-width: 2400px) and (min-height: 3800px) { #scene .nx-fr2 { --gz: 3.2; } }
 
 /* Wall tiles: the call to action ("Read the decisions list", "Ask Leeroy a question") was a no-wrap line wider than its tile between about 1100 and 1370px wide, so the tile cut it off. Let it wrap inside the tile. */
 .tile-go { display: block; max-width: 100%; line-height: 1.25; letter-spacing: 0.06em; }
@@ -178,3 +185,5 @@
 }
 /* the legal strip is one more line under the wall footer; in a window this short the wall already fits to the pixel, so take its height back from the 16px gap above it and the board bottom padding (it stays visible and keyboard reachable) */
 @media (max-height: 450px) { #board > .legal-foot { margin-top: -16px; line-height: 1.1; } #board { padding-bottom: 0; } }
+/* wall tiles must not shave their own text: the tile title is a clipped (overflow hidden, ellipsis) box whose line is 1.02 tall, shorter than the glyphs, so descenders and accents were cut at every size. Give it a little padding to hold the ink and take the same margin back, so no tile changes size. */
+.wall .tile-title { padding-block: 0.24em; margin-block: -0.24em; }
