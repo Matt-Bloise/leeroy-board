@@ -36,7 +36,7 @@
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
-import { ignoredConsoleError, cspCheck } from "../helpers/sweep-filters.mjs";
+import { ignoredConsoleError, cspCheck, sweepContext } from "../helpers/sweep-filters.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
@@ -67,6 +67,7 @@ const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENE
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
 const INJECT_JS = arg("--inject-js") ? readFileSync(arg("--inject-js"), "utf8") : ""; // self-test only: a script run in every page before its own scripts (a fault that needs an interaction, which CSS cannot express)
 const url = BASE ? pageUrl(BASE, { params: { preview: "1" } }) : "about:blank";
+const SWEEP_CTX = sweepContext(BASE || ""); // the local API origin (?brain=) and loopback hosts are the test environment, not a page problem (sweep-filters.mjs)
 const ORIGIN = BASE ? new URL(url).origin : "";
 // Known by-design exceptions, listed so they are visible and easy to delete. A member who has picked a name and opens #tonight lands on the wall: the app clears the hash and no scene opens.
 // Confirmed by hand on master (scene-open class off, #scene hidden, hash emptied); if the owner decides that deep link should open Next steps, delete the entry and the sweep will judge it.
@@ -410,7 +411,7 @@ async function cell(browser, size, state, A) {
     }
   } catch (e) {
     fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`, A.failures);
-  } finally { scene = "all-scenes"; await cspCheck(page, once, A); await ctx.close().catch(() => {}); }
+  } finally { scene = "all-scenes"; await cspCheck(page, once, A, SWEEP_CTX); await ctx.close().catch(() => {}); }
 }
 
 const launch = { ...(process.env.PW_EXECUTABLE ? { executablePath: process.env.PW_EXECUTABLE } : {}) };
