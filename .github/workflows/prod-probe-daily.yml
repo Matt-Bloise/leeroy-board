@@ -1,0 +1,58 @@
+name: Production probe (daily)
+
+# B53: once a day, the production probe (tests/browser/prod-probe.mjs) opens https://leeroy.party/ in Chromium, WebKit and Firefox (phone 390x844 and laptop 1366x768),
+# clicks through every scene against the REAL API and fails on a console error, a 4xx/5xx, junk text, a blank scene, a board member count that differs from /api/state,
+# or copy that gives the wrong party size. It is the same script that runs once after each production deploy (deploy-cloudflare.yml, job production-probe).
+# REQUEST BUDGET: at most 150 Worker requests per run (the free plan allows 100,000 a day for the whole account), serial, one retry of a page load only. Nothing else
+# triggers this workflow: no push, no pull_request. It reads no secret and writes nothing; a red run is the alarm (GitHub emails the owner of the schedule).
+# Scheduled workflows run only on the default branch and GitHub disables them after 60 days without repository activity; "Run workflow" starts one by hand.
+
+on:
+  schedule:
+    - cron: "40 8 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: production-probe
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Production probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      PROBE_REQUIRE_ENGINES: "1"
+      SMOKE_ALLOW_WEBKIT_NO_WEBGL: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies and the three browsers
+        working-directory: tests
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium webkit firefox
+
+      - name: Production probe (at most 150 Worker requests)
+        working-directory: tests
+        run: |
+          set -o pipefail
+          node browser/prod-probe.mjs --url https://leeroy.party/ --budget 150 2>&1 | tee "$RUNNER_TEMP/prod-probe.log"
+
+      - name: Upload the log
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: production-probe-log
+          path: ${{ runner.temp }}/prod-probe.log
+          if-no-files-found: ignore
+          retention-days: 14
