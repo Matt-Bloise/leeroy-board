@@ -58,3 +58,22 @@ export function memberCountProblem(boardCount, partyCount) {
 
 // Distinct strings, trimmed, empty ones dropped.
 export const uniq = (a) => [...new Set(a.map((s) => String(s).replace(/\s+/g, " ").trim()).filter(Boolean))];
+
+// Console errors that do not count. Only third-party noise and messages that say they are report-only: an ENFORCED Content Security Policy violation must fail.
+//   Chrome words a report-only violation "[Report Only] Refused to ..."; Firefox and WebKit say "Report-Only"/"report only" in the message.
+export const isReportOnlyCsp = (t) => /^\[Report Only\]|report[- ]only/i.test(String(t));
+export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = false } = {}) {
+  return errors.filter((e) => !(engine === "webkit" && allowWebkitNoWebgl && /Error creating WebGL context/.test(e)) && !/cloudflareinsights\.com/.test(e) && !isReportOnlyCsp(e));
+}
+
+// A response with status >= 400: "fail" or "warn" (same rule as tests/browser/live-smoke.mjs): anything from the site itself fails; from the API a 5xx fails,
+// a 4xx only warns, except on /api/bootstrap and /api/state, which the board cannot open without (those fail on any 4xx).
+export function classifyHttp(url, status, siteOrigin, apiOrigin) {
+  if (!(status >= 400)) return "ok";
+  let u; try { u = new URL(url); } catch (e) { return "ok"; }
+  if (u.origin !== siteOrigin && u.origin !== apiOrigin) return "ok";
+  const isApi = /^\/api\//.test(u.pathname) && (u.origin === apiOrigin);
+  if (!isApi) return "fail";
+  if (status >= 500) return "fail";
+  return /^\/api\/(?:bootstrap|state)\/?$/.test(u.pathname) ? "fail" : "warn";
+}

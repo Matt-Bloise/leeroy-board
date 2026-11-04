@@ -3,7 +3,7 @@ name: Production probe (daily)
 # B53: once a day, the production probe (tests/browser/prod-probe.mjs) opens https://leeroy.party/ in Chromium, WebKit and Firefox (phone 390x844 and laptop 1366x768),
 # clicks through every scene against the REAL API and fails on a console error, a 4xx/5xx, junk text, a blank scene, a board member count that differs from /api/state,
 # or copy that gives the wrong party size. It is the same script that runs once after each production deploy (deploy-cloudflare.yml, job production-probe).
-# REQUEST BUDGET: at most 150 Worker requests per run (the free plan allows 100,000 a day for the whole account), serial, one retry of a page load only. Nothing else
+# REQUEST BUDGET: at most 200 Worker requests per run (the free plan allows 100,000 a day for the whole account), serial, one retry of a page load only. Nothing else
 # triggers this workflow: no push, no pull_request. It reads no secret and writes nothing; a red run is the alarm (GitHub emails the owner of the schedule).
 # Scheduled workflows run only on the default branch and GitHub disables them after 60 days without repository activity; "Run workflow" starts one by hand.
 
@@ -42,11 +42,11 @@ jobs:
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium webkit firefox
 
-      - name: Production probe (at most 150 Worker requests)
+      - name: Production probe (at most 200 Worker requests)
         working-directory: tests
         run: |
           set -o pipefail
-          node browser/prod-probe.mjs --url https://leeroy.party/ --budget 150 2>&1 | tee "$RUNNER_TEMP/prod-probe.log"
+          node browser/prod-probe.mjs --url https://leeroy.party/ --budget 200 2>&1 | tee "$RUNNER_TEMP/prod-probe.log"
 
       - name: Upload the log
         if: always()
