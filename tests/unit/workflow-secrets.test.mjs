@@ -40,16 +40,36 @@ const parsedText = (w) => strings(w.doc).join("\n");
 const scanText = (w) => w.text + "\n" + parsedText(w);
 // B60: REQUIRED-command checks (and only those) strip shell comments from a run: script first, so `# npm ci --no-audit --no-fund` then `echo skipped` does not satisfy a requirement.
 // Forbidden-secret scans never use this: they read the raw text and the unstripped parsed strings. A `#` starts a comment only outside quotes, at the start of a word (so `$#`, `${#a}`,
-// `${a#b}` and `a#b` are kept), and a backslash escapes the next character. Heredoc bodies are not special-cased (a heredoc line that starts with # is dropped; text inside it is otherwise kept).
+// `${a#b}` and `a#b` are kept), and a backslash escapes the next character. `$'...'` honours backslash escapes. A heredoc body (`<<EOF`, `<<-EOF`, `<<'EOF'`) is copied verbatim up to its
+// delimiter line, with no quote or comment handling, so an apostrophe in it cannot unbalance the quote state; text in a heredoc body is data that counts as present (a known gap: it is not run).
 const stripShellComments = (script) => {
   let out = "", q = "", brace = 0;
+  const pending = [];
   for (let i = 0; i < script.length; i++) {
     const c = script[i];
+    if (c === "\n" && !q && pending.length) {
+      out += c; i++;
+      for (const { tag, dash } of pending.splice(0)) {
+        while (i < script.length) {
+          let e = script.indexOf("\n", i); if (e < 0) e = script.length;
+          const line = script.slice(i, e);
+          out += line + (e < script.length ? "\n" : ""); i = e + 1;
+          if ((dash ? line.replace(/^\t+/, "") : line).trimEnd() === tag) break;
+        }
+      }
+      i--; continue;
+    }
     if (!q && c === "\\") { out += c + (script[i + 1] ?? ""); i++; continue; }
     if (q === "'") { if (c === "'") q = ""; out += c; continue; }
+    if (q === "$'") { if (c === "\\") { out += c + (script[i + 1] ?? ""); i++; continue; } if (c === "'") q = ""; out += c; continue; }
     if (q === '"' && c === "\\") { out += c + (script[i + 1] ?? ""); i++; continue; }
+    if (c === "$" && script[i + 1] === "'" && !q) { q = "$'"; out += "$'"; i++; continue; }
     if (c === "'" && q !== '"') { q = "'"; out += c; continue; }
     if (c === '"') { q = q === '"' ? "" : '"'; out += c; continue; }
+    if (!q && c === "<" && script[i + 1] === "<" && script[i + 2] !== "<" && script[i - 1] !== "<") {
+      const m = /^<<(-?)[ \t]*(['"]?)([A-Za-z_]\w*)\2/.exec(script.slice(i));
+      if (m) { pending.push({ tag: m[3], dash: m[1] === "-" }); out += m[0]; i += m[0].length - 1; continue; }
+    }
     if (c === "$" && script[i + 1] === "{") { brace++; out += "${"; i++; continue; }
     if (brace && c === "}") { brace--; out += c; continue; }
     if (c === "#" && !q && !brace && (i === 0 || /[\s;&|()]/.test(script[i - 1]))) { while (i < script.length && script[i] !== "\n") i++; if (i < script.length) out += "\n"; continue; }
@@ -79,40 +99,59 @@ for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.
 
 // B60: the broad-exposure rules run on EVERY workflow file, PR-triggered or not (a production deploy has no reason to enumerate secrets either; it names each one).
 const BROAD = [
-  ["indexed secrets access hides the name", /(?<![\w.\/-])secrets\s*\[/i],
-  ["toJSON(secrets) exposes every secret", /toJSON\(\s*secrets\s*\)/i],
-  ["secrets: inherit passes every secret to a called workflow", /(?<![\w.\/-])secrets\s*:\s*inherit\b/i],
+  ["indexed secrets access hides the name", (w) => /(?<![\w.\/-])secrets\s*\[/i.test(scanText(w))],
+  ["toJSON(secrets) exposes every secret", (w) => /toJSON\(\s*secrets\s*\)/i.test(scanText(w))],
+  ["secrets.* exposes every secret", (w) => /(?<![\w.\/-])secrets\s*\.\s*\*/i.test(scanText(w))],
+  // Raw text first; then the PARSED document, which resolves quoting (`secrets: "inherit"`), quoted keys, tags (`!!str inherit`) and aliases (`secrets: *a`) that a raw-text regex cannot see.
+  ["secrets: inherit passes every secret to a called workflow", (w) => /(?<![\w.\/-])secrets\s*:\s*inherit\b/i.test(w.text) || inheritsSecrets(w.doc)],
 ];
-const broadSecretUse = (text) => BROAD.filter(([, re]) => re.test(text)).map(([why]) => why);
-for (const w of workflows) {
-  test(`${w.f} has no indexed secrets access, toJSON(secrets) or secrets: inherit`, () => {
-    assert.deepEqual(broadSecretUse(scanText(w)), []);
-  });
-}
+const inheritsSecrets = (v) => !!v && typeof v === "object" && Object.entries(v).some(([k, x]) => (k === "secrets" && typeof x === "string" && x.trim().toLowerCase() === "inherit") || inheritsSecrets(x));
+const broadSecretUse = (w) => BROAD.filter(([, f]) => f(w)).map(([why]) => why);
+const broadFindings = (ws) => ws.flatMap((w) => broadSecretUse(w).map((why) => `${w.f}: ${why}`));
+const bw = (text) => { try { return fx("t.yml", text); } catch { return { f: "t.yml", text, doc: null }; } };
+test("no workflow file has indexed secrets access, toJSON(secrets), secrets.* or secrets: inherit", () => {
+  assert.deepEqual(broadFindings(workflows), []);
+});
 
-test("the broad-exposure rules each catch their pattern (revert-failing: dropping a rule, or limiting it to PR-triggered files, fails here)", () => {
+test("the broad-exposure rules each catch their pattern (revert-failing: dropping a rule fails here)", () => {
   const cases = {
     "indexed single quote": "run: echo ${{ secrets['BOARD_ADMIN_TOKEN'] }}",
     "indexed with spaces": "run: echo ${{ secrets [ 'X' ] }}",
     "toJSON": "env:\n  ALL: ${{ toJSON(secrets) }}",
     "toJSON spaced and lower case": "env:\n  ALL: ${{ tojson( secrets ) }}",
+    "secrets.*": "run: echo ${{ join(secrets.*, ' ') }}",
+    "secrets.* spaced": "run: echo ${{ join(secrets . * , ' ') }}",
     "secrets: inherit": "jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    secrets: inherit",
     "secrets : inherit spaced": "    secrets  :  inherit",
   };
-  for (const [name, text] of Object.entries(cases)) assert.equal(broadSecretUse(text).length, 1, name);
-  for (const ok of ["run: echo ${{ secrets.GITHUB_TOKEN }}", "secrets:\n  X: ${{ secrets.X }}", "run: echo secrets_inherit", "run: echo mysecrets[0]"]) assert.deepEqual(broadSecretUse(ok), [], ok);
-  // Not limited to PR-triggered workflows: a push-only workflow with each pattern is flagged.
+  for (const [name, text] of Object.entries(cases)) assert.equal(broadSecretUse(bw(text)).length, 1, name);
+  for (const ok of ["run: echo ${{ secrets.GITHUB_TOKEN }}", "secrets:\n  X: ${{ secrets.X }}", "run: echo secrets_inherit", "run: echo mysecrets[0]"]) assert.deepEqual(broadSecretUse(bw(ok)), [], ok);
+  // Forms a raw-text regex misses; only the parsed-document check sees them.
+  const call = (v, pre = "") => `${pre}jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    secrets: ${v}\n`;
+  const parsedOnly = {
+    "double-quoted value": call('"inherit"'),
+    "single-quoted value": call("'inherit'"),
+    "!!str tag": call("!!str inherit"),
+    "quoted key": 'jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    "secrets": inherit\n',
+    "alias to an anchored value": "x: &a inherit\n" + call("*a"),
+  };
+  for (const [name, text] of Object.entries(parsedOnly)) {
+    const w = bw(text);
+    assert.deepEqual(broadSecretUse(w), ["secrets: inherit passes every secret to a called workflow"], name);
+  }
+  assert.deepEqual(broadSecretUse(bw(call("{ X: ${{ secrets.X }} }"))), [], "a mapping of named secrets is fine");
+  // Not limited to PR-triggered workflows: a push-only workflow is flagged. broadFindings is what the real-workflow test runs.
   const pushOnly = fx("push.yml", "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${{ secrets['X'] }}\n");
   assert.equal(triggers(pushOnly.doc).some((t) => PR_TRIGGERS.includes(t)), false);
-  assert.deepEqual(broadSecretUse(scanText(pushOnly)), ["indexed secrets access hides the name"]);
+  assert.deepEqual(broadFindings([pushOnly]), ["push.yml: indexed secrets access hides the name"]);
   const folded = fx("f.yml", String.raw`jobs:
   a:
     steps:
       - run: "echo §{{ toJSON(\
           secrets) }}"
 `);
-  assert.equal(broadSecretUse(folded.text).length, 0, "the fixture hides toJSON(secrets) from the raw text");
-  assert.deepEqual(broadSecretUse(scanText(folded)), ["toJSON(secrets) exposes every secret"], "the parsed strings catch it");
+  assert.equal(/toJSON\(\s*secrets\s*\)/i.test(folded.text), false, "the fixture hides toJSON(secrets) from the raw text");
+  assert.deepEqual(broadSecretUse(folded), ["toJSON(secrets) exposes every secret"], "the parsed strings catch it");
 });
 
 test("no workflow uses pull_request_target", () => {
@@ -394,6 +433,8 @@ test("a shell comment inside a run: block never satisfies a REQUIRED command", (
     "comment line then echo": "#NPM\n      - run: |\n          # npm ci --no-audit --no-fund\n          echo skipped\n",
     "trailing comment": "#NPM\n      - run: echo skipped # npm ci --no-audit --no-fund\n",
     "comment after a semicolon": "#NPM\n      - run: echo a; # npm ci --no-audit --no-fund\n",
+    "apostrophe in a heredoc body, then a comment": "#NPM\n      - run: |\n          cat <<EOF\n          it's data\n          EOF\n          # npm ci --no-audit --no-fund\n          echo skipped\n",
+    "$'..\\'..' then a comment": "#NPM\n      - run: |\n          echo $'it\\'s'\n          # npm ci --no-audit --no-fund\n",
     "indented comment in a block": "#NPM\n      - run: |\n          if true; then\n            # npm ci --no-audit --no-fund\n            echo x\n          fi\n",
   };
   for (const [name, step] of Object.entries(bypass)) {
@@ -418,6 +459,11 @@ test("stripShellComments keeps quoted #, $#, ${#x}, ${x#y} and escaped \\#, and 
   assert.equal(stripShellComments("echo 'a # b' \"c # d\""), "echo 'a # b' \"c # d\"");
   assert.equal(stripShellComments("echo $# ${#a} ${a#b} a#b \\# c"), "echo $# ${#a} ${a#b} a#b \\# c");
   assert.equal(stripShellComments("echo \"it's\" # gone"), "echo \"it's\" ");
+  assert.equal(stripShellComments("echo $'it\\'s' # gone"), "echo $'it\\'s' ", "ANSI-C quoting with an escaped quote");
+  const heredoc = "cat <<EOF\nit's a heredoc\nEOF\n# real comment\nnpm ci";
+  assert.equal(stripShellComments(heredoc), "cat <<EOF\nit's a heredoc\nEOF\n\nnpm ci", "an apostrophe in a heredoc body does not unbalance the quotes");
+  assert.equal(stripShellComments("cat <<-'EOF'\n\tx\n\tEOF\n# c\nok"), "cat <<-'EOF'\n\tx\n\tEOF\n\nok");
+  assert.equal(stripShellComments("echo <<< \"a # b\" # c"), "echo <<< \"a # b\" ");
 });
 
 // B60: stripping is for REQUIRED matching only. A forbidden reference inside a shell comment must still be seen by the secret scan.
