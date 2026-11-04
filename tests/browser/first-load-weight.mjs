@@ -5,13 +5,17 @@
 // (js/board.js whenSettled, html.wall-cold) and are not in this window. medal/tonight is the bottom-bar coin on the first screen and is allowed. Asserts: total image bytes and request count under a budget,
 // the hero (img/tavern-hero) is requested, and nothing from the covered wall (crests, medals, pints, map, vector, board-wall) loads.
 // Budget: 20 percent above the value measured when this suite was added (see the PR body). Raise it only with a measured reason.
+// Option: --clock <iso> loads the page with its clock set to that instant, to run these checks inside the launch hero window (B49).
 // Reads only. Exit 0 when every check passes, 1 otherwise.
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { parseClock, applyClock } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const ORIGIN = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
 if (!ORIGIN) { console.error("usage: node first-load-weight.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
+let CLOCK = null;
+try { CLOCK = parseClock(argv); } catch (e) { console.error(e.message); process.exit(2); } /* --clock <iso>: load the page with its clock set (tests/helpers/clock-arg.mjs), e.g. inside the launch hero window */
 const BASE = dirOf(ORIGIN);
 const BUDGET_BYTES = 799067, BUDGET_REQUESTS = 17, WINDOW_MS = 3500;
 const COVERED = /\/img\/(crests|pints|vector|map|buffs|chamber|seats|wax)\/|\/img\/medal\/(?!tonight)|\/img\/(board-wall|map-parchment|parchment-tile|dial-face|beam)\./;
@@ -21,6 +25,7 @@ const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS $
 const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3, serviceWorkers: "block" });
 const page = await ctx.newPage();
+await applyClock(page, CLOCK);
 const rows = [], pending = [];
 page.on("response", (r) => {
   const u = new URL(r.url());

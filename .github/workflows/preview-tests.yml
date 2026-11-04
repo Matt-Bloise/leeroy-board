@@ -329,7 +329,7 @@ jobs:
           node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --budget-min 5 --out "$RUNNER_TEMP/layout-report.json" 2>&1 | tee "$RUNNER_TEMP/layout.log"
 
       - name: Layout sweep at the launch times (gating)
-        # B49: the launch hero shows from 24 h before launch (Nov 4 2026 23:00Z) to 24 h after. The first-visit screen must still fit at a faked clock before it, with it, and after launch.
+        # B49: the launch hero shows from 24 h before launch (Nov 4 2026 23:00Z) to 24 h after. The first-visit screen must still fit, and no covered-wall art may load before the first tap (first-load-weight), at a faked clock before it, with it, and after launch.
         # First-visit gate only, ~40 s each on Chromium; the API comes from tests/fixtures/api-snapshot, 0 requests to the Worker.
         working-directory: tests
         env:
@@ -338,7 +338,8 @@ jobs:
           set -o pipefail
           rc=0
           for clock in 2026-11-03T22:10:00Z 2026-11-04T10:00:00Z 2026-11-05T14:00:00Z; do
-            node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --states gate --clock "$clock" --budget-min 3 2>&1 | tee -a "$RUNNER_TEMP/layout-clock.log" || rc=1
+            node browser/layout-sweep.mjs --url "$PAGES_URL/" --engine chromium --states gate --clock "$clock" --budget-min 2 2>&1 | tee -a "$RUNNER_TEMP/layout-clock.log" || rc=1
+            node browser/first-load-weight.mjs --url "$PAGES_URL/" --clock "$clock" 2>&1 | tee -a "$RUNNER_TEMP/layout-clock.log" || rc=1
           done
           exit $rc
 

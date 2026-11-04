@@ -17,3 +17,10 @@ export function parseClock(argv) {
   return d;
 }
 export async function applyClock(page, date) { if (date) await page.clock.install({ time: date }); }
+// What the launch hero must be at a faked time (js/v15.js WINDOW: shown from T-24h to T+24h, "soon" before launch and "live" after). The page sets html[data-launch] to the same word.
+export const LAUNCH_MS = Date.parse("2026-11-04T23:00:00Z");
+export function expectedHero(date) {
+  const t = date.getTime(), DAY = 24 * 3600e3;
+  if (t < LAUNCH_MS - DAY || t >= LAUNCH_MS + DAY) return "";
+  return t < LAUNCH_MS ? "soon" : "live";
+}
