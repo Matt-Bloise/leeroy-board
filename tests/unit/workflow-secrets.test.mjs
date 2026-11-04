@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { stripComments as code } from "../helpers/yaml-comments.mjs";
 
 const DIR = fileURLToPath(new URL("../../.github/workflows/", import.meta.url));
 const files = readdirSync(DIR).filter((f) => /\.ya?ml$/.test(f));
@@ -28,8 +27,9 @@ const PRODUCTION = ["BOARD_ADMIN_TOKEN", "USER_SALT", "KEY_SALT", "AI_GATEWAY_TO
   "GROQ_API_KEY", "CEREBRAS_API_KEY", "GITHUB_MODELS_TOKEN", "OPENROUTER_API_KEY", "DISCORD_WEBHOOK_URL", "DISCORD_PUBLIC_KEY", "DISCORD_CLIENT_SECRET", "DISCORD_BOT_TOKEN"];
 
 const triggers = (doc) => { const on = doc.on ?? doc[true]; return typeof on === "string" ? [on] : Array.isArray(on) ? on : Object.keys(on || {}); };
-// Comments are not code: `code` (tests/helpers/yaml-comments.mjs) strips `# ...` comments, but not a # inside quotes or ${{ }}, so a runbook pointer in a comment is not read as a reference.
-const secretNames = (text) => [...code(text).matchAll(/(?<![\w.\/-])secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
+// B46: NOTHING is stripped. A `#` line inside a block scalar, a multiline quoted scalar or a heredoc is content that GitHub Actions still expands, and any inline-`#` rule can be
+// tricked by quoting, so every reference anywhere in the file text counts, comments included. A comment that mentions a secret must be reworded.
+const secretNames = (text) => [...text.matchAll(/(?<![\w.\/-])secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
 
 test("the workflow directory is found and parsed", () => {
   assert.ok(workflows.length >= 5);
@@ -40,7 +40,7 @@ for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.
   test(`${w.f} (PR-triggered) names no production secret`, () => {
     const bad = secretNames(w.text).filter((n) => !PR_ALLOWED.has(n));
     assert.deepEqual([...new Set(bad)], [], `${w.f} references secrets a pull request must not read`);
-    const c = code(w.text);
+    const c = w.text;
     for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(c), false, `${w.f} reads production secret ${n}`);
     assert.equal(/CLOUDFLARE_PREVIEW_API_TOKEN/.test(c), false, `${w.f}: CLOUDFLARE_PREVIEW_API_TOKEN is not part of the design (previews use CLOUDFLARE_API_TOKEN)`);
     assert.equal(/(?<![\w.\/-])secrets\s*\[/.test(c), false, "indexed secrets access hides the name");
@@ -72,8 +72,8 @@ test("only the production deploy reads production secrets", () => {
 
 test("the deploy installs wrangler from the lockfile, with an exact version", () => {
   const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
-  assert.match(code(w.text), /npm ci --no-audit --no-fund/);
-  assert.equal(/npm install\b/.test(code(w.text)), false);
+  assert.match(w.text, /npm ci --no-audit --no-fund/);
+  assert.equal(/npm install\b/.test(w.text), false);
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package.json", import.meta.url)), "utf8"));
   assert.match(pkg.devDependencies.wrangler, /^\d+\.\d+\.\d+$/, "wrangler must be an exact version, no ^ or ~");
   const lock = JSON.parse(readFileSync(fileURLToPath(new URL("../../infrastructure/package-lock.json", import.meta.url)), "utf8"));
@@ -96,14 +96,14 @@ test("CLOUDFLARE_API_TOKEN is read only in the preview, teardown and preview-sec
       const n = (JSON.stringify(job).match(TOKEN_RE) || []).length;
       assert.equal(n, allowed[name] || 0, `${w.f} job ${name}: expected ${allowed[name] || 0} reference(s) to secrets.CLOUDFLARE_API_TOKEN, found ${n}`);
     }
-    assert.equal((code(w.text).match(TOKEN_RE) || []).length, Object.values(allowed).reduce((a, b) => a + b, 0), `${w.f}: total references`);
+    assert.equal((w.text.match(TOKEN_RE) || []).length, Object.values(allowed).reduce((a, b) => a + b, 0), `${w.f}: total references`);
   }
   for (const f of Object.keys(TOKEN_JOBS)) assert.ok(prFiles.some((w) => w.f === f), `${f} must be PR-triggered and checked`);
 });
 
 test("BOARD_ADMIN_TOKEN and the other production secrets are never available to a PR workflow", () => {
   for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) {
-    for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(code(w.text)), false, `${w.f}: ${n}`);
+    for (const n of PRODUCTION) assert.equal(new RegExp(`(?<![\\w./-])secrets\\.${n}\\b`).test(w.text), false, `${w.f}: ${n}`);
   }
 });
 
@@ -116,7 +116,7 @@ test("every non-production job that runs `wrangler deploy` strips the Flagship b
     for (const [name, job] of Object.entries(w.doc.jobs)) {
       const steps = job.steps || [];
       steps.forEach((s, i) => {
-        if (!/\bwrangler deploy\b/.test(code(s.run || ""))) return;
+        if (!/\bwrangler deploy\b/.test((s.run || ""))) return;
         seen++;
         const strip = steps.findIndex((t) => (t.run || "").includes(STRIP));
         assert.ok(strip >= 0 && strip <= i, `${w.f} job ${name}: step ${i} runs wrangler deploy without stripping the [[flagship]] binding first`);
@@ -132,21 +132,21 @@ test("the preview strips the binding AFTER it patches wrangler.toml, and no PR-t
   assert.ok(step, "the preview patch step runs the strip tool");
   assert.ok(step.run.indexOf(STRIP) > step.run.indexOf('writeFileSync("wrangler.toml"'), "strip runs after the patched file is written");
   for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) {
-    assert.equal(/flagship/i.test(code(w.text).split(STRIP).join("")), false, `${w.f} mentions Flagship in code other than the strip tool`);
+    assert.equal(/flagship/i.test(w.text.split(STRIP).join("")), false, `${w.f} mentions Flagship in code other than the strip tool`);
   }
 });
 
 test("the production deploy keeps the binding: it does not strip it, and touches Flagship only through the one create-missing-flags step (B51)", () => {
   const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
-  assert.equal(/strip-flagship-binding/.test(code(w.text)), false, "production never strips the binding");
-  const mentions = code(w.text).split("\n").filter((l) => /flagship/i.test(l));
+  assert.equal(/strip-flagship-binding/.test(w.text), false, "production never strips the binding");
+  const mentions = w.text.split("\n").filter((l) => /flagship/i.test(l));
   for (const l of mentions) assert.match(l, /flagship-ensure-flags|Flagship flag|Flagship problem|Flagship app|flagship flags create|never changes an existing flag/i, `unexpected Flagship reference in the production deploy: ${l.trim()}`);
   assert.ok(mentions.length > 0, "the create-missing-flags step is there");
 });
 
 // wrangler 4 needs Node >= 22: every workflow that runs wrangler must set up Node 22 or newer.
 test("every workflow that runs wrangler sets up Node 22 or newer", () => {
-  for (const w of workflows.filter((x) => /\bwrangler\b/.test(code(x.text)))) {
+  for (const w of workflows.filter((x) => /\bwrangler\b/.test(x.text))) {
     const versions = Object.values(w.doc.jobs).flatMap((j) => (j.steps || []).filter((s) => /actions\/setup-node/.test(s.uses || "")).map((s) => Number(String(s.with && s.with["node-version"]).split(".")[0])));
     assert.ok(versions.length > 0, `${w.f} runs wrangler without setup-node`);
     for (const v of versions) assert.ok(v >= 22, `${w.f}: setup-node ${v} is below wrangler 4's node >=22`);
@@ -165,14 +165,14 @@ test("wrangler is pinned to the exact version 4.148.0 in package.json and the lo
 test("the production and preview seed steps read the row count with tools/d1-row-count.mjs, fail the step on error, and never default to 0", () => {
   for (const f of ["deploy-cloudflare.yml", "pr-preview-cloudflare.yml"]) {
     const w = workflows.find((x) => x.f === f);
-    const c = code(w.text);
+    const c = w.text;
     assert.match(c, /ROW_COUNT=\$\(node \.\.\/tools\/d1-row-count\.mjs "\$COUNT_JSON"\) \|\| \{[^}]*exit 1;?\s*\}/, `${f}: row count must come from the fail-closed tool and exit 1 on error`);
     assert.equal(/\?\?\s*0\b/.test(c), false, `${f}: no "?? 0" default for the row count`);
   }
 });
 
 test("the preview workflow does not use `wrangler subdomain get` (gone in wrangler 4) and does not guess a workers.dev account subdomain", () => {
-  const c = code(workflows.find((x) => x.f === "pr-preview-cloudflare.yml").text);
+  const c = workflows.find((x) => x.f === "pr-preview-cloudflare.yml").text;
   assert.equal(/subdomain get/.test(c), false);
   assert.equal(/jmattbloise\.workers\.dev/.test(c), false);
   assert.match(c, /Could not read the preview Worker URL/);
@@ -181,8 +181,8 @@ test("the preview workflow does not use `wrangler subdomain get` (gone in wrangl
 // B51: the production deploy creates missing Flagship flags with wrangler (tools/flagship-ensure-flags.mjs). It needs the production Cloudflare token, so it runs there only.
 test("the Flagship flag creation is referenced by the production deploy only, once, after `wrangler deploy`, continue-on-error, and by no PR-triggered workflow", () => {
   const REF = /flagship-ensure-flags|flagship\s+flags\s+(create|enable|disable|update|delete|split|rules)\b/;
-  for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) assert.equal(REF.test(code(w.text)), false, `${w.f} must not run or reference Flagship flag writes`);
-  for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) assert.equal(/flagship/i.test(code(w.text).replace(/strip-flagship-binding/g, "")), false, `${w.f} (PR-triggered) mentions flagship beyond the preview strip`);
+  for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) assert.equal(REF.test(w.text), false, `${w.f} must not run or reference Flagship flag writes`);
+  for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) assert.equal(/flagship/i.test(w.text.replace(/strip-flagship-binding/g, "")), false, `${w.f} (PR-triggered) mentions flagship beyond the preview strip`);
   const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
   const steps = w.doc.jobs["deploy-production"].steps;
   const at = steps.findIndex((s) => /flagship-ensure-flags/.test(s.run || ""));
@@ -198,7 +198,7 @@ test("the Flagship flag creation is referenced by the production deploy only, on
 });
 
 // B51: the production workflow may contain NO `flagship flags <subcommand>` other than `create` (the script itself only runs list and create; see flagship-ensure.test.mjs).
-const flagshipSubcommands = (text) => [...code(text).matchAll(/flagship\s*(?:\\\s*)?flags\s*(?:\\\s*)?([A-Za-z-]+)/g)].map((m) => m[1].toLowerCase());
+const flagshipSubcommands = (text) => [...text.matchAll(/flagship\s*(?:\\\s*)?flags\s*(?:\\\s*)?([A-Za-z-]+)/g)].map((m) => m[1].toLowerCase());
 const forbiddenFlagshipSubcommands = (text) => flagshipSubcommands(text).filter((c) => c !== "create");
 
 test("the production deploy contains no `flagship flags` subcommand other than create", () => {
@@ -213,27 +213,25 @@ test("the subcommand check itself rejects enable, disable, update, delete, split
   }
   assert.deepEqual(forbiddenFlagshipSubcommands("run: wrangler flagship flags \\\n  enable APP KEY"), ["enable"], "line continuation");
   assert.deepEqual(forbiddenFlagshipSubcommands("run: wrangler flagship flags create APP KEY --disabled"), []);
-  assert.deepEqual(forbiddenFlagshipSubcommands("# wrangler flagship flags enable is done by the owner\nrun: wrangler flagship flags create A K"), [], "comments are not code");
+  assert.deepEqual(forbiddenFlagshipSubcommands("# wrangler flagship flags enable is done by the owner\nrun: wrangler flagship flags create A K"), ["enable"], "comments are not stripped");
 });
 
-// B46: a line is a comment only when its first non-space character is `#`; nothing after an inline `#` is stripped (tests/helpers/yaml-comments.mjs).
-test("the comment stripper keeps a secret that an inline # (or a quote trick) could hide", () => {
+
+// B46: nothing is stripped. These strings each hide a secret reference from a comment-stripping rule; secretNames must still see it. They FAIL if stripping is reintroduced.
+test("a secret reference is seen however a comment, quote or block scalar tries to hide it", () => {
   const caught = {
     "echo with a quoted #": 'run: echo "#" "${{ secrets.X }}"',
     "# inside single quotes": "run: echo '#' \"${{ secrets.X }}\"",
     "secret after a quoted #": 'env: { A: "x #y", B: ${{ secrets.X }} }',
     "escaped quote outside a quote": 'run: echo \\" # ${{ secrets.X }}',
     "}} inside a string literal in an expression": "run: echo ${{ '}}' }} # ${{ secrets.X }}",
-    "multiline quoted scalar": 'run: "echo \\"\n  ${{ secrets.X }} # \\""',
-    "trailing comment naming a secret": "run: make build # uses ${{ secrets.X }}",
+    "multiline quoted scalar, secret after a # line": 'run: "echo\n  # a comment-looking line\n  ${{ secrets.X }}"',
+    "multiline quoted scalar, secret ON a # line": 'run: "echo\n  # ${{ secrets.X }}"',
+    "run: | block with a # line before the expression": "run: |\n  # setup\n  echo ${{ secrets.X }}",
+    "run: | block, secret ON a # line (GitHub still expands it)": "run: |\n  # ${{ secrets.X }}",
+    "heredoc": "run: |\n  cat <<'EOF'\n  # ${{ secrets.X }}\n  EOF",
+    "whole-line comment": "# uses ${{ secrets.X }}",
+    "trailing comment": "run: make build # uses ${{ secrets.X }}",
   };
   for (const [name, text] of Object.entries(caught)) assert.deepEqual(secretNames(text), ["X"], name);
-});
-
-test("the comment stripper ignores whole-line comments only", () => {
-  assert.deepEqual(secretNames("# uses secrets.X for the deploy"), [], "plain comment line");
-  assert.deepEqual(secretNames("    # secrets.X is read in the production job"), [], "indented comment line");
-  assert.deepEqual(secretNames("run: make build\n# secrets.X\nrun: ${{ secrets.Y }}"), ["Y"], "only the comment line is dropped");
-  assert.equal(code("a: b # c"), "a: b # c", "an inline # strips nothing");
-  assert.equal(code("  # c\nb: 1"), "\nb: 1", "a whole-line comment is blanked, line numbers kept");
 });

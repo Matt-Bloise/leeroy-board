@@ -302,8 +302,8 @@ jobs:
             fs.writeFileSync("wrangler.toml", toml, "utf8");
           ' "$DB_ID"
 
-          # A preview must never bind to the PRODUCTION Flagship app: remove the [[flagship]] block (previews then read the legacy [vars]).
-          # The tool fails the step if any flagship binding is left.
+          # A preview must never bind to the PRODUCTION feature-flag app: remove that binding block from wrangler.toml (previews then read the legacy [vars]).
+          # The tool fails the step if any such binding is left.
           node ../tools/strip-flagship-binding.mjs wrangler.toml
 
       - name: Say that the preview limit is reached
@@ -360,7 +360,7 @@ jobs:
           set -e
           WORKER_URL=$(echo "$DEPLOY_OUT" | grep -oE "https://${WORKER_NAME}\.[a-z0-9-]+\.workers\.dev" | head -n 1)
           if [ -z "$WORKER_URL" ]; then
-            # `wrangler subdomain get` does not exist in wrangler 4, and a guessed URL would point the preview tests at the wrong Worker. Fail loudly instead.
+            # The old wrangler 3 command for the account subdomain does not exist in wrangler 4, and a guessed URL would point the preview tests at the wrong Worker. Fail loudly instead.
             echo "::error::Could not read the preview Worker URL (https://${WORKER_NAME}.<subdomain>.workers.dev) from the wrangler deploy output above. Not guessing one."
             exit 1
           fi
