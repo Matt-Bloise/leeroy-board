@@ -81,7 +81,7 @@ test("schema.sql mirrors migration 0009 for both tables", () => {
 });
 
 // ---- (c) backfill
-test("backfill marks only unhashed, unmarked rows older than --before; dry-run changes nothing; a re-run is a no-op", async () => {
+test("backfill marks only unhashed, unmarked rows inside the --after/--before window; dry-run changes nothing; a re-run is a no-op", async () => {
   const db = schemaDb(), env = { DB: db, USER_SALT };
   const raw = (id, at) => db.raw.prepare("INSERT INTO ask_turns (id, by_name, question, status, created_at) VALUES (?, 'Red Fox', 'q', 'answered', ?)").run(id, at);
   raw("gap-1", "2026-11-04T11:59:58.000Z"); raw("gap-2", "2026-11-04T11:59:59.000Z");
@@ -89,15 +89,18 @@ test("backfill marks only unhashed, unmarked rows older than --before; dry-run c
   raw("already", "2026-11-04T11:00:00.000Z"); db.raw.prepare("INSERT INTO ask_turn_legacy VALUES ('already')").run();
   raw("visitor", "2026-11-04T11:00:00.000Z"); db.raw.prepare("UPDATE ask_turns SET by_name = 'Visitor' WHERE id = 'visitor'").run(); // a web visitor: no asker row by design
   await insertAskTurn(env, ROW("hashed"), { discordId: ME }); // has an asker row
-  const before = "2026-11-04T12:00:00Z";
-  const dry = await backfillAskLegacy(db, { before, dryRun: true });
+  const after = "2026-11-04T11:30:00Z", before = "2026-11-04T12:00:00Z";
+  raw("too-old", "2026-11-04T10:00:00.000Z"); // an unhashed row from before migration 0009 ran: outside the window
+  const dry = await backfillAskLegacy(db, { after, before, dryRun: true });
   assert.deepEqual(dry.ids.sort(), ["gap-1", "gap-2"]);
   assert.equal(n(db, "SELECT COUNT(*) AS c FROM ask_turn_legacy"), 1, "dry-run wrote something");
-  const real = await backfillAskLegacy(db, { before });
+  const real = await backfillAskLegacy(db, { after, before });
   assert.equal(real.marked, 2);
   assert.deepEqual(db.raw.prepare("SELECT intent_id FROM ask_turn_legacy ORDER BY 1").all().map((r) => r.intent_id), ["already", "gap-1", "gap-2"]);
-  assert.equal((await backfillAskLegacy(db, { before })).marked, 0);
-  await assert.rejects(backfillAskLegacy(db, {}), /--before/);
+  assert.equal((await backfillAskLegacy(db, { after, before })).marked, 0);
+  await assert.rejects(backfillAskLegacy(db, { before }), /--after/);
+  await assert.rejects(backfillAskLegacy(db, { after }), /--before/);
+  await assert.rejects(backfillAskLegacy(db, { after: before, before: after }), /earlier/);
 });
 
 // ---- (b) wording
@@ -262,4 +265,27 @@ test("a re-vote after migration 0010 (row) wins over the older choice in the doc
   const r = await voteRig({ votes: 1, mine: [0], docBallotFor: [0] }); // document says 1, row says 2
   const exp = await (await r.call("/api/me/export")).json();
   assert.deepEqual(exp.legacy.vote_ballots.map((b) => b.choice), [2]);
+});
+
+test("720 vote documents plus one ballot row for a vote with no document is over the maximum (the bound is checked after the union)", async () => {
+  const { MAX_VOTES } = await import("../../infrastructure/worker/data-rights.js");
+  const r = await voteRig({ votes: MAX_VOTES, mine: [0] });
+  r.raw.prepare("INSERT INTO vote_ballots VALUES ('ffffffff', ?, 1)").run("e".repeat(64));
+  for (const [path, method] of [["/api/me/export", "GET"], ["/api/me/erase", "POST"]]) assert.equal((await r.call(path, method)).status, 413, path);
+  assert.equal(r.raw.prepare("SELECT COUNT(*) AS c FROM users").get().c, 2, "a refused erase changed nothing");
+});
+
+test("erased_includes is stated only when ballots were looked for: not for a member key with no linked Discord id", async () => {
+  const { default: worker } = await import("../../infrastructure/worker/index.js");
+  const { sha256Hex } = await import("../../infrastructure/worker/crypto.js");
+  const withDiscord = await voteRig({ votes: 1, mine: [0] });
+  assert.ok(Array.isArray((await (await withDiscord.call("/api/me/erase", "POST")).json()).erased_includes));
+  invalidateConfigCache(); _resetDataRights();
+  const db = schemaDb(), KEY = "member-key-for-tests-0123456789ab", now = new Date().toISOString();
+  db.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES ('red-fox', ?, ?)").run(await sha256Hex(`${KEY_SALT}:${KEY}`), now);
+  db.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('discord_members', ?, ?)").run(JSON.stringify([{ slug: "red-fox", name: "Red Fox", match: [] }]), now); // no Discord id
+  const env = { DB: db, USER_SALT, KEY_SALT, DATA_RIGHTS: "on", ALLOWED_ORIGINS: "https://leeroy.test" };
+  const res = await worker.fetch(new Request("https://api.test/api/me/erase", { method: "POST", headers: { Authorization: `Board ${KEY}`, Origin: "https://leeroy.test", "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9" }, body: JSON.stringify({ confirm: "erase my data" }) }), env, { waitUntil() {}, passThroughOnException() {} });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).erased_includes, undefined, "no ballot query ran, so no ballot erasure is claimed");
 });

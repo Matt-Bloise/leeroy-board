@@ -138,7 +138,7 @@ const askArgs = (pk, who) => [pk.askerHashes[0], pk.askerHashes[1], who.slug || 
 // row per ballot in vote_ballots (vote_id, voter_hash, choice). A person's hash is per vote: voterHash(discord id, vote id, USER_SALT).
 // Work per request is bounded, not only per statement. At most MAX_VOTES vote documents are considered; more than that is refused with a
 // 413 that states the maximum (nothing is read further, nothing is changed), so the vote part stays well under the free plan's 50 queries per invocation (a db.batch() counts as one):
-// export: ids (1) + table check (1) + document reads (<= 8) + ballot-row reads (<= 8); erase: ids (1) + table check (1) + probes (<= 18) + one batch holding every edit and delete.
+// export: document ids (1) + table check (1) + ballot-row ids (1) + document reads (<= 8) + ballot-row reads (<= 8) = at most 19; erase: document ids (1) + table check (1) + ballot-row ids (1) + probes (<= 18) + one batch holding every edit and delete, 22 in the worst-case test.
 export const MAX_VOTES = 720; // 8 chunks of IN_CHUNK
 const IN_CHUNK = 90; // D1 allows 100 bound values per statement
 const VOTE_CHUNK = 40; // two bound values per vote in the erase probe
@@ -167,9 +167,8 @@ const inList = (n) => Array(n).fill("?").join(", ");
 
 // -> [{ id, hash }] for the votes whose DOCUMENT holds a ballot from this Discord id. The database is asked, 40 votes per query, which of those
 // exact ballots exist: the query returns only matching keys, and only those votes are edited afterwards.
-async function callerVotes(env, discordId, ids) {
-  if (!discordId) return [];
-  const hashOf = await hashesFor(env, discordId, ids), out = [];
+async function callerVotes(env, hashOf, ids) {
+  const out = [];
   for (const chunk of chunks(ids, VOTE_CHUNK)) {
     const cond = chunk.map(() => "(key = ? AND CASE WHEN json_valid(json) THEN json_extract(json, ?) END IS NOT NULL)").join(" OR ");
     const hit = new Set((await rows(env, `SELECT key FROM kv_state WHERE ${cond}`, ...chunk.flatMap((id) => [`vote:${id}`, ballotPath(hashOf.get(id))]))).map((r) => r.key));
@@ -280,12 +279,13 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM answer_details WHERE asker_hash = ?").bind(pk.answerHash));
     // One in-database edit per vote the person voted in: json_remove on the ballot key. The document is never read and rewritten, so a ballot cast by someone else at the same moment is not overwritten.
     const { ids, hasRows } = await voteScope(env); // throws TooManyVotes past MAX_VOTES: refused before anything is changed
-    for (const v of await callerVotes(env, id, ids)) {
+    const hashOf = await hashesFor(env, id, ids); // the per-vote hashes are computed once and used for both the document edits and the row deletes
+    for (const v of await callerVotes(env, hashOf, ids)) {
       st.push(db.prepare("UPDATE kv_state SET json = json_remove(json, ?), updated_at = ? WHERE key = ? AND json_valid(json)").bind(ballotPath(v.hash), new Date(now).toISOString(), `vote:${v.id}`));
     }
     // ballots kept as rows (vote_ballots, migration 0010): deleted by the person's per-vote hashes in the same batch; skipped when the table does not exist yet
     if (ids.length && hasRows) {
-      for (const chunk of chunks([...(await hashesFor(env, id, ids)).values()], IN_CHUNK)) st.push(db.prepare(`DELETE FROM vote_ballots WHERE voter_hash IN (${inList(chunk.length)})`).bind(...chunk));
+      for (const chunk of chunks([...hashOf.values()], IN_CHUNK)) st.push(db.prepare(`DELETE FROM vote_ballots WHERE voter_hash IN (${inList(chunk.length)})`).bind(...chunk));
     }
   }
   for (const h of pk.budgetIds) st.push(db.prepare("DELETE FROM kv_state WHERE key LIKE ?").bind(kvLike(h)));
@@ -317,7 +317,8 @@ async function eraseData(request, env, who, now) {
   invalidateMembersCache();
   return respond(200, {
     erased: true,
-    erased_includes: ["Your ballot in each board vote, whether it is kept in the vote document or, once the per-ballot table exists, as a row of it."],
+    // only when ballots were looked for: a member key with no linked Discord id has no ballot hashes to search by
+    ...(id ? { erased_includes: ["Your ballot in each board vote, whether it is kept in the vote document or, once the per-ballot table exists, as a row of it."] } : {}),
     not_erased: [
       "Board documents in kv_state that mention you by name (party, signups, the Discord roster and similar); ask the owner to review them.",
       "Account rows (accounts, account_keys: name, slug, label) are not erased by this route; ask the owner to remove them.",
