@@ -418,7 +418,7 @@ test("G. GET /votes: the second call within 10 seconds reads nothing from D1", a
   await new Promise((r) => setTimeout(r, 10)); // the isolate cache is filled asynchronously
   const readsAfterFirst = reads;
   const b = await api(env, "GET", "/votes");
-  assert.equal(readsAfterFirst, 3, "index row plus one row per vote on a miss");
+  assert.equal(readsAfterFirst, 4, "index row, one row per vote, and one query for every vote's ballots on a miss");
   assert.equal(reads, readsAfterFirst, "a hit costs no D1 read");
   assert.deepEqual(await a.json(), await b.json());
   await resetCaches();

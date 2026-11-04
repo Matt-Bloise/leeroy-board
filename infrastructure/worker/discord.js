@@ -37,7 +37,7 @@ import { BUILD_MODAL_ID, buildModalEnabled, buildProjectEnabled, buildModalRespo
 import { projectBuild } from "./project-build.js";
 import { JOIN_COMMAND_NAME, JOIN_BUTTON_ID, shouldHint, joinHintBody } from "./join.js";
 import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-command.js";
-import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
+import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordBallot, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
 import { cardsEnabled, requestCardEdit } from "./cards.js";
@@ -1590,7 +1590,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: applied.code === "forbidden" ? "You can only answer your own questions." : `No question found with id **${id}**.`,
+              content: applied.code === "forbidden" ? "You can only answer your own questions." : applied.code === "already_answered" ? "That question already has an answer. Ask a server admin if it needs correcting." : `No question found with id **${id}**.`,
               flags: 64,
             },
           }),
@@ -1769,7 +1769,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (saltProblems(env, ["USER_SALT"]).length) return ephemeral("Voting is unavailable: the Worker is missing its USER_SALT secret.");
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
-    await saveVote(env.DB, result.vote, nowMs);
+    await recordBallot(env.DB, vote.id, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
+    const fresh = (await loadVote(env.DB, vote.id)) || result.vote; // re-read so the counts shown include ballots cast at the same moment
     await purgeWorkerCache(origin, ["/api/votes"]);
     const picked = result.vote.choices[parsed.index];
     const note = result.changed ? `Changed your vote to **${picked}**.` : `Counted your vote for **${picked}**.`;
@@ -1782,7 +1783,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         }).catch(() => {})
       );
     }
-    return new Response(JSON.stringify({ type: 7, data: renderMessage(result.vote, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ type: 7, data: renderMessage(fresh, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
   // 3a. CARDS_ENABLED: sign-up card buttons (type 3) and the write-in / select modals (type 5). Replaces 3b for `signup:` ids.

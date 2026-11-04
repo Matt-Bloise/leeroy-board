@@ -1,5 +1,5 @@
 // Votes for the Discord handler. Pure logic plus thin kv_state helpers that take the D1 binding as an argument.
-// Storage (no schema change): kv_state key `vote:<id>` holds one vote as JSON, `votes:index` holds { ids: [newest first] }.
+// Storage: kv_state key `vote:<id>` holds the vote (title, choices, times) as JSON, ballots are one row each in vote_ballots (migration 0010), `votes:index` holds { ids: [newest first] }.
 // A voter is stored only as a salted hash, never as the raw Discord user id, and the hash never leaves the Worker.
 import { sha256Hex } from "./crypto.js";
 import { requireSalt } from "./salts.js";
@@ -138,16 +138,52 @@ export function addToIndex(index, id, max = VOTE_INDEX_MAX) {
 }
 
 // kv_state helpers. `db` is the D1 binding.
-export async function loadVote(db, id) {
+// The vote document (title, choices, closes_at) lives in kv_state `vote:<id>`; ballots live one per row in vote_ballots (migration 0010).
+// Ballots still inside an old document's `ballots` map are read too; a vote_ballots row for the same voter wins.
+async function tableBallots(db, ids) {
+  if (!ids.length) return [];
+  try {
+    const r = await db.prepare(`SELECT vote_id, voter_hash, choice FROM vote_ballots WHERE vote_id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
+    return (r && r.results) || [];
+  } catch {
+    return []; // table not migrated yet: fall back to the document's own ballots
+  }
+}
+
+function withBallots(vote, rows) {
+  const ballots = { ...(vote.ballots && typeof vote.ballots === "object" ? vote.ballots : {}) };
+  for (const b of rows) ballots[b.voter_hash] = Number(b.choice);
+  return { ...vote, ballots };
+}
+
+async function loadDoc(db, id) {
   if (!VOTE_ID_RE.test(String(id))) return null;
   const row = await db.prepare("SELECT json FROM kv_state WHERE key = ?").bind(`vote:${id}`).first();
   if (!row) return null;
-  try { return JSON.parse(row.json); } catch { return null; }
+  try {
+    const v = JSON.parse(row.json);
+    return v && typeof v === "object" ? v : null;
+  } catch { return null; }
 }
 
+export async function loadVote(db, id) {
+  const doc = await loadDoc(db, id);
+  return doc ? withBallots(doc, await tableBallots(db, [String(id)])) : null;
+}
+
+// Creates the vote document once. Never replaces an existing document and never carries ballots (they are rows).
 export async function saveVote(db, vote, now) {
   const at = new Date(now).toISOString();
-  await db.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").bind(`vote:${vote.id}`, JSON.stringify(vote), at).run();
+  const { ballots: _ballots, ...doc } = vote;
+  await db.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING").bind(`vote:${vote.id}`, JSON.stringify({ ...doc, ballots: {} }), at).run();
+}
+
+// One atomic upsert of one ballot. Two different voters touch two different rows, so neither can overwrite the other.
+export async function recordBallot(db, voteId, voter, index, now) {
+  await db.prepare(
+    "INSERT INTO vote_ballots (vote_id, voter_hash, choice, cast_at) VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT(vote_id, voter_hash) DO UPDATE SET choice = excluded.choice, cast_at = excluded.cast_at"
+  ).bind(String(voteId), voter, index, new Date(now).toISOString()).run();
 }
 
 export async function recordInIndex(db, id, now) {
@@ -164,10 +200,11 @@ export async function loadPublicVotes(db, now) {
   let ids = [];
   try { if (row) ids = JSON.parse(row.json).ids; } catch {}
   ids = (Array.isArray(ids) ? ids : []).filter((id) => VOTE_ID_RE.test(String(id))).slice(0, VOTE_INDEX_MAX);
-  const votes = [];
+  const docs = [];
   for (const id of ids) {
-    const v = await loadVote(db, id);
-    if (v && Array.isArray(v.choices)) votes.push(publicView(v, now));
+    const v = await loadDoc(db, id);
+    if (v && Array.isArray(v.choices)) docs.push([id, v]); // one extra read below covers every vote's ballots
   }
-  return votes;
+  const rows = await tableBallots(db, docs.map(([id]) => id));
+  return docs.map(([id, v]) => publicView(withBallots(v, rows.filter((r) => r.vote_id === id)), now));
 }
