@@ -1,9 +1,8 @@
 // B41 + B43d: vote ballots, room bounds, hidden-field leftovers, answered-ask overwrite. Real Worker code over in-memory SQLite built
-// from schema.sql (plus migration 0010 for the ballot table). No network, no AI, made-up ids and salts only.
+// from schema.sql (which carries vote_ballots, mirrored from migration 0010). No network, no AI, made-up ids and salts only.
 // Each test fails when its change is reverted. Run: node --test tests/unit/votes-room-integrity.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import worker, { recordSheetEventInD1 } from "../../infrastructure/worker/index.js";
 import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
 import { applyManualAnswer } from "../../infrastructure/worker/ask-answer.js";
@@ -13,7 +12,6 @@ import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 
-const rd = (f) => readFileSync(new URL(`../../infrastructure/migrations/${f}`, import.meta.url), "utf8");
 // The limits are written out here on purpose: the test pins the numbers, not the exports.
 const MAX_BROADCAST_BYTES = 256 * 1024, MAX_BROADCAST_RECIPIENTS = 500, MAX_SOCKETS = 500;
 const USER_SALT = "user-salt-for-tests-0123456789";
@@ -25,7 +23,6 @@ const silently = async (fn) => { const e = console.error; console.error = () => 
 
 function makeEnv() {
   const DB = schemaDb();
-  DB.raw.exec(rd("0010_vote_ballots.sql"));
   const sent = [];
   const room = { fetch: async (_u, init) => { sent.push(JSON.parse(init.body)); return new Response("ok"); } };
   invalidateConfigCache();
