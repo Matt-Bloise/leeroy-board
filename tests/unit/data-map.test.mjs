@@ -386,16 +386,16 @@ test("a Discord question by someone not on the roster carries their Discord-id h
 });
 
 // ---- (3) the work to find a member's ballots does not grow with every vote they never joined
-test("erase and export look for ballots 40 votes per query and read or edit only the votes the member voted in", async () => {
+test("export reads vote documents in IN(...) chunks; erase probes 40 votes per query and edits only the votes the member voted in", async () => {
   const { db, ids } = await seeded(), e = env(db);
   for (let i = 0; i < 130; i++) db.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(`vote:${(i + 0x1000).toString(16).padStart(8, "0")}`, JSON.stringify({ id: "x", title: "old", choices: ["a"], ballots: { [`h${i}`]: 0 } }), NOWISO);
   const sqls = [], real = e.DB.prepare;
   e.DB = { ...e.DB, prepare: (sql) => { sqls.push(sql); return real(sql); } };
   const exp = await (await call(e, "GET", "/api/me/export", asKey)).json();
   assert.deepEqual(exp.legacy.vote_ballots, [{ vote_id: "aaaa1111", title: "Pick", choice: 0 }]);
-  const probes = sqls.filter((q) => /^SELECT key FROM kv_state WHERE \(key = \?/.test(q));
-  assert.equal(probes.length, Math.ceil(131 / 40), "one probe per 40 votes");
-  assert.equal(sqls.filter((q) => /^SELECT json FROM kv_state WHERE key = \?$/.test(q)).length <= 2, true, "documents are read only for the votes the member joined (plus the auth roster read)");
+  const reads = sqls.filter((q) => /^SELECT key, json FROM kv_state WHERE key IN \(/.test(q));
+  assert.equal(reads.length, Math.ceil(131 / 90), "export reads vote documents with IN(...) lists, 90 keys per query, no per-vote read");
+  assert.equal(sqls.filter((q) => /^SELECT json FROM kv_state WHERE key = \?$/.test(q)).length <= 1, true, "no per-vote document read (only the auth roster read)");
   sqls.length = 0;
   assert.equal((await call(e, "POST", "/api/me/erase", { ...OWNER, ...asKey }, CONFIRM)).status, 200);
   assert.equal(sqls.filter((q) => /json_remove/.test(q)).length, 1, "one edit, for the one vote the member joined");

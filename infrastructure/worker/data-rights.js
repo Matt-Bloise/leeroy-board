@@ -155,14 +155,22 @@ async function callerVotes(env, discordId) {
   return out;
 }
 
-// -> [{ id, vote, hash, choice }] for export: callerVotes, then one read per vote the person actually voted in.
+// -> [{ id, vote, hash, choice }] for export: vote documents read with IN(...) lists of IN_CHUNK keys (D1 allows 100 bound values per
+// statement), the ballot looked up here. One query per IN_CHUNK votes, not one per 40 plus one per joined vote, so the export stays under
+// the free plan's per-request query cap however many votes exist.
+const IN_CHUNK = 90;
 async function ballotsOf(env, who) {
-  const out = [];
-  for (const { id, hash } of await callerVotes(env, who.discordId)) {
-    const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(`vote:${id}`).first();
-    let vote = null;
-    try { vote = row ? JSON.parse(row.json) : null; } catch (e) { vote = null; }
-    if (vote && vote.ballots && Object.prototype.hasOwnProperty.call(vote.ballots, hash)) out.push({ id, vote, hash, choice: vote.ballots[hash] });
+  if (!who.discordId) return [];
+  const ids = await voteIds(env), out = [];
+  const hashOf = new Map(await Promise.all(ids.map(async (id) => [id, await voterHash(who.discordId, id, env.USER_SALT)])));
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const chunk = ids.slice(i, i + IN_CHUNK);
+    for (const row of await rows(env, `SELECT key, json FROM kv_state WHERE key IN (${chunk.map(() => "?").join(", ")})`, ...chunk.map((id) => `vote:${id}`))) {
+      const id = String(row.key).slice(5), hash = hashOf.get(id);
+      let vote = null;
+      try { vote = JSON.parse(row.json); } catch (e) { vote = null; }
+      if (vote && vote.ballots && Object.prototype.hasOwnProperty.call(vote.ballots, hash)) out.push({ id, vote, hash, choice: vote.ballots[hash] });
+    }
   }
   return out;
 }
@@ -282,6 +290,7 @@ async function eraseData(request, env, who, now) {
       "Your display name, your question and the party's names and builds were sent to the AI vendor; AI Gateway request logs may keep the full request. This service cannot erase those.",
       "A member key that was already checked by another running copy of the Worker can still be accepted for read requests for up to 15 minutes; write requests re-check the database.",
       "Questions asked on Discord by someone who is not on the roster are kept under the Discord nickname and cannot be found by key; a nickname is never matched to a person.",
+      ...(who.via === "web-session" ? ["Questions asked with a board key (not on Discord) after migration 0009 carry only your member-handle hash, which a web sign-in cannot derive; they are erased only through a member-key request."] : []),
       ...(who.via === "web-session" ? ["Rows filed only under a handle or name (sheet_events, dispatches, intents, fact_fixes, and ask_turns written before migration 0009) are erased only through a member-key request."] : []),
     ],
   }, {}, [clearSession]);

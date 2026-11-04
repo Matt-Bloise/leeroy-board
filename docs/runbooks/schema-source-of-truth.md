@@ -56,3 +56,14 @@ Until the model is changed, follow exactly one of these per schema change, and s
 Make migrations the single source of truth: freeze `schema.sql` as `0000_baseline.sql` in `migrations/`, drop the `schema.sql` execute step from both workflows, and let `wrangler d1 migrations apply` build every database from zero. Then a fresh database and an upgraded one follow the same path and the `ADD COLUMN` hazard disappears. Alternative: keep `schema.sql` as a generated artifact, produced by applying all migrations and exporting the schema (`wrangler d1 export --no-data`, flag confirmed with `--help`), and have CI check it is current. Either needs a change to workflows (risk 8 to 10), so it was left out of this documentation change.
 
 Open question (unverified): production already holds a `d1_migrations` row for `0001` only if migrations have run there; confirm with `npx wrangler d1 execute leeroy-board-db --remote --command="SELECT name FROM d1_migrations;"` before renaming or merging anything into `migrations/`.
+
+## Migration 0009 deploy gap (ask_turns written by the old Worker)
+
+Between applying migration 0009 and the deploy of the Worker that writes asker rows, a few seconds of questions from the old Worker have no `ask_turn_askers` row and are not in `ask_turn_legacy`. Export and erase never find them (fail closed). After the deploy, mark them as legacy with `--before` set to the time the new Worker went live (UTC, ISO):
+
+```bash
+node infrastructure/scripts/backfill-ask-legacy.mjs --remote --before 2026-11-04T12:00:00Z --dry-run
+node infrastructure/scripts/backfill-ask-legacy.mjs --remote --before 2026-11-04T12:00:00Z
+```
+
+Dry-run lists the ids and writes nothing. It never touches a row created at or after `--before`, or a row that has an asker row. Tested in `tests/unit/ask-askers.test.mjs`. An Ask from a roster member or Discord user is now refused with 503 / an ephemeral message when `USER_SALT` is missing, instead of being stored unerasable.

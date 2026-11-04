@@ -53,7 +53,7 @@ function makeEnv(publicKeyHex) {
   const db = stubDb();
   const room = { fetch: async () => new Response("ok") };
   return {
-    env: { DB: db, DISCORD_PUBLIC_KEY: publicKeyHex, BOARD_PUBLIC_URL: "https://board.test", USER_SALT: "fixture-salt", BOARD_ROOM: { idFromName: () => "room", get: () => room } },
+    env: { DB: db, DISCORD_PUBLIC_KEY: publicKeyHex, BOARD_PUBLIC_URL: "https://board.test", USER_SALT: "fixture-salt-0123456789", BOARD_ROOM: { idFromName: () => "room", get: () => room } },
     writes: db.writes,
   };
 }
