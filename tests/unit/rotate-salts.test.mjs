@@ -13,7 +13,7 @@ import { userKey } from "../../infrastructure/worker/account.js";
 import { userHash } from "../../infrastructure/worker/answer-ux.js";
 import { voterHash } from "../../infrastructure/worker/votes.js";
 import { hashKey } from "../../infrastructure/worker/auth.js";
-import { derive, readSalts, parseIds, readExportFacts, buildPlan, fullSql, formatPlan, parseArgv, INVENTORY, BREAKS, short } from "../../tools/rotate-salts.mjs";
+import { derive, readSalts, parseIds, readExportFacts, refusalFor, buildPlan, fullSql, formatPlan, parseArgv, INVENTORY, BREAKS, short } from "../../tools/rotate-salts.mjs";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const OLD_U = "old-user-salt-0123456789-abcdefghijklmnop", NEW_U = "N3w-Us3r-Salt-Qx7!Zm29-kLpT81vW5rYb04cD", OLD_K = "old-key-salt-0123456789-abcdefghijklmnopq", NEW_K = "N3w-K3y-Salt-Rw4#Hj62-mNqS90xZ7tVc18eF";
@@ -209,6 +209,35 @@ test("the tool cannot apply, takes no salt as an argument, needs ids, and keeps 
     assert.match(inRepo.stderr, /inside this repository/);
     assert.equal(fs.existsSync(path.join(path.dirname(TOOL), "..", "plan.sql")), false);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- vote_ballots is not re-keyed, so a USER_SALT plan is refused while the export holds ballot rows
+const exportText = (...tables) => tables.map((table) => JSON.stringify({ t: "row", table, r: table === "users" ? { discord_user_id: IDS[0] } : {} })).join("\n") + "\n";
+test("a USER_SALT plan is refused (exit 3, no plan, no SQL) while the export holds a vote_ballots row; an empty table or no table still plans", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rot-vb-"));
+  try {
+    const env = { ...process.env, ...ENV };
+    const go = (text, ...extra) => {
+      const f = path.join(dir, "export.ndjson"); fs.writeFileSync(f, text);
+      const sqlOut = path.join(dir, "plan.sql"); fs.rmSync(sqlOut, { force: true });
+      const r = spawnSync("node", [TOOL, "--export", f, "--sql-out", sqlOut, ...extra], { encoding: "utf8", env });
+      return { ...r, wrote: fs.existsSync(sqlOut) };
+    };
+    const refused = go(exportText("users", "vote_ballots"));
+    assert.equal(refused.status, 3);
+    assert.match(refused.stderr, /refusing to plan a USER_SALT rotation/);
+    assert.equal(refused.wrote, false, "nothing is planned or written");
+    assert.equal(refused.stdout, "");
+    assert.equal(go(exportText("users")).status, 0, "no ballot rows: plans as before");
+    assert.equal(go(exportText("users", "vote_ballots"), "--only", "key").status, 0, "a KEY_SALT-only plan does not touch ballots");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+test("refusalFor: only a USER plan with ballot rows is refused", () => {
+  assert.match(refusalFor({ USER: {} }, { tables: { vote_ballots: 2 } }), /2 vote_ballots row/);
+  assert.equal(refusalFor({ USER: {} }, { tables: { vote_ballots: 0 } }), null);
+  assert.equal(refusalFor({ USER: {} }, { tables: {} }), null);
+  assert.equal(refusalFor({ KEY: {} }, { tables: { vote_ballots: 2 } }), null);
+  assert.equal(refusalFor({ USER: {} }, null), null);
 });
 
 // ---- the inventory must stay complete

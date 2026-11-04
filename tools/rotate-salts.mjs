@@ -54,7 +54,7 @@ export const INVENTORY = [
   { salt: "USER_SALT", where: "ask_turn_askers.asker_hash", scheme: "sha256(USER_SALT:answer-ux:<discord id>) and/or sha256(USER_SALT:answer-ux:slug:<member slug>), one row per hash", source: "worker/answer-ux.js askerHashes", rederive: "yes, for known ids and slugs", action: "UPDATE old to new (without it, an old question is no longer found by erase and export)" },
   { salt: "USER_SALT", where: "answer_feedback.user_hash", scheme: "sha256(USER_SALT:answer-ux:<discord id>)", source: "worker/answer-ux.js userHash", rederive: "yes, for known ids", action: "UPDATE OR IGNORE old to new, then delete leftovers (rows expire after 90 days)" },
   { salt: "USER_SALT", where: "kv_state vote:<id> .ballots keys", scheme: "sha256(USER_SALT:vote:<vote id>:<discord id>)", source: "worker/votes.js voterHash", rederive: "yes, for known ids and known vote ids", action: "json_set the ballot under its new key" },
-  { salt: "USER_SALT", where: "vote_ballots.voter_hash", scheme: "sha256(USER_SALT:vote:<vote id>:<discord id>)", source: "worker/votes.js voterHash", rederive: "yes, for known ids and known vote ids", action: "NOT re-keyed by this tool yet (ballots cast after migration 0010 live here, not in the vote document): follow-up needed before a USER_SALT rotation" },
+  { salt: "USER_SALT", where: "vote_ballots.voter_hash", scheme: "sha256(USER_SALT:vote:<vote id>:<discord id>)", source: "worker/votes.js voterHash", rederive: "yes, for known ids and known vote ids", action: "NOT re-keyed: the tool REFUSES a USER_SALT plan when --export holds any vote_ballots row (see refusalFor); needs a re-key step with collision handling first" },
   { salt: "USER_SALT", where: "guest_rate_limits.ip_hash", scheme: "sha256(USER_SALT:guest-ask:<ip>)", source: "worker/guest-key.js", rederive: "NO (visitor addresses are not stored)", action: "DELETE all rows: they are short-lived counters" },
   { salt: "USER_SALT", where: "audit_log.target (action 'erase')", scheme: "sha256(USER_SALT:erase:<random uuid>)", source: "worker/data-rights.js", rederive: "NO (random, tied to nobody)", action: "none: opaque records, never looked up by hash" },
   { salt: "USER_SALT", where: "Discord button ids (not stored)", scheme: "HMAC-SHA256(USER_SALT, answer-ux:<kind>:<intent>:<message>)", source: "worker/answer-ux.js signButton", rederive: "NO (signed into messages already posted)", action: "none: More, Sources, Helpful and Off on old answers stop working" },
@@ -102,6 +102,17 @@ export function parseIds(text) {
 }
 
 // Reads an export from tools/pull-export.mjs: ids, vote ids, slugs and the rows we can classify. No I/O beyond the string it is given.
+// Why a plan must not be made, or null. Ballots cast after migration 0010 live in vote_ballots.voter_hash, which this tool does not re-key:
+// after a USER_SALT flip a returning voter would be counted twice and the old rows orphaned. So a USER_SALT plan is refused while the export
+// holds such a row. (The tool opens no database: it can only see what --export shows it. Run it with a fresh --export.)
+export function refusalFor(salts, facts) {
+  const n = facts && facts.tables ? facts.tables.vote_ballots || 0 : 0;
+  if (salts && salts.USER && n > 0) {
+    return `refusing to plan a USER_SALT rotation: the export holds ${n} vote_ballots row(s) and this tool does not re-key vote_ballots.voter_hash (voters would be counted twice after the flip). Add the re-key step first, or use --only key.`;
+  }
+  return null;
+}
+
 export function readExportFacts(text) {
   const facts = { ids: new Set(), voteIds: new Set(), slugs: new Set(), userState: [], feedback: [], details: [], ballots: {}, tables: {} };
   for (const raw of String(text).split("\n")) {
@@ -262,6 +273,8 @@ function main() {
     if (o.slugs) list(o.slugs, SLUG_RE, "slug").forEach((x) => slugs.add(x));
     if (o["sql-out"] && insideRepo(o["sql-out"])) throw new Error("--sql-out is inside this repository; it holds hashes of Discord ids. Choose a path outside it.");
   } catch (e) { console.error(`error: ${e.message}`); process.exit(2); }
+  const refused = refusalFor(salts, facts);
+  if (refused) { console.error(`error: ${refused}`); process.exit(3); }
   if (salts.USER && !ids.size) { console.error("error: no Discord ids given. Without them nothing can be re-derived (use --ids-file and/or --export)."); process.exit(2); }
   const plan = buildPlan({ salts, ids: [...ids].sort(), voteIds: [...voteIds].sort(), slugs: [...slugs].sort(), facts, reverse: !!o.reverse });
   if (ignored) plan.ignored_ids = ignored;
