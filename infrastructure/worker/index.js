@@ -46,7 +46,7 @@ import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { publicParty, partyForMember } from "./sheet-privacy.js";
-import { saltProblems, saltErrorBody } from "./salts.js";
+import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
 import { afterSignupChange } from "./cards-handler.js";
@@ -203,11 +203,12 @@ export async function broadcastToRoom(env, payload) {
   try {
     const id = env.BOARD_ROOM.idFromName("global");
     const stub = env.BOARD_ROOM.get(id);
-    await stub.fetch("https://room.internal/broadcast", {
+    const res = await stub.fetch("https://room.internal/broadcast", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(webBoardLinksDeep(payload)),
     });
+    if (res && res.ok === false) console.error("BoardRoom refused a broadcast:", res.status); // e.g. 413 payload_too_large
   } catch (err) {
     console.error("Failed to broadcast to BoardRoom:", err);
   }
@@ -316,13 +317,12 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       const m = (partyDoc.members || []).find(
         (x) => (x.name || "").toLowerCase() === name.toLowerCase()
       );
-      if (m && value !== undefined && value !== null) {
-        // The party document is public (GET /data/party): a hidden field is never copied into it.
-        if (visible !== false) {
-          if (field === "race") m.race = String(value);
-          if (field === "class") m.class = String(value);
-          if (field === "spec_path") m.spec = String(value);
-        }
+      const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
+      if (m && PUBLIC_KEY[field] && (visible === false || (value !== undefined && value !== null))) {
+        // The party document is public (GET /data/party): a hidden field is never copied into it, and a field that turns hidden loses the
+        // value it published earlier.
+        if (visible === false) delete m[PUBLIC_KEY[field]];
+        else m[PUBLIC_KEY[field]] = String(value);
         batchStatements.push(
           env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'party'")
             .bind(JSON.stringify(partyDoc), now)
@@ -1615,7 +1615,12 @@ export default {
             guestLeft = Math.max(0, 2 - guestCount);
           }
 
-          await insertAskTurn(env, { id: intentId, byName: askBy, question, provider: activeProvider, share, createdAt: now }, isGuest ? {} : { slug: memberSlug });
+          try {
+            await insertAskTurn(env, { id: intentId, byName: askBy, question, provider: activeProvider, share, createdAt: now }, isGuest ? {} : { slug: memberSlug });
+          } catch (e) {
+            if (!(e instanceof SaltMissingError)) throw e;
+            return jsonResp(saltErrorBody(e.missing), 503, cors);
+          }
 
           const { seq } = await insertIntent(env, {
             slug: askSlug,

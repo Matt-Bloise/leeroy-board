@@ -32,15 +32,15 @@ import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } fro
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
-import { saltProblems } from "./salts.js";
+import { saltProblems, SaltMissingError } from "./salts.js";
 import { BUILD_MODAL_ID, buildModalEnabled, buildProjectEnabled, buildModalResponse, parseBuildSubmit, saveConfirmedBuild, isSnowflake } from "./build-modal.js";
 import { projectBuild } from "./project-build.js";
 import { JOIN_COMMAND_NAME, JOIN_BUTTON_ID, shouldHint, joinHintBody } from "./join.js";
 import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-command.js";
-import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordInIndex } from "./votes.js";
+import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordBallot, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
-import { cardsEnabled, requestCardEdit } from "./cards.js";
+import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { flushBoardLines } from "./board-lines.js";
 import {
@@ -172,7 +172,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
           { name: "The Crossroads", value: "The Crossroads" },
         ],
       },
-      { name: "place", description: "Somewhere else: type your custom meeting point", type: 3, required: false },
+      { name: "place", description: "Somewhere else: type your custom meeting point", type: 3, required: false, max_length: WRITE_IN_MAX },
       {
         name: "rsvp",
         description: "Launch night attendance",
@@ -208,7 +208,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
           { name: "Arrival Time", value: "when" },
         ],
       },
-      { name: "value", description: "Value for quick update field", type: 3, required: false },
+      { name: "value", description: "Value for quick update field", type: 3, required: false, max_length: WRITE_IN_MAX },
     ],
   },
   {
@@ -363,6 +363,38 @@ export async function verifyDiscordSignature(req, rawBody, publicKeyHex) {
     return false;
   }
 }
+
+// ---- sign-up write validation ---------------------------------------------------------------------------------------------------
+// Only these entry fields may be written from a slash command or a button. Anything else is refused, never stored.
+export const SIGNUP_WRITABLE_FIELDS = ["rsvp", "pack", "meet", "when"];
+
+// Validate one (field, value) pair against the allow-list. `options` is the signups document's `options` (meet/when choices).
+// Returns { ok: true, value } with the value to store, or { ok: false, error }. Server-side: the manifest max_length is only a client hint.
+//   rsvp: in|maybe|late|out    pack: yes|no    when: one of the document's options
+//   meet: a button token (vos, xroads, mN), a listed meeting point, or (freeText) a typed place cleaned by sanitiseWriteIn (<= 40).
+export function validateSignupField(field, value, options, { freeText = false } = {}) {
+  if (typeof field !== "string" || !SIGNUP_WRITABLE_FIELDS.includes(field)) return { ok: false, error: "field" };
+  if (typeof value !== "string" || !value) return { ok: false, error: "value" };
+  if (field === "meet") {
+    const token = resolveChoice("meet", value, options);
+    if (token) return { ok: true, value: token };
+    // The slash command's static choices are always valid, whatever custom options the document carries.
+    const listed = [...DEFAULT_MEET, ...(Array.isArray(options && options.meet) ? options.meet.map(String) : [])];
+    if (listed.includes(value)) return { ok: true, value };
+    if (!freeText) return { ok: false, error: "value" };
+    const clean = sanitiseWriteIn(value, WRITE_IN_MAX);
+    return clean ? { ok: true, value: clean } : { ok: false, error: "value" };
+  }
+  if (field === "when" && (DEFAULT_WHEN.includes(value) || whenOptions(options).includes(value))) return { ok: true, value };
+  const v = resolveChoice(field, value, options);
+  return v ? { ok: true, value: v } : { ok: false, error: "value" };
+}
+
+const signupRejection = (what) =>
+  new Response(
+    JSON.stringify({ type: 4, data: { content: `That sign-up update was not recorded: ${what}.`, flags: 64 } }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
 
 export async function recomputeSignupTallies(signupsDoc) {
   const entries = Array.isArray(signupsDoc.entries) ? signupsDoc.entries : [];
@@ -810,7 +842,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
       const now = new Date().toISOString();
 
-      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      try {
+        await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      } catch (e) {
+        if (!(e instanceof SaltMissingError)) throw e;
+        return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
 
       await insertIntent(env, {
         slug: intentSlug,
@@ -1056,19 +1093,26 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const quickField = getOpt("field");
       const quickVal = getOpt("value");
 
-      const patch = {};
-      if (pack) patch.pack = pack;
-      if (meet) patch.meet = meet;
-      if (place) patch.meet = place;
-      if (rsvp) patch.rsvp = rsvp;
-      if (when) patch.when = when;
-      if (quickField && quickVal) {
-        patch[quickField] = quickVal === "vos" ? "Valley of Strength" : quickVal === "xroads" ? "The Crossroads" : quickVal;
+      const raw = Object.create(null); // null prototype: a "__proto__" quick field must be an ordinary key that validation then rejects
+      if (pack) raw.pack = [pack, false];
+      if (meet) raw.meet = [meet, false];
+      if (place) raw.meet = [place, true];
+      if (rsvp) raw.rsvp = [rsvp, false];
+      if (when) raw.when = [when, false];
+      if (quickField || quickVal) {
+        if (!quickField || !quickVal) return signupRejection("`field` and `value` go together");
+        raw[quickField] = [quickVal, true];
       }
 
-      if (Object.keys(patch).length > 0) {
+      if (Object.keys(raw).length > 0) {
         const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
         const doc = row ? JSON.parse(row.json) : { entries: [] };
+        const patch = {};
+        for (const [k, [v, free]] of Object.entries(raw)) {
+          const checked = validateSignupField(k, v, doc.options, { freeText: free });
+          if (!checked.ok) return signupRejection(checked.error === "field" ? `\`${String(k).slice(0, 20)}\` is not a sign-up field` : `invalid value for **${k}**`);
+          patch[k] = checked.value;
+        }
         const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
         doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
         let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
@@ -1590,7 +1634,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: applied.code === "forbidden" ? "You can only answer your own questions." : `No question found with id **${id}**.`,
+              content: applied.code === "forbidden" ? "You can only answer your own questions." : applied.code === "already_answered" ? "That question already has an answer. Ask a server admin if it needs correcting." : `No question found with id **${id}**.`,
               flags: 64,
             },
           }),
@@ -1641,7 +1685,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
       const intentId = crypto.randomUUID();
       const provider = resolveAiProvider(env);
-      await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      try {
+        await insertAskTurn(env, { id: intentId, byName, question: text, provider, share: true, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+      } catch (e) {
+        if (!(e instanceof SaltMissingError)) throw e;
+        return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
 
       await insertIntent(env, {
         slug: intentSlug,
@@ -1769,7 +1818,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (saltProblems(env, ["USER_SALT"]).length) return ephemeral("Voting is unavailable: the Worker is missing its USER_SALT secret.");
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
-    await saveVote(env.DB, result.vote, nowMs);
+    await recordBallot(env.DB, vote.id, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
+    const fresh = (await loadVote(env.DB, vote.id)) || result.vote; // re-read so the counts shown include ballots cast at the same moment
     await purgeWorkerCache(origin, ["/api/votes"]);
     const picked = result.vote.choices[parsed.index];
     const note = result.changed ? `Changed your vote to **${picked}**.` : `Counted your vote for **${picked}**.`;
@@ -1782,7 +1832,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         }).catch(() => {})
       );
     }
-    return new Response(JSON.stringify({ type: 7, data: renderMessage(result.vote, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ type: 7, data: renderMessage(fresh, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } });
   }
 
   // 3a. CARDS_ENABLED: sign-up card buttons (type 3) and the write-in / select modals (type 5). Replaces 3b for `signup:` ids.
@@ -1819,37 +1869,41 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   // 3b. Message Component Buttons (Type 3): Sign-ups & Party card buttons (`signup:<field>:<value>`)
   if (interaction.type === 3 && interaction.data && interaction.data.custom_id) {
     const customId = String(interaction.data.custom_id);
-    const [, field, val] = customId.split(":");
-    if (field && val) {
+    const parts = customId.split(":");
+    if (parts[0] === "signup") {
       if (!member) return unknownMemberResponse();
+      if (parts.length !== 3) return signupRejection("unrecognised button");
       const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-      if (row) {
-        const doc = JSON.parse(row.json);
-        doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-        let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
-        if (!entry) {
-          entry = { slug: member.slug, name: byName };
-          doc.entries.push(entry);
-        }
-        entry[field] = val === "vos" ? "Valley of Strength" : val === "xroads" ? "The Crossroads" : val;
-        entry.updated = new Date().toISOString();
-        await recomputeSignupTallies(doc);
-
-        await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-          .bind(JSON.stringify(doc), entry.updated)
-          .run();
-
-        await insertIntent(env, {
-          slug: member.slug,
-          kind: "signup",
-          body: { patch: { [field]: entry[field] }, entry },
-          ver: 1,
-          at: entry.updated,
-        });
-
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
-        await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
+      if (!row) return signupRejection("the sign-ups board is not set up yet");
+      const doc = JSON.parse(row.json);
+      const checked = validateSignupField(parts[1], parts[2], doc.options);
+      if (!checked.ok) return signupRejection("unrecognised button");
+      const field = parts[1];
+      const val = checked.value;
+      doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+      let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
+      if (!entry) {
+        entry = { slug: member.slug, name: byName };
+        doc.entries.push(entry);
       }
+      entry[field] = val;
+      entry.updated = new Date().toISOString();
+      await recomputeSignupTallies(doc);
+
+      await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
+        .bind(JSON.stringify(doc), entry.updated)
+        .run();
+
+      await insertIntent(env, {
+        slug: member.slug,
+        kind: "signup",
+        body: { patch: { [field]: val }, entry },
+        ver: 1,
+        at: entry.updated,
+      });
+
+      await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+      await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
       return new Response(
         JSON.stringify({
           type: 4,

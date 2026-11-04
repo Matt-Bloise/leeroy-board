@@ -470,3 +470,12 @@ CREATE TABLE IF NOT EXISTS request_gauge (
   day TEXT PRIMARY KEY CHECK (length(day) = 10),
   n INTEGER NOT NULL DEFAULT 0 CHECK (n >= 0)
 );
+
+-- One row per vote ballot (migration 0010): a cast is one upsert, so concurrent casts cannot lose each other. voter_hash is salted, never a raw id.
+CREATE TABLE IF NOT EXISTS vote_ballots (
+  vote_id TEXT NOT NULL CHECK (length(vote_id) = 8),
+  voter_hash TEXT NOT NULL CHECK (length(voter_hash) = 64),
+  choice INTEGER NOT NULL CHECK (choice >= 0 AND choice <= 4),
+  cast_at TEXT NOT NULL,
+  PRIMARY KEY (vote_id, voter_hash)
+);

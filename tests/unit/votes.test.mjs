@@ -159,7 +159,7 @@ test("loadPublicVotes returns only the public view", async () => {
   const store = { "votes:index": { ids: ["0a1b2c3d", "ffffffff", "not-an-id"] }, "vote:0a1b2c3d": v };
   const db = {
     prepare: (sql) => ({
-      bind: (key) => ({ first: async () => (store[key] ? { json: JSON.stringify(store[key]) } : null) }),
+      bind: (key) => ({ first: async () => (store[key] ? { json: JSON.stringify(store[key]) } : null), all: async () => ({ results: [] }) }), // no vote_ballots rows
       first: async () => (sql.includes("votes:index") ? { json: JSON.stringify(store["votes:index"]) } : null),
     }),
   };

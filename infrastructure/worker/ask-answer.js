@@ -3,7 +3,8 @@
 //   - status 'answered' (what GET /ask and the feed read), or 'error' when the answer failed; never 'done'/'failed'
 //   - a provider error is stored and sent only as shortProviderError (secret-free, 60 characters)
 //   - a private ask (share = 0) puts no question or answer on the sockets, only a nudge to re-read
-//   - a non-admin may only answer an ask that carries their own name
+//   - a non-admin may only answer an ask that carries their own name, and only while it is still waiting ("thinking", or "pending" by the
+//     schema default). An answered or errored ask is final for them; an admin may still correct it.
 import { shortProviderError } from "./ai-models.js";
 
 const MAX_SOURCES_CHARS = 1000;
@@ -15,18 +16,25 @@ export function sourcesText(sources) {
   return text || null;
 }
 
-// Returns { ok: false, code: "not_found" | "forbidden" } or { ok: true, status, share, broadcast } where broadcast is the payload for the room.
+// Returns { ok: false, code: "not_found" | "forbidden" | "already_answered" } or { ok: true, status, share, broadcast } where broadcast is the payload for the room.
 export async function applyManualAnswer(env, { id, answer, sources, failed, byName, isAdmin, now = new Date().toISOString() }) {
-  const row = await env.DB.prepare("SELECT id, by_name, share FROM ask_turns WHERE id = ?").bind(String(id)).first();
+  const row = await env.DB.prepare("SELECT id, by_name, share, status FROM ask_turns WHERE id = ?").bind(String(id)).first();
   if (!row) return { ok: false, code: "not_found" };
   if (!isAdmin && String(row.by_name) !== String(byName || "")) return { ok: false, code: "forbidden" };
+
+  const waiting = row.status === "thinking" || row.status === "pending";
+  if (!isAdmin && !waiting) return { ok: false, code: "already_answered" };
 
   const reason = failed ? shortProviderError(failed) : "";
   const status = failed ? "error" : "answered";
   const model = failed ? `manual (failed: ${reason})`.slice(0, 120) : "manual";
-  await env.DB.prepare("UPDATE ask_turns SET answer = COALESCE(?, answer), model = ?, status = ?, answered_at = ? WHERE id = ?")
-    .bind(answer || null, model, status, now, String(id))
+  // The status test is inside the UPDATE, so a second non-admin answer racing the first changes nothing instead of overwriting it.
+  const upd = await env.DB.prepare(
+    "UPDATE ask_turns SET answer = COALESCE(?, answer), model = ?, status = ?, answered_at = ? WHERE id = ? AND (? = 1 OR status IN ('thinking', 'pending'))"
+  )
+    .bind(answer || null, model, status, now, String(id), isAdmin ? 1 : 0)
     .run();
+  if (!isAdmin && upd && upd.meta && upd.meta.changes === 0) return { ok: false, code: "already_answered" };
 
   const src = sourcesText(sources);
   if (src) {
