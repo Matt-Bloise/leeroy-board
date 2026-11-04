@@ -216,24 +216,24 @@ test("the subcommand check itself rejects enable, disable, update, delete, split
   assert.deepEqual(forbiddenFlagshipSubcommands("# wrangler flagship flags enable is done by the owner\nrun: wrangler flagship flags create A K"), [], "comments are not code");
 });
 
-// B46: the comment stripper must not treat a # inside quotes or ${{ }} as a comment start (that would hide a secret that follows it).
-test("the comment stripper keeps a secret that follows a quoted # (cases the guard must catch)", () => {
-  assert.deepEqual(secretNames('run: echo "#" "${{ secrets.X }}"'), ["X"], "double-quoted #");
-  assert.deepEqual(secretNames("run: echo '#' \"${{ secrets.X }}\""), ["X"], "single-quoted #");
-  assert.deepEqual(secretNames("run: echo '# ${{ secrets.X }}'"), ["X"], "secret inside single quotes after #");
-  assert.deepEqual(secretNames('run: echo "a \\" # \" ${{ secrets.X }}"'), ["X"], "escaped quote inside double quotes");
-  assert.deepEqual(secretNames("run: echo ${{ format('#{0}', secrets.X) }}"), ["X"], "# inside a ${{ }} expression");
-  assert.deepEqual(secretNames('env: { A: "x #y", B: ${{ secrets.X }} }'), ["X"], "secret after a quoted # on the same line");
-  assert.deepEqual(secretNames('run: echo "#" # real comment\nrun: ${{ secrets.Y }}'), ["Y"], "a real comment after a quoted # still ends that line");
+// B46: a line is a comment only when its first non-space character is `#`; nothing after an inline `#` is stripped (tests/helpers/yaml-comments.mjs).
+test("the comment stripper keeps a secret that an inline # (or a quote trick) could hide", () => {
+  const caught = {
+    "echo with a quoted #": 'run: echo "#" "${{ secrets.X }}"',
+    "# inside single quotes": "run: echo '#' \"${{ secrets.X }}\"",
+    "secret after a quoted #": 'env: { A: "x #y", B: ${{ secrets.X }} }',
+    "escaped quote outside a quote": 'run: echo \\" # ${{ secrets.X }}',
+    "}} inside a string literal in an expression": "run: echo ${{ '}}' }} # ${{ secrets.X }}",
+    "multiline quoted scalar": 'run: "echo \\"\n  ${{ secrets.X }} # \\""',
+    "trailing comment naming a secret": "run: make build # uses ${{ secrets.X }}",
+  };
+  for (const [name, text] of Object.entries(caught)) assert.deepEqual(secretNames(text), ["X"], name);
 });
 
-test("the comment stripper still ignores real comments (cases that must pass)", () => {
+test("the comment stripper ignores whole-line comments only", () => {
   assert.deepEqual(secretNames("# uses secrets.X for the deploy"), [], "plain comment line");
   assert.deepEqual(secretNames("    # secrets.X is read in the production job"), [], "indented comment line");
-  assert.deepEqual(secretNames("run: make build # never uses secrets.X"), [], "trailing comment naming secrets");
-  assert.deepEqual(secretNames('run: echo "done" # see secrets.X'), [], "trailing comment after a quoted string");
-  assert.deepEqual(secretNames("run: echo ${{ github.sha }} # secrets.X"), [], "trailing comment after an expression");
-  assert.equal(code("a: b # c").trimEnd(), "a: b", "the code before the comment is kept");
-  assert.equal(code('a: "b # c"'), 'a: "b # c"', "a quoted # is kept");
-  assert.equal(code("url: http://x/y#frag"), "url: http://x/y#frag", "# not preceded by whitespace is not a comment");
+  assert.deepEqual(secretNames("run: make build\n# secrets.X\nrun: ${{ secrets.Y }}"), ["Y"], "only the comment line is dropped");
+  assert.equal(code("a: b # c"), "a: b # c", "an inline # strips nothing");
+  assert.equal(code("  # c\nb: 1"), "\nb: 1", "a whole-line comment is blanked, line numbers kept");
 });
