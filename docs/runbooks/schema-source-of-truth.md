@@ -59,11 +59,11 @@ Open question (unverified): production already holds a `d1_migrations` row for `
 
 ## Migration 0009 deploy gap (ask_turns written by the old Worker)
 
-Between applying migration 0009 and the deploy of the Worker that writes asker rows, a few seconds of questions from the old Worker have no `ask_turn_askers` row and are not in `ask_turn_legacy`. Export and erase never find them (fail closed). After the deploy, mark them as legacy with `--before` set to the time the new Worker went live (UTC, ISO):
+Between applying migration 0009 and the deploy of the Worker that writes asker rows, a few seconds of questions from the old Worker have no `ask_turn_askers` row and are not in `ask_turn_legacy`. Export and erase never find them (fail closed). After the deploy, mark them as legacy with `--before` set to the time the new Worker went live (UTC, ISO; read it from `npx wrangler deployments list` in `infrastructure/`, run `npm ci` there first):
 
 ```bash
 node infrastructure/scripts/backfill-ask-legacy.mjs --remote --before 2026-11-04T12:00:00Z --dry-run
 node infrastructure/scripts/backfill-ask-legacy.mjs --remote --before 2026-11-04T12:00:00Z
 ```
 
-Dry-run lists the ids and writes nothing. It never touches a row created at or after `--before`, or a row that has an asker row. Tested in `tests/unit/ask-askers.test.mjs`. An Ask from a roster member or Discord user is now refused with 503 / an ephemeral message when `USER_SALT` is missing, instead of being stored unerasable.
+Dry-run lists the ids and writes nothing. It never touches a row created at or after `--before`, a row that has an asker row, or a web visitor row (`by_name = 'Visitor'`). Tested in `tests/unit/ask-askers.test.mjs`. An Ask from a roster member or Discord user is now refused with 503 / an ephemeral message when `USER_SALT` is missing, instead of being stored unerasable.

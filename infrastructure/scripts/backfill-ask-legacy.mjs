@@ -6,9 +6,11 @@
 //   node infrastructure/scripts/backfill-ask-legacy.mjs --remote|--local --before 2026-11-04T12:00:00Z [--dry-run]
 // --dry-run prints the count and the ids and changes nothing. Nothing is written without --remote or --local being named.
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-export const GAP_WHERE = "id NOT IN (SELECT intent_id FROM ask_turn_askers) AND id NOT IN (SELECT intent_id FROM ask_turn_legacy) AND created_at < ?";
+// A web visitor row ("Visitor") has no asker row by design and must never become name-matchable, so it is never marked.
+export const GAP_WHERE = "id NOT IN (SELECT intent_id FROM ask_turn_askers) AND id NOT IN (SELECT intent_id FROM ask_turn_legacy) AND created_at < ? AND by_name <> 'Visitor'";
 
 // db: a D1 binding or anything with prepare().bind().all()/run(). -> { ids, marked }
 export async function backfillAskLegacy(db, { before, dryRun = false } = {}) {
@@ -25,7 +27,10 @@ export async function backfillAskLegacy(db, { before, dryRun = false } = {}) {
 function cliDb(target) {
   const run = (sql, args) => {
     const bound = sql.replace(/\?/g, () => `'${String(args.shift()).replace(/'/g, "''")}'`);
-    const out = execFileSync("npx", ["wrangler", "d1", "execute", "leeroy-board-db", target, "--json", "--command", bound], { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" });
+    // node + wrangler's own entry file, not npx: npx is npx.cmd on Windows, which execFileSync cannot start (ENOENT / EINVAL)
+    const infra = fileURLToPath(new URL("..", import.meta.url)), wrangler = fileURLToPath(new URL("../node_modules/wrangler/bin/wrangler.js", import.meta.url));
+    if (!existsSync(wrangler)) throw new Error("wrangler is not installed: run npm ci in infrastructure/ first");
+    const out = execFileSync(process.execPath, [wrangler, "d1", "execute", "leeroy-board-db", target, "--json", "--command", bound], { cwd: infra, encoding: "utf8" });
     return JSON.parse(out)[0] || {};
   };
   return { prepare: (sql) => { let a = []; const o = { bind: (...x) => { a = x; return o; }, all: async () => ({ results: run(sql, [...a]).results || [] }), run: async () => ({ meta: { changes: (run(sql, [...a]).meta || {}).changes || 0 } }) }; return o; } };

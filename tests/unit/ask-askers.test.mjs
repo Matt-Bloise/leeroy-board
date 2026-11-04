@@ -87,6 +87,7 @@ test("backfill marks only unhashed, unmarked rows older than --before; dry-run c
   raw("gap-1", "2026-11-04T11:59:58.000Z"); raw("gap-2", "2026-11-04T11:59:59.000Z");
   raw("after", "2026-11-04T12:00:05.000Z"); // written by the new Worker's window: must not be marked
   raw("already", "2026-11-04T11:00:00.000Z"); db.raw.prepare("INSERT INTO ask_turn_legacy VALUES ('already')").run();
+  raw("visitor", "2026-11-04T11:00:00.000Z"); db.raw.prepare("UPDATE ask_turns SET by_name = 'Visitor' WHERE id = 'visitor'").run(); // a web visitor: no asker row by design
   await insertAskTurn(env, ROW("hashed"), { discordId: ME }); // has an asker row
   const before = "2026-11-04T12:00:00Z";
   const dry = await backfillAskLegacy(db, { before, dryRun: true });
@@ -137,4 +138,68 @@ test("export reads vote documents with IN(...) chunks under D1's 100-parameter l
   assert.ok(sqls.every((q) => q.params <= 100), "a statement exceeds D1's 100 bound parameters");
   assert.equal(sqls.filter((q) => /^SELECT key, json FROM kv_state WHERE key IN \(/.test(q.sql)).length, 3, "200 votes -> 3 IN(...) reads of at most 90 keys");
   assert.ok(sqls.filter((q) => /kv_state/.test(q.sql) && /vote/i.test(q.sql)).length <= 4, "query count for 200 votes stays small");
+});
+
+// ---- vote_ballots (PR 173, migration 0010): export and erase cover ballots kept as rows; bounded work per request
+const OTHER = "100000000000000002", COOKIE_TOKEN = "C".repeat(43);
+async function voteRig({ votes = 3, table = true, mine = [0], docBallotFor = [] } = {}) {
+  const { default: worker } = await import("../../infrastructure/worker/index.js");
+  const { voterHash } = await import("../../infrastructure/worker/votes.js");
+  invalidateConfigCache(); _resetDataRights();
+  const db = schemaDb(), raw = db.raw, th = await webSessionHash(COOKIE_TOKEN), now = new Date().toISOString();
+  if (table) raw.exec("CREATE TABLE vote_ballots (vote_id TEXT NOT NULL, voter_hash TEXT NOT NULL, choice INTEGER NOT NULL, PRIMARY KEY (vote_id, voter_hash))");
+  for (const d of [ME, OTHER]) raw.prepare("INSERT INTO users (discord_user_id, display_name, created_at) VALUES (?, 'P', 'x')").run(d);
+  raw.prepare("INSERT INTO sessions_v2 (token_hash, discord_user_id, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)").run(th, ME, now, new Date(Date.now() + 86400000).toISOString(), now);
+  const ids = [];
+  for (let i = 0; i < votes; i++) {
+    const id = (0xdef000 + i).toString(16).padStart(8, "0"); ids.push(id);
+    const ballots = docBallotFor.includes(i) ? { [await voterHash(ME, id, USER_SALT)]: 1 } : {};
+    raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(`vote:${id}`, JSON.stringify({ id, title: `Vote ${i}`, choices: ["a", "b", "c"], ballots }));
+    if (table && mine.includes(i)) raw.prepare("INSERT INTO vote_ballots VALUES (?, ?, 2)").run(id, await voterHash(ME, id, USER_SALT));
+    if (table) raw.prepare("INSERT INTO vote_ballots VALUES (?, ?, 0)").run(id, await voterHash(OTHER, id, USER_SALT));
+  }
+  let prepared = 0; const real = db.prepare;
+  const env = { DB: { ...db, prepare: (sql) => { prepared++; return real(sql); } }, USER_SALT, KEY_SALT, DATA_RIGHTS: "on", WEB_LOGIN: "on", ALLOWED_ORIGINS: "https://leeroy.test" };
+  const call = (path, method = "GET") => { prepared = 0; return worker.fetch(new Request(`https://api.test${path}`, { method, headers: { Cookie: `${SESS_COOKIE}=${COOKIE_TOKEN}`, Origin: "https://leeroy.test", "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9" }, body: method === "POST" ? JSON.stringify({ confirm: "erase my data" }) : undefined }), env, { waitUntil() {}, passThroughOnException() {} }); };
+  return { raw, call, ids, statements: () => prepared };
+}
+
+test("vote_ballots rows: the export lists the choice, the erase deletes the person's rows and leaves everyone else's", async () => {
+  const r = await voteRig({ votes: 3, mine: [0, 2], docBallotFor: [1] });
+  const exp = await (await r.call("/api/me/export")).json();
+  assert.deepEqual(exp.legacy.vote_ballots.map((b) => [b.vote_id, b.title, b.choice]).sort(), [[r.ids[0], "Vote 0", 2], [r.ids[1], "Vote 1", 1], [r.ids[2], "Vote 2", 2]]);
+  const res = await r.call("/api/me/erase", "POST");
+  assert.equal(res.status, 200);
+  assert.ok((await res.json()).erased_includes.join(" ").includes("per-ballot"));
+  assert.equal(n({ raw: r.raw }, "SELECT COUNT(*) AS c FROM vote_ballots WHERE voter_hash IN (SELECT voter_hash FROM vote_ballots) AND vote_id IN (?, ?, ?)", ...r.ids), 3, "only the other person's three rows are left");
+  assert.equal(r.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, 3);
+  assert.ok(!JSON.stringify(r.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(`vote:${r.ids[1]}`)).includes('\\"ballots\\":{\\"'), "the document ballot is gone too");
+});
+
+test("without the vote_ballots table (migration 0010 not applied) export and erase work and say nothing about it", async () => {
+  const r = await voteRig({ votes: 2, table: false, docBallotFor: [0] });
+  const exp = await r.call("/api/me/export");
+  assert.equal(exp.status, 200);
+  assert.deepEqual((await exp.json()).legacy.vote_ballots.map((b) => b.vote_id), [r.ids[0]]);
+  assert.equal((await r.call("/api/me/erase", "POST")).status, 200);
+});
+
+test("work per request is bounded: at the maximum the statements stay under 50; one vote past it is a 413 that names the maximum and changes nothing", async () => {
+  const { MAX_VOTES } = await import("../../infrastructure/worker/data-rights.js");
+  const at = await voteRig({ votes: MAX_VOTES, mine: [0, MAX_VOTES - 1] });
+  const exp = await at.call("/api/me/export");
+  assert.equal(exp.status, 200);
+  assert.equal((await exp.json()).legacy.vote_ballots.length, 2);
+  assert.ok(at.statements() < 50, `export used ${at.statements()} statements at the maximum`);
+  assert.equal((await at.call("/api/me/erase", "POST")).status, 200);
+  assert.ok(at.statements() < 50, `erase used ${at.statements()} statements at the maximum`);
+  assert.equal(at.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, MAX_VOTES, "only the bystander rows remain");
+  const over = await voteRig({ votes: MAX_VOTES + 1, mine: [0] });
+  for (const [path, method] of [["/api/me/export", "GET"], ["/api/me/erase", "POST"]]) {
+    const res = await over.call(path, method), body = await res.json();
+    assert.equal(res.status, 413); assert.equal(body.error, "too_many_votes"); assert.equal(body.max_votes, MAX_VOTES);
+    assert.ok(over.statements() < 50);
+  }
+  assert.equal(over.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, MAX_VOTES + 2, "a refused erase changed nothing");
+  assert.equal(over.raw.prepare("SELECT COUNT(*) AS c FROM users").get().c, 2, "the account is still there");
 });
