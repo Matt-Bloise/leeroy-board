@@ -17,7 +17,7 @@ const MUTATIONS = [
   { css: "clip-tile-title.css", expect: ["tile-clip"] },
   { css: "hide-tiles.css", expect: ["tile-clip"] },
   { css: "csp-violation.css", expect: ["csp-violation"] },
-  { js: "csp-violation-scene.js", expect: ["csp-violation"] },
+  { js: "csp-violation-scene.js", expect: ["csp-violation"], detail: "csp-mutation.invalid/scene.png" },
 ];
 const tmp = mkdtempSync(path.join(os.tmpdir(), "sweep-mutation-"));
 let bad = 0;
@@ -35,6 +35,8 @@ for (const m of MUTATIONS) {
   const seen = r.rep ? [...new Set(r.rep.failures.map((f) => f.invariant))] : [];
   ok(`mutation ${f}: the sweep FAILS`, r.code === 1, `exit ${r.code}`);
   ok(`mutation ${f}: names ${m.expect.join(" or ")}`, m.expect.some((e) => seen.includes(e)), `saw ${seen.join(",") || "nothing"}`);
+  // a fixture that fires only after a scene opens is found by ITS OWN violation (the injected script itself uses eval, which the report-only policy also reports, so the invariant name alone would pass on that noise)
+  if (m.detail) ok(`mutation ${f}: names ${m.detail}`, !!r.rep && r.rep.failures.some((x) => x.invariant === "csp-violation" && x.detail.includes(m.detail)), "");
 }
 rmSync(tmp, { recursive: true, force: true });
 console.log(bad ? `layout-sweep-mutation: ${bad} FAILED` : "layout-sweep-mutation: every injected layout bug was caught");

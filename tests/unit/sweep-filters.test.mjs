@@ -65,7 +65,7 @@ test("cspCheck reports nothing for a clean page and does not throw on a page tha
 });
 test("the sweep reads the violations in the cell's finally block (after the scenes and on a failed cell) and filters console errors", () => {
   const src = readFileSync(new URL("../browser/layout-sweep.mjs", import.meta.url), "utf8");
-  assert.match(src, /finally \{[^}]*await cspCheck\(page, once, A, SWEEP_CTX\)/);
+  assert.match(src, /\}\s*\n\s*scene = "all-scenes"; await cspCheck\(page, once, A, SWEEP_CTX\);[^\n]*\n\s*\} catch \(e\) \{[\s\S]*?scene = "all-scenes"; await cspCheck\(page, once, A, SWEEP_CTX\);/); // end of the try (after the scenes) and in the catch (failure path)
   assert.doesNotMatch(src, /wallChecks\(page, size, once, A\); \}\s*\n\s*await cspCheck/);
   assert.match(src, /ignoredConsoleError\(m\.text\(\)/);
 });

@@ -5,7 +5,8 @@ import { readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url)), args = process.argv.slice(2);
-const helpers = new Set(["run.mjs", "smoke-retry.mjs"]);
+// prod-probe.mjs is the production probe (B53): it spends real Worker requests, so only its own workflows run it (deploy-cloudflare.yml, prod-probe-daily.yml). Its selftest (prod-probe-selftest.mjs) runs here, on a local fixture server.
+const helpers = new Set(["run.mjs", "smoke-retry.mjs", "prod-probe.mjs"]);
 const suites = readdirSync(here).filter((f) => f.endsWith(".mjs") && !helpers.has(f)).sort((a, b) => (a === "live-smoke.mjs" ? -1 : b === "live-smoke.mjs" ? 1 : a.localeCompare(b)));
 // Per PR, degraded-modes.mjs runs only three conditions (API aborted, API answering 500, JavaScript off). The whole suite (144 checks, with the 12 s API hold and
 // the slow-network runs that are timing-sensitive on a busy preview) runs nightly against production: .github/workflows/nightly-production.yml. DEGRADED_FULL=1 runs it all here.
