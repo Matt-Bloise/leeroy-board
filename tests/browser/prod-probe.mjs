@@ -166,7 +166,7 @@ async function probeOne(browser, engine, vp) {
   const wc = wrongCountCopy(es, N);
   for (const w of wc) fail(tag, `copy states the wrong party size: ${w}`);
   if (!wc.length) pass(`${tag} no copy states a wrong party size (${es.length} strings, party ${N})`);
-  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsRequestFailed: insightsFailed });
+  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsRequestFailed: insightsFailed, budgetSpent: budget.exceeded });
   hard.length ? hard.slice(0, 5).forEach((e) => fail(tag, `console error: ${e.text}${e.at ? ` [${e.at}]` : ""}`)) : pass(`${tag} no console errors`);
   for (const w of uniq(warned).slice(0, 8)) console.log(`WARN ${tag}: API 4xx (not a failure off /api/bootstrap and /api/state): ${w}\n::warning title=Production probe::${tag}: API 4xx ${w}`);
   http.length ? uniq(http).slice(0, 8).forEach((h) => fail(tag, `HTTP error (site 4xx/5xx, API 5xx, or API 4xx on bootstrap/state): ${h}`)) : pass(`${tag} no 4xx/5xx from the site or its API`);

@@ -44,6 +44,16 @@ const NOT_PARTY = [/\bfive points (?:fewer|more)\b/i, /\bgroup of five players\b
 const FIVE_RE = /\bfive\b/i;
 const FOUR_OTHER_RE = /\b(?:other|remaining|rest) four\b|\bfour others\b|\bthe four of (?:you|us|them)\b|\bfour (?:friends|members|players|of us)\b/i;
 
+// The chips render in steps (the first .tn-name can be visible before the rest of the party is), so a count taken right after the first one races the render.
+// Wait (bounded) until the number of visible name chips equals the expected member count; if it never does, say what the DOM held so the assertion that follows is readable.
+const CHIP_SEL = ".tn-name";
+const visibleChips = (page) => page.evaluate((sel) => Array.from(document.querySelectorAll(sel)).filter((b) => b.getClientRects().length).length, CHIP_SEL);
+async function settleChips(page, expected, width, timeout = 10000) {
+  const reached = await page.waitForFunction(([sel, n]) => Array.from(document.querySelectorAll(sel)).filter((b) => b.getClientRects().length).length === n, [CHIP_SEL, expected], { timeout }).then(() => true, () => false);
+  if (!reached) console.log(`NOTE name chips did not reach ${expected} within ${timeout / 1000}s at ${width}px: the DOM has ${await visibleChips(page).catch(() => "?")} visible '${CHIP_SEL}' elements`);
+  return reached;
+}
+
 async function setup(browser, width, { flagOn = true, count = 6, state = "looking" } = {}) {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: phone ? 800 : 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: "block", reducedMotion: "reduce" });
@@ -64,6 +74,7 @@ async function setup(browser, width, { flagOn = true, count = 6, state = "lookin
     const look = page.locator("#nx-fr2-look");
     if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
     await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
+    await settleChips(page, count, width);
   }
   if (state === "member") {
     await page.locator(".tn-name", { hasText: namesOf(count)[0] }).first().click();
