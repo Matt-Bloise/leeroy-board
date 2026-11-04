@@ -17,6 +17,16 @@ export function parseClock(argv) {
   return d;
 }
 export async function applyClock(page, date) { if (date) await page.clock.install({ time: date }); }
+// THE PIN. A browser suite that reads the first-visit view (name picker, purpose card) must not depend on what time the machine says: from T-1h to T+12h around the launch
+// the board opens on the wall with no first-visit sheet (js/v15.js openBefore / openAfter), and the hero is up from T-24h to T+24h. So every suite runs with the page clock
+// pinned to DEFAULT_CLOCK, a neutral instant well before the launch (before the hero window, the same one the CI clock steps use), unless --clock names another.
+//   pinnedClock(argv)       -> the Date to run at: --clock when given (parseClock rules, throws on a bad value), else DEFAULT_CLOCK
+//   pinContext(ctx, argv)   -> installs it on a whole browser context, so every page the context opens starts at that time; call right after newContext, BEFORE the first goto
+// tests/helpers/browser-stub.mjs stubbed() does this for every context it makes; a suite that does not use stubbed() calls pinContext itself. tests/unit/browser-clock-pin.test.mjs fails
+// for a browser suite that does neither (prod-probe.mjs is the one production suite: real time unless --clock is given).
+export const DEFAULT_CLOCK = LAUNCH_CLOCKS.before;
+export function pinnedClock(argv = process.argv.slice(2)) { return parseClock(argv) || new Date(DEFAULT_CLOCK); }
+export async function pinContext(ctx, argv = process.argv.slice(2)) { const d = pinnedClock(argv); await ctx.clock.install({ time: d }); return d; }
 // What the launch hero must be at a faked time (js/v15.js WINDOW: shown from T-24h to T+24h, "soon" before launch and "live" after). The page sets html[data-launch] to the same word.
 export const LAUNCH_MS = Date.parse("2026-11-04T23:00:00Z");
 export function expectedHero(date) {

@@ -6,9 +6,14 @@
 // A stub MISS (the page asked for an API path the snapshot lacks, so the fixture is stale) FAILS the suite: a FAIL line is printed and the process exits 1 even when the suite's own checks passed.
 // Opt out for one run with API_STUB_ALLOW_MISS=1 (misses are then a WARN, as before); the real fix is `tools/local-browser.sh record-fixtures`.
 import { installApiStub } from "./api-stub.mjs";
+import { pinContext } from "./clock-arg.mjs";
 export const ALLOW_MISS = process.env.API_STUB_ALLOW_MISS === "1";
 export const LIVE_API = process.argv.includes("--live-api") || process.env.LIVE_API === "1";
-export function stubbed(browser, { live = LIVE_API, label = "api-stub" } = {}) {
+// The same wrapper pins the page clock of every context (tests/helpers/clock-arg.mjs pinnedClock: a fixed time before the launch, or --clock), also with --live-api, so the first-visit
+// view a suite reads does not depend on the time the suite runs at. `argv` is only for the unit test.
+export function stubbed(browser, { live = LIVE_API, label = "api-stub", argv = process.argv.slice(2) } = {}) {
+  const makeContext = browser.newContext.bind(browser);
+  browser.newContext = async (...args) => { const ctx = await makeContext(...args); try { await pinContext(ctx, argv); } catch (e) { console.error(e.message); process.exit(2); } return ctx; };
   if (live) { console.log(`${label}: off (--live-api): this suite talks to the real API`); return browser; }
   const make = browser.newContext.bind(browser), close = browser.close.bind(browser), stubs = [];
   browser.newContext = async (...args) => { const ctx = await make(...args); stubs.push(await installApiStub(ctx)); return ctx; };
