@@ -39,7 +39,7 @@
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
-import { XR_JS, sameOrigin, formatDiag } from "../helpers/sweep-diag.mjs";
+import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -74,7 +74,7 @@ const NO_OPEN = new Set(["member/tonight"]);
 const failures = [], notes = [];
 let skipped = 0, cells = 0, checks = 0, truncated = false, retried = 0;
 // One (size, state) cell keeps its own tally while it runs so a failed attempt can be thrown away and run again in a fresh page; the tally of the attempt that counts is merged into the totals.
-const fail = (c, state, scene, invariant, detail, sink = failures, diag = "") => sink.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300), ...(diag ? { diag: String(diag) } : {}) }); /* diag is kept apart from detail: the 300-character cut on detail must not discard the URLs a diagnostic exists to show */
+const fail = (c, state, scene, invariant, detail, sink = failures, diag = "") => { const f = { w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300), ...(diag ? { diag: String(diag) } : {}) }; sink.push(f); return f; }; /* diag is kept apart from detail: the 300-character cut on detail must not discard the URLs a diagnostic exists to show */
 
 // Runs in every page (addInitScript). window.__lz.rect(el) is el.getBoundingClientRect() in real viewport pixels; point(el) its centre. See the Zoom note at the top.
 function ZOOM_JS(isWebkit) {
@@ -361,18 +361,17 @@ async function cell(browser, size, state, A) {
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
-  const once = (inv, detail, diag = "") => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures, diag); } };
+  const pending = new Set(); /* diagnostics still being read from the page; awaited before the cell closes */
+  const once = (inv, detail, diag = "") => { const k = `${scene}|${inv}|${detail}`; if (seen.has(k)) return null; seen.add(k); return fail(size, state, scene, inv, detail, A.failures, diag); };
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
   page.on("response", (r) => { const u = r.url(); if (sameOrigin(u, ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   /* B55b: WebKit's CORS line ("Origin ... is not allowed by Access-Control-Allow-Origin. Status code: 404") names no URL and WebKit raises no response/requestfailed event for it (run 41829291747: no xorigin-http line). So the detail adds what the engine does know: the console message's own source (WebKit puts the resource URL there), every Worker the page started and every cross-origin fetch the page made with its status (XR_JS below). A request made inside a worker shows up in none of the events; the worker list then names the suspects. */
   page.on("worker", (w) => { (page.__workers ||= []).push(w.url()); });
-  page.on("console", async (m) => {
+  page.on("console", (m) => {
     if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) return;
     if (!/Access-Control-Allow-Origin|access control/i.test(m.text())) { once("console-error", m.text()); return; }
-    let loc = null, st = null;
-    try { loc = m.location(); } catch (e) {}
-    try { st = await page.evaluate(() => ({ xr: window.__xr || [], wk: window.__wk || [] })); } catch (e) {}
-    once("console-error", m.text(), formatDiag(m.text(), loc, st, page.__workers));
+    let loc = null; try { loc = m.location(); } catch (e) {}
+    captureConsoleError({ text: m.text(), loc, record: (t) => once("console-error", t), evaluate: () => page.evaluate(() => ({ xr: window.__xr || [], wk: window.__wk || [] })), workers: () => page.__workers || [], pending });
   });
   /* xorigin-http: a request to ANOTHER origin (the Worker API, a font host) that answered 4xx/5xx or failed. WebKit logs such a 404 as "Origin <site> is not allowed by Access-Control-Allow-Origin. Status code: 404" without the URL (production QA run 41807379587), so the console-error line alone cannot be traced; this names the URL. The Cloudflare insights beacon is ignored. */
   const xo = (u) => /^https?:/.test(u) && !sameOrigin(u, ORIGIN) && !/cloudflareinsights/.test(u);
@@ -415,7 +414,7 @@ async function cell(browser, size, state, A) {
     }
   } catch (e) {
     fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`, A.failures);
-  } finally { await ctx.close().catch(() => {}); }
+  } finally { await Promise.allSettled([...pending]); await ctx.close().catch(() => {}); }
 }
 
 const launch = { ...(process.env.PW_EXECUTABLE ? { executablePath: process.env.PW_EXECUTABLE } : {}) };

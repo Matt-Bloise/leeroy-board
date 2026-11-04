@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
-import { XR_JS, sameOrigin, clip, formatDiag, LIMITS } from "../helpers/sweep-diag.mjs";
+import { XR_JS, sameOrigin, clip, formatDiag, captureConsoleError, LIMITS, MAX_DIAG } from "../helpers/sweep-diag.mjs";
 const src = readFileSync(new URL("../browser/layout-sweep.mjs", import.meta.url), "utf8");
 
 // Runs XR_JS in a fake page: window.fetch answers from `answer`, window.Worker records what it was given.
@@ -22,7 +22,7 @@ function fakePage(answer = () => ({ ok: false, status: 404 })) {
 test("sweep keeps the diagnostic apart from the 300-character detail", () => {
   assert.match(src, /const fail = \(c, state, scene, invariant, detail, sink = failures, diag = ""\)/);
   assert.match(src, /detail: String\(detail\)\.slice\(0, 300\), \.\.\.\(diag \? \{ diag: String\(diag\) \} : \{\}\)/);
-  assert.match(src, /once\("console-error", m\.text\(\), formatDiag\(/); // not m.text() + extra
+  assert.doesNotMatch(src, /once\("console-error", m\.text\(\) \+/); // never glued onto the detail text
   assert.match(src, /diag: \$\{f\.diag\}/); // printed
 });
 
@@ -30,9 +30,21 @@ test("formatDiag: long message and long URLs do not push the workers and fetches
   const long = (tag) => `https://api.leeroy.party/${tag}/${"x".repeat(900)}`;
   const d = formatDiag("Origin https://leeroy.party is not allowed by Access-Control-Allow-Origin. Status code: 404 " + "m".repeat(5000), { url: long("src"), lineNumber: 7 }, { xr: [{ u: long("fetch-a"), s: 404 }, { u: long("fetch-b"), s: 404 }], wk: [long("wk-b")] }, [long("wk-a")]);
   assert.ok(d.length > 300, "longer than the old 300-character cut");
-  assert.ok(d.length <= LIMITS.total);
   for (const tag of ["src", "wk-a", "wk-b", "fetch-a", "fetch-b"]) assert.ok(d.includes(`https://api.leeroy.party/${tag}/`), `${tag} survives`);
   assert.match(d, /Status code: 404/);
+});
+
+test("formatDiag: maximum message + maximum source + 8 workers + 8 fetches, every fetch URL survives", () => {
+  const url = (tag, i) => `https://api.leeroy.party/${tag}${i}/${"x".repeat(900)}`;
+  const xr = Array.from({ length: 8 }, (_, i) => ({ u: url("f", i), err: "e".repeat(300) })); // the longest entry shape: URL + error text
+  const workers = Array.from({ length: 8 }, (_, i) => url("w", i));
+  const d = formatDiag("M".repeat(9000), { url: url("src", 0), lineNumber: 99999 }, { xr, wk: [] }, workers);
+  assert.ok(d.length <= MAX_DIAG, `${d.length} <= ${MAX_DIAG}`);
+  for (let i = 0; i < 8; i++) {
+    assert.ok(d.includes(clip(url("f", i), LIMITS.fetchUrl)), `fetch ${i} URL survives whole (to its ${LIMITS.fetchUrl}-character clip)`);
+    assert.ok(d.includes(clip(url("w", i), LIMITS.workerUrl)), `worker ${i} URL survives`);
+  }
+  assert.equal((d.match(/"u":/g) || []).length, 8, "all eight fetch entries present");
 });
 
 test("formatDiag: a worker recorded twice (Playwright event and the page wrapper) is listed once", () => {
@@ -101,6 +113,65 @@ test("sameOrigin compares parsed origins, not prefixes", () => {
 test("scene-open failure says whether the scene ever opened", () => {
   assert.match(src, /const everOpened = opened;/);
   assert.match(src, /it opened once, then closed again" : "it never opened"/);
+});
+
+// captureConsoleError: the failure is recorded synchronously; diagnostics come later and may never come.
+function harness({ evaluate, timeoutMs = 20 }) {
+  const failures = [], pending = new Set(); let scene = "five";
+  const record = (t) => { const f = { scene, invariant: "console-error", detail: t }; failures.push(f); return f; };
+  const call = () => captureConsoleError({ text: "Origin https://leeroy.party is not allowed by Access-Control-Allow-Origin. Status code: 404", loc: { url: "https://api.leeroy.party/x", lineNumber: 3 }, record, evaluate, workers: () => ["https://leeroy.party/cloth/sdf-worker.js"], pending, timeoutMs });
+  return { failures, pending, call, setScene: (v) => { scene = v; } };
+}
+
+test("console error: the failure is recorded immediately, with the scene of the moment, before any diagnostic read", () => {
+  const h = harness({ evaluate: () => new Promise(() => {}) });
+  h.call();
+  h.setScene("buffs"); // the cell moved on while the read is pending
+  assert.equal(h.failures.length, 1);
+  assert.equal(h.failures[0].scene, "five");
+  assert.match(h.failures[0].diag, /sdf-worker\.js/, "already carries the workers and source before the read answers");
+  assert.equal(h.pending.size, 1);
+});
+
+test("console error: still recorded, and the cell can finish, when the page read never resolves", async () => {
+  const h = harness({ evaluate: () => new Promise(() => {}) });
+  h.call();
+  await Promise.allSettled([...h.pending]);
+  assert.equal(h.pending.size, 0);
+  assert.equal(h.failures.length, 1);
+  assert.match(h.failures[0].diag, /sdf-worker\.js/);
+});
+
+test("console error: still recorded when the page read throws", async () => {
+  const h = harness({ evaluate: () => { throw new Error("page closed"); } });
+  h.call();
+  await Promise.allSettled([...h.pending]);
+  assert.equal(h.failures.length, 1);
+  assert.match(h.failures[0].diag, /sdf-worker\.js/);
+});
+
+test("console error: diagnostics are attached when the read resolves, and awaiting pending waits for them", async () => {
+  const h = harness({ evaluate: () => new Promise((r) => setTimeout(() => r({ xr: [{ u: "https://api.leeroy.party/api/data/nope.json", s: 404 }], wk: ["https://leeroy.party/vendor/library-worker.js"] }), 5)), timeoutMs: 1000 });
+  h.call();
+  assert.doesNotMatch(h.failures[0].diag, /nope\.json/, "not yet");
+  await Promise.allSettled([...h.pending]);
+  assert.match(h.failures[0].diag, /https:\/\/api\.leeroy\.party\/api\/data\/nope\.json/);
+  assert.match(h.failures[0].diag, /library-worker\.js/);
+  assert.match(h.failures[0].diag, /sdf-worker\.js/);
+});
+
+test("console error: a duplicate (record returns null) starts no read", () => {
+  const pending = new Set();
+  const r = captureConsoleError({ text: "t", loc: null, record: () => null, evaluate: () => { throw new Error("must not run"); }, workers: () => [], pending });
+  assert.equal(r, null);
+  assert.equal(pending.size, 0);
+});
+
+test("sweep wiring: the handler is synchronous, records via captureConsoleError, and the cell awaits pending diagnostics before closing", () => {
+  assert.match(src, /page\.on\("console", \(m\) => \{/);
+  assert.doesNotMatch(src, /page\.on\("console", async/);
+  assert.match(src, /captureConsoleError\(\{ text: m\.text\(\), loc, record: \(t\) => once\("console-error", t\)/);
+  assert.match(src, /finally \{ await Promise\.allSettled\(\[\.\.\.pending\]\); await ctx\.close\(\)/);
 });
 
 test("clip marks a cut", () => {

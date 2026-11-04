@@ -37,7 +37,11 @@ export function sameOrigin(url, origin) {
 
 export const clip = (text, n) => { const t = String(text); return t.length > n ? `${t.slice(0, Math.max(0, n - 1))}…` : t; };
 
-export const LIMITS = { msg: 400, source: 300, workerUrl: 240, workers: 8, fetchUrl: 240, fetches: 8, total: 2600 };
+// Each part has its OWN reserved budget and the parts are joined without a final cut, so no part can push another out:
+// the longest possible output is msg + source + workers + fetches + separators, and every fetch URL (clipped to fetchUrl) is always present.
+export const LIMITS = { msg: 400, source: 300, workerUrl: 160, workers: 8, fetchUrl: 200, fetches: 8, errText: 80 };
+// 8 x (160 + 4) + 22 for the workers part, 8 x (200 + errText + 24) + 40 for the fetches part
+export const MAX_DIAG = LIMITS.msg + LIMITS.source + (LIMITS.workers * (LIMITS.workerUrl + 4) + 40) + (LIMITS.fetches * (LIMITS.fetchUrl + LIMITS.errText + 24) + 40) + 30;
 
 export function formatDiag(msg, loc, st, workers) {
   const L = LIMITS, out = [];
@@ -46,6 +50,23 @@ export function formatDiag(msg, loc, st, workers) {
   const wk = [...new Set([...(workers || []), ...((st && st.wk) || [])])];
   out.push(`[workers ${JSON.stringify(wk.slice(0, L.workers).map((u) => clip(u, L.workerUrl)))}${wk.length > L.workers ? ` +${wk.length - L.workers} more` : ""}]`);
   const xr = ((st && st.xr) || []);
-  out.push(`[cross-origin fetches ${JSON.stringify(xr.slice(-L.fetches).map((x) => ({ ...x, u: clip(x.u, L.fetchUrl) })))}]`);
-  return clip(out.join(" "), L.total);
+  out.push(`[cross-origin fetches ${JSON.stringify(xr.slice(-L.fetches).map((x) => ({ ...x, u: clip(x.u, L.fetchUrl), ...(x.err ? { err: clip(x.err, L.errText) } : {}) })))}]`);
+  return out.join(" ");
+}
+
+// Records a console error at once (the scene and the failure are fixed synchronously, so a later navigation or a hung page cannot lose or mislabel it)
+// and attaches the diagnostic afterwards. `record(text)` returns the failure object (or null for a duplicate); `evaluate()` reads window.__xr / __wk
+// from the page and may hang or throw: the failure then still carries the message source and the workers Playwright reported.
+// The promise is added to `pending`; the caller awaits Promise.allSettled([...pending]) before the cell closes.
+export function captureConsoleError({ text, loc, record, evaluate, workers, pending, timeoutMs = 3000 }) {
+  const entry = record(text);
+  if (!entry) return null;
+  entry.diag = formatDiag(text, loc, null, workers()); // already useful if the page never answers
+  let timer;
+  const gone = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("diagnostic read timed out")), timeoutMs); });
+  const p = Promise.race([Promise.resolve().then(evaluate), gone])
+    .then((st) => { entry.diag = formatDiag(text, loc, st, workers()); }, () => {})
+    .finally(() => { clearTimeout(timer); pending.delete(p); });
+  pending.add(p);
+  return p;
 }
