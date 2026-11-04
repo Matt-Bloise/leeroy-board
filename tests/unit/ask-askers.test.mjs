@@ -158,10 +158,12 @@ async function voteRig({ votes = 3, table = true, mine = [0], docBallotFor = [] 
     if (table && mine.includes(i)) raw.prepare("INSERT INTO vote_ballots VALUES (?, ?, 2)").run(id, await voterHash(ME, id, USER_SALT));
     if (table) raw.prepare("INSERT INTO vote_ballots VALUES (?, ?, 0)").run(id, await voterHash(OTHER, id, USER_SALT));
   }
-  let prepared = 0; const real = db.prepare;
-  const env = { DB: { ...db, prepare: (sql) => { prepared++; return real(sql); } }, USER_SALT, KEY_SALT, DATA_RIGHTS: "on", WEB_LOGIN: "on", ALLOWED_ORIGINS: "https://leeroy.test" };
-  const call = (path, method = "GET") => { prepared = 0; return worker.fetch(new Request(`https://api.test${path}`, { method, headers: { Cookie: `${SESS_COOKIE}=${COOKIE_TOKEN}`, Origin: "https://leeroy.test", "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9" }, body: method === "POST" ? JSON.stringify({ confirm: "erase my data" }) : undefined }), env, { waitUntil() {}, passThroughOnException() {} }); };
-  return { raw, call, ids, statements: () => prepared };
+  // D1 counts a db.batch() call as ONE query toward the free plan's 50 per invocation (the per-statement limits still apply to each member),
+  // so queries = prepared statements that are not members of a batch + one per batch. Members are recorded with their placeholder counts.
+  let prepared = 0, batched = 0, batches = 0; const real = db.prepare, members = [];
+  const env = { DB: { ...db, prepare: (sql) => { prepared++; return real(sql); }, batch: async (list) => { batches++; batched += list.length; for (const st of list) members.push(st.sql); return db.batch(list); } }, USER_SALT, KEY_SALT, DATA_RIGHTS: "on", WEB_LOGIN: "on", ALLOWED_ORIGINS: "https://leeroy.test" };
+  const call = (path, method = "GET") => { prepared = 0; batched = 0; batches = 0; members.length = 0; return worker.fetch(new Request(`https://api.test${path}`, { method, headers: { Cookie: `${SESS_COOKIE}=${COOKIE_TOKEN}`, Origin: "https://leeroy.test", "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9" }, body: method === "POST" ? JSON.stringify({ confirm: "erase my data" }) : undefined }), env, { waitUntil() {}, passThroughOnException() {} }); };
+  return { raw, call, ids, statements: () => prepared, queries: () => prepared - batched + batches, members };
 }
 
 test("vote_ballots rows: the export lists the choice, the erase deletes the person's rows and leaves everyone else's", async () => {
@@ -190,16 +192,58 @@ test("work per request is bounded: at the maximum the statements stay under 50; 
   const exp = await at.call("/api/me/export");
   assert.equal(exp.status, 200);
   assert.equal((await exp.json()).legacy.vote_ballots.length, 2);
-  assert.ok(at.statements() < 50, `export used ${at.statements()} statements at the maximum`);
+  assert.ok(at.queries() < 50, `export used ${at.queries()} queries at the maximum`);
   assert.equal((await at.call("/api/me/erase", "POST")).status, 200);
-  assert.ok(at.statements() < 50, `erase used ${at.statements()} statements at the maximum`);
+  assert.ok(at.queries() < 50, `erase used ${at.queries()} queries at the maximum`);
   assert.equal(at.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, MAX_VOTES, "only the bystander rows remain");
   const over = await voteRig({ votes: MAX_VOTES + 1, mine: [0] });
   for (const [path, method] of [["/api/me/export", "GET"], ["/api/me/erase", "POST"]]) {
     const res = await over.call(path, method), body = await res.json();
     assert.equal(res.status, 413); assert.equal(body.error, "too_many_votes"); assert.equal(body.max_votes, MAX_VOTES);
-    assert.ok(over.statements() < 50);
+    assert.ok(over.queries() < 50);
   }
   assert.equal(over.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, MAX_VOTES + 2, "a refused erase changed nothing");
   assert.equal(over.raw.prepare("SELECT COUNT(*) AS c FROM users").get().c, 2, "the account is still there");
+});
+
+// ---- erase query budget (free plan: 50 queries per invocation; one db.batch() counts as ONE). Worst case: MAX_VOTES votes, the person has a
+// ballot in the document of every one AND a vote_ballots row for every one. The erase makes one json_remove edit per joined vote inside its batch.
+test("worst-case erase (720 votes, a document ballot and a row ballot in each): under 50 queries, every batch member under 100 bound parameters, every ballot gone", async () => {
+  const { MAX_VOTES } = await import("../../infrastructure/worker/data-rights.js");
+  const all = Array.from({ length: MAX_VOTES }, (_, i) => i);
+  const r = await voteRig({ votes: MAX_VOTES, mine: all, docBallotFor: all });
+  const other = JSON.parse(r.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(`vote:${r.ids[5]}`).json);
+  other.ballots.bystanderhash = 0; // someone else's document ballot must survive
+  r.raw.prepare("UPDATE kv_state SET json = ? WHERE key = ?").run(JSON.stringify(other), `vote:${r.ids[5]}`);
+  const res = await r.call("/api/me/erase", "POST");
+  assert.equal(res.status, 200);
+  const edits = r.members.filter((q) => /json_remove/.test(q)).length;
+  assert.equal(edits, MAX_VOTES, "one edit per joined vote, inside the batch");
+  assert.ok(r.queries() < 50, `erase used ${r.queries()} queries (non-batch statements + 1 per batch); budget: under 50`);
+  for (const q of r.members) assert.ok((q.match(/\?/g) || []).length <= 100, `a batch member has more than 100 bound parameters: ${q.slice(0, 80)}`);
+  const left = r.raw.prepare("SELECT key, json FROM kv_state WHERE key LIKE 'vote:%'").all();
+  assert.equal(left.length, MAX_VOTES);
+  assert.equal(left.reduce((sum, row) => sum + Object.keys(JSON.parse(row.json).ballots).length, 0), 1, "only the bystander's document ballot is left");
+  assert.equal(r.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, MAX_VOTES, "only the bystander's 720 rows are left");
+});
+
+test("erase only edits the votes the person joined", async () => {
+  const r = await voteRig({ votes: 6, mine: [0, 1], docBallotFor: [2, 3] });
+  assert.equal((await r.call("/api/me/erase", "POST")).status, 200);
+  assert.equal(r.members.filter((q) => /json_remove/.test(q)).length, 2);
+  assert.equal(r.raw.prepare("SELECT COUNT(*) AS c FROM vote_ballots").get().c, 6, "six bystander rows only");
+});
+
+// ---- voteIds: the limit is applied to vote keys only
+test("a non-vote key that looks like one cannot hide a real vote from the maximum", async () => {
+  const { MAX_VOTES } = await import("../../infrastructure/worker/data-rights.js");
+  const r = await voteRig({ votes: MAX_VOTES + 1, mine: [0] });
+  for (let i = 0; i < 5; i++) r.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, '{}', 'x')").run(`vote:-junk-${i}`);
+  const res = await r.call("/api/me/export");
+  assert.equal(res.status, 413, "721 real votes plus junk keys must still be over the maximum");
+  const under = await voteRig({ votes: 3, mine: [0] });
+  for (let i = 0; i < MAX_VOTES + 5; i++) under.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, '{}', 'x')").run(`vote:-zz-${i}`);
+  const ok = await under.call("/api/me/export");
+  assert.equal(ok.status, 200, "junk keys are not votes and must not push a small board over the maximum");
+  assert.equal((await ok.json()).legacy.vote_ballots.length, 1);
 });

@@ -137,8 +137,8 @@ const askArgs = (pk, who) => [pk.askerHashes[0], pk.askerHashes[1], who.slug || 
 // ---- votes. Ballots live in two places: the `ballots` map inside kv_state vote:<id> (older ballots) and, once migration 0010 is applied, one
 // row per ballot in vote_ballots (vote_id, voter_hash, choice). A person's hash is per vote: voterHash(discord id, vote id, USER_SALT).
 // Work per request is bounded, not only per statement. At most MAX_VOTES vote documents are considered; more than that is refused with a
-// 413 that states the maximum (nothing is read further, nothing is changed), so the free plan's 50 queries per invocation can never be reached
-// by the vote part: ids (1) + table check (1) + document reads (<= 8) + ballot-row reads or deletes (<= 8) + json_remove edits (erase: one per vote the person joined, in the batch).
+// 413 that states the maximum (nothing is read further, nothing is changed), so the vote part stays well under the free plan's 50 queries per invocation (a db.batch() counts as one):
+// export: ids (1) + table check (1) + document reads (<= 8) + ballot-row reads (<= 8); erase: ids (1) + table check (1) + probes (<= 18) + one batch holding every edit and delete.
 export const MAX_VOTES = 720; // 8 chunks of IN_CHUNK
 const IN_CHUNK = 90; // D1 allows 100 bound values per statement
 const VOTE_CHUNK = 40; // two bound values per vote in the erase probe
@@ -147,9 +147,10 @@ const tooManyVotes = (e) => respond(413, { error: "too_many_votes", max_votes: M
 const hasVoteBallots = async (env) => (await rows(env, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vote_ballots'")).length > 0; // feature detect: migration 0010 may not be applied yet
 const ballotPath = (hash) => `$.ballots."${hash}"`; // hex only, quoted because a key may start with a digit
 
-// Ids of every stored vote (kv_state vote:<id>), keys only. Reads at most MAX_VOTES + 1 keys; throws TooManyVotes past the maximum.
+// Ids of every stored vote (kv_state vote:<id>), keys only. The id shape is checked IN SQL (8 lowercase hex characters, like VOTE_ID_RE) so the
+// LIMIT counts votes only: a stray 'vote:...' key can never push a real vote out of the first MAX_VOTES + 1 rows. Throws TooManyVotes past the maximum.
 async function voteIds(env) {
-  const ids = (await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%' LIMIT ?", MAX_VOTES + 1)).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id));
+  const ids = (await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%' AND length(key) = 13 AND substr(key, 6) NOT GLOB '*[^0-9a-f]*' LIMIT ?", MAX_VOTES + 1)).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id));
   if (ids.length > MAX_VOTES) throw new TooManyVotes(ids.length);
   return ids;
 }

@@ -421,6 +421,11 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         "404": { description: DATA_RIGHTS is off. }
+        "413":
+          description: "More than 720 votes exist, which is more than one request can search for the caller's ballots. Body {error: too_many_votes, max_votes, message}. Nothing is changed."
+          content:
+            application/json:
+              schema: { type: object }
         "503": { description: USER_SALT or a table is missing. }
   /api/me/erase:
     post:
@@ -445,6 +450,11 @@ paths:
                 confirm: { type: string, enum: ["erase my data"] }
       responses:
         "200": { description: 'Erased. Body: { erased: true, erased_includes: [string], not_erased: [string] }. 413 { error: too_many_votes, max_votes } when more than 720 votes exist; nothing is changed.' }
+        "413":
+          description: "More than 720 votes exist, which is more than one request can search for the caller's ballots. Body {error: too_many_votes, max_votes, message}. Nothing is changed."
+          content:
+            application/json:
+              schema: { type: object }
         "400": { description: Missing or wrong confirm phrase. }
         "401": { description: No valid key or session. }
         "403": { description: No Origin header. }
