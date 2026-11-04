@@ -1,0 +1,2 @@
+/* the wall shows no tiles at all */
+#board .tile { display: none !important; }

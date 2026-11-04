@@ -273,6 +273,9 @@ async function gateChecks(page, size, once, A) {
 // the clamp doing its job (the ellipsis says so) and passes. Text outside the tile's own rectangle fails too. Needs 9 tiles on screen.
 async function wallChecks(page, size, once, A) {
   A.checks++;
+  // The wall is laid out a moment after the click that shows it (a cold first-visit wall warms 0.3 s after the first press, js/board.js settleGo), and a slower engine on a touch-sized window (Firefox, QA run 41817101970)
+  // can still be under display:none when the 1.2 s of openState are over. Wait for nine laid-out tiles (up to 10 s, the wall's own last-resort warm-up) before judging; a wall that never shows them still fails below.
+  await page.waitForFunction(() => [...document.querySelectorAll("#board .tile")].filter((t) => t.getClientRects().length).length >= 9, null, { timeout: 10000 }).catch(() => {});
   const r = await page.evaluate(() => {
     const tiles = [...document.querySelectorAll("#board .tile")].filter((t) => t.getClientRects().length);
     const bad = [], seen = new Set();
@@ -312,7 +315,15 @@ async function wallChecks(page, size, once, A) {
   // On phones (under 700 wide, one column) two tiles already run a few pixels past their own bottom edge (ledger 2 px at 390, a race name 12 px at 320): that part only reports there. A cut is enforced everywhere.
   const over = r.bad.filter((b) => / sits outside its tile/.test(b)), cut = r.bad.filter((b) => !over.includes(b)), soft = size.touch ? over : [];
   const hard = [...cut, ...(size.touch ? [] : over)];
-  if (r.n < 9) once("tile-clip", `only ${r.n} wall tiles on screen (want 9)`);
+  if (r.n < 9) {
+    // say why: the first hidden box above a tile, and the page state that hides the wall
+    const why = await page.evaluate(() => {
+      const t = document.querySelector("#board .tile"); let h = "no #board .tile in the document";
+      if (t) { h = "all tiles laid out"; for (let e = t; e; e = e.parentElement) { if (getComputedStyle(e).display === "none") { h = `hidden by display:none on ${e.tagName.toLowerCase()}${e.id ? "#" + e.id : ""}${typeof e.className === "string" && e.className.trim() ? "." + e.className.trim().split(/\s+/)[0] : ""}`; break; } } }
+      return `${h}; html class "${document.documentElement.className}"`;
+    }).catch(() => "page state unreadable");
+    once("tile-clip", `only ${r.n} wall tiles on screen (want 9): ${why}`);
+  }
   else if (hard.length) once("tile-clip", `${hard.length} clipped: ${hard.slice(0, 3).join(" | ")}`);
   if (soft.length) notes.push({ w: size.w, h: size.h, invariant: "tile-overflow", detail: soft.join(" | ").slice(0, 200) });
 }
