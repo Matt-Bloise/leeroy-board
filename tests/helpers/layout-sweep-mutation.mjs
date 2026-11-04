@@ -17,6 +17,7 @@ const MUTATIONS = [
   { css: "clip-tile-title.css", expect: ["tile-clip"] },
   { css: "hide-tiles.css", expect: ["tile-clip"] },
   { css: "csp-violation.css", expect: ["csp-violation"] },
+  { js: "csp-violation-scene.js", expect: ["csp-violation"] },
 ];
 const tmp = mkdtempSync(path.join(os.tmpdir(), "sweep-mutation-"));
 let bad = 0;
@@ -30,10 +31,10 @@ const ok = (name, cond, extra = "") => { if (!cond) bad++; console.log(`${cond ?
 const control = sweep([], "control");
 ok("control (no injected CSS): the sweep passes", control.code === 0 && control.rep && control.rep.summary.failures === 0, `exit ${control.code}`);
 for (const m of MUTATIONS) {
-  const r = sweep(["--inject-css", path.join(tests, "fixtures", "layout-mutations", m.css)], m.css);
+  const f = m.css || m.js, r = sweep([m.css ? "--inject-css" : "--inject-js", path.join(tests, "fixtures", "layout-mutations", f)], f);
   const seen = r.rep ? [...new Set(r.rep.failures.map((f) => f.invariant))] : [];
-  ok(`mutation ${m.css}: the sweep FAILS`, r.code === 1, `exit ${r.code}`);
-  ok(`mutation ${m.css}: names ${m.expect.join(" or ")}`, m.expect.some((e) => seen.includes(e)), `saw ${seen.join(",") || "nothing"}`);
+  ok(`mutation ${f}: the sweep FAILS`, r.code === 1, `exit ${r.code}`);
+  ok(`mutation ${f}: names ${m.expect.join(" or ")}`, m.expect.some((e) => seen.includes(e)), `saw ${seen.join(",") || "nothing"}`);
 }
 rmSync(tmp, { recursive: true, force: true });
 console.log(bad ? `layout-sweep-mutation: ${bad} FAILED` : "layout-sweep-mutation: every injected layout bug was caught");

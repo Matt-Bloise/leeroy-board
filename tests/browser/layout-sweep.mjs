@@ -6,6 +6,7 @@
 //            --live-api   use the real API the page points at (default: the Worker API is answered from tests/fixtures/api-snapshot, so the sweep sends no request to the Worker)
 //            --no-retry   do not run a failed (size, state) cell a second time in a fresh page (default: retry once, print WARN when it passed only on the retry)
 //            --clock 2026-11-04T10:00:00Z   load every page with its clock set to that instant (it keeps running), to check a time-dependent screen such as the launch hero without waiting (tests/helpers/clock-arg.mjs)
+//            --inject-js file.js    runs a script in every page before its own (self-test only)
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
 // No AI call, nothing is sent. By default every /api/ call is fulfilled by Playwright from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs): the sweep judges layout, not the API,
 // and a full sweep made 1,056 Worker requests before this (measured locally, docs/runbooks/cloudflare-requests.md). An API path the snapshot lacks fails the run (invariant stub-miss). Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
@@ -63,6 +64,7 @@ const FILL_ENFORCED = new Set(["3440x1440", "3840x2160", "5120x1440"]);
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
 const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENES);
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
+const INJECT_JS = arg("--inject-js") ? readFileSync(arg("--inject-js"), "utf8") : ""; // self-test only: a script run in every page before its own scripts (a fault that needs an interaction, which CSS cannot express)
 const url = BASE ? pageUrl(BASE, { params: { preview: "1" } }) : "about:blank";
 const ORIGIN = BASE ? new URL(url).origin : "";
 // Known by-design exceptions, listed so they are visible and easy to delete. A member who has picked a name and opens #tonight lands on the wall: the app clears the hash and no scene opens.
@@ -347,6 +349,19 @@ async function tourVeilCheck(page, size, once, A) {
   if (r && !r.ok) once("close-hit-tour", `with the guided tour veil up, the close button is covered by ${r.top}`);
 }
 
+// Read the collected report-only CSP violations (see the init script in cell()). Called when the cell is over, after every scene was opened and measured, and also when the cell threw: a violation fired by a scene's
+// own interaction must be seen too. The events are queued by the engine, so flush two animation frames and a short settle first. EVERY distinct violation is named, one failure each, with directive, blocked URI and source.
+async function cspCheck(page, once, A) {
+  try {
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await page.waitForTimeout(250);
+    const v = await page.evaluate(() => window.__csp || []);
+    A.checks++;
+    const count = new Map(); for (const x of v) count.set(x, (count.get(x) || 0) + 1);
+    for (const [x, n] of [...count].slice(0, 40)) once("csp-violation", `${x}${n > 1 ? ` (x${n})` : ""}`);
+  } catch (e) { /* the page is gone (closed or crashed): nothing to read */ }
+}
+
 async function cell(browser, size, state, A) {
   const opts = { viewport: { width: size.w, height: size.h }, serviceWorkers: "block", reducedMotion: "reduce" };
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
@@ -355,6 +370,7 @@ async function cell(browser, size, state, A) {
   await applyClock(page, CLOCK);
   // csp-violation: the report-only policy in _headers must stay quiet on every page. Firefox stops sending reports after a burst and logs "Prevented too many CSP reports" (QA run 41829291747), so each violation event is collected here and named.
   await ctx.addInitScript(() => { window.__csp = []; addEventListener("securitypolicyviolation", (e) => window.__csp.push(`${e.violatedDirective} blocked ${e.blockedURI || "inline"} at ${(e.sourceFile || "").split("/").slice(-2).join("/")}:${e.lineNumber}${e.sample ? ` "${e.sample.slice(0, 40)}"` : ""}`), true); });
+  if (INJECT_JS) await ctx.addInitScript(INJECT_JS);
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
@@ -370,8 +386,6 @@ async function cell(browser, size, state, A) {
     await openState(page, state);
     if (state === "gate") { scene = "gate"; await gateChecks(page, size, once, A); }
     else { scene = "wall"; await wallChecks(page, size, once, A); }
-    A.checks++;
-    { const v = await page.evaluate(() => window.__csp || []).catch(() => []); const uniq = [...new Set(v)]; if (uniq.length) once("csp-violation", `${v.length} report-only CSP violations, ${uniq.length} distinct: ${uniq.slice(0, 3).join(" | ")}`); }
     for (const sc of state === "gate" ? ["gate", ...SCENES.slice(0, 0)] : SCENES) {
       scene = sc;
       A.cells++;
@@ -408,7 +422,7 @@ async function cell(browser, size, state, A) {
     }
   } catch (e) {
     fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`, A.failures);
-  } finally { await ctx.close().catch(() => {}); }
+  } finally { scene = "all-scenes"; await cspCheck(page, once, A); await ctx.close().catch(() => {}); }
 }
 
 const launch = { ...(process.env.PW_EXECUTABLE ? { executablePath: process.env.PW_EXECUTABLE } : {}) };
