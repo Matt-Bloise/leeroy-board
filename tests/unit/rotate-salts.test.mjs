@@ -13,7 +13,7 @@ import { userKey } from "../../infrastructure/worker/account.js";
 import { userHash } from "../../infrastructure/worker/answer-ux.js";
 import { voterHash } from "../../infrastructure/worker/votes.js";
 import { hashKey } from "../../infrastructure/worker/auth.js";
-import { derive, readSalts, parseIds, readExportFacts, buildPlan, fullSql, formatPlan, parseArgv, INVENTORY, BREAKS, short } from "../../tools/rotate-salts.mjs";
+import { derive, readSalts, parseIds, readExportFacts, refusalFor, buildPlan, fullSql, formatPlan, parseArgv, INVENTORY, BREAKS, short } from "../../tools/rotate-salts.mjs";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const OLD_U = "old-user-salt-0123456789-abcdefghijklmnop", NEW_U = "N3w-Us3r-Salt-Qx7!Zm29-kLpT81vW5rYb04cD", OLD_K = "old-key-salt-0123456789-abcdefghijklmnopq", NEW_K = "N3w-K3y-Salt-Rw4#Hj62-mNqS90xZ7tVc18eF";
@@ -169,10 +169,11 @@ test("nothing secret on the screen: no salt, no full 64-character hash, in text,
   try {
     const ids = path.join(dir, "ids.txt"); fs.writeFileSync(ids, IDS.join("\n"));
     const sqlOut = path.join(dir, "plan.sql");
+    const exp = path.join(dir, "export.ndjson"); fs.writeFileSync(exp, JSON.stringify({ t: "row", table: "members", r: { slug: "santa" } }) + "\n"); // a USER_SALT plan needs an export (no vote_ballots rows in it)
     const env = { ...process.env, ...ENV };
-    const text = spawnSync("node", [TOOL, "--ids-file", ids, "--vote-ids", VOTE, "--slugs", "santa", "--sql-out", sqlOut], { encoding: "utf8", env });
+    const text = spawnSync("node", [TOOL, "--ids-file", ids, "--export", exp, "--vote-ids", VOTE, "--slugs", "santa", "--sql-out", sqlOut], { encoding: "utf8", env });
     assert.equal(text.status, 0, text.stderr);
-    const json = spawnSync("node", [TOOL, "--ids-file", ids, "--vote-ids", VOTE, "--slugs", "santa", "--json"], { encoding: "utf8", env });
+    const json = spawnSync("node", [TOOL, "--ids-file", ids, "--export", exp, "--vote-ids", VOTE, "--slugs", "santa", "--json"], { encoding: "utf8", env });
     assert.equal(json.status, 0, json.stderr);
     for (const out of [text.stdout + text.stderr, json.stdout + json.stderr]) {
       for (const s of [OLD_U, NEW_U, OLD_K, NEW_K]) assert.equal(out.includes(s), false, "a salt reached the output");
@@ -211,6 +212,49 @@ test("the tool cannot apply, takes no salt as an argument, needs ids, and keeps 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// ---- vote_ballots is not re-keyed, so a USER_SALT plan is refused while the export holds ballot rows
+const exportText = (...tables) => tables.map((table) => JSON.stringify({ t: "row", table, r: table === "users" ? { discord_user_id: IDS[0] } : {} })).join("\n") + "\n";
+test("a USER_SALT plan is refused (exit 3, no plan, no SQL) while the export holds a vote_ballots row; an empty table or no table still plans", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rot-vb-"));
+  try {
+    const env = { ...process.env, ...ENV };
+    const go = (text, ...extra) => {
+      const f = path.join(dir, "export.ndjson"); fs.writeFileSync(f, text);
+      const sqlOut = path.join(dir, "plan.sql"); fs.rmSync(sqlOut, { force: true });
+      const r = spawnSync("node", [TOOL, "--export", f, "--sql-out", sqlOut, ...extra], { encoding: "utf8", env });
+      return { ...r, wrote: fs.existsSync(sqlOut) };
+    };
+    const refused = go(exportText("users", "vote_ballots"));
+    assert.equal(refused.status, 3);
+    assert.match(refused.stderr, /refusing to plan a USER_SALT rotation/);
+    assert.equal(refused.wrote, false, "nothing is planned or written");
+    assert.equal(refused.stdout, "");
+    assert.equal(go(exportText("users")).status, 0, "no ballot rows: plans as before");
+    assert.equal(go(exportText("users", "vote_ballots"), "--only", "key").status, 0, "a KEY_SALT-only plan does not touch ballots");
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+test("a USER_SALT plan without --export is refused (exit 3, no SQL written); --only key without --export still plans", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rot-ne-"));
+  try {
+    const env = { ...process.env, ...ENV };
+    const ids = path.join(dir, "ids.txt"); fs.writeFileSync(ids, IDS.join("\n"));
+    const sqlOut = path.join(dir, "plan.sql");
+    const r = spawnSync("node", [TOOL, "--ids-file", ids, "--sql-out", sqlOut], { encoding: "utf8", env });
+    assert.equal(r.status, 3);
+    assert.match(r.stderr, /without --export/);
+    assert.equal(fs.existsSync(sqlOut), false);
+    assert.equal(spawnSync("node", [TOOL, "--only", "key", "--ids-file", ids], { encoding: "utf8", env }).status, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+test("refusalFor: only a USER plan with ballot rows is refused", () => {
+  assert.match(refusalFor({ USER: {} }, { tables: { vote_ballots: 2 } }), /2 vote_ballots row/);
+  assert.equal(refusalFor({ USER: {} }, { tables: { vote_ballots: 0 } }), null);
+  assert.equal(refusalFor({ USER: {} }, { tables: {} }), null);
+  assert.equal(refusalFor({ KEY: {} }, { tables: { vote_ballots: 2 } }), null);
+  assert.match(refusalFor({ USER: {} }, null), /without --export/);
+  assert.equal(refusalFor({ KEY: {} }, null), null, "a KEY_SALT-only plan needs no export");
+});
+
 // ---- the inventory must stay complete
 const WORKER = new URL("../../infrastructure/worker/", import.meta.url);
 test("every Worker file that uses a salt is one the inventory accounts for", () => {
@@ -226,7 +270,7 @@ test("every hash-like column in schema.sql is accounted for: salted (inventory) 
     const t = /^CREATE TABLE IF NOT EXISTS (\w+) \(/.exec(l); if (t) { table = t[1]; continue; }
     const c = /^\s+(\w*(?:hash|user_key|_enc)\w*)\s+(?:TEXT|INTEGER)/i.exec(l); if (c && table) found.add(`${table}.${c[1]}`);
   }
-  const salted = new Set(["user_state.user_key", "sessions.user_key", "answer_details.asker_hash", "ask_turn_askers.asker_hash", "answer_feedback.user_hash", "guest_rate_limits.ip_hash", "members.key_hash", "account_keys.key_hash"]);
+  const salted = new Set(["user_state.user_key", "sessions.user_key", "answer_details.asker_hash", "ask_turn_askers.asker_hash", "vote_ballots.voter_hash", "answer_feedback.user_hash", "guest_rate_limits.ip_hash", "members.key_hash", "account_keys.key_hash"]);
   const unsalted = new Set(["sessions.token_hash", "sessions_v2.token_hash", "discord_events.payload_hash", "provider_tokens.access_token_enc", "provider_tokens.refresh_token_enc"]);
   const unknown = [...found].filter((f) => !salted.has(f) && !unsalted.has(f));
   assert.deepEqual(unknown, [], "a new hash-like column: decide whether it is salted and add it to INVENTORY");
