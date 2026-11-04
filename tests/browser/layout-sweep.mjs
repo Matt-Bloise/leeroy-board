@@ -231,7 +231,7 @@ async function gateChecks(page, size, once, A) {
   const measureGate = () => page.evaluate(() => {
     const de = document.documentElement, card = document.querySelector("#nx-fr2");
     const scrollers = [...document.querySelectorAll("body *")].filter((e) => { const s = getComputedStyle(e); return /auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1 && s.display !== "none" && e.getClientRects().length; }).map((e) => e.id || e.className || e.tagName);
-    const box = card && (card.closest(".sheet") || card.closest("#sheet-body") || card.parentElement), cr = card && card.getBoundingClientRect(), br = box && box.getBoundingClientRect();
+    const box = card && (card.closest(".sheet") || card.closest("#sheet-body") || card.parentElement), cr = card && window.__lz.rect(card), br = box && window.__lz.rect(box); /* zoom-aware: WebKit reports a box under CSS zoom (the fitted panel, the old card zoom) at its unzoomed size, which read the card as 2.9 to 5.7 percent of the parchment in production run 41817101970 */
     return { sh: de.scrollHeight, sw: de.scrollWidth, ih: innerHeight, iw: innerWidth, docScrolls: de.scrollHeight > innerHeight + 1, scrollers, fill: cr && br && br.width * br.height > 0 ? (cr.width * cr.height) / (br.width * br.height) : null };
   });
   // a faked-clock run must really be in the state it claims: the launch hero is up (html[data-launch] and #launch-hero, with its live class after launch) or absent

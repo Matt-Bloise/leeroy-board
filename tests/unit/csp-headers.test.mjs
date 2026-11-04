@@ -65,3 +65,18 @@ test("a changed host-redirect script would no longer match (the check is not vac
   const other = `'sha256-${crypto.createHash("sha256").update(`${m[1]} `).digest("base64")}'`;
   assert.ok(!dir("script-src").includes(other));
 });
+
+// B59: the residual WebKit console error "frame-ancestors is ignored when delivered in a report-only policy" at 3440x1440 and wider (production run 41817101970), in the
+// library states only. Source: the library search Worker (vendor/library-worker.js) is a module worker, and WebKit logs the CSP of a worker script response. /vendor/* is
+// immutable for a year, so Cloudflare kept serving the copy it cached before PR 168 removed the directive. No rule in _headers sets frame-ancestors; the fix is a new URL for the worker.
+test("no rule in _headers, on any path, sets frame-ancestors in any header value (comment lines excepted)", () => {
+  const live = headers.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+  assert.deepEqual(live.filter((l) => /frame-ancestors/i.test(l)), []);
+  assert.deepEqual(live.filter((l) => /^\s+Content-Security-Policy/i.test(l)).length, 1, "exactly one CSP header line, under /*");
+});
+test("the library worker is requested under a new ?v= stamp, not the one the edge cached with the old header (9ee32dfeb0)", () => {
+  const board = fs.readFileSync(path.join(root, "js/board.js"), "utf8");
+  const m = /vendor\/library-worker\.js\?v=([0-9a-f]{10})/.exec(board);
+  assert.ok(m, "board.js starts vendor/library-worker.js with a ?v= stamp");
+  assert.notEqual(m[1], "9ee32dfeb0");
+});

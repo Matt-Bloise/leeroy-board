@@ -2721,7 +2721,7 @@ function libStart() {
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=9ee32dfeb0", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=1b6776e15d", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);
