@@ -41,25 +41,47 @@ export function appIdFromToml(toml) {
 }
 
 const LIST_FIELDS = ["flags", "result", "results", "data", "items"];
+const PAGE_KEYS = new Set(["cursor", "next", "next_cursor", "nextCursor", "next_page", "nextPage"]);
+const MORE_KEYS = new Set(["has_more", "hasMore"]);
 const keyOf = (f) => (f && typeof f === "object" ? [f.key, f.flagKey, f.flag_key].find((k) => typeof k === "string" && k) : undefined);
+const nonEmpty = (v) => v !== null && v !== undefined && v !== "" && v !== false;
 
-// The flag keys in the output of `flags list --json --all`, or null when the output cannot be read. Tolerant of: wrangler banner/warning lines before the JSON,
-// a bare array of flags, or an object wrapping the array (flags / result / results / data / items, nested), and of `key`, `flagKey` or `flag_key`.
-// An empty list is a valid answer (Set of 0). Any flag without a readable key, or no array at all, is NOT readable: null, so the caller creates nothing.
-export function extractFlagKeys(output) {
-  const text = String(output ?? "");
-  let value;
-  for (let i = 0; i < text.length && value === undefined; i++) {
-    if (text[i] !== "[" && text[i] !== "{") continue;
-    try { value = JSON.parse(text.slice(i)); } catch (e) { /* maybe trailing text: try the largest balanced parse below */ }
-    if (value === undefined) {
-      const close = text[i] === "[" ? "]" : "}";
-      for (let j = text.lastIndexOf(close); j > i && value === undefined; j = text.lastIndexOf(close, j - 1)) {
-        try { value = JSON.parse(text.slice(i, j + 1)); } catch (e) { /* keep shrinking */ }
-      }
+// True when a wrapper object (not a flag) says there is more: a non-empty cursor / next, or has_more true. Arrays (the flags themselves) are not scanned.
+function morePages(v, depth = 0) {
+  if (!v || typeof v !== "object" || Array.isArray(v) || depth > 3) return false;
+  for (const [k, val] of Object.entries(v)) {
+    if (PAGE_KEYS.has(k) && nonEmpty(val)) return true;
+    if (MORE_KEYS.has(k) && val === true) return true;
+    if (val && typeof val === "object" && !Array.isArray(val) && morePages(val, depth + 1)) return true;
+  }
+  return false;
+}
+
+// The JSON value in the wrangler output, or undefined. Parsing starts only at a line whose FIRST character is [ or { (a banner or warning line that merely
+// contains [] or {} somewhere cannot start it), and ends at a later line that closes it ("]" / "}" first, or the same line for minified JSON). If more than one
+// separate JSON block parses (for example a banner line that is itself "[]" followed by the real list) the output is ambiguous: undefined, never a guess.
+function jsonBlock(text) {
+  const lines = String(text ?? "").split(/\r?\n/);
+  const found = [];
+  for (let s = 0; s < lines.length; s++) {
+    if (lines[s][0] !== "[" && lines[s][0] !== "{") continue;
+    for (let e = lines.length - 1; e >= s; e--) {
+      const last = e === s ? lines[e].trimEnd() : lines[e];
+      if (e === s ? !/[\]}]$/.test(last) : !/^[\]}]/.test(last)) continue;
+      try { found.push(JSON.parse(lines.slice(s, e + 1).join("\n"))); break; } catch (err) { /* try a shorter block */ }
     }
   }
+  return found.length === 1 ? found[0] : undefined;
+}
+
+// The flag keys in the output of `flags list --json --all`, or null when the output cannot be trusted as the COMPLETE list. Tolerant of: wrangler banner/warning
+// lines around the JSON, a bare array of flags, or an object wrapping the array (flags / result / results / data / items, nested), and of `key`, `flagKey` or `flag_key`.
+// An empty list is a valid answer (Set of 0). null (so the caller creates nothing) for: no JSON, an ambiguous output, no array, a flag without a readable key,
+// and ANY sign of a further page (non-null cursor / next / next_cursor, has_more true): a partial first page must never look like the whole list.
+export function extractFlagKeys(output) {
+  const value = jsonBlock(output);
   if (value === undefined) return null;
+  if (morePages(value)) return null;
   const find = (v, depth) => {
     if (Array.isArray(v)) return v;
     if (!v || typeof v !== "object" || depth > 3) return null;
@@ -77,11 +99,16 @@ export const missingKeys = (wanted, existing) => wanted.filter((k) => !existing.
 
 const redactor = (secrets) => (s) => secrets.filter((x) => x && x.length >= 6).reduce((t, x) => t.split(x).join("***"), String(s ?? ""));
 
-// run(args) -> { status, stdout, stderr }. Default: `npx wrangler <args>` (or FLAGSHIP_WRANGLER=<program> <args>, used by the tests with a fake program), no shell.
+// run(args) -> { status, stdout, stderr }. Default: `npx wrangler <args>` (or FLAGSHIP_WRANGLER=<program> <args>, used by the tests with a fake program; a .js/.mjs
+// program is run with this node), no shell. Every call has a timeout (60 s; FLAGSHIP_TIMEOUT_MS overrides it for the tests) so a hung wrangler cannot hold up the deploy:
+// a timed-out call is a failure like any other (status 1, a message in stderr), so nothing more is created after it.
+export const CALL_TIMEOUT_MS = 60000;
 function defaultRun(args, env = process.env) {
-  const prog = env.FLAGSHIP_WRANGLER;
-  const r = prog ? spawnSync(prog, args, { encoding: "utf8", env }) : spawnSync("npx", ["wrangler", ...args], { encoding: "utf8", env });
-  return { status: r.status ?? 1, stdout: r.stdout || "", stderr: r.stderr || (r.error ? String(r.error.message) : "") };
+  const timeout = Number(env.FLAGSHIP_TIMEOUT_MS) > 0 ? Number(env.FLAGSHIP_TIMEOUT_MS) : CALL_TIMEOUT_MS, prog = env.FLAGSHIP_WRANGLER;
+  const opts = { encoding: "utf8", env, timeout, killSignal: "SIGKILL" };
+  const r = !prog ? spawnSync("npx", ["wrangler", ...args], opts) : /\.m?js$/.test(prog) ? spawnSync(process.execPath, [prog, ...args], opts) : spawnSync(prog, args, opts);
+  const timedOut = r.error && r.error.code === "ETIMEDOUT";
+  return { status: timedOut ? 1 : (r.status ?? 1), stdout: r.stdout || "", stderr: timedOut ? `timed out after ${timeout} ms` : (r.stderr || (r.error ? String(r.error.message) : "")) };
 }
 
 export function ensureFlags({ keys, appId, run, log = () => {}, warn = () => {}, dryRun = false, redact = (s) => s }) {

@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { parseKeyList, appIdFromToml, extractFlagKeys, missingKeys, ensureFlags } from "../../tools/flagship-ensure-flags.mjs";
+import { parseKeyList, appIdFromToml, extractFlagKeys, missingKeys, ensureFlags, CALL_TIMEOUT_MS } from "../../tools/flagship-ensure-flags.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const TOOL = path.join(ROOT, "tools/flagship-ensure-flags.mjs");
@@ -44,6 +44,33 @@ test("extractFlagKeys reads the real output of wrangler 4.148.0 `flags list --js
   const real = '\u25b2 [WARNING] Proxy environment variables detected. We\'ll use your proxy for fetch requests.\n\n' + JSON.stringify({ items: [{ key: "D1_FEED", description: null, enabled: false, default_variation: "off", variations: { on: true, off: false }, rules: [], type: "boolean", updated_at: "2026-11-04T02:39:43.831Z" }], cursor: null }, null, 4) + "\n";
   assert.deepEqual([...extractFlagKeys(real)], ["D1_FEED"]);
   assert.equal(extractFlagKeys('{\n    "items": [],\n    "cursor": null\n}').size, 0);
+});
+
+test("extractFlagKeys: a banner line that merely contains [] or {} cannot start the parse (it must not turn 'cannot read' into 'no flags exist')", () => {
+  const real = JSON.stringify({ items: [{ key: "D1_FEED" }], cursor: null }, null, 2);
+  for (const banner of ["\u25b2 [WARNING] no flags [] here {} ok", "note: list is [] until created", "wrangler [] {}", "  [] indented banner", "x [] y"])
+    assert.deepEqual([...extractFlagKeys(banner + "\n\n" + real + "\n")], ["D1_FEED"], banner);
+  // a banner that starts at column 0 and is not valid JSON by itself is skipped too
+  assert.deepEqual([...extractFlagKeys("[] not json at all\n" + real)], ["D1_FEED"]);
+  assert.deepEqual([...extractFlagKeys("{} also not json\n" + real + "\ntrailing notice")], ["D1_FEED"]);
+  // a banner line that IS valid JSON next to the real list is ambiguous: unreadable, never "no flags"
+  assert.equal(extractFlagKeys("[]\n" + real), null);
+  assert.equal(extractFlagKeys("{}\n[]"), null);
+  // only a banner and no list: unreadable, not an empty list
+  assert.equal(extractFlagKeys("\u25b2 [WARNING] nothing [] to see"), null);
+  assert.equal(extractFlagKeys("update available [] \nnothing"), null);
+});
+
+test("extractFlagKeys: any sign of another page makes the list unreadable (a partial first page must not look complete)", () => {
+  const A = [{ key: "D1_FEED" }];
+  for (const more of [{ cursor: "abc" }, { next: "https://x/page2" }, { next_cursor: "n" }, { nextCursor: "n" }, { has_more: true }, { hasMore: true }, { result_info: { cursor: "zz" } }, { meta: { next: 2 } }])
+    assert.equal(extractFlagKeys(JSON.stringify({ items: A, ...more })), null, JSON.stringify(more));
+  assert.equal(extractFlagKeys(JSON.stringify({ result: { flags: A, cursor: "abc" } })), null);
+  // no further page: null / empty cursor, has_more false
+  for (const done of [{ cursor: null }, { cursor: "" }, { next: null }, { has_more: false }, { hasMore: false }, {}])
+    assert.deepEqual([...extractFlagKeys(JSON.stringify({ items: A, ...done }))], ["D1_FEED"], JSON.stringify(done));
+  // a flag that happens to carry a field named next/cursor is a flag, not a page marker
+  assert.deepEqual([...extractFlagKeys(JSON.stringify({ items: [{ key: "A", next: "x", cursor: "y" }] }))], ["A"]);
 });
 
 test("extractFlagKeys: an empty list is a valid answer; anything unreadable is null", () => {
@@ -92,6 +119,15 @@ test("list fails, or its output cannot be read: nothing is created and a warning
   }
 });
 
+test("a list with a next page: nothing is created and a warning is raised", () => {
+  const t = mk(JSON.stringify({ items: [{ key: "OTHER" }], cursor: "page2" }));
+  const r = t.go(["D1_FEED"]);
+  assert.equal(t.calls.length, 1);
+  assert.deepEqual(r.created, []);
+  assert.equal(r.problems, 1);
+  assert.match(t.warns[0], /Created nothing/);
+});
+
 test("a failed create is a warning, the other keys are still tried, and nothing else runs", () => {
   const t = mk("[]", { createStatus: 1 });
   const r = t.go(["A1", "B2"]);
@@ -128,11 +164,11 @@ test("dry run lists but creates nothing", () => {
 });
 
 // ---- the CLI, with a fake wrangler program ----
-function fake({ list = "[]", listStatus = 0, createStatus = 0, stderr = "" } = {}) {
+function fake({ list = "[]", listStatus = 0, createStatus = 0, stderr = "", hang = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flagfake-"));
-  const log = path.join(dir, "calls.jsonl"), prog = path.join(dir, "wrangler");
+  const log = path.join(dir, "calls.jsonl"), prog = path.join(dir, "wrangler.js"); // a .js program is run with node by the tool (also works on Windows)
   fs.writeFileSync(path.join(dir, "list.txt"), list);
-  fs.writeFileSync(prog, `#!${process.execPath}\nconst fs=require("fs"),a=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+"\\n");\nconst L=a[2]==="list";process.stderr.write(${JSON.stringify(stderr)});\nif(L){process.stdout.write(fs.readFileSync(${JSON.stringify(path.join(dir, "list.txt"))},"utf8"));process.exit(${listStatus});}process.exit(${createStatus});\n`, { mode: 0o755 });
+  fs.writeFileSync(prog, `const fs=require("fs"),a=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+"\\n");\n${hang ? "Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,60000);" : ""}const L=a[2]==="list";process.stderr.write(${JSON.stringify(stderr)});\nif(L){process.stdout.write(fs.readFileSync(${JSON.stringify(path.join(dir, "list.txt"))},"utf8"));process.exit(${listStatus});}process.exit(${createStatus});\n`);
   const calls = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
   return { prog, calls, dir };
 }
@@ -196,4 +232,21 @@ test("CLI: --dry-run creates nothing", () => {
   assert.equal(r.status, 0);
   assert.equal(f.calls().length, 1);
   assert.match(r.stdout, /would create D1_FEED/);
+});
+
+test("CLI: a hung wrangler is killed after the timeout, nothing more runs, a warning is raised, exit 1", () => {
+  const f = fake({ hang: true });
+  const t0 = Date.now();
+  const r = cli(f, [], { FLAGSHIP_TIMEOUT_MS: "400" });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.ok(Date.now() - t0 < 8000, "returned promptly, not after the full 60 s");
+  assert.equal(f.calls().length, 1, "only the list was attempted");
+  assert.match(r.stdout, /::warning.*timed out after 400 ms.*Created nothing/s);
+});
+
+test("every spawn has a timeout and the default is 60 s", () => {
+  assert.equal(CALL_TIMEOUT_MS, 60000);
+  const src = fs.readFileSync(TOOL, "utf8");
+  assert.equal((src.match(/spawnSync\(/g) || []).length, 3, "the three spawn forms in defaultRun, all sharing opts");
+  assert.match(src, /const opts = \{[^}]*timeout[^}]*\}/);
 });

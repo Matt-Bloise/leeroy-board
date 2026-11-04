@@ -190,7 +190,28 @@ test("the Flagship flag creation is referenced by the production deploy only, on
   assert.equal(steps.filter((s) => /flagship-ensure-flags/.test(s.run || "")).length, 1);
   assert.ok(steps.findIndex((s) => /npx wrangler deploy\b/.test(s.run || "")) < at, "it runs after wrangler deploy");
   assert.equal(steps[at]["continue-on-error"], true, "a Flagship problem must never block a code deploy");
+  assert.ok(steps[at]["timeout-minutes"] > 0 && steps[at]["timeout-minutes"] <= 5, "a hung wrangler must not hold up the secrets sync that follows (timeout-minutes 3)");
+  assert.equal(workflows.find((x) => x.f === "deploy-cloudflare.yml").doc.jobs["deploy-production"].steps[at + 1].name.startsWith("Sync Worker Secrets"), true, "the secrets sync is the next step");
   assert.equal(/secrets\./.test(steps[at].run + JSON.stringify(steps[at].env || {})), false, "the step names no secret itself (the job env already holds the token)");
   assert.equal(/\b(enable|disable|update|delete|split)\b/.test(steps[at].run || ""), false, "it never changes an existing flag");
   for (const d of Object.values(w.doc.jobs)) assert.equal(d.environment === undefined || d.environment === "production", true);
+});
+
+// B51: the production workflow may contain NO `flagship flags <subcommand>` other than `create` (the script itself only runs list and create; see flagship-ensure.test.mjs).
+const flagshipSubcommands = (text) => [...code(text).matchAll(/flagship\s*(?:\\\s*)?flags\s*(?:\\\s*)?([A-Za-z-]+)/g)].map((m) => m[1].toLowerCase());
+const forbiddenFlagshipSubcommands = (text) => flagshipSubcommands(text).filter((c) => c !== "create");
+
+test("the production deploy contains no `flagship flags` subcommand other than create", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  assert.deepEqual(forbiddenFlagshipSubcommands(w.text), []);
+});
+
+test("the subcommand check itself rejects enable, disable, update, delete, split, rules (and list/evaluate/pull), however spelled, and accepts create", () => {
+  for (const sub of ["enable", "disable", "update", "delete", "split", "rules", "list", "evaluate", "pull", "ENABLE"]) {
+    assert.deepEqual(forbiddenFlagshipSubcommands(`run: npx wrangler flagship flags ${sub} APP KEY`), [sub.toLowerCase()], sub);
+    assert.deepEqual(forbiddenFlagshipSubcommands(`run: |\n  wrangler flagship   flags   ${sub} APP`), [sub.toLowerCase()], `${sub} with extra spaces`);
+  }
+  assert.deepEqual(forbiddenFlagshipSubcommands("run: wrangler flagship flags \\\n  enable APP KEY"), ["enable"], "line continuation");
+  assert.deepEqual(forbiddenFlagshipSubcommands("run: wrangler flagship flags create APP KEY --disabled"), []);
+  assert.deepEqual(forbiddenFlagshipSubcommands("# wrangler flagship flags enable is done by the owner\nrun: wrangler flagship flags create A K"), [], "comments are not code");
 });
