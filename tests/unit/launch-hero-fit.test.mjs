@@ -71,12 +71,13 @@ test("applyClock installs the clock only when one is given", async () => {
 });
 
 test("both suites accept --clock and the CI runs sweep the first-visit gate at all three clocks, in the PR run and in the scheduled cross-engine run", () => {
-  for (const f of ["layout-sweep.mjs", "live-smoke.mjs", "first-load-weight.mjs"]) assert.match(read("tests", "browser", f), /parseClock\(argv\)[\s\S]*applyClock\(page, CLOCK\)/, f);
+  for (const f of ["layout-sweep.mjs", "live-smoke.mjs", "first-load-weight.mjs", "axe.mjs"]) assert.match(read("tests", "browser", f), /parseClock\(argv\)[\s\S]*applyClock\(page, CLOCK\)/, f);
   for (const f of ["cross-engine.yml", "preview-tests.yml"]) {
     const y = read(".github", "workflows", f), step = y.split(/\r?\n/).filter((l) => l.includes("--clock") || l.includes("for clock in")).join("\n");
     for (const c of Object.values(LAUNCH_CLOCKS)) assert.ok(step.includes(c), `${f} runs the sweep at ${c}`);
     assert.match(y, /layout-sweep\.mjs[^\n]*--states gate --clock/, `${f}: gate state only, so the extra cost stays small`);
     assert.ok(!/--live-api/.test(step), `${f}: the clock runs answer the API from fixtures`);
+    assert.match(y, /axe\.mjs[^\n]*--clock/, `${f}: axe scans the hero text at the faked clocks`);
     assert.match(y, /first-load-weight\.mjs[^\n]*--clock/, `${f}: the covered-wall art rule runs at the faked clocks`);
     assert.match(y, /--states gate --clock[^\n]*--budget-min 2/, `${f}: each clock sweep is capped at 2 minutes`);
     assert.ok(!/report-[^\n]*\$clock[^\n]*\.json/.test(y.replace(/\$\{clock\/\/:\/\}/g, "")), `${f}: no colon may reach an artifact file name`);

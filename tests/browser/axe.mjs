@@ -4,11 +4,14 @@
 // Exclusions are listed in EXCLUDE below, each with a reason and a narrow selector. Add none without a reason.
 // Exit 0 when every check passes, 1 otherwise.
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { parseClock, applyClock } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
 if (!BASE) { console.error("usage: node axe.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
+let CLOCK = null;
+try { CLOCK = parseClock(argv); } catch (e) { console.error(e.message); process.exit(2); } /* --clock <iso>: the page runs at that time (tests/helpers/clock-arg.mjs), e.g. inside the launch hero window (B49) */
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const CTX = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1366x768", { viewport: { width: 1366, height: 768 } }]];
@@ -31,6 +34,7 @@ for (const [size, opts] of CTX) {
   const tag = `[${size}]`;
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" });
   const page = await ctx.newPage();
+  await applyClock(page, CLOCK);
   await page.goto(BASE, { waitUntil: "load" });
   await page.waitForSelector("#tn-me .tn-name", { state: "visible", timeout: 12000 }).catch(() => {});
   await page.waitForTimeout(1500);
