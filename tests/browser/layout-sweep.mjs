@@ -353,6 +353,8 @@ async function cell(browser, size, state, A) {
   const ctx = await browser.newContext(opts), page = await ctx.newPage();
   await ctx.addInitScript(ZOOM_JS, ENGINE === "webkit");
   await applyClock(page, CLOCK);
+  // csp-violation: the report-only policy in _headers must stay quiet on every page. Firefox stops sending reports after a burst and logs "Prevented too many CSP reports" (QA run 41829291747), so each violation event is collected here and named.
+  await ctx.addInitScript(() => { window.__csp = []; addEventListener("securitypolicyviolation", (e) => window.__csp.push(`${e.violatedDirective} blocked ${e.blockedURI || "inline"} at ${(e.sourceFile || "").split("/").slice(-2).join("/")}:${e.lineNumber}${e.sample ? ` "${e.sample.slice(0, 40)}"` : ""}`), true); });
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
@@ -368,6 +370,8 @@ async function cell(browser, size, state, A) {
     await openState(page, state);
     if (state === "gate") { scene = "gate"; await gateChecks(page, size, once, A); }
     else { scene = "wall"; await wallChecks(page, size, once, A); }
+    A.checks++;
+    { const v = await page.evaluate(() => window.__csp || []).catch(() => []); const uniq = [...new Set(v)]; if (uniq.length) once("csp-violation", `${v.length} report-only CSP violations, ${uniq.length} distinct: ${uniq.slice(0, 3).join(" | ")}`); }
     for (const sc of state === "gate" ? ["gate", ...SCENES.slice(0, 0)] : SCENES) {
       scene = sc;
       A.cells++;
@@ -381,7 +385,11 @@ async function cell(browser, size, state, A) {
         let opened = await page.waitForFunction(isOpen, sc, { timeout: OPEN_MS }).then(() => true, () => false);
         if (opened) { await page.waitForTimeout(450); opened = await page.evaluate(isOpen, sc); } // still open after the open animation settles
         A.checks++;
-        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden)`, A.failures); continue; }
+        if (!opened) {
+          // say which of the three conditions failed, and whether it ever opened (the wait above resolved) or opened and closed again (QA run 41829291747, WebKit 2560x1440 member/timeline)
+          const st = await page.evaluate((k) => { const p = document.querySelector(`#panel-${k}`); return `scene-open class ${document.documentElement.classList.contains("scene-open")}, #scene hidden ${document.querySelector("#scene").hidden}, #panel-${k} ${p ? (p.hidden ? "hidden" : "shown") : "absent"}, hash "${location.hash}"`; }, sc).catch(() => "page state unreadable");
+          fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (${st}; waited ${OPEN_MS} ms)`, A.failures); continue;
+        }
       } else {
         const opened = await page.evaluate(() => document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden);
         if (!opened) { // the gate is not a scene sheet: only the document-level invariant applies

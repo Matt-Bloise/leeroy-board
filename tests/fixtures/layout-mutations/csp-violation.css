@@ -1,0 +1,2 @@
+/* a stylesheet image from a host the report-only policy does not allow: every use is a violation report (Firefox stops after a burst and logs "Prevented too many CSP reports") */
+#board .tile { background-image: url("https://csp-mutation.invalid/tile.png"); }

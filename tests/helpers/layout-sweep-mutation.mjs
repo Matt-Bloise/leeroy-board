@@ -16,6 +16,7 @@ const MUTATIONS = [
   { css: "sideways-scroll.css", expect: ["hscroll"] },
   { css: "clip-tile-title.css", expect: ["tile-clip"] },
   { css: "hide-tiles.css", expect: ["tile-clip"] },
+  { css: "csp-violation.css", expect: ["csp-violation"] },
 ];
 const tmp = mkdtempSync(path.join(os.tmpdir(), "sweep-mutation-"));
 let bad = 0;
