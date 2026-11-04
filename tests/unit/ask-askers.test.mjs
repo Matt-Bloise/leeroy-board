@@ -150,7 +150,7 @@ async function voteRig({ votes = 3, table = true, mine = [0], docBallotFor = [] 
   const { voterHash } = await import("../../infrastructure/worker/votes.js");
   invalidateConfigCache(); _resetDataRights();
   const db = schemaDb(), raw = db.raw, th = await webSessionHash(COOKIE_TOKEN), now = new Date().toISOString();
-  if (table) raw.exec("CREATE TABLE vote_ballots (vote_id TEXT NOT NULL, voter_hash TEXT NOT NULL, choice INTEGER NOT NULL, PRIMARY KEY (vote_id, voter_hash))");
+  if (!table) raw.exec("DROP TABLE vote_ballots"); // schema.sql carries the table now (PR 173); drop it to model a database where migration 0010 was not applied
   for (const d of [ME, OTHER]) raw.prepare("INSERT INTO users (discord_user_id, display_name, created_at) VALUES (?, 'P', 'x')").run(d);
   raw.prepare("INSERT INTO sessions_v2 (token_hash, discord_user_id, created_at, expires_at, last_seen_at) VALUES (?, ?, ?, ?, ?)").run(th, ME, now, new Date(Date.now() + 86400000).toISOString(), now);
   const ids = [];
@@ -158,8 +158,8 @@ async function voteRig({ votes = 3, table = true, mine = [0], docBallotFor = [] 
     const id = (0xdef000 + i).toString(16).padStart(8, "0"); ids.push(id);
     const ballots = docBallotFor.includes(i) ? { [await voterHash(ME, id, USER_SALT)]: 1 } : {};
     raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(`vote:${id}`, JSON.stringify({ id, title: `Vote ${i}`, choices: ["a", "b", "c"], ballots }));
-    if (table && mine.includes(i)) raw.prepare("INSERT INTO vote_ballots VALUES (?, ?, 2)").run(id, await voterHash(ME, id, USER_SALT));
-    if (table) raw.prepare("INSERT INTO vote_ballots VALUES (?, ?, 0)").run(id, await voterHash(OTHER, id, USER_SALT));
+    if (table && mine.includes(i)) raw.prepare("INSERT INTO vote_ballots (vote_id, voter_hash, choice, cast_at) VALUES (?, ?, 2, 'x')").run(id, await voterHash(ME, id, USER_SALT));
+    if (table) raw.prepare("INSERT INTO vote_ballots (vote_id, voter_hash, choice, cast_at) VALUES (?, ?, 0, 'x')").run(id, await voterHash(OTHER, id, USER_SALT));
   }
   // D1 counts a db.batch() call as ONE query toward the free plan's 50 per invocation (the per-statement limits still apply to each member),
   // so queries = prepared statements that are not members of a batch + one per batch. Members are recorded with their placeholder counts.
@@ -270,7 +270,7 @@ test("a re-vote after migration 0010 (row) wins over the older choice in the doc
 test("720 vote documents plus one ballot row for a vote with no document is over the maximum (the bound is checked after the union)", async () => {
   const { MAX_VOTES } = await import("../../infrastructure/worker/data-rights.js");
   const r = await voteRig({ votes: MAX_VOTES, mine: [0] });
-  r.raw.prepare("INSERT INTO vote_ballots VALUES ('ffffffff', ?, 1)").run("e".repeat(64));
+  r.raw.prepare("INSERT INTO vote_ballots (vote_id, voter_hash, choice, cast_at) VALUES ('ffffffff', ?, 1, 'x')").run("e".repeat(64));
   for (const [path, method] of [["/api/me/export", "GET"], ["/api/me/erase", "POST"]]) assert.equal((await r.call(path, method)).status, 413, path);
   assert.equal(r.raw.prepare("SELECT COUNT(*) AS c FROM users").get().c, 2, "a refused erase changed nothing");
 });
