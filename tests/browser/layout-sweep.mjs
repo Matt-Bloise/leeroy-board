@@ -36,6 +36,7 @@
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
+import { ignoredConsoleError, cspCheck, sweepContext } from "../helpers/sweep-filters.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
@@ -67,6 +68,7 @@ const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENE
 const INJECT_JS = arg("--inject-js") ? readFileSync(arg("--inject-js"), "utf8") : "";
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
 const url = BASE ? pageUrl(BASE, { params: { preview: "1" } }) : "about:blank";
+const SWEEP_CTX = sweepContext(BASE || ""); // the local API origin (?brain=) and loopback hosts are the test environment, not a page problem (sweep-filters.mjs)
 const ORIGIN = BASE ? new URL(url).origin : "";
 // Known by-design exceptions, listed so they are visible and easy to delete. A member who has picked a name and opens #tonight lands on the wall: the app clears the hash and no scene opens.
 // Confirmed by hand on master (scene-open class off, #scene hidden, hash emptied); if the owner decides that deep link should open Next steps, delete the entry and the sweep will judge it.
@@ -358,6 +360,8 @@ async function cell(browser, size, state, A) {
   await ctx.addInitScript(XR_JS);
   if (INJECT_JS) await ctx.addInitScript((js) => { addEventListener("DOMContentLoaded", () => { (0, eval)(js); }); }, INJECT_JS);
   await applyClock(page, CLOCK);
+  // csp-violation: the report-only policy in _headers must stay quiet on every page. Firefox stops sending reports after a burst and logs "Prevented too many CSP reports" (QA run 41829291747), so each violation event is collected here and named.
+  await ctx.addInitScript(() => { window.__csp = []; addEventListener("securitypolicyviolation", (e) => window.__csp.push({ violatedDirective: e.violatedDirective, blockedURI: e.blockedURI, sourceFile: e.sourceFile, lineNumber: e.lineNumber, sample: e.sample }), true); });
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
@@ -368,7 +372,7 @@ async function cell(browser, size, state, A) {
   /* B55b: WebKit's CORS line ("Origin ... is not allowed by Access-Control-Allow-Origin. Status code: 404") names no URL and WebKit raises no response/requestfailed event for it (run 41829291747: no xorigin-http line). So the detail adds what the engine does know: the console message's own source (WebKit puts the resource URL there), every Worker the page started and every cross-origin fetch the page made with its status (XR_JS below). A request made inside a worker shows up in none of the events; the worker list then names the suspects. */
   page.on("worker", (w) => { (page.__workers ||= []).push(w.url()); });
   page.on("console", (m) => {
-    if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) return;
+    if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text()) || ignoredConsoleError(m.text(), (m.location() || {}).url)) return;
     if (!/Access-Control-Allow-Origin|access control/i.test(m.text())) { once("console-error", m.text()); return; }
     let loc = null; try { loc = m.location(); } catch (e) {}
     captureConsoleError({ text: m.text(), loc, record: (t) => once("console-error", t), evaluate: () => page.evaluate(() => ({ xr: window.__xr || [], wk: window.__wk || [] })), workers: () => page.__workers || [], pending });
@@ -395,7 +399,11 @@ async function cell(browser, size, state, A) {
         const everOpened = opened; // true when the scene did open at least once, so a failure below can say "opened, then closed again" or "never opened"
         if (opened) { await page.waitForTimeout(450); opened = await page.evaluate(isOpen, sc); } // still open after the open animation settles
         A.checks++;
-        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden); ${everOpened ? "it opened once, then closed again" : "it never opened"}`, A.failures); continue; }
+        if (!opened) {
+          // say which of the conditions failed, whether it ever opened or opened and closed again (QA run 41829291747, WebKit 2560x1440 member/timeline), and the wait used
+          const st = await page.evaluate((k) => { const p = document.querySelector(`#panel-${k}`); return `scene-open class ${document.documentElement.classList.contains("scene-open")}, #scene hidden ${document.querySelector("#scene").hidden}, #panel-${k} ${p ? (p.hidden ? "hidden" : "shown") : "absent"}, hash "${location.hash}"`; }, sc).catch(() => "page state unreadable");
+          fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (${st}; waited ${OPEN_MS} ms); ${everOpened ? "it opened once, then closed again" : "it never opened"}`, A.failures); continue;
+        }
       } else {
         const opened = await page.evaluate(() => document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden);
         if (!opened) { // the gate is not a scene sheet: only the document-level invariant applies
@@ -412,8 +420,10 @@ async function cell(browser, size, state, A) {
       for (const f of out) once(f.invariant, f.detail);
       if (sc !== "gate") await tourVeilCheck(page, size, once, A);
     }
+    scene = "all-scenes"; await cspCheck(page, once, A, SWEEP_CTX); // after every scene was opened and measured
   } catch (e) {
     fail(size, state, scene, "harness", `${e.message.split("\n")[0]}`, A.failures);
+    scene = "all-scenes"; await cspCheck(page, once, A, SWEEP_CTX); // and on the failure path too
   } finally { await Promise.allSettled([...pending]); await ctx.close().catch(() => {}); }
 }
 
