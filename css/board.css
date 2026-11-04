@@ -1988,7 +1988,16 @@ html.room-off.scene-open body { background: var(--black) url("../img/tavern-plat
   .tile-title { font-size: clamp(1.5rem, 0.95vw, 2.3rem); }
   .t-five .tile-body, .t-signups .tile-body { font-size: clamp(1.2rem, 0.8vw, 1.9rem); }
   .med-ico { --med: clamp(120px, calc((100cqi - 56px) / var(--party-n, 5)), 190px); }
-  .wall > li:not(.t-five):not(.t-signups) .tile-body { zoom: 1.4; }
+  /* tile bodies were scaled with CSS zoom: 1.4. WebKit (Safari 18.2) reports a zoomed box at its unzoomed size, so the sweep's tile-clip read every label as sitting hundreds of pixels outside its tile at 2560px and wider (e.g. "-1418,26" in production run 41829291747) although it was drawn inside. The same 1.4 is applied to the body's own type, padding and gaps instead, so every engine measures what it draws. */
+  .wall > li:not(.t-five):not(.t-signups) { --tz: 1.4; }
+  .wall > li:not(.t-five):not(.t-signups) .tile-body { font-size: calc(max(var(--fs-small), 0.88rem) * var(--tz)); padding: calc(10px * var(--tz)) calc(12px * var(--tz)); gap: calc(6px * var(--tz)); }
+  .wall > li:not(.t-five):not(.t-signups) .tile-viz { min-height: calc(48px * var(--tz)); }
+  .wall > li:not(.t-five):not(.t-signups) .minis { gap: calc(4px * var(--tz)) calc(14px * var(--tz)); }
+  .wall > li:not(.t-five):not(.t-signups) .mini b { font-size: calc(var(--step-1) * var(--tz)); }
+  .wall > li.t-library:not(.t-five):not(.t-signups) .mini b { font-size: calc(clamp(1.6rem, 2.4vw, 2.4rem) * var(--tz)); }
+  .wall > li.t-ledger:not(.t-five):not(.t-signups) .mini b { font-size: calc(clamp(2.1rem, 2.8vw, 3rem) * var(--tz)); }
+  .wall > li:not(.t-five):not(.t-signups) .mini small { font-size: calc(var(--fs-small) * var(--tz)); }
+  .wall > li.t-racials:not(.t-five):not(.t-signups) .tile-line { font-size: calc(1.12rem * var(--tz)); }
 }
 .ring-wrap svg { box-sizing: border-box; border: 7px solid transparent; background: radial-gradient(circle closest-side, transparent 54%, var(--oak-0) 55%, var(--oak-0) 72%, transparent 73%) padding-box, radial-gradient(circle at 34% 28%, var(--oak-3), var(--oak-2) 45%, var(--oak-1) 75%) padding-box, var(--mat-brass) border-box; box-shadow: inset 7px 9px 18px var(--shadow), inset -3px -4px 8px var(--edge-hi), inset 0 0 0 1px var(--brass-dim), 6px 12px 22px var(--shadow); }
 .ring-seg { filter: drop-shadow(1px 2px 1px var(--shadow)); }

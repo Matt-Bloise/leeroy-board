@@ -10,7 +10,7 @@
 // by the cascade. The audit row is written last. kv_state board documents (signups, party, party_sheets, ...) are NOT edited here.
 // Also cleared (everything keyed by a hash of the person): answer_feedback.user_hash and answer_details.asker_hash (answer-ux.js hash),
 // answer_details rows for the person's own Ask turns (the "More" / "Sources" answer text), kv_state ai_budget:<day>:user:<hashId> rows
-// (for the Discord id and for the slug) and the person's ballot inside each kv_state vote:<id> document. The audit row's target is a
+// (for the Discord id and for the slug) and the person's ballot inside each kv_state vote:<id> document and in vote_ballots rows (once migration 0010 exists; 413 past MAX_VOTES votes, nothing changed). The audit row's target is a
 // random value, so no row left after an erase can be tied back to the person. DATA_MAP below lists every table and how it is handled;
 // tests/unit/data-map.test.mjs fails when a table in schema.sql is missing from it.
 // Name-keyed tables (ask_turns, fact_fixes) are matched only for a member-key caller: a web display name is chosen by its owner
@@ -75,6 +75,7 @@ export const DATA_MAP = Object.freeze({
   answer_feedback: { links: "user_hash = sha256(USER_SALT:answer-ux:<discord id>)", erase: "DELETE by user_hash", member: "legacy.answer_feedback" },
   character_profiles: { links: "via characters", erase: "cascade from characters", member: "tenancy.character_profiles" },
   noise_ledger: { links: null, erase: null, member: null },
+  vote_ballots: { links: "voter_hash = voterHash(discord id, vote id, USER_SALT), one row per ballot (migration 0010, PR 173)", erase: "DELETE by voter_hash, in the erase batch; skipped while the table does not exist", member: "legacy.vote_ballots" },
   request_gauge: { links: null, erase: null, member: null }, // Worker requests per UTC day, counts only (migration 0008)
 });
 // Durable Object state: BoardRoom (room.js) is a pure relay. It never touches ctx.storage and keeps no state between messages, so there is nothing to erase.
@@ -133,38 +134,74 @@ async function personalKeys(env, who) {
 const MINE_ASK = "(id IN (SELECT intent_id FROM ask_turn_askers WHERE asker_hash IN (?, ?)) OR (by_name IN (?, ?) AND id IN (SELECT intent_id FROM ask_turn_legacy)))";
 const askArgs = (pk, who) => [pk.askerHashes[0], pk.askerHashes[1], who.slug || null, who.name || null];
 
-// Ids of every stored vote (kv_state vote:<id>), keys only, not the documents.
-async function voteIds(env) {
-  return (await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%'")).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id));
-}
+// ---- votes. Ballots live in two places: the `ballots` map inside kv_state vote:<id> (older ballots) and, once migration 0010 is applied, one
+// row per ballot in vote_ballots (vote_id, voter_hash, choice). A person's hash is per vote: voterHash(discord id, vote id, USER_SALT).
+// Work per request is bounded, not only per statement. At most MAX_VOTES vote documents are considered; more than that is refused with a
+// 413 that states the maximum (nothing is read further, nothing is changed), so the vote part stays well under the free plan's 50 queries per invocation (a db.batch() counts as one):
+// export: document ids (1) + table check (1) + ballot-row ids (1) + document reads (<= 8) + ballot-row reads (<= 8) = at most 19; erase: document ids (1) + table check (1) + ballot-row ids (1) + probes (<= 18) + one batch holding every edit and delete, 22 in the worst-case test.
+export const MAX_VOTES = 720; // 8 chunks of IN_CHUNK
+const IN_CHUNK = 90; // D1 allows 100 bound values per statement
+const VOTE_CHUNK = 40; // two bound values per vote in the erase probe
+class TooManyVotes extends Error { constructor(n) { super("too many votes"); this.count = n; } }
+const tooManyVotes = (e) => respond(413, { error: "too_many_votes", max_votes: MAX_VOTES, message: `This service holds more than ${MAX_VOTES} votes, which is more than one request can search for your ballots. Nothing was changed. Ask the owner to run the export or erase for you.` });
+const hasVoteBallots = async (env) => (await rows(env, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vote_ballots'")).length > 0; // feature detect: migration 0010 may not be applied yet
 const ballotPath = (hash) => `$.ballots."${hash}"`; // hex only, quoted because a key may start with a digit
-const VOTE_CHUNK = 40; // two bound values per vote, and D1 allows 100 per statement
 
-// -> [{ id, hash }] for the votes that hold a ballot from this Discord id. A ballot key is a hash of the vote id and the person, so the
-// hashes are computed here (cheap) and the database is asked, 40 votes per query, which of those exact ballots exist: the query returns only
-// matching keys, and only those votes are read or edited afterwards. Votes the person never joined cost no document read and no statement.
-async function callerVotes(env, discordId) {
-  if (!discordId) return [];
-  const ids = await voteIds(env), out = [];
-  for (let i = 0; i < ids.length; i += VOTE_CHUNK) {
-    const chunk = ids.slice(i, i + VOTE_CHUNK), hashes = await Promise.all(chunk.map((id) => voterHash(discordId, id, env.USER_SALT)));
+// Ids of every vote a ballot could belong to, and whether vote_ballots exists: the vote documents (kv_state vote:<id>) UNION the vote ids that
+// still have ballot rows, so a row whose document was deleted is found too. The id shape is checked IN SQL (8 lowercase hex characters, like
+// VOTE_ID_RE) so each LIMIT counts votes only: a stray 'vote:...' key can never push a real vote out of the first MAX_VOTES + 1 rows.
+// More than MAX_VOTES distinct ids throws TooManyVotes.
+async function voteScope(env) {
+  const ids = new Set((await rows(env, "SELECT key FROM kv_state WHERE key LIKE 'vote:%' AND length(key) = 13 AND substr(key, 6) NOT GLOB '*[^0-9a-f]*' LIMIT ?", MAX_VOTES + 1)).map((r) => String(r.key).slice(5)).filter((id) => VOTE_ID_RE.test(id)));
+  if (ids.size > MAX_VOTES) throw new TooManyVotes(ids.size);
+  const hasRows = await hasVoteBallots(env);
+  if (hasRows) {
+    for (const r of await rows(env, "SELECT DISTINCT vote_id FROM vote_ballots WHERE length(vote_id) = 8 AND vote_id NOT GLOB '*[^0-9a-f]*' LIMIT ?", MAX_VOTES + 1)) if (VOTE_ID_RE.test(String(r.vote_id))) ids.add(String(r.vote_id));
+    if (ids.size > MAX_VOTES) throw new TooManyVotes(ids.size);
+  }
+  return { ids: [...ids], hasRows };
+}
+const hashesFor = async (env, discordId, ids) => new Map(await Promise.all(ids.map(async (id) => [id, await voterHash(discordId, id, env.USER_SALT)])));
+const chunks = (list, n) => { const out = []; for (let i = 0; i < list.length; i += n) out.push(list.slice(i, i + n)); return out; };
+const inList = (n) => Array(n).fill("?").join(", ");
+
+// -> [{ id, hash }] for the votes whose DOCUMENT holds a ballot from this Discord id. The database is asked, 40 votes per query, which of those
+// exact ballots exist: the query returns only matching keys, and only those votes are edited afterwards.
+async function callerVotes(env, hashOf, ids) {
+  const out = [];
+  for (const chunk of chunks(ids, VOTE_CHUNK)) {
     const cond = chunk.map(() => "(key = ? AND CASE WHEN json_valid(json) THEN json_extract(json, ?) END IS NOT NULL)").join(" OR ");
-    const hit = new Set((await rows(env, `SELECT key FROM kv_state WHERE ${cond}`, ...chunk.flatMap((id, j) => [`vote:${id}`, ballotPath(hashes[j])]))).map((r) => r.key));
-    chunk.forEach((id, j) => { if (hit.has(`vote:${id}`)) out.push({ id, hash: hashes[j] }); });
+    const hit = new Set((await rows(env, `SELECT key FROM kv_state WHERE ${cond}`, ...chunk.flatMap((id) => [`vote:${id}`, ballotPath(hashOf.get(id))]))).map((r) => r.key));
+    for (const id of chunk) if (hit.has(`vote:${id}`)) out.push({ id, hash: hashOf.get(id) });
   }
   return out;
 }
 
-// -> [{ id, vote, hash, choice }] for export: callerVotes, then one read per vote the person actually voted in.
-async function ballotsOf(env, who) {
-  const out = [];
-  for (const { id, hash } of await callerVotes(env, who.discordId)) {
-    const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(`vote:${id}`).first();
-    let vote = null;
-    try { vote = row ? JSON.parse(row.json) : null; } catch (e) { vote = null; }
-    if (vote && vote.ballots && Object.prototype.hasOwnProperty.call(vote.ballots, hash)) out.push({ id, vote, hash, choice: vote.ballots[hash] });
+// -> [{ vote_id, title, choice }] for export: vote documents read with IN(...) lists (the ballot looked up here), then, when vote_ballots exists,
+// its rows for the person's hashes, also in IN(...) lists. A vote seen in both places is listed once.
+async function ballotsOf(env, who, { ids, hasRows }) {
+  if (!who.discordId) return [];
+  const hashOf = await hashesFor(env, who.discordId, ids), byId = new Map(), titles = new Map();
+  for (const chunk of chunks(ids, IN_CHUNK)) {
+    for (const row of await rows(env, `SELECT key, json FROM kv_state WHERE key IN (${inList(chunk.length)})`, ...chunk.map((id) => `vote:${id}`))) {
+      const id = String(row.key).slice(5);
+      let vote = null;
+      try { vote = JSON.parse(row.json); } catch (e) { vote = null; }
+      if (!vote) continue;
+      titles.set(id, vote.title);
+      if (vote.ballots && Object.prototype.hasOwnProperty.call(vote.ballots, hashOf.get(id))) byId.set(id, { vote_id: id, title: vote.title, choice: vote.ballots[hashOf.get(id)] });
+    }
   }
-  return out;
+  if (ids.length && hasRows) {
+    const idOf = new Map([...hashOf].map(([id, h]) => [h, id]));
+    for (const chunk of chunks([...idOf.keys()], IN_CHUNK)) {
+      for (const r of await rows(env, `SELECT vote_id, voter_hash, choice FROM vote_ballots WHERE voter_hash IN (${inList(chunk.length)})`, ...chunk)) {
+        const id = idOf.get(String(r.voter_hash));
+        if (id) byId.set(id, { vote_id: id, title: titles.has(id) ? titles.get(id) : null, choice: r.choice }); // the row is the newer write: it wins over a stale document choice
+      }
+    }
+  }
+  return [...byId.values()];
 }
 
 async function collect(env, who) {
@@ -185,7 +222,7 @@ async function collect(env, who) {
   if (id) {
     const uk = await userKey(env, id);
     out.legacy.answer_feedback = await rows(env, "SELECT intent_id, vote, created_at FROM answer_feedback WHERE user_hash = ?", pk.answerHash);
-    out.legacy.vote_ballots = (await ballotsOf(env, who)).map((b) => ({ vote_id: b.id, title: b.vote.title, choice: b.choice }));
+    out.legacy.vote_ballots = await ballotsOf(env, who, await voteScope(env));
     out.legacy.user_state = await rows(env, "SELECT doc, json, updated_at FROM user_state WHERE user_key = ?", uk);
     out.legacy.sessions = await rows(env, "SELECT created_at, expires_at, last_seen FROM sessions WHERE user_key = ?", uk); // never token_hash
     const t = {};
@@ -241,8 +278,14 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM answer_feedback WHERE user_hash = ?").bind(pk.answerHash));
     st.push(db.prepare("DELETE FROM answer_details WHERE asker_hash = ?").bind(pk.answerHash));
     // One in-database edit per vote the person voted in: json_remove on the ballot key. The document is never read and rewritten, so a ballot cast by someone else at the same moment is not overwritten.
-    for (const v of await callerVotes(env, id)) {
+    const { ids, hasRows } = await voteScope(env); // throws TooManyVotes past MAX_VOTES: refused before anything is changed
+    const hashOf = await hashesFor(env, id, ids); // the per-vote hashes are computed once and used for both the document edits and the row deletes
+    for (const v of await callerVotes(env, hashOf, ids)) {
       st.push(db.prepare("UPDATE kv_state SET json = json_remove(json, ?), updated_at = ? WHERE key = ? AND json_valid(json)").bind(ballotPath(v.hash), new Date(now).toISOString(), `vote:${v.id}`));
+    }
+    // ballots kept as rows (vote_ballots, migration 0010): deleted by the person's per-vote hashes in the same batch; skipped when the table does not exist yet
+    if (ids.length && hasRows) {
+      for (const chunk of chunks([...hashOf.values()], IN_CHUNK)) st.push(db.prepare(`DELETE FROM vote_ballots WHERE voter_hash IN (${inList(chunk.length)})`).bind(...chunk));
     }
   }
   for (const h of pk.budgetIds) st.push(db.prepare("DELETE FROM kv_state WHERE key LIKE ?").bind(kvLike(h)));
@@ -274,6 +317,8 @@ async function eraseData(request, env, who, now) {
   invalidateMembersCache();
   return respond(200, {
     erased: true,
+    // only when ballots were looked for: a member key with no linked Discord id has no ballot hashes to search by
+    ...(id ? { erased_includes: ["Your ballot in each board vote, whether it is kept in the vote document or, once the per-ballot table exists, as a row of it."] } : {}),
     not_erased: [
       "Board documents in kv_state that mention you by name (party, signups, the Discord roster and similar); ask the owner to review them.",
       "Account rows (accounts, account_keys: name, slug, label) are not erased by this route; ask the owner to remove them.",
@@ -282,6 +327,7 @@ async function eraseData(request, env, who, now) {
       "Your display name, your question and the party's names and builds were sent to the AI vendor; AI Gateway request logs may keep the full request. This service cannot erase those.",
       "A member key that was already checked by another running copy of the Worker can still be accepted for read requests for up to 15 minutes; write requests re-check the database.",
       "Questions asked on Discord by someone who is not on the roster are kept under the Discord nickname and cannot be found by key; a nickname is never matched to a person.",
+      ...(who.via === "web-session" ? ["Questions asked with a board key (not on Discord) after migration 0009 carry only your member-handle hash, which a web sign-in cannot derive; they are erased only through a member-key request."] : []),
       ...(who.via === "web-session" ? ["Rows filed only under a handle or name (sheet_events, dispatches, intents, fact_fixes, and ask_turns written before migration 0009) are erased only through a member-key request."] : []),
     ],
   }, {}, [clearSession]);
@@ -300,6 +346,7 @@ export async function handleDataRights(request, env, { path, now }) {
     if (!who) return respond(401, { error: "unauthorized" });
     return path === "/me/export" ? await exportData(env, who, now) : await eraseData(request, env, who, now);
   } catch (e) {
+    if (e instanceof TooManyVotes) return tooManyVotes(e);
     if (missingTable(e)) {
       if (!warned) { warned = true; console.warn("data-rights: a table is missing; apply infrastructure/migrations 0002, 0003 and 0009"); }
       return respond(503, { error: "data rights not available" });

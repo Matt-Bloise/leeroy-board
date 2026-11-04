@@ -16,3 +16,5 @@ html.phone-shell .walk-card { top: auto; left: 8px; right: 8px; bottom: calc(64p
 html.phone-shell .walk-card:has(.walk-pic) { grid-template-columns: 88px minmax(0, 1fr); }
 html.phone-shell .walk-pic { width: 88px; }
 @media (forced-colors: active) { .walk-card { border: 2px solid CanvasText; } }
+/* the tour veil covers the whole sheet, so it also covered the close button (WebKit QA: div.walk-veil on top of #scene-close at 3840x2160 and 5120x2880). The header row (.sheet-top has translate, so it is its own stacking layer and the button's own z-index cannot lift it) sits above the veil, which keeps the close button on top; leaving the scene ends the tour (walk.js, scene event). */
+.sheet-top { z-index: 31; }

@@ -1,0 +1,51 @@
+# Answer path claims ledger
+
+Every behavioural claim the `/ask` answer path makes in code comments, or that `docs/` promises, with where it lives, which test proves it, and whether it is proven. Written for task B34 against master `7e52798`.
+
+- **Answer path** = `infrastructure/worker/ai-models.js` (`buildAnswerInputs`, `answerWithAi`, `dispatchToProvider`, `finishAnswerText`, `extractWikiFactsWithAi`), `answer-ux.js`, `ask-answer.js`, `budget.js`, `data-rights.js`.
+- **AC-n** = test *n* in `tests/unit/answer-acceptance.test.mjs` (the eight B34 tests; real Worker code over in-memory SQLite, fake AI, no network).
+- **proven** = a test fails if the behaviour breaks. **unproven** = no test, only a test of something nearby, or the behaviour cannot be checked without a real model. **gap** = unproven *and* a test or probe shows the claim is not what the code does today.
+- Only fakes were used. Nothing here says how a real model behaves; claims that depend on model obedience are listed as unproven on purpose.
+
+## Claims
+
+| # | Claim | Where in code | Test | Status |
+| --- | --- | --- | --- | --- |
+| 1 | The answer cites only library pages that exist; an invented source id is not stored as a cite and not shown | `ai-models.js` `finishAnswerText` (`known.has(id)`); `answer-format.js` `extractCitedIds` | AC-1; `ask-delivery.test.mjs` (filters cites) | proven |
+| 1b | The answer cites only pages **it was given** in the prompt (the top 5 pages) | `finishAnswerText` filters against *all* library pages, not the pages in the prompt | none | unproven (code checks "exists", not "was shown"; a real page id the model was never shown would be kept) |
+| 2 | A user over their daily cap is refused before any model call (no fetch, no `AI.run`); a user under it is not | `ai-models.js` `answerWithAi` (`checkAskBudget` before `dispatchToProvider`); `budget.js` `checkAskBudget` | AC-2; `ask-budget.test.mjs`; `sec-high.test.mjs` (Discord, R3) | proven |
+| 3 | The global neuron cap cannot be overshot by parallel asks (reserve before the call, reconcile after) | `budget.js` `reserveNeurons`, `reconcileNeurons` | `audit-fixes.test.mjs` D1, D2, D4 | proven |
+| 4 | A budget read error fails closed for a Workers AI guest and open for a member | `budget.js` `checkAskBudget` (`failClosed`) | `audit-fixes.test.mjs` D3 | proven |
+| 5 | Private data is never sent to the model: no salt, key, token, webhook url, other person's private question or sign-up note in the prompt | `ai-models.js` `buildAnswerInputs` (prompt is built only from the question, library facts, roster names and, for a private guided ask, roster/tonight/sign-ups) | AC-5 | proven for a non-coach ask. A private **guided** (coach) ask does send tonight's title and the sign-up roster by design; that is not covered |
+| 5b | The asker's display name and question go to the AI vendor | `buildAnswerInputs` | n/a (disclosed) | disclosed in `docs/privacy.md`; not a claim of secrecy |
+| 6 | Question text cannot close its own data fence or pose as instructions | `prompt-fence.js` `stripFence`, `FENCE_RULE`; `buildAnswerInputs` | AC-7; `sec-high.test.mjs` 5 | proven (prompt shape only; whether a model obeys the rule is unproven) |
+| 7 | A failed model call never produces an invented answer when the library has nothing: the turn ends `error`, no cites, error text only | `answerWithAi` (`throw providerErr` when no hits and no pages) and the outer `catch` | AC-3 | proven |
+| 8 | When every model fails but the library has a match, the answer is the stored library fact word for word and the model label says `local-d1-rag` | `answerWithAi` fallback branches | AC-4 | proven |
+| 8b | When every model fails and the question matches **nothing**, the user is told so | `answerWithAi` second fallback branch uses `ranked` (top 5 pages by score, always non-empty when the library has pages) | probe, see Findings | **gap**: an unrelated question gets `status = answered` with the first facts of unrelated pages and their Sources. Reported only; no code changed |
+| 9 | No supporting fact produces an "I do not know" style answer, not a made-up one | System prompt: "Where the library does not know something yet, state plainly that it is not published yet" | none | unproven (prompt instruction only; needs a real model or the bake-off in `docs/runbooks/model-bake-off.md`) |
+| 10 | A provider error stored with the turn is short and secret-free (60 chars, keys and bearer tokens removed) | `ai-models.js` `shortProviderError` | `ask-delivery.test.mjs` (no key in model label); AC-3 (no key in stored text) | proven for the model label. The **error branch** stores `err.message` unshortened in `ask_turns.answer`, so a provider message longer than 60 chars is stored as is: unproven |
+| 11 | Erased users leave no readable asks: question, answer, "More"/"Sources" text and votes are deleted; other people's asks stay | `data-rights.js` `eraseData` (lines for `ask_turns`, `answer_details`, `answer_feedback`, `ask_turn_askers`) | AC-6; `data-rights.test.mjs` (statement order and args) | proven for a member-key erase with `DATA_RIGHTS=on`. Not covered: a web-session erase (by design does not remove name-keyed asks), and `ask_turn_legacy` rows with no hash |
+| 12 | Erase is available | `DATA_RIGHTS` flag, off by default | `data-rights.test.mjs` (flag off: 404) | `docs/privacy.md` states it is **off**; until on, claim 11 is a built capability, not a live promise |
+| 13 | An ask is stored with its asker hashes in one batch, or neither | `answer-ux.js` `insertAskTurn` | AC-6 uses it for the happy path | unproven as a rollback (no test forces the batch to fail) |
+| 14 | A private ask (share = 0) puts no question or answer on the socket or in public stats; failure path likewise | `answerWithAi` broadcast branches | `sec-high.test.mjs` M2, R1 | proven |
+| 15 | A guest ask is private and limited to two per hour per IP /64 | `index.js` guest path | `audit-fixes.test.mjs` C1 to C3 | proven |
+| 16 | Answer buttons are bound to their message and signed; a changed message id or a private answer opened by someone else is refused | `answer-ux.js` `handleAnswerButton` | `answer-ux.test.mjs` | proven (existing suite; not re-checked here) |
+| 17 | The answer cache key never mixes askers, tiers, personas, depth, models or prompts and holds no raw name or question | `ai-models.js` `buildAnswerCacheKey` | `answer-cache-key.test.mjs` | proven |
+| 18 | The answer is **labelled when it is from cache** | nowhere: `cf-aig-cache-ttl` makes AI Gateway cache answers for up to 6 h (`ai-models.js` lines 374, 598); the Worker does not read the gateway's `cf-aig-cache-status` and the stored model label does not say "cached" | none | **gap / not implemented**. `docs/privacy.md` only says Cloudflare may cache an answer for up to 6 hours. There is no labelling to prove |
+| 19 | The fact learner only proposes: every change is stored `pending`, capped (80 / 300 chars), never edits `lib_pages`; scraped text is fenced | `ai-models.js` `extractWikiFactsWithAi`; `wiki-proposals.js` | AC-8; `audit-fixes.test.mjs` E1 | proven (AC-8 stored rows and an untouched library; the guard that skips a made-up `page_id` is not separately proven because a thrown error in the same loop also leaves the library untouched) |
+| 20 | An approved proposal is the only way a learned fact reaches the library | `wiki-proposals.js` `approveProposal` | `wiki-proposals.test.mjs` | covered by the existing suite (outside the 8; not re-checked here) |
+| 21 | The learner skips Workers AI when usage is within the cron reserve, so asks keep room | `extractWikiFactsWithAi` (`overCap(..., CRON_RESERVE)`) | none | unproven |
+| 22 | A manual `/answer` stores real columns only, status `answered`/`error`, a short error, and a non-admin may answer only their own ask | `ask-answer.js` `applyManualAnswer` | `audit-fixes.test.mjs` A4, B2, H | proven |
+| 23 | Provider calls time out (20 s) and the Discord ask fits its 24 s deadline | `ai-models.js` `fetchWithTimeout`, `ASK_*` constants | `ai-timeout.test.mjs`, `ask-delivery.test.mjs` | proven |
+| 24 | `docs/privacy.md` says Ask questions are "not deleted automatically" | retention table | none | unproven (a statement of absence; nothing deletes `ask_turns` on a schedule, and no test asserts that) |
+
+## Findings (reported, not fixed)
+
+1. **Unrelated question + all models down gives a confident-looking answer (claim 8b).** Probe: library with two pages, every provider failing, question "what is the airspeed of a swallow". Result: `status = answered`, `model = workers-ai:workers-ai-local-d1-rag (after workers-ai: down)`, answer is the first fact of each page plus a Sources line linking both. Cause: the fallback's second branch takes `ranked.slice(0, 3)`, and `ranked` is the top 5 pages by score even when every score is 0. The model label is honest about provenance, but nothing tells the reader the facts do not match the question. No test is added because the honest behaviour is not defined yet.
+2. **No "from cache" label (claim 18).** See the row. If the label is wanted, the Worker would have to read `cf-aig-cache-status` from the gateway response.
+3. **Cites check "exists", not "was shown" (claim 1b).**
+4. **The `!page` guard in the learner is masked (claim 19).** Removing `if (!page) continue;` did not fail AC-8, because the next line throws, the `catch` returns `[]`, and the proposals saved before it stay. Behaviour is safe, but the guard is not what makes it safe.
+
+## How the tests were checked
+
+Each of AC-1 to AC-7 was run against a deliberate temporary change to the code and failed; each change was reverted (`git checkout`) and the tree checked clean. See the pull request description for the list.
