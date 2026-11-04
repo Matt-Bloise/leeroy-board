@@ -36,6 +36,8 @@ Both salts were fixed constants committed to a repository that was once public (
      node tools/rotate-salts.mjs --export <private path>/export.ndjson --ids-file <private path>/extra-ids.txt --sql-out <private path>/rotate.sql
    ```
    Read the "Rows in the export" lines. A large "unmapped" count means ids are missing: add them to `--ids-file` and run again. `--only user` or `--only key` plans one salt on its own.
+
+   **The tool refuses (exit 3, no plan, no SQL file) to plan a `USER_SALT` rotation in two cases:** when `--export` is omitted, because it cannot then see whether `vote_ballots` rows exist; and when the export contains any `vote_ballots` row, because the tool does not yet re-key `vote_ballots.voter_hash` (voters would be counted twice after the flip and the old rows orphaned). `--export` is therefore required for a `USER_SALT` plan, and a `USER_SALT` rotation is blocked until the tool gains a re-key step. A `KEY_SALT`-only plan (`--only key`) is not affected. Exit code 2 still means a bad argument or missing input.
 4. Take the D1 Time Travel bookmark and write it down: `cd infrastructure && npx wrangler d1 time-travel info leeroy-board-db`.
 5. Prepare a new key for each member, and the hash statements. Keys are made and handed over privately (`add-party-member.md`, step 4). For each member: `printf '%s' "$NEW_KEY" | KEY_SALT="$NEW_KEY_SALT" node infrastructure/scripts/hash-key.mjs <slug> > <private path>/key-<slug>.sql`. Run nothing yet.
 6. Run the BEFORE query from `rotate.sql` against production and keep the numbers: `npx wrangler d1 execute leeroy-board-db --remote --command "<the BEFORE select>"`.

@@ -104,8 +104,11 @@ export function parseIds(text) {
 // Reads an export from tools/pull-export.mjs: ids, vote ids, slugs and the rows we can classify. No I/O beyond the string it is given.
 // Why a plan must not be made, or null. Ballots cast after migration 0010 live in vote_ballots.voter_hash, which this tool does not re-key:
 // after a USER_SALT flip a returning voter would be counted twice and the old rows orphaned. So a USER_SALT plan is refused while the export
-// holds such a row. (The tool opens no database: it can only see what --export shows it. Run it with a fresh --export.)
+// holds such a row. (The tool opens no database: it can only see what --export shows it, so a USER_SALT plan without --export is refused too, exit 3.)
 export function refusalFor(salts, facts) {
+  if (salts && salts.USER && !facts) {
+    return "refusing to plan a USER_SALT rotation without --export: the tool cannot see whether vote_ballots rows exist, and it does not re-key them. Pull a fresh export (tools/pull-export.mjs) and pass it with --export, or use --only key.";
+  }
   const n = facts && facts.tables ? facts.tables.vote_ballots || 0 : 0;
   if (salts && salts.USER && n > 0) {
     return `refusing to plan a USER_SALT rotation: the export holds ${n} vote_ballots row(s) and this tool does not re-key vote_ballots.voter_hash (voters would be counted twice after the flip). Add the re-key step first, or use --only key.`;
@@ -273,9 +276,9 @@ function main() {
     if (o.slugs) list(o.slugs, SLUG_RE, "slug").forEach((x) => slugs.add(x));
     if (o["sql-out"] && insideRepo(o["sql-out"])) throw new Error("--sql-out is inside this repository; it holds hashes of Discord ids. Choose a path outside it.");
   } catch (e) { console.error(`error: ${e.message}`); process.exit(2); }
+  if (salts.USER && !ids.size) { console.error("error: no Discord ids given. Without them nothing can be re-derived (use --ids-file and/or --export)."); process.exit(2); }
   const refused = refusalFor(salts, facts);
   if (refused) { console.error(`error: ${refused}`); process.exit(3); }
-  if (salts.USER && !ids.size) { console.error("error: no Discord ids given. Without them nothing can be re-derived (use --ids-file and/or --export)."); process.exit(2); }
   const plan = buildPlan({ salts, ids: [...ids].sort(), voteIds: [...voteIds].sort(), slugs: [...slugs].sort(), facts, reverse: !!o.reverse });
   if (ignored) plan.ignored_ids = ignored;
   if (o["sql-out"]) fs.writeFileSync(o["sql-out"], fullSql(plan), { mode: 0o600 });

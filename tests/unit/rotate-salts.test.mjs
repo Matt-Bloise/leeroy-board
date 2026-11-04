@@ -169,10 +169,11 @@ test("nothing secret on the screen: no salt, no full 64-character hash, in text,
   try {
     const ids = path.join(dir, "ids.txt"); fs.writeFileSync(ids, IDS.join("\n"));
     const sqlOut = path.join(dir, "plan.sql");
+    const exp = path.join(dir, "export.ndjson"); fs.writeFileSync(exp, JSON.stringify({ t: "row", table: "members", r: { slug: "santa" } }) + "\n"); // a USER_SALT plan needs an export (no vote_ballots rows in it)
     const env = { ...process.env, ...ENV };
-    const text = spawnSync("node", [TOOL, "--ids-file", ids, "--vote-ids", VOTE, "--slugs", "santa", "--sql-out", sqlOut], { encoding: "utf8", env });
+    const text = spawnSync("node", [TOOL, "--ids-file", ids, "--export", exp, "--vote-ids", VOTE, "--slugs", "santa", "--sql-out", sqlOut], { encoding: "utf8", env });
     assert.equal(text.status, 0, text.stderr);
-    const json = spawnSync("node", [TOOL, "--ids-file", ids, "--vote-ids", VOTE, "--slugs", "santa", "--json"], { encoding: "utf8", env });
+    const json = spawnSync("node", [TOOL, "--ids-file", ids, "--export", exp, "--vote-ids", VOTE, "--slugs", "santa", "--json"], { encoding: "utf8", env });
     assert.equal(json.status, 0, json.stderr);
     for (const out of [text.stdout + text.stderr, json.stdout + json.stderr]) {
       for (const s of [OLD_U, NEW_U, OLD_K, NEW_K]) assert.equal(out.includes(s), false, "a salt reached the output");
@@ -232,12 +233,26 @@ test("a USER_SALT plan is refused (exit 3, no plan, no SQL) while the export hol
     assert.equal(go(exportText("users", "vote_ballots"), "--only", "key").status, 0, "a KEY_SALT-only plan does not touch ballots");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+test("a USER_SALT plan without --export is refused (exit 3, no SQL written); --only key without --export still plans", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rot-ne-"));
+  try {
+    const env = { ...process.env, ...ENV };
+    const ids = path.join(dir, "ids.txt"); fs.writeFileSync(ids, IDS.join("\n"));
+    const sqlOut = path.join(dir, "plan.sql");
+    const r = spawnSync("node", [TOOL, "--ids-file", ids, "--sql-out", sqlOut], { encoding: "utf8", env });
+    assert.equal(r.status, 3);
+    assert.match(r.stderr, /without --export/);
+    assert.equal(fs.existsSync(sqlOut), false);
+    assert.equal(spawnSync("node", [TOOL, "--only", "key", "--ids-file", ids], { encoding: "utf8", env }).status, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
 test("refusalFor: only a USER plan with ballot rows is refused", () => {
   assert.match(refusalFor({ USER: {} }, { tables: { vote_ballots: 2 } }), /2 vote_ballots row/);
   assert.equal(refusalFor({ USER: {} }, { tables: { vote_ballots: 0 } }), null);
   assert.equal(refusalFor({ USER: {} }, { tables: {} }), null);
   assert.equal(refusalFor({ KEY: {} }, { tables: { vote_ballots: 2 } }), null);
-  assert.equal(refusalFor({ USER: {} }, null), null);
+  assert.match(refusalFor({ USER: {} }, null), /without --export/);
+  assert.equal(refusalFor({ KEY: {} }, null), null, "a KEY_SALT-only plan needs no export");
 });
 
 // ---- the inventory must stay complete
