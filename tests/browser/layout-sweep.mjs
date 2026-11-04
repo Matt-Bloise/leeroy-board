@@ -39,6 +39,7 @@
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
+import { XR_JS, sameOrigin, formatDiag } from "../helpers/sweep-diag.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -73,25 +74,7 @@ const NO_OPEN = new Set(["member/tonight"]);
 const failures = [], notes = [];
 let skipped = 0, cells = 0, checks = 0, truncated = false, retried = 0;
 // One (size, state) cell keeps its own tally while it runs so a failed attempt can be thrown away and run again in a fresh page; the tally of the attempt that counts is merged into the totals.
-const fail = (c, state, scene, invariant, detail, sink = failures) => sink.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300) });
-
-// Runs in every page (addInitScript). window.__xr lists the page's cross-origin fetches with their status, window.__wk the scripts of the Workers it started (see the B55b note in the console handler).
-function XR_JS() {
-  try {
-    window.__xr = []; window.__wk = [];
-    const f = window.fetch;
-    if (typeof f === "function") window.fetch = function (input, init) {
-      let u = ""; try { u = new URL(typeof input === "string" ? input : input.url, location.href).href; } catch (e) {}
-      const x = u && !u.startsWith(location.origin) && /^https?:/.test(u);
-      const p = f.apply(this, arguments);
-      if (x) p.then((r) => { if (!r.ok) window.__xr.push({ u, s: r.status }); }, (e) => window.__xr.push({ u, err: String(e && e.message || e).slice(0, 80) }));
-      return p;
-    };
-    const W = window.Worker;
-    if (typeof W === "function") window.Worker = function (url, o) { try { window.__wk.push(String(url instanceof URL ? url.href : new URL(url, location.href).href)); } catch (e) {} return new W(url, o); };
-    if (typeof W === "function") window.Worker.prototype = W.prototype;
-  } catch (e) {}
-}
+const fail = (c, state, scene, invariant, detail, sink = failures, diag = "") => sink.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300), ...(diag ? { diag: String(diag) } : {}) }); /* diag is kept apart from detail: the 300-character cut on detail must not discard the URLs a diagnostic exists to show */
 
 // Runs in every page (addInitScript). window.__lz.rect(el) is el.getBoundingClientRect() in real viewport pixels; point(el) its centre. See the Zoom note at the top.
 function ZOOM_JS(isWebkit) {
@@ -378,22 +361,21 @@ async function cell(browser, size, state, A) {
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
-  const once = (inv, detail) => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures); } };
+  const once = (inv, detail, diag = "") => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures, diag); } };
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
+  page.on("response", (r) => { const u = r.url(); if (sameOrigin(u, ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   /* B55b: WebKit's CORS line ("Origin ... is not allowed by Access-Control-Allow-Origin. Status code: 404") names no URL and WebKit raises no response/requestfailed event for it (run 41829291747: no xorigin-http line). So the detail adds what the engine does know: the console message's own source (WebKit puts the resource URL there), every Worker the page started and every cross-origin fetch the page made with its status (XR_JS below). A request made inside a worker shows up in none of the events; the worker list then names the suspects. */
   page.on("worker", (w) => { (page.__workers ||= []).push(w.url()); });
   page.on("console", async (m) => {
     if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) return;
-    let extra = "";
-    try { const l = m.location(); if (l && l.url) extra += ` [source ${l.url}:${l.lineNumber}]`; } catch (e) {}
-    if (/Access-Control-Allow-Origin|access control/i.test(m.text())) {
-      try { const st = await page.evaluate(() => ({ xr: (window.__xr || []).slice(-12), wk: window.__wk || [] })); extra += ` [workers ${JSON.stringify([...(page.__workers || []), ...st.wk])}] [cross-origin fetches ${JSON.stringify(st.xr)}]`; } catch (e) {}
-    }
-    once("console-error", m.text() + extra);
+    if (!/Access-Control-Allow-Origin|access control/i.test(m.text())) { once("console-error", m.text()); return; }
+    let loc = null, st = null;
+    try { loc = m.location(); } catch (e) {}
+    try { st = await page.evaluate(() => ({ xr: window.__xr || [], wk: window.__wk || [] })); } catch (e) {}
+    once("console-error", m.text(), formatDiag(m.text(), loc, st, page.__workers));
   });
-  page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   /* xorigin-http: a request to ANOTHER origin (the Worker API, a font host) that answered 4xx/5xx or failed. WebKit logs such a 404 as "Origin <site> is not allowed by Access-Control-Allow-Origin. Status code: 404" without the URL (production QA run 41807379587), so the console-error line alone cannot be traced; this names the URL. The Cloudflare insights beacon is ignored. */
-  const xo = (u) => /^https?:/.test(u) && !u.startsWith(ORIGIN) && !/cloudflareinsights/.test(u);
+  const xo = (u) => /^https?:/.test(u) && !sameOrigin(u, ORIGIN) && !/cloudflareinsights/.test(u);
   page.on("response", (r) => { const u = r.url(); if (xo(u) && r.status() >= 400) once("xorigin-http", `${r.status()} ${u}`); });
   page.on("requestfailed", (r) => { const u = r.url(); if (xo(u)) once("xorigin-http", `failed ${r.method()} ${u} ${(r.failure() || {}).errorText || ""}`); });
   try {
@@ -411,9 +393,10 @@ async function cell(browser, size, state, A) {
         // software-rendered WebKit needs 2 to 3 s per frame at 5120x2880 (measured: the page opens in under 100 ms, but the check only gets a turn after the next frame, 5 to 8 s after the hash change), so the wait scales with the pixel count; 5 s up to 2.5 megapixels
         const OPEN_MS = Math.max(5000, Math.round((size.w * size.h) / 1e6) * 4000);
         let opened = await page.waitForFunction(isOpen, sc, { timeout: OPEN_MS }).then(() => true, () => false);
+        const everOpened = opened; // true when the scene did open at least once, so a failure below can say "opened, then closed again" or "never opened"
         if (opened) { await page.waitForTimeout(450); opened = await page.evaluate(isOpen, sc); } // still open after the open animation settles
         A.checks++;
-        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden)`, A.failures); continue; }
+        if (!opened) { fail(size, state, sc, "scene-open", `#${sc} did not open or closed again (html.scene-open, #scene hidden, #panel-${sc} hidden); ${everOpened ? "it opened once, then closed again" : "it never opened"}`, A.failures); continue; }
       } else {
         const opened = await page.evaluate(() => document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden);
         if (!opened) { // the gate is not a scene sheet: only the document-level invariant applies
@@ -502,7 +485,7 @@ if (failures.length) {
     console.log(`    e.g. ${g.ex}`);
   }
 }
-for (const f of failures.slice(0, 20)) console.log(`FAIL ${f.w}x${f.h} ${f.engine} ${f.state}/${f.scene} ${f.invariant}: ${f.detail}`);
+for (const f of failures.slice(0, 20)) console.log(`FAIL ${f.w}x${f.h} ${f.engine} ${f.state}/${f.scene} ${f.invariant}: ${f.detail}${f.diag ? `\n     diag: ${f.diag}` : ""}`);
 if (truncated) console.log(`FAIL time budget of ${BUDGET_MS / 60000} min ran out after ${cells} cells; the sweep is incomplete`);
 if (notes.length) {
   const by = {}; for (const x of notes) (by[x.invariant] ||= []).push(x);
