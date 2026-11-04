@@ -13,8 +13,10 @@ import { needsRetry, mergeRuns, RETRY_DELAY_MS } from "./smoke-retry.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 import { parseClock, applyClock } from "../helpers/clock-arg.mjs";
 import fs from "node:fs";
-/* The party tab is named by the client flag party.n (data/client.json): "The party" when on, "The five" when off. The page under test serves the same data file. */
-const PARTY_TAB = JSON.parse(fs.readFileSync(new URL("../../data/client.json", import.meta.url), "utf8")).flags["party.n"] ? "The party" : "The five";
+/* The party tab is named by the client flag party.n (data/client.json) AND the size of the party the page was given: "The five" when the flag is off or the party has five members, "The party" otherwise
+   (js/board.js K.pn.title()). The member count is read from the data the page loaded, not from the helper. */
+const PARTY_FLAG = !!JSON.parse(fs.readFileSync(new URL("../../data/client.json", import.meta.url), "utf8")).flags["party.n"];
+const partyTab = (n) => (PARTY_FLAG && n !== 5 ? "The party" : "The five");
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -95,6 +97,7 @@ async function visit(browser, engine, size, opts, setup) {
     ok(`${tag} first visit: a purpose card of four lines sits above the name picker`, fr.lines.length === 4 && fr.above, `lines: ${fr.lines.length}, above: ${fr.above}`);
     ok(`${tag} first visit: "Show me what is next" is the primary action and "Just looking" the secondary, both tall enough to tap`, fr.go && fr.look && fr.tall, `go: ${fr.go}, look: ${fr.look}, tall: ${fr.tall}`);
     ok(`${tag} first visit: the countdown line is below the primary action, and the page does not scroll sideways`, fr.below && fr.wide, `below: ${fr.below}, no sideways scroll: ${fr.wide}`);
+    const members = await page.evaluate(() => (window.__boardKit && window.__boardKit.D.party && window.__boardKit.D.party.members.length) || 0), PARTY_TAB = partyTab(members);
     if (!opts.isMobile) ok(`${tag} first visit: Guided shows Next steps, ${PARTY_TAB}, Sign-ups, Leeroy and More`, fr.tabs.join("|") === `Next steps|${PARTY_TAB}|Sign-ups|Leeroy` && fr.more, `tabs: ${fr.tabs.join("|")}, More: ${fr.more}`);
     /* a name picker: the Tonight panel's chips; a chip selects, and "Show me what is next" opens that person's next steps (it used to open on the chip itself) */
     const picked = await page.evaluate(() => {
