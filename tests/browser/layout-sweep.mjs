@@ -6,6 +6,7 @@
 //            --live-api   use the real API the page points at (default: the Worker API is answered from tests/fixtures/api-snapshot, so the sweep sends no request to the Worker)
 //            --no-retry   do not run a failed (size, state) cell a second time in a fresh page (default: retry once, print WARN when it passed only on the retry)
 //            --clock 2026-11-04T10:00:00Z   load every page with its clock set to that instant (it keeps running), to check a time-dependent screen such as the launch hero without waiting (tests/helpers/clock-arg.mjs)
+//            --inject-js file.js   runs a script in every page after DOMContentLoaded (self-test only: proves the console-error detail names the workers and cross-origin fetches)
 //            --inject-css file.css   adds a stylesheet to every page, to prove an invariant can fail (self-test only)
 // No AI call, nothing is sent. By default every /api/ call is fulfilled by Playwright from tests/fixtures/api-snapshot (tests/helpers/api-stub.mjs): the sweep judges layout, not the API,
 // and a full sweep made 1,056 Worker requests before this (measured locally, docs/runbooks/cloudflare-requests.md). An API path the snapshot lacks fails the run (invariant stub-miss). Exit 0 when every invariant holds in every cell, 1 otherwise (also when the time budget runs out first).
@@ -30,7 +31,7 @@
 //   tile-clip       looking and member, the wall before any scene opens: no wall tile clips its own text (a clipping box shorter than its content, or text outside its tile)
 //   http-error      a same-origin response was 4xx or 5xx
 //   xorigin-http    a request to another origin (Worker API, font host) answered 4xx/5xx or failed; the failure names the URL (the Cloudflare insights beacon is ignored)
-//   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
+//   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored). WebKit's CORS line carries no URL, so the failure adds the message's source, the Workers started and the cross-origin fetches seen (B55b)
 // Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
@@ -62,6 +63,7 @@ ALL_SIZES.push("5120x1440"); /* 34 inch ultra-wide at double width: a very wide,
 const FILL_ENFORCED = new Set(["3440x1440", "3840x2160", "5120x1440"]);
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
 const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENES);
+const INJECT_JS = arg("--inject-js") ? readFileSync(arg("--inject-js"), "utf8") : "";
 const INJECT = arg("--inject-css") ? readFileSync(arg("--inject-css"), "utf8") : "";
 const url = BASE ? pageUrl(BASE, { params: { preview: "1" } }) : "about:blank";
 const ORIGIN = BASE ? new URL(url).origin : "";
@@ -72,6 +74,24 @@ const failures = [], notes = [];
 let skipped = 0, cells = 0, checks = 0, truncated = false, retried = 0;
 // One (size, state) cell keeps its own tally while it runs so a failed attempt can be thrown away and run again in a fresh page; the tally of the attempt that counts is merged into the totals.
 const fail = (c, state, scene, invariant, detail, sink = failures) => sink.push({ w: c.w, h: c.h, engine: ENGINE, state, scene, invariant, detail: String(detail).slice(0, 300) });
+
+// Runs in every page (addInitScript). window.__xr lists the page's cross-origin fetches with their status, window.__wk the scripts of the Workers it started (see the B55b note in the console handler).
+function XR_JS() {
+  try {
+    window.__xr = []; window.__wk = [];
+    const f = window.fetch;
+    if (typeof f === "function") window.fetch = function (input, init) {
+      let u = ""; try { u = new URL(typeof input === "string" ? input : input.url, location.href).href; } catch (e) {}
+      const x = u && !u.startsWith(location.origin) && /^https?:/.test(u);
+      const p = f.apply(this, arguments);
+      if (x) p.then((r) => { if (!r.ok) window.__xr.push({ u, s: r.status }); }, (e) => window.__xr.push({ u, err: String(e && e.message || e).slice(0, 80) }));
+      return p;
+    };
+    const W = window.Worker;
+    if (typeof W === "function") window.Worker = function (url, o) { try { window.__wk.push(String(url instanceof URL ? url.href : new URL(url, location.href).href)); } catch (e) {} return new W(url, o); };
+    if (typeof W === "function") window.Worker.prototype = W.prototype;
+  } catch (e) {}
+}
 
 // Runs in every page (addInitScript). window.__lz.rect(el) is el.getBoundingClientRect() in real viewport pixels; point(el) its centre. See the Zoom note at the top.
 function ZOOM_JS(isWebkit) {
@@ -352,13 +372,25 @@ async function cell(browser, size, state, A) {
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
   const ctx = await browser.newContext(opts), page = await ctx.newPage();
   await ctx.addInitScript(ZOOM_JS, ENGINE === "webkit");
+  await ctx.addInitScript(XR_JS);
+  if (INJECT_JS) await ctx.addInitScript((js) => { addEventListener("DOMContentLoaded", () => { (0, eval)(js); }); }, INJECT_JS);
   await applyClock(page, CLOCK);
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
   const once = (inv, detail) => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures); } };
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
+  /* B55b: WebKit's CORS line ("Origin ... is not allowed by Access-Control-Allow-Origin. Status code: 404") names no URL and WebKit raises no response/requestfailed event for it (run 41829291747: no xorigin-http line). So the detail adds what the engine does know: the console message's own source (WebKit puts the resource URL there), every Worker the page started and every cross-origin fetch the page made with its status (XR_JS below). A request made inside a worker shows up in none of the events; the worker list then names the suspects. */
+  page.on("worker", (w) => { (page.__workers ||= []).push(w.url()); });
+  page.on("console", async (m) => {
+    if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) return;
+    let extra = "";
+    try { const l = m.location(); if (l && l.url) extra += ` [source ${l.url}:${l.lineNumber}]`; } catch (e) {}
+    if (/Access-Control-Allow-Origin|access control/i.test(m.text())) {
+      try { const st = await page.evaluate(() => ({ xr: (window.__xr || []).slice(-12), wk: window.__wk || [] })); extra += ` [workers ${JSON.stringify([...(page.__workers || []), ...st.wk])}] [cross-origin fetches ${JSON.stringify(st.xr)}]`; } catch (e) {}
+    }
+    once("console-error", m.text() + extra);
+  });
   page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   /* xorigin-http: a request to ANOTHER origin (the Worker API, a font host) that answered 4xx/5xx or failed. WebKit logs such a 404 as "Origin <site> is not allowed by Access-Control-Allow-Origin. Status code: 404" without the URL (production QA run 41807379587), so the console-error line alone cannot be traced; this names the URL. The Cloudflare insights beacon is ignored. */
   const xo = (u) => /^https?:/.test(u) && !u.startsWith(ORIGIN) && !/cloudflareinsights/.test(u);
@@ -409,6 +441,7 @@ if (argv.includes("--zoom-selftest")) {
   const b = await pw[ENGINE].launch(launch);
   const page = await (await b.newContext({ viewport: { width: 900, height: 700 } })).newPage();
   await page.addInitScript(ZOOM_JS, ENGINE === "webkit");
+  await page.addInitScript(XR_JS);
   await page.goto("about:blank");
   await page.setContent('<style>body{margin:0}</style><div style="position:absolute;left:100px;top:80px;zoom:1.052"><div style="zoom:1.1;padding:30px"><button id=t style="width:120px;height:40px;margin:20px">t</button><button id=u style="width:120px;height:40px;margin:20px 0 0 200px">u</button></div></div>');
   let bad = 0;
