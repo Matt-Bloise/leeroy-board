@@ -33,11 +33,11 @@ test("violations from the harness eval are dropped; real ones, including site ev
 });
 
 // a stub page that records the order of calls
-function stubPage(events, { fail } = {}) {
+function stubPage(events, { fail, rafNever } = {}) {
   const log = [];
   return {
     log,
-    evaluate: async (fn) => { if (fail) throw new Error("Target closed"); const src = String(fn); if (/requestAnimationFrame/.test(src)) { log.push("flush"); return; } log.push("read"); return events; },
+    evaluate: async (fn) => { if (fail) throw new Error("Target closed"); const src = String(fn); if (/requestAnimationFrame/.test(src)) { if (rafNever) { const keep = globalThis.requestAnimationFrame; globalThis.requestAnimationFrame = () => 0; try { await fn(); } finally { globalThis.requestAnimationFrame = keep; } } log.push("flush"); return; } log.push("read"); return events; },
     waitForTimeout: async (ms) => { log.push(`wait ${ms}`); },
   };
 }
@@ -100,4 +100,25 @@ test("a configured API origin on another host is ignored by host and port, whate
   assert.deepEqual(ctx.apiOrigins, ["https://worker.example:9443"]);
   assert.equal(realViolations([V("connect-src", "https://worker.example:9443/api/data")], ctx).length, 0);
   assert.equal(realViolations([V("connect-src", "https://worker.example:9444/api/data")], ctx).length, 1);
+});
+
+// only connect-src can be the test environment: any other directive on the same hosts is a real finding
+test("a script-src or img-src violation on the local worker origin still fails; only connect-src there is ignored", () => {
+  const ctx = sweepContext("http://127.0.0.1:8080/?brain=http://127.0.0.1:8787");
+  for (const d of ["script-src", "script-src-elem", "img-src", "style-src", "style-src-elem", "worker-src", "font-src", "frame-src", "media-src", "default-src", "connect-src-elem"]) {
+    assert.equal(realViolations([V(d, "http://127.0.0.1:8787/x")], ctx).length, 1, d);
+    assert.equal(realViolations([V(d, "http://localhost:8080/x")], ctx).length, 1, d);
+  }
+  assert.equal(realViolations([V("connect-src", "http://127.0.0.1:8787/api/bootstrap")], ctx).length, 0);
+  assert.equal(realViolations([V("connect-src", "https://evil.example/collect")], ctx).length, 1);
+  assert.equal(realViolations([V("connect-src", "http://127.0.0.1.evil.example:8787/x")], ctx).length, 1); // parsed host, not a substring
+});
+
+test("cspCheck still completes when requestAnimationFrame never fires (a timer in the page ends the wait)", { timeout: 4000 }, async () => {
+  const ev = [{ violatedDirective: "img-src", blockedURI: "https://a.invalid/1.png", sourceFile: "http://h/css/a.css", lineNumber: 1 }];
+  const page = stubPage(ev, { rafNever: true }), s = sink();
+  const t0 = Date.now(); await cspCheck(page, s.once, s.A);
+  assert.ok(Date.now() - t0 < 3000, "bounded");
+  assert.deepEqual(page.log, ["flush", "wait 250", "read"]);
+  assert.equal(s.got.length, 1);
 });

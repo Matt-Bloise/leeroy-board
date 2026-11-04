@@ -23,14 +23,16 @@ export function sweepContext(baseUrl) {
   try { const b = new URL(baseUrl); local = LOOPBACK.has(b.hostname.toLowerCase()); const brain = b.searchParams.get("brain"); if (brain && /^https?:/i.test(brain)) apiOrigins = [new URL(brain).origin]; } catch (e) { /* no base: nothing is local */ }
   return { apiOrigins, local };
 }
-const ownEnvironment = (blocked, ctx) => {
-  if (!ctx) return false;
-  let o; try { const u = new URL(blocked); if (!/^https?:|^wss?:/.test(u.protocol)) return false; o = u; } catch (e) { return false; }
-  if ((ctx.apiOrigins || []).some((a) => { try { const x = new URL(a); return x.hostname === o.hostname && x.port === o.port; } catch (e) { return false; } })) return true;
+// Only a connect-src violation can be the test environment's own API: a script, image, style or worker violation on a loopback or API host is a real finding and stays visible. Hosts are compared parsed
+// (hostname and port), never by substring.
+const ownEnvironment = (e, ctx) => {
+  if (!ctx || !/^connect-src$/.test(String(e.violatedDirective || ""))) return false;
+  let o; try { const u = new URL(e.blockedURI); if (!/^(https?|wss?):$/.test(u.protocol)) return false; o = u; } catch (err) { return false; }
+  if ((ctx.apiOrigins || []).some((a) => { try { const x = new URL(a); return x.hostname === o.hostname && x.port === o.port; } catch (err) { return false; } })) return true;
   return !!ctx.local && LOOPBACK.has(o.hostname.toLowerCase());
 };
 export function realViolations(events, ctx) {
-  return (events || []).filter((e) => !isHarnessEval(e.sourceFile) && !ownEnvironment(e.blockedURI, ctx))
+  return (events || []).filter((e) => !isHarnessEval(e.sourceFile) && !ownEnvironment(e, ctx))
     .map((e) => `${e.violatedDirective} blocked ${e.blockedURI || "inline"} at ${(e.sourceFile || "").split("/").slice(-2).join("/")}:${e.lineNumber}${e.sample ? ` "${String(e.sample).slice(0, 40)}"` : ""}`);
 }
 
@@ -38,7 +40,8 @@ export function realViolations(events, ctx) {
 // 250 ms first. Every distinct real violation is one failure through `once` (up to 40, with a repeat count). A page that is already gone has nothing to read.
 export async function cspCheck(page, once, A, ctx) {
   try {
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    // two frames, but never wait for them for ever: a hung or throttled page (a background tab, a stalled compositor) may not run animation frames, so a timer in the page ends the wait after 500 ms
+    await page.evaluate(() => new Promise((r) => { const t = setTimeout(r, 500); requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(t); r(); })); }));
     await page.waitForTimeout(250);
     const v = realViolations(await page.evaluate(() => window.__csp || []), ctx);
     A.checks++;
