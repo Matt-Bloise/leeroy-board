@@ -36,7 +36,10 @@ const probe = () => {
   const text = (document.body ? document.body.innerText : "").replace(/\s+/g, " ").trim();
   const ctl = [...document.querySelectorAll("a[href],button,input,select,textarea,summary,[tabindex]")].filter((e) => !e.disabled && e.tabIndex >= 0 && shown(e));
   const paint = performance.getEntriesByType ? performance.getEntriesByType("paint").map((p) => p.name) : [];
-  return { len: text.length, text: text.slice(0, 70), ctl: ctl.length, paint };
+  /* where the page stood, for a failure line: a run that dies with "7 chars" says nothing about whether the board had started (B52) */
+  const st = (id) => { const e = document.getElementById(id); return e ? (e.hidden ? "hidden" : "shown") : "absent"; };
+  const state = `ready ${document.readyState}, board ${st("board")}, gate ${st("gate")}, opening card ${st("boot")}, js/board.js ${window.__board ? "ran" : "not run"}, scripts ${document.scripts.length}`;
+  return { len: text.length, text: text.slice(0, 70), ctl: ctl.length, paint, state };
 };
 
 /* conditions: id, label, optional ctx options, optional sizes, setup(ctx, page, cdp, state), after(page) once usable. */
@@ -100,6 +103,8 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
     if (cond.init) await ctx.addInitScript(cond.init);
     const page = await ctx.newPage(), cdp = await ctx.newCDPSession(page);
     page.on("pageerror", (e) => errs.push(String(e.message).slice(0, 140)));
+    const late = []; /* requests still waiting or failed when the probe ends (not the held API: that is the point of the condition) */
+    page.on("requestfailed", (r) => { if (!isApi(r.url())) late.push(`${r.url().slice(-40)} ${(r.failure() || {}).errorText || ""}`); });
     page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} cons.push({ text: m.text().slice(0, 140), at }); } });
     if (cond.setup) await cond.setup(ctx, page, cdp);
     if (cond.slow) { await cdp.send("Network.enable"); await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 800, downloadThroughput: (400 * 1024) / 8, uploadThroughput: (400 * 1024) / 8 }); }
@@ -119,7 +124,7 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
       await cond.after(page).catch(() => {}); const t1 = Date.now();
       do { await sleep(300); p = await page.evaluate(probe).catch(() => p); } while (!(p.len >= 40 && p.ctl >= 1) && Date.now() - t1 < budget);
     }
-    const detail = `${p.len} chars, ${p.ctl} controls${cond.paint ? `, paint ${p.paint.join("/") || "none"}` : ""}, text "${p.text}", tab url ${page.url()}`;
+    const detail = `${p.len} chars, ${p.ctl} controls${cond.paint ? `, paint ${p.paint.join("/") || "none"}` : ""}, text "${p.text}", tab url ${page.url()}, after ${Date.now() - t0} ms, ${p.state || "no page state"}${late.length ? `, own requests failed: ${late.slice(0, 4).join(" | ")}` : ""}`;
     ok(`${name} | usable screen`, p.len >= 40 && p.ctl >= 1 && (!cond.paint || p.paint.length > 0), detail);
     if (cond.noscript) {
       const ns = await page.evaluate(() => { const link = [...document.querySelectorAll("body a[href]")].some((a) => a.getBoundingClientRect().width > 0 && !a.closest("[hidden]")); return { text: document.body.innerText.replace(/\s+/g, " "), link }; }).catch(() => ({ text: "", link: false }));
