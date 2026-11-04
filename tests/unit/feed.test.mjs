@@ -145,5 +145,5 @@ test("wrangler.toml ships D1_FEED off; the route calls the feed only behind the 
   const toml = fs.readFileSync(path.join(DATA, "..", "infrastructure", "wrangler.toml"), "utf8");
   assert.match(toml, /^D1_FEED = "off"/m);
   const src = fs.readFileSync(path.join(DATA, "..", "infrastructure", "worker", "index.js"), "utf8");
-  assert.match(src, /path\.startsWith\("\/data\/"\) && feedEnabled\(env\) \? await serveFeedDoc\(env, raw\) : null/);
+  assert.match(src, /path\.startsWith\("\/data\/"\) && \(await feedOn\(env\)\) \? await serveFeedDoc\(env, raw\) : null/);
 });

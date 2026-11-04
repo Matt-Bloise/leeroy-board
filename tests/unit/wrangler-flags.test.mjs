@@ -12,7 +12,7 @@ const declared = new Set([...varsBlock.matchAll(/^([A-Z][A-Z0-9_]*)\s*=/gm)].map
 
 // Not in [vars] on purpose.
 const DOCUMENTED = {
-  bindings: ["DB", "AI", "BOARD_ROOM"],
+  bindings: ["DB", "AI", "BOARD_ROOM", "FLAGS"],
   secrets: ["ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "GITHUB_MODELS_TOKEN", "AI_GATEWAY_TOKEN", "CLOUDFLARE_AIG_TOKEN",
     "BOARD_ADMIN_TOKEN", "KEY_SALT", "USER_SALT", "DISCORD_BOT_TOKEN", "DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_PUBLIC_KEY", "DISCORD_WEBHOOK_URL"],
   optional: ["ANSWER_FORMAT", "AI_DAILY_NEURON_CAP", "ASK_DEADLINE_MS", "ACCOUNT_ID", "CF_ACCOUNT_ID"], // the code has a default when unset (ANSWER_FORMAT defaults ON)

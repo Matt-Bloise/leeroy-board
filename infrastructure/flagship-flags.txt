@@ -1,0 +1,4 @@
+# Flagship flag keys the Worker reads with flagOn(env, "KEY") (infrastructure/worker/*.js).
+# The production deploy (tools/flagship-ensure-flags.mjs) creates any key missing from the Flagship app, DISABLED, and never touches one that exists.
+# One key per line. tests/unit/flags.test.mjs fails when a key passed to flagOn() is not listed here, or listed here but not in docs/runbooks/flags.md.
+D1_FEED
