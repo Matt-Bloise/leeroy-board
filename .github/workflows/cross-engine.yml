@@ -106,6 +106,7 @@ jobs:
           rc=0
           for clock in 2026-11-03T22:10:00Z 2026-11-04T10:00:00Z 2026-11-05T14:00:00Z; do
             node browser/first-load-weight.mjs --url "$TARGET_URL" --clock "$clock" 2>&1 | tee -a "$RUNNER_TEMP/sweep-clock-chromium.log" || rc=1
+            node browser/axe.mjs --url "$TARGET_URL" --clock "$clock" 2>&1 | tee -a "$RUNNER_TEMP/sweep-clock-chromium.log" || rc=1
           done
           exit $rc
 
