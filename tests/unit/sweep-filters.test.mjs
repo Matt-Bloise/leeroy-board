@@ -122,3 +122,21 @@ test("cspCheck still completes when requestAnimationFrame never fires (a timer i
   assert.deepEqual(page.log, ["flush", "wait 250", "read"]);
   assert.equal(s.got.length, 1);
 });
+
+// Firefox's console error as one string, with the file reported as "debugger eval code line N > eval"
+const FF = (msg, file, line = 11) => `[JavaScript Error: "${msg}" {file: "${file}" line: ${line}}]`;
+test("the Firefox throttle notice from 'debugger eval code line N > eval' is ignored, as text and as location", () => {
+  assert.equal(ignoredConsoleError(FF(CSP_THROTTLE, "debugger eval code line 234 > eval"), ""), true);
+  assert.equal(ignoredConsoleError(FF(CSP_THROTTLE, "debugger eval code line 234 > eval"), undefined), true);
+  assert.equal(ignoredConsoleError(FF(CSP_THROTTLE, "debugger eval code"), "https://leeroy.party/js/board.js"), true); // the file inside the text decides
+  assert.equal(ignoredConsoleError(CSP_THROTTLE, "debugger eval code line 234 > eval"), true); // bare text with the location url
+  assert.equal(isHarnessEval("debugger eval code line 234 > eval line 5 > eval"), true);
+});
+test("the same throttle text from a page file, and any other message from the harness eval, still fails", () => {
+  assert.equal(ignoredConsoleError(FF(CSP_THROTTLE, "https://leeroy.party/js/board.js"), "debugger eval code"), false); // the page file inside the text wins over a harness-looking location
+  assert.equal(ignoredConsoleError(FF(CSP_THROTTLE, "https://leeroy.party/js/board.js"), ""), false);
+  assert.equal(ignoredConsoleError(FF(CSP_THROTTLE, "eval-tools.js"), ""), false);
+  assert.equal(ignoredConsoleError(FF("TypeError: x is undefined", "debugger eval code line 234 > eval"), ""), false);
+  assert.equal(ignoredConsoleError(FF(CSP_THROTTLE + " Extra.", "debugger eval code line 234 > eval"), ""), false);
+  assert.equal(ignoredConsoleError(FF("Refused to execute inline script", "debugger eval code"), "debugger eval code"), false);
+});
