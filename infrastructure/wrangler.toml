@@ -43,7 +43,7 @@ new_sqlite_classes = ["BoardRoom"]
 [ai]
 binding = "AI"
 
-# Cloudflare Flagship feature flags. Flags are created and flipped in the Cloudflare dashboard (Compute, Flagship), never by CI.
+# Cloudflare Flagship feature flags. The production deploy creates a missing flag with wrangler (disabled, tools/flagship-ensure-flags.mjs); the owner flips it (dashboard or wrangler flagship flags enable). CI never enables or edits a flag.
 # The app_id is an identifier, not a secret. PR preview Workers must NOT bind to this production app: the PR preview deploy strips this block
 # (tools/strip-flagship-binding.mjs) so previews keep the legacy flag values declared in the vars table below. See docs/runbooks/flags.md.
 [[flagship]]

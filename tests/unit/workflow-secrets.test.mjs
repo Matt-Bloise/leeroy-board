@@ -136,9 +136,12 @@ test("the preview strips the binding AFTER it patches wrangler.toml, and no PR-t
   }
 });
 
-test("the production deploy keeps the binding: it does not strip it and does not touch Flagship", () => {
+test("the production deploy keeps the binding: it does not strip it, and touches Flagship only through the one create-missing-flags step (B51)", () => {
   const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
-  assert.equal(/flagship/i.test(code(w.text)), false);
+  assert.equal(/strip-flagship-binding/.test(code(w.text)), false, "production never strips the binding");
+  const mentions = code(w.text).split("\n").filter((l) => /flagship/i.test(l));
+  for (const l of mentions) assert.match(l, /flagship-ensure-flags|Flagship flag|Flagship problem|Flagship app|flagship flags create|never changes an existing flag/i, `unexpected Flagship reference in the production deploy: ${l.trim()}`);
+  assert.ok(mentions.length > 0, "the create-missing-flags step is there");
 });
 
 // wrangler 4 needs Node >= 22: every workflow that runs wrangler must set up Node 22 or newer.
@@ -173,4 +176,21 @@ test("the preview workflow does not use `wrangler subdomain get` (gone in wrangl
   assert.equal(/subdomain get/.test(c), false);
   assert.equal(/jmattbloise\.workers\.dev/.test(c), false);
   assert.match(c, /Could not read the preview Worker URL/);
+});
+
+// B51: the production deploy creates missing Flagship flags with wrangler (tools/flagship-ensure-flags.mjs). It needs the production Cloudflare token, so it runs there only.
+test("the Flagship flag creation is referenced by the production deploy only, once, after `wrangler deploy`, continue-on-error, and by no PR-triggered workflow", () => {
+  const REF = /flagship-ensure-flags|flagship\s+flags\s+(create|enable|disable|update|delete|split|rules)\b/;
+  for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) assert.equal(REF.test(code(w.text)), false, `${w.f} must not run or reference Flagship flag writes`);
+  for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.includes(t)))) assert.equal(/flagship/i.test(code(w.text).replace(/strip-flagship-binding/g, "")), false, `${w.f} (PR-triggered) mentions flagship beyond the preview strip`);
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  const steps = w.doc.jobs["deploy-production"].steps;
+  const at = steps.findIndex((s) => /flagship-ensure-flags/.test(s.run || ""));
+  assert.ok(at > 0, "the step exists in the production job");
+  assert.equal(steps.filter((s) => /flagship-ensure-flags/.test(s.run || "")).length, 1);
+  assert.ok(steps.findIndex((s) => /npx wrangler deploy\b/.test(s.run || "")) < at, "it runs after wrangler deploy");
+  assert.equal(steps[at]["continue-on-error"], true, "a Flagship problem must never block a code deploy");
+  assert.equal(/secrets\./.test(steps[at].run + JSON.stringify(steps[at].env || {})), false, "the step names no secret itself (the job env already holds the token)");
+  assert.equal(/\b(enable|disable|update|delete|split)\b/.test(steps[at].run || ""), false, "it never changes an existing flag");
+  for (const d of Object.values(w.doc.jobs)) assert.equal(d.environment === undefined || d.environment === "production", true);
 });

@@ -60,6 +60,16 @@ test("every flag key the Worker reads through flagOn is listed in the runbook, s
     for (const m of fs.readFileSync(path.join(dir, f), "utf8").matchAll(/\bflagOn\(\s*env\s*,\s*"([^"]+)"/g)) keys.add(m[1]);
   }
   assert.deepEqual([...keys].sort(), ["D1_FEED"]);
+  // B51: the deploy creates missing Flagship flags from ONE committed list (infrastructure/flagship-flags.txt): every key the Worker reads must be in it
+  const listed = read("infrastructure/flagship-flags.txt").split(/\r?\n/).map((l) => l.replace(/#.*$/, "").trim()).filter(Boolean);
+  for (const k of keys) assert.ok(listed.includes(k), `${k} is passed to flagOn() but missing from infrastructure/flagship-flags.txt, so the deploy would not create it`);
+  for (const k of listed) assert.ok(read("docs/runbooks/flags.md").includes("`" + k + "`"), `${k} (flagship-flags.txt) is listed in docs/runbooks/flags.md`);
+  // every flagOn( call outside flags.js and moments.js must pass a string literal key, or this test (and the key list) could not see it
+  let calls = 0;
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "flags.js" && n !== "moments.js")) calls += (fs.readFileSync(path.join(dir, f), "utf8").match(/\bawait flagOn\(|\bflagOn\(\s*env/g) || []).length;
+  let literal = 0;
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "flags.js" && n !== "moments.js")) literal += (fs.readFileSync(path.join(dir, f), "utf8").match(/\bflagOn\(\s*env\s*,\s*"[^"]+"/g) || []).length;
+  assert.ok(literal > 0 && calls >= literal && !/flagOn\(\s*env\s*,\s*[^"\s]/.test(fs.readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "flags.js" && n !== "moments.js").map((f) => fs.readFileSync(path.join(dir, f), "utf8")).join("\n")), "every flagOn call passes a literal key");
   const doc = read("docs/runbooks/flags.md");
   for (const k of keys) {
     assert.ok(doc.includes("`" + k + "`"), `${k} is listed in docs/runbooks/flags.md`);

@@ -324,6 +324,14 @@ jobs:
           fi
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Create missing Flagship flags (disabled; never changes an existing flag)
+        # After the Worker is deployed. Lists the Flagship app and creates only the keys of infrastructure/flagship-flags.txt that are absent, with
+        # `wrangler flagship flags create <APP_ID> <KEY> --disabled --remote`. Never enables, updates, disables or deletes anything. A problem is a warning, never a failed deploy.
+        # Production job only: tests/unit/workflow-secrets.test.mjs fails if any other workflow references it. See docs/runbooks/flags.md.
+        continue-on-error: true
+        working-directory: infrastructure
+        run: node ../tools/flagship-ensure-flags.mjs
+
       - name: Sync Worker Secrets (AI Providers, Admin Token, Discord)
         working-directory: infrastructure
         env:
