@@ -28,11 +28,13 @@
 //   - is run by the workflows once after each production deploy and once a day (cron) and by nothing else. It is NOT run per push and NOT by tests/browser/run.mjs.
 // Expected cost: the reference read of /api/state (1) + about 26 per context (one page load, every scene, a socket) x 6 (3 engines x 2 viewports) = about 157, measured on the
 // local fixture (53 for Chromium alone). Worst case 200 per run; at about 10 deploys + 1 scheduled run a day that is at most 2,200 of the 100,000 a day (about 2 percent).
-// If the reference read of /api/state fails, the run stops there (1 request) and launches no browser.
+// If the reference read of /api/state fails (a redirect counts as a failure), the run stops there (1 request) and launches no browser. In the browser every /api request is sent by the
+// probe itself without following redirects (helpers/probe-budget.mjs): a 3xx from the API is refused and FAILS the run, so a redirect chain cannot multiply the count.
+// Once the budget is spent nothing else starts: no more scenes, viewports or engines, and the run reports the budget as its one failure of that kind.
 // Exit 0 when everything passes, 1 on any failure, 2 on bad usage or a missing engine under PROBE_REQUIRE_ENGINES=1.
 import fs from "node:fs";
 import { pageUrl, originOf } from "../helpers/page-url.mjs";
-import { WORDS, slugOf, junkIn, wrongCountCopy, memberCountProblem, uniq, consoleFailures, classifyHttp } from "../helpers/probe-checks.mjs";
+import { WORDS, slugOf, junkIn, wrongCountCopy, memberCountProblem, uniq, consoleFailures, classifyHttp, isInsightsHost } from "../helpers/probe-checks.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -53,11 +55,11 @@ const problems = [], notes = [];
 const fail = (where, what) => { problems.push(`${where}: ${what}`); console.log(`FAIL ${where}: ${what}`); };
 const pass = (what) => console.log(`PASS ${what}`);
 
-// 1. The reference: the real party, read once by Node.
+// 1. The reference: the real party, read once by Node. redirect: "error": Node would otherwise follow a redirect chain, each hop a Worker request the budget never saw.
 if (!budget.spend()) { console.error("budget too small"); process.exit(2); }
 let party = null;
 try {
-  const r = await fetch(`${API}/api/state`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20000) });
+  const r = await fetch(`${API}/api/state`, { headers: { accept: "application/json" }, redirect: "error", signal: AbortSignal.timeout(20000) });
   if (!r.ok) fail("reference", `GET /api/state answered ${r.status}`);
   else { const b = await r.json(); party = b.partyDoc && Array.isArray(b.partyDoc.members) ? b.partyDoc : null; if (!party) fail("reference", "/api/state has no partyDoc.members"); }
 } catch (e) { fail("reference", `GET /api/state failed: ${e.message}`); }
@@ -116,15 +118,16 @@ async function probeOne(browser, engine, vp) {
   // The only routes: count every Worker request and every socket before it is sent, and refuse it once the budget is spent (helpers/probe-budget.mjs).
   await guardContext(ctx, budget);
   const page = await ctx.newPage();
-  page.on("pageerror", (e) => errs.push(`uncaught: ${String(e.message).slice(0, 160)}`));
-  page.on("console", (m) => { if (m.type() !== "error") return; const t = m.text(); let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push(`${t.slice(0, 160)}${at ? ` [${at.replace(/[?#].*$/, "")}]` : ""}`); });
+  let insightsFailed = false;
+  page.on("pageerror", (e) => errs.push({ text: `uncaught: ${String(e.message).slice(0, 160)}`, at: "" }));
+  page.on("console", (m) => { if (m.type() !== "error") return; let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 160), at: at.replace(/[?#].*$/, "") }); });
   const ours = (u) => { try { const o = new URL(u).origin; return o === SITE || o === API; } catch (e) { return false; } };
   const warned = [];
   page.on("response", (r) => {
     const v = classifyHttp(r.url(), r.status(), SITE, API), row = `${r.status()} ${r.request().method()} ${r.url().replace(/[?#].*$/, "")}`;
     if (v === "fail") http.push(row); else if (v === "warn") warned.push(row);
   });
-  page.on("requestfailed", (r) => { const why = (r.failure() || {}).errorText || ""; if (ours(r.url()) && !/ERR_ABORTED|NS_BINDING_ABORTED|cancelled|aborted/i.test(why) && !(budget.exceeded && /blockedbyclient|BLOCKED_BY_CLIENT/i.test(why))) failed.push(`${r.method()} ${r.url().replace(/[?#].*$/, "")} (${why})`); });
+  page.on("requestfailed", (r) => { if (isInsightsHost(r.url())) insightsFailed = true; const why = (r.failure() || {}).errorText || ""; if (ours(r.url()) && !/ERR_ABORTED|NS_BINDING_ABORTED|cancelled|aborted/i.test(why) && !(budget.exceeded && /blockedbyclient|BLOCKED_BY_CLIENT/i.test(why))) failed.push(`${r.method()} ${r.url().replace(/[?#].*$/, "")} (${why})`); });
   let chips = -1;
   try {
     const target = pageUrl(URL_, { params: {} });
@@ -138,7 +141,7 @@ async function probeOne(browser, engine, vp) {
     await page.waitForTimeout(900);
     chips = await page.evaluate(() => Array.from(document.querySelectorAll(".tn-name")).filter((b) => b.getClientRects().length).length);
   } catch (e) { fail(tag, `the page did not load: ${String(e.message).split("\n")[0]}`); }
-  if (chips >= 0) {
+  if (chips >= 0 && !budget.exceeded) {
     const bad = memberCountProblem(chips, N);
     bad.length ? bad.forEach((b) => fail(tag, b)) : pass(`${tag} the board shows ${chips} members, the party has ${N}`);
   }
@@ -146,6 +149,7 @@ async function probeOne(browser, engine, vp) {
   if (chips >= 0) {
     visible.push(...(await copyOf(page, false).catch(() => [])).map((t) => ["first screen", t]));
     for (const hash of SCENES) {
+      if (budget.exceeded) break; // nothing else starts once the budget is spent
       const up = await openScene(page, hash).catch((e) => ({ ok: false, why: String(e.message).split("\n")[0] }));
       if (!up.ok) { fail(tag, `scene #${hash} did not open: ${up.why}`); continue; }
       const top = hash.split(".")[0];
@@ -162,15 +166,17 @@ async function probeOne(browser, engine, vp) {
   const wc = wrongCountCopy(es, N);
   for (const w of wc) fail(tag, `copy states the wrong party size: ${w}`);
   if (!wc.length) pass(`${tag} no copy states a wrong party size (${es.length} strings, party ${N})`);
-  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1" });
-  hard.length ? hard.slice(0, 5).forEach((e) => fail(tag, `console error: ${e}`)) : pass(`${tag} no console errors`);
+  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsRequestFailed: insightsFailed });
+  hard.length ? hard.slice(0, 5).forEach((e) => fail(tag, `console error: ${e.text}${e.at ? ` [${e.at}]` : ""}`)) : pass(`${tag} no console errors`);
   for (const w of uniq(warned).slice(0, 8)) console.log(`WARN ${tag}: API 4xx (not a failure off /api/bootstrap and /api/state): ${w}\n::warning title=Production probe::${tag}: API 4xx ${w}`);
   http.length ? uniq(http).slice(0, 8).forEach((h) => fail(tag, `HTTP error (site 4xx/5xx, API 5xx, or API 4xx on bootstrap/state): ${h}`)) : pass(`${tag} no 4xx/5xx from the site or its API`);
   failed.length ? uniq(failed).slice(0, 5).forEach((h) => fail(tag, `request failed: ${h}`)) : pass(`${tag} no failed requests`);
+  for (const r of budget.redirects.splice(0)) fail(tag, `the API answered with a redirect (refused, not followed): ${r}`);
   await ctx.close();
 }
 
 for (const engine of ENGINES) {
+  if (budget.exceeded) { notes.push(`${engine} not run (budget spent)`); continue; } // no more browsers once the budget is spent
   let browser;
   try { browser = await pw[engine].launch(engine === "chromium" && process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}); }
   catch (e) {
@@ -178,10 +184,11 @@ for (const engine of ENGINES) {
     if (REQUIRE) fail("engines", msg); else { console.log(`WARN ${msg}; skipped`); notes.push(`${engine} skipped`); }
     continue;
   }
-  try { for (const vp of VIEWPORTS) { if (budget.exceeded) break; await probeOne(browser, engine, vp); } }
+  let ranAny = false;
+  try { for (const vp of VIEWPORTS) { if (budget.exceeded) break; ranAny = true; await probeOne(browser, engine, vp); } }
   catch (e) { fail(engine, `probe crashed: ${String(e.message).split("\n")[0]}`); }
   finally { await browser.close().catch(() => {}); }
-  notes.push(`${engine} ran`);
+  notes.push(ranAny ? `${engine} ran` : `${engine} not run (budget spent)`);
 }
 if (budget.exceeded) fail("budget", `more than ${BUDGET} Worker requests were needed; the rest were refused`);
 console.log(`\nWorker requests this run: ${budget.used} of ${BUDGET}. Engines: ${notes.join(", ")}. Party: ${N}. ${problems.length ? `${problems.length} problem(s)` : "all checks passed"}.`);

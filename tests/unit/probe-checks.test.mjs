@@ -35,11 +35,32 @@ test("junk text: undefined, NaN, [object Object], raw ids", () => {
 
 test("slugs match the board's own", () => { assert.equal(slugOf("Brindle  Oakhand!"), "brindle-oakhand"); });
 
+test("console exemptions are anchored: the report-only marker must START the message; the Cloudflare beacon is matched by location, not by words in the message", () => {
+  const enforced = "Refused to load the image 'https://x/y.png' because it violates the following Content Security Policy directive: \"img-src 'self'\".";
+  // enforced violations that merely quote the words must still fail
+  assert.equal(consoleFailures([`${enforced} See https://example.org/report-only/policy`]).length, 1);
+  assert.equal(consoleFailures([`${enforced} (compare Content-Security-Policy-Report-Only)`]).length, 1);
+  assert.equal(isReportOnlyCsp("Refused ... report-only ..."), false);
+  assert.equal(isReportOnlyCsp("Content-Security-Policy-Report-Only: blocked x"), true);
+  // beacon: by console location (host match, not substring), not by message text
+  assert.equal(consoleFailures([{ text: "Failed to load resource: net::ERR_FAILED", at: "https://static.cloudflareinsights.com/beacon.min.js" }]).length, 0);
+  assert.equal(consoleFailures([{ text: "TypeError: x is not a function (see cloudflareinsights.com)", at: "https://leeroy.party/js/board.js" }]).length, 1);
+  assert.equal(consoleFailures([{ text: "boom", at: "https://cloudflareinsights.com.evil.example/x.js" }]).length, 1);
+  assert.equal(consoleFailures([{ text: "boom", at: "https://evil.example/cloudflareinsights.com" }]).length, 1);
+  // the URL-less network wording is exempt only when a beacon request was seen failing, and never when the message names another URL
+  assert.equal(consoleFailures([{ text: "Failed to load resource: net::ERR_FAILED", at: "" }]).length, 1);
+  assert.equal(consoleFailures([{ text: "Failed to load resource: net::ERR_FAILED", at: "" }], { insightsRequestFailed: true }).length, 0);
+  assert.equal(consoleFailures([{ text: "Failed to load resource: the server responded with 500 https://api.leeroy.party/api/x", at: "" }], { insightsRequestFailed: true }).length, 1);
+  assert.equal(consoleFailures([{ text: "TypeError: x", at: "" }], { insightsRequestFailed: true }).length, 1);
+});
+
 test("console errors: report-only CSP and third-party noise are exempt; an ENFORCED CSP violation fails", () => {
   const enforced = "Refused to load the image 'https://x/y.png' because it violates the following Content Security Policy directive: \"img-src 'self'\".";
   assert.deepEqual(consoleFailures([enforced]), [enforced]);
   assert.deepEqual(consoleFailures(["Content Security Policy: the page's settings blocked a resource"]).length, 1, "the bare phrase is not an exemption");
-  assert.deepEqual(consoleFailures([`[Report Only] ${enforced}`, "The Content-Security-Policy-Report-Only policy blocked x", "failed https://static.cloudflareinsights.com/beacon.min.js"]), []);
+  assert.deepEqual(consoleFailures([`[Report Only] ${enforced}`, "Content-Security-Policy-Report-Only: the policy blocked x", { text: "Failed to load resource", at: "https://static.cloudflareinsights.com/beacon.min.js" }]), []);
+  assert.equal(consoleFailures(["The Content-Security-Policy-Report-Only policy blocked x"]).length, 1, "mid-message mention is not the marker");
+  assert.equal(consoleFailures(["failed https://static.cloudflareinsights.com/beacon.min.js"]).length, 1, "message text naming the beacon host is not an exemption");
   assert.equal(isReportOnlyCsp("[Report Only] Refused to load"), true);
   assert.equal(consoleFailures(["Error creating WebGL context"], { engine: "webkit", allowWebkitNoWebgl: true }).length, 0);
   assert.equal(consoleFailures(["Error creating WebGL context"], { engine: "chromium", allowWebkitNoWebgl: true }).length, 1);

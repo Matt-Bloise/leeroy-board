@@ -59,11 +59,22 @@ export function memberCountProblem(boardCount, partyCount) {
 // Distinct strings, trimmed, empty ones dropped.
 export const uniq = (a) => [...new Set(a.map((s) => String(s).replace(/\s+/g, " ").trim()).filter(Boolean))];
 
-// Console errors that do not count. Only third-party noise and messages that say they are report-only: an ENFORCED Content Security Policy violation must fail.
-//   Chrome words a report-only violation "[Report Only] Refused to ..."; Firefox and WebKit say "Report-Only"/"report only" in the message.
-export const isReportOnlyCsp = (t) => /^\[Report Only\]|report[- ]only/i.test(String(t));
-export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = false } = {}) {
-  return errors.filter((e) => !(engine === "webkit" && allowWebkitNoWebgl && /Error creating WebGL context/.test(e)) && !/cloudflareinsights\.com/.test(e) && !isReportOnlyCsp(e));
+// Console errors that do not count. Each error is { text, at } (at = the console location's URL). Exempt: a message that STARTS as a report-only CSP report
+// ("[Report Only] ..." in Chromium, "Content-Security-Policy-Report-Only ..."); an error whose console LOCATION is the Cloudflare analytics beacon; and, when a request to that
+// beacon host was seen failing, the generic network wording a browser uses for it without a URL (the live-smoke.mjs rule). Message text that merely mentions a host or
+// "report-only" in the middle is NOT an exemption, and neither is an enforced CSP violation.
+export const isReportOnlyCsp = (t) => /^(\[Report Only\]|Content-Security-Policy-Report-Only)/i.test(String(t));
+const hostOf = (u) => { try { return new URL(u).hostname; } catch (e) { return ""; } };
+export const isInsightsHost = (u) => /(^|\.)cloudflareinsights\.com$/i.test(hostOf(u));
+export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = false, insightsRequestFailed = false } = {}) {
+  return errors.filter((e) => {
+    const text = typeof e === "string" ? e : e.text, at = typeof e === "string" ? "" : e.at || "";
+    if (engine === "webkit" && allowWebkitNoWebgl && /Error creating WebGL context/.test(text)) return false;
+    if (isReportOnlyCsp(text)) return false;
+    if (isInsightsHost(at)) return false;
+    if (insightsRequestFailed && !/https?:\/\//.test(text) && /^(Failed to load resource|.*net::ERR_FAILED|.*Access-Control-Allow-Origin)/i.test(text)) return false;
+    return true;
+  });
 }
 
 // A response with status >= 400: "fail" or "warn" (same rule as tests/browser/live-smoke.mjs): anything from the site itself fails; from the API a 5xx fails,

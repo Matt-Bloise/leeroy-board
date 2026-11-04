@@ -11,6 +11,9 @@
 //   ignored-hash member routes (five.<slug>) never land on the member's card (the "landed" mark is stripped): must fail
 //   csp-enforced the page logs an ENFORCED Content Security Policy violation as a console error: must fail
 //   csp-report-only the same message marked "[Report Only]": must pass (the exemption stays narrow but exists)
+//   state-redirect a plain (non-browser) GET /api/state answers 302 to the real thing: the probe must NOT follow it (redirect: error) and stop, 1 API request
+//   cf-text      the page logs a console error that merely MENTIONS cloudflareinsights.com (location: the page itself): must fail, the exemption is not by message text
+// Any mode also serves /api/hop?n=0..11: a 12-hop redirect chain, to prove the probe's context never lets the browser follow redirects on its own.
 //   state-fail   a plain (non-browser) GET /api/state answers 500: the probe must stop at once and launch no browser
 // seen.api counts HTTP requests under /api/, seen.ws the WebSocket upgrades on /api/live (the Worker requests the probe's budget stands for).
 import http from "node:http";
@@ -38,6 +41,7 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     "no-panel": `setTimeout(() => { const p = document.getElementById("panel-ledger"); if (p) p.remove(); }, 2500);`,
     "ignored-hash": `new MutationObserver((ms) => { for (const m of ms) if (m.target.classList && m.target.classList.contains("landed")) m.target.classList.remove("landed"); }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"], subtree: true });`,
     "csp-enforced": `setTimeout(() => console.error("Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
+    "cf-text": `setTimeout(() => console.error("TypeError: cannot read properties of undefined (reading x) at https://static.cloudflareinsights.com/beacon.min.js"), 1500);`,
     "csp-report-only": `setTimeout(() => console.error("[Report Only] Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
   };
   const seen = { api: 0, ws: 0, static: 0 };
@@ -47,7 +51,9 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     if (p.startsWith("/api/")) {
       seen.api++;
       const key = p.replace(/^\/api/, "");
+      if (key === "/hop") { const n = Number(u.searchParams.get("n") || 0); if (n < 12) { res.writeHead(302, { location: `/api/hop?n=${n + 1}`, "cache-control": "no-store" }); return res.end(); } return json(res, "{}"); }
       if (key === "/state") {
+        if (mode === "state-redirect" && !req.headers["sec-fetch-site"] && !u.searchParams.has("r")) { res.writeHead(302, { location: "/api/state?r=1", "cache-control": "no-store" }); return res.end(); }
         if (mode === "state-fail" && !req.headers["sec-fetch-site"]) return json(res, '{"error":"fixture: state is down"}', 500);
         const s = state();
         if (mode === "wrong-count" && !req.headers["sec-fetch-site"]) s.partyDoc = { ...party, members: [...party.members, { ...party.members[0], name: "Extra Member" }] };
