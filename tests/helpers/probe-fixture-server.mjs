@@ -23,7 +23,7 @@ const STATIC_OK = /^\/(?:index\.html|404\.html|css|js|img|fonts|vendor|scenes|da
 export async function startFixtureServer({ mode = "green" } = {}) {
   const snap = loadSnapshot();
   const party = JSON.parse(FIX("party")), signups = FIX("signups");
-  if (mode === "junk") party.members[1] = { ...party.members[1], board_line: "undefined NaN Druid" };
+  if (mode === "junk") party.members[1] = { ...party.members[1], race: "undefined", board_line: "undefined NaN Druid" };
   const rows = party.members.map((m) => ({ slug: m.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), name: m.name, fields: { race: { value: m.race, visible: true, source: "board" }, class: { value: m.class, visible: true, source: "board" } }, updated: null }));
   const state = () => ({ ...JSON.parse(snap.routes["/state"].body), party: rows, partyDoc: party, signups: JSON.parse(signups) });
   const bootstrap = () => ({ ...JSON.parse(snap.routes["/bootstrap"].body), party, signups: JSON.parse(signups) });
