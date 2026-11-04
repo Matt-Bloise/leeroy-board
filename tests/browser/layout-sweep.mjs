@@ -36,6 +36,7 @@
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
+import { ignoredConsoleError, realViolations } from "../helpers/sweep-filters.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
@@ -355,7 +356,7 @@ async function cspCheck(page, once, A) {
   try {
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     await page.waitForTimeout(250);
-    const v = await page.evaluate(() => window.__csp || []);
+    const v = realViolations(await page.evaluate(() => window.__csp || [])); // the harness's own eval is not a page problem (sweep-filters.mjs)
     A.checks++;
     const count = new Map(); for (const x of v) count.set(x, (count.get(x) || 0) + 1);
     for (const [x, n] of [...count].slice(0, 40)) once("csp-violation", `${x}${n > 1 ? ` (x${n})` : ""}`);
@@ -369,14 +370,14 @@ async function cell(browser, size, state, A) {
   await ctx.addInitScript(ZOOM_JS, ENGINE === "webkit");
   await applyClock(page, CLOCK);
   // csp-violation: the report-only policy in _headers must stay quiet on every page. Firefox stops sending reports after a burst and logs "Prevented too many CSP reports" (QA run 41829291747), so each violation event is collected here and named.
-  await ctx.addInitScript(() => { window.__csp = []; addEventListener("securitypolicyviolation", (e) => window.__csp.push(`${e.violatedDirective} blocked ${e.blockedURI || "inline"} at ${(e.sourceFile || "").split("/").slice(-2).join("/")}:${e.lineNumber}${e.sample ? ` "${e.sample.slice(0, 40)}"` : ""}`), true); });
+  await ctx.addInitScript(() => { window.__csp = []; addEventListener("securitypolicyviolation", (e) => window.__csp.push({ violatedDirective: e.violatedDirective, blockedURI: e.blockedURI, sourceFile: e.sourceFile, lineNumber: e.lineNumber, sample: e.sample }), true); });
   if (INJECT_JS) await ctx.addInitScript(INJECT_JS);
   if (INJECT) await ctx.addInitScript((css) => { addEventListener("DOMContentLoaded", () => { const st = document.createElement("style"); st.textContent = css; document.documentElement.append(st); }); }, INJECT);
   let scene = "-";
   const seen = new Set();
   const once = (inv, detail) => { const k = `${scene}|${inv}|${detail}`; if (!seen.has(k)) { seen.add(k); fail(size, state, scene, inv, detail, A.failures); } };
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text()) && !ignoredConsoleError(m.text(), (m.location() || {}).url)) once("console-error", m.text()); });
   page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   /* xorigin-http: a request to ANOTHER origin (the Worker API, a font host) that answered 4xx/5xx or failed. WebKit logs such a 404 as "Origin <site> is not allowed by Access-Control-Allow-Origin. Status code: 404" without the URL (production QA run 41807379587), so the console-error line alone cannot be traced; this names the URL. The Cloudflare insights beacon is ignored. */
   const xo = (u) => /^https?:/.test(u) && !u.startsWith(ORIGIN) && !/cloudflareinsights/.test(u);
