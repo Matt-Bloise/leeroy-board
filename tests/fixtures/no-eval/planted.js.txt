@@ -1,0 +1,10 @@
+// Fixture for the planted-code test. Stored as .txt so it is never served or scanned as site code.
+// One planted case per rule, on known lines (the test asserts file, line and kind).
+const a = eval("1 + 1");
+const b = new Function("return 2");
+const c = Function("return 3")();
+const d = [].constructor.constructor("return 4")();
+setTimeout("doThing()", 100);
+window.setInterval('tick()', 50);
+setTimeout(() => {}, 10); // clean: function reference
+setTimeout(doThing, 10); // clean
