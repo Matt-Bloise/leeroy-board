@@ -298,7 +298,7 @@ jobs:
     # Layout invariants sweep (tests/browser/layout-sweep.mjs): 18 viewport sizes x 3 visitor states x 12 scenes on Chromium, judged by DOM
     # rules (close button inside the viewport and uncovered, no overlap in the header, title not cut, 44 px touch height, no sideways scroll, no 4xx/5xx).
     # Gating: it is in the report's needs. The sweep stops itself at 9 minutes (--budget-min) and fails if it did not finish; the mutation test after it takes about 20 s
-    # (tests/helpers/layout-sweep-mutation.mjs: proves the sweep still FAILS on 4 injected layout bugs, 0 Worker requests); the job limit is 20 and the full sweep budget 9 min (with the launch hero up, 6.8 min of work: the 5 min budget ran out at 588 of 675 cells on PR 163; B49 also added three gate-only sweeps at faked clocks, about 45 s each).
+    # (tests/helpers/layout-sweep-mutation.mjs: proves the sweep still FAILS on 4 injected layout bugs, 0 Worker requests); the job limit is 22 and the full sweep budget 9 min (with the launch hero up, 6.8 min of work: the 5 min budget ran out at 588 of 675 cells on PR 163; B49 also added three gate-only sweeps at faked clocks, about 45 s each).
     name: layout
     needs: [scope, preview]
     # Skipped when no site, tooling, workflow, config or dependency file changed: tools/ci-scope.mjs decides. Also skipped without `ci-full` (no preview).
