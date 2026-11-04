@@ -1,7 +1,7 @@
 // Header fit check: the scene header must show its title on one line with room to read it, never under a control, in a readable colour, and Settings must not look like the Room eye.
 //   node header-fit.mjs --url https://pr-N.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)
 // No AI call, nothing sent. Viewports: 320x568, 390x844, 768x1024, 1366x768. Per viewport: first-run gate title colour is light, then after "Just take a look" the title is one line,
-// at least 60 px wide, does not overlap the close button, and has a light colour; on a phone the last card has bottom padding for the floating coin; under 1200 px a visible Settings button draws a gear.
+// at least 60 px wide, does not overlap the close button, and has a light colour; on a phone the last card clears the floating coin (bottom padding of 56 px, or the body ends above the coin: css/shell.css); under 1200 px a visible Settings button draws a gear.
 // Exit 0 when every check passes, 1 otherwise.
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
@@ -29,13 +29,13 @@ try {
       const el = document.querySelector("#sheet-title"), r = el.getBoundingClientRect(), cs = getComputedStyle(el), fs = parseFloat(cs.fontSize);
       const cl = document.querySelector("#scene-close").getBoundingClientRect();
       const st = document.querySelector("#scene-settings"), sr = st.getBoundingClientRect(), sv = !!(sr.width && sr.height) && getComputedStyle(st).visibility !== "hidden";
-      return { w: r.width, h: r.height, fs, color: cs.color, overlapClose: !(r.right <= cl.left || r.left >= cl.right || r.bottom <= cl.top || r.top >= cl.bottom), pb: parseFloat(getComputedStyle(document.querySelector("#sheet-body")).paddingBottom), settingsVisible: sv, gear: getComputedStyle(st, "::before").content };
+      return { w: r.width, h: r.height, fs, color: cs.color, overlapClose: !(r.right <= cl.left || r.left >= cl.right || r.bottom <= cl.top || r.top >= cl.bottom), pb: parseFloat(getComputedStyle(document.querySelector("#sheet-body")).paddingBottom), coinGap: (() => { const c = document.querySelector("#bb-coin"), b = document.querySelector("#sheet-body"); if (!c || getComputedStyle(c).display === "none" || getComputedStyle(c).visibility === "hidden") return null; return c.getBoundingClientRect().top - b.getBoundingClientRect().bottom; })(), settingsVisible: sv, gear: getComputedStyle(st, "::before").content };
     });
     ok(`${t} title is one line`, m.h <= m.fs * 1.7, `h ${m.h.toFixed(0)} font ${m.fs}`);
     ok(`${t} title is at least 60 px wide`, m.w >= 60, `w ${m.w.toFixed(0)}`);
     ok(`${t} title does not overlap the close button`, !m.overlapClose);
     ok(`${t} title colour is light on the oak header`, lum(m.color) > 0.5, m.color);
-    if (opts.viewport.width < 700) ok(`${t} last card clears the coin (padding-bottom >= 56)`, m.pb >= 56, `pb ${m.pb}`);
+    if (opts.viewport.width < 700) ok(`${t} last card clears the coin (padding-bottom >= 56, or the body ends above the coin)`, m.pb >= 56 || (m.coinGap !== null && m.coinGap >= -1), `pb ${m.pb}, coin top minus body bottom ${m.coinGap}`);
     if (m.settingsVisible && opts.viewport.width < 1200) ok(`${t} Settings draws a gear`, /2699/i.test(JSON.stringify(m.gear)) || m.gear.includes("\u2699"), m.gear);
     // laptop sizes: the longest scene title ("Who buffs whom") must not be truncated or push the close button out of the sheet or under another element
     await page.evaluate(() => { location.hash = "buffs"; }); await page.waitForTimeout(1200);
