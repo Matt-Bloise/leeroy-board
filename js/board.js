@@ -150,22 +150,46 @@ const MOTION = Object.freeze({ micro: 160, move: 520, hero: 900, stagger: 70, co
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const classVar = (key) => key ? `var(--c-${key})` : "var(--c-none)";
 const andList = (xs) => xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : xs.join("");
-/* party.n (data/client.json flags, default off): copy that said "five" says the real member count. Off, every string is the old one. Scene ids and hashes (#five) never change. */
+/* party.n (data/client.json flags, default off): copy that said "five" says the real member count. Off, or with five members, every string is the old one. Scene ids and hashes (#five) never change.
+   This is the ONE place a count becomes words: scene code calls K.pn.word() / K.pn.word(-1) / K.pn.noun() / K.pn.title() / K.pn.say(n) when it builds a string, and the static text
+   in index.html (which ships the five wording) is rewritten by partyCopy() below. tests/unit/party-copy-source.test.mjs fails when a count word is typed anywhere else. */
 const PN_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 const pnOn = () => !!(D.client && D.client.flags && D.client.flags["party.n"] && D.party && Array.isArray(D.party.members) && D.party.members.length > 0);
-const pnCount = () => (D.party && D.party.members ? D.party.members.length : 5);
-const pnWord = () => { if (!pnOn()) return "five"; const n = pnCount(); return PN_WORDS[n] || String(n); };
-const pnTitle = () => (pnOn() ? "The party" : "The five");
+const pnCount = () => (pnOn() ? D.party.members.length : 5);
+const pnSay = (n) => PN_WORDS[n] || String(n);
+const pnWord = (offset = 0) => pnSay(pnCount() + offset);
+const pnPlain = () => pnCount() === 5;
+const pnNoun = () => (pnPlain() ? "five" : "party");
+const pnTitle = () => (pnPlain() ? "The five" : "The party");
+const PN_RE = `(?:${PN_WORDS.slice(1).join("|")}|party|\\d+)`;
+/* [selector, what, ...]: "text" sets the element's text, "first-text" its first text node, "attr" an attribute, "sub" replaces the matched words inside the text (or the attribute). Every entry gives the same string
+   as the page ships when the count is five, so running it with the flag off, or after the party shrank back to five, puts the old wording back. */
+const PARTY_COPY = [
+  ["#tab-five", "first-text", () => pnTitle()],
+  ['#bottombar .bb[data-go="five"]', "text", () => pnTitle()],
+  ['#more-menu [data-go="five"]', "text", () => pnTitle()],
+  ['.pl[data-place="five"] .pl-txt', "text", () => pnTitle()],
+  ["#panel-five .swipe-hint", "text", () => `Swipe sideways for all ${pnWord()}.`],
+  ["#tt-five", "text", () => pnTitle()],
+  ["#tt-five ~ .tile-go .word", "text", () => `Open the ${pnNoun()}`],
+  ["#as", "attr", "aria-label", () => `Which of the ${pnNoun()} are you`],
+  ["fieldset legend", "sub", new RegExp(`Which of the ${PN_RE} are you`), () => `Which of the ${pnNoun()} are you`],
+  [".gate-card p", "sub", new RegExp(`for the ${PN_RE} of us`), () => `for the ${pnWord()} of us`],
+  [".lede", "sub", new RegExp(`What each of the ${PN_RE} brings the others`), () => `What each of the ${pnWord()} brings the others`],
+  ['meta[name="description"]', "sub-attr", "content", new RegExp(`for ${PN_RE} friends`), () => `for ${pnWord()} friends`],
+];
 function partyCopy() {
-  if (!pnOn()) return;
-  const set = (sel, fn) => { const el = $(sel); if (el) fn(el); };
-  set("#tab-five", (el) => { const t = [...el.childNodes].find((n) => n.nodeType === 3); if (t) t.textContent = pnTitle(); });
-  set("#panel-five .swipe-hint", (el) => { el.textContent = `Swipe sideways for all ${pnWord()}.`; });
-  set("#tt-five", (el) => { el.textContent = pnTitle(); const w = el.parentNode && el.parentNode.querySelector(".word"); if (w) w.textContent = "Open the party"; });
-  set("#as", (el) => el.setAttribute("aria-label", "Which of the party are you"));
-  set("fieldset legend", (el) => { if (/Which of the five are you/.test(el.textContent)) el.textContent = "Which of the party are you?"; });
-  set(".gate-card p", (el) => { if (/for the five of us/.test(el.textContent)) el.textContent = el.textContent.replace("the five of us", `the ${pnWord()} of us`); });
-  if (SC.open === "five") set("#sheet-title", (el) => { el.textContent = pnTitle(); });
+  const apply = (el, get, set, re, make) => { const cur = get(el); if (cur == null) return; const next = re ? (re.test(cur) ? cur.replace(re, make()) : cur) : make(); if (next !== cur) set(el, next); };
+  for (const [sel, what, ...rest] of PARTY_COPY) {
+    for (const el of document.querySelectorAll(sel)) {
+      if (what === "text") apply(el, (e) => e.textContent, (e, v) => { e.textContent = v; }, null, rest[0]);
+      else if (what === "first-text") { const t = [...el.childNodes].find((n) => n.nodeType === 3); if (t) apply(t, (n) => n.textContent, (n, v) => { n.textContent = v; }, null, rest[0]); }
+      else if (what === "attr") apply(el, (e) => e.getAttribute(rest[0]), (e, v) => e.setAttribute(rest[0], v), null, rest[1]);
+      else if (what === "sub") apply(el, (e) => e.textContent, (e, v) => { e.textContent = v; }, rest[0], rest[1]);
+      else if (what === "sub-attr") apply(el, (e) => e.getAttribute(rest[0]), (e, v) => e.setAttribute(rest[0], v), rest[1], rest[2]);
+    }
+  }
+  if (SC.open === "five") { const t = $("#sheet-title"); if (t && t.textContent !== pnTitle()) t.textContent = pnTitle(); }
 }
 
 const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
@@ -3682,8 +3706,9 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
+KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();
 (function burnIn() {

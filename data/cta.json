@@ -3,7 +3,7 @@
   "id": "tile-five",
   "file": "index.html",
   "old": "Turn their cards",
-  "new": "Open the five",
+  "new": "Open the party",
   "flavour": "Turn their cards"
  },
  {
@@ -80,7 +80,7 @@
   "id": "next-pick-name-label",
   "file": "next/rules.js",
   "old": "Pick your name",
-  "new": "Pick your name from the five",
+  "new": "Pick your name from the party",
   "flavour": "Pick your name"
  },
  {

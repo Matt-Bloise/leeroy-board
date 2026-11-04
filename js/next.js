@@ -22,7 +22,7 @@ const WAX = { guided: "red", curious: "amber", everything: "green" };
 const WEEK = ["train-10", "first-dungeon", "meet-again"];
 const brain = () => window.BoardBrain || null;
 const keyed = (B) => !!(B && B.hasKey && B.hasKey());
-const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=90798ae8c7").catch(() => null));
+const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=020417741f").catch(() => null));
 
 const meSlug = () => { const m = MEM.member(); return m ? MEM.slug(m.name) : null; };
 const ticksOf = (slug) => (slug && typeof K.beforeTicks === "function" ? K.beforeTicks(slug) : []);
@@ -32,7 +32,7 @@ function snoozeMap() {
 function buildInput() {
   const B = brain(), m = MEM.member(), me = m ? { class_key: m.class_key, name: m.name, slug: MEM.slug(m.name) } : null;
   return { party: D.party, timeline: D.timeline, tonight: D.tonight, signups: D.signups || null, decide: window.__decide && window.__decide.data ? window.__decide.data : null,
-    launch: B && B.launch ? B.launch() : [], partyRows: B && B.party ? B.party() : [], me, partyCount: K.pn && K.pn.on() ? K.pn.count() : 5, journey: journey(), key: keyed(B), ticks: ticksOf(me && me.slug), snoozed: snoozeMap(), cleanName: K.cleanName };
+    launch: B && B.launch ? B.launch() : [], partyRows: B && B.party ? B.party() : [], me, partyWord: K.pn.word(), partyOther: K.pn.word(-1), partyNoun: K.pn.noun(), say: K.pn.say, journey: journey(), key: keyed(B), ticks: ticksOf(me && me.slug), snoozed: snoozeMap(), cleanName: K.cleanName };
 }
 
 function words(box, layout) {
@@ -80,7 +80,7 @@ function tonightLine(t, short) {
   let s = `${String(t.label).split(":")[0].trim()}${when ? `: ${when}` : ""}.`;
   if (!short) {
     const c = t.coming || {}, n = c.in || 0, rest = [[c.maybe, "tentative"], [c.late, "running late"], [c.out, "out"]].filter(([k]) => k > 0), none = ((D.party && D.party.members.length) || 5) - n - rest.reduce((x, [k]) => x + k, 0);
-    s += n ? ` ${n} of the five ${n === 1 ? "has" : "have"} said they're in for launch night.` : " Nobody has said they're in for launch night yet.";
+    s += n ? ` ${n} of the ${K.pn.word()} ${n === 1 ? "has" : "have"} said they're in for launch night.` : " Nobody has said they're in for launch night yet.";
     if (rest.length) s += ` ${K.andList(rest.map(([k, w]) => `${k} ${w}`))}.`;
     if (none > 0) s += ` ${none} ${none === 1 ? "has" : "have"} not answered yet.`;
   }

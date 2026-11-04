@@ -279,13 +279,12 @@ export async function createAtlas(opts) {
     for (const [c, list] of g) out.push({ home: c === mc, ids: list });
     return out.sort((a, b) => (b.home ? 1 : 0) - (a.home ? 1 : 0));
   }
-  const NUM = ["no one", "one", "two", "three", "four", "five", "six"];
   function setAway(ids, meet, who) {
     const cl = clustersOf(ids, meet);
     S.away = cl.length > 1 ? cl.map((c) => {
       const starts = (who || []).filter((w) => c.ids.includes(w.from)), sp = starts.length ? placeById.get(starts[0].from) : null, z = sp ? zoneById.get(sp.zone) : null;
       const label = c.home ? (placeById.get(meet) || {}).name || meet : z ? z.name : (placeById.get(c.ids[0]) || {}).name || c.ids[0];
-      const say = c.home ? `Show ${label}, the meeting point` : `Show ${label}, where ${NUM[starts.length] || starts.length} of the party start`;
+      const say = c.home ? `Show ${label}, the meeting point` : `Show ${label}, where ${starts.length ? (K.pn ? K.pn.say(starts.length) : String(starts.length)) : "no one"} of the party start`;
       return { ids: c.ids, label, say };
     }) : [];
     placeAway();

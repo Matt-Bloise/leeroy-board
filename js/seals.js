@@ -216,10 +216,10 @@
   }
   function laneAt(x, y, self) { self.style.pointerEvents = "none"; const el = document.elementFromPoint(x, y); self.style.pointerEvents = ""; return el && el.closest ? el.closest("#five-form .fl") : null; }
   K.on("scene", (k) => { if (k === "five") { buildFive(); syncFive(); } });
-  MECH.five = { get hint() { return `to turn all ${K.pn ? K.pn.word() : "five"} cards over, or back`; }, press: ({ say: sy }) => {
+  MECH.five = { get hint() { return `to turn all ${K.pn.word()} cards over, or back`; }, press: ({ say: sy }) => {
     const ms = members(), cs = ms.map(cardOf).filter(Boolean), all = cs.every((c) => c.classList.contains("flipped"));
     ms.forEach((m, i) => setTimeout(() => { const c = cardOf(m); if (c && c.classList.contains("flipped") === all) turnCard(m); }, reduceMQ.matches ? 0 : i * 110));
-    sy(all ? `All ${K.pn ? K.pn.word() : "five"} cards are back on their fronts.` : `All ${K.pn ? K.pn.word() : "five"} cards are turned to their spells.`);
+    sy(all ? `All ${K.pn.word()} cards are back on their fronts.` : `All ${K.pn.word()} cards are turned to their spells.`);
   } };
 
   const R = { i: -1, f: "all" }, KS = {};
@@ -360,7 +360,7 @@
   const replayOn = (sel, cls) => { const el = $(sel); if (!el) return; el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); };
   const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
   MECH.roads = { hint: "to draw the roads again", press: ({ say: sy }) => { const at = window.__atlas && window.__atlas.api, m = $("#map"); if (at && m && m.classList.contains("atlas-on")) { at.showPlan(at.plan({}), { animate: true }); sy("The courses draw again on the Atlas from where each character starts."); return; }  replayOn("#map", "drawing"); sy("The roads draw again from where each character starts."); } };
-  MECH.buffs = { hint: "to light the wheel again", press: ({ say: sy }) => { replayOn("#wheel", "lighting"); sy(`The wheel lights each link between the ${K.pn ? K.pn.word() : "five"}.`); } };
+  MECH.buffs = { hint: "to light the wheel again", press: ({ say: sy }) => { replayOn("#wheel", "lighting"); sy(`The wheel lights each link between the ${K.pn.word()}.`); } };
   MECH.ledger = { hint: "to stamp the ledger again", press: ({ say: sy }) => {
     replayOn("#ledger-slip", "stamping");
     const p = K.D && K.D.party; if (!p) return;
