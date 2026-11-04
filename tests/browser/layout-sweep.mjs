@@ -29,6 +29,7 @@
 //   close-hit-tour  every scene: with the guided tour veil (.walk > .walk-veil) up, the close button is still the top element at its centre
 //   tile-clip       looking and member, the wall before any scene opens: no wall tile clips its own text (a clipping box shorter than its content, or text outside its tile)
 //   http-error      a same-origin response was 4xx or 5xx
+//   xorigin-http    a request to another origin (Worker API, font host) answered 4xx/5xx or failed; the failure names the URL (the Cloudflare insights beacon is ignored)
 //   console-error   a page error or console error (resource-load lines are covered by http-error; the Cloudflare insights beacon is ignored)
 // Zoom: WebKit (Safari 18.2) reports unzoomed getBoundingClientRect values for elements under CSS `zoom` (the sheet panels use zoom: 1.052 at laptop sizes). window.__lz (ZOOM_JS below)
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
@@ -348,6 +349,10 @@ async function cell(browser, size, state, A) {
   page.on("pageerror", (e) => once("console-error", `pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text())) once("console-error", m.text()); });
   page.on("response", (r) => { const u = r.url(); if (u.startsWith(ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
+  /* xorigin-http: a request to ANOTHER origin (the Worker API, a font host) that answered 4xx/5xx or failed. WebKit logs such a 404 as "Origin <site> is not allowed by Access-Control-Allow-Origin. Status code: 404" without the URL (production QA run 41807379587), so the console-error line alone cannot be traced; this names the URL. The Cloudflare insights beacon is ignored. */
+  const xo = (u) => /^https?:/.test(u) && !u.startsWith(ORIGIN) && !/cloudflareinsights/.test(u);
+  page.on("response", (r) => { const u = r.url(); if (xo(u) && r.status() >= 400) once("xorigin-http", `${r.status()} ${u}`); });
+  page.on("requestfailed", (r) => { const u = r.url(); if (xo(u)) once("xorigin-http", `failed ${r.method()} ${u} ${(r.failure() || {}).errorText || ""}`); });
   try {
     await openState(page, state);
     if (state === "gate") { scene = "gate"; await gateChecks(page, size, once, A); }
