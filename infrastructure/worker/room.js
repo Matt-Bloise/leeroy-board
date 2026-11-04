@@ -8,7 +8,7 @@
 // must fail loudly instead of being copied to hundreds of browsers.
 export const MAX_BROADCAST_BYTES = 256 * 1024; // one message; Cloudflare allows 1 MiB per WebSocket message, a party snapshot is far smaller
 export const MAX_BROADCAST_RECIPIENTS = 500; // sockets one broadcast is sent to
-export const MAX_SOCKETS = 1000; // open sockets; /live refuses new ones above this (the page falls back to polling)
+export const MAX_SOCKETS = MAX_BROADCAST_RECIPIENTS; // open sockets; equal to the fan-out cap so no open socket is silently skipped. /live refuses new ones above this (the page falls back to polling)
 
 const jsonResponse = (obj, status) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 const byteLength = (str) => new TextEncoder().encode(str).length;

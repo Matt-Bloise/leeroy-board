@@ -145,7 +145,8 @@ async function tableBallots(db, ids) {
   try {
     const r = await db.prepare(`SELECT vote_id, voter_hash, choice FROM vote_ballots WHERE vote_id IN (${ids.map(() => "?").join(",")})`).bind(...ids).all();
     return (r && r.results) || [];
-  } catch {
+  } catch (e) {
+    if (!/no such table/i.test(String((e && e.message) || e))) throw e; // any other D1 error must not silently drop ballots from the totals
     return []; // table not migrated yet: fall back to the document's own ballots
   }
 }

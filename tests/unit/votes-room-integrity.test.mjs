@@ -15,7 +15,7 @@ import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 
 const rd = (f) => readFileSync(new URL(`../../infrastructure/migrations/${f}`, import.meta.url), "utf8");
 // The limits are written out here on purpose: the test pins the numbers, not the exports.
-const MAX_BROADCAST_BYTES = 256 * 1024, MAX_BROADCAST_RECIPIENTS = 500, MAX_SOCKETS = 1000;
+const MAX_BROADCAST_BYTES = 256 * 1024, MAX_BROADCAST_RECIPIENTS = 500, MAX_SOCKETS = 500;
 const USER_SALT = "user-salt-for-tests-0123456789";
 const VOTE = "0a1b2c3d";
 const ORIGIN = "https://api.test";
@@ -94,6 +94,13 @@ test("votes: an erase that lands between a cast's read and its write is not undo
   assert.ok(erased, "the race was staged");
   const doc = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(`vote:${VOTE}`).json);
   assert.ok(!(h in doc.ballots), "erased ballot stays erased");
+});
+
+test("votes: a D1 error other than a missing table is not swallowed", async () => {
+  const env = makeEnv(); seedVote(env);
+  const real = env.DB.prepare.bind(env.DB);
+  env.DB.prepare = (sql) => { if (/FROM vote_ballots/.test(sql)) throw new Error("D1_ERROR: database is locked"); return real(sql); };
+  await assert.rejects(() => loadPublicVotes(env.DB, Date.now()), /locked/);
 });
 
 // ---- 2. room bounds --------------------------------------------------------------------------------------------------------------
