@@ -36,7 +36,7 @@
 // multiplies a rect or a point by the cumulative zoom (product of getComputedStyle(el).zoom over the element and its ancestors), only on WebKit and only if a probe shows the engine
 // really reports unzoomed values; on Chromium and Firefox it changes nothing. close-viewport, close-hit and body-last use it, and so do the clicks on WebKit.
 // Report: array of {w,h,engine,state,scene,invariant,detail} for failures only, plus a summary, written to --out as {summary, failures}.
-import { ignoredConsoleError, realViolations } from "../helpers/sweep-filters.mjs";
+import { ignoredConsoleError, cspCheck } from "../helpers/sweep-filters.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
@@ -348,19 +348,6 @@ async function tourVeilCheck(page, size, once, A) {
     } finally { w.remove(); }
   });
   if (r && !r.ok) once("close-hit-tour", `with the guided tour veil up, the close button is covered by ${r.top}`);
-}
-
-// Read the collected report-only CSP violations (see the init script in cell()). Called when the cell is over, after every scene was opened and measured, and also when the cell threw: a violation fired by a scene's
-// own interaction must be seen too. The events are queued by the engine, so flush two animation frames and a short settle first. EVERY distinct violation is named, one failure each, with directive, blocked URI and source.
-async function cspCheck(page, once, A) {
-  try {
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-    await page.waitForTimeout(250);
-    const v = realViolations(await page.evaluate(() => window.__csp || [])); // the harness's own eval is not a page problem (sweep-filters.mjs)
-    A.checks++;
-    const count = new Map(); for (const x of v) count.set(x, (count.get(x) || 0) + 1);
-    for (const [x, n] of [...count].slice(0, 40)) once("csp-violation", `${x}${n > 1 ? ` (x${n})` : ""}`);
-  } catch (e) { /* the page is gone (closed or crashed): nothing to read */ }
 }
 
 async function cell(browser, size, state, A) {
