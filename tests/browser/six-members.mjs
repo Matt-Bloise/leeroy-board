@@ -71,8 +71,11 @@ async function setup(browser, width, { flagOn = true, count = 6, state = "lookin
   await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 20000 }).catch(() => {});
   if (state !== "gate") {
+    // "Just take a look" must be TAKEN, not only looked for: the link (or the chips themselves, on a visit that skips the first-visit sheet) can be attached a moment before it is visible,
+    // and a click skipped because the link was not visible yet leaves the chips hidden for good (0 visible .tn-name, the click on a chip then times out). So wait until one of the two is visible.
+    await page.waitForFunction(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return vis(document.querySelector("#nx-fr2-look")) || Array.from(document.querySelectorAll(".tn-name")).some(vis); }, null, { timeout: 20000 }).catch(() => {});
     const look = page.locator("#nx-fr2-look");
-    if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
+    if (await look.isVisible().catch(() => false)) await look.click();
     await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
     await settleChips(page, count, width);
   }
