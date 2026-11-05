@@ -50,7 +50,9 @@ try {
       const b = await state(page);
       ok(`${t} after "Continue with Discord" the hash is still the destination`, b.hash === `#${token}`, b.hash);
       ok(`${t} the scene is still open and the page URL is unchanged`, b.open && b.href === a.href, `${a.href} -> ${b.href}`);
-      ok(`${t} the only thing opened is the Discord sign-up card, in a new tab`, b.opened.length === 1 && b.opened[0][0] === a.signup && /_blank/.test(b.opened[0][1]), JSON.stringify(b.opened));
+      // the one window.open call the page makes, as the init script records it: [url, target, features] = [the page's own sign-up link, "_blank", "noopener"]
+      const want = [[a.signup, "_blank", "noopener"]];
+      ok(`${t} the only thing opened is the Discord sign-up card, in a new tab`, JSON.stringify(b.opened) === JSON.stringify(want), `expected ${JSON.stringify(want)}, got ${JSON.stringify(b.opened)}`);
       ok(`${t} no /auth/ request was made`, authReqs.length === 0, authReqs.join(" | "));
       ok(`${t} no page errors`, errors.length === 0, errors.join(" | "));
       await ctx.close();
