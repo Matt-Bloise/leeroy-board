@@ -25,7 +25,33 @@ const pw = await import("playwright").catch(() => { console.error("playwright no
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2), only = argv.includes("--only") ? argv[argv.indexOf("--only") + 1].split(",") : null;
 let pass = 0, fail = 0;
+// A rejection nobody awaits must never be silent and must never be a surprise: the default is a Node stack trace, exit 1 and no FAIL line, so a real failure looks like a crash and a
+// harmless one ends the run before the summary. Here every one prints a FAIL line and ends the run with exit 1, EXCEPT one narrow case: a closed-target error (TargetClosedError) that
+// arrives while a browser is being closed on purpose (`tearingDown`), from a call that was still in flight when it closed. That one is logged as INFO and the run goes on.
+let tearingDown = false, ignoredAtTeardown = 0;
+const why = (e) => String((e && (e.stack || e.message)) || e).split("\n").slice(0, 3).join(" | ");
+const isClosedTarget = (e) => /TargetClosedError|Target page, context or browser has been closed/.test(String((e && (e.name + " " + e.message)) || e));
+const die = (what, e) => { fail++; console.log(`FAIL ${what}: ${why(e)}`); console.log(`\n${pass} passed, ${fail} failed`); process.exit(1); };
+process.on("unhandledRejection", (e) => {
+  if (tearingDown && isClosedTarget(e)) { ignoredAtTeardown++; console.log(`INFO [teardown] ignored a closed-target rejection from a call still in flight when the browser was closed on purpose: ${why(e)}`); return; }
+  die(`unhandled rejection${tearingDown ? " during teardown" : ""}`, e);
+});
+process.on("uncaughtException", (e) => die("uncaught exception", e));
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
+// Close a case's browser in order, after everything that could still be answering it has stopped: the page's reconnect loops (window.__stopSockets), then a short settle for
+// in-flight route and WebSocket handlers, then the routes themselves (waiting for any handler still running), then page, context, browser and the fixture server. Nothing here is skipped
+// on an error, and `tearingDown` is what lets the rejection handler above tell a late closed-target error of this close from a real failure.
+async function tearDown(page, ctx, browser, srv) {
+  tearingDown = true;
+  await page.evaluate(() => { window.__stopSockets = true; }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 300));
+  await ctx.unrouteAll({ behavior: "wait" }).catch(() => {});
+  await page.close().catch(() => {});
+  await ctx.close().catch(() => {});
+  await browser.close().catch(() => {});
+  await srv.close();
+  await new Promise((r) => setTimeout(r, 200)); // anything that rejects late still lands while `tearingDown` is set
+}
 const L = ["--viewports", "laptop"];
 const CASES = [
   ["green", 0, null, []],
@@ -71,6 +97,7 @@ if (!only || only.includes("redirect")) {
   // a 12-hop redirect chain answered by the API: one counted request must not become many Worker requests
   const srv = await startFixtureServer({ mode: "green" });
   const browser = await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
+  tearingDown = false;
   const budget = createBudget(5), ctx = await browser.newContext();
   await guardContext(ctx, budget);
   const page = await ctx.newPage();
@@ -83,12 +110,13 @@ if (!only || only.includes("redirect")) {
   ok("[redirect] the server saw exactly 1 request for the chain (not 13)", hops === 1, `the server saw ${hops}`);
   ok("[redirect] the redirect was recorded for the probe to fail on", budget.redirects.length === 1 && /302 GET .*\/api\/hop/.test(budget.redirects[0]), JSON.stringify(budget.redirects));
   console.log(`INFO [redirect] counted ${budget.used}, redirects recorded ${budget.redirects.length}, server hits ${hops}`);
-  await browser.close(); await srv.close();
+  await tearDown(page, ctx, browser, srv);
 }
 
 if (!only || only.includes("budget")) {
   const srv = await startFixtureServer({ mode: "green" });
   const browser = await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
+  tearingDown = false;
   const budget = createBudget(5), ctx = await browser.newContext();
   await guardContext(ctx, budget);
   const page = await ctx.newPage();
@@ -97,7 +125,7 @@ if (!only || only.includes("budget")) {
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     // a page that will not take no for an answer: 20 sockets (each reconnects on close) and 20 fetches
     for (let i = 0; i < 20; i++) {
-      const open = () => { const w = new WebSocket(`${origin.replace(/^http/, "ws")}/api/live`); w.onclose = () => setTimeout(open, 20); };
+      const open = () => { const w = new WebSocket(`${origin.replace(/^http/, "ws")}/api/live`); w.onclose = () => { if (!window.__stopSockets) setTimeout(open, 20); }; };
       open();
       fetch("/api/health").catch(() => {});
       await wait(20);
@@ -108,7 +136,8 @@ if (!only || only.includes("budget")) {
   ok("[budget] the budget object counted at most its limit", budget.used <= 5 && budget.exceeded, `used ${budget.used}, exceeded ${budget.exceeded}`);
   ok("[budget] reconnecting sockets and refetches reached the server at most 5 times", reached <= 5, `the server saw ${srv.seen.api} HTTP and ${srv.seen.ws} socket upgrades`);
   console.log(`INFO [budget] limit 5, counted ${budget.used}, refused ${budget.refused}, the server saw ${reached}`);
-  await browser.close(); await srv.close();
+  await tearDown(page, ctx, browser, srv);
 }
+if (ignoredAtTeardown) console.log(`INFO [teardown] ${ignoredAtTeardown} closed-target rejection(s) from calls still in flight were ignored while a browser was closed on purpose`);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
