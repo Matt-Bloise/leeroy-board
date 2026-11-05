@@ -162,8 +162,9 @@ html.nx-first-run :is(#tn-me, #nx-card, #nx-tonight, #nx-queue, #nx-rest, #tn-ca
 .nx-fr2 #nx-fr2-go { justify-content: center; min-height: 48px; padding: 8px 22px; font-size: var(--step-0); border-radius: 6px; }
 .nx-fr2 .nx-fr2-look { display: inline-flex; align-items: center; min-height: 44px; }
 @media (max-width: 699px) { .nx-fr2 { justify-items: stretch; } .nx-fr2 .nx-fr2-look { justify-content: center; } }
-/* Phone home card: the panel carries the focus ring (inset 4px), so it gets even padding on all four sides and the card no longer adds its own bottom margin; the text sits clear of the ring, and the body pads top and bottom alike so its centring is true. */
-@media (max-width: 699px) { html.nx-solo #panel-tonight { padding: var(--g2); } html.nx-solo #panel-tonight .nx-fr2 { margin-bottom: 0; } html.nx-solo #scene #sheet-body { padding-block: var(--g2); } }
+/* Phone home card: the panel carries the focus ring (inset 4px), so it gets even padding on all four sides and the card no longer adds its own bottom margin; the text sits clear of the ring, and the body pads top and bottom alike so its centring is true. Short landscape windows (a phone on its side) get the same rules, and spend less height so the card fits its frame with room to spare in any engine (layout-sweep gate-fit, B63b): tighter gaps and padding, and the quiet link 44px tall in all (38px plus its 3px padding above and below). */
+@media (max-width: 699px), (max-height: 500px) and (orientation: landscape) { html.nx-solo #panel-tonight { padding: var(--g2); } html.nx-solo #panel-tonight .nx-fr2 { margin-bottom: 0; } html.nx-solo #scene #sheet-body { padding-block: var(--g2); } }
+@media (max-height: 500px) and (orientation: landscape) { html.nx-solo #panel-tonight { padding: var(--g1); } html.nx-solo #scene #sheet-body { padding-block: var(--g1); } html.nx-solo #panel-tonight .nx-fr2 { gap: calc(var(--g1) / 2); } html.nx-solo #panel-tonight .nx-fr2 .nx-fr2-look { min-height: 38px; } }
 
 /* Guided ribbon: four tabs and More; the rest are folded, never removed (js/next.js tabFold) */
 #tabs .tab[data-nx-fold] { display: none !important; }

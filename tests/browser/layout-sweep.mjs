@@ -29,6 +29,7 @@
 //   fill            first visit, the card fills at least 25 percent of its parchment (area ratio). FAILS at 3440x1440, 3840x2160 and 5120x1440 (FILL_ENFORCED); report only at every other size
 //   close-hit-tour  every scene: with the guided tour veil (.walk > .walk-veil) up, the close button is still the top element at its centre
 //   float-cover     phone sizes (touch, under 700 wide, so 360, 390, 412 and the rest): no floating control (fixed, sticky, or absolutely placed outside the header: the bottom-bar coin) sits on top of a visible line of text. Judged with the sheet body scrolled to the top, the middle and the end, in every scene and in the first-visit gate. A text rect is cut by every clipping ancestor first (text scrolled out of #sheet-body is not on screen), then must overlap the control by more than 2 px each way and the control must be the element hit at the overlap centre
+//   gate-fit        first visit, short landscape windows (height 320 to 500, wider than tall: 568x320, 640x360, 667x375, 812x375, 844x390, 860x360): the card fits its frame without the sheet body scrolling, the frame sits inside the body, and the body has at least GATE_SLACK px to spare (WebKit sets the card taller than Chromium: 29.6 px on production at 568x320)
 //   gate-inset      first visit, phone sizes: the card's lines sit at least 8 px inside #panel-tonight (the box the keyboard focus ring is drawn in, inset 4 px) on every side, and, when the body does not scroll, the panel is centred in #sheet-body within 6 px
 //   tile-clip       looking and member, the wall before any scene opens: no wall tile clips its own text (a clipping box shorter than its content, or text outside its tile)
 //   http-error      a same-origin response was 4xx or 5xx
@@ -63,8 +64,10 @@ const ALL_STATES = ["gate", "looking", "member"];
 const ALL_SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight", "decide"];
 const pick = (k, all) => { const v = arg(k); if (!v) return all; const l = v.split(",").filter(Boolean); const bad = l.filter((x) => !all.includes(x)); if (bad.length) { console.error(`${k}: unknown ${bad.join(",")}`); process.exit(2); } return l; };
 ALL_SIZES.push("5120x1440");
+ALL_SIZES.push("667x375", "812x375"); /* landscape phones the first-visit card must fit (B63b), with 568x320 and 844x390 already in the list */
 ALL_SIZES.push("412x915"); /* a common Android phone width (Pixel); with 390 and 360 the three phone widths float-cover names */ /* 34 inch ultra-wide at double width: a very wide, not very tall window */
 // fill is enforced (a failure) at these sizes: the first-visit card must fill at least 25 percent of its parchment. Elsewhere it only reports.
+const GATE_SLACK = 24; /* px the first-visit frame must leave free in a short landscape body, so an engine that sets the card taller still fits */
 const FILL_ENFORCED = new Set(["3440x1440", "3840x2160", "5120x1440"]);
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
 const STATES = pick("--states", ALL_STATES), SCENES = pick("--scenes", ALL_SCENES);
@@ -309,18 +312,24 @@ async function gateChecks(page, size, once, A) {
     const y = await page.evaluate(() => scrollY);
     if (y !== 0) once("wheel-still", `scrollY ${y} after a wheel event`);
   }
-  if (size.touch) {
+  const landscape = size.w > size.h && size.h >= 320 && size.h <= 500;
+  if (size.touch || landscape) {
     A.checks++;
     const g = await page.evaluate(() => {
       const p = document.querySelector("#panel-tonight"), c = document.querySelector("#nx-fr2"), b = document.querySelector("#sheet-body");
       if (!p || !c || !b) return null;
       const L = window.__lz, pr = L.rect(p), br = L.rect(b), ks = [...c.children].map((k) => L.rect(k));
-      return { left: Math.min(...ks.map((k) => k.left)) - pr.left, right: pr.right - Math.max(...ks.map((k) => k.right)), top: Math.min(...ks.map((k) => k.top)) - pr.top, bottom: pr.bottom - Math.max(...ks.map((k) => k.bottom)), off: (pr.top + pr.bottom) / 2 - (br.top + br.bottom) / 2, scrolls: b.scrollHeight > b.clientHeight + 1 };
+      return { left: Math.min(...ks.map((k) => k.left)) - pr.left, right: pr.right - Math.max(...ks.map((k) => k.right)), top: Math.min(...ks.map((k) => k.top)) - pr.top, bottom: pr.bottom - Math.max(...ks.map((k) => k.bottom)), off: (pr.top + pr.bottom) / 2 - (br.top + br.bottom) / 2, scrolls: b.scrollHeight > b.clientHeight + 1, over: b.scrollHeight - b.clientHeight, panelTop: pr.top - br.top, panelBottom: br.bottom - pr.bottom, spare: b.clientHeight - pr.height };
     });
     if (g) {
       const tight = ["left", "right", "top", "bottom"].filter((k) => g[k] < 8).map((k) => `${k} ${g[k].toFixed(1)}px`);
       if (tight.length) once("gate-inset", `the first-visit card is closer than 8px to its frame: ${tight.join(", ")}`);
       else if (!g.scrolls && Math.abs(g.off) > 6) once("gate-inset", `the first-visit frame is ${g.off.toFixed(1)}px off the centre of the sheet body`);
+      if (landscape) {
+        A.checks++;
+        const why = [g.scrolls && `the body scrolls (${g.over}px of content past its bottom)`, (g.panelTop < -1 || g.panelBottom < -1) && `the frame sticks out of the body (top ${g.panelTop.toFixed(1)}px, bottom ${g.panelBottom.toFixed(1)}px)`, g.spare < GATE_SLACK && `only ${g.spare.toFixed(1)}px spare in the body (want ${GATE_SLACK})`].filter(Boolean);
+        if (why.length) once("gate-fit", `first-visit card does not fit its frame in a short landscape window: ${why.join("; ")}`);
+      }
     }
   }
   const n = m.scrollers.length + (m.docScrolls ? 1 : 0);
