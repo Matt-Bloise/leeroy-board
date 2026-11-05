@@ -1,4 +1,5 @@
 // Pure judging functions for tests/browser/prod-probe.mjs (no browser, no network), so tests/unit/probe-checks.test.mjs can prove that a wrong member
+import { ignoredConsoleError } from "./sweep-filters.mjs"; // PR 181 (B60): the Firefox harness-eval CSP throttle message, owned by exactly that message from exactly the harness eval source
 // count, a typed "five" with six members and junk text make the probe fail. Each function returns a list of problem strings; an empty list is a pass.
 
 export const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
@@ -92,6 +93,7 @@ export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = fals
     const text = typeof e === "string" ? e : e.text, at = typeof e === "string" ? "" : e.at || "";
     if (engine === "webkit" && allowWebkitNoWebgl && /Error creating WebGL context/.test(text)) return false;
     if (isReportOnlyCsp(text) || isCspAdvisory(text)) return false;
+    if (ignoredConsoleError(text, at)) return false; // Firefox: "Prevented too many CSP reports ..." from "debugger eval code" is the harness's own page.evaluate, not the page
     if (isInsightsHost(at)) return false;
     if (budgetSpent && isBudgetRefusal(text, at)) return false;
     if (insightsRequestFailed && !/https?:\/\//.test(text) && /^(Failed to load resource|.*net::ERR_FAILED|.*Access-Control-Allow-Origin)/i.test(text)) return false;

@@ -152,3 +152,12 @@ test("a long WebKit advisory whose report-only wording lies beyond 160 character
   assert.deepEqual(consoleFailures([full]), []);
   assert.equal(consoleFailures([full.slice(0, 160)]).length, 1, "cut at 160 characters the wording is gone, which is why the probe must keep the whole text");
 });
+
+test("Firefox's harness-eval CSP throttle message (PR 181's ignoredConsoleError) is not a page error; the same text from a real file still fails", () => {
+  const throttle = "Content-Security-Policy: Prevented too many CSP reports from being sent within a short period of time.";
+  assert.deepEqual(consoleFailures([{ text: throttle, at: "debugger eval code" }]), []);
+  assert.deepEqual(consoleFailures([{ text: `[JavaScript Error: "${throttle}" {file: "debugger eval code" line: 1}]`, at: "" }]), []);
+  assert.equal(consoleFailures([{ text: throttle, at: "https://leeroy.party/js/board.js" }]).length, 1);
+  assert.equal(consoleFailures([{ text: throttle, at: "" }]).length, 1, "no source: not provably the harness");
+  assert.equal(consoleFailures([{ text: "TypeError: x", at: "debugger eval code" }]).length, 1, "only that exact message is ignored");
+});

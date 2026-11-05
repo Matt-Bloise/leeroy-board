@@ -81,6 +81,9 @@ const CASES = [
   ["delayed-copy", 0, null, L],
   ["late-cards", 0, null, L],
   ["late-look", 0, null, L],
+  ["green", 0, null, L, "api-route-continue", [["says it is the experiment mode, redirects not refused", /WARN PROBE_API_ROUTE=continue: the browser sends \/api requests itself; redirects are NOT refused/], ["still counts every request", /Worker requests this run: \d+ of 200/]], { PROBE_API_ROUTE: "continue" }],
+  ["stale-first-load", 0, null, L, null, [["reloads once and says so", /WARN chromium laptop 1366x768: the board shows 5 members, the party has 6; reloading once/]]],
+  ["members-never", 1, /the board shows 5 members but \/api\/state partyDoc lists 6 \[DOM: selector "\.tn-name": 5 elements/, L, null, [["says the scenes and copy were not judged", /INFO chromium laptop 1366x768: the scenes were not stepped through and no copy was judged/], ["no scene or copy failure follows the count failure", /^(?![\s\S]*FAIL [^\n]*(did not open|wrong party size))/]]],
   ["csp-firefox-js-error", 0, null, L, null, [["lists the wrapped Firefox advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n(?:\s+- [^\n]*\n)*\s+- \w+: \[JavaScript Error: "Content-Security-Policy: \(Report-Only policy\)/]]],
   ["csp-firefox-js-mention", 1, /console error: \[JavaScript Error: "Content-Security-Policy: The page's settings blocked/, L],
   ["visible-five", 1, /copy states the wrong party size: "Which of the five are you\?"/, L, null, [["says why this engine counts the string as visible", /DIAG chromium laptop[^\n]*"Which of the five are you\?" in p[^\n]*display block[^\n]*checkVisibility true[^\n]*ancestors flagged: none/]]],
@@ -91,9 +94,9 @@ const CASES = [
   ["cf-text", 1, /console error: TypeError: cannot read properties of undefined .*cloudflareinsights/, L],
 ].filter(([m, , , , label]) => !only || only.includes(label || m));
 
-async function runCase([mode, want, re, extra, label, musts]) {
+async function runCase([mode, want, re, extra, label, musts, env]) {
   const srv = await startFixtureServer({ mode });
-  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", ENGINES]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env } });
+  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", ENGINES]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env, ...(env || {}) } });
   let out = ""; child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (out += d));
   const code = await new Promise((r) => child.on("close", r));
   await srv.close();

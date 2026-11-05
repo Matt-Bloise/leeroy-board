@@ -23,6 +23,8 @@
 //   delayed-copy a visible "Which of the five are you?" that is corrected to "six" after 4 s (the copy lags the chips): the probe waits for it and passes; without the wait it fails
 //   cards-never  the member cards of #panel-five never appear: must fail, naming the selector, the count found and what the panel does contain (no fixed wait per route)
 //   csp-advisory-long the WebKit advisory with a policy long enough that "report-only" lies beyond the 160th character: must be exempt (the text is matched in full, not truncated)
+//   stale-first-load  a browser is given FIVE members until the page is reloaded (the probe's own /api/state read says six): the probe reloads ONCE, then passes
+//   members-never     a browser is always given five: must fail with ONE count failure and no copy or scene noise (nothing is judged against a half-rendered board)
 //   late-look    the "Just take a look" link is attached but not visible for the first 3 s (a slow phone or engine): the probe waits for the link, clicks it and passes; without the wait it never reveals the chips
 //   late-cards   the member cards of #panel-five are missing until 7 s after load and come back without the "landed" mark: the probe waits for all cards, opens the route again, passes
 //   csp-firefox-js-error / csp-firefox-js-mention  the same two Firefox messages as Playwright reports them, wrapped as `[JavaScript Error: "..." {file: ...}]`: exempt / still fails
@@ -50,6 +52,10 @@ export async function startFixtureServer({ mode = "green" } = {}) {
   const party = JSON.parse(FIX("party")), signups = FIX("signups");
   if (mode === "junk") party.members[1] = { ...party.members[1], race: "undefined", board_line: "undefined NaN Druid" };
   const rows = party.members.map((m) => ({ slug: m.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), name: m.name, fields: { race: { value: m.race, visible: true, source: "board" }, class: { value: m.class, visible: true, source: "board" } }, updated: null }));
+  // stale-first-load / members-never: a BROWSER request (it carries a Referer or Sec-Fetch-Site; the probe's own Node read of /api/state does not) is answered with FIVE members.
+  // stale-first-load does that only until the page has been loaded a second time (a reload), members-never always.
+  const five = { ...party, members: party.members.slice(0, 5) }, fiveRows = rows.slice(0, 5);
+  const staleFor = (req) => (mode === "members-never" || (mode === "stale-first-load" && seen.index <= 1)) && !!(req.headers["sec-fetch-site"] || req.headers.referer);
   const state = () => ({ ...JSON.parse(snap.routes["/state"].body), party: rows, partyDoc: party, signups: JSON.parse(signups) });
   const bootstrap = () => ({ ...JSON.parse(snap.routes["/bootstrap"].body), party, signups: JSON.parse(signups) });
   const client = () => { const j = JSON.parse(repoDoc("/data/client.json").body); j.flags = { ...(j.flags || {}), "party.n": mode !== "typed-five" }; return JSON.stringify(j); };
@@ -75,7 +81,7 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     "csp-mention-firefox": `setTimeout(() => console.error("Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/x.js (default-src) (Report-Only policy)"), 1500);`,
     "csp-report-only": `setTimeout(() => console.error("[Report Only] Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
   };
-  const seen = { api: 0, ws: 0, static: 0 };
+  const seen = { api: 0, ws: 0, static: 0, index: 0 };
   const json = (res, body, status = 200) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(body); };
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, "http://x"), p = u.pathname;
@@ -86,11 +92,11 @@ export async function startFixtureServer({ mode = "green" } = {}) {
       if (key === "/state") {
         if (mode === "state-redirect" && !req.headers["sec-fetch-site"] && !u.searchParams.has("r")) { res.writeHead(302, { location: "/api/state?r=1", "cache-control": "no-store" }); return res.end(); }
         if (mode === "state-fail" && !req.headers["sec-fetch-site"]) return json(res, '{"error":"fixture: state is down"}', 500);
-        const s = state();
+        const s = state(); if (staleFor(req)) { s.party = fiveRows; s.partyDoc = five; }
         if (mode === "wrong-count" && !req.headers["sec-fetch-site"]) s.partyDoc = { ...party, members: [...party.members, { ...party.members[0], name: "Extra Member" }] };
         return json(res, JSON.stringify(s));
       }
-      if (key === "/bootstrap") return json(res, JSON.stringify(bootstrap()));
+      if (key === "/bootstrap") { const b = bootstrap(); if (staleFor(req)) b.party = five; return json(res, JSON.stringify(b)); }
       if (key === "/data/party.json" || key === "/data/party") return json(res, JSON.stringify(party));
       if (key === "/data/signups.json" || key === "/data/signups") return json(res, signups);
       if (key === "/data/client.json" || key === "/data/client") return json(res, client());
@@ -104,7 +110,7 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     if (!file.startsWith(ROOT + path.sep) || !STATIC_OK.test(rel) && rel !== "/index.html") { res.writeHead(404); return res.end("not found"); }
     let f = file;
     try { if (fs.statSync(f).isDirectory()) f = path.join(f, "index.html"); } catch (e) { res.writeHead(404, { "content-type": "text/plain" }); return res.end("not found"); }
-    try { let body = fs.readFileSync(f); seen.static++; if (path.basename(f) === "index.html" && INJECT[mode]) body = Buffer.from(body.toString("utf8").replace("</body>", `<script>${INJECT[mode]}</script></body>`)); res.writeHead(200, { "content-type": TYPES[path.extname(f)] || "application/octet-stream", "cache-control": "no-store" }); res.end(body); } catch (e) { res.writeHead(404); res.end("not found"); }
+    try { let body = fs.readFileSync(f); seen.static++; if (path.basename(f) === "index.html") seen.index++; if (path.basename(f) === "index.html" && INJECT[mode]) body = Buffer.from(body.toString("utf8").replace("</body>", `<script>${INJECT[mode]}</script></body>`)); res.writeHead(200, { "content-type": TYPES[path.extname(f)] || "application/octet-stream", "cache-control": "no-store" }); res.end(body); } catch (e) { res.writeHead(404); res.end("not found"); }
   });
   // /api/live: accept the WebSocket upgrade and stay silent, as the stub in api-stub.mjs does.
   const socks = new Set();

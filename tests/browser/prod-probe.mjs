@@ -57,6 +57,10 @@ const VIEWPORTS = [{ id: "phone", name: "phone 390x844", width: 390, height: 844
 const TOP = ["timeline", "five", "five.party", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "decide", "tonight"];
 
 const budget = createBudget(BUDGET);
+// Experiment switch: PROBE_API_ROUTE=continue lets the browser send /api requests itself (its own HTTP cache and revalidation, redirects followed). Default "fetch" = the probe sends them
+// (no redirect can multiply the request count). Used to test whether the probe's own fetching changes what the board shows; never set it in the workflows.
+const API_ROUTE = process.env.PROBE_API_ROUTE === "continue" ? "continue" : "fetch";
+if (API_ROUTE === "continue") console.log("WARN PROBE_API_ROUTE=continue: the browser sends /api requests itself; redirects are NOT refused in this mode (experiment only)");
 const problems = [], notes = [], hiddenCopy = new Set(), advisories = new Set();
 const fail = (where, what) => { problems.push(`${where}: ${what}`); console.log(`FAIL ${where}: ${what}`); };
 const pass = (what) => console.log(`PASS ${what}`);
@@ -182,7 +186,7 @@ async function probeOne(browser, engine, vp) {
   const ctx = await browser.newContext(ctxOpts);
   const errs = [], http = [], failed = [];
   // The only routes: count every Worker request and every socket before it is sent, and refuse it once the budget is spent (helpers/probe-budget.mjs).
-  await guardContext(ctx, budget);
+  await guardContext(ctx, budget, { passThrough: API_ROUTE === "continue" });
   if (CLOCK) await ctx.clock.install({ time: CLOCK }); // self-test only (see --clock above)
   const page = await ctx.newPage();
   let insightsFailed = false;
@@ -196,25 +200,37 @@ async function probeOne(browser, engine, vp) {
   });
   page.on("requestfailed", (r) => { if (isInsightsHost(r.url())) insightsFailed = true; const why = (r.failure() || {}).errorText || ""; if (ours(r.url()) && !/ERR_ABORTED|NS_BINDING_ABORTED|cancelled|aborted/i.test(why) && !(budget.exceeded && /blockedbyclient|BLOCKED_BY_CLIENT/i.test(why))) failed.push(`${r.method()} ${r.url().replace(/[?#].*$/, "")} (${why})`); });
   let chips = -1;
-  try {
-    const target = pageUrl(URL_, { params: {} });
-    try { await page.goto(target, { waitUntil: "load", timeout: 45000 }); }
-    catch (e) { console.log(`WARN ${tag}: first load failed (${String(e.message).split("\n")[0]}); loading once more`); await page.goto(target, { waitUntil: "load", timeout: 45000 }); } // the one retry
-    if (page.url() === "about:blank") { console.log(`WARN ${tag}: tab left on about:blank; loading once more`); await page.goto(target, { waitUntil: "load", timeout: 45000 }); }
-    // "Just take a look" can appear a moment after the chips' container is attached (Firefox, phones): wait for the link itself (bounded), click it, then wait for the chips.
+  const target = pageUrl(URL_, { params: {} });
+  // Reveal the member chips ("Just take a look" can appear a moment after the chips' container is attached: Firefox, phones) and wait for them to equal the API count.
+  const reveal = async () => {
     await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 25000 }).catch(() => {});
     await page.waitForSelector("#nx-fr2-look", { state: "visible", timeout: 8000 }).catch(() => {});
     const look = page.locator("#nx-fr2-look");
     if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
     await page.waitForSelector(".tn-name", { state: "visible", timeout: 25000 }).catch(() => {});
-    chips = await settleChips(page, N);
+    return settleChips(page, N);
+  };
+  try {
+    try { await page.goto(target, { waitUntil: "load", timeout: 45000 }); }
+    catch (e) { console.log(`WARN ${tag}: first load failed (${String(e.message).split("\n")[0]}); loading once more`); await page.goto(target, { waitUntil: "load", timeout: 45000 }); } // the one retry
+    if (page.url() === "about:blank") { console.log(`WARN ${tag}: tab left on about:blank; loading once more`); await page.goto(target, { waitUntil: "load", timeout: 45000 }); }
+    chips = await reveal();
+    // A board that still shows another number of members after the bounded wait was loaded from a state that is behind (a slow engine, a cached answer). A visitor would reload, so the probe
+    // does too, ONCE (the same single retry the first load has; it is counted in the request budget like any load). Only if the count is still wrong is that a failure.
+    if (chips >= 0 && chips !== N && !budget.exceeded) {
+      console.log(`WARN ${tag}: the board shows ${chips} members, the party has ${N}; reloading once`);
+      await page.reload({ waitUntil: "load", timeout: 45000 });
+      chips = await reveal();
+    }
   } catch (e) { fail(tag, `the page did not load: ${String(e.message).split("\n")[0]}`); }
+  // Nothing is judged against a half-rendered board: every copy and scene check below runs only when the members shown equal the API count.
+  const boardReady = chips >= 0 && chips === N;
   if (chips >= 0 && !budget.exceeded) {
     const bad = memberCountProblem(chips, N);
-    if (bad.length) { const facts = await chipFacts(page, N); bad.forEach((b) => fail(tag, `${b} [DOM: ${facts}]`)); } else pass(`${tag} the board shows ${chips} members, the party has ${N}`);
+    if (bad.length) { const facts = await chipFacts(page, N); bad.forEach((b) => fail(tag, `${b} [DOM: ${facts}]`)); console.log(`INFO ${tag}: the scenes were not stepped through and no copy was judged, because the board never showed the ${N} members`); } else pass(`${tag} the board shows ${chips} members, the party has ${N}`);
   }
   const visible = [], vtext = [], everything = [], copyState = { gaveUp: false }, sceneState = { cardsGaveUp: false };
-  if (chips >= 0) {
+  if (boardReady) {
     await settleCopy(page, N, 10000, copyState);
     visible.push(...(await copyOf(page, "visible").catch(() => [])).map((t) => ["first screen", t]));
     vtext.push(...(await copyOf(page, "text").catch(() => [])).map((t) => ["first screen", t]));

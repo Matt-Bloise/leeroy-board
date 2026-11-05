@@ -9,9 +9,12 @@ export function createBudget(limit) {
   const b = { limit, used: 0, exceeded: false, refused: 0, redirects: [], spend(n = 1) { if (b.used + n > b.limit) { b.exceeded = true; b.refused++; return false; } b.used += n; return true; } };
   return b;
 }
-export async function guardContext(ctx, budget) {
+// passThrough (experiment only, env PROBE_API_ROUTE=continue in the probe): count the request but let the BROWSER send it (route.continue()), so Firefox's own HTTP cache and ETag revalidation
+// apply as they do for a visitor, instead of the probe fetching it itself. Redirects are then followed by the browser and are NOT refused: use it to compare, never as the default.
+export async function guardContext(ctx, budget, { passThrough = false } = {}) {
   await ctx.route(/\/api\//, async (route) => {
     if (!budget.spend()) return route.abort("blockedbyclient");
+    if (passThrough) return route.continue();
     let res;
     try { res = await route.fetch({ maxRedirects: 0 }); } catch (e) { return route.abort("failed"); }
     if (res.status() >= 300 && res.status() < 400) { budget.redirects.push(`${res.status()} ${route.request().method()} ${route.request().url().replace(/[?#].*$/, "")} -> ${(res.headers().location || "?").replace(/[?#].*$/, "")}`); return route.abort("blockedbyclient"); }
