@@ -107,7 +107,7 @@ const CORE = {
   signups() {
     const S = D.signups, me = MEM.member(); if (!S || !S.tallies) return null;
     const e = me && (S.entries || []).find((x) => K.cleanName(x.name).toLowerCase() === me.name.toLowerCase()), n = (S.tallies.rsvp.in || {}).count || 0;
-    return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: ["Change my answer", () => unfold("signups", "rsvp")] };
+    return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: ["Change my answer", () => unfold("signups", "rsvp")], who: signupWho };
   },
   librarian() { const st = D.stats; return st ? { a: `Type /ask in #wow-forever, or write below. Median answer: ${Math.round(st.median_s)} s.`, go: ["Ask Leeroy", () => { const t = $("#ask-text"); if (t) t.focus(); else unfold("librarian"); }] } : null; },
   library() { const me = MEM.member(); return { a: me ? `Start with your class page (${me.class}) and the page for ${me.race}s.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
@@ -116,6 +116,19 @@ const CORE = {
     return { a: x ? `${x.title}: ${x.state_text}. ${x.by && x.by.text ? x.by.text : ""}` : me ? "Nothing of yours is open." : "Pick your name to see your own choices.", go: ["Open that decision", () => unfold("decide")] };
   },
 };
+// B65: who is in, by time slot, under the Sign-ups card. Read from the tallies the board already shows (rsvp + when), never from a new endpoint.
+// Every member lands in exactly one group: In at <slot>, In (no time picked), Tentative / Running late / Out, or Not answered yet.
+function signupWho() {
+  const S = D.signups, T = S && S.tallies, M = D.party && D.party.members; if (!T || !T.rsvp || !M) return null;
+  const key = (n) => K.cleanName(n).toLowerCase(), has = (slot, m) => !!slot && (slot.names || []).some((n) => key(n) === key(m.name));
+  const left = new Set(M), take = (pred) => { const l = M.filter((m) => left.has(m) && pred(m)); l.forEach((m) => left.delete(m)); return l; };
+  const groups = [];
+  for (const slot of (S.options && S.options.when) || []) groups.push({ id: slot, label: slot === "later" ? "In, later" : `In at ${slot}`, list: take((m) => has(T.rsvp.in, m) && has(T.when && T.when[slot], m)), keep: true });
+  groups.push({ id: "in-open", label: "In, no time picked", list: take((m) => has(T.rsvp.in, m)) });
+  for (const k of ["maybe", "late", "out"]) groups.push({ id: k, label: K.RSVP_SAY[k] || k, list: take((m) => has(T.rsvp[k], m)) });
+  groups.push({ id: "none", label: "Not answered yet", list: [...left], keep: true });
+  return h("section", { class: "jr-who", "aria-label": "Who is in for launch night" }, groups.filter((g) => g.keep || g.list.length).map((g) => h("div", { class: "jr-wg", "data-g": g.id }, h("h4", { class: "jr-wh", text: g.label }), g.list.length ? h("ul", { class: "jr-wl" }, g.list.map((m) => h("li", { class: "jr-wn", "data-member": m.name, text: m.name }))) : h("p", { class: "jr-w0", text: "Nobody yet" }))));
+}
 const deepLine = (key) => { const C = D.client; return ["racials", "legacy", "buffs"].includes(key) && C ? `Numbers here are from the game client's tables, build ${C.build}.` : key === "timeline" ? `Launch: ${(evOf("launch") || {}).epoch}, raids: ${(evOf("raids") || {}).epoch} (seconds since 1970, UTC).` : `Built from the board's own records on ${String((D.party || {}).generated || "").slice(0, 10)}.`; };
 function fold(panel) {
   const deepLink = location.hash.indexOf(`#${panel.id.slice(6)}.`) === 0 || (panel.id === "panel-roads" && /^#atlas(\.|$)/.test(location.hash)) || panel.dataset.view === "sheet" || panel.classList.contains("chamber-on");
@@ -133,7 +146,7 @@ function core(only) {
     if (!c) { rm(box); panel.classList.remove("jr-open"); fold(panel); } else {
       const [label, to, extra] = c.go, go = typeof to === "function" ? h("button", { type: "button", class: `lib-btn strong jr-go${extra ? ` lib-tool ${extra}` : ""}`, onclick: to }, label) : h("a", { class: "lib-btn strong jr-go", href: to }, label);
       const more = h("button", { type: "button", class: "lib-tool jr-more", "aria-expanded": String(panel.classList.contains("jr-open")), onclick: () => openPanel(panel, !panel.classList.contains("jr-open")) }, panel.classList.contains("jr-open") ? "Show less" : "Show me more");
-      const fresh = h("section", { class: "jr-core", "aria-label": "In short" }, h("h3", { class: "jr-q", text: Q[key] }), h("p", { class: "jr-a", text: cut(c.a) }), h("div", { class: "jr-acts" }, go, more));
+      const fresh = h("section", { class: "jr-core", "aria-label": "In short" }, h("h3", { class: "jr-q", text: Q[key] }), h("p", { class: "jr-a", text: cut(c.a) }), h("div", { class: "jr-acts" }, go, more), ...(c.who ? [c.who()] : []));
       panel.insertBefore(fresh, box || panel.firstChild); rm(box);
       fold(panel);
     }

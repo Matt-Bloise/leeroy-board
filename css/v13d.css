@@ -58,6 +58,15 @@ html:not([data-journey]) [data-j="g"], html:not([data-journey]) [data-j="e"] { d
 .jr-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
 .jr-core .jr-go { min-height: 48px; display: inline-flex; align-items: center; text-decoration: none; }
 .jr-core .jr-more { min-height: 48px; color: var(--ink); }
+/* B65: the Sign-ups card sits under the header, not in the middle of the sheet, with who is in by time slot under it */
+html #scene .sheet-body:has(> #panel-signups:not([hidden]) > .jr-core) { align-content: start; padding-top: 12px; }
+.jr-who { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 16px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--ink-line); }
+.jr-wg { min-width: 0; }
+.jr-wh { margin: 0 0 4px; font-family: var(--font-display); font-size: 0.9375rem; line-height: 1.2; color: var(--ink); }
+.jr-wl { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0; padding: 0; list-style: none; }
+.jr-wn { padding: 2px 10px; font-size: 0.9375rem; line-height: 1.35; color: var(--ink); background: var(--cream-2, transparent); border: 1px solid var(--ink-line); border-radius: 999px; overflow-wrap: anywhere; }
+.jr-w0 { margin: 0; font-size: 0.9375rem; line-height: 1.35; color: var(--ink-soft); }
+@media (min-width: 700px) { .jr-who { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .jr-all { margin: 0 0 var(--g1, 8px); min-height: 44px; }
 .jr-deep { margin: 12px 0 0; font-size: 0.9375rem; color: var(--ink-soft); }
 html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):not(.jr-dest):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(#ch-still):not(:has(#ask-box)) { display: none !important; }
