@@ -24,6 +24,9 @@ html.phone-shell .bb-coin.fade .bb-coin-img { animation: bb-fade 120ms linear bo
 @keyframes bb-fade { 0% { opacity: 0.2; } 100% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { html.phone-shell .bb-coin.spin .bb-coin-img { animation: none; } }
 html.phone-shell .bb-coin.off { visibility: hidden; }
+/* The coin floats 62px above the bar, over the sheet body. The body stops above it, so scrolled text is cut there and never runs under the coin (layout-sweep float-cover). Not while the coin is off or collapsed away (first visit, nav-collapsed) or the bar is hidden (a field has focus). */
+html.phone-shell:is(:not(.nav-collapsed), .nav-open) .sheet:has(#bb-coin:not(.off)):not(:has(input:focus, textarea:focus)) #sheet-body { margin-bottom: 62px; }
+@media (max-height: 500px) and (orientation: landscape) { html.phone-shell:is(:not(.nav-collapsed), .nav-open) .sheet:has(#bb-coin:not(.off)):not(:has(input:focus, textarea:focus)) #sheet-body { margin-bottom: 46px; } }
 html.phone-shell .bottombar:has([data-place="more"][aria-current="true"]) .bb-coin { pointer-events: none; }
 @media (max-height: 500px) and (orientation: landscape) { html.phone-shell .bb-coin { top: -46px; height: 32px; padding: 3px 6px; } html.phone-shell .bb-coin-img { width: 26px; height: 26px; margin-inline: 5px; } }
 
