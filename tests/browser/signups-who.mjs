@@ -57,10 +57,14 @@ async function open(browser, width, height, signups) {
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 20000 }).catch(() => {});
+  // "Just take a look" must be TAKEN, not only looked for: the link (or the chips themselves, on a visit that skips the first-visit sheet) can be attached a moment before it is
+  // visible, and a click skipped because the link was not visible yet leaves the chips hidden for good, so the click on a chip times out (the same race B64 fixed in six-members).
+  // Wait until one of the two is visible, then click the link if it is the one that is there.
+  await page.waitForFunction(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return vis(document.querySelector("#nx-fr2-look")) || Array.from(document.querySelectorAll(".tn-name")).some(vis); }, null, { timeout: 20000 }).catch(() => {});
   const look = page.locator("#nx-fr2-look");
-  if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
+  if (await look.isVisible().catch(() => false)) await look.click();
   await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
-  await page.locator(".tn-name", { hasText: NAMES[1] }).first().click();
+  await page.locator(".tn-name", { hasText: NAMES[1] }).first().click({ timeout: 15000 });
   await page.waitForTimeout(800);
   await page.evaluate(() => { location.hash = "signups"; });
   await page.waitForSelector("#panel-signups .jr-who .jr-wn, #panel-signups .jr-who .jr-w0", { state: "visible", timeout: 10000 }).catch(() => {});
@@ -73,44 +77,47 @@ try {
   ok("fixture has six made-up members", NAMES.length === 6 && new Set(NAMES).size === 6, NAMES.join(", "));
   for (const [width, height] of [[390, 844], [1366, 768]]) {
     for (const sc of SCENARIOS) {
-      const t = `[${sc.id} @${width}x${height}]`, { ctx, page, errors } = await open(browser, width, height, signupsOf(sc.signups));
-      const got = await page.evaluate(() => Array.from(document.querySelectorAll("#panel-signups .jr-who .jr-wg")).map((g) => ({ id: g.dataset.g, label: g.querySelector(".jr-wh").textContent.trim(), names: Array.from(g.querySelectorAll(".jr-wn")).map((n) => n.textContent.trim()), empty: !!g.querySelector(".jr-w0"), shown: g.getClientRects().length > 0 })));
-      const all = got.flatMap((g) => g.names);
-      ok(`${t} the page is in the guided Sign-ups scene with a roster`, got.length > 0 && got.every((g) => g.shown), JSON.stringify(got.map((g) => g.id)));
-      ok(`${t} every member appears exactly once`, all.length === NAMES.length && NAMES.every((n) => all.filter((x) => x === n).length === 1), all.join(" | "));
-      for (const [g, names] of Object.entries(sc.want)) {
-        const row = got.find((x) => x.id === g);
-        ok(`${t} group ${g} holds ${names.length ? names.join(", ") : "nobody"}`, !!row && JSON.stringify([...row.names].sort()) === JSON.stringify([...names].sort()) && row.empty === (names.length === 0), row ? row.names.join(", ") : "group missing");
-      }
-      ok(`${t} no other group has anybody in it`, got.every((g) => sc.want[g.id] || g.names.length === 0), got.filter((g) => !sc.want[g.id] && g.names.length).map((g) => g.id).join(", "));
-      const none = got.find((x) => x.id === "none");
-      ok(`${t} "Not answered yet" group is always there`, !!none && none.label === "Not answered yet", none ? none.label : "missing");
-      const geo = await page.evaluate(() => {
-        const r = (el) => { const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width, h: b.height }; };
-        const btn = (re) => Array.from(document.querySelectorAll("#panel-signups .jr-core button")).find((b) => re.test(b.textContent));
-        const go = btn(/Change my answer/), more = btn(/Show me more/), card = document.querySelector("#panel-signups .jr-core"), body = document.querySelector("#sheet-body"), who = document.querySelector("#panel-signups .jr-who");
-        const vh = window.innerHeight, vw = document.documentElement.clientWidth;
-        return { vh, vw, sw: document.documentElement.scrollWidth, go: go && r(go), more: more && r(more), goShown: !!go && go.getClientRects().length > 0, moreShown: !!more && more.getClientRects().length > 0, card: card && r(card), body: body && r(body), who: who && r(who) };
-      });
-      const inView = (b) => b && b.top >= 0 && b.bottom <= geo.vh && b.left >= 0 && b.right <= geo.vw + 0.5;
-      ok(`${t} "Change my answer" is in the first viewport`, geo.goShown && inView(geo.go), JSON.stringify(geo.go));
-      ok(`${t} "Show me more" is in the first viewport`, geo.moreShown && inView(geo.more), JSON.stringify(geo.more));
-      ok(`${t} the roster is in the first viewport`, inView(geo.who), JSON.stringify(geo.who));
-      ok(`${t} the card is top-aligned under the header, not centred`, geo.card.top - geo.body.top <= 40, `card ${Math.round(geo.card.top)}, sheet body ${Math.round(geo.body.top)}`);
-      ok(`${t} no horizontal scroll`, geo.sw <= geo.vw + 1, `viewport ${geo.vw}, document ${geo.sw}`);
-      ok(`${t} no page errors`, errors.length === 0, errors.join(" | "));
-      if (sc === SCENARIOS[0]) {
-        // the answer flow is unchanged: both buttons still open the folded panel
-        await page.locator("#panel-signups").getByRole("button", { name: "Show me more" }).first().click();
-        await page.waitForTimeout(400);
-        ok(`${t} "Show me more" still opens the panel`, await page.evaluate(() => document.querySelector("#panel-signups").classList.contains("jr-open")));
-        await page.locator("#panel-signups").getByRole("button", { name: "Show less" }).first().click();
-        await page.waitForTimeout(300);
-        await page.locator("#panel-signups").getByRole("button", { name: "Change my answer" }).first().click();
-        await page.waitForTimeout(500);
-        ok(`${t} "Change my answer" still opens the panel`, await page.evaluate(() => document.querySelector("#panel-signups").classList.contains("jr-open")));
-      }
-      await ctx.close();
+      const t = `[${sc.id} @${width}x${height}]`; let ctx = null;
+      try {
+        const opened = await open(browser, width, height, signupsOf(sc.signups)), { page, errors } = opened; ctx = opened.ctx;
+        const got = await page.evaluate(() => Array.from(document.querySelectorAll("#panel-signups .jr-who .jr-wg")).map((g) => ({ id: g.dataset.g, label: g.querySelector(".jr-wh").textContent.trim(), names: Array.from(g.querySelectorAll(".jr-wn")).map((n) => n.textContent.trim()), empty: !!g.querySelector(".jr-w0"), shown: g.getClientRects().length > 0 })));
+        const all = got.flatMap((g) => g.names);
+        ok(`${t} the page is in the guided Sign-ups scene with a roster`, got.length > 0 && got.every((g) => g.shown), JSON.stringify(got.map((g) => g.id)));
+        ok(`${t} every member appears exactly once`, all.length === NAMES.length && NAMES.every((n) => all.filter((x) => x === n).length === 1), all.join(" | "));
+        for (const [g, names] of Object.entries(sc.want)) {
+          const row = got.find((x) => x.id === g);
+          ok(`${t} group ${g} holds ${names.length ? names.join(", ") : "nobody"}`, !!row && JSON.stringify([...row.names].sort()) === JSON.stringify([...names].sort()) && row.empty === (names.length === 0), row ? row.names.join(", ") : "group missing");
+        }
+        ok(`${t} no other group has anybody in it`, got.every((g) => sc.want[g.id] || g.names.length === 0), got.filter((g) => !sc.want[g.id] && g.names.length).map((g) => g.id).join(", "));
+        const none = got.find((x) => x.id === "none");
+        ok(`${t} "Not answered yet" group is always there`, !!none && none.label === "Not answered yet", none ? none.label : "missing");
+        const geo = await page.evaluate(() => {
+          const r = (el) => { const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, w: b.width, h: b.height }; };
+          const btn = (re) => Array.from(document.querySelectorAll("#panel-signups .jr-core button")).find((b) => re.test(b.textContent));
+          const go = btn(/Change my answer/), more = btn(/Show me more/), card = document.querySelector("#panel-signups .jr-core"), body = document.querySelector("#sheet-body"), who = document.querySelector("#panel-signups .jr-who");
+          const vh = window.innerHeight, vw = document.documentElement.clientWidth;
+          return { vh, vw, sw: document.documentElement.scrollWidth, go: go && r(go), more: more && r(more), goShown: !!go && go.getClientRects().length > 0, moreShown: !!more && more.getClientRects().length > 0, card: card && r(card), body: body && r(body), who: who && r(who) };
+        });
+        const inView = (b) => b && b.top >= 0 && b.bottom <= geo.vh && b.left >= 0 && b.right <= geo.vw + 0.5;
+        ok(`${t} "Change my answer" is in the first viewport`, geo.goShown && inView(geo.go), JSON.stringify(geo.go));
+        ok(`${t} "Show me more" is in the first viewport`, geo.moreShown && inView(geo.more), JSON.stringify(geo.more));
+        ok(`${t} the roster is in the first viewport`, inView(geo.who), JSON.stringify(geo.who));
+        ok(`${t} the card is top-aligned under the header, not centred`, geo.card.top - geo.body.top <= 40, `card ${Math.round(geo.card.top)}, sheet body ${Math.round(geo.body.top)}`);
+        ok(`${t} no horizontal scroll`, geo.sw <= geo.vw + 1, `viewport ${geo.vw}, document ${geo.sw}`);
+        ok(`${t} no page errors`, errors.length === 0, errors.join(" | "));
+        if (sc === SCENARIOS[0]) {
+          // the answer flow is unchanged: both buttons still open the folded panel
+          await page.locator("#panel-signups").getByRole("button", { name: "Show me more" }).first().click();
+          await page.waitForTimeout(400);
+          ok(`${t} "Show me more" still opens the panel`, await page.evaluate(() => document.querySelector("#panel-signups").classList.contains("jr-open")));
+          await page.locator("#panel-signups").getByRole("button", { name: "Show less" }).first().click();
+          await page.waitForTimeout(300);
+          await page.locator("#panel-signups").getByRole("button", { name: "Change my answer" }).first().click();
+          await page.waitForTimeout(500);
+          ok(`${t} "Change my answer" still opens the panel`, await page.evaluate(() => document.querySelector("#panel-signups").classList.contains("jr-open")));
+        }
+      } catch (e) { ok(`${t} the scenario ran to the end without an exception`, false, String((e && e.message) || e).split("\n")[0]); }
+      finally { if (ctx) await ctx.close().catch(() => {}); }
     }
   }
 } finally { await browser.close(); }
