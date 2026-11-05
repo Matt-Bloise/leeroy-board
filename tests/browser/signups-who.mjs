@@ -2,7 +2,7 @@
 //   node signups-who.mjs --url https://pr-N.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)   optional: env PW_CHROMIUM = path to a Chromium binary
 // Nothing is sent and there is no AI call. data/party.json comes from tests/fixtures/six-members (six made-up members); data/signups.json is built here from a
 // table of made-up answers, one per scenario, so the groups are known in advance. Both the static path and the Worker path (/api/data/<name>) are intercepted and
-// /api/bootstrap is refused so the board falls back to them. The board reads the roster from the same tallies it already shows (no new endpoint).
+// /api/bootstrap and /api/state are refused so the board falls back to them, with or without an API origin (?brain=, as CI has one). The board reads the roster from the same tallies it already shows (no new endpoint).
 // Per scenario (A: every group used, B: no time picked + running late + empty slots, C: everybody answered) and per size (390x844 touch, 1366x768):
 //   every member appears exactly once, in the group the table says; "Not answered yet" is always there; the card is under the header (top-aligned, not centred);
 //   "Change my answer" and "Show me more" are fully inside the first viewport, and so is the roster; no sideways scroll; no page errors.
@@ -51,6 +51,7 @@ async function open(browser, width, height, signups) {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height }, hasTouch: phone, isMobile: phone, serviceWorkers: "block", reducedMotion: "reduce" });
   await ctx.route("**/api/bootstrap*", (r) => r.abort());
+  await ctx.route("**/api/state*", (r) => r.abort()); // with an API origin the board also takes its sign-ups from /api/state (the snapshot's real names); refused, it keeps the data files above
   await ctx.route(DATA_RE, (route) => json(route, DATA_RE.exec(route.request().url())[1] === "party" ? PARTY : signups));
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
