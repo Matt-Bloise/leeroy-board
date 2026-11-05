@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { junkIn, wrongCountCopy, memberCountProblem, slugOf, classifyHttp, consoleFailures, isReportOnlyCsp } from "../helpers/probe-checks.mjs";
+import fs from "node:fs";
 
 test("member count: equal passes, any difference fails", () => {
   assert.deepEqual(memberCountProblem(6, 6), []);
@@ -65,6 +66,25 @@ test("console errors: report-only CSP and third-party noise are exempt; an ENFOR
   assert.equal(consoleFailures(["Error creating WebGL context"], { engine: "webkit", allowWebkitNoWebgl: true }).length, 0);
   assert.equal(consoleFailures(["Error creating WebGL context"], { engine: "chromium", allowWebkitNoWebgl: true }).length, 1);
   assert.equal(consoleFailures(["TypeError: x is undefined"]).length, 1);
+});
+
+test("console errors: our own refusals after the budget is spent are exempt, nothing else is", () => {
+  const refused = { text: "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector", at: "http://127.0.0.1:41234/api/library/tooltips.json" };
+  assert.equal(consoleFailures([refused], { budgetSpent: true }).length, 0, "the page's log of a request the probe refused is not a finding");
+  assert.equal(consoleFailures([{ ...refused, text: "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT" }], { budgetSpent: true }).length, 0);
+  assert.equal(consoleFailures([refused]).length, 1, "with budget left the same message is a real blocked request and fails");
+  assert.equal(consoleFailures([refused], { budgetSpent: false }).length, 1);
+  assert.equal(consoleFailures([{ ...refused, at: "http://127.0.0.1:41234/js/board.js" }], { budgetSpent: true }).length, 1, "only /api/ URLs: the probe refuses nothing else");
+  assert.equal(consoleFailures([{ ...refused, at: "" }], { budgetSpent: true }).length, 1, "no location, no exemption");
+  assert.equal(consoleFailures([{ ...refused, text: "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector and TypeError: x" }], { budgetSpent: true }).length, 1, "exact message only");
+  assert.equal(consoleFailures([{ text: "Failed to load resource: net::ERR_CONNECTION_REFUSED", at: refused.at }], { budgetSpent: true }).length, 1, "other network errors still fail");
+  assert.equal(consoleFailures([{ text: "TypeError: x is undefined", at: refused.at }], { budgetSpent: true }).length, 1, "other errors from an /api/ URL still fail");
+  assert.equal(consoleFailures(["Refused to load the image 'https://x/y.png' because it violates the following Content Security Policy directive: \"img-src 'self'\"."], { budgetSpent: true }).length, 1);
+});
+
+test("the probe tells consoleFailures when the budget is spent", () => {
+  const src = fs.readFileSync(new URL("../browser/prod-probe.mjs", import.meta.url), "utf8");
+  assert.match(src, /consoleFailures\(errs, \{[^}]*budgetSpent: budget\.exceeded/);
 });
 
 test("HTTP statuses: site 4xx/5xx fail; API 5xx fails; API 4xx warns except on bootstrap and state", () => {

@@ -1,5 +1,6 @@
 // Production probe (B53): tests what a person actually sees on the live site, with the REAL API (no stubs, no route interception except the request counter).
-//   node prod-probe.mjs [--url https://leeroy.party/] [--engines chromium,webkit,firefox] [--budget 150]
+//   node prod-probe.mjs [--url https://leeroy.party/] [--engines chromium,webkit,firefox] [--budget 150] [--clock <iso>]
+//   --clock <iso>  only for the local self-test: the page clock is set to that instant. Production runs use the real time on purpose (what a visitor sees RIGHT NOW, the launch wall included).
 //   env PROBE_REQUIRE_ENGINES=1  an engine that is not installed FAILS the run (the workflows set it); without it the engine is skipped with a WARN
 //   env PW_CHROMIUM=<path>       a Chromium binary to use
 //   env GITHUB_STEP_SUMMARY      when set, a short report is appended to it
@@ -36,6 +37,7 @@ import fs from "node:fs";
 import { pageUrl, originOf } from "../helpers/page-url.mjs";
 import { WORDS, slugOf, junkIn, wrongCountCopy, memberCountProblem, uniq, consoleFailures, classifyHttp, isInsightsHost } from "../helpers/probe-checks.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
+import { parseClock } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
 const URL_ = arg("--url", process.env.PROBE_URL || "https://leeroy.party/");
@@ -43,6 +45,8 @@ const ENGINES = arg("--engines", "chromium,webkit,firefox").split(",").map((s) =
 const BUDGET = Number(arg("--budget", "200"));
 const VPSEL = arg("--viewports", "phone,laptop").split(",").map((s) => s.trim());
 const REQUIRE = process.env.PROBE_REQUIRE_ENGINES === "1";
+let CLOCK = null;
+try { CLOCK = parseClock(argv); } catch (e) { console.error(e.message); process.exit(2); }
 if (!/^https?:\/\//.test(URL_) || ENGINES.some((e) => !["chromium", "webkit", "firefox"].includes(e)) || !(BUDGET > 0)) { console.error("usage: node prod-probe.mjs [--url <site>] [--engines chromium,webkit,firefox] [--budget 200] [--viewports phone,laptop]"); process.exit(2); }
 const SITE = originOf(URL_);
 const local = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(SITE);
@@ -117,6 +121,7 @@ async function probeOne(browser, engine, vp) {
   const errs = [], http = [], failed = [];
   // The only routes: count every Worker request and every socket before it is sent, and refuse it once the budget is spent (helpers/probe-budget.mjs).
   await guardContext(ctx, budget);
+  if (CLOCK) await ctx.clock.install({ time: CLOCK }); // self-test only (see --clock above)
   const page = await ctx.newPage();
   let insightsFailed = false;
   page.on("pageerror", (e) => errs.push({ text: `uncaught: ${String(e.message).slice(0, 160)}`, at: "" }));
@@ -166,7 +171,7 @@ async function probeOne(browser, engine, vp) {
   const wc = wrongCountCopy(es, N);
   for (const w of wc) fail(tag, `copy states the wrong party size: ${w}`);
   if (!wc.length) pass(`${tag} no copy states a wrong party size (${es.length} strings, party ${N})`);
-  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsRequestFailed: insightsFailed });
+  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsRequestFailed: insightsFailed, budgetSpent: budget.exceeded });
   hard.length ? hard.slice(0, 5).forEach((e) => fail(tag, `console error: ${e.text}${e.at ? ` [${e.at}]` : ""}`)) : pass(`${tag} no console errors`);
   for (const w of uniq(warned).slice(0, 8)) console.log(`WARN ${tag}: API 4xx (not a failure off /api/bootstrap and /api/state): ${w}\n::warning title=Production probe::${tag}: API 4xx ${w}`);
   http.length ? uniq(http).slice(0, 8).forEach((h) => fail(tag, `HTTP error (site 4xx/5xx, API 5xx, or API 4xx on bootstrap/state): ${h}`)) : pass(`${tag} no 4xx/5xx from the site or its API`);

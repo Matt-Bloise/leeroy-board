@@ -4,6 +4,7 @@
 // the landing page links to them and both resolve; an unknown path answers 404 with the 404 page; /, /landing/, /privacy, /terms and real atlas and js files still answer 200
 // (so the 404.html breaks nothing that exists); no console errors. Exit 0 when every check passes, 1 otherwise.
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { pinContext } from "../helpers/clock-arg.mjs"; // the page clock is pinned to a fixed time before the launch (or --clock), so the first-visit view does not depend on when the suite runs
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const RAW = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -15,7 +16,7 @@ const HOST_BEACON = /cloudflareinsights\.com|\/beacon\.min\.js/;
 const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {});
 
 for (const w of [320, 390, 768, 1366]) {
-  const ctx = await browser.newContext({ viewport: { width: w, height: 800 }, serviceWorkers: "block" });
+  const ctx = await browser.newContext({ viewport: { width: w, height: 800 }, serviceWorkers: "block" }); await pinContext(ctx, argv);
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource/.test(m.text()) && !HOST_BEACON.test(m.text())) errors.push(m.text()); });
@@ -33,7 +34,7 @@ for (const w of [320, 390, 768, 1366]) {
 }
 
 {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" }); await pinContext(ctx, argv);
   const page = await ctx.newPage();
   await page.goto(`${ORIGIN}/landing/`, { waitUntil: "load" });
   for (const [name, want] of [["Privacy notice", "/privacy/"], ["Terms of use", "/terms/"]]) {
@@ -48,7 +49,7 @@ for (const w of [320, 390, 768, 1366]) {
 }
 
 for (const p of ["/this-does-not-exist", "/sitemap.xml", "/favicon.ico"]) {
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block" }); await pinContext(ctx, argv);
   const page = await ctx.newPage();
   const r = await page.goto(ORIGIN + p, { waitUntil: "load" });
   ok(`${p} answers 404`, r && r.status() === 404, String(r && r.status()));

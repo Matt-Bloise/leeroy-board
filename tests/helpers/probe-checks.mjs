@@ -66,12 +66,18 @@ export const uniq = (a) => [...new Set(a.map((s) => String(s).replace(/\s+/g, " 
 export const isReportOnlyCsp = (t) => /^(\[Report Only\]|Content-Security-Policy-Report-Only)/i.test(String(t));
 const hostOf = (u) => { try { return new URL(u).hostname; } catch (e) { return ""; } };
 export const isInsightsHost = (u) => /(^|\.)cloudflareinsights\.com$/i.test(hostOf(u));
-export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = false, insightsRequestFailed = false } = {}) {
+// Once the request budget is spent the probe refuses further /api requests (route.abort("blockedbyclient"), helpers/probe-budget.mjs) and the page logs each refused
+// load as "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector" located at the /api URL. That is our own refusal, already reported as the run's one budget
+// failure, so it is exempt: only that exact message, only from an /api/ URL, only when the budget is spent. Every other console error still fails.
+const BUDGET_REFUSED = /^Failed to load resource: net::ERR_BLOCKED_BY_CLIENT(?:\.Inspector)?$/;
+export const isBudgetRefusal = (text, at) => BUDGET_REFUSED.test(String(text).trim()) && /^https?:\/\/[^/]+\/api\//.test(String(at || ""));
+export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = false, insightsRequestFailed = false, budgetSpent = false } = {}) {
   return errors.filter((e) => {
     const text = typeof e === "string" ? e : e.text, at = typeof e === "string" ? "" : e.at || "";
     if (engine === "webkit" && allowWebkitNoWebgl && /Error creating WebGL context/.test(text)) return false;
     if (isReportOnlyCsp(text)) return false;
     if (isInsightsHost(at)) return false;
+    if (budgetSpent && isBudgetRefusal(text, at)) return false;
     if (insightsRequestFailed && !/https?:\/\//.test(text) && /^(Failed to load resource|.*net::ERR_FAILED|.*Access-Control-Allow-Origin)/i.test(text)) return false;
     return true;
   });

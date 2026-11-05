@@ -5,6 +5,7 @@
 // WebKit is skipped with a WARN when it is not installed locally; set SMOKE_REQUIRE_ENGINES=1 (CI does not need to) to make that a failure. No AI call, nothing is written, no secret is used.
 // Exit 0 when every check passes, 1 otherwise.
 import { pageUrl } from "../helpers/page-url.mjs";
+import { pinContext } from "../helpers/clock-arg.mjs"; // the page clock is pinned to a fixed time before the launch (or --clock), so the first-visit view does not depend on when the suite runs
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
 const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
@@ -28,7 +29,7 @@ for (const eng of ["chromium", "webkit"]) {
   let browser;
   try { browser = await pw[eng].launch(process.env.CHROMIUM_PATH && eng === "chromium" ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}); }
   catch (e) { if (eng === "webkit" && process.env.SMOKE_REQUIRE_ENGINES !== "1") { console.log(`WARN ${eng} is not installed here; its page load is skipped (${String(e.message).split("\n")[0].slice(0, 100)})`); continue; } ok(`${eng} launches`, false, String(e.message).split("\n")[0]); continue; }
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: eng !== "firefox", serviceWorkers: "block" }), page = await ctx.newPage();
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: eng !== "firefox", serviceWorkers: "block" }); await pinContext(ctx, argv); const page = await ctx.newPage();
   const errors = [], apiRows = [];
   // Cloudflare injects its analytics beacon into every Pages preview; WebKit reports it as a page error (access control checks). It is not our code, so it is not counted (degraded-modes.mjs does the same).
   page.on("pageerror", (e) => { if (!/cloudflareinsights|cdn-cgi\/rum/.test(e.message)) errors.push(e.message); });

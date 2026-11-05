@@ -44,6 +44,16 @@ const NOT_PARTY = [/\bfive points (?:fewer|more)\b/i, /\bgroup of five players\b
 const FIVE_RE = /\bfive\b/i;
 const FOUR_OTHER_RE = /\b(?:other|remaining|rest) four\b|\bfour others\b|\bthe four of (?:you|us|them)\b|\bfour (?:friends|members|players|of us)\b/i;
 
+// The chips render in steps (the first .tn-name can be visible before the rest of the party is), so a count taken right after the first one races the render.
+// Wait (bounded) until the number of visible name chips equals the expected member count; if it never does, say what the DOM held so the assertion that follows is readable.
+const CHIP_SEL = ".tn-name";
+const visibleChips = (page) => page.evaluate((sel) => Array.from(document.querySelectorAll(sel)).filter((b) => b.getClientRects().length).length, CHIP_SEL);
+async function settleChips(page, expected, width, timeout = 10000) {
+  const reached = await page.waitForFunction(([sel, n]) => Array.from(document.querySelectorAll(sel)).filter((b) => b.getClientRects().length).length === n, [CHIP_SEL, expected], { timeout }).then(() => true, () => false);
+  if (!reached) console.log(`NOTE name chips did not reach ${expected} within ${timeout / 1000}s at ${width}px: the DOM has ${await visibleChips(page).catch(() => "?")} visible '${CHIP_SEL}' elements`);
+  return reached;
+}
+
 async function setup(browser, width, { flagOn = true, count = 6, state = "looking" } = {}) {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: phone ? 800 : 900 }, hasTouch: phone, isMobile: phone, serviceWorkers: "block", reducedMotion: "reduce" });
@@ -61,9 +71,13 @@ async function setup(browser, width, { flagOn = true, count = 6, state = "lookin
   await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 20000 }).catch(() => {});
   if (state !== "gate") {
+    // "Just take a look" must be TAKEN, not only looked for: the link (or the chips themselves, on a visit that skips the first-visit sheet) can be attached a moment before it is visible,
+    // and a click skipped because the link was not visible yet leaves the chips hidden for good (0 visible .tn-name, the click on a chip then times out). So wait until one of the two is visible.
+    await page.waitForFunction(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return vis(document.querySelector("#nx-fr2-look")) || Array.from(document.querySelectorAll(".tn-name")).some(vis); }, null, { timeout: 20000 }).catch(() => {});
     const look = page.locator("#nx-fr2-look");
-    if (await look.count() && await look.isVisible().catch(() => false)) await look.click();
+    if (await look.isVisible().catch(() => false)) await look.click();
     await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
+    await settleChips(page, count, width);
   }
   if (state === "member") {
     await page.locator(".tn-name", { hasText: namesOf(count)[0] }).first().click();

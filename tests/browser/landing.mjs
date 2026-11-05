@@ -5,6 +5,7 @@
 // and no serious or critical axe violations (minor and moderate print as WARN).
 // Exit 0 when every check passes, 1 otherwise.
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { pinContext } from "../helpers/clock-arg.mjs"; // the page clock is pinned to a fixed time before the launch (or --clock), so the first-visit view does not depend on when the suite runs
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -24,7 +25,7 @@ ok("landing.js defines BOARD_URL once", !!constUrl && (src.match(/BOARD_URL\s*=/
 for (const [size, opts] of CTX) {
   const tag = `[${size}]`;
   const errors = [], foreign = [], scripts = [];
-  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" });
+  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block" }); await pinContext(ctx, argv);
   const page = await ctx.newPage();
   page.on("pageerror", (e) => { if (!/cloudflareinsights/.test(e.message)) errors.push(e.message); });
   // Cloudflare Pages injects its Web Analytics beacon on the host; it is not part of the page, so ignore it in every check below.
