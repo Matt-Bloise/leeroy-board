@@ -23,6 +23,7 @@
 //   delayed-copy a visible "Which of the five are you?" that is corrected to "six" after 4 s (the copy lags the chips): the probe waits for it and passes; without the wait it fails
 //   cards-never  the member cards of #panel-five never appear: must fail, naming the selector, the count found and what the panel does contain (no fixed wait per route)
 //   csp-advisory-long the WebKit advisory with a policy long enough that "report-only" lies beyond the 160th character: must be exempt (the text is matched in full, not truncated)
+//   redirect-api a browser GET of /api/bootstrap is answered with a 302 to the real thing: the browser follows it, the probe counts the hop and FAILS ("the API answered with a redirect")
 //   stale-first-load  a browser is given FIVE members until the page is reloaded (the probe's own /api/state read says six): the probe reloads ONCE, then passes
 //   members-never     a browser is always given five: must fail with ONE count failure and no copy or scene noise (nothing is judged against a half-rendered board)
 //   late-look    the "Just take a look" link is attached but not visible for the first 3 s (a slow phone or engine): the probe waits for the link, clicks it and passes; without the wait it never reveals the chips
@@ -47,7 +48,7 @@ const FIX = (n) => fs.readFileSync(path.join(ROOT, "tests", "fixtures", "six-mem
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2", ".woff": "font/woff", ".txt": "text/plain; charset=utf-8", ".ico": "image/x-icon" };
 const STATIC_OK = /^\/(?:index\.html|404\.html|css|js|img|fonts|vendor|scenes|data|landing|rate|next|room|atlas|cloth|privacy|terms|robots\.txt|favicon\.ico|og-1200x630\.jpg)(?:\/|$|\.)/;
 
-export async function startFixtureServer({ mode = "green" } = {}) {
+export async function startFixtureServer({ mode = "green", crossOrigin = false } = {}) {
   const snap = loadSnapshot();
   const party = JSON.parse(FIX("party")), signups = FIX("signups");
   if (mode === "junk") party.members[1] = { ...party.members[1], race: "undefined", board_line: "undefined NaN Druid" };
@@ -81,9 +82,9 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     "csp-mention-firefox": `setTimeout(() => console.error("Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/x.js (default-src) (Report-Only policy)"), 1500);`,
     "csp-report-only": `setTimeout(() => console.error("[Report Only] Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,
   };
-  const seen = { api: 0, ws: 0, static: 0, index: 0 };
+  const seen = { api: 0, ws: 0, static: 0, index: 0, preflight: 0 };
   const json = (res, body, status = 200) => { res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }); res.end(body); };
-  const server = http.createServer((req, res) => {
+  const handle = (req, res) => {
     const u = new URL(req.url, "http://x"), p = u.pathname;
     if (p.startsWith("/api/")) {
       seen.api++;
@@ -96,6 +97,7 @@ export async function startFixtureServer({ mode = "green" } = {}) {
         if (mode === "wrong-count" && !req.headers["sec-fetch-site"]) s.partyDoc = { ...party, members: [...party.members, { ...party.members[0], name: "Extra Member" }] };
         return json(res, JSON.stringify(s));
       }
+      if (key === "/bootstrap" && mode === "redirect-api" && !!(req.headers["sec-fetch-site"] || req.headers.referer) && !u.searchParams.has("r")) { res.writeHead(302, { location: "/api/bootstrap?r=1", "cache-control": "no-store" }); return res.end(); }
       if (key === "/bootstrap") { const b = bootstrap(); if (staleFor(req)) b.party = five; return json(res, JSON.stringify(b)); }
       if (key === "/data/party.json" || key === "/data/party") return json(res, JSON.stringify(party));
       if (key === "/data/signups.json" || key === "/data/signups") return json(res, signups);
@@ -111,18 +113,35 @@ export async function startFixtureServer({ mode = "green" } = {}) {
     let f = file;
     try { if (fs.statSync(f).isDirectory()) f = path.join(f, "index.html"); } catch (e) { res.writeHead(404, { "content-type": "text/plain" }); return res.end("not found"); }
     try { let body = fs.readFileSync(f); seen.static++; if (path.basename(f) === "index.html") seen.index++; if (path.basename(f) === "index.html" && INJECT[mode]) body = Buffer.from(body.toString("utf8").replace("</body>", `<script>${INJECT[mode]}</script></body>`)); res.writeHead(200, { "content-type": TYPES[path.extname(f)] || "application/octet-stream", "cache-control": "no-store" }); res.end(body); } catch (e) { res.writeHead(404); res.end("not found"); }
-  });
+  };
+  const server = http.createServer(handle);
   // /api/live: accept the WebSocket upgrade and stay silent, as the stub in api-stub.mjs does.
   const socks = new Set();
-  server.on("upgrade", (req, socket) => {
+  const onUpgrade = (req, socket) => {
     const key = req.headers["sec-websocket-key"];
     seen.ws++;
     if (!key) return socket.destroy();
     const acc = crypto.createHash("sha1").update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${acc}\r\n\r\n`);
     socks.add(socket); socket.on("close", () => socks.delete(socket)); socket.on("error", () => {});
-  });
+  };
+  server.on("upgrade", onUpgrade);
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const port = server.address().port;
-  return { port, origin: `http://127.0.0.1:${port}`, url: `http://127.0.0.1:${port}/?brain=local&preview=1`, seen, close: () => new Promise((r) => { for (const s of socks) s.destroy(); server.close(() => r()); }) };
+  // crossOrigin: the API is served from a SECOND origin with the production Worker's CORS shape: Access-Control-Allow-Origin (and Vary: Origin) only when the request carries an Origin
+  // header, a preflight answered only for a request that has one, and nothing else. The page reaches it through ?brain=<that origin>. seen.preflight counts the OPTIONS requests.
+  let apiServer = null, apiPort = null;
+  if (crossOrigin) {
+    apiServer = http.createServer((req, res) => {
+      const origin = req.headers.origin;
+      if (req.method === "OPTIONS") { seen.preflight++; res.writeHead(origin ? 204 : 403, origin ? { "access-control-allow-origin": origin, "access-control-allow-headers": req.headers["access-control-request-headers"] || "content-type", "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-max-age": "60", vary: "Origin" } : {}); return res.end(); }
+      if (origin) { const wh = res.writeHead; res.writeHead = function (status, headers) { return wh.call(this, status, { ...(headers || {}), "access-control-allow-origin": origin, vary: "Origin" }); }; }
+      handle(req, res);
+    });
+    apiServer.on("upgrade", onUpgrade);
+    await new Promise((r) => apiServer.listen(0, "127.0.0.1", r));
+    apiPort = apiServer.address().port;
+  }
+  const apiOrigin = crossOrigin ? `http://127.0.0.1:${apiPort}` : `http://127.0.0.1:${port}`;
+  return { port, origin: `http://127.0.0.1:${port}`, apiOrigin, url: `http://127.0.0.1:${port}/?brain=${crossOrigin ? encodeURIComponent(apiOrigin) : "local"}&preview=1`, seen, close: () => new Promise((r) => { for (const s of socks) s.destroy(); server.close(() => (apiServer ? apiServer.close(() => r()) : r())); }) };
 }

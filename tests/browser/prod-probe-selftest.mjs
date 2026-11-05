@@ -81,7 +81,9 @@ const CASES = [
   ["delayed-copy", 0, null, L],
   ["late-cards", 0, null, L],
   ["late-look", 0, null, L],
-  ["green", 0, null, L, "api-route-continue", [["says it is the experiment mode, redirects not refused", /WARN PROBE_API_ROUTE=continue: the browser sends \/api requests itself; redirects are NOT refused/], ["still counts every request", /Worker requests this run: \d+ of 200/]], { PROBE_API_ROUTE: "continue" }],
+  ["green", 0, null, L, "api-route-fetch", [["says it is the older comparison mode", /WARN PROBE_API_ROUTE=fetch: the probe sends \/api requests itself/], ["still counts every request", /Worker requests this run: \d+ of 200/]], { PROBE_API_ROUTE: "fetch" }],
+  ["redirect-api", 1, /the API answered with a redirect \(counted hop by hop; the probe fails on any\): GET \S+\/api\/bootstrap -> \S+\/api\/bootstrap/, L, null, [["is the default (browser) mode, not the older fetch mode", /^(?![\s\S]*PROBE_API_ROUTE=fetch)/]]],
+  ["green", 0, null, L, "cross-origin", [["reached the API on its own origin", /Worker requests this run: \d+ of 200/]], null, { crossOrigin: true }],
   ["stale-first-load", 0, null, L, null, [["reloads once and says so", /WARN chromium laptop 1366x768: the board shows 5 members, the party has 6; reloading once/]]],
   ["members-never", 1, /the board shows 5 members but \/api\/state partyDoc lists 6 \[DOM: selector "\.tn-name": 5 elements/, L, null, [["says the scenes and copy were not judged", /INFO chromium laptop 1366x768: the scenes were not stepped through and no copy was judged/], ["no scene or copy failure follows the count failure", /^(?![\s\S]*FAIL [^\n]*(did not open|wrong party size))/]]],
   ["csp-firefox-js-error", 0, null, L, null, [["lists the wrapped Firefox advisory as information", /INFO exempted report-only CSP advisories[^\n]*\n(?:\s+- [^\n]*\n)*\s+- \w+: \[JavaScript Error: "Content-Security-Policy: \(Report-Only policy\)/]]],
@@ -94,9 +96,9 @@ const CASES = [
   ["cf-text", 1, /console error: TypeError: cannot read properties of undefined .*cloudflareinsights/, L],
 ].filter(([m, , , , label]) => !only || only.includes(label || m));
 
-async function runCase([mode, want, re, extra, label, musts, env]) {
-  const srv = await startFixtureServer({ mode });
-  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", ENGINES]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env, ...(env || {}) } });
+async function runCase([mode, want, re, extra, label, musts, env, opts]) {
+  const srv = await startFixtureServer({ mode, ...(opts || {}) });
+  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(opts && opts.crossOrigin ? ["--api", srv.apiOrigin] : []), ...(extra.includes("--engines") ? [] : ["--engines", ENGINES]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env, ...(env || {}) } });
   let out = ""; child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (out += d));
   const code = await new Promise((r) => child.on("close", r));
   await srv.close();
@@ -117,26 +119,33 @@ for (const { mode, want, re, code, out, lines, m, srv, musts } of results) {
   }
   if (mode === "state-redirect") ok("[state-redirect] the redirect was not followed: the local server saw exactly 1 API request and no socket", srv.seen.api === 1 && srv.seen.ws === 0, `api ${srv.seen.api}, ws ${srv.seen.ws}`);
   if (mode === "state-fail") ok("[state-fail] no browser launched: the local server saw at most 1 API request and no socket", srv.seen.api <= 1 && srv.seen.ws === 0, `api ${srv.seen.api}, ws ${srv.seen.ws}`);
-  console.log(`INFO [${mode}] ${m ? m[0] : "?"}, local server answered ${srv.seen.api} API requests and ${srv.seen.ws} socket upgrade(s)`);
+  console.log(`INFO [${mode}] ${m ? m[0] : "?"}, local server answered ${srv.seen.api} API requests, ${srv.seen.preflight} CORS preflight(s) and ${srv.seen.ws} socket upgrade(s)`);
 }
 
-if (!only || only.includes("redirect")) {
-  // a 12-hop redirect chain answered by the API: one counted request must not become many Worker requests
+for (const mode of ["browser", "fetch"]) {
+  if (only && !only.includes("redirect")) break;
+  // a 12-hop redirect chain answered by the API. Default mode "browser": the browser follows it, every hop is COUNTED and RECORDED (the probe fails on any redirect) and the count is
+  // honest. Older mode "fetch": the probe refuses the 3xx before the page sees it, so the server sees exactly one request.
   const srv = await startFixtureServer({ mode: "green" });
   const browser = await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
   tearingDown = false;
-  const budget = createBudget(5), ctx = await browser.newContext();
-  await guardContext(ctx, budget);
+  const budget = createBudget(40), ctx = await browser.newContext();
+  await guardContext(ctx, budget, { mode });
   const page = await ctx.newPage();
   await page.goto(`${srv.origin}/robots.txt`);
   const before = srv.seen.api;
   const result = await page.evaluate(() => fetch("/api/hop").then((r) => `status ${r.status}`, (e) => `failed: ${e.message}`));
   await page.waitForTimeout(800);
   const hops = srv.seen.api - before;
-  ok("[redirect] the page's request was refused, not answered through the chain", /failed/.test(result), result);
-  ok("[redirect] the server saw exactly 1 request for the chain (not 13)", hops === 1, `the server saw ${hops}`);
-  ok("[redirect] the redirect was recorded for the probe to fail on", budget.redirects.length === 1 && /302 GET .*\/api\/hop/.test(budget.redirects[0]), JSON.stringify(budget.redirects));
-  console.log(`INFO [redirect] counted ${budget.used}, redirects recorded ${budget.redirects.length}, server hits ${hops}`);
+  if (mode === "browser") {
+    ok("[redirect] browser mode: the chain is followed by the browser (13 requests reach the server)", /status 200/.test(result) && hops === 13, `${result}; the server saw ${hops}`);
+    ok("[redirect] browser mode: every hop is counted (1 routed + 12 hops) and recorded", budget.used === 13 && budget.redirects.length === 12 && /GET .*\/api\/hop -> .*\/api\/hop$/.test(budget.redirects[0]), `used ${budget.used}, recorded ${budget.redirects.length}: ${JSON.stringify(budget.redirects.slice(0, 2))}`);
+  } else {
+    ok("[redirect] fetch mode: the page's request was refused, not answered through the chain", /failed/.test(result), result);
+    ok("[redirect] fetch mode: the server saw exactly 1 request for the chain (not 13)", hops === 1, `the server saw ${hops}`);
+    ok("[redirect] fetch mode: the redirect was recorded for the probe to fail on", budget.redirects.length === 1 && /302 GET .*\/api\/hop/.test(budget.redirects[0]), JSON.stringify(budget.redirects));
+  }
+  console.log(`INFO [redirect ${mode}] counted ${budget.used}, redirects recorded ${budget.redirects.length}, server hits ${hops}`);
   await tearDown(page, ctx, browser, srv);
 }
 

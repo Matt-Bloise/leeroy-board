@@ -31,8 +31,8 @@
 //   - is run by the workflows once after each production deploy and once a day (cron) and by nothing else. It is NOT run per push and NOT by tests/browser/run.mjs.
 // Expected cost: the reference read of /api/state (1) + about 26 per context (one page load, every scene, a socket) x 6 (3 engines x 2 viewports) = about 157, measured on the
 // local fixture (53 for Chromium alone). Worst case 200 per run; at about 10 deploys + 1 scheduled run a day that is at most 2,200 of the 100,000 a day (about 2 percent).
-// If the reference read of /api/state fails (a redirect counts as a failure), the run stops there (1 request) and launches no browser. In the browser every /api request is sent by the
-// probe itself without following redirects (helpers/probe-budget.mjs): a 3xx from the API is refused and FAILS the run, so a redirect chain cannot multiply the count.
+// If the reference read of /api/state fails (a redirect counts as a failure), the run stops there (1 request) and launches no browser. In the browser every /api request is counted and
+// then sent by the browser itself (helpers/probe-budget.mjs); a redirect it follows is counted hop by hop and FAILS the run (the browser bounds one chain at 20 hops).
 // Once the budget is spent nothing else starts: no more scenes, viewports or engines, and the run reports the budget as its one failure of that kind.
 // Exit 0 when everything passes, 1 on any failure, 2 on bad usage or a missing engine under PROBE_REQUIRE_ENGINES=1.
 import fs from "node:fs";
@@ -52,15 +52,16 @@ try { CLOCK = parseClock(argv); } catch (e) { console.error(e.message); process.
 if (!/^https?:\/\//.test(URL_) || ENGINES.some((e) => !["chromium", "webkit", "firefox"].includes(e)) || !(BUDGET > 0)) { console.error("usage: node prod-probe.mjs [--url <site>] [--engines chromium,webkit,firefox] [--budget 200] [--viewports phone,laptop]"); process.exit(2); }
 const SITE = originOf(URL_);
 const local = /^http:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?$/.test(SITE);
-const API = local ? SITE : (arg("--api") || (/(^|\.)leeroy\.party$/.test(new URL(SITE).hostname) ? "https://api.leeroy.party" : SITE));
+const API = arg("--api") || (local ? SITE : (/(^|\.)leeroy\.party$/.test(new URL(SITE).hostname) ? "https://api.leeroy.party" : SITE));
 const VIEWPORTS = [{ id: "phone", name: "phone 390x844", width: 390, height: 844, phone: true }, { id: "laptop", name: "laptop 1366x768", width: 1366, height: 768, phone: false }].filter((v) => VPSEL.includes(v.id));
 const TOP = ["timeline", "five", "five.party", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "decide", "tonight"];
 
 const budget = createBudget(BUDGET);
-// Experiment switch: PROBE_API_ROUTE=continue lets the browser send /api requests itself (its own HTTP cache and revalidation, redirects followed). Default "fetch" = the probe sends them
-// (no redirect can multiply the request count). Used to test whether the probe's own fetching changes what the board shows; never set it in the workflows.
-const API_ROUTE = process.env.PROBE_API_ROUTE === "continue" ? "continue" : "fetch";
-if (API_ROUTE === "continue") console.log("WARN PROBE_API_ROUTE=continue: the browser sends /api requests itself; redirects are NOT refused in this mode (experiment only)");
+// How /api requests are routed (helpers/probe-budget.mjs): default "browser" = counted, then sent by the browser itself (what a visitor's browser does: its own CORS handling and HTTP cache);
+// PROBE_API_ROUTE=fetch = the older mode where the probe sent them with route.fetch and gave the page the answer with route.fulfill (a 3xx is refused there). The older mode made Firefox
+// fall back to the static 5-member data/party.json on production; keep it for comparison only, never in the workflows.
+const API_ROUTE = process.env.PROBE_API_ROUTE === "fetch" ? "fetch" : "browser";
+if (API_ROUTE === "fetch") console.log("WARN PROBE_API_ROUTE=fetch: the probe sends /api requests itself and fulfils the page with the answer (the older mode, known to change what Firefox shows); comparison only");
 const problems = [], notes = [], hiddenCopy = new Set(), advisories = new Set();
 const fail = (where, what) => { problems.push(`${where}: ${what}`); console.log(`FAIL ${where}: ${what}`); };
 const pass = (what) => console.log(`PASS ${what}`);
@@ -186,7 +187,7 @@ async function probeOne(browser, engine, vp) {
   const ctx = await browser.newContext(ctxOpts);
   const errs = [], http = [], failed = [];
   // The only routes: count every Worker request and every socket before it is sent, and refuse it once the budget is spent (helpers/probe-budget.mjs).
-  await guardContext(ctx, budget, { passThrough: API_ROUTE === "continue" });
+  await guardContext(ctx, budget, { mode: API_ROUTE });
   if (CLOCK) await ctx.clock.install({ time: CLOCK }); // self-test only (see --clock above)
   const page = await ctx.newPage();
   let insightsFailed = false;
@@ -265,7 +266,7 @@ async function probeOne(browser, engine, vp) {
   for (const w of uniq(warned).slice(0, 8)) console.log(`WARN ${tag}: API 4xx (not a failure off /api/bootstrap and /api/state): ${w}\n::warning title=Production probe::${tag}: API 4xx ${w}`);
   http.length ? uniq(http).slice(0, 8).forEach((h) => fail(tag, `HTTP error (site 4xx/5xx, API 5xx, or API 4xx on bootstrap/state): ${h}`)) : pass(`${tag} no 4xx/5xx from the site or its API`);
   failed.length ? uniq(failed).slice(0, 5).forEach((h) => fail(tag, `request failed: ${h}`)) : pass(`${tag} no failed requests`);
-  for (const r of budget.redirects.splice(0)) fail(tag, `the API answered with a redirect (refused, not followed): ${r}`);
+  for (const r of budget.redirects.splice(0)) fail(tag, `the API answered with a redirect (counted hop by hop; the probe fails on any): ${r}`);
   await ctx.close();
 }
 
