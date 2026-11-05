@@ -236,7 +236,12 @@ function youYes() {
   if (!MEM.setMe(sl)) { YOU.empty = true; firstRun(); return; }
   location.hash = `#tonight.${sl}`;
   try { document.dispatchEvent(new CustomEvent("board:first-value")); } catch (err) {}
-  setTimeout(() => { firstRun(); render(); go(`five.sheet-${sl}`); }, 0);
+  setTimeout(() => {
+    firstRun(); render();
+    const was = K.SC.open !== null; /* a scene is already open (the Next card the hash above just opened): goScene only switches the tab and never lands, so the sheet would not open */
+    go(`five.sheet-${sl}`);
+    if (was && K.SC.land && K.SC.land.key === "five") { K.SC.land = null; try { if (K.lander) K.lander("five", `sheet-${sl}`); } catch (err) {} }
+  }, 0);
 }
 function youNo() { YOU.no = true; FR.peek = true; sfx("page"); firstRun(); render(); }
 function youCard(el) {
