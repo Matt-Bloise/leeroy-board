@@ -1,7 +1,7 @@
 // The judging rules of the production probe (tests/browser/prod-probe.mjs), without a browser.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { junkIn, wrongCountCopy, memberCountProblem, slugOf, classifyHttp, consoleFailures, isReportOnlyCsp } from "../helpers/probe-checks.mjs";
+import { junkIn, wrongCountCopy, memberCountProblem, slugOf, classifyHttp, consoleFailures, isReportOnlyCsp, isCspAdvisory, exemptedAdvisories } from "../helpers/probe-checks.mjs";
 import fs from "node:fs";
 
 test("member count: equal passes, any difference fails", () => {
@@ -98,4 +98,66 @@ test("HTTP statuses: site 4xx/5xx fail; API 5xx fails; API 4xx warns except on b
   assert.equal(classifyHttp("https://third.example/x", 500, S, A), "ok", "someone else's host is not ours");
   assert.equal(classifyHttp("http://127.0.0.1:1/api/me", 401, "http://127.0.0.1:1", "http://127.0.0.1:1"), "warn", "local: site and API share an origin, /api/ still counts as the API");
   assert.equal(classifyHttp("http://127.0.0.1:1/css/x.css", 404, "http://127.0.0.1:1", "http://127.0.0.1:1"), "fail");
+});
+
+test("WebKit's report-only advisory is exempt, exactly: it must start with \"The Content Security Policy\" AND say report-only; nothing wider", () => {
+  const advisory = "The Content Security Policy 'default-src 'self'' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect.";
+  assert.equal(isCspAdvisory(advisory), true);
+  assert.equal(isCspAdvisory(advisory.toUpperCase().replace("THE CONTENT SECURITY POLICY", "The Content Security Policy")), true, "report-only is matched case-insensitively");
+  assert.deepEqual(consoleFailures([advisory]), []);
+  // an enforced block that starts the same way, no report-only: fails
+  assert.equal(consoleFailures(["The Content Security Policy 'default-src 'self'' blocked the resource https://evil.example/x.js"]).length, 1);
+  // report-only somewhere but not starting that way: fails
+  assert.equal(consoleFailures(["Refused to load https://x/y.js: the Content Security Policy is not report-only here"]).length, 1);
+  assert.equal(consoleFailures(["Uncaught TypeError: x. The Content Security Policy report-only note"]).length, 1);
+  assert.equal(consoleFailures(["Failed to load resource: the server responded with a status of 500"]).length, 1);
+});
+
+test("report-only advisories are exempt by wording per engine; an enforced block that merely mentions report-only elsewhere still fails", () => {
+  const ff = "Content-Security-Policy: (Report-Only policy) The page's settings would block a JavaScript eval (script-src) from being executed because it violates the following directive: \"script-src 'self'\"";
+  const wk = "The Content Security Policy 'default-src 'self'' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect.";
+  // positives: the exact Firefox wording, case-insensitively, and the WebKit advisory
+  assert.deepEqual(consoleFailures([ff, ff.replace("(Report-Only policy)", "(report-only POLICY)").replace("Content-Security-Policy:", "Content Security Policy:"), wk]), []);
+  // negatives: enforced blocks that mention report-only (or the Firefox marker) somewhere other than the start
+  for (const bad of [
+    "The Content Security Policy 'default-src 'self'' blocked the resource https://evil.example/report-only.js",
+    "The Content Security Policy refused https://x/y.js (see the report-only docs)",
+    "Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/x.js (default-src) (Report-Only policy)",
+    "Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/report-only.js (default-src)",
+    "Refused to load https://x/report-only.js because it violates the following Content Security Policy directive: \"default-src 'self'\" (Report-Only policy)",
+    "Uncaught Error: (Report-Only policy) is not defined",
+  ]) assert.equal(consoleFailures([bad]).length, 1, bad);
+  assert.equal(isCspAdvisory(ff), true);
+  assert.equal(isCspAdvisory("Content-Security-Policy: The page's settings blocked x (Report-Only policy)"), false);
+  // the exempted ones are listed for the report
+  assert.deepEqual(exemptedAdvisories([ff, wk, "[Report Only] Refused to load x", { text: "TypeError: x", at: "" }]).length, 3);
+});
+
+test("Firefox as Playwright reports it: the wrapped (Report-Only policy) eval notice is exempt, anchored right after the wrapper; wrapped enforced blocks still fail", () => {
+  const exact = "[JavaScript Error: \"Content-Security-Policy: (Report-Only policy) The page's settings would block a JavaScript eval (script-src) from being executed because it violates the following directive: \\\"script-src 'self'\\\"\" {file: \"https://leeroy.party/js/board.js\" line: 12}]";
+  assert.deepEqual(consoleFailures([exact, exact.toLowerCase()]), []);
+  assert.equal(isCspAdvisory(exact), true);
+  for (const bad of [
+    "[JavaScript Error: \"Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/x.js (default-src) (Report-Only policy)\" {file: \"https://leeroy.party/js/board.js\" line: 3}]",
+    "[JavaScript Error: \"Content-Security-Policy: The page's settings blocked the loading of a resource at https://evil.example/(Report-Only policy).js (default-src)\"]",
+    "[JavaScript Error: \"ReferenceError: x is not defined (Report-Only policy)\"]",
+    "[JavaScript Error: \"TypeError: x\" {file: \"https://leeroy.party/js/Content-Security-Policy: (Report-Only policy)\"}]",
+  ]) assert.equal(consoleFailures([bad]).length, 1, bad);
+});
+
+test("a long WebKit advisory whose report-only wording lies beyond 160 characters is exempt when the text is kept whole", () => {
+  const policy = "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://api.leeroy.party";
+  const full = `The Content Security Policy '${policy}' was delivered in report-only mode, but does not specify a 'report-uri'; the policy will have no effect.`;
+  assert.ok(full.indexOf("report-only") > 160);
+  assert.deepEqual(consoleFailures([full]), []);
+  assert.equal(consoleFailures([full.slice(0, 160)]).length, 1, "cut at 160 characters the wording is gone, which is why the probe must keep the whole text");
+});
+
+test("Firefox's harness-eval CSP throttle message (PR 181's ignoredConsoleError) is not a page error; the same text from a real file still fails", () => {
+  const throttle = "Content-Security-Policy: Prevented too many CSP reports from being sent within a short period of time.";
+  assert.deepEqual(consoleFailures([{ text: throttle, at: "debugger eval code" }]), []);
+  assert.deepEqual(consoleFailures([{ text: `[JavaScript Error: "${throttle}" {file: "debugger eval code" line: 1}]`, at: "" }]), []);
+  assert.equal(consoleFailures([{ text: throttle, at: "https://leeroy.party/js/board.js" }]).length, 1);
+  assert.equal(consoleFailures([{ text: throttle, at: "" }]).length, 1, "no source: not provably the harness");
+  assert.equal(consoleFailures([{ text: "TypeError: x", at: "debugger eval code" }]).length, 1, "only that exact message is ignored");
 });
