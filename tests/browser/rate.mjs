@@ -6,6 +6,7 @@
 // own files, no serious or critical axe violations.
 // Exit 0 when every check passes, 1 otherwise.
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
+import { pinContext } from "../helpers/clock-arg.mjs"; // the page clock is pinned to a fixed time before the launch (or --clock), so the first-visit view does not depend on when the suite runs
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -42,7 +43,7 @@ for (const scheme of ["dark", "light"]) {
     if (scheme === "light" && w !== 390 && w !== 1366) continue;
     const tag = `[${size} ${scheme}]`;
     const errors = [], foreign = [], requested = [];
-    const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: scheme, acceptDownloads: true, serviceWorkers: "block", hasTouch: w < 768, isMobile: w < 768 });
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: scheme, acceptDownloads: true, serviceWorkers: "block", hasTouch: w < 768, isMobile: w < 768 }); await pinContext(ctx, argv);
     const page = await ctx.newPage();
     page.on("pageerror", (e) => { if (!HOST_BEACON.test(e.message)) errors.push(e.message); });
     page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource/.test(m.text()) && !HOST_BEACON.test(m.text())) errors.push(m.text()); });

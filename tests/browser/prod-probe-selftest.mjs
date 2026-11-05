@@ -20,6 +20,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { startFixtureServer } from "../helpers/probe-fixture-server.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
+import { DEFAULT_CLOCK } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2), only = argv.includes("--only") ? argv[argv.indexOf("--only") + 1].split(",") : null;
@@ -43,7 +44,7 @@ const CASES = [
 
 async function runCase([mode, want, re, extra, label]) {
   const srv = await startFixtureServer({ mode });
-  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", "chromium"]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...extra], { env: { ...process.env } });
+  const child = spawn(process.execPath, [path.join(here, "prod-probe.mjs"), "--url", srv.url, ...(extra.includes("--engines") ? [] : ["--engines", "chromium"]), ...(extra.includes("--budget") ? [] : ["--budget", "200"]), ...(extra.includes("--clock") ? [] : ["--clock", DEFAULT_CLOCK]), ...extra], { env: { ...process.env } });
   let out = ""; child.stdout.on("data", (d) => (out += d)); child.stderr.on("data", (d) => (out += d));
   const code = await new Promise((r) => child.on("close", r));
   await srv.close();
