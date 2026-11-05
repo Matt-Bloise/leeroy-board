@@ -28,6 +28,8 @@
 //   one-scroller    REPORT ONLY (listed in the summary, never fails): first visit, no more than one scrolling box
 //   fill            first visit, the card fills at least 25 percent of its parchment (area ratio). FAILS at 3440x1440, 3840x2160 and 5120x1440 (FILL_ENFORCED); report only at every other size
 //   close-hit-tour  every scene: with the guided tour veil (.walk > .walk-veil) up, the close button is still the top element at its centre
+//   float-cover     phone sizes (touch, under 700 wide, so 360, 390, 412 and the rest): no floating control (fixed, sticky, or absolutely placed outside the header: the bottom-bar coin) sits on top of a visible line of text. Judged with the sheet body scrolled to the top, the middle and the end, in every scene and in the first-visit gate. A text rect is cut by every clipping ancestor first (text scrolled out of #sheet-body is not on screen), then must overlap the control by more than 2 px each way and the control must be the element hit at the overlap centre
+//   gate-inset      first visit, phone sizes: the card's lines sit at least 8 px inside #panel-tonight (the box the keyboard focus ring is drawn in, inset 4 px) on every side, and, when the body does not scroll, the panel is centred in #sheet-body within 6 px
 //   tile-clip       looking and member, the wall before any scene opens: no wall tile clips its own text (a clipping box shorter than its content, or text outside its tile)
 //   http-error      a same-origin response was 4xx or 5xx
 //   xorigin-http    a request to another origin (Worker API, font host) answered 4xx/5xx or failed; the failure names the URL (the Cloudflare insights beacon is ignored)
@@ -60,7 +62,8 @@ const ALL_SIZES = ["1920x1080", "1536x864", "1440x900", "1366x768", "1280x720", 
 const ALL_STATES = ["gate", "looking", "member"];
 const ALL_SCENES = ["timeline", "five", "roads", "racials", "legacy", "buffs", "ledger", "signups", "librarian", "library", "tonight", "decide"];
 const pick = (k, all) => { const v = arg(k); if (!v) return all; const l = v.split(",").filter(Boolean); const bad = l.filter((x) => !all.includes(x)); if (bad.length) { console.error(`${k}: unknown ${bad.join(",")}`); process.exit(2); } return l; };
-ALL_SIZES.push("5120x1440"); /* 34 inch ultra-wide at double width: a very wide, not very tall window */
+ALL_SIZES.push("5120x1440");
+ALL_SIZES.push("412x915"); /* a common Android phone width (Pixel); with 390 and 360 the three phone widths float-cover names */ /* 34 inch ultra-wide at double width: a very wide, not very tall window */
 // fill is enforced (a failure) at these sizes: the first-visit card must fill at least 25 percent of its parchment. Elsewhere it only reports.
 const FILL_ENFORCED = new Set(["3440x1440", "3840x2160", "5120x1440"]);
 const SIZES = pick("--sizes", ALL_SIZES).map((s) => { const [w, h] = s.split("x").map(Number); return { w, h, touch: w < 700 }; });
@@ -206,6 +209,48 @@ function measure({ touch, w }) {
     }
     body.scrollTop = prev;
   }
+  // float-cover (phone sizes): a floating control must never sit on top of a visible line of text, wherever the body is scrolled
+  if (touch) {
+    n++;
+    const scene = document.querySelector("#scene"), CTL = "button, a[href], [role=button], [role=tab], input, select, textarea, summary";
+    const floats = (el) => { for (let e = el; e && e !== scene; e = e.parentElement) { const p = getComputedStyle(e).position; if (p === "fixed" || p === "sticky" || (p === "absolute" && !head.contains(e) && !e.matches("#sheet-body *"))) return true; } return false; };
+    const cut = (r, from) => { // the rect cut by every clipping ancestor and by the viewport; null when nothing of it is on screen
+      let q = { left: Math.max(r.left, 0), top: Math.max(r.top, 0), right: Math.min(r.right, vw), bottom: Math.min(r.bottom, vh) };
+      for (let p = from; p && p !== document.documentElement; p = p.parentElement) {
+        const cs = getComputedStyle(p);
+        if (cs.overflowX === "visible" && cs.overflowY === "visible") continue;
+        const pr = R(p);
+        q = { left: Math.max(q.left, pr.left), top: Math.max(q.top, pr.top), right: Math.min(q.right, pr.right), bottom: Math.min(q.bottom, pr.bottom) };
+      }
+      return q.right > q.left && q.bottom > q.top ? q : null;
+    };
+    const prevTop = body.scrollTop, seenCover = new Set();
+    for (const where of ["top", "middle", "end"]) {
+      body.scrollTop = where === "top" ? 0 : where === "end" ? body.scrollHeight : Math.round((body.scrollHeight - body.clientHeight) / 2);
+      const ctls = [...scene.querySelectorAll(CTL)].filter((c) => visible(c) && floats(c)).map((c) => ({ c, r: shown(c) })).filter((x) => x.r);
+      if (!ctls.length) continue;
+      const tw = document.createTreeWalker(scene, NodeFilter.SHOW_TEXT);
+      for (let t = tw.nextNode(); t; t = tw.nextNode()) {
+        if (!t.textContent.trim() || !visible(t.parentElement)) continue;
+        const rg = document.createRange(); rg.selectNodeContents(t);
+        for (const q0 of rg.getClientRects()) {
+          if (q0.width <= 0 || q0.height <= 0) continue;
+          const f = window.__lz.factor(t.parentElement), q = cut({ left: q0.left * f, top: q0.top * f, right: q0.right * f, bottom: q0.bottom * f }, t.parentElement);
+          if (!q) continue;
+          for (const { c, r } of ctls) {
+            if (c.contains(t) || t.parentElement.contains(c)) continue;
+            const ox = Math.min(q.right, r.right) - Math.max(q.left, r.left), oy = Math.min(q.bottom, r.bottom) - Math.max(q.top, r.top);
+            if (ox <= 2 || oy <= 2) continue;
+            const cx = Math.max(q.left, r.left) + ox / 2, cy = Math.max(q.top, r.top) + oy / 2, hit = document.elementFromPoint(cx, cy);
+            if (!hit || !(hit === c || c.contains(hit))) continue;
+            const k = `${label(c)}|${t.textContent.trim().slice(0, 20)}`;
+            if (!seenCover.has(k)) { seenCover.add(k); bad("float-cover", `${label(c)} ${fmt(r)} covers the text "${t.textContent.trim().replace(/\s+/g, " ").slice(0, 30)}" ${fmt({ left: q.left, top: q.top, width: q.right - q.left, height: q.bottom - q.top })} by ${Math.round(ox)}x${Math.round(oy)} (body scrolled to the ${where})`); }
+          }
+        }
+      }
+    }
+    body.scrollTop = prevTop;
+  }
   return { out, n };
 }
 
@@ -263,6 +308,20 @@ async function gateChecks(page, size, once, A) {
     await page.mouse.wheel(0, 400); await page.waitForTimeout(150);
     const y = await page.evaluate(() => scrollY);
     if (y !== 0) once("wheel-still", `scrollY ${y} after a wheel event`);
+  }
+  if (size.touch) {
+    A.checks++;
+    const g = await page.evaluate(() => {
+      const p = document.querySelector("#panel-tonight"), c = document.querySelector("#nx-fr2"), b = document.querySelector("#sheet-body");
+      if (!p || !c || !b) return null;
+      const L = window.__lz, pr = L.rect(p), br = L.rect(b), ks = [...c.children].map((k) => L.rect(k));
+      return { left: Math.min(...ks.map((k) => k.left)) - pr.left, right: pr.right - Math.max(...ks.map((k) => k.right)), top: Math.min(...ks.map((k) => k.top)) - pr.top, bottom: pr.bottom - Math.max(...ks.map((k) => k.bottom)), off: (pr.top + pr.bottom) / 2 - (br.top + br.bottom) / 2, scrolls: b.scrollHeight > b.clientHeight + 1 };
+    });
+    if (g) {
+      const tight = ["left", "right", "top", "bottom"].filter((k) => g[k] < 8).map((k) => `${k} ${g[k].toFixed(1)}px`);
+      if (tight.length) once("gate-inset", `the first-visit card is closer than 8px to its frame: ${tight.join(", ")}`);
+      else if (!g.scrolls && Math.abs(g.off) > 6) once("gate-inset", `the first-visit frame is ${g.off.toFixed(1)}px off the centre of the sheet body`);
+    }
   }
   const n = m.scrollers.length + (m.docScrolls ? 1 : 0);
   if (n > 1) notes.push({ w: size.w, h: size.h, invariant: "one-scroller", detail: `${n} scrolling boxes: ${m.docScrolls ? "document, " : ""}${m.scrollers.slice(0, 3).join(", ")}` });

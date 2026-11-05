@@ -268,3 +268,33 @@ test("no secret value appears in any response or log line", async () => {
   } finally { [console.log, console.warn, console.error] = logs; }
   assert.ok(!seen.join("\n").includes("test-only-secret-not-real"));
 });
+
+// B66: a deep link such as https://leeroy.party/#library.events.launch is a fragment, which a browser never sends to the server, so the Worker cannot carry it
+// and does not try: the callback always lands on the fixed board origin with only ?login=<reason>. These pin that down, so nobody can later add a return target
+// that is not validated: a hostile return/next/redirect value on /start or on the callback must change neither the Discord redirect_uri nor the board redirect.
+const HOSTILE = ["https://evil.example/", "//evil.example/x", "javascript:alert(1)", "/\\evil.example", "https://leeroy.test.evil.example/#library", "#library.events.launch\r\nSet-Cookie: x=1"];
+test("B66 start: a hostile return, next, redirect_uri or hash value leaves the Discord redirect_uri unchanged and is stored nowhere", async () => {
+  for (const bad of HOSTILE) {
+    _resetWebAuth();
+    const q = ["return", "next", "redirect", "redirect_uri", "return_to", "hash"].map((k) => `${k}=${encodeURIComponent(bad)}`).join("&");
+    const res = await web(baseEnv(), req("GET", `/api/auth/discord/start?${q}`));
+    assert.equal(res.status, 302, bad);
+    const loc = new URL(res.headers.get("Location"));
+    assert.equal(loc.origin + loc.pathname, "https://discord.com/oauth2/authorize", bad);
+    assert.equal(loc.searchParams.get("redirect_uri"), "https://api.leeroy.test/api/auth/discord/callback", bad);
+    assert.ok(!res.headers.get("Location").includes("evil"), `Discord redirect carries nothing from the request: ${bad}`);
+    assert.ok(!cookiesOf(res).join(";").includes("evil"), `no cookie carries it: ${bad}`);
+  }
+});
+test("B66 callback: a hostile return, next, redirect or hash value is never reflected, the board redirect stays the fixed same-origin ?login= URL", async () => {
+  for (const bad of HOSTILE) {
+    const env = baseEnv(), stub = discordStub();
+    const { state, pre } = await begin(env);
+    const q = ["return", "next", "redirect", "redirect_uri", "return_to", "hash"].map((k) => `${k}=${encodeURIComponent(bad)}`).join("&");
+    const ok = await web(env, req("GET", `/api/auth/discord/callback?code=abcdef123456&state=${state}&${q}`, { Cookie: `${PRE_COOKIE}=${pre}` }), { fetch: stub });
+    assert.equal(ok.headers.get("Location"), "https://leeroy.test/?login=ok", bad);
+    const refused = await web(baseEnv(), req("GET", `/api/auth/discord/callback?code=abcdef123456&state=${state}&${q}`));
+    assert.equal(refused.headers.get("Location"), "https://leeroy.test/?login=state", bad);
+    for (const r of [ok, refused]) assert.ok(!r.headers.get("Location").includes("evil") && !r.headers.get("Location").includes("#"), `no fragment and nothing reflected: ${bad}`);
+  }
+});
