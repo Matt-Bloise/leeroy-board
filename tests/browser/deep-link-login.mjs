@@ -3,10 +3,11 @@
 // hash, "Continue with Discord" opens the Sign-ups card in Discord in a new tab, and the Worker's /auth/discord/start is not called by any front-end code), so the hash
 // must survive untouched; this suite pins that down.
 //   node deep-link-login.mjs --url https://pr-N.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)   optional: env PW_CHROMIUM = path to a Chromium binary
-// Nothing is sent and there is no AI call: /api/ is answered from tests/fixtures/api-snapshot, data/tonight.json is the real file with a made-up Discord sign-up link,
-// and window.open is recorded instead of opening a tab. Per destination (a Library page, a scene with a sub-address, a plain scene) and size (390x844 touch, 1366x768),
+// Nothing is sent and there is no AI call: /api/ is answered from tests/fixtures/api-snapshot and window.open is recorded instead of opening a tab. The Discord sign-up
+// link is whatever the page itself loaded (D.tonight.links.signup, from the bootstrap snapshot when the page has an API origin and from data/tonight.json when it has
+// none), read back from the page, so the check holds on either data path. Per destination (a Library page, a scene with a sub-address, a plain scene) and size (390x844 touch, 1366x768),
 // from a first visit with nothing remembered: the scene opens on that hash; the hash is unchanged after the page settles; tapping "Continue with Discord" (the first-run
-// button behind the scene, clicked in the page) keeps the hash and the open scene, leaves the page's own URL alone, opens only the made-up discord.com link in a new tab,
+// button behind the scene, clicked in the page) keeps the hash and the open scene, leaves the page's own URL alone, opens only the page's own Discord sign-up link in a new tab,
 // and never requests /auth/discord/start or any other /auth/ path. A deep link that arrives with ?login=ok (what the Worker's callback sends) opens the same destination.
 // Exit 0 when every check passes, 1 otherwise.
 import { pageUrl } from "../helpers/page-url.mjs";
@@ -17,9 +18,7 @@ const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 if (!BASE) { console.error("usage: node deep-link-login.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
-const SIGNUP = "https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333";
 const TOKENS = [["library.events.launch", /Library/], ["five.party", null], ["signups", null]];
-const DATA_TONIGHT = /\/(?:api\/)?data\/tonight(?:\.json)?(?:\?|$)/;
 
 async function visit(browser, width, height, token, query = {}) {
   const phone = width < 768;
@@ -27,7 +26,6 @@ async function visit(browser, width, height, token, query = {}) {
   await ctx.addInitScript(() => { window.__opened = []; window.open = (u, t, f) => { window.__opened.push([String(u), t, f]); return null; }; });
   const authReqs = [];
   ctx.on("request", (r) => { if (/\/auth\//.test(new URL(r.url()).pathname)) authReqs.push(r.url()); });
-  await ctx.route(DATA_TONIGHT, async (route) => { const res = await route.fetch(), j = await res.json(); j.links = { ...(j.links || {}), signup: SIGNUP }; return route.fulfill({ response: res, json: j }); });
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(pageUrl(BASE, { params: { preview: "1", ...query }, hash: token }), { waitUntil: "load" });
@@ -35,7 +33,7 @@ async function visit(browser, width, height, token, query = {}) {
   await page.waitForTimeout(1500);
   return { ctx, page, errors, authReqs };
 }
-const state = (page) => page.evaluate(() => ({ hash: location.hash, href: location.href, open: document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden, title: (document.querySelector("#sheet-title") || {}).textContent || "", first: !!document.querySelector("#nx-fr2-go"), opened: window.__opened }));
+const state = (page) => page.evaluate(() => ({ hash: location.hash, href: location.href, open: document.documentElement.classList.contains("scene-open") && !document.querySelector("#scene").hidden, title: (document.querySelector("#sheet-title") || {}).textContent || "", first: !!document.querySelector("#nx-fr2-go"), opened: window.__opened, signup: (((window.__boardKit || {}).D || {}).tonight || {}).links?.signup || null }));
 
 const browser = stubbed(await pw.chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}));
 try {
@@ -46,12 +44,13 @@ try {
       ok(`${t} signed out, the deep link opens its scene`, a.open && (!titleRe || titleRe.test(a.title)), `open ${a.open}, title "${a.title}"`);
       ok(`${t} the hash is still the destination`, a.hash === `#${token}`, a.hash);
       ok(`${t} the first-run "Continue with Discord" button exists behind the scene`, a.first);
+      ok(`${t} the page loaded a Discord sign-up link`, /^https:\/\/discord\.com\//.test(String(a.signup)), String(a.signup));
       await page.evaluate(() => document.querySelector("#nx-fr2-go").click());
       await page.waitForTimeout(1200);
       const b = await state(page);
       ok(`${t} after "Continue with Discord" the hash is still the destination`, b.hash === `#${token}`, b.hash);
       ok(`${t} the scene is still open and the page URL is unchanged`, b.open && b.href === a.href, `${a.href} -> ${b.href}`);
-      ok(`${t} the only thing opened is the Discord sign-up card, in a new tab`, b.opened.length === 1 && b.opened[0][0] === SIGNUP && /_blank/.test(b.opened[0][1]), JSON.stringify(b.opened));
+      ok(`${t} the only thing opened is the Discord sign-up card, in a new tab`, b.opened.length === 1 && b.opened[0][0] === a.signup && /_blank/.test(b.opened[0][1]), JSON.stringify(b.opened));
       ok(`${t} no /auth/ request was made`, authReqs.length === 0, authReqs.join(" | "));
       ok(`${t} no page errors`, errors.length === 0, errors.join(" | "));
       await ctx.close();
