@@ -241,6 +241,9 @@ async function probeOne(browser, engine, vp) {
       if (!up.ok) { fail(tag, `scene #${hash} did not open: ${up.why}`); continue; }
       const top = hash.split(".")[0];
       await settleCopy(page, N, 5000, copyState);
+      /* innerText of a panel that is not displayed yet is "" (0 characters): on a slow runner the read can land before the scene finishes showing (CI run 42283091609, late-look, #roads at 1366x768).
+         Wait, bounded, until the panel is shown with text; a panel that stays blank still fails below exactly as before, a missing panel returns at once. */
+      await page.waitForFunction((k) => { const p = document.querySelector(`#panel-${k}`); return !p || (!p.hidden && p.innerText.replace(/\s+/g, " ").trim().length >= 20); }, top, { timeout: 4000 }).catch(() => {});
       const text = await page.evaluate((k) => { const p = document.querySelector(`#panel-${k}`) || document.querySelector("#scene"); return p ? p.innerText.replace(/\s+/g, " ").trim() : ""; }, top).catch(() => "");
       if (text.length < 20) fail(tag, `scene #${hash} is blank (${text.length} characters)`); else pass(`${tag} scene #${hash} has content`);
       visible.push(...(await copyOf(page, "visible").catch(() => [])).map((t) => [`#${hash}`, t]));
