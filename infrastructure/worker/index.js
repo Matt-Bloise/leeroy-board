@@ -36,7 +36,7 @@ import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
-import { readJsonCapped, questionTooLong, pickSignupPatch, MAX_QUESTION_CHARS } from "./limits.js";
+import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
@@ -881,15 +881,7 @@ export default {
             ? JSON.parse(row.json)
             : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
           doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-          let entry = doc.entries.find(
-            (e) =>
-              (e.slug && e.slug === member.slug) ||
-              (e.name || "").toLowerCase() === member.name.toLowerCase()
-          );
-          if (!entry) {
-            entry = { slug: member.slug, name: member.name };
-            doc.entries.push(entry);
-          }
+          const entry = upsertSignupEntry(doc, member);
           for (const [k, v] of Object.entries(patch)) {
             entry[k] = v === "vos" ? "Valley of Strength" : v === "xroads" ? "The Crossroads" : v;
           }
@@ -1448,15 +1440,7 @@ export default {
             ? JSON.parse(row.json)
             : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
           doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-          let entry = doc.entries.find(
-            (e) =>
-              (e.slug && e.slug === member.slug) ||
-              (e.name || "").toLowerCase() === member.name.toLowerCase()
-          );
-          if (!entry) {
-            entry = { slug: member.slug, name: member.name };
-            doc.entries.push(entry);
-          }
+          const entry = upsertSignupEntry(doc, member);
           for (const [k, v] of Object.entries(picked.patch)) {
             entry[k] = v;
           }
