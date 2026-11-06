@@ -22,7 +22,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
-import { findAskerSheet, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
+import { findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
 export const PERSONALISE_RULE =
@@ -913,12 +913,12 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
-    const askerSheet = findAskerSheet(sheets, { by, memberSlug, isMember: askerIsMember });
-    const yourBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false }) : "Visitor: no build on file.";
+    const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
+    const yourBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : "Visitor: no build on file.";
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
     const hasBuild = Boolean(askerSheet) && !yourBuild.startsWith("No build on file");
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
-    const groundingText = [topFactHits.join(" "), ranked.map((p) => `${p.title} ${p.blurb || ""} ${(p.facts || []).map((f) => f.value).join(" ")}`).join(" "), yourBuild, partyBuilds, question, by].join(" ");
+    const groundingText = [partySummary, topFactHits.join(" "), ranked.map((p) => `${p.title} ${p.blurb || ""} ${(p.facts || []).map((f) => f.value).join(" ")}`).join(" "), yourBuild, partyBuilds, question, by].join(" ");
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${fence("LIBRARY", `${topFactHits.join("\n")}\n\nTop Matching Pages:\n${topPagesSummary}`)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild };

@@ -110,3 +110,61 @@ test("the egg is rare (about 1 in 25) and never on a personalised answer", async
   const run = (personalised) => finishAnswerText(env, { rawAnswer: "**Holy Shield helps you tank.**", isCoach: false, parsedPages: i.parsedPages, by: "Red Fox", askerIsMember: true, persona: { egg: { oneIn: 1 } }, intentId: dueId, groundingText: i.groundingText, personalised });
   assert.ok(!(await run(true)).answer.includes(DEFAULT_EGG.line));
 });
+
+// ---- identity: the authenticated slug decides; a name alone never unlocks hidden fields ----
+import { readFileSync } from "node:fs";
+import { groundedOrNotPublished } from "../../infrastructure/worker/ask-build.js";
+
+test("conflicting memberSlug and by choose the slug's sheet; a name-only match never gets hidden fields", async () => {
+  const slugWins = await inputs(makeEnv(), { by: "Blue Owl", memberSlug: "red-fox", share: false });
+  assert.match(slugWins.userPrompt, /Red Fox \(the asker\)/);
+  assert.match(slugWins.userPrompt, /tank the Deadmines/);
+  assert.ok(!slugWins.userPrompt.includes("hidden goal text"), "Blue Owl's hidden goal stays out");
+  const nameOnly = await inputs(makeEnv(), { by: "Blue Owl", share: false });
+  assert.match(nameOnly.userPrompt, /Blue Owl \(the asker\)/);
+  assert.ok(!nameOnly.userPrompt.includes("hidden goal text") && !nameOnly.userPrompt.includes("secretspec"), "by-only: visible fields only, even on a private ask");
+  const unknownSlug = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "someone-else", share: false });
+  assert.match(unknownSlug.userPrompt, /fill in their sheet/, "an unknown slug does not fall back to the name");
+  assert.ok(!unknownSlug.userPrompt.includes("tank the Deadmines"));
+});
+
+test("both Discord answerWithAi call sites pass the verified member slug", () => {
+  const src = readFileSync(new URL("../../infrastructure/worker/discord.js", import.meta.url), "utf8");
+  const calls = [...src.matchAll(/answerWithAi\(\{[^\n]*\}\)/g)].map((m) => m[0]);
+  assert.equal(calls.length, 2);
+  for (const c of calls) assert.match(c, /memberSlug: member \? member\.slug : undefined/);
+});
+
+// ---- grounding: repair, do not wipe ----
+const ALLOWED = "Party: Santa. Protection Paladins tank with Holy Shield. Deadmines is a dungeon. Red Fox: class paladin; level 12";
+const g = (a) => groundedOrNotPublished(a, ALLOWED);
+
+test("grounded names, connectors and generic headings pass untouched", () => {
+  for (const a of [
+    "**Meet in Deadmines at eight.**\n\n-# Sources: classes/paladin-protection",
+    "**As a Paladin in Deadmines you tank with Holy Shield.**",
+    "**Recommended Next Steps**\n- Tank with Holy Shield.\n\nWorth a Look Next: Deadmines.",
+    "Good Luck out there. Then Start with Holy Shield.",
+  ]) {
+    const r = g(a);
+    assert.ok(r.ok, `${a} -> ${r.bad}`);
+    assert.equal(r.answer, a);
+  }
+});
+
+test("an invented name removes only its sentence; the rest and the Sources line survive", () => {
+  const r = g("**Protection Paladins tank with Holy Shield.**\n\nFrost Hammer deals huge damage. Deadmines is a good first dungeon.\n- Seal of Fury comes at level 10.\n\n-# Sources: classes/paladin-protection");
+  assert.ok(!r.ok);
+  assert.ok(!r.answer.includes("Frost Hammer") && !r.answer.includes("Seal of Fury"));
+  assert.ok(r.answer.includes("Holy Shield") && r.answer.includes("Deadmines is a good first dungeon"));
+  assert.ok(r.answer.includes("-# Sources: classes/paladin-protection"));
+});
+
+test("when nothing substantive remains the honest line replaces the answer", () => {
+  assert.equal(g("**Frost Hammer is the best weapon.**\n\n-# Sources: classes/paladin-protection").answer, NOT_PUBLISHED_LINE);
+});
+
+test("party state in the grounding text lets party names through", async () => {
+  const i = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox" });
+  assert.ok(i.groundingText.includes("Party:"));
+});
