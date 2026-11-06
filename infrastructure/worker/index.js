@@ -50,7 +50,6 @@ import { publicParty, partyForMember } from "./sheet-privacy.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
-import { afterSignupChange } from "./cards-handler.js";
 import { flushBoardLines } from "./board-lines.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
@@ -1035,49 +1034,6 @@ export default {
           return jsonResp({ error: "Invalid token response" }, 502, cors);
         }
         return jsonResp({ access_token: tokenJson.access_token }, 200, cors);
-      }
-
-      // 1b. POST /signups -> External Discord Bot sync for `#wow-forever` Sign-ups card
-      if (req.method === "POST" && path === "/signups") {
-        const auth = await resolveMemberAuth(req, url, env);
-        if (!auth.ok) {
-          return jsonResp({ error: "Unauthorized board key" }, 401, cors);
-        }
-        const read = await readJsonCapped(req);
-        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
-        const body = read.body;
-        // Compare-and-set (kv-cas.js): a member's own sign-up write racing this bot sync can no longer erase the other's change.
-        let cardsBefore = null;
-        let saved;
-        try {
-          saved = await updateKvJson(env, "signups", async (cur) => {
-            const doc = cur || { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
-            cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
-            if (Array.isArray(body.entries)) {
-              doc.entries = body.entries;
-            } else if (body.name) {
-              doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-              let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === String(body.name).toLowerCase());
-              if (!entry) {
-                entry = { name: body.name };
-                doc.entries.push(entry);
-              }
-              for (const k of ["pack", "meet", "meet_other", "rsvp", "when"]) {
-                if (body[k] !== undefined) entry[k] = body[k];
-              }
-            }
-            await recomputeSignupTallies(doc);
-            return { doc };
-          });
-        } catch (e) {
-          if (e instanceof KvConflictError) return jsonResp({ error: "The sign-ups card is busy. Try again." }, 409, cors);
-          throw e;
-        }
-        const doc = saved.doc;
-        await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json"]);
-        await broadcastToRoom(env, { type: "data", key: "signups" });
-        if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
-        return jsonResp({ ok: true, signups: doc }, 200, cors);
       }
 
       // 1c. GET /ask -> Returns latest Q&A turn for `js/brain.js` (`askRead()`)
