@@ -1217,6 +1217,9 @@ export async function answerWithAi({
     if (share) {
       await broadcastToRoom(env, { type: "data", key: "stats", intent: completedItem });
       await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, ask: completedItem });
+    } else if (isMember === false) {
+      // A guest's private answer goes only to the socket that sent this ask's id (forAsk); everyone else gets the bare nudge.
+      await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, forAsk: String(intentId), ask: completedItem });
     } else {
       await broadcastToRoom(env, { type: "ask", slug: broadcastSlug });
     }

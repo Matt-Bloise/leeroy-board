@@ -8,7 +8,7 @@
 //   - Multi-Provider AI Q&A (`ai-models.js`) & Discord HTTP Interactions (`discord.js`)
 // =============================================================================
 
-import { BoardRoom } from "./room.js";
+import { BoardRoom, LIVE_AUTH_HEADER } from "./room.js";
 import {
   answerWithAi,
   resolveAiProvider,
@@ -960,7 +960,15 @@ export default {
         }
         const id = env.BOARD_ROOM.idFromName("global");
         const stub = env.BOARD_ROOM.get(id);
-        const doResp = await stub.fetch(req);
+        let roomReq = req;
+        if (path === "/live") {
+          // The room reads this header to know the socket belongs to a signed-in web session. A client's own copy never gets through.
+          const h = new Headers(req.headers);
+          h.delete(LIVE_AUTH_HEADER);
+          if (req.headers.get("Upgrade") === "websocket" && (await webSessionFrom(req, env, Date.now()))) h.set(LIVE_AUTH_HEADER, "web");
+          roomReq = new Request(req, { headers: h });
+        }
+        const doResp = await stub.fetch(roomReq);
         if (doResp.status === 101) return doResp; // WebSocket Upgrade
         const headers = new Headers(doResp.headers);
         for (const [k, v] of Object.entries(cors)) headers.set(k, v);
