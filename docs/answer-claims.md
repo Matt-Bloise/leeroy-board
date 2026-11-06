@@ -47,7 +47,7 @@ Every behavioural claim the `/ask` answer path makes in code comments, or that `
 | 31 | An /ask reply opens with one quoted line naming the question it answers (flattened, 160 characters, mentions and links defused) | `discord.js` `quoteQuestion`, `wrap` in the /ask path | `ask-delivery.test.mjs`; `ask-delivery-fixes.test.mjs` | proven |
 | 32 | An unexpanded `{board:...}` token, a bare hex library stamp and any `-#` footer other than Sources or a board link never reach the reader | `answer-format.js` `format` | `ask-delivery-fixes.test.mjs` | proven |
 | 33 | A chicken line written by the model is stripped; only the deterministic egg (claim 30) can add it | `answer-format.js` `stripEggLine`, `finishAnswerText` | `ask-delivery-fixes.test.mjs` | proven |
-| 34 | The same member asking the same question (normalised) with the same visibility within 10 minutes gets the stored answer, with no model call; visitors, other members, errors and budget lines are never reused | `ai-models.js` `findRecentSameAnswer` | `ask-delivery-fixes.test.mjs` | proven |
+| 34 | The same member asking the same question (normalised) with the same visibility within 10 minutes gets the stored answer, with no model call; visitors, other members, errors, budget lines and already-reused rows are never reused, so the window is measured from generation; the lookup scans the asker's last 50 answers in the window; the More / Sources text is copied to the repeated turn; callers of `answerWithAi` ignore its return value and read the stored row, which a test confirms through the real Discord /ask path | `ai-models.js` `findRecentSameAnswer` | `ask-delivery-fixes.test.mjs` | proven |
 
 ## Findings (reported, not fixed)
 

@@ -8,13 +8,15 @@ import { formatAnswer, stripEggLine, DEFAULT_EGG } from "../../infrastructure/wo
 import { answerWithAi, finishAnswerText, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
+import { createDiscordSigner } from "../helpers/discord-sign.mjs";
+import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
 import { insertAskTurn } from "../../infrastructure/worker/answer-ux.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 test("quoteQuestion is short, one line, and defuses mentions, brackets and links", () => {
   const q = quoteQuestion("what\nis  @everyone <@123> https://evil.test/x " + "z".repeat(400));
   assert.ok(q.startsWith("> **Q:** what is @​everyone"));
-  assert.ok(!q.includes("\n") && !q.includes("<") && !q.includes("http"));
+  assert.ok(!q.includes("\n") && !q.includes("<") && !q.includes("://"), "no live link");
   assert.ok(q.length < 200);
 });
 
@@ -96,4 +98,63 @@ test("an answer older than 10 minutes is not reused", async () => {
   env.DB.raw.prepare("UPDATE ask_turns SET answered_at = ? WHERE id = ?").run(new Date(Date.now() - 11 * 60 * 1000).toISOString(), first.id);
   await ask(env);
   assert.equal(calls.length, 2);
+});
+
+test("quoteQuestion: nested link tricks, backticks, spoilers and strikethrough cannot come back or bleed", () => {
+  const q = quoteQuestion("hthttps://tps://x `code` ||spoiler|| ~~strike~~ www.x.test");
+  assert.ok(!q.includes("://"), q);
+  assert.ok(!/[`|~]/.test(q.slice("> **Q:** ".length)), q);
+  assert.equal(quoteQuestion(quoteQuestion("a").slice(9)), quoteQuestion("a"), "stable");
+});
+
+test("A, five other questions, then A again within 10 minutes is still reused", async () => {
+  const { env, calls } = makeEnv();
+  const first = await ask(env);
+  for (const q of ["one?", "two?", "three?", "four?", "five?", "six?"]) await ask(env, { question: q });
+  const before = calls.length;
+  const again = await ask(env);
+  assert.equal(calls.length, before, "no new model call");
+  assert.equal(again.answer, first.answer);
+});
+
+test("a reused answer is not itself a reuse source: the window is measured from generation", async () => {
+  const { env, calls } = makeEnv();
+  const first = await ask(env);
+  env.DB.raw.prepare("UPDATE ask_turns SET answered_at = ? WHERE id = ?").run(new Date(Date.now() - 6 * 60 * 1000).toISOString(), first.id);
+  const reused = await ask(env);
+  assert.equal(reused.model, "reused-answer");
+  env.DB.raw.prepare("UPDATE ask_turns SET answered_at = ? WHERE id = ?").run(new Date(Date.now() - 11 * 60 * 1000).toISOString(), first.id);
+  const callsBefore = calls.length;
+  await ask(env);
+  assert.equal(calls.length, callsBefore + 1, "the original expired, so the reuse row cannot extend it");
+});
+
+test("the real Discord /ask path: a repeated question edits the reply with the stored answer and the quoted question, no second model call", async () => {
+  const { env, calls } = makeEnv();
+  const signer = createDiscordSigner();
+  env.DISCORD_PUBLIC_KEY = signer.publicKeyHex;
+  const patches = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes("/messages/@original")) { if (init.method === "PATCH") patches.push(JSON.parse(init.body)); return new Response("{}", { status: 200 }); }
+    return new Response("{}", { status: 200 });
+  };
+  const interaction = (n) => ({
+    id: `fix-int-${n}`, application_id: "fixture-app-0001", token: `fixture-token-${n}`, version: 1, type: 2,
+    member: { user: { id: "fixture-user-0001", username: "fixture_tester", global_name: "Fixture Tester" }, nick: null, roles: [] },
+    data: { id: "fixture-cmd-ask", name: "ask", type: 1, options: [{ name: "question", type: 3, value: "when does onyxia open" }] },
+  });
+  try {
+    for (const n of [1, 2]) {
+      const pending = [];
+      const res = await handleDiscordInteraction(signer.signedRequest(interaction(n)), env, { waitUntil: (p) => pending.push(p) }, "https://worker.test");
+      assert.equal(res.status, 200);
+      await Promise.allSettled(pending);
+    }
+  } finally { globalThis.fetch = realFetch; }
+  assert.equal(calls.length, 1, "one model call for two asks");
+  assert.equal(patches.length, 2);
+  assert.ok(patches[1].content.startsWith("> **Q:** when does onyxia open"), patches[1].content);
+  const body = (c) => c.split("\n\n").slice(1).join("\n\n");
+  assert.equal(body(patches[1].content), body(patches[0].content), "same answer text");
 });
