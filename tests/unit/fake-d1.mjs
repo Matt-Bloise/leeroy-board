@@ -35,7 +35,19 @@ export function fakeD1(seed = {}, { lenient = false } = {}) {
           if (lenient) return { meta: { changes: 1, last_row_id: 1 } };
           throw new Error(`fake D1: unhandled run(): ${sql}`);
         },
-        async all() { log.push(sql); if (lenient) return { results: [] }; throw new Error(`fake D1: unhandled all(): ${sql}`); },
+        async all() {
+          log.push(sql);
+          // the compare-and-set statements of kv-cas.js updateKvJson: a row comes back only when the statement changed one
+          if (/^UPDATE kv_state SET json = \?, updated_at = \? WHERE key = \? AND json = \? RETURNING key/.test(sql)) {
+            if (kv.get(a[2]) !== a[3]) return { results: [] };
+            kv.set(a[2], a[0]); return { results: [{ key: a[2] }] };
+          }
+          if (/^INSERT OR IGNORE INTO kv_state \(key, json, updated_at\) VALUES \(\?, \?, \?\) RETURNING key/.test(sql)) {
+            if (kv.has(a[0])) return { results: [] };
+            kv.set(a[0], a[1]); return { results: [{ key: a[0] }] };
+          }
+          if (lenient) return { results: [] }; throw new Error(`fake D1: unhandled all(): ${sql}`);
+        },
       };
       return o;
     },

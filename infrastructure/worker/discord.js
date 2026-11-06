@@ -42,6 +42,7 @@ import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
+import { updateKvJson, KvConflictError } from "./kv-cas.js";
 import { flushBoardLines } from "./board-lines.js";
 import {
   broadcastToRoom,
@@ -1113,30 +1114,40 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       if (Object.keys(raw).length > 0) {
-        const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-        const doc = row ? JSON.parse(row.json) : { entries: [] };
-        const patch = {};
-        for (const [k, [v, free]] of Object.entries(raw)) {
-          const checked = validateSignupField(k, v, doc.options, { freeText: free });
-          if (!checked.ok) return signupRejection(checked.error === "field" ? `\`${String(k).slice(0, 20)}\` is not a sign-up field` : `invalid value for **${k}**`);
-          patch[k] = checked.value;
+        const stamp = new Date().toISOString();
+        // Compare-and-set (kv-cas.js), 5 tries (about 10 D1 calls, well under 3 seconds): Discord wants an answer within 3 seconds. Validation runs on the fresh document each try.
+        let cardsBefore = null;
+        let saved;
+        try {
+          saved = await updateKvJson(env, "signups", async (cur) => {
+            const doc = cur || { entries: [] };
+            const patch = {};
+            for (const [k, [v, free]] of Object.entries(raw)) {
+              const checked = validateSignupField(k, v, doc.options, { freeText: free });
+              if (!checked.ok) return { skip: true, result: { reject: checked.error === "field" ? `\`${String(k).slice(0, 20)}\` is not a sign-up field` : `invalid value for **${k}**` } };
+              patch[k] = checked.value;
+            }
+            cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
+            doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+            let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
+            if (!entry) {
+              entry = { slug: member.slug, name: byName };
+              doc.entries.push(entry);
+            }
+            for (const [k, v] of Object.entries(patch)) {
+              entry[k] = v;
+            }
+            entry.updated = stamp;
+            await recomputeSignupTallies(doc);
+            return { doc, result: { patch, entry } };
+          }, { tries: 5, now: () => stamp });
+        } catch (e) {
+          if (e instanceof KvConflictError) return signupRejection("the sign-ups card is busy, try again in a moment");
+          throw e;
         }
-        const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
-        doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-        let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
-        if (!entry) {
-          entry = { slug: member.slug, name: byName };
-          doc.entries.push(entry);
-        }
-        for (const [k, v] of Object.entries(patch)) {
-          entry[k] = v;
-        }
-        entry.updated = new Date().toISOString();
-        await recomputeSignupTallies(doc);
-
-        await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-          .bind(JSON.stringify(doc), entry.updated)
-          .run();
+        if (saved.result.reject) return signupRejection(saved.result.reject);
+        const { patch, entry } = saved.result;
+        const doc = saved.doc;
 
         await insertIntent(env, {
           slug: member.slug,
@@ -1881,26 +1892,35 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (parts[0] === "signup") {
       if (!member) return unknownMemberResponse();
       if (parts.length !== 3) return signupRejection("unrecognised button");
-      const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-      if (!row) return signupRejection("the sign-ups board is not set up yet");
-      const doc = JSON.parse(row.json);
-      const checked = validateSignupField(parts[1], parts[2], doc.options);
-      if (!checked.ok) return signupRejection("unrecognised button");
+      const stamp = new Date().toISOString();
       const field = parts[1];
-      const val = checked.value;
-      doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-      let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
-      if (!entry) {
-        entry = { slug: member.slug, name: byName };
-        doc.entries.push(entry);
+      let saved;
+      try {
+        // Compare-and-set (kv-cas.js), 5 tries (about 10 D1 calls, well under 3 seconds): the interaction must be answered within 3 seconds. Validation runs on the fresh document each try.
+        saved = await updateKvJson(env, "signups", async (cur) => {
+          if (!cur) return { skip: true, result: { reject: "the sign-ups board is not set up yet" } };
+          const doc = cur;
+          const checked = validateSignupField(field, parts[2], doc.options);
+          if (!checked.ok) return { skip: true, result: { reject: "unrecognised button" } };
+          const val = checked.value;
+          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+          let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
+          if (!entry) {
+            entry = { slug: member.slug, name: byName };
+            doc.entries.push(entry);
+          }
+          entry[field] = val;
+          entry.updated = stamp;
+          await recomputeSignupTallies(doc);
+          return { doc, result: { val, entry } };
+        }, { tries: 5, now: () => stamp });
+      } catch (e) {
+        if (e instanceof KvConflictError) return signupRejection("the sign-ups card is busy, try again in a moment");
+        throw e;
       }
-      entry[field] = val;
-      entry.updated = new Date().toISOString();
-      await recomputeSignupTallies(doc);
-
-      await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-        .bind(JSON.stringify(doc), entry.updated)
-        .run();
+      if (saved.result.reject) return signupRejection(saved.result.reject);
+      const { val, entry } = saved.result;
+      const doc = saved.doc;
 
       await insertIntent(env, {
         slug: member.slug,

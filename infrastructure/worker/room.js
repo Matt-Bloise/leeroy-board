@@ -17,6 +17,7 @@ export const MAX_SOCKETS = MAX_BROADCAST_RECIPIENTS; // open sockets; equal to t
 // {"type":"auth","key":"<member key>"}; it becomes a guest-owner when the page sends {"type":"auth","ask":"<its own ask id>"}
 // (the same random id that GET /api/ask?id= already treats as the capability). Anyone else gets presence nudges with no content.
 export const LIVE_AUTH_HEADER = "x-board-live-auth";
+const ASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // the same shape GET /api/ask?id= accepts as a credential
 const CONTENT_KEYS = ["q", "text", "question", "answer", "cites", "sources", "body", "error"];
 
 // Returns the message every socket may read: no "ask" item, and no question or answer fields on an "item" or "intent" object.
@@ -149,7 +150,7 @@ export class BoardRoom {
       const res = await authenticate(new Request("https://room.internal/auth", { headers: { Authorization: `Board ${data.key}` } }), this.env);
       if (res && res.slug) { ws.serializeAttachment({ ...cur, member: true }); ws.send(JSON.stringify({ type: "auth", ok: true })); return; }
       ws.send(JSON.stringify({ type: "auth", ok: false }));
-    } else if (typeof data.ask === "string" && data.ask.length >= 8 && data.ask.length <= 64) {
+    } else if (typeof data.ask === "string" && ASK_ID_RE.test(data.ask)) {
       ws.serializeAttachment({ ...cur, ask: data.ask });
       ws.send(JSON.stringify({ type: "auth", ok: true }));
     }
