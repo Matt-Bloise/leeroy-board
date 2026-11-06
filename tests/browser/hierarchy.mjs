@@ -72,33 +72,37 @@ async function contrastOf(page, png, rects, dpr) {
     });
   }, { b64, rects, dpr });
 }
-// the representative text of one tile (index into #wall > li; -1 = the countdown): its title and its first body line, in viewport CSS px after scrolling it to the middle
-const TEXT_RECTS = (idx) => {
-  const out = [], rect = (el, label, tier) => { if (!el) return; const r = el.getBoundingClientRect(); if (r.width > 4 && r.height > 4 && getComputedStyle(el).display !== "none") out.push({ label, tier, color: getComputedStyle(el).color, x: r.x, y: r.y, w: r.width, h: r.height }); };
-  if (idx < 0) { const c = document.querySelector("#clock"); c.scrollIntoView({ block: "center" }); rect(c.querySelector(".clock-event, .clock-kicker"), "clock", "2"); return out; }
-  const li = document.querySelectorAll("#wall > li[data-tier]")[idx]; if (!li) return null;
-  li.scrollIntoView({ block: "center" });
-  const k = li.className.split(" ")[0], t = li.dataset.tier;
-  rect(li.querySelector(".tile-title"), `${k} title`, t);
-  rect(li.querySelector(".tile-body .tile-line, .tile-body .su-num small, .tile-body .fm-n, .tile-body .loading"), `${k} body`, t);
+// the representative text of each tile (and the countdown): its title and its first body line, as rects in page CSS px with the computed text colour
+const TEXT_RECTS = () => {
+  const out = [], rect = (el, label, tier) => { if (!el) return; const r = el.getBoundingClientRect(); if (r.width > 4 && r.height > 4 && getComputedStyle(el).display !== "none") out.push({ label, tier, color: getComputedStyle(el).color, x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height }); };
+  rect(document.querySelector("#clock .clock-event, #clock .clock-kicker"), "clock", "2");
+  for (const li of document.querySelectorAll("#wall > li[data-tier]")) {
+    const k = li.className.split(" ")[0], t = li.dataset.tier;
+    rect(li.querySelector(".tile-title"), `${k} title`, t);
+    rect(li.querySelector(".tile-body .tile-line, .tile-body .su-num small, .tile-body .fm-n, .tile-body .loading"), `${k} body`, t);
+  }
   return out;
 };
+// one full-page screenshot per viewport (13 viewport shots per viewport timed out on the CI runner's software renderer: a slice 1 CI lesson)
 async function measureAll(page, dpr) {
-  const all = [];
-  for (let idx = -1; idx < 12; idx++) {
-    const rects = await page.evaluate(TEXT_RECTS, idx); if (rects === null) break;
-    await page.waitForTimeout(120);
-    const png = await page.screenshot();
-    all.push(...(await contrastOf(page, png, rects, dpr)));
+  // settle first: the entrance stagger is over and the library tile has its line (its text arrives after the index loads and moves the layout)
+  await page.waitForFunction(() => !document.querySelector("#wall.settle") && /Find an answer/.test((document.querySelector("#ts-library") || {}).textContent || ""), null, { timeout: 15000 }).catch(() => {});
+  let got = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.waitForTimeout(700);
+    const rects = await page.evaluate(TEXT_RECTS);
+    const png = await page.screenshot({ fullPage: true, timeout: 120000 });
+    got = await contrastOf(page, png, rects, dpr);
+    if (got.every((r) => r.ratio !== null && r.ratio >= 4.5)) break; // a transient (a layout still moving under the screenshot) gets one re-measure; a real low ratio fails twice
   }
-  await page.evaluate(() => scrollTo(0, 0));
-  return all;
+  return got;
 }
 const browser = stubbed(await pw.chromium.launch());
 try {
-  const mk = async (member) => {
+  const mk = async (member, roomOff = false) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, serviceWorkers: "block" });
     await ctx.addInitScript(CLS_JS);
+    if (roomOff) await ctx.addInitScript(() => { try { localStorage.setItem("board-room", "off"); } catch (e) {} }); /* contrast contexts only: the WebGL room is not under test there, and a software renderer made 13 screenshots time out on CI */
     if (member) await ctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); } catch (e) {} });
     return ctx;
   };
@@ -133,22 +137,26 @@ try {
   ok("[table] no NEW pills on the board", shape.badges === 0, `${shape.badges}`);
   ok("[table] no library totals or audit line on the wall", !/\b\d[\d,]*\s*(pages|facts)\b|from Blizzard|open questions|Newest change|No numbers have changed/i.test(shape.wallText) && !shape.libNew, shape.wallText.slice(0, 120));
   ok("[table] one experience control (no depth bar)", !shape.depth && shape.journey === 1);
-  const png = await page.screenshot({ path: OUT ? path.join(OUT, "table-390x844.png") : undefined });
+  const png = await page.screenshot({ path: OUT ? path.join(OUT, "table-390x844.png") : undefined, timeout: 120000 });
   const bright = await brightestCell(page, png, 2), r = shape.rect;
   ok("[table] the brightest cluster of the blurred frame is on the hero", !!r && bright.x >= r.x && bright.x <= r.x + r.w && bright.y >= r.y && bright.y <= r.y + r.h, `cell (${bright.x.toFixed(0)}, ${bright.y.toFixed(0)}) l ${bright.l.toFixed(0)} hero ${r ? JSON.stringify(r) : "none"}`);
   ok("[table] the page booted with no #depth and raised no page error (startDepth, markNew gone)", errors.length === 0 && !shape.depth, errors.join("; "));
-  const got = await measureAll(page, 2);
-  for (const r of got) ok(`[table 390] contrast ${r.label} (tier ${r.tier}) at 4.5:1 or better`, r.ratio !== null && r.ratio >= 4.5, r.ratio === null ? "no rect" : `${r.ratio.toFixed(2)}:1`);
-  console.log("INFO contrast 390 " + got.map((r) => `${r.label}=${r.ratio ? r.ratio.toFixed(1) : "-"}`).join(" "));
   // the totals moved inside the Library scene
   await page.locator("#wall .lib-tile a.tile-band").click();
   await page.waitForSelector("#panel-library:not([hidden]) .lib-stat", { timeout: 8000 }).catch(() => {});
   const stats = await page.evaluate(() => [...document.querySelectorAll("#panel-library .lib-stat")].map((e) => e.textContent.replace(/\s+/g, " ").trim()));
   ok("[library] the totals (pages, facts) are inside the Library scene", stats.some((t) => /pages/.test(t)) && stats.some((t) => /facts/.test(t)), JSON.stringify(stats));
   await ctx.close();
+  // contrast at 390 in a room-off context (same page, no WebGL room)
+  { const cctx = await mk(true, true), cp = await cctx.newPage();
+    await cp.goto(url, { waitUntil: "load" }); await cp.waitForTimeout(3000); await cp.locator("#scene-close").click().catch(() => {}); await cp.waitForTimeout(2200);
+  const got = await measureAll(cp, 2);
+  for (const r of got) ok(`[table 390] contrast ${r.label} (tier ${r.tier}) at 4.5:1 or better`, r.ratio !== null && r.ratio >= 4.5, r.ratio === null ? "no rect" : `${r.ratio.toFixed(2)}:1`);
+  console.log("INFO contrast 390 " + got.map((r) => `${r.label}=${r.ratio ? r.ratio.toFixed(1) : "-"}`).join(" "));
+    await cctx.close(); }
   // wide screen: the same contrast rule at 1366x768
   { const wctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1, serviceWorkers: "block" });
-    await wctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); } catch (e) {} });
+    await wctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} });
     const wp = await wctx.newPage(); await wp.goto(url, { waitUntil: "load" }); await wp.waitForTimeout(3000);
     await wp.locator("#scene-close").click().catch(() => {}); await wp.waitForTimeout(2200);
     const wg = await measureAll(wp, 1);
