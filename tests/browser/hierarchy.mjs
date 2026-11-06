@@ -163,12 +163,14 @@ try {
     for (const r of wg) ok(`[table 1366] contrast ${r.label} (tier ${r.tier}) at 4.5:1 or better`, r.ratio !== null && r.ratio >= 4.5, r.ratio === null ? "no rect" : `${r.ratio.toFixed(2)}:1`);
     console.log("INFO contrast 1366 " + wg.map((r) => `${r.label}=${r.ratio ? r.ratio.toFixed(1) : "-"}`).join(" "));
     await wctx.close(); }
-  // the Ledger tile with a poll-only, an empty and an open-only party (data/party.json rewritten in the page; no API)
-  const noBrain = new URL(url); noBrain.searchParams.delete("brain");
+  // the Ledger tile with a poll-only, an empty and an open-only party. The party reaches the page two ways: /api/bootstrap (the preview host and any ?brain= page, answered by the stub)
+  // and data/party.json (a local page with no API): both are rewritten, so the test means the same thing on CI and on a laptop.
   const ledger = async (mutate) => {
     const c = await mk(true);
-    await c.route("**/data/party.json", async (route) => { const r = await route.fetch(); const j = JSON.parse(await r.text()); mutate(j); await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(j) }); });
-    const pg = await c.newPage(); await pg.goto(noBrain.href, { waitUntil: "load" }); await pg.waitForTimeout(3000);
+    const rewrite = (pick) => async (route) => { const r = await route.fetch(); const j = JSON.parse(await r.text()); const party = pick(j); if (party) mutate(party); await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": route.request().headers()["origin"] || "*", "access-control-allow-credentials": "true" }, body: JSON.stringify(j) }); };
+    await c.route("**/data/party.json", rewrite((j) => j));
+    await c.route(/\/api\/bootstrap(\?|$)/, rewrite((j) => j.party));
+    const pg = await c.newPage(); await pg.goto(url, { waitUntil: "load" }); await pg.waitForTimeout(3000);
     const t = await pg.evaluate(() => document.querySelector("#ts-ledger").textContent.replace(/\s+/g, " ")); await c.close(); return t;
   };
   const far = 4e9;
