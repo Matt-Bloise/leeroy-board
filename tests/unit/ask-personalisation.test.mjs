@@ -281,3 +281,16 @@ test("property: 20 good answers built from grounded names come back unchanged", 
   }
   assert.ok(count >= 20);
 });
+
+test("a phrase with an embedded possessive is checked as separate names", () => {
+  for (const a of [
+    "Street Rat's Holy Shield is your main threat tool.",
+    "Bible Boi's Ragefire Chasm run is tonight.",
+    "Look at the asker's Red Fox's talents for this.",
+  ]) {
+    const r = g(a);
+    assert.ok(r.ok, `${a} -> ${r.bad}`);
+    assert.equal(r.answer, a);
+  }
+  assert.ok(!g("Street Rat's Frost Hammer is your main threat tool. Holy Shield helps you tank.").ok, "an invented segment is still caught");
+});

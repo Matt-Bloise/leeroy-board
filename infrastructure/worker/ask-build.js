@@ -145,15 +145,20 @@ function tokens(allowed) {
 function badPhrases(text, allowed) {
   const bad = [];
   for (const m of text.replace(/[*_`]/g, "").matchAll(PHRASE_RE)) {
-    const full = words(m[0]).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
-    if (allowed.includes(full.toLowerCase())) continue;
-    const core = trimPhrase(full, true).map(unpossess);
-    if (core.length < 2) continue;
-    const coreText = core.join(" ");
-    if (allowed.includes(coreText.toLowerCase())) continue;
-    // Every word of the name is individually grounded and the phrase is just two grounded things side by side ("Paladin Deadmines").
-    if (core.filter((x) => !CONNECTORS.has(x.toLowerCase())).every((x) => tokens(allowed).has(x.toLowerCase())) && core.filter((x) => !CONNECTORS.has(x.toLowerCase())).length <= 3) continue;
-    bad.push(full);
+    const whole = m[0].replace(/'s\b/g, "'s");
+    if (allowed.includes(unpossess(whole).toLowerCase()) || allowed.includes(whole.toLowerCase())) continue;
+    // A possessive ends a name: "Street Rat's Holy Shield" is two names, each checked on its own.
+    for (const seg of whole.split(/'s\b\s*/).filter(Boolean)) {
+      const full = words(seg).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
+      if (allowed.includes(full.toLowerCase())) continue;
+      const core = trimPhrase(full, true).map(unpossess);
+      if (core.length < 2) continue;
+      if (allowed.includes(core.join(" ").toLowerCase())) continue;
+      // Every word of the name is individually grounded and the phrase is just grounded things side by side ("Paladin Deadmines").
+      const sig = core.filter((x) => !CONNECTORS.has(x.toLowerCase()));
+      if (sig.every((x) => tokens(allowed).has(x.toLowerCase())) && sig.length <= 3) continue;
+      bad.push(full);
+    }
   }
   return bad;
 }
