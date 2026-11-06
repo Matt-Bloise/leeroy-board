@@ -27,7 +27,8 @@ function makeEnv(seeds) {
         }
         return /COUNT\(\*\)/i.test(sql) ? { count: 0 } : null;
       },
-      all: async () => ({ results: [] }),
+      // the compare-and-set write of kv-cas.js (UPDATE ... RETURNING key): recorded like a write, and it wins
+      all: async () => (/RETURNING key/.test(sql) ? (writes.push({ sql, args }), { results: [{ key: "signups" }] }) : { results: [] }),
       run: async () => (writes.push({ sql, args }), { success: true, meta: { changes: 1, last_row_id: writes.length } }),
     };
     return stmt;
