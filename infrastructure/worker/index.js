@@ -36,7 +36,7 @@ import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
-import { updateKvJson, KvConflictError } from "./kv-cas.js";
+import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
@@ -215,7 +215,7 @@ export async function broadcastToRoom(env, payload) {
   }
 }
 
-export async function buildPartySheetsFromD1(env) {
+export async function buildPartySheetsFromD1(env, { persist = true } = {}) {
   const now = new Date().toISOString();
 
   // 1. Fast path: Read pre-materialized party sheets from kv_state (single point lookup)
@@ -269,6 +269,7 @@ export async function buildPartySheetsFromD1(env) {
   } catch {}
 
   const party = [...bySlug.values()];
+  if (!persist) return { party, seq: Date.now() };
   try {
     await env.DB.prepare(
       "INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, ?)"
@@ -280,51 +281,49 @@ export async function buildPartySheetsFromD1(env) {
   return { party, seq: Date.now() };
 }
 
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at }) {
+// The three public keys of the party document that come from a member's sheet.
+const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
+
+// The public party document, re-derived from the final sheet state (never from the request that just arrived), so concurrent visible and hide
+// writes in any order end in the same place: a hidden field is absent from the document. Hidden fields are removed for every member (self-healing);
+// a visible value is copied only for the member and field written, as before. Mutates and returns partyDoc.
+export function projectPublicParty(partyDoc, sheets, slug, field) {
+  if (!partyDoc || !Array.isArray(partyDoc.members)) return partyDoc;
+  for (const m of partyDoc.members) {
+    const sheet = (sheets || []).find((s) => (s.name || "").toLowerCase() === String(m.name || "").toLowerCase());
+    if (!sheet) continue;
+    for (const [sheetField, key] of Object.entries(PUBLIC_KEY)) {
+      const f = sheet.fields && sheet.fields[sheetField];
+      if (!f) continue;
+      if (f.visible === false) delete m[key];
+      else if (sheet.slug === slug && sheetField === field && f.value !== undefined && f.value !== null) m[key] = String(f.value);
+    }
+  }
+  return partyDoc;
+}
+
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible, source, at }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
 
-  // 1. The event log is append-only, so the row is safe to write first.
-  await env.DB.prepare(
-    "INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  ).bind(slug, name, field, valJson, visible ? 1 : 0, source, now).run();
-
-  // 2. Materialised party sheets: compare-and-set, so overlapping writes (other fields, other members) are never lost.
-  const saved = await updateKvJson(env, "party_sheets", async (cur) => {
-    const currentParty = Array.isArray(cur) && cur.length ? cur : (await buildPartySheetsFromD1(env)).party;
-    let memberSheet = currentParty.find((m) => m.slug === slug);
-    if (!memberSheet) {
-      memberSheet = { slug, name: name || slug, fields: {}, updated: now };
-      currentParty.push(memberSheet);
-    }
-    memberSheet.fields = memberSheet.fields || {};
-    memberSheet.fields[field] = {
-      value,
-      visible: Boolean(visible),
-      source: source || "board",
-      at: now,
-    };
-    memberSheet.updated = now;
-    return { doc: currentParty };
+  // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
+  // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
+  const saved = await commitSheetWrite(env, {
+    event: { slug, name: name || slug, field, valJson, visible, source: source || "board", at: now },
+    compute: async (cur, partyDoc) => {
+      const currentParty = Array.isArray(cur) ? cur : (await buildPartySheetsFromD1(env, { persist: false })).party;
+      let memberSheet = currentParty.find((m) => m.slug === slug);
+      if (!memberSheet) {
+        memberSheet = { slug, name: name || slug, fields: {}, updated: now };
+        currentParty.push(memberSheet);
+      }
+      memberSheet.fields = memberSheet.fields || {};
+      memberSheet.fields[field] = { value, visible: Boolean(visible), source: source || "board", at: now };
+      memberSheet.updated = now;
+      return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
+    },
   });
-  const currentParty = saved.doc;
-
-  // 3. Also sync common fields back into kv_state['party'] (same compare-and-set).
-  try {
-    const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
-    if (PUBLIC_KEY[field] && (visible === false || (value !== undefined && value !== null))) {
-      await updateKvJson(env, "party", async (partyDoc) => {
-        if (!partyDoc) return { skip: true };
-        const m = (partyDoc.members || []).find((x) => (x.name || "").toLowerCase() === name.toLowerCase());
-        if (!m) return { skip: true };
-        // The party document is public (GET /data/party): a hidden field is never copied into it, and a field that turns hidden loses the
-        // value it published earlier.
-        if (visible === false) delete m[PUBLIC_KEY[field]];
-        else m[PUBLIC_KEY[field]] = String(value);
-        return { doc: partyDoc };
-      });
-    }
-  } catch {}
+  const currentParty = saved.sheets;
 
   await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
   await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
