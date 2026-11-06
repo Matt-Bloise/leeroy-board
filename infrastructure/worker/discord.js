@@ -506,7 +506,8 @@ function launchHype(toLaunch) {
 
 // One short quoted line naming the question an /ask reply answers: flattened, mentions defused, no link previews.
 export function quoteQuestion(q) {
-  const flat = String(q || "").replace(/\s+/g, " ").trim().slice(0, 160).replace(/@/g, "@\u200b").replace(/[<>`|~]/g, "").replace(/:\/\//g, ":​//");
+  const flat0 = String(q || "").replace(/\s+/g, " ").trim();
+  const flat = Array.from(flat0).slice(0, 160).join("").replace(/@/g, "@\u200b").replace(/[<>`|~*_]/g, "").replace(/:\/\//g, ":​//");
   return `> **Q:** ${flat}`;
 }
 
