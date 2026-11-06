@@ -1093,8 +1093,8 @@ export default {
           const ws = await webSessionFrom(req, env, Date.now());
           if (ws) {
             row = await env.DB.prepare(
-              "SELECT * FROM ask_turns WHERE by_name = ? OR share = 1 ORDER BY created_at DESC LIMIT 1"
-            ).bind(ws.name).first();
+              "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
+            ).first();
           }
         }
 
