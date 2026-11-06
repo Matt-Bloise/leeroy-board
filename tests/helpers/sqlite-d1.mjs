@@ -16,7 +16,7 @@ export function makeD1(db = new DatabaseSync(":memory:")) {
       all: async () => ({ results: db.prepare(sql).all(...args), success: true }),
       first: async () => db.prepare(sql).get(...args) || null,
       run: async () => { const r = db.prepare(sql).run(...args); return { success: true, meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } }; },
-      _run: () => { const r = db.prepare(sql).run(...args); return { success: true, meta: { changes: Number(r.changes) } }; },
+      _run: () => { if (/^\s*select/i.test(sql)) return { success: true, results: db.prepare(sql).all(...args), meta: {} }; const r = db.prepare(sql).run(...args); return { success: true, meta: { changes: Number(r.changes) } }; },
     };
     return o;
   };

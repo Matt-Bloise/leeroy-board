@@ -302,7 +302,7 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
   return partyDoc;
 }
 
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible, source, at }) {
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
 
@@ -1038,6 +1038,7 @@ export default {
         const read = await readJsonCapped(req);
         if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
         const body = read.body;
+        // TODO(follow-up, PR 203): unguarded read-modify-write of signups; move to updateKvJson.
         const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
         const doc = row ? JSON.parse(row.json) : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
         const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
@@ -1470,6 +1471,7 @@ export default {
         if (kind === "journey") {
           const jVal = body.patch && body.patch.journey;
           if (["guided", "curious", "everything"].includes(jVal)) {
+            // TODO(follow-up, PR 203): unguarded read-modify-write of signups; move to updateKvJson.
             const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
             if (row) {
               const doc = JSON.parse(row.json);
@@ -1511,15 +1513,20 @@ export default {
             await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
               .bind(JSON.stringify(rows), now)
               .run();
-            await recordSheetEventInD1(env, url.origin, {
-              slug: member.slug,
-              name: member.name,
-              field: "launch_state",
-              value: lState,
-              visible: true,
-              source: "board",
-              at: now,
-            });
+            try {
+              await recordSheetEventInD1(env, url.origin, {
+                slug: member.slug,
+                name: member.name,
+                field: "launch_state",
+                value: lState,
+                visible: true,
+                source: "board",
+                at: now,
+              });
+            } catch (e) {
+              if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
+              throw e;
+            }
             await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/launch.json"]);
             await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
           }

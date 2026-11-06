@@ -45,7 +45,7 @@ function stubDb() {
     };
     return stmt;
   };
-  const batch = async (stmts) => stmts.map(() => ({ success: true, meta: { changes: 1 } }));
+  const batch = async (stmts) => stmts.map(() => ({ success: true, results: [{ ok: 1 }], meta: { changes: 1 } }));
   return { prepare, batch, writes };
 }
 

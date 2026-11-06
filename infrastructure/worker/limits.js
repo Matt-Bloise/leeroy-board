@@ -45,7 +45,8 @@ export const nameKey = (s) => String(s || "").normalize("NFKC").toLowerCase().re
 export function upsertSignupEntry(doc, member) {
   const entries = Array.isArray(doc.entries) ? doc.entries : (doc.entries = []);
   const want = nameKey(member.name), lower = String(member.name || "").toLowerCase();
-  const isMine = (e) => e && typeof e === "object" && (e.slug ? e.slug === member.slug || String(e.name || "").toLowerCase() === lower : (want !== "" && nameKey(e.name) === want) || String(e.name || "").toLowerCase() === lower);
+  // A populated slug is authoritative: such a row is this member's only if the slug is equal. Name matching is for slug-less (seed) rows only.
+  const isMine = (e) => e && typeof e === "object" && (e.slug ? e.slug === member.slug : (want !== "" && nameKey(e.name) === want) || String(e.name || "").toLowerCase() === lower);
   const mine = entries.filter(isMine);
   if (!mine.length) {
     const fresh = { slug: member.slug, name: member.name };

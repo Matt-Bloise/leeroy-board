@@ -170,9 +170,9 @@ test("a 409 after exhausted retries leaves no ghost event for a later rebuild", 
   // every sheet commit loses its race: the row's text changes between the read and the batch
   env.DB.prepare = (sql) => {
     const st = realPrepare(sql);
-    if (/^SELECT json FROM kv_state WHERE key = 'party'$/.test(sql)) {
-      const first = st.first;
-      st.first = async () => { const r = await first.call(st); env.raw.raw.prepare("UPDATE kv_state SET json = json || ' ' WHERE key IN ('party_sheets')").run(); return r; };
+    if (/FROM kv_state WHERE key IN \('party_sheets', 'party'\)/.test(sql)) {
+      const all = st.all;
+      st.all = async () => { const r = await all.call(st); env.raw.raw.prepare("UPDATE kv_state SET json = json || ' ' WHERE key IN ('party_sheets')").run(); return r; };
     }
     return st;
   };
@@ -200,4 +200,40 @@ test("first write on an empty kv_state succeeds on attempt 1, with no retry slee
   assert.equal(sleeps, 0, "no retry sleep");
   assert.equal(kv(env, "party_sheets").find((p) => p.slug === "bloise").fields.race.value, "orc");
   assert.equal(env.raw.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events").get().n, 1);
+});
+
+test("a caller that omits visible leaves the field visible (default true) and published", async () => {
+  const env = await envWithParty();
+  const { recordSheetEventInD1 } = await import("../../infrastructure/worker/index.js");
+  await recordSheetEventInD1(env, "https://api.test", { slug: "bloise", name: "Bloise", field: "race", value: "Orc" });
+  assert.equal(bloiseParty(env).race, "Orc");
+  const f = kv(env, "party_sheets").find((p) => p.slug === "bloise").fields.race;
+  assert.equal(f.visible, true); assert.equal(f.source, "board");
+});
+
+test("POST /intent launch: a lost race answers 409, not 500", async () => {
+  const env = await envWithParty();
+  const real = env.DB.prepare;
+  env.DB.prepare = (sql) => {
+    const st = real(sql);
+    if (/FROM kv_state WHERE key IN \('party_sheets', 'party'\)/.test(sql)) {
+      const all = st.all;
+      st.all = async () => { const r = await all.call(st); env.raw.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify([{ slug: "n", name: "n", fields: {}, updated: String(Math.random()) }])); return r; };
+    }
+    return st;
+  };
+  const res = await post(env, "bloise", "/intent", { kind: "launch", patch: { state: "in" } });
+  env.DB.prepare = real;
+  assert.equal(res.status, 409);
+});
+
+test("contention never costs more than 8 attempts (subrequest budget)", async () => {
+  const env = await envWithParty();
+  let calls = 0;
+  const real = env.DB.prepare;
+  env.DB.prepare = (sql) => { calls++; const st = real(sql); if (/FROM kv_state WHERE key IN \('party_sheets', 'party'\)/.test(sql)) { const all = st.all; st.all = async () => { const r = await all.call(st); env.raw.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify([{ slug: "n", name: "n", fields: {}, updated: String(Math.random()) }])); return r; }; } return st; };
+  const res = await post(env, "bloise", "/sheet", { field: "race", value: "Orc" });
+  env.DB.prepare = real;
+  assert.equal(res.status, 409);
+  assert.ok(calls < 50, `${calls} D1 statements prepared`);
 });

@@ -92,3 +92,17 @@ test("upsertSignupEntry never takes another person's row", () => {
   upsertSignupEntry(doc3, { slug: "x", name: "!!!" });
   assert.equal(doc3.entries.length, 2);
 });
+
+test("a populated slug is authoritative: same name, different slugs stay two rows and neither write claims the other", () => {
+  const doc = { entries: [{ slug: "a-one", name: "Alex", pack: "no", updated: "1" }, { slug: "a-two", name: "Alex", rsvp: "in", updated: "2" }] };
+  const e1 = upsertSignupEntry(doc, { slug: "a-one", name: "Alex" });
+  assert.equal(doc.entries.length, 2);
+  assert.equal(e1.slug, "a-one"); assert.equal(e1.pack, "no");
+  const e2 = upsertSignupEntry(doc, { slug: "a-two", name: "Alex" });
+  assert.equal(doc.entries.length, 2);
+  assert.equal(e2.slug, "a-two"); assert.equal(e2.rsvp, "in");
+  // a third member with the same name and a new slug gets a row of their own
+  upsertSignupEntry(doc, { slug: "a-three", name: "Alex" });
+  assert.equal(doc.entries.length, 3);
+  assert.deepEqual(doc.entries.map((x) => x.slug).sort(), ["a-one", "a-three", "a-two"]);
+});
