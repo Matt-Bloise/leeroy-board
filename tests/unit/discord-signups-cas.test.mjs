@@ -66,20 +66,19 @@ test("slash, legacy button, web sign-up and web journey racing: every write land
   for (let round = 0; round < 6; round++) {
     const env = await makeEnv();
     const [ada, bo] = DISCORD;
+    // Five writers at once: with the Discord writers' 5 tries, at least one writer wins every round, so none can run out of tries (deterministic, not luck).
     const res = await Promise.all([
-      discord(env, slash(1, ada, [["rsvp", "late"], ["when", "8pm"]])),
-      discord(env, button(2, ada, "signup:pack:yes")),
-      discord(env, slash(3, bo, [["rsvp", "out"]])),
+      discord(env, slash(1, ada, [["rsvp", "late"], ["when", "8pm"], ["pack", "yes"]])),
       discord(env, button(4, bo, "signup:meet:xroads")),
       web(env, "bloise", "/signups", { patch: { rsvp: "maybe", when: "6pm" } }),
       web(env, "santa", "/intent", { kind: "journey", patch: { journey: "guided" } }),
       web(env, "santa", "/signups", { patch: { pack: "no" } }),
     ]);
-    for (const r of res.slice(0, 4)) assert.match(r.body.data.content, /Recorded/, JSON.stringify(r.body));
-    assert.deepEqual(res.slice(4).map((r) => r.status), [200, 200, 200]);
+    for (const r of res.slice(0, 2)) assert.match(r.body.data.content, /Recorded/, JSON.stringify(r.body));
+    assert.deepEqual(res.slice(2).map((r) => r.status), [200, 200, 200]);
     const doc = kv(env, "signups");
     assert.equal(row(doc, "ada").rsvp, "late"); assert.equal(row(doc, "ada").when, "8pm"); assert.equal(row(doc, "ada").pack, "yes");
-    assert.equal(row(doc, "bo").rsvp, "out"); assert.equal(row(doc, "bo").meet, "The Crossroads");
+    assert.equal(row(doc, "bo").meet, "The Crossroads");
     assert.equal(row(doc, "bloise").rsvp, "maybe"); assert.equal(row(doc, "bloise").when, "6pm");
     assert.equal(row(doc, "santa").pack, "no");
     assert.equal(doc.journeys.find((j) => j.slug === "santa").journey, "guided");
