@@ -158,3 +158,46 @@ test("the real Discord /ask path: a repeated question edits the reply with the s
   const body = (c) => c.split("\n\n").slice(1).join("\n\n");
   assert.equal(body(patches[1].content), body(patches[0].content), "same answer text");
 });
+
+// ---- follow-up polish ----
+test("quoteQuestion: an emoji at the 160 boundary never leaves a lone surrogate; * and _ are stripped", () => {
+  const q = quoteQuestion("x".repeat(159) + "\u{1F525}\u{1F525}");
+  const body = q.slice("> **Q:** ".length);
+  assert.ok(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(body), "no lone surrogate");
+  assert.equal(Array.from(body).length, 160);
+  assert.ok(!/[*_]/.test(quoteQuestion("**bold __under_ *x*").slice("> **Q:** ".length)));
+});
+
+test("stripEggLine ignores an egg line shorter than 8 characters", () => {
+  assert.equal(stripEggLine("The raid opens Dec 9. Ok.", "Ok."), "The raid opens Dec 9. Ok.");
+  assert.equal(stripEggLine("Fine. Extra chicken please.", "Extra chicken please."), "Fine.");
+});
+
+test("bad stored cites JSON does not turn a good stored answer into an error row", async () => {
+  const { env, calls } = makeEnv();
+  const first = await ask(env);
+  env.DB.raw.prepare("UPDATE ask_turns SET cites_json = ? WHERE id = ?").run("{not json", first.id);
+  const again = await ask(env);
+  assert.equal(again.status, "answered");
+  assert.equal(again.answer, first.answer);
+  assert.equal(again.cites_json, "[]");
+  assert.equal(calls.length, 1);
+});
+
+test("a member ask carries two hashes, yet the 50-row lookup still reaches about 50 turns back", async () => {
+  const { env, calls } = makeEnv();
+  const ask2 = async (question) => {
+    const id = `d${++n}`;
+    await insertAskTurn(env, { id, byName: "Red Fox", question, provider: "workers-ai", share: true, createdAt: new Date().toISOString() }, { slug: "red-fox", discordId: "100000000000000001" });
+    const silence = [console.error, console.warn]; console.error = () => {}; console.warn = () => {};
+    try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by: "Red Fox", memberSlug: "red-fox", question, provider: "workers-ai", share: true, isMember: true }); }
+    finally { [console.error, console.warn] = silence; }
+    return env.DB.raw.prepare("SELECT * FROM ask_turns WHERE id = ?").get(id);
+  };
+  const first = await ask2("When does Onyxia open?");
+  for (let i = 0; i < 30; i++) await ask2(`filler question number ${i}?`);
+  const before = calls.length;
+  const again = await ask2("When does Onyxia open?");
+  assert.equal(calls.length, before, "reused: duplicates from the two hashes do not eat the limit");
+  assert.equal(again.answer, first.answer);
+});

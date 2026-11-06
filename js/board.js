@@ -2014,7 +2014,12 @@ function goScene(k) {
 
 const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
 function shown(el) {
-  for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden || n.inert) return false;
+  for (let n = el; n && n.nodeType === 1; n = n.parentNode) {
+    if (n.hidden || n.inert) return false;
+    // content of a closed <details> is not focusable (only its first <summary> is), though Chromium still reports client rects for it
+    const d = n.parentNode;
+    if (d && d.nodeType === 1 && d.tagName === "DETAILS" && !d.open && n !== d.querySelector(":scope > summary")) return false;
+  }
   return !el.getClientRects || el.getClientRects().length > 0;
 }
 const focusables = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && el.getAttribute("tabindex") !== "-1" && shown(el));
@@ -2025,7 +2030,8 @@ function trapFocus(e) {
   const list = [...new Set([...sceneFocus(), ...senseBox().flatMap((n) => (n.matches(FOCUSABLE) ? (shown(n) ? [n] : []) : focusables(n)))])];
   e.preventDefault(); if (!list.length) return;
   const i = list.indexOf(document.activeElement), n = list.length;
-  list[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n].focus();
+  // a candidate that refuses focus (hidden since the list was built) is skipped, so Tab never stalls on one element
+  for (let k = 0, at = i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n; k < n; k++, at = (at + (e.shiftKey ? n - 1 : 1)) % n) { list[at].focus(); if (document.activeElement === list[at]) return; }
 }
 
 function showKeys(on) {

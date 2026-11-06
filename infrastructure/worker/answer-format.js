@@ -80,7 +80,7 @@ function tidy(line) {
 // Removes the chicken line (the persona's or the default) wherever the model wrote it, whole line or trailing sentence.
 export function stripEggLine(text, line) {
   if (typeof text !== "string" || !text) return text;
-  const lines = new Set([DEFAULT_EGG.line, line].filter(Boolean).map((l) => l.trim()));
+  const lines = new Set([DEFAULT_EGG.line, line].filter(Boolean).map((l) => l.trim()).filter((l) => l.length >= 8)); // a very short line would be stripped from every answer
   let out = text;
   for (const l of lines) {
     const esc = [...l].map((ch) => (".*+?^${}()|[]".includes(ch) || ch.charCodeAt(0) === 92 ? String.fromCharCode(92) + ch : ch)).join("");
