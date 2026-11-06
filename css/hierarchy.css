@@ -1,0 +1,23 @@
+/* Cinematic slice 1: one hero, three luminance tiers, loaded after every other stylesheet.
+   Light means relevance (docs/cinematic, cinematic-craft-synthesis): the Sign-ups tile (the member's own answer to the invitation) is the hero at full brightness,
+   context (the countdown, the five, the library search) sits at about 66 percent, periphery (the rest of the wall) at about 46 percent.
+   Dimming is a brightness filter, so text keeps its hue and stays above 4.5:1 (tests/browser/hierarchy.mjs checks the blurred frame, text size and CLS).
+   Touching a tile (hover, focus, pointer press) brings it to full brightness: the touched object brightens, nothing else moves.
+   OLED: no channel-255 block, and the hero glow is candle gold at low alpha, not white. Durations and ease come from css/motion-tokens.css. */
+:root {
+  --tier-hero: 1;
+  --tier-context: 0.66;
+  --tier-periphery: 0.46;
+}
+#wall > li, #clock { transition: filter var(--cin-t-hover) var(--cin-ease); }
+#wall > li[data-tier="2"], #clock[data-tier="2"] { filter: brightness(var(--tier-context)); }
+#wall > li[data-tier="3"] { filter: brightness(var(--tier-periphery)); }
+#wall > li[data-tier="1"] { filter: none; }
+#wall > li:is(:hover, :focus-within, :active), #clock:is(:hover, :focus-visible) { filter: none; }
+/* the hero: first in the wall, full width, a warm edge (candle gold at low alpha) */
+#wall > li[data-tier="1"] > .tile { box-shadow: 0 0 0 1px var(--brass), 0 0 28px rgba(229, 169, 60, 0.26); }
+#wall > li[data-tier="1"] .tile-title { font-size: calc(var(--step-1) * 1.15); }
+/* one experience control: the Guided, Curious, Everything bar. The depth bar is gone from the page; nothing to style for it. */
+@media (max-width: 639px) {
+  #wall > li[data-tier="1"] { grid-column: 1 / -1 !important; }
+}

@@ -499,13 +499,13 @@ function renderTiles() {
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], "."]), wallGloss(L.gloss || {}, ["They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."], "tl-more"),
     h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
-    minis([[p.members.length, "players"], [c.buffs ? c.buffs.list.filter((b) => !b.sixth).length : c.synergy.length, "buffs"]]),
+    h("span", { class: "tile-line", text: "How can you help? Who covers whom." }),
     h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
-    (() => { const mm = minis([[stillOpen.length, "still open"], ...(p.polls.length ? [[p.polls.length, p.polls.length === 1 ? "poll taking votes" : "polls taking votes"]] : [])]); if (stillOpen.length && mm.firstChild) mm.firstChild.setAttribute("data-land", "ledger.open-0"); return mm; })(),
+    h("span", { class: "tile-line", ...(stillOpen.length ? { "data-land": "ledger.open-0" } : {}) }, h("b", { text: stillOpen.length ? "Needs a vote: " : "" }), stillOpen.length ? wholeClause(stillOpen[0].title, 70) : "Nothing is open right now."),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
@@ -2672,9 +2672,8 @@ function libCat(key) {
 }
 function renderLibTile() {
   const ix = LIBD.index; if (!ix) return;
-  const T = ix.totals, c = ix.changes[0], box = $("#ts-library-new");
-  fill("library", minis([[nf.format(T.pages), "pages"], [nf.format(T.facts), "facts"], [nf.format(T.blizzard), "from Blizzard"], [nf.format(T.open), "open questions"]]));
-  if (box) box.replaceChildren(...(c && ix.changes.length >= 3 ? [h("small", { text: `Newest change, ${libDay(c.date)}` }), h("span", { text: wholeClause(`${libTitle(c.page)}: ${c.text}`, 64) })] : [h("small", { text: "Changes" }), h("span", { class: "clamp", text: libQuiet(ix) })]));
+  /* Slice 1: the table carries one line and the search box; the totals and the newest change live inside the Library scene (lib-head). */
+  fill("library", h("span", { class: "tile-line", text: "Find an answer in the library." }));
 }
 const libQuiet = (ix) => `No numbers have changed since ${libDay(ix.changes_since)}; ${plural(ix.rechecks, "recheck", "rechecks")} confirmed them.`;
 function libPrefetch() { libIndex().catch(() => fill("library", h("span", { class: "tile-line", text: "The library did not load." }))); }
@@ -3636,12 +3635,7 @@ function warmNext() {
 }
 addEventListener("board-mode", () => { CT.sig = ""; try { if (D.timeline) tick(); } catch (e) {} if (!roomHas("play") && WARM.held) { WARM.held = false; warmLater(); } });
 function warmLater() { if (WARM.done) return; (window.requestIdleCallback || ((f) => setTimeout(f, 200)))(warmNext, { timeout: 1500 }); }
-function markNew() {
-  const seen = MEM.seenMap();
-  const badge = (k, stamp) => { const t = document.querySelector(`#board [data-scene="${k}"] .tile-title`); if (!t || !seen[k] || !stamp || Date.parse(stamp) <= seen[k] || t.parentNode.querySelector(".new-badge")) return; t.parentNode.insertBefore(h("span", { class: "new-badge", text: "New" }), t.nextSibling); };
-  if (D.signups) badge("signups", D.signups.updated);
-  whenOffTonight(() => libIndex().then((ix) => { if (ix && ix.changes[0]) badge("library", `${ix.changes[0].date}T23:59:59Z`); }).catch(() => {}));
-}
+/* Slice 1: no NEW pills on the table. What changed since a visit is slice 3 (since-last-visit marks), not a pill on a tile title. */
 async function boot(mode, sdk) {
   try { performance.mark("board-boot"); } catch (e) {}
   $("#gate").hidden = true;
@@ -3697,7 +3691,7 @@ async function boot(mode, sdk) {
   whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
   KIT.emit("rendered");
   if (!early) route();
-  markNew(); startDepth();
+  startDepth();
   KIT.emit("booted", mode);
   setTimeout(settleCheck, 1500);
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = PRESENCE_WEB;
@@ -3706,7 +3700,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
