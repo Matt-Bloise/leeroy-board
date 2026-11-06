@@ -966,7 +966,7 @@ export async function findRecentSameAnswer(env, { intentId, question, share }) {
   try {
     const since = new Date(Date.now() - REUSE_WINDOW_MS).toISOString();
     const { results } = await env.DB.prepare(
-      "SELECT t.id, t.answer, t.cites_json, t.question FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
+      "SELECT DISTINCT t.id, t.answer, t.cites_json, t.question, t.answered_at FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
         "WHERE a1.intent_id = ? AND t.id <> ? AND t.status = 'answered' AND t.answer IS NOT NULL AND t.share = ? AND t.answered_at > ? " +
         "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' AND COALESCE(t.model, '') <> 'reused-answer' ORDER BY t.answered_at DESC LIMIT 50"
     ).bind(String(intentId), String(intentId), share ? 1 : 0, since).all();
@@ -1002,8 +1002,14 @@ export async function answerWithAi({
     const prior = await findRecentSameAnswer(env, { intentId, question, share });
     if (prior) {
       const reusedAt = nowIso();
+      // Bad stored JSON must not turn a good stored answer into an error row.
+      let reusedCites = [];
+      try {
+        const parsed = JSON.parse(prior.cites_json || "[]");
+        if (Array.isArray(parsed)) reusedCites = parsed;
+      } catch {}
       await env.DB.prepare("UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?")
-        .bind(prior.answer, prior.cites_json || "[]", "reused-answer", Date.now() - t0, reusedAt, intentId)
+        .bind(prior.answer, JSON.stringify(reusedCites), "reused-answer", Date.now() - t0, reusedAt, intentId)
         .run();
       // Carry the "More" / "Sources" text over so the buttons work on the repeated answer too. A failed copy only means no buttons.
       await env.DB.prepare("INSERT OR REPLACE INTO answer_details (intent_id, more, sources, asker_hash, message_id, created_at) SELECT ?, more, sources, NULL, NULL, ? FROM answer_details WHERE intent_id = ?")
@@ -1012,7 +1018,7 @@ export async function answerWithAi({
         .catch(() => {});
       const broadcastSlug0 = memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-");
       if (share) {
-        const item = { id: wireId(intentId), kind: "ask", by, q: question, text: question, answer: prior.answer, cites: JSON.parse(prior.cites_json || "[]"), model: "reused-answer", share: true, status: "answered", at: reusedAt };
+        const item = { id: wireId(intentId), kind: "ask", by, q: question, text: question, answer: prior.answer, cites: reusedCites, model: "reused-answer", share: true, status: "answered", at: reusedAt };
         await broadcastToRoom(env, { type: "ask", slug: broadcastSlug0, ask: item });
       } else {
         await broadcastToRoom(env, { type: "ask", slug: broadcastSlug0 });
