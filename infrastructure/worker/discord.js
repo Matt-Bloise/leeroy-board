@@ -872,9 +872,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           persona,
           isPrivate,
           askerId: String(user.id || ""),
-          wrap: (a) => quoteQuestion(question) + "
-
-" + a,
+          wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
           answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
         })
       );
