@@ -1585,7 +1585,7 @@ const TITLES = { tonight: "Next steps", timeline: "Dates", get five() { return p
 const PAGE_TITLE = { base: "" };
 function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
-const SC = { how: null, open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
+const SC = { scrollY: null, how: null, open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
@@ -1607,6 +1607,9 @@ function dropPanel(p) { const st = p.style; if (st.position) { st.position = "";
 function later(f, ms = 200) { KIT.deferred = (KIT.deferred || 0) + 1; const idle = () => (typeof requestIdleCallback === "function" ? requestIdleCallback(f, { timeout: ms }) : setTimeout(f, 0)); if (typeof requestAnimationFrame === "function") requestAnimationFrame(idle); else idle(); }
 let TOUCHED = -1e9; addEventListener("pointerdown", (e) => { if (e.isTrusted) TOUCHED = performance.now(); }, { capture: true, passive: true });
 const hap = (n) => { try { if (window.BoardHaptics && performance.now() - TOUCHED < 1500) window.BoardHaptics.fire(n); } catch (e) {} };
+/* Slice 3: the tile whose scene is open carries .is-open (css/open-return.css dims its siblings to tier 3); the wall scroll is kept across an open and restored on close. */
+const openTile = (key) => { document.querySelectorAll("#wall > li.is-open").forEach((l) => l.classList.remove("is-open")); const t = key && tileOf(key), li = t && t.closest && t.closest("#wall > li"); if (li) li.classList.add("is-open"); };
+const restoreScroll = () => { const y = SC.scrollY; if (y == null) return; scrollTo(0, y); requestAnimationFrame(() => { if (SC.scrollY === y) scrollTo(0, y); }); };
 const TILES = new Map(), tileOf = (key) => { let t = TILES.get(key); if (!t || !t.isConnected) { t = document.querySelector(`#board [data-scene="${key}"]`); if (t) TILES.set(key, t); } return t; };
 const PREPPED = new Set(), byId = (id) => $(`#${id}`);
 function prepare(key) { if (PREPPED.has(key) || !$(`#panel-${key}`)) return; PREPPED.add(key); if (key === "timeline" && D.timeline) renderTimeline(); }
@@ -1621,7 +1624,7 @@ function selectPanel(key, crossFade) {
   MEM.set("depth", key === "tonight" ? "tonight" : key === "library" ? "library" : "wall");
   MEM.seen(key);
   markDepth();
-  const prev = SC.open; SC.open = key;
+  const prev = SC.open; SC.open = key; openTile(key);
   $("#sheet-title").textContent = TITLES[key];
   setPageTitle(key);
   $("#sheet-sub").textContent = SUBTITLE[key] || "";
@@ -1839,8 +1842,13 @@ function viewMorph(from, to, update, closing, from2, to2) {
   layer.classList.add("morph"); root.classList.toggle("vt-close", !!closing);
   from.style.viewTransitionName = "scene-band"; if (from2) from2.style.viewTransitionName = "scene-head";
   try {
-    const vt = document.startViewTransition(() => { nm(from, null, ""); nm(from2, null, ""); if (update()) { nm(null, to, "scene-band"); nm(null, to2, "scene-head"); } });
-    vt.finished.then(clear, clear);
+    /* Slice 3: the update runs once. A resize (or a hidden tab) while the browser is capturing can leave the callback uncalled, which left SC.want set and every later tap ignored (1 run in 8 at 1366x768):
+       if it has not run after 600 ms the transition is skipped and the update runs here. */
+    let ran = false;
+    const once = () => { if (ran) return false; ran = true; return update(); };
+    const vt = document.startViewTransition(() => { nm(from, null, ""); nm(from2, null, ""); if (once()) { nm(null, to, "scene-band"); nm(null, to2, "scene-head"); } });
+    const guard = setTimeout(() => { if (ran) return; try { vt.skipTransition(); } catch (e) {} if (!ran) { nm(from, to, ""); nm(from2, to2, ""); once(); clear(); } }, 600);
+    vt.finished.then(() => { clearTimeout(guard); clear(); }, () => { clearTimeout(guard); clear(); });
     if (vt.ready && vt.ready.catch) vt.ready.catch(() => {});
     if (vt.updateCallbackDone && vt.updateCallbackDone.catch) vt.updateCallbackDone.catch(() => {});
   } catch (e) { clear(); update(); }
@@ -1914,15 +1922,16 @@ function showScene(key) {
     $("#board").inert = true;
     document.documentElement.classList.add("scene-open");
     selectPanel(k, false);
-    focusScene(k);
-    const refocus = () => { if (SC.open === k && (!document.activeElement || document.activeElement === document.body)) focusScene(k); };
+    focusHeading(k);
+    const refocus = () => { if (SC.open === k && (!document.activeElement || document.activeElement === document.body)) focusHeading(k); };
     requestAnimationFrame(() => setTimeout(refocus, 60)); if (document.readyState !== "complete") addEventListener("load", () => setTimeout(refocus, 30), { once: true });
     sceneState(true);
     sfx("open", { delay: motionMs("move") * 0.7 }); hap("select");
     if (!reduceMQ.matches) { layer.classList.add("lift"); setTimeout(() => layer.classList.remove("lift"), 320); }
     return landing(k);
   };
-  const band = layer.hidden ? morphBand(key) : null;
+  if (layer.hidden) SC.scrollY = Math.round(window.scrollY || 0);
+  const band = layer.hidden || layer.classList.contains("closing") ? morphBand(key) : null; /* Slice 3: an open asked for while the FLIP close is still running flies from the tile again, not a plain rise */
   const fl = !reduceMQ.matches && SC.land && SC.land.key === key && SC.land.from && document.contains(SC.land.from) ? SC.land.from : null;
   if (band && hasVT()) {
     SC.want = key;
@@ -1961,11 +1970,11 @@ function hideScene(o) {
   setPageTitle(null);
   KIT.emit("closed", key);
   const tile = tileOf(key) || document.querySelector(`#board a[href="#${key}"]`) || $("#main");
-  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close", { delay: glided ? 0 : motionMs("close") * 0.9 }); unflip(); };
+  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); openTile(null); restoreScroll(); sceneState(false); sfx("close", { delay: glided ? 0 : motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
     clearTimeout(SC.closeTimer); stopFlip();
-    layer.hidden = true; layer.classList.remove("closing", "flip", "rise", "fade");
+    layer.hidden = true; layer.classList.remove("closing", "flip", "rise", "fade"); restoreScroll();
     for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
   };
   if (glided) { unlock(); finish(); if (tile) tileFocus(tile); return; }
@@ -1998,7 +2007,7 @@ function startPeek() {
   sceneHooks.push((open) => { if (!open) off(); });
 }
 function requestClose(o) {
-  if (SC.open === null) return;
+  if (SC.open === null && !SC.want) return;
   const opt = o && (o.glided || o.key) ? o : null;
   if (history.state && history.state.pushed) { SC.how = opt; history.back(); return; }
   setHash(null, false); hideScene(opt);
@@ -2008,6 +2017,8 @@ function switchTab(key, crossFade = true) {
   if (key === SC.open) return; setHash(key, false); selectPanel(key, crossFade); swiped();
   if (!o.quiet) hap("select");
 }
+/* Slice 3: a scene opened from the wall puts focus on its heading (the name of where you now are); Tab then reaches the controls, arrows step the tabs. A tab change keeps focus on the tab (focusScene). */
+function focusHeading(k) { const t = $("#sheet-title"); if (t && t.getClientRects().length) { t.tabIndex = -1; t.focus({ preventScroll: true }); if (document.activeElement === t) return; } focusScene(k); }
 function focusScene(k) { const t = $(`#tab-${k}`); if (t && t.getClientRects().length) t.focus({ preventScroll: true }); else { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
 function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); focusScene(k); if (document.activeElement === document.body) { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
 function goScene(k) {
@@ -2053,7 +2064,7 @@ function onKey(e) {
     if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); sfx("esc"); return; }
     if (closeMore()) { e.preventDefault(); sfx("esc"); return; }
     if (SC.open === "library" && LIBUI.escape()) { e.preventDefault(); return; }
-    if (SC.open !== null) { e.preventDefault(); requestClose({ key: true }); }
+    if (SC.open !== null || SC.want) { e.preventDefault(); requestClose({ key: true }); } /* Slice 3: SC.want is an open that has been asked for and has not shown yet (the View Transition is still capturing): Esc cancels it */
     return;
   }
   if (e.key === "Tab") { if (SC.open !== null) trapFocus(e); return; }
@@ -2072,7 +2083,7 @@ function route() {
   const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
   if (/^dates(?:\.|$)/.test(raw)) { try { history.replaceState(history.state, "", `${location.pathname}${location.search}#${raw.replace(/^dates/, "timeline")}`); } catch (e) { return; } return route(); }
   const tm = raw.match(/^tonight\.([a-z0-9-]{1,40})$/); if (tm && MEM.setMe(tm[1]) && D.party) { renderTonight(); markMe(); }
-  if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
+  if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} SC.scrollY = null; scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
   const key = sceneFromHash();
   if (key && !(history.state && history.state.pushed)) { const url = location.pathname + location.search + location.hash; try { history.replaceState(null, "", location.pathname + location.search); history.pushState({ boardScene: key, pushed: true }, "", url); } catch (e) {} }
   const lm = key && key !== "library" && key !== "tonight" && !/^atlas(?:\.|$)/.test(raw) ? raw.match(/^([a-z]+)\.([a-z0-9_-]{1,40})$/) : null;
@@ -2682,7 +2693,7 @@ function libCat(key) {
 function renderLibTile() {
   const ix = LIBD.index; if (!ix) return;
   /* Slice 1: the table carries one line and the search box; the totals and the newest change live inside the Library scene (lib-head). */
-  fill("library", h("span", { class: "tile-line", text: "Find an answer in the library." }));
+  fill("library", h("span", { class: "tile-line", text: "Find an answer." }));
 }
 const libQuiet = (ix) => `No numbers have changed since ${libDay(ix.changes_since)}; ${plural(ix.rechecks, "recheck", "rechecks")} confirmed them.`;
 function libPrefetch() { libIndex().catch(() => fill("library", h("span", { class: "tile-line", text: "The library did not load." }))); }

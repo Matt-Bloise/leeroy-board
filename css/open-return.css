@@ -1,0 +1,25 @@
+/* Cinematic slice 3 (open and return), loaded after css/hierarchy.css.
+   1. Sibling dimming: while a scene is open, every tile except the opened one drops to tier 3 (the opened tile, .is-open, stays at full brightness). Only backgrounds and pictures
+      dim, never text (css/hierarchy.css explains why); a tile whose band goes dark switches its title to cream so it keeps its contrast. Takes the open duration token.
+   2. Since-last-visit marks (js/since.js): a warm edge that cools over 8 s, an outline or a pseudo-element, never a layout change. */
+:root { --since-dur: 8000ms; }
+html.scene-open #wall > li:not(.is-open) { --tv: var(--tier-periphery); --ti: var(--tier-img-periphery); }
+html.scene-open #wall > li.is-open { --tv: 1; --ti: 1; }
+html.scene-open #wall > li:not(.is-open) :is(.tile-title, .tile-go) { color: var(--cream); }
+html.scene-open #wall > li[data-tier] .tile-band { transition-duration: var(--cin-t-open); }
+html.scene-open #wall > li[data-tier] :is(img, svg.emblem, .tile-viz, .tile-search) { transition-duration: var(--cin-t-open); }
+
+@keyframes since-cool { from { opacity: 1; } to { opacity: 0; } }
+#wall > li.since { position: relative; }
+#wall > li.since::after { content: ""; position: absolute; inset: -3px; border-radius: 12px; pointer-events: none; z-index: 4; box-shadow: 0 0 0 2px rgba(229, 169, 60, 0.5), 0 0 10px rgba(229, 169, 60, 0.14); animation: since-cool var(--since-dur) var(--cin-ease) forwards; }
+.who.since, .ribbon > li.since { position: relative; }
+.who.since::before, .ribbon > li.since::before { content: ""; position: absolute; left: -7px; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; background: rgb(229, 169, 60); pointer-events: none; animation: since-cool var(--since-dur) var(--cin-ease) forwards; }
+@media (prefers-reduced-motion: reduce) {
+  #wall > li.since::after, .who.since::before, .ribbon > li.since::before { animation: none; }
+}
+
+/* 3. No layout shift on open. When a scene opens the board header's Menu button used to go display:none, which shortened the header and re-centred the title by 7 px under the veil (a layout shift
+   of 0.0034 at 1366x768 on every open). It is hidden with visibility instead, so the header keeps its size; the board is inert while a scene is open, so nothing is lost.
+   The sheet body also reserves its scrollbar gutter, so a scrollbar that appears once a panel has built does not narrow the content (8 px at 1366 wide, FLIP path). */
+html.nav-collapsed.scene-open #nav-menu-wall { display: inline-flex; align-items: center; visibility: hidden; }
+#sheet-body { scrollbar-gutter: stable; }
