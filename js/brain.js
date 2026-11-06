@@ -241,13 +241,16 @@ async function pollOnce() {
   emit("status", status());
   if (B.via !== "ws") schedulePoll(B.offline ? WS_RETRY_MS : POLL_MS);
 }
+// The room sends question and answer text only to sockets that prove who they are: a member key, or the id of the visitor's own ask.
+function wsSend(o) { try { if (B.ws && B.ws.readyState === 1) B.ws.send(JSON.stringify(o)); } catch (e) {} }
+function wsAuth() { if (B.key) wsSend({ type: "auth", key: B.key }); if (AK.ask && AK.ask.id && !B.key) wsSend({ type: "auth", ask: String(AK.ask.id) }); }
 function openWs() {
   clearTimeout(B.wsT);
   if (!B.base || typeof WebSocket !== "function" || B.ws) return false;
   if (B.offline) { B.wsT = setTimeout(openWs, WS_RETRY_MS); return false; }
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
-  ws.onopen = () => { if (B.ws !== ws) return; opened = true; B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
+  ws.onopen = () => { if (B.ws !== ws) return; opened = true; wsAuth(); B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
   ws.onmessage = (e) => {
     const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return;
     let m; try { m = JSON.parse(d); } catch (er) { return; }
@@ -273,7 +276,7 @@ async function me() {
   try {
     const r = await call("GET", "/me");
     if (r.status === 200 && r.data && r.data.slug) {
-      B.me = { slug: r.data.slug, name: r.data.name }; B.keyBad = false;
+      B.me = { slug: r.data.slug, name: r.data.name }; B.keyBad = false; wsAuth();
       for (const p of r.data.pending || []) for (const [f, v] of Object.entries(p.patch || {})) { if (f === "rsvp") B.pend.rsvp = { value: v, at: p.at, state: "waiting", seq: p.seq }; if (p.kind === "launch" && f === "state" && LAUNCH.includes(v)) B.lPend = { value: v, at: p.at, state: "waiting", seq: p.seq }; }
     } else if (r.status === 401) { B.me = null; B.keyBad = true; }
   } catch (e) { B.errors++; }
@@ -458,7 +461,7 @@ async function ask(text, share, provider) {
     if (r.status === 200 && r.data && r.data.ok) {
       AK.left = typeof r.data.left === "number" ? r.data.left : AK.left;
       AK.ask = { id: r.data.id, status: "queued", text: t, share: !isGuest && share === true, provider: (r.data && r.data.provider) || prov, at: r.data.at, answer: null, sources: [] };
-      AK.st = "queued"; AK.since = Date.now(); askEmit(); AK.t = setTimeout(askRead, 3000);
+      AK.st = "queued"; AK.since = Date.now(); wsAuth(); askEmit(); AK.t = setTimeout(askRead, 3000);
       return { ok: true, state: "queued" };
     }
     if (r.status === 409) { AK.st = "idle"; await askRead(); return { ok: false, why: "open" }; }

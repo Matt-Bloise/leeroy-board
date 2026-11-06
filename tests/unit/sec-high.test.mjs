@@ -259,7 +259,9 @@ test("M2. a private turn puts neither question nor answer on the socket or in st
   assert.equal(row.status, "answered");
   assert.match(row.answer, /SECRET-ANSWER-7/);
   assert.ok(sent.includes('"type":"ask"'), "owner's page is still nudged to re-read");
-  assert.doesNotMatch(sent, /SECRET-(QUESTION|ANSWER)-7/);
+  // A guest's own answer rides a message addressed to that guest's socket only (forAsk); the room strips the text for every other socket.
+  const withText = sent.split("\n").filter((m) => /SECRET-(QUESTION|ANSWER)-7/.test(m));
+  assert.ok(withText.every((m) => JSON.parse(m).forAsk === "u1"), "text appears only in a message addressed to the asker");
   assert.doesNotMatch(stats, /SECRET-(QUESTION|ANSWER)-7/);
 });
 
