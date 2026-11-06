@@ -92,7 +92,7 @@ test("answerWithAi formats the stored answer, filters cites, and records why a p
     row.answer,
     "**Onyxia's Lair opens on 2026-12-09.**\n\n• **Raid size** · 40 players\n\n" +
       "-# Sources: [Onyxia's Lair](<https://leeroy.party/#library.raids.onyxias-lair>)\n" +
-      "-# [Open on the board](<https://leeroy.party/#library.raids>)\n\nAt least I have chicken."
+      "-# [Open on the board](<https://leeroy.party/#library.raids>)"
   );
   assert.deepEqual(JSON.parse(row.cites), ["raids/onyxias-lair"]);
   assert.match(row.model, /^workers-ai:.* \(after claude: .*500.*\)$/);
@@ -182,7 +182,7 @@ test("/ask: provider hangs past the deadline, the placeholder is still replaced 
 test("/ask: a fast answer is delivered formatted, once", async () => {
   const { patches } = await runAsk({ providerDelayMs: 0, deadlineMs: 2000 });
   assert.equal(patches.length, 1);
-  assert.match(patches[0].content, /^\*\*Onyxia's Lair opens on 2026-12-09\.\*\*/);
+  assert.ok(patches[0].content.startsWith("> **Q:** when does onyxia open\n\n**Onyxia's Lair opens on 2026-12-09.**"), "the reply quotes the question it answers");
   assert.match(patches[0].content, /\[Onyxia's Lair\]\(<https:\/\/board\.test|\[Onyxia's Lair\]\(<https:\/\/leeroy\.party/);
   assert.ok(!/Santa, you have/.test(patches[0].content), "guest is not addressed as a party member");
 });
