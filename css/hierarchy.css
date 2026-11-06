@@ -1,23 +1,37 @@
 /* Cinematic slice 1: one hero, three luminance tiers, loaded after every other stylesheet.
    Light means relevance (docs/cinematic, cinematic-craft-synthesis): the Sign-ups tile (the member's own answer to the invitation) is the hero at full brightness,
-   context (the countdown, the five, the library search) sits at about 66 percent, periphery (the rest of the wall) at about 46 percent.
-   Dimming is a brightness filter, so text keeps its hue and stays above 4.5:1 (tests/browser/hierarchy.mjs checks the blurred frame, text size and CLS).
-   Touching a tile (hover, focus, pointer press) brings it to full brightness: the touched object brightens, nothing else moves.
+   context (the countdown, the five, the library search) sits lower, the rest of the wall lower still.
+   Only BACKGROUNDS and PICTURES are dimmed (the parchment band by multiply, images and drawings by a brightness filter). Text is never filtered, so its colour is
+   untouched and tests/browser/hierarchy.mjs holds the rendered contrast of every tier at 4.5:1 or better at 390 and 1366 wide.
+   Touching a tile (hover, focus, press) returns its backgrounds to full brightness: the touched object brightens, nothing else moves.
    OLED: no channel-255 block, and the hero glow is candle gold at low alpha, not white. Durations and ease come from css/motion-tokens.css. */
 :root {
   --tier-hero: 1;
-  --tier-context: 0.66;
-  --tier-periphery: 0.46;
+  --tier-context: 0.62;
+  --tier-periphery: 0.34;
+  --tier-img-context: 0.6;
+  --tier-img-periphery: 0.5;
 }
-#wall > li, #clock { transition: filter var(--cin-t-hover) var(--cin-ease); }
-#wall > li[data-tier="2"], #clock[data-tier="2"] { filter: brightness(var(--tier-context)); }
-#wall > li[data-tier="3"] { filter: brightness(var(--tier-periphery)); }
-#wall > li[data-tier="1"] { filter: none; }
-#wall > li:is(:hover, :focus-within, :active), #clock:is(:hover, :focus-visible) { filter: none; }
-/* the hero: first in the wall, full width, a warm edge (candle gold at low alpha) */
+#wall > li { --tv: var(--tier-hero); --ti: 1; }
+#wall > li[data-tier="2"] { --tv: var(--tier-context); --ti: var(--tier-img-context); }
+#wall > li[data-tier="3"] { --tv: var(--tier-periphery); --ti: var(--tier-img-periphery); }
+#wall > li:is(:hover, :focus-within, :active) { --tv: 1; --ti: 1; }
+#wall > li[data-tier] .tile-band {
+  background-color: rgb(calc(255 * var(--tv)) calc(255 * var(--tv)) calc(255 * var(--tv)));
+  background-blend-mode: multiply;
+  transition: background-color var(--cin-t-hover) var(--cin-ease);
+}
+#wall > li[data-tier] :is(img, svg.emblem, .tile-viz) { filter: brightness(var(--ti)); transition: filter var(--cin-t-hover) var(--cin-ease); }
+/* dark ink on a dimmed parchment band: context uses a darker ink; periphery bands go dark with cream titles (a dim parchment would not hold 4.5:1) */
+#wall > li[data-tier="2"] .tile-title { color: #0f0904; }
+#wall > li[data-tier="3"]:not(:hover, :focus-within, :active) :is(.tile-title, .tile-go) { color: var(--cream); }
+/* the hero: first in the wall, full width on a phone, a warm edge (candle gold at low alpha) */
 #wall > li[data-tier="1"] > .tile { box-shadow: 0 0 0 1px var(--brass), 0 0 28px rgba(229, 169, 60, 0.26); }
 #wall > li[data-tier="1"] .tile-title { font-size: calc(var(--step-1) * 1.15); }
-/* one experience control: the Guided, Curious, Everything bar. The depth bar is gone from the page; nothing to style for it. */
 @media (max-width: 639px) {
   #wall > li[data-tier="1"] { grid-column: 1 / -1 !important; }
 }
+/* the library search is a bright parchment plaque with an input: the plaque takes the tier's picture dimming (a filter on the plaque, so the ink inside goes darker, not lighter);
+   the placeholder is set dark so it holds 4.5:1 on the dimmed parchment */
+#wall > li[data-tier] .tile-search { filter: brightness(var(--ti)); transition: filter var(--cin-t-hover) var(--cin-ease); }
+#wall > li[data-tier="2"] .tile-q::placeholder { color: #0f0904; }

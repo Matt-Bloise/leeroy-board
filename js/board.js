@@ -505,7 +505,10 @@ function renderTiles() {
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
-    h("span", { class: "tile-line", ...(stillOpen.length ? { "data-land": "ledger.open-0" } : {}) }, h("b", { text: stillOpen.length ? "Needs a vote: " : "" }), stillOpen.length ? wholeClause(stillOpen[0].title, 70) : "Nothing is open right now."),
+    (() => { /* the pending action: an open decision first, else a poll still taking votes; "nothing open" only when BOTH are empty */
+      const first = stillOpen[0], poll = !first && p.polls[0];
+      return h("span", { class: "tile-line", ...(first ? { "data-land": "ledger.open-0" } : {}) }, h("b", { text: first ? "Needs a vote: " : poll ? "A poll is taking votes: " : "" }), first ? wholeClause(first.title, 70) : poll ? wholeClause(poll.title, 70) : "Nothing is open right now.");
+    })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
