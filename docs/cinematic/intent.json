@@ -1,7 +1,7 @@
 {
   "version": 1,
   "about": "Intent register, slice 0 of the cinematic program. Every visible region and every motion on two views has an entry: what the person needs to know or do, and why it moves. tests/unit/intent-register.test.mjs fails when a visible element on either view is not covered. Captured at 390x844 on 2026-11-06 with the page clock pinned and no API (static data only).",
-  "tiers": "hero = the one thing to read or do; context = what orients; periphery = atmosphere that carries no information. Today the wall (table view) has no single hero: that finding belongs to slice 1.",
+  "tiers": "hero = the one thing to read or do; context = what orients; periphery = atmosphere that carries no information. Slice 1 (2026-11-06): the table has one hero, the Sign-ups tile (the member's own answer to the invitation), at full brightness; the countdown, the five and the library search are context (about 66 percent); the rest of the wall is periphery (about 46 percent). Tiers are data-tier attributes in index.html and css/hierarchy.css.",
   "not_covered": [
     "Next steps for a signed-in member (the member card needs the API state; the stub snapshot has no per-member route). Add in slice 1 with a fixture.",
     "Every other scene and every non-idle state (pressed, submitting, failed, offline): later slices, one register entry per state."
@@ -60,11 +60,11 @@
         { "id": "tb-tile-five", "selector": ["a.tile:has(#tt-five)", "a.tile:has(#tt-five) *", "span.tile-line.five-strip", "span.tile-line.five-strip *"], "tier": "context",
           "intent": "Who is in the group, which role each fills, and whether the group has its tank, healer and damage.",
           "motion": [ { "name": "v14-rise", "trigger": "page load, staggered 75 ms a tile", "purpose": "tiles arrive in reading order", "reducedMotion": "none (animation: none)" } ] },
-        { "id": "tb-tile-signups", "selector": ["a.tile:has(#tt-signups)", "a.tile:has(#tt-signups) *"], "tier": "context",
-          "intent": "Who said they are coming and how many have not answered.",
+        { "id": "tb-tile-signups", "selector": ["a.tile:has(#tt-signups)", "a.tile:has(#tt-signups) *"], "tier": "hero",
+          "intent": "The one thing to do on the table: who said they are coming, how many have not answered, and a tap to give your own answer.",
           "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
         { "id": "tb-tile-library", "selector": ["div.tile.lib-tile", "div.tile.lib-tile *"], "tier": "context",
-          "intent": "Find any fact: how much the library holds, and a search box.",
+          "intent": "Find an answer: one line and a search box. The totals and the newest change live inside the Library scene, not on the table.",
           "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
         { "id": "tb-tile-roads", "selector": ["a.tile:has(#tt-roads)", "a.tile:has(#tt-roads) *"], "tier": "context",
           "intent": "Show where each character is heading on the three roads.",
