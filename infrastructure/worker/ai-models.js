@@ -914,7 +914,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     const askerSheet = findAskerSheet(sheets, { by, memberSlug, isMember: askerIsMember });
-    const yourBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap) : "Visitor: no build on file.";
+    const yourBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false }) : "Visitor: no build on file.";
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
     const hasBuild = Boolean(askerSheet) && !yourBuild.startsWith("No build on file");
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.

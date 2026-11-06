@@ -46,12 +46,14 @@ function stateFor(sheet, stateMap) {
   return out;
 }
 
-// All of the asker's own fields, visible or not: it is their data going into their own answer.
-export function renderAskerBuild(sheet, stateMap) {
+// The asker's own fields. A hidden field is included only for a private ask (includeHidden): a public ask is posted in the channel,
+// where the model could repeat it to everyone.
+export function renderAskerBuild(sheet, stateMap, { includeHidden = false } = {}) {
   if (!sheet) return EMPTY_BUILD_LINE;
   const fields = sheet.fields || {};
   const parts = [];
   for (const k of FIELD_ORDER) {
+    if (!includeHidden && fields[k] && fields[k].visible === false) continue;
     const t = fieldText(fields[k]);
     if (t) parts.push(`${k}: ${t}`);
   }

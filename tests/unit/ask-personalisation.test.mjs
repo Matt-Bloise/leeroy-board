@@ -29,13 +29,18 @@ function makeEnv({ sheets = SHEETS, kv = {} } = {}) {
 }
 const inputs = (env, o) => buildAnswerInputs(env, { question: "how do I tank as a paladin", journey: "curious", ...o });
 
-test("the prompt carries the asker's own build, including a hidden field, found by slug", async () => {
-  const { userPrompt, systemPrompt, personalised } = await inputs(makeEnv({ kv: { signups: { roster: { "Red Fox": "yes" } }, tonight: { title: "Deadmines run" } } }), { by: "Red Fox", memberSlug: "red-fox" });
+test("the prompt carries the asker's own build, found by slug; their hidden field only on a private ask", async () => {
+  const kv = { signups: { roster: { "Red Fox": "yes" } }, tonight: { title: "Deadmines run" } };
+  const pub = await inputs(makeEnv({ kv }), { by: "Red Fox", memberSlug: "red-fox", share: true });
+  assert.ok(!pub.userPrompt.includes("tank the Deadmines"), "a public ask must not carry the asker's hidden field");
+  assert.match(pub.userPrompt, /class: paladin/);
+  const { userPrompt, systemPrompt, personalised } = await inputs(makeEnv({ kv }), { by: "Red Fox", memberSlug: "red-fox", share: false });
   assert.match(userPrompt, /YOUR_BUILD/);
   assert.match(userPrompt, /class: paladin/);
   assert.match(userPrompt, /spec_path: protection/);
   assert.match(userPrompt, /professions: mining, smithing/);
-  assert.match(userPrompt, /tank the Deadmines/, "the asker's own hidden field is used for them");
+  assert.match(userPrompt, /tank the Deadmines/, "private ask: the asker's own hidden field is used for them");
+  assert.ok(!userPrompt.includes("secretspec") && !userPrompt.includes("hidden goal text"), "others' hidden fields never");
   assert.match(userPrompt, /signup: yes/);
   assert.match(userPrompt, /tonight: Deadmines run/);
   assert.ok(personalised);
@@ -88,6 +93,9 @@ test("grounding: an invented spell or place is replaced by the honest line; libr
   assert.ok(!bad.answer.includes("Seal of Fury"));
   const good = await run("**As a Protection Paladin you tank with Holy Shield.**\n\n-# Sources: classes/paladin-protection");
   assert.ok(good.answer.includes("Holy Shield"));
+  const realistic = await run("**As a Paladin tank at level 12, you hold threat with Holy Shield.**\n- **Protection Paladin** · tanks with Holy Shield\n- Start with the Tank basics page.\n\n-# Sources: classes/paladin-protection");
+  assert.ok(!realistic.answer.includes(NOT_PUBLISHED_LINE), "a good answer is not replaced");
+  assert.ok(realistic.answer.includes("Holy Shield"));
   assert.deepEqual(unknownNames("Good luck out there. Red Fox is human.", i.groundingText), []);
 });
 
