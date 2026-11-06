@@ -90,11 +90,11 @@ function idsWhereEggDue(n, egg) {
   return due;
 }
 
-test("the egg is deterministic, about one in twelve, and never random", () => {
+test("the egg is deterministic, about one in 25, and never random", () => {
   const a = idsWhereEggDue(2400);
   const b = idsWhereEggDue(2400);
   assert.deepEqual(a, b);
-  assert.ok(a.length > 120 && a.length < 290, `expected about 200 of 2400, got ${a.length}`);
+  assert.ok(a.length > 60 && a.length < 140, `expected about 96 of 2400, got ${a.length}`);
   assert.equal(eggDue("", {}), false);
   assert.equal(eggDue(undefined, {}), false);
   const src = readFileSync(new URL("../../infrastructure/worker/answer-format.js", import.meta.url), "utf8");

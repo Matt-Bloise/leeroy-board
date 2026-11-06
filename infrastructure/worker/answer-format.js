@@ -247,7 +247,7 @@ const SKIPPY_ALL_RE = /\bSkippy\b/gi;
 const SELF_REF_RE =
   /\bLeeroy\b[^.!?\n]{0,40}?\b(?:and|or|vs\.?|versus|aka|a\.k\.a\.?|formerly|previously|not|isn't|is not|also known as|renamed|replaced|replaces)\b[^.!?\n]{0,40}?\bLeeroy\b|\bLeeroy\s*\((?:also |formerly |aka )?Leeroy\)/i;
 
-export const DEFAULT_EGG = Object.freeze({ line: "At least I have chicken.", oneIn: 12 });
+export const DEFAULT_EGG = Object.freeze({ line: "At least I have chicken.", oneIn: 25 });
 
 function eggHash(seed) {
   let h = 2166136261;
@@ -369,7 +369,7 @@ export function applyVoiceGuards(text, opts = {}) {
       .replace(/\n{3,}/g, "\n\n")
       .trim();
     if (!out) return text;
-    if (opts.full && !opts.isCoach && eggDue(opts.intentId, opts.egg)) {
+    if (opts.full && !opts.isCoach && !opts.noEgg && eggDue(opts.intentId, opts.egg)) {
       const { line } = eggSettings(opts.egg);
       if (!out.toLowerCase().includes(line.toLowerCase())) out = `${out}\n\n${line}`;
     }
@@ -436,7 +436,7 @@ export function formatAnswerParts(raw, ctx = {}) {
   if (typeof raw !== "string") return { main: raw, more: "", sources: "" };
   const c = ctx && typeof ctx === "object" ? ctx : {};
   try {
-    const guardOpts = { roster: c.roster, intentId: c.intentId, egg: c.egg, isCoach: Boolean(c.isCoach) || c.journey === "guided" };
+    const guardOpts = { roster: c.roster, intentId: c.intentId, egg: c.egg, noEgg: Boolean(c.noEgg), isCoach: Boolean(c.isCoach) || c.journey === "guided" };
     const split = c.ux ? splitAnswerParts(raw) : { main: raw, more: "", sources: "" };
     // A reply that is only a marker section still gets a channel body.
     const mainRaw = split.main || split.more || split.sources || raw;
