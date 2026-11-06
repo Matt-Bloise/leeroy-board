@@ -104,7 +104,7 @@ test("IsRel unit: coverage floor drops weak facts and abstains below ABSTAIN_BEL
 // ---- IsSup ----
 test("IsSup: a number the library, the build and the question never gave is stripped; supported numbers stay (leaked-fact case)", async () => {
   const env = makeEnv();
-  const i = await ask(env, "who is the first boss of the sunken vault");
+  const i = await ask(env, "who is the first boss of the sunken vault and what levels is it meant for");
   const r = await finish(env, i, "**The first boss of the Sunken Vault is Old Moss.**\n- It drops 7 boots and 450 gold.\n- The vault is meant for levels 18 to 24.\n\n-# Sources: dungeons/sunken-vault");
   assert.ok(r.answer.includes("Old Moss"));
   assert.ok(r.answer.includes("18 to 24"), "a number from the retrieved fact stays");

@@ -9,7 +9,7 @@ import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 
 const PAGES = [
-  { id: "raids/onyxias-lair", category: "raids", title: "Onyxia's Lair", facts: [{ key: "onyxia.opens", value: "Onyxia's Lair opens on 2026-12-09." }, { key: "onyxia.size", value: "Raid size is 40 players." }] },
+  { id: "raids/onyxias-lair", category: "raids", title: "Onyxia's Lair", facts: [{ key: "onyxia.opens", value: "Onyxia's Lair opens on 2026-12-09." }, { key: "onyxia.size", value: "Onyxia's Lair opens as a 40 player raid." }] },
   { id: "classes/paladin-holy", category: "classes", title: "Holy Paladin", facts: [] },
 ].map((p) => ({ ...p, as_of: "2026-11-01", blurb: p.title, aliases_json: "[]", facts_json: JSON.stringify(p.facts), open_json: "[]" }));
 

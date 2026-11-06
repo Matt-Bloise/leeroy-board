@@ -6,6 +6,7 @@
 //   IsSup    supportCheck(answer, ...)       every cited source id was retrieved; a number the answer states appears in the retrieved text, the build, the
 //                                            party state or the question, else the sentence goes (names are checked by ask-build.js groundedOrNotPublished).
 import { expandWords, idfFor, factHay } from "./rank-core.js";
+import { parseSourceIds } from "./answer-format.js";
 
 export const ABSTAIN_LINE = "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.";
 
@@ -57,31 +58,48 @@ export const ABSTAIN_RULE =
 export const SKIP_RULE = "This message needs no library lookup. Answer it in voice, and state no game fact, number, name or date.";
 
 // ---- IsSup ----------------------------------------------------------------------------------------------------------------
-// The retrieved page ids travel inside groundingText (as the last line) so every caller of finishAnswerText, including the offline ask-eval, can check
-// citations without a new argument. RETRIEVED_MARK is not a word the model or the library uses.
+// The retrieved page ids and the abstain flag reach finishAnswerText as a structured argument (`retrieval`). For callers that only have groundingText
+// (the offline ask-eval), the same data rides as ONE marker on the very last line. The marker is trusted only there: text a person controls (the question,
+// the asker's name) can never be the last line, and any marker-looking text inside it is defanged before the real one is appended.
 export const RETRIEVED_MARK = "[[retrieved:";
-export const groundingWithIds = (text, ids, abstain = false) => `${text}\n${RETRIEVED_MARK} ${[...ids].join(" ")}${abstain ? " | abstain" : ""}]]`;
+const defang = (t) => String(t || "").split(RETRIEVED_MARK).join("[ [retrieved:");
+export const groundingWithIds = (text, ids, abstain = false) => [defang(text), `${RETRIEVED_MARK} ${[...ids].join(" ")}${abstain ? " | abstain" : ""}]]`].join("\n");
 export function retrievedFromGrounding(groundingText) {
-  const m = /\[\[retrieved:([^\]]*)\]\]/.exec(String(groundingText || ""));
+  const m = /\n\[\[retrieved:([^\]]*)\]\]$/.exec(String(groundingText || ""));
   if (!m) return null; // an older caller without the marker: no citation filter, as before
   const [list, flag] = m[1].split("|");
   return { ids: new Set(list.split(/\s+/).filter(Boolean)), abstain: /abstain/.test(flag || "") };
 }
+// The structured form wins; the marker is only the fallback.
+export function retrievalOf({ retrieval, groundingText } = {}) {
+  if (retrieval && typeof retrieval === "object") return { ids: new Set(retrieval.ids || []), abstain: Boolean(retrieval.abstain) };
+  return retrievedFromGrounding(groundingText);
+}
 
-const SOURCES_LINE = /^(\s*-#\s*Sources?\s*:\s*)(.*)$/gim;
-// Remove cited ids that were not retrieved from the Sources line (and from inline [id~key] cites). A Sources line left empty is dropped.
+const SOURCES_LINE = /^(\s*(?:-#\s*)?)Sources?\s*:\s*(.*)$/gim;
+const LIB_LINK = /\[([^\]\n]*)\]\(<?([^)>\s]*#library\.([a-z0-9_-]+)\.([a-z0-9_.-]+))>?\)/gi;
+// Ids on one Sources line in any mix of plain ids, [bracketed] ids and Markdown links to library pages. The formatter's parser reads either links or
+// plain ids, never both; a mixed line would lose its plain ids, so the two halves are read separately here.
+const LINK_ANY = /\[[^\]\n]*\]\(<?[^)>\s]*>?\)/g;
+export function sourceIdsOf(rest) {
+  const text = String(rest || "");
+  const linked = parseSourceIds(text.match(LINK_ANY) ? text.match(LINK_ANY).join(" ") : "");
+  return [...new Set([...parseSourceIds(text.replace(LINK_ANY, " ")), ...linked])];
+}
+// Remove cited ids that were not retrieved. A Sources line is read with the formatter's own parser (plain ids, bracketed ids, Markdown links to library
+// pages, mixed), rewritten as plain ids that were retrieved, and dropped when none is left: anything the parser does not recognise is not kept, so a
+// mixed-format line cannot smuggle an id past the filter. Inline [id~key] cites and Markdown links to an unretrieved library page are removed too
+// (the link keeps its label).
 export function stripUnretrievedCites(answer, retrieved) {
   if (!retrieved) return { answer, removed: [] };
   const removed = [];
   const keep = (id) => retrieved.has(id) || (removed.push(id), false);
   let out = String(answer || "").replace(SOURCES_LINE, (line, head, rest) => {
-    const ids = rest.split(/[,;·|]+/).map((s) => s.trim()).filter(Boolean);
-    // Masked links or anything that is not a plain id list are left to the formatter.
-    if (ids.some((s) => !/^[a-z0-9_-]+\/[a-z0-9_.-]+$/i.test(s))) return line;
-    const kept = ids.filter(keep);
-    return kept.length ? `${head}${kept.join(", ")}` : "";
+    const kept = sourceIdsOf(rest).filter(keep);
+    return kept.length ? `${head}Sources: ${kept.join(", ")}` : "";
   });
   out = out.replace(/\[([a-z0-9_-]+\/[a-z0-9_.-]+)(?:~[^\]]+)?\](?!\()/gi, (m, id) => (keep(id) ? m : ""));
+  out = out.replace(LIB_LINK, (m, label, href, cat, slug) => (keep(`${cat}/${slug}`) ? m : label));
   return { answer: out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim(), removed };
 }
 
@@ -110,7 +128,7 @@ export function supportCheck(answer, allowedText) {
   const cut = text.search(/\n-#\s*Sources?:/i);
   const body = cut >= 0 ? text.slice(0, cut) : text;
   const tail = cut >= 0 ? text.slice(cut) : "";
-  const allowed = numberSet(allowedText);
+  const allowed = numberSet(String(allowedText || "").replace(/\[\[retrieved:[^\]]*\]\]/g, " "));
   const unsupported = [];
   const kept = [];
   for (const line of body.split("\n")) {

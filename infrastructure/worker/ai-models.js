@@ -22,7 +22,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
-import { needsRetrieval, selectRelevant, ABSTAIN_RULE, SKIP_RULE, ABSTAIN_LINE, groundingWithIds, retrievedFromGrounding, stripUnretrievedCites, supportCheck } from "./self-rag.js";
+import { needsRetrieval, selectRelevant, ABSTAIN_RULE, SKIP_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -931,7 +931,11 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const hasBuild = Boolean(askerSheet) && hasBuildText(yourBuild);
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
     const retrievedIds = new Set([...ranked.map((p) => p.id), ...hits.slice(0, 20).map((h) => h.page)]);
-    const groundingBase = [partySummary, topFactHits.join(" "), ranked.map((p) => `${p.title} ${p.blurb || ""} ${(p.facts || []).map((f) => f.value).join(" ")}`).join(" "), yourBuild, partyBuilds, question, by].join(" ");
+    // What the answer may draw names and numbers from: exactly what the prompt showed (the fact values and the page lines, no scores, no ids, no facts of a
+    // page the prompt only summarised), plus the build, the party and the question.
+    const shownFacts = hits.slice(0, 20).map((h) => h.value).join(" ");
+    const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, by].join(" ");
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
     const libraryBlock = !retrieve
@@ -941,7 +945,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, retrievedIds: [...retrievedIds] };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain } };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -951,7 +955,7 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
@@ -962,7 +966,7 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       if (!g.ok) repaired = g.answer;
     }
     // IsSup (self-rag.js): a number the library, the build and the question never gave goes; a source that was not retrieved is not cited.
-    const retrieved = retrievedFromGrounding(groundingText);
+    const retrieved = retrievalOf({ retrieval, groundingText });
     if (retrieved) {
       const n = supportCheck(repaired, groundingText);
       if (!n.ok) repaired = n.answer;
@@ -1055,7 +1059,7 @@ export async function answerWithAi({
 
     // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
     const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember });
-    const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised } = inputs;
+    const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -1171,7 +1175,7 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised, retrieval });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
