@@ -1088,9 +1088,14 @@ export default {
             "SELECT * FROM ask_turns WHERE by_name = ? OR by_name = ? OR share = 1 ORDER BY created_at DESC LIMIT 1"
           ).bind(auth.member.name, auth.member.slug).first();
         } else {
-          row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
-          ).first();
+          // No key and no id: the visitor is anonymous. The latest shared turn is a member's question and answer, so it is for signed-in
+          // members and web sessions only (audit 2026-11-06 finding 4). A guest polls their own just-created ask by its random id (above).
+          const ws = await webSessionFrom(req, env, Date.now());
+          if (ws) {
+            row = await env.DB.prepare(
+              "SELECT * FROM ask_turns WHERE by_name = ? OR share = 1 ORDER BY created_at DESC LIMIT 1"
+            ).bind(ws.name).first();
+          }
         }
 
         let limitLeft = 6;
