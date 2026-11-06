@@ -1046,27 +1046,34 @@ export default {
         const read = await readJsonCapped(req);
         if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
         const body = read.body;
-        // TODO(follow-up, PR 203): unguarded read-modify-write of signups; move to updateKvJson.
-        const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-        const doc = row ? JSON.parse(row.json) : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
-        const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
-        if (Array.isArray(body.entries)) {
-          doc.entries = body.entries;
-        } else if (body.name) {
-          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-          let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === String(body.name).toLowerCase());
-          if (!entry) {
-            entry = { name: body.name };
-            doc.entries.push(entry);
-          }
-          for (const k of ["pack", "meet", "meet_other", "rsvp", "when"]) {
-            if (body[k] !== undefined) entry[k] = body[k];
-          }
+        // Compare-and-set (kv-cas.js): a member's own sign-up write racing this bot sync can no longer erase the other's change.
+        let cardsBefore = null;
+        let saved;
+        try {
+          saved = await updateKvJson(env, "signups", async (cur) => {
+            const doc = cur || { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
+            cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
+            if (Array.isArray(body.entries)) {
+              doc.entries = body.entries;
+            } else if (body.name) {
+              doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+              let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === String(body.name).toLowerCase());
+              if (!entry) {
+                entry = { name: body.name };
+                doc.entries.push(entry);
+              }
+              for (const k of ["pack", "meet", "meet_other", "rsvp", "when"]) {
+                if (body[k] !== undefined) entry[k] = body[k];
+              }
+            }
+            await recomputeSignupTallies(doc);
+            return { doc };
+          });
+        } catch (e) {
+          if (e instanceof KvConflictError) return jsonResp({ error: "The sign-ups card is busy. Try again." }, 409, cors);
+          throw e;
         }
-        await recomputeSignupTallies(doc);
-        await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-          .bind(JSON.stringify(doc), doc.updated)
-          .run();
+        const doc = saved.doc;
         await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json"]);
         await broadcastToRoom(env, { type: "data", key: "signups" });
         if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
@@ -1484,17 +1491,19 @@ export default {
         if (kind === "journey") {
           const jVal = body.patch && body.patch.journey;
           if (["guided", "curious", "everything"].includes(jVal)) {
-            // TODO(follow-up, PR 203): unguarded read-modify-write of signups; move to updateKvJson.
-            const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-            if (row) {
-              const doc = JSON.parse(row.json);
-              doc.journeys = Array.isArray(doc.journeys) ? doc.journeys : [];
-              const jEntry = doc.journeys.find((j) => j.slug === member.slug);
-              if (jEntry) jEntry.journey = jVal;
-              else doc.journeys.push({ slug: member.slug, name: member.name, journey: jVal });
-              await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-                .bind(JSON.stringify(doc), now)
-                .run();
+            try {
+              await updateKvJson(env, "signups", async (cur) => {
+                if (!cur) return { skip: true }; // no card yet: nothing to attach the journey to (as before)
+                const doc = cur;
+                doc.journeys = Array.isArray(doc.journeys) ? doc.journeys : [];
+                const jEntry = doc.journeys.find((j) => j.slug === member.slug);
+                if (jEntry) jEntry.journey = jVal;
+                else doc.journeys.push({ slug: member.slug, name: member.name, journey: jVal });
+                return { doc };
+              }, { now: () => now });
+            } catch (e) {
+              if (e instanceof KvConflictError) return jsonResp({ error: "The sign-ups card is busy. Try again." }, 409, cors);
+              throw e;
             }
           }
           const { seq } = await insertIntent(env, {
