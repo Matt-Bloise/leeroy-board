@@ -77,6 +77,22 @@ function tidy(line) {
     .replace(/[ \t]+$/g, "");
 }
 
+// Removes the chicken line (the persona's or the default) wherever the model wrote it, whole line or trailing sentence.
+export function stripEggLine(text, line) {
+  if (typeof text !== "string" || !text) return text;
+  const lines = new Set([DEFAULT_EGG.line, line].filter(Boolean).map((l) => l.trim()));
+  let out = text;
+  for (const l of lines) {
+    const esc = [...l].map((ch) => (".*+?^${}()|[]".includes(ch) || ch.charCodeAt(0) === 92 ? String.fromCharCode(92) + ch : ch)).join("");
+    out = out.replace(new RegExp("[ \t]*" + esc + "[ \t]*", "gi"), "");
+  }
+  return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// A line that is only a leftover token: an unexpanded {board:...} deep link or a bare hex library stamp.
+const BOARD_TOKEN_RE = /\{board:[^}]*\}/g;
+const STAMP_LINE_RE = /^\s*(?:-#\s*)?[0-9a-f]{8,40}\s*$/i;
+
 function format(raw, ctx) {
   const pages = Array.isArray(ctx.pages) ? ctx.pages : [];
   const byId = new Map();
@@ -86,7 +102,11 @@ function format(raw, ctx) {
   const asker = ctx.asker || {};
   const isMember = asker.isMember !== false && String(asker.name || "").trim().toLowerCase() !== "visitor";
 
-  const lines = raw.replace(/\r\n?/g, "\n").split("\n");
+  const lines = raw
+    .replace(/\r\n?/g, "\n")
+    .replace(BOARD_TOKEN_RE, "")
+    .split("\n")
+    .filter((l) => !STAMP_LINE_RE.test(l) && !/^\s*-#\s*$/.test(l));
 
   // Pass 1: pull out sources, the board link and other footer lines; find the last footer line.
   let sourceIds = null;
@@ -108,7 +128,7 @@ function format(raw, ctx) {
       return;
     }
     if (FOOTER_LINE_RE.test(line)) {
-      otherFooter.push(line.trim());
+      // Any other footer line (unexpanded token, library stamp, persona flourish) is dropped: only Sources and a board link stay.
       lastFooter = i;
       return;
     }

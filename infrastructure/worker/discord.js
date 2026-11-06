@@ -504,6 +504,12 @@ function launchHype(toLaunch) {
   return `${days} days. Time to study your talents and prep your route.`;
 }
 
+// One short quoted line naming the question an /ask reply answers: flattened, mentions defused, no link previews.
+export function quoteQuestion(q) {
+  const flat = String(q || "").replace(/\s+/g, " ").trim().slice(0, 160).replace(/@/g, "@\u200b").replace(/[<>]/g, "").replace(/https?:\/\//gi, "");
+  return `> **Q:** ${flat}`;
+}
+
 // Run an answer and edit the placeholder (@original) with the result. The final edit is ALWAYS sent, exactly once:
 // the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
 // (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
@@ -866,6 +872,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           persona,
           isPrivate,
           askerId: String(user.id || ""),
+          wrap: (a) => quoteQuestion(question) + "
+
+" + a,
           answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
         })
       );

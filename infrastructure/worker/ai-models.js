@@ -19,7 +19,7 @@ import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
-import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds } from "./answer-format.js";
+import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
@@ -928,12 +928,14 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 // The chicken line is rare: never more often than one answer in 25, whatever the stored persona says.
 const eggFor = (persona) => {
   const e = persona && persona.egg && typeof persona.egg === "object" ? persona.egg : {};
-  return { ...e, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
+  return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
 export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
+    // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
+    repaired = stripEggLine(repaired, eggFor(persona).line);
     // A spell, place or item the library never gave is replaced by the honest line.
     if (typeof groundingText === "string") {
       const g = groundedOrNotPublished(repaired, groundingText);
@@ -954,6 +956,25 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
         })
       : { main: repaired, more: "", sources: "" };
     return { answer: parts.main, cites, parts };
+}
+
+// The stored answer of this asker's identical question (same visibility) in the last 10 minutes, or null. Asker identity is the salted
+// hash in ask_turn_askers, so a visitor (no hash) is never matched, and an error or budget line is never reused.
+const REUSE_WINDOW_MS = 10 * 60 * 1000;
+const normQuestion = (q) => String(q || "").toLowerCase().replace(/\s+/g, " ").replace(/[\s.!?]+$/g, "").trim();
+export async function findRecentSameAnswer(env, { intentId, question, share }) {
+  try {
+    const since = new Date(Date.now() - REUSE_WINDOW_MS).toISOString();
+    const { results } = await env.DB.prepare(
+      "SELECT t.answer, t.cites_json, t.question FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
+        "WHERE a1.intent_id = ? AND t.id <> ? AND t.status = 'answered' AND t.answer IS NOT NULL AND t.share = ? AND t.answered_at > ? " +
+        "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' ORDER BY t.answered_at DESC LIMIT 5"
+    ).bind(String(intentId), String(intentId), share ? 1 : 0, since).all();
+    const want = normQuestion(question);
+    return (results || []).find((r) => normQuestion(r.question) === want) || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function answerWithAi({
@@ -977,6 +998,23 @@ export async function answerWithAi({
   let budgetCode = null;
 
   try {
+    // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
+    const prior = await findRecentSameAnswer(env, { intentId, question, share });
+    if (prior) {
+      const reusedAt = nowIso();
+      await env.DB.prepare("UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?")
+        .bind(prior.answer, prior.cites_json || "[]", "reused-answer", Date.now() - t0, reusedAt, intentId)
+        .run();
+      const broadcastSlug0 = memberSlug || by.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      if (share) {
+        const item = { id: wireId(intentId), kind: "ask", by, q: question, text: question, answer: prior.answer, cites: JSON.parse(prior.cites_json || "[]"), model: "reused-answer", share: true, status: "answered", at: reusedAt };
+        await broadcastToRoom(env, { type: "ask", slug: broadcastSlug0, ask: item });
+      } else {
+        await broadcastToRoom(env, { type: "ask", slug: broadcastSlug0 });
+      }
+      return { reused: true };
+    }
+
     // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
     const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember });
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised } = inputs;
