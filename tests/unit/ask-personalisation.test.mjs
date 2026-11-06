@@ -168,3 +168,56 @@ test("party state in the grounding text lets party names through", async () => {
   const i = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox" });
   assert.ok(i.groundingText.includes("Party:"));
 });
+
+// ---- round 2: fail closed, headings are checked, bold is re-balanced, web-shaped integration ----
+import { renderPartyBuilds, renderAskerBuild } from "../../infrastructure/worker/ask-build.js";
+import { answerWithAi } from "../../infrastructure/worker/ai-models.js";
+import { insertAskTurn } from "../../infrastructure/worker/answer-ux.js";
+
+test("visibility fails closed: missing, null and bare values are hidden for others and for a public ask", () => {
+  const sheet = { slug: "x", name: "Ex", fields: { class: { value: "rogue" }, race: { value: "orc", visible: null }, level: 7, goals: { value: "g", visible: "yes" }, spec_path: { value: "combat", visible: true } } };
+  const others = renderPartyBuilds([sheet], null);
+  assert.match(others, /spec_path combat/);
+  for (const hidden of ["rogue", "orc", "7", "\bg\b"]) assert.ok(!new RegExp(hidden).test(others), `${hidden} leaked`);
+  const pub = renderAskerBuild(sheet, {}, { includeHidden: false });
+  assert.match(pub, /spec_path: combat/);
+  assert.ok(!/rogue|orc|level|goals/.test(pub));
+  const priv = renderAskerBuild(sheet, {}, { includeHidden: true });
+  assert.match(priv, /class: rogue/);
+  assert.match(priv, /level: 7/);
+});
+
+test("invented names inside headings and colon lead-ins are caught; generic headings are not", () => {
+  for (const a of ["# Frost Hammer\n\nHoly Shield helps you tank.", "**Frost Hammer:** deals damage.\n\nHoly Shield helps you tank with a long enough sentence here.", "Here is what you need to know about the new gear drops and rewards for tanks, and also Frost Hammer: it rocks.\n\nHoly Shield helps you tank."]) {
+    const r = g(a);
+    assert.ok(!r.ok && !r.answer.includes("Frost Hammer"), a);
+    assert.ok(r.answer.includes("Holy Shield"), "the rest survives: " + r.answer);
+  }
+  assert.ok(g("**Recommended Next Steps:**\n\nHoly Shield helps you tank in Deadmines.").ok);
+});
+
+test("cutting a sentence out of a bold line leaves no unpaired **", () => {
+  const r = g("**Frost Hammer is strong. Holy Shield helps you tank.**\n\nDeadmines is a dungeon.");
+  assert.ok(!r.ok);
+  assert.equal((r.answer.match(/\*\*/g) || []).length % 2, 0, r.answer);
+  assert.ok(r.answer.includes("Holy Shield") && !r.answer.includes("Frost Hammer"));
+});
+
+test("web-shaped answerWithAi: the signed-in slug's sheet reaches the model, and not another member's hidden field", async () => {
+  const { DB } = makeEnv();
+  const prompts = [];
+  const env = {
+    DB, USER_SALT: "user-salt-for-tests-0123456789", KEY_SALT: "key-salt-for-tests-0123456789", BOARD_ADMIN_TOKEN: "admin-token-for-tests-0123456789abcdef",
+    BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) },
+    AI: { run: async (_m, inputs) => { prompts.push(inputs.messages.map((m) => m.content).join("\n")); return { response: "**Holy Shield helps you tank.**\n\n-# Sources: classes/paladin-protection", usage: { prompt_tokens: 5, completion_tokens: 5 } }; } },
+  };
+  const id = "web-1";
+  await insertAskTurn(env, { id, byName: "Red Fox", question: "how do I tank as a paladin", provider: "workers-ai", share: false, createdAt: new Date().toISOString() }, { slug: "red-fox" });
+  const silence = [console.error, console.warn]; console.error = () => {}; console.warn = () => {};
+  try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by: "Red Fox", memberSlug: "red-fox", question: "how do I tank as a paladin", provider: "workers-ai", share: false, isMember: true }); }
+  finally { [console.error, console.warn] = silence; }
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /class: paladin/);
+  assert.match(prompts[0], /tank the Deadmines/, "private ask by the signed-in member: own hidden field is used");
+  assert.ok(!prompts[0].includes("hidden goal text") && !prompts[0].includes("secretspec"));
+});

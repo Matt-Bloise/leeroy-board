@@ -10,6 +10,9 @@ export const EMPTY_BUILD_LINE = "No build on file for the asker yet. Say so once
 // Sheet fields shown to the model, in order. Mirrors SHEET_FIELDS in index.js plus role if a sheet carries one.
 const FIELD_ORDER = ["class", "race", "spec_path", "spec_at_40", "level", "role", "professions", "launch_state", "plan_zone", "goals"];
 
+// Fails closed: a field is public only when it says visible === true. Missing, null or a bare value counts as hidden.
+const isVisible = (f) => Boolean(f) && typeof f === "object" && !Array.isArray(f) && f.visible === true;
+
 const clip = (s, n) => String(s).replace(/\s+/g, " ").trim().slice(0, n);
 
 function fieldText(f) {
@@ -62,7 +65,7 @@ export function renderAskerBuild(sheet, stateMap, { includeHidden = false } = {}
   const fields = sheet.fields || {};
   const parts = [];
   for (const k of FIELD_ORDER) {
-    if (!includeHidden && fields[k] && fields[k].visible === false) continue;
+    if (!includeHidden && !isVisible(fields[k])) continue;
     const t = fieldText(fields[k]);
     if (t) parts.push(`${k}: ${t}`);
   }
@@ -78,7 +81,7 @@ export function renderPartyBuilds(sheets, askerSheet) {
     const parts = [];
     for (const k of FIELD_ORDER) {
       const f = (s.fields || {})[k];
-      if (!f || f.visible === false) continue;
+      if (!isVisible(f)) continue;
       const t = fieldText(f);
       if (t) parts.push(`${k} ${t}`);
     }
@@ -102,11 +105,16 @@ const GENERIC = new Set((
   "option options or other our overview point points quick recommended remember same see second set should since so some start step steps " +
   "summary take tell tip tips that the their then there these they third this those though three tonight today too try two up use want was " +
   "way we well what when where which while who why will with without worth would yes you your meet pick keep give note notes plan " +
-  "reminder reminders also still once before after during until across about above below over under per via ask answer answers question " +
+  "reminder reminders also still once before after during until across about above below over under basics guide info details rundown breakdown comparison pros cons requirements per via ask answer answers question " +
   "questions party board library sign signup signups ups trade offs long short high low early late new old big small full half"
 ).split(/\s+/));
 
 const words = (t) => t.split(/\s+/).filter(Boolean);
+
+// After a sentence is cut out of a bold line, an unpaired ** would bold the rest of the message: drop the markers if they are odd.
+function balanceBold(line) {
+  return (line.match(/\*\*/g) || []).length % 2 ? line.replace(/\*\*/g, "") : line;
+}
 
 function trimPhrase(phrase, opens) {
   let w = words(phrase);
@@ -114,13 +122,6 @@ function trimPhrase(phrase, opens) {
   while (w.length && (CONNECTORS.has(w[0].toLowerCase()) || (GENERIC.has(w[0].toLowerCase()) && (opens || w.length > 2)))) w.shift();
   while (w.length && (CONNECTORS.has(w[w.length - 1].toLowerCase()) || GENERIC.has(w[w.length - 1].toLowerCase()))) w.pop();
   return w;
-}
-
-function isHeading(line) {
-  const t = line.replace(/[*_`#>\-•\s]+/g, " ").trim();
-  if (!t) return true;
-  if (/:\s*$/.test(line.trim()) || /^\s*#/.test(line)) return true;
-  return words(t).length <= 5 && !/[.!?]$/.test(t) && /^\*\*.*\*\*$|^__.*__$/.test(line.trim().replace(/^[-•]\s*/, ""));
 }
 
 const tokenCache = new Map();
@@ -155,7 +156,6 @@ export function unknownNames(answer, allowedText) {
   const allowed = `${allowedText || ""} ${HOUSE.join(" ")}`.toLowerCase();
   const bad = [];
   for (const line of body.split("\n")) {
-    if (isHeading(line)) continue;
     bad.push(...badPhrases(line, allowed));
   }
   return bad;
@@ -171,7 +171,6 @@ export function groundedOrNotPublished(answer, allowedText) {
   const bad = [];
   const kept = [];
   for (const line of body.split("\n")) {
-    if (isHeading(line)) { kept.push(line); continue; }
     const parts = line.split(/(?<=[.!?])\s+/);
     const ok = parts.filter((sent) => {
       const b = badPhrases(sent, allowed);
@@ -179,7 +178,7 @@ export function groundedOrNotPublished(answer, allowedText) {
       return b.length === 0;
     });
     if (ok.length === parts.length) kept.push(line);
-    else if (ok.length) kept.push(ok.join(" "));
+    else if (ok.length) kept.push(balanceBold(ok.join(" ")));
     // a line that lost every sentence is dropped
   }
   if (!bad.length) return { ok: true, bad: [], answer: text };
