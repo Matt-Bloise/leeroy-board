@@ -6,6 +6,10 @@ import { stripFence } from "./prompt-fence.js";
 
 export const NOT_PUBLISHED_LINE = "The library does not have that yet.";
 export const EMPTY_BUILD_LINE = "No build on file for the asker yet. Say so once and ask them to fill in their sheet on the board.";
+export const VISITOR_BUILD_LINE = "Visitor: no build; do not mention sheets.";
+// The member has data, but none of it may appear in this (public) ask: say nothing about sheets or missing data.
+export const HIDDEN_BUILD_LINE = "Build is private for this ask; do not mention sheets or missing data.";
+export const hasBuildText = (t) => !/^(No build on file|Visitor: no build|Build is private)/.test(String(t));
 
 // Sheet fields shown to the model, in order. Mirrors SHEET_FIELDS in index.js plus role if a sheet carries one.
 const FIELD_ORDER = ["class", "race", "spec_path", "spec_at_40", "level", "role", "professions", "launch_state", "plan_zone", "goals"];
@@ -69,7 +73,7 @@ export function renderAskerBuild(sheet, stateMap, { includeHidden = false } = {}
     const t = fieldText(fields[k]);
     if (t) parts.push(`${k}: ${t}`);
   }
-  if (!parts.length) return EMPTY_BUILD_LINE;
+  if (!parts.length) return Object.values(fields).some((f) => fieldText(f)) ? HIDDEN_BUILD_LINE : EMPTY_BUILD_LINE;
   return [`${clip(stripFence(sheet.name || sheet.slug, { oneLine: true }), 40)} (the asker)`, ...parts, ...stateFor(sheet, stateMap)].join("; ");
 }
 
@@ -95,7 +99,9 @@ export function renderPartyBuilds(sheets, askerSheet) {
 // party names or the question is an invented spell, place or item. Conservative: single capitalised words, house names, generic prose
 // words ("Recommended Next Steps"), headings and leading connector words never trigger it. A hit removes only the sentence or bullet that
 // holds the name; the whole answer falls back to the not-published line only when nothing substantive is left.
-const PHRASE_RE = /\b[A-Z][a-z']+(?:\s+(?:of|the|in|for|to)\s+[A-Z][a-z']+|\s+[A-Z][a-z']+)+/g;
+const PHRASE_RE = /\b[A-Z][a-z]+(?:'s)?(?:\s+(?:of|the|in|for|to)\s+[A-Z][a-z]+(?:'s)?|\s+[A-Z][a-z]+(?:'s)?)+/g;
+// A possessive of a name is the name: "Bible Boi's" is checked as "Bible Boi".
+const unpossess = (w) => w.replace(/'s?$/i, "");
 const HOUSE = [...ROSTER_DATA.map((r) => r.display), "leeroy", "leeroy jenkins", "dungeons and drinking", "wow classic", "classic forever", "world of warcraft"];
 const CONNECTORS = new Set(["of", "the", "in", "for", "to", "and", "a", "an", "at", "on", "with"]);
 // Words that make ordinary prose look like a name: sentence openers, heading words, filler.
@@ -105,7 +111,7 @@ const GENERIC = new Set((
   "option options or other our overview point points quick recommended remember same see second set should since so some start step steps " +
   "summary take tell tip tips that the their then there these they third this those though three tonight today too try two up use want was " +
   "way we well what when where which while who why will with without worth would yes you your meet pick keep give note notes plan " +
-  "reminder reminders also still once before after during until across about above below over under basics guide info details rundown breakdown comparison pros cons requirements per via ask answer answers question " +
+  "reminder reminders also still once before after during until across about above below over under basics guide info details rundown breakdown comparison pros cons requirements talent tree trees side horde alliance build builds spec specs role roles class classes profession professions gear zone zones dungeon dungeons quest quests level levels leveling rotation stats priority reward rewards requirements location locations route schedule per via ask answer answers question " +
   "questions party board library sign signup signups ups trade offs long short high low early late new old big small full half"
 ).split(/\s+/));
 
@@ -128,7 +134,8 @@ const tokenCache = new Map();
 function tokens(allowed) {
   let t = tokenCache.get(allowed);
   if (!t) {
-    t = new Set(allowed.match(/[a-z']+/g) || []);
+    t = new Set();
+    for (const w of allowed.match(/[a-z]+(?:'s)?/g) || []) { t.add(w); t.add(unpossess(w)); }
     if (tokenCache.size > 20) tokenCache.clear();
     tokenCache.set(allowed, t);
   }
@@ -138,9 +145,9 @@ function tokens(allowed) {
 function badPhrases(text, allowed) {
   const bad = [];
   for (const m of text.replace(/[*_`]/g, "").matchAll(PHRASE_RE)) {
-    const full = m[0].trim();
+    const full = words(m[0]).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
     if (allowed.includes(full.toLowerCase())) continue;
-    const core = trimPhrase(full, true);
+    const core = trimPhrase(full, true).map(unpossess);
     if (core.length < 2) continue;
     const coreText = core.join(" ");
     if (allowed.includes(coreText.toLowerCase())) continue;

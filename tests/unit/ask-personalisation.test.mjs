@@ -71,7 +71,7 @@ test("an empty build degrades honestly; a visitor gets no build", async () => {
   const unknown = await inputs(makeEnv(), { by: "Nobody Here", memberSlug: "nobody-here" });
   assert.match(unknown.userPrompt, /fill in their sheet/);
   const visitor = await inputs(makeEnv(), { by: "Visitor", isMember: false });
-  assert.match(visitor.userPrompt, /Visitor: no build on file/);
+  assert.match(visitor.userPrompt, /Visitor: no build; do not mention sheets/);
   assert.ok(!visitor.userPrompt.includes("class: paladin"));
 });
 
@@ -136,7 +136,7 @@ test("both Discord answerWithAi call sites pass the verified member slug", () =>
 });
 
 // ---- grounding: repair, do not wipe ----
-const ALLOWED = "Party: Santa. Protection Paladins tank with Holy Shield. Deadmines is a dungeon. Red Fox: class paladin; level 12";
+const ALLOWED = "Party: Santa, Bible Boi, Street Rat, Handsome Squidward. Protection Paladins tank with Holy Shield. Deadmines is a dungeon. Ragefire Chasm is in Orgrimmar. Onyxia's Lair opens soon. Red Fox: class paladin; level 12";
 const g = (a) => groundedOrNotPublished(a, ALLOWED);
 
 test("grounded names, connectors and generic headings pass untouched", () => {
@@ -220,4 +220,64 @@ test("web-shaped answerWithAi: the signed-in slug's sheet reaches the model, and
   assert.match(prompts[0], /class: paladin/);
   assert.match(prompts[0], /tank the Deadmines/, "private ask by the signed-in member: own hidden field is used");
   assert.ok(!prompts[0].includes("hidden goal text") && !prompts[0].includes("secretspec"));
+});
+
+// ---- round 3: possessives, bold labels, sheet wording, property-style pass-through ----
+import { HIDDEN_BUILD_LINE } from "../../infrastructure/worker/ask-build.js";
+
+test("possessives of grounded names pass untouched", () => {
+  for (const a of [
+    "**Bible Boi's signup is yes.** Holy Shield helps you tank.",
+    "Street Rat's build is public. Handsome Squidward's plan is set.",
+    "Holy Shield's cooldown is in the library page. Ragefire Chasm's entrance is in Orgrimmar.",
+    "Onyxia's Lair opens soon.",
+  ]) {
+    const r = g(a);
+    assert.ok(r.ok, `${a} -> ${r.bad}`);
+    assert.equal(r.answer, a);
+  }
+  assert.ok(!g("Frost Hammer's damage is huge. Holy Shield helps you tank.").ok, "a possessive of an invention is still an invention");
+});
+
+test("a bold label ending in a colon is not an invention", () => {
+  for (const a of ["**Talent Tree:** put points in Protection first.", "**Horde Side:** Ragefire Chasm is in Orgrimmar."]) {
+    const r = g(a);
+    assert.ok(r.ok, `${a} -> ${r.bad}`);
+    assert.equal(r.answer, a);
+  }
+});
+
+test("the build line never tells visitors, or members with only hidden data on a public ask, to fill in a sheet", async () => {
+  const visitor = await inputs(makeEnv(), { by: "Visitor", isMember: false });
+  assert.ok(!/fill in/.test(visitor.userPrompt));
+  const hiddenOnly = [{ slug: "quiet-bat", name: "Quiet Bat", fields: { class: f("rogue", false), level: f(5, false) }, updated: "x" }];
+  const pub = await inputs(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: true });
+  assert.ok(pub.userPrompt.includes(HIDDEN_BUILD_LINE));
+  assert.ok(!/fill in|rogue/.test(pub.userPrompt));
+  const priv = await inputs(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: false });
+  assert.match(priv.userPrompt, /class: rogue/);
+  const none = await inputs(makeEnv({ sheets: [{ slug: "new-cat", name: "New Cat", fields: {}, updated: "x" }] }), { by: "New Cat", memberSlug: "new-cat" });
+  assert.match(none.userPrompt, /fill in their sheet/);
+  assert.ok(!/fill in|sheet/i.test(PERSONALISE_RULE.replace(/Only if YOUR_BUILD says[^;]*;[^.]*\./, "")), "the rule itself mentions sheets only conditionally");
+});
+
+test("property: 20 good answers built from grounded names come back unchanged", () => {
+  const names = ["Holy Shield", "Deadmines", "Ragefire Chasm", "Bible Boi", "Street Rat", "Handsome Squidward", "Onyxia's Lair"];
+  const shapes = [
+    (n) => `**${n} is worth a look.**`,
+    (n) => `${n}'s notes are in the library.`,
+    (n) => `**Recommended Next Steps**\n- Start with ${n}.\n- Then check Deadmines.`,
+    (n) => `**Quick Tips:** ${n} comes first.\n\n-# Sources: classes/paladin-protection`,
+    (n) => `Meet in ${n} tonight. Good Luck out there.`,
+    (n) => `# ${n}\n\nAs a Paladin you tank with Holy Shield.`,
+  ];
+  let count = 0;
+  for (const n of names) for (const shape of shapes) {
+    if (count >= 40) break;
+    const a = shape(n);
+    const r = g(a);
+    assert.ok(r.ok && r.answer === a, `${a} -> ${r.bad} / ${r.answer}`);
+    count++;
+  }
+  assert.ok(count >= 20);
 });
