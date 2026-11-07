@@ -474,7 +474,7 @@ function tick() {
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function fill(key, ...kids) { const el = $(`#ts-${key}`); if (el) el.replaceChildren(...kids.flat().filter(Boolean)); }
-const LEEROY_HOW = "In #wow-forever, type /ask and your question, or tag Leeroy Jenkins.";
+const LEEROY_HOW = "In #wow-forever, type /ask and your question.";
 function renderTiles() {
   partyCopy();
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;

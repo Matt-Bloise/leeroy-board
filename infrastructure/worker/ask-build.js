@@ -77,6 +77,15 @@ export function renderAskerBuild(sheet, stateMap, { includeHidden = false } = {}
   return [`${clip(stripFence(sheet.name || sheet.slug, { oneLine: true }), 40)} (the asker)`, ...parts, ...stateFor(sheet, stateMap)].join("; ");
 }
 
+// The asker's class, spec, level, race and professions as plain values, for the code-written abstain answer. Same visibility rule as renderAskerBuild.
+export function askerFacts(sheet, { includeHidden = false } = {}) {
+  if (!sheet) return null;
+  const fields = sheet.fields || {};
+  const get = (k) => (!includeHidden && !isVisible(fields[k]) ? "" : fieldText(fields[k]));
+  const out = { class: get("class"), spec: get("spec_path"), level: get("level"), race: get("race"), professions: get("professions").split(/[,;]+/).map((x) => x.trim()).filter(Boolean) };
+  return out.class || out.spec || out.level || out.professions.length ? out : null;
+}
+
 // Other members: ONLY fields marked visible. A hidden field's value must never reach the prompt.
 export function renderPartyBuilds(sheets, askerSheet) {
   const lines = [];
