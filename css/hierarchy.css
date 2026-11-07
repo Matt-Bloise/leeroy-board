@@ -35,3 +35,12 @@
    the placeholder is set dark so it holds 4.5:1 on the dimmed parchment */
 #wall > li[data-tier] .tile-search { filter: brightness(var(--ti)); transition: filter var(--cin-t-hover) var(--cin-ease); }
 #wall > li[data-tier="2"] .tile-q::placeholder { color: #0f0904; }
+
+/* Cinematic slice 7: the Library's empty state. It is a statement, not a bright field: near-black ground, cream text, one brass edge (OLED: black stays black).
+   The Ask Leeroy link is the single strong control on it. */
+.lib-empty { background: #0b0805; color: var(--cream); box-shadow: 0 0 0 1px var(--brass); }
+.lib-empty .lib-title, .lib-empty p { color: var(--cream); }
+.lib-empty .lib-empty-q { opacity: 0.85; }
+.lib-empty .plink { color: var(--cream); }
+.lib-empty a.lib-btn { display: inline-flex; align-items: center; text-decoration: none; min-height: 44px; }
+.lib-empty a:focus-visible, .lib-empty button:focus-visible { outline: 2px solid var(--cream); outline-offset: 2px; }
