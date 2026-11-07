@@ -12,6 +12,7 @@
 // Channel and message ids live only in the D1 kv_state row `cards`, written through PUT /api/config/cards or POST /api/admin/cards/post.
 
 import { noiseDay, recordShadow } from "./noise.js";
+import { cardMembers, parseClassEmoji, memberFor, iconFor } from "./card-members.js";
 
 export const CARDS_KEY = "cards";
 export const CARD_EDIT_KEY = "cards_edit";
@@ -153,8 +154,19 @@ const NO_MENTIONS = { parse: [] };
 export function renderSignupCard(state) {
   const t = tallyEntries(state);
   const fields = [];
+  const members = state && Array.isArray(state.members) ? state.members : null;
+  const emoji = (state && state.classEmoji) || {};
+  const entries = Array.isArray(state && state.entries) ? state.entries : [];
+  const byState = (st) => entries.filter((e) => e && e.rsvp === st).map((e) => `${iconFor(memberFor(members, e), emoji)}${cleanName(e.name)}`);
   for (const s of RSVP_STATES) {
-    if (s === "in" || t.rsvp[s].length) fields.push({ name: `${RSVP_LABEL[s]} (${t.rsvp[s].length})`, value: listNames(t.rsvp[s]), inline: false });
+    if (s === "in" || t.rsvp[s].length) {
+      const names = members ? byState(s) : t.rsvp[s];
+      fields.push({ name: `${RSVP_LABEL[s]} (${names.length})`, value: listNames(names), inline: false });
+    }
+  }
+  if (members) {
+    const quiet = members.filter((m) => !entries.some((e) => e && e.rsvp && memberFor([m], e)));
+    if (quiet.length) fields.push({ name: `No answer yet (${quiet.length})`, value: clampText(quiet.map((m) => `${iconFor(m, emoji)}${m.name}`).join(", "), 1024), inline: false });
   }
   if (t.pack.yes.length || t.pack.no.length) {
     fields.push({ name: "Pre-order pack", value: clampText(`Yes ${t.pack.yes.length} · No ${t.pack.no.length}`, 1024), inline: true });
@@ -173,6 +185,8 @@ export function renderSignupCard(state) {
   };
   const when = fmtUpdated(state && state.updated);
   if (when) embed.footer = { text: `Updated ${when}` };
+  const thumb = assetUrl(state, "img/seal.png");
+  if (thumb) embed.thumbnail = { url: thumb };
 
   const mopts = meetOptions(state && state.options).slice(0, 2);
   const wopts = whenOptions(state && state.options).slice(0, 5);
@@ -193,25 +207,80 @@ export function renderSignupCard(state) {
   return { embeds: [embed], components, allowed_mentions: NO_MENTIONS };
 }
 
+// A static board image for embeds (Pages serves it; no Worker work). Only when the card state carries an https site base.
+function assetUrl(state, path) {
+  const base = state && typeof state.siteBase === "string" ? state.siteBase.replace(/\/+$/, "") : "";
+  return /^https:\/\/[^\s/]+$/.test(base) ? `${base}/${path}` : null;
+}
+
+const DETAIL_MAX = 1024;
+const detailBits = (e) => {
+  const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
+  if (e && e.when) bits.push(sanitiseWriteIn(e.when));
+  if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
+  if (e && (e.pack === "yes" || e.pack === "no")) bits.push(`pack ${e.pack}`);
+  return bits;
+};
+// One person per two lines: name and class, then a `-#` detail line. People with no sign-up still show; sign-ups from people the
+// party sheets do not list yet show with a plain note.
+function boardBlocks(state, entries) {
+  const emoji = state.classEmoji || {};
+  const used = new Set();
+  const blocks = [];
+  for (const m of state.members) {
+    const e = entries.find((x) => x && memberFor([m], x));
+    if (e) used.add(e);
+    const head = [m.classLabel, m.role].filter(Boolean).join(" · ");
+    blocks.push(`${iconFor(m, emoji)}**${m.name}**${head ? ` · ${head}` : ""}\n-# ${[m.race, ...detailBits(e)].filter(Boolean).join(" · ")}`);
+  }
+  for (const e of entries) {
+    if (used.has(e)) continue;
+    blocks.push(`**${cleanName(e && e.name)}**\n-# Not on the party sheets yet · ${detailBits(e).join(" · ")}`);
+  }
+  return blocks;
+}
+
+// Cut at person boundaries: Discord allows 1024 characters per field value.
+function chunkBlocks(blocks) {
+  const out = [];
+  let cur = "";
+  for (const blk of blocks) {
+    const piece = clampText(blk, DETAIL_MAX);
+    if (cur && cur.length + 1 + piece.length > DETAIL_MAX) { out.push(cur); cur = piece; } else cur = cur ? `${cur}\n${piece}` : piece;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 // The party board card: one line per person, no buttons (an optional https link button to the board).
+// With state.members (the party document) each person shows class, role and race, including people with no sign-up and sign-ups
+// from people the party sheets do not list yet. Without it the original one-line shape is kept.
 export function renderBoardCard(state) {
   const entries = Array.isArray(state && state.entries) ? state.entries : [];
   const t = tallyEntries(state);
-  const lines = entries.map((e) => {
-    const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
-    if (e && e.when) bits.push(String(e.when));
-    if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
-    if (e && e.pack) bits.push(`pack ${e.pack}`);
-    return `**${cleanName(e && e.name)}**: ${bits.join(" · ")}`;
-  });
+  let fields;
+  if (state && Array.isArray(state.members)) {
+    fields = chunkBlocks(boardBlocks(state, entries)).slice(0, 6).map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
+  } else {
+    const lines = entries.map((e) => {
+      const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
+      if (e && e.when) bits.push(String(e.when));
+      if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
+      if (e && e.pack) bits.push(`pack ${e.pack}`);
+      return `**${cleanName(e && e.name)}**: ${bits.join(" · ")}`;
+    });
+    fields = lines.length ? [{ name: "Who", value: clampText(lines.join("\n"), 1024), inline: false }] : [];
+  }
   const embed = {
     title: "Party board",
     description: clampText(`${t.rsvp.in.length} in · ${t.rsvp.maybe.length} tentative · ${t.rsvp.late.length} running late · ${t.rsvp.out.length} out`, 4096),
     color: GOLD,
-    fields: lines.length ? [{ name: "Who", value: clampText(lines.join("\n"), 1024), inline: false }] : [],
+    fields,
   };
   const when = fmtUpdated(state && state.updated);
   if (when) embed.footer = { text: `Updated ${when}` };
+  const thumb = assetUrl(state, "img/seal.png");
+  if (thumb) embed.thumbnail = { url: thumb };
   const body = { embeds: [embed], components: [], allowed_mentions: NO_MENTIONS };
   const url = state && state.boardUrl;
   if (typeof url === "string" && /^https:\/\//.test(url) && url.length <= 512) {
@@ -277,6 +346,21 @@ export async function loadSignups(db) {
   return row ? parse(row.json, { entries: [] }) : { entries: [] };
 }
 
+// The card state: sign-ups plus the party members (the same public document /api/state serves) and the optional class emoji map.
+// Runs in the deferred redraw, never in the 3 s interaction path. A failed party read leaves the legacy card shape.
+export async function loadCardState(env) {
+  const state = await loadSignups(env.DB);
+  const base = env.BOARD_PUBLIC_URL ? String(env.BOARD_PUBLIC_URL).replace(/\/+$/, "") : "";
+  state.boardUrl = base ? `${base}/#signups` : undefined;
+  state.siteBase = base || undefined;
+  try {
+    const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
+    if (row && row.json) state.members = cardMembers(JSON.parse(row.json));
+  } catch { /* legacy shape */ }
+  state.classEmoji = parseClassEmoji(env.CARD_CLASS_EMOJI);
+  return state;
+}
+
 async function readEdit(db) {
   const row = await db.prepare("SELECT json FROM kv_state WHERE key = ?").bind(CARD_EDIT_KEY).first();
   const raw = row ? row.json : null;
@@ -321,8 +405,7 @@ export function retryAfterMs(res, json) {
 // Redraw every configured, live card from the current sign-ups. A 404 means a person deleted the message: mark it deleted and stop
 // editing it (never retry it), so a missing card cannot loop. POST /api/admin/cards/post recreates it.
 export async function redrawCards(env, cards, { fetchImpl = fetch, now = Date.now() } = {}) {
-  const state = await loadSignups(env.DB);
-  state.boardUrl = env.BOARD_PUBLIC_URL ? `${String(env.BOARD_PUBLIC_URL).replace(/\/+$/, "")}/#signups` : undefined;
+  const state = await loadCardState(env);
   const results = [];
   let marked = false;
   let retryAfter = 0;
@@ -398,8 +481,7 @@ export async function postCard(env, { card, channelId, fetchImpl = fetch, now = 
   if (!RENDERERS[card]) return { ok: false, error: "card must be signups or board" };
   const cards = (await loadCards(env.DB)) || {};
   if (cards[card] && !cards[card].deleted && !cards[card].errored && !replace) return { ok: false, error: "card_exists", status: 409 };
-  const state = await loadSignups(env.DB);
-  state.boardUrl = env.BOARD_PUBLIC_URL ? `${String(env.BOARD_PUBLIC_URL).replace(/\/+$/, "")}/#signups` : undefined;
+  const state = await loadCardState(env);
   const body = RENDERERS[card](state);
   if (cardsShadow(env)) {
     await recordShadow(env.DB, "post", channelId, noiseDay(now, null)).catch(() => {});
