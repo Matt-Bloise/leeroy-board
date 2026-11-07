@@ -271,6 +271,7 @@ async function openState(page, state) {
   await page.waitForSelector("#nx-fr2-look", { state: "visible", timeout: 20000 });
   await page.waitForTimeout(500);
   if (state !== "gate") await press(page, page.getByText("Just take a look", { exact: false }).first());
+  if (state !== "gate") await page.evaluate(() => window.__boardKit && window.__boardKit.goScene("tonight")).catch(() => {}); // "Just take a look" now closes the card; the sweep judges the name picker, so open Tonight again
   if (state === "member") {
     await press(page, page.getByRole("button", { name: /Bloise/ }).first());
     await press(page, page.getByRole("button", { name: /Show me what is next/ }).first());
