@@ -64,6 +64,11 @@ async function run(label, viewport, mobile) {
   ok(label + ": the lamp stays inside the viewport and is quiet (opacity <= 1, centre on screen)", !!l2 && l2.cx >= 0 && l2.cx <= l2.w && l2.cy >= 0 && l2.cy <= l2.h && l2.op <= 1);
   await page.waitForTimeout(700);
   if (OUT) await page.screenshot({ path: path.join(OUT, "home-" + label + ".png") }).catch(() => {});
+  ok(label + ": exactly one lamp and one script copy", await page.evaluate(() => document.querySelectorAll("#lamp").length === 1 && document.querySelectorAll('script[src^="js/light.js"]').length === 1));
+  // Calm via the API settles: one class flip, no mutation loop, and the button repaints
+  const churn = await page.evaluate(() => new Promise((done) => { let n = 0; const ob = new MutationObserver((ms) => { for (const m of ms) if (m.attributeName === "class") n++; }); ob.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] }); window.BoardLight.calm(true); setTimeout(() => { ob.disconnect(); const b = document.querySelector("#light-calm"); done({ n, pressed: b && b.getAttribute("aria-pressed"), text: b && b.textContent, lamps: document.querySelectorAll("#lamp").length }); }, 600); }));
+  ok(label + ": BoardLight.calm(true) settles (class changed at most twice), removes the lamp and repaints the button", churn.n <= 2 && churn.lamps === 0 && churn.pressed === "true" && /calm/.test(churn.text), JSON.stringify(churn));
+  await page.evaluate(() => window.BoardLight.calm(false)); await until(page, () => !!document.querySelector("#lamp"));
   // Calm switch
   const btn = await page.$("#light-calm");
   ok(`${label}: the Calm light switch exists`, !!btn);

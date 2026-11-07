@@ -22,6 +22,7 @@ const math = {
 };
 if (typeof module !== "undefined" && module.exports) module.exports = { math };
 if (typeof window === "undefined" || typeof document === "undefined") return;
+if (window.BoardLight) return; // loaded twice: the first copy keeps the one lamp
 
 const KEY = "board-light-calm", html = document.documentElement;
 const get = () => { try { return localStorage.getItem(KEY) === "1"; } catch (e) { return false; } };
@@ -53,7 +54,7 @@ function stop() { if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; } S.last 
 
 function sync() {
   const ok = allowed();
-  html.classList.toggle("light-off", !ok);
+  if (html.classList.contains("light-off") === ok) html.classList.toggle("light-off", !ok);
   if (!ok) { stop(); if (S.lamp) { S.lamp.remove(); S.lamp = null; } html.style.removeProperty("--lx"); html.style.removeProperty("--ly"); S.qx = S.qy = 0; return; }
   if (!S.lamp && document.body) {
     const d = document.createElement("div"); d.id = "lamp"; d.setAttribute("aria-hidden", "true");
@@ -62,9 +63,12 @@ function sync() {
   }
   if (document.hidden) stop();
 }
+function paintBtn() {
+  const b = document.getElementById("light-calm"); if (!b) return;
+  b.setAttribute("aria-pressed", String(S.calmUser)); b.textContent = S.calmUser ? "Light: calm" : "Light: warm";
+}
 function button() {
   const b = document.getElementById("light-calm"); if (!b) return;
-  const paintBtn = () => { b.setAttribute("aria-pressed", String(S.calmUser)); b.textContent = S.calmUser ? "Light: calm" : "Light: warm"; };
   paintBtn();
   b.addEventListener("click", () => { S.calmUser = !S.calmUser; put(S.calmUser); paintBtn(); sync(); });
 }
@@ -80,6 +84,6 @@ function boot() {
   if (typeof MutationObserver === "function") new MutationObserver(sync).observe(html, { attributes: true, attributeFilter: ["class"] });
   link(); addEventListener("load", link);
 }
-window.BoardLight = Object.freeze({ math, calm: (v) => { if (typeof v === "boolean") { S.calmUser = v; put(v); sync(); } return S.calmUser; } });
+window.BoardLight = Object.freeze({ math, calm: (v) => { if (typeof v === "boolean") { S.calmUser = v; put(v); paintBtn(); sync(); } return S.calmUser; } });
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
 })();
