@@ -81,7 +81,8 @@ try {
     const hasVT = await page.evaluate(() => typeof document.startViewTransition === "function");
     ok(`${tag} the ${path === "vt" ? "View Transition" : "FLIP"} path is the one under test`, path === "vt" ? hasVT : !hasVT);
     // the wall scroll is read after the tile is in view (a tap would scroll it there first); it must come back unchanged
-    const yNow = async () => { await tile(page).scrollIntoViewIfNeeded(); return page.evaluate(() => Math.round(scrollY)); };
+    // no locator.scrollIntoViewIfNeeded: it waits for the element to be "stable" and timed out at 30 s on the CI runner (run 42320879864); a plain in-page scrollIntoView has no such wait
+    const yNow = async () => { await page.evaluate((k) => { const t = document.querySelector(`#wall a.tile[data-scene="${k}"]`); if (t) t.scrollIntoView({ block: "nearest" }); }, KEY); return page.evaluate(() => Math.round(scrollY)); };
     let y0 = await yNow();
     // A: open, Esc closes to the same tile
     await tap(page); await settle(page, "open");
