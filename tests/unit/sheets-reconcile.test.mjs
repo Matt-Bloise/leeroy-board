@@ -151,3 +151,45 @@ test("a write for a distinct person with a similar name still gets its own sheet
   assert.equal(rows.find((r) => r.slug === "winton").fields.class.value, "paladin");
   assert.equal(rows.find((r) => r.slug === "winton-alt").fields.class.value, "mage");
 });
+
+test("a write under 'Winton (alt)' while 'Winton' is still in the document is a second person, not a rename", async () => {
+  const stored = [{ slug: "winton", name: "Winton", fields: { class: f("paladin") }, updated: "x" }];
+  const doc = { members: [{ name: "Winton", class_key: "paladin", class: "Paladin", race: "Undead" }] };
+  const env = makeEnv({ stored, doc });
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "winton-alt", name: "Winton (alt)", field: "level", value: 2 }));
+  const rows = kv(env, "party_sheets");
+  assert.deepEqual(rows.map((r) => r.slug).sort(), ["winton", "winton-alt"]);
+  assert.equal(rows.find((r) => r.slug === "winton").name, "Winton", "the first person is untouched");
+});
+
+test("the exact-name rule alone: a stored sheet with the same name but another slug takes the write", async () => {
+  const stored = [{ slug: "winton-old", name: "Winton (alt)", fields: { class: f("paladin") }, updated: "x" }];
+  const doc = { members: [{ name: "Winton (alt)", class_key: "paladin", class: "Paladin", race: "Undead" }] };
+  const env = makeEnv({ stored, doc });
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "winton-alt", name: "Winton (alt)", field: "level", value: 4 }));
+  const rows = kv(env, "party_sheets");
+  assert.equal(rows.length, 1, JSON.stringify(rows.map((r) => r.slug)));
+  assert.equal(rows[0].slug, "winton-alt");
+  assert.equal(rows[0].fields.class.value, "paladin");
+});
+
+test("an ambiguous rename (two stored sheets left the document with the same base name) matches neither", async () => {
+  const stored = [
+    { slug: "sam-horde", name: "Sam (Horde)", fields: { class: f("hunter") }, updated: "x" },
+    { slug: "sam-alliance", name: "Sam (Alliance)", fields: { class: f("rogue") }, updated: "x" },
+  ];
+  const doc = { members: [{ name: "Sam (A)", class_key: "rogue", class: "Rogue", race: "Human" }, { name: "Sam (H)", class_key: "hunter", class: "Hunter", race: "Orc" }] };
+  const env = makeEnv({ stored, doc });
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "sam-a", name: "Sam (A)", field: "level", value: 5 }));
+  const rows = kv(env, "party_sheets");
+  assert.equal(rows.find((r) => r.slug === "sam-horde").name, "Sam (Horde)", "neither stored sheet was renamed");
+  assert.equal(rows.find((r) => r.slug === "sam-alliance").name, "Sam (Alliance)");
+  assert.ok(rows.some((r) => r.slug === "sam-a" && r.fields.level.value === 5));
+});
+
+test("without a party document a write under a new slug never takes over a stored sheet", async () => {
+  const stored = [{ slug: "winton", name: "Winton", fields: { class: f("paladin") }, updated: "x" }];
+  const env = makeEnv({ stored, doc: null });
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "winton-alt", name: "Winton (alt)", field: "level", value: 1 }));
+  assert.deepEqual(kv(env, "party_sheets").map((r) => r.slug).sort(), ["winton", "winton-alt"]);
+});
