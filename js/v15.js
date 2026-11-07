@@ -204,7 +204,7 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
   function renderAsk() {
     const p = $("#lh-ask"); if (!p) return;
     const u = channelUrl();
-    p.replaceChildren(K.emb("speech"), " ", h("b", { text: "Ask Leeroy: " }), "in ", u ? h("a", { class: "tn-link", href: u, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open #wow-forever on Discord" }, "#wow-forever") : "#wow-forever", " type ", h("b", { text: "/ask" }), " and your question, or tag Leeroy Jenkins in a message. He answers from the same library this board searches. ", h("a", { class: "tn-link", href: "#librarian", text: "His numbers so far" }), ".");
+    p.replaceChildren(K.emb("speech"), " ", h("b", { text: "Ask Leeroy: " }), "in ", u ? h("a", { class: "tn-link", href: u, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open #wow-forever on Discord" }, "#wow-forever") : "#wow-forever", " type ", h("b", { text: "/ask" }), " and your question. He answers from the same library this board searches. ", h("a", { class: "tn-link", href: "#librarian", text: "His numbers so far" }), ".");
   }
 
   function refresh() {
