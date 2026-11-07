@@ -137,45 +137,65 @@ export function stripUnretrievedCites(answer, retrieved) {
 }
 
 // ---- numbers ----------------------------------------------------------------------------------------------------------------
-// A number the answer states is "checked" when it is 6 or more, a decimal or a percentage; 0 to 5 are counting words ("two options"). A checked number is
-// supported when the allowed text has the same value in any common spelling: leading zeros ("2026-12-09" supports "9" and "December 9"), thousands commas,
-// k and m suffixes ("10k" is 10,000), 12-hour and 24-hour clocks ("8 PM" is 20:00), number words ("sixty" is 60), and ranges ("5 to 7 hours" supports
-// "6 hours", and a stated range is supported when any value inside it is). Known blind spots: "a dozen", fractions, and a wrong number that happens to
-// equal another number in the retrieved text.
-const WORD_VALUES = (() => {
-  const units = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(" ");
-  const tens = { twenty: 20, thirty: 30, forty: 40, fourty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
-  const m = { hundred: 100, thousand: 1000 };
-  units.forEach((w, i) => { m[w] = i; });
-  Object.assign(m, tens);
-  return m;
-})();
+// One tokenizer reads numbers in the answer AND in the grounding text: digits (with thousands commas, decimals, % and k/m suffixes) and number words
+// ("sixty", "twenty-five", "two hundred"). A token is "checked" when its value is 6 or more, or it is a decimal or a percentage; 0 to 5 are counting words
+// ("two options"). A checked token is supported when the grounding text has the same VALUE: in any spelling (digits or words, leading zeros, "10k" and
+// "10,000"), as a date part ("2026-12-09" supports "December 9" and "the 9th"), or inside a range ("5 to 7 hours" and "about 6 hours" support each other).
+// Clock equivalents (8 PM is 20:00) are added only from a recognised clock expression in the grounding text (h:mm, am/pm, o'clock), never from a bare
+// number: "8 gold" does not authorise "20 gold", and "level 20" does not authorise "level 8". Known blind spots: "a dozen", fractions, "a couple", and a wrong
+// number that happens to equal another number in the grounding text. "ten minutes" and the like are checked too: a spelled-out number of 6 or more that the
+// shown text never gave is removed with its sentence.
+const UNIT_WORDS = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(" ");
+const TENS_WORDS = { twenty: 20, thirty: 30, forty: 40, fourty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const UNIT_VALUE = Object.fromEntries(UNIT_WORDS.map((w, i) => [w, i]));
+const WORD_NUM_RE = new RegExp(
+  `(?<![A-Za-z0-9])(?:(${Object.keys(TENS_WORDS).join("|")})(?:[-\\s](one|two|three|four|five|six|seven|eight|nine))?|(${UNIT_WORDS.join("|")}))(?:\\s+(hundred|thousand))?(?![A-Za-z0-9])`,
+  "gi"
+);
 const NUM_RE = /(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?:\s?(k|m)(?![A-Za-z0-9]))?(%)?/gi;
 const RANGE_RE = /(?<![\w.])(\d+)\s*(?:to|-|–|—)\s*(\d+)(?![\d.])/gi;
-const valueOf = (m) => {
-  let v = parseFloat(`${m[1].replace(/,/g, "")}${m[2] !== undefined ? "." + m[2] : ""}`);
-  if (m[3]) v *= m[3].toLowerCase() === "k" ? 1e3 : 1e6;
-  return v;
-};
 const canon = (v) => String(Math.round(v * 1e6) / 1e6);
+
+// [{ value, start, end, decimal, percent }] for the digits and the number words in `text`.
+function numberTokens(text) {
+  const s = String(text || "");
+  const out = [];
+  for (const m of s.matchAll(NUM_RE)) {
+    let v = parseFloat(`${m[1].replace(/,/g, "")}${m[2] !== undefined ? "." + m[2] : ""}`);
+    if (m[3]) v *= m[3].toLowerCase() === "k" ? 1e3 : 1e6;
+    out.push({ value: v, start: m.index, end: m.index + m[0].length, decimal: m[2] !== undefined, percent: Boolean(m[4]) });
+  }
+  for (const m of s.matchAll(WORD_NUM_RE)) {
+    const tens = m[1] ? TENS_WORDS[m[1].toLowerCase()] + (m[2] ? UNIT_VALUE[m[2].toLowerCase()] : 0) : UNIT_VALUE[m[3].toLowerCase()];
+    const mult = m[4] ? (m[4].toLowerCase() === "hundred" ? 100 : 1000) : 1;
+    out.push({ value: tens * mult, start: m.index, end: m.index + m[0].length, decimal: false, percent: false });
+  }
+  return out;
+}
+
+// Clock expressions only: "8pm", "8 PM", "8:30", "20:00", "8 o'clock". The 12-hour and 24-hour readings of the hour are both allowed.
+const CLOCK_RE = /(?<![\w.:])(\d{1,2}):(\d{2})(?![\d:])|(?<![\w.:])(\d{1,2})\s?(a\.?m\.?|p\.?m\.?)(?![A-Za-z])|(?<![\w.:])(\d{1,2})\s?o['’]?clock/gi;
+function clockHours(text) {
+  const hours = new Set();
+  for (const m of String(text || "").matchAll(CLOCK_RE)) {
+    const h = Number(m[1] ?? m[3] ?? m[5]);
+    if (!Number.isInteger(h) || h < 0 || h > 23) continue;
+    hours.add(h);
+    if (h >= 1 && h <= 12) hours.add(h + 12);
+    if (h >= 13) hours.add(h - 12);
+  }
+  return hours;
+}
 
 function allowedValues(text) {
   const src = String(text || "").replace(/\[\[retrieved:[^\]]*\]\]/g, " ");
   const set = new Set();
-  const add = (v) => set.add(canon(v));
-  for (const m of src.matchAll(NUM_RE)) {
-    const v = valueOf(m);
-    add(v);
-    if (Number.isInteger(v) && v >= 1 && v <= 12) add(v + 12); // 8 pm is 20:00
-    if (Number.isInteger(v) && v >= 13 && v <= 23) add(v - 12); // 20:00 is 8 pm
-  }
+  for (const t of numberTokens(src)) set.add(canon(t.value));
+  for (const h of clockHours(src)) set.add(canon(h));
   for (const m of src.matchAll(RANGE_RE)) {
     const a = Number(m[1]), b = Number(m[2]);
-    if (b > a && b - a <= 400) for (let n = a; n <= b; n++) add(n);
+    if (b > a && b - a <= 400) for (let n = a; n <= b; n++) set.add(canon(n));
   }
-  const low = src.toLowerCase();
-  for (const m of low.matchAll(/\b(twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety)(?:[\s-](one|two|three|four|five|six|seven|eight|nine))?\b/g)) add(WORD_VALUES[m[1]] + (m[2] ? WORD_VALUES[m[2]] : 0));
-  for (const m of low.matchAll(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|hundred|thousand)\b/g)) add(WORD_VALUES[m[1]]);
   return set;
 }
 
@@ -191,11 +211,10 @@ function unsupportedIn(sentence, allowed) {
     for (let n = a; n <= b && !ok; n++) ok = allowed.has(canon(n));
     if (!ok && (a > 5 || b > 5)) bad.push(r[0]);
   }
-  for (const m of sentence.matchAll(NUM_RE)) {
-    if (consumed.some(([s, e]) => m.index >= s && m.index < e)) continue;
-    const v = valueOf(m);
-    const checked = v > 5 || m[2] !== undefined || Boolean(m[4]);
-    if (checked && !allowed.has(canon(v))) bad.push(m[0].trim());
+  for (const t of numberTokens(sentence)) {
+    if (consumed.some(([s, e]) => t.start >= s && t.start < e)) continue;
+    const checked = t.value > 5 || t.decimal || t.percent;
+    if (checked && !allowed.has(canon(t.value))) bad.push(sentence.slice(t.start, t.end).trim());
   }
   return bad;
 }
