@@ -1087,7 +1087,12 @@ export async function findPreviousQuestion(env, { intentId, share = false }) {
     for (const r of results || []) {
       const q = String(r.question || "");
       if (!q || skipKind(q) !== null || refersToPrevious(q)) continue;
-      if (isFollowUpOpener(q)) { opener = opener || q; continue; }
+      if (isFollowUpOpener(q)) {
+        // Topic drift: "what about the mage?" names a new topic, so it IS the latest topic for a later bare "again?"; skipping it resolved to the older question.
+        // A pronoun-only opener ("what about that") has no topic of its own and is still skipped.
+        if (stripFollowUpScaffold(q).replace(/\b(?:the|that|this|it|them|those|these|one|ones|too|then)\b/gi, " ").replace(/[^a-z0-9]+/gi, "")) return q;
+        opener = opener || q; continue;
+      }
       return q;
     }
     return opener;

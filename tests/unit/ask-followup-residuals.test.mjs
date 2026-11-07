@@ -48,12 +48,22 @@ test("explicit follow-up with no previous question gets the clarification before
 });
 
 // (2) + (3) context-dependent turns are not standalone; the walk goes back to the first standalone turn
-test("an opener turn is skipped: 'same question' after Q1 -> 'and what about the mage' resolves to Q1", async () => {
+test("topic drift: Q1 -> 'and what about the mage' -> 'same question' resolves to the mage turn, never Q1", async () => {
   const env = makeEnv();
   await turn(env, "b0", "what is the best spec for a paladin", iso(30));
   await turn(env, "b1", "and what about the mage", iso(20));
   await turn(env, "b2", "same question", iso(0));
-  assert.equal(await findPreviousQuestion(env, { intentId: "b2", share: true }), "what is the best spec for a paladin");
+  assert.equal(await findPreviousQuestion(env, { intentId: "b2", share: true }), "and what about the mage");
+});
+test("topic drift: 'again?' after Q1 -> 'what about the mage?' ranks the mage page, not paladin", async () => {
+  const env = makeEnv();
+  await turn(env, "d0", "what is the best spec for a paladin", iso(30));
+  await turn(env, "d1", "what about the mage?", iso(20));
+  await turn(env, "d2", "again?", iso(0));
+  const prev = await findPreviousQuestion(env, { intentId: "d2", share: true });
+  assert.equal(prev, "what about the mage?");
+  const i = await inputs(env, "again?", prev);
+  assert.equal(i.hits[0].page, "classes/mage");
 });
 test("chain Q1 -> 'what about that' -> 'any better answers' returns Q1, not the middle turn", async () => {
   const env = makeEnv();
