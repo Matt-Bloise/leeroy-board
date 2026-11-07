@@ -13,7 +13,7 @@
 // =============================================================================
 
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
-import { rank as rankWikiCore, factHays } from "./rank-core.js";
+import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
 import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
@@ -829,6 +829,7 @@ const FORMAT_REMINDER =
 // Timestamp ids go to the page as numbers, random (UUID) ids whole, so the page can poll GET /api/ask?id= with them.
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
 
+const MAX_RANK_PASSES = 3; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups share this; more than 2 extra passes is never spent
 export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null }) {
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
@@ -855,12 +856,18 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const explicitRef = retrieve && refersToPrevious(question);
     const openerRef = retrieve && !explicitRef && isFollowUpOpener(question);
     // Score individual facts & open questions using precomputed cachedHays (TF-IDF + stemming + synonyms + role/lead boosts)
+    // Cost (Free plan: 10 ms CPU): every rank pass is counted and a request makes at most MAX_RANK_PASSES of them; the abstain page lookups below stop at the cap.
+    let rankPasses = 0;
     const retrieveFor = (q) => {
+      rankPasses += 1;
       const r = rankWikiCore(cleanQuestion(q, askNames), parsedPages, { hays: cachedHays });
       return { ranking: r, rel: selectRelevant(r.hits, r.words, cachedHays) };
     };
     let prevQ = "";
-    let pick = retrieve ? retrieveFor(explicitRef && prevText ? `${prevText} ${stripFollowUpScaffold(question)}` : question) : null;
+    // An explicit follow-up with no earlier question on record cannot be answered from its own words, however well they retrieve: the clarification is written
+    // by code before any ranking or model call (no topic is guessed).
+    const noContext = explicitRef && !prevText;
+    let pick = retrieve && !noContext ? retrieveFor(explicitRef && prevText ? `${prevText} ${stripFollowUpScaffold(question)}` : question) : null;
     if (explicitRef && prevText) prevQ = prevText;
     else if (openerRef && prevText && (pick.rel.abstain || pick.rel.best < FOLLOWUP_OWN_STRONG)) {
       const combined = retrieveFor(`${prevText} ${stripFollowUpScaffold(question)}`);
@@ -872,7 +879,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const { words } = ranking;
     const rel = pick ? pick.rel : { hits: [], abstain: false };
     const hits = rel.hits;
-    const abstain = retrieve && rel.abstain;
+    const abstain = retrieve && (noContext || rel.abstain);
     const topFactHits = hits
       .slice(0, 20)
       .map((h) => `  - [${h.page}~${h.key}] (score ${h.score}): ${h.value}`);
@@ -959,12 +966,16 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     if (abstain) {
       // The asker's own coverage is offered only when the question is about the game (fewer than half its content words are ones the Library never uses): "what is the
       // best pizza topping" gets the honest line and the subject areas, not a list of Paladin pages.
-      const gameish = rel.absent * 2 < words.length;
-      const facts = askerIsMember && gameish ? askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }) : null;
+      // A tie (exactly half unknown) still counts as about the game, and so does any question that names the asker's own class, spec or profession.
+      const allFacts = askerIsMember ? askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }) : null;
+      const buildStems = new Set(allFacts ? [allFacts.class, allFacts.spec, ...allFacts.professions].flatMap((t) => String(t || "").toLowerCase().split(/[^a-z0-9]+/)).filter((t) => t.length > 2).map((t) => stem(t)) : []);
+      const gameish = rel.absent * 2 <= (words || []).length && (words || []).length > 0 || (words || []).some((w) => buildStems.has(stem(w)));
+      const facts = gameish ? allFacts : null;
       const seen = new Set();
       const add = (q, prefix) => {
         const cleaned = cleanQuestion(q, []);
-        if (!cleaned) return;
+        if (!cleaned || rankPasses >= MAX_RANK_PASSES) return;
+        rankPasses += 1;
         const r = rankWikiCore(cleaned, parsedPages, { hays: cachedHays });
         const rel = selectRelevant(r.hits, r.words, cachedHays);
         for (const h of rel.hits) {
@@ -996,7 +1007,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ) };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1070,11 +1081,16 @@ export async function findPreviousQuestion(env, { intentId, share = false }) {
       "SELECT DISTINCT t.id, t.question, t.created_at FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
         `WHERE a1.intent_id = ? AND t.id <> ? AND t.created_at > ? ${share ? "AND t.share = 1 " : ""}ORDER BY t.created_at DESC LIMIT 20`
     ).bind(String(intentId), String(intentId), since).all();
+    // Walk back (newest first) to the first STANDALONE turn. An explicit follow-up has no topic of its own, and neither has a "what about ..." opener (it may have
+    // used the turn before it), so both are skipped; a real question that merely starts "ok so ..." is standalone. When only openers exist, the newest opener is used.
+    let opener = null;
     for (const r of results || []) {
       const q = String(r.question || "");
-      // an earlier explicit follow-up has no topic of its own; a real question that merely starts "ok so ..." does
-      if (q && !refersToPrevious(q) && skipKind(q) === null) return q;
+      if (!q || skipKind(q) !== null || refersToPrevious(q)) continue;
+      if (isFollowUpOpener(q)) { opener = opener || q; continue; }
+      return q;
     }
+    return opener;
   } catch {}
   return null;
 }
