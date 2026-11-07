@@ -1,0 +1,35 @@
+/* Cinematic slice 6: Buffs and roads. Loaded after hierarchy.css. Nothing here moves; there is no transition to reduce.
+   OLED: cards and the tip are near-black with a brass hairline; the only bright things are cream text and a thin class-colour rule. */
+
+/* Roads: name cards replace ribbon titles. A card is the name in cream on near-black, under its emblem, with a 2 px class-colour rule; the race and class line is in the tip. */
+.map-svg .pin-banner { transform-box: fill-box; transform-origin: 50% 0; transform: scale(0.86); }
+.map-svg .pin-banner .banner-cloth { fill: #100b06; fill-opacity: 1; stroke: var(--brass-dim, var(--brass)); stroke-width: 1; filter: none; }
+.map-svg .pin-banner .banner-stripe { height: 2px; }
+.map-svg .pin-banner .banner-text { fill: var(--cream); font-weight: 600; letter-spacing: 0.02em; }
+.map-svg .pin-lead { stroke-opacity: 0.55; }
+/* the lines are scenery: they sit under every pin and never take the pointer, so a tip can only come from a character or a road button */
+.rb-roads .road-line, .rb-roads .road-line * { pointer-events: none; cursor: default; }
+.rb-roads .map-road, .rb-roads .map-air { stroke-opacity: 0.7; }
+.rb-roads .map-road-halo { opacity: 0.35; }
+.rb-roads .map-trail { opacity: 0.4; stroke-width: 2.4; }
+.rb-roads .road-panel { display: none; }
+/* name cards and their leaders are labels, not controls: they never sit on top of a pin and eat its tap */
+.rb-roads .map-labels, .rb-roads .map-labels * { pointer-events: none; }
+.rb-roads .map-pin { cursor: pointer; }
+.rb-roads .map-pin:focus-visible { outline: none; }
+.rb-roads .map-pin:focus-visible .pin-body { stroke: var(--cream); stroke-width: 2.5; }
+
+
+/* Buffs: the glance list, quiet, in the page's own ink */
+.bw-glance { margin: 10px 0 12px; padding: 10px 12px; border: 1px solid var(--grain); border-radius: var(--radius); background: transparent; }
+.bw-glance h4 { margin: 0 0 6px; }
+.bw-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bw-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding-left: 10px; border-left: 3px solid var(--bc, var(--brass)); }
+.bw-arrow { font-size: 0.85em; opacity: 0.75; text-transform: lowercase; }
+.bw-what { flex-basis: 100%; opacity: 0.9; }
+@media (min-width: 700px) { .bw-what { flex-basis: auto; } .bw-what::before { content: ": "; } }
+
+/* Buffs: 44 px targets for the level marks, the sliders and the "who" buttons (the .lib-tool class stays on them) */
+.deep-marks { gap: 8px; }
+.deep-marks .lib-tool, .deep-who .lib-tool { min-width: 44px; min-height: 44px; }
+#deep-level { min-height: 44px; }

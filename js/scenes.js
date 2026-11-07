@@ -9,7 +9,7 @@ const SCENES = {
   probe: () => [new URL("../scenes/probe.css?v=1c5e2abb08", HERE), new URL("../scenes/probe.js?v=24d1f46113", HERE)],
   data: () => [new URL("../scenes/data.css?v=ee39216ed8", HERE), new URL("../scenes/data.js?v=46a654146f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=0c70badf8e", HERE), new URL("../scenes/walk.js?v=fef65c1b6a", HERE)],
-  place: () => [new URL("../scenes/place.css?v=d0b34a8d10", HERE), new URL("../scenes/place.js?v=29dc6fb5f4", HERE)],
+  place: () => [new URL("../scenes/place.css?v=d0b34a8d10", HERE), new URL("../scenes/place.js?v=f6e833bd99", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=d7744ab4c3", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
   hades: () => [new URL("../scenes/hades.css?v=858a039a4a", HERE), new URL("../scenes/hades.js?v=a6de8f404c", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=6cd88699fc", HERE)],
@@ -123,6 +123,7 @@ if (typeof document.addEventListener === "function") {
   document.addEventListener("pointerover", hoverIn, { capture: true, passive: true });
   document.addEventListener("keydown", () => { if (!P.place) load("place"); }, { capture: true, passive: true });
 }
+K.on("roads-open", () => { if (!P.place) load("place"); }); /* slice 6: a touch phone never hovers or presses a key, so the road cards came only to desktops; opening Three roads loads them for everyone */
 K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) afterPlay(() => setTimeout(() => afterPlay(() => { if (!P.place) load("place"); }), 4000)); });
 if (window.BoardSound && BoardSound.onState) BoardSound.onState((on) => { if (on) load("foley"); });
 /* roster.v1 (data/client.json flags): the officer roster is not in the ribbon. It opens at #roster and from a Menu entry, only while the flag is on. */
