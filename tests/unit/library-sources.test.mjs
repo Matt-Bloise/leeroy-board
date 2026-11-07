@@ -132,3 +132,21 @@ test("no library file cites a crawl-disallowed host", () => {
   assert.deepEqual(hits, []);
   for (const h of NEVER) assert.ok(!cfg.hosts[h] && !cfg.knownViolations.unlistedHosts.some((v) => v.host === h), `${h} must not be listed or tolerated`);
 });
+
+// External community sources (link-only, never copied): label, https URL, access date and non-affiliation note are required.
+test("external community sources are https, labelled Likely, dated and carry the non-affiliation note", () => {
+  const ext = Object.entries(cfg.hosts).filter(([, h]) => h.kind === "external-community");
+  assert.ok(ext.some(([host]) => host === "wowforevertools.com"), "wowforevertools.com must be recorded");
+  for (const [host, h] of ext) {
+    assert.equal(h.storedText, "link-only", `${host}: external community sources are link-only`);
+    assert.ok(["Confirmed", "Likely", "Speculative"].includes(h.label), `${host}: label`);
+    const u = new URL(h.url);
+    assert.equal(u.protocol, "https:", `${host}: https only`);
+    assert.equal(u.host, host, `${host}: url host must match the key`);
+    assert.match(h.accessed, /^\d{4}-\d{2}-\d{2}$/, `${host}: accessed date`);
+    assert.ok(!Number.isNaN(Date.parse(h.accessed)), `${host}: accessed date parses`);
+    assert.match(h.attribution, /not affiliated with or endorsed by Blizzard/i, `${host}: non-affiliation note`);
+  }
+  assert.equal(cfg.hosts["wowforevertools.com"].label, "Likely");
+  assert.equal(cfg.hosts["wowforevertools.com"].accessed, "2026-11-07");
+});

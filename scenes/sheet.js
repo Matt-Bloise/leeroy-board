@@ -19,7 +19,7 @@ function chLoad() {
   /* the credentialed call goes only for someone who has signed in on the web (marker board-wl), as the Is-this-you card does */
   let wl = false; try { wl = localStorage.getItem("board-wl") === "1"; } catch (e) {}
   if (!wl) return null;
-  CH.p = Promise.all([import("../js/characters.js?v=89fcecd39c").catch(() => null), fetch(u, { cache: "no-store", credentials: "include" }).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
+  CH.p = Promise.all([import("../js/characters.js?v=e0fde00881").catch(() => null), fetch(u, { cache: "no-store", credentials: "include" }).then((r) => (r.ok ? r.json() : null)).catch(() => null)])
     .then(([mod, j]) => { CH.mod = mod; CH.list = mod && j ? mod.list(j) : []; if (PS.view === "sheet") render(); }).catch(() => {});
   return CH.p;
 }

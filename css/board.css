@@ -1164,6 +1164,9 @@ main.has-beam, main.beam-soon { margin-top: 44px; }
 .lib-door, .catrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-height: 44px; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--ink-soft); border-left: 4px solid var(--wax); border-radius: 0 8px 8px 0; background: var(--parchment-2); color: var(--ink); text-decoration: none; }
 .lib-door b, .catrow b { font-family: var(--font-sc); letter-spacing: 0.04em; font-size: 1.05rem; }
 .lib-door span, .catrow span { font-size: 1rem; }
+.pro-tool { margin: 8px 0; font-size: 1rem; color: var(--ink); }
+.pro-tool-a { display: inline-block; min-height: 44px; line-height: 44px; padding: 0 4px; color: var(--ink); text-decoration: underline; }
+.pro-tool-a:focus-visible { outline: 2px solid var(--wax); outline-offset: 2px; }
 .lib-door:focus-visible, .catrow:focus-visible { background: var(--parchment); }
 @media (hover: hover) { .lib-door:hover, .catrow:hover { background: var(--parchment); } }
 .catrows { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); }

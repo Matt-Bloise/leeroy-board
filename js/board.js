@@ -142,7 +142,7 @@ function startRoomLadder() {
     aim: () => LB, signal: flickAt, tiltOn: () => LB.tilt,
     onLight: (nx, ny, n) => { LB.x = (nx * 0.5 + 0.5) * innerWidth; LB.y = (ny * 0.5 + 0.5) * innerHeight; LB.rn = n; LB.roomAt = performance.now(); } };
   ROOM_CUES.signup = host.newSignup; ROOM_CUES.launch = !!(launch && launch.epoch && Date.now() / 1000 >= launch.epoch); roomCues();
-  const bootRoom = () => import("../room/tier.js?v=c3f8bb008a").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
+  const bootRoom = () => import("../room/tier.js?v=284026da8e").then((m) => m.startTier(host)).catch((e) => { RS.tier = "low"; RS.why = `ladder did not load: ${e && e.message}`; });
   const later = () => setTimeout(bootRoom, 1500);
   if (document.readyState === "complete") later(); else addEventListener("load", later, { once: true });
 }
@@ -1016,7 +1016,7 @@ function renderRaces() {
 wideMQ.addEventListener("change", () => document.querySelectorAll("#races details").forEach((d, i) => { d.open = wideMQ.matches || i === 0; }));
 
 const KIND_WORD = { toy: "a fun item with no stats", tabard: "a cloth crest worn over armor", pet: "a pet that follows you", mount: "a mount to ride" };
-const VF = (n, ...a) => { const go = () => import("../img/vector/vector.js?v=e8eaa96e36").then((m) => m[n](...a)).catch(() => {}); wallCold() ? whenSettled(go) : go(); };
+const VF = (n, ...a) => { const go = () => import("../img/vector/vector.js?v=8b6e15b981").then((m) => m[n](...a)).catch(() => {}); wallCold() ? whenSettled(go) : go(); };
 function renderLegacy() {
   const L = D.client.legacy, wrap = $("#legacy-ring"); wrap.replaceChildren();
   $("#legacy-lede").textContent = `${L.total} account-wide challenges, one point each. A character spends up to ${L.spend_cap} at launch, and one character can earn ${L.solo_cap} alone.`;
@@ -1157,7 +1157,7 @@ function renderBuffsDeep() {
   const shown = B.list.filter((b) => !b.sixth || BD.sixth);
   const classes = [...P.members.map((m) => m.class_key), ...(BD.sixth ? ["shaman"] : [])];
   const slider = h("input", { type: "range", id: "deep-level", min: 1, max: 60, step: 1, value: L, "aria-label": "Character level", "aria-valuetext": `Level ${L}` });
-  const marks = h("div", { class: "deep-marks", role: "group", "aria-label": "Jump to a level" }, B.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(L === k), "aria-label": `Level ${k}`, text: String(k) })));
+  const marks = h("div", { class: "deep-marks", role: "group", "aria-label": "Jump to a level" }, B.marks.map((k) => h("button", { type: "button", class: "pro-tool", "aria-pressed": String(L === k), "aria-label": `Level ${k}`, text: String(k) })));
   const six = h("label", { class: "deep-six" }, h("input", { type: "checkbox", id: "deep-sixth", ...(BD.sixth ? { checked: "" } : {}) }), " Show what a Shaman would add");
   let answer;
   if (me) {
@@ -1185,8 +1185,8 @@ function renderBuffsDeep() {
   });
   box.replaceChildren(...[
     h("h3", { id: "deep-h", text: me ? "For you" : "Who gives what" }),
-    me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${me.race} ${me.class}.` }), h("button", { type: "button", class: "lib-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
-      : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), h("span", { class: "deep-scope", text: "Only changes what this page shows you" }), D.party.members.map((m) => h("button", { type: "button", class: "lib-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
+    me && !BD.pick ? h("div", { class: "deep-who", role: "group", "aria-label": "Whose buffs are shown" }, h("b", { class: "deep-me", text: `Showing ${me.name}, ${me.race} ${me.class}.` }), h("button", { type: "button", class: "pro-tool", id: "deep-change", onclick: () => { BD.pick = true; renderBuffsDeep(); const x = $("#buffs-deep .deep-who button"); if (x) x.focus({ preventScroll: true }); } }, "Change person"))
+      : h("div", { class: "deep-who", role: "group", "aria-label": "Who are you? Pick a name to see what you get" }, h("b", { text: "Who are you? " }), h("span", { class: "deep-scope", text: "Only changes what this page shows you" }), D.party.members.map((m) => h("button", { type: "button", class: "pro-tool", "aria-pressed": String(!!me && me.name === m.name), style: `--cc: ${classVar(m.class_key)}`, onclick: () => { BD.pick = false; MEM.setMe(MEM.slug(m.name)); try { renderTonight(); markMe(); renderWheel(); } catch (e) {} renderBuffsDeep(); const x = $("#deep-change"); if (x) x.focus({ preventScroll: true }); } }, crestMark(m), m.name))),
     h("div", { class: "deep-ctl" }, h("label", { for: "deep-level", class: "deep-l" }, "Level ", h("b", { id: "deep-l", text: String(L) })), slider, marks, six),
     h("p", { class: "deep-key", text: "Stamina adds health, Intellect adds mana, Spirit refills health and mana faster." }),
     answer,
@@ -1479,7 +1479,7 @@ function startDiscordPresence(sdk) {
     }
   };
   render([], "none");
-  Promise.race([import("../vendor/discord-auth.js?v=6ed8b65c34").then((m) => m.signIn(sdk)), new Promise((r) => setTimeout(r, 6000))]).catch(() => {}).then(poll);
+  Promise.race([import("../vendor/discord-auth.js?v=c327ee69cd").then((m) => m.signIn(sdk)), new Promise((r) => setTimeout(r, 6000))]).catch(() => {}).then(poll);
   clearInterval(discordPoll);
   discordPoll = setInterval(() => { if (!document.hidden) poll(); }, 15000);
   document.addEventListener("click", (e) => {
@@ -2724,7 +2724,7 @@ const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copi
 
 function libCore() {
   /* ready only when BOTH the ranker and the slice-7 lead helper have settled; a helper that fails to load is null and the list keeps plain rank order */
-  if (!LIBS.coreP) LIBS.coreP = Promise.all([import("../vendor/rank-core.js?v=16d8a1283e").catch(() => null), import("./library-search.js?v=5a42177630").catch(() => null)]).then(([core, lsm]) => { LIBS.lsm = lsm; LIBS.core = core; if (lsm && LIBS.view && LIBS.view.kind === "results" && LIBS.ready && LIBS.via === "page") libPending(); return core; });
+  if (!LIBS.coreP) LIBS.coreP = Promise.all([import("../vendor/rank-core.js?v=c24a6bb221").catch(() => null), import("./library-search.js?v=5a42177630").catch(() => null)]).then(([core, lsm]) => { LIBS.lsm = lsm; LIBS.core = core; if (lsm && LIBS.view && LIBS.view.kind === "results" && LIBS.ready && LIBS.via === "page") libPending(); return core; });
   return LIBS.coreP;
 }
 function libStart() {
@@ -2733,7 +2733,7 @@ function libStart() {
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=dffa5944b5", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=2b4e4d29fa", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);
@@ -2898,13 +2898,14 @@ function libRenderShelf(main) {
   };
   const seen = MEM.seenMap(), isNewPage = (p) => { const t = seen[`page:${p.id}`], d = p.checked || p.as_of; return !!t && !!d && Date.parse(`${d}T23:59:59Z`) > t; };
   const kids = [];
-  if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids); return; }
+  if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), LIBS.cat === "professions" ? libToolRow() : null, h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids.filter(Boolean)); return; }
   if (libExpert()) kids.push(libRibbon(null));
   kids.push(wideLib() ? null : h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
     wideLib() ? null : h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
       h("b", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")} · ${nf.format(c.facts)} facts` })))),
     h("details", { class: "allshelf" }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
     libDoors(),
+    libToolRow(),
     h("details", { class: "allshelf" }, h("summary", { text: "The front page: what changed, what nobody knows, what Blizzard said" }), libFront(wideLib() ? 2 : 8)));
   main.replaceChildren(...kids.filter(Boolean));
 }
@@ -3097,6 +3098,7 @@ async function libRenderPage(v, tok, fresh) {
       h("div", { class: "lib-row" }, linkChip(v), askChip(p.title, `Ask Leeroy about ${p.title}`))),
     xp && (p.category === "classes" || p.category === "races") ? libRibbon(p) : null,
     p.blurb ? h("p", { class: "blurb", text: p.blurb }) : null,
+    p.category === "professions" ? libToolRow() : null,
     h("h4", { class: "lib-h", text: "Facts" }), facts,
     p.open.length ? h("div", { class: "unknown" }, h("h4", {}, emb("question", "pend"), "Nobody knows yet"), h("ul", {}, p.open.map((o) => h("li", {}, ...richText(o))))) : null,
     p.related.length ? h("div", {}, h("h4", { class: "lib-h", text: "Related" }), h("div", { class: "ptabs" }, p.related.filter((id) => LIBD.head[id]).map((id) => pageLink(id, "ptab", libTitle(id))))) : null,
@@ -3345,6 +3347,12 @@ const changeLi = (c) => {
   return h("li", {}, h("time", { datetime: c.date, text: libDay(c.date) }), h("span", { class: "chg-box" }, body,
     long ? h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `More: read the whole change on ${libTitle(c.page)}`, onclick: (e) => { const on = body.classList.toggle("clamp"), t = e.currentTarget; t.setAttribute("aria-expanded", String(!on)); t.textContent = on ? "More" : "Less"; t.setAttribute("aria-label", `${t.textContent}: ${on ? "read the whole change" : "show less of the change"} on ${libTitle(c.page)}`); } }, "More") : null));
 };
+const PRO_TOOL_URL = "https://wowforevertools.com/professions";
+function libToolRow() { /* a link out, never an embed: the site refuses framing. Nothing from it is copied or stored. */
+  return h("p", { class: "pro-tool" }, "Recipes, trainers and camping for every profession: ",
+    h("a", { class: "pro-tool-a", href: PRO_TOOL_URL, target: "_blank", rel: "noopener noreferrer", "aria-label": "WoW Forever Tools, a community site, opens in a new tab" }, "WoW Forever Tools"),
+    " (community site, opens in a new tab). Built from the beta client; Blizzard may change recipes before launch.");
+}
 function libDoors() {
   const ix = LIBD.index, T = ix.totals;
   const door = (tok, b, rest) => h("a", { class: "lib-door", href: `#${tok}`, "data-lv": tok }, h("b", { text: b }), h("span", { text: rest }));
@@ -3487,7 +3495,7 @@ function renderTonight() {
       h("div", { class: "tn-pick", role: "group", "aria-label": T.labels.who }, h("p", { class: "tn-who", text: T.labels.who }), T.labels.why ? h("p", { class: "tn-why", text: T.labels.why }) : null, ...names,
         h("div", { class: "tn-first-act", role: "group", "aria-label": "Next" }, show, look), say));
   }
-  else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "lib-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
+  else meBox.replaceChildren(h("div", { class: "tn-chip deep-who", role: "group", "aria-label": "Whose steps are shown" }, h("b", { class: "deep-me" }, member ? crestMark(member) : null, member ? `${T.labels.iam} ${member.name}: ${member.race} ${member.class}` : T.labels.looking), h("button", { type: "button", class: "pro-tool", id: "tn-change", onclick: () => { MEM.set("me", null); renderTonight(); markMe(); const x = $("#tn-me .tn-name"); if (x) x.focus({ preventScroll: true }); } }, "Change person")));
   const ev = tonightNext(T);
   const idx = member ? P.members.indexOf(member) : -1, person = T.people.find((x) => x.member === idx);
   const S = D.signups, entries = S && S.entries ? S.entries : [];
@@ -3514,7 +3522,7 @@ function renderTonight() {
     card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
     card(T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), !mine && !groups.length ? h("p", { text: T.labels.nobody }) : null)].filter(Boolean));
   const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
-    h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
+    h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "pro-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
   act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]), h("a", { class: "lib-btn tn-decide", href: "#decide", text: TITLES.decide })].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();
   try { renderBefore(); startHow(); } catch (e) { console.error("before", e); }

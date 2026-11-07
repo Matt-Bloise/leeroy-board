@@ -2,6 +2,19 @@
  "comment": "DRAFT for the owner and architect to confirm. Allow-list of hosts that library data/library/*.json may cite, with licence, attribution text and stored-text policy. storedText: link-only = cite the URL, never store the host's text; attribution-required = text may be stored with the attribution shown. Sources: docs/roadmap/research/notes-R5-ip-commercial.md section 3 and docs/compliance/blizzard-checklist.md rules 5 and 6. Licence fields marked 'not reviewed' were not read; treat them as all rights reserved. knownViolations lists what the data does today, with a reason each; it may only shrink (tests/unit/library-sources.test.mjs). Do not add a host to hosts or raise a count to silence the test.",
  "version": 1,
  "hosts": {
+  "wowforevertools.com": {
+   "name": "WoW Forever Tools (community site)",
+   "licence": "No terms, licence or embed policy stated; treat as all rights reserved",
+   "licenceUrl": "",
+   "attribution": "Link only, opens in a new tab. Unofficial community site, not affiliated with or endorsed by Blizzard Entertainment (it says so itself and credits Blizzard for text and art). Nothing from it is copied, stored, mirrored or hotlinked; it sends X-Frame-Options DENY so it is never embedded.",
+   "storedText": "link-only",
+   "reviewed": "2026-11-07: link-only entry in the Library professions area (js/board.js libToolRow); no facts taken from it",
+   "kind": "external-community",
+   "label": "Likely",
+   "url": "https://wowforevertools.com/professions",
+   "accessed": "2026-11-07",
+   "note": "Strong evidence, not Blizzard's own words. Data is read from the beta client and Blizzard can change recipes before launch. To have the link removed, ask the Leeroy Party owner."
+  },
   "worldofwarcraft.blizzard.com": {
    "name": "Blizzard WoW site",
    "licence": "Blizzard Entertainment proprietary; all rights reserved",
