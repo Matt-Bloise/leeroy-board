@@ -97,7 +97,7 @@ html.nx-tn:is(.nx-first, .nx-solo) .my-sheet { display: none; }
 #nav-menu-wall { display: none; }
 html.nav-collapsed:not(.scene-open) #nav-menu-wall { display: inline-flex; align-items: center; }
 html:not(.nav-collapsed) .nav-menu { display: none; }
-html.nav-collapsed:not(.nav-open) :is(#tabs, .tabs-wrap, .scene-hint, #journey, .journey-scene, #depth, #sound-box, #sense-btn, #sense-panel, #mode-btn, #mode-btn-scene, #scene-peek, #scene-settings, #open-settings, #tilt, .tonight-link, #scene .seal, .bb-coin, .my-sheet) { display: none !important; }
+html.nav-collapsed:not(.nav-open) :is(#tabs, .tabs-wrap, .scene-hint, #journey, .journey-scene, #depth, #sound-box, #light-calm, #sense-btn, #sense-panel, #mode-btn, #mode-btn-scene, #scene-peek, #scene-settings, #open-settings, #tilt, .tonight-link, #scene .seal, .bb-coin, .my-sheet) { display: none !important; }
 html.nav-collapsed.phone-shell #nav-menu { display: none; }
 html.nav-collapsed.phone-shell:not(.scene-open) #nav-menu-wall { display: inline-flex; }
 /* Laptop and desktop: the close button is absolutely placed at the right edge of the header, so the Menu button beside it needs its own room (layout-sweep head-overlap at 1280 wide and up). */

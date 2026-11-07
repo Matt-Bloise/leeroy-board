@@ -123,7 +123,7 @@ if (typeof document.addEventListener === "function") {
   document.addEventListener("pointerover", hoverIn, { capture: true, passive: true });
   document.addEventListener("keydown", () => { if (!P.place) load("place"); }, { capture: true, passive: true });
 }
-K.on("roads-open", () => { if (!P.place) load("place"); }); /* slice 6: a touch phone never hovers or presses a key, so the road cards came only to desktops; opening Three roads loads them for everyone */
+K.on("roads-open", () => { if (!P.place) setTimeout(() => { if (!P.place) load("place"); }, 900); }); /* after the open transition, so opening and returning is not slowed by the fetch */ /* slice 6: a touch phone never hovers or presses a key, so the road cards came only to desktops; opening Three roads loads them for everyone */
 K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) afterPlay(() => setTimeout(() => afterPlay(() => { if (!P.place) load("place"); }), 4000)); });
 if (window.BoardSound && BoardSound.onState) BoardSound.onState((on) => { if (on) load("foley"); });
 /* roster.v1 (data/client.json flags): the officer roster is not in the ribbon. It opens at #roster and from a Menu entry, only while the flag is on. */
