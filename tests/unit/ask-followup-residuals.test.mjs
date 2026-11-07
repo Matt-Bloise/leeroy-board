@@ -55,6 +55,15 @@ test("topic drift: Q1 -> 'and what about the mage' -> 'same question' resolves t
   await turn(env, "b2", "same question", iso(0));
   assert.equal(await findPreviousQuestion(env, { intentId: "b2", share: true }), "and what about the mage");
 });
+test("pronoun-only openers ('what about her', 'what about him', 'and them', 'what about there') are not topics: 'again?' still resolves to Q1", async () => {
+  for (const [n, opener] of [["p1", "what about her?"], ["p2", "what about him"], ["p3", "and what about them"], ["p4", "what about there"], ["p5", "what about those ones"]]) {
+    const env = makeEnv();
+    await turn(env, n + "a", "what is the best spec for a paladin", iso(30));
+    await turn(env, n + "b", opener, iso(20));
+    await turn(env, n + "c", "again?", iso(0));
+    assert.equal(await findPreviousQuestion(env, { intentId: n + "c", share: true }), "what is the best spec for a paladin", opener);
+  }
+});
 test("topic drift: 'again?' after Q1 -> 'what about the mage?' ranks the mage page, not paladin", async () => {
   const env = makeEnv();
   await turn(env, "d0", "what is the best spec for a paladin", iso(30));
