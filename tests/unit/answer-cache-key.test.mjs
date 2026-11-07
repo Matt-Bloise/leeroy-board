@@ -27,6 +27,8 @@ async function ask({ by = "Santa", isMember = true, journey = "curious", share =
   invalidatePersonaCache();
   invalidatePagesCache();
   const DB = schemaDb();
+  // a library page the questions find: with nothing relevant the answer is written by code and no gateway request is made
+  DB.raw.prepare("INSERT INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES ('classes/tanking', 'classes', 'Tanking', 'Who tanks', '[]', ?, '2026-11-01T00:00:00Z')").run(JSON.stringify([{ key: "tanking.tonight", value: "Who tanks tonight is agreed in the party channel." }]));
   if (pack) DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('persona', ?, 'x')").run(JSON.stringify(pack));
   const env = {
     DB, GROQ_API_KEY: "test-key-not-real", AI_GATEWAY_ID: "gw", CLOUDFLARE_ACCOUNT_ID: "acct",
@@ -74,13 +76,13 @@ test("depth changes the key", async () => {
 });
 
 test("the key holds no raw name or question text", async () => {
-  const k = await keyOf({ by: "Handsome Squidward", question: "SECRET QUESTION TEXT" });
+  const k = await keyOf({ by: "Handsome Squidward", question: "who tanks tonight SECRET-TEXT" });
   assert.ok(!/squidward|secret|question/i.test(k), k);
   assert.match(k, /^ask:groq:llama-3\.3-70b-versatile:fast:production:member:[0-9a-f]{32}$/);
 });
 
 test("metadata on the real request carries variant, tier and journey and no personal data", async () => {
-  const h = await ask({ by: "Handsome Squidward", question: "SECRET QUESTION TEXT", journey: "guided" });
+  const h = await ask({ by: "Handsome Squidward", question: "who tanks tonight SECRET-TEXT", journey: "guided" });
   assert.deepEqual(JSON.parse(h["cf-aig-metadata"]), { app: "leeroy-board", service: "chamber", variant: "production", tier: "member", journey: "guided" });
   assert.ok(!/squidward|secret/i.test(h["cf-aig-metadata"]));
   const v = await ask({ isMember: false });
