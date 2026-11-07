@@ -29,6 +29,32 @@ export function skipKind(question) {
 // false = do not search the Library for this message. Anything that is not clearly a greeting or a pure "my build" question retrieves.
 export const needsRetrieval = (question) => skipKind(question) === null;
 
+// ---- follow-ups --------------------------------------------------------------------------------------------------------------
+// "any better answers to my previous question", "and what about the Crossroads?", "try that again": the words of such a message say nothing about the topic, so
+// ranking them alone finds nothing and the answer abstains (a friend's first live answer did exactly that). When the asker has an earlier question, its words
+// are ranked together with the follow-up and the prompt carries it. Conservative: an explicit reference, or a short opener like "and ..." / "what about ...".
+const FOLLOWUP_REF = /\b(?:my|your|the|that|this)\s+(?:previous|last|earlier|prior|first|original)\s+(?:question|ask|message|answer|one)\b|\b(?:any|a)\s+better\s+(?:answers?|ideas?|options?)\b|\b(?:try|ask|answer|do)\s+(?:that|it|this)?\s*again\b|\bonce\s+more\b|\bsame\s+(?:question|thing)\b|\bfollow[\s-]?up\b/i;
+const FOLLOWUP_OPENER = /^\s*(?:(?:and|but|so|then|also|ok(?:ay)?[,.]?)\s+)*(?:what\s+about|how\s+about|and|but|so|then|also)\b/i;
+export function isFollowUp(question) {
+  const q = String(question || "");
+  if (FOLLOWUP_REF.test(q)) return true;
+  return FOLLOWUP_OPENER.test(q) && q.trim().split(/\s+/).length <= 9;
+}
+// The follow-up's own words ("any better answers to my previous question") are scaffolding, not a topic: they are taken out before the earlier question is ranked
+// with what is left (a follow-up may still add a topic: "and what about the mage?" keeps "the mage").
+export function stripFollowUpScaffold(question) {
+  return String(question || "")
+    .replace(new RegExp(FOLLOWUP_REF.source, "gi"), " ")
+    .replace(FOLLOWUP_OPENER, " ")
+    .replace(/\b(?:please|pls|thanks|thank you)\b/gi, " ")
+    .replace(/^\s*(?:to\s+)?(?:about|on)\s+/i, "")
+    .replace(/\s+(?:to|about)\s*$|(?:^|\s)(?:to|about)\s+(?=[,.?!]|$)/gi, " ")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s,.;:!?-]+|[\s,;:-]+$/g, "")
+    .trim();
+}
+export const FOLLOWUP_RULE = "This is a follow-up. PREVIOUS_QUESTION is the asker's earlier question: answer what they are asking now about it, from the library facts below.";
+
 // ---- IsRel ----------------------------------------------------------------------------------------------------------------
 // Chat filler and names are not topics. They used to be scored like topics: a word the Library never uses has the highest idf, so "bro ... nah lol" or a
 // party member's name dragged the coverage of a perfectly answerable question down (audit: "bro can Bible Boi tank onyxia or nah lol" abstained).
@@ -69,9 +95,9 @@ export const REL_WINDOW = 40; // facts examined (the ranker already ordered them
 export function selectRelevant(hits, words, hays) {
   const list = Array.isArray(hits) ? hits : [];
   const ws = Array.isArray(words) ? words : [];
-  const none = (extra = {}) => ({ hits: [], abstain: true, best: 0, kept: 0, dropped: list.length, absent: 0, ...extra });
-  if (!list.length || !ws.length) return none();
   const absent = ws.filter((w) => !hays.some((h) => h.includes(w)));
+  const none = (extra = {}) => ({ hits: [], abstain: true, best: 0, kept: 0, dropped: list.length, absent: absent.length, ...extra });
+  if (!list.length || !ws.length) return none();
   // two or more absent words, or a very short question (one or two content words) with one: the Library is not what this question is about
   if (absent.length >= ABSENT_MAX || (absent.length >= 1 && ws.length <= 2)) return none({ absent: absent.length });
   const idf = idfFor(expandWords(ws), hays, null);
@@ -97,6 +123,35 @@ export const ABSTAIN_RULE =
 // A greeting needs no facts; a question about the asker's own sheet is answered from YOUR_BUILD, which is the one place its class, level and spec may come from.
 export const SKIP_RULE = "This message needs no library lookup. Answer it in voice, and state no game fact, number, name or date.";
 export const BUILD_RULE = "This is a question about the asker's own build. Answer it from YOUR_BUILD only: you may state exactly what it lists (class, race, spec, level, professions, goals, sign-up). Add no other game fact, number, name or date.";
+
+// ---- the abstain answer, written by code ---------------------------------------------------------------------------------------
+// When nothing relevant is retrieved there is nothing for a model to add, and a model asked to "say the Library has nothing" filled the space with chat ("well
+// past the point where the library keeps your notes") and a hook to another friend's profession. So no model is called: the answer is the honest line, what
+// would settle it, and what the Library DOES cover for the asker's own class, spec and professions (or, for a visitor, its subject areas). No other person is
+// named, nothing is invented, and it costs no AI call.
+const clipText = (t, n) => { const x = String(t || "").replace(/\s+/g, " ").trim(); return x.length > n ? `${x.slice(0, n - 1).trimEnd()}...` : x; };
+const titleCase = (t) => String(t || "").replace(/\b([a-z])/g, (m) => m.toUpperCase());
+// build: { class, spec, level, professions: [] } or null; pages: [{ id, title }] the Library has for that build; categories: area names for a visitor.
+export function composeAbstain({ build = null, pages = [], categories = [], followUpWithoutContext = false } = {}) {
+  const lines = [];
+  if (followUpWithoutContext) {
+    lines.push("**I can't tell which question you mean.**", "Ask it again in full and I'll look it up in the Library.");
+  } else {
+    lines.push("**The Library does not cover that yet, so I won't guess.**", "What would settle it: an official Blizzard post, or someone in the party who has played it.");
+  }
+  const list = (Array.isArray(pages) ? pages : []).filter((p) => p && p.id && p.title).slice(0, 3);
+  const who = build ? [build.level ? `level ${build.level}` : "", build.spec ? titleCase(build.spec) : "", build.class ? titleCase(build.class) : ""].filter(Boolean).join(" ") : "";
+  if (list.length) {
+    lines.push("", who ? `For your ${who} the Library does have:` : "The Library does have:");
+    // Titles only: a clipped blurb is half a claim, and the page itself (the Sources link) is the place to read the rest.
+    for (const p of list) lines.push(`- **${clipText(p.title, 40)}**`);
+    lines.push("", `-# Sources: ${list.map((p) => p.id).join(", ")}`);
+  } else {
+    const cats = [...new Set((Array.isArray(categories) ? categories : []).map((c) => String(c || "").trim()).filter(Boolean))].slice(0, 6);
+    if (cats.length) lines.push("", `I can answer questions about: ${cats.join(", ")}.`);
+  }
+  return lines.join("\n");
+}
 
 // ---- IsSup ----------------------------------------------------------------------------------------------------------------
 // The retrieved page ids and the abstain flag reach finishAnswerText as a structured argument (`retrieval`). For callers that only have groundingText

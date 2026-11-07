@@ -187,10 +187,10 @@ test("/ask: a fast answer is delivered formatted, once", async () => {
   assert.ok(!/Santa, you have/.test(patches[0].content), "guest is not addressed as a party member");
 });
 
-test("/ask: provider error and nothing to answer from still replaces the placeholder with the error line", async () => {
+test("/ask: provider error and nothing to answer from still replaces the placeholder, now with the honest line written by code", async () => {
   const { patches } = await runAsk({ providerDelayMs: 0, providerStatus: 500, deadlineMs: 2000, pages: [] });
   assert.equal(patches.length, 1);
-  assert.match(patches[0].content, /Leeroy tripped over a footnote\. Try again in a moment\./);
+  assert.match(patches[0].content, /does not cover that yet/i);
 });
 
 test("/ask: provider error falls back to a library answer, delivered once", async () => {

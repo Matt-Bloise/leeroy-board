@@ -83,7 +83,7 @@ test("the same member asking the same question again gets the same answer with n
 test("a different question, a different member, a visitor, or a different visibility is not reused", async () => {
   const { env, calls } = makeEnv();
   await ask(env);
-  await ask(env, { question: "When does Onyxia close?" });
+  await ask(env, { question: "When does Onyxia open again?" });
   await ask(env, { slug: "blue-owl", by: "Blue Owl" });
   await ask(env, { share: false });
   assert.equal(calls.length, 4);
