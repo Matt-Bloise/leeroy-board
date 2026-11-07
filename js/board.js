@@ -2722,14 +2722,18 @@ const copyChip = (label, text, done) => h("button", { class: "copy", type: "butt
 const linkChip = (v) => { const l = libLink(v); return copyChip(v.kind === "page" ? "Copy link to this page" : v.kind === "results" ? "Copy link to this search" : "Copy link", l.text, l.framed ? "Copied the link token: add it after the board's address." : "Link copied."); };
 const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.");
 
-function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=16d8a1283e").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
+function libCore() {
+  /* ready only when BOTH the ranker and the slice-7 lead helper have settled; a helper that fails to load is null and the list keeps plain rank order */
+  if (!LIBS.coreP) LIBS.coreP = Promise.all([import("../vendor/rank-core.js?v=16d8a1283e").catch(() => null), import("./library-search.js?v=5a42177630").catch(() => null)]).then(([core, lsm]) => { LIBS.lsm = lsm; LIBS.core = core; if (lsm && LIBS.view && LIBS.view.kind === "results" && LIBS.ready && LIBS.via === "page") libPending(); return core; });
+  return LIBS.coreP;
+}
 function libStart() {
   if (LIBS.state !== "idle") return;
   LIBS.state = "loading";
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=1b6776e15d", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=dffa5944b5", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);
@@ -2767,7 +2771,8 @@ function libSearch(q, keepView) {
   const id = ++LIBS.req;
   if (LIBS.via === "worker" && LIBS.worker) { LIBS.worker.postMessage({ id, q: t, cap: 400, full: LIB_CAP, cat: LIBS.cat }); return; }
   const t0 = performance.now();
-  const { words, hits } = LIBS.core.rank(t, LIBS.all, { hays: LIBS.hays });
+  const { words, hits: ranked } = LIBS.core.rank(t, LIBS.all, { hays: LIBS.hays });
+  const hits = LIBS.lsm ? LIBS.lsm.leadWithNamedPages(ranked, t, LIBS.all) : ranked;
   libResults({ id, q: t, words, total: hits.length, ms: Math.round((performance.now() - t0) * 10) / 10, hits: hits.slice(0, 400).map((x) => ({ score: x.score, page: x.page, title: x.p.title, category: x.p.category, key: x.key, value: x.value, open: x.open, refs: x.f ? x.f.refs : [] })) });
 }
 function libResults(m) {
@@ -2874,6 +2879,7 @@ function libRender(fresh) {
   libRenderRail();
   const v = LIBS.view, count = $("#lib-count");
   $("#panel-library").dataset.view = v.kind;
+  { const live = v.kind !== "shelf" || !!LIBS.cat, pl = $("#panel-library"), cols = pl.querySelector(".lib-cols"); pl.classList.toggle("lib-live", live); if (live && cols) cols.classList.remove("jr-fold"); } /* slice 7: a search or a page in view unfolds the results for a guided visitor */
   if (count && v.kind !== "results") count.textContent = "";
   if (!LIBD.index) { if (LIBS.state === "failed") BF.fail(main, "the library", libRetry); else main.replaceChildren(h("p", { class: "loading", text: "Opening the stacks." })); return; }
   if (v.kind === "page") { libRenderPage(v, tok, fresh); return; }
@@ -2912,7 +2918,7 @@ function libRenderResults(main) {
   const hits = LIBS.res.hits.filter((x) => !LIBS.cat || x.category === LIBS.cat);
   const pages = new Map();
   for (const x of hits) { if (!pages.has(x.page)) pages.set(x.page, { id: x.page, title: x.title, category: x.category, hits: [] }); pages.get(x.page).hits.push(x); }
-  if (count) count.textContent = hits.length ? (hits.length > 1 ? `Best answer first, then ${plural(hits.length - 1, "more line", "more lines")} from ${plural(pages.size, "page", "pages")}.` : "One answer.") : "No match";
+  if (count) count.textContent = hits.length ? (hits.length > 1 ? `Best answer first, then ${plural(hits.length - 1, "more line", "more lines")} from ${plural(pages.size, "page", "pages")}.` : "One answer.") : "The Library does not cover that.";
   $("#panel-library").dataset.view = hits.length ? "results" : "zero";
   if (LIBS.lastQ !== v.q) { LIBS.lastQ = v.q; const sb = $("#sheet-body"); if (sb) sb.scrollTop = 0; }
   if (!hits.length) { main.replaceChildren(libZero(v.q)); return; }
@@ -3040,19 +3046,26 @@ function libNearest(q, n = 5) {
   });
   return scored.filter((x) => x.sc >= 0.42).sort((a, b) => b.sc - a.sc).slice(0, n).map((x) => x.p);
 }
+/* the Leeroy scene opens by its link; the ask box is built by js/ask.js at load, so it exists by the time anyone clicks: put the question in it */
+function libAskDraft(text) {
+  const t = $("#ask-text");
+  if (t && !t.value) { t.value = text; t.dispatchEvent(new Event("input", { bubbles: true })); }
+}
 function libZero(q) {
-  const near = libNearest(q);
-  const card = h("div", { class: "lib-empty" },
-    h("h3", { class: "lib-title", text: `Nothing on the shelves for "${q.length > 60 ? `${q.slice(0, 57).trim()}...` : q}"` }),
-    near.length ? h("p", { text: "Pages with a similar name:" }) : null,
-    near.length ? h("ul", { class: "hits" }, near.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: libCatTitle(p.category) })])))) : null,
-    h("p", { text: "Leeroy can look it up. The button copies the question as a Discord command." }),
-    h("div", { class: "lib-row" }, h("button", { class: "lib-btn strong", type: "button", onclick: () => libCopy(`/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.") }, "Ask Leeroy"), linkChip(LIBS.view)));
+  const E = LIBS.lsm ? LIBS.lsm.emptyState(q, libNearest(q)) : { headline: "The Library does not cover that.", detail: `Nothing on the shelves matches "${q}".`, near: [], nearLead: "", askLabel: "Ask Leeroy", askNote: "", askHref: "#librarian", askDraft: String(q).slice(0, 500) };
+  const askGo = h("a", { class: "lib-btn strong lib-ask-go", href: E.askHref, onclick: () => libAskDraft(E.askDraft) }, E.askLabel);
+  const card = h("div", { class: "lib-empty", role: "status" },
+    h("h3", { class: "lib-title", text: E.headline }),
+    h("p", { class: "lib-empty-q", text: E.detail }),
+    E.near.length ? h("p", { text: E.nearLead }) : null,
+    E.near.length ? h("ul", { class: "hits" }, E.near.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: libCatTitle(p.category) })])))) : null,
+    E.askNote ? h("p", { text: E.askNote }) : null,
+    h("div", { class: "lib-row" }, askGo, h("button", { class: "lib-btn", type: "button", onclick: () => libCopy(`/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.") }, "Copy as a Discord command"), linkChip(LIBS.view)));
   const ix = LIBD.index;
   const shelf = h("div", { class: "shelf" }, ix.categories.map((c) => h("section", { class: "scroll", "aria-label": c.title },
     h("div", { class: "scroll-end" }, h("h3", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")}, ${plural(c.facts, "fact", "facts")}` })),
     h("ul", {}, ix.pages.filter((p) => p.category === c.key).map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: nf.format(p.facts) })])))))));
-  return h("div", { class: "lib-zero" }, card, h("h3", { class: "lib-title", text: near.length ? "Or browse a shelf" : "Browse a shelf instead" }), shelf);
+  return h("div", { class: "lib-zero" }, card, h("details", { class: "allshelf" }, h("summary", { text: E.near.length ? "Or browse a shelf" : "Browse a shelf instead" }), shelf));
 }
 async function libRenderPage(v, tok, fresh) {
   const main = $("#lib-main"), head = LIBD.head[v.id];
