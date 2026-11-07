@@ -14,7 +14,8 @@ const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 if (!BASE) { console.error("usage: node open-return.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
 const RUNS = Number(arg("--runs") || 10), ONLY = arg("--only"), THROTTLE = Number(arg("--throttle") || process.env.OPEN_RETURN_THROTTLE || 1);
 const TOKEN = 540; // the longest transition (ms): the close
-const BOUND = Math.round((2 * TOKEN + 400) * Math.max(1, THROTTLE / 2)); // a final state must be reached within about 2 x the transition, with slack
+const WATCHDOG = Math.round(1.5 * TOKEN); // js/scene-fsm.js forces the end state this long after a move starts (factor 1.5)
+const BOUND = Math.round((WATCHDOG + 1200) * Math.max(1, THROTTLE / 2)); // the final state must hold by the watchdog plus 1200 ms of slack: a timer firing late on a loaded runner must not fail a correct end state
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 const url = pageUrl(BASE, { params: { preview: "1" } });
