@@ -156,7 +156,9 @@ for (const [size, opts] of SIZES) {
   await page.locator("#ps-cf-name").fill(FORM.name);
   await page.locator("#ps-cf-class").selectOption({ index: 1 }); await page.locator("#ps-cf-race").selectOption({ index: 1 }); await page.locator("#ps-cf-faction").selectOption("Horde"); await page.locator("#ps-cf-region").selectOption("Americas");
   await page.locator("#ps-cf-ruleset").fill("Normal");
-  await tap(page, "#ps-cf .ps-cf-go"); await page.waitForTimeout(500);
+  await tap(page, "#ps-cf .ps-cf-go");
+  // bounded wait on the state instead of a fixed 500 ms sleep: the refusal message arrives with the 404, which was slower than that once on a loaded CI runner (run 42320879864)
+  await page.waitForFunction(() => /^Not added: /.test(((document.querySelector("#ps-char-say") || {}).innerText || "").trim()), null, { timeout: 8000 }).catch(() => {});
   ok("[refused save] the form stays open with what was typed", (await page.locator("#ps-cf").isVisible()) && (await page.locator("#ps-cf-name").inputValue()) === FORM.name);
   ok("[refused save] the list is unchanged and the message is plain", (await page.locator(".ps-char").count()) === 3 && /^Not added: /.test((await page.locator("#ps-char-say").innerText()).trim()));
   ok("[refused save] no console or page errors", errors.length === 0, errors.join(" | ").slice(0, 300));

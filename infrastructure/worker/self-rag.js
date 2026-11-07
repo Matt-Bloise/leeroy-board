@@ -22,6 +22,7 @@ const WHO_AM_I = /^\s*(?:who\s+am\s+i|what\s+am\s+i\s+playing|what\s+do\s+i\s+pl
 // "greeting" = chat with no content; "build" = a question about the asker's own sheet; null = search the Library.
 export function skipKind(question) {
   const q = String(question || "");
+  if (refersToPrevious(q)) return null; // "ok again" is a follow-up, not a greeting
   if (GREETING.test(q)) return "greeting";
   if (BUILD_ONLY.test(q) || WHO_AM_I.test(q)) return "build";
   return null;
@@ -38,7 +39,7 @@ export const needsRetrieval = (question) => skipKind(question) === null;
 //                      own words are ranked first; the earlier question is added only when that retrieval is weak (buildAnswerInputs).
 // A bare "so", "and", "ok so" or "also" opener is not enough: "So what is the best spec for a paladin" is a new question, and so is a message that merely contains
 // "a better option", "the same thing", "the first one" or "follow up".
-const FOLLOWUP_REF = /\b(?:my|your|the|that|this)\s+(?:previous|last|earlier|prior)\s+(?:question|ask|message|answer)\b|\b(?:any|some)\s+better\s+answers?\b|\b(?:try|ask|answer|do|say)\s+(?:that|it|this)\s+again\b|\bonce\s+more\b|\bsame\s+question\b|\bfollow[\s-]?up\s+(?:question|to)\b/i;
+const FOLLOWUP_REF = /\b(?:my|your|the|that|this)\s+(?:previous|last|earlier|prior)\s+(?:question|ask|message|answer)\b|\b(?:any|some)\s+better\s+answers?\b|\b(?:try|ask|answer|do|say)\s+(?:that|it|this)\s+again\b|\bonce\s+more\b|\bsame\s+question\b|\bfollow[\s-]?up\s+(?:question|to)\b|^\s*(?:(?:and|ok(?:ay)?|so|then)[,.]?\s+)*(?:again|same(?:\s+again)?|more)\s*[?!.]*\s*$/i;
 const FOLLOWUP_OPENER = /^\s*(?:(?:and|but|so|then|also|ok(?:ay)?[,.]?)\s+)*(?:what\s+about|how\s+about)\b/i;
 export const refersToPrevious = (question) => FOLLOWUP_REF.test(String(question || ""));
 export const isFollowUpOpener = (question) => {
