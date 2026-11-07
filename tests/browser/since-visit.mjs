@@ -9,6 +9,7 @@
 // checked with a fast clock) and reduced motion keeps no animation on a mark.
 import { pageUrl } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { loadSnapshot } from "../helpers/api-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -18,6 +19,9 @@ const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS $
 const url = pageUrl(BASE, { params: { preview: "1" } });
 const VIEW = { phone: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true }, laptop: { viewport: { width: 1366, height: 768 }, deviceScaleFactor: 1 } };
 const E = (iso) => String(Date.parse(iso));
+// the sign-up answers of the fixture, read from the snapshot the page is served: who changed after a stamp is computed here, not guessed
+const ENTRIES = JSON.parse(loadSnapshot().routes["/bootstrap"].body).signups.entries.map((e) => ({ name: e.name.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, "").toLowerCase(), at: Date.parse(e.updated) }));
+const changedAfter = (iso) => ENTRIES.filter((e) => e.at > Date.parse(iso)).map((e) => e.name).sort();
 const browser = stubbed(await pw.chromium.launch());
 
 async function visit(view, epoch, { reduced = false, openScene = null } = {}) {
@@ -69,6 +73,9 @@ try {
       await v.ctx.close(); }
     // older: sign-ups answers are newer than the stamp too
     { const v = await visit(view, E("2026-10-28T00:00:00Z")); const t = await v.tiles(); ok(`${tag} stamp 2026-10-28: Sign-ups and Library are marked`, t.includes("t-signups") && t.includes("t-library") && t.length === 2, JSON.stringify(t)); await v.ctx.close(); }
+    // a date-only library change is compared by calendar day: the same UTC day as the stamp is NOT new, a later day is
+    { const v = await visit(view, E("2026-10-31T08:00:00Z")); const t = await v.tiles(); ok(`${tag} a stamp on the same UTC day as the newest library change (2026-10-31) marks nothing`, t.length === 0, JSON.stringify(t)); await v.ctx.close(); }
+    { const v = await visit(view, E("2026-10-30T23:00:00Z")); const t = await v.tiles(); ok(`${tag} a stamp the evening before it (2026-10-30) marks the Library tile`, t.length === 1 && t[0] === "t-library", JSON.stringify(t)); await v.ctx.close(); }
     // first visit and a stamp from the future
     { const v = await visit(view, null); const t = await v.tiles(); ok(`${tag} no stamp (first visit): nothing is marked`, t.length === 0, JSON.stringify(t)); await v.ctx.close(); }
     { const v = await visit(view, E("2099-01-01T00:00:00Z")); const t = await v.tiles(); ok(`${tag} a stamp in the future marks nothing`, t.length === 0, JSON.stringify(t)); await v.ctx.close(); }
@@ -77,12 +84,18 @@ try {
   }
   // rows inside the scenes (laptop: wide, one pass is enough)
   { const v = await visit("laptop", E("2026-10-28T00:00:00Z"), { openScene: "signups" }); const r = await rowsOf(v.page);
-    ok("[rows] Sign-ups, stamp 2026-10-28: the people whose answer changed after it are marked, others are not", r.names.length >= 1 && r.names.length <= 3 && r.names.length < r.all.length, JSON.stringify(r.names) + " of " + JSON.stringify(r.all));
+    const want = changedAfter("2026-10-28T00:00:00Z").slice(0, 3), got = r.names.map((n) => n.toLowerCase()).sort();
+    ok("[rows] Sign-ups, stamp 2026-10-28: exactly the people whose answer changed after it are marked (from the fixture timestamps), nobody else", want.length >= 1 && JSON.stringify(got) === JSON.stringify(want), `marked ${JSON.stringify(got)} expected ${JSON.stringify(want)} of ${JSON.stringify(r.all)}`);
     { const m = await marksShift(v.page); ok("[rows] applying the row marks in the open Sign-ups scene adds 0 layout shift", m.marked >= 1 && m.delta === 0, `delta ${m.delta} marked ${m.marked}`); }
     await v.ctx.close(); }
   { const v = await visit("laptop", E("2026-10-30T00:00:00Z"), { openScene: "library" }); const r = await rowsOf(v.page);
-    ok("[rows] Library what-changed rows: only rows dated after the stamp are marked (2026-10-31), at most 3", r.changes.length >= 1 && r.changes.length <= 3 && r.changes.every((d) => d > "2026-10-30"), JSON.stringify(r.changes) + " of " + JSON.stringify(r.changeRows));
-    ok("[rows] older Library rows stay unmarked", r.changeRows.filter((d) => d && d <= "2026-10-30").length === 0 || r.changes.length < r.changeRows.length, JSON.stringify(r.changeRows));
+    const newerRows = r.changeRows.filter((d) => d && d > "2026-10-30");
+    ok("[rows] Library what-changed rows: exactly the rows dated after the stamp day are marked (2026-10-31), at most 3, no older row", newerRows.length >= 1 && r.changes.length === Math.min(3, newerRows.length) && r.changes.every((d) => d > "2026-10-30"), JSON.stringify(r.changes) + " of " + JSON.stringify(r.changeRows));
+    // rows that render late are marked too: clear the marks, then change the panel the way a late render would; the observer marks them again
+    await v.page.evaluate(() => { window.BoardSince.clear(); const m = document.querySelector("#panel-library .lib-main") || document.querySelector("#panel-library"); m.appendChild(document.createElement("span")); });
+    await v.page.waitForTimeout(500);
+    const r2 = await rowsOf(v.page);
+    ok("[rows] a panel that gets content after the first second is marked when it renders (mutation observer)", r2.changes.length === Math.min(3, newerRows.length), JSON.stringify(r2.changes));
     await v.ctx.close(); }
   // the stamp is written when the page is hidden
   { const v = await visit("phone", E("2026-10-30T00:00:00Z")); const before = await v.page.evaluate(() => localStorage.getItem("board-last-visit"));
