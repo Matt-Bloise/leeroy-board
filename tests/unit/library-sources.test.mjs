@@ -150,3 +150,15 @@ test("external community sources are https, labelled Likely, dated and carry the
   assert.equal(cfg.hosts["wowforevertools.com"].label, "Likely");
   assert.equal(cfg.hosts["wowforevertools.com"].accessed, "2026-11-07");
 });
+
+// Guard: the Professions link paragraph owns .pro-tool; the pre-existing .lib-tool buttons (Buffs and Tonight scenes) must keep their class.
+test("js/board.js keeps lib-tool on the existing buttons and uses pro-tool only for the new link row", () => {
+  const src = fs.readFileSync(path.join(root, "js", "board.js"), "utf8").replace(/\r/g, "");
+  const proLines = src.split("\n").filter((l) => /\bpro-tool\b/.test(l));
+  assert.equal(proLines.length, 2, "pro-tool appears on the new paragraph and its link only");
+  for (const l of proLines) assert.ok(/libToolRow|class: "pro-tool"|class: "pro-tool-a"/.test(l));
+  assert.ok(!/button[^\n]*pro-tool/.test(src), "no button may carry pro-tool");
+  assert.ok((src.match(/h\("button"[^\n]*class: "lib-tool[ "]/g) || []).length >= 4, "the level-jump marks, change-person buttons and member switcher keep lib-tool");
+  assert.ok(/id: "deep-change"[^\n]*lib-tool|lib-tool[^\n]*id: "deep-change"/.test(src), "#deep-change keeps lib-tool");
+  assert.ok(/id: "tn-change"[^\n]*lib-tool|lib-tool[^\n]*id: "tn-change"/.test(src), "#tn-change keeps lib-tool");
+});
