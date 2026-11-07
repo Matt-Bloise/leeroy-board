@@ -829,7 +829,7 @@ const FORMAT_REMINDER =
 // Timestamp ids go to the page as numbers, random (UUID) ids whole, so the page can poll GET /api/ask?id= with them.
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
 
-const MAX_RANK_PASSES = 3; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups share this; more than 2 extra passes is never spent
+const MAX_RANK_PASSES = 4; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups (class + two professions) share this; a plain abstain keeps full coverage, an opener that abstains gets class + one profession
 export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null }) {
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context

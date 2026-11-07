@@ -22,6 +22,7 @@ const WHO_AM_I = /^\s*(?:who\s+am\s+i|what\s+am\s+i\s+playing|what\s+do\s+i\s+pl
 // "greeting" = chat with no content; "build" = a question about the asker's own sheet; null = search the Library.
 export function skipKind(question) {
   const q = String(question || "");
+  if (refersToPrevious(q)) return null; // "ok again" is a follow-up, not a greeting
   if (GREETING.test(q)) return "greeting";
   if (BUILD_ONLY.test(q) || WHO_AM_I.test(q)) return "build";
   return null;

@@ -6,11 +6,12 @@ import { answerWithAi, buildAnswerInputs, findPreviousQuestion, invalidatePagesC
 import { insertAskTurn } from "../../infrastructure/worker/answer-ux.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
-import { isFollowUp, refersToPrevious, stripFollowUpScaffold } from "../../infrastructure/worker/self-rag.js";
+import { isFollowUp, refersToPrevious, stripFollowUpScaffold, skipKind } from "../../infrastructure/worker/self-rag.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const f = (value) => ({ value, visible: true, source: "board", at: "2026-11-01T00:00:00.000Z" });
-const SHEETS = [{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin"), spec_path: f("retribution"), level: f(12) }, updated: "x" }];
+const SHEETS = [{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin"), spec_path: f("retribution"), level: f(12) }, updated: "x" },
+  { slug: "gray-wolf", name: "Gray Wolf", fields: { class: f("paladin"), spec_path: f("retribution"), level: f(20), professions: f(["leatherworking", "mining"]) }, updated: "x" }];
 const LIB = [
   { id: "classes/paladin", category: "classes", title: "Paladin", blurb: "Plate", facts: [
     { key: "paladin.role", value: "Paladins can tank, heal or deal damage; Retribution is the damage spec." },
@@ -18,6 +19,7 @@ const LIB = [
     { key: "paladin.train", value: "A Paladin trains new seals and blessings from the class trainer in the capital." },
   ] },
   { id: "classes/mage", category: "classes", title: "Mage", blurb: "Cloth", facts: [{ key: "mage.role", value: "A mage deals ranged spell damage and conjures food and water." }] },
+  { id: "professions/mining", category: "professions", title: "Mining", blurb: "Ore", facts: [{ key: "mining.start", value: "Mining is learned from the miner trainer in Orgrimmar." }] },
   { id: "professions/leatherworking", category: "professions", title: "Leatherworking", blurb: "Leather", facts: [{ key: "lw.start", value: "Leatherworking is learned from the trainer in Thunder Bluff and needs skill 37 for the first pattern." }] },
 ];
 function makeEnv() {
@@ -85,7 +87,8 @@ test("'again?' after a real question ranks the earlier question", async () => {
 test("'does the paladin trainer teach seals to flamingo wands' abstains with the asker's class page offered", async () => {
   const env = makeEnv();
   const i = await inputs(env, "does the paladin trainer teach seals to flamingo wands zzorp");
-  if (i.abstain) assert.ok(i.abstainPages.some((p) => p.id === "classes/paladin"), "build page kept");
+  assert.equal(i.abstain, true, "probe abstains");
+  assert.ok(i.abstainPages.some((p) => p.id === "classes/paladin"), "build page kept");
   const j = await inputs(env, "zzorp flamingo paladin wands");
   assert.equal(j.abstain && !j.abstainPages.some((p) => p.id === "classes/paladin"), false, "a build word keeps the build pages");
   const k = await inputs(env, "what is the best pizza topping");
@@ -93,26 +96,54 @@ test("'does the paladin trainer teach seals to flamingo wands' abstains with the
 });
 
 // (6) cost: rank passes per path, and D1 statements, are bounded
-test("rank passes: plain 1, follow-up 1, opener retry <= 2, abstain with build <= 3; D1 statements do not grow with follow-ups", async () => {
+const inputsAs = (env, who, question, previousQuestion = null) => buildAnswerInputs(env, { question, by: who.name, memberSlug: who.slug, journey: "curious", share: false, previousQuestion });
+const WOLF = { name: "Gray Wolf", slug: "gray-wolf" };
+test("rank passes are capped at 4 and the abstain lookups keep class + two professions on a plain abstain", async () => {
   const env = makeEnv();
-  const count = [];
+  const plain = await inputsAs(env, WOLF, "zzorp flamingo paladin wands");
+  assert.equal(plain.abstain, true);
+  assert.deepEqual(plain.abstainPages.map((p) => p.id).sort(), ["classes/paladin", "professions/leatherworking", "professions/mining"], "claim 37: class page and both profession pages");
+  assert.ok(plain.rankPasses <= 4);
+  const opener = await inputsAs(env, WOLF, "and what about zzorp flamingo paladin wands", "zzorp qwix paladin blorp");
+  assert.equal(opener.abstain, true);
+  assert.equal(opener.rankPasses, 4, "the cap is what stops the opener-abstain path (5 passes without it)");
+  assert.deepEqual(opener.abstainPages.map((p) => p.id), ["classes/paladin", "professions/leatherworking"], "class page + one profession");
+  const passes = { plain: (await inputs(env, "what is the best spec for a paladin")).rankPasses, explicit: (await inputs(env, "again?", "what is the best spec for a paladin")).rankPasses, noContext: (await inputs(env, "again?")).rankPasses };
+  console.log("RANK_PASSES", JSON.stringify({ ...passes, abstain: plain.rankPasses, openerAbstain: opener.rankPasses }));
+  assert.deepEqual(passes, { plain: 1, explicit: 1, noContext: 0 });
+});
+test("findPreviousQuestion is exactly one D1 statement; buildAnswerInputs costs the same for a follow-up as for a plain question", async () => {
+  const env = makeEnv();
+  await turn(env, "s0", "what is the best spec for a paladin", iso(30));
+  await turn(env, "s1", "again?", iso(0));
+  const sqls = [];
   const orig = env.DB.prepare.bind(env.DB);
-  env.DB.prepare = (sql) => { count.push(sql); return orig(sql); };
-  const passes = {};
-  passes.plain = (await inputs(env, "what is the best spec for a paladin")).rankPasses;
-  passes.explicit = (await inputs(env, "again?", "what is the best spec for a paladin")).rankPasses;
-  passes.opener = (await inputs(env, "and what about zzorp", "what is the best spec for a paladin")).rankPasses;
-  passes.abstain = (await inputs(env, "zzorp flamingo paladin wands")).rankPasses;
-  passes.openerAbstain = (await inputs(env, "and what about zzorp flamingo wands", "zzorp qwix paladin blorp")).rankPasses;
-  passes.noContext = (await inputs(env, "again?")).rankPasses;
-  console.log("RANK_PASSES", JSON.stringify(passes));
-  for (const [k, v] of Object.entries(passes)) assert.ok(v <= 3, `${k}: ${v} passes`);
-  assert.equal(passes.noContext, 0, "no ranking at all without context");
-  const before = count.length;
-  await inputs(env, "again?", "what is the best spec for a paladin");
-  const stmts = count.length - before;
-  const before2 = count.length;
-  await inputs(env, "what is the best spec for a paladin");
-  console.log("D1_STATEMENTS buildAnswerInputs follow-up", stmts, "plain", count.length - before2);
-  assert.equal(stmts, count.length - before2 - 0, "a follow-up costs no more D1 statements in buildAnswerInputs than a plain question");
+  env.DB.prepare = (sql) => { sqls.push(sql); return orig(sql); };
+  await findPreviousQuestion(env, { intentId: "s1", share: true });
+  assert.equal(sqls.length, 1);
+  await inputs(env, "warm the library cache"); // the first call also loads the library pages
+  sqls.length = 0; await inputs(env, "again?", "what is the best spec for a paladin"); const follow = sqls.length;
+  sqls.length = 0; await inputs(env, "what is the best spec for a paladin"); const plain = sqls.length;
+  console.log("D1_STATEMENTS lookup 1, buildAnswerInputs follow-up", follow, "plain", plain);
+  assert.equal(follow, plain);
+});
+
+// review of the first head: "ok again" is a follow-up, not a greeting
+test("'ok again', 'okay again', 'ok, again', 'and again?' are follow-ups and retrieve; plain greetings still skip", async () => {
+  for (const q of ["ok again", "okay again", "ok, again", "and again?"]) {
+    assert.equal(refersToPrevious(q), true, q);
+    assert.equal(skipKind(q), null, q);
+  }
+  for (const q of ["thanks again", "ok", "hello"]) assert.equal(skipKind(q), "greeting", q);
+  const i = await inputs(makeEnv(), "ok again", "what is the best spec for a paladin");
+  assert.equal(i.retrieved, true); assert.equal(i.followUp, true); assert.equal(i.hits[0].page, "classes/paladin");
+});
+
+// the exact tie (half the content words unknown) is still about the game
+test("exactly half unknown content words, no build word, still offers the asker's build pages", async () => {
+  const env = makeEnv();
+  const i = await inputs(env, "zzorp flamingo trainer seals");
+  console.log("TIE", i.abstain, JSON.stringify(i.abstainPages));
+  assert.equal(i.abstain, true, "probe abstains");
+  assert.ok(i.abstainPages.length > 0, "tie keeps build pages");
 });
