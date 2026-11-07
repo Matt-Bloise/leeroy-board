@@ -67,3 +67,27 @@ export async function loadRoster(env) {
     return ROSTER_DATA.slice();
   }
 }
+
+// The stored sheets row (kv_state 'party_sheets') is written once and then only edited by sheet writes, so a person added to the party
+// document afterwards (admin add, /join) had no sheet and fell out of GET /api/state `party`, /sheet and the asker's own build. This adds a
+// sheet for each party-document member the stored rows do not cover (matched by slug or by name, lowercase) and changes nothing else.
+// It never invents the built-in five: only people the document names. Pure; returns the same array when nothing is missing.
+export function reconcileSheetsWithDoc(sheets, partyDoc, fields = ["race", "class", "spec_path", "professions", "plan_zone"]) {
+  const list = Array.isArray(sheets) ? sheets : [];
+  const docMembers = partyDoc && Array.isArray(partyDoc.members) ? partyDoc.members : [];
+  const bySlug = new Set(list.map((s) => s.slug));
+  const byName = new Set(list.map((s) => String(s.name || "").toLowerCase()));
+  const at = (partyDoc && typeof partyDoc.generated === "string" && partyDoc.generated) || new Date().toISOString();
+  let out = list;
+  for (const m of docMembers) {
+    const s = sheetMemberFromDoc(m);
+    if (!s || bySlug.has(s.slug) || byName.has(s.name.toLowerCase())) continue;
+    bySlug.add(s.slug);
+    byName.add(s.name.toLowerCase());
+    const f = {};
+    for (const k of fields) if (s[k] !== undefined && s[k] !== "") f[k] = { value: s[k], visible: true, source: "board", at };
+    if (out === list) out = list.slice();
+    out.push({ slug: s.slug, name: s.name, fields: f, updated: at });
+  }
+  return out;
+}

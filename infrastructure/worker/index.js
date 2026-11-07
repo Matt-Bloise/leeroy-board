@@ -54,7 +54,7 @@ import { flushBoardLines } from "./board-lines.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { PARTY_MEMBERS, loadPartyMembers } from "./party-source.js";
+import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc } from "./party-source.js";
 
 export { BoardRoom };
 
@@ -223,7 +223,13 @@ export async function buildPartySheetsFromD1(env, { persist = true } = {}) {
     if (cachedRow && cachedRow.json) {
       const parsed = JSON.parse(cachedRow.json);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return { party: parsed, seq: Date.now() };
+        // A person added to the party document after this row was stored has no sheet here: add theirs (reads one more row; nothing is written).
+        let reconciled = parsed;
+        try {
+          const partyRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
+          if (partyRow && partyRow.json) reconciled = reconcileSheetsWithDoc(parsed, JSON.parse(partyRow.json));
+        } catch {}
+        return { party: reconciled, seq: Date.now() };
       }
     }
   } catch {}
