@@ -8,7 +8,7 @@
 //                                            retrieved text, the build, the party state or the question, else that sentence goes. Names: ask-build.js.
 // Trade-off, stated plainly: this trades some recall for fewer invented facts. A real question can abstain (see the calibration notes below and
 // docs/answer-claims.md), and a true number the Library never gave is removed.
-import { expandWords, idfFor, factHay } from "./rank-core.js";
+import { expandWords, idfFor, factHay, stem } from "./rank-core.js";
 import { parseSourceIds } from "./answer-format.js";
 
 export const ABSTAIN_LINE = "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.";
@@ -37,6 +37,13 @@ const FILLER = ("bro bruh dude dudes man mate fam yo hey hi hello sup lol lmao l
   "friend buddy pal u ur r k kk lemme gimme sooo soo so ok ya yall y'all").split(/\s+/);
 const FILLER_SET = new Set(FILLER.map((w) => w.toLowerCase()));
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// A display name is not always a name: a Discord user called "Rogue" or "Hunter" asking about the rogue or the hunter class is asking about the Library. The
+// asker's own name is therefore taken out of the question only when none of its words occurs in the Library text; party member names always are.
+export function askerNameToStrip(by, hays) {
+  const tokens = String(by || "").toLowerCase().match(/[a-z0-9']{3,}/g) || [];
+  const inLibrary = tokens.some((t) => (Array.isArray(hays) ? hays : []).some((h) => h.includes(stem(t))));
+  return inLibrary ? "" : String(by || "");
+}
 // The question with party names (and the asker's own name), chat filler and "lvl" tidied away, for ranking and coverage only. The prompt still carries the
 // question exactly as asked.
 export function cleanQuestion(question, names = []) {
@@ -93,13 +100,14 @@ export const BUILD_RULE = "This is a question about the asker's own build. Answe
 
 // ---- IsSup ----------------------------------------------------------------------------------------------------------------
 // The retrieved page ids and the abstain flag reach finishAnswerText as a structured argument (`retrieval`). For callers that only have groundingText
-// (the offline ask-eval), the same data rides as ONE marker on the very last line. The marker is trusted only there: text a person controls (the question,
+// (the offline ask-eval in leeroy-ops passes groundingText, so it gets these checks; the admin model bake-off, eval.js, passes neither and does not run them:
+// it compares raw model behaviour with the lint), the same data rides as ONE marker on the very last line. The marker is trusted only there: text a person controls (the question,
 // the asker's name) can never be the last line, and any marker-looking text inside it is defanged before the real one is appended.
 export const RETRIEVED_MARK = "[[retrieved:";
 const defang = (t) => String(t || "").split(RETRIEVED_MARK).join("[ [retrieved:");
 export const groundingWithIds = (text, ids, abstain = false) => [defang(text), `${RETRIEVED_MARK} ${[...ids].join(" ")}${abstain ? " | abstain" : ""}]]`].join("\n");
 export function retrievedFromGrounding(groundingText) {
-  const m = /\n\[\[retrieved:([^\]]*)\]\]$/.exec(String(groundingText || ""));
+  const m = /\n\[\[retrieved:([^\][]*)\]\]$/.exec(String(groundingText || ""));
   if (!m) return null; // an older caller without the marker: no citation filter, as before
   const [list, flag] = m[1].split("|");
   return { ids: new Set(list.split(/\s+/).filter(Boolean)), abstain: /abstain/.test(flag || "") };
@@ -148,13 +156,45 @@ export function stripUnretrievedCites(answer, retrieved) {
 const UNIT_WORDS = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(" ");
 const TENS_WORDS = { twenty: 20, thirty: 30, forty: 40, fourty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
 const UNIT_VALUE = Object.fromEntries(UNIT_WORDS.map((w, i) => [w, i]));
-const WORD_NUM_RE = new RegExp(
-  `(?<![A-Za-z0-9])(?:(${Object.keys(TENS_WORDS).join("|")})(?:[-\\s](one|two|three|four|five|six|seven|eight|nine))?|(${UNIT_WORDS.join("|")}))(?:\\s+(hundred|thousand))?(?![A-Za-z0-9])`,
-  "gi"
-);
+const NUMWORD = [...UNIT_WORDS, ...Object.keys(TENS_WORDS), "hundred", "thousand"].sort((x, y) => y.length - x.length).join("|");
+// A run of number words ("two hundred and fifty", "twenty-five", "hundred"); parsed left to right by wordRunTokens, which splits a run that is really two numbers.
+const WORD_RUN_RE = new RegExp(`(?<![A-Za-z0-9])(?:${NUMWORD})(?:[-\\s]+(?:and\\s+)?(?:${NUMWORD}))*(?![A-Za-z0-9])`, "gi");
 const NUM_RE = /(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?:\s?(k|m)(?![A-Za-z0-9]))?(%)?/gi;
 const RANGE_RE = /(?<![\w.])(\d+)\s*(?:to|-|–|—)\s*(\d+)(?![\d.])/gi;
 const canon = (v) => String(Math.round(v * 1e6) / 1e6);
+
+// Parse one run of number words into tokens. Standard reading: units and tens add up, "hundred" multiplies what came before (or stands for 100 alone, as in
+// "a hundred"), "thousand" closes a group. A word that cannot continue the number starts a new one ("five six" is 5 and 6, "twenty five" is 25).
+function wordRunTokens(text, offset) {
+  const words = [...text.matchAll(/[A-Za-z]+/g)].filter((w) => w[0].toLowerCase() !== "and");
+  const tokens = [];
+  let total = 0, current = 0, last = "none", start = null, end = null;
+  const flush = () => {
+    if (start !== null) tokens.push({ value: total + current, start: offset + start, end: offset + end, decimal: false, percent: false });
+    total = 0; current = 0; last = "none"; start = null; end = null;
+  };
+  for (const w of words) {
+    const word = w[0].toLowerCase();
+    const isTens = Object.prototype.hasOwnProperty.call(TENS_WORDS, word);
+    const isUnit = Object.prototype.hasOwnProperty.call(UNIT_VALUE, word);
+    const v = isTens ? TENS_WORDS[word] : isUnit ? UNIT_VALUE[word] : 0;
+    const open = last === "none" || last === "hundred" || last === "thousand";
+    let ok;
+    if (isUnit) ok = open || (last === "tens" && v >= 1 && v <= 9);
+    else if (isTens) ok = open;
+    else if (word === "hundred") ok = last === "none" || last === "unit" || last === "tens";
+    else ok = last !== "none"; // thousand
+    if (!ok) flush();
+    if (start === null) start = w.index;
+    end = w.index + w[0].length;
+    if (isUnit) { current += v; last = "unit"; }
+    else if (isTens) { current += v; last = "tens"; }
+    else if (word === "hundred") { current = (current || 1) * 100; last = "hundred"; }
+    else { total += (current || 1) * 1000; current = 0; last = "thousand"; }
+  }
+  flush();
+  return tokens;
+}
 
 // [{ value, start, end, decimal, percent }] for the digits and the number words in `text`.
 function numberTokens(text) {
@@ -165,11 +205,7 @@ function numberTokens(text) {
     if (m[3]) v *= m[3].toLowerCase() === "k" ? 1e3 : 1e6;
     out.push({ value: v, start: m.index, end: m.index + m[0].length, decimal: m[2] !== undefined, percent: Boolean(m[4]) });
   }
-  for (const m of s.matchAll(WORD_NUM_RE)) {
-    const tens = m[1] ? TENS_WORDS[m[1].toLowerCase()] + (m[2] ? UNIT_VALUE[m[2].toLowerCase()] : 0) : UNIT_VALUE[m[3].toLowerCase()];
-    const mult = m[4] ? (m[4].toLowerCase() === "hundred" ? 100 : 1000) : 1;
-    out.push({ value: tens * mult, start: m.index, end: m.index + m[0].length, decimal: false, percent: false });
-  }
+  for (const run of s.matchAll(WORD_RUN_RE)) out.push(...wordRunTokens(run[0], run.index));
   return out;
 }
 

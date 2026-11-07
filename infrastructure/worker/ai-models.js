@@ -22,7 +22,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
-import { skipKind, cleanQuestion, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
+import { skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -847,7 +847,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const retrieve = skip === null;
     // Party names, the asker's own name and chat filler ("bro", "nah lol") are not topics: they are taken out of the question for ranking and coverage (the
     // prompt keeps the question as asked).
-    const rankQuestion = cleanQuestion(question, [...ROSTER_DATA.map((r) => r.display), "leeroy jenkins", by]);
+    const rankQuestion = cleanQuestion(question, [...ROSTER_DATA.map((r) => r.display), "leeroy jenkins", askerNameToStrip(by, cachedHays)]);
     // Score individual facts & open questions using precomputed cachedHays (TF-IDF + stemming + synonyms + role/lead boosts)
     const ranking = retrieve ? rankWikiCore(rankQuestion, parsedPages, { hays: cachedHays }) : { words: [], hits: [] };
     const { words } = ranking;
