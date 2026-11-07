@@ -22,7 +22,7 @@ const WAX = { guided: "red", curious: "amber", everything: "green" };
 const WEEK = ["train-10", "first-dungeon", "meet-again"];
 const brain = () => window.BoardBrain || null;
 const keyed = (B) => !!(B && B.hasKey && B.hasKey());
-const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=d0c70d71a8").catch(() => null));
+const rules = () => window.__nextRules ? Promise.resolve(window.__nextRules) : (NX.p ||= import("../next/rules.js?v=020417741f").catch(() => null));
 
 const meSlug = () => { const m = MEM.member(); return m ? MEM.slug(m.name) : null; };
 const ticksOf = (slug) => (slug && typeof K.beforeTicks === "function" ? K.beforeTicks(slug) : []);
@@ -166,7 +166,7 @@ function draw(out) {
 const NS = { p: null };
 const nsFlag = () => !!(D.client && D.client.flags && D.client.flags["nextstep.v2"]);
 const nsJson = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-const nsLoad = () => (NS.p ||= Promise.all([import("./nextstep.js?v=be24141cdb").catch(() => null), nsJson("data/cta.json"), nsJson("data/sample/roster.json")]).then(([mod, cta, roster]) => {
+const nsLoad = () => (NS.p ||= Promise.all([import("./nextstep.js?v=bb23497925").catch(() => null), nsJson("data/cta.json"), nsJson("data/sample/roster.json")]).then(([mod, cta, roster]) => {
   const copy = {}; if (Array.isArray(cta)) for (const e of cta) if (e && /^nextstep-/.test(e.id) && typeof e.new === "string") copy[e.id] = e.new;
   return mod && typeof mod.nextStep === "function" ? { mod, copy, roster } : null;
 }));
