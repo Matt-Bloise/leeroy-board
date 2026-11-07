@@ -214,7 +214,7 @@ export async function broadcastToRoom(env, payload) {
   }
 }
 
-export async function buildPartySheetsFromD1(env, { persist = true } = {}) {
+export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } = {}) {
   const now = new Date().toISOString();
 
   // 1. Fast path: Read pre-materialized party sheets from kv_state (single point lookup)
@@ -224,10 +224,15 @@ export async function buildPartySheetsFromD1(env, { persist = true } = {}) {
       const parsed = JSON.parse(cachedRow.json);
       if (Array.isArray(parsed) && parsed.length > 0) {
         // A person added to the party document after this row was stored has no sheet here: add theirs (reads one more row; nothing is written).
+        // A caller that already read the party row passes it as partyDoc (null means "read, none"); otherwise it is read here.
         let reconciled = parsed;
         try {
-          const partyRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
-          if (partyRow && partyRow.json) reconciled = reconcileSheetsWithDoc(parsed, JSON.parse(partyRow.json));
+          let doc = partyDoc;
+          if (doc === undefined) {
+            const partyRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
+            doc = partyRow && partyRow.json ? JSON.parse(partyRow.json) : null;
+          }
+          if (doc) reconciled = reconcileSheetsWithDoc(parsed, doc);
         } catch {}
         return { party: reconciled, seq: Date.now() };
       }
@@ -300,7 +305,7 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
     for (const [sheetField, key] of Object.entries(PUBLIC_KEY)) {
       const f = sheet.fields && sheet.fields[sheetField];
       if (!f) continue;
-      if (f.visible === false) delete m[key];
+      if (f.visible === false) { delete m[key]; if (key === "class") delete m.class_key; }
       else if (sheet.slug === slug && sheetField === field && f.value !== undefined && f.value !== null) m[key] = String(f.value);
     }
   }
@@ -316,7 +321,9 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
   const saved = await commitSheetWrite(env, {
     event: { slug, name: name || slug, field, valJson, visible, source: source || "board", at: now },
     compute: async (cur, partyDoc) => {
-      const currentParty = Array.isArray(cur) ? cur : (await buildPartySheetsFromD1(env, { persist: false })).party;
+      // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
+      // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
+      const currentParty = reconcileSheetsWithDoc(Array.isArray(cur) ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party, partyDoc);
       let memberSheet = currentParty.find((m) => m.slug === slug);
       if (!memberSheet) {
         memberSheet = { slug, name: name || slug, fields: {}, updated: now };
@@ -918,18 +925,17 @@ export default {
         if (path === "/state" && req.method === "GET") {
           let resp = await getCachedResponse(url.origin, "/api/state");
           if (!resp) {
-            const [{ results }, { party }] = await Promise.all([
-              env.DB.prepare(
-                "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
-              ).all(),
-              buildPartySheetsFromD1(env),
-            ]);
+            const { results } = await env.DB.prepare(
+              "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
+            ).all();
             const map = {};
             for (const row of results || []) {
               try {
                 map[row.key] = JSON.parse(row.json);
               } catch {}
             }
+            // The party row is already in hand: pass it on so the sheets are reconciled without a second read.
+            const { party } = await buildPartySheetsFromD1(env, { partyDoc: map.party || null });
             const now = new Date().toISOString();
             resp = jsonResp(
               webBoardLinksDeep({

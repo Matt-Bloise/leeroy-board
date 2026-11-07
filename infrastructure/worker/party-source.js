@@ -75,15 +75,19 @@ export async function loadRoster(env) {
 export function reconcileSheetsWithDoc(sheets, partyDoc, fields = ["race", "class", "spec_path", "professions", "plan_zone"]) {
   const list = Array.isArray(sheets) ? sheets : [];
   const docMembers = partyDoc && Array.isArray(partyDoc.members) ? partyDoc.members : [];
+  // One person, three keys: the slug, the lowercase name, and the name without a parenthetical ("Winton (alt)" is Winton), so an admin rename
+  // in the document does not make a second person out of a sheet that already exists.
+  const norm = (n) => slugify(String(n || "").replace(/[(][^)]*[)]/g, " "));
   const bySlug = new Set(list.map((s) => s.slug));
-  const byName = new Set(list.map((s) => String(s.name || "").toLowerCase()));
+  const byName = new Set(list.flatMap((s) => [String(s.name || "").toLowerCase(), norm(s.name)]));
   const at = (partyDoc && typeof partyDoc.generated === "string" && partyDoc.generated) || new Date().toISOString();
   let out = list;
   for (const m of docMembers) {
     const s = sheetMemberFromDoc(m);
-    if (!s || bySlug.has(s.slug) || byName.has(s.name.toLowerCase())) continue;
+    if (!s || bySlug.has(s.slug) || byName.has(s.name.toLowerCase()) || byName.has(norm(s.name))) continue;
     bySlug.add(s.slug);
     byName.add(s.name.toLowerCase());
+    byName.add(norm(s.name));
     const f = {};
     for (const k of fields) if (s[k] !== undefined && s[k] !== "") f[k] = { value: s[k], visible: true, source: "board", at };
     if (out === list) out = list.slice();
