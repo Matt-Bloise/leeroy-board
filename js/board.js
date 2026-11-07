@@ -2381,7 +2381,7 @@ function tiltReady() {
   if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) window.screen.orientation.addEventListener("change", () => { TILT.b0 = TILT.g0 = null; });
   const linkTilt = () => {
     const BT = window.BoardTilt; if (!BT || TILT.linked) return; TILT.linked = true;
-    BT.on(({ x, y }) => { LB.tilt = !!BT.status().on; if (LB.tilt) aimAt(innerWidth * (0.5 + 0.5 * x), innerHeight * (0.5 + 0.5 * y)); });
+    BT.on(({ x, y }) => { const was = LB.tilt; LB.tilt = !!BT.status().on; if (was !== LB.tilt) { tiltLabel(LB.tilt); if (!LB.tilt) { LB.tx = LB.ty = null; } } if (LB.tilt) aimAt(innerWidth * (0.5 + 0.5 * x), innerHeight * (0.5 + 0.5 * y)); });
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", linkTilt); else linkTilt();
   tilt.addEventListener("click", async () => {

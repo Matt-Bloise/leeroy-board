@@ -85,6 +85,9 @@
           "motion": [ { "name": "since-cool", "trigger": "tiles and rows are marked once after load or when the scene opens", "purpose": "the edge cools over 8 s so it says 'new' and then gets out of the way", "reducedMotion": "static for 8 s, then removed" } ] },
         { "id": "tb-sheet-closed", "selector": ["section.sheet", "div.sheet-head", "#sheet-title", "#scene-close", "#sheet-body"], "tier": "periphery",
           "intent": "The scene sheet is closed and must show nothing; entries exist because the closed sheet stays in the DOM.", "motion": [] },
+        { "id": "tb-lamp", "selector": ["#lamp", "#light-calm"], "tier": "periphery",
+          "intent": "Make the board feel lit: a soft candle-gold lamp under the pointer (or the phone's tilt) and a warm rim on the crests. It carries no information; the Light switch (warm or calm) turns it off for good and is remembered.",
+          "motion": [ { "name": "lamp follow", "trigger": "pointer move or device tilt; requestAnimationFrame only while the lamp is still travelling", "purpose": "the light has a source, so the wall reads as a place", "reducedMotion": "no lamp; hero and hover warmth stay static" } ] },
         { "id": "tb-dock", "selector": ["button.pl", "button.pl *"], "tier": "context",
           "intent": "Three places to go: Next steps, My sheet, Menu.", "motion": [] }
       ]
