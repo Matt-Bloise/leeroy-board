@@ -62,9 +62,11 @@ async function open(browser, width, height, signups) {
   // Wait until one of the two is visible, then click the link if it is the one that is there.
   await page.waitForFunction(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return vis(document.querySelector("#nx-fr2-look")) || Array.from(document.querySelectorAll(".tn-name")).some(vis); }, null, { timeout: 20000 }).catch(() => {});
   const look = page.locator("#nx-fr2-look");
-  if (await look.isVisible().catch(() => false)) await look.click();
+  if (await look.isVisible().catch(() => false)) { await look.click(); await page.evaluate(() => window.__boardKit && window.__boardKit.goScene("tonight")).catch(() => {}); // "Just take a look" now closes the card; the name picker is one tap away in Next steps
+  }
   await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
   await page.locator(".tn-name", { hasText: NAMES[1] }).first().click({ timeout: 15000 });
+  await page.getByRole("button", { name: /Show me what is next/ }).first().click({ timeout: 15000 }).catch(() => {}); // a name is only kept once it is confirmed; "Change my answer" waits for that
   await page.waitForTimeout(800);
   await page.evaluate(() => { location.hash = "signups"; });
   await page.waitForSelector("#panel-signups .jr-who .jr-wn, #panel-signups .jr-who .jr-w0", { state: "visible", timeout: 10000 }).catch(() => {});

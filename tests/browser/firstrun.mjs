@@ -41,6 +41,7 @@ try {
     await page.screenshot({ path: path.join(SHOTS, `firstrun-${tag}.png`) });
     ok(`${t} no page errors`, errors.length === 0, errors.join(" | "));
     await page.locator("#nx-fr2-look").click();
+    await page.evaluate(() => window.__boardKit && window.__boardKit.goScene("tonight")).catch(() => {}); // "Just take a look" now closes the card; the name picker is one tap away in Next steps
     await page.waitForTimeout(500);
     ok(`${t} Just take a look shows the five names`, (await visibleNames(page)) === 5, String(await visibleNames(page)));
     ok(`${t} first screen gone after peek`, (await page.locator("#nx-fr2").count()) === 0);

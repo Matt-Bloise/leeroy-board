@@ -328,11 +328,13 @@ const sampleLoad = () => (sampleP ||= Promise.all(SAMPLE_FILES.map((n) => fetch(
 function sampleView(S) {
   const sig = (n) => (S.signups.entries || []).find((e) => e.name === n), bld = (n) => (S.builds.builds || []).find((b) => b.name === n) || {};
   const go = () => { const c = $("#tn-change"); if (c) { c.click(); return; } if (K.goScene) K.goScene("tonight"); const f = $("#tn-me button, #tn-me a"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } };
-  return [h("h3", { class: "ps-sample-h", id: "ps-sample-h" }, h("span", { class: "ps-sample-tag", text: "Sample guild" }), ` ${S.party.party}, a sheet to look at`),
+  const inner = [h("h3", { class: "ps-sample-h", id: "ps-sample-h" }, h("span", { class: "ps-sample-tag", text: "Sample guild" }), ` ${S.party.party}, a sheet to look at`),
     h("p", { class: "ps-sample-p", text: "Made-up names, so you can see what a sheet holds before you have one." }),
     h("ul", { class: "ps-sample-l", "aria-label": "The sample guild, one line each" }, S.party.members.map((m) => { const b = bld(m.name), a = sig(m.name);
       return h("li", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` }, h("b", { text: m.name }), h("span", { text: `${m.race} ${m.class}, ${m.role}. ${b.spec_path || m.spec}${b.level ? `, level ${b.level}` : ""}.` }), h("small", { text: `${K.andList(m.professions.map((p) => p.name))}.${a ? ` ${m.name.split(" ")[0]} ${RSVP[a.rsvp] || a.rsvp} on launch night.` : ""}${b.goals ? ` Goal: ${b.goals}` : ""}` })); })),
     h("button", { type: "button", class: "lib-tool ps-sample-go", onclick: go }, "Make this for my guild")];
+  /* the real party comes first on The five; the made-up guild waits behind "See an example" */
+  return [h("details", { class: "ps-sample-d" }, h("summary", { class: "ps-sample-sum", text: "See an example" }), ...inner)];
 }
 const firstValue = () => { if (SC.open !== "five") return; try { document.dispatchEvent(new CustomEvent("board:first-value")); } catch (e) {} };
 async function sampleSync() {
@@ -340,7 +342,7 @@ async function sampleSync() {
   if (MEM.member() || !D.party) { const o = $("#ps-sample"); if (o) o.hidden = true; return; }
   const S = await sampleLoad(); if (!S || MEM.member()) return;
   let box = $("#ps-sample");
-  if (!box) { box = h("section", { class: "ps-sample", id: "ps-sample", "aria-labelledby": "ps-sample-h" }); const v = $("#ps-views"); panel.insertBefore(box, v ? v.nextSibling : panel.firstChild); }
+  if (!box) { box = h("section", { class: "ps-sample", id: "ps-sample", "aria-labelledby": "ps-sample-h" }); const v = $("#ps-views"); panel.appendChild(box); }
   if (!box.firstChild) box.replaceChildren(...sampleView(S));
   box.hidden = false; firstValue();
 }

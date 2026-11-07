@@ -75,7 +75,8 @@ async function setup(browser, width, { flagOn = true, count = 6, state = "lookin
     // and a click skipped because the link was not visible yet leaves the chips hidden for good (0 visible .tn-name, the click on a chip then times out). So wait until one of the two is visible.
     await page.waitForFunction(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return vis(document.querySelector("#nx-fr2-look")) || Array.from(document.querySelectorAll(".tn-name")).some(vis); }, null, { timeout: 20000 }).catch(() => {});
     const look = page.locator("#nx-fr2-look");
-    if (await look.isVisible().catch(() => false)) await look.click();
+    if (await look.isVisible().catch(() => false)) { await look.click(); await page.evaluate(() => window.__boardKit && window.__boardKit.goScene("tonight")).catch(() => {}); // "Just take a look" now closes the card; the name picker is one tap away in Next steps
+  }
     await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
     await settleChips(page, count, width);
   }
