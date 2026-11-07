@@ -68,13 +68,15 @@ async function run(label, viewport, mobile) {
   const btn = await page.$("#light-calm");
   ok(`${label}: the Calm light switch exists`, !!btn);
   if (btn) {
-    await btn.click({ timeout: 3000 }).catch((e) => console.log("note: calm click failed: " + String(e.message).slice(0, 80)));
+    await until(page, () => !document.documentElement.classList.contains("scene-open") && !document.documentElement.classList.contains("scene-closing"));
+    await page.waitForTimeout(600);
+    await btn.dispatchEvent("click"); // the presence bar is still settling after the open/return transition, which fails Playwright's stability check; the handler is what is under test
     await page.waitForTimeout(700); if (OUT) await page.screenshot({ path: path.join(OUT, "home-" + label + "-calm.png") }).catch(() => {});
     ok(`${label}: Calm removes the lamp`, await until(page, () => !document.querySelector("#lamp") && document.documentElement.classList.contains("light-off")));
     ok(`${label}: Calm is remembered`, (await page.evaluate(() => localStorage.getItem("board-light-calm"))) === "1");
     await page.reload({ waitUntil: "load" }).catch(() => {}); await page.waitForTimeout(500);
     ok(`${label}: Calm survives a reload`, (await page.evaluate(() => !document.querySelector("#lamp"))));
-    const b2 = await page.$("#light-calm"); if (b2) await b2.click().catch(() => {});
+    const b2 = await page.$("#light-calm"); if (b2) await b2.dispatchEvent("click");
     ok(`${label}: switching back restores the lamp`, await until(page, () => !!document.querySelector("#lamp")));
   }
   ok(`${label}: no page errors`, errors.length === 0, errors.join(" | "));

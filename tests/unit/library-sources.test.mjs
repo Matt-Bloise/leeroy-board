@@ -132,3 +132,33 @@ test("no library file cites a crawl-disallowed host", () => {
   assert.deepEqual(hits, []);
   for (const h of NEVER) assert.ok(!cfg.hosts[h] && !cfg.knownViolations.unlistedHosts.some((v) => v.host === h), `${h} must not be listed or tolerated`);
 });
+
+// External community sources (link-only, never copied): label, https URL, access date and non-affiliation note are required.
+test("external community sources are https, labelled Likely, dated and carry the non-affiliation note", () => {
+  const ext = Object.entries(cfg.hosts).filter(([, h]) => h.kind === "external-community");
+  assert.ok(ext.some(([host]) => host === "wowforevertools.com"), "wowforevertools.com must be recorded");
+  for (const [host, h] of ext) {
+    assert.equal(h.storedText, "link-only", `${host}: external community sources are link-only`);
+    assert.ok(["Confirmed", "Likely", "Speculative"].includes(h.label), `${host}: label`);
+    const u = new URL(h.url);
+    assert.equal(u.protocol, "https:", `${host}: https only`);
+    assert.equal(u.host, host, `${host}: url host must match the key`);
+    assert.match(h.accessed, /^\d{4}-\d{2}-\d{2}$/, `${host}: accessed date`);
+    assert.ok(!Number.isNaN(Date.parse(h.accessed)), `${host}: accessed date parses`);
+    assert.match(h.attribution, /not affiliated with or endorsed by Blizzard/i, `${host}: non-affiliation note`);
+  }
+  assert.equal(cfg.hosts["wowforevertools.com"].label, "Likely");
+  assert.equal(cfg.hosts["wowforevertools.com"].accessed, "2026-11-07");
+});
+
+// Guard: the Professions link paragraph owns .pro-tool; the pre-existing .lib-tool buttons (Buffs and Tonight scenes) must keep their class.
+test("js/board.js keeps lib-tool on the existing buttons and uses pro-tool only for the new link row", () => {
+  const src = fs.readFileSync(path.join(root, "js", "board.js"), "utf8").replace(/\r/g, "");
+  const proLines = src.split("\n").filter((l) => /\bpro-tool\b/.test(l));
+  assert.equal(proLines.length, 2, "pro-tool appears on the new paragraph and its link only");
+  for (const l of proLines) assert.ok(/libToolRow|class: "pro-tool"|class: "pro-tool-a"/.test(l));
+  assert.ok(!/button[^\n]*pro-tool/.test(src), "no button may carry pro-tool");
+  assert.ok((src.match(/h\("button"[^\n]*class: "lib-tool[ "]/g) || []).length >= 4, "the level-jump marks, change-person buttons and member switcher keep lib-tool");
+  assert.ok(/id: "deep-change"[^\n]*lib-tool|lib-tool[^\n]*id: "deep-change"/.test(src), "#deep-change keeps lib-tool");
+  assert.ok(/id: "tn-change"[^\n]*lib-tool|lib-tool[^\n]*id: "tn-change"/.test(src), "#tn-change keeps lib-tool");
+});
