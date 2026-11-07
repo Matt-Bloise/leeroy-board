@@ -35,10 +35,24 @@ export function parseClassEmoji(raw) {
   return out;
 }
 
+// An explicit slug match wins; the name is only used when NO member has that slug (or the entry has none).
 export const memberFor = (members, entry) => {
   if (!Array.isArray(members) || !entry) return null;
-  const bySlug = typeof entry.slug === "string" && entry.slug ? entry.slug : null;
+  const bySlug = typeof entry.slug === "string" && entry.slug ? members.find((m) => m.slug === entry.slug) : null;
+  if (bySlug) return bySlug;
   const byName = slugify(entry.name || "");
-  return members.find((m) => m.slug === bySlug || m.slug === byName) || null;
+  return byName ? members.find((m) => m.slug === byName) || null : null;
 };
+
+// Pair every sign-up entry with at most one member and every member with at most one entry (the first entry wins).
+// Returns { byEntry: Map(entry -> member), byMember: Map(member -> entry) }; an entry in neither map claims nobody.
+export function claimEntries(members, entries) {
+  const byEntry = new Map();
+  const byMember = new Map();
+  for (const e of Array.isArray(entries) ? entries : []) {
+    const m = memberFor(members, e);
+    if (m && !byMember.has(m)) { byMember.set(m, e); byEntry.set(e, m); }
+  }
+  return { byEntry, byMember };
+}
 export const iconFor = (member, emoji) => (member && member.classKey && emoji && emoji[member.classKey] ? `${emoji[member.classKey]} ` : "");

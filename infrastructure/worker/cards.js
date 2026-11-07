@@ -12,7 +12,7 @@
 // Channel and message ids live only in the D1 kv_state row `cards`, written through PUT /api/config/cards or POST /api/admin/cards/post.
 
 import { noiseDay, recordShadow } from "./noise.js";
-import { cardMembers, parseClassEmoji, memberFor, iconFor } from "./card-members.js";
+import { cardMembers, parseClassEmoji, iconFor, claimEntries } from "./card-members.js";
 
 export const CARDS_KEY = "cards";
 export const CARD_EDIT_KEY = "cards_edit";
@@ -157,7 +157,8 @@ export function renderSignupCard(state) {
   const members = state && Array.isArray(state.members) ? state.members : null;
   const emoji = (state && state.classEmoji) || {};
   const entries = Array.isArray(state && state.entries) ? state.entries : [];
-  const byState = (st) => entries.filter((e) => e && e.rsvp === st).map((e) => `${iconFor(memberFor(members, e), emoji)}${cleanName(e.name)}`);
+  const claimed = members ? claimEntries(members, entries) : null;
+  const byState = (st) => entries.filter((e) => e && e.rsvp === st).map((e) => `${iconFor(claimed.byEntry.get(e), emoji)}${cleanName(e.name)}`);
   for (const s of RSVP_STATES) {
     if (s === "in" || t.rsvp[s].length) {
       const names = members ? byState(s) : t.rsvp[s];
@@ -165,7 +166,7 @@ export function renderSignupCard(state) {
     }
   }
   if (members) {
-    const quiet = members.filter((m) => !entries.some((e) => e && e.rsvp && memberFor([m], e)));
+    const quiet = members.filter((m) => { const e = claimed.byMember.get(m); return !(e && e.rsvp); });
     if (quiet.length) fields.push({ name: `No answer yet (${quiet.length})`, value: clampText(quiet.map((m) => `${iconFor(m, emoji)}${m.name}`).join(", "), 1024), inline: false });
   }
   if (t.pack.yes.length || t.pack.no.length) {
@@ -187,6 +188,7 @@ export function renderSignupCard(state) {
   if (when) embed.footer = { text: `Updated ${when}` };
   const thumb = assetUrl(state, "img/seal.png");
   if (thumb) embed.thumbnail = { url: thumb };
+  capEmbedText(embed);
 
   const mopts = meetOptions(state && state.options).slice(0, 2);
   const wopts = whenOptions(state && state.options).slice(0, 5);
@@ -207,6 +209,20 @@ export function renderSignupCard(state) {
   return { embeds: [embed], components, allowed_mentions: NO_MENTIONS };
 }
 
+// Discord rejects an embed whose text (title + description + field names + values + footer) passes 6000 characters, and a rejected
+// edit leaves the card stale. Trim field values from the last field back until it fits.
+export const EMBED_TEXT_MAX = 6000;
+const embedTextLength = (e) => (e.title || "").length + (e.description || "").length + ((e.footer && e.footer.text) || "").length + (e.fields || []).reduce((n, f) => n + f.name.length + f.value.length, 0);
+function capEmbedText(embed) {
+  let over = embedTextLength(embed) - EMBED_TEXT_MAX;
+  for (let i = embed.fields.length - 1; over > 0 && i >= 0; i--) {
+    const f = embed.fields[i];
+    const keep = Math.max(1, f.value.length - over);
+    over -= f.value.length - keep;
+    f.value = clampText(f.value, keep);
+  }
+}
+
 // A static board image for embeds (Pages serves it; no Worker work). Only when the card state carries an https site base.
 function assetUrl(state, path) {
   const base = state && typeof state.siteBase === "string" ? state.siteBase.replace(/\/+$/, "") : "";
@@ -225,31 +241,38 @@ const detailBits = (e) => {
 // party sheets do not list yet show with a plain note.
 function boardBlocks(state, entries) {
   const emoji = state.classEmoji || {};
-  const used = new Set();
+  const claimed = claimEntries(state.members, entries);
   const blocks = [];
   for (const m of state.members) {
-    const e = entries.find((x) => x && memberFor([m], x));
-    if (e) used.add(e);
+    const e = claimed.byMember.get(m);
     const head = [m.classLabel, m.role].filter(Boolean).join(" · ");
     blocks.push(`${iconFor(m, emoji)}**${m.name}**${head ? ` · ${head}` : ""}\n-# ${[m.race, ...detailBits(e)].filter(Boolean).join(" · ")}`);
   }
   for (const e of entries) {
-    if (used.has(e)) continue;
+    if (!e || claimed.byEntry.has(e)) continue;
     blocks.push(`**${cleanName(e && e.name)}**\n-# Not on the party sheets yet · ${detailBits(e).join(" · ")}`);
   }
   return blocks;
 }
 
-// Cut at person boundaries: Discord allows 1024 characters per field value.
-function chunkBlocks(blocks) {
-  const out = [];
-  let cur = "";
+// Fill fields person by person (a person is never split across fields: 1024 characters per value) and stop before the WHOLE embed
+// would pass the 6000-character budget. `fixedChars` is title + description + footer. Returns the values and how many people did not fit.
+const OMIT_NOTE_MAX = 40; // room kept in the footer for " · +NN more on the board"
+function fitBlocks(blocks, fixedChars) {
+  const values = [];
+  let used = fixedChars + OMIT_NOTE_MAX;
+  let shown = 0;
   for (const blk of blocks) {
     const piece = clampText(blk, DETAIL_MAX);
-    if (cur && cur.length + 1 + piece.length > DETAIL_MAX) { out.push(cur); cur = piece; } else cur = cur ? `${cur}\n${piece}` : piece;
+    const last = values.length - 1;
+    const joins = last >= 0 && values[last].length + 1 + piece.length <= DETAIL_MAX;
+    const cost = joins ? 1 + piece.length : piece.length + (values.length ? 1 : 3); // a new field also costs its name ("Who" 3, later ones 1)
+    if (used + cost > EMBED_TEXT_MAX || (!joins && values.length >= 25)) break;
+    if (joins) values[last] += `\n${piece}`; else values.push(piece);
+    used += cost;
+    shown += 1;
   }
-  if (cur) out.push(cur);
-  return out;
+  return { values, omitted: blocks.length - shown };
 }
 
 // The party board card: one line per person, no buttons (an optional https link button to the board).
@@ -259,8 +282,13 @@ export function renderBoardCard(state) {
   const entries = Array.isArray(state && state.entries) ? state.entries : [];
   const t = tallyEntries(state);
   let fields;
+  let omitted = 0;
+  const description = clampText(`${t.rsvp.in.length} in \u00b7 ${t.rsvp.maybe.length} tentative \u00b7 ${t.rsvp.late.length} running late \u00b7 ${t.rsvp.out.length} out`, 4096);
+  const updatedText = fmtUpdated(state && state.updated);
   if (state && Array.isArray(state.members)) {
-    fields = chunkBlocks(boardBlocks(state, entries)).slice(0, 6).map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
+    const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + (updatedText ? `Updated ${updatedText}`.length : 0));
+    omitted = fit.omitted;
+    fields = fit.values.map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
   } else {
     const lines = entries.map((e) => {
       const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
@@ -273,14 +301,15 @@ export function renderBoardCard(state) {
   }
   const embed = {
     title: "Party board",
-    description: clampText(`${t.rsvp.in.length} in · ${t.rsvp.maybe.length} tentative · ${t.rsvp.late.length} running late · ${t.rsvp.out.length} out`, 4096),
+    description,
     color: GOLD,
     fields,
   };
-  const when = fmtUpdated(state && state.updated);
-  if (when) embed.footer = { text: `Updated ${when}` };
+  const footer = [updatedText ? `Updated ${updatedText}` : null, omitted ? `+${omitted} more on the board` : null].filter(Boolean).join(" · ");
+  if (footer) embed.footer = { text: footer };
   const thumb = assetUrl(state, "img/seal.png");
   if (thumb) embed.thumbnail = { url: thumb };
+  capEmbedText(embed);
   const body = { embeds: [embed], components: [], allowed_mentions: NO_MENTIONS };
   const url = state && state.boardUrl;
   if (typeof url === "string" && /^https:\/\//.test(url) && url.length <= 512) {
