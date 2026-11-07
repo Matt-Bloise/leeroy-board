@@ -51,12 +51,21 @@ test("nothing missing returns the same array; no document and junk change nothin
   assert.deepEqual(reconcileSheetsWithDoc(null, null), []);
 });
 
-test("an admin rename in the document does not make a second person", () => {
+test("a true admin rename does not make a second person", () => {
   const stored = [{ slug: "winton", name: "Winton", fields: { class: f("paladin") }, updated: "x" }];
-  for (const renamed of ["Winton (alt)", "winton", "WINTON  (tank)"]) {
+  for (const renamed of ["Winton (alt)", "WINTON  (tank)"]) {
     assert.equal(reconcileSheetsWithDoc(stored, { members: [{ name: renamed, class_key: "paladin", race: "Undead" }] }), stored, renamed);
   }
   assert.equal(reconcileSheetsWithDoc(stored, { members: [{ name: "Winton Jr", class_key: "mage", race: "Gnome" }] }).length, 2, "a different name is a different person");
+});
+
+test("distinct people whose names differ only by a parenthetical stay distinct", () => {
+  const stored = [{ slug: "winton", name: "Winton", fields: { class: f("paladin") }, updated: "x" }];
+  const both = reconcileSheetsWithDoc(stored, { members: [{ name: "Winton", class_key: "paladin", race: "Undead" }, { name: "Winton (alt)", class_key: "mage", race: "Gnome" }] });
+  assert.deepEqual(both.map((x) => x.slug), ["winton", "winton-alt"]);
+  const sams = reconcileSheetsWithDoc([], { members: [{ name: "Sam (Horde)", class_key: "hunter", race: "Orc" }, { name: "Sam (Alliance)", class_key: "rogue", race: "Human" }] });
+  assert.deepEqual(sams.map((x) => x.slug), ["sam-horde", "sam-alliance"]);
+  assert.equal(sams[1].fields.class.value, "rogue");
 });
 
 test("WRITE THEN READ: a synthesized member keeps race, class and zone after their first sheet write", async () => {
@@ -95,4 +104,26 @@ test("hiding a class also removes class_key from the public document", () => {
   projectPublicParty(doc, [{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin", false) } }], "red-fox", "class");
   assert.equal(doc.members[0].class, undefined);
   assert.equal(doc.members[0].class_key, undefined);
+});
+
+test("a hide reaches a renamed person, but not a distinct person with a similar name", () => {
+  const doc = { members: [{ name: "Winton (alt)", class: "Paladin", class_key: "paladin" }] };
+  projectPublicParty(doc, [{ slug: "winton", name: "Winton", fields: { class: f("paladin", false) } }], "winton", "class");
+  assert.equal(doc.members[0].class, undefined, "renamed: hidden");
+  const two = { members: [{ name: "Winton", class: "Paladin", class_key: "paladin" }, { name: "Winton (alt)", class: "Mage", class_key: "mage" }] };
+  projectPublicParty(two, [{ slug: "winton", name: "Winton", fields: { class: f("paladin", false) } }, { slug: "winton-alt", name: "Winton (alt)", fields: { class: f("mage") } }], "winton", "class");
+  assert.equal(two.members[0].class, undefined);
+  assert.equal(two.members[1].class, "Mage", "the other person keeps theirs");
+});
+
+test("GET /api/bootstrap reads the party row once", async () => {
+  const env = makeEnv();
+  await purgeWorkerCache(ORIGIN, ["/api/bootstrap"]);
+  const reads = [];
+  const real = env.DB.prepare.bind(env.DB);
+  env.DB.prepare = (sql) => { if (/FROM kv_state WHERE key = 'party'/.test(sql)) reads.push(sql); return real(sql); };
+  const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api/bootstrap`, { headers: { "CF-Connecting-IP": "203.0.113.10" } }), env, ctx));
+  const body = await res.json();
+  assert.equal(reads.length, 0, "the party row comes from the bundle select, not a second query");
+  assert.ok(body.partySheets.some((p) => p.slug === "blue-owl"), "and the document member is listed");
 });

@@ -54,7 +54,7 @@ import { flushBoardLines } from "./board-lines.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc } from "./party-source.js";
+import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember } from "./party-source.js";
 
 export { BoardRoom };
 
@@ -300,7 +300,7 @@ const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
 export function projectPublicParty(partyDoc, sheets, slug, field) {
   if (!partyDoc || !Array.isArray(partyDoc.members)) return partyDoc;
   for (const m of partyDoc.members) {
-    const sheet = (sheets || []).find((s) => (s.name || "").toLowerCase() === String(m.name || "").toLowerCase());
+    const sheet = sheetForDocMember(sheets, partyDoc.members, m);
     if (!sheet) continue;
     for (const [sheetField, key] of Object.entries(PUBLIC_KEY)) {
       const f = sheet.fields && sheet.fields[sheetField];
@@ -1266,12 +1266,16 @@ export default {
       if (req.method === "GET" && path === "/bootstrap") {
         let resp = await getCachedResponse(url.origin, "/api/bootstrap");
         if (!resp) {
-          const [{ results }, { party: partySheets }] = await Promise.all([
-            env.DB.prepare(
-              "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','marks','decide')"
-            ).all(),
-            buildPartySheetsFromD1(env),
-          ]);
+          const { results } = await env.DB.prepare(
+            "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','marks','decide')"
+          ).all();
+          let partyDocRead = null;
+          for (const row of results || []) {
+            if (row.key === "party") {
+              try { partyDocRead = JSON.parse(row.json); } catch {}
+            }
+          }
+          const { party: partySheets } = await buildPartySheetsFromD1(env, { partyDoc: partyDocRead });
           const isPrPreview = isPrPreviewEnv(env);
           const providers = {};
           for (const k of Object.keys(AI_PROVIDER_LABELS)) {
