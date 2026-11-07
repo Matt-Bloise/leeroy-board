@@ -30,16 +30,23 @@ export function skipKind(question) {
 export const needsRetrieval = (question) => skipKind(question) === null;
 
 // ---- follow-ups --------------------------------------------------------------------------------------------------------------
-// "any better answers to my previous question", "and what about the Crossroads?", "try that again": the words of such a message say nothing about the topic, so
-// ranking them alone finds nothing and the answer abstains (a friend's first live answer did exactly that). When the asker has an earlier question, its words
-// are ranked together with the follow-up and the prompt carries it. Conservative: an explicit reference, or a short opener like "and ..." / "what about ...".
-const FOLLOWUP_REF = /\b(?:my|your|the|that|this)\s+(?:previous|last|earlier|prior|first|original)\s+(?:question|ask|message|answer|one)\b|\b(?:any|a)\s+better\s+(?:answers?|ideas?|options?)\b|\b(?:try|ask|answer|do)\s+(?:that|it|this)?\s*again\b|\bonce\s+more\b|\bsame\s+(?:question|thing)\b|\bfollow[\s-]?up\b/i;
-const FOLLOWUP_OPENER = /^\s*(?:(?:and|but|so|then|also|ok(?:ay)?[,.]?)\s+)*(?:what\s+about|how\s+about|and|but|so|then|also)\b/i;
-export function isFollowUp(question) {
+// "any better answers to my previous question", "try that again", "and what about the mage?": the words of such a message say little or nothing about the topic,
+// so ranking them alone finds nothing and the answer abstains (a friend's first live answer did exactly that). Two kinds, handled differently:
+//   refersToPrevious   an explicit reference to the earlier turn ("my previous question", "any better answers", "try that again", "same question"): the earlier
+//                      question is always ranked with what is left of the message.
+//   isFollowUpOpener   a short "what about ..." / "how about ..." (optionally after and/but/so/ok): ellipsis that MAY depend on the earlier question. The message's
+//                      own words are ranked first; the earlier question is added only when that retrieval is weak (buildAnswerInputs).
+// A bare "so", "and", "ok so" or "also" opener is not enough: "So what is the best spec for a paladin" is a new question, and so is a message that merely contains
+// "a better option", "the same thing", "the first one" or "follow up".
+const FOLLOWUP_REF = /\b(?:my|your|the|that|this)\s+(?:previous|last|earlier|prior)\s+(?:question|ask|message|answer)\b|\b(?:any|some)\s+better\s+answers?\b|\b(?:try|ask|answer|do|say)\s+(?:that|it|this)\s+again\b|\bonce\s+more\b|\bsame\s+question\b|\bfollow[\s-]?up\s+(?:question|to)\b/i;
+const FOLLOWUP_OPENER = /^\s*(?:(?:and|but|so|then|also|ok(?:ay)?[,.]?)\s+)*(?:what\s+about|how\s+about)\b/i;
+export const refersToPrevious = (question) => FOLLOWUP_REF.test(String(question || ""));
+export const isFollowUpOpener = (question) => {
   const q = String(question || "");
-  if (FOLLOWUP_REF.test(q)) return true;
   return FOLLOWUP_OPENER.test(q) && q.trim().split(/\s+/).length <= 9;
-}
+};
+export const FOLLOWUP_OWN_STRONG = 0.5; // a "what about ..." opener keeps its own retrieval when its best coverage reaches this
+export const isFollowUp = (question) => refersToPrevious(question) || isFollowUpOpener(question);
 // The follow-up's own words ("any better answers to my previous question") are scaffolding, not a topic: they are taken out before the earlier question is ranked
 // with what is left (a follow-up may still add a topic: "and what about the mage?" keeps "the mage").
 export function stripFollowUpScaffold(question) {

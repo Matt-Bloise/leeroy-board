@@ -22,7 +22,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
-import { isFollowUp, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
+import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { askerFacts, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -847,14 +847,30 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const retrieve = skip === null;
     // Party names, the asker's own name and chat filler ("bro", "nah lol") are not topics: they are taken out of the question for ranking and coverage (the
     // prompt keeps the question as asked).
-    // A follow-up ("any better answers to my previous question") says nothing about the topic: the asker's earlier question is ranked with it and shown to the model.
-    const followUp = retrieve && isFollowUp(question);
-    const prevQ = followUp && previousQuestion ? stripFence(String(previousQuestion), { oneLine: true }).slice(0, 280) : "";
-    const rankQuestion = cleanQuestion(prevQ ? `${prevQ} ${stripFollowUpScaffold(question)}` : question, [...ROSTER_DATA.map((r) => r.display), "leeroy jenkins", askerNameToStrip(by, cachedHays)]);
+    // A follow-up ("any better answers to my previous question") says little about the topic: the asker's earlier question is ranked with it and shown to the model.
+    // An explicit reference always uses the earlier question; a short "what about ..." opener is tried on its own words first and uses the earlier question only when
+    // that retrieval is weak ("So what is the best spec for a paladin" is a new question and never gets the previous topic's facts).
+    const askNames = [...ROSTER_DATA.map((r) => r.display), "leeroy jenkins", askerNameToStrip(by, cachedHays)];
+    const prevText = previousQuestion ? stripFence(String(previousQuestion), { oneLine: true }).slice(0, 280) : "";
+    const explicitRef = retrieve && refersToPrevious(question);
+    const openerRef = retrieve && !explicitRef && isFollowUpOpener(question);
     // Score individual facts & open questions using precomputed cachedHays (TF-IDF + stemming + synonyms + role/lead boosts)
-    const ranking = retrieve ? rankWikiCore(rankQuestion, parsedPages, { hays: cachedHays }) : { words: [], hits: [] };
+    const retrieveFor = (q) => {
+      const r = rankWikiCore(cleanQuestion(q, askNames), parsedPages, { hays: cachedHays });
+      return { ranking: r, rel: selectRelevant(r.hits, r.words, cachedHays) };
+    };
+    let prevQ = "";
+    let pick = retrieve ? retrieveFor(explicitRef && prevText ? `${prevText} ${stripFollowUpScaffold(question)}` : question) : null;
+    if (explicitRef && prevText) prevQ = prevText;
+    else if (openerRef && prevText && (pick.rel.abstain || pick.rel.best < FOLLOWUP_OWN_STRONG)) {
+      const combined = retrieveFor(`${prevText} ${stripFollowUpScaffold(question)}`);
+      if (!combined.rel.abstain) { pick = combined; prevQ = prevText; }
+    }
+    const followUp = explicitRef || (openerRef && Boolean(prevQ));
+    const ranking = pick ? pick.ranking : { words: [], hits: [] };
+    const rankQuestion = pick ? ranking.words.join(" ") : "";
     const { words } = ranking;
-    const rel = retrieve ? selectRelevant(ranking.hits, words, cachedHays) : { hits: [], abstain: false };
+    const rel = pick ? pick.rel : { hits: [], abstain: false };
     const hits = rel.hits;
     const abstain = retrieve && rel.abstain;
     const topFactHits = hits
@@ -970,15 +986,15 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // page the prompt only summarised), plus the build, the party and the question.
     const shownFacts = hits.slice(0, 20).map((h) => h.value).join(" ");
     const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
-    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, by].join(" ");
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, prevQ, by].join(" "); // the earlier question was shown too: a name or number only it holds may be repeated
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
     const libraryBlock = !retrieve
       ? ["(not needed for this message)", skip === "build" ? BUILD_RULE : SKIP_RULE].join(NL)
       : abstain
         ? ["(no library fact matches this question)", ABSTAIN_RULE].join(NL)
-        : [...(prevQ ? [FOLLOWUP_RULE, ""] : []), topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
-    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
+        : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
+    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ) };
 }
@@ -1045,16 +1061,19 @@ export async function findRecentSameAnswer(env, { intentId, question, share }) {
 
 // The asker's most recent earlier question that stands on its own (not itself a follow-up), within a day. Asker identity is the salted hash in ask_turn_askers, so
 // a visitor (no hash) never has one. Used only to rank and show the earlier question next to a follow-up.
-export async function findPreviousQuestion(env, { intentId }) {
+// A PUBLIC follow-up (share true) only ever sees a public earlier question: a private one must not reach a prompt whose answer is posted for everyone. A private follow-up
+// may use either. DISTINCT, because a Discord member has two asker hashes and each turn would otherwise come back twice and push the question out of the window.
+export async function findPreviousQuestion(env, { intentId, share = false }) {
   try {
     const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
     const { results } = await env.DB.prepare(
-      "SELECT t.question FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
-        "WHERE a1.intent_id = ? AND t.id <> ? AND t.created_at > ? ORDER BY t.created_at DESC LIMIT 6"
+      "SELECT DISTINCT t.id, t.question, t.created_at FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
+        `WHERE a1.intent_id = ? AND t.id <> ? AND t.created_at > ? ${share ? "AND t.share = 1 " : ""}ORDER BY t.created_at DESC LIMIT 20`
     ).bind(String(intentId), String(intentId), since).all();
     for (const r of results || []) {
       const q = String(r.question || "");
-      if (q && !isFollowUp(q) && skipKind(q) === null) return q;
+      // an earlier explicit follow-up has no topic of its own; a real question that merely starts "ok so ..." does
+      if (q && !refersToPrevious(q) && skipKind(q) === null) return q;
     }
   } catch {}
   return null;
@@ -1110,7 +1129,7 @@ export async function answerWithAi({
     }
 
     // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
-    const previousQuestion = isFollowUp(question) ? await findPreviousQuestion(env, { intentId }) : null;
+    const previousQuestion = isFollowUp(question) ? await findPreviousQuestion(env, { intentId, share: Boolean(share) }) : null;
     const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion });
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
 
