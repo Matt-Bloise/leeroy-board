@@ -1854,16 +1854,23 @@ function viewMorph(from, to, update, closing, from2, to2) {
   } catch (e) { clear(); update(); }
 }
 function stopFlip() { clearTimeout(SC.flipTimer); if (SC.anim2) { try { SC.anim2.cancel(); } catch (e) {} SC.anim2 = null; } if (SC.anim) { try { SC.anim.cancel(); } catch (e) {} SC.anim = null; } }
+/* Slice 3: whatever an interrupted or starved transition left behind (flip animations, the morph and flip classes, the lift, view-transition names), cleared. Used by the hard stops below. */
+function settleLayer() {
+  const layer = $("#scene"); stopFlip();
+  layer.classList.remove("flip", "morph", "lift"); document.documentElement.classList.remove("vt-close");
+  document.querySelectorAll("[style*='view-transition-name']").forEach((e) => { e.style.viewTransitionName = ""; }); VTX.length = 0;
+}
 function flipSheet(band, opening, done) {
   const layer = $("#scene"), sheet = $(".sheet");
   stopFlip();
+  const id = SC.flipId = (SC.flipId || 0) + 1; /* Slice 3: cancelling a running flip resolves its animation's finished promise AFTER the next flip has started; that old end() used to clear the new flip's timer and class. Each flip now acts only while it is the current one. */
   const a = band.getBoundingClientRect(), b = sheet.getBoundingClientRect();
   if (!a.width || !b.width || !b.height) return false;
   const from = `translate(${(a.left - b.left).toFixed(1)}px, ${(a.top - b.top).toFixed(1)}px) scale(${(a.width / b.width).toFixed(4)}, ${(a.height / b.height).toFixed(4)})`;
   const kf = [{ transform: from }, { transform: "none" }];
   layer.classList.add("flip");
   let an = null, ended = false;
-  const end = () => { if (ended) return; ended = true; clearTimeout(SC.flipTimer); if (opening) { layer.classList.remove("flip"); if (SC.anim === an) stopFlip(); } if (done) done(); };
+  const end = () => { if (ended) return; ended = true; if (SC.flipId !== id) return; clearTimeout(SC.flipTimer); if (opening) { layer.classList.remove("flip"); if (SC.anim === an) stopFlip(); } if (done) done(); };
   try {
     const dur = opening ? MOTION.move : MOTION.close, fill = opening ? "backwards" : "forwards";
     an = sheet.animate(opening ? kf : kf.reverse(), { duration: dur, easing: opening ? MOTION.oak : MOTION.shut, fill });
@@ -1873,6 +1880,7 @@ function flipSheet(band, opening, done) {
   SC.anim = an;
   if (an && an.finished) an.finished.then(end, end);
   SC.flipTimer = setTimeout(end, (opening ? MOTION.move : MOTION.close) + 120);
+  setTimeout(() => { if (!ended && SC.flipId === id) { try { an.cancel(); if (SC.anim2) SC.anim2.cancel(); } catch (e) {} end(); } }, 2 * (opening ? MOTION.move : MOTION.close) + 300); /* hard stop at about twice the transition if neither the animation nor the timer above ended it */
   return true;
 }
 function flipPut(el, f, y) {
@@ -1931,6 +1939,7 @@ function showScene(key) {
     return landing(k);
   };
   if (layer.hidden) SC.scrollY = Math.round(window.scrollY || 0);
+  clearTimeout(SC.openGuard); const guardTok = SC.token; SC.openGuard = setTimeout(() => { if (SC.token === guardTok && SC.open === key && !SC.want && !layer.hidden) settleLayer(); }, 2 * MOTION.move + 400); /* an open always converges: about twice the transition after it began, nothing is left running or classed */
   const band = layer.hidden || layer.classList.contains("closing") ? morphBand(key) : null; /* Slice 3: an open asked for while the FLIP close is still running flies from the tile again, not a plain rise */
   const fl = !reduceMQ.matches && SC.land && SC.land.key === key && SC.land.from && document.contains(SC.land.from) ? SC.land.from : null;
   if (band && hasVT()) {
@@ -1973,10 +1982,11 @@ function hideScene(o) {
   const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); openTile(null); restoreScroll(); sceneState(false); sfx("close", { delay: glided ? 0 : motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
-    clearTimeout(SC.closeTimer); stopFlip();
+    clearTimeout(SC.closeTimer); clearTimeout(SC.closeGuard); stopFlip();
     layer.hidden = true; layer.classList.remove("closing", "flip", "rise", "fade"); restoreScroll();
     for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
   };
+  clearTimeout(SC.closeGuard); SC.closeGuard = setTimeout(() => { if (token !== SC.token || SC.open !== null || layer.hidden || layer.classList.contains("warming")) return; settleLayer(); if ($("#board").inert) unlock(); finish(); }, 2 * MOTION.close + 400); /* a close always converges: about twice the transition after it began the layer is hidden and the board live, whatever the animations did */
   if (glided) { unlock(); finish(); if (tile) tileFocus(tile); return; }
   if (!(o && o.key)) hap("select");
   const band = morphBand(key);
