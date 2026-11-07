@@ -53,9 +53,10 @@ const browser = stubbed(await pw.chromium.launch());
 async function run(label, viewport, mobile) {
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1, hasTouch: mobile, isMobile: mobile, serviceWorkers: "block", reducedMotion: "reduce" });
   ctx.setDefaultTimeout(WAIT); const page = await ctx.newPage();
-  const errors = [];
+  const errors = [], outbound = [];
+  await ctx.route(/wowforevertools\.com/, (r) => { outbound.push(r.request().url()); r.abort(); }); // the test must never reach the community site: only the href is asserted
   page.on("pageerror", (e) => errors.push(String(e.message || e)));
-  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/cloudflareinsights|beacon\.min\.js/i.test(m.text())) errors.push(m.text()); }); // report-only CSP notes and the analytics beacon are exempt, as in layout-sweep
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]|^Failed to load resource|^Refused to/.test(m.text()) && !/cloudflareinsights|beacon\.min\.js/i.test(m.text())) errors.push(m.text()); }); // report-only CSP notes, failed third-party loads (the runner has no network for fonts or the beacon) and the analytics beacon are exempt, as in layout-sweep
   await open(page, "library.c.professions");
   await check(page, label, "shelf");
   if (OUT) await page.screenshot({ path: path.join(OUT, `professions-tool-shelf-${label}.png`), timeout: WAIT * 2 }).catch(() => {});
@@ -63,6 +64,7 @@ async function run(label, viewport, mobile) {
   await check(page, label, "page");
   if (OUT) await page.screenshot({ path: path.join(OUT, `professions-tool-page-${label}.png`), timeout: WAIT * 2 }).catch(() => {});
   ok(`${label}: no console error and no page error`, errors.length === 0, errors.join(" | ").slice(0, 300));
+  ok(`${label}: nothing requested wowforevertools.com`, outbound.length === 0, outbound.join(" "));
   await ctx.close();
 }
 try {
