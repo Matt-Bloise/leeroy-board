@@ -127,3 +127,27 @@ test("GET /api/bootstrap reads the party row once", async () => {
   assert.equal(reads.length, 0, "the party row comes from the bundle select, not a second query");
   assert.ok(body.partySheets.some((p) => p.slug === "blue-owl"), "and the document member is listed");
 });
+
+test("WRITE THEN READ: a write under a renamed member's new slug lands on the existing sheet, not a second one", async () => {
+  const stored = [{ slug: "winton", name: "Winton", fields: { class: f("paladin"), race: f("undead") }, updated: "x" }];
+  const doc = { members: [{ name: "Winton (alt)", class_key: "paladin", class: "Paladin", race: "Undead" }] };
+  const env = makeEnv({ stored, doc });
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "winton-alt", name: "Winton (alt)", field: "level", value: 12 }));
+  const rows = kv(env, "party_sheets");
+  assert.equal(rows.length, 1, JSON.stringify(rows.map((r) => r.slug)));
+  assert.equal(rows[0].slug, "winton-alt");
+  assert.equal(rows[0].name, "Winton (alt)");
+  assert.equal(rows[0].fields.level.value, 12);
+  assert.equal(rows[0].fields.class.value, "paladin", "the old fields survive");
+});
+
+test("a write for a distinct person with a similar name still gets its own sheet", async () => {
+  const stored = [{ slug: "winton", name: "Winton", fields: { class: f("paladin") }, updated: "x" }];
+  const doc = { members: [{ name: "Winton", class_key: "paladin", class: "Paladin", race: "Undead" }, { name: "Winton (alt)", class_key: "mage", class: "Mage", race: "Gnome" }] };
+  const env = makeEnv({ stored, doc });
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "winton-alt", name: "Winton (alt)", field: "level", value: 3 }));
+  const rows = kv(env, "party_sheets");
+  assert.deepEqual(rows.map((r) => r.slug).sort(), ["winton", "winton-alt"]);
+  assert.equal(rows.find((r) => r.slug === "winton").fields.class.value, "paladin");
+  assert.equal(rows.find((r) => r.slug === "winton-alt").fields.class.value, "mage");
+});

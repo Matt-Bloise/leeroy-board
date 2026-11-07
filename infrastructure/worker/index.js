@@ -54,7 +54,7 @@ import { flushBoardLines } from "./board-lines.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember } from "./party-source.js";
+import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
 export { BoardRoom };
 
@@ -324,8 +324,15 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
       const currentParty = reconcileSheetsWithDoc(Array.isArray(cur) ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party, partyDoc);
-      let memberSheet = currentParty.find((m) => m.slug === slug);
-      if (!memberSheet) {
+      // Same identity as the reconcile above: a write that arrives under a renamed document member's new slug lands on the person's existing
+      // sheet (which takes the new slug and name) instead of starting a second one-field sheet. Events keyed by the old slug stay as history.
+      let memberSheet = sheetForWrite(currentParty, partyDoc, slug, name);
+      if (memberSheet) {
+        if (memberSheet.slug !== slug) {
+          memberSheet.slug = slug;
+          if (name) memberSheet.name = name;
+        }
+      } else {
         memberSheet = { slug, name: name || slug, fields: {}, updated: now };
         currentParty.push(memberSheet);
       }
