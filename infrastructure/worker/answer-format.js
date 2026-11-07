@@ -47,7 +47,7 @@ function idFromLibraryHref(href) {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
-function parseSourceIds(text) {
+export function parseSourceIds(text) {
   const ids = [];
   const links = [...text.matchAll(/\]\(<?([^)>\s]+)>?\)/g)];
   if (links.length) {

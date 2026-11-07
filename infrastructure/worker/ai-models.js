@@ -22,6 +22,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
+import { skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -840,8 +841,19 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 
     const libraryStamp = (idxRow && idxRow.stamp) || "v1";
 
+    // Self-RAG-lite (self-rag.js): Retrieve? greetings and pure "my build" questions skip the library; IsRel facts below a coverage floor are dropped, and
+    // when none is left the answer abstains (the model is still called, in voice and with the asker's build, but told the library has nothing).
+    const skip = skipKind(question);
+    const retrieve = skip === null;
+    // Party names, the asker's own name and chat filler ("bro", "nah lol") are not topics: they are taken out of the question for ranking and coverage (the
+    // prompt keeps the question as asked).
+    const rankQuestion = cleanQuestion(question, [...ROSTER_DATA.map((r) => r.display), "leeroy jenkins", askerNameToStrip(by, cachedHays)]);
     // Score individual facts & open questions using precomputed cachedHays (TF-IDF + stemming + synonyms + role/lead boosts)
-    const { words, hits } = rankWikiCore(question, parsedPages, { hays: cachedHays });
+    const ranking = retrieve ? rankWikiCore(rankQuestion, parsedPages, { hays: cachedHays }) : { words: [], hits: [] };
+    const { words } = ranking;
+    const rel = retrieve ? selectRelevant(ranking.hits, words, cachedHays) : { hits: [], abstain: false };
+    const hits = rel.hits;
+    const abstain = retrieve && rel.abstain;
     const topFactHits = hits
       .slice(0, 20)
       .map((h) => `  - [${h.page}~${h.key}] (score ${h.score}): ${h.value}`);
@@ -854,17 +866,21 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const fallbackWords =
       words && words.length
         ? words
-        : question
+        : rankQuestion
             .toLowerCase()
             .replace(/[^a-z0-9\s-]/g, " ")
             .split(/\s+/)
             .filter((w) => w.length > 2);
 
-    const ranked = parsedPages
-      .map((p) => ({ p, s: scorePageForQuestion(p, fallbackWords) + (pageHitBonus.get(p.id) || 0) }))
-      .sort((a, b) => b.s - a.s)
-      .slice(0, 5)
-      .map((x) => x.p);
+    // A page counts only if something matched it (IsRel for pages): five pages of zero score used to ride along on every question.
+    const ranked = !retrieve || abstain
+      ? []
+      : parsedPages
+          .map((p) => ({ p, s: scorePageForQuestion(p, fallbackWords) + (pageHitBonus.get(p.id) || 0) }))
+          .filter((x) => x.s > 0)
+          .sort((a, b) => b.s - a.s)
+          .slice(0, 5)
+          .map((x) => x.p);
 
     const topPagesSummary = ranked
       .map((p) => `  - ${p.title} (${p.id})${p.blurb ? `: ${p.blurb}` : ""}`)
@@ -918,10 +934,22 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
     const hasBuild = Boolean(askerSheet) && hasBuildText(yourBuild);
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
-    const groundingText = [partySummary, topFactHits.join(" "), ranked.map((p) => `${p.title} ${p.blurb || ""} ${(p.facts || []).map((f) => f.value).join(" ")}`).join(" "), yourBuild, partyBuilds, question, by].join(" ");
-    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${fence("LIBRARY", `${topFactHits.join("\n")}\n\nTop Matching Pages:\n${topPagesSummary}`)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
+    const retrievedIds = new Set([...ranked.map((p) => p.id), ...hits.slice(0, 20).map((h) => h.page)]);
+    // What the answer may draw names and numbers from: exactly what the prompt showed (the fact values and the page lines, no scores, no ids, no facts of a
+    // page the prompt only summarised), plus the build, the party and the question.
+    const shownFacts = hits.slice(0, 20).map((h) => h.value).join(" ");
+    const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, by].join(" ");
+    const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
+    const NL = "\n";
+    const libraryBlock = !retrieve
+      ? ["(not needed for this message)", skip === "build" ? BUILD_RULE : SKIP_RULE].join(NL)
+      : abstain
+        ? ["(no library fact matches this question)", ABSTAIN_RULE].join(NL)
+        : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
+    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain } };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -931,7 +959,7 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
@@ -941,9 +969,16 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       const g = groundedOrNotPublished(repaired, groundingText);
       if (!g.ok) repaired = g.answer;
     }
+    // IsSup (self-rag.js): a number the library, the build and the question never gave goes; a source that was not retrieved is not cited.
+    const retrieved = retrievalOf({ retrieval, groundingText });
+    if (retrieved) {
+      const n = supportCheck(repaired, groundingText);
+      if (!n.ok) repaired = n.answer;
+      repaired = stripUnretrievedCites(repaired, retrieved.ids).answer || ABSTAIN_LINE;
+    }
     const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
     const known = new Set(libPages.map((p) => p.id));
-    const cites = extractCitedIds(repaired).filter((id) => known.has(id));
+    const cites = extractCitedIds(repaired).filter((id) => known.has(id) && (!retrieved || retrieved.ids.has(id)));
     const chatMax = Number(persona && persona.format && persona.format.chatMaxChars);
     const uxOn = answerUxEnabled(env);
     const parts = answerFormatEnabled(env)
@@ -1028,7 +1063,7 @@ export async function answerWithAi({
 
     // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
     const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember });
-    const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised } = inputs;
+    const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -1144,7 +1179,7 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised, retrieval });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
