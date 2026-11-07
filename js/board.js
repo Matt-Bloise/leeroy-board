@@ -1824,65 +1824,20 @@ function placeOrnament(key) {
   mark(document.querySelector(".hero-art img"), (document.querySelector(".hero-art img") || {}).currentSrc || "img/tavern-hero.jpg");
 })();
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
-const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;
-const canFlip = () => typeof $(".sheet").animate === "function";
-function morphBand(key) {
-  if (reduceMQ.matches) return null;
-  const t = tileOf(key);
-  if (!t) return null;
-  const seen = () => { const r = t.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
-  if (!seen() && hasVT() && t.scrollIntoView) { try { t.scrollIntoView({ block: "nearest" }); } catch (e) {} }
-  return seen() ? t : null;
-}
-const VTX = [];
-function viewMorph(from, to, update, closing, from2, to2) {
-  const layer = $("#scene"), root = document.documentElement;
-  const nm = (a, b, v) => { if (a) a.style.viewTransitionName = v; if (b) b.style.viewTransitionName = v; };
-  const clear = () => { nm(from, to, ""); nm(from2, to2, ""); VTX.splice(0).forEach((e) => { e.style.viewTransitionName = ""; }); layer.classList.remove("morph"); root.classList.remove("vt-close"); };
-  layer.classList.add("morph"); root.classList.toggle("vt-close", !!closing);
-  from.style.viewTransitionName = "scene-band"; if (from2) from2.style.viewTransitionName = "scene-head";
-  try {
-    /* Slice 3: the update runs once. A resize (or a hidden tab) while the browser is capturing can leave the callback uncalled, which left SC.want set and every later tap ignored (1 run in 8 at 1366x768):
-       if it has not run after 600 ms the transition is skipped and the update runs here. */
-    let ran = false;
-    const once = () => { if (ran) return false; ran = true; return update(); };
-    const vt = document.startViewTransition(() => { nm(from, null, ""); nm(from2, null, ""); if (once()) { nm(null, to, "scene-band"); nm(null, to2, "scene-head"); } });
-    const guard = setTimeout(() => { if (ran) return; try { vt.skipTransition(); } catch (e) {} if (!ran) { nm(from, to, ""); nm(from2, to2, ""); once(); clear(); } }, 600);
-    vt.finished.then(() => { clearTimeout(guard); clear(); }, () => { clearTimeout(guard); clear(); });
-    if (vt.ready && vt.ready.catch) vt.ready.catch(() => {});
-    if (vt.updateCallbackDone && vt.updateCallbackDone.catch) vt.updateCallbackDone.catch(() => {});
-  } catch (e) { clear(); update(); }
-}
-function stopFlip() { clearTimeout(SC.flipTimer); if (SC.anim2) { try { SC.anim2.cancel(); } catch (e) {} SC.anim2 = null; } if (SC.anim) { try { SC.anim.cancel(); } catch (e) {} SC.anim = null; } }
-/* Slice 3: whatever an interrupted or starved transition left behind (flip animations, the morph and flip classes, the lift, view-transition names), cleared. Used by the hard stops below. */
-function settleLayer() {
-  const layer = $("#scene"); stopFlip();
-  layer.classList.remove("flip", "morph", "lift"); document.documentElement.classList.remove("vt-close");
-  document.querySelectorAll("[style*='view-transition-name']").forEach((e) => { e.style.viewTransitionName = ""; }); VTX.length = 0;
-}
-function flipSheet(band, opening, done) {
-  const layer = $("#scene"), sheet = $(".sheet");
-  stopFlip();
-  const id = SC.flipId = (SC.flipId || 0) + 1; /* Slice 3: cancelling a running flip resolves its animation's finished promise AFTER the next flip has started; that old end() used to clear the new flip's timer and class. Each flip now acts only while it is the current one. */
-  const a = band.getBoundingClientRect(), b = sheet.getBoundingClientRect();
-  if (!a.width || !b.width || !b.height) return false;
-  const from = `translate(${(a.left - b.left).toFixed(1)}px, ${(a.top - b.top).toFixed(1)}px) scale(${(a.width / b.width).toFixed(4)}, ${(a.height / b.height).toFixed(4)})`;
-  const kf = [{ transform: from }, { transform: "none" }];
-  layer.classList.add("flip");
-  let an = null, ended = false;
-  const end = () => { if (ended) return; ended = true; if (SC.flipId !== id) return; clearTimeout(SC.flipTimer); if (opening) { layer.classList.remove("flip"); if (SC.anim === an) stopFlip(); } if (done) done(); };
-  try {
-    const dur = opening ? MOTION.move : MOTION.close, fill = opening ? "backwards" : "forwards";
-    an = sheet.animate(opening ? kf : kf.reverse(), { duration: dur, easing: opening ? MOTION.oak : MOTION.shut, fill });
-    SC.anim2 = sheet.animate(opening ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 1 }, { opacity: 0 }], { duration: dur, easing: MOTION.fade, fill });
-  }
-  catch (e) { layer.classList.remove("flip"); return false; }
-  SC.anim = an;
-  if (an && an.finished) an.finished.then(end, end);
-  SC.flipTimer = setTimeout(end, (opening ? MOTION.move : MOTION.close) + 120);
-  setTimeout(() => { if (!ended && SC.flipId === id) { try { an.cancel(); if (SC.anim2) SC.anim2.cancel(); } catch (e) {} end(); } }, 2 * (opening ? MOTION.move : MOTION.close) + 300); /* hard stop at about twice the transition if neither the animation nor the timer above ended it */
-  return true;
-}
+/* Slice 3: scene open and close are a small state machine (js/scene-fsm.js: closed, opening, open, closing) driven by plain CSS animations (.rise opens, .closing closes), with a hard watchdog at 1.5 x the
+   transition that always forces the end state. The View Transitions API and the interruptible FLIP choreography were removed: on a slow or headless engine they could leave the scene shown with the board inert.
+   The effects below do the visual work (layer, classes, focus, scroll, inert); the machine decides when and guarantees an end. A glided close (browser back, a landing) resets the machine directly. */
+const sceneFSM = (window.SceneFSM || { create: () => null }).create({
+  openMs: MOTION.move, closeMs: MOTION.close,
+  instant: () => reduceMQ.matches,
+  effects: {
+    enter: (st, c) => { if (st === "opening" && c && c.enter) c.got = c.enter(); },
+    settled: (st, info) => { if (st === "closed") { if (info.ctx && info.ctx.finish) info.ctx.finish(); } else { const L = $("#scene"); if (L) L.classList.remove("lift"); } },
+  },
+  onError: (n, e) => console.error("scene", n, e),
+}) || { /* scene-fsm.js did not load: the old behaviour, a timer, so the board still opens and closes */
+  state: "closed", open(c) { this.state = "open"; c.got = c.enter(); return "open"; }, close(c) { this.state = "closed"; setTimeout(c.finish, motionMs("close")); return "closing"; }, transitionEnd() {}, reset() { this.state = "closed"; },
+};
 function flipPut(el, f, y) {
   if (f && f.getBoundingClientRect) f = f.getBoundingClientRect();
   else if (!f) { const b = $("#bottombar"), c = b && b.getBoundingClientRect(); if (c && c.width > 0) f = { left: c.left + c.width / 2 - 24, top: c.top + c.height / 2 - 24, width: 48, height: 48 }; }
@@ -1919,7 +1874,6 @@ function showScene(key) {
   if (SC.want) { SC.want = key; return; }
   clearTimeout(SC.closeTimer); SC.token++;
   const wasOpen = !layer.hidden && !layer.classList.contains("closing") && SC.open !== null;
-  if (SC.anim) { stopFlip(); layer.classList.remove("flip"); }
   layer.classList.remove("closing");
   if (wasOpen) { if (SC.open !== key) { selectPanel(key, true); hap("select"); if (document.activeElement && document.activeElement.closest("#tabs")) focusScene(key); } landing(key); lap(); return; }
   const open = (k, how) => {
@@ -1938,19 +1892,11 @@ function showScene(key) {
     if (!reduceMQ.matches) { layer.classList.add("lift"); setTimeout(() => layer.classList.remove("lift"), 320); }
     return landing(k);
   };
-  if (layer.hidden) SC.scrollY = Math.round(window.scrollY || 0);
-  clearTimeout(SC.openGuard); const guardTok = SC.token; SC.openGuard = setTimeout(() => { if (SC.token === guardTok && SC.open === key && !SC.want && !layer.hidden) settleLayer(); }, 2 * MOTION.move + 400); /* an open always converges: about twice the transition after it began, nothing is left running or classed */
-  const band = layer.hidden || layer.classList.contains("closing") ? morphBand(key) : null; /* Slice 3: an open asked for while the FLIP close is still running flies from the tile again, not a plain rise */
+  if (SC.open === null) SC.scrollY = Math.round(window.scrollY || 0); /* a fresh open (the layer may be hidden, warming or still closing): remember the wall scroll */
   const fl = !reduceMQ.matches && SC.land && SC.land.key === key && SC.land.from && document.contains(SC.land.from) ? SC.land.from : null;
-  if (band && hasVT()) {
-    SC.want = key;
-    if (fl) { fl.style.viewTransitionName = "land-flight"; VTX.push(fl); }
-    viewMorph(band, $(".sheet"), () => { const k = SC.want; SC.want = null; if (!k) return false; const got = open(k, ""); lap(); if (fl) fl.style.viewTransitionName = ""; if (got && fl) { got.style.viewTransitionName = "land-flight"; VTX.push(got); } return true; }, false, band.querySelector(".tile-band"), $(".sheet-head"));
-    return;
-  }
-  if (band && canFlip()) { const got = open(key, ""); if (!flipSheet(band, true)) layer.classList.add("rise"); if (got && fl) KIT.emit("fly", fl, got); lap(); return; }
-  const got = open(key, reduceMQ.matches ? "fade" : "rise");
-  if (got && fl) KIT.emit("fly", fl, got);
+  const ctx = { key, got: null, enter: () => open(key, reduceMQ.matches ? "fade" : "rise") };
+  sceneFSM.open(ctx);
+  if (ctx.got && fl) KIT.emit("fly", fl, ctx.got);
   lap();
 }
 function landing(k) {
@@ -1961,7 +1907,11 @@ function landing(k) {
 }
 const tileFocus = (t) => {
   let f = t.matches("a, button, main") ? t : t.querySelector("a[href]");
-  if (f && f.getClientRects && !f.getClientRects().length) f = $("#main");
+  if (f && f.getClientRects && !f.getClientRects().length) { /* no box yet (the board is still settling after a close, seen with reduced motion where the close is instant): main for now, the tile as soon as it has one */
+    const want = f; f = $("#main"); let n = 0;
+    const later = () => { const a = document.activeElement; if (!want.isConnected || (a && a !== document.body && a !== f && !a.closest("#scene"))) return; if (want.getClientRects().length) { want.focus({ preventScroll: true }); return; } if (++n < 30) requestAnimationFrame(later); };
+    requestAnimationFrame(later);
+  }
   if (!f) f = $("#main");
   if (!f) return;
   f.focus({ preventScroll: true });
@@ -1982,23 +1932,17 @@ function hideScene(o) {
   const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); openTile(null); restoreScroll(); sceneState(false); sfx("close", { delay: glided ? 0 : motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
-    clearTimeout(SC.closeTimer); clearTimeout(SC.closeGuard); stopFlip();
+    clearTimeout(SC.closeTimer);
     layer.hidden = true; layer.classList.remove("closing", "flip", "rise", "fade"); restoreScroll();
     for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
   };
-  clearTimeout(SC.closeGuard); SC.closeGuard = setTimeout(() => { if (token !== SC.token || SC.open !== null || layer.hidden || layer.classList.contains("warming")) return; settleLayer(); if ($("#board").inert) unlock(); finish(); }, 2 * MOTION.close + 400); /* a close always converges: about twice the transition after it began the layer is hidden and the board live, whatever the animations did */
-  if (glided) { unlock(); finish(); if (tile) tileFocus(tile); return; }
+  if (glided) { unlock(); finish(); sceneFSM.reset(); if (tile) tileFocus(tile); return; }
   if (!(o && o.key)) hap("select");
-  const band = morphBand(key);
-  if (band && hasVT()) {
-    viewMorph($(".sheet"), band, () => { if (token !== SC.token) return false; unlock(); finish(); if (tile) tileFocus(tile); return true; }, true, $(".sheet-head"), band.querySelector(".tile-band"));
-    return;
-  }
   unlock();
   layer.classList.remove("rise");
   layer.classList.add("closing");
   clearTimeout(SC.closeTimer);
-  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, reduceMQ.matches ? MOTION.micro : motionMs("close"));
+  sceneFSM.close({ finish });
   if (tile) tileFocus(tile);
 }
 function unflip() { document.querySelectorAll("#cards .card.flipped").forEach((c) => { c.classList.remove("flipped"); c.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", "false")); const f = c.querySelector(".front"), b = c.querySelector(".back"); if (f) f.inert = false; if (b) b.inert = true; }); }
@@ -2101,6 +2045,7 @@ function route() {
   if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
 }
 function startScenes() {
+  { const sh = $(".sheet"); if (sh) sh.addEventListener("animationend", (e) => { if (e.target === sh && /^(sheet-in|sheet-out|v14-unfold|fade-in|fade-out|nx-fade|nx-fade-out)$/.test(e.animationName)) sceneFSM.transitionEnd(); }); }
   $("#board").addEventListener("click", (e) => {
     if (e.target.closest && e.target.closest(".tile-search, .gl, .gl-def")) return;
     const a = e.target.closest && e.target.closest("[data-scene]");
