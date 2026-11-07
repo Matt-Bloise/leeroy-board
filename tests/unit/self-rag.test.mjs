@@ -9,7 +9,7 @@ import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
 import {
   needsRetrieval, selectRelevant, supportCheck, stripUnretrievedCites, retrievedFromGrounding, groundingWithIds,
-  ABSTAIN_LINE, ABSTAIN_RULE, SKIP_RULE, ABSTAIN_BELOW,
+  ABSTAIN_LINE, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, NUMBER_UNCONFIRMED_LINE, ABSTAIN_BELOW,
 } from "../../infrastructure/worker/self-rag.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
@@ -53,7 +53,7 @@ test("Retrieve?: a skipped message carries no library facts, tells the model so,
     assert.deepEqual(i.hits, []);
     assert.deepEqual(i.ranked, []);
     assert.match(i.userPrompt, /not needed for this message/);
-    assert.ok(i.userPrompt.includes(SKIP_RULE));
+    assert.ok(i.userPrompt.includes(q === "hello there" ? SKIP_RULE : BUILD_RULE));
     assert.ok(!/Holy Shield|Old Moss/.test(i.userPrompt), "no library fact in the prompt");
     assert.deepEqual(retrievedFromGrounding(i.groundingText).ids.size, 0);
   }
@@ -134,7 +134,8 @@ test("IsSup: a source that exists in the library but was not retrieved is not ci
 test("IsSup: when every substantive sentence was unsupported the answer falls back to the abstain wording", () => {
   const r = supportCheck("**It costs 900 gold.**\n- You need level 77 first.\n\n-# Sources: systems/mounts", "mounts cost gold");
   assert.equal(r.ok, false);
-  assert.equal(r.answer, ABSTAIN_LINE);
+  assert.ok(r.answer.startsWith(NUMBER_UNCONFIRMED_LINE), "a number mismatch alone never becomes the abstain line");
+  assert.notEqual(r.answer, ABSTAIN_LINE);
   assert.ok(ABSTAIN_LINE.startsWith("The Library does not cover that"));
 });
 

@@ -1,42 +1,74 @@
 // Self-RAG-lite for /ask (ops-wiki karpathy-wiki.md, "Self-RAG"). The published method trains a model to emit reflection tokens; ours are not trained
 // with them, so the same four judgments are made by deterministic code. Pure: no I/O, no clock, no model call, so the hot path keeps its Free-plan budget.
-//   Retrieve? needsRetrieval(question)       greetings, thanks and pure "my build" questions skip the library; every other question retrieves.
-//   IsRel    selectRelevant(...)             a coverage floor on the retrieved facts; below it a fact is dropped, and when no fact is left the answer abstains.
+//   Retrieve? skipKind(question)             greetings, thanks and pure "my build" questions skip the library; every other question retrieves.
+//   IsRel    cleanQuestion, selectRelevant   party names, the asker's name and chat filler are taken out of the question before ranking; a coverage floor and an
+//                                            absent-words rule then drop weak facts, and when none is left the answer abstains.
 //   Abstain  ABSTAIN_RULE / ABSTAIN_LINE     say plainly that the Library does not cover it and what would settle it; nothing invented.
-//   IsSup    supportCheck(answer, ...)       every cited source id was retrieved; a number the answer states appears in the retrieved text, the build, the
-//                                            party state or the question, else the sentence goes (names are checked by ask-build.js groundedOrNotPublished).
+//   IsSup    stripUnretrievedCites, supportCheck   every cited source id was retrieved; a number the answer states appears (in any common spelling) in the
+//                                            retrieved text, the build, the party state or the question, else that sentence goes. Names: ask-build.js.
+// Trade-off, stated plainly: this trades some recall for fewer invented facts. A real question can abstain (see the calibration notes below and
+// docs/answer-claims.md), and a true number the Library never gave is removed.
 import { expandWords, idfFor, factHay } from "./rank-core.js";
 import { parseSourceIds } from "./answer-format.js";
 
 export const ABSTAIN_LINE = "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.";
+export const NUMBER_UNCONFIRMED_LINE = "The Library doesn't confirm that figure, so I won't state it.";
 
 // ---- Retrieve? ------------------------------------------------------------------------------------------------------------
 const GREETING = /^\s*(?:hi|hello|hey|yo|sup|howdy|hiya|good\s+(?:morning|evening|afternoon|night)|thanks?(?:\s+you)?|thx|ty|cheers|ok(?:ay)?|cool|nice|great|awesome|lol|test(?:ing)?|ping|gm|gn)(?:\s+(?:there|leeroy|jenkins|everyone|all|again|so\s+much|a\s+lot|mate|friend|bot))*\s*[!.?~]*\s*$/i;
 const BUILD_ONLY = /^\s*(?:what(?:'s|\s+is)|show(?:\s+me)?|tell\s+me\s+about|how(?:'s|\s+is)|describe|summari[sz]e|remind\s+me\s+of)\s+(?:my|our)\s+(?:build|sheet|character|char|spec|gear|talents?|setup|loadout|level|professions?)\s*[!.?]*\s*$/i;
 const WHO_AM_I = /^\s*(?:who\s+am\s+i|what\s+am\s+i\s+playing|what\s+do\s+i\s+play)\s*[!.?]*\s*$/i;
 
-// false = do not search the Library for this message. Anything that is not clearly a greeting or a pure "my build" question retrieves.
-export function needsRetrieval(question) {
+// "greeting" = chat with no content; "build" = a question about the asker's own sheet; null = search the Library.
+export function skipKind(question) {
   const q = String(question || "");
-  return !(GREETING.test(q) || BUILD_ONLY.test(q) || WHO_AM_I.test(q));
+  if (GREETING.test(q)) return "greeting";
+  if (BUILD_ONLY.test(q) || WHO_AM_I.test(q)) return "build";
+  return null;
 }
+// false = do not search the Library for this message. Anything that is not clearly a greeting or a pure "my build" question retrieves.
+export const needsRetrieval = (question) => skipKind(question) === null;
 
 // ---- IsRel ----------------------------------------------------------------------------------------------------------------
-// Coverage of a fact = the idf mass of the question's content words that the fact's text contains, over the idf mass of all of them. A word the
-// Library never uses is worth the most (its idf is highest) and is matched by nothing, so a question about something the Library lacks scores low
-// however many generic words it shares. Calibrated on 30 held-out questions the ask-eval judge labelled "library lacks": the three lowest-coverage
-// questions were exactly three of the six labelled lacking, and no answerable question scored below 0.27.
+// Chat filler and names are not topics. They used to be scored like topics: a word the Library never uses has the highest idf, so "bro ... nah lol" or a
+// party member's name dragged the coverage of a perfectly answerable question down (audit: "bro can Bible Boi tank onyxia or nah lol" abstained).
+const FILLER = ("bro bruh dude dudes man mate fam yo hey hi hello sup lol lmao lmfao rofl haha hehe nah nope yep yeah yea ya yup ok okay pls plz please thx thanks thank ty " +
+  "tbh imo idk imho btw fyi omg wtf asking asked wanna gonna gotta kinda sorta whatever anyways anyway basically literally honestly guys folks anyone someone everyone " +
+  "friend buddy pal u ur r k kk lemme gimme sooo soo so ok ya yall y'all").split(/\s+/);
+const FILLER_SET = new Set(FILLER.map((w) => w.toLowerCase()));
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// The question with party names (and the asker's own name), chat filler and "lvl" tidied away, for ranking and coverage only. The prompt still carries the
+// question exactly as asked.
+export function cleanQuestion(question, names = []) {
+  let q = String(question || "");
+  const list = [...new Set((Array.isArray(names) ? names : []).map((n) => String(n || "").trim().toLowerCase()).filter((n) => n.length >= 3))].sort((a, b) => b.length - a.length);
+  for (const n of list) q = q.replace(new RegExp(`(?<![A-Za-z0-9])${escapeRe(n)}(?![A-Za-z0-9])`, "gi"), " ");
+  q = q.replace(/\blvls?\b/gi, "level");
+  return q.split(/(\s+)/).map((t) => (FILLER_SET.has(t.toLowerCase().replace(/[^a-z0-9']/g, "")) ? " " : t)).join("").replace(/\s+/g, " ").trim();
+}
+
+// Coverage of a fact = the idf mass of the question's content words that the fact's text (key and value) contains, over the idf mass of all of them.
+// Words the Library never uses count at a capped idf, and two or more of them abstain outright (a question about pizza, a laptop driver or a football cup is
+// not about the Library whatever else it shares). Calibration, in docs/answer-claims.md claim 36: 15 fictional messy in-scope questions (none may abstain)
+// and 10 out-of-scope ones; the gold-set labels used earlier were a model's and did not separate the two well enough to rely on.
 export const ABSTAIN_BELOW = 0.2; // best coverage among the top facts under this: nothing relevant, abstain
+export const ABSENT_MAX = 2; // content words the Library never uses: this many or more abstain (one is enough for a question of two content words)
+export const ABSENT_IDF_CAP = 3; // an absent word weighs no more than this in the coverage denominator
 export const FACT_FLOOR = 0.12; // a fact must cover at least this much of the question ...
 export const FACT_REL_BEST = 0.4; // ... and at least this share of the best fact's coverage
 export const REL_WINDOW = 40; // facts examined (the ranker already ordered them)
 
-// hits: the ranker's hits ({ score, page, key, value, open, f }); words: its question words; hays: factHays(pages) for the idf corpus.
+// hits: the ranker's hits ({ score, page, key, value, open, f }); words: its question words (already cleaned); hays: factHays(pages) for the idf corpus.
 export function selectRelevant(hits, words, hays) {
   const list = Array.isArray(hits) ? hits : [];
   const ws = Array.isArray(words) ? words : [];
-  if (!list.length || !ws.length) return { hits: [], abstain: true, best: 0, kept: 0, dropped: list.length };
+  const none = (extra = {}) => ({ hits: [], abstain: true, best: 0, kept: 0, dropped: list.length, absent: 0, ...extra });
+  if (!list.length || !ws.length) return none();
+  const absent = ws.filter((w) => !hays.some((h) => h.includes(w)));
+  // two or more absent words, or a very short question (one or two content words) with one: the Library is not what this question is about
+  if (absent.length >= ABSENT_MAX || (absent.length >= 1 && ws.length <= 2)) return none({ absent: absent.length });
   const idf = idfFor(expandWords(ws), hays, null);
+  for (const w of absent) idf[w] = Math.min(idf[w] || 0, ABSENT_IDF_CAP);
   const total = ws.reduce((n, w) => n + (idf[w] || 0), 0) || 1;
   const covered = (h) => {
     const hay = h.f ? factHay(h.f) : String(h.value || "").toLowerCase();
@@ -46,16 +78,18 @@ export function selectRelevant(hits, words, hays) {
   };
   const scored = list.slice(0, REL_WINDOW).map((h) => ({ h, c: covered(h) }));
   const best = scored.reduce((b, x) => Math.max(b, x.c), 0);
-  if (best < ABSTAIN_BELOW) return { hits: [], abstain: true, best, kept: 0, dropped: list.length };
+  if (best < ABSTAIN_BELOW) return none({ best, absent: absent.length });
   const floor = Math.max(FACT_FLOOR, FACT_REL_BEST * best);
   const kept = scored.filter((x) => x.c >= floor).map((x) => x.h);
-  return { hits: kept, abstain: kept.length === 0, best, kept: kept.length, dropped: list.length - kept.length };
+  return { hits: kept, abstain: kept.length === 0, best, kept: kept.length, dropped: list.length - kept.length, absent: absent.length };
 }
 
 // ---- prompt text ----------------------------------------------------------------------------------------------------------
 export const ABSTAIN_RULE =
   "The library has nothing on this question. Say so plainly in one short sentence, name what would settle it (an official Blizzard post, or a party member who has played it), and state no game fact, number, name or date. You may still use the asker's build and the party state.";
+// A greeting needs no facts; a question about the asker's own sheet is answered from YOUR_BUILD, which is the one place its class, level and spec may come from.
 export const SKIP_RULE = "This message needs no library lookup. Answer it in voice, and state no game fact, number, name or date.";
+export const BUILD_RULE = "This is a question about the asker's own build. Answer it from YOUR_BUILD only: you may state exactly what it lists (class, race, spec, level, professions, goals, sign-up). Add no other game fact, number, name or date.";
 
 // ---- IsSup ----------------------------------------------------------------------------------------------------------------
 // The retrieved page ids and the abstain flag reach finishAnswerText as a structured argument (`retrieval`). For callers that only have groundingText
@@ -78,18 +112,17 @@ export function retrievalOf({ retrieval, groundingText } = {}) {
 
 const SOURCES_LINE = /^(\s*(?:-#\s*)?)Sources?\s*:\s*(.*)$/gim;
 const LIB_LINK = /\[([^\]\n]*)\]\(<?([^)>\s]*#library\.([a-z0-9_-]+)\.([a-z0-9_.-]+))>?\)/gi;
-// Ids on one Sources line in any mix of plain ids, [bracketed] ids and Markdown links to library pages. The formatter's parser reads either links or
-// plain ids, never both; a mixed line would lose its plain ids, so the two halves are read separately here.
+// Ids on one Sources line in any mix of plain ids ("a/b, c/d", "a/b and c/d"), [bracketed] ids and Markdown links to library pages. The formatter's parser
+// reads either links or plain ids, never both; a mixed line would lose its plain ids, so the two halves are read separately here.
 const LINK_ANY = /\[[^\]\n]*\]\(<?[^)>\s]*>?\)/g;
 export function sourceIdsOf(rest) {
   const text = String(rest || "");
   const linked = parseSourceIds(text.match(LINK_ANY) ? text.match(LINK_ANY).join(" ") : "");
   return [...new Set([...parseSourceIds(text.replace(LINK_ANY, " ")), ...linked])];
 }
-// Remove cited ids that were not retrieved. A Sources line is read with the formatter's own parser (plain ids, bracketed ids, Markdown links to library
-// pages, mixed), rewritten as plain ids that were retrieved, and dropped when none is left: anything the parser does not recognise is not kept, so a
-// mixed-format line cannot smuggle an id past the filter. Inline [id~key] cites and Markdown links to an unretrieved library page are removed too
-// (the link keeps its label).
+// Remove cited ids that were not retrieved. A Sources line is read with the formatter's own parser, rewritten as plain ids that were retrieved, and dropped
+// when none is left: anything the parser does not recognise is not kept, so a mixed-format line cannot smuggle an id past the filter. Inline [id~key] cites and
+// Markdown links to an unretrieved library page are removed too (the link keeps its label). A library id written bare in prose is not a citation and stays.
 export function stripUnretrievedCites(answer, retrieved) {
   if (!retrieved) return { answer, removed: [] };
   const removed = [];
@@ -103,38 +136,85 @@ export function stripUnretrievedCites(answer, retrieved) {
   return { answer: out.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trim(), removed };
 }
 
-// A number the answer states: 6 or more, or any decimal or percentage. 0 to 5 are counting words ("two options") and are not checked.
-const NUM = /(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(%?)/g;
-const numbersOf = (sentence) => {
-  const out = [];
-  for (const m of String(sentence).matchAll(NUM)) {
-    const whole = m[1].replace(/,/g, "");
-    const decimal = m[2] !== undefined;
-    if (!decimal && !m[3] && Number(whole) <= 5) continue;
-    out.push(`${whole}${decimal ? "." + m[2] : ""}`);
-  }
-  return out;
+// ---- numbers ----------------------------------------------------------------------------------------------------------------
+// A number the answer states is "checked" when it is 6 or more, a decimal or a percentage; 0 to 5 are counting words ("two options"). A checked number is
+// supported when the allowed text has the same value in any common spelling: leading zeros ("2026-12-09" supports "9" and "December 9"), thousands commas,
+// k and m suffixes ("10k" is 10,000), 12-hour and 24-hour clocks ("8 PM" is 20:00), number words ("sixty" is 60), and ranges ("5 to 7 hours" supports
+// "6 hours", and a stated range is supported when any value inside it is). Known blind spots: "a dozen", fractions, and a wrong number that happens to
+// equal another number in the retrieved text.
+const WORD_VALUES = (() => {
+  const units = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(" ");
+  const tens = { twenty: 20, thirty: 30, forty: 40, fourty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+  const m = { hundred: 100, thousand: 1000 };
+  units.forEach((w, i) => { m[w] = i; });
+  Object.assign(m, tens);
+  return m;
+})();
+const NUM_RE = /(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?(?:\s?(k|m)(?![A-Za-z0-9]))?(%)?/gi;
+const RANGE_RE = /(?<![\w.])(\d+)\s*(?:to|-|–|—)\s*(\d+)(?![\d.])/gi;
+const valueOf = (m) => {
+  let v = parseFloat(`${m[1].replace(/,/g, "")}${m[2] !== undefined ? "." + m[2] : ""}`);
+  if (m[3]) v *= m[3].toLowerCase() === "k" ? 1e3 : 1e6;
+  return v;
 };
-const numberSet = (text) => {
-  const set = new Set();
-  for (const m of String(text).matchAll(/(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?/g)) set.add(`${m[1].replace(/,/g, "")}${m[2] !== undefined ? "." + m[2] : ""}`);
-  return set;
-};
+const canon = (v) => String(Math.round(v * 1e6) / 1e6);
 
-// Drop each sentence or bullet that states a number found nowhere in `allowedText` (retrieved facts and pages, the asker's build, the party state, the
-// question). The headline, the Sources line and every other sentence stay. Fewer than 4 substantive words left = the abstain line.
+function allowedValues(text) {
+  const src = String(text || "").replace(/\[\[retrieved:[^\]]*\]\]/g, " ");
+  const set = new Set();
+  const add = (v) => set.add(canon(v));
+  for (const m of src.matchAll(NUM_RE)) {
+    const v = valueOf(m);
+    add(v);
+    if (Number.isInteger(v) && v >= 1 && v <= 12) add(v + 12); // 8 pm is 20:00
+    if (Number.isInteger(v) && v >= 13 && v <= 23) add(v - 12); // 20:00 is 8 pm
+  }
+  for (const m of src.matchAll(RANGE_RE)) {
+    const a = Number(m[1]), b = Number(m[2]);
+    if (b > a && b - a <= 400) for (let n = a; n <= b; n++) add(n);
+  }
+  const low = src.toLowerCase();
+  for (const m of low.matchAll(/\b(twenty|thirty|forty|fourty|fifty|sixty|seventy|eighty|ninety)(?:[\s-](one|two|three|four|five|six|seven|eight|nine))?\b/g)) add(WORD_VALUES[m[1]] + (m[2] ? WORD_VALUES[m[2]] : 0));
+  for (const m of low.matchAll(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|hundred|thousand)\b/g)) add(WORD_VALUES[m[1]]);
+  return set;
+}
+
+// The unsupported checked numbers of one sentence, as display strings.
+function unsupportedIn(sentence, allowed) {
+  const bad = [];
+  const consumed = [];
+  for (const r of sentence.matchAll(RANGE_RE)) {
+    const a = Number(r[1]), b = Number(r[2]);
+    if (b <= a || b - a > 400) continue; // not a range ("2026-12-09" is a date: its parts are checked one by one below)
+    consumed.push([r.index, r.index + r[0].length]);
+    let ok = false;
+    for (let n = a; n <= b && !ok; n++) ok = allowed.has(canon(n));
+    if (!ok && (a > 5 || b > 5)) bad.push(r[0]);
+  }
+  for (const m of sentence.matchAll(NUM_RE)) {
+    if (consumed.some(([s, e]) => m.index >= s && m.index < e)) continue;
+    const v = valueOf(m);
+    const checked = v > 5 || m[2] !== undefined || Boolean(m[4]);
+    if (checked && !allowed.has(canon(v))) bad.push(m[0].trim());
+  }
+  return bad;
+}
+
+// Drop each sentence or bullet that states a number found nowhere in `allowedText` (retrieved facts and pages as shown, the asker's build, the party state,
+// the question). The headline, the Sources line and every other sentence stay. A number mismatch alone never turns the whole answer into the abstain line:
+// if almost nothing substantive is left, the answer says the Library does not confirm the figure.
 export function supportCheck(answer, allowedText) {
   const text = String(answer || "");
   const cut = text.search(/\n-#\s*Sources?:/i);
   const body = cut >= 0 ? text.slice(0, cut) : text;
   const tail = cut >= 0 ? text.slice(cut) : "";
-  const allowed = numberSet(String(allowedText || "").replace(/\[\[retrieved:[^\]]*\]\]/g, " "));
+  const allowed = allowedValues(allowedText);
   const unsupported = [];
   const kept = [];
   for (const line of body.split("\n")) {
     const parts = line.split(/(?<=[.!?])\s+/);
     const ok = parts.filter((sent) => {
-      const bad = numbersOf(sent).filter((n) => !allowed.has(n));
+      const bad = unsupportedIn(sent, allowed);
       unsupported.push(...bad);
       return bad.length === 0;
     });
@@ -147,7 +227,7 @@ export function supportCheck(answer, allowedText) {
   if (!unsupported.length) return { ok: true, unsupported: [], answer: text };
   const left = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   const substantive = left.replace(/[^A-Za-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 2).length;
-  if (substantive < 4) return { ok: false, unsupported, answer: ABSTAIN_LINE };
+  if (substantive < 4) return { ok: false, unsupported, answer: `${NUMBER_UNCONFIRMED_LINE}${tail}` };
   return { ok: false, unsupported, answer: `${left}${tail}` };
 }
 

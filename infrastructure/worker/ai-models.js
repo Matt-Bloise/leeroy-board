@@ -22,7 +22,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
-import { needsRetrieval, selectRelevant, ABSTAIN_RULE, SKIP_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
+import { skipKind, cleanQuestion, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -843,9 +843,13 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 
     // Self-RAG-lite (self-rag.js): Retrieve? greetings and pure "my build" questions skip the library; IsRel facts below a coverage floor are dropped, and
     // when none is left the answer abstains (the model is still called, in voice and with the asker's build, but told the library has nothing).
-    const retrieve = needsRetrieval(question);
+    const skip = skipKind(question);
+    const retrieve = skip === null;
+    // Party names, the asker's own name and chat filler ("bro", "nah lol") are not topics: they are taken out of the question for ranking and coverage (the
+    // prompt keeps the question as asked).
+    const rankQuestion = cleanQuestion(question, [...ROSTER_DATA.map((r) => r.display), "leeroy jenkins", by]);
     // Score individual facts & open questions using precomputed cachedHays (TF-IDF + stemming + synonyms + role/lead boosts)
-    const ranking = retrieve ? rankWikiCore(question, parsedPages, { hays: cachedHays }) : { words: [], hits: [] };
+    const ranking = retrieve ? rankWikiCore(rankQuestion, parsedPages, { hays: cachedHays }) : { words: [], hits: [] };
     const { words } = ranking;
     const rel = retrieve ? selectRelevant(ranking.hits, words, cachedHays) : { hits: [], abstain: false };
     const hits = rel.hits;
@@ -862,7 +866,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const fallbackWords =
       words && words.length
         ? words
-        : question
+        : rankQuestion
             .toLowerCase()
             .replace(/[^a-z0-9\s-]/g, " ")
             .split(/\s+/)
@@ -939,7 +943,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
     const libraryBlock = !retrieve
-      ? ["(not needed for this message)", SKIP_RULE].join(NL)
+      ? ["(not needed for this message)", skip === "build" ? BUILD_RULE : SKIP_RULE].join(NL)
       : abstain
         ? ["(no library fact matches this question)", ABSTAIN_RULE].join(NL)
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
