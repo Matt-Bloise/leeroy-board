@@ -69,7 +69,7 @@ html #scene .sheet-body:has(> #panel-signups:not([hidden]) > .jr-core) { align-c
 @media (min-width: 700px) { .jr-who { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .jr-all { margin: 0 0 var(--g1, 8px); min-height: 44px; }
 .jr-deep { margin: 12px 0 0; font-size: 0.9375rem; color: var(--ink-soft); }
-html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):not(.jr-dest):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(#ch-still):not(:has(#ask-box)) { display: none !important; }
+html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):not(.jr-dest):not(.lib-live):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(#ch-still):not(.lib-bar):not(:has(#ask-box)) { display: none !important; }
 html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="good"], html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="deep"], html[data-journey="curious"] #panel-library:not(.lib-rest) [data-depth="deep"] { display: none; }
 @media (min-width: 700px) { #sheet-body .panel > .jr-core { width: max-content; max-width: min(100%, 72ch); justify-self: center; box-sizing: border-box; } }
 html[data-journey="guided"] .tn-cards { display: none; }
@@ -330,3 +330,7 @@ button.cal-day.win { background: var(--hi-brass); }
 }
 
 
+
+/* Cinematic slice 7: the Library search box stays in view for a guided visitor (it used to fold away with the rest of the panel until "Show me more"); the extras around it stay folded */
+html[data-journey="guided"] #panel-library:not(.jr-open) .lib-bar > :not(.lib-q):not(.lib-count):not(label) { display: none; }
+html[data-journey="guided"] #sheet-body #panel-library.lib-live > .jr-core { display: none; }
