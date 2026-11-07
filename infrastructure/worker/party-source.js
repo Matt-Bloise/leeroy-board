@@ -109,6 +109,25 @@ export function reconcileSheetsWithDoc(sheets, partyDoc, fields = ["race", "clas
 
 // The sheet that belongs to one party-document member: exact lowercase name, else the sheet of a true rename (same name minus a
 // parenthetical, and that sheet's own name is not in the document). Used by projectPublicParty so a hide reaches a renamed person.
+// The stored sheet a sheet WRITE belongs to: exact slug, else exact lowercase name, else the one sheet that has left the document and has the
+// same name minus a parenthetical (a true rename, the same identity rule reconcileSheetsWithDoc uses). That last rule needs a party document and EXACTLY ONE such sheet; two candidates are ambiguous and mean a new person. Undefined means a new person.
+export function sheetForWrite(sheets, partyDoc, slug, name) {
+  const list = sheets || [];
+  const bySlug = list.find((s) => s.slug === slug);
+  if (bySlug) return bySlug;
+  const want = String(name || "").toLowerCase();
+  const byName = want && list.find((s) => String(s.name || "").toLowerCase() === want);
+  if (byName) return byName;
+  if (!want) return undefined;
+  const docMembers = partyDoc && Array.isArray(partyDoc.members) ? partyDoc.members : [];
+  if (!docMembers.length) return undefined;
+  const inDoc = new Set(), inDocSlug = new Set();
+  for (const d of docMembers) if (d && typeof d.name === "string") { inDoc.add(d.name.toLowerCase()); inDocSlug.add(slugify(d.name)); }
+  const n = normName(want);
+  const gone = list.filter((s) => !inDoc.has(String(s.name || "").toLowerCase()) && !inDocSlug.has(s.slug) && normName(s.name) === n);
+  return gone.length === 1 ? gone[0] : undefined;
+}
+
 export function sheetForDocMember(sheets, docMembers, m) {
   const list = sheets || [];
   const want = String(m && m.name || "").toLowerCase();
