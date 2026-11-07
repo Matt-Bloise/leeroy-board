@@ -2864,13 +2864,14 @@ function libRenderShelf(main) {
   };
   const seen = MEM.seenMap(), isNewPage = (p) => { const t = seen[`page:${p.id}`], d = p.checked || p.as_of; return !!t && !!d && Date.parse(`${d}T23:59:59Z`) > t; };
   const kids = [];
-  if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids); return; }
+  if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), LIBS.cat === "professions" ? libToolRow() : null, h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids.filter(Boolean)); return; }
   if (libExpert()) kids.push(libRibbon(null));
   kids.push(wideLib() ? null : h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
     wideLib() ? null : h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
       h("b", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")} · ${nf.format(c.facts)} facts` })))),
     h("details", { class: "allshelf" }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
     libDoors(),
+    libToolRow(),
     h("details", { class: "allshelf" }, h("summary", { text: "The front page: what changed, what nobody knows, what Blizzard said" }), libFront(wideLib() ? 2 : 8)));
   main.replaceChildren(...kids.filter(Boolean));
 }
@@ -3063,6 +3064,7 @@ async function libRenderPage(v, tok, fresh) {
       h("div", { class: "lib-row" }, linkChip(v), askChip(p.title, `Ask Leeroy about ${p.title}`))),
     xp && (p.category === "classes" || p.category === "races") ? libRibbon(p) : null,
     p.blurb ? h("p", { class: "blurb", text: p.blurb }) : null,
+    p.category === "professions" ? libToolRow() : null,
     h("h4", { class: "lib-h", text: "Facts" }), facts,
     p.open.length ? h("div", { class: "unknown" }, h("h4", {}, emb("question", "pend"), "Nobody knows yet"), h("ul", {}, p.open.map((o) => h("li", {}, ...richText(o))))) : null,
     p.related.length ? h("div", {}, h("h4", { class: "lib-h", text: "Related" }), h("div", { class: "ptabs" }, p.related.filter((id) => LIBD.head[id]).map((id) => pageLink(id, "ptab", libTitle(id))))) : null,
@@ -3311,6 +3313,12 @@ const changeLi = (c) => {
   return h("li", {}, h("time", { datetime: c.date, text: libDay(c.date) }), h("span", { class: "chg-box" }, body,
     long ? h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `More: read the whole change on ${libTitle(c.page)}`, onclick: (e) => { const on = body.classList.toggle("clamp"), t = e.currentTarget; t.setAttribute("aria-expanded", String(!on)); t.textContent = on ? "More" : "Less"; t.setAttribute("aria-label", `${t.textContent}: ${on ? "read the whole change" : "show less of the change"} on ${libTitle(c.page)}`); } }, "More") : null));
 };
+const PRO_TOOL_URL = "https://wowforevertools.com/professions";
+function libToolRow() { /* a link out, never an embed: the site refuses framing. Nothing from it is copied or stored. */
+  return h("p", { class: "pro-tool" }, "Recipes, trainers and camping for every profession: ",
+    h("a", { class: "pro-tool-a", href: PRO_TOOL_URL, target: "_blank", rel: "noopener noreferrer", "aria-label": "WoW Forever Tools, a community site, opens in a new tab" }, "WoW Forever Tools"),
+    " (community site, opens in a new tab). Built from the beta client; Blizzard may change recipes before launch.");
+}
 function libDoors() {
   const ix = LIBD.index, T = ix.totals;
   const door = (tok, b, rest) => h("a", { class: "lib-door", href: `#${tok}`, "data-lv": tok }, h("b", { text: b }), h("span", { text: rest }));
