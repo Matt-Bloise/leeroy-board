@@ -302,6 +302,18 @@ jobs:
             echo "D1 already contains live state ($ROW_COUNT rows). Skipping seed to preserve live edits."
           fi
 
+      # Library-only seed: touches lib_blobs + lib_pages only (never kv_state). Per page the repo copy wins only when newer than the D1 row,
+      # and the whole step is a no-op while the sha256 of data/library/*.json equals the lib_blobs row `seed.stamp`. This job runs on master in the production environment only.
+      # continue-on-error: this step can never block or fail a production deploy; the Worker deploy does not depend on it.
+      - name: Merge Library data into D1 (only when data/library changed)
+        continue-on-error: true
+        working-directory: infrastructure
+        run: |
+          if ! node ./scripts/seed-d1.mjs --library-only --remote; then
+            echo "::warning::Library seed failed or aborted (nothing blocks the deploy). The Library in D1 is unchanged or partly merged; re-run the deploy after fixing it. See the log above."
+            exit 1
+          fi
+
       - name: Deploy Cloudflare Worker + Durable Object + Cron Trigger
         id: worker
         working-directory: infrastructure

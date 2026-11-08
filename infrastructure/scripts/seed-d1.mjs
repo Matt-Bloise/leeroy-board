@@ -43,6 +43,23 @@ function splitChunks(str, size = CHUNK_SIZE) {
   return chunks;
 }
 
+// --library-only: merge data/library/*.json into lib_blobs + lib_pages ONLY (never kv_state, never lib_sources).
+// Per page, the repo copy wins only when newer than the D1 row; skipped when the seed.stamp hash is unchanged.
+// --dry-run in this mode reads D1, prints per-page verdicts and writes nothing. --force ignores the stamp.
+if (process.argv.includes("--library-only")) {
+  const { runLibrarySeed, makeWranglerDb } = await import("./library-seed.mjs");
+  const db = await makeWranglerDb({ dbName, isRemote, infraDir: INFRA_DIR });
+  const result = await runLibrarySeed({
+    db,
+    libDir: LIB_DIR,
+    dryRun,
+    force: process.argv.includes("--force"),
+    log: (l) => console.log(l),
+  });
+  console.log(`library-only seed: ${result.status}`);
+  process.exit(0);
+}
+
 const statements = [];
 
 // 1. Seed `kv_state` from `data/*.json` and `data/atlas/{marks,links}.json`
