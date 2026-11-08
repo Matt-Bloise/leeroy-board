@@ -108,9 +108,12 @@ try {
       let good = 0, slowest = 0; const why = [];
       for (let i = 0; i < RUNS; i++) {
         const vp0 = page.viewportSize(); y0 = await yNow();
+        // Evidence for a CI-only flake (Nov 8: "open then close at 40 percent ... scroll 192 -> 0, run 1" failed five full runs in a row on CI hardware and never locally): record, per frame, only the CHANGES of scrollY and of the <html> classes for 4 s.
+        // Read on failure only. It asserts nothing and changes no bound.
+        await page.evaluate(() => { window.__tr = []; const t0 = performance.now(); const f = () => { const r = document.documentElement, last = window.__tr[window.__tr.length - 1], cur = [Math.round(performance.now() - t0), Math.round(scrollY), r.className.replace(/\s+/g, ".").slice(0, 100)]; if (!last || last[1] !== cur[1] || last[2] !== cur[2]) window.__tr.push(cur); if (performance.now() - t0 < 4000) requestAnimationFrame(f); }; requestAnimationFrame(f); });
         let want; try { want = await run(); } catch (e) { why.push(`run ${i + 1}: ${String(e.message).split("\n")[0]}`); break; }
         const took = await settle(page, want === "open" ? "open" : "closed"); slowest = Math.max(slowest, took);
-        const st = await page.evaluate(state), b = verdict(st, want, y0); if (b.length === 0) good++; else if (why.length < 3) why.push(`run ${i + 1}: ${b.join(", ")} ${process.env.OPEN_RETURN_DEBUG ? JSON.stringify(st) : ""}`);
+        const st = await page.evaluate(state), b = verdict(st, want, y0); if (b.length === 0) good++; else if (why.length < 3) { await page.waitForTimeout(600); const tr = await page.evaluate(() => (window.__tr || []).slice(0, 30)), cx = await page.evaluate(() => ({ sr: history.scrollRestoration, sh: document.documentElement.scrollHeight, ih: innerHeight, main: getComputedStyle(document.getElementById("main")).display, y: Math.round(scrollY) })); why.push(`run ${i + 1}: ${b.join(", ")} ${process.env.OPEN_RETURN_DEBUG ? JSON.stringify(st) : ""} TRACE[ms,scrollY,html classes] ${JSON.stringify(tr)} CTX ${JSON.stringify(cx)}`); }
         if (want === "open") { await page.keyboard.press("Escape"); await settle(page, "closed"); }
         if (name === "resize in flight") { await page.setViewportSize(vp0); await settle(page, "closed"); }
       }
