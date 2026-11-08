@@ -63,3 +63,20 @@ test("wranglerD1Args rejects an empty read and a multi-line or percent read", ()
   assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true, sql: "SELECT '%PATH%'" }), /percent/);
   assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true, sql: 'SELECT "x" FROM t' }), /double quote/);
 });
+
+import { joinStatements } from "../../infrastructure/scripts/library-seed.mjs";
+import { DatabaseSync } from "node:sqlite";
+
+// Production run 3 (Nov 8 2026): the Worker's INSERT has no trailing ';', so statements joined with "\n" became a syntax error at the next UPDATE.
+test("joinStatements ends every statement with a semicolon so the joined script runs as one file", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE lib_blobs (name TEXT PRIMARY KEY, stamp TEXT, json TEXT, updated_at TEXT)");
+  const insert = "INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('classes.json', 's', 'abc', 't') ON CONFLICT(name) DO UPDATE SET json = excluded.json"; // no ';', as the Worker writes it
+  const append = "UPDATE lib_blobs SET json = json || 'def' WHERE name = 'classes.json';";
+  assert.throws(() => db.exec([insert, append].join("\n")), /syntax error/i, "the old join is the bug");
+  db.exec(joinStatements([insert, append, "UPDATE lib_blobs SET json = json || 'ghi' WHERE name = 'classes.json'"]));
+  assert.equal(db.prepare("SELECT json FROM lib_blobs WHERE name = 'classes.json'").get().json, "abcdefghi");
+});
+test("joinStatements keeps statements that already end with a semicolon, and trailing whitespace", () => {
+  assert.equal(joinStatements(["SELECT 1;", "SELECT 2  \n"]), "SELECT 1;\nSELECT 2;");
+});
