@@ -8,6 +8,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { runLibrarySeed, comparePage, chunkEscaped, MAX_STMT_BYTES, STAMP_NAME } from "../../infrastructure/scripts/library-seed.mjs";
+process.env.LIBRARY_SEED_ALLOW_EMPTY = "1"; // these tests seed a brand-new in-memory database; the empty-database guard is tested in library-seed-reads.test.mjs
 
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite");
