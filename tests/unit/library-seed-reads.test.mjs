@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { wranglerD1Args, runLibrarySeed } from "../../infrastructure/scripts/library-seed.mjs";
 
+delete process.env.LIBRARY_SEED_ALLOW_EMPTY; // the guard tests below need it unset, whatever the caller's environment
+
 // First production run, Nov 8 2026: reads went through `wrangler d1 execute --remote --file`, the bulk import path, which returns a summary and no rows.
 // Every SELECT looked empty, so every page read as "absent in D1". Reads must use --command; only writes use --file.
 
@@ -59,4 +61,5 @@ test("wranglerD1Args rejects an empty read and a multi-line or percent read", ()
   assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true }), /needs a file or a non-empty sql/);
   assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true, sql: "SELECT 1\nSELECT 2" }), /one line/);
   assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true, sql: "SELECT '%PATH%'" }), /percent/);
+  assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true, sql: 'SELECT "x" FROM t' }), /double quote/);
 });

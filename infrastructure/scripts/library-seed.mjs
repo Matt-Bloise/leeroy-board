@@ -494,7 +494,7 @@ export function rowsFromWrangler(stdout) {
  */
 export function wranglerD1Args({ dbName, isRemote, sql, file, persistTo }) {
   if (!file && !(typeof sql === "string" && sql.trim())) throw new Error("wranglerD1Args needs a file or a non-empty sql string");
-  if (!file && /[%\r\n]/.test(sql)) throw new Error("a --command read must be one line without a percent sign (cmd.exe expands %VAR% on Windows)");
+  if (!file && /[%"\r\n]/.test(sql)) throw new Error("a --command read must be one line without a percent sign or a double quote (cmd.exe expands %VAR% and mis-parses quotes on Windows); reads are fixed SQL with single-quoted literals");
   const args = ["wrangler", "d1", "execute", dbName, isRemote ? "--remote" : "--local", file ? `--file=${file}` : `--command=${sql}`, "--json"];
   if (persistTo && !isRemote) args.push("--persist-to", persistTo);
   return args;
