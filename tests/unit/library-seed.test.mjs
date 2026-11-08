@@ -293,3 +293,17 @@ test("a stamp written by an older seed algorithm does not skip the run", async (
   assert.notEqual(r.status, "skipped");
   assert.match(factsOf(db, "p-algo"), /k\.new/);
 });
+test("D1 newer: repo-only facts are still appended, D1's dates and shared facts are kept", async () => {
+  const dir = makeLibDir([page("p-dn", "2026-10-29", "2026-10-29", { facts: [{ key: "k.shared", value: "repo-copy" }, { key: "k.hotfix", value: "repo-only" }] })]);
+  const db = makeDb();
+  db.sqlite.exec(
+    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-dn', 'classes', 'p-dn', '2026-10-29', '2026-11-02', 'b', '[{"key":"k.shared","value":"live"}]', 'u1')`
+  );
+  const r = await runLibrarySeed({ db, libDir: dir, now: NOW });
+  const facts = JSON.parse(factsOf(db, "p-dn"));
+  assert.deepEqual(facts.map((f) => f.key), ["k.shared", "k.hotfix"]);
+  assert.equal(facts[0].value, "live");
+  assert.equal(r.counts.merged, 1);
+  assert.deepEqual(r.unbumped, [], "a D1-newer page is not an unbumped warning");
+  assert.equal(db.query("SELECT checked FROM lib_pages WHERE id = 'p-dn'")[0].checked, "2026-11-02");
+});

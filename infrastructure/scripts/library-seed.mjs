@@ -108,7 +108,7 @@ export function readLibraryFiles(libDir) {
 }
 
 /** sha256 of the concatenated file contents, in sorted file-name order. */
-export const SEED_ALGO = "seed-algo:2 (fact-level merge)";
+export const SEED_ALGO = "seed-algo:3 (fact-level merge, also when D1 is newer)";
 export function libraryHash(files) {
   const h = crypto.createHash("sha256");
   h.update(SEED_ALGO + "\n"); // a change in what the seed does re-runs it even when the data files are unchanged
@@ -360,9 +360,10 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
         verdict = c > 0 ? "repo newer" : c < 0 ? "D1 newer" : "same";
         // Equal dates always keep D1 (live cron/wiki edits are never clobbered). A repo edit that did not bump
         // as_of or checked is therefore NOT applied; list it so it cannot go unnoticed.
-        if (c === 0 && contentHash(canonRepo(p)) !== contentHash(canonRow(d1))) {
-          unbumped.push(p.id);
-          // Additive fact merge: facts the repo has and D1 lacks (by fact key) are appended to the D1 row, nothing in D1
+        if (c <= 0 && contentHash(canonRepo(p)) !== contentHash(canonRow(d1))) {
+          if (c === 0) unbumped.push(p.id);
+          // Additive fact merge (equal dates, or D1 newer: its page text wins, but a fact the repo has and D1 has never
+          // had is still published): facts absent from D1 by fact key are appended to the D1 row, nothing in D1
           // is changed or removed, as_of and checked stay D1's. The write is versioned on the row's updated_at.
           const add = missingFacts(p, d1);
           if (add.length) {
