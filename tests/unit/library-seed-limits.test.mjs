@@ -162,3 +162,55 @@ test("a skipped guarded index.json totals write blocks the stamp", async () => {
   assert.equal(r.status, "not-stamped");
   assert.equal(stampRows(db), 0);
 });
+
+import { makeEnv } from "../../infrastructure/scripts/library-seed.mjs";
+
+const wordFor = (n) => {
+  let w = "";
+  do {
+    w = String.fromCharCode(97 + (n % 26)) + w;
+    n = Math.floor(n / 26);
+  } while (n > 0);
+  return "w" + w.padStart(4, "a");
+};
+
+test("makeEnv chunked write resolves the name from VALUES ('search.json', ?, ?, ?) and round-trips", async () => {
+  const db = makeDb();
+  const env = makeEnv(db);
+  const json = JSON.stringify({ generated: "x", idf: Object.fromEntries(Array.from({ length: 12000 }, (_, i) => [wordFor(i), 1.2345])) });
+  assert.ok(bytes(json) > 100000);
+  await env.DB.prepare(
+    "INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('search.json', ?, ?, ?) ON CONFLICT(name) DO UPDATE SET stamp = excluded.stamp, json = excluded.json, updated_at = excluded.updated_at"
+  )
+    .bind("s", json, NOW)
+    .run();
+  const stored = db.sqlite.prepare("SELECT json FROM lib_blobs WHERE name = 'search.json'").get().json;
+  assert.equal(bytes(stored), bytes(json));
+  assert.equal(JSON.parse(stored).idf[wordFor(11999)], 1.2345);
+});
+
+test("makeEnv chunked write without a resolvable name throws and executes nothing", async () => {
+  const db = makeDb();
+  const env = makeEnv(db);
+  await assert.rejects(env.DB.prepare("INSERT INTO lib_blobs (stamp, json, updated_at) VALUES (?, ?, ?)").bind("s", "x".repeat(90000), NOW).run(), /without a resolvable name/);
+  assert.deepEqual(db.log, []);
+});
+
+test("a real seed whose search.json and open.json exceed one chunk stores both intact and stamps", async () => {
+  const pages = Array.from({ length: 120 }, (_, i) =>
+    page("big-" + String(i).padStart(3, "0"), {
+      facts: Array.from({ length: 40 }, (_, j) => ({ key: "k." + j, value: wordFor(i * 40 + j) + " " + wordFor(i * 40 + j + 7000) })),
+      open: Array.from({ length: 12 }, (_, j) => "open question number " + j + " about " + wordFor(i * 12 + j)),
+    })
+  );
+  const db = makeDb();
+  const r = await runLibrarySeed({ db, libDir: makeLibDir(pages), now: NOW });
+  assert.equal(r.status, "seeded");
+  for (const name of ["search.json", "open.json"]) {
+    const row = db.sqlite.prepare("SELECT json FROM lib_blobs WHERE name = ?").get(name);
+    assert.ok(bytes(row.json) > 40000, `${name} is larger than one chunk (${bytes(row.json)} bytes)`);
+    const parsed = JSON.parse(row.json);
+    assert.ok(name === "search.json" ? Object.keys(parsed.idf).length > 3000 : parsed.open.length === 120 * 12);
+  }
+  assert.equal(stampRows(db), 1);
+});

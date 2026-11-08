@@ -199,8 +199,10 @@ export function makeEnv(db, ownBlobs = new Set()) {
               return {};
             }
             const chunks = chunkEscaped(params[big]);
-            const nameM = /name = '([^']+)'/.exec(sql);
+            // The Worker writes either `WHERE name = 'x'`, `VALUES ('x.json', ?, ?, ?)` (search.json, open.json) or binds the name.
+            const nameM = /name = '([^']+)'/.exec(sql) || /VALUES \('([^']+\.json)'/.exec(sql);
             const name = nameM ? nameM[1] : params.find((v) => typeof v === "string" && /\.json$/.test(v));
+            if (!name) throw new Error("chunked lib_blobs write without a resolvable name");
             const head = params.slice();
             head[big] = chunks[0];
             const stmts = [inline(sql, head)];
