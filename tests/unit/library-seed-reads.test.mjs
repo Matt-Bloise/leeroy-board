@@ -25,7 +25,7 @@ const noWrites = () => { throw new Error("a write was attempted"); };
 
 test("an empty-looking D1 is refused before any write (a failed read must never look like a new database)", async () => {
   const db = { query: () => [], exec: noWrites };
-  await assert.rejects(runLibrarySeed({ db, libDir: "data/library" }), /no Library pages and no index\.json/);
+  await assert.rejects(runLibrarySeed({ db, libDir: "data/library" }), /no Library pages or no index\.json/);
 });
 test("rows that lack an id are a broken read, not an empty table", async () => {
   const db = { query: (sql) => (/FROM lib_pages/.test(sql) ? [{ "Total queries executed": 1 }] : []), exec: noWrites };
@@ -34,4 +34,29 @@ test("rows that lack an id are a broken read, not an empty table", async () => {
 test("blob rows that lack a name are a broken read", async () => {
   const db = { query: (sql) => (/FROM lib_blobs/.test(sql) && /name, json/.test(sql) ? [{ "Total queries executed": 1 }] : []), exec: noWrites };
   await assert.rejects(runLibrarySeed({ db, libDir: "data/library" }), /without a name/);
+});
+
+import { rowsFromWrangler } from "../../infrastructure/scripts/library-seed.mjs";
+const ok = (results) => JSON.stringify([{ results, success: true, meta: {} }]);
+
+test("rowsFromWrangler returns the rows, including a genuinely empty table", () => {
+  assert.deepEqual(rowsFromWrangler("├ Checking\n" + ok([{ a: 1 }])), [{ a: 1 }]);
+  assert.deepEqual(rowsFromWrangler(ok([])), []);
+});
+test("rowsFromWrangler never turns a missing results array into an empty table", () => {
+  assert.throws(() => rowsFromWrangler(JSON.stringify([{ "Total queries executed": 1, "Rows read": 0 }])), /no d1 JSON payload|no results array/);
+  assert.throws(() => rowsFromWrangler("├ Checking if file needs uploading\n"), /no d1 JSON payload/);
+});
+test("pages present but index.json missing is refused (either one missing means a failed read)", async () => {
+  const db = { query: (sql) => (/FROM lib_pages/.test(sql) ? [{ id: "classes/mage", category: "classes", as_of: "2026-10-19" }] : []), exec: noWrites };
+  await assert.rejects(runLibrarySeed({ db, libDir: "data/library" }), /no Library pages or no index\.json/);
+});
+test("index.json present but no pages is refused", async () => {
+  const db = { query: (sql) => (/name, json, updated_at/.test(sql) ? [{ name: "index.json", json: "{}", updated_at: "2026-11-08T00:00:00Z" }] : []), exec: noWrites };
+  await assert.rejects(runLibrarySeed({ db, libDir: "data/library" }), /no Library pages or no index\.json/);
+});
+test("wranglerD1Args rejects an empty read and a multi-line or percent read", () => {
+  assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true }), /needs a file or a non-empty sql/);
+  assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true, sql: "SELECT 1\nSELECT 2" }), /one line/);
+  assert.throws(() => wranglerD1Args({ dbName: "db", isRemote: true, sql: "SELECT '%PATH%'" }), /percent/);
 });

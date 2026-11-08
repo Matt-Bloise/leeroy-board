@@ -374,8 +374,8 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   }
   // A live database always holds index.json. No pages and no index.json means a failed read or the wrong database, and a
   // "first-time seed" of production would overwrite live content: refuse unless the operator says this really is a new database.
-  if (d1Pages.size === 0 && !blobRows.has("index.json") && process.env.LIBRARY_SEED_ALLOW_EMPTY !== "1") {
-    throw new Error("D1 shows no Library pages and no index.json. Refusing to seed: this looks like a failed read or the wrong database. Set LIBRARY_SEED_ALLOW_EMPTY=1 only for a brand-new database. Nothing was written.");
+  if ((d1Pages.size === 0 || !blobRows.has("index.json")) && process.env.LIBRARY_SEED_ALLOW_EMPTY !== "1") {
+    throw new Error("D1 shows no Library pages or no index.json. Refusing to seed: this looks like a failed read or the wrong database. Set LIBRARY_SEED_ALLOW_EMPTY=1 only for a brand-new database. Nothing was written.");
   }
   const parses = (txt) => {
     try {
@@ -480,11 +480,21 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   return { status: "seeded", counts, lines, unbumped };
 }
 
+// The rows of a read: the last statement result's `results` array. A response without one is an error, never an empty table.
+export function rowsFromWrangler(stdout) {
+  const out = parseWranglerJson(stdout);
+  const last = Array.isArray(out) ? out[out.length - 1] : out;
+  if (!last || !Array.isArray(last.results)) throw new Error("wrangler response has no results array");
+  return last.results;
+}
+
 /**
  * The wrangler argument list for one D1 call. WRITES go through --file (the bulk path). READS must use --command: on a remote
  * database --file is the import path, which returns a summary and NO rows, so every SELECT looked empty (first production run, Nov 8 2026).
  */
 export function wranglerD1Args({ dbName, isRemote, sql, file, persistTo }) {
+  if (!file && !(typeof sql === "string" && sql.trim())) throw new Error("wranglerD1Args needs a file or a non-empty sql string");
+  if (!file && /[%\r\n]/.test(sql)) throw new Error("a --command read must be one line without a percent sign (cmd.exe expands %VAR% on Windows)");
   const args = ["wrangler", "d1", "execute", dbName, isRemote ? "--remote" : "--local", file ? `--file=${file}` : `--command=${sql}`, "--json"];
   if (persistTo && !isRemote) args.push("--persist-to", persistTo);
   return args;
@@ -508,9 +518,7 @@ export async function makeWranglerDb({ dbName, isRemote, infraDir }) {
   };
   return {
     query(sql) {
-      const out = parseWranglerJson(run(sql, true));
-      const last = Array.isArray(out) ? out[out.length - 1] : out;
-      return (last && last.results) || [];
+      return rowsFromWrangler(run(sql, true));
     },
     exec(statements) {
       if (statements.length) run(statements.join("\n"));
