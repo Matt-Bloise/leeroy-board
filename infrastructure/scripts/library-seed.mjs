@@ -103,21 +103,16 @@ export const contentHash = (canon) => sha8(JSON.stringify(canon));
 
 /**
  * Conditional upsert: the comparison is part of the write, so a cron or approval write that lands between
- * the snapshot read and this statement is not overwritten with older data. A repo page with equal dates but
- * different content may only replace the exact row version it was compared against (updated_at).
+ * the snapshot read and this statement is not overwritten with older data. Equal dates never overwrite.
  */
-function pageStatement(p, now, snapUpdatedAt) {
+function pageStatement(p, now) {
   const cols = "id, category, title, confidence, status, as_of, checked, recheck_days, blurb, aliases_json, facts_json, open_json, related_json, history_json, snapshots_json, updated_at";
   const sets = cols
     .split(", ")
     .filter((c) => c !== "id")
     .map((c) => `${c} = excluded.${c}`)
     .join(", ");
-  const guard = `COALESCE(excluded.as_of, '') > COALESCE(lib_pages.as_of, '') OR (COALESCE(excluded.as_of, '') = COALESCE(lib_pages.as_of, '') AND COALESCE(excluded.checked, '') > COALESCE(lib_pages.checked, ''))${
-    snapUpdatedAt === undefined
-      ? ""
-      : ` OR (COALESCE(excluded.as_of, '') = COALESCE(lib_pages.as_of, '') AND COALESCE(excluded.checked, '') = COALESCE(lib_pages.checked, '') AND lib_pages.updated_at = ${sqlStr(snapUpdatedAt)})`
-  }`;
+  const guard = `COALESCE(excluded.as_of, '') > COALESCE(lib_pages.as_of, '') OR (COALESCE(excluded.as_of, '') = COALESCE(lib_pages.as_of, '') AND COALESCE(excluded.checked, '') > COALESCE(lib_pages.checked, ''))`;
   return `${insertPart(p, now, cols)} ON CONFLICT(id) DO UPDATE SET ${sets} WHERE ${guard};`;
 }
 
@@ -218,10 +213,8 @@ function refreshIndexTotals(db, repoIndex) {
   if (Array.isArray(ix.categories)) {
     for (const c of ix.categories) {
       const m = per.get(c.key);
-      if (m) {
-        c.pages = m.pages;
-        c.facts = m.facts;
-      }
+      c.pages = m ? m.pages : 0;
+      c.facts = m ? m.facts : 0;
     }
   }
   const json = JSON.stringify(ix);
@@ -251,7 +244,8 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   for (const r of db.query("SELECT * FROM lib_pages")) d1Pages.set(r.id, r);
 
   const counts = { "repo newer": 0, "D1 newer": 0, same: 0, inserted: 0, blobs: 0 };
-  const writes = [];
+  const writes = []; // units: a unit (one page, or one blob with its chunk appends) is never split across batches
+  const unbumped = [];
   // Every category present in the repo files is rebuilt on every run that does not skip on the stamp, plus the
   // old category of any page that moved. A failed run therefore cannot leave a stale category blob behind:
   // the retry rebuilds them all, and the stamp is written only after that.
@@ -270,24 +264,20 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
         say(`${p.id}: repo newer (absent in D1)`);
       } else {
         const c = comparePage(p, d1);
-        let snap; // set only for an equal-dates, different-content write
         verdict = c > 0 ? "repo newer" : c < 0 ? "D1 newer" : "same";
-        if (c === 0 && contentHash(canonRepo(p)) !== contentHash(canonRow(d1))) {
-          verdict = "repo newer";
-          snap = d1.updated_at;
-          say(`${p.id}: repo newer (same dates, content differs)`);
-        } else {
-          say(`${p.id}: ${verdict}`);
-        }
+        // Equal dates always keep D1 (live cron/wiki edits are never clobbered). A repo edit that did not bump
+        // as_of or checked is therefore NOT applied; list it so it cannot go unnoticed.
+        if (c === 0 && contentHash(canonRepo(p)) !== contentHash(canonRow(d1))) unbumped.push(p.id);
+        say(`${p.id}: ${verdict}`);
         if (verdict === "repo newer") {
           if (d1.category !== p.category) rebuildCats.add(d1.category);
-          writes.push(pageStatement(p, now, snap));
+          writes.push([pageStatement(p, now)]);
         }
         counts[verdict]++;
         continue;
       }
       counts[verdict]++;
-      writes.push(pageStatement(p, now));
+      writes.push([pageStatement(p, now)]);
     }
   }
 
@@ -295,6 +285,14 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   // or the repo's `generated` is newer. Category blobs, search, open and index are rebuilt below, except
   // that a missing one is seeded first so the rebuild has a base. index.json: repo wins only when newer.
   const blobRows = new Map(db.query("SELECT name, json FROM lib_blobs").map((r) => [r.name, r.json]));
+  const parses = (txt) => {
+    try {
+      JSON.parse(txt);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const genOf = (txt) => {
     try {
       return String(JSON.parse(txt).generated || "");
@@ -307,30 +305,50 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
     const d1Json = blobRows.get(file);
     const repoJson = JSON.stringify(parsed);
     let write = false;
-    if (d1Json === undefined) write = true;
+    if (d1Json === undefined || !parses(d1Json)) write = true;
     else if (!hasPages && !DERIVED.has(file)) write = String(parsed.generated || "") > genOf(d1Json);
     if (write) {
-      say(`${file}: blob ${d1Json === undefined ? "absent in D1, seeding" : "repo newer"}`);
-      writes.push(...blobStatements(file, repoJson, now));
+      say(`${file}: blob ${d1Json === undefined ? "absent in D1, seeding" : parses(d1Json) ? "repo newer" : "unparseable in D1, replacing"}`);
+      writes.push(blobStatements(file, repoJson, now));
       counts.blobs++;
     } else if (!hasPages) {
       say(`${file}: blob kept (D1 same or newer)`);
     }
   }
 
+  if (unbumped.length) {
+    say(`WARNING: repo content differs but as_of/checked not bumped (NOT applied): ${unbumped.join(", ")}`);
+  }
   say(
     `Pages: ${counts["repo newer"]} repo newer (${counts.inserted} new), ${counts["D1 newer"]} D1 newer, ${counts.same} same. Blobs written: ${counts.blobs}.`
   );
 
+  // Also every category blob already in D1 and every category D1 pages sit in, so an interrupted category move
+  // can never lose the old category on retry.
+  for (const [name, json] of blobRows) {
+    if (name === "index.json" || !name.endsWith(".json")) continue;
+    try {
+      if (Array.isArray(JSON.parse(json).pages)) rebuildCats.add(name.slice(0, -5));
+    } catch {}
+  }
+  for (const r of d1Pages.values()) rebuildCats.add(r.category);
   say(`Categories to rebuild: ${[...rebuildCats].sort().join(", ") || "none"}.`);
 
   if (dryRun) {
     say("Dry run: nothing written.");
-    return { status: "dry-run", counts, lines };
+    return { status: "dry-run", counts, lines, unbumped };
   }
 
   const BATCH = 20;
-  for (let i = 0; i < writes.length; i += BATCH) db.exec(writes.slice(i, i + BATCH));
+  let batch = [];
+  for (const unit of writes) {
+    if (batch.length && batch.length + unit.length > BATCH) {
+      db.exec(batch);
+      batch = [];
+    }
+    batch.push(...unit);
+  }
+  if (batch.length) db.exec(batch);
 
   // Rebuild derived blobs with the Worker's own function. Category blobs for touched categories,
   // then one final pass (null) that refreshes index.json stamps.
@@ -342,7 +360,7 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
 
   db.exec(blobStatements(STAMP_NAME, hash, now));
   say(`Stamp ${STAMP_NAME} written (${hash.slice(0, 12)}).`);
-  return { status: "seeded", counts, lines };
+  return { status: "seeded", counts, lines, unbumped };
 }
 
 /** Real D1 access through wrangler (remote or local). Reads and writes go through --file. */

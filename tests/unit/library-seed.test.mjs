@@ -29,10 +29,12 @@ function makeDb({ failOnExec = 0, afterSnapshot = null } = {}) {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(SCHEMA);
   const log = [];
+  const batches = [];
   let execCalls = 0;
   return {
     sqlite,
     log,
+    batches,
     query: (sql) => {
       const rows = sqlite.prepare(sql).all();
       if (afterSnapshot && /FROM lib_pages$/.test(sql)) afterSnapshot(sqlite); // a concurrent writer lands right after the snapshot read
@@ -40,6 +42,7 @@ function makeDb({ failOnExec = 0, afterSnapshot = null } = {}) {
     },
     exec: (stmts) => {
       if (failOnExec && ++execCalls === failOnExec) throw new Error("simulated D1 failure");
+      batches.push(stmts);
       for (const s of stmts) {
         log.push(s);
         sqlite.exec(s);
@@ -167,22 +170,19 @@ test("race: a D1 page that became newer after the snapshot is not overwritten", 
   assert.match(factsOf(db, "p-race"), /cron-write/);
 });
 
-test("same dates but different content: repo wins; a D1 edit between snapshot and write still wins", async () => {
-  const dir = makeLibDir([page("p-edit", "2026-11-05", "2026-11-05", { facts: [{ key: "k.f", value: "edited in repo" }] })]);
-  const db = makeDb();
-  db.sqlite.exec(
-    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-edit', 'classes', 'p-edit', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.f","value":"old"}]', 'u1')`
-  );
-  const r = await runLibrarySeed({ db, libDir: dir, now: NOW });
-  assert.equal(r.counts["repo newer"], 1);
-  assert.match(factsOf(db, "p-edit"), /edited in repo/);
-
-  const db2 = makeDb({ afterSnapshot: (sq) => sq.exec(`UPDATE lib_pages SET facts_json = '[{"key":"k.f","value":"wiki edit"}]', updated_at = 'u2' WHERE id = 'p-edit'`) });
-  db2.sqlite.exec(
-    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-edit', 'classes', 'p-edit', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.f","value":"old"}]', 'u1')`
-  );
-  await runLibrarySeed({ db: db2, libDir: dir, now: NOW });
-  assert.match(factsOf(db2, "p-edit"), /wiki edit/);
+test("equal dates keep D1 even when repo content differs, and the dry-run and the run print a warning list", async () => {
+  const dir = makeLibDir([page("p-edit", "2026-11-05", "2026-11-05", { facts: [{ key: "k.f", value: "edited in repo" }] }), page("p-ok", "2026-11-05", "2026-11-05")]);
+  for (const dryRun of [true, false]) {
+    const db = makeDb();
+    db.sqlite.exec(
+      `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-edit', 'classes', 'p-edit', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.f","value":"live"}]', 'u1'), ('p-ok', 'classes', 'p-ok', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.f","value":"f-2026-11-05"}]', 'u1')`
+    );
+    const lines = [];
+    const r = await runLibrarySeed({ db, libDir: dir, dryRun, log: (l) => lines.push(l), now: NOW });
+    assert.deepEqual(r.unbumped, ["p-edit"]);
+    assert.ok(lines.includes("WARNING: repo content differs but as_of/checked not bumped (NOT applied): p-edit"));
+    assert.match(factsOf(db, "p-edit"), /live/, "D1 kept");
+  }
 });
 
 test("a page that moves category rebuilds both category blobs; an emptied category ends empty", async () => {
@@ -207,4 +207,42 @@ test("index.json: categories new in the repo are added to D1's list, D1 entries 
   const ix = JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'index.json'")[0].json);
   assert.deepEqual(ix.categories.map((c) => c.key).sort(), ["classes", "d1only"]);
   assert.equal(ix.categories.find((c) => c.key === "classes").pages, 1, "count corrected from lib_pages");
+});
+
+test("interrupted category move: retry still rebuilds the old category from the blobs already in D1", async () => {
+  const db = makeDb({ failOnExec: 2 }); // the page batch (exec 1) lands, the next exec fails before any rebuild
+  db.sqlite.exec(`INSERT INTO lib_pages (id, category, title, as_of, checked, updated_at) VALUES ('mv', 'old', 'mv', '2026-11-01', '2026-11-01', 'x')`);
+  db.sqlite.exec(`INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('old.json', 's', '{"key":"old","title":"Old","pages":[{"id":"mv"}]}', 'x')`);
+  const dir = makeLibDir([page("mv", "2026-11-07", "2026-11-07")]);
+  await assert.rejects(runLibrarySeed({ db, libDir: dir, now: NOW }), /simulated D1 failure/);
+  assert.equal(db.query("SELECT category FROM lib_pages WHERE id = 'mv'")[0].category, "classes", "move landed");
+  assert.equal(catPagesInBlob(db, "old"), 1, "old blob still stale after the interruption");
+  const r = await runLibrarySeed({ db, libDir: dir, now: NOW });
+  assert.equal(r.status, "seeded");
+  assert.equal(catPagesInBlob(db, "old"), 0);
+  assert.equal(catPagesInBlob(db, "classes"), 1);
+});
+
+test("emptied category: index.json count goes to zero", async () => {
+  const db = makeDb();
+  db.sqlite.exec(
+    `INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('index.json', 's', '{"generated":"2026-11-09","totals":{},"categories":[{"key":"old","title":"Old","pages":1,"facts":4}]}', 'x')`
+  );
+  db.sqlite.exec(`INSERT INTO lib_pages (id, category, title, as_of, checked, updated_at) VALUES ('mv', 'old', 'mv', '2026-11-01', '2026-11-01', 'x')`);
+  await runLibrarySeed({ db, libDir: makeLibDir([page("mv", "2026-11-07", "2026-11-07")]), now: NOW });
+  const ix = JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'index.json'")[0].json);
+  const old = ix.categories.find((c) => c.key === "old");
+  assert.deepEqual([old.pages, old.facts], [0, 0]);
+});
+
+test("a chunked blob write is never split across batches; an unparseable D1 blob is replaced", async () => {
+  const dir = makeLibDir(manyPages(25, "2026-11-07"));
+  fs.writeFileSync(path.join(dir, "news.json"), JSON.stringify({ generated: "2026-11-08", items: ["x".repeat(70000)] }));
+  const db = makeDb();
+  db.sqlite.exec(`INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('news.json', 's', '{"truncat', 'x')`);
+  await runLibrarySeed({ db, libDir: dir, now: NOW });
+  const withHead = db.batches.filter((b) => b.some((st) => st.startsWith("INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES ('news.json'")));
+  assert.equal(withHead.length, 1);
+  assert.ok(withHead[0].filter((st) => st.startsWith("UPDATE lib_blobs SET json = json ||") && st.includes("WHERE name = 'news.json'")).length >= 2, "all chunk appends in the same batch as the head");
+  assert.equal(JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'news.json'")[0].json).items[0].length, 70000);
 });
