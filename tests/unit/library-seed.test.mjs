@@ -248,3 +248,33 @@ test("a chunked blob write is never split across batches; an unparseable D1 blob
   assert.ok(withHead[0].filter((st) => st.startsWith("UPDATE lib_blobs SET json = json ||") && st.includes("WHERE name = 'news.json' AND updated_at")).length >= 2, "all chunk appends in the same batch as the head");
   assert.equal(JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'news.json'")[0].json).items[0].length, 90000);
 });
+
+test("equal dates: repo-only facts (by key) are appended to D1, D1 facts and dates are untouched", async () => {
+  const dir = makeLibDir([
+    page("p-merge", "2026-11-05", "2026-11-05", { facts: [{ key: "k.shared", value: "repo-copy" }, { key: "k.new", value: "repo-only" }] }),
+  ]);
+  const db = makeDb();
+  db.sqlite.exec(
+    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-merge', 'classes', 'p-merge', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.shared","value":"live"},{"key":"k.liveonly","value":"d1-only"}]', 'u1')`
+  );
+  const r = await runLibrarySeed({ db, libDir: dir, now: NOW });
+  const facts = JSON.parse(factsOf(db, "p-merge"));
+  assert.deepEqual(facts.map((f) => f.key), ["k.shared", "k.liveonly", "k.new"]);
+  assert.equal(facts[0].value, "live", "shared fact keeps D1's value");
+  assert.equal(r.counts.merged, 1);
+  const row = db.query("SELECT as_of, checked FROM lib_pages WHERE id = 'p-merge'")[0];
+  assert.deepEqual([row.as_of, row.checked], ["2026-11-05", "2026-11-05"]);
+  const blob = JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'classes.json'")[0].json);
+  assert.ok(blob.pages.find((p) => p.id === "p-merge").facts.some((f) => f.key === "k.new"), "category blob rebuilt with the merged fact");
+});
+
+test("fact merge race: a row that changed after the snapshot is not touched by the merge", async () => {
+  const dir = makeLibDir([page("p-mr", "2026-11-05", "2026-11-05", { facts: [{ key: "k.new", value: "repo-only" }] })]);
+  const db = makeDb({ afterSnapshot: (sq) => sq.exec(`UPDATE lib_pages SET facts_json = '[{"key":"k.cron","value":"cron"}]', updated_at = 'u2' WHERE id = 'p-mr'`) });
+  db.sqlite.exec(
+    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-mr', 'classes', 'p-mr', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.old","value":"x"}]', 'u1')`
+  );
+  await runLibrarySeed({ db, libDir: dir, now: NOW });
+  assert.match(factsOf(db, "p-mr"), /k\.cron/);
+  assert.doesNotMatch(factsOf(db, "p-mr"), /k\.new/);
+});
