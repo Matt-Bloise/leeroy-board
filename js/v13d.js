@@ -107,6 +107,7 @@ const CORE = {
   signups() {
     const S = D.signups, me = MEM.member(); if (!S || !S.tallies) return null;
     const e = me && (S.entries || []).find((x) => K.cleanName(x.name).toLowerCase() === me.name.toLowerCase()), n = (S.tallies.rsvp.in || {}).count || 0;
+    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(), le = K.launchEvent(); return { a: `Launch night was ${le.when}. ${n} of ${D.party.members.length} had said they were in.${me ? (e && e.rsvp ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you was recorded.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: ["See the answers", () => unfold("signups", "rsvp")], who: signupWho }; }
     return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: ["Change my answer", () => unfold("signups", "rsvp")], who: signupWho };
   },
   librarian() { const st = D.stats; return st ? { a: `Type /ask in #wow-forever, or write below. Median answer: ${Math.round(st.median_s)} s.`, go: ["Ask Leeroy", () => { const t = $("#ask-text"); if (t) t.focus(); else unfold("librarian"); }] } : null; },

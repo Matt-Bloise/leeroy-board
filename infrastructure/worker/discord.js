@@ -58,6 +58,7 @@ import {
   QUIZ_DATA,
 } from "./bot-data.js";
 import { loadRoster } from "./party-source.js";
+import { tonightLines } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember } from "./sheet-privacy.js";
 import { canManageGuild } from "./setup-command.js";
@@ -900,23 +901,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       ]);
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
       const party = partyRow ? JSON.parse(partyRow.json) : { members: [] };
-      const inList = (signups.entries || []).filter((e) => e.rsvp === "in").map((e) => e.name);
-      const myEntry = (signups.entries || []).find(
-        (e) => (e.name || "").toLowerCase() === byName.toLowerCase()
-      );
-      const nextStep = !myEntry || !myEntry.rsvp
-        ? "Say whether you are **in** for launch night (`/signup rsvp:in`)."
-        : !myEntry.meet
-        ? "Pick where the party meets (`/signup meet:Valley of Strength` or `The Crossroads`)."
-        : "Your launch-night answers are in — check your character sheet with `/sheet`.";
-
-      const lines = [
-        `**Launch Night: Wed Nov 4, 6:00 PM ET** (<t:1793833200:F>)`,
-        `• **Party (${(party.members || []).length}):** ${(party.members || []).map((m) => `${m.name} (${m.race} ${m.class})`).join(" · ")}`,
-        `• **RSVP In (${inList.length}):** ${inList.length ? inList.join(", ") : "None yet"}`,
-        `• **Next for ${byName}:** ${nextStep}`,
-        `• **Board:** ${boardUrl}/#tonight`,
-      ];
+      const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
       return new Response(
         JSON.stringify({
           type: 4,

@@ -1234,7 +1234,7 @@ function splitPolls() {
   const p = D.party; if (!p) return false;
   const now = Date.now() / 1000, all = [...(p.polls || []), ...(p.polls_closed || [])], n = (p.polls || []).length;
   p.polls = all.filter((q) => !(q.closes_epoch <= now)); p.polls_closed = all.filter((q) => q.closes_epoch <= now);
-  return p.polls.length !== n;
+  return settleLaunch() || p.polls.length !== n;
 }
 function roles() {
   for (const m of (D.party && D.party.members) || []) {
@@ -1511,7 +1511,7 @@ function renderSeats(S) {
       s("text", { class: "seat-name", x, y: 192, text: m.name }),
       s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : "no answer yet" }));
   });
-  box.replaceChildren(h("h4", { class: "seats-cap", text: launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
+  box.replaceChildren(h("h4", { class: "seats-cap", text: launchPast() ? `The table for launch night, ${launchEvent().when} (answers as they stood)` : launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
 }
 const signupsOk = (S) => !!(S && S.tallies && S.tallies.pack && S.tallies.meet && S.tallies.rsvp && S.options && Array.isArray(S.options.meet));
 async function reloadOpt() {
@@ -1535,7 +1535,7 @@ function renderDiscordSignups() {
   const groups = [
     ["Pack", "ticket", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", "pin", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
-    ["Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
+    [launchPast() ? "Launch night, answers as they stood" : "Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
     ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
   body.replaceChildren(...groups.map(([title, icon, rows], gi) => h("div", { class: "tally", "data-q": ["pack", "meet", "rsvp", "when"][gi] }, h("h4", {}, emb(icon), title), ...rows)));
@@ -3444,6 +3444,17 @@ function yourTime(T) {
   const mine = f(), et = f("America/New_York");
   return mine === et ? "" : ` (${mine} your time)`;
 }
+/* Launch night is a dated past event once its epoch passes: the board says so and points at the next dated event in the timeline data. */
+function launchEvent() { return (D.timeline && D.timeline.events && D.timeline.events.find((x) => x.key === "launch")) || null; }
+function launchPast() { const e = launchEvent(); return !!(e && e.epoch && Date.now() / 1000 >= e.epoch); }
+function nextDated() { const now = Date.now() / 1000, ev = (D.timeline && D.timeline.events) || []; return ev.filter((x) => x.epoch && x.epoch > now).sort((a, b) => a.epoch - b.epoch)[0] || null; }
+function settleLaunch() {
+  const p = D.party; if (!p || !launchPast()) return false;
+  const e = launchEvent(), mv = (p.open || []).filter((o) => /^launch[- ]night/i.test(o.title)); if (!mv.length) return false;
+  p.open = p.open.filter((o) => !mv.includes(o));
+  p.settled_extra = [...(p.settled_extra || []), ...mv.map((o) => ({ text: /meeting point/i.test(o.title) ? `Launch-night meeting point: launch night has passed (${e.when}).` : `Launch night happened: ${e.when}.`, source: o.source || "group notes" }))];
+  return true;
+}
 function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `Launch: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
 /* the first screen for a visitor with no saved name: what the board is for, in four plain lines, and the one action that follows */
 const FIRST_RUN = Object.freeze({ go: "Show me what is next", purpose: Object.freeze(["This is the party board for our World of Warcraft: Forever group.", "It tells you what to do next, shows who is playing what, and collects the group's votes.", "Whatever you post in Discord (forms, build threads, votes) shows up here.", "Pick who you are below, or just look around."]) });
@@ -3696,7 +3707,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
