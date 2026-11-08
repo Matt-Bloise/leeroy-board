@@ -28,7 +28,41 @@ import { recomputeCategoryAndIndex } from "../worker/scraper.js";
 export const STAMP_NAME = "seed.stamp";
 // Rebuilt from lib_pages (or written by the cron): seeded only when absent, never overwritten from the repo.
 const DERIVED = new Set(["index.json", "search.json", "open.json", "refresh.json"]);
-const CHUNK = 30000; // characters per literal, well under D1's 100 KB statement limit
+const CHUNK_BYTES = 40000; // UTF-8 bytes of one ESCAPED literal (quotes doubled); a statement then stays far under D1's 100 KB limit
+export const MAX_STMT_BYTES = 80000; // any fully built statement above this aborts the whole seed before a single write
+
+/**
+ * Split on code-point boundaries (never inside a surrogate pair) so that each piece, after SQL quote doubling,
+ * is at most CHUNK_BYTES of UTF-8. A single code point is at most 4 bytes, so progress is guaranteed.
+ */
+export function chunkEscaped(str, maxBytes = CHUNK_BYTES) {
+  const out = [];
+  let cur = "";
+  let bytes = 0;
+  for (const ch of str) {
+    const b = ch === "'" ? 2 : Buffer.byteLength(ch);
+    if (bytes + b > maxBytes) {
+      out.push(cur);
+      cur = "";
+      bytes = 0;
+    }
+    cur += ch;
+    bytes += b;
+  }
+  if (cur || !out.length) out.push(cur);
+  return out;
+}
+
+function assertStatementSizes(units) {
+  for (const unit of units) {
+    for (const st of unit) {
+      const n = Buffer.byteLength(st);
+      if (n > MAX_STMT_BYTES) {
+        throw new Error(`Library seed aborted before any write: a statement is ${n} bytes (limit ${MAX_STMT_BYTES}): ${st.slice(0, 120).replace(/\s+/g, " ")}...`);
+      }
+    }
+  }
+}
 
 export function sqlStr(val) {
   if (val === null || val === undefined) return "NULL";
@@ -70,13 +104,20 @@ export function comparePage(repo, d1) {
   return 0;
 }
 
-function blobStatements(name, json, now) {
+/**
+ * One blob as a unit of statements. Guarded: the head only lands when the row is absent at the snapshot and still absent,
+ * or its updated_at is not newer than the snapshot (`snapUpdatedAt`). Chunk appends only apply while the row carries
+ * this write's `now` as updated_at, so a skipped head can never be followed by stray appends.
+ */
+function blobStatements(name, json, now, snapUpdatedAt) {
   const stamp = sha8(json);
-  const out = [
-    `INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES (${sqlStr(name)}, ${sqlStr(stamp)}, ${sqlStr(json.slice(0, CHUNK))}, ${sqlStr(now)});`,
-  ];
-  for (let i = CHUNK; i < json.length; i += CHUNK) {
-    out.push(`UPDATE lib_blobs SET json = json || ${sqlStr(json.slice(i, i + CHUNK))} WHERE name = ${sqlStr(name)};`);
+  const chunks = chunkEscaped(json);
+  const head = `INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES (${sqlStr(name)}, ${sqlStr(stamp)}, ${sqlStr(chunks[0])}, ${sqlStr(now)}) ON CONFLICT(name) DO UPDATE SET stamp = excluded.stamp, json = excluded.json, updated_at = excluded.updated_at WHERE ${
+    snapUpdatedAt === undefined ? "0" : `lib_blobs.updated_at <= ${sqlStr(snapUpdatedAt)}`
+  };`;
+  const out = [head];
+  for (let i = 1; i < chunks.length; i++) {
+    out.push(`UPDATE lib_blobs SET json = json || ${sqlStr(chunks[i])} WHERE name = ${sqlStr(name)} AND updated_at = ${sqlStr(now)};`);
   }
   return out;
 }
@@ -149,19 +190,19 @@ export function makeEnv(db) {
             return db.query(inline(sql, params))[0] || null;
           },
           async run() {
-            const big = params.findIndex((v) => typeof v === "string" && v.length > CHUNK);
+            const big = params.findIndex((v) => typeof v === "string" && Buffer.byteLength(v) > CHUNK_BYTES);
             if (big < 0) {
               db.exec([inline(sql, params)]);
               return {};
             }
-            const full = params[big];
+            const chunks = chunkEscaped(params[big]);
             const nameM = /name = '([^']+)'/.exec(sql);
             const name = nameM ? nameM[1] : params.find((v) => typeof v === "string" && /\.json$/.test(v));
             const head = params.slice();
-            head[big] = full.slice(0, CHUNK);
+            head[big] = chunks[0];
             const stmts = [inline(sql, head)];
-            for (let i = CHUNK; i < full.length; i += CHUNK) {
-              stmts.push(`UPDATE lib_blobs SET json = json || ${sqlStr(full.slice(i, i + CHUNK))} WHERE name = ${sqlStr(name)};`);
+            for (let i = 1; i < chunks.length; i++) {
+              stmts.push(`UPDATE lib_blobs SET json = json || ${sqlStr(chunks[i])} WHERE name = ${sqlStr(name)};`);
             }
             db.exec(stmts);
             return {};
@@ -174,8 +215,8 @@ export function makeEnv(db) {
 }
 
 /** Keep index.json totals/category counts in line with lib_pages (recomputeCategoryAndIndex only touches stamps). */
-function refreshIndexTotals(db, repoIndex) {
-  const row = db.query("SELECT json FROM lib_blobs WHERE name = 'index.json'")[0];
+function refreshIndexTotals(db, repoIndex, now) {
+  const row = db.query("SELECT json, updated_at FROM lib_blobs WHERE name = 'index.json'")[0];
   if (!row) return;
   let ix;
   try {
@@ -217,8 +258,13 @@ function refreshIndexTotals(db, repoIndex) {
       c.facts = m ? m.facts : 0;
     }
   }
+  // Same guard as every blob write: only if index.json still has the updated_at that was read (else skip; the final
+  // recompute pass refreshes stamps, and the next seed run corrects the counts).
   const json = JSON.stringify(ix);
-  db.exec([`UPDATE lib_blobs SET stamp = ${sqlStr(sha8(json))}, json = ${sqlStr(json.slice(0, CHUNK))} WHERE name = 'index.json';`, ...Array.from({ length: Math.ceil(json.length / CHUNK) - 1 }, (_, i) => `UPDATE lib_blobs SET json = json || ${sqlStr(json.slice((i + 1) * CHUNK, (i + 2) * CHUNK))} WHERE name = 'index.json';`)]);
+  const chunks = chunkEscaped(json);
+  const stmts = [`UPDATE lib_blobs SET stamp = ${sqlStr(sha8(json))}, json = ${sqlStr(chunks[0])}, updated_at = ${sqlStr(now)} WHERE name = 'index.json' AND updated_at = ${sqlStr(row.updated_at)};`];
+  for (let i = 1; i < chunks.length; i++) stmts.push(`UPDATE lib_blobs SET json = json || ${sqlStr(chunks[i])} WHERE name = 'index.json' AND updated_at = ${sqlStr(now)};`);
+  db.exec(stmts);
 }
 
 /**
@@ -284,7 +330,12 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   // Blobs that are not page-bearing (news, glossary, tooltips, ...): write the repo copy when D1 has none
   // or the repo's `generated` is newer. Category blobs, search, open and index are rebuilt below, except
   // that a missing one is seeded first so the rebuild has a base. index.json: repo wins only when newer.
-  const blobRows = new Map(db.query("SELECT name, json FROM lib_blobs").map((r) => [r.name, r.json]));
+  const blobRows = new Map();
+  const blobStamps = new Map(); // name -> updated_at at snapshot time
+  for (const r of db.query("SELECT name, json, updated_at FROM lib_blobs")) {
+    blobRows.set(r.name, r.json);
+    blobStamps.set(r.name, r.updated_at);
+  }
   const parses = (txt) => {
     try {
       JSON.parse(txt);
@@ -309,7 +360,7 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
     else if (!hasPages && !DERIVED.has(file)) write = String(parsed.generated || "") > genOf(d1Json);
     if (write) {
       say(`${file}: blob ${d1Json === undefined ? "absent in D1, seeding" : parses(d1Json) ? "repo newer" : "unparseable in D1, replacing"}`);
-      writes.push(blobStatements(file, repoJson, now));
+      writes.push(blobStatements(file, repoJson, now, blobStamps.get(file)));
       counts.blobs++;
     } else if (!hasPages) {
       say(`${file}: blob kept (D1 same or newer)`);
@@ -334,6 +385,9 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   for (const r of d1Pages.values()) rebuildCats.add(r.category);
   say(`Categories to rebuild: ${[...rebuildCats].sort().join(", ") || "none"}.`);
 
+  // Size check on every fully escaped statement BEFORE any write: one oversized statement aborts the whole seed.
+  assertStatementSizes(writes);
+
   if (dryRun) {
     say("Dry run: nothing written.");
     return { status: "dry-run", counts, lines, unbumped };
@@ -354,11 +408,11 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   // then one final pass (null) that refreshes index.json stamps.
   const env = makeEnv(db);
   const repoIndex = files.find((f) => f.file === "index.json");
-  refreshIndexTotals(db, repoIndex && repoIndex.parsed);
+  refreshIndexTotals(db, repoIndex && repoIndex.parsed, now);
   for (const cat of [...rebuildCats].sort()) await recomputeCategoryAndIndex(env, cat);
   await recomputeCategoryAndIndex(env, null);
 
-  db.exec(blobStatements(STAMP_NAME, hash, now));
+  db.exec(blobStatements(STAMP_NAME, hash, now, blobStamps.get(STAMP_NAME)));
   say(`Stamp ${STAMP_NAME} written (${hash.slice(0, 12)}).`);
   return { status: "seeded", counts, lines, unbumped };
 }

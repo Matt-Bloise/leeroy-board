@@ -1,0 +1,120 @@
+// Library seed: statement size limits, surrogate-safe chunking, and blob/index concurrency guards.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
+import { runLibrarySeed, chunkEscaped, MAX_STMT_BYTES } from "../../infrastructure/scripts/library-seed.mjs";
+
+const require = createRequire(import.meta.url);
+const { DatabaseSync } = require("node:sqlite");
+const SCHEMA = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../../infrastructure/schema.sql"), "utf8");
+const NOW = "2026-11-08T12:00:00.000Z";
+const EURO = "€";
+const EMOJI = "\u{1F600}";
+const bytes = (st) => Buffer.byteLength(st);
+
+function page(id, extra = {}) {
+  return { id, category: "classes", title: id, confidence: "confirmed", status: "current", as_of: "2026-11-07", checked: "2026-11-07", recheck_days: 7, blurb: "b", aliases: [], facts: [{ key: "k.f", value: "v" }], open: [], related: [], history: [], snapshots: [], ...extra };
+}
+
+function makeLibDir(pages, extraFiles = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "libseed-lim-"));
+  fs.writeFileSync(path.join(dir, "classes.json"), JSON.stringify({ key: "classes", title: "Classes", pages }));
+  fs.writeFileSync(path.join(dir, "index.json"), JSON.stringify({ generated: "2026-11-08T00:00:00Z", totals: {}, categories: [], pages: [], changes: [] }));
+  for (const [f, v] of Object.entries(extraFiles)) fs.writeFileSync(path.join(dir, f), JSON.stringify(v));
+  return dir;
+}
+
+function makeDb(afterQuery = null) {
+  const sqlite = new DatabaseSync(":memory:");
+  sqlite.exec(SCHEMA);
+  const log = [];
+  return {
+    sqlite,
+    log,
+    query: (sql) => {
+      const rows = sqlite.prepare(sql).all();
+      if (afterQuery) afterQuery(sqlite, sql);
+      return rows;
+    },
+    exec: (stmts) => {
+      for (const s of stmts) {
+        log.push(s);
+        sqlite.exec(s);
+      }
+    },
+  };
+}
+
+test("chunkEscaped is byte-aware for apostrophes and multibyte text, and lossless", () => {
+  const limit = 100;
+  for (const unit of ["a", "'", "é", EURO, EMOJI]) {
+    const str = unit.repeat(400);
+    const chunks = chunkEscaped(str, limit);
+    assert.equal(chunks.join(""), str);
+    for (const c of chunks) assert.ok(bytes(c.replace(/'/g, "''")) <= limit, `chunk within ${limit} bytes for ${JSON.stringify(unit)}`);
+  }
+});
+
+test("chunkEscaped never splits a surrogate pair: an emoji at the boundary moves to the next chunk", () => {
+  const chunks = chunkEscaped("x".repeat(99) + EMOJI + "y", 100);
+  assert.deepEqual(chunks.map((c) => c.length), [99, 3]);
+  for (const c of chunks) {
+    assert.ok(!/[\uD800-\uDBFF]$/.test(c), "no trailing high surrogate");
+    assert.ok(!/^[\uDC00-\uDFFF]/.test(c), "no leading low surrogate");
+  }
+});
+
+test("a page statement over the limit aborts the whole seed: no write at all (apostrophes, multibyte)", async () => {
+  for (const value of ["'".repeat(50000), EURO.repeat(30000)]) {
+    const db = makeDb();
+    const dir = makeLibDir([page("small"), page("huge", { facts: [{ key: "k.f", value }] })]);
+    await assert.rejects(runLibrarySeed({ db, libDir: dir, now: NOW }), /aborted before any write: a statement is \d+ bytes/);
+    assert.deepEqual(db.log, []);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM lib_pages").get().n, 0);
+  }
+});
+
+test("a large page just under the limit is accepted", async () => {
+  const db = makeDb();
+  await runLibrarySeed({ db, libDir: makeLibDir([page("big", { facts: [{ key: "k.f", value: "a".repeat(60000) }] })]), now: NOW });
+  assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM lib_pages").get().n, 1);
+});
+
+test("a big blob of apostrophes, euro signs and emoji is chunked within the limit and round-trips", async () => {
+  const value = `it's ${EURO}${EMOJI} `.repeat(20000);
+  const db = makeDb();
+  await runLibrarySeed({ db, libDir: makeLibDir([page("p1")], { "news.json": { generated: "2026-11-08", items: [value] } }), now: NOW });
+  for (const st of db.log) assert.ok(bytes(st) <= MAX_STMT_BYTES, "statement within limit");
+  assert.equal(JSON.parse(db.sqlite.prepare("SELECT json FROM lib_blobs WHERE name = 'news.json'").get().json).items[0], value);
+});
+
+test("blob concurrency: a blob changed in D1 after the snapshot is kept, with no stray chunk appends", async () => {
+  const db = makeDb((sq, sql) => {
+    if (sql === "SELECT name, json, updated_at FROM lib_blobs") {
+      sq.exec(`UPDATE lib_blobs SET json = '{"live":1}', updated_at = '2026-11-20T00:00:00Z' WHERE name = 'news.json'`);
+    }
+  });
+  db.sqlite.exec(`INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('news.json', 's', '{"generated":"2026-11-01"}', '2026-11-01T00:00:00Z')`);
+  const dir = makeLibDir([page("p1")], { "news.json": { generated: "2026-11-08", items: ["x".repeat(100000)] } });
+  await runLibrarySeed({ db, libDir: dir, now: NOW });
+  assert.equal(db.sqlite.prepare("SELECT json FROM lib_blobs WHERE name = 'news.json'").get().json, '{"live":1}');
+});
+
+test("index.json changed after it was read: the totals write is skipped, the concurrent write survives", async () => {
+  const db = makeDb((sq, sql) => {
+    if (sql === "SELECT json, updated_at FROM lib_blobs WHERE name = 'index.json'") {
+      sq.exec(
+        `UPDATE lib_blobs SET json = '{"generated":"2026-11-09","totals":{"pages":999},"categories":[],"concurrent":1}', updated_at = '2026-11-20T00:00:00Z' WHERE name = 'index.json'`
+      );
+    }
+  });
+  db.sqlite.exec(`INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('index.json', 's', '{"generated":"2026-11-09","totals":{},"categories":[]}', '2026-11-01T00:00:00Z')`);
+  await runLibrarySeed({ db, libDir: makeLibDir([page("p1")]), now: NOW });
+  const ix = JSON.parse(db.sqlite.prepare("SELECT json FROM lib_blobs WHERE name = 'index.json'").get().json);
+  assert.equal(ix.concurrent, 1);
+  assert.equal(ix.totals.pages, 999, "our totals were not applied over the concurrent write");
+});

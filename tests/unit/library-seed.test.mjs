@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { runLibrarySeed, comparePage, STAMP_NAME } from "../../infrastructure/scripts/library-seed.mjs";
+import { runLibrarySeed, comparePage, chunkEscaped, MAX_STMT_BYTES, STAMP_NAME } from "../../infrastructure/scripts/library-seed.mjs";
 
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite");
@@ -25,7 +25,7 @@ function makeLibDir(pages) {
   return dir;
 }
 
-function makeDb({ failOnExec = 0, afterSnapshot = null } = {}) {
+function makeDb({ failOnExec = 0, afterSnapshot = null, afterQuery = null } = {}) {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(SCHEMA);
   const log = [];
@@ -38,6 +38,7 @@ function makeDb({ failOnExec = 0, afterSnapshot = null } = {}) {
     query: (sql) => {
       const rows = sqlite.prepare(sql).all();
       if (afterSnapshot && /FROM lib_pages$/.test(sql)) afterSnapshot(sqlite); // a concurrent writer lands right after the snapshot read
+      if (afterQuery) afterQuery(sqlite, sql);
       return rows;
     },
     exec: (stmts) => {
@@ -237,12 +238,12 @@ test("emptied category: index.json count goes to zero", async () => {
 
 test("a chunked blob write is never split across batches; an unparseable D1 blob is replaced", async () => {
   const dir = makeLibDir(manyPages(25, "2026-11-07"));
-  fs.writeFileSync(path.join(dir, "news.json"), JSON.stringify({ generated: "2026-11-08", items: ["x".repeat(70000)] }));
+  fs.writeFileSync(path.join(dir, "news.json"), JSON.stringify({ generated: "2026-11-08", items: ["x".repeat(90000)] }));
   const db = makeDb();
   db.sqlite.exec(`INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('news.json', 's', '{"truncat', 'x')`);
   await runLibrarySeed({ db, libDir: dir, now: NOW });
-  const withHead = db.batches.filter((b) => b.some((st) => st.startsWith("INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES ('news.json'")));
+  const withHead = db.batches.filter((b) => b.some((st) => st.startsWith("INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('news.json'")));
   assert.equal(withHead.length, 1);
-  assert.ok(withHead[0].filter((st) => st.startsWith("UPDATE lib_blobs SET json = json ||") && st.includes("WHERE name = 'news.json'")).length >= 2, "all chunk appends in the same batch as the head");
-  assert.equal(JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'news.json'")[0].json).items[0].length, 70000);
+  assert.ok(withHead[0].filter((st) => st.startsWith("UPDATE lib_blobs SET json = json ||") && st.includes("WHERE name = 'news.json' AND updated_at")).length >= 2, "all chunk appends in the same batch as the head");
+  assert.equal(JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'news.json'")[0].json).items[0].length, 90000);
 });
