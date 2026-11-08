@@ -108,8 +108,10 @@ export function readLibraryFiles(libDir) {
 }
 
 /** sha256 of the concatenated file contents, in sorted file-name order. */
+export const SEED_ALGO = "seed-algo:2 (fact-level merge)";
 export function libraryHash(files) {
   const h = crypto.createHash("sha256");
+  h.update(SEED_ALGO + "\n"); // a change in what the seed does re-runs it even when the data files are unchanged
   for (const f of files) h.update(f.text);
   return h.digest("hex");
 }
@@ -172,7 +174,7 @@ export function missingFacts(repoPage, d1Row) {
 /** Append facts to a D1 page; only applies if the row is unchanged since the snapshot read (updated_at). */
 function factMergeStatement(d1Row, add, now) {
   const merged = JSON.stringify([...jsonOrEmpty(d1Row.facts_json), ...add]);
-  return `UPDATE lib_pages SET facts_json = ${sqlStr(merged)}, updated_at = ${sqlStr(now)} WHERE id = ${sqlStr(d1Row.id)} AND updated_at = ${sqlStr(d1Row.updated_at)};`;
+  return `UPDATE lib_pages SET facts_json = ${sqlStr(merged)}, updated_at = ${sqlStr(now)} WHERE id = ${sqlStr(d1Row.id)} AND updated_at IS ${sqlStr(d1Row.updated_at)};`;
 }
 
 /**
@@ -434,7 +436,7 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   }
 
   if (unbumped.length) {
-    say(`WARNING: repo content differs but as_of/checked not bumped (NOT applied): ${unbumped.join(", ")}`);
+    say(`WARNING: repo content differs but as_of/checked not bumped (NOT applied, except repo-only facts merged by key): ${unbumped.join(", ")}`);
   }
   say(
     `Pages: ${counts["repo newer"]} repo newer (${counts.inserted} new), ${counts["D1 newer"]} D1 newer, ${counts.same} same, ${counts.merged} with repo-only facts merged. Blobs written: ${counts.blobs}.`
