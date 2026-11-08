@@ -1074,6 +1074,9 @@ export async function findRecentSameAnswer(env, { intentId, question, share }) {
 // a visitor (no hash) never has one. Used only to rank and show the earlier question next to a follow-up.
 // A PUBLIC follow-up (share true) only ever sees a public earlier question: a private one must not reach a prompt whose answer is posted for everyone. A private follow-up
 // may use either. DISTINCT, because a Discord member has two asker hashes and each turn would otherwise come back twice and push the question out of the window.
+// A follow-up opener names a topic only when something is left after the scaffold, pronouns, determiners and filler are removed. Letters and digits of any script count.
+const OPENER_FILLER = /\b(?:the|a|an|that|this|it|its|itself|him|his|himself|her|hers|herself|he|she|they|them|their|theirs|themselves|there|here|you|your|yours|yourself|i|me|my|mine|myself|we|us|our|ours|ourselves|those|these|one|ones|too|then|also|and|or|but|so|ok|okay|now|today|other|another|else|something|anything|same)\b/gi;
+function openerHasTopic(q) { return stripFollowUpScaffold(q).replace(OPENER_FILLER, " ").replace(/[^\p{L}\p{N}]+/gu, "") !== ""; }
 export async function findPreviousQuestion(env, { intentId, share = false }) {
   try {
     const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
@@ -1081,8 +1084,9 @@ export async function findPreviousQuestion(env, { intentId, share = false }) {
       "SELECT DISTINCT t.id, t.question, t.created_at FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
         `WHERE a1.intent_id = ? AND t.id <> ? AND t.created_at > ? ${share ? "AND t.share = 1 " : ""}ORDER BY t.created_at DESC LIMIT 20`
     ).bind(String(intentId), String(intentId), since).all();
-    // Walk back (newest first) to the first STANDALONE turn. An explicit follow-up has no topic of its own, and neither has a "what about ..." opener (it may have
-    // used the turn before it), so both are skipped; a real question that merely starts "ok so ..." is standalone. When only openers exist, the newest opener is used.
+    // Walk back (newest first) to the first STANDALONE turn. An explicit follow-up has no topic of its own and is skipped. A "what about ..." opener that NAMES something
+    // ("what about the mage?") is the latest topic and is returned; one made only of pronouns and filler ("what about her?") has no topic and is skipped like a follow-up.
+    // A real question that merely starts "ok so ..." is standalone. When only topic-less openers exist, the newest one is used.
     let opener = null;
     for (const r of results || []) {
       const q = String(r.question || "");
@@ -1090,7 +1094,7 @@ export async function findPreviousQuestion(env, { intentId, share = false }) {
       if (isFollowUpOpener(q)) {
         // Topic drift: "what about the mage?" names a new topic, so it IS the latest topic for a later bare "again?"; skipping it resolved to the older question.
         // A pronoun-only opener ("what about that") has no topic of its own and is still skipped.
-        if (stripFollowUpScaffold(q).replace(/\b(?:the|a|an|that|this|it|its|him|his|her|hers|he|she|they|them|their|there|here|you|your|yours|i|me|my|mine|we|us|our|ours|those|these|one|ones|too|then|also|and|or|but|so|ok|okay)\b/gi, " ").replace(/[^a-z0-9]+/gi, "")) return q;
+        if (openerHasTopic(q)) return q;
         opener = opener || q; continue;
       }
       return q;
