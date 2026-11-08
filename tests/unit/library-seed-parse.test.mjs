@@ -25,6 +25,18 @@ test("a bracket inside a progress line does not hide the real payload", () => {
   assert.deepEqual(parseWranglerJson(noisy), payload);
 });
 test("garbage throws with the start of the output", () => {
-  assert.throws(() => parseWranglerJson("├ Checking if file needs uploading\nERROR something broke\n"), /no JSON payload; output starts: ├ Checking if file needs uploading ERROR/);
-  assert.throws(() => parseWranglerJson(""), /no JSON payload/);
+  assert.throws(() => parseWranglerJson("├ Checking if file needs uploading\nERROR something broke\n"), /no d1 JSON payload; output starts: ├ Checking if file needs uploading ERROR/);
+  assert.throws(() => parseWranglerJson(""), /no d1 JSON payload/);
+});
+test("an unrelated JSON line before the real payload is not mistaken for it (council review)", () => {
+  assert.deepEqual(parseWranglerJson("{}\n" + json), payload);
+  assert.deepEqual(parseWranglerJson("[123]\n[\"info\"]\n" + json), payload);
+});
+test("a truncated response is rejected, not turned into an empty result", () => {
+  const truncated = json.slice(0, Math.floor(json.length / 2));
+  assert.throws(() => parseWranglerJson("├ working\n" + truncated), /no d1 JSON payload/);
+  assert.throws(() => parseWranglerJson("{}\n"), /no d1 JSON payload/);
+});
+test("a failed statement result is rejected", () => {
+  assert.throws(() => parseWranglerJson(JSON.stringify([{ results: [], success: false }])), /no d1 JSON payload/);
 });
