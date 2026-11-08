@@ -37,7 +37,8 @@ export function parseWranglerJson(stdout) {
   const lines = text.split(/\r?\n/);
   const accept = (candidate) => { try { const v = JSON.parse(candidate); return isD1Payload(v) ? { v } : null; } catch { return null; } };
   for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].trimStart();
+    // only a line that starts at column 0 can open the payload: wrangler pretty-prints, so a statement object nested inside an array is indented and must never be accepted on its own
+    const t = lines[i];
     if (!(t.startsWith("[") || t.startsWith("{"))) continue;
     // longest first, then shrink from the end past trailing log lines
     for (let j = lines.length; j > i; j--) { const hit = accept(lines.slice(i, j).join("\n")); if (hit) return hit.v; }

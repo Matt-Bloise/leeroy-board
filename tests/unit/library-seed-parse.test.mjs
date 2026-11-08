@@ -37,6 +37,12 @@ test("a truncated response is rejected, not turned into an empty result", () => 
   assert.throws(() => parseWranglerJson("├ working\n" + truncated), /no d1 JSON payload/);
   assert.throws(() => parseWranglerJson("{}\n"), /no d1 JSON payload/);
 });
+test("a nested statement of a rejected or truncated array is never accepted on its own (council review)", () => {
+  const failedFirst = JSON.stringify([{ results: [], success: false }, { results: [{ id: "x" }], success: true }], null, 2);
+  assert.throws(() => parseWranglerJson("├ working\n" + failedFirst), /no d1 JSON payload/);
+  const noClosingBracket = failedFirst.replace(/\n\]$/, "");
+  assert.throws(() => parseWranglerJson("├ working\n" + noClosingBracket), /no d1 JSON payload/);
+});
 test("a failed statement result is rejected", () => {
   assert.throws(() => parseWranglerJson(JSON.stringify([{ results: [], success: false }])), /no d1 JSON payload/);
 });
