@@ -25,6 +25,27 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { recomputeCategoryAndIndex } from "../worker/scraper.js";
 
+// Wrangler's stdout is not pure JSON in CI: it can print progress lines ("├ Checking if file needs uploading"), a banner and ANSI colours before the --json payload,
+// and log lines after it (first production run, Nov 8 2026: JSON.parse failed on "├"). Strip colours, then try each line that starts a JSON array or object, through the end
+// of the output, until one parses. If none does, throw with the start of the output so the log shows what wrangler said.
+// A candidate counts only if it has wrangler's d1 --json shape: an array of statement results, each an object with a `results` array (and success not false), or one such object.
+// Anything else (an unrelated JSON log line, a truncated response) is skipped; with no valid candidate the parser throws instead of returning an empty result.
+const isD1Result = (x) => !!x && typeof x === "object" && !Array.isArray(x) && Array.isArray(x.results) && x.success !== false;
+const isD1Payload = (x) => (Array.isArray(x) ? x.length > 0 && x.every(isD1Result) : isD1Result(x));
+export function parseWranglerJson(stdout) {
+  const text = String(stdout || "").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+  const lines = text.split(/\r?\n/);
+  const accept = (candidate) => { try { const v = JSON.parse(candidate); return isD1Payload(v) ? { v } : null; } catch { return null; } };
+  for (let i = 0; i < lines.length; i++) {
+    // only a line that starts at column 0 can open the payload: wrangler pretty-prints, so a statement object nested inside an array is indented and must never be accepted on its own
+    const t = lines[i];
+    if (!(t.startsWith("[") || t.startsWith("{"))) continue;
+    // longest first, then shrink from the end past trailing log lines
+    for (let j = lines.length; j > i; j--) { const hit = accept(lines.slice(i, j).join("\n")); if (hit) return hit.v; }
+  }
+  throw new Error("wrangler output holds no d1 JSON payload; output starts: " + text.slice(0, 300).replace(/\s+/g, " "));
+}
+
 export const STAMP_NAME = "seed.stamp";
 // Rebuilt from lib_pages (or written by the cron): seeded only when absent, never overwritten from the repo.
 const DERIVED = new Set(["index.json", "search.json", "open.json", "refresh.json"]);
@@ -469,7 +490,7 @@ export async function makeWranglerDb({ dbName, isRemote, infraDir }) {
   };
   return {
     query(sql) {
-      const out = JSON.parse(run(sql));
+      const out = parseWranglerJson(run(sql));
       const last = Array.isArray(out) ? out[out.length - 1] : out;
       return (last && last.results) || [];
     },
