@@ -480,6 +480,12 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   return { status: "seeded", counts, lines, unbumped };
 }
 
+// One SQL script from several statements. Every statement must end with ";": the Worker's own statements (scraper.js recomputeCategoryAndIndex) have none,
+// so joining them with a newline made "INSERT ... excluded.updated_at\nUPDATE ..." a syntax error and the whole file was rejected (production run 3, Nov 8 2026).
+export function joinStatements(statements) {
+  return statements.map((s) => { const t = String(s).trimEnd(); return t.endsWith(";") ? t : t + ";"; }).join("\n");
+}
+
 // The rows of a read: the last statement result's `results` array. A response without one is an error, never an empty table.
 export function rowsFromWrangler(stdout) {
   const out = parseWranglerJson(stdout);
@@ -521,7 +527,7 @@ export async function makeWranglerDb({ dbName, isRemote, infraDir }) {
       return rowsFromWrangler(run(sql, true));
     },
     exec(statements) {
-      if (statements.length) run(statements.join("\n"));
+      if (statements.length) run(joinStatements(statements));
     },
   };
 }
