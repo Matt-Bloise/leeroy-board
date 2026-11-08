@@ -36,10 +36,10 @@ test("before launch: keeps the sign-up prompt", () => {
 import vm from "node:vm";
 const src = fs.readFileSync("js/board.js", "utf8");
 const grab = (name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name); const eol = src.indexOf("\n", i); return src.slice(i, src.slice(i, eol).trimEnd().endsWith("{") ? src.indexOf("\n}", i) + 2 : eol); };
-function boardFns(nowSec) {
-  const D = { party: JSON.parse(fs.readFileSync("data/party.json", "utf8")), timeline: JSON.parse(fs.readFileSync("data/tonight.json", "utf8")) };
-  const ctx = { D, Date: { now: () => nowSec * 1000 } };
-  vm.runInNewContext(["launchEvent", "launchPast", "nextDated", "settleLaunch"].map(grab).join("\n") + "\nthis.out={settleLaunch,nextDated,launchPast};", ctx);
+function boardFns(nowSec, timelineFile = "data/tonight.json") {
+  const D = { party: JSON.parse(fs.readFileSync("data/party.json", "utf8")), timeline: JSON.parse(fs.readFileSync(timelineFile, "utf8")) };
+  const ctx = { D, Date: { now: () => nowSec * 1000 }, fmtWhen: (epoch) => `WHEN(${epoch})` };
+  vm.runInNewContext(["withWhen", "launchEvent", "launchPast", "nextDated", "settleLaunch"].map(grab).join("\n") + "\nthis.out={settleLaunch,nextDated,launchPast};", ctx);
   return { D, ...ctx.out };
 }
 test("Ledger: after launch, launch-night items leave Still open and land in Settled with the date", () => {
@@ -55,4 +55,12 @@ test("Ledger: before launch nothing moves; next dated event after launch is Raid
   const b = boardFns(LAUNCH_EPOCH - 60);
   assert.equal(b.settleLaunch(), false);
   assert.equal(boardFns(LAUNCH_EPOCH + 60).nextDated().label, "Raids open");
+});
+test("Timeline events without a when text get one: 'Launch night was undefined' reached production on Nov 8", () => {
+  const b = boardFns(LAUNCH_EPOCH + 86400, "data/timeline.json");
+  assert.ok(b.launchPast());
+  assert.match(String(b.nextDated().when), /^WHEN\(\d+\)$/);
+  assert.equal(b.settleLaunch(), true);
+  assert.ok(!JSON.stringify(b.D.party.settled_extra).includes("undefined"));
+  assert.ok(b.D.party.settled_extra.some((x) => x.text.includes(`WHEN(${LAUNCH_EPOCH})`)));
 });
