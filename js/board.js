@@ -3445,9 +3445,11 @@ function yourTime(T) {
   return mine === et ? "" : ` (${mine} your time)`;
 }
 /* Launch night is a dated past event once its epoch passes: the board says so and points at the next dated event in the timeline data. */
-function launchEvent() { return (D.timeline && D.timeline.events && D.timeline.events.find((x) => x.key === "launch")) || null; }
+/* timeline.json events carry an epoch but no `when` text (tonight.json events do): fill it so "Launch night was undefined" cannot reach a page */
+function withWhen(e) { return e && !e.when && e.epoch ? { ...e, when: fmtWhen(e.epoch) } : e; }
+function launchEvent() { return withWhen((D.timeline && D.timeline.events && D.timeline.events.find((x) => x.key === "launch")) || null); }
 function launchPast() { const e = launchEvent(); return !!(e && e.epoch && Date.now() / 1000 >= e.epoch); }
-function nextDated() { const now = Date.now() / 1000, ev = (D.timeline && D.timeline.events) || []; return ev.filter((x) => x.epoch && x.epoch > now).sort((a, b) => a.epoch - b.epoch)[0] || null; }
+function nextDated() { const now = Date.now() / 1000, ev = (D.timeline && D.timeline.events) || []; return ev.filter((x) => x.epoch && x.epoch > now).sort((a, b) => a.epoch - b.epoch).map(withWhen)[0] || null; }
 function settleLaunch() {
   const p = D.party; if (!p || !launchPast()) return false;
   const e = launchEvent(), mv = (p.open || []).filter((o) => /^launch[- ]night/i.test(o.title)); if (!mv.length) return false;
