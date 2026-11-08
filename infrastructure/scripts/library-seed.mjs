@@ -315,7 +315,10 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   }
 
   const d1Pages = new Map();
-  for (const r of db.query("SELECT * FROM lib_pages")) d1Pages.set(r.id, r);
+  for (const r of db.query("SELECT * FROM lib_pages")) {
+    if (!r || r.id === undefined) throw new Error("lib_pages read returned a row without an id: the read path is broken (first production run, Nov 8 2026: reads through --file returned no rows). Nothing was written.");
+    d1Pages.set(r.id, r);
+  }
 
   const counts = { "repo newer": 0, "D1 newer": 0, same: 0, inserted: 0, blobs: 0 };
   const writes = []; // units: a unit (one page, or one blob with its chunk appends) is never split across batches
@@ -365,8 +368,14 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   const blobRows = new Map();
   const blobStamps = new Map(); // name -> updated_at at snapshot time
   for (const r of db.query("SELECT name, json, updated_at FROM lib_blobs")) {
+    if (!r || r.name === undefined) throw new Error("lib_blobs read returned a row without a name: the read path is broken. Nothing was written.");
     blobRows.set(r.name, r.json);
     blobStamps.set(r.name, r.updated_at);
+  }
+  // A live database always holds index.json. No pages and no index.json means a failed read or the wrong database, and a
+  // "first-time seed" of production would overwrite live content: refuse unless the operator says this really is a new database.
+  if (d1Pages.size === 0 && !blobRows.has("index.json") && process.env.LIBRARY_SEED_ALLOW_EMPTY !== "1") {
+    throw new Error("D1 shows no Library pages and no index.json. Refusing to seed: this looks like a failed read or the wrong database. Set LIBRARY_SEED_ALLOW_EMPTY=1 only for a brand-new database. Nothing was written.");
   }
   const parses = (txt) => {
     try {
@@ -471,26 +480,35 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   return { status: "seeded", counts, lines, unbumped };
 }
 
-/** Real D1 access through wrangler (remote or local). Reads and writes go through --file. */
+/**
+ * The wrangler argument list for one D1 call. WRITES go through --file (the bulk path). READS must use --command: on a remote
+ * database --file is the import path, which returns a summary and NO rows, so every SELECT looked empty (first production run, Nov 8 2026).
+ */
+export function wranglerD1Args({ dbName, isRemote, sql, file, persistTo }) {
+  const args = ["wrangler", "d1", "execute", dbName, isRemote ? "--remote" : "--local", file ? `--file=${file}` : `--command=${sql}`, "--json"];
+  if (persistTo && !isRemote) args.push("--persist-to", persistTo);
+  return args;
+}
+
+/** Real D1 access through wrangler (remote or local). Reads use --command, writes use --file. */
 export async function makeWranglerDb({ dbName, isRemote, infraDir }) {
   const { execFileSync } = await import("node:child_process");
-  const run = (sql) => {
-    const f = path.join(infraDir, `.seed-lib-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sql`);
-    fs.writeFileSync(f, sql, "utf8");
+  const run = (sql, isRead = false) => {
+    const f = isRead ? null : path.join(infraDir, `.seed-lib-${process.pid}-${crypto.randomBytes(4).toString("hex")}.sql`);
+    if (f) fs.writeFileSync(f, sql, "utf8");
     try {
-      const args = ["wrangler", "d1", "execute", dbName, isRemote ? "--remote" : "--local", `--file=${f}`, "--json"];
-      if (process.env.D1_PERSIST_TO && !isRemote) args.push("--persist-to", process.env.D1_PERSIST_TO);
+      const args = wranglerD1Args({ dbName, isRemote, sql, file: f, persistTo: process.env.D1_PERSIST_TO });
       // A shell is needed only on Windows (npx is npx.cmd); there the arguments are quoted. Elsewhere no shell, so nothing is re-parsed.
       const win = process.platform === "win32";
       const argv = win ? args.map((a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)) : args;
       return execFileSync("npx", argv, { cwd: infraDir, shell: win, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
     } finally {
-      if (fs.existsSync(f)) fs.unlinkSync(f);
+      if (f && fs.existsSync(f)) fs.unlinkSync(f);
     }
   };
   return {
     query(sql) {
-      const out = parseWranglerJson(run(sql));
+      const out = parseWranglerJson(run(sql, true));
       const last = Array.isArray(out) ? out[out.length - 1] : out;
       return (last && last.results) || [];
     },

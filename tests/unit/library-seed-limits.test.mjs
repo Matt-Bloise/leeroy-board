@@ -164,6 +164,7 @@ test("a skipped guarded index.json totals write blocks the stamp", async () => {
 });
 
 import { makeEnv } from "../../infrastructure/scripts/library-seed.mjs";
+process.env.LIBRARY_SEED_ALLOW_EMPTY = "1"; // these tests seed a brand-new in-memory database; the empty-database guard is tested in library-seed-reads.test.mjs
 
 const wordFor = (n) => {
   let w = "";
