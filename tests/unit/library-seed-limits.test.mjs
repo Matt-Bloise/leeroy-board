@@ -118,3 +118,47 @@ test("index.json changed after it was read: the totals write is skipped, the con
   assert.equal(ix.concurrent, 1);
   assert.equal(ix.totals.pages, 999, "our totals were not applied over the concurrent write");
 });
+
+const stampRows = (db) => db.sqlite.prepare("SELECT 1 FROM lib_blobs WHERE name = 'seed.stamp'").all().length;
+
+test("a live page write that interleaves with the rebuild: no stamp, warning, next run stamps", async () => {
+  let fired = false;
+  const db = makeDb((sq, sql) => {
+    if (!fired && sql.startsWith("SELECT * FROM lib_pages WHERE category = 'classes'")) {
+      fired = true;
+      sq.exec(`UPDATE lib_pages SET facts_json = '[{"key":"k","value":"cron"}]', updated_at = '2026-11-20T00:00:00Z' WHERE id = 'p1'`);
+    }
+  });
+  const dir = makeLibDir([page("p1")]);
+  const lines = [];
+  const r = await runLibrarySeed({ db, libDir: dir, now: NOW, log: (l) => lines.push(l) });
+  assert.equal(r.status, "not-stamped");
+  assert.equal(stampRows(db), 0);
+  assert.ok(lines.includes("::warning::library seed: a concurrent edit was detected, not stamping; the next deploy retries"));
+  assert.deepEqual(r.interleaved, ["page p1"]);
+  const r2 = await runLibrarySeed({ db, libDir: dir, now: "2026-11-21T00:00:00.000Z" });
+  assert.equal(r2.status, "seeded");
+  assert.equal(stampRows(db), 1);
+});
+
+test("a foreign blob write during the run blocks the stamp; the seed's own writes do not", async () => {
+  const db = makeDb((sq, sql) => {
+    if (sql.startsWith("SELECT * FROM lib_pages WHERE category = 'classes'")) {
+      sq.exec(`INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES ('refresh.json', 's', '{"cron":1}', '2026-11-20T00:00:00Z')`);
+    }
+  });
+  const r = await runLibrarySeed({ db, libDir: makeLibDir([page("p1")]), now: NOW });
+  assert.equal(r.status, "not-stamped");
+  assert.deepEqual(r.interleaved, ["blob refresh.json"]);
+  assert.equal(stampRows(db), 0);
+});
+
+test("a skipped guarded index.json totals write blocks the stamp", async () => {
+  const db = makeDb((sq, sql) => {
+    if (sql === "SELECT json, updated_at FROM lib_blobs WHERE name = 'index.json'") sq.exec(`UPDATE lib_blobs SET updated_at = '2026-11-20T00:00:00Z' WHERE name = 'index.json'`);
+  });
+  db.sqlite.exec(`INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('index.json', 's', '{"generated":"2026-11-09","totals":{},"categories":[]}', '2026-11-01T00:00:00Z')`);
+  const r = await runLibrarySeed({ db, libDir: makeLibDir([page("p1")]), now: NOW });
+  assert.equal(r.status, "not-stamped");
+  assert.equal(stampRows(db), 0);
+});

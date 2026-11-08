@@ -166,7 +166,7 @@ function insertPart(p, now, cols) {
  * with `?` placeholders inlined as SQL literals. A bound string longer than CHUNK is split into
  * a short INSERT/UPDATE plus `json = json || ...` appends (D1 caps a statement at 100 KB).
  */
-export function makeEnv(db) {
+export function makeEnv(db, ownBlobs = new Set()) {
   const inline = (sql, params) => {
     let i = 0;
     return sql.replace(/\?/g, () => {
@@ -190,6 +190,9 @@ export function makeEnv(db) {
             return db.query(inline(sql, params))[0] || null;
           },
           async run() {
+            // Record which lib_blobs rows the Worker function writes, so the interleaving check can tell them from foreign writes.
+            const m = /INTO lib_blobs \(name[^)]*\) VALUES \('([^']+)'/.exec(inline(sql, params).slice(0, 300)) || /UPDATE lib_blobs .*? WHERE name = '([^']+)'/s.exec(inline(sql, params).slice(0, 400));
+            if (m) ownBlobs.add(m[1]);
             const big = params.findIndex((v) => typeof v === "string" && Buffer.byteLength(v) > CHUNK_BYTES);
             if (big < 0) {
               db.exec([inline(sql, params)]);
@@ -217,12 +220,12 @@ export function makeEnv(db) {
 /** Keep index.json totals/category counts in line with lib_pages (recomputeCategoryAndIndex only touches stamps). */
 function refreshIndexTotals(db, repoIndex, now) {
   const row = db.query("SELECT json, updated_at FROM lib_blobs WHERE name = 'index.json'")[0];
-  if (!row) return;
+  if (!row) return true;
   let ix;
   try {
     ix = JSON.parse(row.json);
   } catch {
-    return;
+    return true;
   }
   // Category list: add keys the repo index has and D1's lacks (counts are corrected just below); keep D1's own entries.
   if (repoIndex && Array.isArray(repoIndex.categories)) {
@@ -265,6 +268,8 @@ function refreshIndexTotals(db, repoIndex, now) {
   const stmts = [`UPDATE lib_blobs SET stamp = ${sqlStr(sha8(json))}, json = ${sqlStr(chunks[0])}, updated_at = ${sqlStr(now)} WHERE name = 'index.json' AND updated_at = ${sqlStr(row.updated_at)};`];
   for (let i = 1; i < chunks.length; i++) stmts.push(`UPDATE lib_blobs SET json = json || ${sqlStr(chunks[i])} WHERE name = 'index.json' AND updated_at = ${sqlStr(now)};`);
   db.exec(stmts);
+  const after = db.query("SELECT updated_at FROM lib_blobs WHERE name = 'index.json'")[0];
+  return !!after && after.updated_at === now; // false: the guard skipped the write because index.json changed under us
 }
 
 /**
@@ -292,6 +297,8 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   const counts = { "repo newer": 0, "D1 newer": 0, same: 0, inserted: 0, blobs: 0 };
   const writes = []; // units: a unit (one page, or one blob with its chunk appends) is never split across batches
   const unbumped = [];
+  const intendedPages = new Set();
+  const intendedBlobs = new Set();
   // Every category present in the repo files is rebuilt on every run that does not skip on the stamp, plus the
   // old category of any page that moved. A failed run therefore cannot leave a stale category blob behind:
   // the retry rebuilds them all, and the stamp is written only after that.
@@ -316,6 +323,7 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
         if (c === 0 && contentHash(canonRepo(p)) !== contentHash(canonRow(d1))) unbumped.push(p.id);
         say(`${p.id}: ${verdict}`);
         if (verdict === "repo newer") {
+          intendedPages.add(p.id);
           if (d1.category !== p.category) rebuildCats.add(d1.category);
           writes.push([pageStatement(p, now)]);
         }
@@ -323,6 +331,7 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
         continue;
       }
       counts[verdict]++;
+      intendedPages.add(p.id);
       writes.push([pageStatement(p, now)]);
     }
   }
@@ -360,6 +369,7 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
     else if (!hasPages && !DERIVED.has(file)) write = String(parsed.generated || "") > genOf(d1Json);
     if (write) {
       say(`${file}: blob ${d1Json === undefined ? "absent in D1, seeding" : parses(d1Json) ? "repo newer" : "unparseable in D1, replacing"}`);
+      intendedBlobs.add(file);
       writes.push(blobStatements(file, repoJson, now, blobStamps.get(file)));
       counts.blobs++;
     } else if (!hasPages) {
@@ -406,11 +416,32 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
 
   // Rebuild derived blobs with the Worker's own function. Category blobs for touched categories,
   // then one final pass (null) that refreshes index.json stamps.
-  const env = makeEnv(db);
+  const ownBlobs = new Set(["index.json"]); // recompute always rewrites index.json
+  const env = makeEnv(db, ownBlobs);
   const repoIndex = files.find((f) => f.file === "index.json");
-  refreshIndexTotals(db, repoIndex && repoIndex.parsed, now);
+  let interleaved = [];
+  if (!refreshIndexTotals(db, repoIndex && repoIndex.parsed, now)) interleaved.push("index.json (totals write skipped)");
   for (const cat of [...rebuildCats].sort()) await recomputeCategoryAndIndex(env, cat);
   await recomputeCategoryAndIndex(env, null);
+
+  // Stamp only if nothing changed under the seed: every lib_pages row must be at its snapshot version (or ours),
+  // every lib_blobs row too (rows the seed or the Worker rebuild function wrote are exempt). Anything else is a concurrent
+  // edit, including one that interleaved with the rebuild (the rebuild has no version guard of its own).
+  for (const r of db.query("SELECT id, updated_at FROM lib_pages")) {
+    const snap = d1Pages.get(r.id);
+    const ok = intendedPages.has(r.id) ? r.updated_at === now : snap ? r.updated_at === snap.updated_at : r.updated_at === now;
+    if (!ok) interleaved.push(`page ${r.id}`);
+  }
+  for (const r of db.query("SELECT name, updated_at FROM lib_blobs")) {
+    if (r.name === STAMP_NAME || ownBlobs.has(r.name)) continue;
+    const ok = intendedBlobs.has(r.name) ? r.updated_at === now : blobStamps.has(r.name) && r.updated_at === blobStamps.get(r.name);
+    if (!ok) interleaved.push(`blob ${r.name}`);
+  }
+  if (interleaved.length) {
+    say("::warning::library seed: a concurrent edit was detected, not stamping; the next deploy retries");
+    say(`Changed under the seed: ${interleaved.slice(0, 20).join(", ")}`);
+    return { status: "not-stamped", counts, lines, unbumped, interleaved };
+  }
 
   db.exec(blobStatements(STAMP_NAME, hash, now, blobStamps.get(STAMP_NAME)));
   say(`Stamp ${STAMP_NAME} written (${hash.slice(0, 12)}).`);
@@ -426,7 +457,10 @@ export async function makeWranglerDb({ dbName, isRemote, infraDir }) {
     try {
       const args = ["wrangler", "d1", "execute", dbName, isRemote ? "--remote" : "--local", `--file=${f}`, "--json"];
       if (process.env.D1_PERSIST_TO && !isRemote) args.push("--persist-to", process.env.D1_PERSIST_TO);
-      return execFileSync("npx", args, { cwd: infraDir, shell: true, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+      // A shell is needed only on Windows (npx is npx.cmd); there the arguments are quoted. Elsewhere no shell, so nothing is re-parsed.
+      const win = process.platform === "win32";
+      const argv = win ? args.map((a) => (/[\s"&|<>^()]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)) : args;
+      return execFileSync("npx", argv, { cwd: infraDir, shell: win, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
     } finally {
       if (fs.existsSync(f)) fs.unlinkSync(f);
     }
