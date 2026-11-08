@@ -71,6 +71,15 @@ test("known limit: the topic opener replaces Q1 wholesale, so Q1's predicate is 
   await turn(env, "k2", "again?", iso(0));
   assert.equal(await findPreviousQuestion(env, { intentId: "k2", share: true }), "what about mages?");
 });
+test("topic-less openers ('what about mine', 'something else', 'yourself', 'the other one') are skipped; a non-Latin topic counts", async () => {
+  for (const [n, opener, skip] of [["u1", "what about mine?", true], ["u2", "what about something else", true], ["u3", "what about yourself", true], ["u4", "what about the other one", true], ["u5", "what about 法师", false]]) {
+    const env = makeEnv();
+    await turn(env, n + "a", "what is the best spec for a paladin", iso(30));
+    await turn(env, n + "b", opener, iso(20));
+    await turn(env, n + "c", "again?", iso(0));
+    assert.equal(await findPreviousQuestion(env, { intentId: n + "c", share: true }), skip ? "what is the best spec for a paladin" : opener, opener);
+  }
+});
 test("topic drift: 'again?' after Q1 -> 'what about the mage?' ranks the mage page, not paladin", async () => {
   const env = makeEnv();
   await turn(env, "d0", "what is the best spec for a paladin", iso(30));
