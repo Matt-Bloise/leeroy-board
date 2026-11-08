@@ -27,6 +27,7 @@ for (const [size, opts] of CTX) {
   const box = page.locator("#ps-sample");
   await box.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
   ok(`${tag} sample sheet is visible without an identity`, await box.isVisible());
+  await box.locator("details").evaluate((d) => { d.open = true; }).catch(() => {}); // the example is collapsed under "See an example"
   const t = (await box.innerText().catch(() => "")).replace(/\s+/g, " ");
   ok(`${tag} it is labelled "Sample guild"`, /Sample guild/.test(t), t.slice(0, 80));
   ok(`${tag} it lists five fictional members`, (await box.locator("li").count()) === 5 && /Brindle Oakhand/.test(t));

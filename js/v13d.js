@@ -107,8 +107,8 @@ const CORE = {
   signups() {
     const S = D.signups, me = MEM.member(); if (!S || !S.tallies) return null;
     const e = me && (S.entries || []).find((x) => K.cleanName(x.name).toLowerCase() === me.name.toLowerCase()), n = (S.tallies.rsvp.in || {}).count || 0;
-    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(), le = K.launchEvent(); return { a: `Launch night was ${le.when}. ${n} of ${D.party.members.length} had said they were in.${me ? (e && e.rsvp ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you was recorded.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: ["See the answers", () => unfold("signups", "rsvp")], who: signupWho }; }
-    return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: ["Change my answer", () => unfold("signups", "rsvp")], who: signupWho };
+    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(), le = K.launchEvent(); return { a: `Launch night was ${le.when}. ${n} of ${D.party.members.length} had said they were in.${me ? (e && e.rsvp ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you was recorded.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: me ? ["See the answers", () => unfold("signups", "rsvp")] : null, who: signupWho }; }
+    return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: me ? ["Change my answer", () => unfold("signups", "rsvp")] : null, who: signupWho };
   },
   librarian() { const st = D.stats; return st ? { a: `Type /ask in #wow-forever, or write below. Median answer: ${Math.round(st.median_s)} s.`, go: ["Ask Leeroy", () => { const t = $("#ask-text"); if (t) t.focus(); else unfold("librarian"); }] } : null; },
   library() { const me = MEM.member(); return { a: me ? `Start with your class page (${me.class}) and the page for ${me.race}s.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
@@ -145,9 +145,9 @@ function core(only) {
     let box = kid(panel, "jr-core"), c = null;
     if (g) { try { c = CORE[key] && CORE[key](); } catch (e) { console.error("core", key, e); } }
     if (!c) { rm(box); panel.classList.remove("jr-open"); fold(panel); } else {
-      const [label, to, extra] = c.go, go = typeof to === "function" ? h("button", { type: "button", class: `lib-btn strong jr-go${extra ? ` lib-tool ${extra}` : ""}`, onclick: to }, label) : h("a", { class: "lib-btn strong jr-go", href: to }, label);
+      const [label, to, extra] = c.go || [], go = !label ? null : typeof to === "function" ? h("button", { type: "button", class: `lib-btn strong jr-go${extra ? ` lib-tool ${extra}` : ""}`, onclick: to }, label) : h("a", { class: "lib-btn strong jr-go", href: to }, label);
       const more = h("button", { type: "button", class: "lib-tool jr-more", "aria-expanded": String(panel.classList.contains("jr-open")), onclick: () => openPanel(panel, !panel.classList.contains("jr-open")) }, panel.classList.contains("jr-open") ? "Show less" : "Show me more");
-      const fresh = h("section", { class: "jr-core", "aria-label": "In short" }, h("h3", { class: "jr-q", text: Q[key] }), h("p", { class: "jr-a", text: cut(c.a) }), h("div", { class: "jr-acts" }, go, more), ...(c.who ? [c.who()] : []));
+      const fresh = h("section", { class: "jr-core", "aria-label": "In short" }, h("h3", { class: "jr-q", text: Q[key] }), h("p", { class: "jr-a", text: cut(c.a) }), h("div", { class: "jr-acts" }, ...[go, more].filter(Boolean)), ...(c.who ? [c.who()] : []));
       panel.insertBefore(fresh, box || panel.firstChild); rm(box);
       fold(panel);
     }
