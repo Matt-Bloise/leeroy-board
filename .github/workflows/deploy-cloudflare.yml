@@ -302,6 +302,14 @@ jobs:
             echo "D1 already contains live state ($ROW_COUNT rows). Skipping seed to preserve live edits."
           fi
 
+      # Library-only seed: touches lib_blobs + lib_pages only (never kv_state). Per page the repo copy wins only when newer than the D1 row,
+      # and the whole step is a no-op while the sha256 of data/library/*.json equals the lib_blobs row `seed.stamp`. This job runs on master in the production environment only.
+      - name: Merge Library data into D1 (only when data/library changed)
+        working-directory: infrastructure
+        run: |
+          set -e
+          node ./scripts/seed-d1.mjs --library-only --remote
+
       - name: Deploy Cloudflare Worker + Durable Object + Cron Trigger
         id: worker
         working-directory: infrastructure
