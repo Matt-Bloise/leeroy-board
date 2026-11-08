@@ -20,4 +20,6 @@
 .legal-foot a:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 
 /* touch targets: the footer links were 95x19 px. On a coarse pointer each is at least 44x44 (WCAG 2.5.8 asks 24, the sweep and the header use 44). */
-@media (pointer: coarse) { .tr-foot-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; } }
+@media (pointer: coarse), (max-width: 699px) { .tr-foot-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 8px; } }
+/* the footer links are 44 px tall at every width and pointer (audit 2026-11-07: 16 px tall on a phone-width desktop window) */
+.legal-foot a { display: inline-flex; align-items: center; min-height: 44px; padding-inline: 4px; }

@@ -107,6 +107,8 @@
 .ps-sample-l { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ps-sample-l li { display: grid; gap: 2px; padding: 8px 10px; border-left: 4px solid var(--cc, var(--brass-dim)); background: var(--parchment-2); border-radius: 4px; overflow-wrap: anywhere; }
 .ps-sample-l small { color: var(--ink-soft); font-size: 1rem; }
+.ps-sample-d { display: grid; gap: 8px; }
+.ps-sample-sum { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); }
 .ps-sample-go { justify-self: start; min-height: 44px; color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
 /* the guided journey folds every panel child but its summary card (css/v13d.css); the sample sheet is the point of this scene for a visitor, so it outranks that rule */
 html[data-journey="guided"] #sheet-body #panel-five #ps-sample#ps-sample#ps-sample#ps-sample#ps-sample:not([hidden]) { display: grid !important; }

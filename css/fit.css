@@ -187,3 +187,16 @@
 @media (max-height: 450px) { #board > .legal-foot { margin-top: -16px; line-height: 1.1; } #board { padding-bottom: 0; } }
 /* wall tiles must not shave their own text: the tile title is a clipped (overflow hidden, ellipsis) box whose line is 1.02 tall, shorter than the glyphs, so descenders and accents were cut at every size. Give it a little padding to hold the ink and take the same margin back, so no tile changes size. */
 .wall .tile-title { padding-block: 0.24em; margin-block: -0.24em; }
+
+/* Phone header (audit 2026-11-07, findings 2, 4, 5): the title takes its own row, the controls wrap in a row of their own, nothing is clipped, every control is 44 px or more.
+   Party names never break inside a word at 320-420 px: three columns instead of five or six. */
+@media (max-width: 599px) {
+  #top .hero-title { grid-template-columns: minmax(0, 1fr); }
+  #top .hero-title h1 { grid-column: 1; grid-row: 2; overflow-wrap: break-word; }
+  #top .hero-title .presence { grid-column: 1; grid-row: 3; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  #top .presence #light-calm { width: auto; min-width: 44px; padding: 0 12px; font-size: 0.8125rem; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+}
+@media (max-width: 420px) {
+  .wall .t-five .tile-viz.five-viz { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 8px; }
+  .wall .t-five .med b { overflow-wrap: normal; word-break: normal; hyphens: manual; max-width: 100%; }
+}
