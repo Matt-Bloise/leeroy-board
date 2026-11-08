@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { tonightLines, LAUNCH_EPOCH, NEXT_DATED } from "../../infrastructure/worker/tonight-copy.js";
+import { tonightLines, LAUNCH_EPOCH, NEXT_DATED, nextDated } from "../../infrastructure/worker/tonight-copy.js";
 
 const party = { members: [{ name: "Aa", race: "Orc", class: "Warrior" }] };
 const signups = { entries: [{ name: "Aa", rsvp: "in" }] };
@@ -18,6 +18,13 @@ test("after launch: past tense, next dated event, no sign-up prompt", () => {
   assert.match(t, /Raids open, Wed, Dec 9/);
   assert.match(t, /as they stood \(1 in\)/);
   assert.doesNotMatch(t, /\/signup|Say whether/);
+});
+test("after the last dated event: no 'days ago', says none posted yet", () => {
+  const t = tonightLines({ ...base, now: NEXT_DATED.epoch + 5 * 86400 }).join("\n");
+  assert.doesNotMatch(t, /Raids open, Wed, Dec 9/);
+  assert.match(t, /Next dated event:\*\* none posted yet/);
+  assert.equal(nextDated(NEXT_DATED.epoch - 1).label, "Raids open");
+  assert.equal(nextDated(NEXT_DATED.epoch + 1), null);
 });
 test("before launch: keeps the sign-up prompt", () => {
   const t = tonightLines({ ...base, now: LAUNCH_EPOCH - 60, signups: { entries: [] } }).join("\n");
