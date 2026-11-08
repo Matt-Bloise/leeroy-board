@@ -279,7 +279,7 @@ function firstRun() {
   if (!el) {
     el = h("section", { class: "nx-fr2", id: "nx-fr2", "aria-labelledby": "nx-fr2-h" }, h("h2", { id: "nx-fr2-h", text: FR.cta["firstrun-heading"] }), h("p", { class: "nx-fr2-line", text: FR.cta["firstrun-line"] }),
       btn("lib-btn strong", FR.cta[inActivity() ? "firstrun-primary-activity" : "firstrun-primary-discord"], frPrimary, { id: "nx-fr2-go" }),
-      h("a", { class: "nx-link nx-fr2-look", id: "nx-fr2-look", href: "#tonight", onclick: (e) => { e.preventDefault(); FR.peek = true; sfx("page"); firstRun(); render(); try { document.dispatchEvent(new CustomEvent("board:first-value")); } catch (err) {} /* one tap: close the entry card and show the wall; the name picker stays one tap away under Next steps */ const x = $("#scene-close"); if (x && K.SC && K.SC.open) x.click(); } }, FR.cta["firstrun-look"]));
+      h("a", { class: "nx-link nx-fr2-look", id: "nx-fr2-look", href: "#tonight", onclick: (e) => { e.preventDefault(); FR.peek = true; sfx("page"); firstRun(); render(); try { document.dispatchEvent(new CustomEvent("board:first-value")); } catch (err) {} } }, FR.cta["firstrun-look"]));
   }
   if (el.nextSibling !== meBox) panel.insertBefore(el, meBox);
 }

@@ -24,7 +24,9 @@ async function run(label, viewport, mobile) {
   const look = await until(page, () => { const b = document.querySelector("#nx-fr2-look"); return !!b && b.getBoundingClientRect().width > 0; });
   ok(`${label}: the entry card offers "Just take a look"`, look);
   if (look) await page.click("#nx-fr2-look", { timeout: WAIT }).catch(() => {});
-  ok(`${label}: one tap on it closes the entry card and shows the wall`, await until(page, () => !document.documentElement.classList.contains("scene-open") && !document.querySelector("#nx-fr2")));
+  ok(`${label}: it reveals the name picker (still there for anyone who wants it)`, await until(page, () => [...document.querySelectorAll("#tn-me .tn-name")].filter((b) => b.getClientRects().length).length >= 4));
+  if (await page.evaluate(() => document.documentElement.classList.contains("scene-open"))) await page.click("#scene-close", { timeout: WAIT }).catch(() => {});
+  ok(`${label}: the wall is reachable behind the card`, await until(page, () => !document.documentElement.classList.contains("scene-open")));
   await until(page, () => !!document.querySelector("#top h1") && document.querySelector("#top h1").getBoundingClientRect().width > 0);
   const hdr = await page.evaluate(() => [...document.querySelectorAll("#top h1, #top .presence button")].filter((e) => e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== "none")
     .map((e) => { const r = e.getBoundingClientRect(); return { id: e.id || e.tagName, l: Math.round(r.left), r: Math.round(r.right), h: Math.round(r.height), fs: parseFloat(getComputedStyle(e).fontSize) }; }));

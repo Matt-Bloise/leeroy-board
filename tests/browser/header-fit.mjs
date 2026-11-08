@@ -24,7 +24,6 @@ try {
     const gate = await page.evaluate(() => getComputedStyle(document.querySelector("#sheet-title")).color);
     ok(`${t} first-run header title is light`, lum(gate) > 0.5, gate);
     await page.locator("#nx-fr2-look").click().catch(() => {});
-    await page.evaluate(() => window.__boardKit && window.__boardKit.goScene("tonight")).catch(() => {}); // "Just take a look" now closes the card; the name picker is one tap away in Next steps
     await page.waitForTimeout(1500);
     const m = await page.evaluate(() => {
       const el = document.querySelector("#sheet-title"), r = el.getBoundingClientRect(), cs = getComputedStyle(el), fs = parseFloat(cs.fontSize);
