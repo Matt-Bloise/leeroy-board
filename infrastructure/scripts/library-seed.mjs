@@ -108,8 +108,10 @@ export function readLibraryFiles(libDir) {
 }
 
 /** sha256 of the concatenated file contents, in sorted file-name order. */
+export const SEED_ALGO = "seed-algo:2 (fact-level merge)";
 export function libraryHash(files) {
   const h = crypto.createHash("sha256");
+  h.update(SEED_ALGO + "\n"); // a change in what the seed does re-runs it even when the data files are unchanged
   for (const f of files) h.update(f.text);
   return h.digest("hex");
 }
@@ -162,6 +164,18 @@ function canonRow(r) {
 }
 
 export const contentHash = (canon) => sha8(JSON.stringify(canon));
+
+/** Repo facts (with a string id) whose id is absent from the D1 row's facts. Order follows the repo page. */
+export function missingFacts(repoPage, d1Row) {
+  const have = new Set(jsonOrEmpty(d1Row.facts_json).map((f) => f && f.key).filter((k) => typeof k === "string"));
+  return (repoPage.facts || []).filter((f) => f && typeof f.key === "string" && !have.has(f.key));
+}
+
+/** Append facts to a D1 page; only applies if the row is unchanged since the snapshot read (updated_at). */
+function factMergeStatement(d1Row, add, now) {
+  const merged = JSON.stringify([...jsonOrEmpty(d1Row.facts_json), ...add]);
+  return `UPDATE lib_pages SET facts_json = ${sqlStr(merged)}, updated_at = ${sqlStr(now)} WHERE id = ${sqlStr(d1Row.id)} AND updated_at IS ${sqlStr(d1Row.updated_at)};`;
+}
 
 /**
  * Conditional upsert: the comparison is part of the write, so a cron or approval write that lands between
@@ -320,7 +334,7 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
     d1Pages.set(r.id, r);
   }
 
-  const counts = { "repo newer": 0, "D1 newer": 0, same: 0, inserted: 0, blobs: 0 };
+  const counts = { "repo newer": 0, "D1 newer": 0, same: 0, inserted: 0, blobs: 0, merged: 0 };
   const writes = []; // units: a unit (one page, or one blob with its chunk appends) is never split across batches
   const unbumped = [];
   const intendedPages = new Set();
@@ -346,7 +360,19 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
         verdict = c > 0 ? "repo newer" : c < 0 ? "D1 newer" : "same";
         // Equal dates always keep D1 (live cron/wiki edits are never clobbered). A repo edit that did not bump
         // as_of or checked is therefore NOT applied; list it so it cannot go unnoticed.
-        if (c === 0 && contentHash(canonRepo(p)) !== contentHash(canonRow(d1))) unbumped.push(p.id);
+        if (c === 0 && contentHash(canonRepo(p)) !== contentHash(canonRow(d1))) {
+          unbumped.push(p.id);
+          // Additive fact merge: facts the repo has and D1 lacks (by fact key) are appended to the D1 row, nothing in D1
+          // is changed or removed, as_of and checked stay D1's. The write is versioned on the row's updated_at.
+          const add = missingFacts(p, d1);
+          if (add.length) {
+            intendedPages.add(p.id);
+            rebuildCats.add(d1.category);
+            writes.push([factMergeStatement(d1, add, now)]);
+            counts.merged++;
+            say(`${p.id}: +${add.length} repo-only fact(s) merged into D1 (${add.map((f) => f.key).join(", ")})`);
+          }
+        }
         say(`${p.id}: ${verdict}`);
         if (verdict === "repo newer") {
           intendedPages.add(p.id);
@@ -410,10 +436,10 @@ export async function runLibrarySeed({ db, libDir, dryRun = false, force = false
   }
 
   if (unbumped.length) {
-    say(`WARNING: repo content differs but as_of/checked not bumped (NOT applied): ${unbumped.join(", ")}`);
+    say(`WARNING: repo content differs but as_of/checked not bumped (NOT applied, except repo-only facts merged by key): ${unbumped.join(", ")}`);
   }
   say(
-    `Pages: ${counts["repo newer"]} repo newer (${counts.inserted} new), ${counts["D1 newer"]} D1 newer, ${counts.same} same. Blobs written: ${counts.blobs}.`
+    `Pages: ${counts["repo newer"]} repo newer (${counts.inserted} new), ${counts["D1 newer"]} D1 newer, ${counts.same} same, ${counts.merged} with repo-only facts merged. Blobs written: ${counts.blobs}.`
   );
 
   // Also every category blob already in D1 and every category D1 pages sit in, so an interrupted category move

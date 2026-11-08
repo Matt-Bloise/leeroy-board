@@ -2,6 +2,7 @@
 // D1 is faked with in-memory SQLite loaded from the real infrastructure/schema.sql.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -182,7 +183,7 @@ test("equal dates keep D1 even when repo content differs, and the dry-run and th
     const lines = [];
     const r = await runLibrarySeed({ db, libDir: dir, dryRun, log: (l) => lines.push(l), now: NOW });
     assert.deepEqual(r.unbumped, ["p-edit"]);
-    assert.ok(lines.includes("WARNING: repo content differs but as_of/checked not bumped (NOT applied): p-edit"));
+    assert.ok(lines.includes("WARNING: repo content differs but as_of/checked not bumped (NOT applied, except repo-only facts merged by key): p-edit"));
     assert.match(factsOf(db, "p-edit"), /live/, "D1 kept");
   }
 });
@@ -247,4 +248,48 @@ test("a chunked blob write is never split across batches; an unparseable D1 blob
   assert.equal(withHead.length, 1);
   assert.ok(withHead[0].filter((st) => st.startsWith("UPDATE lib_blobs SET json = json ||") && st.includes("WHERE name = 'news.json' AND updated_at")).length >= 2, "all chunk appends in the same batch as the head");
   assert.equal(JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'news.json'")[0].json).items[0].length, 90000);
+});
+
+test("equal dates: repo-only facts (by key) are appended to D1, D1 facts and dates are untouched", async () => {
+  const dir = makeLibDir([
+    page("p-merge", "2026-11-05", "2026-11-05", { facts: [{ key: "k.shared", value: "repo-copy" }, { key: "k.new", value: "repo-only" }] }),
+  ]);
+  const db = makeDb();
+  db.sqlite.exec(
+    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-merge', 'classes', 'p-merge', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.shared","value":"live"},{"key":"k.liveonly","value":"d1-only"}]', 'u1')`
+  );
+  const r = await runLibrarySeed({ db, libDir: dir, now: NOW });
+  const facts = JSON.parse(factsOf(db, "p-merge"));
+  assert.deepEqual(facts.map((f) => f.key), ["k.shared", "k.liveonly", "k.new"]);
+  assert.equal(facts[0].value, "live", "shared fact keeps D1's value");
+  assert.equal(r.counts.merged, 1);
+  const row = db.query("SELECT as_of, checked FROM lib_pages WHERE id = 'p-merge'")[0];
+  assert.deepEqual([row.as_of, row.checked], ["2026-11-05", "2026-11-05"]);
+  const blob = JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'classes.json'")[0].json);
+  assert.ok(blob.pages.find((p) => p.id === "p-merge").facts.some((f) => f.key === "k.new"), "category blob rebuilt with the merged fact");
+});
+
+test("fact merge race: a row that changed after the snapshot is not touched by the merge", async () => {
+  const dir = makeLibDir([page("p-mr", "2026-11-05", "2026-11-05", { facts: [{ key: "k.new", value: "repo-only" }] })]);
+  const db = makeDb({ afterSnapshot: (sq) => sq.exec(`UPDATE lib_pages SET facts_json = '[{"key":"k.cron","value":"cron"}]', updated_at = 'u2' WHERE id = 'p-mr'`) });
+  db.sqlite.exec(
+    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-mr', 'classes', 'p-mr', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.old","value":"x"}]', 'u1')`
+  );
+  await runLibrarySeed({ db, libDir: dir, now: NOW });
+  assert.match(factsOf(db, "p-mr"), /k\.cron/);
+  assert.doesNotMatch(factsOf(db, "p-mr"), /k\.new/);
+});
+
+test("a stamp written by an older seed algorithm does not skip the run", async () => {
+  const dir = makeLibDir([page("p-algo", "2026-11-05", "2026-11-05", { facts: [{ key: "k.new", value: "repo-only" }] })]);
+  const db = makeDb();
+  db.sqlite.exec(
+    `INSERT INTO lib_pages (id, category, title, as_of, checked, blurb, facts_json, updated_at) VALUES ('p-algo', 'classes', 'p-algo', '2026-11-05', '2026-11-05', 'b', '[{"key":"k.old","value":"x"}]', 'u1')`
+  );
+  const oldHash = crypto.createHash("sha256");
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".json")).sort()) oldHash.update(fs.readFileSync(path.join(dir, f), "utf8"));
+  db.sqlite.exec(`INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('${STAMP_NAME}', 's', '${oldHash.digest("hex")}', 'x')`);
+  const r = await runLibrarySeed({ db, libDir: dir, now: NOW });
+  assert.notEqual(r.status, "skipped");
+  assert.match(factsOf(db, "p-algo"), /k\.new/);
 });
