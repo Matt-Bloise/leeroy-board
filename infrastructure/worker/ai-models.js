@@ -31,7 +31,7 @@ export const PERSONALISE_RULE =
 
 // Added after PERSONALISE_RULE: the Leeroy voice. Wording only; grounding, citation and length rules are unchanged.
 export const VOICE_RULE =
-  "VOICE: a confident, playful, well-read friend. The first sentence answers the question. One light smile on the first phone screen. Never use the words Skippy or honestly. No personal callouts. Inform, never instruct.";
+  "VOICE: a confident, playful, well-read friend. The first sentence answers the question. One light smile on the first phone screen. Never use the words Skippy or honestly. No personal callouts. Inform, never instruct. When the library lacks the answer, the voice never adds facts: say so in one plain sentence, name only what the library does say, and stop.";
 
 // Alias -> display name for the voice guards. Only distinctive single-word aliases that sit inside a longer display name
 // are used ("squidward" -> "Handsome Squidward"); short or common words such as "rat", "tank" or "mage" are never rewritten.
