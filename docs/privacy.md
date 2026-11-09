@@ -44,7 +44,7 @@ The device check page (`/probe`) shows you what your browser reports before anyt
 ## How long we keep it
 
 - Web sign-in sessions last 30 days. Web sign-in is off today.
-- Guest address fingerprints are deleted after about 2 hours.
+- Guest address fingerprints become eligible for deletion after 2 hours. They are cleared when another guest asks a question, so they can stay longer when no guest asks.
 - Most other things (characters, sign-ups, questions and answers, votes, counters) stay until you ask us to delete them. Nothing deletes them on a timer.
 - Backups and Cloudflare or AI company copies can last longer, on their schedule.
 
@@ -60,7 +60,16 @@ We set no cookies today. We show no ads. We do not sell your data or share it fo
 
 Message Matt on Discord, or email the contact address below. Say what you want removed. Matt will run the delete for you. The self-serve delete button is built but turned off for now, so a person does it by hand.
 
-A delete removes your account, characters, builds, sign-ups, settings, poll votes, daily counters and your questions and answers. It does not remove your card on the shared party list until an admin edits it. It cannot reach copies held by Cloudflare, Discord, the AI companies, or old backups. Questions asked on the web as a guest are not linked to anyone, so they cannot be found or deleted.
+What a delete removes: your account and what hangs off it (characters, builds, sign-ups, settings, web sign-in sessions), your poll votes, your daily AI counters, and the questions and answers we can tie to you. It leaves one record that says a delete happened and when, with nothing that links it to you.
+
+What it does not remove:
+
+- Your card and name on the shared party list and sign-up list. An admin edits those by hand.
+- Your entry in the Discord member list the bot uses. It stays until an admin edits it, so the bot still treats you as a member.
+- Some questions. Which ones we can find depends on how you asked. A question you asked on Discord without being on the member list is stored under your Discord nickname, and older ones carry no fingerprint, so a person has to find them by hand. Questions asked on the web as a guest are not linked to anyone and cannot be found. Sheet edits and similar rows filed under your handle are found only when the request is made with your member key.
+- Copies held by Cloudflare, Discord, the AI companies, and old backups.
+
+Because of those exceptions, Matt checks them by hand before he tells you the delete is complete.
 
 Contact: [privacy@leeroy.party](mailto:privacy@leeroy.party)
 
