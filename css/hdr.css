@@ -44,3 +44,13 @@
 :root.oled-care.oled-dim .oled-veil { opacity: 0.7; }
 @media (prefers-reduced-motion: reduce) { :root.oled-care .sense-fab, :root.oled-care .bottombar, :root.oled-care .seal, .oled-veil { transition: none; } }
 @media print { .oled-veil { display: none; } }
+
+/* Dimmer parchment for HDR ultrawide (2026-11-09). js/hdr.js adds html.hdr-dim only when the display reports (dynamic-range: high) AND the viewport is at least 1600px wide
+   (and not ?hdr=0). The class is the single switch so tests can force it. Parchment fills and the paper textures drop about 32 percent in linear light (code values x 0.85);
+   ink, wax, brass and the dark oak surfaces are untouched. Textures are dimmed with a multiply against a grey fill, so the paper keeps its grain and the ink stays crisp. */
+:root.hdr-dim {
+  --parchment: #c5bca5; --parchment-2: #b7a989; --cream: #d4cec0; --cream-2: #cec5b1; --ink-soft: #3a2916; --hdr-mul: #d7d7d7;
+}
+:root.hdr-dim .sheet-body, :root.hdr-dim .tile-band, :root.hdr-dim .tab, :root.hdr-dim .tab[aria-selected="true"] { background-color: var(--hdr-mul); background-blend-mode: multiply; }
+:root.hdr-dim .map-box::before { filter: brightness(0.7); }
+:root.hdr-dim .ask-card { background: var(--cream); }

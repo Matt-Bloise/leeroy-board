@@ -16,6 +16,10 @@
     if (!on) { root.classList.remove("oled-dim"); return; }
     if (!veil && document.body) { veil = document.createElement("div"); veil.setAttribute("class", "oled-veil"); veil.setAttribute("aria-hidden", "true"); document.body.appendChild(veil); }
   };
+  const DIM = "(dynamic-range: high) and (min-width: 1600px)";
+  const dim = () => root.classList.toggle("hdr-dim", !off && mq(DIM));
+  dim();
+  try { const md = matchMedia(DIM); if (md.addEventListener) md.addEventListener("change", dim); } catch (e) {}
   apply();
   addEventListener("board-screencare", apply); addEventListener("board-calm", apply);
   for (const q of ["(dynamic-range: high)", "(prefers-color-scheme: dark)"]) { try { const m = matchMedia(q); if (m.addEventListener) m.addEventListener("change", apply); } catch (e) {} }
