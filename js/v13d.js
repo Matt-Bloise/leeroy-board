@@ -71,7 +71,6 @@ const decideData = () => (window.__decide && window.__decide.data) || D.decide |
 const meetOf = () => { const S = D.signups, t = S && S.tallies && S.tallies.meet; let best = null; for (const p of (S && S.options && S.options.meet) || []) { const n = t && t[p] ? t[p].count : 0; if (n && (!best || n > best[1])) best = [p, n]; } return best && best[0]; };
 const roadHow = (z) => ({ "Tirisfal Glades": "the Undercity zeppelin", Mulgore: "the road past the Crossroads", Durotar: "the Durotar road" })[z] || "the road";
 const mine = (rows) => { const me = MEM.member(); return me ? rows.find((r) => r.class_key === me.class_key) : null; };
-const WIDE_DONE = new Set();
 function openPanel(panel, on) { panel.classList.toggle("jr-open", on !== false); fold(panel); const b = panel.querySelector(".jr-more"); if (b) { b.setAttribute("aria-expanded", String(panel.classList.contains("jr-open"))); b.textContent = panel.classList.contains("jr-open") ? "Show less" : "Show me more"; } }
 const unfold = (key, sub) => { const p = $(`#panel-${key}`); if (p) openPanel(p); if (sub) landOn(key, sub); };
 const CORE = {
@@ -146,8 +145,6 @@ function core(only) {
     let box = kid(panel, "jr-core"), c = null;
     if (g) { try { c = CORE[key] && CORE[key](); } catch (e) { console.error("core", key, e); } }
     if (!c) { rm(box); panel.classList.remove("jr-open"); fold(panel); } else {
-      /* desktop (1100 px and up): a guided sheet opens its detail once, so the parchment is not one small card (not Roads: its wide map already fills the sheet); "Show less" is respected afterwards */
-      if (key !== "roads" && !WIDE_DONE.has(key) && window.matchMedia && matchMedia("(min-width: 1100px)").matches) { WIDE_DONE.add(key); panel.classList.add("jr-open"); }
       const [label, to, extra] = c.go || [], go = !label ? null : typeof to === "function" ? h("button", { type: "button", class: `lib-btn strong jr-go${extra ? ` lib-tool ${extra}` : ""}`, onclick: to }, label) : h("a", { class: "lib-btn strong jr-go", href: to }, label);
       const more = h("button", { type: "button", class: "lib-tool jr-more", "aria-expanded": String(panel.classList.contains("jr-open")), onclick: () => openPanel(panel, !panel.classList.contains("jr-open")) }, panel.classList.contains("jr-open") ? "Show less" : "Show me more");
       const fresh = h("section", { class: "jr-core", "aria-label": "In short" }, h("h3", { class: "jr-q", text: Q[key] }), h("p", { class: "jr-a", text: cut(c.a) }), h("div", { class: "jr-acts" }, ...[go, more].filter(Boolean)), ...(c.who ? [c.who()] : []));
