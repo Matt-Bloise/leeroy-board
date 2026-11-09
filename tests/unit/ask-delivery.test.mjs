@@ -200,48 +200,67 @@ test("/ask: provider error falls back to a library answer, delivered once", asyn
 });
 
 // ---- delivery PATCH retry ----
-import { patchOriginalWithRetry, setPatchSleepForTests } from "../../infrastructure/worker/discord.js";
+import { patchOriginalWithRetry, setPatchClockForTests } from "../../infrastructure/worker/discord.js";
 
-function patchHarness(script) {
+// Fake clock: each fetch costs fetchMs, sleep advances the clock. Script steps: "net" or { status, headers }.
+function patchHarness(script, { fetchMs = 0 } = {}) {
   const calls = [];
   const sleeps = [];
+  let clock = 0;
   globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), method: init.method, body: init.body });
+    calls.push({ url: String(url), method: init.method, body: init.body, at: clock });
+    clock += fetchMs;
     const step = script[Math.min(calls.length - 1, script.length - 1)];
     if (step === "net") throw new TypeError("fetch failed");
     return new Response("{}", { status: step.status, headers: step.headers || {} });
   };
-  setPatchSleepForTests(async (ms) => { sleeps.push(ms); });
-  const env = {};
+  setPatchClockForTests({ now: () => clock, sleep: async (ms) => { sleeps.push(ms); clock += ms; } });
   const quiet = console.warn;
   console.warn = () => {};
-  return { calls, sleeps, env, restore: () => { console.warn = quiet; setPatchSleepForTests(null); } };
+  return { calls, sleeps, setClock: (v) => { clock = v; }, restore: () => { console.warn = quiet; setPatchClockForTests(null); } };
 }
 const FAKE_INTERACTION = { application_id: "a", token: "t" };
+const run = (h, opts) => patchOriginalWithRetry(FAKE_INTERACTION, "x", [], { startedAt: 0, ...opts });
 
 test("delivery retry: 500 then success edits once more and returns true", async () => {
   const h = patchHarness([{ status: 500 }, { status: 200 }]);
   try {
-    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), true);
+    assert.equal(await run(h), true);
     assert.equal(h.calls.length, 2);
     assert.deepEqual(h.sleeps, [250]);
     assert.equal(h.calls[0].body, h.calls[1].body);
   } finally { h.restore(); }
 });
 
-test("delivery retry: 429 honours Retry-After (capped at 2 s) then succeeds", async () => {
-  const h = patchHarness([{ status: 429, headers: { "Retry-After": "1" } }, { status: 429, headers: { "Retry-After": "30" } }, { status: 200 }]);
+test("delivery retry: a Retry-After of 1 s is honoured, then success", async () => {
+  const h = patchHarness([{ status: 429, headers: { "Retry-After": "1" } }, { status: 200 }]);
   try {
-    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), true);
-    assert.equal(h.calls.length, 3);
-    assert.deepEqual(h.sleeps, [1000, 2000]);
+    assert.equal(await run(h), true);
+    assert.deepEqual(h.sleeps, [1000]);
+  } finally { h.restore(); }
+});
+
+test("delivery retry: a missing Retry-After uses the 250 ms backoff, not an immediate retry", async () => {
+  const h = patchHarness([{ status: 429 }, { status: 200 }]);
+  try {
+    assert.equal(await run(h), true);
+    assert.deepEqual(h.sleeps, [250]);
+  } finally { h.restore(); }
+});
+
+test("delivery retry: a 30 s Retry-After stops instead of retrying early", async () => {
+  const h = patchHarness([{ status: 429, headers: { "Retry-After": "30" } }, { status: 200 }]);
+  try {
+    assert.equal(await run(h), false);
+    assert.equal(h.calls.length, 1);
+    assert.deepEqual(h.sleeps, []);
   } finally { h.restore(); }
 });
 
 test("delivery retry: 404 stops after one attempt", async () => {
   const h = patchHarness([{ status: 404 }]);
   try {
-    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), false);
+    assert.equal(await run(h), false);
     assert.equal(h.calls.length, 1);
     assert.deepEqual(h.sleeps, []);
   } finally { h.restore(); }
@@ -250,7 +269,7 @@ test("delivery retry: 404 stops after one attempt", async () => {
 test("delivery retry: network error twice then success", async () => {
   const h = patchHarness(["net", "net", { status: 200 }]);
   try {
-    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), true);
+    assert.equal(await run(h), true);
     assert.equal(h.calls.length, 3);
     assert.deepEqual(h.sleeps, [250, 750]);
   } finally { h.restore(); }
@@ -259,9 +278,26 @@ test("delivery retry: network error twice then success", async () => {
 test("delivery retry: all attempts fail returns false, does not throw, stops at 3 attempts", async () => {
   const h = patchHarness([{ status: 503 }]);
   try {
-    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), false);
+    assert.equal(await run(h), false);
     assert.equal(h.calls.length, 3);
   } finally { h.restore(); }
+});
+
+test("delivery retry: starting late (24 s elapsed) makes only the attempts that fit and never exceeds the budget", async () => {
+  const h = patchHarness([{ status: 500 }], { fetchMs: 2000 });
+  h.setClock(24000);
+  try {
+    assert.equal(await run(h), false);
+    // attempt 1 ends at 26000, sleep 250 -> 26250, attempt 2 ends 28250 (over budget), no third attempt.
+    assert.equal(h.calls.length, 2);
+    assert.ok(h.calls.every((c) => c.at < 28000), "no attempt starts after the budget");
+  } finally { h.restore(); }
+  const h2 = patchHarness([{ status: 500 }], { fetchMs: 1500 });
+  h2.setClock(27500);
+  try {
+    assert.equal(await run(h2), false);
+    assert.equal(h2.calls.length, 1, "under 800 ms left after the first attempt: no retry");
+  } finally { h2.restore(); }
 });
 
 test("/ask: a 500 on the first delivery edit is retried and the answer lands", async () => {
@@ -282,11 +318,10 @@ test("/ask: a 500 on the first delivery edit is retried and the answer lands", a
   const env = baseEnv(db, { DISCORD_PUBLIC_KEY: signer.publicKeyHex, ANTHROPIC_API_KEY: "test-key", ASK_DEADLINE_MS: "2000", USER_SALT: "fixture-salt-0123456789" });
   const pending = [];
   const quiet = console.warn; console.warn = () => {};
-  setPatchSleepForTests(async () => {});
   try {
     await handleDiscordInteraction(signer.signedRequest(askInteraction), env, { waitUntil: (p) => pending.push(p) }, "https://worker.test");
     await Promise.allSettled(pending);
-  } finally { console.warn = quiet; setPatchSleepForTests(null); }
+  } finally { console.warn = quiet; }
   assert.equal(patchCalls, 2);
   assert.equal(delivered.length, 1);
   assert.match(delivered[0].content, /Onyxia's Lair opens/);

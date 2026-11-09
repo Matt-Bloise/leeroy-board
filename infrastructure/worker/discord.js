@@ -514,17 +514,24 @@ export function quoteQuestion(q) {
   return `> **Q:** ${flat}`;
 }
 
-// Delivery edit with up to 2 retries (3 attempts). Retries only on network error, HTTP 5xx and 429 (Retry-After honoured up to 2 s);
-// any other 4xx (401/403/404: token or message gone) stops at once. PATCH on the same message is idempotent, so a retry never double-posts.
-// Backoff 250 ms then 750 ms; setPatchSleepForTests(fn) replaces the wait in tests. Logs status only, never tokens or content. Never throws.
+// Delivery edit with up to 2 retries (3 attempts) inside ONE overall time budget measured from the request start
+// (DELIVERY_BUDGET_MS, under the roughly 30 s waitUntil cap). Retries only on network error, HTTP 5xx and 429; other 4xx
+// (401/403/404: token or message gone) stop at once. Retry-After is honoured only when present and a finite non-negative
+// number; if the wait does not fit the remaining budget the loop stops instead of retrying early. Each attempt's timeout is
+// min(5 s, remaining budget); no new attempt starts with under 800 ms left (the first attempt always runs). PATCH on the same
+// message is idempotent, so a retry never double-posts. Logs attempt and status only, never tokens or content. Never throws.
+export const DELIVERY_BUDGET_MS = 28000;
 const PATCH_BACKOFF_MS = [250, 750];
-const PATCH_RETRY_AFTER_CAP_MS = 2000;
-let patchSleep = (ms) => new Promise((r) => setTimeout(r, ms));
-export function setPatchSleepForTests(fn) {
-  patchSleep = fn || ((ms) => new Promise((r) => setTimeout(r, ms)));
+const PATCH_MIN_ATTEMPT_MS = 800;
+const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let patchClock = { now: () => Date.now(), sleep: defaultSleep };
+export function setPatchClockForTests(clock) {
+  patchClock = clock || { now: () => Date.now(), sleep: defaultSleep };
 }
-export async function patchOriginalWithRetry(interaction, content, components = []) {
+export async function patchOriginalWithRetry(interaction, content, components = [], { startedAt = patchClock.now(), budgetMs = DELIVERY_BUDGET_MS } = {}) {
+  const remaining = () => budgetMs - (patchClock.now() - startedAt);
   for (let attempt = 0; attempt <= PATCH_BACKOFF_MS.length; attempt++) {
+    if (attempt > 0 && remaining() < PATCH_MIN_ATTEMPT_MS) return false;
     let status = 0;
     let wait = PATCH_BACKOFF_MS[attempt];
     try {
@@ -532,21 +539,25 @@ export async function patchOriginalWithRetry(interaction, content, components = 
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: clampContent(content), allowed_mentions: ALLOWED_MENTIONS_NONE, ...(components.length ? { components } : {}) }),
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(Math.max(PATCH_MIN_ATTEMPT_MS, Math.min(5000, remaining()))),
       });
       status = res.status;
       if (res.ok) return true;
       if (status === 429) {
-        const ra = Number(res.headers && res.headers.get && res.headers.get("Retry-After"));
-        if (Number.isFinite(ra) && ra >= 0) wait = Math.min(ra * 1000, PATCH_RETRY_AFTER_CAP_MS);
+        const raw = res.headers && res.headers.get ? res.headers.get("Retry-After") : null;
+        const ra = raw === null || raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+        if (Number.isFinite(ra) && ra >= 0) wait = ra * 1000;
       }
     } catch {
       status = 0;
     }
     const retryable = status === 0 || status === 429 || status >= 500;
-    console.warn(JSON.stringify({ evt: "answer_patch_failed", attempt: attempt + 1, status: status || "network", retry: retryable && attempt < PATCH_BACKOFF_MS.length }));
-    if (!retryable || attempt >= PATCH_BACKOFF_MS.length) return false;
-    await patchSleep(wait);
+    const more = retryable && attempt < PATCH_BACKOFF_MS.length;
+    console.warn(JSON.stringify({ evt: "answer_patch_failed", attempt: attempt + 1, status: status || "network", retry: more }));
+    if (!more) return false;
+    // The wait plus a minimal next attempt must fit the budget; otherwise stop rather than retry early.
+    if (wait + PATCH_MIN_ATTEMPT_MS > remaining()) return false;
+    await patchClock.sleep(wait);
   }
   return false;
 }
@@ -607,7 +618,7 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
     );
   }
   if (interaction && interaction.application_id && interaction.token) {
-    await patchOriginalWithRetry(interaction, clampContent(wrap(text)), components);
+    await patchOriginalWithRetry(interaction, clampContent(wrap(text)), components, { startedAt });
   }
   // Keep the invocation alive so a late answer is still stored.
   await work;
