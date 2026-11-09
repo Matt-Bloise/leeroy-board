@@ -334,3 +334,15 @@ button.cal-day.win { background: var(--hi-brass); }
 /* Cinematic slice 7: the Library search box stays in view for a guided visitor (it used to fold away with the rest of the panel until "Show me more"); the extras around it stay folded */
 html[data-journey="guided"] #panel-library:not(.jr-open) .lib-bar > :not(.lib-q):not(.lib-count):not(label) { display: none; }
 html[data-journey="guided"] #sheet-body #panel-library.lib-live > .jr-core { display: none; }
+
+/* Scene scale and placement (desktop): one guide-card position in every scene, type sized for a 1440 px screen. max() keeps the phone and the ultrawide at their current or larger sizes. */
+@media (min-width: 700px) {
+  html #scene #sheet-body.sheet-body:has(> .panel:not([hidden]):not(#panel-tonight) > .jr-core) { align-content: start; padding-top: 24px; }
+  #sheet-body .panel:not(#panel-tonight) > .jr-core { justify-self: start; margin: 0 0 16px 8px; max-width: min(100%, 640px); }
+}
+@media (min-width: 1100px) {
+  #sheet-body .panel > .jr-core { padding: 16px 20px; }
+  #sheet-body .panel > .jr-core .jr-q { font-size: max(var(--step-1), 1.4rem); }
+  #sheet-body .panel > .jr-core .jr-a { font-size: max(1rem, 1.0625rem); line-height: 1.45; max-width: 60ch; }
+  #sheet-body .panel > .jr-core :is(.jr-go, .jr-more) { font-size: max(1rem, 1.0625rem); }
+}
