@@ -86,6 +86,41 @@ export function askerFacts(sheet, { includeHidden = false } = {}) {
   return out.class || out.spec || out.level || out.professions.length ? out : null;
 }
 
+// ---- relevance -------------------------------------------------------------------------------------------------------------
+// The asker's stored build reaches the prompt only when it helps. Deterministic rules, first match wins:
+//  1. Explicit self or party reference ("my build", "my class", "our party", "tonight", "we") -> relevant.
+//  2. The question names a class: relevant when it is the asker's class (or spec), NOT relevant when it is a different class.
+//  3. The question names the asker's race or one of their professions, or mentions a level ("level 12", "what levels", "lvl 20", "my level") -> relevant.
+//  4. The top retrieved pages include the asker's own class page (classes/<class>...) -> relevant.
+//  Otherwise not relevant. A pure "my build" question (skip === "build") is always relevant.
+export const BUILD_NOT_RELEVANT_LINE = "The asker's stored build is not relevant to this question: do not mention it.";
+const CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
+const CLASS_ALIAS = { pally: "paladin", lock: "warlock", warlocks: "warlock", pala: "paladin" };
+const RACES = ["human", "dwarf", "gnome", "night elf", "orc", "undead", "tauren", "troll", "forsaken"];
+const SELF_RE = /\b(?:my\s+(?:build|character|char|class|spec|specs|race|level|profession|professions|talents|sheet|main|gear|party|group)|our\s+(?:party|group|build|comp|team)|(?:the|this)\s+party|party|tonight|we|our)\b/i;
+const LEVEL_RE = /\b(?:levels?|lvl)\b/i;
+const wordsOf = (t) => String(t || "").toLowerCase().split(/[^a-z0-9']+/).filter(Boolean).map((w) => w.replace(/'s$/, "").replace(/(?<=[a-z]{4})s$/, ""));
+export function buildRelevant(question, facts, { rankedIds = [], skip = null } = {}) {
+  if (skip === "build") return { relevant: true, reason: "build question" };
+  const q = String(question || "");
+  if (SELF_RE.test(q)) return { relevant: true, reason: "self or party reference" };
+  const qw = wordsOf(q);
+  const qset = new Set(qw.map((w) => CLASS_ALIAS[w] || w));
+  const namedClasses = CLASSES.filter((c) => qset.has(c));
+  const myClass = facts && facts.class ? wordsOf(facts.class).map((w) => CLASS_ALIAS[w] || w).find((w) => CLASSES.includes(w)) : "";
+  if (namedClasses.length) {
+    return namedClasses.includes(myClass) ? { relevant: true, reason: "own class named" } : { relevant: false, reason: "different class named" };
+  }
+  const spec = facts && facts.spec ? wordsOf(facts.spec).filter((w) => w.length > 3) : [];
+  if (spec.some((w) => qset.has(w))) return { relevant: true, reason: "own spec named" };
+  const ql = ` ${qw.join(" ")} `;
+  if (facts && facts.race && RACES.some((r) => ql.includes(` ${r} `) && String(facts.race).toLowerCase().includes(r))) return { relevant: true, reason: "own race named" };
+  if (facts && facts.professions && facts.professions.some((p) => wordsOf(p).some((w) => w.length > 3 && qset.has(w)))) return { relevant: true, reason: "own profession named" };
+  if (LEVEL_RE.test(q)) return { relevant: true, reason: "level stated" };
+  if (myClass && rankedIds.some((id) => String(id).startsWith(`classes/${myClass}`))) return { relevant: true, reason: "own class page retrieved" };
+  return { relevant: false, reason: "generic question" };
+}
+
 // Other members: ONLY fields marked visible. A hidden field's value must never reach the prompt.
 export function renderPartyBuilds(sheets, askerSheet) {
   const lines = [];

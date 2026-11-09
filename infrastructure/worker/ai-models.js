@@ -24,11 +24,11 @@ import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedId
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
-import { askerFacts, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
+import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
 export const PERSONALISE_RULE =
-  "Personalise with YOUR_BUILD when relevant (\"as a Paladin tank...\"); never claim a build detail it does not list. Answer ONLY from LIBRARY facts, YOUR_BUILD and PARTY_BUILDS. Never name a spell, talent, place, item or level that those do not contain; if the library lacks it, say plainly \"The library does not have that yet.\" Only if YOUR_BUILD says the member has no build on file, say so once and suggest they fill in their sheet; otherwise never mention sheets or missing build data.";
+  "Personalise with YOUR_BUILD only when the question is about the asker's own class, race, level, profession or party (\"as a Paladin tank...\"); never claim a build detail it does not list. Answer ONLY from LIBRARY facts, YOUR_BUILD and PARTY_BUILDS. Never name a spell, talent, place, item or level that those do not contain; if the library lacks it, say plainly \"The library does not have that yet.\" Only if YOUR_BUILD says the member has no build on file, say so once and suggest they fill in their sheet; otherwise never mention sheets or missing build data. When the prompt says the stored build is not relevant, never mention it.";
 
 // Added after PERSONALISE_RULE: the Leeroy voice. Wording only; grounding, citation and length rules are unchanged.
 export const VOICE_RULE =
@@ -961,9 +961,13 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
-    const yourBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
+    const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
-    const hasBuild = Boolean(askerSheet) && hasBuildText(yourBuild);
+    // The stored build is shown only when the question makes it relevant (ask-build.js buildRelevant); otherwise the model is told once to leave it out.
+    const buildHelps = Boolean(askerSheet) && hasBuildText(fullBuild)
+      && buildRelevant(question, askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }), { rankedIds: ranked.map((p) => p.id), skip }).relevant;
+    const yourBuild = Boolean(askerSheet) && hasBuildText(fullBuild) && !buildHelps ? BUILD_NOT_RELEVANT_LINE : fullBuild;
+    const hasBuild = buildHelps;
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
     // The abstain answer is written by code (self-rag.js composeAbstain): the Library pages that cover the asker's own class, spec and professions.
     let abstainPages = [];
@@ -1010,7 +1014,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       : abstain
         ? ["(no library fact matches this question)", ABSTAIN_RULE].join(NL)
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
-    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
+    const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses };
 }

@@ -7,7 +7,7 @@ import { buildAnswerInputs, buildAnswerCacheKey, finishAnswerText, invalidatePag
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { eggDue, DEFAULT_EGG } from "../../infrastructure/worker/answer-format.js";
-import { findAskerSheet, unknownNames, NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
+import { findAskerSheet, unknownNames, NOT_PUBLISHED_LINE, buildRelevant, askerFacts, BUILD_NOT_RELEVANT_LINE } from "../../infrastructure/worker/ask-build.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const f = (value, visible = true) => ({ value, visible, source: "board", at: "2026-11-01T00:00:00.000Z" });
@@ -28,6 +28,7 @@ function makeEnv({ sheets = SHEETS, kv = {} } = {}) {
   return { DB };
 }
 const inputs = (env, o) => buildAnswerInputs(env, { question: "how do I tank as a paladin", journey: "curious", ...o });
+const inputsMine = (env, o) => inputs(env, { question: "what suits my build", ...o });
 
 test("the prompt carries the asker's own build, found by slug; their hidden field only on a private ask", async () => {
   const kv = { signups: { roster: { "Red Fox": "yes" } }, tonight: { title: "Deadmines run" } };
@@ -116,14 +117,14 @@ import { readFileSync } from "node:fs";
 import { groundedOrNotPublished } from "../../infrastructure/worker/ask-build.js";
 
 test("conflicting memberSlug and by choose the slug's sheet; a name-only match never gets hidden fields", async () => {
-  const slugWins = await inputs(makeEnv(), { by: "Blue Owl", memberSlug: "red-fox", share: false });
+  const slugWins = await inputsMine(makeEnv(), { by: "Blue Owl", memberSlug: "red-fox", share: false });
   assert.match(slugWins.userPrompt, /Red Fox \(the asker\)/);
   assert.match(slugWins.userPrompt, /tank the Deadmines/);
   assert.ok(!slugWins.userPrompt.includes("hidden goal text"), "Blue Owl's hidden goal stays out");
-  const nameOnly = await inputs(makeEnv(), { by: "Blue Owl", share: false });
+  const nameOnly = await inputsMine(makeEnv(), { by: "Blue Owl", share: false });
   assert.match(nameOnly.userPrompt, /Blue Owl \(the asker\)/);
   assert.ok(!nameOnly.userPrompt.includes("hidden goal text") && !nameOnly.userPrompt.includes("secretspec"), "by-only: visible fields only, even on a private ask");
-  const unknownSlug = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "someone-else", share: false });
+  const unknownSlug = await inputsMine(makeEnv(), { by: "Red Fox", memberSlug: "someone-else", share: false });
   assert.match(unknownSlug.userPrompt, /fill in their sheet/, "an unknown slug does not fall back to the name");
   assert.ok(!unknownSlug.userPrompt.includes("tank the Deadmines"));
 });
@@ -248,15 +249,15 @@ test("a bold label ending in a colon is not an invention", () => {
 });
 
 test("the build line never tells visitors, or members with only hidden data on a public ask, to fill in a sheet", async () => {
-  const visitor = await inputs(makeEnv(), { by: "Visitor", isMember: false });
+  const visitor = await inputsMine(makeEnv(), { by: "Visitor", isMember: false });
   assert.ok(!/fill in/.test(visitor.userPrompt));
   const hiddenOnly = [{ slug: "quiet-bat", name: "Quiet Bat", fields: { class: f("rogue", false), level: f(5, false) }, updated: "x" }];
-  const pub = await inputs(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: true });
+  const pub = await inputsMine(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: true });
   assert.ok(pub.userPrompt.includes(HIDDEN_BUILD_LINE));
   assert.ok(!/fill in|rogue/.test(pub.userPrompt));
-  const priv = await inputs(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: false });
+  const priv = await inputsMine(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: false });
   assert.match(priv.userPrompt, /class: rogue/);
-  const none = await inputs(makeEnv({ sheets: [{ slug: "new-cat", name: "New Cat", fields: {}, updated: "x" }] }), { by: "New Cat", memberSlug: "new-cat" });
+  const none = await inputsMine(makeEnv({ sheets: [{ slug: "new-cat", name: "New Cat", fields: {}, updated: "x" }] }), { by: "New Cat", memberSlug: "new-cat" });
   assert.match(none.userPrompt, /fill in their sheet/);
   assert.ok(!/fill in|sheet/i.test(PERSONALISE_RULE.replace(/Only if YOUR_BUILD says[^;]*;[^.]*\./, "")), "the rule itself mentions sheets only conditionally");
 });
@@ -313,4 +314,39 @@ test("ask system prompt carries the Leeroy voice rule, keeps the guardrails, and
   const before = sp.replace(`${VOICE_RULE}\n\n`, "");
   assert.ok(before.length < sp.length);
   assert.ok(sp.length / before.length < 1.30, `prompt grew ${((sp.length / before.length - 1) * 100).toFixed(1)}%`);
+});
+
+// ---- relevance: the stored build is mentioned only when the question makes it relevant ----
+const FOX = askerFacts(SHEETS[0]); // paladin, protection, human, level 12, mining and smithing
+test("buildRelevant: own class named is relevant; a different class is not; generic is not", () => {
+  assert.equal(buildRelevant("how do I tank as a paladin", FOX).relevant, true);
+  assert.equal(buildRelevant("best pet for a Hunter?", FOX).relevant, false, "Hunter question, Paladin build");
+  assert.equal(buildRelevant("what does red in a tooltip mean", FOX).relevant, false);
+  assert.equal(buildRelevant("where is the trainer in Stormwind", FOX).relevant, false);
+  assert.equal(buildRelevant("how does a protection warrior hold threat", FOX).relevant, false, "a spec word of ours does not override a different class named");
+});
+test("buildRelevant: my build, level, profession, race, party and the own class page", () => {
+  assert.equal(buildRelevant("what should my build do next", FOX).relevant, true);
+  assert.equal(buildRelevant("what can I do at level 12", FOX).relevant, true);
+  assert.equal(buildRelevant("best dungeon for what levels", FOX).relevant, true);
+  assert.equal(buildRelevant("where do I learn smithing recipes", FOX).relevant, true);
+  assert.equal(buildRelevant("where do I learn cooking recipes", FOX).relevant, false);
+  assert.equal(buildRelevant("which human starting zone quests are fast", FOX).relevant, true);
+  assert.equal(buildRelevant("which gnome starting zone quests are fast", FOX).relevant, false);
+  assert.equal(buildRelevant("who should tank for our party tonight", FOX).relevant, true);
+  assert.equal(buildRelevant("what armor is best", FOX, { rankedIds: ["classes/paladin-protection"] }).relevant, true);
+  assert.equal(buildRelevant("what armor is best", FOX, { rankedIds: ["classes/mage-frost"] }).relevant, false);
+  assert.equal(buildRelevant("anything", FOX, { skip: "build" }).relevant, true);
+  assert.equal(buildRelevant("my build is a hunter", FOX).relevant, true, "an explicit self reference wins");
+});
+test("an irrelevant question gets the not-relevant line and no YOUR_BUILD block; a relevant one keeps the build", async () => {
+  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "what does red in a tooltip mean" });
+  assert.ok(off.userPrompt.includes(BUILD_NOT_RELEVANT_LINE));
+  assert.ok(!/YOUR_BUILD/.test(off.userPrompt) && !off.userPrompt.includes("class: paladin"));
+  assert.equal(off.personalised, false);
+  const hunter = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "how do I tame a hunter pet" });
+  assert.ok(hunter.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && !hunter.userPrompt.includes("class: paladin"));
+  const on = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "how do I tank as a paladin" });
+  assert.match(on.userPrompt, /YOUR_BUILD/);
+  assert.ok(!on.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && on.personalised);
 });

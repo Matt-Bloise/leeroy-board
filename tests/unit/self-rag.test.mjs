@@ -80,7 +80,7 @@ test("Abstain: nothing relevant retrieved, so the prompt says the library has no
   assert.deepEqual(i.ranked, []);
   assert.match(i.userPrompt, /no library fact matches this question/);
   assert.ok(i.userPrompt.includes(ABSTAIN_RULE));
-  assert.match(i.userPrompt, /class: paladin/, "the asker's build lines are kept");
+  assert.ok(!/class: paladin/.test(i.userPrompt) && i.userPrompt.includes("not relevant to this question"), "a pizza question leaves the stored build out");
   assert.ok(!/Holy Shield|Old Moss|plate armor/.test(i.userPrompt), "no library fact leaks into an abstaining prompt");
   assert.ok(retrievedFromGrounding(i.groundingText).abstain);
 });
