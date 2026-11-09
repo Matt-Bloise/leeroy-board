@@ -49,7 +49,7 @@ jobs:
           [ -n "$ADMIN_TOKEN" ] || MISSING="$MISSING BOARD_ADMIN_TOKEN"
           [ -n "$ACCOUNT_ID" ] || MISSING="$MISSING CLOUDFLARE_ACCOUNT_ID"
           if [ -n "$MISSING" ]; then
-            echo "::error::Production secrets missing:$MISSING. They must be secrets of the GitHub environment 'production' (restricted to master). Nothing was deployed. See docs/runbooks/ci-secrets.md."
+            echo "::error::Production secrets missing:$MISSING. Nothing was deployed. BOARD_ADMIN_TOKEN must be an environment secret (Settings > Environments > production > Environment secrets). CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are read at repository level (Settings > Secrets and variables > Actions > Repository secrets; the environment inherits them, and previews need the token there). See docs/runbooks/ci-secrets.md."
             exit 1
           fi
 

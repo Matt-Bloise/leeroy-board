@@ -1,12 +1,12 @@
-// B66 regression: a friend who is not signed in taps a deep link such as https://leeroy.party/#library.events.launch and chooses "Continue with Discord":
+// B66 regression: a friend who is not signed in taps a deep link such as https://leeroy.party/#library.events.launch and chooses "Open Discord sign-ups":
 // the destination hash must still be the destination. Today nothing in the page leaves the origin for a login round trip (the open web board opens straight on the
-// hash, "Continue with Discord" opens the Sign-ups card in Discord in a new tab, and the Worker's /auth/discord/start is not called by any front-end code), so the hash
+// hash, "Open Discord sign-ups" opens the Sign-ups card in Discord in a new tab, and the Worker's /auth/discord/start is not called by any front-end code), so the hash
 // must survive untouched; this suite pins that down.
 //   node deep-link-login.mjs --url https://pr-N.leeroy-board.pages.dev/   (or env PREVIEW_PAGES)   optional: env PW_CHROMIUM = path to a Chromium binary
 // Nothing is sent and there is no AI call: /api/ is answered from tests/fixtures/api-snapshot and window.open is recorded instead of opening a tab. The Discord sign-up
 // link is whatever the page itself loaded (D.tonight.links.signup, from the bootstrap snapshot when the page has an API origin and from data/tonight.json when it has
 // none), read back from the page, so the check holds on either data path. Per destination (a Library page, a scene with a sub-address, a plain scene) and size (390x844 touch, 1366x768),
-// from a first visit with nothing remembered: the scene opens on that hash; the hash is unchanged after the page settles; tapping "Continue with Discord" (the first-run
+// from a first visit with nothing remembered: the scene opens on that hash; the hash is unchanged after the page settles; tapping "Open Discord sign-ups" (the first-run
 // button behind the scene, clicked in the page) keeps the hash and the open scene, leaves the page's own URL alone, opens only the page's own Discord sign-up link in a new tab,
 // and never requests /auth/discord/start or any other /auth/ path. A deep link that arrives with ?login=ok (what the Worker's callback sends) opens the same destination.
 // Exit 0 when every check passes, 1 otherwise.
@@ -43,12 +43,12 @@ try {
       const a = await state(page);
       ok(`${t} signed out, the deep link opens its scene`, a.open && (!titleRe || titleRe.test(a.title)), `open ${a.open}, title "${a.title}"`);
       ok(`${t} the hash is still the destination`, a.hash === `#${token}`, a.hash);
-      ok(`${t} the first-run "Continue with Discord" button exists behind the scene`, a.first);
+      ok(`${t} the first-run "Open Discord sign-ups" button exists behind the scene`, a.first);
       ok(`${t} the page loaded a Discord sign-up link`, /^https:\/\/discord\.com\//.test(String(a.signup)), String(a.signup));
       await page.evaluate(() => document.querySelector("#nx-fr2-go").click());
       await page.waitForTimeout(1200);
       const b = await state(page);
-      ok(`${t} after "Continue with Discord" the hash is still the destination`, b.hash === `#${token}`, b.hash);
+      ok(`${t} after "Open Discord sign-ups" the hash is still the destination`, b.hash === `#${token}`, b.hash);
       ok(`${t} the scene is still open and the page URL is unchanged`, b.open && b.href === a.href, `${a.href} -> ${b.href}`);
       // the one window.open call the page makes, as the init script records it: [url, target, features] = [the page's own sign-up link, "_blank", "noopener"]
       const want = [[a.signup, "_blank", "noopener"]];

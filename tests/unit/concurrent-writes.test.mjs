@@ -44,6 +44,14 @@ async function post(env, who, path, body) {
     return await worker.fetch(new Request(`https://api.test/api${path}`, { method: "POST", headers: { Authorization: `Board ${KEYS[who]}`, "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.9" }, body: JSON.stringify(body) }), env, ctx);
   } finally { console.error = silence; }
 }
+// 12 writers against 8 tries each is not a guaranteed win: every round has at least one winner, so the unluckiest writer can lose 8 rounds in a row when the
+// machine is loaded and the retry timers fire in lockstep. The Worker answers that case with 409 "busy, try again", which is its contract. A client
+// retries on 409, so the parallel tests do too (up to 3 more times); what they prove is that no write is lost or overwritten, not that nobody is ever told to retry.
+async function postRetry(env, who, path, body) {
+  let res = await post(env, who, path, body);
+  for (let i = 0; i < 3 && res.status === 409; i++) res = await post(env, who, path, body);
+  return res;
+}
 const kv = (env, key) => { const r = env.raw.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key); return r ? JSON.parse(r.json) : null; };
 
 // five different fields per member, plus one repeat of the first: 12 writes in all
@@ -53,7 +61,7 @@ const EXPECT = { pack: "yes", when: "6pm", meet: "The Crossroads", rsvp: "late",
 for (const [label, seed] of [["no sign-ups row yet", null], ["an existing sign-ups row", { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [{ name: "Street Rat", rsvp: "in" }] }]]) {
   test(`12 parallel POST /signups (${label}): every field of both members survives`, async () => {
     const env = await makeEnv(seed);
-    const calls = ["bloise", "santa"].flatMap((who) => SIGNUP_PATCHES.map((patch) => post(env, who, "/signups", { patch })));
+    const calls = ["bloise", "santa"].flatMap((who) => SIGNUP_PATCHES.map((patch) => postRetry(env, who, "/signups", { patch })));
     const res = await Promise.all(calls);
     assert.deepEqual(res.map((r) => r.status), Array(12).fill(200));
     const doc = kv(env, "signups");
@@ -70,7 +78,7 @@ test("12 parallel POST /intent signup: every field survives", async () => {
   const env = await makeEnv(null);
   const mk = (k, v) => ({ kind: "signup", field: k, value: v });
   const bodies = [mk("rsvp", "late"), mk("when", "6pm"), mk("pack", "yes"), mk("meet", "The Crossroads"), mk("rsvp", "late"), mk("when", "6pm")];
-  const res = await Promise.all(["bloise", "santa"].flatMap((who) => bodies.map((b) => post(env, who, "/intent", b))));
+  const res = await Promise.all(["bloise", "santa"].flatMap((who) => bodies.map((b) => postRetry(env, who, "/intent", b))));
   assert.deepEqual(res.map((r) => r.status), Array(12).fill(200));
   const doc = kv(env, "signups");
   for (const slug of ["bloise", "santa"]) {
@@ -82,7 +90,7 @@ test("12 parallel POST /intent signup: every field survives", async () => {
 test("12 parallel POST /sheet: every field of both members survives", async () => {
   const env = await makeEnv(null);
   const FIELDS = [["race", "tauren"], ["class", "druid"], ["spec_path", "feral-tank"], ["level", 12], ["plan_zone", "mulgore"], ["goals", ["a pack"]]];
-  const res = await Promise.all(["bloise", "santa"].flatMap((who) => FIELDS.map(([field, value]) => post(env, who, "/sheet", { field, value }))));
+  const res = await Promise.all(["bloise", "santa"].flatMap((who) => FIELDS.map(([field, value]) => postRetry(env, who, "/sheet", { field, value }))));
   assert.deepEqual(res.map((r) => r.status), Array(12).fill(200));
   const party = kv(env, "party_sheets");
   for (const slug of ["bloise", "santa"]) {

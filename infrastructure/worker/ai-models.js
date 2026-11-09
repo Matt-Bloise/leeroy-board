@@ -12,6 +12,7 @@
 // `guided` coach voice, and `wiki-learn.mjs` automated D1 fact extraction.
 // =============================================================================
 
+import { classPageFallback } from "./ask-fallback.js";
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
@@ -19,11 +20,11 @@ import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
-import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
+import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings, stripPersonaIntro } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
-import { askerFacts, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
+import { askerFacts, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
 export const PERSONALISE_RULE =
@@ -1021,15 +1022,17 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
     repaired = stripEggLine(repaired, eggFor(persona).line);
+    repaired = stripPersonaIntro(repaired);
     // A spell, place or item the library never gave is replaced by the honest line.
     if (typeof groundingText === "string" && !trusted) {
       const g = groundedOrNotPublished(repaired, groundingText);
       if (!g.ok) repaired = g.answer;
+      repaired = guardRefusal(repaired, groundingText);
     }
     // IsSup (self-rag.js): a number the library, the build and the question never gave goes; a source that was not retrieved is not cited.
     const retrieved = retrievalOf({ retrieval, groundingText });
@@ -1052,6 +1055,7 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
           ...(uxOn ? { ux: true, roster: rosterAliases(), intentId, isCoach, egg: eggFor(persona), noEgg: personalised } : {}),
         })
       : { main: repaired, more: "", sources: "" };
+    parts.main = classPageFallback(parts.main, { question, pages: parsedPages, boardUrl: env.BOARD_PUBLIC_URL }); // ask-fallback.js hook
     return { answer: parts.main, cites, parts };
 }
 
@@ -1284,7 +1288,7 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed) });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
