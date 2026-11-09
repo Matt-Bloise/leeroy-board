@@ -177,3 +177,6 @@ html.nx-first-run :is(#tn-me, #nx-card, #nx-tonight, #nx-queue, #nx-rest, #tn-ca
   .nx-fr2-line { font-size: max(var(--step-0), 1.125rem); }
   .nx-fr2 #nx-fr2-go, .nx-fr2 .nx-fr2-look { font-size: max(var(--step-0), 1.0625rem); }
 }
+
+/* Tiny landscape windows (under 260 px tall): the first-visit card is taller than the sheet body, and the stretched panel ended 92 px above the card's bottom in WebKit at 384x216 (layout-sweep gate-inset). The panel sizes to its content and the body scrolls, so the frame always wraps the card; taller windows are unchanged. */
+@media (max-height: 259px) and (orientation: landscape) { html.nx-solo #panel-tonight { align-self: start; } }
