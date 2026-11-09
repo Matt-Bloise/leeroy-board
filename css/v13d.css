@@ -346,3 +346,10 @@ html[data-journey="guided"] #sheet-body #panel-library.lib-live > .jr-core { dis
   #sheet-body .panel > .jr-core .jr-a { font-size: max(1rem, 1.0625rem); line-height: 1.45; max-width: 60ch; }
   #sheet-body .panel > .jr-core :is(.jr-go, .jr-more) { font-size: max(1rem, 1.0625rem); }
 }
+/* desktop (1100 px and up): the guided card uses the width of the sheet (full width up to 96ch, larger type, who-is-in in three columns); the button and the folded state stay as they are. After the rules above so it wins at equal specificity. */
+@media (min-width: 1100px) {
+  #sheet-body .panel:not(#panel-tonight) > .jr-core { width: 100%; max-width: min(100%, 96ch); padding: 20px 28px; }
+  #sheet-body .panel > .jr-core .jr-q { font-size: max(var(--step-2, 1.5rem), 1.6rem); }
+  #sheet-body .panel > .jr-core .jr-a { font-size: 1.125rem; max-width: 80ch; }
+  #sheet-body .panel > .jr-core .jr-who { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
