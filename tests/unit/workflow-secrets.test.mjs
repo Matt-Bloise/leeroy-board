@@ -198,6 +198,18 @@ test("the production deploy runs in the environment production and is not PR-tri
   assert.equal(job.if, "github.ref == 'refs/heads/master'");
 });
 
+test("the deploy guard message tells where each missing secret lives (token and account id at repository level, admin token in the environment)", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  const step = w.doc.jobs["deploy-production"].steps.find((s) => s.name === "Require the production environment secrets");
+  assert.ok(step);
+  const msg = step.run.split(/\r?\n/).find((l) => l.includes("Production secrets missing"));
+  assert.ok(msg);
+  assert.match(msg, /Nothing was deployed/);
+  assert.match(msg, /BOARD_ADMIN_TOKEN must be an environment secret \(Settings > Environments > production > Environment secrets\)/);
+  assert.match(msg, /CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are read at repository level \(Settings > Secrets and variables > Actions > Repository secrets/);
+  assert.doesNotMatch(msg, /They must be secrets of the GitHub environment/);
+});
+
 test("only the production deploy reads production secrets", () => {
   for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) {
     const bad = secretNames(scanText(w)).filter((n) => PRODUCTION.includes(n));
