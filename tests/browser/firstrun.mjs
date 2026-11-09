@@ -33,7 +33,7 @@ try {
     const t = `[${tag}]`;
     ok(`${t} heading`, (await page.locator("#nx-fr2-h").innerText().catch(() => "")) === "Your guild's companion for WoW Forever.");
     ok(`${t} line`, /See your group, your next step, and what is coming\. Two minutes\./.test(await page.locator(".nx-fr2-line").innerText().catch(() => "")));
-    ok(`${t} primary label`, (await page.locator("#nx-fr2-go").innerText().catch(() => "")) === "Open Discord sign-ups");
+    ok(`${t} primary label`, (await page.locator("#nx-fr2-go").innerText().catch(() => "")) === "Continue with Discord");
     ok(`${t} quiet link`, (await page.locator("#nx-fr2-look").innerText().catch(() => "")) === "Just take a look");
     ok(`${t} no names`, (await visibleNames(page)) === 0);
     const r = await page.evaluate(() => { const b = document.getElementById("nx-fr2-go"), x = b ? b.getBoundingClientRect() : null; return { y: window.scrollY, h: window.innerHeight, w: window.innerWidth, x: x && { t: x.top, b: x.bottom, l: x.left, r: x.right, n: x.width * x.height } }; });
