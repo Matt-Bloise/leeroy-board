@@ -60,7 +60,6 @@ const ALLOWED = [
   { file: "data/guided-atlas.json", re: /group of five players/, why: "a dungeon is a group of five players (game rule)" },
   { file: "data/decide.json", re: /fifth \(reagent\) slot/, why: "the game's fifth bag slot" },
   { file: "data/decide.json", re: /three of five still travel/, why: "the game's summoning rule for a five-player dungeon group" },
-  { file: "privacy/index.html", re: /four safe-area insets/, why: "the four edges of the screen" },
   { file: "js/shell.js", re: /const five = \$\("#panel-five"\)/, why: "a variable named for the scene id" },
   { file: "scenes/place.js", re: /five = \$\("#panel-five"\)|\[lib, five\]|if \(five &&|root: five/, why: "a variable named for the scene id" },
 ];
