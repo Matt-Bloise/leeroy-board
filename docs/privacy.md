@@ -31,7 +31,7 @@ To sign you in, to show the group's board, to answer your questions, and to stop
 ## Other companies that handle it
 
 - Cloudflare hosts the board and the database. It also keeps its own request logs, which include your internet address. We do not control those logs. Cloudflare also adds a visit-counting script to leeroy.party. We have not yet checked what it records.
-- Discord handles the bot commands, and the web sign-in when that is switched on (it is off today).
+- Discord handles the bot commands, and the web sign-in when that is switched on (it is off today). As of 9 November 2026 the bot receives your slash commands, button presses, direct messages to it, and messages that mention it. Discord does not send it the text of ordinary channel messages. Only the owner can add the bot to a server.
 - When you ask Leeroy a question, we send your name, your question, and the party's names and builds to an AI company so it can answer. Several AI companies can be used. They may keep a copy under their own rules.
 - Nothing goes to Blizzard.
 
