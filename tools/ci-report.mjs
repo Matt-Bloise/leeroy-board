@@ -59,7 +59,9 @@ export function buildReport(i) {
       notRun = i.apiNeeded === false ? "api (scope rule: no Worker or API file changed)" : "none";
     } else {
       // Browser and layout may only be absent because the scope rule said no site, tooling, workflow, config or dependency file changed.
-      pass = unitStamps && apiOk && (skipped(r.browser) || ok(r.browser)) && (skipped(r.layout) || ok(r.layout));
+      // Advisor follow-up (Nov 9): with the API suite skipped nothing else proved the preview deploy, so a failed preview must not earn the gate phrase.
+      const previewOk = i.apiNeeded === false ? ok(i.previewResult) : true;
+      pass = unitStamps && apiOk && previewOk && (skipped(r.browser) || ok(r.browser)) && (skipped(r.layout) || ok(r.layout));
       ran = i.apiNeeded === false ? "unit, stamps" : "unit, stamps, api";
       notRun = i.apiNeeded === false ? "api, browser, layout (scope rules: no Worker, API, site, tools, .github, wrangler or package*.json file changed)" : "browser, layout (scope rule: no site, tools, .github, wrangler or package*.json file changed)";
     }
@@ -157,6 +159,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href && process.arg
     siteChanged: e.SITE_CHANGED === "true",
     apiNeeded: e.API_NEEDED !== "false", // fails closed: only the literal "false" lets the API suite be absent
     full: e.FULL === "true",
+    previewResult: e.PREVIEW_RESULT,
     results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT },
     counts, failing, pagesUrl: e.PAGES_URL || "", visual: e.VISUAL === "true", runUrl: e.RUN_URL || "",
   });

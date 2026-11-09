@@ -455,6 +455,7 @@ jobs:
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
           SITE_CHANGED: ${{ needs.scope.outputs.site_changed }}
           API_NEEDED: ${{ needs.scope.outputs.api_needed }}
+          PREVIEW_RESULT: ${{ needs.preview.result }}
           FULL: ${{ needs.scope.outputs.full }}
           UNIT_RESULT: ${{ needs.unit.result }}
           STAMPS_RESULT: ${{ needs.stamps.result }}

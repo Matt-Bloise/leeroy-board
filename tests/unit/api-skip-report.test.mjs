@@ -26,8 +26,15 @@ test("apiNeeded=false does not excuse the other suites", () => {
   assert.equal(buildReport({ ...base, siteChanged: true, apiNeeded: false, results: res({ api: "skipped", browser: "failure" }) }).pass, false);
   assert.equal(buildReport({ ...base, siteChanged: false, apiNeeded: false, results: res({ api: "skipped", browser: "skipped", layout: "skipped", unit: "failure" }) }).pass, false);
 });
+test("no site and no API change: a failed or missing preview never earns the gate phrase (advisor follow-up)", () => {
+  const mk = (previewResult) => buildReport({ ...base, siteChanged: false, apiNeeded: false, previewResult, results: res({ api: "skipped", browser: "skipped", layout: "skipped" }) });
+  assert.equal(mk("failure").pass, false);
+  assert.equal(mk("cancelled").pass, false);
+  assert.equal(mk(undefined).pass, false);
+  assert.equal(mk("success").pass, true);
+});
 test("no site and no API change: unit and stamps alone give the gate phrase", () => {
-  const r = buildReport({ ...base, siteChanged: false, apiNeeded: false, results: res({ api: "skipped", browser: "skipped", layout: "skipped" }) });
+  const r = buildReport({ ...base, siteChanged: false, apiNeeded: false, previewResult: "success", results: res({ api: "skipped", browser: "skipped", layout: "skipped" }) });
   assert.equal(r.pass, true);
   assert.equal(r.gate, true);
 });

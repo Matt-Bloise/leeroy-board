@@ -21,7 +21,7 @@ export function isApiPath(p) {
   if (/(^|\/)package[^/]*\.json$/.test(path)) return true;
   if (/(^|\/)wrangler[^/]*$/.test(path)) return true;
   if (/(^|\/)(schema|migrations?)([./]|$)/.test(path) || /\.sql$/.test(path)) return true;
-  if (path.startsWith("infrastructure/") && /\.(md|markdown|txt)$/.test(path)) return false; // docs inside infrastructure/
+  if (path.startsWith("infrastructure/") && /\.(md|markdown)$/.test(path)) return false; // docs inside infrastructure/ (not .txt: flagship-flags.txt is read by the production deploy)
   return FORCE_DIRS.some((d) => path.startsWith(d));
 }
 

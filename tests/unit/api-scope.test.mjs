@@ -37,3 +37,15 @@ test("CRLF input, a leading ./ and case are normalised in the safe direction", (
   assert.equal(isApiPath("./infrastructure/worker/a.js"), true);
   assert.equal(isApiPath("Infrastructure/Worker/A.js"), true);
 });
+
+test("advisor follow-up: a .txt inside infrastructure/ still needs the API suite; no Worker file imports outside infrastructure/worker", async () => {
+  const { apiNeeded } = await import("../../tools/api-scope.mjs");
+  assert.equal(apiNeeded(["infrastructure/flagship-flags.txt"]), true);
+  assert.equal(apiNeeded(["infrastructure/README.md"]), false);
+  const fs = await import("node:fs"), path = await import("node:path");
+  const dir = path.join(import.meta.dirname, "..", "..", "infrastructure", "worker");
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".js"))) {
+    const src = fs.readFileSync(path.join(dir, f), "utf8");
+    for (const m of src.matchAll(/(?:import|from)\s*["']([^"']+)["']/g)) assert.ok(!m[1].startsWith("../"), f + " imports " + m[1] + " outside infrastructure/worker: extend tools/api-scope.mjs first");
+  }
+});
