@@ -198,3 +198,96 @@ test("/ask: provider error falls back to a library answer, delivered once", asyn
   assert.equal(patches.length, 1);
   assert.match(patches[0].content, /Onyxia/);
 });
+
+// ---- delivery PATCH retry ----
+import { patchOriginalWithRetry, setPatchSleepForTests } from "../../infrastructure/worker/discord.js";
+
+function patchHarness(script) {
+  const calls = [];
+  const sleeps = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), method: init.method, body: init.body });
+    const step = script[Math.min(calls.length - 1, script.length - 1)];
+    if (step === "net") throw new TypeError("fetch failed");
+    return new Response("{}", { status: step.status, headers: step.headers || {} });
+  };
+  setPatchSleepForTests(async (ms) => { sleeps.push(ms); });
+  const env = {};
+  const quiet = console.warn;
+  console.warn = () => {};
+  return { calls, sleeps, env, restore: () => { console.warn = quiet; setPatchSleepForTests(null); } };
+}
+const FAKE_INTERACTION = { application_id: "a", token: "t" };
+
+test("delivery retry: 500 then success edits once more and returns true", async () => {
+  const h = patchHarness([{ status: 500 }, { status: 200 }]);
+  try {
+    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), true);
+    assert.equal(h.calls.length, 2);
+    assert.deepEqual(h.sleeps, [250]);
+    assert.equal(h.calls[0].body, h.calls[1].body);
+  } finally { h.restore(); }
+});
+
+test("delivery retry: 429 honours Retry-After (capped at 2 s) then succeeds", async () => {
+  const h = patchHarness([{ status: 429, headers: { "Retry-After": "1" } }, { status: 429, headers: { "Retry-After": "30" } }, { status: 200 }]);
+  try {
+    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), true);
+    assert.equal(h.calls.length, 3);
+    assert.deepEqual(h.sleeps, [1000, 2000]);
+  } finally { h.restore(); }
+});
+
+test("delivery retry: 404 stops after one attempt", async () => {
+  const h = patchHarness([{ status: 404 }]);
+  try {
+    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), false);
+    assert.equal(h.calls.length, 1);
+    assert.deepEqual(h.sleeps, []);
+  } finally { h.restore(); }
+});
+
+test("delivery retry: network error twice then success", async () => {
+  const h = patchHarness(["net", "net", { status: 200 }]);
+  try {
+    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), true);
+    assert.equal(h.calls.length, 3);
+    assert.deepEqual(h.sleeps, [250, 750]);
+  } finally { h.restore(); }
+});
+
+test("delivery retry: all attempts fail returns false, does not throw, stops at 3 attempts", async () => {
+  const h = patchHarness([{ status: 503 }]);
+  try {
+    assert.equal(await patchOriginalWithRetry(FAKE_INTERACTION, "x"), false);
+    assert.equal(h.calls.length, 3);
+  } finally { h.restore(); }
+});
+
+test("/ask: a 500 on the first delivery edit is retried and the answer lands", async () => {
+  const db = fakeDb({ persona: { system: "S", ackLines: ["thinking line"], errorLines: ["Leeroy tripped."] } }, PAGES);
+  let patchCalls = 0;
+  const delivered = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes("/messages/@original")) {
+      patchCalls++;
+      if (patchCalls === 1) return new Response("err", { status: 500 });
+      delivered.push(JSON.parse(init.body));
+      return new Response("{}", { status: 200 });
+    }
+    if (u.includes("api.anthropic.com")) return new Response(JSON.stringify({ content: [{ type: "text", text: MODEL_RAW }] }), { status: 200 });
+    return new Response("{}", { status: 200 });
+  };
+  const env = baseEnv(db, { DISCORD_PUBLIC_KEY: signer.publicKeyHex, ANTHROPIC_API_KEY: "test-key", ASK_DEADLINE_MS: "2000", USER_SALT: "fixture-salt-0123456789" });
+  const pending = [];
+  const quiet = console.warn; console.warn = () => {};
+  setPatchSleepForTests(async () => {});
+  try {
+    await handleDiscordInteraction(signer.signedRequest(askInteraction), env, { waitUntil: (p) => pending.push(p) }, "https://worker.test");
+    await Promise.allSettled(pending);
+  } finally { console.warn = quiet; setPatchSleepForTests(null); }
+  assert.equal(patchCalls, 2);
+  assert.equal(delivered.length, 1);
+  assert.match(delivered[0].content, /Onyxia's Lair opens/);
+});

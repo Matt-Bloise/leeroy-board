@@ -514,6 +514,43 @@ export function quoteQuestion(q) {
   return `> **Q:** ${flat}`;
 }
 
+// Delivery edit with up to 2 retries (3 attempts). Retries only on network error, HTTP 5xx and 429 (Retry-After honoured up to 2 s);
+// any other 4xx (401/403/404: token or message gone) stops at once. PATCH on the same message is idempotent, so a retry never double-posts.
+// Backoff 250 ms then 750 ms; setPatchSleepForTests(fn) replaces the wait in tests. Logs status only, never tokens or content. Never throws.
+const PATCH_BACKOFF_MS = [250, 750];
+const PATCH_RETRY_AFTER_CAP_MS = 2000;
+let patchSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export function setPatchSleepForTests(fn) {
+  patchSleep = fn || ((ms) => new Promise((r) => setTimeout(r, ms)));
+}
+export async function patchOriginalWithRetry(interaction, content, components = []) {
+  for (let attempt = 0; attempt <= PATCH_BACKOFF_MS.length; attempt++) {
+    let status = 0;
+    let wait = PATCH_BACKOFF_MS[attempt];
+    try {
+      const res = await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: clampContent(content), allowed_mentions: ALLOWED_MENTIONS_NONE, ...(components.length ? { components } : {}) }),
+        signal: AbortSignal.timeout(5000),
+      });
+      status = res.status;
+      if (res.ok) return true;
+      if (status === 429) {
+        const ra = Number(res.headers && res.headers.get && res.headers.get("Retry-After"));
+        if (Number.isFinite(ra) && ra >= 0) wait = Math.min(ra * 1000, PATCH_RETRY_AFTER_CAP_MS);
+      }
+    } catch {
+      status = 0;
+    }
+    const retryable = status === 0 || status === 429 || status >= 500;
+    console.warn(JSON.stringify({ evt: "answer_patch_failed", attempt: attempt + 1, status: status || "network", retry: retryable && attempt < PATCH_BACKOFF_MS.length }));
+    if (!retryable || attempt >= PATCH_BACKOFF_MS.length) return false;
+    await patchSleep(wait);
+  }
+  return false;
+}
+
 // Run an answer and edit the placeholder (@original) with the result. The final edit is ALWAYS sent, exactly once:
 // the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
 // (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
@@ -570,14 +607,7 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
     );
   }
   if (interaction && interaction.application_id && interaction.token) {
-    try {
-      await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: clampContent(wrap(text)), allowed_mentions: ALLOWED_MENTIONS_NONE, ...(components.length ? { components } : {}) }),
-        signal: AbortSignal.timeout(5000),
-      });
-    } catch {}
+    await patchOriginalWithRetry(interaction, clampContent(wrap(text)), components);
   }
   // Keep the invocation alive so a late answer is still stored.
   await work;
