@@ -965,7 +965,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
     // The stored build is shown only when the question makes it relevant (ask-build.js buildRelevant); otherwise the model is told once to leave it out.
     const buildHelps = Boolean(askerSheet) && hasBuildText(fullBuild)
-      && buildRelevant(question, askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }), { rankedIds: ranked.map((p) => p.id), skip }).relevant;
+      && buildRelevant(question, askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }), { rankedIds: ranked.map((p) => p.id), skip, previousQuestion: prevQ }).relevant;
     const yourBuild = Boolean(askerSheet) && hasBuildText(fullBuild) && !buildHelps ? BUILD_NOT_RELEVANT_LINE : fullBuild;
     const hasBuild = buildHelps;
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.

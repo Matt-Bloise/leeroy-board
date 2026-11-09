@@ -350,3 +350,18 @@ test("an irrelevant question gets the not-relevant line and no YOUR_BUILD block;
   assert.match(on.userPrompt, /YOUR_BUILD/);
   assert.ok(!on.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && on.personalised);
 });
+
+test("buildRelevant: pronouns and party words alone never make it relevant; a different class beats them", () => {
+  assert.equal(buildRelevant("Where can we find a hunter trainer?", FOX).relevant, false);
+  assert.equal(buildRelevant("What does party mean in WoW?", FOX).relevant, false);
+  assert.equal(buildRelevant("what is on tonight in Stormwind", FOX).relevant, false);
+  assert.equal(buildRelevant("What should our party do tonight?", FOX).relevant, true, "the explicit phrase our party");
+  assert.equal(buildRelevant("Where can we find a paladin trainer?", FOX).relevant, true, "own class named");
+});
+test("buildRelevant: a follow-up keeps the build when the previous question was relevant, unless it names another class", () => {
+  const prev = "what should my build train at level 10";
+  assert.equal(buildRelevant("And which weapon?", FOX).relevant, false);
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: prev }).relevant, true);
+  assert.equal(buildRelevant("And what about a hunter?", FOX, { previousQuestion: prev }).relevant, false);
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "what is the capital of france" }).relevant, false);
+});
