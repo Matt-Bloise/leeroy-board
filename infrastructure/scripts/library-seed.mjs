@@ -108,7 +108,7 @@ export function readLibraryFiles(libDir) {
 }
 
 /** sha256 of the concatenated file contents, in sorted file-name order. */
-export const SEED_ALGO = "seed-algo:3 (fact-level merge, also when D1 is newer)";
+export const SEED_ALGO = "seed-algo:4 (fact-level merge, also when D1 is newer; repo-only index.pages entries appended)";
 export function libraryHash(files) {
   const h = crypto.createHash("sha256");
   h.update(SEED_ALGO + "\n"); // a change in what the seed does re-runs it even when the data files are unchanged
@@ -269,6 +269,18 @@ function refreshIndexTotals(db, repoIndex, now) {
     ix.categories = Array.isArray(ix.categories) ? ix.categories : [];
     const have = new Set(ix.categories.map((c) => c.key));
     for (const c of repoIndex.categories) if (c && c.key && !have.has(c.key)) ix.categories.push({ ...c });
+  }
+  // Page directory: append repo entries whose id D1's index.pages lacks (same rule as repo-only facts: add by id, never
+  // change or remove what D1 has; where both have the id, D1 wins). Totals below still come from lib_pages.
+  if (repoIndex && Array.isArray(repoIndex.pages)) {
+    ix.pages = Array.isArray(ix.pages) ? ix.pages : [];
+    const haveIds = new Set(ix.pages.map((e) => e && e.id));
+    for (const e of repoIndex.pages) {
+      if (e && e.id && !haveIds.has(e.id)) {
+        ix.pages.push(JSON.parse(JSON.stringify(e)));
+        haveIds.add(e.id);
+      }
+    }
   }
   const pages = db.query("SELECT category, facts_json, open_json FROM lib_pages");
   const len = (j) => {
