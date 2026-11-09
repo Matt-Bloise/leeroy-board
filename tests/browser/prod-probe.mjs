@@ -188,18 +188,20 @@ async function probeOne(browser, engine, vp) {
   const errs = [], http = [], failed = [];
   // The only routes: count every Worker request and every socket before it is sent, and refuse it once the budget is spent (helpers/probe-budget.mjs).
   await guardContext(ctx, budget, { mode: API_ROUTE });
+  if (process.env.PROBE_SELFTEST_BEACON === "1") await ctx.route((u) => isInsightsHost(u.href), (r) => r.fulfill({ status: 404, body: "", headers: {} })); // self-test only: the beacon host answers 404 with no CORS headers, deterministically and offline
   if (CLOCK) await ctx.clock.install({ time: CLOCK }); // self-test only (see --clock above)
   const page = await ctx.newPage();
-  let insightsFailed = false;
-  page.on("pageerror", (e) => errs.push({ text: `uncaught: ${String(e.message).slice(0, 160)}`, at: "" }));
-  page.on("console", (m) => { if (m.type() !== "error") return; let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 4000), at: at.replace(/[?#].*$/, "") }); });
+  const insightsFailedAt = []; // epoch ms of each cloudflareinsights request that failed or answered >= 400 (WebKit logs the CORS 404 without a URL)
+  page.on("pageerror", (e) => errs.push({ text: `uncaught: ${String(e.message).slice(0, 160)}`, at: "", t: Date.now() }));
+  page.on("console", (m) => { if (m.type() !== "error") return; let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} errs.push({ text: m.text().slice(0, 4000), at: at.replace(/[?#].*$/, ""), t: Date.now() }); });
   const ours = (u) => { try { const o = new URL(u).origin; return o === SITE || o === API; } catch (e) { return false; } };
   const warned = [];
   page.on("response", (r) => {
+    if (isInsightsHost(r.url()) && r.status() >= 400) insightsFailedAt.push(Date.now());
     const v = classifyHttp(r.url(), r.status(), SITE, API), row = `${r.status()} ${r.request().method()} ${r.url().replace(/[?#].*$/, "")}`;
     if (v === "fail") http.push(row); else if (v === "warn") warned.push(row);
   });
-  page.on("requestfailed", (r) => { if (isInsightsHost(r.url())) insightsFailed = true; const why = (r.failure() || {}).errorText || ""; if (ours(r.url()) && !/ERR_ABORTED|NS_BINDING_ABORTED|cancelled|aborted/i.test(why) && !(budget.exceeded && /blockedbyclient|BLOCKED_BY_CLIENT/i.test(why))) failed.push(`${r.method()} ${r.url().replace(/[?#].*$/, "")} (${why})`); });
+  page.on("requestfailed", (r) => { if (isInsightsHost(r.url())) insightsFailedAt.push(Date.now()); const why = (r.failure() || {}).errorText || ""; if (ours(r.url()) && !/ERR_ABORTED|NS_BINDING_ABORTED|cancelled|aborted/i.test(why) && !(budget.exceeded && /blockedbyclient|BLOCKED_BY_CLIENT/i.test(why))) failed.push(`${r.method()} ${r.url().replace(/[?#].*$/, "")} (${why})`); });
   let chips = -1;
   const target = pageUrl(URL_, { params: {} });
   // Reveal the member chips ("Just take a look" can appear a moment after the chips' container is attached: Firefox, phones) and wait for them to equal the API count.
@@ -264,7 +266,9 @@ async function probeOne(browser, engine, vp) {
   const seenVisible = new Set(wc);
   for (const h of wrongCountCopy(uniq(everything.map((p) => p[1])), N)) if (!seenVisible.has(h)) hiddenCopy.add(h);
   for (const a of exemptedAdvisories(errs)) advisories.add(`${engine}: ${a}`);
-  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsRequestFailed: insightsFailed, budgetSpent: budget.exceeded });
+  let beaconIgnored = 0;
+  const hard = consoleFailures(errs, { engine, allowWebkitNoWebgl: process.env.SMOKE_ALLOW_WEBKIT_NO_WEBGL === "1", insightsFailedAt, budgetSpent: budget.exceeded, onBeacon: () => beaconIgnored++ });
+  if (beaconIgnored) console.log(`WARN third-party analytics beacon error ignored (${beaconIgnored}), see /privacy`);
   hard.length ? hard.slice(0, 5).forEach((e) => fail(tag, `console error: ${e.text.length > 200 ? `${e.text.slice(0, 200)}... (${e.text.length} chars)` : e.text}${e.at ? ` [${e.at}]` : ""}`)) : pass(`${tag} no console errors`);
   for (const w of uniq(warned).slice(0, 8)) console.log(`WARN ${tag}: API 4xx (not a failure off /api/bootstrap and /api/state): ${w}\n::warning title=Production probe::${tag}: API 4xx ${w}`);
   http.length ? uniq(http).slice(0, 8).forEach((h) => fail(tag, `HTTP error (site 4xx/5xx, API 5xx, or API 4xx on bootstrap/state): ${h}`)) : pass(`${tag} no 4xx/5xx from the site or its API`);
