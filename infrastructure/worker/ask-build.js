@@ -215,6 +215,7 @@ export function groundedOrNotPublished(answer, allowedText) {
 // An answer without the refusal line is returned unchanged, byte for byte.
 const REFUSAL_RE = /the library does not have that yet\.?/i;
 const PUB_CLAIM_RE = /\b(?:not|nothing|never|no\w*)\b[^.!?]{0,40}\bpublished\b/i;
+const PERSONA_SENT_RE = new RegExp("^as the [^.!?]{0,160}librarian|^i (?:look up|share) verified", "i");
 export function guardRefusal(answer, allowedText) {
   const text = String(answer || "");
   if (!REFUSAL_RE.test(text)) return text;
@@ -236,7 +237,8 @@ export function guardRefusal(answer, allowedText) {
         kept.push(sent);
         continue;
       }
-      if (seen && (PUB_CLAIM_RE.test(sent) || badPhrases(sent, allowed).length)) continue;
+      // Nov 9 eval: after the refusal the model restates its persona (As the party librarian for ... I share verified facts); that is branding, not an answer.
+      if (seen && (PERSONA_SENT_RE.test(sent.trim()) || PUB_CLAIM_RE.test(sent) || badPhrases(sent, allowed).length)) continue;
       kept.push(sent);
     }
     if (kept.length === parts.length && kept.every((k, i) => k === parts[i])) out.push(line);

@@ -64,3 +64,11 @@ test("a refusal sentence with only grounded words is unchanged", () => {
   const same = "The library does not have that yet, but it lists frost mage spells.";
   assert.equal(guardRefusal(same, "frost mage spells library"), same);
 });
+
+// Nov 9 refusal eval run: the persona sentence came AFTER the refusal line (not leading), so stripPersonaIntro missed it.
+test("a persona sentence after the refusal line is dropped", () => {
+  const a = "The library does not have that yet, Blue Owl, as nothing about past Discord posts is published yet. As the party librarian for Dungeons and Drinking, serving Santa and Bloise, I share verified facts and options, including your frost mage setup.";
+  const out = guardRefusal(a, "santa bloise frost mage dungeons drinking party library");
+  assert.ok(/^The library does not have that yet/.test(out));
+  assert.ok(!/librarian/i.test(out), out);
+});
