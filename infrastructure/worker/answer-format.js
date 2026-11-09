@@ -89,6 +89,22 @@ export function stripEggLine(text, line) {
   return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// A leading persona-introduction sentence ("As the party librarian for ..., I can share verified library facts ...",
+// optionally after a first-name greeting) says nothing and, in refusals, drags build details in. Only the first sentence of the
+// answer, only when it matches, and only when something else follows. Anything else is returned byte for byte.
+const PERSONA_INTRO_RE = /^\s*(?:\*\*)?(?:[A-Z][\w'-]*(?: [A-Z][\w'-]*){0,2},\s+)?as (?:the|your) [^.!?\n]{0,80}?\blibrarian\b[^.!?\n]*[.!?]+(?:\*\*)?[ \t]*/i;
+export function stripPersonaIntro(text) {
+  if (typeof text !== "string" || !text) return text;
+  const m = PERSONA_INTRO_RE.exec(text);
+  if (!m) return text;
+  // Advisor follow-up (Nov 9): only an intro that carries no fact. It must contain a persona verb (share, look up, offer, help) and must not be followed straight by the sources footer.
+  if (!/\bI (?:can |will |am here to )?(?:share|look up|offer|help|pull)\b/i.test(m[0])) return text;
+  const rest = text.slice(m[0].length).replace(/^\n+/, "");
+  if (/^\s*-#/.test(rest)) return text;
+  if (!/[A-Za-z0-9]/.test(rest.split(/\n-#/)[0])) return text;
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
 // A line that is only a leftover token: an unexpanded {board:...} deep link or a bare hex library stamp.
 const BOARD_TOKEN_RE = /\{board:[^}]*\}/g;
 const STAMP_LINE_RE = /^\s*(?:-#\s*)?[0-9a-f]{8,40}\s*$/i;

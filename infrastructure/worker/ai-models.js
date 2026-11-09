@@ -19,11 +19,11 @@ import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
-import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings } from "./answer-format.js";
+import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings, stripPersonaIntro } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
-import { askerFacts, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished } from "./ask-build.js";
+import { askerFacts, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
 export const PERSONALISE_RULE =
@@ -1026,10 +1026,12 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
     repaired = stripEggLine(repaired, eggFor(persona).line);
+    repaired = stripPersonaIntro(repaired);
     // A spell, place or item the library never gave is replaced by the honest line.
     if (typeof groundingText === "string" && !trusted) {
       const g = groundedOrNotPublished(repaired, groundingText);
       if (!g.ok) repaired = g.answer;
+      repaired = guardRefusal(repaired, groundingText);
     }
     // IsSup (self-rag.js): a number the library, the build and the question never gave goes; a source that was not retrieved is not cited.
     const retrieved = retrievalOf({ retrieval, groundingText });
