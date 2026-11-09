@@ -50,9 +50,19 @@ test("console exemptions are anchored: the report-only marker must START the mes
   assert.equal(consoleFailures([{ text: "boom", at: "https://evil.example/cloudflareinsights.com" }]).length, 1);
   // the URL-less network wording is exempt only when a beacon request was seen failing, and never when the message names another URL
   assert.equal(consoleFailures([{ text: "Failed to load resource: net::ERR_FAILED", at: "" }]).length, 1);
-  assert.equal(consoleFailures([{ text: "Failed to load resource: net::ERR_FAILED", at: "" }], { insightsRequestFailed: true }).length, 0);
-  assert.equal(consoleFailures([{ text: "Failed to load resource: the server responded with 500 https://api.leeroy.party/api/x", at: "" }], { insightsRequestFailed: true }).length, 1);
-  assert.equal(consoleFailures([{ text: "TypeError: x", at: "" }], { insightsRequestFailed: true }).length, 1);
+  const T = 1_000_000, cors = "Origin https://leeroy.party is not allowed by Access-Control-Allow-Origin. Status code: 404", rum = "Beacon API cannot load https://cloudflareinsights.com/cdn-cgi/rum. Origin https://leeroy.party is not allowed by Access-Control-Allow-Origin. Status code: 404";
+  assert.equal(consoleFailures([{ text: "Failed to load resource: net::ERR_FAILED", at: "", t: T }], { insightsFailedAt: [T - 100] }).length, 0);
+  assert.equal(consoleFailures([{ text: "Failed to load resource: the server responded with 500 https://api.leeroy.party/api/x", at: "", t: T }], { insightsFailedAt: [T - 100] }).length, 1);
+  assert.equal(consoleFailures([{ text: "TypeError: x", at: "", t: T }], { insightsFailedAt: [T - 100] }).length, 1);
+  // the two WebKit lines: exempt within 2 s after a beacon failure (counted via onBeacon), never without one, never later, never for another host
+  let n = 0;
+  assert.equal(consoleFailures([{ text: cors, at: "", t: T }, { text: rum, at: "", t: T + 10 }], { insightsFailedAt: [T - 1500], onBeacon: () => n++ }).length, 0);
+  assert.equal(n, 2);
+  assert.equal(consoleFailures([{ text: cors, at: "", t: T }, { text: rum, at: "", t: T }]).length, 2, "no beacon failure seen");
+  assert.equal(consoleFailures([{ text: cors, at: "", t: T }], { insightsFailedAt: [T - 2500] }).length, 1, "more than 2 s after");
+  assert.equal(consoleFailures([{ text: cors, at: "", t: T }], { insightsFailedAt: [T + 5000] }).length, 1, "failure long after the message");
+  assert.equal(consoleFailures([{ text: rum.replace("cloudflareinsights.com", "evil.example"), at: "", t: T }], { insightsFailedAt: [T - 100] }).length, 1, "other host");
+  assert.equal(consoleFailures([{ text: cors + " https://api.leeroy.party/api/x", at: "", t: T }], { insightsFailedAt: [T - 100] }).length, 1, "extra text");
 });
 
 test("console errors: report-only CSP and third-party noise are exempt; an ENFORCED CSP violation fails", () => {

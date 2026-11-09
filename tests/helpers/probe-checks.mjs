@@ -88,15 +88,29 @@ export const isBudgetRefusal = (text, at) => BUDGET_REFUSED.test(String(text).tr
 export function exemptedAdvisories(errors) {
   return [...new Set(errors.map((e) => (typeof e === "string" ? e : e.text)).filter((t) => isReportOnlyCsp(t) || isCspAdvisory(t)).map((t) => String(t).replace(/\s+/g, " ").trim().slice(0, 160)))];
 }
-export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = false, insightsRequestFailed = false, budgetSpent = false } = {}) {
+// Cloudflare Web Analytics beacon noise (injected by Cloudflare, not in our repo; /privacy discloses it). Its RUM endpoint answers 404 without CORS headers, which WebKit logs as
+// two console errors with no usable location. Exempt only (a) a message located at an insights host, or (b) one of two exact wordings that arrives within BEACON_WINDOW_MS after
+// a cloudflareinsights request failed or answered >= 400 on the same page ('failedAt': epoch ms; the error's 't'): the URL-less CORS line, and "Beacon API cannot load <insights URL>".
+// BEACON_SLACK_MS allows for Playwright delivering the console event just before the network event. Anything else, including any own-origin error, still fails.
+export const BEACON_WINDOW_MS = 2000, BEACON_SLACK_MS = 500;
+const BEACON_CORS = /^Origin \S+ is not allowed by Access-Control-Allow-Origin\. Status code: \d{3}$/;
+const BEACON_LOAD = /^(?:Failed to load resource: net::ERR_FAILED|Beacon API cannot load (\S+?)\. Origin \S+ is not allowed by Access-Control-Allow-Origin\. Status code: \d{3})$/;
+export function isBeaconNoise(e, failedAt = []) {
+  const text = String(typeof e === "string" ? e : e.text).trim(), at = typeof e === "string" ? "" : e.at || "", t = typeof e === "string" ? NaN : e.t;
+  if (isInsightsHost(at)) return true;
+  if (!Number.isFinite(t) || !failedAt.some((f) => t - f <= BEACON_WINDOW_MS && f - t <= BEACON_SLACK_MS)) return false;
+  if (BEACON_CORS.test(text)) return true;
+  const m = text.match(BEACON_LOAD);
+  return !!m && (!m[1] || isInsightsHost(m[1]));
+}
+export function consoleFailures(errors, { engine = "", allowWebkitNoWebgl = false, insightsFailedAt = [], budgetSpent = false, onBeacon = null } = {}) {
   return errors.filter((e) => {
     const text = typeof e === "string" ? e : e.text, at = typeof e === "string" ? "" : e.at || "";
     if (engine === "webkit" && allowWebkitNoWebgl && /Error creating WebGL context/.test(text)) return false;
     if (isReportOnlyCsp(text) || isCspAdvisory(text)) return false;
     if (ignoredConsoleError(text, at)) return false; // Firefox: "Prevented too many CSP reports ..." from "debugger eval code" is the harness's own page.evaluate, not the page
-    if (isInsightsHost(at)) return false;
     if (budgetSpent && isBudgetRefusal(text, at)) return false;
-    if (insightsRequestFailed && !/https?:\/\//.test(text) && /^(Failed to load resource|.*net::ERR_FAILED|.*Access-Control-Allow-Origin)/i.test(text)) return false;
+    if (isBeaconNoise(e, insightsFailedAt)) { if (onBeacon) onBeacon(e); return false; }
     return true;
   });
 }
