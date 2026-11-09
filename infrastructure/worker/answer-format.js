@@ -97,7 +97,10 @@ export function stripPersonaIntro(text) {
   if (typeof text !== "string" || !text) return text;
   const m = PERSONA_INTRO_RE.exec(text);
   if (!m) return text;
+  // Advisor follow-up (Nov 9): only an intro that carries no fact. It must contain a persona verb (share, look up, offer, help) and must not be followed straight by the sources footer.
+  if (!/\bI (?:can |will |am here to )?(?:share|look up|offer|help|pull)\b/i.test(m[0])) return text;
   const rest = text.slice(m[0].length).replace(/^\n+/, "");
+  if (/^\s*-#/.test(rest)) return text;
   if (!/[A-Za-z0-9]/.test(rest.split(/\n-#/)[0])) return text;
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 }

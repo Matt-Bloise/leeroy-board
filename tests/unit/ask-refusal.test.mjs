@@ -72,3 +72,26 @@ test("a persona sentence after the refusal line is dropped", () => {
   assert.ok(/^The library does not have that yet/.test(out));
   assert.ok(!/librarian/i.test(out), out);
 });
+
+// Advisor review Nov 9 (probes): the guard must never drop a correct sourced sentence.
+test("an intro that carries a fact is kept, a bare persona intro still goes", () => {
+  const withFact = "As the party librarian for Dungeons and Drinking, Onyxia's Lair opens on 2026-12-09.\n\n-# Sources: [events](<https://leeroy.party/#library.events>)";
+  assert.equal(stripPersonaIntro(withFact), withFact);
+  const tell = "As the party librarian, I can tell you Onyxia's Lair opens on 2026-12-09. A Protection Paladin is a tank.";
+  assert.equal(stripPersonaIntro(tell), tell);
+  assert.equal(stripPersonaIntro("As the party librarian for D and D, I can share verified library facts and options. Onyxia opens on 2026-12-09."), "Onyxia opens on 2026-12-09.");
+});
+test("grounded sentences about published things survive after the refusal line", () => {
+  const g = "notes events published schedule roster board molten core november lists raid";
+  const a = "The library does not have that yet. The notes published under events list the raid schedule. November's published schedule lists Molten Core. The roster is now published on the board.";
+  assert.equal(guardRefusal(a, g), a);
+});
+test("a persona sentence that carries a fact survives; a bare one is dropped", () => {
+  const g = "onyxia lair opens 2026-12-09 library facts";
+  const keep = "The library does not have that yet. I share verified library facts: Onyxia's Lair opens on 2026-12-09.";
+  assert.equal(guardRefusal(keep, g), keep);
+});
+test("a cut bold refusal sentence stays balanced", () => {
+  const out = guardRefusal("**The library does not have that yet, as the Deadmines guide is not published yet.**", "deadmines guide");
+  assert.equal((out.match(/\*\*/g) || []).length % 2, 0, out);
+});

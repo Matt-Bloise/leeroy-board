@@ -214,8 +214,10 @@ export function groundedOrNotPublished(answer, allowedText) {
 // that claims something "is not published", goes too. A sentence naming what would settle it, or what the library does say, stays.
 // An answer without the refusal line is returned unchanged, byte for byte.
 const REFUSAL_RE = /the library does not have that yet\.?/i;
-const PUB_CLAIM_RE = /\b(?:not|nothing|never|no\w*)\b[^.!?]{0,40}\bpublished\b/i;
-const PERSONA_SENT_RE = new RegExp("^as the [^.!?]{0,160}librarian|^i (?:look up|share) verified", "i");
+const PUB_CLAIM_RE = /(?:\b(?:not|nothing|never|no|none|nobody)\b|n't\b)[^.!?]{0,40}\bpublished\b/i; // advisor follow-up: the old no\w* matched notes, now, November, normal
+const PERSONA_ASTHE_RE = new RegExp("^as the [^.!?]{0,160}librarian", "i"), PERSONA_VERB_RE = new RegExp("\\bI (?:can |will |am here to )?(?:share|look up|offer|help|pull)\\b", "i"), PERSONA_VERIFIED_RE = new RegExp("^i (?:look up|share) verified (?:library )?facts, options", "i");
+// a persona sentence restates the role and carries no fact (advisor follow-up Nov 9: 'I share verified library facts: Onyxia opens on ...' must survive)
+const personaSentence = (s) => (PERSONA_ASTHE_RE.test(s) && PERSONA_VERB_RE.test(s)) || PERSONA_VERIFIED_RE.test(s);
 export function guardRefusal(answer, allowedText) {
   const text = String(answer || "");
   if (!REFUSAL_RE.test(text)) return text;
@@ -238,11 +240,11 @@ export function guardRefusal(answer, allowedText) {
         continue;
       }
       // Nov 9 eval: after the refusal the model restates its persona (As the party librarian for ... I share verified facts); that is branding, not an answer.
-      if (seen && (PERSONA_SENT_RE.test(sent.trim()) || PUB_CLAIM_RE.test(sent) || badPhrases(sent, allowed).length)) continue;
+      if (seen && (personaSentence(sent.trim()) || PUB_CLAIM_RE.test(sent) || badPhrases(sent, allowed).length)) continue;
       kept.push(sent);
     }
     if (kept.length === parts.length && kept.every((k, i) => k === parts[i])) out.push(line);
-    else if (kept.length) out.push(kept.join(" "));
+    else if (kept.length) out.push(balanceBold(kept.join(" ")));
   }
   const left = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   return left ? `${left}${body.match(/\s*$/)[0]}${tail}` : text;
