@@ -15,6 +15,6 @@ export function classPageFallback(answer, { question, pages, boardUrl } = {}) {
   const page = (Array.isArray(pages) ? pages : []).find((p) => p && p.id === id);
   if (!page) return answer;
   const base = String(boardUrl || "https://leeroy.party").replace(/\/+$/, "");
-  const title = String(page.title || "").replace(/[\[\]<>()]/g, "").trim() || id;
+  const title = String(page.title || "").replace(/https?:\/\/\S+/gi, "").replace(/[\[\]<>()*_`]/g, "").trim() || id; // advisor follow-up Nov 9: no URL or markdown from a library title in the link text
   return `${answer.trimEnd()}\nThe library does have the [${title} page](<${base}/#library.${id.replace("/", ".")}>) if you want the overview.`;
 }

@@ -26,3 +26,9 @@ test("two classes named, or a class missing from the library, adds nothing", () 
   assert.equal(classPageFallback(NOT_PUBLISHED_LINE, ctx("mage or rogue")), NOT_PUBLISHED_LINE);
   assert.equal(classPageFallback(NOT_PUBLISHED_LINE, ctx("explain the warlock")), NOT_PUBLISHED_LINE);
 });
+
+test("a library title with a URL or markdown cannot reach the link text (advisor follow-up)", () => {
+  const out = classPageFallback("The library does not have that yet.", { question: "how do mages work", pages: [{ id: "classes/mage", title: "Mage https://evil.example **x**" }], boardUrl: "https://leeroy.party" });
+  assert.ok(!/evil\.example/.test(out) && !/\*\*/.test(out), out);
+  assert.ok(/\[Mage x page\]|\[Mage\s+x page\]/.test(out), out);
+});
