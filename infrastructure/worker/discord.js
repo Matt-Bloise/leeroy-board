@@ -1290,7 +1290,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
               {
                 color: GOLD,
                 title: "The WoW: Forever Library Shelves",
-                description: SLASH_COPY.libraryBody(LIBRARY_DATA.posted.length, posted, LIBRARY_DATA.coming.length, coming, `${boardUrl}/#library`),
+                description: SLASH_COPY.libraryBody(LIBRARY_DATA.posted.length, posted, LIBRARY_DATA.coming.length, coming, `${boardUrl}/#library`).slice(0, 4096), // advisor follow-up: Discord embed description limit
               },
             ],
           },
