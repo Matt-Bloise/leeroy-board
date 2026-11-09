@@ -208,3 +208,40 @@ export function groundedOrNotPublished(answer, allowedText) {
   if (substantive < 4) return { ok: false, bad, answer: NOT_PUBLISHED_LINE };
   return { ok: false, bad, answer: `${left}${tail}` };
 }
+
+// A refusal ("The library does not have that yet") stays a refusal. Inside the sentence that holds the line, a trailing ", as ... is not
+// published yet" qualifier is an unsupported status claim and goes. After it, a sentence that holds a name the grounding text never gave, or
+// that claims something "is not published", goes too. A sentence naming what would settle it, or what the library does say, stays.
+// An answer without the refusal line is returned unchanged, byte for byte.
+const REFUSAL_RE = /the library does not have that yet\.?/i;
+const PUB_CLAIM_RE = /\b(?:not|nothing|never|no\w*)\b[^.!?]{0,40}\bpublished\b/i;
+export function guardRefusal(answer, allowedText) {
+  const text = String(answer || "");
+  if (!REFUSAL_RE.test(text)) return text;
+  const cut = text.search(/\n-#\s*Sources?:/i);
+  const body = cut >= 0 ? text.slice(0, cut) : text;
+  const tail = cut >= 0 ? text.slice(cut) : "";
+  const allowed = `${allowedText || ""} ${HOUSE.join(" ")}`.toLowerCase();
+  let seen = false;
+  const out = [];
+  for (const line of body.split("\n")) {
+    const parts = line.split(/(?<=[.!?])\s+/);
+    const kept = [];
+    for (let sent of parts) {
+      if (!seen && REFUSAL_RE.test(sent)) {
+        seen = true;
+        const m = REFUSAL_RE.exec(sent);
+        const after = sent.slice(m.index + m[0].length);
+        if (PUB_CLAIM_RE.test(after)) sent = `${sent.slice(0, m.index + m[0].length).replace(/\.?$/, ".")}`;
+        kept.push(sent);
+        continue;
+      }
+      if (seen && (PUB_CLAIM_RE.test(sent) || badPhrases(sent, allowed).length)) continue;
+      kept.push(sent);
+    }
+    if (kept.length === parts.length && kept.every((k, i) => k === parts[i])) out.push(line);
+    else if (kept.length) out.push(kept.join(" "));
+  }
+  const left = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return left ? `${left}${body.match(/\s*$/)[0]}${tail}` : text;
+}
