@@ -29,6 +29,10 @@ import { askerFacts, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBui
 export const PERSONALISE_RULE =
   "Personalise with YOUR_BUILD when relevant (\"as a Paladin tank...\"); never claim a build detail it does not list. Answer ONLY from LIBRARY facts, YOUR_BUILD and PARTY_BUILDS. Never name a spell, talent, place, item or level that those do not contain; if the library lacks it, say plainly \"The library does not have that yet.\" Only if YOUR_BUILD says the member has no build on file, say so once and suggest they fill in their sheet; otherwise never mention sheets or missing build data.";
 
+// Added after PERSONALISE_RULE: the Leeroy voice. Wording only; grounding, citation and length rules are unchanged.
+export const VOICE_RULE =
+  "VOICE: a confident, playful, well-read friend. The first sentence answers the question. One light smile on the first phone screen. Never use the words Skippy or honestly. No personal callouts. Inform, never instruct. When the library lacks the answer, the voice never adds facts: say so in one plain sentence, using the exact line from the rule above (The library does not have that yet), name only what the library does say, and stop.";
+
 // Alias -> display name for the voice guards. Only distinctive single-word aliases that sit inside a longer display name
 // are used ("squidward" -> "Handsome Squidward"); short or common words such as "rat", "tank" or "mage" are never rewritten.
 export function rosterAliases() {
@@ -951,7 +955,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         })
       : isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
     if (promptVariant === "format-reminder") systemPrompt = `${systemPrompt}\n\n${FORMAT_REMINDER}`;
-    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${FENCE_RULE}`;
+    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}\n\n${FENCE_RULE}`;
 
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
