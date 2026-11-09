@@ -260,6 +260,13 @@ function measure({ touch, w }) {
 // WebKit under CSS zoom: a locator click aims at the unzoomed rect and times out, so click the zoom-aware centre of the element instead.
 async function press(page, locator, timeout = 20000) {
   if (ENGINE !== "webkit") return locator.click({ timeout });
+  // wait for the target to be visible first (the same wait locator.click() does on the other engines); on a timeout say what the page showed, so a CI-only miss names its cause instead of a bare "elementHandle: Timeout"
+  try { await locator.waitFor({ state: "visible", timeout }); }
+  catch (e) {
+    const seen = await page.evaluate(() => [...document.querySelectorAll("button, a, [role=button]")].filter((b) => b.getClientRects().length).map((b) => (b.textContent || "").trim().replace(/\s+/g, " ").slice(0, 28)).filter(Boolean).slice(0, 12).join(" | ")).catch(() => "page state unreadable");
+    const open = await page.evaluate(() => document.documentElement.classList.contains("scene-open")).catch(() => "?");
+    throw new Error(`${e.message.split("\n")[0]} (waited ${timeout} ms for the target to be visible; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
+  }
   const el = await locator.elementHandle({ timeout });
   await el.evaluate((e) => e.scrollIntoView({ block: "center", inline: "center" }));
   const { x, y } = await el.evaluate((e) => window.__lz.point(e));
