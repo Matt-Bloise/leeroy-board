@@ -1318,6 +1318,8 @@ const worker = {
       // 3. GET /library/:name -> Edge-cached library JSON blob from D1 `lib_blobs`
       if (req.method === "GET" && path.startsWith("/library/")) {
         const name = decodeURIComponent(path.slice("/library/".length));
+        // seed.stamp is the deploy seed's bookkeeping row, not a Library document.
+        if (name === "seed.stamp") return jsonResp({ error: `Library blob ${name} not found` }, 404, cors);
         let resp = await getCachedResponse(url.origin, `/api/library/${name}`);
         if (!resp) {
           const row = await env.DB.prepare("SELECT json, stamp FROM lib_blobs WHERE name = ?")
