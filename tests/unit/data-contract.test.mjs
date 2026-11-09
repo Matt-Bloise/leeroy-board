@@ -8,7 +8,7 @@ import vm from "node:vm";
 // extracted as source, not copied) over each real data file with every event wrapped in a Proxy, and fails when the code reads a property the data does not have and the property is
 // not in the list of reads that are guarded on purpose below. A new unguarded read of a missing field fails here before it can render as "undefined".
 
-const src = fs.readFileSync("js/board.js", "utf8");
+const src = fs.readFileSync("js/board.js", "utf8").replace(/\r\n/g, "\n"); // LF so the function-end search below cannot miss on a CRLF checkout
 const grab = (name) => {
   const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, `function ${name} not found in js/board.js`);
   const eol = src.indexOf("\n", i), first = src.slice(i, eol);
@@ -32,7 +32,7 @@ function run(file, nowSec) {
   o.launchPast(); const nx = o.nextDated(); if (nx) texts.push(String(nx.when), String(nx.label));
   const le = o.launchEvent(); if (le) texts.push(String(le.when));
   o.settleLaunch(); texts.push(JSON.stringify(D.party.settled_extra || []));
-  o.tonightNext({ events }); // the tonight scene's own pick
+  if (file.endsWith("tonight.json")) { const tn = o.tonightNext({ events }); if (tn) texts.push(String(tn.when), String(tn.label)); } // the tonight scene picks from tonight.json only; its pick is rendered, not discarded
   return { missed, texts };
 }
 
