@@ -265,7 +265,7 @@ async function press(page, locator, timeout = 20000) {
   catch (e) {
     const seen = await page.evaluate(() => [...document.querySelectorAll("button, a, [role=button]")].filter((b) => b.getClientRects().length).map((b) => (b.textContent || "").trim().replace(/\s+/g, " ").slice(0, 28)).filter(Boolean).slice(0, 12).join(" | ")).catch(() => "page state unreadable");
     const open = await page.evaluate(() => document.documentElement.classList.contains("scene-open")).catch(() => "?");
-    throw new Error(`${e.message.split("\n")[0]} (waited ${timeout} ms for the target to be visible; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
+    throw new Error(`${e.message.split("\n")[0]} (waited ${timeout} ms for the target ${String(locator)} to be visible; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
   }
   const el = await locator.elementHandle({ timeout });
   await el.evaluate((e) => e.scrollIntoView({ block: "center", inline: "center" }));
