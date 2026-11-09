@@ -25,6 +25,10 @@ for (const [size, opts] of CTX) {
   await page.waitForSelector("#nx-fr2-look", { state: "visible", timeout: 20000 });
   await page.waitForTimeout(800);
 
+  /* the scene heading takes programmatic focus on open: it must not draw a ring (a stranger reads it as a bug) */
+  const hf = await page.evaluate(() => { const e = document.activeElement; if (!e || !/^H[1-6]$/.test(e.tagName)) return { tag: e && e.tagName, skipped: true }; const cs = getComputedStyle(e); return { tag: e.tagName, style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) }; });
+  ok(`${tag} a programmatically focused scene heading shows no focus ring`, hf.skipped || hf.style === "none" || hf.width === 0, JSON.stringify(hf));
+
   /* Escape on the first-visit card: focus must not drop to <body> */
   if (!touch) {
     await page.keyboard.press("Tab");
