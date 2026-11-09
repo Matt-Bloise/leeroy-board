@@ -74,7 +74,7 @@ test("slash, legacy button, web sign-up and web journey racing: every write land
       web(env, "santa", "/intent", { kind: "journey", patch: { journey: "guided" } }),
       web(env, "santa", "/signups", { patch: { pack: "no" } }),
     ]);
-    for (const r of res.slice(0, 2)) assert.match(r.body.data.content, /Recorded/, JSON.stringify(r.body));
+    for (const r of res.slice(0, 2)) assert.match(r.body.data.content, /Recorded|^Logged, /, JSON.stringify(r.body));
     assert.deepEqual(res.slice(2).map((r) => r.status), [200, 200, 200]);
     const doc = kv(env, "signups");
     assert.equal(row(doc, "ada").rsvp, "late"); assert.equal(row(doc, "ada").when, "8pm"); assert.equal(row(doc, "ada").pack, "yes");
@@ -102,7 +102,7 @@ test("sign-up card buttons and modals racing slash commands and web writes: ever
       web(env, "bloise", "/signups", { patch: { rsvp: "late" } }),
     ]);
     for (const r of res.slice(0, 3)) assert.equal(r.type, 4, JSON.stringify(r));
-    assert.match(res[3].body.data.content, /Recorded/);
+    assert.match(res[3].body.data.content, /Recorded|^Logged, /);
     const doc = kv(env, "signups");
     assert.equal(row(doc, "ada").rsvp, "in"); assert.equal(row(doc, "ada").meet, "The Old Mill");
     assert.equal(row(doc, "bo").pack, "yes"); assert.equal(row(doc, "bo").when, "8pm");

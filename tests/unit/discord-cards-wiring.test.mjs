@@ -97,20 +97,20 @@ test("flag on: /signup without options opens the select modal; flag off keeps th
   const off = await world().send(slash("signup"));
   assert.equal(off.type, 4);
   assert.equal(off.data.flags, 64);
-  assert.match(off.data.content, /^\*\*Ada's Sign-up Status:\*\*/);
+  assert.match(off.data.content, /^\*\*Ada's sign-up status\*\*/);
   assert.deepEqual(off.data.components[0].components.slice(0, 3).map((c) => c.custom_id), ["signup:rsvp:in", "signup:rsvp:maybe", "signup:rsvp:out"]);
 });
 
 test("/signup with options: flag off writes as before with no card work; flag on also queues the follow-ups", async () => {
   const off = world();
   const r0 = await off.send(slash("signup", [{ name: "rsvp", type: 3, value: "maybe" }]));
-  assert.match(r0.data.content, /^Recorded sign-up update for \*\*Ada\*\*: \*\*rsvp\*\*: `maybe`/);
+  assert.match(r0.data.content, /^Logged, \*\*Ada\*\*: \*\*rsvp\*\*: `maybe`/);
   assert.equal(off.waits.length, 0);
   assert.equal(off.DB.kv.has("board_lines_pending"), false);
 
   const on = world({ flags: { ...ON, BOARD_LINES_ENABLED: "on" } });
   const r1 = await on.send(slash("signup", [{ name: "rsvp", type: 3, value: "maybe" }]));
-  assert.match(r1.data.content, /^Recorded sign-up update for \*\*Ada\*\*/);
+  assert.match(r1.data.content, /^Logged, \*\*Ada\*\*/);
   assert.ok(on.waits.length >= 1);
   assert.deepEqual(Object.values(JSON.parse(on.DB.kv.get("board_lines_pending")).changes), [{ name: "Ada", from: null, to: "maybe" }]);
   const patches = outbound.filter((o) => o.method === "PATCH");

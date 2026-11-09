@@ -1,3 +1,4 @@
+import { SLASH_COPY } from "./slash-copy.js";
 // Copy for `/tonight`. Dates are the ones in data/tonight.json (events); a test keeps them in step.
 export const LAUNCH_EPOCH = 1793833200; // Wed, Nov 4, 2026, 6 PM ET
 export const NEXT_DATED = { label: "Raids open", when: "Wed, Dec 9", epoch: 1796857200 };
@@ -21,10 +22,10 @@ export function tonightLines({ now, byName, party, signups, boardUrl }) {
   }
   const mine = entries.find((e) => (e.name || "").toLowerCase() === String(byName).toLowerCase());
   const nextStep = !mine || !mine.rsvp
-    ? "Say whether you are **in** for launch night (`/signup rsvp:in`)."
+    ? SLASH_COPY.tonightRsvp()
     : !mine.meet
-    ? "Pick where the party meets (`/signup meet:Valley of Strength` or `The Crossroads`)."
-    : "Your launch-night answers are in — check your character sheet with `/sheet`.";
+    ? SLASH_COPY.tonightMeet()
+    : SLASH_COPY.tonightDone();
   return [
     `**Launch Night: Wed Nov 4, 6:00 PM ET** (<t:${LAUNCH_EPOCH}:F>)`,
     roster,

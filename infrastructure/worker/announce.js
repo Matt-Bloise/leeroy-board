@@ -1,6 +1,8 @@
 // Pure helpers for Discord posts made by the Worker: the /start reply and POST /api/announce.
 // No network, no D1. Channel and role ids are never written here; they come from the discord_roster config row.
 
+import { SLASH_COPY } from "./slash-copy.js";
+
 export const DISCORD_CONTENT_MAX = 2000;
 export const BUTTON_LABEL_MAX = 80;
 export const BUTTON_URL_MAX = 512;
@@ -66,12 +68,7 @@ export function buildAnnounceBody({ text, roleId, buttonLabel, buttonUrl } = {})
 
 // Ephemeral /start reply: four plain lines and a link button.
 export function buildStartReply(siteUrl = "https://leeroy.party/") {
-  const lines = [
-    "Leeroy Board is the party's shared board for WoW: Forever.",
-    "It keeps your character sheet, the build and the launch-night plan in one place, so nobody has to ask twice.",
-    "Everything you post in Discord, forms, threads and votes, shows up there too.",
-    siteUrl,
-  ];
+  const lines = SLASH_COPY.startLines(siteUrl);
   return {
     content: lines.join("\n"),
     flags: 64,

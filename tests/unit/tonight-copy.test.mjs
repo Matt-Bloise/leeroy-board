@@ -17,7 +17,7 @@ test("after launch: past tense, next dated event, no sign-up prompt", () => {
   assert.match(t, /Launch night was Wed Nov 4/);
   assert.match(t, /Raids open, Wed, Dec 9/);
   assert.match(t, /as they stood \(1 in\)/);
-  assert.doesNotMatch(t, /\/signup|Say whether/);
+  assert.doesNotMatch(t, /\/signup|not recorded yet/);
 });
 test("after the last dated event: no 'days ago', says none posted yet", () => {
   const t = tonightLines({ ...base, now: NEXT_DATED.epoch + 5 * 86400 }).join("\n");
@@ -29,7 +29,7 @@ test("after the last dated event: no 'days ago', says none posted yet", () => {
 test("before launch: keeps the sign-up prompt", () => {
   const t = tonightLines({ ...base, now: LAUNCH_EPOCH - 60, signups: { entries: [] } }).join("\n");
   assert.match(t, /Launch Night: Wed Nov 4/);
-  assert.match(t, /Say whether you are \*\*in\*\*/);
+  assert.match(t, /RSVP is not recorded yet; `\/signup rsvp:in`/);
 });
 
 // The Ledger move runs in the browser; run the real functions from js/board.js against the repo's own data.
