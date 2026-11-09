@@ -1,6 +1,7 @@
 // /join: the same modal as /build, offered to anyone who is not on the board yet. Listed in the manifest only while BUILD_MODAL is on
 // (like /setup), so with the flags off the served command list is unchanged. The first-contact hint is behind JOIN_PROMPT (default off).
 import { isSnowflake } from "./build-modal.js";
+import { SLASH_COPY } from "./slash-copy.js";
 
 export const JOIN_COMMAND_NAME = "join";
 export const JOIN_BUTTON_ID = "join:open";
@@ -13,7 +14,7 @@ const on = (v) => ["1", "true", "on", "yes"].includes(String(v || "").trim().toL
 export const joinPromptEnabled = (env) => on(env && env.JOIN_PROMPT);
 
 export const joinHintBody = () => ({
-  content: "You are not on the board yet. It takes a minute: pick a game handle, your class, race and role.",
+  content: SLASH_COPY.join(),
   flags: 64,
   components: [{ type: 1, components: [{ type: 2, style: 1, label: "Join the board", custom_id: JOIN_BUTTON_ID }] }],
 });
