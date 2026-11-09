@@ -11,8 +11,6 @@
 //   csp-enforced     an enforced CSP violation in the console              -> exit 1
 //   csp-report-only  a "[Report Only]" CSP message                         -> exit 0
 //   state-redirect   the reference /api/state answers a redirect                -> exit 1, not followed, no browser launched
-//   beacon-webkit    a beacon request fails, then WebKit's two URL-less/Beacon CORS lines follow within 2 s -> exit 0 with one WARN line (2 ignored)
-//   beacon-own-error / beacon-other-host / beacon-no-failure   an own-origin error after a beacon failure / the Beacon line naming another host / the CORS line with no beacon failure before it -> exit 1
 //   cf-text          a console error that only mentions cloudflareinsights.com -> exit 1 (the exemption is by location, not by text)
 //   budget-spent     --budget 20 with two engines                           -> exit 1, one budget failure, no scene noise, the second engine never started, server saw <= 20
 //   delayed-render   the sixth name chip appears 5 s after load                   -> exit 0 (the probe waits for the chips; fails without the settle wait)
@@ -96,9 +94,10 @@ const CASES = [
   ["green", 1, /budget: more than 20 Worker requests/, ["--viewports", "laptop,phone", "--budget", "20", "--engines", "chromium,firefox"], "budget-spent"],
   ["state-redirect", 1, /Aborting before any browser is launched/, L],
   ["cf-text", 1, /console error: TypeError: cannot read properties of undefined .*cloudflareinsights/, L],
-  ["beacon-webkit", 0, null, L, null, [["prints one non-failing WARN line per run", /WARN third-party analytics beacon error ignored \(2\), see \/privacy/]]],
-  ["beacon-own-error", 1, /console error: TypeError: boom in board\.js/, L, null, [["prints no WARN line when nothing was ignored", /^(?![\s\S]*WARN third-party analytics beacon error ignored)/]]],
-  ["beacon-other-host", 1, /console error: Beacon API cannot load https:\/\/evil\.example\//, L],
+  ["beacon-location", 0, null, L, null, [["prints one non-failing WARN line per run", /WARN third-party analytics beacon error ignored \(1\), see \/privacy/]], { PROBE_SELFTEST_BEACON: "1" }],
+  ["beacon-own-cors", 1, /console error: Origin \S+ is not allowed by Access-Control-Allow-Origin\. Status code: 404/, L, null, [["the beacon's own located error is still the only one ignored", /WARN third-party analytics beacon error ignored \(1\), see \/privacy/]], { PROBE_SELFTEST_BEACON: "1" }],
+  ["beacon-own-error", 1, /console error: TypeError: boom in board\.js/, L, null, [["the beacon image's own error is still the only one ignored", /WARN third-party analytics beacon error ignored \(1\), see \/privacy/]], { PROBE_SELFTEST_BEACON: "1" }],
+  ["beacon-other-host", 1, /console error: Beacon API cannot load https:\/\/evil\.example\//, L, null, [], { PROBE_SELFTEST_BEACON: "1" }],
   ["beacon-no-failure", 1, /console error: Origin \S+ is not allowed by Access-Control-Allow-Origin\. Status code: 404/, L],
 ].filter(([m, , , , label]) => !only || only.includes(label || m));
 

@@ -188,6 +188,7 @@ async function probeOne(browser, engine, vp) {
   const errs = [], http = [], failed = [];
   // The only routes: count every Worker request and every socket before it is sent, and refuse it once the budget is spent (helpers/probe-budget.mjs).
   await guardContext(ctx, budget, { mode: API_ROUTE });
+  if (process.env.PROBE_SELFTEST_BEACON === "1") await ctx.route((u) => isInsightsHost(u.href), (r) => r.fulfill({ status: 404, body: "", headers: {} })); // self-test only: the beacon host answers 404 with no CORS headers, deterministically and offline
   if (CLOCK) await ctx.clock.install({ time: CLOCK }); // self-test only (see --clock above)
   const page = await ctx.newPage();
   const insightsFailedAt = []; // epoch ms of each cloudflareinsights request that failed or answered >= 400 (WebKit logs the CORS 404 without a URL)
