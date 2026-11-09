@@ -45,7 +45,15 @@ const form = el("form", { class: "ask-form", id: "ask-form", novalidate: true, h
   el("div", { class: "ask-row" }, btn, check), stat);
 note.parentNode.insertBefore(form, note);
 
-let cur = null, shown = "";
+let cur = null, shown = "", waited = "", typer = 0;
+// Life cues: a short wiggle when an answer lands and a quiet typing tick while a question waits. Both are off under reduced motion, Calm and Play mode (html.calm, html.still), and the tick goes through BoardSound, which stays silent while sound is off.
+const quiet = () => { try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return true; } catch (e) {} return /(^|\s)(calm|still|play)(\s|$)/.test(document.documentElement.className || ""); };
+function typing(on) {
+  if (!on) { clearTimeout(typer); typer = 0; return; }
+  if (typer) return;
+  const beat = () => { typer = setTimeout(beat, 380 + Math.random() * 520); if (quiet() || document.hidden) return; const S = window.BoardSound; if (S && typeof S.play === "function") S.play("tick", { db: -34 }); };
+  typer = setTimeout(beat, 600);
+}
 const len = () => Array.from(ta.value.replace(/\s+/g, " ").trim()).length;
 function tally() { const n = len(); count.textContent = `${n} / ${MAX}`; count.classList.toggle("over", n > MAX); }
 function say(t) { if (stat.textContent !== t) stat.textContent = t; }
@@ -62,6 +70,8 @@ function paint(s) {
   const old = a && s.state !== "queued" && Date.now() - Date.parse(a.at) > 864e5;
   const slow = s.state === "queued" && a && Date.now() - Date.parse(a.at) > 6e5;
   check.hidden = s.state !== "queued";
+  typing(s.state === "queued");
+  if (s.state === "queued" && a) waited = a.id;
   say(s.state === "sending" ? "Sending."
     : s.state === "queued" ? (slow ? "Still waiting. Check now looks again." : "Sent. Leeroy has it and is looking; the answer appears below.")
     : s.state === "answered" && !old ? "Leeroy answered."
@@ -74,10 +84,12 @@ function paint(s) {
   shown = sig;
   out.replaceChildren();
   if (!a || old || s.state === "idle") return;
-  const card = el("div", { class: `ask-card ${a.status}` }, el("p", { class: "ask-q" }, el("b", { text: "You asked: " }), a.text));
+  const fresh = a.status === "answered" && waited === a.id && !quiet();
+  if (a.status === "answered") waited = "";
+  const card = el("div", { class: `ask-card ${a.status}${fresh ? " ask-wiggle" : ""}` }, el("p", { class: "ask-q" }, el("b", { text: "You asked: " }), a.text));
   if (a.status === "answered" && a.answer) {
     const badge = LABELS[a.provider] || "Leeroy";
-    card.append(el("p", { class: "ask-who", text: badge }));
+    card.append(el("p", { class: "ask-who" }, el("img", { class: "ask-crest", src: "img/marks/source-leeroy.webp", alt: "", width: 24, height: 24, decoding: "async" }), el("span", { text: badge })));
     for (const para of String(a.answer).split(/\n+/)) if (para.trim()) card.append(el("p", { class: "ask-a", text: para }));
     if (a.sources && a.sources.length) card.append(el("p", { class: "ask-src" }, el("b", { text: "Sources: " }), a.sources.join("; ")));
     if (a.share) card.append(el("p", { class: "ask-src", text: "This one was also posted in #wow-forever." }));

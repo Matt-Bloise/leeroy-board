@@ -32,12 +32,14 @@ export function verifyComment(body, want) {
 const ok = (r) => r === "success";
 const skipped = (r) => r === "skipped";
 
-// in: { sha7, sha (full head sha), runId, previewSkipped (full run, preview secrets absent), docsOnly, siteChanged, full, results: {unit, stamps, api, browser, layout}, counts: {uPass,uFail,aPass,aFail,bPass,bFail,lFail}, pagesUrl, failing, visual, runUrl }
+// in: { apiNeeded (false only when no Worker or API file changed), sha7, sha (full head sha), runId, previewSkipped (full run, preview secrets absent), docsOnly, siteChanged, full, results: {unit, stamps, api, browser, layout}, counts: {uPass,uFail,aPass,aFail,bPass,bFail,lFail}, pagesUrl, failing, visual, runUrl }
 // out: { body, pass, gate }  (gate: the body carries the merge-gate phrase)
 export function buildReport(i) {
   const r = i.results;
   const unitStamps = ok(r.unit) && ok(r.stamps);
   let pass, mode, ran, notRun;
+  // B72: the API suite may be absent only when tools/api-scope.mjs said no Worker or API file changed (apiNeeded === false). Anything else (true, undefined) needs api to succeed.
+  const apiOk = i.apiNeeded === false ? ok(r.api) || skipped(r.api) : ok(r.api);
   if (i.docsOnly) {
     mode = "docs";
     pass = unitStamps;
@@ -52,14 +54,16 @@ export function buildReport(i) {
   } else if (i.full) {
     mode = "full";
     if (i.siteChanged) {
-      pass = unitStamps && ok(r.api) && ok(r.browser) && ok(r.layout);
-      ran = "unit, stamps, api, browser, layout";
-      notRun = "none";
+      pass = unitStamps && apiOk && ok(r.browser) && ok(r.layout);
+      ran = i.apiNeeded === false ? "unit, stamps, browser, layout" : "unit, stamps, api, browser, layout";
+      notRun = i.apiNeeded === false ? "api (scope rule: no Worker or API file changed)" : "none";
     } else {
       // Browser and layout may only be absent because the scope rule said no site, tooling, workflow, config or dependency file changed.
-      pass = unitStamps && ok(r.api) && (skipped(r.browser) || ok(r.browser)) && (skipped(r.layout) || ok(r.layout));
-      ran = "unit, stamps, api";
-      notRun = "browser, layout (scope rule: no site, tools, .github, wrangler or package*.json file changed)";
+      // Advisor follow-up (Nov 9): with the API suite skipped nothing else proved the preview deploy, so a failed preview must not earn the gate phrase.
+      const previewOk = i.apiNeeded === false ? ok(i.previewResult) : true;
+      pass = unitStamps && apiOk && previewOk && (skipped(r.browser) || ok(r.browser)) && (skipped(r.layout) || ok(r.layout));
+      ran = i.apiNeeded === false ? "unit, stamps" : "unit, stamps, api";
+      notRun = i.apiNeeded === false ? "api, browser, layout (scope rules: no Worker, API, site, tools, .github, wrangler or package*.json file changed)" : "browser, layout (scope rule: no site, tools, .github, wrangler or package*.json file changed)";
     }
   } else {
     mode = "light";
@@ -75,6 +79,7 @@ export function buildReport(i) {
       if (mode === "docs") return "not run (docs only)";
       if (mode === "light") return "not run (full suite not requested)";
       if (mode === "skipped") return "not run (preview secrets missing)";
+      if (name === "api") return i.apiNeeded === false ? "not run (scope rule)" : "not run";
       return name === "browser" || name === "layout" ? (i.siteChanged ? "not run" : "not run (scope rule)") : "not run";
     }
     return "FAIL";
@@ -152,7 +157,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href && process.arg
     previewSkipped: e.PREVIEW_SECRETS === "false",
     docsOnly: e.DOCS_ONLY === "true",
     siteChanged: e.SITE_CHANGED === "true",
+    apiNeeded: e.API_NEEDED !== "false", // fails closed: only the literal "false" lets the API suite be absent
     full: e.FULL === "true",
+    previewResult: e.PREVIEW_RESULT,
     results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT },
     counts, failing, pagesUrl: e.PAGES_URL || "", visual: e.VISUAL === "true", runUrl: e.RUN_URL || "",
   });

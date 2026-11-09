@@ -26,6 +26,7 @@
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
 import { answerUxEnabled } from "./answer-format.js";
+import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
@@ -656,7 +657,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const legacyBuildContent = async (t) => {
     const person = (await loadRoster(env)).find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
     const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
-    return `**${t.name}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
+    return SLASH_COPY.build(t.name, mention || "(thread link not configured)", `${boardUrl}/#five`);
   };
 
   // 4. Autocomplete (Type 4) -> Application Command Autocomplete Result (Type 8)
@@ -796,8 +797,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       };
       const ephemeral = (content) =>
         new Response(JSON.stringify({ type: 4, data: { content, flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (!sub) return ephemeral("Use `/vote start` with a title and 2 to 5 choices separated by |.");
-      if (!member) return ephemeral("I can't tell which party member you are, so only the party can start a vote. You can still press the buttons on one.");
+      if (!sub) return ephemeral(SLASH_COPY.voteUsage());
+      if (!member) return ephemeral(SLASH_COPY.voteNotMember());
       const nowMs = Date.now();
       const made = createVote({ id: newVoteId(), title: subOpt("title"), choices: subOpt("options"), hours: subOpt("closes_in_hours") || undefined, now: nowMs });
       if (!made.ok) return ephemeral(made.error);
@@ -955,7 +956,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `Updated **${target.name}**'s sheet (**${field}** → \`${value}\`). View on the board: ${boardUrl}/#five`,
+              content: SLASH_COPY.sheetUpdated(target.name, field, value, `${boardUrl}/#five`),
               flags: 64,
             },
           }),
@@ -970,7 +971,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         ? Object.entries(mine.fields)
             .map(([k, v]) => `• **${k}:** ${Array.isArray(v.value) ? v.value.join(", ") : v.value}`)
             .join("\n")
-        : "No custom sheet fields recorded yet.";
+        : SLASH_COPY.sheetEmpty();
       return new Response(
         JSON.stringify({
           type: 4,
@@ -1038,7 +1039,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `**Launch Night Status**\n${summary}`,
+            content: `${SLASH_COPY.launchHeader()}\n${summary}`,
             flags: 64,
           },
         }),
@@ -1056,7 +1057,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `**${label} on the Living Board:** ${boardUrl}/${hash}`,
+            content: SLASH_COPY.mapLine(label, `${boardUrl}/${hash}`),
             components: [
               {
                 type: 1,
@@ -1151,7 +1152,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `Recorded sign-up update for **${byName}**: ${summary}. View on the board: ${boardUrl}/#signups`,
+              content: SLASH_COPY.signupLogged(byName, summary, `${boardUrl}/#signups`),
               flags: 64,
             },
           }),
@@ -1170,7 +1171,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       const statusText = [
-        `**${byName}'s Sign-up Status:**`,
+        SLASH_COPY.signupStatusHeader(byName),
         `• **RSVP:** \`${myEntry.rsvp || "not answered"}\``,
         `• **Meeting Point:** \`${myEntry.meet || "not answered"}\``,
         `• **Pre-order Pack:** \`${myEntry.pack || "not answered"}\``,
@@ -1266,7 +1267,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
                 color: GOLD,
                 title: "Every WoW: Forever Date We Know",
                 description: lines.join("\n").slice(0, 4000),
-                footer: { text: "Blizzard's verified dates. Times render in your local time zone." },
+                footer: { text: SLASH_COPY.datesFooter() },
               },
             ],
           },
@@ -1289,7 +1290,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
               {
                 color: GOLD,
                 title: "The WoW: Forever Library Shelves",
-                description: `**On the Shelves (${LIBRARY_DATA.posted.length}):**\n${posted}\n\n**Coming Soon (${LIBRARY_DATA.coming.length}):**\n${coming}\n\nOpen full library on the Living Board: ${boardUrl}/#library`,
+                description: SLASH_COPY.libraryBody(LIBRARY_DATA.posted.length, posted, LIBRARY_DATA.coming.length, coming, `${boardUrl}/#library`).slice(0, 4096), // advisor follow-up: Discord embed description limit
               },
             ],
           },
@@ -1306,7 +1307,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const head = `**${q.round}** #${q.n}`;
       const content = reveal === "reaction"
         ? `${head}\n${q.q}\n-# React with 👀 to reveal the answer. Full quiz on the Living Board.`
-        : `${head}\n${q.q}\n||${q.a}||\n-# Tap the spoiler bar to reveal. No prizes, only bragging rights.`;
+        : `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
 
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
@@ -1318,7 +1319,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (cmd === "didyouknow") {
       const facts = FACTS_DATA.facts || [];
       const f = facts[Math.floor(Math.random() * facts.length)] || facts[0];
-      const content = `**Did you know?** ${f.text}\n-# ${f.tag} (${f.thread} thread, as of ${FACTS_DATA.asOf || "verified"})`;
+      const content = SLASH_COPY.didYouKnow(f.text, f.tag, f.thread, FACTS_DATA.asOf || "verified");
 
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
@@ -1404,7 +1405,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `${pickLine(await loadPersona(env), "emptyLines", title, `No library page found for "${title}".`)} Check \`/library\` for all available shelves.`,
+              content: `${pickLine(await loadPersona(env), "emptyLines", title, SLASH_COPY.pageMissing(title))}${SLASH_COPY.pageMissingTail()}`,
               flags: 64,
             },
           }),
@@ -1465,7 +1466,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `No tooltip found for "${name}". Check \`/page\` or ask with \`/ask\`.`,
+              content: SLASH_COPY.tooltipMissing(name),
               flags: 64,
             },
           }),
@@ -1515,7 +1516,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `You're on **${choice.toUpperCase()}**. ${effects[choice] || ""}\n-# Switch any time with \`/journey\`.`,
+            content: SLASH_COPY.journey(choice.toUpperCase(), effects[choice] || ""),
             flags: 64,
           },
         }),
