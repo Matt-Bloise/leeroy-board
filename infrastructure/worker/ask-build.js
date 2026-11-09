@@ -232,7 +232,7 @@ export function guardRefusal(answer, allowedText) {
         seen = true;
         const m = REFUSAL_RE.exec(sent);
         const after = sent.slice(m.index + m[0].length);
-        if (PUB_CLAIM_RE.test(after)) sent = `${sent.slice(0, m.index + m[0].length).replace(/\.?$/, ".")}`;
+        if (PUB_CLAIM_RE.test(after) || badPhrases(after, allowed).length) sent = `${sent.slice(0, m.index + m[0].length).replace(/\.?$/, ".")}`;
         kept.push(sent);
         continue;
       }

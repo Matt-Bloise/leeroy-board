@@ -54,3 +54,13 @@ test("sourced refusal with a Sources footer keeps the footer", () => {
   const t = "The library does not have that yet.\n\n-# Sources: [classes/overview](<https://leeroy.party/#library.classes.overview>)";
   assert.equal(guardRefusal(t, GROUND), t);
 });
+
+// Council finding (Codex, Nov 9): an unknown name attached to the refusal sentence itself used to survive.
+test("an invented name attached to the refusal sentence is cut back to the canonical line", () => {
+  const out = guardRefusal("The library does not have that yet for Zorblax the Unseen.", "mage frost gnome");
+  assert.equal(out, "The library does not have that yet.");
+});
+test("a refusal sentence with only grounded words is unchanged", () => {
+  const same = "The library does not have that yet, but it lists frost mage spells.";
+  assert.equal(guardRefusal(same, "frost mage spells library"), same);
+});
