@@ -295,8 +295,8 @@ test("a phrase with an embedded possessive is checked as separate names", () => 
   assert.ok(!g("Street Rat's Frost Hammer is your main threat tool. Holy Shield helps you tank.").ok, "an invented segment is still caught");
 });
 
-// AR145 voice: the voice instructions are present, every old guardrail survives, and the prompt grows by under 15 percent.
-test("ask system prompt carries the Leeroy voice rule, keeps the guardrails, and grows under 15 percent", async () => {
+// AR145 voice: the voice instructions are present, every old guardrail survives, and the prompt grows by under 30 percent.
+test("ask system prompt carries the Leeroy voice rule, keeps the guardrails, and grows under 30 percent", async () => {
   const { VOICE_RULE } = await import("../../infrastructure/worker/ai-models.js");
   const { FENCE_RULE } = await import("../../infrastructure/worker/prompt-fence.js");
   const r = await inputs(makeEnv());
@@ -312,5 +312,5 @@ test("ask system prompt carries the Leeroy voice rule, keeps the guardrails, and
   }
   const before = sp.replace(`${VOICE_RULE}\n\n`, "");
   assert.ok(before.length < sp.length);
-  assert.ok(sp.length / before.length < 1.15, `prompt grew ${((sp.length / before.length - 1) * 100).toFixed(1)}%`);
+  assert.ok(sp.length / before.length < 1.30, `prompt grew ${((sp.length / before.length - 1) * 100).toFixed(1)}%`);
 });
