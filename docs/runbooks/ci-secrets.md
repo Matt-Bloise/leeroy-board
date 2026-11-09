@@ -86,6 +86,6 @@ There is no CODEOWNERS file: it would enforce nothing without a ruleset rule req
 
 | Message | Meaning |
 | :--- | :--- |
-| `Production secrets missing: ...` (deploy) | The environment `production` lacks that secret. Nothing was deployed. Add it as in section 2. |
+| `Production secrets missing: ...` (deploy) | The named secret is not where the deploy reads it. Nothing was deployed. `BOARD_ADMIN_TOKEN` is an environment secret (Settings > Environments > production > Environment secrets, section 2). `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are repository secrets by design (Settings > Secrets and variables > Actions > Repository secrets; previews read the token there). |
 | `Preview skipped` / `Preview tests skipped` notice | A preview secret is absent. Add it as in section 3. |
 | `Preview tests comment check failed: ...` | The comment is not from this run and commit. Re-run the workflow; do not merge on that comment. |
