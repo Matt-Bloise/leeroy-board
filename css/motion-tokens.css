@@ -1,6 +1,6 @@
 /* Cinematic motion tokens (slice 0). One ease, eight verbs, one duration each. Not linked from index.html yet: slice 1 wires it in; until then
    nothing reads these values and no page changes. Existing tokens in board.css (--t-micro, --t-move, --ease-oak ...) are untouched.
-   JS twin: js/motion-tokens.js (tests/unit/motion-tokens.test.mjs fails if the two disagree).
+   tests/unit/motion-tokens.test.mjs checks the verbs, tiers, ease and reduced-motion collapse.
    Grammar: docs/cinematic/ and the program page; tiers: acknowledge 80 to 120 ms, local change 160 to 250 ms, scene change 300 to 400 ms, milestone 600 ms once. */
 :root {
   --cin-ease: cubic-bezier(.22, 1, .36, 1);
