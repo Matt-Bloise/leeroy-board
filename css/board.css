@@ -2008,3 +2008,8 @@ html.room-off.scene-open body { background: var(--black) url("../img/tavern-plat
 .ring-wrap svg circle[stroke="var(--brass)"] { stroke: var(--wax); filter: drop-shadow(0 0 3px var(--hi-wax)); }
 /* first-load weight: a cold wall (first visit, covered by the Next steps scene) is not rendered, so no style is computed for it and its images and backgrounds do not load; js/board.js (settleGo) removes the class */
 html.wall-cold #main { display: none; }
+.stop-earlier { display: grid; gap: 12px; }
+.earlier-toggle { justify-self: start; min-height: 44px; padding: 0 14px; font-family: var(--font-ui); font-size: var(--step--1); color: var(--ink); background: transparent; border: 1px solid var(--ink-line); border-radius: 999px; cursor: pointer; }
+.earlier-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.rail-earlier { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.rail-earlier[hidden] { display: none; }

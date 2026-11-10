@@ -361,7 +361,7 @@ function renderHero() {
 }
 function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
 const eventTs = (e) => (e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch);
-let shownNext;
+let shownNext, earlierOpen = false;
 function eventState(e, now, next) {
   const ts = eventTs(e);
   if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, ${cardDates(`until ${e.until} (${e.until_zone || "Pacific"})`)}`];
@@ -380,17 +380,28 @@ function renderTimeline() {
   let i = -1; starts.forEach((x, k) => { if (x <= now) i = k; });
   const prog = i < 0 ? 0 : i >= starts.length - 1 ? 1 : (i + Math.min(1, (now - starts[i]) / (starts[i + 1] - starts[i]))) / (starts.length - 1);
   tl.style.setProperty("--prog", `${Math.round(prog * 1000) / 10}%`);
-  t.events.forEach((e, di) => {
+  const stops = t.events.map((e, di) => {
     const [cls, label] = eventState(e, now, next);
     const lit = cls === "next" || cls === "open";
-    tl.append(h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
+    return [cls, h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
       h("span", { class: "stop-mark", "aria-hidden": "true" }, ...stopEmblem(EMB_LABEL[e.key] || "seal"), cls === "past" ? emb.dates("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
       h("div", { class: "stop-body" },
         h("div", { class: "when", text: eventWhen(e) }),
         h("h3", { text: e.label }),
         e.detail ? h("p", { text: e.detail }) : null,
-        h("p", { class: "label state", text: label }))));
+        h("p", { class: "label state", text: label })))];
   });
+  const gone = stops.filter((x) => x[0] === "past").map((x) => x[1]);
+  if (!launchPast() || !gone.length) tl.append(...stops.map((x) => x[1]));
+  else {
+    /* After launch the dates ahead lead; what already happened sits behind one Earlier control (kept, never deleted). */
+    tl.append(...stops.filter((x) => x[0] !== "past").map((x) => x[1]));
+    const list = h("ol", { class: "rail-earlier", id: "rail-earlier" }, ...gone);
+    const btn = h("button", { type: "button", class: "earlier-toggle", "aria-expanded": earlierOpen ? "true" : "false", "aria-controls": "rail-earlier", text: `Earlier (${gone.length})` });
+    list.hidden = !earlierOpen;
+    btn.addEventListener("click", () => { earlierOpen = !earlierOpen; list.hidden = !earlierOpen; btn.setAttribute("aria-expanded", earlierOpen ? "true" : "false"); });
+    tl.append(h("li", { class: "stop-earlier" }, btn, list));
+  }
   renderCalendar(now);
   KIT.emit("timeline");
 }
