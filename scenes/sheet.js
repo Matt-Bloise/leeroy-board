@@ -273,7 +273,7 @@ function sheetView(m) {
     charsView(m),
     h("p", { class: "ps-how", text: how }),
     impView(m),
-    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
+    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.filter((f) => !(f === "launch_state" && !F[f].text && K.launchPast())).map((f) => lineEl(m, f, F[f], mine))),
     h("p", { class: "ps-say", id: "ps-say", role: "status", "aria-live": "polite", text: PS.say }));
 }
 /* Import from game (scenes/import.js): own sheet only. Opening it holds back re-renders like the other editors; nothing is sent until the Send tap inside the panel. */
