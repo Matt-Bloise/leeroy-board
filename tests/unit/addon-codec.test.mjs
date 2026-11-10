@@ -155,3 +155,7 @@ test("Lua source is pinned to the twin: tag, key order, modulus, no bit/5.2 cons
   }
   assert.ok(!/\bbit\./.test(luaSrc));
 });
+
+test("level above 60 is encoded as the real integer (the importer rejects it, not the add-on)", () => {
+  assert.equal(payload({ v: 1, iface: 16001, t: 1, class: "MAGE", race: "Gnome", level: 61 }), "v=1;iface=16001;t=1;class=MAGE;race=Gnome;level=61");
+});

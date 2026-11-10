@@ -41,7 +41,7 @@ local function newFrame(name, width, height, title)
 end
 
 -- Export window: movable, EditBox pre-filled with the string and highlighted. Edits are reverted, so it behaves read-only.
-function UI.ShowExport(text, summaryLines)
+function UI.ShowExport(text)
   if not UI.exportFrame then
     local f = newFrame("LeeroyBuildExportFrame", 560, 210, "Leeroy Build export")
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")

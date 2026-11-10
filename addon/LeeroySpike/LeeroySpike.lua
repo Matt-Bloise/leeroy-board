@@ -2,8 +2,7 @@
 --   1. Does the client load it (interface number, TOC suffix)?
 --   2. Which character calls work without a Lua error (UnitName, UnitRace, UnitClass, UnitLevel, GetProfessions)?
 --   3. What does the SavedVariables file look like, so a site page can read it?
--- It sends nothing. It writes only the player's own character, only when the player types /leeroyspike save or logs out
--- with the option on. Every field written is listed in the printed summary.
+-- It sends nothing. It writes only the player's own character, and only when the player types /leeroyspike save. Every field written is listed in the printed summary.
 local ADDON = ...
 LeeroySpikeDB = LeeroySpikeDB or {}
 
@@ -28,7 +27,9 @@ local function snapshot()
     local p1, p2 = safe(GetProfessions)
     snap.professionIndexes = { p1, p2 }
     local names = {}
-    for _, idx in ipairs({ p1, p2 }) do
+    local slots = { p1, p2 }
+    for slot = 1, 2 do
+      local idx = slots[slot]
       if type(idx) == "number" and GetProfessionInfo then names[#names + 1] = (safe(GetProfessionInfo, idx)) end
     end
     snap.professions = names
@@ -61,6 +62,6 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:SetScript("OnEvent", function()
-  LeeroySpikeDB.snapshot = snapshot()
-  print("|cff7fd1ffLeeroySpike|r loaded. Type /leeroyspike save to refresh the snapshot.")
+  -- Consent: nothing about the character is collected or stored on login. Only /leeroyspike save does that.
+  print("|cff7fd1ffLeeroySpike|r loaded. Nothing is saved until you type /leeroyspike save.")
 end)

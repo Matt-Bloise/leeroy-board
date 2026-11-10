@@ -62,7 +62,8 @@ end
 function collectors.level()
   local ok, lvl = call(UnitLevel, "player")
   lvl = ok and cleanInt(lvl) or nil
-  if lvl and lvl >= 1 and lvl <= 60 then return lvl end
+  -- Real integer is exported even above 60; the importer rejects out-of-range values with a reason.
+  if lvl and lvl >= 1 then return lvl end
   return nil
 end
 
@@ -83,7 +84,9 @@ function collectors.prof()
   local ok, p1, p2 = call(GetProfessions)
   if not ok then return nil end
   local found = {}
-  for _, idx in ipairs({ p1, p2 }) do
+  local slots = { p1, p2 }
+  for slot = 1, 2 do
+    local idx = slots[slot]
     if cleanInt(idx) then
       local okInfo, _, _, rank, _, _, _, skillLine = call(GetProfessionInfo, idx)
       rank, skillLine = cleanInt(rank), cleanInt(skillLine)
@@ -113,10 +116,9 @@ function collectors.talents()
   return table.concat(points, ",")
 end
 
--- enabled: key -> boolean (the player's ticks). Returns values (key -> value, only fields read cleanly)
--- and the list of required technical keys or ticked fields that were unavailable.
+-- enabled: key -> boolean (the player's ticks). Returns values (key -> value, only fields read cleanly).
 function Fields.collect(enabled)
-  local values, unavailable = {}, {}
+  local values = {}
   local okB, _, _, _, iface = call(GetBuildInfo)
   iface = okB and cleanInt(iface) or nil
   local okT, now = call(time)
@@ -124,15 +126,12 @@ function Fields.collect(enabled)
   values.v = 1
   values.iface = iface
   values.t = now
-  if not iface then unavailable[#unavailable + 1] = "iface" end
-  if not now then unavailable[#unavailable + 1] = "t" end
   for _, f in ipairs(Fields.LIST) do
     if enabled[f.key] then
-      local v = collectors[f.key]()
-      if v == nil then unavailable[#unavailable + 1] = f.key else values[f.key] = v end
+      values[f.key] = collectors[f.key]()
     end
   end
-  return values, unavailable
+  return values
 end
 
 ns.Fields = Fields

@@ -26,7 +26,7 @@ end
 
 local function doExport()
   applyDefaults()
-  local values, unavailable = Fields.collect(LeeroyBuildDB.enabled)
+  local values = Fields.collect(LeeroyBuildDB.enabled)
   if not values.iface or not values.t then
     say("Export stopped: the game did not return its build number or time.")
     return

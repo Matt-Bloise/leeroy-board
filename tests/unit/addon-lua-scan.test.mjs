@@ -114,3 +114,27 @@ test("toc files list existing files and use a numeric interface", () => {
   }
   assert.match(readFileSync(new URL("LeeroySpike.toc", dirs[1]), "utf8").split("\n")[0], /^## Interface: 16001/);
 });
+
+test("consent: no character data is collected on login in either add-on", () => {
+  const spike = stripLua(readFileSync(new URL("LeeroySpike.lua", dirs[1]), "utf8"));
+  const onEvent = spike.slice(spike.indexOf('f:SetScript("OnEvent"'));
+  assert.ok(!/snapshot\s*\(/.test(onEvent), "spike OnEvent must not call snapshot()");
+  const core = stripLua(readFileSync(new URL("LeeroyBuild.lua", dirs[0]), "utf8"));
+  // LeeroyBuildDB may only receive the option ticks.
+  const writes = core.match(/LeeroyBuildDB\.\w+\s*=[^=]/g) || [];
+  assert.ok(writes.every((w) => w.startsWith("LeeroyBuildDB.enabled")), writes.join("|"));
+  assert.ok(!/Fields\.collect/.test(core.slice(core.indexOf("local loader"))), "no collection in the event loader");
+});
+
+test("professions: positions 1 and 2 are tested independently (no ipairs over a table with a nil hole)", () => {
+  for (const [dir, f] of [[dirs[0], "LeeroyBuild_Fields.lua"], [dirs[1], "LeeroySpike.lua"]]) {
+    const src = stripLua(readFileSync(new URL(f, dir), "utf8"));
+    assert.ok(!/ipairs\s*\(\s*\{\s*p1\s*,\s*p2\s*\}\s*\)/.test(src), f);
+    assert.ok(/for slot = 1, 2 do/.test(src), f);
+  }
+});
+
+test("level above 60 is exported as-is (importer rejects it)", () => {
+  const src = readFileSync(new URL("LeeroyBuild_Fields.lua", dirs[0]), "utf8");
+  assert.ok(!/lvl <= 60/.test(src));
+});
