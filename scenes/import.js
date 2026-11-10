@@ -8,7 +8,7 @@ const HERE = (document.currentScript && document.currentScript.src) || null;
 const NAME = { race: "Race", class: "Class", level: "Level", professions: "Professions" };
 const FILE_MAX = 2 * 1024 * 1024;
 const WHY = { "no key": "this board link has no key", key: "this board link is not yours", off: "the party sheet is switched off for now", offline: "no connection", busy: "busy, try again in a minute", refused: "the board did not accept that value", failed: "the board could not save it", "nowhere to send": "no connection to the board", "not on the board's lists": "that value is not on the board's lists" };
-const S = { text: "", sending: false, results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, rev: 0 }
+const S = { text: "", sending: false, results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, op: 0 }
 let ctl = null;
 let outEl = null;
 
@@ -62,19 +62,23 @@ function summary(x) {
     !can.ok ? h("span", { class: "imp-why", text: can.why }) : null));
   return h("div", { class: "imp-sum" }, ...kids);
 }
+/* ONE operation token. Every async operation (a file read, a paste, a drop, a send) takes S.op = ++S.op when it STARTS, and every completion path checks that its token is still S.op, and that nothing is sending, before it touches the text box, the state or the results. The latest operation wins; an older one that finishes or fails later does nothing, and shows nothing. */
 async function send(rows) {
   const can = S.ctx.canSend(); if (S.sending || S.results || !can.ok) return;
   const todo = rows.filter((o) => o.change); if (!todo.length) return;
-  const rev = ++S.rev; S.sending = true; S.frozen = rows; update();
+  const tok = ++S.op; S.sending = true; S.frozen = rows; update(); /* edits during sending are blocked by the lock, and any other operation would void this token */
   const res = {}, B = window.BoardBrain;
-  for (const o of todo) {
-    let r; try { r = await B.setSheet(o.field, o.after); } catch (e) { r = { ok: false, why: "failed" }; }
-    res[o.field] = r && r.ok ? { ok: true } : { ok: false, why: WHY[r && r.why] || "the board could not save it" };
-  }
+  try {
+    for (const o of todo) {
+      if (tok !== S.op) return;
+      let r; try { r = await B.setSheet(o.field, o.after); } catch (e) { r = { ok: false, why: "failed" }; }
+      if (tok !== S.op) return;
+      res[o.field] = r && r.ok ? { ok: true } : { ok: false, why: WHY[r && r.why] || "the board could not save it" };
+    }
+  } finally { S.sending = false; if (tok !== S.op) { S.frozen = null; update(); } }
+  if (tok !== S.op) return;
   const ok = Object.values(res).filter((x) => x.ok).length;
-  S.sending = false;
-  if (S.rev !== rev) { S.frozen = null; update(); return; }
-  S.rev++; /* a read that began before Send and ends after it is stale too */ /* the input changed while sending: these results belong to the old export and are never shown against the new one */
+  S.op++; /* a read that began before Send and ends after it is stale too */
   S.results = res;
   S.say = ok === todo.length ? `Sent ${ok} line${ok === 1 ? "" : "s"} to your sheet.` : `${ok} of ${todo.length} lines sent. The rest were not.`;
   update();
@@ -92,12 +96,13 @@ function update() {
   if (ctl) { const lock = S.sending; ctl.ta.disabled = lock; ctl.pick.disabled = lock; ctl.choose.disabled = lock; ctl.drop.setAttribute("aria-disabled", String(lock)); }
   outEl.replaceChildren(body, h("p", { class: "imp-say", id: "imp-say", role: "status", "aria-live": "polite", text: S.say }));
 }
-function setText(t) { if (S.sending) return; S.rev++; S.text = String(t).slice(0, 400000); S.results = null; S.say = ""; S.fileErr = ""; S.frozen = null; update(); }
+function setText(t) { if (S.sending) return; S.op++; S.text = String(t).slice(0, 400000); S.results = null; S.say = ""; S.fileErr = ""; S.frozen = null; update(); }
 function fromFile(file, ta) {
   if (!file || S.sending) return;
-  const tok = S.rev; /* a read is only used if nothing was typed, dropped or sent since it started */
+  const tok = ++S.op; S.fileErr = ""; /* starting a read voids every earlier read, paste and result */
+  const live = () => tok === S.op && !S.sending;
   if (file.size > FILE_MAX) { S.fileErr = "That file is over 2 MB. The add-on's file is far smaller; pick the right one."; update(); return; }
-  file.text().then((t) => { if (S.sending || S.rev !== tok) return; ta.value = t; setText(t); }).catch(() => { S.fileErr = "That file could not be read."; update(); });
+  Promise.resolve().then(() => file.text()).then((t) => { if (!live()) return; ta.value = t; setText(t); }, () => { if (!live()) return; S.fileErr = "That file could not be read."; update(); });
 }
 function mount(host, ctx) {
   S.ctx = ctx;

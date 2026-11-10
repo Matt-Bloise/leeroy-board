@@ -51,6 +51,18 @@ async function run(browser, [label, opts]) {
   ok(`${label}: nothing about the import in localStorage`, await page.evaluate(() => !Object.entries(localStorage).some(([k, v]) => /LEEROY1|Secretname/.test(k + v))));
   const bad = await page.locator("#imp-text").fill(s.replace("level=33", "level=34")).then(() => page.locator(".imp-bad").innerText());
   ok(`${label}: a tampered string is refused in plain words`, /check does not match/.test(bad), bad);
+  /* one operation token: the latest of several reads or a paste wins, and an older read that fails later shows nothing */
+  const X = encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full, Y = encode({ v: 1, iface: 16001, t: now - 60, class: "ROGUE", race: "Orc", level: 7 }).full;
+  const drop = (text, ms, reject) => page.evaluate(([o, d, rj]) => { const slow = { size: 10, text: () => new Promise((res, rej) => setTimeout(() => (rj ? rej(new Error("x")) : res(o)), d)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); }, [text, ms, reject]);
+  const val = () => page.locator("#imp-text").inputValue();
+  await drop(X, 700); await drop(Y, 150); await page.waitForTimeout(1100);
+  ok(`${label}: two reads, the older finishing last: the newer one wins`, (await val()) === Y, (await val()).slice(0, 60));
+  await page.locator("#imp-text").fill(""); await drop(X, 150); await drop(Y, 700); await page.waitForTimeout(1100);
+  ok(`${label}: two reads, the newer finishing last: the newer one wins`, (await val()) === Y && /level 7/.test(await page.locator("#imp-out").innerText()), (await val()).slice(0, 60));
+  await drop(X, 500, true); await page.locator("#imp-text").fill(s); await page.waitForTimeout(900);
+  ok(`${label}: an older read that fails after a newer paste shows no error and keeps the preview`, (await page.locator(".imp-bad").count()) === 0 && (await val()) === s && (await page.locator(".imp-row").count()) > 0 && !/could not be read/.test(await page.locator("#imp-out").innerText()));
+  await drop(X, 100, true); await page.waitForTimeout(500);
+  ok(`${label}: the latest read failing does say so`, /could not be read/.test(await page.locator("#imp-out").innerText()));
   await page.locator("#imp-text").fill(s);
   await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
   const geo = await page.evaluate(() => {
