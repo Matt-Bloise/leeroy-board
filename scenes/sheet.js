@@ -8,7 +8,7 @@ const LABEL = { race: "Race", class: "Class", spec_path: "Spec path", spec_at_40
 const LAUNCH = { queue: "In the queue", in: "In the game", done: "Done for tonight" };
 const SRC = { board: "the Party Board", discord: "Discord", game: "the game", leeroy: "Leeroy" };
 const GOALS_MAX = 140;
-const PS = { view: "cards", who: null, data: null, voc: null, edit: null, say: "", sigs: {}, dirty: false };
+const PS = { imp: false, impWait: false, view: "cards", who: null, data: null, voc: null, edit: null, say: "", sigs: {}, dirty: false };
 /* chars.v1 (data/client.json flags, default false): Q37 character switcher. CH.list comes from the "characters" of /me; the switcher shows only for the viewer's own sheet and only with 2 or more. */
 const CH = { list: [], active: null, mod: null, p: null, open: false, draft: {}, errors: {}, busy: false, say: "" };
 const chOn = () => !!(D.client && D.client.flags && D.client.flags["chars.v1"]);
@@ -272,10 +272,38 @@ function sheetView(m) {
       h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn.title()}`)),
     charsView(m),
     h("p", { class: "ps-how", text: how }),
+    impView(m),
     h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
     h("p", { class: "ps-say", id: "ps-say", role: "status", "aria-live": "polite", text: PS.say }));
 }
-const nameList = (ms) => K.andList(ms.map((m) => m.name));
+/* Import from game (scenes/import.js): own sheet only. Opening it holds back re-renders like the other editors; nothing is sent until the Send tap inside the panel. */
+function impCtx(m) {
+  return {
+    label: labelOf, lists: () => PS.voc.lists,
+    current: () => { const F = fieldsFor(m), o = {}; for (const f of ["race", "class", "level", "professions"]) o[f] = F[f].value === undefined ? null : F[f].value; return o; },
+    canSend: () => {
+      const B = BB(), st = B && B.status ? B.status() : null;
+      if (!st || !st.key) return { ok: false, why: "Sending needs your own board link (the one with your key)." };
+      if (!keyIsThem(m)) return { ok: false, why: "This board link belongs to someone else, so nothing can be sent from here." };
+      if (st.sheetOff) return { ok: false, why: "The party sheet is switched off for now, so nothing can be sent." };
+      return { ok: true };
+    },
+    done: () => { PS.dirty = false; render(); },
+  };
+}
+function impView(m) {
+  if (!isMe(m)) return null;
+  const host = h("div", { id: "ps-imp", class: "ps-imp-host" });
+  if (PS.imp) host.hidden = false; else host.hidden = true;
+  if (PS.imp) {
+    if (window.BoardImport) window.BoardImport.mount(host, impCtx(m));
+    else if (window.__scenes && !PS.impWait) { PS.impWait = true; window.__scenes.load("import").then(() => { PS.impWait = false; if (PS.imp && PS.view === "sheet") render(); }); }
+  }
+  const btn = h("button", { type: "button", class: "lib-tool imp-toggle", id: "ps-imp-btn", "aria-expanded": String(!!PS.imp), "aria-controls": "ps-imp",
+    onclick: () => { PS.imp = !PS.imp; PS.edit = PS.imp ? "@import" : null; render(); const f = PS.imp ? $("#imp-text") : $("#ps-imp-btn"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } } }, "Import from game");
+  return h("div", { class: "ps-imp" }, btn, host);
+}
+const nameList = (ms) =>K.andList(ms.map((m) => m.name));
 function tableView() {
   const ms = members(), d = PS.data, all = ms.map((m) => ({ m, F: fieldsFor(m), p: d ? d.people.find((x) => x.class_key === m.class_key) : null }));
   const take = {};
@@ -382,7 +410,7 @@ function render() {
   if (again && !PS.edit) { const f = $(again); if (f && f !== document.activeElement) { try { f.focus({ preventScroll: true }); } catch (e) {} } }
 }
 function show(v, who, user) {
-  PS.view = v; if (v === "sheet") { PS.who = who; chLoad(); } else { PS.edit = null; CH.open = false; }
+  PS.view = v; if (v === "sheet") { PS.who = who; chLoad(); } else { PS.edit = null; CH.open = false; PS.imp = false; }
   if (v !== "sheet") PS.say = "";
   ready().then(() => {
     render();

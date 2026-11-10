@@ -1,0 +1,85 @@
+// Import from game panel (scenes/import.js, js/addon-import.js): own sheet only; nothing read before a paste, nothing sent before the Send tap,
+// the summary shows before and after, a field is sent only when it changes, per-field success and failure, no overlap at 390x844 and 1440x900, zero console errors.
+//   node addon-import.mjs --url http://127.0.0.1:8080/   (or env PREVIEW_PAGES)
+// Everything under /api/ is stubbed by interception with a made-up member key; nothing real is sent. Exit 0 when every check passes, 1 otherwise.
+import { pageUrl } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
+const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
+const argv = process.argv.slice(2), ui = argv.indexOf("--url");
+const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
+if (!BASE) { console.error("usage: node addon-import.mjs --url <pages origin>"); process.exit(2); }
+let pass = 0, fail = 0;
+const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
+const KEY = "TestKeyTestKeyTestKey123456";
+const SIZES = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1440x900", { viewport: { width: 1440, height: 900 } }]];
+const json = (route, body, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
+
+async function run(browser, [label, opts]) {
+  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
+  page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]|^Failed to load resource|cloudflareinsights|net::ERR|WebSocket connection/.test(m.text())) errors.push(m.text()); });
+  await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); } catch (e) {} }, [KEY]);
+  await ctx.route("**/api/**", (route) => {
+    const u = new URL(route.request().url()), m = route.request().method();
+    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise" });
+    if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
+    if (m === "POST" && u.pathname.endsWith("/api/sheet")) {
+      const b = route.request().postDataJSON(); posts.push(b);
+      if (b.field === "level") return json(route, { error: "busy" }, 429);
+      return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() });
+    }
+    return route.abort();
+  });
+  await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
+  await page.waitForFunction(() => window.__scenes && window.__boardKit && window.__boardKit.D && window.__boardKit.D.party, null, { timeout: 20000 }).catch(() => {});
+  await page.evaluate(() => window.__scenes.load("sheet")).catch(() => {});
+  await page.evaluate(() => window.__sheet.openSheet("bloise", true));
+  await page.waitForTimeout(1500);
+  ok(`${label}: Import from game button is on your own sheet`, await page.locator("#ps-imp-btn").count() === 1);
+  await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
+  await page.locator("#imp-text").waitFor({ state: "visible", timeout: 10000 });
+  await page.waitForFunction(() => /Nothing is read until/.test(document.querySelector("#imp-out").innerText), null, { timeout: 8000 }).catch(() => {});
+  ok(`${label}: panel opens empty and sends nothing`, (await page.locator("#imp-out").innerText()).includes("Nothing is read until you paste") && posts.length === 0);
+  const now = Math.floor(Date.now() / 1000);
+  const { encode } = await import("../../js/addon-import.js");
+  const s = encode({ v: 1, iface: 16001, t: now - 60, name: "Secretname", class: "WARRIOR", race: "Troll", level: 33, prof: "164:300,185:100", zone: "Elwynn Forest" }).full;
+  await page.locator("#imp-text").fill(s.slice(0, 40) + "\n" + s.slice(40));
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const txt = await page.locator("#imp-out").innerText();
+  ok(`${label}: summary names what was found and what will change`, /level 33/.test(txt) && /Will change/.test(txt) && /Secretname/.test(txt) && /never sent/.test(txt) && /Profession skill 185: not on the board's list, skipped/.test(txt), txt.slice(0, 300));
+  ok(`${label}: nothing sent before the tap`, posts.length === 0);
+  ok(`${label}: nothing about the import in localStorage`, await page.evaluate(() => !Object.entries(localStorage).some(([k, v]) => /LEEROY1|Secretname/.test(k + v))));
+  const bad = await page.locator("#imp-text").fill(s.replace("level=33", "level=34")).then(() => page.locator(".imp-bad").innerText());
+  ok(`${label}: a tampered string is refused in plain words`, /check does not match/.test(bad), bad);
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const geo = await page.evaluate(() => {
+    const sc = document.documentElement.scrollWidth - window.innerWidth;
+    const boxes = [...document.querySelectorAll(".imp-row, .imp-text, .imp-drop, .imp-send, .imp-note")].map((e) => e.getBoundingClientRect());
+    const over = [];
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i], b = boxes[j]; if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) over.push([i, j]); }
+    const panel = document.querySelector(".imp").getBoundingClientRect();
+    return { sc, over, panelRight: panel.right, vw: window.innerWidth, short: [...document.querySelectorAll(".imp-send, .imp-choose, .imp-toggle")].filter((e) => e.offsetHeight < 44).length };
+  });
+  ok(`${label}: no horizontal scroll, no overlap, controls 44px`, geo.sc <= 1 && geo.over.length === 0 && geo.panelRight <= geo.vw + 1 && geo.short === 0, JSON.stringify(geo));
+  if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-before.png` : undefined }).catch(() => {});
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await page.locator("#imp-send").click();
+  await page.locator('.imp-row[data-state="failed"], .imp-row[data-state="sent"]').first().waitFor({ timeout: 8000 });
+  await page.waitForTimeout(500);
+  const fields = posts.map((p) => p.field).sort();
+  ok(`${label}: only changed fields were sent, one at a time, and never the name`, JSON.stringify(fields) === JSON.stringify(["class", "level", "professions", "race"]) && !JSON.stringify(posts).includes("Secretname") && !JSON.stringify(posts).includes("Elwynn"), JSON.stringify(posts));
+  ok(`${label}: values sent are board slugs`, posts.some((p) => p.field === "class" && p.value === "warrior") && posts.some((p) => p.field === "race" && p.value === "troll") && posts.some((p) => p.field === "professions" && JSON.stringify(p.value) === '["blacksmithing"]'), JSON.stringify(posts));
+  const states = await page.locator(".imp-row").evaluateAll((els) => Object.fromEntries(els.map((e) => [e.dataset.field, e.dataset.state])));
+  ok(`${label}: a failed line says so and the others say Sent`, states.level === "failed" && states.race === "sent" && states.class === "sent" && states.professions === "sent", JSON.stringify(states));
+  ok(`${label}: the failure is in words`, /Level\s*[\s\S]*Not sent: busy/.test(await page.locator("#imp-out").innerText()));
+  ok(`${label}: Send cannot run twice`, (await page.locator("#imp-send").getAttribute("aria-disabled")) === "true");
+  if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-after.png` : undefined }).catch(() => {});
+  ok(`${label}: zero console errors`, errors.length === 0, errors.join(" | "));
+  await ctx.close();
+}
+const browser = stubbed(await pw.chromium.launch());
+for (const sz of SIZES) await run(browser, sz);
+await browser.close();
+console.log(`${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
