@@ -28,6 +28,7 @@ function escape(value) {
     else if (c === 61) piece = "%3D";
     else if (c === 124) piece = "%7C";
     else if (c === 10) piece = "%0A";
+    else if (c === 32) piece = "%20";
     else if (c < 32 || c > 126) piece = "%" + hex(c, 2).toUpperCase();
     else piece = String.fromCharCode(c);
     out.push(piece);
@@ -150,7 +151,7 @@ test("Lua source is pinned to the twin: tag, key order, modulus, no bit/5.2 cons
   assert.ok(luaSrc.includes(`Codec.TAG = "${TAG}"`));
   assert.equal((luaSrc.match(/% 65521/g) || []).length, 2);
   assert.ok(luaSrc.includes('string.format("%04x%04x", b, a)'));
-  for (const piece of ['c == 37 then piece = "%25"', 'c == 59 then piece = "%3B"', 'c == 61 then piece = "%3D"', 'c == 124 then piece = "%7C"', 'c == 10 then piece = "%0A"', "c < 32 or c > 126"]) {
+  for (const piece of ['c == 37 then piece = "%25"', 'c == 59 then piece = "%3B"', 'c == 61 then piece = "%3D"', 'c == 124 then piece = "%7C"', 'c == 10 then piece = "%0A"', 'c == 32 then piece = "%20"', "c < 32 or c > 126"]) {
     assert.ok(luaSrc.includes(piece), piece);
   }
   assert.ok(!/\bbit\./.test(luaSrc));
@@ -158,4 +159,14 @@ test("Lua source is pinned to the twin: tag, key order, modulus, no bit/5.2 cons
 
 test("level above 60 is encoded as the real integer (the importer rejects it, not the add-on)", () => {
   assert.equal(payload({ v: 1, iface: 16001, t: 1, class: "MAGE", race: "Gnome", level: 61 }), "v=1;iface=16001;t=1;class=MAGE;race=Gnome;level=61");
+});
+
+test("spaces are escaped as %20 (name and zone), golden vector unchanged", () => {
+  assert.equal(escape("Elwynn Forest"), "Elwynn%20Forest");
+  const p = payload({ v: 1, iface: 16001, t: 1794000000, name: "Mary Jane", class: "PALADIN", race: "Human", level: 40, zone: "Elwynn Forest" });
+  assert.equal(p, "v=1;iface=16001;t=1794000000;name=Mary%20Jane;class=PALADIN;race=Human;level=40;zone=Elwynn%20Forest");
+  assert.ok(!/[ 	
+]/.test(wrap(p)));
+  assert.equal(decodeURIComponent(escape("Mary Jane")), "Mary Jane");
+  assert.equal(wrap(vectors.vectors[0].payload), vectors.vectors[0].string);
 });

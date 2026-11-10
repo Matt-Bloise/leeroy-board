@@ -19,7 +19,7 @@ Unticked by default: character name, talent points per tree, current zone.
 A field the game will not give the add-on is left out, never guessed. The window and the chat summary list exactly what went into the string.
 
 ## Wire format
-`LEEROY1|<key=value;...>|<check>`. Values escape `%`, `;`, `=`, `|` and newline as `%XX`; every other control byte (below 32) and every byte above 126 is also written `%XX` (uppercase hex of the UTF-8 byte), so the string is ASCII only. Any standard percent-decoder reads it back. The check is Adler-32 of the payload, 8 lowercase hex digits. Level is exported as the real integer; the site rejects out-of-range values with a reason.
+`LEEROY1|<key=value;...>|<check>`. Values escape `%`, `;`, `=`, `|`, space (`%20`) and newline as `%XX`; every other control byte (below 32) and every byte above 126 is also written `%XX` (uppercase hex of the UTF-8 byte), so the string is ASCII only. Any standard percent-decoder reads it back. The check is Adler-32 of the payload, 8 lowercase hex digits. Level is exported as the real integer; the site rejects out-of-range values with a reason.
 
 ## Privacy
 - The add-on has no network code (WoW add-ons cannot make network requests) and sends nothing.

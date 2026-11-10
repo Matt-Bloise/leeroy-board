@@ -22,6 +22,7 @@ function Codec.escape(value)
     elseif c == 61 then piece = "%3D"
     elseif c == 124 then piece = "%7C"
     elseif c == 10 then piece = "%0A"
+    elseif c == 32 then piece = "%20"
     elseif c < 32 or c > 126 then piece = string.format("%%%02X", c)
     else piece = string.char(c) end
     out[#out + 1] = piece
