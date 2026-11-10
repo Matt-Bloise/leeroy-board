@@ -272,7 +272,7 @@ function sheetView(m) {
       h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn.title()}`)),
     charsView(m),
     h("p", { class: "ps-how", text: how }),
-    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
+    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.filter((f) => !(f === "launch_state" && !F[f].text && K.launchPast())).map((f) => lineEl(m, f, F[f], mine))),
     h("p", { class: "ps-say", id: "ps-say", role: "status", "aria-live": "polite", text: PS.say }));
 }
 const nameList = (ms) => K.andList(ms.map((m) => m.name));

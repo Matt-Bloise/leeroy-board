@@ -3449,6 +3449,14 @@ function yourTime(T) {
 function withWhen(e) { return e && !e.when && e.epoch ? { ...e, when: fmtWhen(e.epoch) } : e; }
 function launchEvent() { return withWhen((D.timeline && D.timeline.events && D.timeline.events.find((x) => x.key === "launch")) || null); }
 function launchPast() { const e = launchEvent(); return !!(e && e.epoch && Date.now() / 1000 >= e.epoch); }
+/* After launch the board talks in past tense and drops the pre-launch checklists. Pure: takes the event and the clock so tests can fake both sides of launch. */
+function launchSay(e, nowS) { if (!e || !e.epoch) return ""; const now = nowS === undefined ? Date.now() / 1000 : nowS; return now >= e.epoch ? `Launched ${fmtWhen(e.epoch, { time: false })}, ${relWhen(e.epoch, now)}.` : `Launch is ${relWhen(e.epoch, now)}, ${fmtWhen(e.epoch)}.`; }
+/* The "Names" line comes from the names_open event (data/timeline.json carries until/until_zone, tonight.json open_when). Closed window: no line. */
+function namesLine(ev, tl, nowS) {
+  if (!ev || !ev.until_epoch || nowS >= ev.until_epoch) return "";
+  const t = tl || ev, until = t.until || ev.until, zone = t.until_zone || ev.until_zone || "Pacific";
+  return until ? `Names: open now for pack holders, ${cardDates(`until ${until} (${zone})`)}.` : `Names: ${String(ev.open_when || "open now").replace(/^./, (c) => c.toLowerCase())}.`;
+}
 function nextDated() { const now = Date.now() / 1000, ev = (D.timeline && D.timeline.events) || []; return ev.filter((x) => x.epoch && x.epoch > now).sort((a, b) => a.epoch - b.epoch).map(withWhen)[0] || null; }
 function settleLaunch() {
   const p = D.party; if (!p || !launchPast()) return false;
@@ -3519,7 +3527,8 @@ function beforeItems(T, P, member, mine) {
     const po = open(/profession/i) || {}, pr = member.professions || [], und = pr.some((p) => p.status === "undecided"), gap = (po.text || "").match(/Gap: ([A-Za-z]+)/);
     out.push({ id: "prof", text: `Professions on the board: ${pr.map((p) => p.name).join(" and ") || "none yet"}${und ? " (one still undecided)" : ""}.`, href: po.links && po.links[0] ? po.links[0].url : L.choose, more: gap ? `The group has no ${gap[1]} yet.` : "" });
   }
-  if (names && names.until_epoch) out.push({ id: "names", text: nowS < names.until_epoch ? `Names: open now for pack holders, ${cardDates("until Nov 3 (Pacific)")}.` : "Names: the pack-holder window has closed.", more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
+  const namesText = namesLine(names, D.timeline && D.timeline.events.find((e) => e.key === "names_open"), nowS);
+  if (namesText) out.push({ id: "names", text: namesText, more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
   if (member) out.push({ id: "signup", text: mine ? `Sign-up card: you answered "${T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || mine.rsvp}".` : "Sign-up card: no answer from you yet.", href: L.signup });
   const meet = open(/meeting point/i);
   if (meet) out.push({ id: "meet", text: unchosen(meet) ? "Meeting point: nothing chosen yet." : `Meeting point: ${meet.status}.`, href: unchosen(meet) ? P.signup_url : null, more: meet.detail || "" });
@@ -3538,6 +3547,8 @@ function groupOpenLine(T, P) {
 }
 function renderBefore() {
   const T = D.tonight, P = D.party, box = $("#tn-before"); if (!T || !P || !box) return;
+  if (launchPast()) { box.replaceChildren(); box.hidden = true; return; } /* launch has happened: the pre-launch list is retired */
+  box.hidden = false;
   const me = MEM.me(), member = MEM.member(), slug = member ? MEM.slug(member.name) : "just-looking";
   const S = D.signups, entries = S && S.entries ? S.entries : [], mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
   const items = me ? beforeItems(T, P, member, mine) : [], ticks = new Set(beforeTicks(slug));
@@ -3709,7 +3720,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

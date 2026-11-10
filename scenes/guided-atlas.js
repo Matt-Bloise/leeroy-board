@@ -62,7 +62,7 @@ function build() {
 }
 function head() {
   const m = MEM.member(); if (!m || !G.title) return;
-  G.title.replaceChildren(`${m.name}, ${m.race} ${m.class}`, h("small", { text: "Your map. Your route to launch night." }));
+  G.title.replaceChildren(`${m.name}, ${m.race} ${m.class}`, h("small", { text: K.launchPast() ? "Your map. Your route through the world." : "Your map. Your route to launch night." }));
 }
 function mirror() {
   if (!G.card || !G.shown) return;
