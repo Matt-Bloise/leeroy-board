@@ -30,7 +30,20 @@ async function open(page) {
 const move = (page, x, y) => page.evaluate(([x, y]) => window.dispatchEvent(new PointerEvent("pointermove", { clientX: x, clientY: y, pointerType: "mouse", bubbles: true })), [x, y]);
 const lamp = (page) => page.evaluate(() => { const l = document.querySelector("#lamp"); if (!l) return null; const r = l.getBoundingClientRect(); return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, hidden: l.getAttribute("aria-hidden"), op: +getComputedStyle(l).opacity, w: innerWidth, h: innerHeight, lx: getComputedStyle(document.documentElement).getPropertyValue("--lx").trim() }; }).catch(() => null);
 
-const browser = stubbed(await pw.chromium.launch());
+// Counts flips of the light-off class (the only class js/light.js writes) on <html> for ms. Each MutationRecord's new state is the next record's oldValue (the last one's is the live className), so a burst of
+// toggles delivered in ONE callback is still counted one by one. hdr, cloth and mode also rewrite the html class (CI trace of Nov 10: +265 ms, +280 ms, no light-off change): those count in `all` only.
+// act: "calm" = BoardLight.calm(true); "burst" = 4 synchronous light-off toggles (ends where it began); "other" = 4 synchronous toggles of an unrelated class.
+function watchLightOff({ act, ms }) {
+  return new Promise((done) => {
+    const root = document.documentElement, has = (s) => /(^|\s)light-off(\s|$)/.test(s || ""); let n = 0, all = 0; const muts = [], t0 = performance.now();
+    const ob = new MutationObserver((recs) => { recs = recs.filter((m) => m.attributeName === "class"); recs.forEach((m, i) => { const before = m.oldValue || "", after = i + 1 < recs.length ? recs[i + 1].oldValue || "" : root.className; all++; if (has(before) !== has(after)) n++; muts.push([Math.round(performance.now() - t0), has(before) !== has(after) ? "light-off" : "other"]); }); });
+    ob.observe(root, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+    if (act === "calm") window.BoardLight.calm(true);
+    else if (act === "burst") for (let i = 0; i < 4; i++) root.classList.toggle("light-off");
+    else if (act === "other") for (let i = 0; i < 4; i++) root.classList.toggle("zz-probe");
+    setTimeout(() => { ob.disconnect(); const b = document.querySelector("#light-calm"); done({ n, all, muts, pressed: b && b.getAttribute("aria-pressed"), text: b && b.textContent, lamps: document.querySelectorAll("#lamp").length }); }, ms);
+  });
+}const browser = stubbed(await pw.chromium.launch());
 async function run(label, viewport, mobile) {
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1, hasTouch: mobile, isMobile: mobile, serviceWorkers: "block" });
   ctx.setDefaultTimeout(WAIT); const page = await ctx.newPage();
@@ -66,8 +79,11 @@ async function run(label, viewport, mobile) {
   if (OUT) await page.screenshot({ path: path.join(OUT, "home-" + label + ".png") }).catch(() => {});
   ok(label + ": exactly one lamp and one script copy", await page.evaluate(() => document.querySelectorAll("#lamp").length === 1 && document.querySelectorAll('script[src^="js/light.js"]').length === 1));
   // Calm via the API settles: one class flip, no mutation loop, and the button repaints
-  const churn = await page.evaluate(() => new Promise((done) => { let n = 0; const muts = [], t0 = performance.now(); let prev = document.documentElement.className; /* evidence for a CI-only flake (BoardLight.calm n=3 on Nov 9): which class was added or removed, and when; asserts nothing */ const ob = new MutationObserver((ms) => { for (const m of ms) if (m.attributeName === "class") { n++; const cur = document.documentElement.className, A = new Set(prev.split(/\s+/)), B = new Set(cur.split(/\s+/)); muts.push([Math.round(performance.now() - t0), [...B].filter((x) => !A.has(x)).join("+"), [...A].filter((x) => !B.has(x)).join("+")]); prev = cur; } }); ob.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] }); window.BoardLight.calm(true); setTimeout(() => { ob.disconnect(); const b = document.querySelector("#light-calm"); done({ n, muts, pressed: b && b.getAttribute("aria-pressed"), text: b && b.textContent, lamps: document.querySelectorAll("#lamp").length }); }, 600); }));
-  ok(label + ": BoardLight.calm(true) settles (class changed at most twice), removes the lamp and repaints the button", churn.n <= 2 && churn.lamps === 0 && churn.pressed === "true" && /calm/.test(churn.text), JSON.stringify(churn));
+  const churn = await page.evaluate(watchLightOff, { act: "calm", ms: 600 });
+  ok(label + ": BoardLight.calm(true) settles (light-off flipped at most twice), removes the lamp and repaints the button", churn.n <= 2 && churn.lamps === 0 && churn.pressed === "true" && /calm/.test(churn.text), JSON.stringify(churn));
+  // self-check of the counter above: a synchronous burst of 4 light-off toggles in ONE task is counted as 4 (it would fail the bound), class changes that leave light-off alone count 0
+  { const burst = await page.evaluate(watchLightOff, { act: "burst", ms: 100 }), other = await page.evaluate(watchLightOff, { act: "other", ms: 100 });
+    ok(label + ": the light-off counter sees a synchronous burst of 4 flips as 4 and unrelated class changes as 0", burst.n === 4 && burst.n > 2 && other.n === 0 && other.all >= 4, JSON.stringify({ burst: burst.n, other: [other.n, other.all] })); }
   await page.evaluate(() => window.BoardLight.calm(false)); await until(page, () => !!document.querySelector("#lamp"));
   // Calm switch
   const btn = await page.$("#light-calm");
