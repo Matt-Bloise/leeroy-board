@@ -170,15 +170,17 @@ function setText(t) {
   t = String(t); const big = t.length > TEXT_MAX, run = begin("paste", big ? "failed" : t.trim() ? "ready" : "idle");
   put(run, { results: null, say: "", frozen: null, text: big ? "" : t, fileErr: big ? TOO_BIG : "" }); update();
 }
+/* the text box is looked up when a read ends: the sheet may have re-rendered (a new mount, a new textarea) while the file was loading */
+const setBox = (v) => { if (ctl && ctl.ta) ctl.ta.value = v; };
 function fromFile(file, ta) {
   if (!file || sending()) return;
   const run = begin("read", "reading"); put(run, { fileErr: "", results: null, frozen: null, say: "" }); update(); /* a new read supersedes every earlier read, paste and result; the old preview goes at once, so it cannot be sent while the new file loads */
-  if (file.size > TEXT_MAX) { run.phase = "failed"; if (put(run, { text: "", fileErr: TOO_BIG })) { ta.value = ""; update(); } return; }
+  if (file.size > TEXT_MAX) { run.phase = "failed"; if (put(run, { text: "", fileErr: TOO_BIG })) { setBox(""); update(); } return; }
   Promise.resolve().then(() => file.text()).then((t) => {
     if (!own(run)) return;
-    if (t.length > TEXT_MAX) { run.phase = "failed"; if (put(run, { text: "", fileErr: TOO_BIG })) { ta.value = ""; update(); } return; }
+    if (t.length > TEXT_MAX) { run.phase = "failed"; if (put(run, { text: "", fileErr: TOO_BIG })) { setBox(""); update(); } return; }
     run.phase = t.trim() ? "ready" : "idle";
-    if (put(run, { text: t, fileErr: "" })) { ta.value = t; update(); }
+    if (put(run, { text: t, fileErr: "" })) { setBox(t); update(); }
   }, () => { if (!own(run)) return; run.phase = "failed"; if (put(run, { fileErr: "That file could not be read." })) update(); });
 }
 function mount(host, ctx) {

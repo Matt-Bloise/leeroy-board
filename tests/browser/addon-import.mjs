@@ -102,6 +102,14 @@ async function run(browser, [label, opts]) {
   ok(`${label}: a tap on Send during the read writes nothing`, posts.length === 0);
   await page.waitForFunction(() => document.querySelector(".imp-row") && /level 33/.test(document.getElementById("imp-out").innerText), null, { timeout: 5000 }).catch(() => {});
   ok(`${label}: after the read the NEW export is the preview and Send is live`, (await page.locator("#imp-text").inputValue()) === s && /level 33/.test(await page.locator("#imp-out").innerText()) && (await page.locator("#imp-send").getAttribute("aria-disabled")) !== "true");
+  /* a re-render of the sheet during a read builds a new text box: the file's text must land in the one on screen */
+  await page.locator("#imp-text").fill(Z); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await drop(s, 700);
+  await page.evaluate(() => window.__sheet.show("sheet", "bloise"));
+  await page.waitForTimeout(400);
+  const boxBefore = await page.evaluate(() => document.getElementById("imp-text").value);
+  await page.waitForFunction(() => /level 33/.test(document.getElementById("imp-out").innerText), null, { timeout: 5000 }).catch(() => {});
+  ok(`${label}: a remount during a read still puts the file's text in the visible box`, (await page.locator("#imp-text").inputValue()) === s && /level 33/.test(await page.locator("#imp-out").innerText()) && (await page.locator("#imp-text").count()) === 1, JSON.stringify({ boxBefore: boxBefore.slice(0, 40) }));
   await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
   await page.locator("#imp-send").click();
   const during = await page.evaluate(() => ({ ta: document.getElementById("imp-text").disabled, file: document.getElementById("imp-file").disabled, choose: document.querySelector(".imp-choose").disabled, send: document.getElementById("imp-send").getAttribute("aria-disabled"), label: document.getElementById("imp-send").textContent }));
