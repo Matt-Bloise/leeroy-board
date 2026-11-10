@@ -27,6 +27,7 @@ const S = { text: "", results: null, mod: null, modP: null, ctx: null, say: "", 
 const begin = (kind, phase) => (S.cur = { id: ++S.n, kind, phase });
 const own = (run) => S.cur === run;
 const sending = () => !!S.cur && S.cur.phase === "sending";
+const reading = () => !!S.cur && S.cur.phase === "reading";
 /* the only way shared state is written: a superseded run changes nothing and learns so from the return value */
 function put(run, patch) { if (!own(run)) return false; Object.assign(S, patch); return true; }
 begin("idle", "idle");
@@ -77,7 +78,7 @@ function summary(x) {
   /* Professions are never cleared by an export. A self-reported export that finds none (prof= empty, left out, or nothing on the board list) must not wipe what a friend typed on the board: the add-on may not see professions the board knows. So an empty result is omitted from the changes and said plainly here. */
   if (!rows.some((o) => o.field === "professions")) kids.push(h("p", { class: "imp-info imp-kept", text: "Professions: none found in the export, your board value is kept." }));
   if (mapped.skipped.length) kids.push(h("ul", { class: "imp-skips", "aria-label": "Skipped values" }, ...mapped.skipped.map((s) => h("li", { class: "imp-skip", text: A.skippedLine(s) }))));
-  const n = rows.filter((o) => o.change).length, can = S.ctx.canSend(), done = !!S.results, busy = sending();
+  const n = rows.filter((o) => o.change).length, can = S.ctx.canSend(), done = !!S.results, busy = sending() || reading();
   const failed = S.results ? Object.keys(S.results).filter((f) => !S.results[f].ok) : [];
   kids.push(h("p", { class: "imp-note", text: "Only lines marked Will change are sent, one at a time, after you tap Send. A line you left unticked in the add-on options is not in the export." }));
   kids.push(h("div", { class: "imp-act" },
@@ -86,13 +87,13 @@ function summary(x) {
   return h("div", { class: "imp-sum" }, ...kids);
 }
 function send(rows) {
-  const can = S.ctx.canSend(); if (sending() || S.results || !can.ok) return;
+  const can = S.ctx.canSend(); if (!S.cur || S.cur.phase !== "ready" || S.results || !can.ok) return; /* only a settled preview can be sent: not while reading, sending or after a failed read */
   const todo = rows.filter((o) => o.change); if (!todo.length) return;
   return execute("send", todo, rows, {});
 }
 /* Retry: plan again against what the sheet shows NOW, and send only the lines that failed (and still differ). Lines already sent keep their result. */
 function retry() {
-  const A = S.mod, can = S.ctx.canSend(); if (sending() || !S.results || !can.ok || !A) return;
+  const A = S.mod, can = S.ctx.canSend(); if (!S.cur || S.cur.phase !== "done" || !S.results || !can.ok || !A) return;
   const failed = Object.keys(S.results).filter((f) => !S.results[f].ok); if (!failed.length) return;
   const r = A.parse(S.text); if (!r.ok) return;
   const fresh = A.plan(A.mapToBoard(r.data, S.ctx.lists()), S.ctx.current());
@@ -141,6 +142,7 @@ function update() {
   const x = read();
   let body;
   if (S.fileErr) body = h("p", { class: "imp-bad", role: "alert", text: S.fileErr });
+  else if (reading()) body = h("p", { class: "imp-info imp-reading", role: "status", text: "Reading the file..." });
   else if (x.kind === "ok") body = summary(x);
   else if (x.kind === "bad") body = h("p", { class: "imp-bad", role: "alert", text: x.why });
   else if (x.kind === "fail") body = h("div", { class: "imp-sum" }, h("p", { class: "imp-bad", role: "alert", text: "The reader could not load. Reload the page and try again." }), h("div", { class: "imp-act" }, h("button", { type: "button", class: "lib-tool imp-retry-load", id: "imp-retry-load", onclick: () => { S.loadFail = false; update(); const p = lib(); if (p) p.then(update); } }, "Try loading it again"), h("button", { type: "button", class: "lib-tool imp-reload", onclick: () => { try { location.reload(); } catch (e) {} } }, "Reload the page")));
@@ -157,7 +159,7 @@ function setText(t) {
 }
 function fromFile(file, ta) {
   if (!file || sending()) return;
-  const run = begin("read", "reading"); put(run, { fileErr: "", results: null, frozen: null, say: "" }); /* a new read supersedes every earlier read, paste and result */
+  const run = begin("read", "reading"); put(run, { fileErr: "", results: null, frozen: null, say: "" }); update(); /* a new read supersedes every earlier read, paste and result; the old preview goes at once, so it cannot be sent while the new file loads */
   if (file.size > TEXT_MAX) { run.phase = "failed"; if (put(run, { text: "", fileErr: TOO_BIG })) { ta.value = ""; update(); } return; }
   Promise.resolve().then(() => file.text()).then((t) => {
     if (!own(run)) return;

@@ -84,14 +84,20 @@ async function run(browser, [label, opts]) {
   });
   ok(`${label}: no horizontal scroll, no overlap, controls 44px`, geo.sc <= 1 && geo.over.length === 0 && geo.panelRight <= geo.vw + 1 && geo.short === 0, JSON.stringify(geo));
   if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-before.png` : undefined }).catch(() => {});
-  /* file-read race: a read that finishes while sending must not touch the text box */
-  await page.evaluate((o) => { const f = new File([o], "late.lua"); const slow = { size: f.size, text: () => { window.__readStarted = Date.now(); return new Promise((r) => setTimeout(() => { window.__readDone = Date.now(); r(o); }, 900)); } }; const dt = new DataTransfer(); window.__slowFile = slow; const ev = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); }, encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full);
   await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
-  await page.evaluate((o) => { const slow = { size: o.length, text: () => new Promise((r) => setTimeout(() => r(o), 3000)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); window.__lateStart = Date.now(); document.getElementById("imp-drop").dispatchEvent(ev); }, encode({ v: 1, iface: 16001, t: now - 60, class: "ROGUE", race: "Orc", level: 7 }).full).catch(() => {});
+  /* while a file read is pending the OLD export cannot be sent: Send is disabled and says Reading, and a forced tap writes nothing; the NEW export's lines are what Send writes */
+  const Z = encode({ v: 1, iface: 16001, t: now - 60, class: "ROGUE", race: "Orc", level: 7 }).full;
+  await page.locator("#imp-text").fill(Z); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await drop(s, 800);
+  const rdg = await page.evaluate(() => ({ dis: document.getElementById("imp-send") ? document.getElementById("imp-send").getAttribute("aria-disabled") : "gone", out: document.getElementById("imp-out").innerText }));
+  ok(`${label}: while a file is being read, the old export is not shown as sendable`, /Reading the file/.test(rdg.out) && (rdg.dis === "gone" || rdg.dis === "true") && !/Level 7/.test(rdg.out), JSON.stringify(rdg).slice(0, 160));
+  await page.evaluate(() => { const b = document.getElementById("imp-send"); if (b) b.click(); });
+  await page.waitForTimeout(200);
+  ok(`${label}: a tap on Send during the read writes nothing`, posts.length === 0);
+  await page.waitForFunction(() => document.querySelector(".imp-row") && /level 33/.test(document.getElementById("imp-out").innerText), null, { timeout: 5000 }).catch(() => {});
+  ok(`${label}: after the read the NEW export is the preview and Send is live`, (await page.locator("#imp-text").inputValue()) === s && /level 33/.test(await page.locator("#imp-out").innerText()) && (await page.locator("#imp-send").getAttribute("aria-disabled")) !== "true");
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
   await page.locator("#imp-send").click();
-  await page.waitForFunction(() => window.__readDone, null, { timeout: 5000 });
-  const midSend = await page.evaluate(() => ({ v: document.getElementById("imp-text").value, sending: document.getElementById("imp-send").textContent }));
-  ok(`${label}: a file read that finished mid-send did not replace the text box`, midSend.v === s && /Sending/.test(midSend.sending), JSON.stringify(midSend).slice(0, 120));
   const during = await page.evaluate(() => ({ ta: document.getElementById("imp-text").disabled, file: document.getElementById("imp-file").disabled, choose: document.querySelector(".imp-choose").disabled, send: document.getElementById("imp-send").getAttribute("aria-disabled"), label: document.getElementById("imp-send").textContent }));
   ok(`${label}: while sending, the text box, file picker and Send are locked`, during.ta && during.file && during.choose && during.send === "true" && /Sending/.test(during.label), JSON.stringify(during));
   /* an edit attempt during submission (an input event, and a drop of other text) must change nothing */
@@ -116,10 +122,6 @@ async function run(browser, [label, opts]) {
   ok(`${label}: after a clean retry every line says Sent and the button is Done`, (await page.locator('.imp-row[data-state="sent"]').count()) === 4 && /Done/.test(await page.locator("#imp-send").innerText()));
   globalThis.__lvOk = false;
   ok(`${label}: Send cannot run twice`, (await page.locator("#imp-send").getAttribute("aria-disabled")) === "true");
-  const rd = await page.evaluate(() => [window.__readStarted, window.__readDone]);
-  ok(`${label}: the slow read did run and finish before the results came back`, !!rd[0] && !!rd[1], JSON.stringify(rd));
-  await page.waitForTimeout(3200);
-  ok(`${label}: a read that finishes after submission does not replace the export or clear its results`, (await page.locator("#imp-text").inputValue()) === s && (await page.locator(".imp-row[data-state=sent]").count()) === 4, (await page.locator("#imp-text").inputValue()).slice(0, 70));
   const after = await page.locator("#imp-out").innerText();
   ok(`${label}: results stay with the export that was sent (the edit during sending was ignored)`, /Level 33/.test(after) && !/Level 12|Gnome/i.test(after) && posts.every((p) => !(p.field === "class" && p.value === "mage")), JSON.stringify(after));
   ok(`${label}: boxes unlock after sending`, await page.evaluate(() => !document.getElementById("imp-text").disabled));
