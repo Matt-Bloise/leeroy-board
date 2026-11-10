@@ -321,7 +321,7 @@ const FOX = askerFacts(SHEETS[0]); // human paladin, protection, level 12, minin
 const mkFacts = (cls, race, spec = "", professions = "") => askerFacts({ slug: "x", name: "X", fields: { class: f(cls), race: f(race), spec_path: f(spec), level: f(20), professions: f(professions) } });
 const MAGE_28 = mkFacts("mage", "gnome", "frost"), UNDEAD_PRIEST = mkFacts("priest", "undead", "holy"), UNDEAD_MAGE = mkFacts("mage", "undead"), MAGE = mkFacts("mage", "human");
 const TRUTH = [
-  // [question, facts, kept?]  rows from the Nov 9 measurement
+  // [question, facts, kept?]  rows from the Nov 9 measurement, then the council cases
   ["best class for a beginner", MAGE_28, true],
   ["What is the cooldown on Will of the Forsaken?", UNDEAD_PRIEST, true],
   ["how many tanks for Onyxia", FOX, true],
@@ -331,37 +331,47 @@ const TRUTH = [
   ["can we all meet in Durotar at level 1", FOX, true],
   ["when is launch", FOX, true],
   ["is there a day/night cycle", FOX, true],
+  // self-identification as another class or race: suppressed
+  ["I am a Hunter on the Alliance side, where do I train weapon skills", FOX, false],
   ["Where do I train weapon skills, I am a Hunter on the Alliance side?", FOX, false],
-  ["Can a Paladin use two-handed swords?", MAGE, false],
-  ["Can a Paladin use two-handed swords?", FOX, true],
-  ["which hunters are good at tracking", FOX, false],
-  ["where are the rogue trainers", FOX, false],
-  ["what is the best mount for orcs", FOX, false],
-  ["what do night elves get at level 1", FOX, false],
-  ["what do night elves get at level 1", mkFacts("druid", "night elf"), true],
-  ["compare a hunter with my class", FOX, true], // explicit phrase wins
+  ["I'm a hunter, what pet is best", FOX, false],
+  ["as a hunter where do I train", FOX, false],
+  ["I play a rogue, best poison?", FOX, false],
+  ["I main hunter, what bow", FOX, false],
+  ["my hunter needs a bow", FOX, false],
+  ["I am a dwarf, where do I start", FOX, false],
+  ["as an undead where do I start", FOX, false],
+  ["I am a night elf hunter, where do I train", mkFacts("druid", "night elf"), false],
+  // self-identification as the stored class or race, and explicit phrases: kept
+  ["I am a paladin, how do I tank", FOX, true],
+  ["as a human where do I start", FOX, true],
+  ["I am a hunter, what is my build good at", FOX, true],
   ["what should my build do next", MAGE, true],
-  ["Where can we find a hunter trainer?", FOX, false], // pronouns do not rescue a different class
-  ["and what is the best mount", mkFacts("mage", ""), true], // nothing on file to contradict
-  ["anything", FOX, true],
+  // third-person mentions never suppress; the model decides
+  ["How do I survive a rogue attacking me?", FOX, true],
+  ["Where are the Rogue trainers", FOX, true],
+  ["How do I open this lock?", FOX, true],
+  ["Can a Paladin use two-handed swords?", MAGE, true],
+  ["Where can we find a hunter trainer?", FOX, true],
+  ["what do night elves get at level 1", FOX, true],
+  ["and what is the best mount", mkFacts("mage", ""), true],
 ];
 test("buildRelevant truth table from the real measured rows", () => {
   for (const [q, facts, kept] of TRUTH) assert.equal(buildRelevant(q, facts).relevant, kept, q);
-  assert.equal(buildRelevant("anything at all about hunters", FOX, { skip: "build" }).relevant, true);
+  assert.equal(buildRelevant("I am a hunter", FOX, { skip: "build" }).relevant, true);
 });
-test("buildRelevant: a follow-up inherits the previous decision unless it names the asker's own class", () => {
-  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "Can a hunter use bows?" }).relevant, false);
-  assert.equal(buildRelevant("And which weapon for a paladin?", FOX, { previousQuestion: "Can a hunter use bows?" }).relevant, true);
+test("buildRelevant: a follow-up inherits a self-identified suppression unless it self-identifies as the stored class", () => {
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "I am a hunter, can I use bows?" }).relevant, false);
+  assert.equal(buildRelevant("And which weapon, I am a paladin?", FOX, { previousQuestion: "I am a hunter, can I use bows?" }).relevant, true);
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "Can a hunter use bows?" }).relevant, true);
   assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "what should my build train at level 10" }).relevant, true);
-  assert.equal(buildRelevant("And what about a hunter?", FOX, { previousQuestion: "what should my build train at level 10" }).relevant, false);
-  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "what is the capital of france" }).relevant, true);
 });
-test("a different-class question drops the YOUR_BUILD block; everything else keeps it", async () => {
-  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "where are the hunter pet trainers" });
+test("a self-identified different class drops the YOUR_BUILD block; everything else keeps it", async () => {
+  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "I am a hunter, where do I train pets" });
   assert.ok(off.userPrompt.includes(BUILD_NOT_RELEVANT_LINE));
   assert.ok(!/YOUR_BUILD/.test(off.userPrompt) && !off.userPrompt.includes("class: paladin"));
   assert.equal(off.personalised, false);
-  for (const question of ["how do I tank as a paladin", "what does red in a tooltip mean", "when is launch"]) {
+  for (const question of ["how do I tank as a paladin", "what does red in a tooltip mean", "when is launch", "where are the hunter pet trainers"]) {
     const on = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question });
     assert.match(on.userPrompt, /YOUR_BUILD/, question);
     assert.ok(!on.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && on.personalised, question);

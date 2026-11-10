@@ -87,47 +87,49 @@ export function askerFacts(sheet, { includeHidden = false } = {}) {
 }
 
 // ---- relevance -------------------------------------------------------------------------------------------------------------
-// The stored build is in the prompt BY DEFAULT; the model decides whether it changes the answer (PERSONALISE_RULE). Code suppresses it only in clear cases:
+// The stored build is in the prompt BY DEFAULT; the model decides whether it changes the answer (PERSONALISE_RULE). Third-person mentions of a class or race
+// ("how do I beat a rogue", "where are the rogue trainers", "how do I open this lock") never suppress it: regex cannot tell those apart. Code suppresses only on SELF-IDENTIFICATION:
 //  0. A pure "my build" question (skip === "build"): kept.
 //  1. An explicit phrase (my build/class/character/spec/race/level/profession/talents/sheet/main/gear, my party/group, our party/group/build/comp/team): kept.
-//  2. The question names a class (singular, plural or alias) and the asker's own class is not among them: suppressed.
-//  3. The question names a race and neither the asker's race nor an alias of it is among them: suppressed.
-//  4. A follow-up (a previous question is shown) whose previous question was suppressed under 2 or 3, and which itself names nothing of the asker's: suppressed (it inherits that decision).
-//  Everything else: kept. No asker class or race on file means nothing to contradict, so kept.
+//  2. The asker says they are a class or race ("I am a hunter", "I'm a dwarf", "as an undead", "I play / I main a ...", "my hunter") and it is the stored class or race: kept.
+//  3. The asker says they are a class or race that is NOT the stored one: suppressed.
+//  4. A follow-up whose previous question was suppressed under 3, and which itself self-identifies as nothing: suppressed (it inherits that decision).
+//  Everything else: kept. Full class names and plain plurals only, no nicknames. No class or race on file means nothing to contradict, so kept.
 export const BUILD_NOT_RELEVANT_LINE = "The asker's stored build is not relevant to this question: do not mention it.";
 const CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
-const CLASS_ALIAS = { pally: "paladin", pala: "paladin", lock: "warlock", warlocks: "warlock" };
-const RACE_FORMS = { human: ["human", "humans"], dwarf: ["dwarf", "dwarves"], gnome: ["gnome", "gnomes"], "night elf": ["night elf", "night elves"], orc: ["orc", "orcs"], undead: ["undead", "forsaken"], tauren: ["tauren", "taurens"], troll: ["troll", "trolls"] };
+const RACE_FORMS = { human: ["human"], dwarf: ["dwarf", "dwarves"], gnome: ["gnome"], "night elf": ["night elf", "night elves"], orc: ["orc"], undead: ["undead", "forsaken"], tauren: ["tauren"], troll: ["troll"] };
 const SELF_RE = /\b(?:my\s+(?:build|character|char|class|spec|specs|race|level|profession|professions|talents|sheet|main|gear|party|group)|our\s+(?:party|group|build|comp|team))\b/i;
-const wordsOf = (t) => String(t || "").toLowerCase().split(/[^a-z0-9']+/).filter(Boolean).map((w) => w.replace(/'s$/, "").replace(/(?<=[a-z]{4})s$/, ""));
-// "clear" = the question contradicts the asker's build (names another class or race and nothing of theirs); own = names something of the asker's.
-function conflict(q, facts) {
-  const qw = wordsOf(q);
-  const qset = new Set(qw.map((w) => CLASS_ALIAS[w] || w));
-  const ql = ` ${String(q).toLowerCase().split(/[^a-z0-9']+/).filter(Boolean).join(" ")} `; // raw words: "elves" must stay whole
-  const named = CLASSES.filter((c) => qset.has(c));
-  const myClass = facts && facts.class ? wordsOf(facts.class).map((w) => CLASS_ALIAS[w] || w).find((w) => CLASSES.includes(w)) : "";
-  const myRace = facts && facts.race ? String(facts.race).toLowerCase() : "";
-  const myKey = Object.keys(RACE_FORMS).find((k) => myRace.includes(k) || RACE_FORMS[k].some((f) => myRace.includes(f)));
-  const raceHit = (k) => RACE_FORMS[k].some((f) => ql.includes(` ${f} `));
-  const races = Object.keys(RACE_FORMS).filter(raceHit);
-  const own = (myClass && named.includes(myClass)) || (myKey && raceHit(myKey));
-  if (own) return { own: true, different: false };
-  if (myClass && named.length) return { own: false, different: true, why: "different class named" };
-  if (myKey && races.length) return { own: false, different: true, why: "different race named" };
-  return { own: false, different: false };
+const wordsOf = (t) => String(t || "").toLowerCase().split(/[^a-z0-9']+/).filter(Boolean);
+const singular = (w) => w.replace(/(?<=[a-z]{3})s$/, "");
+// The classes and races the question says the ASKER is: the 5 words after a self-identification opener.
+function selfIdentified(q) {
+  const classes = new Set(), races = new Set();
+  const text = String(q || "").toLowerCase();
+  for (const m of text.matchAll(/\b(?:i\s*am|i'm|im|i\s+play|i\s+main|as\s+an?|my)\b([^.,;!?]*)/g)) {
+    const ws = wordsOf(m[1]).slice(0, 5);
+    const span = ` ${ws.join(" ")} `;
+    for (const w of ws) { const c = CLASSES.find((k) => k === w || `${k}s` === w); if (c) classes.add(c); }
+    for (const [k, forms] of Object.entries(RACE_FORMS)) if (forms.some((f) => span.includes(` ${f} `) || span.includes(` ${f}s `))) races.add(k);
+  }
+  return { classes, races };
 }
 export function buildRelevant(question, facts, { skip = null, previousQuestion = "" } = {}) {
   if (skip === "build") return { relevant: true, reason: "build question" };
   const q = String(question || "");
   if (SELF_RE.test(q)) return { relevant: true, reason: "explicit build phrase" };
-  const cur = conflict(q, facts);
-  if (cur.different) return { relevant: false, reason: cur.why };
-  if (!cur.own && previousQuestion && !SELF_RE.test(String(previousQuestion))) {
-    const prev = conflict(String(previousQuestion), facts);
-    if (prev.different) return { relevant: false, reason: "follow-up of a suppressed question" };
-  }
-  return { relevant: true, reason: "default" };
+  const myClass = facts && facts.class ? wordsOf(facts.class).map(singular).find((w) => CLASSES.includes(w)) : "";
+  const myRace = facts && facts.race ? String(facts.race).toLowerCase() : "";
+  const myKey = Object.keys(RACE_FORMS).find((k) => myRace.includes(k) || RACE_FORMS[k].some((f) => myRace.includes(f)));
+  const verdict = (text) => {
+    const id = selfIdentified(text);
+    const badC = myClass && id.classes.size && !id.classes.has(myClass), badR = myKey && id.races.size && !id.races.has(myKey);
+    if (badC || badR) return "different"; // any identity that contradicts the stored build wins ("I am a night elf hunter" with a night elf druid)
+    return (myClass && id.classes.has(myClass)) || (myKey && id.races.has(myKey)) ? "own" : "none";
+  };
+  const cur = verdict(q);
+  if (cur === "different") return { relevant: false, reason: "asker says they are another class or race" };
+  if (cur === "none" && previousQuestion && !SELF_RE.test(String(previousQuestion)) && verdict(previousQuestion) === "different") return { relevant: false, reason: "follow-up of a suppressed question" };
+  return { relevant: true, reason: cur === "own" ? "asker names own class or race" : "default" };
 }
 
 // Other members: ONLY fields marked visible. A hidden field's value must never reach the prompt.
