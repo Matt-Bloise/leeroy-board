@@ -1,6 +1,6 @@
 // Close guard and focus after close, Chromium, fixtures, zero Worker requests.
 //   node close-guard.mjs --url http://127.0.0.1:8080/   (or env PREVIEW_PAGES; tools/local-browser.sh close-guard)
-// A: two close requests inside ONE task (key repeat, Escape plus the close button, Escape plus a Back tap) must call history.back() once: the page stays on the site and the scene closes exactly once.
+// A: two close requests inside ONE task (key repeat, Escape plus the close button). The browser's own Back button bypasses requestClose (it only raises popstate), so this guard cannot cover Escape plus a real Back press must call history.back() once: the page stays on the site and the scene closes exactly once.
 //    Before the guard the second history.back() left the page (about:blank in this probe).
 // B: after a close, focus is on the tile, or on the main landmark while the tile has no layout box yet, and never stays on <body>; the tile takes focus once it has a box.
 import { pageUrl } from "../helpers/page-url.mjs";
@@ -11,12 +11,14 @@ const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 if (!BASE) { console.error("usage: node close-guard.mjs --url <pages origin> (or set PREVIEW_PAGES)"); process.exit(2); }
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
+const THROTTLE = Number(arg("--throttle") || 1);
 const browser = stubbed(await pw.chromium.launch());
 const TILE = '#wall a.tile[data-scene="roads"]';
 async function fresh() {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, serviceWorkers: "block" });
   await ctx.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); localStorage.setItem("board-room", "off"); } catch (e) {} });
   const page = await ctx.newPage();
+  if (THROTTLE > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send("Emulation.setCPUThrottlingRate", { rate: THROTTLE }); }
   await page.goto("about:blank"); await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForFunction(() => !!document.querySelector("#wall .tile"), null, { timeout: 15000 });
   await page.locator("#scene-close").click({ timeout: 8000 }).catch(() => {});
@@ -47,11 +49,12 @@ try {
   { // B: the tile is briefly not laid out when the scene closes
     const { ctx, page } = await fresh();
     await open(page);
-    await page.evaluate((sel) => { const t = document.querySelector(sel); t.style.display = "none"; window.__bodyFocus = []; document.addEventListener("focusout", () => setTimeout(() => { if (document.activeElement === document.body) window.__bodyFocus.push(Math.round(performance.now())); }, 0), true); setTimeout(() => { t.style.display = ""; }, 1200); }, TILE);
+    await page.evaluate((sel) => { const t = document.querySelector(sel); t.style.display = "none"; window.__bodyFocus = []; document.addEventListener("focusout", () => setTimeout(() => { if (document.activeElement === document.body) window.__bodyFocus.push(Math.round(performance.now())); }, 0), true); window.__restore = () => { t.style.display = ""; }; }, TILE);
     await page.keyboard.press("Escape");
-    await shut(page); await page.waitForTimeout(100);
+    await shut(page); await page.waitForTimeout(100); /* the tile comes back a short, fixed time AFTER the close finished, well inside the 1500 ms retry window */
     const mid = await page.evaluate(() => { const a = document.activeElement; return { tag: a ? a.tagName + (a.id ? "#" + a.id : "") : "none", body: a === document.body, cls: a && a.className, href: a && a.getAttribute("href"), box: a ? a.getClientRects().length : -1 }; });
     ok("[tile not laid out] focus is on the main landmark, not on <body>, while the tile has no box", !mid.body && mid.tag === "MAIN#main", JSON.stringify(mid));
+    await page.waitForTimeout(200); await page.evaluate(() => window.__restore());
     await page.waitForFunction((sel) => document.activeElement === document.querySelector(sel), TILE, { timeout: 2500 }).catch(() => {});
     const end = await page.evaluate((sel) => ({ onTile: document.activeElement === document.querySelector(sel), body: document.activeElement === document.body }), TILE);
     ok("[tile not laid out] once the tile has a box it takes focus", end.onTile && !end.body, JSON.stringify(end));
