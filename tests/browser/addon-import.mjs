@@ -19,12 +19,12 @@ async function run(browser, [label, opts]) {
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]|^Failed to load resource|cloudflareinsights|net::ERR|WebSocket connection/.test(m.text())) errors.push(m.text()); });
   await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); } catch (e) {} }, [KEY]);
-  await ctx.route("**/api/**", (route) => {
+  await ctx.route("**/api/**", async (route) => {
     const u = new URL(route.request().url()), m = route.request().method();
     if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise" });
     if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
     if (m === "POST" && u.pathname.endsWith("/api/sheet")) {
-      const b = route.request().postDataJSON(); posts.push(b);
+      const b = route.request().postDataJSON(); posts.push(b); await new Promise((r) => setTimeout(r, 400));
       if (b.field === "level") return json(route, { error: "busy" }, 429);
       return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() });
     }
@@ -65,6 +65,11 @@ async function run(browser, [label, opts]) {
   if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-before.png` : undefined }).catch(() => {});
   await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
   await page.locator("#imp-send").click();
+  const during = await page.evaluate(() => ({ ta: document.getElementById("imp-text").disabled, file: document.getElementById("imp-file").disabled, choose: document.querySelector(".imp-choose").disabled, send: document.getElementById("imp-send").getAttribute("aria-disabled"), label: document.getElementById("imp-send").textContent }));
+  ok(`${label}: while sending, the text box, file picker and Send are locked`, during.ta && during.file && during.choose && during.send === "true" && /Sending/.test(during.label), JSON.stringify(during));
+  /* an edit attempt during submission (an input event, and a drop of other text) must change nothing */
+  const other = encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full;
+  await page.evaluate((o) => { const ta = document.getElementById("imp-text"); ta.value = o; ta.dispatchEvent(new Event("input", { bubbles: true })); const dt = new DataTransfer(); dt.setData("text/plain", o); document.getElementById("imp-drop").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true })); }, other);
   await page.locator('.imp-row[data-state="failed"], .imp-row[data-state="sent"]').first().waitFor({ timeout: 8000 });
   await page.waitForTimeout(500);
   const fields = posts.map((p) => p.field).sort();
@@ -74,6 +79,15 @@ async function run(browser, [label, opts]) {
   ok(`${label}: a failed line says so and the others say Sent`, states.level === "failed" && states.race === "sent" && states.class === "sent" && states.professions === "sent", JSON.stringify(states));
   ok(`${label}: the failure is in words`, /Level\s*[\s\S]*Not sent: busy/.test(await page.locator("#imp-out").innerText()));
   ok(`${label}: Send cannot run twice`, (await page.locator("#imp-send").getAttribute("aria-disabled")) === "true");
+  const after = await page.locator("#imp-out").innerText();
+  ok(`${label}: results stay with the export that was sent (the edit during sending was ignored)`, /Level 33/.test(after) && !/Level 12|Gnome/i.test(after) && posts.every((p) => !(p.field === "class" && p.value === "mage")), JSON.stringify(after));
+  ok(`${label}: boxes unlock after sending`, await page.evaluate(() => !document.getElementById("imp-text").disabled));
+  await page.locator("#imp-text").fill(other);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const fresh = await page.evaluate(() => [...document.querySelectorAll(".imp-row")].map((e) => e.dataset.state));
+  ok(`${label}: a new export starts clean, no Sent left over from the old one`, fresh.length > 0 && fresh.every((x) => x === "change" || x === "same"), JSON.stringify(fresh));
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
   if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-after.png` : undefined }).catch(() => {});
   ok(`${label}: zero console errors`, errors.length === 0, errors.join(" | "));
   await ctx.close();

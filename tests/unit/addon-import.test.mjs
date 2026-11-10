@@ -116,13 +116,44 @@ test("whitespace and line breaks around and inside the string are tolerated", ()
   assert.equal(A.parse(spaced, NOW).ok, true);
 });
 
-test("a zone name with a real space still verifies, and a chat-added space does not break the string", () => {
-  const full = vectors[2].full;
-  const r = A.parse(full, NOW);
+test("the encoder escapes space, quote, apostrophe, backslash and control bytes as the format says", () => {
+  assert.equal(A.escapeValue("Elwynn Forest"), "Elwynn%20Forest");
+  assert.equal(A.escapeValue("Un'Goro \"x\" a\\b\t"), "Un%27Goro%20%22x%22%20a%5Cb%09");
+  assert.match(vectors[2].payload, /zone=Elwynn%20Forest/);
+  const r = A.parse(vectors[2].full, NOW);
   assert.equal(r.ok, true);
   assert.equal(r.data.zone, "Elwynn Forest");
-  const wrapped = full.replace("class=PALADIN", "class= PALADIN").replace("Forest", "Forest\n");
-  assert.equal(A.parse(wrapped, NOW).ok, false);
+  assert.equal(A.parse(vectors[2].full.replace("Elwynn%20", "Elwynn%20\n"), NOW).data.zone, "Elwynn Forest");
+});
+
+test("quotes, apostrophes and backslashes in name and zone round trip, bare and inside a SavedVariables file", () => {
+  const name = "O'Neil \"Big\" back\\slash", zone = "Un'Goro Crater";
+  const full = mk({ name, zone });
+  const wire = full.split("|")[1];
+  assert.ok(!/["'\ ]/.test(wire));
+  for (const text of [full, `LeeroyBuildDB = {\n\t["export"] = "${full}",\n}\n`, `LeeroyBuildDB = {\n\t['export'] = '${full}',\n}`, `${full}\n-- end`]) {
+    const r = A.parse(text, NOW);
+    assert.equal(r.ok, true, text.slice(0, 60));
+    assert.equal(r.data.name, name);
+    assert.equal(r.data.zone, zone);
+  }
+});
+
+test("a damaged check says so in words", () => {
+  assert.match(A.parse("LEEROY1|v=1;level=4|abc", NOW).why, /damaged/);
+});
+
+test("__proto__ and duplicate keys: no prototype pollution, duplicates refused", () => {
+  const pay = vectors[0].payload + ";__proto__=x";
+  const r = A.parse(`LEEROY1|${pay}|${A.hex8(A.adler32(A.utf8(pay)))}`, NOW);
+  assert.equal(r.ok, true);
+  assert.equal(Object.getPrototypeOf(r.data), Object.prototype);
+  assert.equal({}.x, undefined);
+  assert.match(r.warnings[0], /__proto__/);
+  const dup = vectors[0].payload + ";__proto__=a;__proto__=b";
+  assert.equal(A.parse(`LEEROY1|${dup}|${A.hex8(A.adler32(A.utf8(dup)))}`, NOW).why, "The field __proto__ appears twice.");
+  const dup2 = vectors[0].payload + ";class=MAGE";
+  assert.equal(A.parse(`LEEROY1|${dup2}|${A.hex8(A.adler32(A.utf8(dup2)))}`, NOW).why, "The field class appears twice.");
 });
 
 test("a whole SavedVariables file: the export is found inside Lua text, quotes and all", () => {

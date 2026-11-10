@@ -8,12 +8,13 @@ const HERE = (document.currentScript && document.currentScript.src) || null;
 const NAME = { race: "Race", class: "Class", level: "Level", professions: "Professions" };
 const FILE_MAX = 2 * 1024 * 1024;
 const WHY = { "no key": "this board link has no key", key: "this board link is not yours", off: "the party sheet is switched off for now", offline: "no connection", busy: "busy, try again in a minute", refused: "the board did not accept that value", failed: "the board could not save it", "nowhere to send": "no connection to the board", "not on the board's lists": "that value is not on the board's lists" };
-const S = { text: "", sending: false, results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null };
+const S = { text: "", sending: false, results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, rev: 0 }
+let ctl = null;
 let outEl = null;
 
 function lib() {
   if (S.modP || !HERE) return S.modP;
-  S.modP = import(new URL("../js/addon-import.js?v=140bb99c6f", HERE).href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; return null; });
+  S.modP = import(new URL("../js/addon-import.js?v=bc4d8cc8eb", HERE).href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; return null; });
   return S.modP;
 }
 const show = (f, v) => {
@@ -62,14 +63,16 @@ function summary(x) {
 async function send(rows) {
   const can = S.ctx.canSend(); if (S.sending || S.results || !can.ok) return;
   const todo = rows.filter((o) => o.change); if (!todo.length) return;
-  S.sending = true; S.frozen = rows; update();
+  const rev = S.rev; S.sending = true; S.frozen = rows; update();
   const res = {}, B = window.BoardBrain;
   for (const o of todo) {
     let r; try { r = await B.setSheet(o.field, o.after); } catch (e) { r = { ok: false, why: "failed" }; }
     res[o.field] = r && r.ok ? { ok: true } : { ok: false, why: WHY[r && r.why] || "the board could not save it" };
   }
   const ok = Object.values(res).filter((x) => x.ok).length;
-  S.sending = false; S.results = res;
+  S.sending = false;
+  if (S.rev !== rev) { S.frozen = null; update(); return; } /* the input changed while sending: these results belong to the old export and are never shown against the new one */
+  S.results = res;
   S.say = ok === todo.length ? `Sent ${ok} line${ok === 1 ? "" : "s"} to your sheet.` : `${ok} of ${todo.length} lines sent. The rest were not.`;
   update();
   if (S.ctx.done) S.ctx.done();
@@ -83,11 +86,12 @@ function update() {
   else if (x.kind === "bad") body = h("p", { class: "imp-bad", role: "alert", text: x.why });
   else if (x.kind === "wait") body = h("p", { class: "imp-info", text: "Loading the reader..." });
   else body = h("p", { class: "imp-info", text: "Nothing is read until you paste or drop an export. Nothing is sent until you tap Send." });
+  if (ctl) { const lock = S.sending; ctl.ta.disabled = lock; ctl.pick.disabled = lock; ctl.choose.disabled = lock; ctl.drop.setAttribute("aria-disabled", String(lock)); }
   outEl.replaceChildren(body, h("p", { class: "imp-say", id: "imp-say", role: "status", "aria-live": "polite", text: S.say }));
 }
-function setText(t) { S.text = String(t).slice(0, 400000); S.results = null; S.say = ""; S.fileErr = ""; S.frozen = null; update(); }
+function setText(t) { if (S.sending) return; S.rev++; S.text = String(t).slice(0, 400000); S.results = null; S.say = ""; S.fileErr = ""; S.frozen = null; update(); }
 function fromFile(file, ta) {
-  if (!file) return;
+  if (!file || S.sending) return;
   if (file.size > FILE_MAX) { S.fileErr = "That file is over 2 MB. The add-on's file is far smaller; pick the right one."; update(); return; }
   file.text().then((t) => { ta.value = t; setText(t); }).catch(() => { S.fileErr = "That file could not be read."; update(); });
 }
@@ -98,11 +102,12 @@ function mount(host, ctx) {
   ta.addEventListener("input", () => setText(ta.value));
   const pick = h("input", { type: "file", class: "imp-file", id: "imp-file", accept: ".lua,.txt,text/plain", tabindex: "-1", "aria-hidden": "true" });
   pick.addEventListener("change", () => { fromFile(pick.files && pick.files[0], ta); pick.value = ""; });
-  const drop = h("div", { class: "imp-drop", id: "imp-drop" }, h("span", { text: "Drop the add-on's saved file here, or " }), h("button", { type: "button", class: "ps-chb imp-choose", onclick: () => pick.click() }, "choose a file"), h("span", { text: "." }));
+  const choose = h("button", { type: "button", class: "ps-chb imp-choose", onclick: () => pick.click() }, "choose a file");
+  const drop = h("div", { class: "imp-drop", id: "imp-drop" }, h("span", { text: "Drop the add-on's saved file here, or " }), choose, h("span", { text: "." }));
   for (const ev of ["dragenter", "dragover"]) drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("imp-over"); });
   for (const ev of ["dragleave", "dragend"]) drop.addEventListener(ev, () => drop.classList.remove("imp-over"));
   drop.addEventListener("drop", (e) => {
-    e.preventDefault(); drop.classList.remove("imp-over");
+    e.preventDefault(); drop.classList.remove("imp-over"); if (S.sending) return;
     const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) fromFile(f, ta); else { const t = e.dataTransfer && e.dataTransfer.getData("text/plain"); if (t) { ta.value = t; setText(t); } }
   });
@@ -111,6 +116,7 @@ function mount(host, ctx) {
     h("h4", { class: "imp-h", id: "imp-h", text: "Import from game" }),
     h("p", { class: "imp-lede", text: "In the game, the Leeroy add-on shows an export string. Paste it here, or drop the add-on's saved file. This page reads it on your device and shows what it found before anything is sent." }),
     h("label", { class: "imp-l", for: "imp-text", text: "Export string or file text" }), ta, drop, pick, outEl));
+  ctl = { ta, pick, choose, drop };
   lib(); update(); if (S.modP) S.modP.then(update);
 }
 window.BoardImport = Object.freeze({ mount });

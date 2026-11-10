@@ -14,12 +14,12 @@ export function adler32(bytes) {
 export const hex8 = (n) => n.toString(16).padStart(8, "0");
 export function utf8(str) { return Array.from(new TextEncoder().encode(String(str))); }
 
-/* Escaping, as the format says: % ; = | newline, and every byte above 126 as %XX of its UTF-8 bytes (uppercase hex). Other control bytes are escaped too so the wire stays printable. */
+/* Escaping, as the format says: % ; = | newline, and every byte above 126 as %XX of its UTF-8 bytes (uppercase hex), plus space, quote, apostrophe, backslash and the other control bytes, so the wire holds no raw space or quote. */
 export function escapeValue(s) {
   let out = "";
   for (const c of utf8(s)) {
     const ch = String.fromCharCode(c);
-    if (c > 126 || c < 32 || ch === "%" || ch === ";" || ch === "=" || ch === "|") out += "%" + c.toString(16).toUpperCase().padStart(2, "0");
+    if (c > 126 || c <= 32 || ch === "\\" || ch === "\"" || ch === "'" || ch === "%" || ch === ";" || ch === "=" || ch === "|") out += "%" + c.toString(16).toUpperCase().padStart(2, "0");
     else out += ch;
   }
   return out;
@@ -41,19 +41,12 @@ export function encode(fields) {
 }
 
 /* Finds the export string in whatever was pasted or dropped: the bare string, a chat message around it, or a whole SavedVariables file.
-   Two readings come back. The format says to strip all whitespace; but a zone name can hold a real space that the check was computed over, while a chat wrap can add a stray one.
-   So line breaks and tabs are always dropped, and spaces are tried kept and removed; the check decides which is right. */
+   All whitespace is stripped first (the wire never holds a raw space: spaces are %20). Then: the tag and |, the payload up to the next |, and exactly 8 hex digits of check.
+   Nothing depends on quote characters, so a surrounding Lua quote or any text after the check is simply left behind. */
 export function extract(text) {
-  const t = String(text == null ? "" : text).replace(/\\\|/g, "|");
-  const m = /LEEROY1[\s​﻿]*\|[^"'|]*\|[^"']*/.exec(t);
-  if (!m) return null;
-  return { keepSpaces: trimCheck(m[0].replace(/[\r\n\t​﻿]/g, "")), noSpaces: trimCheck(m[0].replace(/[\s​﻿]+/g, "")) };
-}
-/* a bare paste ends at the end of the 8 check digits, even with chat text behind it */
-function trimCheck(s) {
-  const i = s.lastIndexOf("|");
-  const m = i < 0 ? null : /^\s*[0-9A-Fa-f]{8}/.exec(s.slice(i + 1));
-  return m ? s.slice(0, i + 1) + m[0].trim() : s;
+  const t = String(text == null ? "" : text).replace(/[\s​﻿]+/g, "");
+  const m = /LEEROY1\|([^|]*)\|([0-9A-Fa-f]{8})/.exec(t);
+  return m ? m[0] : null;
 }
 
 function parseOne(s) {
@@ -65,12 +58,12 @@ function parseOne(s) {
   if (!/^[0-9A-Fa-f]{8}$/.test(check)) return bad("The check at the end is not 8 hex digits, so part of the export is missing or changed.");
   if (/[^\x20-\x7e]/.test(payload)) return bad("The export has characters the add-on never writes. Copy it again from the game.");
   if (hex8(adler32(utf8(payload))) !== check.toLowerCase()) return { ok: false, check: true, why: "The check does not match: the text was changed or cut when it was copied. Copy it again from the game." };
-  const raw = {};
+  const raw = Object.create(null);
   for (const pair of payload.split(";")) {
     const i = pair.indexOf("=");
     if (i < 1) return bad("The export is damaged: a field has no name or no value.");
     const k = pair.slice(0, i);
-    if (Object.prototype.hasOwnProperty.call(raw, k)) return bad(`The field ${k.slice(0, 12)} appears twice.`);
+    if (k in raw) return bad(`The field ${k.slice(0, 12)} appears twice.`);
     const v = unescapeValue(pair.slice(i + 1));
     if (v === null) return bad(`The field ${k.slice(0, 12)} has text that is not a valid escape (%XX) or not valid text.`);
     raw[k] = v;
@@ -105,9 +98,8 @@ function parseOne(s) {
 export function parse(text, now) {
   if (String(text == null ? "" : text).trim() === "") return bad("Nothing to read yet. Paste the export string from the add-on.");
   const found = extract(text);
-  if (!found) return bad("This is not a Leeroy export. It should begin with LEEROY1|.");
-  let r = parseOne(found.keepSpaces);
-  if (!r.ok && r.check && found.noSpaces !== found.keepSpaces) { const r2 = parseOne(found.noSpaces); if (r2.ok || !r2.check) r = r2; }
+  if (!found) return bad(/LEEROY1\s*\|/.test(String(text)) ? "The export is damaged: it needs the data and then a check of 8 hex digits, split by |. Copy it again from the game." : "This is not a Leeroy export. It should begin with LEEROY1|.");
+  const r = parseOne(found);
   if (!r.ok) return bad(r.why);
   const nowS = Number.isFinite(now) ? now : Math.floor(Date.now() / 1000);
   const age = (nowS - r.data.t) / 86400, warnings = [];
