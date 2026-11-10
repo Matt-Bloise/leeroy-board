@@ -1,5 +1,5 @@
-// The committed download can never drift from the source: downloads/LeeroyBuild-<version>.zip must equal a fresh build of addon/LeeroyBuild,
-// and the page get-addon/index.html must show that zip's version, size and SHA-256. Fix a failure with: node addon/build-zip.mjs --out downloads
+// The committed download can never drift from the source: landing/addon/LeeroyBuild-<version>.zip must equal a fresh build of addon/LeeroyBuild,
+// and the page landing/addon/index.html must show that zip's version, size and SHA-256. Fix a failure with: node addon/build-zip.mjs --out landing/addon
 // Run: node --test tests/unit/addon-download.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -11,7 +11,7 @@ import { buildZip, collectAddon, addonVersion, readZip } from "../../addon/build
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const version = addonVersion();
-const zipPath = path.join(root, "downloads", `LeeroyBuild-${version}.zip`);
+const zipPath = path.join(root, "landing", "addon", `LeeroyBuild-${version}.zip`);
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 
 test("rebuilding gives identical bytes", () => {
@@ -21,16 +21,16 @@ test("rebuilding gives identical bytes", () => {
 test("the committed zip equals a fresh build of addon/LeeroyBuild", () => {
   const committed = readFileSync(zipPath);
   const fresh = buildZip(collectAddon());
-  assert.ok(committed.equals(fresh), "downloads zip is stale; run: node addon/build-zip.mjs --out downloads");
+  assert.ok(committed.equals(fresh), "landing/addon zip is stale; run: node addon/build-zip.mjs --out landing/addon");
   for (const e of readZip(committed)) assert.ok(e.crcOk && e.name.startsWith("LeeroyBuild/"), e.name);
 });
 
-test("only the current version's zip is in downloads/", () => {
-  assert.deepEqual(readdirSync(path.join(root, "downloads")), [`LeeroyBuild-${version}.zip`]);
+test("only the page and the current version's zip is in landing/addon/", () => {
+  assert.deepEqual(readdirSync(path.join(root, "landing", "addon")).sort(), [`LeeroyBuild-${version}.zip`, "index.html"]);
 });
 
 test("the page shows this zip's version, size and SHA-256, and links it with download", () => {
-  const html = readFileSync(path.join(root, "get-addon", "index.html"), "utf8");
+  const html = readFileSync(path.join(root, "landing/addon", "index.html"), "utf8");
   const zip = readFileSync(zipPath);
   const text = (id) => new RegExp(`id="${id}">([^<]*)<`).exec(html)?.[1];
   assert.equal(text("ver"), version);
@@ -38,12 +38,12 @@ test("the page shows this zip's version, size and SHA-256, and links it with dow
   assert.equal(text("sha"), sha(zip));
   const a = /<a class="dl" id="dl" href="([^"]+)" download>([^<]*)</.exec(html);
   assert.ok(a, "download link");
-  assert.equal(a[1], `../downloads/LeeroyBuild-${version}.zip`);
+  assert.equal(a[1], `LeeroyBuild-${version}.zip`);
   assert.ok(a[2].includes(version));
 });
 
 test("the page copy has no em dash, emoji, or unproven claim", () => {
-  const html = readFileSync(path.join(root, "get-addon", "index.html"), "utf8");
+  const html = readFileSync(path.join(root, "landing/addon", "index.html"), "utf8");
   assert.ok(!/—|–|[\u{1F300}-\u{1FAFF}☀-➿]/u.test(html));
   assert.ok(!/curseforge|approved by|tested in the game/i.test(html));
   assert.match(html, /\/console scriptErrors 1/);
@@ -51,5 +51,5 @@ test("the page copy has no em dash, emoji, or unproven claim", () => {
 });
 
 test("the board links to the page", () => {
-  assert.match(readFileSync(path.join(root, "index.html"), "utf8"), /href="\/get-addon\/">Get the add-on</);
+  assert.match(readFileSync(path.join(root, "index.html"), "utf8"), /href="\/landing\/addon\/">Get the add-on</);
 });
