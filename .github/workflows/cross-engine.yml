@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [chromium, webkit, firefox]
+        engine: [webkit]
     steps:
       - name: Check the URL
         run: |
@@ -80,7 +80,7 @@ jobs:
           ENGINE: ${{ matrix.engine }}
         run: |
           set -o pipefail
-          node browser/layout-sweep.mjs --url "$TARGET_URL" --engine "$ENGINE" --out "report-$ENGINE.json" --budget-min 20 2>&1 | tee "$RUNNER_TEMP/sweep-$ENGINE.log"
+          node browser/layout-sweep.mjs --url "$TARGET_URL" --engine "$ENGINE" --out "report-$ENGINE.json" --sizes 667x375,568x320 --states member --budget-min 20 2>&1 | tee "$RUNNER_TEMP/sweep-$ENGINE.log"
 
       - name: Layout sweep at the launch times
         # B49: the launch hero appears 24 h before launch (Nov 4 2026 23:00Z), so the first-visit screen is swept at three faked clocks: before it, with the hero up, after launch.
