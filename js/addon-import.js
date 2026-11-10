@@ -45,7 +45,7 @@ export function encode(fields) {
    Nothing depends on quote characters, so a surrounding Lua quote or any text after the check is simply left behind. */
 export function extractAll(text) {
   const t = String(text == null ? "" : text).replace(/[\s​﻿]+/g, "");
-  return t.match(/LEEROY1\|[^|]*\|[0-9A-Fa-f]{8}/g) || [];
+  return t.match(/LEEROY1\|[^|]*\|[0-9A-Fa-f]{8}(?![0-9A-Fa-f])/g) || [];
 }
 export const extract = (text) => extractAll(text)[0] || null;
 
@@ -122,6 +122,7 @@ const pick = (cands, list) => (Array.isArray(cands) && Array.isArray(list) ? can
 
 export function mapToBoard(data, vocab) {
   const v = vocab || {}, fields = {}, skipped = [];
+  let blocked = null;
   const cls = pick(own(CLASS_SLUGS, data.class), v.class); if (cls) fields.class = cls; else skipped.push({ what: "Class", from: data.class });
   const race = pick(own(RACE_SLUGS, data.race), v.race); if (race) fields.race = race; else skipped.push({ what: "Race", from: data.race });
   const max = Number.isInteger(v.levelMax) && v.levelMax > 0 && v.levelMax <= 60 ? v.levelMax : 60;
@@ -132,9 +133,12 @@ export function mapToBoard(data, vocab) {
       const s = own(PROF_SLUGS, p.id) ? pick([own(PROF_SLUGS, p.id)], v.professions) : null;
       if (s) { if (!slugs.includes(s)) slugs.push(s); } else skipped.push({ what: "Profession", from: `skill ${p.id}` });
     }
-    if (slugs.length) fields.professions = slugs;
+    /* Never replace on a partial match: if ANY imported profession is not on the board list, the professions line is left alone, so a friend's other profession is not wiped by an export that cannot name it. */
+    const unmapped = skipped.filter((x) => x.what === "Profession");
+    if (slugs.length && !unmapped.length) fields.professions = slugs;
+    else if (unmapped.length) blocked = unmapped.map((x) => x.from);
   }
-  return { fields, skipped };
+  return { fields, skipped, profKept: blocked };
 }
 
 const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);

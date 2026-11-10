@@ -36,7 +36,7 @@ let ctl = null, outEl = null;
 function lib() {
   if (S.modP || !HERE) return S.modP;
   /* a failed import is remembered by the browser for that exact URL, so a retry asks for a new one */
-  const u = new URL("../js/addon-import.js?v=6a7843fc53", HERE); if (S.tries) u.searchParams.set("r", String(S.tries));
+  const u = new URL("../js/addon-import.js?v=ece7c272b8", HERE); if (S.tries) u.searchParams.set("r", String(S.tries));
   S.modP = import(u.href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; S.loadFail = true; S.tries++; return null; });
   return S.modP;
 }
@@ -77,7 +77,7 @@ function summary(x) {
   });
   kids.push(list.length ? h("ul", { class: "imp-rows", "aria-label": "Sheet lines this export would set" }, ...list) : h("p", { class: "imp-warn", text: "Nothing in this export matches the board's lists, so there is nothing to send." }));
   /* Professions are never cleared by an export. A self-reported export that finds none (prof= empty, left out, or nothing on the board list) must not wipe what a friend typed on the board: the add-on may not see professions the board knows. So an empty result is omitted from the changes and said plainly here. */
-  if (!rows.some((o) => o.field === "professions")) kids.push(h("p", { class: "imp-info imp-kept", text: "Professions: none found in the export, your board value is kept." }));
+  if (!rows.some((o) => o.field === "professions")) kids.push(h("p", { class: "imp-info imp-kept", text: mapped.profKept ? `Professions: ${K.andList(mapped.profKept)} ${mapped.profKept.length > 1 ? "are" : "is"} not on the board's list, so your board professions are kept.` : "Professions: none found in the export, your board value is kept." }));
   if (mapped.skipped.length) kids.push(h("ul", { class: "imp-skips", "aria-label": "Skipped values" }, ...mapped.skipped.map((s) => h("li", { class: "imp-skip", text: A.skippedLine(s) }))));
   const n = rows.filter((o) => o.change).length, can = S.ctx.canSend(), done = !!S.results, busy = sending() || reading();
   const failed = S.results ? Object.keys(S.results).filter((f) => !S.results[f].ok) : [];

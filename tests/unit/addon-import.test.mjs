@@ -206,7 +206,8 @@ test("unmapped values are reported, never guessed", () => {
   const m = A.mapToBoard(d, vocab);
   assert.equal(m.fields.class, undefined);
   assert.equal(m.fields.race, undefined);
-  assert.deepEqual(m.fields.professions, ["blacksmithing"]);
+  assert.equal(m.fields.professions, undefined); /* a partial match never replaces the board value */
+  assert.deepEqual(m.profKept, ["skill 999"]);
   assert.deepEqual(m.skipped.map(A.skippedLine), [
     "Class DEATHKNIGHT: not on the board's list, skipped.",
     "Race BloodElf: not on the board's list, skipped.",
@@ -296,4 +297,25 @@ test("several exports, none valid: the first one's reason is reported", () => {
   const r = A.parse(`${a}\n${b}`, NOW);
   assert.equal(r.ok, false);
   assert.equal(r.why, "Level 61 is above the 60 the board supports.");
+});
+
+test("one known and one unknown profession: the professions line is not changed, and the summary says why", () => {
+  const cur = { race: "human", class: "paladin", level: 40, professions: ["mining", "herbalism"] };
+  const d = A.parse(mk({ prof: "164:300,999:5" }), NOW).data;
+  const m = A.mapToBoard(d, vocab), p = A.plan(m, cur);
+  assert.equal(m.fields.professions, undefined);
+  assert.deepEqual(m.profKept, ["skill 999"]);
+  assert.ok(!p.some((x) => x.field === "professions"));
+  assert.deepEqual(cur.professions, ["mining", "herbalism"]);
+  assert.deepEqual(A.mapToBoard(A.parse(mk({ prof: "164:300,186:5" }), NOW).data, vocab).fields.professions, ["blacksmithing", "mining"]);
+});
+
+test("a check followed by another hex digit is damaged, not silently cut to 8 digits", () => {
+  const ok = vectors[0].full;
+  assert.equal(A.parse(ok, NOW).ok, true);
+  assert.equal(A.parse(ok + "a", NOW).ok, false);
+  assert.match(A.parse(ok + "0", NOW).why, /damaged/);
+  assert.equal(A.parse(ok + "\n", NOW).ok, true);
+  assert.equal(A.parse(ok + " thanks!", NOW).ok, true);
+  assert.equal(A.parse('x = "' + ok + '",', NOW).ok, true);
 });
