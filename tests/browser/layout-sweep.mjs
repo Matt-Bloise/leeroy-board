@@ -285,6 +285,24 @@ async function openState(page, state) {
   await page.waitForTimeout(500);
   if (state !== "gate") await press(page, page.getByText("Just take a look", { exact: false }).first());
   if (state === "member") {
+    // Nov 10 (CI run 42767890012, WebKit 667x375, 640x360, 568x320): the first look press can miss while the gate sheet animates; html keeps nx-first-run, the chips stay display:none and #nx-fr2-look is visible and hit-testable. Wait for the gate class to drop; if it has not after about 2.5 s, wait for the link's box to hold still for two animation frames and press again, up to 3 presses in all.
+    const look = page.getByText("Just take a look", { exact: false }).first();
+    const gateGone = (ms) => page.waitForFunction(() => !document.documentElement.classList.contains("nx-first-run"), null, { timeout: ms }).then(() => true, () => false);
+    let presses = 1;
+    while (!(await gateGone(2500)) && presses < 3) {
+      await look.waitFor({ state: "visible", timeout: 20000 }).catch(() => {});
+      await look.evaluate((el) => new Promise((resolve) => {
+        let last = "", same = 0, n = 0;
+        const tick = () => { const r = el.getBoundingClientRect(), k = [r.x, r.y, r.width, r.height].join(","); same = k === last ? same + 1 : 0; last = k; if (same >= 2 || ++n > 120) resolve(); else requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      })).catch(() => {});
+      await press(page, look).catch(() => {});
+      presses++;
+    }
+    if (!(await gateGone(2500))) {
+      const gate = await page.evaluate(() => ({ htmlClass: document.documentElement.className, lookBox: (() => { const e = document.querySelector("#nx-fr2-look"); if (!e) return null; const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) }; })(), chips: document.querySelectorAll("#tn-me .tn-name").length })).catch(() => ({}));
+      throw new Error(`nx-first-run still set after ${presses} presses of "Just take a look"; first-run gate state ${JSON.stringify(gate)}; html class list "${gate.htmlClass || ""}"`);
+    }
     // The name chips (#tn-me .tn-name) exist only once the Tonight scene is open. On a loaded CI runner it can open late: wait for it (press the look link once more if it has not opened after about 3 s), then for a visible chip.
     const sceneOpen = (ms) => page.waitForFunction(() => document.documentElement.classList.contains("scene-open"), null, { timeout: ms }).then(() => true, () => false);
     if (!(await sceneOpen(3000))) {
