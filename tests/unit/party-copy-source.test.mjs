@@ -51,7 +51,7 @@ const STATIC = [
 const ALLOWED = [
   ...STATIC.map(([file, re, selector]) => ({ file, re, selector, why: "the page ships the five wording; partyCopy() rewrites it for any other count and puts it back for five" })),
   { file: "js/board.js", re: /\? "The five" : "The party"/, why: "the helper's own wording, the one place the title is typed" },
-  { file: "index.html", re: /Four questions for launch night/, why: "the launch-night sign-up asks four questions; not the party size" },
+  { file: "index.html", re: /sign-up card's four questions/, why: "the sign-up card asks four questions; not the party size" },
   { file: "data/trust.json", re: /Four short answers/, why: "the trust card has four answers" },
   { file: "data/actions.json", re: /four cards that show where things are/, why: "the first-open walk has four cards" },
   { file: "js/v13d.js", re: /Five points (?:fewer|more)/, why: "the Bonuses dial steps by five points" },
