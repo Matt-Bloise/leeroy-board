@@ -76,7 +76,8 @@ try {
   const lane = async (view) => {
     if (ONLY && ONLY !== view) return;
     const tag = `[${view}]`, { ctx, page, errors } = await fresh(view);
-    const yNow = async () => { await page.evaluate((k) => { const t = document.querySelector(`#wall a.tile[data-scene="${k}"]`); if (t) t.scrollIntoView({ block: "nearest" }); }, KEY); return page.evaluate(() => Math.round(scrollY)); };
+    // Position the tile, then let the page drain every callback that was already queued (two frames: a restoreScroll re-assert from an earlier close, run late by a loaded CI runner or its faked clock, calls scrollTo(0, y) with the OLD y) and read again until the same y comes back twice. CI evidence (runs 128856519308, 128945764844, 130167859936, all phone, B open then close, run 1): the harness read y0 = 192, scrollY was 0 before the first frame of the iteration, so the wall had been moved after the read and before the tap.
+    const yNow = async () => { let prev = null, y = 0; for (let i = 0; i < 8; i++) { y = await page.evaluate((k) => new Promise((res) => { const t = document.querySelector(`#wall a.tile[data-scene="${k}"]`); if (t) t.scrollIntoView({ block: "nearest" }); requestAnimationFrame(() => requestAnimationFrame(() => { if (t) t.scrollIntoView({ block: "nearest" }); res(Math.round(scrollY)); })); }), KEY); if (y === prev) return y; prev = y; } return y; };
     let y0 = await yNow();
     // A: open, Esc folds back to the same tile
     await tap(page); const tOpen = await settle(page, "open");
