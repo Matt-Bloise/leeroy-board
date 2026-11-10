@@ -1,12 +1,12 @@
 // Build dist/LeeroyBuild-<version>.zip from addon/LeeroyBuild with the folder LeeroyBuild at the zip root.
 // Node only, no packages: a minimal store-only (no compression) zip writer. Output is deterministic.
-// Run: node tools/build-addon-zip.mjs [--out dist]
+// Run: node addon/build-zip.mjs [--out dist]
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const ADDON_DIR = path.join(here, "..", "addon", "LeeroyBuild");
+const ADDON_DIR = path.join(here, "LeeroyBuild");
 const ROOT_NAME = "LeeroyBuild";
 // Fixed timestamp (2026-01-01 00:00:00) so the same sources give the same bytes.
 const DOS_TIME = 0;

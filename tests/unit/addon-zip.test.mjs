@@ -1,9 +1,9 @@
-// Tests tools/build-addon-zip.mjs: store-only zip writer, read back and verified.
+// Tests addon/build-zip.mjs: store-only zip writer, read back and verified.
 // Run: node --test tests/unit/addon-zip.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
 import zlib from "node:zlib";
-import { buildZip, readZip, crc32, collectAddon, addonVersion } from "../../tools/build-addon-zip.mjs";
+import { buildZip, readZip, crc32, collectAddon, addonVersion } from "../../addon/build-zip.mjs";
 
 test("crc32 matches the standard check value", () => {
   assert.equal(crc32(Buffer.from("123456789")), 0xcbf43926);
