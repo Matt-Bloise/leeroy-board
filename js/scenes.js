@@ -4,7 +4,7 @@ const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const HERE = (document.currentScript && document.currentScript.src) || null;
 const SCENES = {
   sheet: () => [new URL("../scenes/sheet.css?v=cbc6d93e41", HERE), new URL("../scenes/sheet.js?v=fa9cf47aa5", HERE)],
-  import: () => [new URL("../scenes/import.css?v=8db4829667", HERE), new URL("../scenes/import.js?v=36c993b26a", HERE)],
+  import: () => [new URL("../scenes/import.css?v=8db4829667", HERE), new URL("../scenes/import.js?v=8ef2d7f138", HERE)],
   chamber: () => [new URL("../scenes/chamber.css?v=ceca5fbe60", HERE), new URL("../scenes/chamber.js?v=f7b01f71a8", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=1768b64335", HERE), new URL("../scenes/decide.js?v=9f716a3650", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=1c5e2abb08", HERE), new URL("../scenes/probe.js?v=24d1f46113", HERE)],

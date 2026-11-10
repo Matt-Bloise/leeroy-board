@@ -6,7 +6,8 @@ const K = window.__boardKit; if (!K) return;
 const { h } = K;
 const HERE = (document.currentScript && document.currentScript.src) || null;
 const NAME = { race: "Race", class: "Class", level: "Level", professions: "Professions" };
-const FILE_MAX = 2 * 1024 * 1024;
+/* ONE size limit for the file, the text box and the reader: an export is at most 2048 characters, so 400000 is already generous (a whole SavedVariables file). Over it is refused out loud, never cut. */
+const TEXT_MAX = 400000, TOO_BIG = "That file is larger than the add-on ever writes; paste only the export string.";
 const WHY = { "no key": "this board link has no key", key: "this board link is not yours", off: "the party sheet is switched off for now", offline: "no connection", busy: "busy, try again in a minute", refused: "the board did not accept that value", failed: "the board could not save it", "nowhere to send": "no connection to the board", "not on the board's lists": "that value is not on the board's lists" };
 const S = { text: "", sending: false, results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, op: 0 }
 let ctl = null;
@@ -56,9 +57,10 @@ function summary(x) {
   if (!rows.some((o) => o.field === "professions")) kids.push(h("p", { class: "imp-info imp-kept", text: "Professions: none found in the export, your board value is kept." }));
   if (mapped.skipped.length) kids.push(h("ul", { class: "imp-skips", "aria-label": "Skipped values" }, ...mapped.skipped.map((s) => h("li", { class: "imp-skip", text: A.skippedLine(s) }))));
   const n = rows.filter((o) => o.change).length, can = S.ctx.canSend(), done = !!S.results;
+  const failed = S.results ? Object.keys(S.results).filter((f) => !S.results[f].ok) : [];
   kids.push(h("p", { class: "imp-note", text: "Only lines marked Will change are sent, one at a time, after you tap Send. A line you left unticked in the add-on options is not in the export." }));
   kids.push(h("div", { class: "imp-act" },
-    h("button", { type: "button", class: "lib-tool imp-send", id: "imp-send", "aria-disabled": n && can.ok && !S.sending && !done ? null : "true", onclick: () => send(rows) }, S.sending ? "Sending..." : done ? "Done" : n ? `Send ${n} change${n === 1 ? "" : "s"} to my sheet` : "Nothing to send"),
+    h("button", { type: "button", class: "lib-tool imp-send", id: "imp-send", "aria-disabled": can.ok && !S.sending && (failed.length || (n && !done)) ? null : "true", onclick: () => (failed.length ? retry() : send(rows)) }, S.sending ? "Sending..." : failed.length ? `Retry ${failed.length} failed line${failed.length === 1 ? "" : "s"}` : done ? "Done" : n ? `Send ${n} change${n === 1 ? "" : "s"} to my sheet` : "Nothing to send"),
     !can.ok ? h("span", { class: "imp-why", text: can.why }) : null));
   return h("div", { class: "imp-sum" }, ...kids);
 }
@@ -66,7 +68,22 @@ function summary(x) {
 async function send(rows) {
   const can = S.ctx.canSend(); if (S.sending || S.results || !can.ok) return;
   const todo = rows.filter((o) => o.change); if (!todo.length) return;
-  const tok = ++S.op; S.sending = true; S.frozen = rows; update(); /* edits during sending are blocked by the lock, and any other operation would void this token */
+  return run(todo, rows, {});
+}
+/* Retry: plan again against what the sheet shows NOW, and send only the lines that failed (and still differ). Lines already sent keep their result. */
+async function retry() {
+  const A = S.mod, can = S.ctx.canSend(); if (S.sending || !S.results || !can.ok || !A) return;
+  const failed = Object.keys(S.results).filter((f) => !S.results[f].ok); if (!failed.length) return;
+  const r = A.parse(S.text); if (!r.ok) return;
+  const fresh = A.plan(A.mapToBoard(r.data, S.ctx.lists()), S.ctx.current());
+  const keep = {}; for (const f of Object.keys(S.results)) if (S.results[f].ok) keep[f] = S.results[f];
+  const frozen = (S.frozen || []).map((o) => (failed.includes(o.field) ? fresh.find((x) => x.field === o.field) || o : o));
+  const todo = fresh.filter((o) => failed.includes(o.field) && o.change);
+  if (!todo.length) { S.op++; S.results = keep; S.frozen = frozen; S.say = "Nothing left to retry: those lines already match your sheet."; update(); return; }
+  return run(todo, frozen, keep);
+}
+async function run(todo, frozen, keep) {
+  const tok = ++S.op; S.sending = true; S.frozen = frozen; S.results = Object.keys(keep).length ? keep : null; S.say = ""; update(); /* edits during sending are blocked by the lock, and any other operation would void this token */
   const res = {}, B = window.BoardBrain;
   try {
     for (const o of todo) {
@@ -77,9 +94,9 @@ async function send(rows) {
     }
   } finally { S.sending = false; if (tok !== S.op) { S.frozen = null; update(); } }
   if (tok !== S.op) return;
-  const ok = Object.values(res).filter((x) => x.ok).length;
+  const all = { ...keep, ...res }, ok = Object.values(res).filter((x) => x.ok).length;
   S.op++; /* a read that began before Send and ends after it is stale too */
-  S.results = res;
+  S.results = all;
   S.say = ok === todo.length ? `Sent ${ok} line${ok === 1 ? "" : "s"} to your sheet.` : `${ok} of ${todo.length} lines sent. The rest were not.`;
   update();
   if (S.ctx.done) S.ctx.done();
@@ -96,13 +113,13 @@ function update() {
   if (ctl) { const lock = S.sending; ctl.ta.disabled = lock; ctl.pick.disabled = lock; ctl.choose.disabled = lock; ctl.drop.setAttribute("aria-disabled", String(lock)); }
   outEl.replaceChildren(body, h("p", { class: "imp-say", id: "imp-say", role: "status", "aria-live": "polite", text: S.say }));
 }
-function setText(t) { if (S.sending) return; S.op++; S.text = String(t).slice(0, 400000); S.results = null; S.say = ""; S.fileErr = ""; S.frozen = null; update(); }
+function setText(t) { if (S.sending) return; S.op++; S.results = null; S.say = ""; S.frozen = null; t = String(t); if (t.length > TEXT_MAX) { S.text = ""; S.fileErr = TOO_BIG; } else { S.text = t; S.fileErr = ""; } update(); }
 function fromFile(file, ta) {
   if (!file || S.sending) return;
   const tok = ++S.op; S.fileErr = ""; /* starting a read voids every earlier read, paste and result */
   const live = () => tok === S.op && !S.sending;
-  if (file.size > FILE_MAX) { S.fileErr = "That file is over 2 MB. The add-on's file is far smaller; pick the right one."; update(); return; }
-  Promise.resolve().then(() => file.text()).then((t) => { if (!live()) return; ta.value = t; setText(t); }, () => { if (!live()) return; S.fileErr = "That file could not be read."; update(); });
+  if (file.size > TEXT_MAX) { S.text = ""; S.fileErr = TOO_BIG; ta.value = ""; update(); return; }
+  Promise.resolve().then(() => file.text()).then((t) => { if (!live()) return; if (t.length > TEXT_MAX) { S.text = ""; S.results = null; S.frozen = null; S.fileErr = TOO_BIG; ta.value = ""; update(); return; } ta.value = t; setText(t); }, () => { if (!live()) return; S.fileErr = "That file could not be read."; update(); });
 }
 function mount(host, ctx) {
   S.ctx = ctx;

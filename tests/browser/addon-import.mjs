@@ -25,7 +25,7 @@ async function run(browser, [label, opts]) {
     if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
     if (m === "POST" && u.pathname.endsWith("/api/sheet")) {
       const b = route.request().postDataJSON(); posts.push(b); await new Promise((r) => setTimeout(r, 400));
-      if (b.field === "level") return json(route, { error: "busy" }, 429);
+      if (b.field === "level" && !globalThis.__lvOk) return json(route, { error: "busy" }, 429);
       return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() });
     }
     return route.abort();
@@ -65,6 +65,15 @@ async function run(browser, [label, opts]) {
   ok(`${label}: the latest read failing does say so`, /could not be read/.test(await page.locator("#imp-out").innerText()));
   await page.locator("#imp-text").fill(s);
   await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  /* one size limit: an oversized file or paste is refused out loud, never cut */
+  await page.evaluate(() => { const big = { size: 400001, text: () => Promise.resolve("x") }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [big], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); });
+  await page.waitForTimeout(150);
+  ok(`${label}: an oversized file is refused with the explicit reason`, /larger than the add-on ever writes; paste only the export string/.test(await page.locator("#imp-out").innerText()), await page.locator("#imp-out").innerText());
+  await page.evaluate(() => { const big = { size: 10, text: () => Promise.resolve("y".repeat(400001)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [big], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); });
+  await page.waitForTimeout(300);
+  ok(`${label}: a file that is longer than it claimed is refused too, not cut`, /larger than the add-on ever writes/.test(await page.locator("#imp-out").innerText()));
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
   const geo = await page.evaluate(() => {
     const sc = document.documentElement.scrollWidth - window.innerWidth;
     const boxes = [...document.querySelectorAll(".imp-row, .imp-text, .imp-drop, .imp-send, .imp-note")].map((e) => e.getBoundingClientRect());
@@ -96,11 +105,21 @@ async function run(browser, [label, opts]) {
   const states = await page.locator(".imp-row").evaluateAll((els) => Object.fromEntries(els.map((e) => [e.dataset.field, e.dataset.state])));
   ok(`${label}: a failed line says so and the others say Sent`, states.level === "failed" && states.race === "sent" && states.class === "sent" && states.professions === "sent", JSON.stringify(states));
   ok(`${label}: the failure is in words`, /Level\s*[\s\S]*Not sent: busy/.test(await page.locator("#imp-out").innerText()));
+  /* retry: the failed line (level) can be sent again, only that one, against the current sheet */
+  const before = posts.length;
+  ok(`${label}: the button now offers Retry for the failed line`, /Retry 1 failed line/.test(await page.locator("#imp-send").innerText()) && (await page.locator("#imp-send").getAttribute("aria-disabled")) !== "true");
+  globalThis.__lvOk = true;
+  await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.querySelector('.imp-row[data-field="level"]').dataset.state === "sent", null, { timeout: 8000 }).catch(() => {});
+  const again = posts.slice(before);
+  ok(`${label}: retry sent only the failed line and it succeeded`, again.length === 1 && again[0].field === "level" && again[0].value === 33, JSON.stringify(again));
+  ok(`${label}: after a clean retry every line says Sent and the button is Done`, (await page.locator('.imp-row[data-state="sent"]').count()) === 4 && /Done/.test(await page.locator("#imp-send").innerText()));
+  globalThis.__lvOk = false;
   ok(`${label}: Send cannot run twice`, (await page.locator("#imp-send").getAttribute("aria-disabled")) === "true");
   const rd = await page.evaluate(() => [window.__readStarted, window.__readDone]);
   ok(`${label}: the slow read did run and finish before the results came back`, !!rd[0] && !!rd[1], JSON.stringify(rd));
   await page.waitForTimeout(3200);
-  ok(`${label}: a read that finishes after submission does not replace the export or clear its results`, (await page.locator("#imp-text").inputValue()) === s && (await page.locator(".imp-row[data-state=sent]").count()) === 3, (await page.locator("#imp-text").inputValue()).slice(0, 70));
+  ok(`${label}: a read that finishes after submission does not replace the export or clear its results`, (await page.locator("#imp-text").inputValue()) === s && (await page.locator(".imp-row[data-state=sent]").count()) === 4, (await page.locator("#imp-text").inputValue()).slice(0, 70));
   const after = await page.locator("#imp-out").innerText();
   ok(`${label}: results stay with the export that was sent (the edit during sending was ignored)`, /Level 33/.test(after) && !/Level 12|Gnome/i.test(after) && posts.every((p) => !(p.field === "class" && p.value === "mage")), JSON.stringify(after));
   ok(`${label}: boxes unlock after sending`, await page.evaluate(() => !document.getElementById("imp-text").disabled));
