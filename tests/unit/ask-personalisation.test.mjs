@@ -378,7 +378,7 @@ test("a self-identified different class drops the YOUR_BUILD block; everything e
   }
 });
 test("PERSONALISE_RULE leaves the decision to the model and bans personalising invention", () => {
-  assert.match(PERSONALISE_RULE, /only when it changes the answer/);
-  assert.match(PERSONALISE_RULE, /do not mention it at all/);
+  assert.match(PERSONALISE_RULE, /touches the asker themselves/);
+  assert.match(PERSONALISE_RULE, /Do not mention it when the question is a plain lookup/);
   assert.match(PERSONALISE_RULE, /never add facts about items or spells/);
 });
