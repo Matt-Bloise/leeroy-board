@@ -85,3 +85,34 @@ test("calendar button: an existing launch .ics node is removed once the clock cr
     assert.equal(removed, removedExpected); assert.equal(reachedRest, !removedExpected);
   }
 });
+
+// Sheet cross-PR interaction: the "sees N of M lines" count and the Level hint must follow launch, using the real functions from scenes/sheet.js with a faked clock.
+const sheetSrc = fs.readFileSync("scenes/sheet.js", "utf8").replace(/\r\n/g, "\n");
+const grabSheet = (start, endMarker) => { const i = sheetSrc.indexOf(start); assert.ok(i >= 0, `${start} not found`); return sheetSrc.slice(i, sheetSrc.indexOf(endMarker, i)); };
+function loadSheet(nowS, mine) {
+  const past = nowS >= LAUNCH, fieldsLine = sheetSrc.match(/^const FIELDS = .*$/m); assert.ok(fieldsLine, "FIELDS not found");
+  const code = [fieldsLine[0], grabSheet("const shownFields", "function parity"), grabSheet("function parity", "\n}\n") + "\n}", grabSheet("function invite", "\n}\n") + "\n}"].join("\n");
+  const h = (tag, attrs, ...kids) => ({ tag, attrs: attrs || {}, kids });
+  const ctx = { K: { launchPast: () => past }, h, isMe: () => mine, pslug: () => "x", dayOf: (s) => s, Date, Math };
+  vm.runInNewContext(code + "\nthis.FIELDS = FIELDS; this.shownFields = shownFields; this.parity = parity; this.invite = invite;", ctx);
+  return ctx;
+}
+const emptyF = (FIELDS) => Object.fromEntries(FIELDS.map((f) => [f, { text: "", visible: false, at: null }]));
+const parText = (n) => n.kids[1].attrs.text;
+test("sheet parity: 'N of M lines' counts the rendered rows, 9 before launch and 8 after (unset launch_state hidden)", () => {
+  for (const [nowS, rows] of [[LAUNCH - DAY, 9], [LAUNCH + DAY, 8]]) {
+    const o = loadSheet(nowS, true), F = emptyF(o.FIELDS);
+    assert.equal(o.shownFields(F).length, rows);
+    assert.match(parText(o.parity({}, F)), new RegExp(`^The party sees 0 of ${rows} lines\.`));
+  }
+  const o = loadSheet(LAUNCH + DAY, true), F = emptyF(o.FIELDS); F.launch_state = { text: "ready", visible: true, at: null };
+  assert.equal(o.shownFields(F).length, 9, "a set launch_state row stays");
+  assert.match(parText(o.parity({}, F)), /sees 1 of 9 lines/);
+});
+test("sheet Level hint: old text before launch; after launch the own sheet points at Import from game, others get the plain line", () => {
+  const flat = (a) => a.map((x) => (typeof x === "string" ? x : x.kids.join(""))).join("");
+  const pre = loadSheet(LAUNCH - DAY, true); assert.equal(flat(pre.invite({}, "level")), "Fills in once the game is live. Launch, on Dates");
+  const mine = loadSheet(LAUNCH + DAY, true); assert.equal(flat(mine.invite({}, "level")), "Your level comes from the game. Use Import from game above to fill it in.");
+  const other = loadSheet(LAUNCH + DAY, false); assert.equal(flat(other.invite({}, "level")), "Not on the board yet.");
+  assert.match(sheetSrc, /"Import from game"\)\;/); assert.match(fs.readFileSync("scenes/import.js", "utf8"), /text: "Import from game"/);
+});

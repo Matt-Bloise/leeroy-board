@@ -176,12 +176,14 @@ function seal(src, from) {
   img.addEventListener("error", () => { img.remove(); });
   return h("span", { class: "ps-src", "data-src": k, title: say }, img, h("span", { class: "sr-only", text: say }));
 }
+/* The rows actually rendered: after launch an unset launch_state row is hidden, and the "sees N of M" line counts the same list. */
+const shownFields = (F) => FIELDS.filter((f) => !(f === "launch_state" && !F[f].text && K.launchPast()));
 function parity(m, F) {
-  const filled = FIELDS.filter((f) => F[f].text), seen = filled.filter((f) => F[f].visible), newest = FIELDS.map((f) => F[f].at).filter(Boolean).sort().pop();
-  const share = seen.length / FIELDS.length, fresh = newest ? (Date.now() - Date.parse(newest)) / 864e5 : null;
+  const rows = shownFields(F), filled = rows.filter((f) => F[f].text), seen = filled.filter((f) => F[f].visible), newest = rows.map((f) => F[f].at).filter(Boolean).sort().pop();
+  const share = seen.length / rows.length, fresh = newest ? (Date.now() - Date.parse(newest)) / 864e5 : null;
   return h("div", { class: "ps-par", "data-fresh": fresh === null ? "board" : fresh < 3 ? "new" : "older" },
     h("span", { class: "ps-bar", "aria-hidden": "true" }, h("i", { style: `--p: ${share.toFixed(3)}` })),
-    h("span", { class: "ps-par-t", text: `The party sees ${seen.length} of ${FIELDS.length} lines. ${newest ? `Newest line ${dayOf(newest)}.` : "Every line so far comes from the board's records."}` }));
+    h("span", { class: "ps-par-t", text: `The party sees ${seen.length} of ${rows.length} lines. ${newest ? `Newest line ${dayOf(newest)}.` : "Every line so far comes from the board's records."}` }));
 }
 
 function editor(m, f, x) {
@@ -209,6 +211,7 @@ function invite(m, f) {
   if (f === "spec_at_40" || f === "spec_path") return ["Not chosen yet. ", a(`#decide.${sl}`, "The three paths, in What to decide")];
   if (f === "professions") return ["None on the board yet. ", a(`#decide.${sl}`, "Every profession, in What to decide")];
   if (f === "plan_zone") return ["No place yet. ", a("#roads", "Where the roads meet, on Three roads")];
+  if (f === "level" && K.launchPast()) return isMe(m) ? ["Your level comes from the game. Use Import from game above to fill it in."] : ["Not on the board yet."];
   if (f === "level") return ["Fills in once the game is live. ", a("#timeline", "Launch, on Dates")];
   if (f === "launch_state") return ["Not set. The three states are on the wall on launch night."];
   if (f === "goals") return ["Empty. A line of your own, if you like."];
@@ -273,7 +276,7 @@ function sheetView(m) {
     charsView(m),
     h("p", { class: "ps-how", text: how }),
     impView(m),
-    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.filter((f) => !(f === "launch_state" && !F[f].text && K.launchPast())).map((f) => lineEl(m, f, F[f], mine))),
+    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, shownFields(F).map((f) => lineEl(m, f, F[f], mine))),
     h("p", { class: "ps-say", id: "ps-say", role: "status", "aria-live": "polite", text: PS.say }));
 }
 /* Import from game (scenes/import.js): own sheet only. Opening it holds back re-renders like the other editors; nothing is sent until the Send tap inside the panel. */

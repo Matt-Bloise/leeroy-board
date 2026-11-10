@@ -3,7 +3,7 @@
 const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const HERE = (document.currentScript && document.currentScript.src) || null;
 const SCENES = {
-  sheet: () => [new URL("../scenes/sheet.css?v=cbc6d93e41", HERE), new URL("../scenes/sheet.js?v=6e1d14638f", HERE)],
+  sheet: () => [new URL("../scenes/sheet.css?v=cbc6d93e41", HERE), new URL("../scenes/sheet.js?v=a6c4b8aae5", HERE)],
   import: () => [new URL("../scenes/import.css?v=8db4829667", HERE), new URL("../scenes/import.js?v=7536995a9a", HERE)],
   chamber: () => [new URL("../scenes/chamber.css?v=ceca5fbe60", HERE), new URL("../scenes/chamber.js?v=9e50294446", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=1768b64335", HERE), new URL("../scenes/decide.js?v=9f716a3650", HERE)],
