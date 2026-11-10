@@ -333,7 +333,8 @@ K.on("timeline", () => {
   const c = cal.querySelector(".cal"); if (c && !c.querySelector(".cal-card")) c.append(h("p", { class: "cal-card", "aria-live": "polite", text: todayLine() }));
   for (const st of rail.querySelectorAll(".stop[data-ev]")) {
     const e = D.timeline.events.find((x) => x.key === st.dataset.ev);
-    if (!e || !e.epoch || !["launch", "raids"].includes(e.key) || st.querySelector(".ics") || (e.key === "launch" && K.launchPast())) continue;
+    if (e && e.key === "launch" && K.launchPast()) { const old = st.querySelector(".ics"); if (old) old.remove(); continue; } /* a button rendered before launch does not survive the launch moment */
+    if (!e || !e.epoch || !["launch", "raids"].includes(e.key) || st.querySelector(".ics")) continue;
     const a = h("button", { type: "button", class: "lib-tool ics", "data-j": "g c e", "aria-label": `Add to my calendar: ${e.label.toLowerCase()}`, onclick: () => saveIcs(e) }, emb("cal"), "Add to my calendar");
     const body = st.querySelector(".stop-body"); if (body) body.append(a);
   }

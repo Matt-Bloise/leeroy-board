@@ -65,10 +65,23 @@ test("guards: every retired pre-launch surface checks launchPast, and the sheet 
   const v15 = rd("js/v15.js"); assert.match(v15, /if \(L\.phase === "live" \|\| K\.launchPast\(\)\) \{ det\.hidden = true; return; \}/);
   const v13 = rd("js/v13d.js");
   assert.match(v13, /go: K\.launchPast\(\) \? null : \["Add launch to my calendar"/);
-  assert.match(v13, /\(e\.key === "launch" && K\.launchPast\(\)\)\) continue/);
+  assert.match(v13, /if \(e && e\.key === "launch" && K\.launchPast\(\)\) \{ const old = st\.querySelector\("\.ics"\); if \(old\) old\.remove\(\); continue; \}/);
   assert.match(v13, /earned \$\{K\.launchPast\(\) \? "so far" : "before launch"\}/);
   assert.match(rd("scenes/guided-atlas.js"), /K\.launchPast\(\) \? "Your map\. Your route through the world\." : "Your map\. Your route to launch night\."/);
   const sh = rd("scenes/sheet.js");
   assert.match(sh, /f === "launch_state" && !F\[f\]\.text && K\.launchPast\(\)/);
   assert.match(sh, /launch_state: "Launch night"/); assert.match(sh, /"launch_state", "plan_zone"/);
+});
+
+test("calendar button: an existing launch .ics node is removed once the clock crosses launch; before launch it stays", () => {
+  const v13 = fs.readFileSync("js/v13d.js", "utf8"), i = v13.indexOf('if (e && e.key === "launch" && K.launchPast())');
+  assert.ok(i >= 0, "removal branch present");
+  const branch = v13.slice(i, v13.indexOf("continue; }", i) + "continue; }".length);
+  for (const [nowS, removedExpected] of [[LAUNCH - DAY, false], [LAUNCH + 1, true]]) {
+    const o = load(nowS); let removed = false, reachedRest = false;
+    const st = { querySelector: () => ({ remove: () => { removed = true; } }) };
+    const mark = { set() { reachedRest = true; } };
+    vm.runInNewContext(`for (const _ of [1]) { ${branch}\n mark.set(); }`, { e: { key: "launch" }, st, K: { launchPast: o.launchPast }, mark });
+    assert.equal(removed, removedExpected); assert.equal(reachedRest, !removedExpected);
+  }
 });
