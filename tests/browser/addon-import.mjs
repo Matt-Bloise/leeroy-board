@@ -64,9 +64,12 @@ async function run(browser, [label, opts]) {
   ok(`${label}: no horizontal scroll, no overlap, controls 44px`, geo.sc <= 1 && geo.over.length === 0 && geo.panelRight <= geo.vw + 1 && geo.short === 0, JSON.stringify(geo));
   if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-before.png` : undefined }).catch(() => {});
   /* file-read race: a read that finishes while sending must not touch the text box */
-  await page.evaluate((o) => { const f = new File([o], "late.lua"); const slow = { size: f.size, text: () => new Promise((r) => setTimeout(() => r(o), 900)) }; const dt = new DataTransfer(); window.__slowFile = slow; const ev = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); }, encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full);
+  await page.evaluate((o) => { const f = new File([o], "late.lua"); const slow = { size: f.size, text: () => { window.__readStarted = Date.now(); return new Promise((r) => setTimeout(() => { window.__readDone = Date.now(); r(o); }, 900)); } }; const dt = new DataTransfer(); window.__slowFile = slow; const ev = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); }, encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full);
   await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
   await page.locator("#imp-send").click();
+  await page.waitForFunction(() => window.__readDone, null, { timeout: 5000 });
+  const midSend = await page.evaluate(() => ({ v: document.getElementById("imp-text").value, sending: document.getElementById("imp-send").textContent }));
+  ok(`${label}: a file read that finished mid-send did not replace the text box`, midSend.v === s && /Sending/.test(midSend.sending), JSON.stringify(midSend).slice(0, 120));
   const during = await page.evaluate(() => ({ ta: document.getElementById("imp-text").disabled, file: document.getElementById("imp-file").disabled, choose: document.querySelector(".imp-choose").disabled, send: document.getElementById("imp-send").getAttribute("aria-disabled"), label: document.getElementById("imp-send").textContent }));
   ok(`${label}: while sending, the text box, file picker and Send are locked`, during.ta && during.file && during.choose && during.send === "true" && /Sending/.test(during.label), JSON.stringify(during));
   /* an edit attempt during submission (an input event, and a drop of other text) must change nothing */
@@ -81,8 +84,8 @@ async function run(browser, [label, opts]) {
   ok(`${label}: a failed line says so and the others say Sent`, states.level === "failed" && states.race === "sent" && states.class === "sent" && states.professions === "sent", JSON.stringify(states));
   ok(`${label}: the failure is in words`, /Level\s*[\s\S]*Not sent: busy/.test(await page.locator("#imp-out").innerText()));
   ok(`${label}: Send cannot run twice`, (await page.locator("#imp-send").getAttribute("aria-disabled")) === "true");
-  await page.waitForTimeout(700);
-  ok(`${label}: a file read that finished mid-send did not replace the text box`, (await page.locator("#imp-text").inputValue()) === s, (await page.locator("#imp-text").inputValue()).slice(0, 60));
+  const rd = await page.evaluate(() => [window.__readStarted, window.__readDone]);
+  ok(`${label}: the slow read did run and finish before the results came back`, !!rd[0] && !!rd[1], JSON.stringify(rd));
   const after = await page.locator("#imp-out").innerText();
   ok(`${label}: results stay with the export that was sent (the edit during sending was ignored)`, /Level 33/.test(after) && !/Level 12|Gnome/i.test(after) && posts.every((p) => !(p.field === "class" && p.value === "mage")), JSON.stringify(after));
   ok(`${label}: boxes unlock after sending`, await page.evaluate(() => !document.getElementById("imp-text").disabled));
