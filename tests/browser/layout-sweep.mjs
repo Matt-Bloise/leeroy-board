@@ -265,7 +265,11 @@ async function press(page, locator, timeout = 20000) {
   catch (e) {
     const seen = await page.evaluate(() => [...document.querySelectorAll("button, a, [role=button]")].filter((b) => b.getClientRects().length).map((b) => (b.textContent || "").trim().replace(/\s+/g, " ").slice(0, 28)).filter(Boolean).slice(0, 12).join(" | ")).catch(() => "page state unreadable");
     const open = await page.evaluate(() => document.documentElement.classList.contains("scene-open")).catch(() => "?");
-    throw new Error(`${e.message.split("\n")[0]} (waited ${timeout} ms for the target ${String(locator)} to be visible; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
+    // Nov 9: CI names the target (a name chip) but not WHY it never became visible: report how many elements match and the geometry and style of the first three, plus the viewport and the page scroll, so the next CI run says whether it is absent, zero-sized, hidden or off-screen.
+    const count = await locator.count().catch(() => "?");
+    const geo = await locator.evaluateAll((els) => els.slice(0, 3).map((el) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y), display: s.display, visibility: s.visibility, opacity: s.opacity, parentOverflow: el.parentElement ? getComputedStyle(el.parentElement).overflow : "" }; })).catch(() => []);
+    const vp = await page.evaluate(() => ({ iw: innerWidth, ih: innerHeight, sy: Math.round(scrollY), sh: document.documentElement.scrollHeight })).catch(() => ({}));
+    throw new Error(`${e.message.split("\n")[0]} (waited ${timeout} ms for the target ${String(locator)} to be visible; matches ${count}; first matches ${JSON.stringify(geo)}; viewport ${JSON.stringify(vp)}; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
   }
   const el = await locator.elementHandle({ timeout });
   await el.evaluate((e) => e.scrollIntoView({ block: "center", inline: "center" }));
