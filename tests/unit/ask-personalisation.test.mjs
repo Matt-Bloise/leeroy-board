@@ -316,52 +316,59 @@ test("ask system prompt carries the Leeroy voice rule, keeps the guardrails, and
   assert.ok(sp.length / before.length < 1.30, `prompt grew ${((sp.length / before.length - 1) * 100).toFixed(1)}%`);
 });
 
-// ---- relevance: the stored build is mentioned only when the question makes it relevant ----
-const FOX = askerFacts(SHEETS[0]); // paladin, protection, human, level 12, mining and smithing
-test("buildRelevant: own class named is relevant; a different class is not; generic is not", () => {
-  assert.equal(buildRelevant("how do I tank as a paladin", FOX).relevant, true);
-  assert.equal(buildRelevant("best pet for a Hunter?", FOX).relevant, false, "Hunter question, Paladin build");
-  assert.equal(buildRelevant("what does red in a tooltip mean", FOX).relevant, false);
-  assert.equal(buildRelevant("where is the trainer in Stormwind", FOX).relevant, false);
-  assert.equal(buildRelevant("how does a protection warrior hold threat", FOX).relevant, false, "a spec word of ours does not override a different class named");
+// ---- relevance: the build is kept by default; code suppresses it only when the question names another class or race ----
+const FOX = askerFacts(SHEETS[0]); // human paladin, protection, level 12, mining and smithing
+const mkFacts = (cls, race, spec = "", professions = "") => askerFacts({ slug: "x", name: "X", fields: { class: f(cls), race: f(race), spec_path: f(spec), level: f(20), professions: f(professions) } });
+const MAGE_28 = mkFacts("mage", "gnome", "frost"), UNDEAD_PRIEST = mkFacts("priest", "undead", "holy"), UNDEAD_MAGE = mkFacts("mage", "undead"), MAGE = mkFacts("mage", "human");
+const TRUTH = [
+  // [question, facts, kept?]  rows from the Nov 9 measurement
+  ["best class for a beginner", MAGE_28, true],
+  ["What is the cooldown on Will of the Forsaken?", UNDEAD_PRIEST, true],
+  ["how many tanks for Onyxia", FOX, true],
+  ["what are professions", mkFacts("priest", "human", "", "tailoring, enchanting"), true],
+  ["how do I find a group", UNDEAD_PRIEST, true],
+  ["How much does Cannibalize heal for an undead mage?", UNDEAD_MAGE, true],
+  ["can we all meet in Durotar at level 1", FOX, true],
+  ["when is launch", FOX, true],
+  ["is there a day/night cycle", FOX, true],
+  ["Where do I train weapon skills, I am a Hunter on the Alliance side?", FOX, false],
+  ["Can a Paladin use two-handed swords?", MAGE, false],
+  ["Can a Paladin use two-handed swords?", FOX, true],
+  ["which hunters are good at tracking", FOX, false],
+  ["where are the rogue trainers", FOX, false],
+  ["what is the best mount for orcs", FOX, false],
+  ["what do night elves get at level 1", FOX, false],
+  ["what do night elves get at level 1", mkFacts("druid", "night elf"), true],
+  ["compare a hunter with my class", FOX, true], // explicit phrase wins
+  ["what should my build do next", MAGE, true],
+  ["Where can we find a hunter trainer?", FOX, false], // pronouns do not rescue a different class
+  ["and what is the best mount", mkFacts("mage", ""), true], // nothing on file to contradict
+  ["anything", FOX, true],
+];
+test("buildRelevant truth table from the real measured rows", () => {
+  for (const [q, facts, kept] of TRUTH) assert.equal(buildRelevant(q, facts).relevant, kept, q);
+  assert.equal(buildRelevant("anything at all about hunters", FOX, { skip: "build" }).relevant, true);
 });
-test("buildRelevant: my build, level, profession, race, party and the own class page", () => {
-  assert.equal(buildRelevant("what should my build do next", FOX).relevant, true);
-  assert.equal(buildRelevant("what can I do at level 12", FOX).relevant, true);
-  assert.equal(buildRelevant("best dungeon for what levels", FOX).relevant, true);
-  assert.equal(buildRelevant("where do I learn smithing recipes", FOX).relevant, true);
-  assert.equal(buildRelevant("where do I learn cooking recipes", FOX).relevant, false);
-  assert.equal(buildRelevant("which human starting zone quests are fast", FOX).relevant, true);
-  assert.equal(buildRelevant("which gnome starting zone quests are fast", FOX).relevant, false);
-  assert.equal(buildRelevant("who should tank for our party tonight", FOX).relevant, true);
-  assert.equal(buildRelevant("what armor is best", FOX, { rankedIds: ["classes/paladin-protection"] }).relevant, true);
-  assert.equal(buildRelevant("what armor is best", FOX, { rankedIds: ["classes/mage-frost"] }).relevant, false);
-  assert.equal(buildRelevant("anything", FOX, { skip: "build" }).relevant, true);
-  assert.equal(buildRelevant("my build is a hunter", FOX).relevant, true, "an explicit self reference wins");
+test("buildRelevant: a follow-up inherits the previous decision unless it names the asker's own class", () => {
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "Can a hunter use bows?" }).relevant, false);
+  assert.equal(buildRelevant("And which weapon for a paladin?", FOX, { previousQuestion: "Can a hunter use bows?" }).relevant, true);
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "what should my build train at level 10" }).relevant, true);
+  assert.equal(buildRelevant("And what about a hunter?", FOX, { previousQuestion: "what should my build train at level 10" }).relevant, false);
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "what is the capital of france" }).relevant, true);
 });
-test("an irrelevant question gets the not-relevant line and no YOUR_BUILD block; a relevant one keeps the build", async () => {
-  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "what does red in a tooltip mean" });
+test("a different-class question drops the YOUR_BUILD block; everything else keeps it", async () => {
+  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "where are the hunter pet trainers" });
   assert.ok(off.userPrompt.includes(BUILD_NOT_RELEVANT_LINE));
   assert.ok(!/YOUR_BUILD/.test(off.userPrompt) && !off.userPrompt.includes("class: paladin"));
   assert.equal(off.personalised, false);
-  const hunter = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "how do I tame a hunter pet" });
-  assert.ok(hunter.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && !hunter.userPrompt.includes("class: paladin"));
-  const on = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "how do I tank as a paladin" });
-  assert.match(on.userPrompt, /YOUR_BUILD/);
-  assert.ok(!on.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && on.personalised);
+  for (const question of ["how do I tank as a paladin", "what does red in a tooltip mean", "when is launch"]) {
+    const on = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question });
+    assert.match(on.userPrompt, /YOUR_BUILD/, question);
+    assert.ok(!on.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && on.personalised, question);
+  }
 });
-
-test("buildRelevant: pronouns and party words alone never make it relevant; a different class beats them", () => {
-  assert.equal(buildRelevant("Where can we find a hunter trainer?", FOX).relevant, false);
-  assert.equal(buildRelevant("What does party mean in WoW?", FOX).relevant, false);
-  assert.equal(buildRelevant("what is on tonight in Stormwind", FOX).relevant, false);
-  assert.equal(buildRelevant("What should our party do tonight?", FOX).relevant, true, "the explicit phrase our party");
-  assert.equal(buildRelevant("Where can we find a paladin trainer?", FOX).relevant, true, "own class named");
-});
-test("buildRelevant: a follow-up keeps the build when the previous question was relevant, unless it names another class", () => {
-  const prev = "what should my build train at level 10";
-  assert.equal(buildRelevant("And which weapon?", FOX).relevant, false);
-  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: prev }).relevant, true);
-  assert.equal(buildRelevant("And what about a hunter?", FOX, { previousQuestion: prev }).relevant, false);
-  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "what is the capital of france" }).relevant, false);
+test("PERSONALISE_RULE leaves the decision to the model and bans personalising invention", () => {
+  assert.match(PERSONALISE_RULE, /only when it changes the answer/);
+  assert.match(PERSONALISE_RULE, /do not mention it at all/);
+  assert.match(PERSONALISE_RULE, /never add facts about items or spells/);
 });

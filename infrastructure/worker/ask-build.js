@@ -87,45 +87,47 @@ export function askerFacts(sheet, { includeHidden = false } = {}) {
 }
 
 // ---- relevance -------------------------------------------------------------------------------------------------------------
-// The asker's stored build reaches the prompt only when it helps. Deterministic rules, first match wins:
-//  0. A pure "my build" question (skip === "build"): relevant.
-//  1. Explicit phrase only: "my build/class/character/spec/race/level/profession/talents/sheet/main/gear", "my party/group", "our party/group/build/comp/team": relevant.
-//  2. A class is named and it is NOT the asker's class: not relevant, whatever else the question says (we, our, tonight, party included).
-//  3. The asker's own class, spec word, race or profession is named, or a level/levels/lvl is mentioned: relevant.
-//  4. The top ranked pages include the asker's own class page (classes/<class>...): relevant.
-//  5. Follow-up (a previous question is shown): if rules 2 does not exclude it, relevant when the previous question was relevant under rules 1, 3 or 4.
-//  Otherwise not relevant. Standalone "party", "tonight", "we", "our" never make a question relevant.
+// The stored build is in the prompt BY DEFAULT; the model decides whether it changes the answer (PERSONALISE_RULE). Code suppresses it only in clear cases:
+//  0. A pure "my build" question (skip === "build"): kept.
+//  1. An explicit phrase (my build/class/character/spec/race/level/profession/talents/sheet/main/gear, my party/group, our party/group/build/comp/team): kept.
+//  2. The question names a class (singular, plural or alias) and the asker's own class is not among them: suppressed.
+//  3. The question names a race and neither the asker's race nor an alias of it is among them: suppressed.
+//  4. A follow-up (a previous question is shown) whose previous question was suppressed under 2 or 3, and which itself names nothing of the asker's: suppressed (it inherits that decision).
+//  Everything else: kept. No asker class or race on file means nothing to contradict, so kept.
 export const BUILD_NOT_RELEVANT_LINE = "The asker's stored build is not relevant to this question: do not mention it.";
 const CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
-const CLASS_ALIAS = { pally: "paladin", lock: "warlock", warlocks: "warlock", pala: "paladin" };
-const RACES = ["human", "dwarf", "gnome", "night elf", "orc", "undead", "tauren", "troll", "forsaken"];
+const CLASS_ALIAS = { pally: "paladin", pala: "paladin", lock: "warlock", warlocks: "warlock" };
+const RACE_FORMS = { human: ["human", "humans"], dwarf: ["dwarf", "dwarves"], gnome: ["gnome", "gnomes"], "night elf": ["night elf", "night elves"], orc: ["orc", "orcs"], undead: ["undead", "forsaken"], tauren: ["tauren", "taurens"], troll: ["troll", "trolls"] };
 const SELF_RE = /\b(?:my\s+(?:build|character|char|class|spec|specs|race|level|profession|professions|talents|sheet|main|gear|party|group)|our\s+(?:party|group|build|comp|team))\b/i;
-const LEVEL_RE = /\b(?:levels?|lvl)\b/i;
 const wordsOf = (t) => String(t || "").toLowerCase().split(/[^a-z0-9']+/).filter(Boolean).map((w) => w.replace(/'s$/, "").replace(/(?<=[a-z]{4})s$/, ""));
-function relevantByQuestion(q, facts, rankedIds) {
-  if (SELF_RE.test(q)) return { relevant: true, reason: "explicit build phrase" };
+// "clear" = the question contradicts the asker's build (names another class or race and nothing of theirs); own = names something of the asker's.
+function conflict(q, facts) {
   const qw = wordsOf(q);
   const qset = new Set(qw.map((w) => CLASS_ALIAS[w] || w));
-  const namedClasses = CLASSES.filter((c) => qset.has(c));
+  const ql = ` ${String(q).toLowerCase().split(/[^a-z0-9']+/).filter(Boolean).join(" ")} `; // raw words: "elves" must stay whole
+  const named = CLASSES.filter((c) => qset.has(c));
   const myClass = facts && facts.class ? wordsOf(facts.class).map((w) => CLASS_ALIAS[w] || w).find((w) => CLASSES.includes(w)) : "";
-  if (namedClasses.length) {
-    return namedClasses.includes(myClass) ? { relevant: true, reason: "own class named" } : { relevant: false, reason: "different class named", different: true };
-  }
-  const spec = facts && facts.spec ? wordsOf(facts.spec).filter((w) => w.length > 3) : [];
-  if (spec.some((w) => qset.has(w))) return { relevant: true, reason: "own spec named" };
-  const ql = ` ${qw.join(" ")} `;
-  if (facts && facts.race && RACES.some((r) => ql.includes(` ${r} `) && String(facts.race).toLowerCase().includes(r))) return { relevant: true, reason: "own race named" };
-  if (facts && facts.professions && facts.professions.some((p) => wordsOf(p).some((w) => w.length > 3 && qset.has(w)))) return { relevant: true, reason: "own profession named" };
-  if (LEVEL_RE.test(q)) return { relevant: true, reason: "level mentioned" };
-  if (myClass && rankedIds.some((id) => String(id).startsWith(`classes/${myClass}`))) return { relevant: true, reason: "own class page retrieved" };
-  return { relevant: false, reason: "generic question" };
+  const myRace = facts && facts.race ? String(facts.race).toLowerCase() : "";
+  const myKey = Object.keys(RACE_FORMS).find((k) => myRace.includes(k) || RACE_FORMS[k].some((f) => myRace.includes(f)));
+  const raceHit = (k) => RACE_FORMS[k].some((f) => ql.includes(` ${f} `));
+  const races = Object.keys(RACE_FORMS).filter(raceHit);
+  const own = (myClass && named.includes(myClass)) || (myKey && raceHit(myKey));
+  if (own) return { own: true, different: false };
+  if (myClass && named.length) return { own: false, different: true, why: "different class named" };
+  if (myKey && races.length) return { own: false, different: true, why: "different race named" };
+  return { own: false, different: false };
 }
-export function buildRelevant(question, facts, { rankedIds = [], skip = null, previousQuestion = "" } = {}) {
+export function buildRelevant(question, facts, { skip = null, previousQuestion = "" } = {}) {
   if (skip === "build") return { relevant: true, reason: "build question" };
-  const cur = relevantByQuestion(String(question || ""), facts, rankedIds);
-  if (cur.relevant || cur.different || !previousQuestion) return cur;
-  const prev = relevantByQuestion(String(previousQuestion), facts, []);
-  return prev.relevant ? { relevant: true, reason: "follow-up of a relevant question" } : cur;
+  const q = String(question || "");
+  if (SELF_RE.test(q)) return { relevant: true, reason: "explicit build phrase" };
+  const cur = conflict(q, facts);
+  if (cur.different) return { relevant: false, reason: cur.why };
+  if (!cur.own && previousQuestion && !SELF_RE.test(String(previousQuestion))) {
+    const prev = conflict(String(previousQuestion), facts);
+    if (prev.different) return { relevant: false, reason: "follow-up of a suppressed question" };
+  }
+  return { relevant: true, reason: "default" };
 }
 
 // Other members: ONLY fields marked visible. A hidden field's value must never reach the prompt.

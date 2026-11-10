@@ -28,7 +28,7 @@ import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE,
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
 export const PERSONALISE_RULE =
-  "Personalise with YOUR_BUILD only when the question is about the asker's own class, race, level, profession or party (\"as a Paladin tank...\"); never claim a build detail it does not list. Answer ONLY from LIBRARY facts, YOUR_BUILD and PARTY_BUILDS. Never name a spell, talent, place, item or level that those do not contain; if the library lacks it, say plainly \"The library does not have that yet.\" Only if YOUR_BUILD says the member has no build on file, say so once and suggest they fill in their sheet; otherwise never mention sheets or missing build data. When the prompt says the stored build is not relevant, never mention it.";
+  "Use YOUR_BUILD only when it changes the answer for this asker (their class, race, role, level or professions matter to it); if it does not, do not mention it at all. Never claim a build detail it does not list, and never add facts about items or spells that the library does not contain just to personalise. Answer ONLY from LIBRARY facts, YOUR_BUILD and PARTY_BUILDS. Never name a spell, talent, place, item or level that those do not contain; if the library lacks it, say plainly \"The library does not have that yet.\" Only if YOUR_BUILD says the member has no build on file, say so once and suggest they fill in their sheet; otherwise never mention sheets or missing build data. When the prompt says the stored build is not relevant, never mention it.";
 
 // Added after PERSONALISE_RULE: the Leeroy voice. Wording only; grounding, citation and length rules are unchanged.
 export const VOICE_RULE =
@@ -965,7 +965,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
     // The stored build is shown only when the question makes it relevant (ask-build.js buildRelevant); otherwise the model is told once to leave it out.
     const buildHelps = Boolean(askerSheet) && hasBuildText(fullBuild)
-      && buildRelevant(question, askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }), { rankedIds: ranked.map((p) => p.id), skip, previousQuestion: prevQ }).relevant;
+      && buildRelevant(question, askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }), { skip, previousQuestion: prevQ }).relevant;
     const yourBuild = Boolean(askerSheet) && hasBuildText(fullBuild) && !buildHelps ? BUILD_NOT_RELEVANT_LINE : fullBuild;
     const hasBuild = buildHelps;
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
