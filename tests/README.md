@@ -61,6 +61,9 @@ Re-record the snapshot after the API shape changes: `tools/local-browser.sh reco
 
 Needs Node 22 or newer.
 
+Unit tests (`node --test tests/unit/*.test.mjs` from the repo root): run `npm ci` in `tests/` first, because five test files need the `yaml` package.
+On Windows every unit test must pass; any local failure is real, so do not dismiss it as a known Windows failure.
+
 ```
 cd tests
 npm install

@@ -7,7 +7,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+import { fileURLToPath } from "node:url";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 const DIRS = ["js", "scenes", "next", "atlas", "room", "landing", "rate", "privacy", "terms"], TOP = ["index.html", "404.html"];
