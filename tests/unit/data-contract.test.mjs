@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+const rp = (p) => fileURLToPath(new URL("../../" + p, import.meta.url)); // repo-root path, independent of cwd and of Windows separators
 import vm from "node:vm";
 
 // Contract between the board's code and the REAL data files. On Nov 8 2026 PRs 226 and 227 read `.when` from timeline events; data/tonight.json events have it, data/timeline.json
@@ -8,7 +10,7 @@ import vm from "node:vm";
 // extracted as source, not copied) over each real data file with every event wrapped in a Proxy, and fails when the code reads a property the data does not have and the property is
 // not in the list of reads that are guarded on purpose below. A new unguarded read of a missing field fails here before it can render as "undefined".
 
-const src = fs.readFileSync("js/board.js", "utf8").replace(/\r\n/g, "\n"); // LF so the function-end search below cannot miss on a CRLF checkout
+const src = fs.readFileSync(rp("js/board.js"), "utf8").replace(/\r\n/g, "\n"); // LF so the function-end search below cannot miss on a CRLF checkout
 const grab = (name) => {
   const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, `function ${name} not found in js/board.js`);
   const eol = src.indexOf("\n", i), first = src.slice(i, eol);
@@ -21,10 +23,10 @@ const GUARDED = new Set(["when", "open_when", "until_epoch", "date", "detail", "
 const IGNORE = new Set(["then", "toJSON", "constructor", "inspect", "nodeType", "length", "asymmetricMatch", "$$typeof"]);
 
 function run(file, nowSec) {
-  const raw = JSON.parse(fs.readFileSync(file, "utf8")), missed = new Set();
+  const raw = JSON.parse(fs.readFileSync(rp(file), "utf8")), missed = new Set();
   const wrap = (o) => new Proxy(o, { get(t, k, r) { if (typeof k === "string" && !(k in t) && !IGNORE.has(k)) missed.add(k); return Reflect.get(t, k, r); } });
   const events = raw.events.map(wrap);
-  const party = JSON.parse(fs.readFileSync("data/party.json", "utf8"));
+  const party = JSON.parse(fs.readFileSync(rp("data/party.json"), "utf8"));
   const D = { party, timeline: { events } };
   const ctx = { D, Date: { now: () => nowSec * 1000 }, fmtWhen: (epoch) => `WHEN(${epoch})` };
   vm.runInNewContext(FNS.map(grab).join("\n") + "\nthis.out={launchPast,nextDated,settleLaunch,tonightNext,launchEvent};", ctx);
@@ -36,7 +38,7 @@ function run(file, nowSec) {
   return { missed, texts };
 }
 
-const LAUNCH = JSON.parse(fs.readFileSync("data/timeline.json", "utf8")).events.find((e) => e.key === "launch").epoch;
+const LAUNCH = JSON.parse(fs.readFileSync(rp("data/timeline.json"), "utf8")).events.find((e) => e.key === "launch").epoch;
 for (const file of ["data/timeline.json", "data/tonight.json"]) {
   for (const [label, now] of [["before launch", LAUNCH - 3600], ["after launch", LAUNCH + 86400], ["after every dated event", LAUNCH + 90 * 86400]]) {
     test(`board code reads only fields ${file} has, and renders no undefined (${label})`, () => {
@@ -48,5 +50,5 @@ for (const file of ["data/timeline.json", "data/tonight.json"]) {
   }
 }
 test("every real timeline and tonight event has a key and a numeric epoch or a date", () => {
-  for (const file of ["data/timeline.json", "data/tonight.json"]) for (const e of JSON.parse(fs.readFileSync(file, "utf8")).events) assert.ok(typeof e.key === "string" && (Number.isFinite(e.epoch) || typeof e.date === "string"), `${file}: event ${JSON.stringify(e).slice(0, 80)} lacks key and epoch or date`);
+  for (const file of ["data/timeline.json", "data/tonight.json"]) for (const e of JSON.parse(fs.readFileSync(rp(file), "utf8")).events) assert.ok(typeof e.key === "string" && (Number.isFinite(e.epoch) || typeof e.date === "string"), `${file}: event ${JSON.stringify(e).slice(0, 80)} lacks key and epoch or date`);
 });

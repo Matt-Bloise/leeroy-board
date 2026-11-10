@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+const rp = (p) => fileURLToPath(new URL("../../" + p, import.meta.url)); // repo-root path, independent of cwd and of Windows separators
 import { tonightLines, LAUNCH_EPOCH, NEXT_DATED, nextDated } from "../../infrastructure/worker/tonight-copy.js";
 
 const party = { members: [{ name: "Aa", race: "Orc", class: "Warrior" }] };
@@ -8,7 +10,7 @@ const signups = { entries: [{ name: "Aa", rsvp: "in" }] };
 const base = { byName: "Aa", party, signups, boardUrl: "https://leeroy.party" };
 
 test("dates match data/tonight.json", () => {
-  const ev = JSON.parse(fs.readFileSync("data/tonight.json", "utf8")).events;
+  const ev = JSON.parse(fs.readFileSync(rp("data/tonight.json"), "utf8")).events;
   assert.equal(ev.find((e) => e.key === "launch").epoch, LAUNCH_EPOCH);
   assert.equal(ev.find((e) => e.key === "raids").epoch, NEXT_DATED.epoch);
 });
@@ -34,10 +36,10 @@ test("before launch: keeps the sign-up prompt", () => {
 
 // The Ledger move runs in the browser; run the real functions from js/board.js against the repo's own data.
 import vm from "node:vm";
-const src = fs.readFileSync("js/board.js", "utf8");
+const src = fs.readFileSync(rp("js/board.js"), "utf8");
 const grab = (name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name); const eol = src.indexOf("\n", i); return src.slice(i, src.slice(i, eol).trimEnd().endsWith("{") ? src.indexOf("\n}", i) + 2 : eol); };
 function boardFns(nowSec, timelineFile = "data/tonight.json") {
-  const D = { party: JSON.parse(fs.readFileSync("data/party.json", "utf8")), timeline: JSON.parse(fs.readFileSync(timelineFile, "utf8")) };
+  const D = { party: JSON.parse(fs.readFileSync(rp("data/party.json"), "utf8")), timeline: JSON.parse(fs.readFileSync(rp(timelineFile), "utf8")) };
   const ctx = { D, Date: { now: () => nowSec * 1000 }, fmtWhen: (epoch) => `WHEN(${epoch})` };
   vm.runInNewContext(["withWhen", "launchEvent", "launchPast", "nextDated", "settleLaunch"].map(grab).join("\n") + "\nthis.out={settleLaunch,nextDated,launchPast};", ctx);
   return { D, ...ctx.out };
