@@ -227,6 +227,17 @@ test("plan: shows before and after and flags only real changes", () => {
   ]);
 });
 
+test("empty or missing professions never clear the board's value: no change is planned", () => {
+  const cur = { race: "human", class: "paladin", level: 40, professions: ["mining", "herbalism"] };
+  for (const prof of ["", undefined, "999:5"]) {
+    const d = A.parse(mk({ prof }), NOW).data;
+    const m = A.mapToBoard(d, vocab), p = A.plan(m, cur);
+    assert.equal(m.fields.professions, undefined, String(prof));
+    assert.ok(!p.some((x) => x.field === "professions"), "no professions row is planned, so none is sent");
+    assert.deepEqual(cur.professions, ["mining", "herbalism"]);
+  }
+});
+
 test("the name never appears in the mapped fields", () => {
   const d = A.parse(mk({ name: "Secretname", zone: "Elwynn Forest" }), NOW).data;
   assert.equal(d.name, "Secretname");

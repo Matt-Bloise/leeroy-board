@@ -52,6 +52,8 @@ function summary(x) {
       h("span", { class: "imp-s", text: state }));
   });
   kids.push(list.length ? h("ul", { class: "imp-rows", "aria-label": "Sheet lines this export would set" }, ...list) : h("p", { class: "imp-warn", text: "Nothing in this export matches the board's lists, so there is nothing to send." }));
+  /* Professions are never cleared by an export. A self-reported export that finds none (prof= empty, left out, or nothing on the board list) must not wipe what a friend typed on the board: the add-on may not see professions the board knows. So an empty result is omitted from the changes and said plainly here. */
+  if (!rows.some((o) => o.field === "professions")) kids.push(h("p", { class: "imp-info imp-kept", text: "Professions: none found in the export, your board value is kept." }));
   if (mapped.skipped.length) kids.push(h("ul", { class: "imp-skips", "aria-label": "Skipped values" }, ...mapped.skipped.map((s) => h("li", { class: "imp-skip", text: A.skippedLine(s) }))));
   const n = rows.filter((o) => o.change).length, can = S.ctx.canSend(), done = !!S.results;
   kids.push(h("p", { class: "imp-note", text: "Only lines marked Will change are sent, one at a time, after you tap Send. A line you left unticked in the add-on options is not in the export." }));
@@ -92,8 +94,9 @@ function update() {
 function setText(t) { if (S.sending) return; S.rev++; S.text = String(t).slice(0, 400000); S.results = null; S.say = ""; S.fileErr = ""; S.frozen = null; update(); }
 function fromFile(file, ta) {
   if (!file || S.sending) return;
+  const tok = S.rev; /* a read is only used if nothing was typed, dropped or sent since it started */
   if (file.size > FILE_MAX) { S.fileErr = "That file is over 2 MB. The add-on's file is far smaller; pick the right one."; update(); return; }
-  file.text().then((t) => { ta.value = t; setText(t); }).catch(() => { S.fileErr = "That file could not be read."; update(); });
+  file.text().then((t) => { if (S.sending || S.rev !== tok) return; ta.value = t; setText(t); }).catch(() => { S.fileErr = "That file could not be read."; update(); });
 }
 function mount(host, ctx) {
   S.ctx = ctx;
