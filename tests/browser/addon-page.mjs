@@ -19,7 +19,7 @@ for (const [w, hgt] of [[390, 844], [1440, 900]]) {
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) errors.push(m.text()); });
   page.on("requestfailed", (r) => errors.push(`requestfailed ${r.url()}`));
-  const r = await page.goto(`${ORIGIN}/get-addon/`, { waitUntil: "load" });
+  const r = await page.goto(`${ORIGIN}/landing/addon/`, { waitUntil: "load" });
   const t = `[${w}x${hgt}]`;
   ok(`${t} answers 200`, r && r.status() === 200);
   ok(`${t} one h1`, (await page.locator("h1").count()) === 1);
@@ -27,9 +27,9 @@ for (const [w, hgt] of [[390, 844], [1440, 900]]) {
   const dl = page.locator("#dl");
   const href = await dl.getAttribute("href");
   ok(`${t} link has a download attribute`, (await dl.getAttribute("download")) !== null);
-  ok(`${t} link is relative and names the zip`, /^\.\.\/downloads\/LeeroyBuild-\d+\.\d+\.\d+\.zip$/.test(href), href);
+  ok(`${t} link is relative and names the zip`, /^LeeroyBuild-\d+\.\d+\.\d+\.zip$/.test(href), href);
   ok(`${t} link is visible and at least 44px tall`, (await dl.isVisible()) && (await dl.boundingBox()).height >= 44);
-  const zr = await page.request.get(new URL(href, `${ORIGIN}/get-addon/`).href);
+  const zr = await page.request.get(new URL(href, `${ORIGIN}/landing/addon/`).href);
   const buf = Buffer.from(await zr.body());
   ok(`${t} zip answers 200`, zr.status() === 200, String(zr.status()));
   ok(`${t} page SHA-256 equals the served file`, (await page.locator("#sha").innerText()).trim() === crypto.createHash("sha256").update(buf).digest("hex"));
