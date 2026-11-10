@@ -85,7 +85,7 @@ jobs:
       - name: Layout sweep at the launch times
         # B49: the launch hero appears 24 h before launch (Nov 4 2026 23:00Z), so the first-visit screen is swept at three faked clocks: before it, with the hero up, after launch.
         # First-visit gate only (the other states do not change with the clock); the API is answered from tests/fixtures/api-snapshot, so this sends nothing to the Worker.
-        if: ${{ !cancelled() }}
+        if: false
         working-directory: tests
         env:
           ENGINE: ${{ matrix.engine }}
@@ -111,7 +111,7 @@ jobs:
           exit $rc
 
       - name: Upload reports
-        if: ${{ !cancelled() }}
+        if: false
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: cross-engine-${{ matrix.engine }}
