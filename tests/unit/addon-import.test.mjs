@@ -238,6 +238,26 @@ test("empty or missing professions never clear the board's value: no change is p
   }
 });
 
+test("inherited object keys are plain unknown values: skipped, never a throw", () => {
+  for (const tok of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) {
+    for (const data of [{ ...base, level: 40, race: tok, class: tok }, { ...base, level: 40, race: tok, class: tok, prof: [{ id: tok, rank: 1 }] }]) {
+      const m = A.mapToBoard(data, vocab);
+      assert.equal(m.fields.race, undefined, tok);
+      assert.equal(m.fields.class, undefined, tok);
+      assert.ok(m.skipped.map(A.skippedLine).includes(`Race ${tok}: not on the board's list, skipped.`));
+    }
+    const r = A.parse(mk({ race: tok }), NOW);
+    if (r.ok) assert.doesNotThrow(() => A.mapToBoard(r.data, vocab));
+  }
+  const viaParse = A.parse(mk({ race: "constructor" }), NOW);
+  assert.equal(viaParse.ok, true);
+  assert.deepEqual(A.mapToBoard(viaParse.data, vocab).skipped.map(A.skippedLine), ["Race constructor: not on the board's list, skipped."]);
+  assert.equal(A.parse(mk({ race: "__proto__" }), NOW).ok, false);
+  const prof = A.mapToBoard(A.parse(mk({ prof: "424242:1" }), NOW).data, vocab);
+  assert.deepEqual(prof.skipped.map(A.skippedLine), ["Profession skill 424242: not on the board's list, skipped."]);
+  assert.equal(A.mapToBoard({ ...base, race: "Human", class: "PALADIN" }, { race: "x", class: null, professions: {} }).fields.race, undefined);
+});
+
 test("the name never appears in the mapped fields", () => {
   const d = A.parse(mk({ name: "Secretname", zone: "Elwynn Forest" }), NOW).data;
   assert.equal(d.name, "Secretname");

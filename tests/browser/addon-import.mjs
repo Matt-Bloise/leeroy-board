@@ -66,6 +66,7 @@ async function run(browser, [label, opts]) {
   /* file-read race: a read that finishes while sending must not touch the text box */
   await page.evaluate((o) => { const f = new File([o], "late.lua"); const slow = { size: f.size, text: () => { window.__readStarted = Date.now(); return new Promise((r) => setTimeout(() => { window.__readDone = Date.now(); r(o); }, 900)); } }; const dt = new DataTransfer(); window.__slowFile = slow; const ev = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); }, encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full);
   await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await page.evaluate((o) => { const slow = { size: o.length, text: () => new Promise((r) => setTimeout(() => r(o), 3000)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); window.__lateStart = Date.now(); document.getElementById("imp-drop").dispatchEvent(ev); }, encode({ v: 1, iface: 16001, t: now - 60, class: "ROGUE", race: "Orc", level: 7 }).full).catch(() => {});
   await page.locator("#imp-send").click();
   await page.waitForFunction(() => window.__readDone, null, { timeout: 5000 });
   const midSend = await page.evaluate(() => ({ v: document.getElementById("imp-text").value, sending: document.getElementById("imp-send").textContent }));
@@ -86,6 +87,8 @@ async function run(browser, [label, opts]) {
   ok(`${label}: Send cannot run twice`, (await page.locator("#imp-send").getAttribute("aria-disabled")) === "true");
   const rd = await page.evaluate(() => [window.__readStarted, window.__readDone]);
   ok(`${label}: the slow read did run and finish before the results came back`, !!rd[0] && !!rd[1], JSON.stringify(rd));
+  await page.waitForTimeout(3200);
+  ok(`${label}: a read that finishes after submission does not replace the export or clear its results`, (await page.locator("#imp-text").inputValue()) === s && (await page.locator(".imp-row[data-state=sent]").count()) === 3, (await page.locator("#imp-text").inputValue()).slice(0, 70));
   const after = await page.locator("#imp-out").innerText();
   ok(`${label}: results stay with the export that was sent (the edit during sending was ignored)`, /Level 33/.test(after) && !/Level 12|Gnome/i.test(after) && posts.every((p) => !(p.field === "class" && p.value === "mage")), JSON.stringify(after));
   ok(`${label}: boxes unlock after sending`, await page.evaluate(() => !document.getElementById("imp-text").disabled));

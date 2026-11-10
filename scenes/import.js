@@ -14,7 +14,7 @@ let outEl = null;
 
 function lib() {
   if (S.modP || !HERE) return S.modP;
-  S.modP = import(new URL("../js/addon-import.js?v=bc4d8cc8eb", HERE).href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; return null; });
+  S.modP = import(new URL("../js/addon-import.js?v=ee0fc5e72b", HERE).href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; return null; });
   return S.modP;
 }
 const show = (f, v) => {
@@ -65,7 +65,7 @@ function summary(x) {
 async function send(rows) {
   const can = S.ctx.canSend(); if (S.sending || S.results || !can.ok) return;
   const todo = rows.filter((o) => o.change); if (!todo.length) return;
-  const rev = S.rev; S.sending = true; S.frozen = rows; update();
+  const rev = ++S.rev; S.sending = true; S.frozen = rows; update();
   const res = {}, B = window.BoardBrain;
   for (const o of todo) {
     let r; try { r = await B.setSheet(o.field, o.after); } catch (e) { r = { ok: false, why: "failed" }; }
@@ -73,7 +73,8 @@ async function send(rows) {
   }
   const ok = Object.values(res).filter((x) => x.ok).length;
   S.sending = false;
-  if (S.rev !== rev) { S.frozen = null; update(); return; } /* the input changed while sending: these results belong to the old export and are never shown against the new one */
+  if (S.rev !== rev) { S.frozen = null; update(); return; }
+  S.rev++; /* a read that began before Send and ends after it is stale too */ /* the input changed while sending: these results belong to the old export and are never shown against the new one */
   S.results = res;
   S.say = ok === todo.length ? `Sent ${ok} line${ok === 1 ? "" : "s"} to your sheet.` : `${ok} of ${todo.length} lines sent. The rest were not.`;
   update();

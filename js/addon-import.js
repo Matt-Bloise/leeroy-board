@@ -114,18 +114,20 @@ export const CLASS_SLUGS = { WARRIOR: ["warrior"], PALADIN: ["paladin"], HUNTER:
 export const RACE_SLUGS = { Human: ["human"], Dwarf: ["dwarf"], NightElf: ["night-elf", "nightelf"], Gnome: ["gnome"], Draenei: ["draenei"], Orc: ["orc"], Scourge: ["undead", "forsaken"], Tauren: ["tauren"], Troll: ["troll"], BloodElf: ["blood-elf", "bloodelf"] };
 /* Profession skillLine ids. The repo holds names only, no ids, so these come from the client's public SkillLine table as commonly documented. They are NOT proven from the repo and are unconfirmed on the Forever client. A mapped id still has to name a slug the board lists. Secondary skills (cooking, fishing, first aid) are not on the board's list and are not mapped. */
 export const PROF_SLUGS = { 171: "alchemy", 164: "blacksmithing", 333: "enchanting", 202: "engineering", 182: "herbalism", 165: "leatherworking", 186: "mining", 393: "skinning", 197: "tailoring" };
-const pick = (cands, list) => (Array.isArray(list) ? (cands || []).find((c) => list.includes(c)) || null : null);
+/* Lookup tables are read with own() only: a value such as "constructor" or "toString" is a plain unknown, never an inherited function. */
+const own = (table, key) => (Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined);
+const pick = (cands, list) => (Array.isArray(cands) && Array.isArray(list) ? cands.find((c) => list.includes(c)) || null : null);
 
 export function mapToBoard(data, vocab) {
   const v = vocab || {}, fields = {}, skipped = [];
-  const cls = pick(CLASS_SLUGS[data.class], v.class); if (cls) fields.class = cls; else skipped.push({ what: "Class", from: data.class });
-  const race = pick(RACE_SLUGS[data.race], v.race); if (race) fields.race = race; else skipped.push({ what: "Race", from: data.race });
+  const cls = pick(own(CLASS_SLUGS, data.class), v.class); if (cls) fields.class = cls; else skipped.push({ what: "Class", from: data.class });
+  const race = pick(own(RACE_SLUGS, data.race), v.race); if (race) fields.race = race; else skipped.push({ what: "Race", from: data.race });
   const max = Number.isInteger(v.levelMax) && v.levelMax > 0 && v.levelMax <= 60 ? v.levelMax : 60;
   if (data.level >= 1 && data.level <= max) fields.level = data.level; else skipped.push({ what: "Level", from: String(data.level) });
   if (data.prof) {
     const slugs = [];
     for (const p of data.prof) {
-      const s = PROF_SLUGS[p.id] ? pick([PROF_SLUGS[p.id]], v.professions) : null;
+      const s = own(PROF_SLUGS, p.id) ? pick([own(PROF_SLUGS, p.id)], v.professions) : null;
       if (s) { if (!slugs.includes(s)) slugs.push(s); } else skipped.push({ what: "Profession", from: `skill ${p.id}` });
     }
     if (slugs.length) fields.professions = slugs;
