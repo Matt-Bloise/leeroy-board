@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Download the Leeroy Build add-on for WoW Forever and bring your character into the board.">
+<meta name="color-scheme" content="dark light">
+<title>Get the add-on - Leeroy board</title>
+<style>:root{--bg:#14100c;--text:#f3ead6;--dim:#d8caa8;--brass:#eecd8c;--line:#7a5a2c;--link:#eecd8c;--head:#2a2118}
+@media (prefers-color-scheme:light){:root{--bg:#f6efde;--text:#2b1d10;--dim:#46331f;--brass:#7a3a12;--line:#b79a62;--link:#7a3a12;--head:#e9dcbd}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;color-scheme:dark light}
+body{margin:0;background:var(--bg);color:var(--text);font:1rem/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.top,main,.foot{max-width:44rem;margin:0 auto;padding:0 16px}
+.top{padding-top:16px}
+.brand{margin:0}
+a{color:var(--link)}
+a:focus-visible{outline:3px solid var(--text);outline-offset:3px}
+.back{display:inline-block;min-height:44px;padding:10px 0;font-weight:700}
+h1{font-size:1.8rem;line-height:1.2;margin:1rem 0 .8rem;overflow-wrap:anywhere}
+h2{font-size:1.2rem;color:var(--brass);margin:2rem 0 .6rem}
+h3,h4{font-size:1.05rem;color:var(--brass);margin:1.4rem 0 .4rem}
+p,li{overflow-wrap:anywhere}
+ul,ol{padding-left:1.3rem}
+li{margin:.25rem 0}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;background:var(--head);padding:0 .25em;border-radius:3px}
+.tbl{overflow-x:auto;margin:1rem 0;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:30rem;font-size:.95rem}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{background:var(--head);color:var(--brass)}
+tr:last-child td{border-bottom:0}
+.foot nav{display:flex;flex-wrap:wrap;gap:.2rem 1.2rem;margin:0 0 .5rem}@media (pointer:coarse){.foot nav a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}}.foot{margin-top:2.5rem;padding-top:1rem;padding-bottom:2rem;border-top:1px solid var(--line);color:var(--dim);font-size:.95rem}
+@media (min-width:768px){h1{font-size:2.3rem}}.dl{display:inline-flex;align-items:center;min-height:44px;padding:10px 18px;border:2px solid var(--brass);border-radius:6px;font-weight:700;text-decoration:none;margin:.4rem 0}.meta{display:grid;grid-template-columns:max-content 1fr;gap:.2rem 1rem;margin:.8rem 0}.meta dt{color:var(--dim)}.meta dd{margin:0;overflow-wrap:anywhere}.sha{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.9em;word-break:break-all}</style>
+</head>
+<body>
+<header class="top"><a class="back" href="/">Back to the board</a></header>
+<main id="main">
+<h1>Get the add-on</h1>
+<p>Leeroy Build is a small add-on for WoW Forever. It writes your own character (class, race, level, professions) as one line of text that you copy in the game. You paste that line on this site, check what it found, and choose whether to send it.</p>
+<p>This is an early version. Tell us if it will not load.</p>
+<p><a class="dl" id="dl" href="../downloads/LeeroyBuild-0.1.0.zip" download>Download LeeroyBuild-0.1.0.zip</a></p>
+<dl class="meta">
+<dt>Version</dt><dd id="ver">0.1.0</dd>
+<dt>File size</dt><dd id="size">19149 bytes</dd>
+<dt>SHA-256</dt><dd class="sha" id="sha">27c0bc40c1a80295b313ce11607dfde4c7c96a20eb9f430b6b9e4ed7dd118d42</dd>
+</dl>
+<p>The SHA-256 is computed from the zip when it is built. To check your download, run <code>Get-FileHash LeeroyBuild-0.1.0.zip</code> in PowerShell on Windows, or <code>shasum -a 256 LeeroyBuild-0.1.0.zip</code> in Terminal on a Mac. The result should match the line above.</p>
+<h2>Install on Windows</h2>
+<ol><li>Close the game.</li><li>Save the zip, then right-click it and choose Extract All.</li><li>Open the AddOns folder of your WoW Forever install, the one that already holds your other add-ons.</li><li>Move the extracted <code>LeeroyBuild</code> folder in. The result must be <code>AddOns\LeeroyBuild\LeeroyBuild.toc</code>.</li><li>Start the game. At the character screen, open AddOns and make sure Leeroy Build is ticked. If it says out of date, tick Load out of date AddOns.</li></ol>
+<h2>Install on Mac</h2>
+<ol><li>Quit the game.</li><li>Double-click the zip in Finder to unpack it.</li><li>Open the AddOns folder of your WoW Forever install, the one that already holds your other add-ons.</li><li>Move the <code>LeeroyBuild</code> folder in. The result must be <code>AddOns/LeeroyBuild/LeeroyBuild.toc</code>.</li><li>Start the game. At the character screen, open AddOns and make sure Leeroy Build is ticked. If it says out of date, tick Load out of date AddOns.</li></ol>
+<h2>How to import</h2>
+<ol><li>In the game, type <code>/leeroy export</code>. A window opens with the line already selected.</li><li>Press Ctrl+C (Cmd+C on a Mac) to copy it, then Esc.</li><li>On this site, open your own sheet and choose Import from game.</li><li>Paste the line.</li><li>Check the summary it shows.</li><li>Tap Send.</li></ol>
+<h2>What it exports</h2>
+<ul><li>Always: a format tag, the game's interface number, and the time of the export.</li><li>On by default: class, race, level and your primary professions.</li><li>Off by default: character name, talent points per tree, and current zone. Turn them on with <code>/leeroy options</code>.</li><li>Not exported: other players, chat, guild, friends, your account name, or file paths.</li></ul>
+<p>The add-on sends nothing anywhere. It has no network code. Nothing leaves the game unless you copy the line and paste it yourself. To remove it, delete the <code>LeeroyBuild</code> folder.</p>
+<h2>If something goes wrong</h2>
+<p>This is an early add-on. If it does not load or shows an error, type <code>/console scriptErrors 1</code>, then <code>/reload</code>, and repeat what you did. Copy the error text and send it to Matt with your interface number (<code>/dump select(4, GetBuildInfo())</code>). Turn the popup off again with <code>/console scriptErrors 0</code>.</p>
+</main>
+<footer class="foot">
+<nav aria-label="Legal"><a href="/privacy/">Privacy</a> <a href="/terms/">Terms</a> <a href="mailto:privacy@leeroy.party">Contact</a></nav>
+<p>Fan project. Not affiliated with or endorsed by Blizzard Entertainment.</p>
+</footer>
+</body>
+</html>

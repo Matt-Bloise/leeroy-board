@@ -1,0 +1,56 @@
+// Get the add-on page: renders at 390x844 and 1440x900 with no overlap, no horizontal scroll, zero console errors;
+// the download link has the right href and a download attribute and serves the zip; the SHA-256 and size on the page equal the served file.
+//   node tests/browser/addon-page.mjs --url http://127.0.0.1:8080/   (or env PREVIEW_PAGES)
+import crypto from "node:crypto";
+import { originOf } from "../helpers/page-url.mjs";
+import { pinContext } from "../helpers/clock-arg.mjs";
+const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
+const argv = process.argv.slice(2), ui = argv.indexOf("--url");
+const RAW = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
+if (!RAW) { console.error("usage: node addon-page.mjs --url <origin>"); process.exit(2); }
+const ORIGIN = originOf(RAW);
+let pass = 0, fail = 0;
+const ok = (n, c, x = "") => { if (c) { pass++; console.log(`PASS ${n}`); } else { fail++; console.log(`FAIL ${n}${x ? `: ${x}` : ""}`); } };
+const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {});
+for (const [w, hgt] of [[390, 844], [1440, 900]]) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: hgt }, serviceWorkers: "block" });
+  await pinContext(ctx, argv);
+  const page = await ctx.newPage(), errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) errors.push(m.text()); });
+  page.on("requestfailed", (r) => errors.push(`requestfailed ${r.url()}`));
+  const r = await page.goto(`${ORIGIN}/get-addon/`, { waitUntil: "load" });
+  const t = `[${w}x${hgt}]`;
+  ok(`${t} answers 200`, r && r.status() === 200);
+  ok(`${t} one h1`, (await page.locator("h1").count()) === 1);
+  ok(`${t} no horizontal scroll`, await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  const dl = page.locator("#dl");
+  const href = await dl.getAttribute("href");
+  ok(`${t} link has a download attribute`, (await dl.getAttribute("download")) !== null);
+  ok(`${t} link is relative and names the zip`, /^\.\.\/downloads\/LeeroyBuild-\d+\.\d+\.\d+\.zip$/.test(href), href);
+  ok(`${t} link is visible and at least 44px tall`, (await dl.isVisible()) && (await dl.boundingBox()).height >= 44);
+  const zr = await page.request.get(new URL(href, `${ORIGIN}/get-addon/`).href);
+  const buf = Buffer.from(await zr.body());
+  ok(`${t} zip answers 200`, zr.status() === 200, String(zr.status()));
+  ok(`${t} page SHA-256 equals the served file`, (await page.locator("#sha").innerText()).trim() === crypto.createHash("sha256").update(buf).digest("hex"));
+  ok(`${t} page size equals the served file`, (await page.locator("#size").innerText()).trim() === `${buf.length} bytes`);
+  ok(`${t} version in the link text`, (await dl.innerText()).includes((await page.locator("#ver").innerText()).trim()));
+  // overlap: no two visible leaf blocks in main intersect
+  const overlaps = await page.evaluate(() => {
+    const els = [...document.querySelectorAll("main h1, main h2, main p, main li, main dt, main dd, main a.dl")].filter((e) => e.getClientRects().length);
+    const bad = [];
+    for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+      if (els[i].contains(els[j]) || els[j].contains(els[i])) continue;
+      const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
+      if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) bad.push(`${els[i].tagName}/${els[j].tagName}`);
+    }
+    return bad;
+  });
+  ok(`${t} no overlapping blocks`, overlaps.length === 0, overlaps.join(","));
+  ok(`${t} no element wider than the viewport`, await page.evaluate(() => [...document.querySelectorAll("main *")].every((e) => e.getBoundingClientRect().right <= window.innerWidth + 1)));
+  ok(`${t} zero console errors`, errors.length === 0, errors.join(" | "));
+  await ctx.close();
+}
+await browser.close();
+console.log(`${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
