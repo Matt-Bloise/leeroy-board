@@ -165,8 +165,7 @@ test("spaces are escaped as %20 (name and zone), golden vector unchanged", () =>
   assert.equal(escape("Elwynn Forest"), "Elwynn%20Forest");
   const p = payload({ v: 1, iface: 16001, t: 1794000000, name: "Mary Jane", class: "PALADIN", race: "Human", level: 40, zone: "Elwynn Forest" });
   assert.equal(p, "v=1;iface=16001;t=1794000000;name=Mary%20Jane;class=PALADIN;race=Human;level=40;zone=Elwynn%20Forest");
-  assert.ok(!/[ 	
-]/.test(wrap(p)));
+  assert.ok(!/[ \t\r\n]/.test(wrap(p)));
   assert.equal(decodeURIComponent(escape("Mary Jane")), "Mary Jane");
   assert.equal(wrap(vectors.vectors[0].payload), vectors.vectors[0].string);
 });
