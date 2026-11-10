@@ -269,7 +269,9 @@ async function press(page, locator, timeout = 20000) {
     const count = await locator.count().catch(() => "?");
     const geo = await locator.evaluateAll((els) => els.slice(0, 3).map((el) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y), display: s.display, visibility: s.visibility, opacity: s.opacity, parentOverflow: el.parentElement ? getComputedStyle(el.parentElement).overflow : "" }; })).catch(() => []);
     const vp = await page.evaluate(() => ({ iw: innerWidth, ih: innerHeight, sy: Math.round(scrollY), sh: document.documentElement.scrollHeight })).catch(() => ({}));
-    throw new Error(`${e.message.split("\n")[0]} (waited ${timeout} ms for the target ${String(locator)} to be visible; matches ${count}; first matches ${JSON.stringify(geo)}; viewport ${JSON.stringify(vp)}; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
+    // Nov 10: the scene-open flag and the chip count come FIRST, so a CI log cut at about 220 characters still shows them
+    const chips = await page.locator("#tn-me .tn-name").count().catch(() => "?");
+    throw new Error(`scene-open ${open}; #tn-me .tn-name count ${chips}; ${e.message.split("\n")[0]} (waited ${timeout} ms for the target ${String(locator)} to be visible; matches ${count}; first matches ${JSON.stringify(geo)}; viewport ${JSON.stringify(vp)}; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
   }
   const el = await locator.elementHandle({ timeout });
   await el.evaluate((e) => e.scrollIntoView({ block: "center", inline: "center" }));
@@ -283,6 +285,13 @@ async function openState(page, state) {
   await page.waitForTimeout(500);
   if (state !== "gate") await press(page, page.getByText("Just take a look", { exact: false }).first());
   if (state === "member") {
+    // The name chips (#tn-me .tn-name) exist only once the Tonight scene is open. On a loaded CI runner it can open late: wait for it (press the look link once more if it has not opened after about 3 s), then for a visible chip.
+    const sceneOpen = (ms) => page.waitForFunction(() => document.documentElement.classList.contains("scene-open"), null, { timeout: ms }).then(() => true, () => false);
+    if (!(await sceneOpen(3000))) {
+      await press(page, page.getByText("Just take a look", { exact: false }).first()).catch(() => {});
+      await sceneOpen(20000);
+    }
+    await page.waitForSelector("#tn-me .tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
     await press(page, page.getByRole("button", { name: /Bloise/ }).first());
     await press(page, page.getByRole("button", { name: /Show me what is next/ }).first());
   }
