@@ -44,6 +44,7 @@ import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
 import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mjs";
+import { isBeaconNoise, isInsightsHost } from "../helpers/probe-checks.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -477,7 +478,12 @@ async function cell(browser, size, state, A) {
   page.on("response", (r) => { const u = r.url(); if (sameOrigin(u, ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   /* B55b: WebKit's CORS line ("Origin ... is not allowed by Access-Control-Allow-Origin. Status code: 404") names no URL and WebKit raises no response/requestfailed event for it (run 41829291747: no xorigin-http line). So the detail adds what the engine does know: the console message's own source (WebKit puts the resource URL there), every Worker the page started and every cross-origin fetch the page made with its status (XR_JS below). A request made inside a worker shows up in none of the events; the worker list then names the suspects. */
   page.on("worker", (w) => { (page.__workers ||= []).push(w.url()); });
+  /* WebKit logs the Cloudflare beacon's CORS 404 as a URL-less console line (run 42893784114: 4 cells, no source, no cross-origin fetch seen from the page). Same rule as the production probe (isBeaconNoise): exempt it only on WebKit, only with no usable location, only in the exact wording, and only within 2 s of a cloudflareinsights request that failed or answered >= 400 on this page. Any other URL-less CORS line still fails. */
+  const insightsFailedAt = [];
+  page.on("response", (r) => { if (isInsightsHost(r.url()) && r.status() >= 400) insightsFailedAt.push(Date.now()); });
+  page.on("requestfailed", (r) => { if (isInsightsHost(r.url())) insightsFailedAt.push(Date.now()); });
   page.on("console", (m) => {
+    if (m.type() === "error") { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} if (isBeaconNoise({ text: m.text(), at, t: Date.now() }, insightsFailedAt, ENGINE)) { console.log(`WARN ${size.w}x${size.h} ignored the Cloudflare analytics beacon CORS console error (insights request failed within 2 s)`); return; } }
     if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text()) || ignoredConsoleError(m.text(), (m.location() || {}).url)) return;
     if (!/Access-Control-Allow-Origin|access control/i.test(m.text())) { once("console-error", m.text()); return; }
     let loc = null; try { loc = m.location(); } catch (e) {}
