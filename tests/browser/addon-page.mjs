@@ -11,13 +11,36 @@ if (!RAW) { console.error("usage: node addon-page.mjs --url <origin>"); process.
 const ORIGIN = originOf(RAW);
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { if (c) { pass++; console.log(`PASS ${n}`); } else { fail++; console.log(`FAIL ${n}${x ? `: ${x}` : ""}`); } };
+/* Cloudflare Web Analytics beacon (injected by Cloudflare on Pages previews, not in our repo): its endpoint https://cloudflareinsights.com/cdn-cgi/rum refuses a preview origin (CORS), which logs one console error and one failed request.
+   Tolerated, as in the production probe (PR 270, tests/helpers/probe-checks.mjs), by URL and never by message text: a console message LOCATED at that exact URL, or the Chromium CORS line "Access to XMLHttpRequest at '<url>' ... blocked by CORS policy"
+   whose quoted URL is that exact URL, or a failed request for it. Each one ignored prints a WARN. Everything else stays fatal. */
+const isRumUrl = (u) => { try { const x = new URL(u); return x.protocol === "https:" && x.hostname === "cloudflareinsights.com" && x.pathname === "/cdn-cgi/rum"; } catch (e) { return false; } };
+const isRumConsole = (text, at) => { if (isRumUrl(at)) return true; const m = /^Access to XMLHttpRequest at '([^']+)' from origin '[^']+' has been blocked by CORS policy/.exec(String(text)); return !!m && isRumUrl(m[1]); };
+{ /* deterministic self-test: a synthetic rum error is tolerated, anything else still fails */
+  const CORS = (u) => `Access to XMLHttpRequest at '${u}' from origin 'https://pr-1.leeroy-board.pages.dev' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.`;
+  const cases = [
+    ["rum CORS line", isRumConsole(CORS("https://cloudflareinsights.com/cdn-cgi/rum"), "https://pr-1.leeroy-board.pages.dev/x"), true],
+    ["console error located at the rum URL", isRumConsole("Failed to load resource: net::ERR_FAILED", "https://cloudflareinsights.com/cdn-cgi/rum"), true],
+    ["CORS line for another origin", isRumConsole(CORS("https://example.com/api/thing"), "https://pr-1.leeroy-board.pages.dev/x"), false],
+    ["rum path on another host", isRumConsole(CORS("https://example.com/cdn-cgi/rum"), ""), false],
+    ["lookalike host", isRumConsole(CORS("https://cloudflareinsights.com.evil.test/cdn-cgi/rum"), ""), false],
+    ["other insights path", isRumConsole(CORS("https://cloudflareinsights.com/cdn-cgi/other"), ""), false],
+    ["message that only mentions the URL", isRumConsole("TypeError: boom at https://cloudflareinsights.com/cdn-cgi/rum", "https://pr-1.leeroy-board.pages.dev/x"), false],
+    ["plain page error", isRumConsole("TypeError: x is undefined", "https://pr-1.leeroy-board.pages.dev/x"), false],
+    ["failed request for the rum URL", isRumUrl("https://cloudflareinsights.com/cdn-cgi/rum"), true],
+    ["failed request for our own file", isRumUrl("https://pr-1.leeroy-board.pages.dev/js/x.js"), false],
+  ];
+  const bad = cases.filter(([, got, want]) => got !== want);
+  if (bad.length) { console.log(`FAIL beacon tolerance self-test: ${bad.map((b) => b[0]).join(", ")}`); process.exit(1); }
+  console.log(`PASS beacon tolerance self-test (${cases.length} cases)`);
+}
 const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
 for (const [w, hgt] of [[390, 844], [1440, 900]]) {
   const ctx = await browser.newContext({ viewport: { width: w, height: hgt }, serviceWorkers: "block" });
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) errors.push(m.text()); });
-  page.on("requestfailed", (r) => errors.push(`requestfailed ${r.url()}`));
+  page.on("console", (m) => { if (m.type() !== "error" || /^\[Report Only\]/.test(m.text())) return; if (isRumConsole(m.text(), m.location().url)) { console.log(`WARN [${w}x${hgt}] ignored the Cloudflare analytics beacon console error (cloudflareinsights.com/cdn-cgi/rum)`); return; } errors.push(m.text()); });
+  page.on("requestfailed", (r) => { if (isRumUrl(r.url())) { console.log(`WARN [${w}x${hgt}] ignored the failed Cloudflare analytics beacon request ${r.url()}`); return; } errors.push(`requestfailed ${r.url()}`); });
   const r = await page.goto(`${ORIGIN}/landing/addon/`, { waitUntil: "load" });
   const t = `[${w}x${hgt}]`;
   ok(`${t} answers 200`, r && r.status() === 200);
