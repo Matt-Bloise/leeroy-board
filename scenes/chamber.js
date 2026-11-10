@@ -105,7 +105,7 @@ const BAR = "img/chamber/leeroy-bar-smug.webp";
 artLoad(BAR).then((good) => { if (!good) stillImg.classList.add("is-head"); stillImg.setAttribute("src", good ? BAR : moodUrl("smug")); });
 const STILL_LINES = ["Pull up a stool. I am not going anywhere.", "The tankard is full and the library is open. Ask whenever you like.", "Take the stool by the candle. I will keep your place.", "Quiet night at the bar. Good for questions about Forever."];
 const stillLine = (t) => STILL_LINES[Math.floor((t === undefined ? Date.now() : t) / 86400000) % STILL_LINES.length];
-const HOW = "Ask Leeroy questions about the guild and launch night. Public visitors can ask up to 2 questions per hour using Cloudflare Workers AI. Guild members can use their board link for full access.";
+const HOW = "Ask Leeroy questions about the guild and WoW Forever. Public visitors can ask up to 2 questions per hour using Cloudflare Workers AI. Guild members can use their board link for full access.";
 const still = h("section", { class: "hades is-still", id: "ch-still", hidden: true, "aria-label": "Leeroy at the bar" },
   h("div", { class: "ch-still-stage" }, h("div", { class: "ch-still-bust" }, stillImg), h("div", { class: "ch-still-counter", "aria-hidden": "true" }), h("p", { class: "ch-still-line" })),
   h("p", { class: "ch-still-how", text: HOW }));

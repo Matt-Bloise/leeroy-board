@@ -1,6 +1,6 @@
 // Slice 0 lint, report mode: hard-coded animation and transition durations outside the token files are listed in
 // tests/fixtures/motion-literals-baseline.json. The test fails only on NEW offenders (a key that is not in the baseline, or a count above it).
-// Migrating an offender to a token (css/motion-tokens.css, js/motion-tokens.js) lowers the baseline: run `MOTION_LINT_WRITE=1 node tests/unit/motion-literals.test.mjs`.
+// Migrating an offender to a token (css/motion-tokens.css) lowers the baseline: run `MOTION_LINT_WRITE=1 node tests/unit/motion-literals.test.mjs`.
 // MOTION_LINT_REPORT=1 prints every offender. Flip to strict (baseline {}) once the program has migrated them.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BASELINE = path.join(root, "tests/fixtures/motion-literals-baseline.json");
-const TOKEN_FILES = new Set(["css/motion-tokens.css", "js/motion-tokens.js"]);
+const TOKEN_FILES = new Set(["css/motion-tokens.css"]);
 const SKIP_DIRS = new Set(["node_modules", ".git", "tests", "docs", "vendor", "infrastructure", "tools", ".github", "img", "fonts", "data"]);
 const ALLOWED = new Set(["0s", "0ms", "1ms"]); // zero and the reduced-motion collapse value are not durations
 
@@ -64,7 +64,7 @@ if (process.env.MOTION_LINT_WRITE === "1") {
     console.log(`motion-literals: ${total} literal durations in ${Object.keys(now).length} places (baseline ${baseTotal}); new ones fail, migrating one to a token lowers the baseline`);
     if (process.env.MOTION_LINT_REPORT === "1") for (const [k, n] of Object.entries(now)) console.log(`  ${n} x ${k}`);
     const fresh = Object.entries(now).filter(([k, n]) => n > (base[k] || 0)).map(([k, n]) => `${k} (${n}, baseline ${base[k] || 0})`);
-    assert.deepEqual(fresh, [], `new hard-coded durations: use a token from css/motion-tokens.css or js/motion-tokens.js\n  ${fresh.join("\n  ")}`);
+    assert.deepEqual(fresh, [], `new hard-coded durations: use a token from css/motion-tokens.css\n  ${fresh.join("\n  ")}`);
   });
   test("the baseline has no stale entries beyond the current offenders", () => {
     const now = collect(), base = JSON.parse(fs.readFileSync(BASELINE, "utf8"));

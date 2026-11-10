@@ -136,7 +136,7 @@
   "id": "firstrun-line",
   "file": "js/next.js",
   "old": "Who is playing what, where, and when",
-  "new": "See your group, your next step, and what is coming. Two minutes.",
+  "new": "Pick your name to see your build, the party's, and the next dated thing.",
   "flavour": "Who is playing what, where, and when"
  },
  {
@@ -150,7 +150,7 @@
   "id": "firstrun-primary-discord",
   "file": "js/next.js",
   "old": "Show me what is next",
-  "new": "Open Discord sign-ups",
+  "new": "Open the Discord card",
   "flavour": "Show me what is next"
  },
  {

@@ -37,6 +37,13 @@ const tipState = (page) => page.evaluate(() => {
   return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, hits, text: t.textContent, side: t.dataset.side };
 }).catch(() => null);
 
+// Diagnostics for a failed pin hover/tap check: says why (tip element count, box, computed style, page visibility, the point used, viewport, scroll, what is under the pointer). Evidence only; never asserted.
+const hoverDiag = (page, box, shown) => page.evaluate(([b, sh]) => {
+  const d = (e) => (e ? e.tagName + (e.id ? "#" + e.id : "") + "." + String(e.className && e.className.baseVal !== undefined ? e.className.baseVal : e.className).slice(0, 40) : null);
+  const tips = document.querySelectorAll("#road-card"), c = tips[0], r = c && c.getBoundingClientRect(), cs = c && getComputedStyle(c), m = document.querySelector("#map"), mr = m && m.getBoundingClientRect(), under = document.elementFromPoint(b.x, b.y);
+  return { shownByWait: sh, tipMatches: tips.length, tipBox: r ? [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] : null, tipHiddenAttr: c ? c.hidden : null, display: cs ? cs.display : null, visibility: cs ? cs.visibility : null, opacity: cs ? cs.opacity : null, documentHidden: document.hidden, visibilityState: document.visibilityState, hasFocus: document.hasFocus(), hoverXY: [Math.round(b.x * 10) / 10, Math.round(b.y * 10) / 10], vp: [innerWidth, innerHeight], scroll: [Math.round(scrollX), Math.round(scrollY)], under: d(under), underInsidePin: !!(under && under.closest && under.closest(".map-pin")), hash: location.hash, map: mr ? [Math.round(mr.left), Math.round(mr.top), Math.round(mr.width), Math.round(mr.height)] : null, hoverMedia: matchMedia("(hover: hover)").matches };
+}, [box, shown]).catch((e) => ({ diagError: String(e && e.message).slice(0, 80) }));
+
 const browser = stubbed(await pw.chromium.launch());
 async function run(label, viewport, mobile) {
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1, hasTouch: mobile, isMobile: mobile, serviceWorkers: "block", reducedMotion: "reduce" });
@@ -81,7 +88,8 @@ async function run(label, viewport, mobile) {
     if (mobile) await page.touchscreen.tap(box.x, box.y); else await page.mouse.move(box.x, box.y);
     const shown = await until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; });
     ts = await tipState(page);
-    ok(`${label}: pin ${i + 1} ${mobile ? "tap" : "hover"} opens a tip that is inside the view and covers nothing`, shown && !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h && ts.hits.length === 0, JSON.stringify(ts) + (shown ? "" : " DIAG(tip never opened; evidence for a CI-only flake, nothing asserted) " + JSON.stringify(await page.evaluate((b) => { const d = (e) => (e ? e.tagName + (e.id ? "#" + e.id : "") + "." + String(e.className && e.className.baseVal !== undefined ? e.className.baseVal : e.className).slice(0, 40) : null), m = document.querySelector("#map"), r = m && m.getBoundingClientRect(), c = document.getElementById("road-card"); return { box: [Math.round(b.x), Math.round(b.y)], under: d(document.elementFromPoint(b.x, b.y)), hash: location.hash, html: document.documentElement.className.slice(0, 120), vp: [innerWidth, innerHeight], map: r ? [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] : null, card: !!c, cardHidden: c ? c.hidden : null, hoverMedia: matchMedia("(hover: hover)").matches }; }, box).catch(() => null))));
+    const pass = shown && !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h && ts.hits.length === 0;
+    ok(`${label}: pin ${i + 1} ${mobile ? "tap" : "hover"} opens a tip that is inside the view and covers nothing`, pass, JSON.stringify(ts) + (pass ? "" : " DIAG(evidence for a CI-only flake, nothing asserted) " + JSON.stringify(await hoverDiag(page, box, shown))));
     await page.keyboard.press("Escape");
     await until(page, () => { const t = document.getElementById("road-card"); return !t || t.hidden; });
   }

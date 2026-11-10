@@ -64,6 +64,10 @@ async function heroScan(browser, opts, tag) {
       const nIncomplete = r.incomplete.filter((x) => x.id === "color-contrast").reduce((a, v) => a + v.nodes.length, 0);
       if (nIncomplete) console.log(`WARN ${tag} launch hero: axe could not measure the contrast of ${nIncomplete} text node(s) (text over the plate picture or pseudo-elements): ${JSON.stringify(reasons)}; checked by eye only`);
       const inList = (arr) => arr.filter((x) => x.id === "color-contrast").some((v) => v.nodes.some((n) => n.target.join(" ") === "#lh-check-sum"));
+      if (expectedHero(CLOCK) === "live") { /* post-launch copy (#283): in the live phase the "Before launch" checklist is retired (js/v15.js renderCheck sets #lh-check hidden), so there is no summary to measure; assert it is really out of the way instead. */
+        const gone = await page.evaluate(() => { const d = document.querySelector("#lh-check"); return !d || d.hidden || getComputedStyle(d).display === "none"; });
+        ok(`${tag} launch hero: the Before launch checklist is retired once the game is live (#lh-check hidden)`, gone && !inList(r.violations));
+      } else
       ok(`${tag} launch hero: the checklist summary (#lh-check-sum, the node that once failed at 1.2:1) was measured and passes`, inList(r.passes) && !inList(r.violations) && !inList(r.incomplete), `in passes ${inList(r.passes)}, violations ${inList(r.violations)}, incomplete ${inList(r.incomplete)}`);
     }
   }
