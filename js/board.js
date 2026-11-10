@@ -372,7 +372,7 @@ function eventState(e, now, next) {
 }
 function stopEmblem(name) { return [emb.dates(name)]; }
 function renderTimeline() {
-  const t = D.timeline, tl = $("#rail"); tl.replaceChildren();
+  const t = D.timeline, tl = $("#rail"), hadFocus = !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("earlier-toggle")); tl.replaceChildren();
   const now = Date.now() / 1000;
   const next = nextEvent(now);
   shownNext = next ? next.key : null;
@@ -383,7 +383,7 @@ function renderTimeline() {
   const stops = t.events.map((e, di) => {
     const [cls, label] = eventState(e, now, next);
     const lit = cls === "next" || cls === "open";
-    return [cls, h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
+    return [cls, eventTs(e), h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
       h("span", { class: "stop-mark", "aria-hidden": "true" }, ...stopEmblem(EMB_LABEL[e.key] || "seal"), cls === "past" ? emb.dates("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
       h("div", { class: "stop-body" },
         h("div", { class: "when", text: eventWhen(e) }),
@@ -391,16 +391,20 @@ function renderTimeline() {
         e.detail ? h("p", { text: e.detail }) : null,
         h("p", { class: "label state", text: label })))];
   });
-  const gone = stops.filter((x) => x[0] === "past").map((x) => x[1]);
-  if (!launchPast() || !gone.length) tl.append(...stops.map((x) => x[1]));
+  const gone = stops.filter((x) => x[0] === "past").sort((a, b) => b[1] - a[1]).map((x) => x[2]); /* most recent first */
+  if (!launchPast() || !gone.length) tl.append(...stops.map((x) => x[2]));
   else {
     /* After launch the dates ahead lead; what already happened sits behind one Earlier control (kept, never deleted). */
-    tl.append(...stops.filter((x) => x[0] !== "past").map((x) => x[1]));
+    const ahead = stops.filter((x) => x[0] !== "past").sort((a, b) => a[1] - b[1]).map((x) => x[2]); /* soonest first */
+    tl.append(...ahead);
+    if (!ahead.length) tl.append(h("li", { class: "stop-none" }, h("p", { class: "label", text: "Nothing dated ahead right now." })));
+    gone.forEach((l) => l.removeAttribute("data-j")); /* the Earlier button is the reader's own ask: show them in every journey (Guided hides past stops otherwise) */
     const list = h("ol", { class: "rail-earlier", id: "rail-earlier" }, ...gone);
     const btn = h("button", { type: "button", class: "earlier-toggle", "aria-expanded": earlierOpen ? "true" : "false", "aria-controls": "rail-earlier", text: `Earlier (${gone.length})` });
     list.hidden = !earlierOpen;
     btn.addEventListener("click", () => { earlierOpen = !earlierOpen; list.hidden = !earlierOpen; btn.setAttribute("aria-expanded", earlierOpen ? "true" : "false"); });
     tl.append(h("li", { class: "stop-earlier" }, btn, list));
+    if (hadFocus) btn.focus({ preventScroll: true });
   }
   renderCalendar(now);
   KIT.emit("timeline");

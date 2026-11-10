@@ -39,7 +39,20 @@ try {
       await page.focus(".earlier-toggle"); await page.keyboard.press("Enter");
       ok(`${t} Enter expands`, await page.evaluate(() => document.querySelector(".earlier-toggle").getAttribute("aria-expanded") === "true" && !document.getElementById("rail-earlier").hidden));
       ok(`${t} no horizontal scroll`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await page.screenshot({ path: `dates-${tag}-after-open.png` });
+      // (2) focus survives a forced re-render while the Earlier button is focused
+      const kept = await page.evaluate(() => { const b = document.querySelector(".earlier-toggle"); b.focus(); __boardKit.render.timeline(); const n = document.querySelector(".earlier-toggle"); return { same: document.activeElement === n, exp: n.getAttribute("aria-expanded") }; });
+      ok(`${t} focus and expanded state survive a re-render`, kept.same && kept.exp === "true", JSON.stringify(kept));
+      // (1) order from out-of-order data: late (+9000 s) listed before early (+100 s); two past events listed oldest first
+      const order = await page.evaluate(() => { const now = Date.now() / 1000, ev = __boardKit.D.timeline.events, keep = ev.slice(); const mk = (key, off) => ({ key, epoch: Math.round(now + off), label: key, format: "F" });
+        __boardKit.D.timeline.events = [mk("late", 9000), mk("p_old", -90000), launchEv(keep), mk("early", 100), mk("p_new", -5000)]; __boardKit.render.timeline();
+        const r = { top: [...document.querySelectorAll("#rail > li:not(.stop-earlier)")].map((l) => l.dataset.ev), earlier: [...document.querySelectorAll("#rail-earlier .stop")].map((l) => l.dataset.ev) };
+        // (3) all past: nothing upcoming
+        __boardKit.D.timeline.events = [mk("p_old", -90000), launchEv(keep), mk("p_new", -5000)]; __boardKit.render.timeline();
+        const b = document.querySelector(".earlier-toggle"); if (b.getAttribute("aria-expanded") !== "true") b.click();
+        r.none = (document.querySelector(".stop-none") || {}).textContent; r.vis = [...document.querySelectorAll("#rail .stop")].filter((l) => l.getClientRects().length > 0).map((l) => l.dataset.ev);
+        __boardKit.D.timeline.events = keep; __boardKit.render.timeline(); return r; function launchEv(k) { const l = k.find((x) => x.key === "launch"); return { ...l, epoch: Math.round(now - 20000) }; } });
+      ok(`${t} upcoming ascending, Earlier most recent first`, order.top.join() === "early,late" && order.earlier.join() === "p_new,launch,p_old", JSON.stringify(order));
+      ok(`${t} all past: one honest line, every event visible when expanded`, order.none === "Nothing dated ahead right now." && order.vis.length === 3, JSON.stringify(order));
     }
     await ctx.close();
   }
