@@ -382,3 +382,17 @@ test("PERSONALISE_RULE leaves the decision to the model and bans personalising i
   assert.match(PERSONALISE_RULE, /Do not mention it when the question is a plain lookup/);
   assert.match(PERSONALISE_RULE, /never add facts about items or spells/);
 });
+test("buildRelevant: combat phrasing and other people's characters are not the asker's identity", () => {
+  for (const q of ["I am fighting a rogue, how do I survive", "I'm being ganked by a hunter, what now", "my friend is a hunter, what should he train", "my brother plays a rogue, where does he train", "I play with a mage and a warlock", "as a group we fight a druid boss"]) assert.equal(buildRelevant(q, FOX).relevant, true, q);
+});
+test("buildRelevant: real self-identification still works with articles and race plus class", () => {
+  for (const q of ["I am a hunter, where do I train", "I'm a night elf hunter, where do I train", "as an undead rogue, what poisons", "I play a dwarf hunter", "my hunter needs a pet"]) assert.equal(buildRelevant(q, FOX).relevant, false, q);
+  assert.equal(buildRelevant("I am a human paladin, where do I train", FOX).relevant, true);
+});
+test("the system prompt sent to the model carries both halves of the rule for any question (answer-level behaviour is measured by scripts/ask-eval, not in unit tests: no model calls in CI)", async () => {
+  for (const question of ["Can a Paladin use two-handed swords?", "which role should I take in a group"]) {
+    const r = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question });
+    assert.ok(r.systemPrompt.includes("in one short clause") && r.systemPrompt.includes("plain lookup"), question);
+    assert.match(r.userPrompt, /YOUR_BUILD/, question);
+  }
+});
