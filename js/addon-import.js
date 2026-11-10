@@ -88,7 +88,7 @@ function parseOne(s) {
   }
   if ("talents" in raw) {
     const pts = raw.talents === "" ? [] : raw.talents.split(",");
-    if (pts.length > 4 || !pts.every((p) => /^\d{1,2}$/.test(p))) return bad("The talents field should be up to four point counts.");
+    if (pts.length > 4 || !pts.every((p) => /^\d{1,2}$/.test(p))) return bad("The talents field should be up to 4 point counts.");
     out.talents = pts.map(Number);
   }
   return { ok: true, data: out, ignored: Object.keys(raw).filter((k) => !ORDER.includes(k)) };

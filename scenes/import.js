@@ -36,7 +36,7 @@ let ctl = null, outEl = null;
 function lib() {
   if (S.modP || !HERE) return S.modP;
   /* a failed import is remembered by the browser for that exact URL, so a retry asks for a new one */
-  const u = new URL("../js/addon-import.js?v=ece7c272b8", HERE); if (S.tries) u.searchParams.set("r", String(S.tries));
+  const u = new URL("../js/addon-import.js?v=4fd6b5a0b2", HERE); if (S.tries) u.searchParams.set("r", String(S.tries));
   S.modP = import(u.href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; S.loadFail = true; S.tries++; return null; });
   return S.modP;
 }
