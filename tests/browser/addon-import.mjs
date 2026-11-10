@@ -140,6 +140,7 @@ const CHARS = [
 /* context changes (the character switcher, chars.v1 switched on by interception) and a reader that fails to load */
 async function contexts(browser, [label, opts]) {
   const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
+  let hold = null; /* { gate, used, started }: the next POST waits on the gate */
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
   await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); localStorage.setItem("board-wl", "1"); } catch (e) {} }, [KEY]);
   await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": true }; await json(route, j); });
@@ -147,7 +148,7 @@ async function contexts(browser, [label, opts]) {
     const u = new URL(route.request().url()), m = route.request().method();
     if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise", user: "abcd1234", expires_at: 4102444800, characters: CHARS });
     if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
-    if (m === "POST" && u.pathname.endsWith("/api/sheet")) { const b = route.request().postDataJSON(); posts.push(b); await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() }); }
+    if (m === "POST" && u.pathname.endsWith("/api/sheet")) { const b = route.request().postDataJSON(); posts.push(b); if (hold && !hold.used) { hold.used = true; await hold.gate; } else await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() }); }
     return route.abort();
   });
   await ctx.route("**/js/addon-import.js*", (route) => route.abort());
@@ -180,6 +181,41 @@ async function contexts(browser, [label, opts]) {
   const txt = await page.locator("#imp-out").innerText();
   ok(`${label}: switching during sending stops the remaining writes and says so`, posts.length === 1 && /you switched characters/.test(txt) && /Stopped before/.test(txt), `posts=${posts.length} ${txt.slice(0, 160)}`);
   ok(`${label}: after the switch there is no export and no Sent line left`, (await page.locator(".imp-row").count()) === 0 && (await page.locator("#imp-text").inputValue()) === "");
+  /* A is held, the character is switched, B starts, A is released: B stays locked, keeps its preview and finishes with exactly its own lines */
+  posts.length = 0;
+  await page.locator("#imp-text").fill(s); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  let release; hold = { gate: new Promise((r) => { release = r; }), used: false };
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await swap(1);
+  await page.locator("#imp-text").fill(s); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(250);
+  release();
+  await page.waitForTimeout(150);
+  const mid = await page.evaluate(() => ({ locked: document.getElementById("imp-text").disabled, label: document.getElementById("imp-send").textContent, rows: document.querySelectorAll(".imp-row").length }));
+  ok(`${label}: A finishing late leaves B locked with its preview intact`, mid.locked && /Sending/.test(mid.label) && mid.rows === 4, JSON.stringify(mid));
+  await page.waitForFunction(() => /Done|Retry/.test(document.getElementById("imp-send").textContent), null, { timeout: 8000 }).catch(() => {});
+  const endB = await page.locator(".imp-row").evaluateAll((els) => els.map((e) => [e.dataset.field, e.dataset.state]));
+  const fields = posts.map((q) => q.field), sentB = endB.filter(([, x]) => x === "sent").map(([f]) => f);
+  ok(`${label}: B completes with exactly its own lines, and A wrote nothing after the switch`, endB.length === 4 && endB.every(([, x]) => x === "sent" || x === "same") && sentB.length >= 1 && posts.length === 1 + sentB.length && JSON.stringify(fields.slice(1)) === JSON.stringify(sentB), JSON.stringify({ endB, fields }));
+  ok(`${label}: unlocked after B`, await page.evaluate(() => !document.getElementById("imp-text").disabled));
+  /* the same with file reads: a slow read from before the switch ends while B is sending */
+  posts.length = 0; hold = null;
+  await swap(0);
+  await page.evaluate(() => { window.__rd = 0; const slow = { size: 10, text: () => new Promise((r) => setTimeout(() => { window.__rd = Date.now(); r("LEEROY1|from-the-old-read"); }, 700)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); });
+  await swap(1);
+  const s2 = encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12, prof: "171:100" }).full;
+  await page.locator("#imp-text").fill(s2); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const rows0 = await page.locator(".imp-row").count();
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => window.__rd > 0, null, { timeout: 5000 }).catch(() => {});
+  const mid2 = await page.evaluate(() => ({ v: document.getElementById("imp-text").value, locked: document.getElementById("imp-text").disabled, label: document.getElementById("imp-send").textContent, rows: document.querySelectorAll(".imp-row").length }));
+  ok(`${label}: an old read finishing during B's send changes nothing`, mid2.v === s2 && mid2.locked && /Sending/.test(mid2.label) && mid2.rows === rows0 && rows0 >= 3, JSON.stringify(mid2).slice(0, 200));
+  await page.waitForFunction(() => /Done|Retry/.test(document.getElementById("imp-send").textContent), null, { timeout: 8000 }).catch(() => {});
+  const sent2 = await page.locator('.imp-row[data-state="sent"]').count();
+  ok(`${label}: B still completes with exactly its own lines`, sent2 >= 1 && posts.length === sent2, `${sent2} sent, ${posts.length} posted`);
   ok(`${label}: context checks, zero page errors`, errors.length === 0, errors.join(" | "));
   await ctx.close();
 }
