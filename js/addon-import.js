@@ -43,11 +43,11 @@ export function encode(fields) {
 /* Finds the export string in whatever was pasted or dropped: the bare string, a chat message around it, or a whole SavedVariables file.
    All whitespace is stripped first (the wire never holds a raw space: spaces are %20). Then: the tag and |, the payload up to the next |, and exactly 8 hex digits of check.
    Nothing depends on quote characters, so a surrounding Lua quote or any text after the check is simply left behind. */
-export function extract(text) {
+export function extractAll(text) {
   const t = String(text == null ? "" : text).replace(/[\s​﻿]+/g, "");
-  const m = /LEEROY1\|([^|]*)\|([0-9A-Fa-f]{8})/.exec(t);
-  return m ? m[0] : null;
+  return t.match(/LEEROY1\|[^|]*\|[0-9A-Fa-f]{8}/g) || [];
 }
+export const extract = (text) => extractAll(text)[0] || null;
 
 function parseOne(s) {
   if (s.length > MAX_LEN) return bad(`Too long: an export is at most ${MAX_LEN} characters and this is ${s.length}.`);
@@ -97,16 +97,18 @@ function parseOne(s) {
 /* parse(text, nowSeconds): text is the bare string, a chat message, or a whole SavedVariables file. */
 export function parse(text, now) {
   if (String(text == null ? "" : text).trim() === "") return bad("Nothing to read yet. Paste the export string from the add-on.");
-  const found = extract(text);
-  if (!found) return bad(/LEEROY1\s*\|/.test(String(text)) ? "The export is damaged: it needs the data and then a check of 8 hex digits, split by |. Copy it again from the game." : "This is not a Leeroy export. It should begin with LEEROY1|.");
-  const r = parseOne(found);
-  if (!r.ok) return bad(r.why);
+  const found = extractAll(text);
+  if (!found.length) return bad(/LEEROY1\s*\|/.test(String(text)) ? "The export is damaged: it needs the data and then a check of 8 hex digits, split by |. Copy it again from the game." : "This is not a Leeroy export. It should begin with LEEROY1|.");
+  /* A pasted file can hold more than one export. Every one is checked; the NEWEST valid one (highest t) is used and the count is reported. If none is valid, the reason of the first is shown. */
+  const all = found.map(parseOne), good = all.filter((x) => x.ok);
+  if (!good.length) return bad(all[0].why);
+  const r = good.reduce((best, x) => (x.data.t > best.data.t ? x : best));
   const nowS = Number.isFinite(now) ? now : Math.floor(Date.now() / 1000);
   const age = (nowS - r.data.t) / 86400, warnings = [];
   if (age > STALE_DAYS) warnings.push(`This export is ${Math.floor(age)} days old. Export again in the game for current values.`);
   if (age < -1) warnings.push("The export time is in the future. Check the clock on the game computer.");
   if (r.ignored.length) warnings.push(`Ignored fields this board does not read: ${r.ignored.slice(0, 5).map((k) => k.slice(0, 12)).join(", ")}.`);
-  return { ok: true, data: r.data, ageDays: age, warnings };
+  return { ok: true, data: r.data, ageDays: age, warnings, count: found.length };
 }
 
 /* Mapping to the board's vocabulary. vocab: { race: [slug], class: [slug], professions: [slug], levelMax }, the same lists brain.js validates against (sheetVocab). */

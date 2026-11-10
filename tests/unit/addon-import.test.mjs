@@ -275,3 +275,25 @@ test("unescape decodes any %XX, upper or lower case, and rejects malformed escap
     assert.equal(r.why, "The field name has text that is not a valid escape (%XX) or not valid text.", badName);
   }
 });
+
+test("several exports in one file: the newest valid one is used and the count is reported", () => {
+  const old = A.encode({ ...base, t: 1793990000, level: 10 }).full, newer = A.encode({ ...base, t: 1794000000, level: 40 }).full, newest = A.encode({ ...base, t: 1794000500, level: 41 }).full;
+  const lua = `A = "${newer}"\nB = "${old}"\nC = "${newest}"`;
+  const r = A.parse(lua, NOW);
+  assert.equal(r.ok, true);
+  assert.equal(r.count, 3);
+  assert.equal(r.data.level, 41);
+  const broken = newest.replace("level=41", "level=42");
+  const r2 = A.parse(`${broken}\n${old}`, NOW);
+  assert.equal(r2.ok, true);
+  assert.equal(r2.count, 2);
+  assert.equal(r2.data.level, 10);
+  assert.equal(A.parse(old, NOW).count, 1);
+});
+
+test("several exports, none valid: the first one's reason is reported", () => {
+  const a = A.encode({ ...base, level: 61 }).full, b = A.encode({ ...base }).full.replace("level=40", "level=41");
+  const r = A.parse(`${a}\n${b}`, NOW);
+  assert.equal(r.ok, false);
+  assert.equal(r.why, "Level 61 is above the 60 the board supports.");
+});

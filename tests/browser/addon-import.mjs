@@ -181,7 +181,7 @@ async function contexts(browser, [label, opts]) {
   await swap(0);
   await page.waitForTimeout(2200);
   const txt = await page.locator("#imp-out").innerText();
-  ok(`${label}: switching during sending stops the remaining writes and says so`, posts.length === 1 && /you switched characters/.test(txt) && /Stopped before/.test(txt), `posts=${posts.length} ${txt.slice(0, 160)}`);
+  ok(`${label}: switching during sending stops the remaining writes and says so`, posts.length === 1 && /You switched characters\./.test(txt) && /The line being saved \(\w+\) may still be saved; the rest were not sent/.test(txt), `posts=${posts.length} ${txt.slice(0, 160)}`);
   ok(`${label}: after the switch there is no export and no Sent line left`, (await page.locator(".imp-row").count()) === 0 && (await page.locator("#imp-text").inputValue()) === "");
   /* A is held, the character is switched, B starts, A is released: B stays locked, keeps its preview and finishes with exactly its own lines */
   posts.length = 0;
@@ -218,6 +218,27 @@ async function contexts(browser, [label, opts]) {
   await page.waitForFunction(() => /Done|Retry/.test(document.getElementById("imp-send").textContent), null, { timeout: 8000 }).catch(() => {});
   const sent2 = await page.locator('.imp-row[data-state="sent"]').count();
   ok(`${label}: B still completes with exactly its own lines`, sent2 >= 1 && posts.length === sent2, `${sent2} sent, ${posts.length} posted`);
+  /* closing the panel mid-send is not a character switch, and the notice names the line that may still be saved */
+  posts.length = 0; hold = null;
+  await page.locator("#imp-text").fill(s); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
+  await page.waitForTimeout(2200);
+  await page.locator("#ps-imp-btn").click(); await page.locator("#imp-out").waitFor({ timeout: 5000 });
+  const closedTxt = await page.locator("#imp-out").innerText();
+  ok(`${label}: closing mid-send says it was closed, names the line that may still be saved, and never says switched`, /You closed the panel\. The line being saved \(\w+\) may still be saved; the rest were not sent\./.test(closedTxt) && !/switched/.test(closedTxt) && posts.length === 1, `posts=${posts.length} ${closedTxt.slice(0, 200)}`);
+  /* an empty character id that becomes a real one during a send stops the remaining writes (the id is read from the page, no re-render happens) */
+  await page.evaluate(() => { const o = document.querySelector(".ps-imp"); if (o) o.remove(); });
+  await page.evaluate(() => { window.BoardImport.reset("open"); window.__id = "sheet:me|"; const host = document.createElement("div"); host.id = "fake-host"; document.body.appendChild(host); window.BoardImport.mount(host, { label: (f, v) => String(v), lists: () => ({ race: ["troll"], class: ["warrior"], professions: [], levelMax: 60 }), current: () => ({}), canSend: () => ({ ok: true }), identity: () => window.__id, done: () => {} }); });
+  posts.length = 0;
+  await page.locator("#fake-host #imp-text").fill(s); await page.locator("#fake-host .imp-row").first().waitFor({ timeout: 5000 });
+  await page.evaluate(() => document.querySelector("#fake-host #imp-send").click());
+  await page.waitForFunction(() => document.querySelector("#fake-host #imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await page.evaluate(() => { window.__id = "sheet:me|c2"; });
+  await page.waitForFunction(() => /Done|Retry/.test(document.querySelector("#fake-host #imp-send").textContent), null, { timeout: 8000 }).catch(() => {});
+  const fk = await page.locator("#fake-host .imp-row").evaluateAll((els) => els.map((e) => [e.dataset.field, e.dataset.state, e.innerText.replace(/\s+/g, " ")]));
+  ok(`${label}: an empty character id turning into a real one stops the remaining writes`, posts.length === 1 && fk[0][1] === "sent" && fk.slice(1).every((x) => x[1] === "failed" && /you switched characters/.test(x[2])), JSON.stringify({ posts: posts.length, fk }).slice(0, 300));
   ok(`${label}: context checks, zero page errors`, errors.length === 0, errors.join(" | "));
   await ctx.close();
 }

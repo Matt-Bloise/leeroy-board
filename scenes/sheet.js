@@ -302,7 +302,7 @@ function impView(m) {
     else if (window.__scenes && !PS.impWait) { PS.impWait = true; window.__scenes.load("import").then(() => { PS.impWait = false; if (PS.imp && PS.view === "sheet") render(); }); }
   }
   const btn = h("button", { type: "button", class: "lib-tool imp-toggle", id: "ps-imp-btn", "aria-expanded": String(!!PS.imp), "aria-controls": "ps-imp",
-    onclick: () => { PS.imp = !PS.imp; PS.edit = PS.imp ? "@import" : null; if (window.BoardImport) window.BoardImport.reset(); render(); const f = PS.imp ? $("#imp-text") : $("#ps-imp-btn"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } } }, "Import from game");
+    onclick: () => { PS.imp = !PS.imp; PS.edit = PS.imp ? "@import" : null; if (window.BoardImport) window.BoardImport.reset(PS.imp ? "open" : "closed"); render(); const f = PS.imp ? $("#imp-text") : $("#ps-imp-btn"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } } }, "Import from game");
   return h("div", { class: "ps-imp" }, btn, host);
 }
 const nameList = (ms) =>K.andList(ms.map((m) => m.name));
@@ -412,7 +412,7 @@ function render() {
   if (again && !PS.edit) { const f = $(again); if (f && f !== document.activeElement) { try { f.focus({ preventScroll: true }); } catch (e) {} } }
 }
 function show(v, who, user) {
-  if (v !== "sheet" || who !== PS.who) { PS.imp = false; if (PS.edit === "@import") PS.edit = null; if (window.BoardImport) window.BoardImport.reset(); }
+  if (v !== "sheet" || who !== PS.who) { PS.imp = false; if (PS.edit === "@import") PS.edit = null; if (window.BoardImport) window.BoardImport.reset(v !== "sheet" ? "closed" : "switched"); }
   PS.view = v; if (v === "sheet") { PS.who = who; chLoad(); } else { PS.edit = null; CH.open = false; PS.imp = false; }
   if (v !== "sheet") PS.say = "";
   ready().then(() => {

@@ -23,7 +23,7 @@ const NAME = { race: "Race", class: "Class", level: "Level", professions: "Profe
 /* ONE size limit for the file, the text box and the reader: an export is at most 2048 characters, so 400000 is already generous (a whole SavedVariables file). Over it is refused out loud, never cut. */
 const TEXT_MAX = 400000, TOO_BIG = "That file is larger than the add-on ever writes; paste only the export string.";
 const WHY = { "no key": "this board link has no key", key: "this board link is not yours", off: "the party sheet is switched off for now", offline: "no connection", busy: "busy, try again in a minute", refused: "the board did not accept that value", failed: "the board could not save it", "nowhere to send": "no connection to the board", "not on the board's lists": "that value is not on the board's lists" };
-const S = { text: "", results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, left: null, id: null, loadFail: false, tries: 0, n: 0, cur: null };
+const S = { text: "", results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, left: null, inflight: null, note: "", id: null, loadFail: false, tries: 0, n: 0, cur: null };
 const begin = (kind, phase) => (S.cur = { id: ++S.n, kind, phase });
 const own = (run) => S.cur === run;
 const sending = () => !!S.cur && S.cur.phase === "sending";
@@ -36,7 +36,7 @@ let ctl = null, outEl = null;
 function lib() {
   if (S.modP || !HERE) return S.modP;
   /* a failed import is remembered by the browser for that exact URL, so a retry asks for a new one */
-  const u = new URL("../js/addon-import.js?v=ee0fc5e72b", HERE); if (S.tries) u.searchParams.set("r", String(S.tries));
+  const u = new URL("../js/addon-import.js?v=6a7843fc53", HERE); if (S.tries) u.searchParams.set("r", String(S.tries));
   S.modP = import(u.href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; S.loadFail = true; S.tries++; return null; });
   return S.modP;
 }
@@ -58,6 +58,7 @@ function read() {
 }
 function summary(x) {
   const { r, mapped, rows } = x, d = r.data, A = S.mod, kids = [];
+  if (r.count > 1) kids.push(h("p", { class: "imp-warn imp-many", text: `Found ${r.count} exports; using the one from ${age(r.ageDays)}.` }));
   kids.push(h("p", { class: "imp-found", text: `Found a Leeroy export from ${age(r.ageDays)}: level ${d.level}, ${d.race}, ${d.class}${d.prof && d.prof.length ? `, ${d.prof.length} profession${d.prof.length === 1 ? "" : "s"}` : ""}.` }));
   const info = [];
   if (d.name) info.push(`character name ${d.name} (shown here only, never sent)`);
@@ -110,32 +111,44 @@ async function execute(kind, todo, frozen, keep) {
   try {
     for (const o of todo) {
       if (!own(run)) return;
-      if (who !== null && !sameWho(who, S.ctx.identity())) { for (const q of todo) if (!(q.field in res)) res[q.field] = { ok: false, why: "you switched characters" }; break; }
-      put(run, { left: todo.filter((q) => q !== o && !(q.field in res)).map((q) => q.field) });
+      if (who !== null && !sameWho(who, S.ctx.identity(), true)) { for (const q of todo) if (!(q.field in res)) res[q.field] = { ok: false, why: "you switched characters" }; break; }
+      put(run, { left: todo.filter((q) => q !== o && !(q.field in res)).map((q) => q.field), inflight: o.field }); /* the line being saved is kept apart: it may still be saved after a reset */
       let r; try { r = await B.setSheet(o.field, o.after); } catch (e) { r = { ok: false, why: "failed" }; }
       if (!own(run)) return;
+      put(run, { inflight: null });
       res[o.field] = r && r.ok ? { ok: true } : { ok: false, why: WHY[r && r.why] || "the board could not save it" };
     }
-  } catch (e) { if (put(run, { left: null, say: "Sending stopped because of an error. Check the lines below." })) { run.phase = "done"; put(run, { results: { ...keep, ...res } }); update(); } return; }
+  } catch (e) { if (put(run, { left: null, inflight: null, say: "Sending stopped because of an error. Check the lines below." })) { run.phase = "done"; put(run, { results: { ...keep, ...res } }); update(); } return; }
   if (!own(run)) return;
   const ok = Object.values(res).filter((x) => x.ok).length;
   run.phase = "done";
-  put(run, { left: null, results: { ...keep, ...res }, say: ok === todo.length ? `Sent ${ok} line${ok === 1 ? "" : "s"} to your sheet.` : `${ok} of ${todo.length} lines sent. The rest were not.` });
+  put(run, { left: null, inflight: null, results: { ...keep, ...res }, say: ok === todo.length ? `Sent ${ok} line${ok === 1 ? "" : "s"} to your sheet.` : `${ok} of ${todo.length} lines sent. The rest were not.` });
   update();
   if (S.ctx.done) S.ctx.done();
 }
 /* the same context: same view and sheet, and the same character, where an empty character id (the list has not loaded yet) matches any */
-function sameWho(a, b) {
+function sameWho(a, b, strict) {
   const [pa, ca] = String(a).split("|"), [pb, cb] = String(b).split("|");
-  return pa === pb && (!ca || !cb || ca === cb);
+  return pa === pb && (strict ? (ca || "") === (cb || "") : (!ca || !cb || ca === cb)); /* strict, during a send: an empty id that becomes a real one is a change too */
 }
 /* Wipes everything that belongs to one context by replacing the current run with a new idle one: anything still in flight is superseded and can never write again.
    If a send was cut off by the switch, the lines it had not sent yet are named in the notice. */
-function reset() {
-  const cut = sending() && S.left && S.left.length ? S.left.map((f) => NAME[f]).join(", ") : "";
-  const run = begin("idle", "idle");
-  Object.assign(S, { text: "", results: null, frozen: null, fileErr: "", left: null, id: null, say: cut ? `Not sent: you switched characters. Stopped before ${cut}.` : "" });
-  if (run && outEl && outEl.isConnected) update();
+function cutNote(reason) {
+  if (!sending()) return "";
+  const lead = reason === "closed" ? "You closed the panel." : "You switched characters.";
+  const now = S.inflight ? NAME[S.inflight] : "", rest = (S.left || []).map((f) => NAME[f]).join(", ");
+  if (now) return `${lead} The line being saved (${now}) may still be saved${rest ? "; the rest were not sent" : ""}.`;
+  return rest ? `${lead} Not sent: ${rest}.` : "";
+}
+/* reason: "open" (a fresh open of the panel), "closed" (the panel was closed or the view left) or "switched" (another sheet or character). Only "switched" talks about characters.
+   A notice made by a close is kept until the panel is next opened, so it is seen. */
+function reset(reason) {
+  reason = reason || "open";
+  const note = cutNote(reason), keep = reason === "open" ? S.note : "";
+  begin("idle", "idle");
+  S.note = reason === "closed" ? note : "";
+  Object.assign(S, { text: "", results: null, frozen: null, fileErr: "", left: null, inflight: null, id: null, say: reason === "closed" ? "" : note || keep });
+  if (outEl && outEl.isConnected) update();
 }
 function update() {
   if (!outEl || !outEl.isConnected) return;
@@ -170,7 +183,7 @@ function fromFile(file, ta) {
 }
 function mount(host, ctx) {
   const id = ctx.identity ? ctx.identity() : null;
-  if (S.id !== null && id !== null && !sameWho(S.id, id)) reset();
+  if (S.id !== null && id !== null && !sameWho(S.id, id)) reset("switched");
   S.id = id; S.ctx = ctx;
   const ta = h("textarea", { id: "imp-text", class: "imp-text", rows: "4", spellcheck: "false", autocomplete: "off", autocapitalize: "off", "aria-label": "Export from the Leeroy add-on", placeholder: "LEEROY1|..." });
   ta.value = S.text;
