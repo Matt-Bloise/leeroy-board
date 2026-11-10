@@ -29,6 +29,9 @@ function escape(value) {
     else if (c === 124) piece = "%7C";
     else if (c === 10) piece = "%0A";
     else if (c === 32) piece = "%20";
+    else if (c === 34) piece = "%22";
+    else if (c === 39) piece = "%27";
+    else if (c === 92) piece = "%5C";
     else if (c < 32 || c > 126) piece = "%" + hex(c, 2).toUpperCase();
     else piece = String.fromCharCode(c);
     out.push(piece);
@@ -151,7 +154,7 @@ test("Lua source is pinned to the twin: tag, key order, modulus, no bit/5.2 cons
   assert.ok(luaSrc.includes(`Codec.TAG = "${TAG}"`));
   assert.equal((luaSrc.match(/% 65521/g) || []).length, 2);
   assert.ok(luaSrc.includes('string.format("%04x%04x", b, a)'));
-  for (const piece of ['c == 37 then piece = "%25"', 'c == 59 then piece = "%3B"', 'c == 61 then piece = "%3D"', 'c == 124 then piece = "%7C"', 'c == 10 then piece = "%0A"', 'c == 32 then piece = "%20"', "c < 32 or c > 126"]) {
+  for (const piece of ['c == 37 then piece = "%25"', 'c == 59 then piece = "%3B"', 'c == 61 then piece = "%3D"', 'c == 124 then piece = "%7C"', 'c == 10 then piece = "%0A"', 'c == 32 then piece = "%20"', 'c == 34 then piece = "%22"', 'c == 39 then piece = "%27"', 'c == 92 then piece = "%5C"', "c < 32 or c > 126"]) {
     assert.ok(luaSrc.includes(piece), piece);
   }
   assert.ok(!/\bbit\./.test(luaSrc));
@@ -167,5 +170,16 @@ test("spaces are escaped as %20 (name and zone), golden vector unchanged", () =>
   assert.equal(p, "v=1;iface=16001;t=1794000000;name=Mary%20Jane;class=PALADIN;race=Human;level=40;zone=Elwynn%20Forest");
   assert.ok(!/[ \t\r\n]/.test(wrap(p)));
   assert.equal(decodeURIComponent(escape("Mary Jane")), "Mary Jane");
+  assert.equal(wrap(vectors.vectors[0].payload), vectors.vectors[0].string);
+});
+
+test("quotes and backslash are escaped; Un'Goro Crater is safe", () => {
+  assert.equal(escape("Un'Goro Crater"), "Un%27Goro%20Crater");
+  assert.equal(escape('say "hi"'), "say%20%22hi%22");
+  assert.equal(escape("a\\b"), "a%5Cb");
+  const p = payload({ v: 1, iface: 16001, t: 1, name: "O'Neil \"The\" Z\\", class: "MAGE", race: "Gnome", level: 5, zone: "Un'Goro Crater" });
+  assert.equal(p, "v=1;iface=16001;t=1;name=O%27Neil%20%22The%22%20Z%5C;class=MAGE;race=Gnome;level=5;zone=Un%27Goro%20Crater");
+  assert.ok(!/["'\\ ]/.test(wrap(p)));
+  assert.equal(decodeURIComponent(escape("O'Neil \"The\" Z\\")), "O'Neil \"The\" Z\\");
   assert.equal(wrap(vectors.vectors[0].payload), vectors.vectors[0].string);
 });
