@@ -1,0 +1,10 @@
+## Interface: 16001
+## Title: Leeroy Build
+## Notes: Exports your own character (class, race, level, professions) as a text string you can paste on leeroy.party. Sends nothing anywhere.
+## Author: Matt Bloise
+## Version: 0.1.0
+## SavedVariables: LeeroyBuildDB
+LeeroyBuild_Codec.lua
+LeeroyBuild_Fields.lua
+LeeroyBuild_UI.lua
+LeeroyBuild.lua
