@@ -288,6 +288,8 @@ function impCtx(m) {
       if (st.sheetOff) return { ok: false, why: "The party sheet is switched off for now, so nothing can be sent." };
       return { ok: true };
     },
+    /* The identity compared before every write. B.setSheet takes no character argument: the Worker keys a write by the member key, so a write cannot land on a different character. What CAN change under the person is what they are looking at and previewing: the sheet view, whose sheet it is (PS.view, PS.who) and the character picked in the switcher (the id chCurrent uses, read from the same CH.list and MEM key as this scene). If any of those differ from the moment Send started, the preview no longer belongs to this context, so the remaining writes are not sent. */
+    identity: () => { let id = ""; try { const c = CH.mod && CH.list.length ? chCurrent(m) : null; id = c ? String(c.id || CH.mod.keyOf(c)) : ""; } catch (e) {} return `${PS.view}:${PS.who}|${id}`; },
     done: () => { PS.dirty = false; render(); },
   };
 }
@@ -300,7 +302,7 @@ function impView(m) {
     else if (window.__scenes && !PS.impWait) { PS.impWait = true; window.__scenes.load("import").then(() => { PS.impWait = false; if (PS.imp && PS.view === "sheet") render(); }); }
   }
   const btn = h("button", { type: "button", class: "lib-tool imp-toggle", id: "ps-imp-btn", "aria-expanded": String(!!PS.imp), "aria-controls": "ps-imp",
-    onclick: () => { PS.imp = !PS.imp; PS.edit = PS.imp ? "@import" : null; render(); const f = PS.imp ? $("#imp-text") : $("#ps-imp-btn"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } } }, "Import from game");
+    onclick: () => { PS.imp = !PS.imp; PS.edit = PS.imp ? "@import" : null; if (window.BoardImport) window.BoardImport.reset(); render(); const f = PS.imp ? $("#imp-text") : $("#ps-imp-btn"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } } }, "Import from game");
   return h("div", { class: "ps-imp" }, btn, host);
 }
 const nameList = (ms) =>K.andList(ms.map((m) => m.name));
@@ -410,6 +412,7 @@ function render() {
   if (again && !PS.edit) { const f = $(again); if (f && f !== document.activeElement) { try { f.focus({ preventScroll: true }); } catch (e) {} } }
 }
 function show(v, who, user) {
+  if (v !== "sheet" || who !== PS.who) { PS.imp = false; if (PS.edit === "@import") PS.edit = null; if (window.BoardImport) window.BoardImport.reset(); }
   PS.view = v; if (v === "sheet") { PS.who = who; chLoad(); } else { PS.edit = null; CH.open = false; PS.imp = false; }
   if (v !== "sheet") PS.say = "";
   ready().then(() => {

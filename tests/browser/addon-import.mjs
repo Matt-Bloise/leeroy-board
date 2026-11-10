@@ -133,8 +133,59 @@ async function run(browser, [label, opts]) {
   ok(`${label}: zero console errors`, errors.length === 0, errors.join(" | "));
   await ctx.close();
 }
+const CHARS = [
+  { id: "t-1", name: "Pip Fizzwick", class: "Mage", race: "Gnome", ruleset: "Normal", faction: "Alliance", region: "Americas" },
+  { id: "t-2", name: "Marrow Ironkettle", class: "Warrior", race: "Dwarf", ruleset: "Normal", faction: "Alliance", region: "Americas" },
+];
+/* context changes (the character switcher, chars.v1 switched on by interception) and a reader that fails to load */
+async function contexts(browser, [label, opts]) {
+  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
+  page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
+  await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); localStorage.setItem("board-wl", "1"); } catch (e) {} }, [KEY]);
+  await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": true }; await json(route, j); });
+  await ctx.route("**/api/**", async (route) => {
+    const u = new URL(route.request().url()), m = route.request().method();
+    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise", user: "abcd1234", expires_at: 4102444800, characters: CHARS });
+    if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
+    if (m === "POST" && u.pathname.endsWith("/api/sheet")) { const b = route.request().postDataJSON(); posts.push(b); await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() }); }
+    return route.abort();
+  });
+  await ctx.route("**/js/addon-import.js*", (route) => route.abort());
+  await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
+  await page.waitForFunction(() => window.__scenes && window.__boardKit && window.__boardKit.D && window.__boardKit.D.party, null, { timeout: 20000 }).catch(() => {});
+  await page.evaluate(() => window.__scenes.load("sheet")).catch(() => {});
+  await page.evaluate(() => window.__sheet.openSheet("bloise", true));
+  await page.locator("#ps-chars .ps-char").nth(1).waitFor({ timeout: 10000 }).catch(() => {});
+  await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
+  await page.locator("#imp-out").waitFor({ timeout: 8000 });
+  await page.waitForFunction(() => /could not load/.test(document.querySelector("#imp-out").innerText), null, { timeout: 8000 }).catch(() => {});
+  ok(`${label}: a reader that fails to load says so and offers a way out`, /The reader could not load. Reload the page and try again./.test(await page.locator("#imp-out").innerText()) && (await page.locator("#imp-retry-load").count()) === 1 && !/Loading the reader/.test(await page.locator("#imp-out").innerText()));
+  await ctx.unroute("**/js/addon-import.js*");
+  await page.locator("#imp-retry-load").click();
+  await page.waitForFunction(() => /Nothing is read until/.test(document.querySelector("#imp-out").innerText), null, { timeout: 8000 }).catch(() => {});
+  ok(`${label}: the retry loads the reader`, /Nothing is read until/.test(await page.locator("#imp-out").innerText()));
+  const now = Math.floor(Date.now() / 1000), { encode } = await import("../../js/addon-import.js");
+  const s = encode({ v: 1, iface: 16001, t: now - 60, class: "WARRIOR", race: "Troll", level: 33, prof: "164:300" }).full;
+  const swap = async (i) => { await page.locator("#ps-chars .ps-char").nth(i).evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-chars .ps-char").nth(i).click(); await page.waitForTimeout(300); };
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await swap(1);
+  ok(`${label}: switching character between paste and send resets the summary`, (await page.locator(".imp-row").count()) === 0 && (await page.locator("#imp-text").inputValue()) === "" && posts.length === 0);
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await swap(0);
+  await page.waitForTimeout(2200);
+  const txt = await page.locator("#imp-out").innerText();
+  ok(`${label}: switching during sending stops the remaining writes and says so`, posts.length === 1 && /you switched characters/.test(txt) && /Stopped before/.test(txt), `posts=${posts.length} ${txt.slice(0, 160)}`);
+  ok(`${label}: after the switch there is no export and no Sent line left`, (await page.locator(".imp-row").count()) === 0 && (await page.locator("#imp-text").inputValue()) === "");
+  ok(`${label}: context checks, zero page errors`, errors.length === 0, errors.join(" | "));
+  await ctx.close();
+}
 const browser = stubbed(await pw.chromium.launch());
 for (const sz of SIZES) await run(browser, sz);
+for (const sz of SIZES) await contexts(browser, sz);
 await browser.close();
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

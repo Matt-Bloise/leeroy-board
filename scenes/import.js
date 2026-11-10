@@ -9,13 +9,15 @@ const NAME = { race: "Race", class: "Class", level: "Level", professions: "Profe
 /* ONE size limit for the file, the text box and the reader: an export is at most 2048 characters, so 400000 is already generous (a whole SavedVariables file). Over it is refused out loud, never cut. */
 const TEXT_MAX = 400000, TOO_BIG = "That file is larger than the add-on ever writes; paste only the export string.";
 const WHY = { "no key": "this board link has no key", key: "this board link is not yours", off: "the party sheet is switched off for now", offline: "no connection", busy: "busy, try again in a minute", refused: "the board did not accept that value", failed: "the board could not save it", "nowhere to send": "no connection to the board", "not on the board's lists": "that value is not on the board's lists" };
-const S = { text: "", sending: false, results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, op: 0 }
+const S = { text: "", sending: false, results: null, mod: null, modP: null, ctx: null, say: "", fileErr: "", frozen: null, op: 0, id: null, loadFail: false, left: null }
 let ctl = null;
 let outEl = null;
 
 function lib() {
   if (S.modP || !HERE) return S.modP;
-  S.modP = import(new URL("../js/addon-import.js?v=ee0fc5e72b", HERE).href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; return null; });
+  /* a failed import is remembered by the browser for that exact URL, so a retry asks for a new one */
+  const u = new URL("../js/addon-import.js?v=ee0fc5e72b", HERE); if (S.tries) u.searchParams.set("r", String(S.tries));
+  S.modP = import(u.href).then((m) => { S.mod = m; return m; }).catch(() => { S.modP = null; S.loadFail = true; S.tries = (S.tries || 0) + 1; return null; });
   return S.modP;
 }
 const show = (f, v) => {
@@ -27,7 +29,7 @@ const age = (d) => (d < 0.04 ? "just now" : d < 1 ? "today" : `${Math.floor(d)} 
 
 function read() {
   const A = S.mod, t = S.text;
-  if (!A) return { kind: "wait" };
+  if (!A) return { kind: S.loadFail ? "fail" : "wait" };
   if (!t.trim()) return { kind: "empty" };
   const r = A.parse(t);
   if (!r.ok) return { kind: "bad", why: r.why };
@@ -83,16 +85,18 @@ async function retry() {
   return run(todo, frozen, keep);
 }
 async function run(todo, frozen, keep) {
-  const tok = ++S.op; S.sending = true; S.frozen = frozen; S.results = Object.keys(keep).length ? keep : null; S.say = ""; update(); /* edits during sending are blocked by the lock, and any other operation would void this token */
+  const tok = ++S.op, who = S.ctx.identity ? S.ctx.identity() : null; S.left = todo.map((o) => o.field); S.sending = true; S.frozen = frozen; S.results = Object.keys(keep).length ? keep : null; S.say = ""; update(); /* edits during sending are blocked by the lock, and any other operation would void this token */
   const res = {}, B = window.BoardBrain;
   try {
     for (const o of todo) {
       if (tok !== S.op) return;
+      if (who !== null && !sameWho(who, S.ctx.identity())) { for (const q of todo) if (!(q.field in res)) res[q.field] = { ok: false, why: "you switched characters" }; break; }
+      S.left = todo.filter((q) => q !== o && !(q.field in res)).map((q) => q.field);
       let r; try { r = await B.setSheet(o.field, o.after); } catch (e) { r = { ok: false, why: "failed" }; }
       if (tok !== S.op) return;
       res[o.field] = r && r.ok ? { ok: true } : { ok: false, why: WHY[r && r.why] || "the board could not save it" };
     }
-  } finally { S.sending = false; if (tok !== S.op) { S.frozen = null; update(); } }
+  } finally { S.sending = false; S.left = null; if (tok !== S.op) { S.frozen = null; update(); } }
   if (tok !== S.op) return;
   const all = { ...keep, ...res }, ok = Object.values(res).filter((x) => x.ok).length;
   S.op++; /* a read that began before Send and ends after it is stale too */
@@ -101,6 +105,18 @@ async function run(todo, frozen, keep) {
   update();
   if (S.ctx.done) S.ctx.done();
 }
+/* the same context: same view and sheet, and the same character, where an empty character id (the list has not loaded yet) matches any */
+function sameWho(a, b) {
+  const [pa, ca] = String(a).split("|"), [pb, cb] = String(b).split("|");
+  return pa === pb && (!ca || !cb || ca === cb);
+}
+/* Wipes everything that belongs to one context. Bumping the token makes any in-flight read or send finish into nothing. If a send was cut off by the switch, the lines it had not sent yet are named in the notice. */
+function reset() {
+  const cut = S.sending && S.left && S.left.length ? S.left.map((f) => NAME[f]).join(", ") : "";
+  S.op++; S.text = ""; S.results = null; S.frozen = null; S.fileErr = ""; S.sending = false; S.id = null;
+  S.say = cut ? `Not sent: you switched characters. Stopped before ${cut}.` : "";
+  if (outEl && outEl.isConnected) update();
+}
 function update() {
   if (!outEl || !outEl.isConnected) return;
   const x = read();
@@ -108,6 +124,7 @@ function update() {
   if (S.fileErr) body = h("p", { class: "imp-bad", role: "alert", text: S.fileErr });
   else if (x.kind === "ok") body = summary(x);
   else if (x.kind === "bad") body = h("p", { class: "imp-bad", role: "alert", text: x.why });
+  else if (x.kind === "fail") body = h("div", { class: "imp-sum" }, h("p", { class: "imp-bad", role: "alert", text: "The reader could not load. Reload the page and try again." }), h("div", { class: "imp-act" }, h("button", { type: "button", class: "lib-tool imp-retry-load", id: "imp-retry-load", onclick: () => { S.loadFail = false; update(); const p = lib(); if (p) p.then(update); } }, "Try loading it again"), h("button", { type: "button", class: "lib-tool imp-reload", onclick: () => { try { location.reload(); } catch (e) {} } }, "Reload the page")));
   else if (x.kind === "wait") body = h("p", { class: "imp-info", text: "Loading the reader..." });
   else body = h("p", { class: "imp-info", text: "Nothing is read until you paste or drop an export. Nothing is sent until you tap Send." });
   if (ctl) { const lock = S.sending; ctl.ta.disabled = lock; ctl.pick.disabled = lock; ctl.choose.disabled = lock; ctl.drop.setAttribute("aria-disabled", String(lock)); }
@@ -122,7 +139,9 @@ function fromFile(file, ta) {
   Promise.resolve().then(() => file.text()).then((t) => { if (!live()) return; if (t.length > TEXT_MAX) { S.text = ""; S.results = null; S.frozen = null; S.fileErr = TOO_BIG; ta.value = ""; update(); return; } ta.value = t; setText(t); }, () => { if (!live()) return; S.fileErr = "That file could not be read."; update(); });
 }
 function mount(host, ctx) {
-  S.ctx = ctx;
+  const id = ctx.identity ? ctx.identity() : null;
+  if (S.id !== null && id !== null && !sameWho(S.id, id)) reset();
+  S.id = id; S.ctx = ctx;
   const ta = h("textarea", { id: "imp-text", class: "imp-text", rows: "4", spellcheck: "false", autocomplete: "off", autocapitalize: "off", "aria-label": "Export from the Leeroy add-on", placeholder: "LEEROY1|..." });
   ta.value = S.text;
   ta.addEventListener("input", () => setText(ta.value));
@@ -145,5 +164,5 @@ function mount(host, ctx) {
   ctl = { ta, pick, choose, drop };
   lib(); update(); if (S.modP) S.modP.then(update);
 }
-window.BoardImport = Object.freeze({ mount });
+window.BoardImport = Object.freeze({ mount, reset });
 })();
