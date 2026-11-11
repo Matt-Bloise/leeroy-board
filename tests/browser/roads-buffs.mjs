@@ -85,8 +85,12 @@ async function run(label, viewport, mobile) {
   for (let i = 0; i < pins.length; i++) {
     const box = await page.evaluate((k) => { const r = document.querySelectorAll("#map .map-pin")[k].querySelector(".pin-body").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, i).catch(() => null);
     if (!box) continue;
-    if (mobile) await page.touchscreen.tap(box.x, box.y); else await page.mouse.move(box.x, box.y);
-    const shown = await until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; });
+    // The page keeps hover quiet after a scene opens until the pointer really moves (scenes/place.js: Q); the first move only records where the pointer rests. A single mouse.move from an unmoved pointer is therefore one event and never counts as a move.
+    // Travel there in steps (several pointermove events, the last more than 4 px from the first), as a hand does; one wiggle on the pin is the fallback.
+    const tipUp = () => until(page, () => { const t = document.getElementById("road-card"); return !!t && !t.hidden; });
+    if (mobile) await page.touchscreen.tap(box.x, box.y); else await page.mouse.move(box.x, box.y, { steps: 6 });
+    let shown = await tipUp();
+    if (!shown && !mobile) { await page.mouse.move(box.x + 6, box.y + 3, { steps: 3 }); await page.mouse.move(box.x, box.y, { steps: 3 }); shown = await tipUp(); }
     ts = await tipState(page);
     const pass = shown && !!ts && ts.l >= 0 && ts.t >= 0 && ts.r <= ts.w && ts.b <= ts.h && ts.hits.length === 0;
     ok(`${label}: pin ${i + 1} ${mobile ? "tap" : "hover"} opens a tip that is inside the view and covers nothing`, pass, JSON.stringify(ts) + (pass ? "" : " DIAG(evidence for a CI-only flake, nothing asserted) " + JSON.stringify(await hoverDiag(page, box, shown))));
