@@ -224,6 +224,21 @@ test("the deploy guard message tells where each missing secret lives (token and 
   assert.doesNotMatch(msg, /They must be secrets of the GitHub environment/);
 });
 
+test("the empty-token message names the repository secret for the token and the environment secret for the admin token, and the runbook row matches", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  const lines = Object.values(w.doc.jobs).flatMap((j) => j.steps || []).flatMap((s) => (typeof s.run === "string" ? s.run.split(/\r?\n/) : []));
+  const msg = lines.find((l) => l.includes("CLOUDFLARE_API_TOKEN is empty or missing"));
+  assert.ok(msg);
+  assert.match(msg, /repository secret \(Settings > Secrets and variables > Actions > Repository secrets\)/);
+  assert.match(msg, /BOARD_ADMIN_TOKEN is the environment secret \(Settings > Environments > production\)/);
+  assert.doesNotMatch(msg, /in GitHub Secrets/);
+  const rb = readFileSync(new URL("../../docs/runbooks/ci-secrets.md", import.meta.url), "utf8");
+  const row = rb.split(/\r?\n/).find((l) => l.includes("Production secrets missing: ..."));
+  assert.ok(row);
+  assert.match(row, /`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are repository secrets by design/);
+  assert.doesNotMatch(row, /environment `production` lacks/);
+});
+
 test("only the production deploy reads production secrets", () => {
   for (const w of workflows.filter((x) => x.f !== "deploy-cloudflare.yml")) {
     const bad = secretNames(scanText(w)).filter((n) => PRODUCTION.includes(n));

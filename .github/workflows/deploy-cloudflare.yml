@@ -93,7 +93,7 @@ jobs:
           CLEAN_ACC=$(echo "$CLOUDFLARE_ACCOUNT_ID" | tr -d '\r\n ' | sed -e 's/^["\x27]//' -e 's/["\x27]$//')
 
           if [ -z "$CLEAN_TOKEN" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN is empty or missing in GitHub Secrets."
+            echo "::error::CLOUDFLARE_API_TOKEN is empty or missing. It is a repository secret (Settings > Secrets and variables > Actions > Repository secrets), not an environment secret; BOARD_ADMIN_TOKEN is the environment secret (Settings > Environments > production). See docs/runbooks/ci-secrets.md."
             exit 1
           fi
 
