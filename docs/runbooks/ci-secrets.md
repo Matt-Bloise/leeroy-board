@@ -10,7 +10,7 @@ Why: a workflow file in a pull request runs with the secrets the repository give
 | `BOARD_ADMIN_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
 | `USER_SALT`, `KEY_SALT`, `AI_GATEWAY_TOKEN` | **repository level, deliberately** (see below) | `deploy-cloudflare.yml` only (no PR workflow references them) |
 | `CLOUDFLARE_AIG_TOKEN`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`, `GITHUB_MODELS_TOKEN`, `OPENROUTER_API_KEY`, `DISCORD_WEBHOOK_URL`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN` | environment `production` | `deploy-cloudflare.yml` only |
-| `CLOUDFLARE_ACCOUNT_ID` | repository secret (an identifier, not a credential; may also be copied into `production`) | deploy and preview |
+| `CLOUDFLARE_ACCOUNT_ID` | repository secret (an identifier, not a credential; may also be copied into `production`; if an environment copy exists it wins for the deploy) | deploy and preview |
 | ~~`CLOUDFLARE_PREVIEW_API_TOKEN`~~ | **not used.** Delete it if it still exists (the value that was pasted is invalid) | nothing |
 | `BOARD_PREVIEW_ADMIN_TOKEN` | repository secret | `pr-preview-cloudflare.yml`, `preview-tests.yml`; the base for the per-preview salts and admin token |
 
