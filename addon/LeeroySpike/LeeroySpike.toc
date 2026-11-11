@@ -1,0 +1,7 @@
+## Interface: 16001
+## Title: Leeroy Spike
+## Notes: Writes one small snapshot of your own character to SavedVariables so Leeroy can learn what the game exposes. Nothing is sent anywhere.
+## Author: Matt Bloise
+## Version: 0.0.1
+## SavedVariables: LeeroySpikeDB
+LeeroySpike.lua

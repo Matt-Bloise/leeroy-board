@@ -361,7 +361,7 @@ function renderHero() {
 }
 function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
 const eventTs = (e) => (e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch);
-let shownNext;
+let shownNext, earlierOpen = false;
 function eventState(e, now, next) {
   const ts = eventTs(e);
   if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, ${cardDates(`until ${e.until} (${e.until_zone || "Pacific"})`)}`];
@@ -372,7 +372,7 @@ function eventState(e, now, next) {
 }
 function stopEmblem(name) { return [emb.dates(name)]; }
 function renderTimeline() {
-  const t = D.timeline, tl = $("#rail"); tl.replaceChildren();
+  const t = D.timeline, tl = $("#rail"), hadFocus = !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("earlier-toggle")); tl.replaceChildren();
   const now = Date.now() / 1000;
   const next = nextEvent(now);
   shownNext = next ? next.key : null;
@@ -380,17 +380,32 @@ function renderTimeline() {
   let i = -1; starts.forEach((x, k) => { if (x <= now) i = k; });
   const prog = i < 0 ? 0 : i >= starts.length - 1 ? 1 : (i + Math.min(1, (now - starts[i]) / (starts[i + 1] - starts[i]))) / (starts.length - 1);
   tl.style.setProperty("--prog", `${Math.round(prog * 1000) / 10}%`);
-  t.events.forEach((e, di) => {
+  const stops = t.events.map((e, di) => {
     const [cls, label] = eventState(e, now, next);
     const lit = cls === "next" || cls === "open";
-    tl.append(h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
+    return [cls, eventTs(e), h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
       h("span", { class: "stop-mark", "aria-hidden": "true" }, ...stopEmblem(EMB_LABEL[e.key] || "seal"), cls === "past" ? emb.dates("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
       h("div", { class: "stop-body" },
         h("div", { class: "when", text: eventWhen(e) }),
         h("h3", { text: e.label }),
         e.detail ? h("p", { text: e.detail }) : null,
-        h("p", { class: "label state", text: label }))));
+        h("p", { class: "label state", text: label })))];
   });
+  const gone = stops.filter((x) => x[0] === "past").sort((a, b) => b[1] - a[1]).map((x) => x[2]); /* most recent first */
+  if (!launchPast() || !gone.length) tl.append(...stops.map((x) => x[2]));
+  else {
+    /* After launch the dates ahead lead; what already happened sits behind one Earlier control (kept, never deleted). */
+    const ahead = stops.filter((x) => x[0] !== "past").sort((a, b) => a[1] - b[1]).map((x) => x[2]); /* soonest first */
+    tl.append(...ahead);
+    if (!ahead.length) tl.append(h("li", { class: "stop-none" }, h("p", { class: "label", text: "Nothing dated ahead right now." })));
+    gone.forEach((l) => l.removeAttribute("data-j")); /* the Earlier button is the reader's own ask: show them in every journey (Guided hides past stops otherwise) */
+    const list = h("ol", { class: "rail-earlier", id: "rail-earlier" }, ...gone);
+    const btn = h("button", { type: "button", class: "earlier-toggle", "aria-expanded": earlierOpen ? "true" : "false", "aria-controls": "rail-earlier", text: `Earlier (${gone.length})` });
+    list.hidden = !earlierOpen;
+    btn.addEventListener("click", () => { earlierOpen = !earlierOpen; list.hidden = !earlierOpen; btn.setAttribute("aria-expanded", earlierOpen ? "true" : "false"); });
+    tl.append(h("li", { class: "stop-earlier" }, btn, list));
+    if (hadFocus) btn.focus({ preventScroll: true });
+  }
   renderCalendar(now);
   KIT.emit("timeline");
 }
@@ -1585,7 +1600,7 @@ const TITLES = { tonight: "Next steps", timeline: "Dates", get five() { return p
 const PAGE_TITLE = { base: "" };
 function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
-const SC = { scrollY: null, how: null, open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
+const SC = { scrollY: null, how: null, open: null, want: null, backing: false, backTimer: 0, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
@@ -1907,16 +1922,18 @@ function landing(k) {
 }
 const tileFocus = (t) => {
   let f = t.matches("a, button, main") ? t : t.querySelector("a[href]");
+  const main = $("#main"), t0 = performance.now(), LIMIT = 1500; /* retries are bounded by time, not by frame count: a throttled or backgrounded tab runs few frames */
+  const lost = () => { const a = document.activeElement; return !a || a === document.body || !!a.closest("#scene"); }; /* focus is nowhere useful: on <body> or inside the closing scene layer */
   if (f && f.getClientRects && !f.getClientRects().length) { /* no box yet (the board is still settling after a close, seen with reduced motion where the close is instant): main for now, the tile as soon as it has one */
-    const want = f; f = $("#main"); let n = 0;
-    const later = () => { const a = document.activeElement; if (!want.isConnected || (a && a !== document.body && a !== f && !a.closest("#scene"))) return; if (want.getClientRects().length) { want.focus({ preventScroll: true }); return; } if (++n < 30) requestAnimationFrame(later); };
+    const want = f; f = main;
+    const later = () => { const a = document.activeElement; if (!want.isConnected || (a && a !== document.body && a !== f && !a.closest("#scene"))) return; if (want.getClientRects().length) { want.focus({ preventScroll: true }); if (document.activeElement === want) return; } if (performance.now() - t0 < LIMIT) requestAnimationFrame(later); };
     requestAnimationFrame(later);
   }
-  if (!f) f = $("#main");
+  if (!f) f = main;
   if (!f) return;
   f.focus({ preventScroll: true });
-  /* closing the first-visit card with Escape: the page is still settling when this runs, the call is ignored, the scene layer then hides and focus drops to <body>. Try again on the next frames while focus is still on <body> or inside the closing scene layer, and never take it from anything else. */
-  if (document.activeElement !== f) { let n = 0; const again = () => { const a = document.activeElement; if ((a && a !== document.body && !a.closest("#scene")) || !f.isConnected) return; f.focus({ preventScroll: true }); if (document.activeElement !== f && ++n < 40) requestAnimationFrame(again); }; requestAnimationFrame(again); }
+  /* closing the first-visit card with Escape: the page is still settling when this runs, the call is ignored, the scene layer then hides and focus drops to <body>. Try again on the next frames while focus is still on <body> or inside the closing scene layer, and never take it from anything else. When the target still cannot take focus, fall back to the main landmark so focus never stays on <body>. */
+  if (document.activeElement !== f) { const again = () => { if (!lost() || !f.isConnected) return; f.focus({ preventScroll: true }); if (document.activeElement === f) return; if (performance.now() - t0 < LIMIT) requestAnimationFrame(again); else if (main && main !== f && lost()) main.focus({ preventScroll: true }); }; requestAnimationFrame(again); }
 };
 function hideScene(o) {
   o = o || SC.how; SC.how = null; const glided = !!(o && o.glided);
@@ -1963,7 +1980,11 @@ function startPeek() {
 function requestClose(o) {
   if (SC.open === null && !SC.want) return;
   const opt = o && (o.glided || o.key) ? o : null;
-  if (history.state && history.state.pushed) { SC.how = opt; history.back(); return; }
+  if (history.state && history.state.pushed) {
+    if (SC.backing) return; /* a close is already on its way (key repeat, Escape plus a Back tap): a second history.back() would leave the page */
+    SC.backing = true; clearTimeout(SC.backTimer); SC.backTimer = setTimeout(() => { SC.backing = false; }, 800); /* safety: the flag can never stick */
+    SC.how = opt; history.back(); return;
+  }
   setHash(null, false); hideScene(opt);
 }
 function switchTab(key, crossFade = true) {
@@ -2077,6 +2098,7 @@ function startScenes() {
     if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target) || ($("#roster") && $("#roster").contains(e.target)) || senseBox().some((n) => n.contains(e.target))) return;
     const first = sceneFocus()[0]; if (first) first.focus();
   });
+  addEventListener("popstate", () => { SC.backing = false; clearTimeout(SC.backTimer); });
   addEventListener("popstate", route);
   addEventListener("hashchange", route);
   $("#view-wheel").addEventListener("click", () => setBuffView("wheel"));
@@ -3449,6 +3471,14 @@ function yourTime(T) {
 function withWhen(e) { return e && !e.when && e.epoch ? { ...e, when: fmtWhen(e.epoch) } : e; }
 function launchEvent() { return withWhen((D.timeline && D.timeline.events && D.timeline.events.find((x) => x.key === "launch")) || null); }
 function launchPast() { const e = launchEvent(); return !!(e && e.epoch && Date.now() / 1000 >= e.epoch); }
+/* After launch the board talks in past tense and drops the pre-launch checklists. Pure: takes the event and the clock so tests can fake both sides of launch. */
+function launchSay(e, nowS) { if (!e || !e.epoch) return ""; const now = nowS === undefined ? Date.now() / 1000 : nowS; return now >= e.epoch ? `Launched ${fmtWhen(e.epoch, { time: false })}, ${relWhen(e.epoch, now)}.` : `Launch is ${relWhen(e.epoch, now)}, ${fmtWhen(e.epoch)}.`; }
+/* The "Names" line comes from the names_open event (data/timeline.json carries until/until_zone, tonight.json open_when). Closed window: no line. */
+function namesLine(ev, tl, nowS) {
+  if (!ev || !ev.until_epoch || nowS >= ev.until_epoch) return "";
+  const t = tl || ev, until = t.until || ev.until, zone = t.until_zone || ev.until_zone || "Pacific";
+  return until ? `Names: open now for pack holders, ${cardDates(`until ${until} (${zone})`)}.` : `Names: ${String(ev.open_when || "open now").replace(/^./, (c) => c.toLowerCase())}.`;
+}
 function nextDated() { const now = Date.now() / 1000, ev = (D.timeline && D.timeline.events) || []; return ev.filter((x) => x.epoch && x.epoch > now).sort((a, b) => a.epoch - b.epoch).map(withWhen)[0] || null; }
 function settleLaunch() {
   const p = D.party; if (!p || !launchPast()) return false;
@@ -3519,7 +3549,8 @@ function beforeItems(T, P, member, mine) {
     const po = open(/profession/i) || {}, pr = member.professions || [], und = pr.some((p) => p.status === "undecided"), gap = (po.text || "").match(/Gap: ([A-Za-z]+)/);
     out.push({ id: "prof", text: `Professions on the board: ${pr.map((p) => p.name).join(" and ") || "none yet"}${und ? " (one still undecided)" : ""}.`, href: po.links && po.links[0] ? po.links[0].url : L.choose, more: gap ? `The group has no ${gap[1]} yet.` : "" });
   }
-  if (names && names.until_epoch) out.push({ id: "names", text: nowS < names.until_epoch ? `Names: open now for pack holders, ${cardDates("until Nov 3 (Pacific)")}.` : "Names: the pack-holder window has closed.", more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
+  const namesText = namesLine(names, D.timeline && D.timeline.events.find((e) => e.key === "names_open"), nowS);
+  if (namesText) out.push({ id: "names", text: namesText, more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
   if (member) out.push({ id: "signup", text: mine ? `Sign-up card: you answered "${T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || mine.rsvp}".` : "Sign-up card: no answer from you yet.", href: L.signup });
   const meet = open(/meeting point/i);
   if (meet) out.push({ id: "meet", text: unchosen(meet) ? "Meeting point: nothing chosen yet." : `Meeting point: ${meet.status}.`, href: unchosen(meet) ? P.signup_url : null, more: meet.detail || "" });
@@ -3538,6 +3569,8 @@ function groupOpenLine(T, P) {
 }
 function renderBefore() {
   const T = D.tonight, P = D.party, box = $("#tn-before"); if (!T || !P || !box) return;
+  if (launchPast()) { box.replaceChildren(); box.hidden = true; return; } /* launch has happened: the pre-launch list is retired */
+  box.hidden = false;
   const me = MEM.me(), member = MEM.member(), slug = member ? MEM.slug(member.name) : "just-looking";
   const S = D.signups, entries = S && S.entries ? S.entries : [], mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
   const items = me ? beforeItems(T, P, member, mine) : [], ticks = new Set(beforeTicks(slug));
@@ -3709,7 +3742,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

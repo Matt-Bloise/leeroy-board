@@ -1,0 +1,264 @@
+// Import from game panel (scenes/import.js, js/addon-import.js): own sheet only; nothing read before a paste, nothing sent before the Send tap,
+// the summary shows before and after, a field is sent only when it changes, per-field success and failure, no overlap at 390x844 and 1440x900, zero console errors.
+//   node addon-import.mjs --url http://127.0.0.1:8080/   (or env PREVIEW_PAGES)
+// Everything under /api/ is stubbed by interception with a made-up member key; nothing real is sent. Exit 0 when every check passes, 1 otherwise.
+import { pageUrl } from "../helpers/page-url.mjs";
+import { stubbed } from "../helpers/browser-stub.mjs";
+const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
+const argv = process.argv.slice(2), ui = argv.indexOf("--url");
+const BASE = (ui >= 0 && argv[ui + 1]) || process.env.PREVIEW_PAGES;
+if (!BASE) { console.error("usage: node addon-import.mjs --url <pages origin>"); process.exit(2); }
+let pass = 0, fail = 0;
+const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
+const KEY = "TestKeyTestKeyTestKey123456";
+const SIZES = [["390x844", { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }], ["1440x900", { viewport: { width: 1440, height: 900 } }]];
+const json = (route, body, status = 200) => route.fulfill({ status, contentType: "application/json", headers: { "cache-control": "no-store" }, body: JSON.stringify(body) });
+
+async function run(browser, [label, opts]) {
+  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
+  page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
+  page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]|^Failed to load resource|cloudflareinsights|net::ERR|WebSocket connection/.test(m.text())) errors.push(m.text()); });
+  await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); } catch (e) {} }, [KEY]);
+  await ctx.route("**/api/**", async (route) => {
+    const u = new URL(route.request().url()), m = route.request().method();
+    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise" });
+    if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
+    if (m === "POST" && u.pathname.endsWith("/api/sheet")) {
+      const b = route.request().postDataJSON(); posts.push(b); await new Promise((r) => setTimeout(r, 400));
+      if (b.field === "level" && !globalThis.__lvOk) return json(route, { error: "busy" }, 429);
+      return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() });
+    }
+    return route.abort();
+  });
+  await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
+  await page.waitForFunction(() => window.__scenes && window.__boardKit && window.__boardKit.D && window.__boardKit.D.party, null, { timeout: 20000 }).catch(() => {});
+  await page.evaluate(() => window.__scenes.load("sheet")).catch(() => {});
+  await page.evaluate(() => window.__sheet.openSheet("bloise", true));
+  await page.waitForTimeout(1500);
+  ok(`${label}: Import from game button is on your own sheet`, await page.locator("#ps-imp-btn").count() === 1);
+  await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
+  await page.locator("#imp-text").waitFor({ state: "visible", timeout: 10000 });
+  await page.waitForFunction(() => /Nothing is read until/.test(document.querySelector("#imp-out").innerText), null, { timeout: 8000 }).catch(() => {});
+  ok(`${label}: panel opens empty and sends nothing`, (await page.locator("#imp-out").innerText()).includes("Nothing is read until you paste") && posts.length === 0);
+  const now = Math.floor(Date.now() / 1000);
+  const { encode } = await import("../../js/addon-import.js");
+  const s = encode({ v: 1, iface: 16001, t: now - 60, name: "Secretname", class: "WARRIOR", race: "Troll", level: 33, prof: "164:300", zone: "Elwynn Forest" }).full;
+  await page.locator("#imp-text").fill(s.slice(0, 40) + "\n" + s.slice(40));
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const txt = await page.locator("#imp-out").innerText();
+  ok(`${label}: summary names what was found and what will change`, /level 33/.test(txt) && /Will change/.test(txt) && /Secretname/.test(txt) && /never sent/.test(txt), txt.slice(0, 300));
+  await page.locator("#imp-text").fill(encode({ v: 1, iface: 16001, t: now - 60, class: "WARRIOR", race: "Troll", level: 33, prof: "164:300,185:100" }).full);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const mixed = await page.locator("#imp-out").innerText();
+  ok(`${label}: one known and one unknown profession leaves the professions line alone, and says so`, /skill 185 is not on the board's list, so your board professions are kept/.test(mixed) && (await page.locator('.imp-row[data-field="professions"]').count()) === 0, mixed.slice(0, 200));
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  ok(`${label}: nothing sent before the tap`, posts.length === 0);
+  ok(`${label}: nothing about the import in localStorage`, await page.evaluate(() => !Object.entries(localStorage).some(([k, v]) => /LEEROY1|Secretname/.test(k + v))));
+  const bad = await page.locator("#imp-text").fill(s.replace("level=33", "level=34")).then(() => page.locator(".imp-bad").innerText());
+  ok(`${label}: a tampered string is refused in plain words`, /check does not match/.test(bad), bad);
+  /* one operation token: the latest of several reads or a paste wins, and an older read that fails later shows nothing */
+  const X = encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full, Y = encode({ v: 1, iface: 16001, t: now - 60, class: "ROGUE", race: "Orc", level: 7 }).full;
+  const drop = (text, ms, reject) => page.evaluate(([o, d, rj]) => { const slow = { size: 10, text: () => new Promise((res, rej) => setTimeout(() => (rj ? rej(new Error("x")) : res(o)), d)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); }, [text, ms, reject]);
+  const val = () => page.locator("#imp-text").inputValue();
+  await drop(X, 700); await drop(Y, 150); await page.waitForTimeout(1100);
+  ok(`${label}: two reads, the older finishing last: the newer one wins`, (await val()) === Y, (await val()).slice(0, 60));
+  await page.locator("#imp-text").fill(""); await drop(X, 150); await drop(Y, 700); await page.waitForTimeout(1100);
+  ok(`${label}: two reads, the newer finishing last: the newer one wins`, (await val()) === Y && /level 7/.test(await page.locator("#imp-out").innerText()), (await val()).slice(0, 60));
+  await drop(X, 500, true); await page.locator("#imp-text").fill(s); await page.waitForTimeout(900);
+  ok(`${label}: an older read that fails after a newer paste shows no error and keeps the preview`, (await page.locator(".imp-bad").count()) === 0 && (await val()) === s && (await page.locator(".imp-row").count()) > 0 && !/could not be read/.test(await page.locator("#imp-out").innerText()));
+  await drop(X, 100, true); await page.waitForTimeout(500);
+  ok(`${label}: the latest read failing does say so`, /could not be read/.test(await page.locator("#imp-out").innerText()));
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  /* one size limit: an oversized file or paste is refused out loud, never cut */
+  await page.evaluate(() => { const big = { size: 400001, text: () => Promise.resolve("x") }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [big], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); });
+  await page.waitForTimeout(150);
+  ok(`${label}: an oversized file is refused with the explicit reason`, /larger than the add-on ever writes; paste only the export string/.test(await page.locator("#imp-out").innerText()), await page.locator("#imp-out").innerText());
+  await page.evaluate(() => { const big = { size: 10, text: () => Promise.resolve("y".repeat(400001)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [big], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); });
+  await page.waitForTimeout(300);
+  ok(`${label}: a file that is longer than it claimed is refused too, not cut`, /larger than the add-on ever writes/.test(await page.locator("#imp-out").innerText()));
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const geo = await page.evaluate(() => {
+    const sc = document.documentElement.scrollWidth - window.innerWidth;
+    const boxes = [...document.querySelectorAll(".imp-row, .imp-text, .imp-drop, .imp-send, .imp-note")].map((e) => e.getBoundingClientRect());
+    const over = [];
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) { const a = boxes[i], b = boxes[j]; if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) over.push([i, j]); }
+    const panel = document.querySelector(".imp").getBoundingClientRect();
+    return { sc, over, panelRight: panel.right, vw: window.innerWidth, short: [...document.querySelectorAll(".imp-send, .imp-choose, .imp-toggle")].filter((e) => e.offsetHeight < 44).length };
+  });
+  ok(`${label}: no horizontal scroll, no overlap, controls 44px`, geo.sc <= 1 && geo.over.length === 0 && geo.panelRight <= geo.vw + 1 && geo.short === 0, JSON.stringify(geo));
+  if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-before.png` : undefined }).catch(() => {});
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
+  /* while a file read is pending the OLD export cannot be sent: Send is disabled and says Reading, and a forced tap writes nothing; the NEW export's lines are what Send writes */
+  const Z = encode({ v: 1, iface: 16001, t: now - 60, class: "ROGUE", race: "Orc", level: 7 }).full;
+  await page.locator("#imp-text").fill(Z); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await drop(s, 800);
+  const rdg = await page.evaluate(() => ({ dis: document.getElementById("imp-send") ? document.getElementById("imp-send").getAttribute("aria-disabled") : "gone", out: document.getElementById("imp-out").innerText }));
+  ok(`${label}: while a file is being read, the old export is not shown as sendable`, /Reading the file/.test(rdg.out) && (rdg.dis === "gone" || rdg.dis === "true") && !/Level 7/.test(rdg.out), JSON.stringify(rdg).slice(0, 160));
+  await page.evaluate(() => { const b = document.getElementById("imp-send"); if (b) b.click(); });
+  await page.waitForTimeout(200);
+  ok(`${label}: a tap on Send during the read writes nothing`, posts.length === 0);
+  await page.waitForFunction(() => document.querySelector(".imp-row") && /level 33/.test(document.getElementById("imp-out").innerText), null, { timeout: 5000 }).catch(() => {});
+  ok(`${label}: after the read the NEW export is the preview and Send is live`, (await page.locator("#imp-text").inputValue()) === s && /level 33/.test(await page.locator("#imp-out").innerText()) && (await page.locator("#imp-send").getAttribute("aria-disabled")) !== "true");
+  /* a re-render of the sheet during a read builds a new text box: the file's text must land in the one on screen */
+  await page.locator("#imp-text").fill(Z); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await drop(s, 700);
+  await page.evaluate(() => window.__sheet.show("sheet", "bloise"));
+  await page.waitForTimeout(400);
+  const boxBefore = await page.evaluate(() => document.getElementById("imp-text").value);
+  await page.waitForFunction(() => /level 33/.test(document.getElementById("imp-out").innerText), null, { timeout: 5000 }).catch(() => {});
+  ok(`${label}: a remount during a read still puts the file's text in the visible box`, (await page.locator("#imp-text").inputValue()) === s && /level 33/.test(await page.locator("#imp-out").innerText()) && (await page.locator("#imp-text").count()) === 1, JSON.stringify({ boxBefore: boxBefore.slice(0, 40) }));
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await page.locator("#imp-send").click();
+  const during = await page.evaluate(() => ({ ta: document.getElementById("imp-text").disabled, file: document.getElementById("imp-file").disabled, choose: document.querySelector(".imp-choose").disabled, send: document.getElementById("imp-send").getAttribute("aria-disabled"), label: document.getElementById("imp-send").textContent }));
+  ok(`${label}: while sending, the text box, file picker and Send are locked`, during.ta && during.file && during.choose && during.send === "true" && /Sending/.test(during.label), JSON.stringify(during));
+  /* an edit attempt during submission (an input event, and a drop of other text) must change nothing */
+  const other = encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12 }).full;
+  await page.evaluate((o) => { const ta = document.getElementById("imp-text"); ta.value = o; ta.dispatchEvent(new Event("input", { bubbles: true })); const dt = new DataTransfer(); dt.setData("text/plain", o); document.getElementById("imp-drop").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true })); }, other);
+  await page.locator('.imp-row[data-state="failed"], .imp-row[data-state="sent"]').first().waitFor({ timeout: 8000 });
+  await page.waitForTimeout(500);
+  const fields = posts.map((p) => p.field).sort();
+  ok(`${label}: only changed fields were sent, one at a time, and never the name`, JSON.stringify(fields) === JSON.stringify(["class", "level", "professions", "race"]) && !JSON.stringify(posts).includes("Secretname") && !JSON.stringify(posts).includes("Elwynn"), JSON.stringify(posts));
+  ok(`${label}: values sent are board slugs`, posts.some((p) => p.field === "class" && p.value === "warrior") && posts.some((p) => p.field === "race" && p.value === "troll") && posts.some((p) => p.field === "professions" && JSON.stringify(p.value) === '["blacksmithing"]'), JSON.stringify(posts));
+  const states = await page.locator(".imp-row").evaluateAll((els) => Object.fromEntries(els.map((e) => [e.dataset.field, e.dataset.state])));
+  ok(`${label}: a failed line says so and the others say Sent`, states.level === "failed" && states.race === "sent" && states.class === "sent" && states.professions === "sent", JSON.stringify(states));
+  ok(`${label}: the failure is in words`, /Level\s*[\s\S]*Not sent: busy/.test(await page.locator("#imp-out").innerText()));
+  /* retry: the failed line (level) can be sent again, only that one, against the current sheet */
+  const before = posts.length;
+  ok(`${label}: the button now offers Retry for the failed line`, /Retry 1 failed line/.test(await page.locator("#imp-send").innerText()) && (await page.locator("#imp-send").getAttribute("aria-disabled")) !== "true");
+  globalThis.__lvOk = true;
+  await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.querySelector('.imp-row[data-field="level"]').dataset.state === "sent", null, { timeout: 8000 }).catch(() => {});
+  const again = posts.slice(before);
+  ok(`${label}: retry sent only the failed line and it succeeded`, again.length === 1 && again[0].field === "level" && again[0].value === 33, JSON.stringify(again));
+  ok(`${label}: after a clean retry every line says Sent and the button is Done`, (await page.locator('.imp-row[data-state="sent"]').count()) === 4 && /Done/.test(await page.locator("#imp-send").innerText()));
+  globalThis.__lvOk = false;
+  ok(`${label}: Send cannot run twice`, (await page.locator("#imp-send").getAttribute("aria-disabled")) === "true");
+  const after = await page.locator("#imp-out").innerText();
+  ok(`${label}: results stay with the export that was sent (the edit during sending was ignored)`, /Level 33/.test(after) && !/Level 12|Gnome/i.test(after) && posts.every((p) => !(p.field === "class" && p.value === "mage")), JSON.stringify(after));
+  ok(`${label}: boxes unlock after sending`, await page.evaluate(() => !document.getElementById("imp-text").disabled));
+  await page.locator("#imp-text").fill(other);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const fresh = await page.evaluate(() => [...document.querySelectorAll(".imp-row")].map((e) => e.dataset.state));
+  ok(`${label}: a new export starts clean, no Sent left over from the old one`, fresh.length > 0 && fresh.every((x) => x === "change" || x === "same"), JSON.stringify(fresh));
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  if (label === "1440x900") await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/import-${label}-after.png` : undefined }).catch(() => {});
+  ok(`${label}: zero console errors`, errors.length === 0, errors.join(" | "));
+  await ctx.close();
+}
+const CHARS = [
+  { id: "t-1", name: "Pip Fizzwick", class: "Mage", race: "Gnome", ruleset: "Normal", faction: "Alliance", region: "Americas" },
+  { id: "t-2", name: "Marrow Ironkettle", class: "Warrior", race: "Dwarf", ruleset: "Normal", faction: "Alliance", region: "Americas" },
+];
+/* context changes (the character switcher, chars.v1 switched on by interception) and a reader that fails to load */
+async function contexts(browser, [label, opts]) {
+  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" }), page = await ctx.newPage(), errors = [], posts = [];
+  let hold = null; /* { gate, used, started }: the next POST waits on the gate */
+  page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
+  await ctx.addInitScript(([key]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", "bloise"); localStorage.setItem("board-key", key); localStorage.setItem("board-wl", "1"); } catch (e) {} }, [KEY]);
+  await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": true }; await json(route, j); });
+  await ctx.route("**/api/**", async (route) => {
+    const u = new URL(route.request().url()), m = route.request().method();
+    if (m === "GET" && u.pathname.endsWith("/api/me")) return json(route, { slug: "bloise", name: "Bloise", user: "abcd1234", expires_at: 4102444800, characters: CHARS });
+    if (m === "GET" && u.pathname.endsWith("/api/sheet")) return json(route, { sheet: { fields: {}, updated: null }, party: [] });
+    if (m === "POST" && u.pathname.endsWith("/api/sheet")) { const b = route.request().postDataJSON(); posts.push(b); if (hold && !hold.used) { hold.used = true; await hold.gate; } else await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true, value: b.value, visible: true, at: new Date().toISOString() }); }
+    return route.abort();
+  });
+  await ctx.route("**/js/addon-import.js*", (route) => route.abort());
+  await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
+  await page.waitForFunction(() => window.__scenes && window.__boardKit && window.__boardKit.D && window.__boardKit.D.party, null, { timeout: 20000 }).catch(() => {});
+  await page.evaluate(() => window.__scenes.load("sheet")).catch(() => {});
+  await page.evaluate(() => window.__sheet.openSheet("bloise", true));
+  await page.locator("#ps-chars .ps-char").nth(1).waitFor({ timeout: 10000 }).catch(() => {});
+  await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
+  await page.locator("#imp-out").waitFor({ timeout: 8000 });
+  await page.waitForFunction(() => /could not load/.test(document.querySelector("#imp-out").innerText), null, { timeout: 8000 }).catch(() => {});
+  ok(`${label}: a reader that fails to load says so and offers a way out`, /The reader could not load. Reload the page and try again./.test(await page.locator("#imp-out").innerText()) && (await page.locator("#imp-retry-load").count()) === 1 && !/Loading the reader/.test(await page.locator("#imp-out").innerText()));
+  await ctx.unroute("**/js/addon-import.js*");
+  await page.locator("#imp-retry-load").click();
+  await page.waitForFunction(() => /Nothing is read until/.test(document.querySelector("#imp-out").innerText), null, { timeout: 8000 }).catch(() => {});
+  ok(`${label}: the retry loads the reader`, /Nothing is read until/.test(await page.locator("#imp-out").innerText()));
+  const now = Math.floor(Date.now() / 1000), { encode } = await import("../../js/addon-import.js");
+  const s = encode({ v: 1, iface: 16001, t: now - 60, class: "WARRIOR", race: "Troll", level: 33, prof: "164:300" }).full;
+  const swap = async (i) => { await page.locator("#ps-chars .ps-char").nth(i).evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-chars .ps-char").nth(i).click(); await page.waitForTimeout(300); };
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await swap(1);
+  ok(`${label}: switching character between paste and send resets the summary`, (await page.locator(".imp-row").count()) === 0 && (await page.locator("#imp-text").inputValue()) === "" && posts.length === 0);
+  await page.locator("#imp-text").fill(s);
+  await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await swap(0);
+  await page.waitForTimeout(2200);
+  const txt = await page.locator("#imp-out").innerText();
+  ok(`${label}: switching during sending stops the remaining writes and says so`, posts.length === 1 && /You switched characters\./.test(txt) && /The line being saved \(\w+\) may still be saved; the rest were not sent/.test(txt), `posts=${posts.length} ${txt.slice(0, 160)}`);
+  ok(`${label}: after the switch there is no export and no Sent line left`, (await page.locator(".imp-row").count()) === 0 && (await page.locator("#imp-text").inputValue()) === "");
+  /* A is held, the character is switched, B starts, A is released: B stays locked, keeps its preview and finishes with exactly its own lines */
+  posts.length = 0;
+  await page.locator("#imp-text").fill(s); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  let release; hold = { gate: new Promise((r) => { release = r; }), used: false };
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await swap(1);
+  await page.locator("#imp-text").fill(s); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(250);
+  release();
+  await page.waitForTimeout(150);
+  const mid = await page.evaluate(() => ({ locked: document.getElementById("imp-text").disabled, label: document.getElementById("imp-send").textContent, rows: document.querySelectorAll(".imp-row").length }));
+  ok(`${label}: A finishing late leaves B locked with its preview intact`, mid.locked && /Sending/.test(mid.label) && mid.rows === 4, JSON.stringify(mid));
+  await page.waitForFunction(() => /Done|Retry/.test(document.getElementById("imp-send").textContent), null, { timeout: 8000 }).catch(() => {});
+  const endB = await page.locator(".imp-row").evaluateAll((els) => els.map((e) => [e.dataset.field, e.dataset.state]));
+  const fields = posts.map((q) => q.field), sentB = endB.filter(([, x]) => x === "sent").map(([f]) => f);
+  ok(`${label}: B completes with exactly its own lines, and A wrote nothing after the switch`, endB.length === 4 && endB.every(([, x]) => x === "sent" || x === "same") && sentB.length >= 1 && posts.length === 1 + sentB.length && JSON.stringify(fields.slice(1)) === JSON.stringify(sentB), JSON.stringify({ endB, fields }));
+  ok(`${label}: unlocked after B`, await page.evaluate(() => !document.getElementById("imp-text").disabled));
+  /* the same with file reads: a slow read from before the switch ends while B is sending */
+  posts.length = 0; hold = null;
+  await swap(0);
+  await page.evaluate(() => { window.__rd = 0; const slow = { size: 10, text: () => new Promise((r) => setTimeout(() => { window.__rd = Date.now(); r("LEEROY1|from-the-old-read"); }, 700)) }; const ev = new DragEvent("drop", { bubbles: true, cancelable: true }); Object.defineProperty(ev, "dataTransfer", { value: { files: [slow], getData: () => "" } }); document.getElementById("imp-drop").dispatchEvent(ev); });
+  await swap(1);
+  const s2 = encode({ v: 1, iface: 16001, t: now - 60, class: "MAGE", race: "Gnome", level: 12, prof: "171:100" }).full;
+  await page.locator("#imp-text").fill(s2); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  const rows0 = await page.locator(".imp-row").count();
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => window.__rd > 0, null, { timeout: 5000 }).catch(() => {});
+  const mid2 = await page.evaluate(() => ({ v: document.getElementById("imp-text").value, locked: document.getElementById("imp-text").disabled, label: document.getElementById("imp-send").textContent, rows: document.querySelectorAll(".imp-row").length }));
+  ok(`${label}: an old read finishing during B's send changes nothing`, mid2.v === s2 && mid2.locked && /Sending/.test(mid2.label) && mid2.rows === rows0 && rows0 >= 3, JSON.stringify(mid2).slice(0, 200));
+  await page.waitForFunction(() => /Done|Retry/.test(document.getElementById("imp-send").textContent), null, { timeout: 8000 }).catch(() => {});
+  const sent2 = await page.locator('.imp-row[data-state="sent"]').count();
+  ok(`${label}: B still completes with exactly its own lines`, sent2 >= 1 && posts.length === sent2, `${sent2} sent, ${posts.length} posted`);
+  /* closing the panel mid-send is not a character switch, and the notice names the line that may still be saved */
+  posts.length = 0; hold = null;
+  await page.locator("#imp-text").fill(s); await page.locator(".imp-row").first().waitFor({ timeout: 5000 });
+  await page.locator("#imp-send").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#imp-send").click();
+  await page.waitForFunction(() => document.getElementById("imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await page.locator("#ps-imp-btn").evaluate((e) => e.scrollIntoView({ block: "center" })); await page.locator("#ps-imp-btn").click();
+  await page.waitForTimeout(2200);
+  await page.locator("#ps-imp-btn").click(); await page.locator("#imp-out").waitFor({ timeout: 5000 });
+  const closedTxt = await page.locator("#imp-out").innerText();
+  ok(`${label}: closing mid-send says it was closed, names the line that may still be saved, and never says switched`, /You closed the panel\. The line being saved \(\w+\) may still be saved; the rest were not sent\./.test(closedTxt) && !/switched/.test(closedTxt) && posts.length === 1, `posts=${posts.length} ${closedTxt.slice(0, 200)}`);
+  /* an empty character id that becomes a real one during a send stops the remaining writes (the id is read from the page, no re-render happens) */
+  await page.evaluate(() => { const o = document.querySelector(".ps-imp"); if (o) o.remove(); });
+  await page.evaluate(() => { window.BoardImport.reset("open"); window.__id = "sheet:me|"; const host = document.createElement("div"); host.id = "fake-host"; document.body.appendChild(host); window.BoardImport.mount(host, { label: (f, v) => String(v), lists: () => ({ race: ["troll"], class: ["warrior"], professions: [], levelMax: 60 }), current: () => ({}), canSend: () => ({ ok: true }), identity: () => window.__id, done: () => {} }); });
+  posts.length = 0;
+  await page.locator("#fake-host #imp-text").fill(s); await page.locator("#fake-host .imp-row").first().waitFor({ timeout: 5000 });
+  await page.evaluate(() => document.querySelector("#fake-host #imp-send").click());
+  await page.waitForFunction(() => document.querySelector("#fake-host #imp-send").textContent.includes("Sending"), null, { timeout: 3000 }).catch(() => {});
+  await page.evaluate(() => { window.__id = "sheet:me|c2"; });
+  await page.waitForFunction(() => /Done|Retry/.test(document.querySelector("#fake-host #imp-send").textContent), null, { timeout: 8000 }).catch(() => {});
+  const fk = await page.locator("#fake-host .imp-row").evaluateAll((els) => els.map((e) => [e.dataset.field, e.dataset.state, e.innerText.replace(/\s+/g, " ")]));
+  ok(`${label}: an empty character id turning into a real one stops the remaining writes`, posts.length === 1 && fk[0][1] === "sent" && fk.slice(1).every((x) => x[1] === "failed" && /you switched characters/.test(x[2])), JSON.stringify({ posts: posts.length, fk }).slice(0, 300));
+  ok(`${label}: context checks, zero page errors`, errors.length === 0, errors.join(" | "));
+  await ctx.close();
+}
+const browser = stubbed(await pw.chromium.launch());
+for (const sz of SIZES) await run(browser, sz);
+for (const sz of SIZES) await contexts(browser, sz);
+await browser.close();
+console.log(`${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

@@ -1,0 +1,16 @@
+{
+  "note": "Golden vectors for Leeroy export format v1. Created by the add-on branch (claude/addon-leeroybuild) because claude/addon-import-panel was not on origin; the importer branch may keep or replace this file, the values must stay identical. The check is Adler-32 of the payload bytes, cross-checked against the zlib trailer in tests/unit/addon-codec.test.mjs.",
+  "vectors": [
+    {
+      "name": "basic",
+      "payload": "v=1;iface=16001;t=1794000000;class=PALADIN;race=Human;level=40",
+      "check": "31f812b5",
+      "string": "LEEROY1|v=1;iface=16001;t=1794000000;class=PALADIN;race=Human;level=40|31f812b5"
+    },
+    {
+      "name": "escapes",
+      "value": "A;b=c",
+      "escaped": "A%3Bb%3Dc"
+    }
+  ]
+}
