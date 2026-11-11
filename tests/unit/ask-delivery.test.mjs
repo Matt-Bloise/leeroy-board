@@ -217,7 +217,7 @@ function patchHarness(script, { fetchMs = 0 } = {}) {
   setPatchClockForTests({ now: () => clock, sleep: async (ms) => { sleeps.push(ms); clock += ms; } });
   const quiet = console.warn;
   console.warn = () => {};
-  return { calls, sleeps, setClock: (v) => { clock = v; }, restore: () => { console.warn = quiet; setPatchClockForTests(null); } };
+  return { calls, sleeps, setClock: (v) => { clock = v; }, restore: () => { console.warn = quiet; globalThis.fetch = realFetch; setPatchClockForTests(null); } };
 }
 const FAKE_INTERACTION = { application_id: "a", token: "t" };
 const run = (h, opts) => patchOriginalWithRetry(FAKE_INTERACTION, "x", [], { startedAt: 0, ...opts });
@@ -325,4 +325,69 @@ test("/ask: a 500 on the first delivery edit is retried and the answer lands", a
   assert.equal(patchCalls, 2);
   assert.equal(delivered.length, 1);
   assert.match(delivered[0].content, /Onyxia's Lair opens/);
+});
+
+// ---- follow-ups from the PR 272 advisor review ----
+test("delivery retry: a start at 27.5 s still gives the first attempt a 2 s timeout (probe)", async () => {
+  const h = patchHarness([{ status: 200 }]);
+  h.setClock(27500);
+  const timeouts = [];
+  const realTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms) => { timeouts.push(ms); return realTimeout.call(AbortSignal, ms); };
+  try {
+    assert.equal(await run(h), true);
+    assert.deepEqual(timeouts, [2000]);
+  } finally { AbortSignal.timeout = realTimeout; h.restore(); }
+});
+
+test("delivery retry: retry is logged true only when a second attempt actually runs", async () => {
+  const h = patchHarness([{ status: 429, headers: { "Retry-After": "30" } }, { status: 200 }]);
+  const rows = [];
+  console.warn = (l) => rows.push(JSON.parse(l));
+  try {
+    assert.equal(await run(h), false);
+    assert.equal(h.calls.length, 1);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].retry, false);
+  } finally { h.restore(); }
+  const h2 = patchHarness([{ status: 500 }, { status: 200 }]);
+  const rows2 = [];
+  console.warn = (l) => rows2.push(JSON.parse(l));
+  try {
+    assert.equal(await run(h2), true);
+    assert.equal(rows2[0].retry, true);
+    assert.equal(h2.calls.length, 2);
+  } finally { h2.restore(); }
+});
+
+test("delivery retry: the unread body of a failed attempt is cancelled", async () => {
+  const h = patchHarness([{ status: 404 }]);
+  let cancelled = 0;
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (...a) => {
+    const res = await inner(...a);
+    const orig = res.body.cancel.bind(res.body);
+    res.body.cancel = (...x) => { cancelled++; return orig(...x); };
+    return res;
+  };
+  try {
+    assert.equal(await run(h), false);
+    assert.equal(cancelled, 1);
+  } finally { h.restore(); }
+});
+
+test("delivery retry: restore() puts the original fetch back", () => {
+  const h = patchHarness([{ status: 200 }]);
+  assert.notEqual(globalThis.fetch, realFetch);
+  h.restore();
+  assert.equal(globalThis.fetch, realFetch);
+});
+
+test("delivery: stats report the attempt count", async () => {
+  const h = patchHarness([{ status: 500 }, { status: 200 }]);
+  const stats = { attempts: 0 };
+  try {
+    assert.equal(await run(h, { stats }), true);
+    assert.equal(stats.attempts, 2);
+  } finally { h.restore(); }
 });
