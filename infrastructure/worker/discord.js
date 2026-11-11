@@ -102,7 +102,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   },
   {
     name: "tonight",
-    description: "See the launch countdown, your next step, and who is signed up for launch night",
+    description: "See your next step for tonight and who is signed up",
   },
   {
     name: "sheet",
@@ -128,7 +128,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   },
   {
     name: "launch",
-    description: "Set or check launch-night queue status (queue, in, done)",
+    description: "Set or check your queue status for tonight (queue, in, done)",
     options: [
       {
         name: "state",
@@ -153,7 +153,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   },
   {
     name: "signup",
-    description: "Set your launch-night RSVP, pack, meeting point, or arrival time",
+    description: "Set your RSVP, pack, meeting point, or arrival time for tonight",
     options: [
       {
         name: "pack",
@@ -167,7 +167,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
       },
       {
         name: "meet",
-        description: "Launch-night meeting point",
+        description: "Meeting point for tonight",
         type: 3,
         required: false,
         choices: [
@@ -178,7 +178,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
       { name: "place", description: "Somewhere else: type your custom meeting point", type: 3, required: false, max_length: WRITE_IN_MAX },
       {
         name: "rsvp",
-        description: "Launch night attendance",
+        description: "Attendance for tonight",
         type: 3,
         required: false,
         choices: [
@@ -190,7 +190,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
       },
       {
         name: "when",
-        description: "When you get on for launch night (Eastern)",
+        description: "When you get on tonight (Eastern)",
         type: 3,
         required: false,
         choices: [
@@ -216,7 +216,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   },
   {
     name: "countdown",
-    description: "Countdown to launch day, with hype and stress test status",
+    description: "How long Forever has been live, with launch and stress test status",
   },
   {
     name: "dates",

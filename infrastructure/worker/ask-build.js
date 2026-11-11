@@ -3,6 +3,7 @@
 import { slugify } from "./member-model.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { stripFence } from "./prompt-fence.js";
+import { factionOf } from "./ask-opener.js";
 
 export const NOT_PUBLISHED_LINE = "The library does not have that yet.";
 export const EMPTY_BUILD_LINE = "No build on file for the asker yet. Say so once and ask them to fill in their sheet on the board.";
@@ -73,6 +74,10 @@ export function renderAskerBuild(sheet, stateMap, { includeHidden = false } = {}
     const t = fieldText(fields[k]);
     if (t) parts.push(`${k}: ${t}`);
   }
+  // The faction follows from the race (human is Alliance, orc is Horde), so the model never has to guess it from a trainer or zone list.
+  const raceOnLine = parts.find((x) => x.startsWith("race: "));
+  const faction = raceOnLine ? factionOf(raceOnLine.slice(6)) : "";
+  if (faction) parts.splice(parts.indexOf(raceOnLine) + 1, 0, `faction: ${faction}`);
   if (!parts.length) return Object.values(fields).some((f) => fieldText(f)) ? HIDDEN_BUILD_LINE : EMPTY_BUILD_LINE;
   return [`${clip(stripFence(sheet.name || sheet.slug, { oneLine: true }), 40)} (the asker)`, ...parts, ...stateFor(sheet, stateMap)].join("; ");
 }
