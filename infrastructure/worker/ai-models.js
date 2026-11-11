@@ -979,7 +979,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       const allFacts = askerIsMember ? askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }) : null;
       const buildStems = new Set(allFacts ? [allFacts.class, allFacts.spec, ...allFacts.professions].flatMap((t) => String(t || "").toLowerCase().split(/[^a-z0-9]+/)).filter((t) => t.length > 2).map((t) => stem(t)) : []);
       const gameish = rel.absent * 2 <= (words || []).length && (words || []).length > 0 || (words || []).some((w) => buildStems.has(stem(w)));
-      const facts = gameish ? allFacts : null;
+      const facts = gameish && buildHelps ? allFacts : null; // a suppressed build must not surface as "your" coverage
       const seen = new Set();
       const add = (q, prefix) => {
         const cleaned = cleanQuestion(q, []);

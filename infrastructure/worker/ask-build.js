@@ -104,18 +104,32 @@ const singular = (w) => w.replace(/(?<=[a-z]{3})s$/, "");
 // The classes and races the question says the ASKER is: only the words IMMEDIATELY after a self-identification opener (articles allowed, then race and class words,
 // e.g. "I am a night elf hunter"). "I am fighting a rogue" and "my friend is a hunter" name no identity: the first word after the opener must be an article, race or class.
 const RACE_WORDS = new Set(Object.values(RACE_FORMS).flat().flatMap((f) => f.split(" ")));
+const SKIP_WORDS = new Set(["level", "lvl", "lv", "new", "newly", "brand", "playing", "alliance", "horde"]);
+const MODALS = new Set(["would", "could", "might"]);
 function selfIdentified(q) {
   const classes = new Set(), races = new Set();
   const text = String(q || "").toLowerCase();
-  for (const m of text.matchAll(/\b(?:i\s*am|i'm|im|i\s+play|i\s+main|as\s+an?|my)\b([^.,;!?]*)/g)) {
+  // "as good as a ..." is a comparison, not an opener: the lookbehind rejects "as <word> as a".
+  for (const m of text.matchAll(/\b(?:i\s*am|i'm|im|i\s+play|i\s+main|i\s+rolled|(?<!\bas\s+\w+\s+)as\s+an?|my)\b([^.,;!?]*)/g)) {
+    const opener = m[0].slice(0, m[0].length - m[1].length).trim();
+    const isMy = opener === "my", isAs = opener.startsWith("as");
     const ws = wordsOf(m[1]);
-    let i = 0;
-    while (i < ws.length && ["a", "an", "the"].includes(ws[i]) && i < 1) i++;
+    let i = 0, skipped = 0;
+    if (ws[i] && ["a", "an", "the"].includes(ws[i])) i++;
+    // Up to two skipped words (level, a number, faction, new, playing) may sit between the opener and the class or race. Not after "my".
+    while (!isMy && skipped < 2 && i < ws.length && (SKIP_WORDS.has(ws[i]) || /^\d+$/.test(ws[i]))) { i++; skipped++; }
+    if (skipped && ws[i] && ["a", "an"].includes(ws[i])) i++;
     const taken = [];
     for (; i < ws.length && taken.length < 3; i++) {
       const w = ws[i];
       if (CLASSES.some((k) => k === w || `${k}s` === w) || RACE_WORDS.has(w) || RACE_WORDS.has(w.replace(/s$/, ""))) taken.push(w); else break;
     }
+    if (!taken.length) continue;
+    const next = ws[i];
+    // "my <class>" names the asker only for "my hunter alt/main/character" or when the class ends the clause ("how do I gear my hunter"); "my hunter friend" is a party member.
+    if (isMy && next && !["alt", "main", "character", "char"].includes(next)) continue;
+    // "as a warrior would ..." is a hypothetical, not the asker.
+    if (isAs && ws.slice(i, i + 3).some((w) => MODALS.has(w))) continue;
     const span = ` ${taken.join(" ")} `;
     for (const w of taken) { const c = CLASSES.find((k) => k === w || `${k}s` === w); if (c) classes.add(c); }
     for (const [k, forms] of Object.entries(RACE_FORMS)) if (forms.some((f) => span.includes(` ${f} `) || span.includes(` ${f}s `))) races.add(k);

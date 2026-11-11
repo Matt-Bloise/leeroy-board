@@ -338,10 +338,25 @@ const TRUTH = [
   ["as a hunter where do I train", FOX, false],
   ["I play a rogue, best poison?", FOX, false],
   ["I main hunter, what bow", FOX, false],
-  ["my hunter needs a bow", FOX, false],
+  ["my hunter alt needs a bow", FOX, false],
+  ["how do I gear my hunter", FOX, false],
   ["I am a dwarf, where do I start", FOX, false],
   ["as an undead where do I start", FOX, false],
   ["I am a night elf hunter, where do I train", mkFacts("druid", "night elf"), false],
+  // advisor round 1: party-member and comparison phrasings keep the build; modifiers before the class still self-identify
+  ["my priest healer keeps dying, what can I do as the tank", FOX, true],
+  ["what does my druid healer need from me", FOX, true],
+  ["my mage buddy keeps pulling aggro, how do I hold threat", FOX, true],
+  ["My warlock keeps dying in our runs, how do I keep threat off him", FOX, true],
+  ["my hunter friend wants to know where to train", FOX, true],
+  ["Is a dwarf as good as a night elf for priest?", mkFacts("priest", "human"), true],
+  ["is a troll as good as an orc for warrior", mkFacts("warrior", "tauren"), true],
+  ["what pet is as good as a hunter pet", FOX, true],
+  ["As a warrior tank would, how do I hold aggro", FOX, true],
+  ["I'm a level 20 hunter, where do I train", FOX, false],
+  ["I am an alliance hunter", FOX, false],
+  ["I am playing a hunter", FOX, false],
+  ["I rolled a hunter", FOX, false],
   // self-identification as the stored class or race, and explicit phrases: kept
   ["I am a paladin, how do I tank", FOX, true],
   ["as a human where do I start", FOX, true],
@@ -386,7 +401,7 @@ test("buildRelevant: combat phrasing and other people's characters are not the a
   for (const q of ["I am fighting a rogue, how do I survive", "I'm being ganked by a hunter, what now", "my friend is a hunter, what should he train", "my brother plays a rogue, where does he train", "I play with a mage and a warlock", "as a group we fight a druid boss"]) assert.equal(buildRelevant(q, FOX).relevant, true, q);
 });
 test("buildRelevant: real self-identification still works with articles and race plus class", () => {
-  for (const q of ["I am a hunter, where do I train", "I'm a night elf hunter, where do I train", "as an undead rogue, what poisons", "I play a dwarf hunter", "my hunter needs a pet"]) assert.equal(buildRelevant(q, FOX).relevant, false, q);
+  for (const q of ["I am a hunter, where do I train", "I'm a night elf hunter, where do I train", "as an undead rogue, what poisons", "I play a dwarf hunter", "my hunter alt needs a pet"]) assert.equal(buildRelevant(q, FOX).relevant, false, q);
   assert.equal(buildRelevant("I am a human paladin, where do I train", FOX).relevant, true);
 });
 test("the system prompt sent to the model carries both halves of the rule for any question (answer-level behaviour is measured by scripts/ask-eval, not in unit tests: no model calls in CI)", async () => {
@@ -395,4 +410,10 @@ test("the system prompt sent to the model carries both halves of the rule for an
     assert.ok(r.systemPrompt.includes("in one short clause") && r.systemPrompt.includes("plain lookup"), question);
     assert.match(r.userPrompt, /YOUR_BUILD/, question);
   }
+});
+
+test("abstain answer does not list the stored build's pages when the build is suppressed", async () => {
+  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "I am a hunter, what is the zzzqx flarn of the xyzzy" });
+  assert.equal(off.personalised, false);
+  assert.deepEqual(off.abstainPages || [], []);
 });
