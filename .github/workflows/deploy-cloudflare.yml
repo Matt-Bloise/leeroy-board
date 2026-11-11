@@ -24,8 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     # A manual run may be started from any branch; production only ever deploys from master.
     if: github.ref == 'refs/heads/master'
-    # Production secrets live ONLY in the GitHub environment `production` (deployment branches: master only). PR workflows cannot read them.
-    # Delete the repository-level copies too (docs/runbooks/ci-secrets.md), otherwise a run of any branch could still read them.
+    # Most production secrets live in the GitHub environment `production` (deployment branches: master only); delete their repository-level copies once moved (docs/runbooks/ci-secrets.md).
+    # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are repository secrets by design (previews read them): keep those copies. An environment copy, if one exists, wins for this deploy.
     environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

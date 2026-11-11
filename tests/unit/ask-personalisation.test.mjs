@@ -357,6 +357,10 @@ const TRUTH = [
   ["I am an alliance hunter", FOX, false],
   ["I am playing a hunter", FOX, false],
   ["I rolled a hunter", FOX, false],
+  // advisor round 2, known limitations (pinned as current behaviour, not endorsed): clause-final "my <class>" counts as the asker even when it is a party member
+  ["how do I keep threat off my mage", FOX, false],
+  ["how do I heal my warrior?", mkFacts("priest", "human"), false],
+  ["what buffs should I give my rogue", FOX, false],
   // self-identification as the stored class or race, and explicit phrases: kept
   ["I am a paladin, how do I tank", FOX, true],
   ["as a human where do I start", FOX, true],
@@ -413,7 +417,11 @@ test("the system prompt sent to the model carries both halves of the rule for an
 });
 
 test("abstain answer does not list the stored build's pages when the build is suppressed", async () => {
-  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "I am a hunter, what is the zzzqx flarn of the xyzzy" });
+  // Both questions name "paladin" so each counts as about the game; only the build gate differs. The fixture Library has the stored class's page.
+  const own = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "what is the zzzqx flarn of the xyzzy paladin" });
+  assert.equal(own.personalised, true);
+  assert.deepEqual(own.abstainPages, [{ id: "classes/paladin-protection", title: "Protection Paladin" }], "an own-build abstain lists the stored class's page (keeps the test below from passing vacuously)");
+  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "I am a hunter, what is the zzzqx flarn of the xyzzy paladin" });
   assert.equal(off.personalised, false);
   assert.deepEqual(off.abstainPages || [], []);
 });
