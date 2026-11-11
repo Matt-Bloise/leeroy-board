@@ -59,6 +59,10 @@ test("faction follows the race and reaches the build line only when the race is 
   assert.equal(factionOf("undead"), "Horde");
   assert.equal(factionOf("Forsaken"), "Horde");
   assert.equal(factionOf("skyborne"), "");
+  assert.equal(factionOf("night-elf"), "Alliance");
+  assert.equal(factionOf("  ORC "), "Horde");
+  // whole words only: a longer word that merely contains a race name is not that race
+  for (const notRace of ["orcish", "gnomeregan", "trolley", "humanoid", "dwarfish", "undeadly", "blood elf", ""]) assert.equal(factionOf(notRace), "", notRace);
   const f = (value, visible = true) => ({ value, visible, source: "board", at: "x" });
   const sheet = { slug: "red-fox", name: "Red Fox", fields: { class: f("paladin"), race: f("human"), spec_path: f("protection") } };
   assert.match(renderAskerBuild(sheet, {}), /race: human; faction: Alliance; spec_path: protection/);
@@ -74,6 +78,9 @@ test("retrieval extras: role questions only, class and spec only, facts must nam
   assert.equal(buildQueryExtra("how many tanks", null), "");
   assert.equal(hasBuildFact("a Protection Paladin tank", paladin), true);
   assert.equal(hasBuildFact("a warrior tank", paladin), false);
+  // a spec with no letters strips to nothing and must not match any text
+  for (const spec of ["---", "???", "  ", "12", "--"]) assert.equal(hasBuildFact("any text at all", { class: "none", spec }), false, spec);
+  assert.equal(hasBuildFact("a Protection Paladin tank", { class: "---", spec: "protection" }), true);
   const shown = [{ page: "a/b", key: "k1", value: "x", score: 9 }];
   const more = [{ page: "a/b", key: "k1", value: "paladin", score: 9 }, { page: "classes/tanking", key: "t1", value: "Paladin full tank", score: 5 }, { page: "classes/tanking", key: "t2", value: "warrior only", score: 5 }];
   assert.deepEqual(pickBuildFacts(more, shown, paladin).map((h) => h.key), ["t1"]);

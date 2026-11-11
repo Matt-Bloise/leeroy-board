@@ -10,8 +10,9 @@ export const FACTION_OF_RACE = { human: "Alliance", dwarf: "Alliance", gnome: "A
 
 // "human" -> "Alliance". Unknown or empty race -> "" (nothing is guessed).
 export function factionOf(race) {
-  const r = String(race || "").toLowerCase();
-  const key = Object.keys(FACTION_OF_RACE).find((k) => r === k || r.includes(k) || (k === "undead" && r.includes("forsaken")));
+  // Whole words only: "orcish" or "gnomeregan" is not a race on the list. Letters and single spaces only, so "night-elf" and "Night Elf" agree.
+  const r = ` ${String(race || "").toLowerCase().replace(/[^a-z]+/g, " ").trim()} `;
+  const key = Object.keys(FACTION_OF_RACE).find((k) => r.includes(` ${k} `) || (k === "undead" && r.includes(" forsaken ")));
   return key ? FACTION_OF_RACE[key] : "";
 }
 
@@ -60,8 +61,9 @@ export function whoText(facts, topic) {
 // Does the library text shown in the prompt mention the asker's class or spec?
 export function hasBuildFact(shownFacts, facts) {
   const text = String(shownFacts || "").toLowerCase();
-  const words = [facts && facts.class, facts && facts.spec].map((w) => String(w || "").toLowerCase().trim()).filter((w) => w.length > 2 && !SPECIAL_SPEC.test(w));
-  return words.some((w) => new RegExp("\\b" + w.replace(/[^a-z ]/g, "") + "\\b").test(text));
+  // Strip to letters first, then judge the length: a spec such as "---" must become nothing, not an empty pattern that matches any text.
+  const words = [facts && facts.class, facts && facts.spec].map((w) => String(w || "").toLowerCase().replace(/[^a-z ]/g, "").replace(/ +/g, " ").trim()).filter((w) => w.length > 2 && !SPECIAL_SPEC.test(w));
+  return words.some((w) => new RegExp("\\b" + w + "\\b").test(text));
 }
 
 // The topic key: a role question, else the category of the best retrieved page, else default.
