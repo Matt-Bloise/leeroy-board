@@ -307,3 +307,35 @@ test("D1 newer: repo-only facts are still appended, D1's dates and shared facts 
   assert.deepEqual(r.unbumped, [], "a D1-newer page is not an unbumped warning");
   assert.equal(db.query("SELECT checked FROM lib_pages WHERE id = 'p-dn'")[0].checked, "2026-11-02");
 });
+
+function seedIndexPages(d1Pages, repoPages) {
+  const db = makeDb();
+  db.sqlite.exec(
+    `INSERT INTO lib_blobs (name, stamp, json, updated_at) VALUES ('index.json', 's', '${JSON.stringify({ generated: "2026-11-09", totals: {}, categories: [], pages: d1Pages, changes: [] })}', 'x')`
+  );
+  const dir = makeLibDir([page("p1", "2026-11-07", "2026-11-07")]);
+  fs.writeFileSync(path.join(dir, "index.json"), JSON.stringify({ generated: "2026-11-08", categories: [], totals: { pages: 99, facts: 99 }, pages: repoPages }));
+  const read = () => JSON.parse(db.query("SELECT json FROM lib_blobs WHERE name = 'index.json'")[0].json);
+  return { db, dir, read };
+}
+
+test("index.pages: repo-only entries are appended whole; D1 entries and D1-only entries are untouched", async () => {
+  const d1 = [{ id: "a", blurb: "d1 a", core: true }, { id: "d1only", blurb: "only here" }];
+  const repo = [{ id: "a", blurb: "repo a", core: false }, { id: "new1", blurb: "n1", aliases: ["x"], core: true, counts: { facts: 2 } }, { id: "new2", blurb: "n2" }];
+  const { db, dir, read } = seedIndexPages(d1, repo);
+  await runLibrarySeed({ db, libDir: dir, now: NOW });
+  const ix = read();
+  assert.deepEqual(ix.pages.map((e) => e.id), ["a", "d1only", "new1", "new2"], "order stable: D1 first, then repo order");
+  assert.deepEqual(ix.pages[0], d1[0]);
+  assert.deepEqual(ix.pages[1], d1[1]);
+  assert.deepEqual(ix.pages[2], repo[1]);
+});
+
+test("index.pages: a second run adds nothing", async () => {
+  const { db, dir, read } = seedIndexPages([{ id: "a", blurb: "d1 a" }], [{ id: "a", blurb: "r" }, { id: "new1", blurb: "n1" }]);
+  await runLibrarySeed({ db, libDir: dir, now: NOW });
+  const first = read().pages;
+  await runLibrarySeed({ db, libDir: dir, now: NOW, force: true });
+  assert.deepEqual(read().pages, first);
+  assert.equal(read().pages.filter((e) => e.id === "new1").length, 1);
+});
