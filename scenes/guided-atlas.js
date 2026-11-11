@@ -362,7 +362,7 @@ if (typeof MutationObserver === "function") {
 for (const ev of ["pointerdown", "keydown"]) D.addEventListener(ev, () => { G.used = true; }, { capture: true, passive: true });
 addEventListener("storage", (e) => { if (e.key === VIEW || e.key === "board-me") later(); });
 { const me = ls.get("board-me"), j = ls.get("board-journey"), g = !j || j === "guided";
-  if (g && me && me !== "just-looking" && ls.get(VIEW) !== "team") root.classList.add("ga-pre");
+  if (g && me && me !== "just-looking" && ls.get(VIEW) !== "team") { root.classList.add("ga-pre"); setTimeout(() => root.classList.remove("ga-pre"), 3000); } /* the cover must not outlive 3 s even if the board never boots (API held or data failed): the timer is armed here, not in the "booted" handler */
   if (g && !me) root.classList.add("ga-one"); }
 window.__guidedAtlas = Object.freeze({ stops: () => ({ stops: G.stops.map((x) => ({ n: x.n, kind: x.kind, id: x.id, name: x.name, a: x.a })), last: Z.last || [], hi: G.hi, touring: !!Z.tour, framed: Z.framed, labels: G.labels || 0, moved: G.moved }), world: () => Z.world(), route: () => { G.moved = false; Z.frame(false); }, status: () => ({ on: G.shown, view: view(), eligible: eligible(), loaded: !!G.A, failed: G.failed, more: G.more, plan: G.plan ? G.plan.meet : null, data: !!G.data }), api: () => G.A, setView, steps, mirror });
 })();
