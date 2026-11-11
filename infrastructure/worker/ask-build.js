@@ -86,6 +86,75 @@ export function askerFacts(sheet, { includeHidden = false } = {}) {
   return out.class || out.spec || out.level || out.professions.length ? out : null;
 }
 
+// ---- relevance -------------------------------------------------------------------------------------------------------------
+// The stored build is in the prompt BY DEFAULT; the model decides whether it changes the answer (PERSONALISE_RULE). Third-person mentions of a class or race
+// ("how do I beat a rogue", "where are the rogue trainers", "how do I open this lock") never suppress it: regex cannot tell those apart. Code suppresses only on SELF-IDENTIFICATION:
+//  0. A pure "my build" question (skip === "build"): kept.
+//  1. An explicit phrase (my build/class/character/spec/race/level/profession/talents/sheet/main/gear, my party/group, our party/group/build/comp/team): kept.
+//  2. The asker says they are a class or race ("I am a hunter", "I'm a dwarf", "as an undead", "I play / I main a ...", "my hunter") and it is the stored class or race: kept.
+//  3. The asker says they are a class or race that is NOT the stored one: suppressed.
+//  4. A follow-up whose previous question was suppressed under 3, and which itself self-identifies as nothing: suppressed (it inherits that decision).
+//  Everything else: kept. Full class names and plain plurals only, no nicknames. No class or race on file means nothing to contradict, so kept.
+export const BUILD_NOT_RELEVANT_LINE = "The asker's stored build is not relevant to this question: do not mention it.";
+const CLASSES = ["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"];
+const RACE_FORMS = { human: ["human"], dwarf: ["dwarf", "dwarves"], gnome: ["gnome"], "night elf": ["night elf", "night elves"], orc: ["orc"], undead: ["undead", "forsaken"], tauren: ["tauren"], troll: ["troll"] };
+const SELF_RE = /\b(?:my\s+(?:build|character|char|class|spec|specs|race|level|profession|professions|talents|sheet|main|gear|party|group)|our\s+(?:party|group|build|comp|team))\b/i;
+const wordsOf = (t) => String(t || "").toLowerCase().split(/[^a-z0-9']+/).filter(Boolean);
+const singular = (w) => w.replace(/(?<=[a-z]{3})s$/, "");
+// The classes and races the question says the ASKER is: only the words IMMEDIATELY after a self-identification opener (articles allowed, then race and class words,
+// e.g. "I am a night elf hunter"). "I am fighting a rogue" and "my friend is a hunter" name no identity: the first word after the opener must be an article, race or class.
+const RACE_WORDS = new Set(Object.values(RACE_FORMS).flat().flatMap((f) => f.split(" ")));
+const SKIP_WORDS = new Set(["level", "lvl", "lv", "new", "newly", "brand", "playing", "alliance", "horde"]);
+const MODALS = new Set(["would", "could", "might"]);
+function selfIdentified(q) {
+  const classes = new Set(), races = new Set();
+  const text = String(q || "").toLowerCase();
+  // "as good as a ..." is a comparison, not an opener: the lookbehind rejects "as <word> as a".
+  for (const m of text.matchAll(/\b(?:i\s*am|i'm|im|i\s+play|i\s+main|i\s+rolled|(?<!\bas\s+\w+\s+)as\s+an?|my)\b([^.,;!?]*)/g)) {
+    const opener = m[0].slice(0, m[0].length - m[1].length).trim();
+    const isMy = opener === "my", isAs = opener.startsWith("as");
+    const ws = wordsOf(m[1]);
+    let i = 0, skipped = 0;
+    if (ws[i] && ["a", "an", "the"].includes(ws[i])) i++;
+    // Up to two skipped words (level, a number, faction, new, playing) may sit between the opener and the class or race. Not after "my".
+    while (!isMy && skipped < 2 && i < ws.length && (SKIP_WORDS.has(ws[i]) || /^\d+$/.test(ws[i]))) { i++; skipped++; }
+    if (skipped && ws[i] && ["a", "an"].includes(ws[i])) i++;
+    const taken = [];
+    for (; i < ws.length && taken.length < 3; i++) {
+      const w = ws[i];
+      if (CLASSES.some((k) => k === w || `${k}s` === w) || RACE_WORDS.has(w) || RACE_WORDS.has(w.replace(/s$/, ""))) taken.push(w); else break;
+    }
+    if (!taken.length) continue;
+    const next = ws[i];
+    // "my <class>" names the asker only for "my hunter alt/main/character" or when the class ends the clause ("how do I gear my hunter"); "my hunter friend" is a party member.
+    if (isMy && next && !["alt", "main", "character", "char"].includes(next)) continue;
+    // "as a warrior would ..." is a hypothetical, not the asker.
+    if (isAs && ws.slice(i, i + 3).some((w) => MODALS.has(w))) continue;
+    const span = ` ${taken.join(" ")} `;
+    for (const w of taken) { const c = CLASSES.find((k) => k === w || `${k}s` === w); if (c) classes.add(c); }
+    for (const [k, forms] of Object.entries(RACE_FORMS)) if (forms.some((f) => span.includes(` ${f} `) || span.includes(` ${f}s `))) races.add(k);
+  }
+  return { classes, races };
+}
+export function buildRelevant(question, facts, { skip = null, previousQuestion = "" } = {}) {
+  if (skip === "build") return { relevant: true, reason: "build question" };
+  const q = String(question || "");
+  if (SELF_RE.test(q)) return { relevant: true, reason: "explicit build phrase" };
+  const myClass = facts && facts.class ? wordsOf(facts.class).map(singular).find((w) => CLASSES.includes(w)) : "";
+  const myRace = facts && facts.race ? String(facts.race).toLowerCase() : "";
+  const myKey = Object.keys(RACE_FORMS).find((k) => myRace.includes(k) || RACE_FORMS[k].some((f) => myRace.includes(f)));
+  const verdict = (text) => {
+    const id = selfIdentified(text);
+    const badC = myClass && id.classes.size && !id.classes.has(myClass), badR = myKey && id.races.size && !id.races.has(myKey);
+    if (badC || badR) return "different"; // any identity that contradicts the stored build wins ("I am a night elf hunter" with a night elf druid)
+    return (myClass && id.classes.has(myClass)) || (myKey && id.races.has(myKey)) ? "own" : "none";
+  };
+  const cur = verdict(q);
+  if (cur === "different") return { relevant: false, reason: "asker says they are another class or race" };
+  if (cur === "none" && previousQuestion && !SELF_RE.test(String(previousQuestion)) && verdict(previousQuestion) === "different") return { relevant: false, reason: "follow-up of a suppressed question" };
+  return { relevant: true, reason: cur === "own" ? "asker names own class or race" : "default" };
+}
+
 // Other members: ONLY fields marked visible. A hidden field's value must never reach the prompt.
 export function renderPartyBuilds(sheets, askerSheet) {
   const lines = [];

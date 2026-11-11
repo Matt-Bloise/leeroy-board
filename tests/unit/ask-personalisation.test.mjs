@@ -7,7 +7,7 @@ import { buildAnswerInputs, buildAnswerCacheKey, finishAnswerText, invalidatePag
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { eggDue, DEFAULT_EGG } from "../../infrastructure/worker/answer-format.js";
-import { findAskerSheet, unknownNames, NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
+import { findAskerSheet, unknownNames, NOT_PUBLISHED_LINE, buildRelevant, askerFacts, BUILD_NOT_RELEVANT_LINE } from "../../infrastructure/worker/ask-build.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const f = (value, visible = true) => ({ value, visible, source: "board", at: "2026-11-01T00:00:00.000Z" });
@@ -28,6 +28,7 @@ function makeEnv({ sheets = SHEETS, kv = {} } = {}) {
   return { DB };
 }
 const inputs = (env, o) => buildAnswerInputs(env, { question: "how do I tank as a paladin", journey: "curious", ...o });
+const inputsMine = (env, o) => inputs(env, { question: "what suits my build", ...o });
 
 test("the prompt carries the asker's own build, found by slug; their hidden field only on a private ask", async () => {
   const kv = { signups: { roster: { "Red Fox": "yes" } }, tonight: { title: "Deadmines run" } };
@@ -116,14 +117,14 @@ import { readFileSync } from "node:fs";
 import { groundedOrNotPublished } from "../../infrastructure/worker/ask-build.js";
 
 test("conflicting memberSlug and by choose the slug's sheet; a name-only match never gets hidden fields", async () => {
-  const slugWins = await inputs(makeEnv(), { by: "Blue Owl", memberSlug: "red-fox", share: false });
+  const slugWins = await inputsMine(makeEnv(), { by: "Blue Owl", memberSlug: "red-fox", share: false });
   assert.match(slugWins.userPrompt, /Red Fox \(the asker\)/);
   assert.match(slugWins.userPrompt, /tank the Deadmines/);
   assert.ok(!slugWins.userPrompt.includes("hidden goal text"), "Blue Owl's hidden goal stays out");
-  const nameOnly = await inputs(makeEnv(), { by: "Blue Owl", share: false });
+  const nameOnly = await inputsMine(makeEnv(), { by: "Blue Owl", share: false });
   assert.match(nameOnly.userPrompt, /Blue Owl \(the asker\)/);
   assert.ok(!nameOnly.userPrompt.includes("hidden goal text") && !nameOnly.userPrompt.includes("secretspec"), "by-only: visible fields only, even on a private ask");
-  const unknownSlug = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "someone-else", share: false });
+  const unknownSlug = await inputsMine(makeEnv(), { by: "Red Fox", memberSlug: "someone-else", share: false });
   assert.match(unknownSlug.userPrompt, /fill in their sheet/, "an unknown slug does not fall back to the name");
   assert.ok(!unknownSlug.userPrompt.includes("tank the Deadmines"));
 });
@@ -248,15 +249,15 @@ test("a bold label ending in a colon is not an invention", () => {
 });
 
 test("the build line never tells visitors, or members with only hidden data on a public ask, to fill in a sheet", async () => {
-  const visitor = await inputs(makeEnv(), { by: "Visitor", isMember: false });
+  const visitor = await inputsMine(makeEnv(), { by: "Visitor", isMember: false });
   assert.ok(!/fill in/.test(visitor.userPrompt));
   const hiddenOnly = [{ slug: "quiet-bat", name: "Quiet Bat", fields: { class: f("rogue", false), level: f(5, false) }, updated: "x" }];
-  const pub = await inputs(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: true });
+  const pub = await inputsMine(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: true });
   assert.ok(pub.userPrompt.includes(HIDDEN_BUILD_LINE));
   assert.ok(!/fill in|rogue/.test(pub.userPrompt));
-  const priv = await inputs(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: false });
+  const priv = await inputsMine(makeEnv({ sheets: hiddenOnly }), { by: "Quiet Bat", memberSlug: "quiet-bat", share: false });
   assert.match(priv.userPrompt, /class: rogue/);
-  const none = await inputs(makeEnv({ sheets: [{ slug: "new-cat", name: "New Cat", fields: {}, updated: "x" }] }), { by: "New Cat", memberSlug: "new-cat" });
+  const none = await inputsMine(makeEnv({ sheets: [{ slug: "new-cat", name: "New Cat", fields: {}, updated: "x" }] }), { by: "New Cat", memberSlug: "new-cat" });
   assert.match(none.userPrompt, /fill in their sheet/);
   assert.ok(!/fill in|sheet/i.test(PERSONALISE_RULE.replace(/Only if YOUR_BUILD says[^;]*;[^.]*\./, "")), "the rule itself mentions sheets only conditionally");
 });
@@ -313,4 +314,106 @@ test("ask system prompt carries the Leeroy voice rule, keeps the guardrails, and
   const before = sp.replace(`${VOICE_RULE}\n\n`, "");
   assert.ok(before.length < sp.length);
   assert.ok(sp.length / before.length < 1.30, `prompt grew ${((sp.length / before.length - 1) * 100).toFixed(1)}%`);
+});
+
+// ---- relevance: the build is kept by default; code suppresses it only when the question names another class or race ----
+const FOX = askerFacts(SHEETS[0]); // human paladin, protection, level 12, mining and smithing
+const mkFacts = (cls, race, spec = "", professions = "") => askerFacts({ slug: "x", name: "X", fields: { class: f(cls), race: f(race), spec_path: f(spec), level: f(20), professions: f(professions) } });
+const MAGE_28 = mkFacts("mage", "gnome", "frost"), UNDEAD_PRIEST = mkFacts("priest", "undead", "holy"), UNDEAD_MAGE = mkFacts("mage", "undead"), MAGE = mkFacts("mage", "human");
+const TRUTH = [
+  // [question, facts, kept?]  rows from the Nov 9 measurement, then the council cases
+  ["best class for a beginner", MAGE_28, true],
+  ["What is the cooldown on Will of the Forsaken?", UNDEAD_PRIEST, true],
+  ["how many tanks for Onyxia", FOX, true],
+  ["what are professions", mkFacts("priest", "human", "", "tailoring, enchanting"), true],
+  ["how do I find a group", UNDEAD_PRIEST, true],
+  ["How much does Cannibalize heal for an undead mage?", UNDEAD_MAGE, true],
+  ["can we all meet in Durotar at level 1", FOX, true],
+  ["when is launch", FOX, true],
+  ["is there a day/night cycle", FOX, true],
+  // self-identification as another class or race: suppressed
+  ["I am a Hunter on the Alliance side, where do I train weapon skills", FOX, false],
+  ["Where do I train weapon skills, I am a Hunter on the Alliance side?", FOX, false],
+  ["I'm a hunter, what pet is best", FOX, false],
+  ["as a hunter where do I train", FOX, false],
+  ["I play a rogue, best poison?", FOX, false],
+  ["I main hunter, what bow", FOX, false],
+  ["my hunter alt needs a bow", FOX, false],
+  ["how do I gear my hunter", FOX, false],
+  ["I am a dwarf, where do I start", FOX, false],
+  ["as an undead where do I start", FOX, false],
+  ["I am a night elf hunter, where do I train", mkFacts("druid", "night elf"), false],
+  // advisor round 1: party-member and comparison phrasings keep the build; modifiers before the class still self-identify
+  ["my priest healer keeps dying, what can I do as the tank", FOX, true],
+  ["what does my druid healer need from me", FOX, true],
+  ["my mage buddy keeps pulling aggro, how do I hold threat", FOX, true],
+  ["My warlock keeps dying in our runs, how do I keep threat off him", FOX, true],
+  ["my hunter friend wants to know where to train", FOX, true],
+  ["Is a dwarf as good as a night elf for priest?", mkFacts("priest", "human"), true],
+  ["is a troll as good as an orc for warrior", mkFacts("warrior", "tauren"), true],
+  ["what pet is as good as a hunter pet", FOX, true],
+  ["As a warrior tank would, how do I hold aggro", FOX, true],
+  ["I'm a level 20 hunter, where do I train", FOX, false],
+  ["I am an alliance hunter", FOX, false],
+  ["I am playing a hunter", FOX, false],
+  ["I rolled a hunter", FOX, false],
+  // self-identification as the stored class or race, and explicit phrases: kept
+  ["I am a paladin, how do I tank", FOX, true],
+  ["as a human where do I start", FOX, true],
+  ["I am a hunter, what is my build good at", FOX, true],
+  ["what should my build do next", MAGE, true],
+  // third-person mentions never suppress; the model decides
+  ["How do I survive a rogue attacking me?", FOX, true],
+  ["Where are the Rogue trainers", FOX, true],
+  ["How do I open this lock?", FOX, true],
+  ["Can a Paladin use two-handed swords?", MAGE, true],
+  ["Where can we find a hunter trainer?", FOX, true],
+  ["what do night elves get at level 1", FOX, true],
+  ["and what is the best mount", mkFacts("mage", ""), true],
+];
+test("buildRelevant truth table from the real measured rows", () => {
+  for (const [q, facts, kept] of TRUTH) assert.equal(buildRelevant(q, facts).relevant, kept, q);
+  assert.equal(buildRelevant("I am a hunter", FOX, { skip: "build" }).relevant, true);
+});
+test("buildRelevant: a follow-up inherits a self-identified suppression unless it self-identifies as the stored class", () => {
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "I am a hunter, can I use bows?" }).relevant, false);
+  assert.equal(buildRelevant("And which weapon, I am a paladin?", FOX, { previousQuestion: "I am a hunter, can I use bows?" }).relevant, true);
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "Can a hunter use bows?" }).relevant, true);
+  assert.equal(buildRelevant("And which weapon?", FOX, { previousQuestion: "what should my build train at level 10" }).relevant, true);
+});
+test("a self-identified different class drops the YOUR_BUILD block; everything else keeps it", async () => {
+  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "I am a hunter, where do I train pets" });
+  assert.ok(off.userPrompt.includes(BUILD_NOT_RELEVANT_LINE));
+  assert.ok(!/YOUR_BUILD/.test(off.userPrompt) && !off.userPrompt.includes("class: paladin"));
+  assert.equal(off.personalised, false);
+  for (const question of ["how do I tank as a paladin", "what does red in a tooltip mean", "when is launch", "where are the hunter pet trainers"]) {
+    const on = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question });
+    assert.match(on.userPrompt, /YOUR_BUILD/, question);
+    assert.ok(!on.userPrompt.includes(BUILD_NOT_RELEVANT_LINE) && on.personalised, question);
+  }
+});
+test("PERSONALISE_RULE leaves the decision to the model and bans personalising invention", () => {
+  assert.match(PERSONALISE_RULE, /touches the asker themselves/);
+  assert.match(PERSONALISE_RULE, /Do not mention it when the question is a plain lookup/);
+  assert.match(PERSONALISE_RULE, /never add facts about items or spells/);
+});
+test("buildRelevant: combat phrasing and other people's characters are not the asker's identity", () => {
+  for (const q of ["I am fighting a rogue, how do I survive", "I'm being ganked by a hunter, what now", "my friend is a hunter, what should he train", "my brother plays a rogue, where does he train", "I play with a mage and a warlock", "as a group we fight a druid boss"]) assert.equal(buildRelevant(q, FOX).relevant, true, q);
+});
+test("buildRelevant: real self-identification still works with articles and race plus class", () => {
+  for (const q of ["I am a hunter, where do I train", "I'm a night elf hunter, where do I train", "as an undead rogue, what poisons", "I play a dwarf hunter", "my hunter alt needs a pet"]) assert.equal(buildRelevant(q, FOX).relevant, false, q);
+  assert.equal(buildRelevant("I am a human paladin, where do I train", FOX).relevant, true);
+});
+test("the system prompt sent to the model carries both halves of the rule for any question (answer-level behaviour is measured by scripts/ask-eval, not in unit tests: no model calls in CI)", async () => {
+  for (const question of ["Can a Paladin use two-handed swords?", "which role should I take in a group"]) {
+    const r = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question });
+    assert.ok(r.systemPrompt.includes("in one short clause") && r.systemPrompt.includes("plain lookup"), question);
+    assert.match(r.userPrompt, /YOUR_BUILD/, question);
+  }
+});
+
+test("abstain answer does not list the stored build's pages when the build is suppressed", async () => {
+  const off = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", question: "I am a hunter, what is the zzzqx flarn of the xyzzy" });
+  assert.equal(off.personalised, false);
+  assert.deepEqual(off.abstainPages || [], []);
 });
