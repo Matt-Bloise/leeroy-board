@@ -1,8 +1,10 @@
 // /ask opener, faction line, build-aware retrieval and sentence-safe cut. Fictional members only. Run: node --test tests/unit/ask-opener.test.mjs
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { buildOpener, factionOf, whoText, hasBuildFact, openerTopic, buildQueryExtra, pickBuildFacts, TOPIC_BANK, BUILD_BANK, isRoleQuestion } from "../../infrastructure/worker/ask-opener.js";
 import { formatAnswer } from "../../infrastructure/worker/answer-format.js";
+import { ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE } from "../../infrastructure/worker/self-rag.js";
 import { renderAskerBuild } from "../../infrastructure/worker/ask-build.js";
 import { buildAnswerInputs, finishAnswerText, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
@@ -113,17 +115,65 @@ test("production builder: faction on the build line, a role question pulls the c
   assert.ok(!/your /i.test(plain.opener || ""), "a visitor's opener never names a build");
 });
 
-test("finishAnswerText puts the opener first, never on a refusal, a coach answer or with ASK_OPENER off or unset", async () => {
-  const env = { DB: makeEnv().DB, BOARD_PUBLIC_URL: "https://leeroy.party", ASK_OPENER: "on" };
-  const base = { rawAnswer: "Blizzard has published no tank count for any raid.", isCoach: false, parsedPages: [], by: "Red Fox", askerIsMember: true, persona: null, intentId: "t", groundingText: "Blizzard has published no tank count for any raid.", personalised: true, trusted: false, question: "q" };
-  const opener = "Here is what the library holds for your protection paladin.";
-  assert.ok(!(await finishAnswerText(env, { ...base, trusted: true, opener })).answer.includes("your protection paladin"), "trusted (code-written) answers get none");
-  const on = await finishAnswerText(env, { ...base, opener });
-  assert.ok(on.answer.startsWith(opener), on.answer);
-  assert.ok(!(await finishAnswerText({ ...env, ASK_OPENER: "off" }, { ...base, opener })).answer.includes("your protection paladin"));
-  assert.ok(!(await finishAnswerText(env, { ...base, isCoach: true, opener })).answer.includes("your protection paladin"));
-  const { ASK_OPENER, ...unset } = env;
-  assert.ok(!(await finishAnswerText(unset, { ...base, opener })).answer.includes("your protection paladin"), "unset reads as off");
-  const refusal = await finishAnswerText(env, { ...base, rawAnswer: "The library does not have that yet.", opener });
-  assert.ok(!refusal.answer.includes("your protection paladin"));
+const CITED = "Blizzard has published no tank count for any raid. [raids/tank-counts~raids.tank_counts]";
+const PAGES = [{ id: "raids/tank-counts", category: "raids", title: "Raid tanks" }];
+const OPENER = "Here is what the library holds for your protection paladin.";
+const finishEnv = (extra = {}) => ({ DB: makeEnv().DB, BOARD_PUBLIC_URL: "https://leeroy.party", ...extra });
+const finishBase = { rawAnswer: CITED, isCoach: false, parsedPages: PAGES, by: "Red Fox", askerIsMember: true, persona: null, intentId: "t", groundingText: "Blizzard has published no tank count for any raid.", personalised: true, trusted: false, question: "q", opener: OPENER };
+const gotOpener = (r) => r.answer.includes("your protection paladin");
+
+test("finishAnswerText puts the opener first when ASK_OPENER is on and a valid citation survives", async () => {
+  const on = await finishAnswerText(finishEnv({ ASK_OPENER: "on" }), finishBase);
+  assert.ok(on.answer.startsWith(OPENER), on.answer);
+  assert.deepEqual(on.cites, ["raids/tank-counts"]);
+});
+
+test("ASK_OPENER off, unset or any other value adds no opener", async () => {
+  for (const v of ["off", "OFF", "", "0", undefined]) {
+    const env = finishEnv(v === undefined ? {} : { ASK_OPENER: v });
+    assert.ok(!gotOpener(await finishAnswerText(env, finishBase)), String(v));
+  }
+});
+
+test("the opener needs a valid citation: none cited, or only an unknown page cited, means no opener", async () => {
+  const env = finishEnv({ ASK_OPENER: "on" });
+  const plain = await finishAnswerText(env, { ...finishBase, rawAnswer: "Blizzard has published no tank count for any raid." });
+  assert.deepEqual(plain.cites, []);
+  assert.ok(!gotOpener(plain));
+  const unknown = await finishAnswerText(env, { ...finishBase, rawAnswer: "Blizzard has published no tank count. [made/up-page~x.y]" });
+  assert.deepEqual(unknown.cites, []);
+  assert.ok(!gotOpener(unknown));
+});
+
+test("an abstaining or figure-unconfirmed answer never gets an opener, even with a citation in it", async () => {
+  const env = finishEnv({ ASK_OPENER: "on" });
+  const cites = ` [raids/tank-counts~raids.tank_counts]`;
+  const declines = [
+    ABSTAIN_LINE + cites,
+    `**The Library does not cover that yet, so I won't guess.**
+What would settle it: an official Blizzard post.${cites}`,
+    NUMBER_UNCONFIRMED_LINE + cites,
+    `${NUMBER_UNCONFIRMED_LINE}
+-# Sources: raids/tank-counts`,
+    `Raids reset weekly. ${NUMBER_UNCONFIRMED_LINE}${cites}`,
+    `The library does not have that yet.${cites}`,
+  ];
+  for (const rawAnswer of declines) {
+    const r = await finishAnswerText(env, { ...finishBase, rawAnswer, groundingText: "x" });
+    assert.ok(!gotOpener(r), rawAnswer);
+  }
+});
+
+test("no opener on trusted (code-written) or coach answers", async () => {
+  const env = finishEnv({ ASK_OPENER: "on" });
+  assert.ok(!gotOpener(await finishAnswerText(env, { ...finishBase, trusted: true })), "trusted");
+  assert.ok(!gotOpener(await finishAnswerText(env, { ...finishBase, isCoach: true })), "coach");
+  assert.ok(!gotOpener(await finishAnswerText(env, { ...finishBase, opener: "" })), "empty opener");
+});
+
+test("wrangler.toml ships ASK_OPENER off", () => {
+  const toml = readFileSync(new URL("../../infrastructure/wrangler.toml", import.meta.url), "utf8");
+  const m = toml.match(/^ASK_OPENER\s*=\s*"([^"]*)"/m);
+  assert.ok(m, "ASK_OPENER is declared");
+  assert.equal(m[1], "off");
 });

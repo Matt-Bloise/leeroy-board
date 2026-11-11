@@ -23,7 +23,7 @@ import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings, stripPersonaIntro } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
-import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
+import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
@@ -1031,6 +1031,8 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
 // The chicken line is rare: never more often than one answer in 25, whatever the stored persona says.
+// The words of the refusal, abstain and unconfirmed-figure lines (self-rag.js ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, ask-build.js NOT_PUBLISHED_LINE), which may sit inside a longer or bold-wrapped answer.
+const DECLINES_RE = /does not (?:cover|have) that yet|(?:does not|doesn't) confirm that figure|not published yet/i;
 const eggFor = (persona) => {
   const e = persona && persona.egg && typeof persona.egg === "object" ? persona.egg : {};
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
@@ -1055,15 +1057,14 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       if (!n.ok) repaired = n.answer;
       repaired = stripUnretrievedCites(repaired, retrieved.ids).answer || ABSTAIN_LINE;
     }
-    // One deterministic in-voice line (ask-opener.js) in front of the cited facts. Never on a refusal or abstain line, a coach answer or a code-written answer; ASK_OPENER=on enables it (wrangler.toml); unset reads as off.
-    if (opener && !trusted && !isCoach && repaired && String(env && env.ASK_OPENER).toLowerCase() === "on" && !/does not have that yet|not published yet/i.test(repaired) && repaired !== ABSTAIN_LINE) {
-      repaired = `${opener}
-
-${repaired}`;
-    }
     const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
     const known = new Set(libPages.map((p) => p.id));
     const cites = extractCitedIds(repaired).filter((id) => known.has(id) && (!retrieved || retrieved.ids.has(id)));
+    // One deterministic in-voice line (ask-opener.js) in front of the cited facts, added only after the citations are known: at least one valid citation must survive, so the
+    // opener never promises coverage the answer declines. Never on a refusal, abstain, unconfirmed-figure, coach or code-written answer. ASK_OPENER=on enables it (wrangler.toml ships it off); unset reads as off.
+    if (opener && !trusted && !isCoach && repaired && cites.length > 0 && String(env && env.ASK_OPENER).toLowerCase() === "on" && !DECLINES_RE.test(repaired) && !repaired.includes(ABSTAIN_LINE) && !repaired.includes(NUMBER_UNCONFIRMED_LINE)) {
+      repaired = `${opener}\n\n${repaired}`;
+    }
     const chatMax = Number(persona && persona.format && persona.format.chatMaxChars);
     const uxOn = answerUxEnabled(env);
     const parts = answerFormatEnabled(env)
