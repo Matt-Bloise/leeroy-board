@@ -84,8 +84,8 @@ test("a cut answer ends on a finished sentence, not mid-clause", () => {
   const ctx = { pages: [], asker: { name: "x", isMember: false }, boardUrl: "https://leeroy.party", maxChars: 130 };
   const out = formatAnswer(body, ctx);
   assert.ok(out.length <= 130, String(out.length));
-  assert.match(out, /[.!?]$/);
-  assert.ok(!out.includes("…"));
+  assert.match(out, / …$/, "a cut answer keeps a visible mark even when it ends on a full sentence");
+  assert.ok(out.startsWith("First sentence is here and is fairly long on purpose."));
   const noStop = formatAnswer("word ".repeat(60).trim(), { ...ctx, maxChars: 100 });
   assert.match(noStop, /…$/, "no sentence end in range: the word cut stays");
 });
