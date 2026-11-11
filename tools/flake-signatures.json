@@ -1,0 +1,30 @@
+{
+  "comment": "Known harness-timing flakes of the Preview Tests workflow. A signature is a regex tested against ONE failure line (a FAIL line or an error annotation). Each entry was diagnosed as harness timing, not a product bug. Add an entry only with that evidence; a wrong entry hides a real failure behind a rerun.",
+  "signatures": [
+    {
+      "id": "webkit-rum-beacon-cors",
+      "pattern": "Origin https://leeroy\\.party is not allowed by Access-Control-Allow-Origin\\. Status code: 404",
+      "why": "WebKit logs a console error when the Cloudflare analytics beacon is answered without CORS headers. The beacon is injected by Cloudflare, not by the product, and the console error carries no source URL, so the test cannot tell it apart from a page error."
+    },
+    {
+      "id": "roads-buffs-pin-hover",
+      "pattern": "pin \\d+ hover opens a tip that is inside the view and covers nothing",
+      "why": "The hover is measured before the tip has settled on a slow runner (the DIAG block reports shownByWait false). Timing of the harness wait, not the layout."
+    },
+    {
+      "id": "open-return-b-scroll",
+      "pattern": "open then close at 40 percent.*scroll \\d+ -> 0",
+      "why": "Scenario B of open-return reads scrollY while the close transition is still restoring it on CI hardware; it never fails locally. Harness timing. The pattern also matches a real, repeatable loss of scroll position; that fails again on attempt 2, which is never rerun, so the cost is one wasted rerun."
+    },
+    {
+      "id": "preview-worker-not-found",
+      "pattern": "\\[code: 10007\\]|This Worker does not exist on your account",
+      "why": "Cloudflare answers code 10007 for a preview Worker for a short time right after upload, before it is routable. Eventual consistency of the preview environment."
+    },
+    {
+      "id": "layout-sweep-time-budget",
+      "pattern": "time budget of \\d+(\\.\\d+)? min ran out after \\d+ cells",
+      "why": "The layout sweep ran out of its time budget on a slow runner and stopped incomplete. Runner speed, not a layout result."
+    }
+  ]
+}
