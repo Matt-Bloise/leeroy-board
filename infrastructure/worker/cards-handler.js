@@ -10,6 +10,7 @@ import {
   confirmationLine, describeChange, requestCardEdit, whenOptions, DEFAULT_MEET, WRITE_IN_MAX,
 } from "./cards.js";
 import { noteSignupChange } from "./board-lines.js";
+import { updateKvJson, KvConflictError } from "./kv-cas.js";
 
 const eph = (content) => ({ type: 4, data: { content, flags: 64 } });
 export const WRITE_IN_MODAL_ID = "signup:modal:meet";
@@ -72,17 +73,21 @@ export function afterSignupChange(env, ctx, before, after, now = Date.now()) {
 
 // Apply patches ({ field, value }) for one person, persist, and fire the follow-ups. Returns the saved document.
 async function applyAndSave({ env, ctx, member, byName, patches, deps, now }) {
-  const before = await loadSignups(env.DB);
-  let doc = before;
-  for (const p of patches) {
-    const r = applySignupChange(doc, { name: byName, slug: member.slug, field: p.field, value: p.value, now });
-    if (!r.ok) continue;
-    doc = r.doc;
-  }
-  await deps.recompute(doc);
-  // The only work before the reply is the save itself (one read above, one write here). Everything else follows under waitUntil.
-  await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('signups', ?, ?)").bind(JSON.stringify(doc), new Date(now).toISOString()).run();
-  const entry = doc.entries.find((e) => String(e.name || "").toLowerCase() === byName.toLowerCase());
+  // Compare-and-set (kv-cas.js), 5 tries (about 10 D1 calls, well under 3 seconds): the interaction must be answered within 3 seconds. The patches are applied to the fresh document each try.
+  let before = null, entry = null;
+  const saved = await updateKvJson(env, "signups", async (cur) => {
+    before = cur || { entries: [] };
+    let doc = structuredClone(before);
+    for (const p of patches) {
+      const r = applySignupChange(doc, { name: byName, slug: member.slug, field: p.field, value: p.value, now });
+      if (!r.ok) continue;
+      doc = r.doc;
+    }
+    await deps.recompute(doc);
+    entry = doc.entries.find((e) => String(e.name || "").toLowerCase() === byName.toLowerCase());
+    return { doc };
+  }, { tries: 5, now: () => new Date(now).toISOString() });
+  const doc = saved.doc;
   await defer(ctx, async () => {
     await deps.insertIntent(env, { slug: member.slug, kind: "signup", body: { patch: Object.fromEntries(patches.map((p) => [p.field, p.value])), entry }, ver: 1, at: new Date(now).toISOString() });
     await deps.purgeWorkerCache(deps.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
@@ -92,7 +97,16 @@ async function applyAndSave({ env, ctx, member, byName, patches, deps, now }) {
   return doc;
 }
 
-export async function handleCardInteraction({ interaction, env, ctx, member, byName, deps, now = Date.now() }) {
+export async function handleCardInteraction(args) {
+  try {
+    return await handleCardInteractionInner(args);
+  } catch (e) {
+    if (e instanceof KvConflictError) return eph("The sign-ups card is busy. Try again in a moment.");
+    throw e;
+  }
+}
+
+async function handleCardInteractionInner({ interaction, env, ctx, member, byName, deps, now = Date.now() }) {
   if (!cardsEnabled(env) || !interaction || !interaction.data) return null;
   const id = String(interaction.data.custom_id || "");
   if (!id.startsWith("signup:")) return null;

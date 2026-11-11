@@ -44,6 +44,7 @@ import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
 import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mjs";
+import { isBeaconNoise, isInsightsHost } from "../helpers/probe-checks.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -260,6 +261,19 @@ function measure({ touch, w }) {
 // WebKit under CSS zoom: a locator click aims at the unzoomed rect and times out, so click the zoom-aware centre of the element instead.
 async function press(page, locator, timeout = 20000) {
   if (ENGINE !== "webkit") return locator.click({ timeout });
+  // wait for the target to be visible first (the same wait locator.click() does on the other engines); on a timeout say what the page showed, so a CI-only miss names its cause instead of a bare "elementHandle: Timeout"
+  try { await locator.waitFor({ state: "visible", timeout }); }
+  catch (e) {
+    const seen = await page.evaluate(() => [...document.querySelectorAll("button, a, [role=button]")].filter((b) => b.getClientRects().length).map((b) => (b.textContent || "").trim().replace(/\s+/g, " ").slice(0, 28)).filter(Boolean).slice(0, 12).join(" | ")).catch(() => "page state unreadable");
+    const open = await page.evaluate(() => document.documentElement.classList.contains("scene-open")).catch(() => "?");
+    // Nov 9: CI names the target (a name chip) but not WHY it never became visible: report how many elements match and the geometry and style of the first three, plus the viewport and the page scroll, so the next CI run says whether it is absent, zero-sized, hidden or off-screen.
+    const count = await locator.count().catch(() => "?");
+    const geo = await locator.evaluateAll((els) => els.slice(0, 3).map((el) => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y), display: s.display, visibility: s.visibility, opacity: s.opacity, parentOverflow: el.parentElement ? getComputedStyle(el.parentElement).overflow : "" }; })).catch(() => []);
+    const vp = await page.evaluate(() => ({ iw: innerWidth, ih: innerHeight, sy: Math.round(scrollY), sh: document.documentElement.scrollHeight })).catch(() => ({}));
+    // Nov 10: the scene-open flag and the chip count come FIRST, so a CI log cut at about 220 characters still shows them
+    const chips = await page.locator("#tn-me .tn-name").count().catch(() => "?");
+    throw new Error(`scene-open ${open}; #tn-me .tn-name count ${chips}; ${e.message.split("\n")[0]} (waited ${timeout} ms for the target ${String(locator)} to be visible; matches ${count}; first matches ${JSON.stringify(geo)}; viewport ${JSON.stringify(vp)}; visible buttons and links: ${seen || "none"}; scene-open ${open})`);
+  }
   const el = await locator.elementHandle({ timeout });
   await el.evaluate((e) => e.scrollIntoView({ block: "center", inline: "center" }));
   const { x, y } = await el.evaluate((e) => window.__lz.point(e));
@@ -272,6 +286,31 @@ async function openState(page, state) {
   await page.waitForTimeout(500);
   if (state !== "gate") await press(page, page.getByText("Just take a look", { exact: false }).first());
   if (state === "member") {
+    // Nov 10 (CI run 42767890012, WebKit 667x375, 640x360, 568x320): the first look press can miss while the gate sheet animates; html keeps nx-first-run, the chips stay display:none and #nx-fr2-look is visible and hit-testable. Wait for the gate class to drop; if it has not after about 2.5 s, wait for the link's box to hold still for two animation frames and press again, up to 3 presses in all.
+    const look = page.getByText("Just take a look", { exact: false }).first();
+    const gateGone = (ms) => page.waitForFunction(() => !document.documentElement.classList.contains("nx-first-run"), null, { timeout: ms }).then(() => true, () => false);
+    let presses = 1;
+    while (!(await gateGone(2500)) && presses < 3) {
+      await look.waitFor({ state: "visible", timeout: 20000 }).catch(() => {});
+      await look.evaluate((el) => new Promise((resolve) => {
+        let last = "", same = 0, n = 0;
+        const tick = () => { const r = el.getBoundingClientRect(), k = [r.x, r.y, r.width, r.height].join(","); same = k === last ? same + 1 : 0; last = k; if (same >= 2 || ++n > 120) resolve(); else requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      })).catch(() => {});
+      await press(page, look).catch(() => {});
+      presses++;
+    }
+    if (!(await gateGone(2500))) {
+      const gate = await page.evaluate(() => ({ htmlClass: document.documentElement.className, lookBox: (() => { const e = document.querySelector("#nx-fr2-look"); if (!e) return null; const r = e.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) }; })(), chips: document.querySelectorAll("#tn-me .tn-name").length })).catch(() => ({}));
+      throw new Error(`nx-first-run still set after ${presses} presses of "Just take a look"; first-run gate state ${JSON.stringify(gate)}; html class list "${gate.htmlClass || ""}"`);
+    }
+    // The name chips (#tn-me .tn-name) exist only once the Tonight scene is open. On a loaded CI runner it can open late: wait for it (press the look link once more if it has not opened after about 3 s), then for a visible chip.
+    const sceneOpen = (ms) => page.waitForFunction(() => document.documentElement.classList.contains("scene-open"), null, { timeout: ms }).then(() => true, () => false);
+    if (!(await sceneOpen(3000))) {
+      await press(page, page.getByText("Just take a look", { exact: false }).first()).catch(() => {});
+      await sceneOpen(20000);
+    }
+    await page.waitForSelector("#tn-me .tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
     await press(page, page.getByRole("button", { name: /Bloise/ }).first());
     await press(page, page.getByRole("button", { name: /Show me what is next/ }).first());
   }
@@ -439,7 +478,12 @@ async function cell(browser, size, state, A) {
   page.on("response", (r) => { const u = r.url(); if (sameOrigin(u, ORIGIN) && r.status() >= 400 && !/cloudflareinsights/.test(u)) once("http-error", `${r.status()} ${u.slice(ORIGIN.length)}`); });
   /* B55b: WebKit's CORS line ("Origin ... is not allowed by Access-Control-Allow-Origin. Status code: 404") names no URL and WebKit raises no response/requestfailed event for it (run 41829291747: no xorigin-http line). So the detail adds what the engine does know: the console message's own source (WebKit puts the resource URL there), every Worker the page started and every cross-origin fetch the page made with its status (XR_JS below). A request made inside a worker shows up in none of the events; the worker list then names the suspects. */
   page.on("worker", (w) => { (page.__workers ||= []).push(w.url()); });
+  /* WebKit logs the Cloudflare beacon's CORS 404 as a URL-less console line (run 42893784114: 4 cells, no source, no cross-origin fetch seen from the page). Same rule as the production probe (isBeaconNoise): exempt it only on WebKit, only with no usable location, only in the exact wording, and only within 2 s of a cloudflareinsights request that failed or answered >= 400 on this page. Any other URL-less CORS line still fails. */
+  const insightsFailedAt = [];
+  page.on("response", (r) => { if (isInsightsHost(r.url()) && r.status() >= 400) insightsFailedAt.push(Date.now()); });
+  page.on("requestfailed", (r) => { if (isInsightsHost(r.url())) insightsFailedAt.push(Date.now()); });
   page.on("console", (m) => {
+    if (m.type() === "error") { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} if (isBeaconNoise({ text: m.text(), at, t: Date.now() }, insightsFailedAt, ENGINE)) { console.log(`WARN ${size.w}x${size.h} ignored the Cloudflare analytics beacon CORS console error (insights request failed within 2 s)`); return; } }
     if (m.type() !== "error" || /^\[Report Only\]/.test(m.text()) || /^Failed to load resource|^Refused to|cloudflareinsights|beacon\.min\.js/i.test(m.text()) || ignoredConsoleError(m.text(), (m.location() || {}).url)) return;
     if (!/Access-Control-Allow-Origin|access control/i.test(m.text())) { once("console-error", m.text()); return; }
     let loc = null; try { loc = m.location(); } catch (e) {}

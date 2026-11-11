@@ -40,6 +40,7 @@ jobs:
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       site_changed: ${{ steps.classify.outputs.site_changed }}
+      api_needed: ${{ steps.classify.outputs.api_needed }}
       full: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
     steps:
       - name: Checkout
@@ -60,6 +61,8 @@ jobs:
           cat "$RUNNER_TEMP/paths.txt"
           echo "docs_only=$(node tools/docs-only.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
           echo "site_changed=$(node tools/ci-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
+          # B72: the API suite (the only job that calls the real preview Worker, about 117 requests) runs only when a Worker, API, schema, wrangler, dependency or CI file changed.
+          echo "api_needed=$(node tools/api-scope.mjs < "$RUNNER_TEMP/paths.txt")" >> "$GITHUB_OUTPUT"
 
   unit:
     name: unit
@@ -200,7 +203,9 @@ jobs:
 
   api:
     name: api
-    needs: preview
+    needs: [scope, preview]
+    # B72: skipped when tools/api-scope.mjs says no Worker or API code changed. tools/ci-report.mjs accepts the skip only with API_NEEDED=false and never otherwise.
+    if: needs.scope.outputs.api_needed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -449,6 +454,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
           SITE_CHANGED: ${{ needs.scope.outputs.site_changed }}
+          API_NEEDED: ${{ needs.scope.outputs.api_needed }}
+          PREVIEW_RESULT: ${{ needs.preview.result }}
           FULL: ${{ needs.scope.outputs.full }}
           UNIT_RESULT: ${{ needs.unit.result }}
           STAMPS_RESULT: ${{ needs.stamps.result }}
@@ -489,7 +496,7 @@ jobs:
       - name: Fail the job if a suite failed
         env:
           OK: ${{ steps.build.outputs.ok }}
-          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }} full=${{ needs.scope.outputs.full }} docs_only=${{ needs.scope.outputs.docs_only }} site_changed=${{ needs.scope.outputs.site_changed }}
+          RESULTS: unit=${{ needs.unit.result }} stamps=${{ needs.stamps.result }} preview=${{ needs.preview.result }} api=${{ needs.api.result }} browser=${{ needs.browser.result }} layout=${{ needs.layout.result }} full=${{ needs.scope.outputs.full }} api_needed=${{ needs.scope.outputs.api_needed }} docs_only=${{ needs.scope.outputs.docs_only }} site_changed=${{ needs.scope.outputs.site_changed }}
         run: |
           echo "$RESULTS"
           [ "$OK" = "true" ] || { echo "::error::Checks failed ($RESULTS)."; exit 1; }

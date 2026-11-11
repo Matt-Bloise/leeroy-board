@@ -3,19 +3,20 @@
 const K = window.__boardKit; if (!K || typeof document === "undefined") return;
 const HERE = (document.currentScript && document.currentScript.src) || null;
 const SCENES = {
-  sheet: () => [new URL("../scenes/sheet.css?v=4179817b30", HERE), new URL("../scenes/sheet.js?v=d9c961eefb", HERE)],
-  chamber: () => [new URL("../scenes/chamber.css?v=ceca5fbe60", HERE), new URL("../scenes/chamber.js?v=f7b01f71a8", HERE)],
+  sheet: () => [new URL("../scenes/sheet.css?v=cbc6d93e41", HERE), new URL("../scenes/sheet.js?v=a6c4b8aae5", HERE)],
+  import: () => [new URL("../scenes/import.css?v=8db4829667", HERE), new URL("../scenes/import.js?v=00379e9b01", HERE)],
+  chamber: () => [new URL("../scenes/chamber.css?v=ceca5fbe60", HERE), new URL("../scenes/chamber.js?v=9e50294446", HERE)],
   decide: () => [new URL("../scenes/decide.css?v=1768b64335", HERE), new URL("../scenes/decide.js?v=9f716a3650", HERE)],
   probe: () => [new URL("../scenes/probe.css?v=1c5e2abb08", HERE), new URL("../scenes/probe.js?v=24d1f46113", HERE)],
   data: () => [new URL("../scenes/data.css?v=ee39216ed8", HERE), new URL("../scenes/data.js?v=46a654146f", HERE)],
   walk: () => [new URL("../scenes/walk.css?v=0c70badf8e", HERE), new URL("../scenes/walk.js?v=fef65c1b6a", HERE)],
-  place: () => [new URL("../scenes/place.css?v=d0b34a8d10", HERE), new URL("../scenes/place.js?v=29dc6fb5f4", HERE)],
+  place: () => [new URL("../scenes/place.css?v=d0b34a8d10", HERE), new URL("../scenes/place.js?v=f6e833bd99", HERE)],
   buffs: () => [new URL("../scenes/buffs.css?v=d7744ab4c3", HERE), new URL("../scenes/buffs.js?v=256503156b", HERE)],
   hades: () => [new URL("../scenes/hades.css?v=858a039a4a", HERE), new URL("../scenes/hades.js?v=a6de8f404c", HERE)],
   wide: () => [null, new URL("../scenes/wide.js?v=6cd88699fc", HERE)],
   settings: () => [new URL("../scenes/settings.css?v=f5cbd09225", HERE), new URL("../scenes/settings.js?v=5f638d5226", HERE)],
   refresh: () => [new URL("../scenes/refresh.css?v=35a7bbfcac", HERE), new URL("../scenes/refresh.js?v=9c90f169ab", HERE)],
-  guided: () => [new URL("../scenes/guided-atlas.css?v=335e4f4395", HERE), new URL("../scenes/guided-atlas.js?v=3d4c48b7f8", HERE)],
+  guided: () => [new URL("../scenes/guided-atlas.css?v=335e4f4395", HERE), new URL("../scenes/guided-atlas.js?v=6091380e9a", HERE)],
   tablet: () => [new URL("../scenes/tablet.css?v=a996a39582", HERE), null],
   foley: () => [null, new URL("../scenes/foley.js?v=135b19b8a4", HERE)],
   foleyfx: () => [null, new URL("../scenes/foley-fx.js?v=835f856b07", HERE)],
@@ -123,6 +124,7 @@ if (typeof document.addEventListener === "function") {
   document.addEventListener("pointerover", hoverIn, { capture: true, passive: true });
   document.addEventListener("keydown", () => { if (!P.place) load("place"); }, { capture: true, passive: true });
 }
+K.on("roads-open", () => { if (!P.place) setTimeout(() => { if (!P.place) load("place"); }, 900); }); /* after the open transition, so opening and returning is not slowed by the fetch */ /* slice 6: a touch phone never hovers or presses a key, so the road cards came only to desktops; opening Three roads loads them for everyone */
 K.on("booted", () => { if (HERE && fine() && !/[?&](render|brain)=/.test(String(location.search || ""))) afterPlay(() => setTimeout(() => afterPlay(() => { if (!P.place) load("place"); }), 4000)); });
 if (window.BoardSound && BoardSound.onState) BoardSound.onState((on) => { if (on) load("foley"); });
 /* roster.v1 (data/client.json flags): the officer roster is not in the ribbon. It opens at #roster and from a Menu entry, only while the flag is on. */

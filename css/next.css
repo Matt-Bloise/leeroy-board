@@ -170,3 +170,13 @@ html.nx-first-run :is(#tn-me, #nx-card, #nx-tonight, #nx-queue, #nx-rest, #tn-ca
 #tabs .tab[data-nx-fold] { display: none !important; }
 #tabs .tabs-more { color: #f4e8c8; text-shadow: 0 1px 2px #1a0f06; flex: none; align-self: flex-start; margin: 6px 0 0 8px; min-height: 44px; padding: 4px 16px; cursor: pointer; white-space: nowrap; }
 .ribbons-on #scene #tabs .tabs-more { margin-top: 10px; z-index: 4; }
+
+/* Gate type scale on desktop: the 1440 px screen had the smallest type relative to the card; max() leaves larger screens as they are */
+@media (min-width: 1100px) {
+  .nx-fr2 h2 { font-size: max(var(--step-1), 2rem); }
+  .nx-fr2-line { font-size: max(var(--step-0), 1.125rem); }
+  .nx-fr2 #nx-fr2-go, .nx-fr2 .nx-fr2-look { font-size: max(var(--step-0), 1.0625rem); }
+}
+
+/* Tiny landscape windows (under 260 px tall): the first-visit card is taller than the sheet body, and the stretched panel ended 92 px above the card's bottom in WebKit at 384x216 (layout-sweep gate-inset). The panel sizes to its content and the body scrolls, so the frame always wraps the card; taller windows are unchanged. */
+@media (max-height: 259px) and (orientation: landscape) { html.nx-solo #panel-tonight { align-self: start; } }

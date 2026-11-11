@@ -8,6 +8,10 @@
 // Conditions: the API aborted, answering 500, or held for 12 s; JavaScript off (a visible <noscript> note with a link); storage, IndexedDB and cookies throwing,
 // and storage access itself throwing; analytics blocked (also: no console error from our code); reduced motion, forced colours, dark scheme, more contrast;
 // zoom equivalents (640x360, 480x270, text at 200 percent); a very slow network (400 kbps, 800 ms); a stale index.html whose script 404s.
+// The slow-network cell is judged clock-independently (B71b): every context is clock-pinned (stubbed(), B64), and under Playwright's clock install performance.getEntries* return nothing, so a
+// "paint entry" criterion can never be met. Instead the cell needs CDP Page.lifecycleEvent firstPaint (outside the page, so not faked) AND a strictly visible card: 40+ characters and a focusable control
+// whose computed opacity is 1 through its ancestors (the boot-in fade is done) with its box inside the viewport. Two negative conditions prove it can still go red: the document held for 5 s, and a render-blocking
+// stylesheet held for 6 s (text in the DOM, nothing painted); each must be REFUSED, and a run that accepts them fails.
 // Makes no AI call and sends nothing. Chromium only. Exit 0 when every check passes, 1 otherwise.
 // Late rejections from routes or pages that closed with the context are not test failures; anything else still fails the run.
 process.on("unhandledRejection", (e) => { if (/Target page, context or browser has been closed/.test(String(e && e.message || e))) return; console.error(e); process.exit(1); });
@@ -31,10 +35,12 @@ const routeApi = async (ctx, fn) => { await ctx.route((u) => isApi(u.href), fn);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* the in-page probe: visible characters and visible, focusable links or controls */
-const probe = () => {
+const probe = (strict) => {
+  const alpha = (e) => { let a = 1; for (let n = e; n && n.nodeType === 1; n = n.parentElement) a *= +getComputedStyle(n).opacity; return a; };
+  const inside = (e) => { const r = e.getBoundingClientRect(); return r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; };
   const shown = (e) => { const r = e.getBoundingClientRect(), c = getComputedStyle(e); if (!(r.width > 0 && r.height > 0 && c.visibility !== "hidden" && c.display !== "none") || e.closest("[hidden],[inert]")) return false; for (let n = e; n && n.nodeType === 1; n = n.parentElement) if (+getComputedStyle(n).opacity === 0) return false; return true; }; /* opacity counts through the ancestors: a card still fading in is not visible */
   const text = (document.body ? document.body.innerText : "").replace(/\s+/g, " ").trim();
-  const ctl = [...document.querySelectorAll("a[href],button,input,select,textarea,summary,[tabindex]")].filter((e) => !e.disabled && e.tabIndex >= 0 && shown(e));
+  const ctl = [...document.querySelectorAll("a[href],button,input,select,textarea,summary,[tabindex]")].filter((e) => !e.disabled && e.tabIndex >= 0 && shown(e) && (!strict || (alpha(e) >= 0.99 && inside(e))));
   const paint = performance.getEntriesByType ? performance.getEntriesByType("paint").map((p) => p.name) : [];
   /* where the page stood, for a failure line: a run that dies with "7 chars" says nothing about whether the board had started (B52) */
   const st = (id) => { const e = document.getElementById(id); return e ? (e.hidden ? "hidden" : "shown") : "absent"; };
@@ -74,6 +80,23 @@ const stale = (which) => async (ctx) => {
     } catch (e) { await route.continue().catch(() => {}); }
   });
 };
+/* negatives for the slow cell. holdDocument: index.html is not sent for 5 s, so no card exists inside the budget. blockPaint: the document arrives at once but carries a render-blocking
+   <link rel=stylesheet> in the head whose file is held for 6 s, and the card's `hidden` is taken off (the inline script that does it would itself wait for that stylesheet) and its fade-in is replaced by opacity:1, so the card is in the DOM, laid out and
+   fully opaque (80 characters, a visible link) while the browser has painted nothing: the "80 chars, 1 controls, paint none" failure, which only the paint signal can refuse. */
+const docPath = (u) => u.origin === origin && /\/(index\.html)?$/.test(u.pathname);
+const holdDocument = async (ctx) => { await ctx.route((u) => docPath(u), async (route) => { await sleep(5000); await route.continue().catch(() => {}); }); };
+const blockPaint = async (ctx) => {
+  await ctx.route((u) => u.origin === origin && u.pathname === "/__held.css", async (route) => { await sleep(6000); await route.fulfill({ status: 200, contentType: "text/css", body: "/* held */" }).catch(() => {}); });
+  await ctx.route((u) => docPath(u), async (route) => {
+    try {
+      const real = HOST_MAP ? route.request().url().replace(/^(https?:\/\/)[^/:]+/, `$1${HOST_MAP.split("=")[1]}`) : undefined; /* the node side does not use the browser's host map */
+      const r = await route.fetch(real ? { url: real } : {}); let body = await r.text();
+      body = body.replace("</head>", `<link rel="stylesheet" href="/__held.css"></head>`).replace('<div id="boot" role="status" hidden>', '<div id="boot" role="status">').replace("animation:boot-in .01s .8s both", "opacity:1");
+      const headers = { ...r.headers() }; delete headers["content-encoding"]; delete headers["content-length"];
+      await route.fulfill({ status: r.status(), headers, body });
+    } catch (e) { await route.continue().catch(() => {}); }
+  });
+};
 const CONDITIONS = [
   { id: "control", label: "no fault (control)" },
   { id: "api-abort", label: "API requests aborted", setup: failReq("abort") },
@@ -91,6 +114,9 @@ const CONDITIONS = [
   { id: "zoom-480x270", label: "zoom 400 percent of a laptop (480x270)", sizes: [["480x270", { viewport: { width: 480, height: 270 } }]] },
   { id: "text-200", label: "text scaled to 200 percent", init: () => { const set = () => { if (document.documentElement) document.documentElement.style.fontSize = "200%"; }; set(); document.addEventListener("readystatechange", set); }, after: (page) => page.evaluate(() => { document.documentElement.style.fontSize = "200%"; }) }, /* set from the first byte, as a text-size setting is, and again once the page is up */
   { id: "slow-network", label: "400 kbps, 800 ms (a visible card in 3 s)", budget: 3000, paint: true, slow: true },
+  /* the negatives: a genuinely slow page must make the slow cell fail. Each must be REFUSED by the same criterion (expectRed), on the phone only. */
+  { id: "slow-network-card-withheld", label: "400 kbps, 800 ms, document held 5 s (a card in 3 s must be refused)", budget: 3000, paint: true, slow: true, expectRed: true, sizes: [["390x844", PHONE]], setup: holdDocument },
+  { id: "slow-network-paint-blocked", label: "400 kbps, 800 ms, render-blocking stylesheet held 6 s (a card in 3 s must be refused)", budget: 3000, paint: true, slow: true, expectRed: true, sizes: [["390x844", PHONE]], setup: blockPaint },
   { id: "stale-board", label: "stale index, board.js 404s", sw: "allow", setup: stale("board") },
   { id: "stale-shell", label: "stale index, shell.js 404s", sw: "allow", setup: stale("shell") },
 ];
@@ -106,6 +132,9 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
     const late = []; /* requests still waiting or failed when the probe ends (not the held API: that is the point of the condition) */
     page.on("requestfailed", (r) => { if (!isApi(r.url())) late.push(`${r.url().slice(-40)} ${(r.failure() || {}).errorText || ""}`); });
     page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text())) { let at = ""; try { at = (m.location() || {}).url || ""; } catch (e) {} cons.push({ text: m.text().slice(0, 140), at }); } });
+    let painted = false; /* CDP firstPaint of the main frame: browser-side, so the page clock pin cannot fake or hide it (performance.getEntries* are empty under the pin) */
+    if (cond.paint) { await cdp.send("Page.enable"); await cdp.send("Page.setLifecycleEventsEnabled", { enabled: true }); cdp.on("Page.lifecycleEvent", (e) => { if (e.name === "firstPaint") painted = true; }); }
+    const usable = (q) => q.len >= 40 && q.ctl >= 1 && (!cond.paint || painted);
     if (cond.setup) await cond.setup(ctx, page, cdp);
     if (cond.slow) { await cdp.send("Network.enable"); await cdp.send("Network.emulateNetworkConditions", { offline: false, latency: 800, downloadThroughput: (400 * 1024) / 8, uploadThroughput: (400 * 1024) / 8 }); }
     if (cond.sw === "allow") { await page.goto(url, { waitUntil: "load", timeout: 45000 }).catch(() => {}); await page.goto(url, { waitUntil: "load", timeout: 45000 }).catch(() => {}); await page.unrouteAll?.({ behavior: "ignoreErrors" }).catch(() => {}); }
@@ -114,18 +143,20 @@ async function runOne(browser, cond, [size, sopts], visit, slug) {
       await nav; /* a tab left on about:blank after the navigation (tests/helpers/goto-retry.mjs): load it again, at most twice, and say so; a slow-network run is still on its way and is left alone */
       for (let i = 1; i <= 2 && page.url() === "about:blank"; i++) { console.log(`WARN ${name}: the tab was left on about:blank; loading it again (${i} of 2)`); nav = page.goto(url, { waitUntil: "commit", timeout: 60000 }).catch(() => {}); await nav; }
     }
-    const budget = cond.budget || 6000; let p = { len: 0, ctl: 0, paint: [], text: "" };
+    const budget = cond.budget || 6000; let p = { len: 0, ctl: 0, paint: [], text: "" }, usableAt = null;
     while (Date.now() - t0 < budget) {
-      p = await page.evaluate(probe).catch(() => p);
-      if (p.len >= 40 && p.ctl >= 1 && (!cond.paint || p.paint.length > 0)) break;
+      p = await page.evaluate(probe, !!cond.paint).catch(() => p);
+      if (usable(p)) { usableAt = Date.now() - t0; break; }
       await sleep(250);
     }
     if (cond.after) { /* the change lands on a page that is up; give it the same budget to settle (a sheet may be mid-open) */
       await cond.after(page).catch(() => {}); const t1 = Date.now();
       do { await sleep(300); p = await page.evaluate(probe).catch(() => p); } while (!(p.len >= 40 && p.ctl >= 1) && Date.now() - t1 < budget);
     }
-    const detail = `${p.len} chars, ${p.ctl} controls${cond.paint ? `, paint ${p.paint.join("/") || "none"}` : ""}, text "${p.text}", tab url ${page.url()}, after ${Date.now() - t0} ms, ${p.state || "no page state"}${late.length ? `, own requests failed: ${late.slice(0, 4).join(" | ")}` : ""}`;
-    ok(`${name} | usable screen`, p.len >= 40 && p.ctl >= 1 && (!cond.paint || p.paint.length > 0), detail);
+    const detail = `${p.len} chars, ${p.ctl} controls${cond.paint ? `, first paint (CDP) ${painted ? "yes" : "none"}` : ""}, text "${p.text}", tab url ${page.url()}, after ${Date.now() - t0} ms, ${p.state || "no page state"}${late.length ? `, own requests failed: ${late.slice(0, 4).join(" | ")}` : ""}`;
+    if (cond.expectRed) ok(`${name} | the check refuses it (no usable screen in ${budget} ms)`, !usable(p), detail);
+    else ok(`${name} | usable screen`, usable(p), detail);
+    if (cond.paint && !cond.expectRed && usableAt !== null) lines.push(`INFO ${name} | usable after ${usableAt} ms`);
     if (cond.noscript) {
       const ns = await page.evaluate(() => { const link = [...document.querySelectorAll("body a[href]")].some((a) => a.getBoundingClientRect().width > 0 && !a.closest("[hidden]")); return { text: document.body.innerText.replace(/\s+/g, " "), link }; }).catch(() => ({ text: "", link: false }));
       ok(`${name} | the no-script note is visible, plain, and has a link`, /JavaScript|script/i.test(ns.text) && ns.link, ns.text.slice(0, 80));

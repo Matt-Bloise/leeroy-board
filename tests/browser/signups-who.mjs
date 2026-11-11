@@ -65,6 +65,7 @@ async function open(browser, width, height, signups) {
   if (await look.isVisible().catch(() => false)) await look.click();
   await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
   await page.locator(".tn-name", { hasText: NAMES[1] }).first().click({ timeout: 15000 });
+  await page.getByRole("button", { name: /Show me what is next/ }).first().click({ timeout: 15000 }).catch(() => {}); // a name is only kept once it is confirmed; "Change my answer" waits for that
   await page.waitForTimeout(800);
   await page.evaluate(() => { location.hash = "signups"; });
   await page.waitForSelector("#panel-signups .jr-who .jr-wn, #panel-signups .jr-who .jr-w0", { state: "visible", timeout: 10000 }).catch(() => {});

@@ -74,7 +74,7 @@ const mine = (rows) => { const me = MEM.member(); return me ? rows.find((r) => r
 function openPanel(panel, on) { panel.classList.toggle("jr-open", on !== false); fold(panel); const b = panel.querySelector(".jr-more"); if (b) { b.setAttribute("aria-expanded", String(panel.classList.contains("jr-open"))); b.textContent = panel.classList.contains("jr-open") ? "Show less" : "Show me more"; } }
 const unfold = (key, sub) => { const p = $(`#panel-${key}`); if (p) openPanel(p); if (sub) landOn(key, sub); };
 const CORE = {
-  timeline() { const l = evOf("launch"), r = evOf("raids"); return l && l.epoch ? { a: `Launch is ${K.relWhen(l.epoch)}, ${K.fmtWhen(l.epoch)}.${r && r.epoch ? ` Raids open ${K.fmtWhen(r.epoch)}.` : ""}`, go: ["Add launch to my calendar", () => saveIcs(l), "ics"] } : null; },
+  timeline() { const l = evOf("launch"), r = evOf("raids"); return l && l.epoch ? { a: `${K.launchSay(l)}${r && r.epoch ? ` Raids ${r.epoch * 1000 > Date.now() ? "open" : "opened"} ${K.fmtWhen(r.epoch)}.` : ""}`, go: K.launchPast() ? null : ["Add launch to my calendar", () => saveIcs(l), "ics"] } : null; },
   five() {
     const P = D.party, me = MEM.member(); if (!P) return null;
     const a = me ? `${me.name}: ${me.race} ${me.class}, ${typeof me.role_detail === "string" ? me.role_detail : me.role}. With you: ${K.andList(P.members.filter((x) => x !== me).map((x) => x.name))}.` : `${K.pn.word()[0].toUpperCase() + K.pn.word().slice(1)} of you: ${P.members.map((x) => `${x.name} (${x.race} ${x.class})`).join(", ")}.`;
@@ -92,7 +92,7 @@ const CORE = {
   },
   legacy() {
     const L = D.client && D.client.legacy, t = L && L.thresholds && L.thresholds[0]; if (!L) return null;
-    return { a: `${L.total} points in all, ${L.earned_now} earned before launch, ${L.spend_cap} can be spent. The first reward comes at ${t.n} points${t.alt ? ` (one guide says ${t.alt})` : ""}.`, go: ["Open the Bonuses page in the Library", "#library.systems.legacy"] };
+    return { a: `${L.total} points in all, ${L.earned_now} earned ${K.launchPast() ? "so far" : "before launch"}, ${L.spend_cap} can be spent. The first reward comes at ${t.n} points${t.alt ? ` (one guide says ${t.alt})` : ""}.`, go: ["Open the Bonuses page in the Library", "#library.systems.legacy"] };
   },
   buffs() {
     const C = D.client, d = decideData(), me = MEM.member(); if (!C || !C.buffs) return null;
@@ -107,7 +107,8 @@ const CORE = {
   signups() {
     const S = D.signups, me = MEM.member(); if (!S || !S.tallies) return null;
     const e = me && (S.entries || []).find((x) => K.cleanName(x.name).toLowerCase() === me.name.toLowerCase()), n = (S.tallies.rsvp.in || {}).count || 0;
-    return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: ["Change my answer", () => unfold("signups", "rsvp")], who: signupWho };
+    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(), le = K.launchEvent(); return { a: `Launch night was ${le.when}. ${n} of ${D.party.members.length} had said they were in.${me ? (e && e.rsvp ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you was recorded.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: me ? ["See the answers", () => unfold("signups", "rsvp")] : null, who: signupWho }; }
+    return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: me ? ["Change my answer", () => unfold("signups", "rsvp")] : null, who: signupWho };
   },
   librarian() { const st = D.stats; return st ? { a: `Type /ask in #wow-forever, or write below. Median answer: ${Math.round(st.median_s)} s.`, go: ["Ask Leeroy", () => { const t = $("#ask-text"); if (t) t.focus(); else unfold("librarian"); }] } : null; },
   library() { const me = MEM.member(); return { a: me ? `Start with your class page (${me.class}) and the page for ${me.race}s.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
@@ -134,7 +135,7 @@ function fold(panel) {
   const deepLink = location.hash.indexOf(`#${panel.id.slice(6)}.`) === 0 || (panel.id === "panel-roads" && /^#atlas(\.|$)/.test(location.hash)) || panel.dataset.view === "sheet" || panel.classList.contains("chamber-on");
   const on = journey() === "guided" && panel.id !== "panel-tonight" && !!kid(panel, "jr-core") && !panel.classList.contains("jr-open") && !deepLink;
   panel.classList.toggle("jr-dest", journey() === "guided" && deepLink && panel.id !== "panel-tonight" && !!kid(panel, "jr-core"));
-  for (const c of panel.children) if (!c.classList.contains("jr-core")) c.classList.toggle("jr-fold", on && c.id !== "ask-box" && c.id !== "ch-still" && !c.querySelector("#ask-box"));
+  for (const c of panel.children) if (!c.classList.contains("jr-core")) c.classList.toggle("jr-fold", on && c.id !== "ask-box" && c.id !== "ch-still" && !c.classList.contains("lib-bar") && !(c.classList.contains("lib-cols") && panel.classList.contains("lib-live")) && !c.querySelector("#ask-box"));
 }
 function core(only) {
   if (!D.party || !D.timeline) return;
@@ -144,9 +145,9 @@ function core(only) {
     let box = kid(panel, "jr-core"), c = null;
     if (g) { try { c = CORE[key] && CORE[key](); } catch (e) { console.error("core", key, e); } }
     if (!c) { rm(box); panel.classList.remove("jr-open"); fold(panel); } else {
-      const [label, to, extra] = c.go, go = typeof to === "function" ? h("button", { type: "button", class: `lib-btn strong jr-go${extra ? ` lib-tool ${extra}` : ""}`, onclick: to }, label) : h("a", { class: "lib-btn strong jr-go", href: to }, label);
+      const [label, to, extra] = c.go || [], go = !label ? null : typeof to === "function" ? h("button", { type: "button", class: `lib-btn strong jr-go${extra ? ` lib-tool ${extra}` : ""}`, onclick: to }, label) : h("a", { class: "lib-btn strong jr-go", href: to }, label);
       const more = h("button", { type: "button", class: "lib-tool jr-more", "aria-expanded": String(panel.classList.contains("jr-open")), onclick: () => openPanel(panel, !panel.classList.contains("jr-open")) }, panel.classList.contains("jr-open") ? "Show less" : "Show me more");
-      const fresh = h("section", { class: "jr-core", "aria-label": "In short" }, h("h3", { class: "jr-q", text: Q[key] }), h("p", { class: "jr-a", text: cut(c.a) }), h("div", { class: "jr-acts" }, go, more), ...(c.who ? [c.who()] : []));
+      const fresh = h("section", { class: "jr-core", "aria-label": "In short" }, h("h3", { class: "jr-q", text: Q[key] }), h("p", { class: "jr-a", text: cut(c.a) }), h("div", { class: "jr-acts" }, ...[go, more].filter(Boolean)), ...(c.who ? [c.who()] : []));
       panel.insertBefore(fresh, box || panel.firstChild); rm(box);
       fold(panel);
     }
@@ -332,6 +333,7 @@ K.on("timeline", () => {
   const c = cal.querySelector(".cal"); if (c && !c.querySelector(".cal-card")) c.append(h("p", { class: "cal-card", "aria-live": "polite", text: todayLine() }));
   for (const st of rail.querySelectorAll(".stop[data-ev]")) {
     const e = D.timeline.events.find((x) => x.key === st.dataset.ev);
+    if (e && e.key === "launch" && K.launchPast()) { const old = st.querySelector(".ics"); if (old) old.remove(); continue; } /* a button rendered before launch does not survive the launch moment */
     if (!e || !e.epoch || !["launch", "raids"].includes(e.key) || st.querySelector(".ics")) continue;
     const a = h("button", { type: "button", class: "lib-tool ics", "data-j": "g c e", "aria-label": `Add to my calendar: ${e.label.toLowerCase()}`, onclick: () => saveIcs(e) }, emb("cal"), "Add to my calendar");
     const body = st.querySelector(".stop-body"); if (body) body.append(a);

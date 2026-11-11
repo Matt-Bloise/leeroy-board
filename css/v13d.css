@@ -69,7 +69,7 @@ html #scene .sheet-body:has(> #panel-signups:not([hidden]) > .jr-core) { align-c
 @media (min-width: 700px) { .jr-who { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .jr-all { margin: 0 0 var(--g1, 8px); min-height: 44px; }
 .jr-deep { margin: 12px 0 0; font-size: 0.9375rem; color: var(--ink-soft); }
-html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):not(.jr-dest):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(#ch-still):not(:has(#ask-box)) { display: none !important; }
+html[data-journey="guided"] #sheet-body .panel .jr-fold, html[data-journey="guided"] #sheet-body .panel:not(#panel-tonight):not(.jr-open):not(.jr-dest):not(.lib-live):has(> .jr-core) > :not(.jr-core):not(#ask-box):not(#ch-still):not(.lib-bar):not(:has(#ask-box)) { display: none !important; }
 html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="good"], html[data-journey="guided"] #panel-library:not(.lib-rest) [data-depth="deep"], html[data-journey="curious"] #panel-library:not(.lib-rest) [data-depth="deep"] { display: none; }
 @media (min-width: 700px) { #sheet-body .panel > .jr-core { width: max-content; max-width: min(100%, 72ch); justify-self: center; box-sizing: border-box; } }
 html[data-journey="guided"] .tn-cards { display: none; }
@@ -330,3 +330,26 @@ button.cal-day.win { background: var(--hi-brass); }
 }
 
 
+
+/* Cinematic slice 7: the Library search box stays in view for a guided visitor (it used to fold away with the rest of the panel until "Show me more"); the extras around it stay folded */
+html[data-journey="guided"] #panel-library:not(.jr-open) .lib-bar > :not(.lib-q):not(.lib-count):not(label) { display: none; }
+html[data-journey="guided"] #sheet-body #panel-library.lib-live > .jr-core { display: none; }
+
+/* Scene scale and placement (desktop): one guide-card position in every scene, type sized for a 1440 px screen. max() keeps the phone and the ultrawide at their current or larger sizes. */
+@media (min-width: 700px) {
+  html #scene #sheet-body.sheet-body:has(> .panel:not([hidden]):not(#panel-tonight) > .jr-core) { align-content: start; padding-top: 24px; }
+  #sheet-body .panel:not(#panel-tonight) > .jr-core { justify-self: start; margin: 0 0 16px 8px; max-width: min(100%, 640px); }
+}
+@media (min-width: 1100px) {
+  #sheet-body .panel > .jr-core { padding: 16px 20px; }
+  #sheet-body .panel > .jr-core .jr-q { font-size: max(var(--step-1), 1.4rem); }
+  #sheet-body .panel > .jr-core .jr-a { font-size: max(1rem, 1.0625rem); line-height: 1.45; max-width: 60ch; }
+  #sheet-body .panel > .jr-core :is(.jr-go, .jr-more) { font-size: max(1rem, 1.0625rem); }
+}
+/* desktop (1100 px and up): the guided card uses the width of the sheet (full width up to 96ch, larger type, who-is-in in three columns); the button and the folded state stay as they are. After the rules above so it wins at equal specificity. */
+@media (min-width: 1100px) {
+  #sheet-body .panel:not(#panel-tonight) > .jr-core { width: 100%; max-width: min(100%, 96ch); padding: 20px 28px; }
+  #sheet-body .panel > .jr-core .jr-q { font-size: max(var(--step-2, 1.5rem), 1.6rem); }
+  #sheet-body .panel > .jr-core .jr-a { font-size: 1.125rem; max-width: 80ch; }
+  #sheet-body .panel > .jr-core .jr-who { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

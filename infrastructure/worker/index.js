@@ -8,7 +8,7 @@
 //   - Multi-Provider AI Q&A (`ai-models.js`) & Discord HTTP Interactions (`discord.js`)
 // =============================================================================
 
-import { BoardRoom } from "./room.js";
+import { BoardRoom, LIVE_AUTH_HEADER } from "./room.js";
 import {
   answerWithAi,
   resolveAiProvider,
@@ -36,7 +36,8 @@ import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
 import { upsertMember } from "./members.js";
-import { readJsonCapped, questionTooLong, pickSignupPatch, MAX_QUESTION_CHARS } from "./limits.js";
+import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
+import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
@@ -49,12 +50,12 @@ import { publicParty, partyForMember } from "./sheet-privacy.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
-import { afterSignupChange } from "./cards-handler.js";
 import { flushBoardLines } from "./board-lines.js";
 import { eventsEnabled, runSync } from "./scheduled-events.js";
+import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { PARTY_MEMBERS, loadPartyMembers } from "./party-source.js";
+import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
 export { BoardRoom };
 
@@ -214,7 +215,7 @@ export async function broadcastToRoom(env, payload) {
   }
 }
 
-export async function buildPartySheetsFromD1(env) {
+export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } = {}) {
   const now = new Date().toISOString();
 
   // 1. Fast path: Read pre-materialized party sheets from kv_state (single point lookup)
@@ -223,7 +224,18 @@ export async function buildPartySheetsFromD1(env) {
     if (cachedRow && cachedRow.json) {
       const parsed = JSON.parse(cachedRow.json);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return { party: parsed, seq: Date.now() };
+        // A person added to the party document after this row was stored has no sheet here: add theirs (reads one more row; nothing is written).
+        // A caller that already read the party row passes it as partyDoc (null means "read, none"); otherwise it is read here.
+        let reconciled = parsed;
+        try {
+          let doc = partyDoc;
+          if (doc === undefined) {
+            const partyRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
+            doc = partyRow && partyRow.json ? JSON.parse(partyRow.json) : null;
+          }
+          if (doc) reconciled = reconcileSheetsWithDoc(parsed, doc);
+        } catch {}
+        return { party: reconciled, seq: Date.now() };
       }
     }
   } catch {}
@@ -268,9 +280,10 @@ export async function buildPartySheetsFromD1(env) {
   } catch {}
 
   const party = [...bySlug.values()];
+  if (!persist) return { party, seq: Date.now() };
   try {
     await env.DB.prepare(
-      "INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, ?)"
+      "INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, ?)"
     )
       .bind(JSON.stringify(party), now)
       .run();
@@ -279,59 +292,59 @@ export async function buildPartySheetsFromD1(env) {
   return { party, seq: Date.now() };
 }
 
+// The three public keys of the party document that come from a member's sheet.
+const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
+
+// The public party document, re-derived from the final sheet state (never from the request that just arrived), so concurrent visible and hide
+// writes in any order end in the same place: a hidden field is absent from the document. Hidden fields are removed for every member (self-healing);
+// a visible value is copied only for the member and field written, as before. Mutates and returns partyDoc.
+export function projectPublicParty(partyDoc, sheets, slug, field) {
+  if (!partyDoc || !Array.isArray(partyDoc.members)) return partyDoc;
+  for (const m of partyDoc.members) {
+    const sheet = sheetForDocMember(sheets, partyDoc.members, m);
+    if (!sheet) continue;
+    for (const [sheetField, key] of Object.entries(PUBLIC_KEY)) {
+      const f = sheet.fields && sheet.fields[sheetField];
+      if (!f) continue;
+      if (f.visible === false) { delete m[key]; if (key === "class") delete m.class_key; }
+      else if (sheet.slug === slug && sheetField === field && f.value !== undefined && f.value !== null) m[key] = String(f.value);
+    }
+  }
+  return partyDoc;
+}
+
 export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
 
-  // 1. Rebuild updated party sheets
-  const { party: currentParty } = await buildPartySheetsFromD1(env);
-  let memberSheet = currentParty.find((m) => m.slug === slug);
-  if (!memberSheet) {
-    memberSheet = { slug, name: name || slug, fields: {}, updated: now };
-    currentParty.push(memberSheet);
-  }
-  memberSheet.fields = memberSheet.fields || {};
-  memberSheet.fields[field] = {
-    value,
-    visible: Boolean(visible),
-    source: source || "board",
-    at: now,
-  };
-  memberSheet.updated = now;
-
-  // 2. Prepare batch updates (insert event + materialize party_sheets + sync party doc if needed)
-  const batchStatements = [
-    env.DB.prepare(
-      "INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).bind(slug, name, field, valJson, visible ? 1 : 0, source, now),
-    env.DB.prepare(
-      "INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, ?)"
-    ).bind(JSON.stringify(currentParty), now),
-  ];
-
-  // Also sync common fields back into kv_state['party']
-  try {
-    const partyRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
-    if (partyRow) {
-      const partyDoc = JSON.parse(partyRow.json);
-      const m = (partyDoc.members || []).find(
-        (x) => (x.name || "").toLowerCase() === name.toLowerCase()
-      );
-      const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
-      if (m && PUBLIC_KEY[field] && (visible === false || (value !== undefined && value !== null))) {
-        // The party document is public (GET /data/party): a hidden field is never copied into it, and a field that turns hidden loses the
-        // value it published earlier.
-        if (visible === false) delete m[PUBLIC_KEY[field]];
-        else m[PUBLIC_KEY[field]] = String(value);
-        batchStatements.push(
-          env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'party'")
-            .bind(JSON.stringify(partyDoc), now)
-        );
+  // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
+  // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
+  const saved = await commitSheetWrite(env, {
+    event: { slug, name: name || slug, field, valJson, visible, source: source || "board", at: now },
+    compute: async (cur, partyDoc) => {
+      // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
+      // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
+      const currentParty = reconcileSheetsWithDoc(Array.isArray(cur) ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party, partyDoc);
+      // Same identity as the reconcile above: a write that arrives under a renamed document member's new slug lands on the person's existing
+      // sheet (which takes the new slug and name) instead of starting a second one-field sheet. Events keyed by the old slug stay as history.
+      let memberSheet = sheetForWrite(currentParty, partyDoc, slug, name);
+      if (memberSheet) {
+        if (memberSheet.slug !== slug) {
+          memberSheet.slug = slug;
+          if (name) memberSheet.name = name;
+        }
+      } else {
+        memberSheet = { slug, name: name || slug, fields: {}, updated: now };
+        currentParty.push(memberSheet);
       }
-    }
-  } catch {}
+      memberSheet.fields = memberSheet.fields || {};
+      memberSheet.fields[field] = { value, visible: Boolean(visible), source: source || "board", at: now };
+      memberSheet.updated = now;
+      return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
+    },
+  });
+  const currentParty = saved.sheets;
 
-  await env.DB.batch(batchStatements);
   await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
   await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
   return { party: currentParty, at: now };
@@ -361,7 +374,7 @@ export const ROUTES = [
   "GET /atlas/*", "PUT /atlas/*", "POST /intent", "POST /refresh", "GET /", "GET /health",
 ];
 
-export default {
+const worker = {
   async fetch(req, env, ctx) {
     try { gauge.hit(env, ctx); } catch (e) { /* the gauge can never fail a request */ } // REQUEST_GAUGE (default off): one in-memory add, a batched D1 write every 25 requests; see worker/gauge.js
     const url = new URL(req.url);
@@ -469,15 +482,20 @@ export default {
           const visible = body.visible !== false;
           const value = body.value === undefined ? null : body.value;
           const now = new Date().toISOString();
-          await recordSheetEventInD1(env, url.origin, {
-            slug: m.slug,
-            name: m.name,
-            field,
-            value,
-            visible,
-            source: "board",
-            at: now,
-          });
+          try {
+            await recordSheetEventInD1(env, url.origin, {
+              slug: m.slug,
+              name: m.name,
+              field,
+              value,
+              visible,
+              source: "board",
+              at: now,
+            });
+          } catch (e) {
+            if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
+            throw e;
+          }
           const { seq } = await insertIntent(env, {
             slug: m.slug,
             kind: "sheet",
@@ -876,29 +894,24 @@ export default {
           if (picked.error || !Object.keys(picked.patch).length) return jsonResp({ error: picked.error || "No known sign-up field" }, 400, cors);
           const patch = picked.patch;
 
-          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-          const doc = row
-            ? JSON.parse(row.json)
-            : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
-          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-          let entry = doc.entries.find(
-            (e) =>
-              (e.slug && e.slug === member.slug) ||
-              (e.name || "").toLowerCase() === member.name.toLowerCase()
-          );
-          if (!entry) {
-            entry = { slug: member.slug, name: member.name };
-            doc.entries.push(entry);
+          let saved;
+          try {
+            saved = await updateKvJson(env, "signups", async (cur) => {
+              const doc = cur || { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
+              doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+              const entry = upsertSignupEntry(doc, member);
+              for (const [k, v] of Object.entries(patch)) {
+                entry[k] = v === "vos" ? "Valley of Strength" : v === "xroads" ? "The Crossroads" : v;
+              }
+              entry.updated = now;
+              await recomputeSignupTallies(doc);
+              return { doc, result: entry };
+            });
+          } catch (e) {
+            if (e instanceof KvConflictError) return jsonResp({ error: "The sign-ups card is busy. Try again." }, 409, cors);
+            throw e;
           }
-          for (const [k, v] of Object.entries(patch)) {
-            entry[k] = v === "vos" ? "Valley of Strength" : v === "xroads" ? "The Crossroads" : v;
-          }
-          entry.updated = now;
-          await recomputeSignupTallies(doc);
-
-          await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-            .bind(JSON.stringify(doc), now)
-            .run();
+          const doc = saved.doc, entry = saved.result;
 
           const { seq } = await insertIntent(env, {
             slug: member.slug,
@@ -920,18 +933,17 @@ export default {
         if (path === "/state" && req.method === "GET") {
           let resp = await getCachedResponse(url.origin, "/api/state");
           if (!resp) {
-            const [{ results }, { party }] = await Promise.all([
-              env.DB.prepare(
-                "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
-              ).all(),
-              buildPartySheetsFromD1(env),
-            ]);
+            const { results } = await env.DB.prepare(
+              "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
+            ).all();
             const map = {};
             for (const row of results || []) {
               try {
                 map[row.key] = JSON.parse(row.json);
               } catch {}
             }
+            // The party row is already in hand: pass it on so the sheets are reconciled without a second read.
+            const { party } = await buildPartySheetsFromD1(env, { partyDoc: map.party || null });
             const now = new Date().toISOString();
             resp = jsonResp(
               webBoardLinksDeep({
@@ -967,7 +979,15 @@ export default {
         }
         const id = env.BOARD_ROOM.idFromName("global");
         const stub = env.BOARD_ROOM.get(id);
-        const doResp = await stub.fetch(req);
+        let roomReq = req;
+        if (path === "/live") {
+          // The room reads this header to know the socket belongs to a signed-in web session. A client's own copy never gets through.
+          const h = new Headers(req.headers);
+          h.delete(LIVE_AUTH_HEADER);
+          if (req.headers.get("Upgrade") === "websocket" && (await webSessionFrom(req, env, Date.now()))) h.set(LIVE_AUTH_HEADER, "web");
+          roomReq = new Request(req, { headers: h });
+        }
+        const doResp = await stub.fetch(roomReq);
         if (doResp.status === 101) return doResp; // WebSocket Upgrade
         const headers = new Headers(doResp.headers);
         for (const [k, v] of Object.entries(cors)) headers.set(k, v);
@@ -1036,41 +1056,6 @@ export default {
         return jsonResp({ access_token: tokenJson.access_token }, 200, cors);
       }
 
-      // 1b. POST /signups -> External Discord Bot sync for `#wow-forever` Sign-ups card
-      if (req.method === "POST" && path === "/signups") {
-        const auth = await resolveMemberAuth(req, url, env);
-        if (!auth.ok) {
-          return jsonResp({ error: "Unauthorized board key" }, 401, cors);
-        }
-        const read = await readJsonCapped(req);
-        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
-        const body = read.body;
-        const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-        const doc = row ? JSON.parse(row.json) : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
-        const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
-        if (Array.isArray(body.entries)) {
-          doc.entries = body.entries;
-        } else if (body.name) {
-          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-          let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === String(body.name).toLowerCase());
-          if (!entry) {
-            entry = { name: body.name };
-            doc.entries.push(entry);
-          }
-          for (const k of ["pack", "meet", "meet_other", "rsvp", "when"]) {
-            if (body[k] !== undefined) entry[k] = body[k];
-          }
-        }
-        await recomputeSignupTallies(doc);
-        await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-          .bind(JSON.stringify(doc), doc.updated)
-          .run();
-        await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json"]);
-        await broadcastToRoom(env, { type: "data", key: "signups" });
-        if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
-        return jsonResp({ ok: true, signups: doc }, 200, cors);
-      }
-
       // 1c. GET /ask -> Returns latest Q&A turn for `js/brain.js` (`askRead()`)
       if (req.method === "GET" && path === "/ask") {
         const isPrPreview = isPrPreviewEnv(env);
@@ -1094,9 +1079,14 @@ export default {
             "SELECT * FROM ask_turns WHERE by_name = ? OR by_name = ? OR share = 1 ORDER BY created_at DESC LIMIT 1"
           ).bind(auth.member.name, auth.member.slug).first();
         } else {
-          row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
-          ).first();
+          // No key and no id: the visitor is anonymous. The latest shared turn is a member's question and answer, so it is for signed-in
+          // members and web sessions only (audit 2026-11-06 finding 4). A guest polls their own just-created ask by its random id (above).
+          const ws = await webSessionFrom(req, env, Date.now());
+          if (ws) {
+            row = await env.DB.prepare(
+              "SELECT * FROM ask_turns WHERE share = 1 ORDER BY created_at DESC LIMIT 1"
+            ).first();
+          }
         }
 
         let limitLeft = 6;
@@ -1284,12 +1274,16 @@ export default {
       if (req.method === "GET" && path === "/bootstrap") {
         let resp = await getCachedResponse(url.origin, "/api/bootstrap");
         if (!resp) {
-          const [{ results }, { party: partySheets }] = await Promise.all([
-            env.DB.prepare(
-              "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','marks','decide')"
-            ).all(),
-            buildPartySheetsFromD1(env),
-          ]);
+          const { results } = await env.DB.prepare(
+            "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','marks','decide')"
+          ).all();
+          let partyDocRead = null;
+          for (const row of results || []) {
+            if (row.key === "party") {
+              try { partyDocRead = JSON.parse(row.json); } catch {}
+            }
+          }
+          const { party: partySheets } = await buildPartySheetsFromD1(env, { partyDoc: partyDocRead });
           const isPrPreview = isPrPreviewEnv(env);
           const providers = {};
           for (const k of Object.keys(AI_PROVIDER_LABELS)) {
@@ -1324,6 +1318,8 @@ export default {
       // 3. GET /library/:name -> Edge-cached library JSON blob from D1 `lib_blobs`
       if (req.method === "GET" && path.startsWith("/library/")) {
         const name = decodeURIComponent(path.slice("/library/".length));
+        // seed.stamp is the deploy seed's bookkeeping row, not a Library document.
+        if (name === "seed.stamp") return jsonResp({ error: `Library blob ${name} not found` }, 404, cors);
         let resp = await getCachedResponse(url.origin, `/api/library/${name}`);
         if (!resp) {
           const row = await env.DB.prepare("SELECT json, stamp FROM lib_blobs WHERE name = ?")
@@ -1443,28 +1439,24 @@ export default {
 
           const picked = pickSignupPatch(patch);
           if (picked.error || !Object.keys(picked.patch).length) return jsonResp({ error: picked.error || "No known sign-up field" }, 400, cors);
-          const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-          const doc = row
-            ? JSON.parse(row.json)
-            : { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
-          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-          let entry = doc.entries.find(
-            (e) =>
-              (e.slug && e.slug === member.slug) ||
-              (e.name || "").toLowerCase() === member.name.toLowerCase()
-          );
-          if (!entry) {
-            entry = { slug: member.slug, name: member.name };
-            doc.entries.push(entry);
+          let saved;
+          try {
+            saved = await updateKvJson(env, "signups", async (cur) => {
+              const doc = cur || { options: { meet: ["Valley of Strength", "The Crossroads"] }, entries: [] };
+              doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+              const entry = upsertSignupEntry(doc, member);
+              for (const [k, v] of Object.entries(picked.patch)) {
+                entry[k] = v;
+              }
+              entry.updated = now;
+              await recomputeSignupTallies(doc);
+              return { doc, result: entry };
+            });
+          } catch (e) {
+            if (e instanceof KvConflictError) return jsonResp({ error: "The sign-ups card is busy. Try again." }, 409, cors);
+            throw e;
           }
-          for (const [k, v] of Object.entries(picked.patch)) {
-            entry[k] = v;
-          }
-          entry.updated = now;
-          await recomputeSignupTallies(doc);
-          await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-            .bind(JSON.stringify(doc), now)
-            .run();
+          const doc = saved.doc, entry = saved.result;
           const { seq } = await insertIntent(env, {
             slug: member.slug,
             kind: "signup",
@@ -1481,16 +1473,19 @@ export default {
         if (kind === "journey") {
           const jVal = body.patch && body.patch.journey;
           if (["guided", "curious", "everything"].includes(jVal)) {
-            const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-            if (row) {
-              const doc = JSON.parse(row.json);
-              doc.journeys = Array.isArray(doc.journeys) ? doc.journeys : [];
-              const jEntry = doc.journeys.find((j) => j.slug === member.slug);
-              if (jEntry) jEntry.journey = jVal;
-              else doc.journeys.push({ slug: member.slug, name: member.name, journey: jVal });
-              await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-                .bind(JSON.stringify(doc), now)
-                .run();
+            try {
+              await updateKvJson(env, "signups", async (cur) => {
+                if (!cur) return { skip: true }; // no card yet: nothing to attach the journey to (as before)
+                const doc = cur;
+                doc.journeys = Array.isArray(doc.journeys) ? doc.journeys : [];
+                const jEntry = doc.journeys.find((j) => j.slug === member.slug);
+                if (jEntry) jEntry.journey = jVal;
+                else doc.journeys.push({ slug: member.slug, name: member.name, journey: jVal });
+                return { doc };
+              }, { now: () => now });
+            } catch (e) {
+              if (e instanceof KvConflictError) return jsonResp({ error: "The sign-ups card is busy. Try again." }, 409, cors);
+              throw e;
             }
           }
           const { seq } = await insertIntent(env, {
@@ -1522,15 +1517,20 @@ export default {
             await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
               .bind(JSON.stringify(rows), now)
               .run();
-            await recordSheetEventInD1(env, url.origin, {
-              slug: member.slug,
-              name: member.name,
-              field: "launch_state",
-              value: lState,
-              visible: true,
-              source: "board",
-              at: now,
-            });
+            try {
+              await recordSheetEventInD1(env, url.origin, {
+                slug: member.slug,
+                name: member.name,
+                field: "launch_state",
+                value: lState,
+                visible: true,
+                source: "board",
+                at: now,
+              });
+            } catch (e) {
+              if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
+              throw e;
+            }
             await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/launch.json"]);
             await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
           }
@@ -1843,4 +1843,10 @@ export default {
     // CARDS_ENABLED: this tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).
     if (cardsEnabled(env)) ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
   },
+};
+
+// Every response (success, error, preflight, 404) gets the security headers; websocket upgrades pass through.
+export default {
+  ...worker,
+  fetch: async (req, env, ctx) => withSecurityHeaders(await worker.fetch(req, env, ctx)),
 };

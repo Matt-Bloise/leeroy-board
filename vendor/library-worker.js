@@ -3,6 +3,7 @@
 // own ranker, copied by build-data.mjs), so typing never blocks a frame. Hits carry what a result row shows.
 // Cache note: /vendor/* is cached for a year (immutable), headers included, so a copy cached before PR 168 kept serving a Content-Security-Policy-Report-Only with frame-ancestors, which WebKit logs as a console error when it starts this worker. This edit gives the worker a new ?v= URL, so the next load fetches fresh headers.
 import { rank, factHays } from "./rank-core.js?v=16d8a1283e";
+import { leadWithNamedPages } from "../js/library-search.js?v=5a42177630";
 let pages = [], hays = [], idf = null, ready = null, apiBase = "";
 /* V11 cache stamps: index.json loads with "no-cache" and names every other file's stamp, which rides on its URL */
 let stamps = {};
@@ -35,7 +36,8 @@ onmessage = async (e) => {
     const info = await ready;
     if (m.q === undefined) { postMessage({ ready: true, ...info }); return; }
     const t0 = performance.now();
-    const { words, hits } = rank(m.q, pages, { hays, idf });
+    const { words, hits: ranked } = rank(m.q, pages, { hays, idf });
+    const hits = leadWithNamedPages(ranked, m.q, pages); /* slice 7: the page the question names leads */
     const cap = m.cap || 400;
     /* V13a: only the rows the page can show carry their text: the first `full` hits on the shelf asked for (`cat`, or every
        shelf). The rest come slim (page, title, shelf, score), enough for the counts; the page asks again for more. */

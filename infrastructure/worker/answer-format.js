@@ -47,7 +47,7 @@ function idFromLibraryHref(href) {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
-function parseSourceIds(text) {
+export function parseSourceIds(text) {
   const ids = [];
   const links = [...text.matchAll(/\]\(<?([^)>\s]+)>?\)/g)];
   if (links.length) {
@@ -77,6 +77,38 @@ function tidy(line) {
     .replace(/[ \t]+$/g, "");
 }
 
+// Removes the chicken line (the persona's or the default) wherever the model wrote it, whole line or trailing sentence.
+export function stripEggLine(text, line) {
+  if (typeof text !== "string" || !text) return text;
+  const lines = new Set([DEFAULT_EGG.line, line].filter(Boolean).map((l) => l.trim()).filter((l) => l.length >= 8)); // a very short line would be stripped from every answer
+  let out = text;
+  for (const l of lines) {
+    const esc = [...l].map((ch) => (".*+?^${}()|[]".includes(ch) || ch.charCodeAt(0) === 92 ? String.fromCharCode(92) + ch : ch)).join("");
+    out = out.replace(new RegExp("[ \t]*" + esc + "[ \t]*", "gi"), "");
+  }
+  return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+// A leading persona-introduction sentence ("As the party librarian for ..., I can share verified library facts ...",
+// optionally after a first-name greeting) says nothing and, in refusals, drags build details in. Only the first sentence of the
+// answer, only when it matches, and only when something else follows. Anything else is returned byte for byte.
+const PERSONA_INTRO_RE = /^\s*(?:\*\*)?(?:[A-Z][\w'-]*(?: [A-Z][\w'-]*){0,2},\s+)?as (?:the|your) [^.!?\n]{0,80}?\blibrarian\b[^.!?\n]*[.!?]+(?:\*\*)?[ \t]*/i;
+export function stripPersonaIntro(text) {
+  if (typeof text !== "string" || !text) return text;
+  const m = PERSONA_INTRO_RE.exec(text);
+  if (!m) return text;
+  // Advisor follow-up (Nov 9): only an intro that carries no fact. It must contain a persona verb (share, look up, offer, help) and must not be followed straight by the sources footer.
+  if (!/\bI (?:can |will |am here to )?(?:share|look up|offer|help|pull)\b/i.test(m[0])) return text;
+  const rest = text.slice(m[0].length).replace(/^\n+/, "");
+  if (/^\s*-#/.test(rest)) return text;
+  if (!/[A-Za-z0-9]/.test(rest.split(/\n-#/)[0])) return text;
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
+// A line that is only a leftover token: an unexpanded {board:...} deep link or a bare hex library stamp.
+const BOARD_TOKEN_RE = /\{board:[^}]*\}/g;
+const STAMP_LINE_RE = /^\s*(?:-#\s*)?[0-9a-f]{8,40}\s*$/i;
+
 function format(raw, ctx) {
   const pages = Array.isArray(ctx.pages) ? ctx.pages : [];
   const byId = new Map();
@@ -86,7 +118,11 @@ function format(raw, ctx) {
   const asker = ctx.asker || {};
   const isMember = asker.isMember !== false && String(asker.name || "").trim().toLowerCase() !== "visitor";
 
-  const lines = raw.replace(/\r\n?/g, "\n").split("\n");
+  const lines = raw
+    .replace(/\r\n?/g, "\n")
+    .replace(BOARD_TOKEN_RE, "")
+    .split("\n")
+    .filter((l) => !STAMP_LINE_RE.test(l) && !/^\s*-#\s*$/.test(l));
 
   // Pass 1: pull out sources, the board link and other footer lines; find the last footer line.
   let sourceIds = null;
@@ -108,7 +144,7 @@ function format(raw, ctx) {
       return;
     }
     if (FOOTER_LINE_RE.test(line)) {
-      otherFooter.push(line.trim());
+      // Any other footer line (unexpanded token, library stamp, persona flourish) is dropped: only Sources and a board link stay.
       lastFooter = i;
       return;
     }
@@ -247,7 +283,7 @@ const SKIPPY_ALL_RE = /\bSkippy\b/gi;
 const SELF_REF_RE =
   /\bLeeroy\b[^.!?\n]{0,40}?\b(?:and|or|vs\.?|versus|aka|a\.k\.a\.?|formerly|previously|not|isn't|is not|also known as|renamed|replaced|replaces)\b[^.!?\n]{0,40}?\bLeeroy\b|\bLeeroy\s*\((?:also |formerly |aka )?Leeroy\)/i;
 
-export const DEFAULT_EGG = Object.freeze({ line: "At least I have chicken.", oneIn: 12 });
+export const DEFAULT_EGG = Object.freeze({ line: "At least I have chicken.", oneIn: 25 });
 
 function eggHash(seed) {
   let h = 2166136261;
@@ -369,7 +405,7 @@ export function applyVoiceGuards(text, opts = {}) {
       .replace(/\n{3,}/g, "\n\n")
       .trim();
     if (!out) return text;
-    if (opts.full && !opts.isCoach && eggDue(opts.intentId, opts.egg)) {
+    if (opts.full && !opts.isCoach && !opts.noEgg && eggDue(opts.intentId, opts.egg)) {
       const { line } = eggSettings(opts.egg);
       if (!out.toLowerCase().includes(line.toLowerCase())) out = `${out}\n\n${line}`;
     }
@@ -436,7 +472,7 @@ export function formatAnswerParts(raw, ctx = {}) {
   if (typeof raw !== "string") return { main: raw, more: "", sources: "" };
   const c = ctx && typeof ctx === "object" ? ctx : {};
   try {
-    const guardOpts = { roster: c.roster, intentId: c.intentId, egg: c.egg, isCoach: Boolean(c.isCoach) || c.journey === "guided" };
+    const guardOpts = { roster: c.roster, intentId: c.intentId, egg: c.egg, noEgg: Boolean(c.noEgg), isCoach: Boolean(c.isCoach) || c.journey === "guided" };
     const split = c.ux ? splitAnswerParts(raw) : { main: raw, more: "", sources: "" };
     // A reply that is only a marker section still gets a channel body.
     const mainRaw = split.main || split.more || split.sources || raw;

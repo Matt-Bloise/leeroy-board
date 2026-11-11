@@ -1,0 +1,14 @@
+/* Cinematic slice 4: Light. Warm tavern light, quiet. Loaded after hierarchy.css.
+   Lamp (#lamp, js/light.js): one 320px candle-gold radial at low alpha, moved by transform only, absent under reduced motion / calm.
+   Hero and hover: a warm inset on the touched tile (static, works without JS). Crests: a small warm rim shifted away from the light (--lx/--ly, quantised to 0.1).
+   OLED: peak alpha 0.13, no channel above 255, black stays black (the lamp fades to nothing at its edge), highlights are small. */
+#lamp { position: fixed; left: 0; top: 0; width: 320px; height: 320px; z-index: 3; pointer-events: none; border-radius: 50%; opacity: 0; will-change: transform;
+  background: radial-gradient(closest-side, rgba(255, 190, 110, 0.13), rgba(255, 160, 80, 0.05) 55%, transparent); transition: opacity var(--cin-t-hover, 240ms) ease-out; }
+#lamp.lit { opacity: 1; }
+html.scene-open #lamp { opacity: 0; }
+#wall > li[data-tier="1"] > .tile { box-shadow: 0 0 0 1px var(--brass), 0 0 28px rgba(229, 169, 60, 0.26), inset 0 22px 44px -28px rgba(255, 190, 100, 0.2); }
+#wall > li:not([data-tier="1"]):is(:hover, :focus-within) > .tile { box-shadow: 0 0 0 1px var(--brass-dim, var(--brass)), 0 8px 22px -10px rgba(229, 169, 60, 0.3), inset 0 18px 36px -26px rgba(255, 190, 100, 0.16); }
+html:not(.light-off) .crest, html:not(.light-off) .crest-mark { filter: drop-shadow(calc(var(--lx, 0) * -1.5px) calc(var(--ly, 0) * -1.5px + 1px) 1.5px rgba(255, 214, 150, 0.4)) drop-shadow(1px 3px 3px var(--shadow, #000)); }
+@media (prefers-reduced-motion: reduce) { #lamp { display: none; } }
+/* OLED: the hero band sits at 92 percent, not 100, so the brightest 10 percent window of the home board stays under the budget (oled-budget.json win10 55) with the lamp lit; hover and press still return the touched tile to full */
+:root { --tier-hero: 0.97; }

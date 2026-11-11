@@ -54,7 +54,7 @@ const stripShellComments = (script) => {
           let e = script.indexOf("\n", i); if (e < 0) e = script.length;
           const line = script.slice(i, e);
           out += line + (e < script.length ? "\n" : ""); i = e + 1;
-          if ((dash ? line.replace(/^\t+/, "") : line).trimEnd() === tag) break;
+          if ((dash ? line.replace(/^\t+/, "") : line) === tag) break;
         }
       }
       i--; continue;
@@ -105,10 +105,24 @@ for (const w of workflows.filter((x) => triggers(x.doc).some((t) => PR_TRIGGERS.
 // Expressions: every `${{ ... }}` in the raw text and in the parsed strings, plus every parsed `if:` value (which Actions evaluates as an expression without the wrapper). String literals are
 // blanked first. Inside an expression the identifier `secrets` is fine only when it is followed by `.NAME` (a named secret); anything else (`toJSON((secrets))`, `true && secrets`,
 // `secrets || github`, `format('{0}', secrets)`, `secrets[...]`, `secrets.*`) hands over the whole context or hides the name.
+// The body of each `${{ ... }}`, ending at the first `}}` outside a single-quoted string literal ('' is an escaped quote); an unterminated expression runs to the end of the text.
+const exprBodies = (text) => {
+  const out = [];
+  for (let at = text.indexOf("${{"); at >= 0; ) {
+    let i = at + 3, q = false;
+    for (; i < text.length; i++) {
+      if (text[i] === "'") q = !q;
+      else if (!q && text[i] === "}" && text[i + 1] === "}") break;
+    }
+    out.push(text.slice(at + 3, i));
+    at = text.indexOf("${{", i);
+  }
+  return out;
+};
 const expressions = (w) => {
   const found = [], seen = new Set();
   const add = (e) => { if (!seen.has(e)) { seen.add(e); found.push(e); } };
-  for (const t of [w.text, parsedText(w)]) for (const m of t.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) add(m[1]);
+  for (const t of [w.text, parsedText(w)]) for (const e of exprBodies(t)) add(e);
   (function walk(v) { if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) { if (k === "if" && typeof x === "string") add(x.replace(/^\s*\$\{\{([\s\S]*)\}\}\s*$/, "$1")); walk(x); } })(w.doc);
   return found;
 };
@@ -196,6 +210,33 @@ test("the production deploy runs in the environment production and is not PR-tri
   const job = w.doc.jobs["deploy-production"];
   assert.equal(job.environment, "production");
   assert.equal(job.if, "github.ref == 'refs/heads/master'");
+});
+
+test("the deploy guard message tells where each missing secret lives (token and account id at repository level, admin token in the environment)", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  const step = w.doc.jobs["deploy-production"].steps.find((s) => s.name === "Require the production environment secrets");
+  assert.ok(step);
+  const msg = step.run.split(/\r?\n/).find((l) => l.includes("Production secrets missing"));
+  assert.ok(msg);
+  assert.match(msg, /Nothing was deployed/);
+  assert.match(msg, /BOARD_ADMIN_TOKEN must be an environment secret \(Settings > Environments > production > Environment secrets\)/);
+  assert.match(msg, /CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are read at repository level \(Settings > Secrets and variables > Actions > Repository secrets/);
+  assert.doesNotMatch(msg, /They must be secrets of the GitHub environment/);
+});
+
+test("the empty-token message names the repository secret for the token and the environment secret for the admin token, and the runbook row matches", () => {
+  const w = workflows.find((x) => x.f === "deploy-cloudflare.yml");
+  const lines = Object.values(w.doc.jobs).flatMap((j) => j.steps || []).flatMap((s) => (typeof s.run === "string" ? s.run.split(/\r?\n/) : []));
+  const msg = lines.find((l) => l.includes("CLOUDFLARE_API_TOKEN is empty or missing"));
+  assert.ok(msg);
+  assert.match(msg, /repository secret \(Settings > Secrets and variables > Actions > Repository secrets\)/);
+  assert.match(msg, /BOARD_ADMIN_TOKEN is the environment secret \(Settings > Environments > production\)/);
+  assert.doesNotMatch(msg, /in GitHub Secrets/);
+  const rb = readFileSync(new URL("../../docs/runbooks/ci-secrets.md", import.meta.url), "utf8");
+  const row = rb.split(/\r?\n/).find((l) => l.includes("Production secrets missing: ..."));
+  assert.ok(row);
+  assert.match(row, /`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are repository secrets by design/);
+  assert.doesNotMatch(row, /environment `production` lacks/);
 });
 
 test("only the production deploy reads production secrets", () => {
@@ -502,6 +543,34 @@ test("stripShellComments keeps quoted #, $#, ${#x}, ${x#y} and escaped \\#, and 
   assert.equal(stripShellComments("echo $((1<<n)) # a\n# npm ci\nok"), "echo $((1<<n)) \n\nok", "a shift in $(( )) is not a heredoc (the next comment line is still a comment)");
   assert.equal(stripShellComments("(( x = 1<<n )) # a\n# npm ci\nok"), "(( x = 1<<n )) \n\nok", "nor in a (( )) command");
   assert.equal(stripShellComments("echo <<< \"a # b\" # c"), "echo <<< \"a # b\" ");
+});
+
+// B60b: residuals from the PR 184 advisor review.
+test("B60b: a heredoc terminator must match the whole line (trailing whitespace is body, not a terminator)", () => {
+  assert.equal(stripShellComments("cat <<EOF\nx\nEOF  \n# still body\nEOF\n# gone\nok"), "cat <<EOF\nx\nEOF  \n# still body\nEOF\n\nok", "trailing spaces");
+  assert.equal(stripShellComments("cat <<EOF\nx\nEOF\t\n# still body\nEOF\n# gone\nok"), "cat <<EOF\nx\nEOF\t\n# still body\nEOF\n\nok", "trailing tab");
+  assert.equal(stripShellComments("cat <<-EOF\n\tx\n\tEOF \n# still body\n\tEOF\n# gone\nok"), "cat <<-EOF\n\tx\n\tEOF \n# still body\n\tEOF\n\nok", "<<- with trailing space");
+});
+
+test("B60b: heredoc delimiters with backslash or mid-word quoting, and shifts in $(( )) and (( )), are told apart", () => {
+  const R = String.raw;
+  for (const [name, hd] of Object.entries({ "backslash": R`cat <<\EOF`, "backslash mid-word": R`cat <<\E\OF`, "mid-word quote": "cat <<E'OF'", "space before backslash": R`cat <<  \EOF` })) {
+    assert.equal(stripShellComments(`${hd}\nit's data\nEOF\n# comment\nok`), `${hd}\nit's data\nEOF\n\nok`, name);
+  }
+  assert.equal(stripShellComments(R`cat <<-\EOF` + "\n\tit's\n\tEOF\n# c\nok"), R`cat <<-\EOF` + "\n\tit's\n\tEOF\n\nok", "<<-\EOF");
+  assert.equal(stripShellComments("echo $((1<<n)) && cat <<'EOF'\nit's\nEOF\n# c\nok"), "echo $((1<<n)) && cat <<'EOF'\nit's\nEOF\n\nok", "a real heredoc after a shift");
+  assert.equal(stripShellComments("(( x = 1<<n )); cat <<EOF\nit's\nEOF\n# c\nok"), "(( x = 1<<n )); cat <<EOF\nit's\nEOF\n\nok", "a real heredoc after a (( )) shift");
+});
+
+test("B60b: an expression is not cut at a }} inside a quoted string literal, so a bare `secrets` after it is still found", () => {
+  const cases = {
+    "}} before the bare secrets": "run: echo ${{ format('}}{0}', secrets) }}",
+    "}} then toJSON": "run: echo ${{ '}}' && toJSON(secrets) }}",
+    "escaped quote then }}": "run: echo ${{ format('it''s }}', secrets) }}",
+    "in an if: with the wrapper": "jobs:\n  a:\n    if: ${{ '}}' != '' && toJSON(secrets) }}\n    steps:\n      - run: echo hi\n",
+  };
+  for (const [name, text] of Object.entries(cases)) assert.equal(bareSecrets(bw(text)).length > 0, true, name);
+  for (const ok of ["run: echo ${{ format('}}{0}', secrets.X) }}", "run: echo ${{ '}}' }} secrets"]) assert.deepEqual(bareSecrets(bw(ok)), [], ok);
 });
 
 // B60: stripping is for REQUIRED matching only. A forbidden reference inside a shell comment must still be seen by the secret scan.

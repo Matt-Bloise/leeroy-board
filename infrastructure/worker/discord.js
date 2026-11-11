@@ -26,6 +26,7 @@
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
 import { answerUxEnabled } from "./answer-format.js";
+import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
@@ -42,6 +43,7 @@ import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS
 import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
+import { updateKvJson, KvConflictError } from "./kv-cas.js";
 import { flushBoardLines } from "./board-lines.js";
 import {
   broadcastToRoom,
@@ -57,6 +59,7 @@ import {
   QUIZ_DATA,
 } from "./bot-data.js";
 import { loadRoster } from "./party-source.js";
+import { tonightLines } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember } from "./sheet-privacy.js";
 import { canManageGuild } from "./setup-command.js";
@@ -504,6 +507,61 @@ function launchHype(toLaunch) {
   return `${days} days. Time to study your talents and prep your route.`;
 }
 
+// One short quoted line naming the question an /ask reply answers: flattened, mentions defused, no link previews.
+export function quoteQuestion(q) {
+  const flat0 = String(q || "").replace(/\s+/g, " ").trim();
+  const flat = Array.from(flat0).slice(0, 160).join("").replace(/@/g, "@\u200b").replace(/[<>`|~*_]/g, "").replace(/:\/\//g, ":​//");
+  return `> **Q:** ${flat}`;
+}
+
+// Delivery edit with up to 2 retries (3 attempts) inside ONE overall time budget measured from the request start
+// (DELIVERY_BUDGET_MS, under the roughly 30 s waitUntil cap). Retries only on network error, HTTP 5xx and 429; other 4xx
+// (401/403/404: token or message gone) stop at once. Retry-After is honoured only when present and a finite non-negative
+// number; if the wait does not fit the remaining budget the loop stops instead of retrying early. Each attempt's timeout is
+// min(5 s, remaining budget); no new attempt starts with under 800 ms left (the first attempt always runs). PATCH on the same
+// message is idempotent, so a retry never double-posts. Logs attempt and status only, never tokens or content. Never throws.
+export const DELIVERY_BUDGET_MS = 28000;
+const PATCH_BACKOFF_MS = [250, 750];
+const PATCH_MIN_ATTEMPT_MS = 800;
+const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let patchClock = { now: () => Date.now(), sleep: defaultSleep };
+export function setPatchClockForTests(clock) {
+  patchClock = clock || { now: () => Date.now(), sleep: defaultSleep };
+}
+export async function patchOriginalWithRetry(interaction, content, components = [], { startedAt = patchClock.now(), budgetMs = DELIVERY_BUDGET_MS } = {}) {
+  const remaining = () => budgetMs - (patchClock.now() - startedAt);
+  for (let attempt = 0; attempt <= PATCH_BACKOFF_MS.length; attempt++) {
+    if (attempt > 0 && remaining() < PATCH_MIN_ATTEMPT_MS) return false;
+    let status = 0;
+    let wait = PATCH_BACKOFF_MS[attempt];
+    try {
+      const res = await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: clampContent(content), allowed_mentions: ALLOWED_MENTIONS_NONE, ...(components.length ? { components } : {}) }),
+        signal: AbortSignal.timeout(Math.max(PATCH_MIN_ATTEMPT_MS, Math.min(5000, remaining()))),
+      });
+      status = res.status;
+      if (res.ok) return true;
+      if (status === 429) {
+        const raw = res.headers && res.headers.get ? res.headers.get("Retry-After") : null;
+        const ra = raw === null || raw === undefined || String(raw).trim() === "" ? NaN : Number(raw);
+        if (Number.isFinite(ra) && ra >= 0) wait = ra * 1000;
+      }
+    } catch {
+      status = 0;
+    }
+    const retryable = status === 0 || status === 429 || status >= 500;
+    const more = retryable && attempt < PATCH_BACKOFF_MS.length;
+    console.warn(JSON.stringify({ evt: "answer_patch_failed", attempt: attempt + 1, status: status || "network", retry: more }));
+    if (!more) return false;
+    // The wait plus a minimal next attempt must fit the budget; otherwise stop rather than retry early.
+    if (wait + PATCH_MIN_ATTEMPT_MS > remaining()) return false;
+    await patchClock.sleep(wait);
+  }
+  return false;
+}
+
 // Run an answer and edit the placeholder (@original) with the result. The final edit is ALWAYS sent, exactly once:
 // the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
 // (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
@@ -560,14 +618,7 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
     );
   }
   if (interaction && interaction.application_id && interaction.token) {
-    try {
-      await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}/messages/@original`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: clampContent(wrap(text)), allowed_mentions: ALLOWED_MENTIONS_NONE, ...(components.length ? { components } : {}) }),
-        signal: AbortSignal.timeout(5000),
-      });
-    } catch {}
+    await patchOriginalWithRetry(interaction, clampContent(wrap(text)), components, { startedAt });
   }
   // Keep the invocation alive so a late answer is still stored.
   await work;
@@ -647,7 +698,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
   const legacyBuildContent = async (t) => {
     const person = (await loadRoster(env)).find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
     const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
-    return `**${t.name}'s Build**: ${mention || "(thread link not configured)"}\n-# Class & spec planning for launch night. Check party character sheets at ${boardUrl}/#five`;
+    return SLASH_COPY.build(t.name, mention || "(thread link not configured)", `${boardUrl}/#five`);
   };
 
   // 4. Autocomplete (Type 4) -> Application Command Autocomplete Result (Type 8)
@@ -787,8 +838,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       };
       const ephemeral = (content) =>
         new Response(JSON.stringify({ type: 4, data: { content, flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
-      if (!sub) return ephemeral("Use `/vote start` with a title and 2 to 5 choices separated by |.");
-      if (!member) return ephemeral("I can't tell which party member you are, so only the party can start a vote. You can still press the buttons on one.");
+      if (!sub) return ephemeral(SLASH_COPY.voteUsage());
+      if (!member) return ephemeral(SLASH_COPY.voteNotMember());
       const nowMs = Date.now();
       const made = createVote({ id: newVoteId(), title: subOpt("title"), choices: subOpt("options"), hours: subOpt("closes_in_hours") || undefined, now: nowMs });
       if (!made.ok) return ephemeral(made.error);
@@ -866,7 +917,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           persona,
           isPrivate,
           askerId: String(user.id || ""),
-          answer: () => answerWithAi({ env, origin, intentId, by: byName, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
+          wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
+          answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
         })
       );
 
@@ -891,23 +943,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       ]);
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
       const party = partyRow ? JSON.parse(partyRow.json) : { members: [] };
-      const inList = (signups.entries || []).filter((e) => e.rsvp === "in").map((e) => e.name);
-      const myEntry = (signups.entries || []).find(
-        (e) => (e.name || "").toLowerCase() === byName.toLowerCase()
-      );
-      const nextStep = !myEntry || !myEntry.rsvp
-        ? "Say whether you are **in** for launch night (`/signup rsvp:in`)."
-        : !myEntry.meet
-        ? "Pick where the party meets (`/signup meet:Valley of Strength` or `The Crossroads`)."
-        : "Your launch-night answers are in — check your character sheet with `/sheet`.";
-
-      const lines = [
-        `**Launch Night: Wed Nov 4, 6:00 PM ET** (<t:1793833200:F>)`,
-        `• **Party (${(party.members || []).length}):** ${(party.members || []).map((m) => `${m.name} (${m.race} ${m.class})`).join(" · ")}`,
-        `• **RSVP In (${inList.length}):** ${inList.length ? inList.join(", ") : "None yet"}`,
-        `• **Next for ${byName}:** ${nextStep}`,
-        `• **Board:** ${boardUrl}/#tonight`,
-      ];
+      const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
       return new Response(
         JSON.stringify({
           type: 4,
@@ -961,7 +997,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `Updated **${target.name}**'s sheet (**${field}** → \`${value}\`). View on the board: ${boardUrl}/#five`,
+              content: SLASH_COPY.sheetUpdated(target.name, field, value, `${boardUrl}/#five`),
               flags: 64,
             },
           }),
@@ -976,7 +1012,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         ? Object.entries(mine.fields)
             .map(([k, v]) => `• **${k}:** ${Array.isArray(v.value) ? v.value.join(", ") : v.value}`)
             .join("\n")
-        : "No custom sheet fields recorded yet.";
+        : SLASH_COPY.sheetEmpty();
       return new Response(
         JSON.stringify({
           type: 4,
@@ -1044,7 +1080,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `**Launch Night Status**\n${summary}`,
+            content: `${SLASH_COPY.launchHeader()}\n${summary}`,
             flags: 64,
           },
         }),
@@ -1062,7 +1098,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `**${label} on the Living Board:** ${boardUrl}/${hash}`,
+            content: SLASH_COPY.mapLine(label, `${boardUrl}/${hash}`),
             components: [
               {
                 type: 1,
@@ -1105,30 +1141,40 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       if (Object.keys(raw).length > 0) {
-        const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-        const doc = row ? JSON.parse(row.json) : { entries: [] };
-        const patch = {};
-        for (const [k, [v, free]] of Object.entries(raw)) {
-          const checked = validateSignupField(k, v, doc.options, { freeText: free });
-          if (!checked.ok) return signupRejection(checked.error === "field" ? `\`${String(k).slice(0, 20)}\` is not a sign-up field` : `invalid value for **${k}**`);
-          patch[k] = checked.value;
+        const stamp = new Date().toISOString();
+        // Compare-and-set (kv-cas.js), 5 tries (about 10 D1 calls, well under 3 seconds): Discord wants an answer within 3 seconds. Validation runs on the fresh document each try.
+        let cardsBefore = null;
+        let saved;
+        try {
+          saved = await updateKvJson(env, "signups", async (cur) => {
+            const doc = cur || { entries: [] };
+            const patch = {};
+            for (const [k, [v, free]] of Object.entries(raw)) {
+              const checked = validateSignupField(k, v, doc.options, { freeText: free });
+              if (!checked.ok) return { skip: true, result: { reject: checked.error === "field" ? `\`${String(k).slice(0, 20)}\` is not a sign-up field` : `invalid value for **${k}**` } };
+              patch[k] = checked.value;
+            }
+            cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
+            doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+            let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
+            if (!entry) {
+              entry = { slug: member.slug, name: byName };
+              doc.entries.push(entry);
+            }
+            for (const [k, v] of Object.entries(patch)) {
+              entry[k] = v;
+            }
+            entry.updated = stamp;
+            await recomputeSignupTallies(doc);
+            return { doc, result: { patch, entry } };
+          }, { tries: 5, now: () => stamp });
+        } catch (e) {
+          if (e instanceof KvConflictError) return signupRejection("the sign-ups card is busy, try again in a moment");
+          throw e;
         }
-        const cardsBefore = cardsEnabled(env) ? structuredClone(doc) : null;
-        doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-        let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
-        if (!entry) {
-          entry = { slug: member.slug, name: byName };
-          doc.entries.push(entry);
-        }
-        for (const [k, v] of Object.entries(patch)) {
-          entry[k] = v;
-        }
-        entry.updated = new Date().toISOString();
-        await recomputeSignupTallies(doc);
-
-        await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-          .bind(JSON.stringify(doc), entry.updated)
-          .run();
+        if (saved.result.reject) return signupRejection(saved.result.reject);
+        const { patch, entry } = saved.result;
+        const doc = saved.doc;
 
         await insertIntent(env, {
           slug: member.slug,
@@ -1147,7 +1193,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `Recorded sign-up update for **${byName}**: ${summary}. View on the board: ${boardUrl}/#signups`,
+              content: SLASH_COPY.signupLogged(byName, summary, `${boardUrl}/#signups`),
               flags: 64,
             },
           }),
@@ -1166,7 +1212,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       }
 
       const statusText = [
-        `**${byName}'s Sign-up Status:**`,
+        SLASH_COPY.signupStatusHeader(byName),
         `• **RSVP:** \`${myEntry.rsvp || "not answered"}\``,
         `• **Meeting Point:** \`${myEntry.meet || "not answered"}\``,
         `• **Pre-order Pack:** \`${myEntry.pack || "not answered"}\``,
@@ -1262,7 +1308,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
                 color: GOLD,
                 title: "Every WoW: Forever Date We Know",
                 description: lines.join("\n").slice(0, 4000),
-                footer: { text: "Blizzard's verified dates. Times render in your local time zone." },
+                footer: { text: SLASH_COPY.datesFooter() },
               },
             ],
           },
@@ -1285,7 +1331,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
               {
                 color: GOLD,
                 title: "The WoW: Forever Library Shelves",
-                description: `**On the Shelves (${LIBRARY_DATA.posted.length}):**\n${posted}\n\n**Coming Soon (${LIBRARY_DATA.coming.length}):**\n${coming}\n\nOpen full library on the Living Board: ${boardUrl}/#library`,
+                description: SLASH_COPY.libraryBody(LIBRARY_DATA.posted.length, posted, LIBRARY_DATA.coming.length, coming, `${boardUrl}/#library`).slice(0, 4096), // advisor follow-up: Discord embed description limit
               },
             ],
           },
@@ -1302,7 +1348,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const head = `**${q.round}** #${q.n}`;
       const content = reveal === "reaction"
         ? `${head}\n${q.q}\n-# React with 👀 to reveal the answer. Full quiz on the Living Board.`
-        : `${head}\n${q.q}\n||${q.a}||\n-# Tap the spoiler bar to reveal. No prizes, only bragging rights.`;
+        : `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
 
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
@@ -1314,7 +1360,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (cmd === "didyouknow") {
       const facts = FACTS_DATA.facts || [];
       const f = facts[Math.floor(Math.random() * facts.length)] || facts[0];
-      const content = `**Did you know?** ${f.text}\n-# ${f.tag} (${f.thread} thread, as of ${FACTS_DATA.asOf || "verified"})`;
+      const content = SLASH_COPY.didYouKnow(f.text, f.tag, f.thread, FACTS_DATA.asOf || "verified");
 
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
@@ -1400,7 +1446,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `${pickLine(await loadPersona(env), "emptyLines", title, `No library page found for "${title}".`)} Check \`/library\` for all available shelves.`,
+              content: `${pickLine(await loadPersona(env), "emptyLines", title, SLASH_COPY.pageMissing(title))}${SLASH_COPY.pageMissingTail()}`,
               flags: 64,
             },
           }),
@@ -1461,7 +1507,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           JSON.stringify({
             type: 4,
             data: {
-              content: `No tooltip found for "${name}". Check \`/page\` or ask with \`/ask\`.`,
+              content: SLASH_COPY.tooltipMissing(name),
               flags: 64,
             },
           }),
@@ -1511,7 +1557,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         JSON.stringify({
           type: 4,
           data: {
-            content: `You're on **${choice.toUpperCase()}**. ${effects[choice] || ""}\n-# Switch any time with \`/journey\`.`,
+            content: SLASH_COPY.journey(choice.toUpperCase(), effects[choice] || ""),
             flags: 64,
           },
         }),
@@ -1709,7 +1755,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           persona,
           wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
           askerId: String(user.id || ""),
-          answer: async () => answerWithAi({ env, origin, intentId, by: byName, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }), isMember: Boolean(member), storeDetails: true }),
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }), isMember: Boolean(member), storeDetails: true }),
         })
       );
 
@@ -1873,26 +1919,35 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     if (parts[0] === "signup") {
       if (!member) return unknownMemberResponse();
       if (parts.length !== 3) return signupRejection("unrecognised button");
-      const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first();
-      if (!row) return signupRejection("the sign-ups board is not set up yet");
-      const doc = JSON.parse(row.json);
-      const checked = validateSignupField(parts[1], parts[2], doc.options);
-      if (!checked.ok) return signupRejection("unrecognised button");
+      const stamp = new Date().toISOString();
       const field = parts[1];
-      const val = checked.value;
-      doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
-      let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
-      if (!entry) {
-        entry = { slug: member.slug, name: byName };
-        doc.entries.push(entry);
+      let saved;
+      try {
+        // Compare-and-set (kv-cas.js), 5 tries (about 10 D1 calls, well under 3 seconds): the interaction must be answered within 3 seconds. Validation runs on the fresh document each try.
+        saved = await updateKvJson(env, "signups", async (cur) => {
+          if (!cur) return { skip: true, result: { reject: "the sign-ups board is not set up yet" } };
+          const doc = cur;
+          const checked = validateSignupField(field, parts[2], doc.options);
+          if (!checked.ok) return { skip: true, result: { reject: "unrecognised button" } };
+          const val = checked.value;
+          doc.entries = Array.isArray(doc.entries) ? doc.entries : [];
+          let entry = doc.entries.find((e) => (e.name || "").toLowerCase() === byName.toLowerCase());
+          if (!entry) {
+            entry = { slug: member.slug, name: byName };
+            doc.entries.push(entry);
+          }
+          entry[field] = val;
+          entry.updated = stamp;
+          await recomputeSignupTallies(doc);
+          return { doc, result: { val, entry } };
+        }, { tries: 5, now: () => stamp });
+      } catch (e) {
+        if (e instanceof KvConflictError) return signupRejection("the sign-ups card is busy, try again in a moment");
+        throw e;
       }
-      entry[field] = val;
-      entry.updated = new Date().toISOString();
-      await recomputeSignupTallies(doc);
-
-      await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'signups'")
-        .bind(JSON.stringify(doc), entry.updated)
-        .run();
+      if (saved.result.reject) return signupRejection(saved.result.reject);
+      const { val, entry } = saved.result;
+      const doc = saved.doc;
 
       await insertIntent(env, {
         slug: member.slug,

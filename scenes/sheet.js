@@ -8,7 +8,7 @@ const LABEL = { race: "Race", class: "Class", spec_path: "Spec path", spec_at_40
 const LAUNCH = { queue: "In the queue", in: "In the game", done: "Done for tonight" };
 const SRC = { board: "the Party Board", discord: "Discord", game: "the game", leeroy: "Leeroy" };
 const GOALS_MAX = 140;
-const PS = { view: "cards", who: null, data: null, voc: null, edit: null, say: "", sigs: {}, dirty: false };
+const PS = { imp: false, impWait: false, view: "cards", who: null, data: null, voc: null, edit: null, say: "", sigs: {}, dirty: false };
 /* chars.v1 (data/client.json flags, default false): Q37 character switcher. CH.list comes from the "characters" of /me; the switcher shows only for the viewer's own sheet and only with 2 or more. */
 const CH = { list: [], active: null, mod: null, p: null, open: false, draft: {}, errors: {}, busy: false, say: "" };
 const chOn = () => !!(D.client && D.client.flags && D.client.flags["chars.v1"]);
@@ -176,12 +176,14 @@ function seal(src, from) {
   img.addEventListener("error", () => { img.remove(); });
   return h("span", { class: "ps-src", "data-src": k, title: say }, img, h("span", { class: "sr-only", text: say }));
 }
+/* The rows actually rendered: after launch an unset launch_state row is hidden, and the "sees N of M" line counts the same list. */
+const shownFields = (F) => FIELDS.filter((f) => !(f === "launch_state" && !F[f].text && K.launchPast()));
 function parity(m, F) {
-  const filled = FIELDS.filter((f) => F[f].text), seen = filled.filter((f) => F[f].visible), newest = FIELDS.map((f) => F[f].at).filter(Boolean).sort().pop();
-  const share = seen.length / FIELDS.length, fresh = newest ? (Date.now() - Date.parse(newest)) / 864e5 : null;
+  const rows = shownFields(F), filled = rows.filter((f) => F[f].text), seen = filled.filter((f) => F[f].visible), newest = rows.map((f) => F[f].at).filter(Boolean).sort().pop();
+  const share = seen.length / rows.length, fresh = newest ? (Date.now() - Date.parse(newest)) / 864e5 : null;
   return h("div", { class: "ps-par", "data-fresh": fresh === null ? "board" : fresh < 3 ? "new" : "older" },
     h("span", { class: "ps-bar", "aria-hidden": "true" }, h("i", { style: `--p: ${share.toFixed(3)}` })),
-    h("span", { class: "ps-par-t", text: `The party sees ${seen.length} of ${FIELDS.length} lines. ${newest ? `Newest line ${dayOf(newest)}.` : "Every line so far comes from the board's records."}` }));
+    h("span", { class: "ps-par-t", text: `The party sees ${seen.length} of ${rows.length} lines. ${newest ? `Newest line ${dayOf(newest)}.` : "Every line so far comes from the board's records."}` }));
 }
 
 function editor(m, f, x) {
@@ -209,6 +211,7 @@ function invite(m, f) {
   if (f === "spec_at_40" || f === "spec_path") return ["Not chosen yet. ", a(`#decide.${sl}`, "The three paths, in What to decide")];
   if (f === "professions") return ["None on the board yet. ", a(`#decide.${sl}`, "Every profession, in What to decide")];
   if (f === "plan_zone") return ["No place yet. ", a("#roads", "Where the roads meet, on Three roads")];
+  if (f === "level" && K.launchPast()) return isMe(m) ? ["Your level comes from the game. Use Import from game above to fill it in."] : ["Not on the board yet."];
   if (f === "level") return ["Fills in once the game is live. ", a("#timeline", "Launch, on Dates")];
   if (f === "launch_state") return ["Not set. The three states are on the wall on launch night."];
   if (f === "goals") return ["Empty. A line of your own, if you like."];
@@ -272,10 +275,40 @@ function sheetView(m) {
       h("button", { type: "button", class: "lib-tool ps-back", onclick: () => show("cards", null, true) }, `Back to ${K.pn.title()}`)),
     charsView(m),
     h("p", { class: "ps-how", text: how }),
-    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, FIELDS.map((f) => lineEl(m, f, F[f], mine))),
+    impView(m),
+    h("ul", { class: "ps-lines", "aria-label": `${m.name}'s sheet, line by line` }, shownFields(F).map((f) => lineEl(m, f, F[f], mine))),
     h("p", { class: "ps-say", id: "ps-say", role: "status", "aria-live": "polite", text: PS.say }));
 }
-const nameList = (ms) => K.andList(ms.map((m) => m.name));
+/* Import from game (scenes/import.js): own sheet only. Opening it holds back re-renders like the other editors; nothing is sent until the Send tap inside the panel. */
+function impCtx(m) {
+  return {
+    label: labelOf, lists: () => PS.voc.lists,
+    current: () => { const F = fieldsFor(m), o = {}; for (const f of ["race", "class", "level", "professions"]) o[f] = F[f].value === undefined ? null : F[f].value; return o; },
+    canSend: () => {
+      const B = BB(), st = B && B.status ? B.status() : null;
+      if (!st || !st.key) return { ok: false, why: "Sending needs your own board link (the one with your key)." };
+      if (!keyIsThem(m)) return { ok: false, why: "This board link belongs to someone else, so nothing can be sent from here." };
+      if (st.sheetOff) return { ok: false, why: "The party sheet is switched off for now, so nothing can be sent." };
+      return { ok: true };
+    },
+    /* The identity compared before every write. B.setSheet takes no character argument: the Worker keys a write by the member key, so a write cannot land on a different character. What CAN change under the person is what they are looking at and previewing: the sheet view, whose sheet it is (PS.view, PS.who) and the character picked in the switcher (the id chCurrent uses, read from the same CH.list and MEM key as this scene). If any of those differ from the moment Send started, the preview no longer belongs to this context, so the remaining writes are not sent. */
+    identity: () => { let id = ""; try { const c = CH.mod && CH.list.length ? chCurrent(m) : null; id = c ? String(c.id || CH.mod.keyOf(c)) : ""; } catch (e) {} return `${PS.view}:${PS.who}|${id}`; },
+    done: () => { PS.dirty = false; render(); },
+  };
+}
+function impView(m) {
+  if (!isMe(m)) return null;
+  const host = h("div", { id: "ps-imp", class: "ps-imp-host" });
+  if (PS.imp) host.hidden = false; else host.hidden = true;
+  if (PS.imp) {
+    if (window.BoardImport) window.BoardImport.mount(host, impCtx(m));
+    else if (window.__scenes && !PS.impWait) { PS.impWait = true; window.__scenes.load("import").then(() => { PS.impWait = false; if (PS.imp && PS.view === "sheet") render(); }); }
+  }
+  const btn = h("button", { type: "button", class: "lib-tool imp-toggle", id: "ps-imp-btn", "aria-expanded": String(!!PS.imp), "aria-controls": "ps-imp",
+    onclick: () => { PS.imp = !PS.imp; PS.edit = PS.imp ? "@import" : null; if (window.BoardImport) window.BoardImport.reset(PS.imp ? "open" : "closed"); render(); const f = PS.imp ? $("#imp-text") : $("#ps-imp-btn"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } } }, "Import from game");
+  return h("div", { class: "ps-imp" }, btn, host);
+}
+const nameList = (ms) =>K.andList(ms.map((m) => m.name));
 function tableView() {
   const ms = members(), d = PS.data, all = ms.map((m) => ({ m, F: fieldsFor(m), p: d ? d.people.find((x) => x.class_key === m.class_key) : null }));
   const take = {};
@@ -328,11 +361,13 @@ const sampleLoad = () => (sampleP ||= Promise.all(SAMPLE_FILES.map((n) => fetch(
 function sampleView(S) {
   const sig = (n) => (S.signups.entries || []).find((e) => e.name === n), bld = (n) => (S.builds.builds || []).find((b) => b.name === n) || {};
   const go = () => { const c = $("#tn-change"); if (c) { c.click(); return; } if (K.goScene) K.goScene("tonight"); const f = $("#tn-me button, #tn-me a"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } };
-  return [h("h3", { class: "ps-sample-h", id: "ps-sample-h" }, h("span", { class: "ps-sample-tag", text: "Sample guild" }), ` ${S.party.party}, a sheet to look at`),
+  const inner = [h("h3", { class: "ps-sample-h", id: "ps-sample-h" }, h("span", { class: "ps-sample-tag", text: "Sample guild" }), ` ${S.party.party}, a sheet to look at`),
     h("p", { class: "ps-sample-p", text: "Made-up names, so you can see what a sheet holds before you have one." }),
     h("ul", { class: "ps-sample-l", "aria-label": "The sample guild, one line each" }, S.party.members.map((m) => { const b = bld(m.name), a = sig(m.name);
       return h("li", { "data-who": m.class_key, style: `--cc: ${K.classVar(m.class_key)}` }, h("b", { text: m.name }), h("span", { text: `${m.race} ${m.class}, ${m.role}. ${b.spec_path || m.spec}${b.level ? `, level ${b.level}` : ""}.` }), h("small", { text: `${K.andList(m.professions.map((p) => p.name))}.${a ? ` ${m.name.split(" ")[0]} ${RSVP[a.rsvp] || a.rsvp} on launch night.` : ""}${b.goals ? ` Goal: ${b.goals}` : ""}` })); })),
     h("button", { type: "button", class: "lib-tool ps-sample-go", onclick: go }, "Make this for my guild")];
+  /* the real party comes first on The five; the made-up guild waits behind "See an example" */
+  return [h("details", { class: "ps-sample-d" }, h("summary", { class: "ps-sample-sum", text: "See an example" }), ...inner)];
 }
 const firstValue = () => { if (SC.open !== "five") return; try { document.dispatchEvent(new CustomEvent("board:first-value")); } catch (e) {} };
 async function sampleSync() {
@@ -340,7 +375,7 @@ async function sampleSync() {
   if (MEM.member() || !D.party) { const o = $("#ps-sample"); if (o) o.hidden = true; return; }
   const S = await sampleLoad(); if (!S || MEM.member()) return;
   let box = $("#ps-sample");
-  if (!box) { box = h("section", { class: "ps-sample", id: "ps-sample", "aria-labelledby": "ps-sample-h" }); const v = $("#ps-views"); panel.insertBefore(box, v ? v.nextSibling : panel.firstChild); }
+  if (!box) { box = h("section", { class: "ps-sample", id: "ps-sample", "aria-labelledby": "ps-sample-h" }); const v = $("#ps-views"); panel.appendChild(box); }
   if (!box.firstChild) box.replaceChildren(...sampleView(S));
   box.hidden = false; firstValue();
 }
@@ -380,7 +415,8 @@ function render() {
   if (again && !PS.edit) { const f = $(again); if (f && f !== document.activeElement) { try { f.focus({ preventScroll: true }); } catch (e) {} } }
 }
 function show(v, who, user) {
-  PS.view = v; if (v === "sheet") { PS.who = who; chLoad(); } else { PS.edit = null; CH.open = false; }
+  if (v !== "sheet" || who !== PS.who) { PS.imp = false; if (PS.edit === "@import") PS.edit = null; if (window.BoardImport) window.BoardImport.reset(v !== "sheet" ? "closed" : "switched"); }
+  PS.view = v; if (v === "sheet") { PS.who = who; chLoad(); } else { PS.edit = null; CH.open = false; PS.imp = false; }
   if (v !== "sheet") PS.say = "";
   ready().then(() => {
     render();

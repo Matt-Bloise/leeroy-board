@@ -34,3 +34,32 @@ export function pickSignupPatch(patch) {
   }
   return { patch: out };
 }
+
+// Sign-up row matching. The seed data names some rows with decoration ("=Bloise="), so an exact lower-case name match missed them and the first
+// member write appended a second row for the same person. nameKey keeps letters and digits only.
+export const nameKey = (s) => String(s || "").normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+// Finds the member's row in doc.entries (by slug; by exact name; or, for a row with no slug, by name ignoring punctuation and case), folds any
+// further rows for the same person into it (newer values win), stamps the member's slug and display name on it, and creates it when absent.
+// Mutates doc.entries and returns the entry.
+export function upsertSignupEntry(doc, member) {
+  const entries = Array.isArray(doc.entries) ? doc.entries : (doc.entries = []);
+  const want = nameKey(member.name), lower = String(member.name || "").toLowerCase();
+  // A populated slug is authoritative: such a row is this member's only if the slug is equal. Name matching is for slug-less (seed) rows only.
+  const isMine = (e) => e && typeof e === "object" && (e.slug ? e.slug === member.slug : (want !== "" && nameKey(e.name) === want) || String(e.name || "").toLowerCase() === lower);
+  const mine = entries.filter(isMine);
+  if (!mine.length) {
+    const fresh = { slug: member.slug, name: member.name };
+    entries.push(fresh);
+    return fresh;
+  }
+  const primary = mine[0];
+  for (const e of [...mine.slice(1)].sort((a, b) => String(a.updated || "").localeCompare(String(b.updated || "")))) {
+    if (String(e.updated || "") >= String(primary.updated || "")) Object.assign(primary, e);
+    else for (const [k, v] of Object.entries(e)) if (primary[k] === undefined || primary[k] === null) primary[k] = v;
+    entries.splice(entries.indexOf(e), 1);
+  }
+  primary.slug = member.slug;
+  primary.name = member.name;
+  return primary;
+}

@@ -217,7 +217,7 @@ function roads(M) {
   svg.querySelectorAll(".map-town, .map-mark, .map-zep-g, .route-plate").forEach((e) => {
     e.style.pointerEvents = "all"; e.classList.add("place-target");
     if (e.matches(".map-mark") && Number(e.getAttribute("x")) === 382) e.classList.add("map-cross");
-    if (!e.hasAttribute("tabindex")) e.setAttribute("tabindex", "0");
+    if (!e.hasAttribute("tabindex")) e.setAttribute("tabindex", "0"); if (!e.hasAttribute("role")) e.setAttribute("role", "img");
     if (!e.hasAttribute("aria-label")) e.setAttribute("aria-label", e.matches(".map-town") ? "Orgrimmar, where all three roads end" : e.matches(".map-zep-g, .route-plate") ? "The Undercity zeppelin" : "The Crossroads");
   });
   svg.querySelectorAll(".road-g").forEach((g) => { const pins = [...g.querySelectorAll(".map-pin")].map((p) => p.getAttribute("data-who")).filter(Boolean); if (pins.length) g.setAttribute("aria-description", pins.join("; ")); });
@@ -225,7 +225,7 @@ function roads(M) {
   if (!card) { card = h("div", { class: "place-card road-card", id: "road-card", role: "tooltip", hidden: "" }); sheet.append(card); }
   if (RM.wired) return;
   RM.wired = true;
-  const SEL = ".map-pin, .road-btn, .road-g, .road-line, .map-town, .map-mark, .map-zep-g, .route-plate";
+  const SEL = ".map-pin, .road-btn, .road-g, .map-town, .map-mark, .map-zep-g, .route-plate";
   const P = K.D.party;
   const who = (name) => P.members.find((m) => m.name === name);
   const idOf = (t) => {
@@ -292,8 +292,16 @@ function roads(M) {
     if (pinned === t) { hide(); return; }
     pinned = t; show(t, "tap");
   });
+  /* slice 6: on a phone a tap on a character shows the card (pinned, docked as a sheet) instead of zooming the map; the zoom's own click handler sits on the road group and would stop the bubble, so this listens first */
+  panel.addEventListener("click", (e) => {
+    if (!coarse()) return;
+    const t = e.target.closest && e.target.closest(".map-pin"); if (!t || e.target.closest("#road-card")) return;
+    e.stopPropagation();
+    if (pinned === t) { hide(); return; }
+    pinned = t; show(t, "tap");
+  }, true);
   addEventListener("pointerdown", (e) => { if (!card.hidden && pinned && !e.target.closest("#road-card") && !e.target.closest(SEL)) hide(); }, true);
-  addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { const was = pinned; hide(); if (was) { e.preventDefault(); e.stopImmediatePropagation(); } } }, true);
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !card.hidden) { hide(); e.preventDefault(); e.stopImmediatePropagation(); } }, true); /* slice 6: Esc closes the card first, hovered or pinned; the next Esc leaves the scene */
   K.sceneHooks.push((on) => { if (!on) hide(); });
   const bodyEl = $("#sheet-body"); if (bodyEl) bodyEl.addEventListener("scroll", () => { if (!card.hidden && !coarse()) hide(); }, { passive: true });
 }
@@ -381,6 +389,7 @@ function tips() {
 
 K.place = { choose, rowRect, contentRects, hover, dock, visibleBounds, IN, OUT };
 K.on("map", roads);
+if (K.lastMap) roads(K.lastMap); /* slice 6: the map was drawn before this file loaded (js/roads-buffs.js keeps the last one) */
 const boot = () => { try { tooltips(); glossary(); context(); rows(); tips(); } catch (e) { console.error("place", e); } };
 if (K.booted) boot(); else K.on("booted", boot);
 })();

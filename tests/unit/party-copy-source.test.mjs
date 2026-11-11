@@ -7,7 +7,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "..");
+import { fileURLToPath } from "node:url";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 const DIRS = ["js", "scenes", "next", "atlas", "room", "landing", "rate", "privacy", "terms"], TOP = ["index.html", "404.html"];
@@ -51,7 +52,7 @@ const STATIC = [
 const ALLOWED = [
   ...STATIC.map(([file, re, selector]) => ({ file, re, selector, why: "the page ships the five wording; partyCopy() rewrites it for any other count and puts it back for five" })),
   { file: "js/board.js", re: /\? "The five" : "The party"/, why: "the helper's own wording, the one place the title is typed" },
-  { file: "index.html", re: /Four questions for launch night/, why: "the launch-night sign-up asks four questions; not the party size" },
+  { file: "index.html", re: /sign-up card's four questions/, why: "the sign-up card asks four questions; not the party size" },
   { file: "data/trust.json", re: /Four short answers/, why: "the trust card has four answers" },
   { file: "data/actions.json", re: /four cards that show where things are/, why: "the first-open walk has four cards" },
   { file: "js/v13d.js", re: /Five points (?:fewer|more)/, why: "the Bonuses dial steps by five points" },
@@ -60,7 +61,6 @@ const ALLOWED = [
   { file: "data/guided-atlas.json", re: /group of five players/, why: "a dungeon is a group of five players (game rule)" },
   { file: "data/decide.json", re: /fifth \(reagent\) slot/, why: "the game's fifth bag slot" },
   { file: "data/decide.json", re: /three of five still travel/, why: "the game's summoning rule for a five-player dungeon group" },
-  { file: "privacy/index.html", re: /four safe-area insets/, why: "the four edges of the screen" },
   { file: "js/shell.js", re: /const five = \$\("#panel-five"\)/, why: "a variable named for the scene id" },
   { file: "scenes/place.js", re: /five = \$\("#panel-five"\)|\[lib, five\]|if \(five &&|root: five/, why: "a variable named for the scene id" },
 ];

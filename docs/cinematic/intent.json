@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "about": "Intent register, slice 0 of the cinematic program. Every visible region and every motion on two views has an entry: what the person needs to know or do, and why it moves. tests/unit/intent-register.test.mjs fails when a visible element on either view is not covered. Captured at 390x844 on 2026-11-06 with the page clock pinned and no API (static data only).",
+  "tiers": "hero = the one thing to read or do; context = what orients; periphery = atmosphere that carries no information. Slice 1 (2026-11-06): the table has one hero, the Sign-ups tile (the member's own answer to the invitation), at full brightness; the countdown, the five and the library search are context (about 66 percent); the rest of the wall is periphery (about 46 percent). Tiers are data-tier attributes in index.html and css/hierarchy.css.",
+  "not_covered": [
+    "Next steps for a signed-in member (the member card needs the API state; the stub snapshot has no per-member route). Add in slice 1 with a fixture.",
+    "Every other scene and every non-idle state (pressed, submitting, failed, offline): later slices, one register entry per state."
+  ],
+  "views": {
+    "next-steps": {
+      "describe": "First visit: the Next steps scene open over the wall at #tonight, nobody signed in. Setup: load /?preview=1 with a fresh profile, wait 3.5 s.",
+      "entries": [
+        { "id": "ns-room-art", "selector": ["img.ready", "div.candle", "#wisps"], "tier": "periphery",
+          "intent": "Say 'a tavern at night' before any word is read; carries no information and must never compete with the invitation.",
+          "motion": [
+            { "name": "candle", "trigger": "page load, loops", "purpose": "warmth of the one light source", "reducedMotion": "paused while a scene is open" },
+            { "name": "wisps", "trigger": "page load, canvas particles", "purpose": "keeps the room alive at rest", "reducedMotion": "opacity transition collapses to 1 ms" }
+          ] },
+        { "id": "ns-sheet-frame", "selector": ["section.sheet", "div.sheet-head", "#sheet-body", "#panel-tonight"], "tier": "context",
+          "intent": "Show that this is a sheet over the wall, so the person knows where they are and that the wall is one tap away.",
+          "motion": [
+            { "name": "v14-unfold + fade-in", "trigger": "scene opens", "purpose": "the sheet arrives from the wall, so the wall stays the place it came from", "reducedMotion": "ends at once (--t-move is 1 ms)" }
+          ] },
+        { "id": "ns-title", "selector": ["#sheet-title"], "tier": "context",
+          "intent": "Name the scene: Next steps.", "motion": [] },
+        { "id": "ns-close", "selector": ["#scene-close"], "tier": "context",
+          "intent": "One obvious way back to the wall.",
+          "motion": [ { "name": "sheet-out", "trigger": "press", "purpose": "the sheet leaves toward the wall", "reducedMotion": "fade only, 160 ms" } ] },
+        { "id": "ns-invite-heading", "selector": ["#nx-fr2-h"], "tier": "hero",
+          "intent": "Answer what this is in one line: a companion for the guild's WoW run.", "motion": [] },
+        { "id": "ns-invite-line", "selector": ["p.nx-fr2-line"], "tier": "hero",
+          "intent": "Say what the person gets (group, next step, what is coming) and what it costs (two minutes).", "motion": [] },
+        { "id": "ns-continue", "selector": ["#nx-fr2-go"], "tier": "hero",
+          "intent": "The one action that matters now: sign in with Discord to see your own next step.", "motion": [] },
+        { "id": "ns-look", "selector": ["#nx-fr2-look"], "tier": "context",
+          "intent": "A quiet way to decline signing in and still see the board.", "motion": [] },
+        { "id": "ns-dock", "selector": ["button.pl", "button.pl *"], "tier": "context",
+          "intent": "Three places to go next: Next steps (here), My sheet, Menu. The current one is marked.", "motion": [] }
+      ]
+    },
+    "table": {
+      "describe": "The home board, the wall, at 390x844 with a member remembered and the sheet closed. Setup: localStorage board-as = Santa, board-hinted = 1; load /?preview=1, press the scene close button, wait 2.5 s.",
+      "entries": [
+        { "id": "tb-room-art", "selector": ["img.ready", "div.candle", "#wisps", "img.beam", "#light"], "tier": "periphery",
+          "intent": "Set the tavern mood and light the wall; no information.",
+          "motion": [
+            { "name": "candle", "trigger": "page load, loops", "purpose": "warmth of the one light source", "reducedMotion": "stops" },
+            { "name": "wisps", "trigger": "page load", "purpose": "the room is alive at rest", "reducedMotion": "collapses" }
+          ] },
+        { "id": "tb-kicker", "selector": ["#kicker"], "tier": "context",
+          "intent": "Say which board and which ruleset this is.", "motion": [] },
+        { "id": "tb-title", "selector": ["h1"], "tier": "context",
+          "intent": "Name the board.", "motion": [] },
+        { "id": "tb-menu", "selector": ["#nav-menu-wall"], "tier": "context",
+          "intent": "Reach everything that is not on the wall.", "motion": [] },
+        { "id": "tb-clock", "selector": ["#clock", "#clock *"], "tier": "context",
+          "intent": "Answer when the next event is: name, date and time in the viewer's timezone, with a tap to the dates.", "motion": [] },
+        { "id": "tb-wall", "selector": ["#main"], "tier": "context",
+          "intent": "Hold the tiles; each tile is one question the group asks. While a scene is open the other tiles drop to tier 3 and the opened tile keeps full brightness, so the sheet reads as the one thing in play.", "motion": [] },
+        { "id": "tb-tile-five", "selector": ["a.tile:has(#tt-five)", "a.tile:has(#tt-five) *", "span.tile-line.five-strip", "span.tile-line.five-strip *"], "tier": "context",
+          "intent": "Who is in the group, which role each fills, and whether the group has its tank, healer and damage.",
+          "motion": [ { "name": "v14-rise", "trigger": "page load, staggered 75 ms a tile", "purpose": "tiles arrive in reading order", "reducedMotion": "none (animation: none)" } ] },
+        { "id": "tb-tile-signups", "selector": ["a.tile:has(#tt-signups)", "a.tile:has(#tt-signups) *"], "tier": "hero",
+          "intent": "The one thing to do on the table: who said they are coming, how many have not answered, and a tap to give your own answer.",
+          "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
+        { "id": "tb-tile-library", "selector": ["div.tile.lib-tile", "div.tile.lib-tile *"], "tier": "context",
+          "intent": "Find an answer: one line and a search box. The totals and the newest change live inside the Library scene, not on the table.",
+          "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
+        { "id": "tb-tile-roads", "selector": ["a.tile:has(#tt-roads)", "a.tile:has(#tt-roads) *"], "tier": "context",
+          "intent": "Show where each character is heading on the three roads.",
+          "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
+        { "id": "tb-tile-racials", "selector": ["a.tile:has(#tt-racials)", "a.tile:has(#tt-racials) *"], "tier": "context",
+          "intent": "Show each race's special skill.",
+          "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
+        { "id": "tb-tile-bonuses", "selector": ["div.tile.gl-tile", "div.tile.gl-tile *"], "tier": "context",
+          "intent": "Explain the account-wide bonuses and open the legacy points.",
+          "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
+        { "id": "tb-tile-buffs", "selector": ["a.tile:has(#tt-buffs)", "a.tile:has(#tt-buffs) *"], "tier": "context",
+          "intent": "Show who buffs whom.",
+          "motion": [ { "name": "v14-rise", "trigger": "page load", "purpose": "tiles arrive in reading order", "reducedMotion": "none" } ] },
+        { "id": "tb-tile-ornament", "selector": ["i"], "tier": "periphery",
+          "intent": "Pins, arrows and ornaments on tiles mark a tile as tappable; no information of their own.", "motion": [] },
+        { "id": "tb-since-mark", "selector": ["#wall > li.since", "#wall > li.since *"], "tier": "context",
+          "intent": "Since your last visit: a warm edge on a tile whose content changed after this browser last left (Sign-ups, Library), at most 3, so a returning member sees what moved without reading everything. Rows inside the Sign-ups and Library scenes get the same edge. Diffed from a localStorage stamp; a first visit shows none.",
+          "motion": [ { "name": "since-cool", "trigger": "tiles and rows are marked once after load or when the scene opens", "purpose": "the edge cools over 8 s so it says 'new' and then gets out of the way", "reducedMotion": "static for 8 s, then removed" } ] },
+        { "id": "tb-sheet-closed", "selector": ["section.sheet", "div.sheet-head", "#sheet-title", "#scene-close", "#sheet-body"], "tier": "periphery",
+          "intent": "The scene sheet is closed and must show nothing; entries exist because the closed sheet stays in the DOM.", "motion": [] },
+        { "id": "tb-lamp", "selector": ["#lamp", "#light-calm"], "tier": "periphery",
+          "intent": "Make the board feel lit: a soft candle-gold lamp under the pointer (or the phone's tilt) and a warm rim on the crests. It carries no information; the Light switch (warm or calm) turns it off for good and is remembered.",
+          "motion": [ { "name": "lamp follow", "trigger": "pointer move or device tilt; requestAnimationFrame only while the lamp is still travelling", "purpose": "the light has a source, so the wall reads as a place", "reducedMotion": "no lamp; hero and hover warmth stay static" } ] },
+        { "id": "tb-dock", "selector": ["button.pl", "button.pl *"], "tier": "context",
+          "intent": "Three places to go: Next steps, My sheet, Menu.", "motion": [] }
+      ]
+    }
+  }
+}

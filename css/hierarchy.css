@@ -1,0 +1,46 @@
+/* Cinematic slice 1: one hero, three luminance tiers, loaded after every other stylesheet.
+   Light means relevance (docs/cinematic, cinematic-craft-synthesis): the Sign-ups tile (the member's own answer to the invitation) is the hero at full brightness,
+   context (the countdown, the five, the library search) sits lower, the rest of the wall lower still.
+   Only BACKGROUNDS and PICTURES are dimmed (the parchment band by multiply, images and drawings by a brightness filter). Text is never filtered, so its colour is
+   untouched and tests/browser/hierarchy.mjs holds the rendered contrast of every tier at 4.5:1 or better at 390 and 1366 wide.
+   Touching a tile (hover, focus, press) returns its backgrounds to full brightness: the touched object brightens, nothing else moves.
+   OLED: no channel-255 block, and the hero glow is candle gold at low alpha, not white. Durations and ease come from css/motion-tokens.css. */
+:root {
+  --tier-hero: 1;
+  --tier-context: 0.62;
+  --tier-periphery: 0.34;
+  --tier-img-context: 0.6;
+  --tier-img-periphery: 0.5;
+}
+#wall > li { --tv: var(--tier-hero); --ti: 1; }
+#wall > li[data-tier="2"] { --tv: var(--tier-context); --ti: var(--tier-img-context); }
+#wall > li[data-tier="3"] { --tv: var(--tier-periphery); --ti: var(--tier-img-periphery); }
+#wall > li:is(:hover, :focus-within, :active) { --tv: 1; --ti: 1; }
+#wall > li[data-tier] .tile-band {
+  background-color: rgb(calc(255 * var(--tv)) calc(255 * var(--tv)) calc(255 * var(--tv)));
+  background-blend-mode: multiply;
+  transition: background-color var(--cin-t-hover) var(--cin-ease);
+}
+#wall > li[data-tier] :is(img, svg.emblem, .tile-viz) { filter: brightness(var(--ti)); transition: filter var(--cin-t-hover) var(--cin-ease); }
+/* dark ink on a dimmed parchment band: context uses a darker ink; periphery bands go dark with cream titles (a dim parchment would not hold 4.5:1) */
+#wall > li[data-tier="2"] .tile-title { color: #0f0904; }
+#wall > li[data-tier="3"]:not(:hover, :focus-within, :active) :is(.tile-title, .tile-go) { color: var(--cream); }
+/* the hero: first in the wall, full width on a phone, a warm edge (candle gold at low alpha) */
+#wall > li[data-tier="1"] > .tile { box-shadow: 0 0 0 1px var(--brass), 0 0 28px rgba(229, 169, 60, 0.26); }
+#wall > li[data-tier="1"] .tile-title { font-size: calc(var(--step-1) * 1.15); }
+@media (max-width: 639px) {
+  #wall > li[data-tier="1"] { grid-column: 1 / -1 !important; }
+}
+/* the library search is a bright parchment plaque with an input: the plaque takes the tier's picture dimming (a filter on the plaque, so the ink inside goes darker, not lighter);
+   the placeholder is set dark so it holds 4.5:1 on the dimmed parchment */
+#wall > li[data-tier] .tile-search { filter: brightness(var(--ti)); transition: filter var(--cin-t-hover) var(--cin-ease); }
+#wall > li[data-tier="2"] .tile-q::placeholder { color: #0f0904; }
+
+/* Cinematic slice 7: the Library's empty state. It is a statement, not a bright field: near-black ground, cream text, one brass edge (OLED: black stays black).
+   The Ask Leeroy link is the single strong control on it. */
+.lib-empty { background: #0b0805; color: var(--cream); box-shadow: 0 0 0 1px var(--brass); }
+.lib-empty .lib-title, .lib-empty p { color: var(--cream); }
+.lib-empty .lib-empty-q { opacity: 0.85; }
+.lib-empty .plink { color: var(--cream); }
+.lib-empty a.lib-btn { display: inline-flex; align-items: center; text-decoration: none; min-height: 44px; }
+.lib-empty a:focus-visible, .lib-empty button:focus-visible { outline: 2px solid var(--cream); outline-offset: 2px; }

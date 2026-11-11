@@ -178,6 +178,11 @@ test("library index JSON is reachable", async () => {
   assert.ok(b.totals && b.totals.pages > 0, "library totals missing");
 });
 
+test("library seed bookkeeping row is not served", async () => {
+  const r = await fetch(`${API}/api/library/seed.stamp`, { headers: { Origin: PAGES } });
+  assert.equal(r.status, 404);
+});
+
 test("WebSocket /api/live connects and delivers a first message within 10 s", async () => {
   const ws = new WebSocket(`${API.replace(/^http/, "ws")}/api/live`);
   const first = await new Promise((resolve, reject) => {

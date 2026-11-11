@@ -94,6 +94,11 @@ const CASES = [
   ["green", 1, /budget: more than 20 Worker requests/, ["--viewports", "laptop,phone", "--budget", "20", "--engines", "chromium,firefox"], "budget-spent"],
   ["state-redirect", 1, /Aborting before any browser is launched/, L],
   ["cf-text", 1, /console error: TypeError: cannot read properties of undefined .*cloudflareinsights/, L],
+  ["beacon-location", 0, null, L, null, [["prints one non-failing WARN line per run", /WARN third-party analytics beacon error ignored \(1\), see \/privacy/]], { PROBE_SELFTEST_BEACON: "1" }],
+  ["beacon-own-cors", 1, /console error: Origin \S+ is not allowed by Access-Control-Allow-Origin\. Status code: 404/, L, null, [["the beacon's own located error is still the only one ignored", /WARN third-party analytics beacon error ignored \(1\), see \/privacy/]], { PROBE_SELFTEST_BEACON: "1" }],
+  ["beacon-own-error", 1, /console error: TypeError: boom in board\.js/, L, null, [["the beacon image's own error is still the only one ignored", /WARN third-party analytics beacon error ignored \(1\), see \/privacy/]], { PROBE_SELFTEST_BEACON: "1" }],
+  ["beacon-other-host", 1, /console error: Beacon API cannot load https:\/\/evil\.example\//, L, null, [], { PROBE_SELFTEST_BEACON: "1" }],
+  ["beacon-no-failure", 1, /console error: Origin \S+ is not allowed by Access-Control-Allow-Origin\. Status code: 404/, L],
 ].filter(([m, , , , label]) => !only || only.includes(label || m));
 
 async function runCase([mode, want, re, extra, label, musts, env, opts]) {

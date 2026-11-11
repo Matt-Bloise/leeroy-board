@@ -361,7 +361,7 @@ function renderHero() {
 }
 function nextEvent(now) { const t = D.timeline; return t.countdown_order.map((k) => t.events.find((e) => e.key === k)).find((e) => e && e.epoch > now) || null; }
 const eventTs = (e) => (e.epoch === null ? Date.parse(`${e.date}T23:59:59Z`) / 1000 : e.epoch);
-let shownNext;
+let shownNext, earlierOpen = false;
 function eventState(e, now, next) {
   const ts = eventTs(e);
   if (e.until_epoch && ts <= now && now < e.until_epoch) return ["open", `Open now, ${cardDates(`until ${e.until} (${e.until_zone || "Pacific"})`)}`];
@@ -372,7 +372,7 @@ function eventState(e, now, next) {
 }
 function stopEmblem(name) { return [emb.dates(name)]; }
 function renderTimeline() {
-  const t = D.timeline, tl = $("#rail"); tl.replaceChildren();
+  const t = D.timeline, tl = $("#rail"), hadFocus = !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("earlier-toggle")); tl.replaceChildren();
   const now = Date.now() / 1000;
   const next = nextEvent(now);
   shownNext = next ? next.key : null;
@@ -380,17 +380,32 @@ function renderTimeline() {
   let i = -1; starts.forEach((x, k) => { if (x <= now) i = k; });
   const prog = i < 0 ? 0 : i >= starts.length - 1 ? 1 : (i + Math.min(1, (now - starts[i]) / (starts[i + 1] - starts[i]))) / (starts.length - 1);
   tl.style.setProperty("--prog", `${Math.round(prog * 1000) / 10}%`);
-  t.events.forEach((e, di) => {
+  const stops = t.events.map((e, di) => {
     const [cls, label] = eventState(e, now, next);
     const lit = cls === "next" || cls === "open";
-    tl.append(h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
+    return [cls, eventTs(e), h("li", { class: `stop ${cls}`.trim(), style: `--di: ${di}`, "data-ev": e.key, ...(cls === "past" ? { "data-j": "c e" } : {}) },
       h("span", { class: "stop-mark", "aria-hidden": "true" }, ...stopEmblem(EMB_LABEL[e.key] || "seal"), cls === "past" ? emb.dates("seal", "stop-seal") : null, lit ? h("i", { class: "stop-ember" }) : null, lit ? h("i", { class: "stop-ember" }) : null),
       h("div", { class: "stop-body" },
         h("div", { class: "when", text: eventWhen(e) }),
         h("h3", { text: e.label }),
         e.detail ? h("p", { text: e.detail }) : null,
-        h("p", { class: "label state", text: label }))));
+        h("p", { class: "label state", text: label })))];
   });
+  const gone = stops.filter((x) => x[0] === "past").sort((a, b) => b[1] - a[1]).map((x) => x[2]); /* most recent first */
+  if (!launchPast() || !gone.length) tl.append(...stops.map((x) => x[2]));
+  else {
+    /* After launch the dates ahead lead; what already happened sits behind one Earlier control (kept, never deleted). */
+    const ahead = stops.filter((x) => x[0] !== "past").sort((a, b) => a[1] - b[1]).map((x) => x[2]); /* soonest first */
+    tl.append(...ahead);
+    if (!ahead.length) tl.append(h("li", { class: "stop-none" }, h("p", { class: "label", text: "Nothing dated ahead right now." })));
+    gone.forEach((l) => l.removeAttribute("data-j")); /* the Earlier button is the reader's own ask: show them in every journey (Guided hides past stops otherwise) */
+    const list = h("ol", { class: "rail-earlier", id: "rail-earlier" }, ...gone);
+    const btn = h("button", { type: "button", class: "earlier-toggle", "aria-expanded": earlierOpen ? "true" : "false", "aria-controls": "rail-earlier", text: `Earlier (${gone.length})` });
+    list.hidden = !earlierOpen;
+    btn.addEventListener("click", () => { earlierOpen = !earlierOpen; list.hidden = !earlierOpen; btn.setAttribute("aria-expanded", earlierOpen ? "true" : "false"); });
+    tl.append(h("li", { class: "stop-earlier" }, btn, list));
+    if (hadFocus) btn.focus({ preventScroll: true });
+  }
   renderCalendar(now);
   KIT.emit("timeline");
 }
@@ -474,7 +489,7 @@ function tick() {
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 function fill(key, ...kids) { const el = $(`#ts-${key}`); if (el) el.replaceChildren(...kids.flat().filter(Boolean)); }
-const LEEROY_HOW = "In #wow-forever, type /ask and your question, or tag Leeroy Jenkins.";
+const LEEROY_HOW = "In #wow-forever, type /ask and your question.";
 function renderTiles() {
   partyCopy();
   const p = D.party, c = D.client, L = c.legacy, st = D.stats, S = D.signups;
@@ -499,13 +514,16 @@ function renderTiles() {
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], "."]), wallGloss(L.gloss || {}, ["They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."], "tl-more"),
     h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
-    minis([[p.members.length, "players"], [c.buffs ? c.buffs.list.filter((b) => !b.sixth).length : c.synergy.length, "buffs"]]),
+    h("span", { class: "tile-line", text: "How can you help? Who covers whom." }),
     h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
-    (() => { const mm = minis([[stillOpen.length, "still open"], ...(p.polls.length ? [[p.polls.length, p.polls.length === 1 ? "poll taking votes" : "polls taking votes"]] : [])]); if (stillOpen.length && mm.firstChild) mm.firstChild.setAttribute("data-land", "ledger.open-0"); return mm; })(),
+    (() => { /* the pending action: an open decision first, else a poll still taking votes; "nothing open" only when BOTH are empty */
+      const first = stillOpen[0], poll = !first && p.polls[0];
+      return h("span", { class: "tile-line", ...(first ? { "data-land": "ledger.open-0" } : {}) }, h("b", { text: first ? "Needs a vote: " : poll ? "A poll is taking votes: " : "" }), first ? wholeClause(first.title, 70) : poll ? wholeClause(poll.title, 70) : "Nothing is open right now.");
+    })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
   if (S && S.tallies) {
     const T = S.tallies;
@@ -1231,7 +1249,7 @@ function splitPolls() {
   const p = D.party; if (!p) return false;
   const now = Date.now() / 1000, all = [...(p.polls || []), ...(p.polls_closed || [])], n = (p.polls || []).length;
   p.polls = all.filter((q) => !(q.closes_epoch <= now)); p.polls_closed = all.filter((q) => q.closes_epoch <= now);
-  return p.polls.length !== n;
+  return settleLaunch() || p.polls.length !== n;
 }
 function roles() {
   for (const m of (D.party && D.party.members) || []) {
@@ -1508,7 +1526,7 @@ function renderSeats(S) {
       s("text", { class: "seat-name", x, y: 192, text: m.name }),
       s("text", { class: `seat-ans ${state}`, x, y: 214, text: a && a.rsvp ? `${SAY[a.rsvp] || a.rsvp}${a.when ? `, ${WHEN[a.when] || a.when}` : ""}` : "no answer yet" }));
   });
-  box.replaceChildren(h("h4", { class: "seats-cap", text: launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
+  box.replaceChildren(h("h4", { class: "seats-cap", text: launchPast() ? `The table for launch night, ${launchEvent().when} (answers as they stood)` : launchWhen() ? `The table on launch night: ${launchWhen().replace(/^Launch: /, "")}` : "The table on launch night" }), svg);
 }
 const signupsOk = (S) => !!(S && S.tallies && S.tallies.pack && S.tallies.meet && S.tallies.rsvp && S.options && Array.isArray(S.options.meet));
 async function reloadOpt() {
@@ -1532,7 +1550,7 @@ function renderDiscordSignups() {
   const groups = [
     ["Pack", "ticket", [row(T.pack.yes, "I hold a pack"), row(T.pack.no, "No pack")]],
     ["Meeting point", "pin", [...S.options.meet.map((m) => row(T.meet[m], m)), row(T.meet.other, "Somewhere else", T.meet.other.places.map((x) => `${x.name} (${x.place})`).join(", "))]],
-    ["Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
+    [launchPast() ? "Launch night, answers as they stood" : "Launch night", "voice", RSVP_KEYS.filter((k) => T.rsvp[k]).map((k) => row(T.rsvp[k], RSVP_SAY[k], null, k))],
     ...(T.when ? [["When they get on", "clock", [row(T.when["6pm"], "6 PM ET, at launch"), row(T.when["8pm"], "Around 8 PM ET"), row(T.when.later, "Later than that")]]] : []),
   ];
   body.replaceChildren(...groups.map(([title, icon, rows], gi) => h("div", { class: "tally", "data-q": ["pack", "meet", "rsvp", "when"][gi] }, h("h4", {}, emb(icon), title), ...rows)));
@@ -1582,7 +1600,7 @@ const TITLES = { tonight: "Next steps", timeline: "Dates", get five() { return p
 const PAGE_TITLE = { base: "" };
 function setPageTitle(key) { if (!PAGE_TITLE.base) PAGE_TITLE.base = document.title || "Dungeons and Drinking Board"; document.title = key ? `${TITLES[key]}: ${PAGE_TITLE.base}` : PAGE_TITLE.base; }
 const PLAY = { roads: ["#map", "drawing"], legacy: ["#legacy-ring", "filling"], buffs: ["#wheel", "lighting"], ledger: ["#ledger-slip", "stamping"] };
-const SC = { how: null, open: null, want: null, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
+const SC = { scrollY: null, how: null, open: null, want: null, backing: false, backTimer: 0, closeTimer: 0, fadeTimer: 0, flipTimer: 0, anim: null, token: 0 };
 const motionMs = (k) => (reduceMQ.matches ? 0 : typeof k === "number" ? k : MOTION[k]);
 const sceneHooks = [];
 const sceneState = (on) => sceneHooks.forEach((f) => { try { f(on); } catch (e) { console.error(e); } });
@@ -1604,6 +1622,9 @@ function dropPanel(p) { const st = p.style; if (st.position) { st.position = "";
 function later(f, ms = 200) { KIT.deferred = (KIT.deferred || 0) + 1; const idle = () => (typeof requestIdleCallback === "function" ? requestIdleCallback(f, { timeout: ms }) : setTimeout(f, 0)); if (typeof requestAnimationFrame === "function") requestAnimationFrame(idle); else idle(); }
 let TOUCHED = -1e9; addEventListener("pointerdown", (e) => { if (e.isTrusted) TOUCHED = performance.now(); }, { capture: true, passive: true });
 const hap = (n) => { try { if (window.BoardHaptics && performance.now() - TOUCHED < 1500) window.BoardHaptics.fire(n); } catch (e) {} };
+/* Slice 3: the tile whose scene is open carries .is-open (css/open-return.css dims its siblings to tier 3); the wall scroll is kept across an open and restored on close. */
+const openTile = (key) => { document.querySelectorAll("#wall > li.is-open").forEach((l) => l.classList.remove("is-open")); const t = key && tileOf(key), li = t && t.closest && t.closest("#wall > li"); if (li) li.classList.add("is-open"); };
+const restoreScroll = () => { const y = SC.scrollY; if (y == null) return; scrollTo(0, y); requestAnimationFrame(() => { if (SC.scrollY === y) scrollTo(0, y); }); };
 const TILES = new Map(), tileOf = (key) => { let t = TILES.get(key); if (!t || !t.isConnected) { t = document.querySelector(`#board [data-scene="${key}"]`); if (t) TILES.set(key, t); } return t; };
 const PREPPED = new Set(), byId = (id) => $(`#${id}`);
 function prepare(key) { if (PREPPED.has(key) || !$(`#panel-${key}`)) return; PREPPED.add(key); if (key === "timeline" && D.timeline) renderTimeline(); }
@@ -1618,7 +1639,7 @@ function selectPanel(key, crossFade) {
   MEM.set("depth", key === "tonight" ? "tonight" : key === "library" ? "library" : "wall");
   MEM.seen(key);
   markDepth();
-  const prev = SC.open; SC.open = key;
+  const prev = SC.open; SC.open = key; openTile(key);
   $("#sheet-title").textContent = TITLES[key];
   setPageTitle(key);
   $("#sheet-sub").textContent = SUBTITLE[key] || "";
@@ -1818,52 +1839,20 @@ function placeOrnament(key) {
   mark(document.querySelector(".hero-art img"), (document.querySelector(".hero-art img") || {}).currentSrc || "img/tavern-hero.jpg");
 })();
 const WEBKIT_ENGINE = typeof navigator !== "undefined" && /AppleWebKit\//.test(navigator.userAgent || "") && !/(Chrome|Chromium|Edg|HeadlessChrome)\//.test(navigator.userAgent || "");
-const hasVT = () => typeof document.startViewTransition === "function" && !WEBKIT_ENGINE;
-const canFlip = () => typeof $(".sheet").animate === "function";
-function morphBand(key) {
-  if (reduceMQ.matches) return null;
-  const t = tileOf(key);
-  if (!t) return null;
-  const seen = () => { const r = t.getBoundingClientRect(); return r.width > 0 && r.bottom > 0 && r.top < innerHeight; };
-  if (!seen() && hasVT() && t.scrollIntoView) { try { t.scrollIntoView({ block: "nearest" }); } catch (e) {} }
-  return seen() ? t : null;
-}
-const VTX = [];
-function viewMorph(from, to, update, closing, from2, to2) {
-  const layer = $("#scene"), root = document.documentElement;
-  const nm = (a, b, v) => { if (a) a.style.viewTransitionName = v; if (b) b.style.viewTransitionName = v; };
-  const clear = () => { nm(from, to, ""); nm(from2, to2, ""); VTX.splice(0).forEach((e) => { e.style.viewTransitionName = ""; }); layer.classList.remove("morph"); root.classList.remove("vt-close"); };
-  layer.classList.add("morph"); root.classList.toggle("vt-close", !!closing);
-  from.style.viewTransitionName = "scene-band"; if (from2) from2.style.viewTransitionName = "scene-head";
-  try {
-    const vt = document.startViewTransition(() => { nm(from, null, ""); nm(from2, null, ""); if (update()) { nm(null, to, "scene-band"); nm(null, to2, "scene-head"); } });
-    vt.finished.then(clear, clear);
-    if (vt.ready && vt.ready.catch) vt.ready.catch(() => {});
-    if (vt.updateCallbackDone && vt.updateCallbackDone.catch) vt.updateCallbackDone.catch(() => {});
-  } catch (e) { clear(); update(); }
-}
-function stopFlip() { clearTimeout(SC.flipTimer); if (SC.anim2) { try { SC.anim2.cancel(); } catch (e) {} SC.anim2 = null; } if (SC.anim) { try { SC.anim.cancel(); } catch (e) {} SC.anim = null; } }
-function flipSheet(band, opening, done) {
-  const layer = $("#scene"), sheet = $(".sheet");
-  stopFlip();
-  const a = band.getBoundingClientRect(), b = sheet.getBoundingClientRect();
-  if (!a.width || !b.width || !b.height) return false;
-  const from = `translate(${(a.left - b.left).toFixed(1)}px, ${(a.top - b.top).toFixed(1)}px) scale(${(a.width / b.width).toFixed(4)}, ${(a.height / b.height).toFixed(4)})`;
-  const kf = [{ transform: from }, { transform: "none" }];
-  layer.classList.add("flip");
-  let an = null, ended = false;
-  const end = () => { if (ended) return; ended = true; clearTimeout(SC.flipTimer); if (opening) { layer.classList.remove("flip"); if (SC.anim === an) stopFlip(); } if (done) done(); };
-  try {
-    const dur = opening ? MOTION.move : MOTION.close, fill = opening ? "backwards" : "forwards";
-    an = sheet.animate(opening ? kf : kf.reverse(), { duration: dur, easing: opening ? MOTION.oak : MOTION.shut, fill });
-    SC.anim2 = sheet.animate(opening ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 1 }, { opacity: 0 }], { duration: dur, easing: MOTION.fade, fill });
-  }
-  catch (e) { layer.classList.remove("flip"); return false; }
-  SC.anim = an;
-  if (an && an.finished) an.finished.then(end, end);
-  SC.flipTimer = setTimeout(end, (opening ? MOTION.move : MOTION.close) + 120);
-  return true;
-}
+/* Slice 3: scene open and close are a small state machine (js/scene-fsm.js: closed, opening, open, closing) driven by plain CSS animations (.rise opens, .closing closes), with a hard watchdog at 1.5 x the
+   transition that always forces the end state. The View Transitions API and the interruptible FLIP choreography were removed: on a slow or headless engine they could leave the scene shown with the board inert.
+   The effects below do the visual work (layer, classes, focus, scroll, inert); the machine decides when and guarantees an end. A glided close (browser back, a landing) resets the machine directly. */
+const sceneFSM = (window.SceneFSM || { create: () => null }).create({
+  openMs: MOTION.move, closeMs: MOTION.close,
+  instant: () => reduceMQ.matches,
+  effects: {
+    enter: (st, c) => { if (st === "opening" && c && c.enter) c.got = c.enter(); },
+    settled: (st, info) => { if (st === "closed") { if (info.ctx && info.ctx.finish) info.ctx.finish(); } else { const L = $("#scene"); if (L) L.classList.remove("lift"); } },
+  },
+  onError: (n, e) => console.error("scene", n, e),
+}) || { /* scene-fsm.js did not load: the old behaviour, a timer, so the board still opens and closes */
+  state: "closed", open(c) { this.state = "open"; c.got = c.enter(); return "open"; }, close(c) { this.state = "closed"; setTimeout(c.finish, motionMs("close")); return "closing"; }, transitionEnd() {}, reset() { this.state = "closed"; },
+};
 function flipPut(el, f, y) {
   if (f && f.getBoundingClientRect) f = f.getBoundingClientRect();
   else if (!f) { const b = $("#bottombar"), c = b && b.getBoundingClientRect(); if (c && c.width > 0) f = { left: c.left + c.width / 2 - 24, top: c.top + c.height / 2 - 24, width: 48, height: 48 }; }
@@ -1900,7 +1889,6 @@ function showScene(key) {
   if (SC.want) { SC.want = key; return; }
   clearTimeout(SC.closeTimer); SC.token++;
   const wasOpen = !layer.hidden && !layer.classList.contains("closing") && SC.open !== null;
-  if (SC.anim) { stopFlip(); layer.classList.remove("flip"); }
   layer.classList.remove("closing");
   if (wasOpen) { if (SC.open !== key) { selectPanel(key, true); hap("select"); if (document.activeElement && document.activeElement.closest("#tabs")) focusScene(key); } landing(key); lap(); return; }
   const open = (k, how) => {
@@ -1911,25 +1899,19 @@ function showScene(key) {
     $("#board").inert = true;
     document.documentElement.classList.add("scene-open");
     selectPanel(k, false);
-    focusScene(k);
-    const refocus = () => { if (SC.open === k && (!document.activeElement || document.activeElement === document.body)) focusScene(k); };
+    focusHeading(k);
+    const refocus = () => { if (SC.open === k && (!document.activeElement || document.activeElement === document.body)) focusHeading(k); };
     requestAnimationFrame(() => setTimeout(refocus, 60)); if (document.readyState !== "complete") addEventListener("load", () => setTimeout(refocus, 30), { once: true });
     sceneState(true);
     sfx("open", { delay: motionMs("move") * 0.7 }); hap("select");
     if (!reduceMQ.matches) { layer.classList.add("lift"); setTimeout(() => layer.classList.remove("lift"), 320); }
     return landing(k);
   };
-  const band = layer.hidden ? morphBand(key) : null;
+  if (SC.open === null) SC.scrollY = Math.round(window.scrollY || 0); /* a fresh open (the layer may be hidden, warming or still closing): remember the wall scroll */
   const fl = !reduceMQ.matches && SC.land && SC.land.key === key && SC.land.from && document.contains(SC.land.from) ? SC.land.from : null;
-  if (band && hasVT()) {
-    SC.want = key;
-    if (fl) { fl.style.viewTransitionName = "land-flight"; VTX.push(fl); }
-    viewMorph(band, $(".sheet"), () => { const k = SC.want; SC.want = null; if (!k) return false; const got = open(k, ""); lap(); if (fl) fl.style.viewTransitionName = ""; if (got && fl) { got.style.viewTransitionName = "land-flight"; VTX.push(got); } return true; }, false, band.querySelector(".tile-band"), $(".sheet-head"));
-    return;
-  }
-  if (band && canFlip()) { const got = open(key, ""); if (!flipSheet(band, true)) layer.classList.add("rise"); if (got && fl) KIT.emit("fly", fl, got); lap(); return; }
-  const got = open(key, reduceMQ.matches ? "fade" : "rise");
-  if (got && fl) KIT.emit("fly", fl, got);
+  const ctx = { key, got: null, enter: () => open(key, reduceMQ.matches ? "fade" : "rise") };
+  sceneFSM.open(ctx);
+  if (ctx.got && fl) KIT.emit("fly", fl, ctx.got);
   lap();
 }
 function landing(k) {
@@ -1940,12 +1922,18 @@ function landing(k) {
 }
 const tileFocus = (t) => {
   let f = t.matches("a, button, main") ? t : t.querySelector("a[href]");
-  if (f && f.getClientRects && !f.getClientRects().length) f = $("#main");
-  if (!f) f = $("#main");
+  const main = $("#main"), t0 = performance.now(), LIMIT = 1500; /* retries are bounded by time, not by frame count: a throttled or backgrounded tab runs few frames */
+  const lost = () => { const a = document.activeElement; return !a || a === document.body || !!a.closest("#scene"); }; /* focus is nowhere useful: on <body> or inside the closing scene layer */
+  if (f && f.getClientRects && !f.getClientRects().length) { /* no box yet (the board is still settling after a close, seen with reduced motion where the close is instant): main for now, the tile as soon as it has one */
+    const want = f; f = main;
+    const later = () => { const a = document.activeElement; if (!want.isConnected || (a && a !== document.body && a !== f && !a.closest("#scene"))) return; if (want.getClientRects().length) { want.focus({ preventScroll: true }); if (document.activeElement === want) return; } if (performance.now() - t0 < LIMIT) requestAnimationFrame(later); };
+    requestAnimationFrame(later);
+  }
+  if (!f) f = main;
   if (!f) return;
   f.focus({ preventScroll: true });
-  /* closing the first-visit card with Escape: the page is still settling when this runs, the call is ignored, the scene layer then hides and focus drops to <body>. Try again on the next frames while focus is still on <body> or inside the closing scene layer, and never take it from anything else. */
-  if (document.activeElement !== f) { let n = 0; const again = () => { const a = document.activeElement; if ((a && a !== document.body && !a.closest("#scene")) || !f.isConnected) return; f.focus({ preventScroll: true }); if (document.activeElement !== f && ++n < 40) requestAnimationFrame(again); }; requestAnimationFrame(again); }
+  /* closing the first-visit card with Escape: the page is still settling when this runs, the call is ignored, the scene layer then hides and focus drops to <body>. Try again on the next frames while focus is still on <body> or inside the closing scene layer, and never take it from anything else. When the target still cannot take focus, fall back to the main landmark so focus never stays on <body>. */
+  if (document.activeElement !== f) { const again = () => { if (!lost() || !f.isConnected) return; f.focus({ preventScroll: true }); if (document.activeElement === f) return; if (performance.now() - t0 < LIMIT) requestAnimationFrame(again); else if (main && main !== f && lost()) main.focus({ preventScroll: true }); }; requestAnimationFrame(again); }
 };
 function hideScene(o) {
   o = o || SC.how; SC.how = null; const glided = !!(o && o.glided);
@@ -1958,25 +1946,20 @@ function hideScene(o) {
   setPageTitle(null);
   KIT.emit("closed", key);
   const tile = tileOf(key) || document.querySelector(`#board a[href="#${key}"]`) || $("#main");
-  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); sceneState(false); sfx("close", { delay: glided ? 0 : motionMs("close") * 0.9 }); unflip(); };
+  const unlock = () => { $("#board").inert = false; document.documentElement.classList.remove("scene-open"); openTile(null); restoreScroll(); sceneState(false); sfx("close", { delay: glided ? 0 : motionMs("close") * 0.9 }); unflip(); };
   const finish = () => {
     if (token !== SC.token) return;
-    clearTimeout(SC.closeTimer); stopFlip();
-    layer.hidden = true; layer.classList.remove("closing", "flip", "rise", "fade");
+    clearTimeout(SC.closeTimer);
+    layer.hidden = true; layer.classList.remove("closing", "flip", "rise", "fade"); restoreScroll();
     for (const k of SCENES) { const p = $(`#panel-${k}`); p.hidden = true; p.classList.remove("entering", "leaving"); }
   };
-  if (glided) { unlock(); finish(); if (tile) tileFocus(tile); return; }
+  if (glided) { unlock(); finish(); sceneFSM.reset(); if (tile) tileFocus(tile); return; }
   if (!(o && o.key)) hap("select");
-  const band = morphBand(key);
-  if (band && hasVT()) {
-    viewMorph($(".sheet"), band, () => { if (token !== SC.token) return false; unlock(); finish(); if (tile) tileFocus(tile); return true; }, true, $(".sheet-head"), band.querySelector(".tile-band"));
-    return;
-  }
   unlock();
   layer.classList.remove("rise");
   layer.classList.add("closing");
   clearTimeout(SC.closeTimer);
-  if (!(band && canFlip() && flipSheet(band, false, finish))) SC.closeTimer = setTimeout(finish, reduceMQ.matches ? MOTION.micro : motionMs("close"));
+  sceneFSM.close({ finish });
   if (tile) tileFocus(tile);
 }
 function unflip() { document.querySelectorAll("#cards .card.flipped").forEach((c) => { c.classList.remove("flipped"); c.querySelectorAll(".flip").forEach((b) => b.setAttribute("aria-pressed", "false")); const f = c.querySelector(".front"), b = c.querySelector(".back"); if (f) f.inert = false; if (b) b.inert = true; }); }
@@ -1995,9 +1978,13 @@ function startPeek() {
   sceneHooks.push((open) => { if (!open) off(); });
 }
 function requestClose(o) {
-  if (SC.open === null) return;
+  if (SC.open === null && !SC.want) return;
   const opt = o && (o.glided || o.key) ? o : null;
-  if (history.state && history.state.pushed) { SC.how = opt; history.back(); return; }
+  if (history.state && history.state.pushed) {
+    if (SC.backing) return; /* a close is already on its way (key repeat, Escape plus a Back tap): a second history.back() would leave the page */
+    SC.backing = true; clearTimeout(SC.backTimer); SC.backTimer = setTimeout(() => { SC.backing = false; }, 800); /* safety: the flag can never stick */
+    SC.how = opt; history.back(); return;
+  }
   setHash(null, false); hideScene(opt);
 }
 function switchTab(key, crossFade = true) {
@@ -2005,6 +1992,8 @@ function switchTab(key, crossFade = true) {
   if (key === SC.open) return; setHash(key, false); selectPanel(key, crossFade); swiped();
   if (!o.quiet) hap("select");
 }
+/* Slice 3: a scene opened from the wall puts focus on its heading (the name of where you now are); Tab then reaches the controls, arrows step the tabs. A tab change keeps focus on the tab (focusScene). */
+function focusHeading(k) { const t = $("#sheet-title"); if (t && t.getClientRects().length) { t.tabIndex = -1; t.focus({ preventScroll: true }); if (document.activeElement === t) return; } focusScene(k); }
 function focusScene(k) { const t = $(`#tab-${k}`); if (t && t.getClientRects().length) t.focus({ preventScroll: true }); else { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
 function stepTab(d) { const i = SCENES.indexOf(SC.open); if (i < 0) return; const k = SCENES[(i + d + SCENES.length) % SCENES.length]; switchTab(k); focusScene(k); if (document.activeElement === document.body) { const p = $(`#panel-${k}`); if (p) p.focus({ preventScroll: true }); } }
 function goScene(k) {
@@ -2014,7 +2003,12 @@ function goScene(k) {
 
 const FOCUSABLE = "a[href], button, input, select, textarea, summary, [tabindex]";
 function shown(el) {
-  for (let n = el; n && n.nodeType === 1; n = n.parentNode) if (n.hidden || n.inert) return false;
+  for (let n = el; n && n.nodeType === 1; n = n.parentNode) {
+    if (n.hidden || n.inert) return false;
+    // content of a closed <details> is not focusable (only its first <summary> is), though Chromium still reports client rects for it
+    const d = n.parentNode;
+    if (d && d.nodeType === 1 && d.tagName === "DETAILS" && !d.open && n !== d.querySelector(":scope > summary")) return false;
+  }
   return !el.getClientRects || el.getClientRects().length > 0;
 }
 const focusables = (box) => [...box.querySelectorAll(FOCUSABLE)].filter((el) => !el.disabled && el.getAttribute("tabindex") !== "-1" && shown(el));
@@ -2025,7 +2019,8 @@ function trapFocus(e) {
   const list = [...new Set([...sceneFocus(), ...senseBox().flatMap((n) => (n.matches(FOCUSABLE) ? (shown(n) ? [n] : []) : focusables(n)))])];
   e.preventDefault(); if (!list.length) return;
   const i = list.indexOf(document.activeElement), n = list.length;
-  list[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n].focus();
+  // a candidate that refuses focus (hidden since the list was built) is skipped, so Tab never stalls on one element
+  for (let k = 0, at = i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? n - 1 : 1)) % n; k < n; k++, at = (at + (e.shiftKey ? n - 1 : 1)) % n) { list[at].focus(); if (document.activeElement === list[at]) return; }
 }
 
 function showKeys(on) {
@@ -2044,7 +2039,7 @@ function onKey(e) {
     if (!$("#keys").hidden) { e.preventDefault(); showKeys(false); sfx("esc"); return; }
     if (closeMore()) { e.preventDefault(); sfx("esc"); return; }
     if (SC.open === "library" && LIBUI.escape()) { e.preventDefault(); return; }
-    if (SC.open !== null) { e.preventDefault(); requestClose({ key: true }); }
+    if (SC.open !== null || SC.want) { e.preventDefault(); requestClose({ key: true }); } /* Slice 3: SC.want is an open that has been asked for and has not shown yet (the View Transition is still capturing): Esc cancels it */
     return;
   }
   if (e.key === "Tab") { if (SC.open !== null) trapFocus(e); return; }
@@ -2063,7 +2058,7 @@ function route() {
   const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
   if (/^dates(?:\.|$)/.test(raw)) { try { history.replaceState(history.state, "", `${location.pathname}${location.search}#${raw.replace(/^dates/, "timeline")}`); } catch (e) { return; } return route(); }
   const tm = raw.match(/^tonight\.([a-z0-9-]{1,40})$/); if (tm && MEM.setMe(tm[1]) && D.party) { renderTonight(); markMe(); }
-  if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
+  if (raw === "wall") { MEM.set("depth", "wall"); try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch (e) {} SC.scrollY = null; scrollTo(0, 0); if (document.readyState !== "complete") addEventListener("load", () => scrollTo(0, 0), { once: true }); }
   const key = sceneFromHash();
   if (key && !(history.state && history.state.pushed)) { const url = location.pathname + location.search + location.hash; try { history.replaceState(null, "", location.pathname + location.search); history.pushState({ boardScene: key, pushed: true }, "", url); } catch (e) {} }
   const lm = key && key !== "library" && key !== "tonight" && !/^atlas(?:\.|$)/.test(raw) ? raw.match(/^([a-z]+)\.([a-z0-9_-]{1,40})$/) : null;
@@ -2071,6 +2066,7 @@ function route() {
   if (key) { showScene(key); if (key === "library") LIBUI.fromHash(); } else hideScene();
 }
 function startScenes() {
+  { const sh = $(".sheet"); if (sh) sh.addEventListener("animationend", (e) => { if (e.target === sh && /^(sheet-in|sheet-out|v14-unfold|fade-in|fade-out|nx-fade|nx-fade-out)$/.test(e.animationName)) sceneFSM.transitionEnd(); }); }
   $("#board").addEventListener("click", (e) => {
     if (e.target.closest && e.target.closest(".tile-search, .gl, .gl-def")) return;
     const a = e.target.closest && e.target.closest("[data-scene]");
@@ -2102,6 +2098,7 @@ function startScenes() {
     if (SC.open === null || !e.target || $("#scene").contains(e.target) || $("#keys").contains(e.target) || ($("#roster") && $("#roster").contains(e.target)) || senseBox().some((n) => n.contains(e.target))) return;
     const first = sceneFocus()[0]; if (first) first.focus();
   });
+  addEventListener("popstate", () => { SC.backing = false; clearTimeout(SC.backTimer); });
   addEventListener("popstate", route);
   addEventListener("hashchange", route);
   $("#view-wheel").addEventListener("click", () => setBuffView("wheel"));
@@ -2406,7 +2403,7 @@ function tiltReady() {
   if (window.screen && window.screen.orientation && window.screen.orientation.addEventListener) window.screen.orientation.addEventListener("change", () => { TILT.b0 = TILT.g0 = null; });
   const linkTilt = () => {
     const BT = window.BoardTilt; if (!BT || TILT.linked) return; TILT.linked = true;
-    BT.on(({ x, y }) => { LB.tilt = !!BT.status().on; if (LB.tilt) aimAt(innerWidth * (0.5 + 0.5 * x), innerHeight * (0.5 + 0.5 * y)); });
+    BT.on(({ x, y }) => { const was = LB.tilt; LB.tilt = !!BT.status().on; if (was !== LB.tilt) { tiltLabel(LB.tilt); if (!LB.tilt) { LB.tx = LB.ty = null; } } if (LB.tilt) aimAt(innerWidth * (0.5 + 0.5 * x), innerHeight * (0.5 + 0.5 * y)); });
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", linkTilt); else linkTilt();
   tilt.addEventListener("click", async () => {
@@ -2672,9 +2669,8 @@ function libCat(key) {
 }
 function renderLibTile() {
   const ix = LIBD.index; if (!ix) return;
-  const T = ix.totals, c = ix.changes[0], box = $("#ts-library-new");
-  fill("library", minis([[nf.format(T.pages), "pages"], [nf.format(T.facts), "facts"], [nf.format(T.blizzard), "from Blizzard"], [nf.format(T.open), "open questions"]]));
-  if (box) box.replaceChildren(...(c && ix.changes.length >= 3 ? [h("small", { text: `Newest change, ${libDay(c.date)}` }), h("span", { text: wholeClause(`${libTitle(c.page)}: ${c.text}`, 64) })] : [h("small", { text: "Changes" }), h("span", { class: "clamp", text: libQuiet(ix) })]));
+  /* Slice 1: the table carries one line and the search box; the totals and the newest change live inside the Library scene (lib-head). */
+  fill("library", h("span", { class: "tile-line", text: "Find an answer." }));
 }
 const libQuiet = (ix) => `No numbers have changed since ${libDay(ix.changes_since)}; ${plural(ix.rechecks, "recheck", "rechecks")} confirmed them.`;
 function libPrefetch() { libIndex().catch(() => fill("library", h("span", { class: "tile-line", text: "The library did not load." }))); }
@@ -2714,14 +2710,18 @@ const copyChip = (label, text, done) => h("button", { class: "copy", type: "butt
 const linkChip = (v) => { const l = libLink(v); return copyChip(v.kind === "page" ? "Copy link to this page" : v.kind === "results" ? "Copy link to this search" : "Copy link", l.text, l.framed ? "Copied the link token: add it after the board's address." : "Link copied."); };
 const askChip = (q, label) => copyChip(label || "Ask Leeroy", `/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.");
 
-function libCore() { if (!LIBS.coreP) LIBS.coreP = import("../vendor/rank-core.js?v=16d8a1283e").then((m) => (LIBS.core = m)).catch(() => null); return LIBS.coreP; }
+function libCore() {
+  /* ready only when BOTH the ranker and the slice-7 lead helper have settled; a helper that fails to load is null and the list keeps plain rank order */
+  if (!LIBS.coreP) LIBS.coreP = Promise.all([import("../vendor/rank-core.js?v=16d8a1283e").catch(() => null), import("./library-search.js?v=5a42177630").catch(() => null)]).then(([core, lsm]) => { LIBS.lsm = lsm; LIBS.core = core; if (lsm && LIBS.view && LIBS.view.kind === "results" && LIBS.ready && LIBS.via === "page") libPending(); return core; });
+  return LIBS.coreP;
+}
 function libStart() {
   if (LIBS.state !== "idle") return;
   LIBS.state = "loading";
   libCore();
   libTips();
   let w = null;
-  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=1b6776e15d", { type: "module" }); } catch (e) { w = null; }
+  try { if (typeof Worker === "function") w = new Worker("vendor/library-worker.js?v=dffa5944b5", { type: "module" }); } catch (e) { w = null; }
   if (!w) { libFallback("no worker"); return; }
   LIBS.worker = w; LIBS.via = "worker";
   const timer = setTimeout(() => { if (!LIBS.ready) libFallback("worker timeout"); }, 8000);
@@ -2759,7 +2759,8 @@ function libSearch(q, keepView) {
   const id = ++LIBS.req;
   if (LIBS.via === "worker" && LIBS.worker) { LIBS.worker.postMessage({ id, q: t, cap: 400, full: LIB_CAP, cat: LIBS.cat }); return; }
   const t0 = performance.now();
-  const { words, hits } = LIBS.core.rank(t, LIBS.all, { hays: LIBS.hays });
+  const { words, hits: ranked } = LIBS.core.rank(t, LIBS.all, { hays: LIBS.hays });
+  const hits = LIBS.lsm ? LIBS.lsm.leadWithNamedPages(ranked, t, LIBS.all) : ranked;
   libResults({ id, q: t, words, total: hits.length, ms: Math.round((performance.now() - t0) * 10) / 10, hits: hits.slice(0, 400).map((x) => ({ score: x.score, page: x.page, title: x.p.title, category: x.p.category, key: x.key, value: x.value, open: x.open, refs: x.f ? x.f.refs : [] })) });
 }
 function libResults(m) {
@@ -2866,6 +2867,7 @@ function libRender(fresh) {
   libRenderRail();
   const v = LIBS.view, count = $("#lib-count");
   $("#panel-library").dataset.view = v.kind;
+  { const live = v.kind !== "shelf" || !!LIBS.cat, pl = $("#panel-library"), cols = pl.querySelector(".lib-cols"); pl.classList.toggle("lib-live", live); if (live && cols) cols.classList.remove("jr-fold"); } /* slice 7: a search or a page in view unfolds the results for a guided visitor */
   if (count && v.kind !== "results") count.textContent = "";
   if (!LIBD.index) { if (LIBS.state === "failed") BF.fail(main, "the library", libRetry); else main.replaceChildren(h("p", { class: "loading", text: "Opening the stacks." })); return; }
   if (v.kind === "page") { libRenderPage(v, tok, fresh); return; }
@@ -2884,13 +2886,14 @@ function libRenderShelf(main) {
   };
   const seen = MEM.seenMap(), isNewPage = (p) => { const t = seen[`page:${p.id}`], d = p.checked || p.as_of; return !!t && !!d && Date.parse(`${d}T23:59:59Z`) > t; };
   const kids = [];
-  if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids); return; }
+  if (LIBS.cat) { kids.push(h("h3", { class: "lib-title", text: libCatTitle(LIBS.cat) }), LIBS.cat === "professions" ? libToolRow() : null, h("div", { class: "shelf" }, cats.map(card))); main.replaceChildren(...kids.filter(Boolean)); return; }
   if (libExpert()) kids.push(libRibbon(null));
   kids.push(wideLib() ? null : h("h3", { class: "lib-title catrows-h", text: "The shelves" }),
     wideLib() ? null : h("div", { class: "catrows" }, ix.categories.map((c) => h("a", { class: "catrow", href: `#${libTok({ kind: "shelf", cat: c.key })}`, "data-lv": libTok({ kind: "shelf", cat: c.key }) },
       h("b", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")} · ${nf.format(c.facts)} facts` })))),
     h("details", { class: "allshelf" }, h("summary", { text: `Every page, shelf by shelf (${nf.format(ix.pages.length)})` }), h("div", { class: "shelf" }, cats.map(card))),
     libDoors(),
+    libToolRow(),
     h("details", { class: "allshelf" }, h("summary", { text: "The front page: what changed, what nobody knows, what Blizzard said" }), libFront(wideLib() ? 2 : 8)));
   main.replaceChildren(...kids.filter(Boolean));
 }
@@ -2904,7 +2907,7 @@ function libRenderResults(main) {
   const hits = LIBS.res.hits.filter((x) => !LIBS.cat || x.category === LIBS.cat);
   const pages = new Map();
   for (const x of hits) { if (!pages.has(x.page)) pages.set(x.page, { id: x.page, title: x.title, category: x.category, hits: [] }); pages.get(x.page).hits.push(x); }
-  if (count) count.textContent = hits.length ? (hits.length > 1 ? `Best answer first, then ${plural(hits.length - 1, "more line", "more lines")} from ${plural(pages.size, "page", "pages")}.` : "One answer.") : "No match";
+  if (count) count.textContent = hits.length ? (hits.length > 1 ? `Best answer first, then ${plural(hits.length - 1, "more line", "more lines")} from ${plural(pages.size, "page", "pages")}.` : "One answer.") : "The Library does not cover that.";
   $("#panel-library").dataset.view = hits.length ? "results" : "zero";
   if (LIBS.lastQ !== v.q) { LIBS.lastQ = v.q; const sb = $("#sheet-body"); if (sb) sb.scrollTop = 0; }
   if (!hits.length) { main.replaceChildren(libZero(v.q)); return; }
@@ -3032,19 +3035,26 @@ function libNearest(q, n = 5) {
   });
   return scored.filter((x) => x.sc >= 0.42).sort((a, b) => b.sc - a.sc).slice(0, n).map((x) => x.p);
 }
+/* the Leeroy scene opens by its link; the ask box is built by js/ask.js at load, so it exists by the time anyone clicks: put the question in it */
+function libAskDraft(text) {
+  const t = $("#ask-text");
+  if (t && !t.value) { t.value = text; t.dispatchEvent(new Event("input", { bubbles: true })); }
+}
 function libZero(q) {
-  const near = libNearest(q);
-  const card = h("div", { class: "lib-empty" },
-    h("h3", { class: "lib-title", text: `Nothing on the shelves for "${q.length > 60 ? `${q.slice(0, 57).trim()}...` : q}"` }),
-    near.length ? h("p", { text: "Pages with a similar name:" }) : null,
-    near.length ? h("ul", { class: "hits" }, near.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: libCatTitle(p.category) })])))) : null,
-    h("p", { text: "Leeroy can look it up. The button copies the question as a Discord command." }),
-    h("div", { class: "lib-row" }, h("button", { class: "lib-btn strong", type: "button", onclick: () => libCopy(`/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.") }, "Ask Leeroy"), linkChip(LIBS.view)));
+  const E = LIBS.lsm ? LIBS.lsm.emptyState(q, libNearest(q)) : { headline: "The Library does not cover that.", detail: `Nothing on the shelves matches "${q}".`, near: [], nearLead: "", askLabel: "Ask Leeroy", askNote: "", askHref: "#librarian", askDraft: String(q).slice(0, 500) };
+  const askGo = h("a", { class: "lib-btn strong lib-ask-go", href: E.askHref, onclick: () => libAskDraft(E.askDraft) }, E.askLabel);
+  const card = h("div", { class: "lib-empty", role: "status" },
+    h("h3", { class: "lib-title", text: E.headline }),
+    h("p", { class: "lib-empty-q", text: E.detail }),
+    E.near.length ? h("p", { text: E.nearLead }) : null,
+    E.near.length ? h("ul", { class: "hits" }, E.near.map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: libCatTitle(p.category) })])))) : null,
+    E.askNote ? h("p", { text: E.askNote }) : null,
+    h("div", { class: "lib-row" }, askGo, h("button", { class: "lib-btn", type: "button", onclick: () => libCopy(`/ask ${q}`, "Copied the /ask line: paste it in #wow-forever.") }, "Copy as a Discord command"), linkChip(LIBS.view)));
   const ix = LIBD.index;
   const shelf = h("div", { class: "shelf" }, ix.categories.map((c) => h("section", { class: "scroll", "aria-label": c.title },
     h("div", { class: "scroll-end" }, h("h3", { text: c.title }), h("span", { text: `${plural(c.pages, "page", "pages")}, ${plural(c.facts, "fact", "facts")}` })),
     h("ul", {}, ix.pages.filter((p) => p.category === c.key).map((p) => h("li", {}, pageLink(p.id, "plink", [p.title, h("small", { text: nf.format(p.facts) })])))))));
-  return h("div", { class: "lib-zero" }, card, h("h3", { class: "lib-title", text: near.length ? "Or browse a shelf" : "Browse a shelf instead" }), shelf);
+  return h("div", { class: "lib-zero" }, card, h("details", { class: "allshelf" }, h("summary", { text: E.near.length ? "Or browse a shelf" : "Browse a shelf instead" }), shelf));
 }
 async function libRenderPage(v, tok, fresh) {
   const main = $("#lib-main"), head = LIBD.head[v.id];
@@ -3076,6 +3086,7 @@ async function libRenderPage(v, tok, fresh) {
       h("div", { class: "lib-row" }, linkChip(v), askChip(p.title, `Ask Leeroy about ${p.title}`))),
     xp && (p.category === "classes" || p.category === "races") ? libRibbon(p) : null,
     p.blurb ? h("p", { class: "blurb", text: p.blurb }) : null,
+    p.category === "professions" ? libToolRow() : null,
     h("h4", { class: "lib-h", text: "Facts" }), facts,
     p.open.length ? h("div", { class: "unknown" }, h("h4", {}, emb("question", "pend"), "Nobody knows yet"), h("ul", {}, p.open.map((o) => h("li", {}, ...richText(o))))) : null,
     p.related.length ? h("div", {}, h("h4", { class: "lib-h", text: "Related" }), h("div", { class: "ptabs" }, p.related.filter((id) => LIBD.head[id]).map((id) => pageLink(id, "ptab", libTitle(id))))) : null,
@@ -3324,6 +3335,12 @@ const changeLi = (c) => {
   return h("li", {}, h("time", { datetime: c.date, text: libDay(c.date) }), h("span", { class: "chg-box" }, body,
     long ? h("button", { class: "chg-more", type: "button", "aria-expanded": "false", "aria-label": `More: read the whole change on ${libTitle(c.page)}`, onclick: (e) => { const on = body.classList.toggle("clamp"), t = e.currentTarget; t.setAttribute("aria-expanded", String(!on)); t.textContent = on ? "More" : "Less"; t.setAttribute("aria-label", `${t.textContent}: ${on ? "read the whole change" : "show less of the change"} on ${libTitle(c.page)}`); } }, "More") : null));
 };
+const PRO_TOOL_URL = "https://wowforevertools.com/professions";
+function libToolRow() { /* a link out, never an embed: the site refuses framing. Nothing from it is copied or stored. */
+  return h("p", { class: "pro-tool" }, "Recipes, trainers and camping for every profession: ",
+    h("a", { class: "pro-tool-a", href: PRO_TOOL_URL, target: "_blank", rel: "noopener noreferrer", "aria-label": "WoW Forever Tools, a community site, opens in a new tab" }, "WoW Forever Tools"),
+    " (community site, opens in a new tab). Built from the beta client; Blizzard may change recipes before launch.");
+}
 function libDoors() {
   const ix = LIBD.index, T = ix.totals;
   const door = (tok, b, rest) => h("a", { class: "lib-door", href: `#${tok}`, "data-lv": tok }, h("b", { text: b }), h("span", { text: rest }));
@@ -3449,6 +3466,27 @@ function yourTime(T) {
   const mine = f(), et = f("America/New_York");
   return mine === et ? "" : ` (${mine} your time)`;
 }
+/* Launch night is a dated past event once its epoch passes: the board says so and points at the next dated event in the timeline data. */
+/* timeline.json events carry an epoch but no `when` text (tonight.json events do): fill it so "Launch night was undefined" cannot reach a page */
+function withWhen(e) { return e && !e.when && e.epoch ? { ...e, when: fmtWhen(e.epoch) } : e; }
+function launchEvent() { return withWhen((D.timeline && D.timeline.events && D.timeline.events.find((x) => x.key === "launch")) || null); }
+function launchPast() { const e = launchEvent(); return !!(e && e.epoch && Date.now() / 1000 >= e.epoch); }
+/* After launch the board talks in past tense and drops the pre-launch checklists. Pure: takes the event and the clock so tests can fake both sides of launch. */
+function launchSay(e, nowS) { if (!e || !e.epoch) return ""; const now = nowS === undefined ? Date.now() / 1000 : nowS; return now >= e.epoch ? `Launched ${fmtWhen(e.epoch, { time: false })}, ${relWhen(e.epoch, now)}.` : `Launch is ${relWhen(e.epoch, now)}, ${fmtWhen(e.epoch)}.`; }
+/* The "Names" line comes from the names_open event (data/timeline.json carries until/until_zone, tonight.json open_when). Closed window: no line. */
+function namesLine(ev, tl, nowS) {
+  if (!ev || !ev.until_epoch || nowS >= ev.until_epoch) return "";
+  const t = tl || ev, until = t.until || ev.until, zone = t.until_zone || ev.until_zone || "Pacific";
+  return until ? `Names: open now for pack holders, ${cardDates(`until ${until} (${zone})`)}.` : `Names: ${String(ev.open_when || "open now").replace(/^./, (c) => c.toLowerCase())}.`;
+}
+function nextDated() { const now = Date.now() / 1000, ev = (D.timeline && D.timeline.events) || []; return ev.filter((x) => x.epoch && x.epoch > now).sort((a, b) => a.epoch - b.epoch).map(withWhen)[0] || null; }
+function settleLaunch() {
+  const p = D.party; if (!p || !launchPast()) return false;
+  const e = launchEvent(), mv = (p.open || []).filter((o) => /^launch[- ]night/i.test(o.title)); if (!mv.length) return false;
+  p.open = p.open.filter((o) => !mv.includes(o));
+  p.settled_extra = [...(p.settled_extra || []), ...mv.map((o) => ({ text: /meeting point/i.test(o.title) ? `Launch-night meeting point: launch night has passed (${e.when}).` : `Launch night happened: ${e.when}.`, source: o.source || "group notes" }))];
+  return true;
+}
 function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `Launch: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
 /* the first screen for a visitor with no saved name: what the board is for, in four plain lines, and the one action that follows */
 const FIRST_RUN = Object.freeze({ go: "Show me what is next", purpose: Object.freeze(["This is the party board for our World of Warcraft: Forever group.", "It tells you what to do next, shows who is playing what, and collects the group's votes.", "Whatever you post in Discord (forms, build threads, votes) shows up here.", "Pick who you are below, or just look around."]) });
@@ -3511,7 +3549,8 @@ function beforeItems(T, P, member, mine) {
     const po = open(/profession/i) || {}, pr = member.professions || [], und = pr.some((p) => p.status === "undecided"), gap = (po.text || "").match(/Gap: ([A-Za-z]+)/);
     out.push({ id: "prof", text: `Professions on the board: ${pr.map((p) => p.name).join(" and ") || "none yet"}${und ? " (one still undecided)" : ""}.`, href: po.links && po.links[0] ? po.links[0].url : L.choose, more: gap ? `The group has no ${gap[1]} yet.` : "" });
   }
-  if (names && names.until_epoch) out.push({ id: "names", text: nowS < names.until_epoch ? `Names: open now for pack holders, ${cardDates("until Nov 3 (Pacific)")}.` : "Names: the pack-holder window has closed.", more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
+  const namesText = namesLine(names, D.timeline && D.timeline.events.find((e) => e.key === "names_open"), nowS);
+  if (namesText) out.push({ id: "names", text: namesText, more: (open(/pack/i) || {}).detail || "", stamp: names.until_epoch });
   if (member) out.push({ id: "signup", text: mine ? `Sign-up card: you answered "${T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || mine.rsvp}".` : "Sign-up card: no answer from you yet.", href: L.signup });
   const meet = open(/meeting point/i);
   if (meet) out.push({ id: "meet", text: unchosen(meet) ? "Meeting point: nothing chosen yet." : `Meeting point: ${meet.status}.`, href: unchosen(meet) ? P.signup_url : null, more: meet.detail || "" });
@@ -3530,6 +3569,8 @@ function groupOpenLine(T, P) {
 }
 function renderBefore() {
   const T = D.tonight, P = D.party, box = $("#tn-before"); if (!T || !P || !box) return;
+  if (launchPast()) { box.replaceChildren(); box.hidden = true; return; } /* launch has happened: the pre-launch list is retired */
+  box.hidden = false;
   const me = MEM.me(), member = MEM.member(), slug = member ? MEM.slug(member.name) : "just-looking";
   const S = D.signups, entries = S && S.entries ? S.entries : [], mine = member ? entries.find((e) => cleanName(e.name).toLowerCase() === member.name.toLowerCase()) : null;
   const items = me ? beforeItems(T, P, member, mine) : [], ticks = new Set(beforeTicks(slug));
@@ -3636,12 +3677,7 @@ function warmNext() {
 }
 addEventListener("board-mode", () => { CT.sig = ""; try { if (D.timeline) tick(); } catch (e) {} if (!roomHas("play") && WARM.held) { WARM.held = false; warmLater(); } });
 function warmLater() { if (WARM.done) return; (window.requestIdleCallback || ((f) => setTimeout(f, 200)))(warmNext, { timeout: 1500 }); }
-function markNew() {
-  const seen = MEM.seenMap();
-  const badge = (k, stamp) => { const t = document.querySelector(`#board [data-scene="${k}"] .tile-title`); if (!t || !seen[k] || !stamp || Date.parse(stamp) <= seen[k] || t.parentNode.querySelector(".new-badge")) return; t.parentNode.insertBefore(h("span", { class: "new-badge", text: "New" }), t.nextSibling); };
-  if (D.signups) badge("signups", D.signups.updated);
-  whenOffTonight(() => libIndex().then((ix) => { if (ix && ix.changes[0]) badge("library", `${ix.changes[0].date}T23:59:59Z`); }).catch(() => {}));
-}
+/* Slice 1: no NEW pills on the table. What changed since a visit is slice 3 (since-last-visit marks), not a pill on a tile title. */
 async function boot(mode, sdk) {
   try { performance.mark("board-boot"); } catch (e) {}
   $("#gate").hidden = true;
@@ -3697,7 +3733,7 @@ async function boot(mode, sdk) {
   whenOffTonight(() => (window.requestIdleCallback || ((f) => setTimeout(f, 600)))(libPrefetch, { timeout: 2500 }));
   KIT.emit("rendered");
   if (!early) route();
-  markNew(); startDepth();
+  startDepth();
   KIT.emit("booted", mode);
   setTimeout(settleCheck, 1500);
   if (mode !== "discord" && !$("#presence-text").textContent) $("#presence-text").textContent = PRESENCE_WEB;
@@ -3706,7 +3742,7 @@ async function boot(mode, sdk) {
   if (mode === "discord") startDiscordPresence(sdk);
   else startRuntime().catch((e) => { console.error(e); setStatus("Sign-ups are read-only on this view."); });
 }
-Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, markNew, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);

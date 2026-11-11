@@ -12,6 +12,9 @@
 //   csp-enforced the page logs an ENFORCED Content Security Policy violation as a console error: must fail
 //   csp-report-only the same message marked "[Report Only]": must pass (the exemption stays narrow but exists)
 //   state-redirect a plain (non-browser) GET /api/state answers 302 to the real thing: the probe must NOT follow it (redirect: error) and stop, 1 API request
+//   beacon-location  the beacon image answers 404 (probe routes it): Chromium logs it located at the insights host
+//   beacon-own-cors  then the page itself logs the CORS wordings (own-origin location, inside the window, Chromium)
+//   beacon-no-failure / beacon-own-error / beacon-other-host   the CORS line with no beacon failure before it / an own-origin error / the Beacon line naming another host
 //   cf-text      the page logs a console error that merely MENTIONS cloudflareinsights.com (location: the page itself): must fail, the exemption is not by message text
 // Any mode also serves /api/hop?n=0..11: a 12-hop redirect chain, to prove the probe's context never lets the browser follow redirects on its own.
 //   state-fail   a plain (non-browser) GET /api/state answers 500: the probe must stop at once and launch no browser
@@ -41,6 +44,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { loadSnapshot, repoDoc } from "./api-stub.mjs";
+const beaconFail = (then) => `setTimeout(() => { const i = new Image(); i.src = "https://static.cloudflareinsights.com/__probe_selftest_404"; document.body.append(i); setTimeout(() => { ${then} }, 600); }, 1200);`; // the probe (PROBE_SELFTEST_BEACON=1) answers this URL 404 without CORS headers, so the browser logs the real error
+const CORS_LINE = "console.error('Origin ' + location.origin + ' is not allowed by Access-Control-Allow-Origin. Status code: 404');";
+const beaconLine = (host) => "console.error('Beacon API cannot load https://" + host + "/cdn-cgi/rum. Origin ' + location.origin + ' is not allowed by Access-Control-Allow-Origin. Status code: 404');";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, "..", "..");
@@ -61,6 +67,11 @@ export async function startFixtureServer({ mode = "green", crossOrigin = false }
   const bootstrap = () => ({ ...JSON.parse(snap.routes["/bootstrap"].body), party, signups: JSON.parse(signups) });
   const client = () => { const j = JSON.parse(repoDoc("/data/client.json").body); j.flags = { ...(j.flags || {}), "party.n": mode !== "typed-five" }; return JSON.stringify(j); };
   const INJECT = {
+    "beacon-location": beaconFail(""),
+    "beacon-own-cors": beaconFail(CORS_LINE + beaconLine("cloudflareinsights.com")),
+    "beacon-own-error": beaconFail('console.error("TypeError: boom in board.js");'),
+    "beacon-other-host": beaconFail(beaconLine("evil.example")),
+    "beacon-no-failure": `setTimeout(() => { ${CORS_LINE} }, 1500);`,
     "no-panel": `setTimeout(() => { const p = document.getElementById("panel-ledger"); if (p) p.remove(); }, 2500);`,
     "ignored-hash": `new MutationObserver((ms) => { for (const m of ms) if (m.target.classList && m.target.classList.contains("landed")) m.target.classList.remove("landed"); }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"], subtree: true });`,
     "csp-enforced": `setTimeout(() => console.error("Refused to load the image 'https://evil.example/x.png' because it violates the following Content Security Policy directive: \\"img-src 'self'\\"."), 1500);`,

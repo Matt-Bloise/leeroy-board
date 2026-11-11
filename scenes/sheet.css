@@ -107,6 +107,8 @@
 .ps-sample-l { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .ps-sample-l li { display: grid; gap: 2px; padding: 8px 10px; border-left: 4px solid var(--cc, var(--brass-dim)); background: var(--parchment-2); border-radius: 4px; overflow-wrap: anywhere; }
 .ps-sample-l small { color: var(--ink-soft); font-size: 1rem; }
+.ps-sample-d { display: grid; gap: 8px; }
+.ps-sample-sum { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-family: var(--font-display); font-size: var(--step-1); color: var(--ink); }
 .ps-sample-go { justify-self: start; min-height: 44px; color: var(--parchment); background: var(--oak-3); border-color: var(--brass); }
 /* the guided journey folds every panel child but its summary card (css/v13d.css); the sample sheet is the point of this scene for a visitor, so it outranks that rule */
 html[data-journey="guided"] #sheet-body #panel-five #ps-sample#ps-sample#ps-sample#ps-sample#ps-sample:not([hidden]) { display: grid !important; }
@@ -132,3 +134,12 @@ html[data-journey="guided"] #sheet-body #panel-five #ps-sample#ps-sample#ps-samp
 .ps-cf-e { margin: 0; font-family: var(--font-body); font-size: 1rem; color: var(--wax); }
 .ps-cf-row { grid-column: 1 / -1; flex-wrap: wrap; }
 @media (min-width: 700px) { .ps-cf { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* "See an example": a chevron and a fuller label so the fold reads as a control; behaviour unchanged */
+.ps-sample-sum { gap: 10px; list-style: none; width: fit-content; padding: 4px 14px 4px 10px; border: 1px solid var(--ink-line, var(--brass-dim)); border-radius: 999px; background: var(--parchment-2, transparent); }
+.ps-sample-sum::-webkit-details-marker { display: none; }
+.ps-sample-sum::before { content: ""; flex: none; width: 0.55em; height: 0.55em; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform var(--t-micro, 120ms); }
+.ps-sample-sum::after { content: "member card"; margin-left: -5px; }
+.ps-sample-d[open] > .ps-sample-sum::before { transform: rotate(45deg); }
+.ps-sample-sum:hover { border-color: var(--brass); }
+.ps-sample-sum:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }

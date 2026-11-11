@@ -185,6 +185,8 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
   }
   function renderCheck() {
     const det = $("#lh-check"), list = $("#lh-check-list"), sum = $("#lh-check-sum"), count = $("#lh-check-count"); if (!det || !list) return;
+    if (L.phase === "live" || K.launchPast()) { det.hidden = true; return; } /* launch has happened: the "Before launch" checklist is retired */
+    det.hidden = false;
     const slug = meSlug(), items = checkItems(), on = new Set(ticks(slug)), member = K.MEM.member();
     const upd = () => { const n = items.filter((i) => on.has(i.id)).length; sum.textContent = `Before launch: ${n} of ${items.length} ticked`; count.textContent = `${n} of ${items.length} ticked on this device${member ? ` for ${member.name}` : ""}. Nothing here leaves your browser.`; };
     list.replaceChildren(...items.map((i) => { const id = `lh-ck-${i.id}`; const li = h("li", { class: "lh-ck", "data-on": on.has(i.id) ? "1" : "0" });
@@ -204,7 +206,7 @@ function currentState() { const B = window.BoardBrain, mine = B && B.mineLaunch 
   function renderAsk() {
     const p = $("#lh-ask"); if (!p) return;
     const u = channelUrl();
-    p.replaceChildren(K.emb("speech"), " ", h("b", { text: "Ask Leeroy: " }), "in ", u ? h("a", { class: "tn-link", href: u, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open #wow-forever on Discord" }, "#wow-forever") : "#wow-forever", " type ", h("b", { text: "/ask" }), " and your question, or tag Leeroy Jenkins in a message. He answers from the same library this board searches. ", h("a", { class: "tn-link", href: "#librarian", text: "His numbers so far" }), ".");
+    p.replaceChildren(K.emb("speech"), " ", h("b", { text: "Ask Leeroy: " }), "in ", u ? h("a", { class: "tn-link", href: u, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open #wow-forever on Discord" }, "#wow-forever") : "#wow-forever", " type ", h("b", { text: "/ask" }), " and your question. He answers from the same library this board searches. ", h("a", { class: "tn-link", href: "#librarian", text: "His numbers so far" }), ".");
   }
 
   function refresh() {

@@ -40,6 +40,7 @@ async function api(env, method, path, who = "anon", body) {
   const silence = console.error; console.error = () => {};
   try { return await worker.fetch(new Request(`https://api.test/api${path}`, init), env, ctx); } finally { console.error = silence; }
 }
+const seedOnyxia = (DB) => DB.raw.prepare("INSERT OR REPLACE INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES ('raids/onyxias-lair', 'raids', 'Onyxia', 'The raid', '[]', ?, '2026-11-01T00:00:00Z')").run(JSON.stringify([{ key: "onyxia.opens", value: "Onyxia's Lair opens on 2026-12-09." }]));
 const seedTurn = (env, id, extra = {}) => env.DB.raw.prepare(
   "INSERT INTO ask_turns (id, by_name, question, answer, status, share, created_at) VALUES (?, ?, ?, ?, 'answered', 0, '2026-11-01T00:00:00Z')"
 ).run(id, extra.by || "Santa", extra.q || "private question", extra.a || "private answer");
@@ -247,9 +248,10 @@ async function runAsk(share) {
   const sent = [];
   env.BOARD_ROOM = { idFromName: () => "r", get: () => ({ fetch: async (_url, init) => (sent.push(String(init && init.body)), new Response("ok")) }) };
   env.AI = { run: async () => ({ response: "**SECRET-ANSWER-7.** done" }) };
+  seedOnyxia(env.DB); // the question finds the library, so the model is called
   env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('stats', ?, 'x')").run(JSON.stringify({ answers: 0, recent: [] }));
-  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES ('u1', 'Visitor', 'SECRET-QUESTION-7', 'workers-ai', 'thinking', ?, 'x')").run(share ? 1 : 0);
-  await answerWithAi({ env, origin: "https://worker.test", intentId: "u1", by: "Visitor", question: "SECRET-QUESTION-7", provider: "workers-ai", share, isMember: false });
+  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES ('u1', 'Visitor', 'when does onyxia open SECRET-QUESTION-7', 'workers-ai', 'thinking', ?, 'x')").run(share ? 1 : 0);
+  await answerWithAi({ env, origin: "https://worker.test", intentId: "u1", by: "Visitor", question: "when does onyxia open SECRET-QUESTION-7", provider: "workers-ai", share, isMember: false });
   const stats = env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'stats'").get().json;
   return { sent: sent.join("\n"), stats, row: env.DB.raw.prepare("SELECT status, answer FROM ask_turns WHERE id = 'u1'").get() };
 }
@@ -259,7 +261,9 @@ test("M2. a private turn puts neither question nor answer on the socket or in st
   assert.equal(row.status, "answered");
   assert.match(row.answer, /SECRET-ANSWER-7/);
   assert.ok(sent.includes('"type":"ask"'), "owner's page is still nudged to re-read");
-  assert.doesNotMatch(sent, /SECRET-(QUESTION|ANSWER)-7/);
+  // A guest's own answer rides a message addressed to that guest's socket only (forAsk); the room strips the text for every other socket.
+  const withText = sent.split("\n").filter((m) => /SECRET-(QUESTION|ANSWER)-7/.test(m));
+  assert.ok(withText.every((m) => JSON.parse(m).forAsk === "u1"), "text appears only in a message addressed to the asker");
   assert.doesNotMatch(stats, /SECRET-(QUESTION|ANSWER)-7/);
 });
 
@@ -306,6 +310,7 @@ test("R2. GET /ask with no id and no key returns null after a guest ask (guest a
 });
 
 test("R3. with the global cap hit, a user over their own cap is still refused on claude; others are not", async () => {
+  invalidatePagesCache();
   const env = await makeEnv();
   await recordUsage(env, "ask", 999999); // global (Workers AI neurons) cap exceeded
   const over = askBudgetKeys({ userPart: await hashId("100000000000000050") });
@@ -318,6 +323,7 @@ test("R3. with the global cap hit, a user over their own cap is still refused on
   // End to end through answerWithAi with provider claude: refused for the user over cap, no provider call.
   env.ANTHROPIC_API_KEY = "test-key-not-real";
   env.BOARD_ROOM = { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) };
+  seedOnyxia(env.DB);
   env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES ('c1', 'U', 'q', 'claude', 'thinking', 1, 'x')").run();
   const before = outbound;
   const out = await answerWithAi({ env, origin: "https://worker.test", intentId: "c1", by: "U", question: "when is onyxia", provider: "claude", share: true, budget: over, isMember: true });
