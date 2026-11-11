@@ -14,11 +14,11 @@
     {
       "id": "open-return-b-scroll",
       "pattern": "open then close at 40 percent.*scroll \\d+ -> 0",
-      "why": "Scenario B of open-return reads scrollY while the close transition is still restoring it on CI hardware; it never fails locally. Harness timing."
+      "why": "Scenario B of open-return reads scrollY while the close transition is still restoring it on CI hardware; it never fails locally. Harness timing. The pattern also matches a real, repeatable loss of scroll position; that fails again on attempt 2, which is never rerun, so the cost is one wasted rerun."
     },
     {
       "id": "preview-worker-not-found",
-      "pattern": "10007|This Worker does not exist on your account",
+      "pattern": "\\[code: 10007\\]|This Worker does not exist on your account",
       "why": "Cloudflare answers code 10007 for a preview Worker for a short time right after upload, before it is routable. Eventual consistency of the preview environment."
     },
     {

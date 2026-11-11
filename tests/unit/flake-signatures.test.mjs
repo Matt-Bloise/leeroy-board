@@ -60,7 +60,7 @@ test("the exit-code annotation is a consequence and is ignored, other annotation
 });
 
 test("timestamps, a BOM and CRLF are tolerated; PASS and DIAG lines are not failures", () => {
-  const log = "﻿" + ts + "PASS fine\r\n" + ts + "DIAG shownByWait false\r\n" + ts + KNOWN["layout-sweep-time-budget"] + "\r\n";
+  const log = "\uFEFF" + ts + "PASS fine\r\n" + ts + "DIAG shownByWait false\r\n" + ts + KNOWN["layout-sweep-time-budget"] + "\r\n";
   assert.equal(failureLines(log).length, 1);
 });
 
@@ -104,4 +104,22 @@ test("the CLI judges each file on its own and treats a missing file as silent", 
   assert.equal(run(flake, empty).status, 10);
   assert.equal(run(flake, missing).status, 10);
   assert.equal(run().status, 10);
+});
+
+test("the 10007 signature needs the bracketed code or the sentence, never the bare number", () => {
+  assert.equal(verdict("FAIL [phone] step took 10007 ms, limit 9000: the sheet never opened").rerun, false);
+  assert.equal(verdict("FAIL [phone] sheet at x=10007 px is off screen").rerun, false);
+  assert.equal(verdict("##[error]request failed [code: 10007]").rerun, true);
+  assert.equal(verdict("##[error]This Worker does not exist on your account").rerun, true);
+});
+
+test("the scroll signature states the cost of a real failure matching it", () => {
+  const doc = JSON.parse(raw);
+  assert.match(doc.signatures.find((s) => s.id === "open-return-b-scroll").why, /never rerun/);
+});
+
+test("the byte order mark is written as an escape in source, not as an invisible character", () => {
+  for (const f of ["../../tools/flake-signatures.mjs", "./flake-signatures.test.mjs"]) {
+    assert.ok(!readFileSync(new URL(f, import.meta.url), "utf8").includes("\uFEFF"), f);
+  }
 });

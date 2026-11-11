@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const TIMESTAMP = /^﻿?\d{4}-\d\d-\d\dT[\d:.]+Z\s?/;
+const TIMESTAMP = /^\uFEFF?\d{4}-\d\d-\d\dT[\d:.]+Z\s?/;
 const EXIT_CODE_ONLY = /^##\[error\]Process completed with exit code \d+\.?$/; // the consequence of a failure line, not a cause
 
 export function failureLines(log) {
