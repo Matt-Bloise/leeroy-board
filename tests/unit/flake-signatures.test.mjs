@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { failureLines, classify, loadSignatures } from "../../tools/flake-signatures.mjs";
+import { fileURLToPath } from "node:url";
+import { failureLines, classify, classifyJobs, loadSignatures } from "../../tools/flake-signatures.mjs";
 
 const raw = readFileSync(new URL("../../tools/flake-signatures.json", import.meta.url), "utf8");
 const sigs = loadSignatures(raw);
@@ -61,4 +62,46 @@ test("the exit-code annotation is a consequence and is ignored, other annotation
 test("timestamps, a BOM and CRLF are tolerated; PASS and DIAG lines are not failures", () => {
   const log = "﻿" + ts + "PASS fine\r\n" + ts + "DIAG shownByWait false\r\n" + ts + KNOWN["layout-sweep-time-budget"] + "\r\n";
   assert.equal(failureLines(log).length, 1);
+});
+
+const jobLog = (...logLines) => logLines.map((l) => ts + l).join("\n");
+
+test("classifyJobs: every failed job a known flake reruns", () => {
+  const r = classifyJobs([jobLog(KNOWN["layout-sweep-time-budget"]), jobLog(KNOWN["roads-buffs-pin-hover"])], sigs);
+  assert.equal(r.rerun, true);
+  assert.deepEqual(r.jobs.map((j) => j.rerun), [true, true]);
+});
+
+test("classifyJobs: a known flake beside a crashed job with an empty log does NOT rerun", () => {
+  for (const crashed of ["", "\n", null, undefined, jobLog("PASS a check", "##[error]Process completed with exit code 1.")]) {
+    const r = classifyJobs([jobLog(KNOWN["layout-sweep-time-budget"]), crashed], sigs);
+    assert.equal(r.rerun, false, String(crashed));
+    assert.deepEqual(r.jobs.map((j) => j.rerun), [true, false]);
+  }
+});
+
+test("classifyJobs: a known flake beside a job with an unknown failure does not rerun", () => {
+  const r = classifyJobs([jobLog(KNOWN["layout-sweep-time-budget"]), jobLog("FAIL [phone] the footer is visible: false")], sigs);
+  assert.equal(r.rerun, false);
+});
+
+test("classifyJobs: no logs at all, or only silent logs, never rerun", () => {
+  assert.equal(classifyJobs([], sigs).rerun, false);
+  assert.equal(classifyJobs([""], sigs).rerun, false);
+});
+
+test("the CLI judges each file on its own and treats a missing file as silent", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "flake-"));
+  const flake = join(dir, "a.log"), empty = join(dir, "b.log"), missing = join(dir, "nope.log");
+  writeFileSync(flake, jobLog(KNOWN["layout-sweep-time-budget"]));
+  writeFileSync(empty, "");
+  const run = (...files) => spawnSync(process.execPath, [fileURLToPath(new URL("../../tools/flake-signatures.mjs", import.meta.url)), ...files], { encoding: "utf8" });
+  assert.equal(run(flake).status, 0);
+  assert.equal(run(flake, empty).status, 10);
+  assert.equal(run(flake, missing).status, 10);
+  assert.equal(run().status, 10);
 });
