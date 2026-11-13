@@ -176,3 +176,15 @@ test("Firefox's harness-eval CSP throttle message (PR 181's ignoredConsoleError)
   assert.equal(consoleFailures([{ text: throttle, at: "" }]).length, 1, "no source: not provably the harness");
   assert.equal(consoleFailures([{ text: "TypeError: x", at: "debugger eval code" }]).length, 1, "only that exact message is ignored");
 });
+
+// The layout sweep answers the Cloudflare analytics beacon itself (issue 303, run 43452114041): the live endpoint answers 404 without CORS, and WebKit logs that as a
+// URL-less console line which the sweep could only excuse inside a 2 s window, so a slow beacon failed a cell. Only the beacon's own endpoint is answered; nothing else.
+test("beacon stub: only https cloudflareinsights.com/cdn-cgi/rum is matched, and the answer allows the site's origin", async () => {
+  const { isRumUrl, rumStub } = await import("../helpers/probe-checks.mjs");
+  for (const u of ["https://cloudflareinsights.com/cdn-cgi/rum", "https://cloudflareinsights.com/cdn-cgi/rum?x=1"]) assert.equal(isRumUrl(u), true, u);
+  for (const u of ["http://cloudflareinsights.com/cdn-cgi/rum", "https://cloudflareinsights.com.evil.test/cdn-cgi/rum", "https://cloudflareinsights.com/cdn-cgi/other", "https://leeroy.party/cdn-cgi/rum", "https://static.cloudflareinsights.com/beacon.min.js", "not a url", "", null]) assert.equal(isRumUrl(u), false, String(u));
+  const s = rumStub("https://leeroy.party");
+  assert.equal(s.status, 204); assert.equal(s.body, ""); assert.equal(s.headers["access-control-allow-origin"], "https://leeroy.party");
+  assert.match(s.headers["access-control-allow-methods"], /POST/); assert.match(s.headers["access-control-allow-methods"], /OPTIONS/);
+  assert.throws(() => rumStub("*"), /an origin/, "never a wildcard"); assert.throws(() => rumStub("leeroy.party"), /an origin/);
+});

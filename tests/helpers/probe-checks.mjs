@@ -79,6 +79,15 @@ export const isCspAdvisory = (t) => {
 };
 const hostOf = (u) => { try { return new URL(u).hostname; } catch (e) { return ""; } };
 export const isInsightsHost = (u) => /(^|\.)cloudflareinsights\.com$/i.test(hostOf(u));
+// The beacon's own endpoint, and the answer the layout sweep gives it (issue 303). The live endpoint answers 404 without CORS; WebKit logs that as a URL-less console
+// line the sweep can excuse only inside BEACON_WINDOW_MS, so a slow beacon failed a cell (run 43452114041). Answering it in the browser removes the noise at its source.
+// Only https://cloudflareinsights.com/cdn-cgi/rum is answered; the answer allows exactly the site's origin, never a wildcard.
+export const isRumUrl = (u) => { try { const x = new URL(String(u)); return x.protocol === "https:" && x.hostname.toLowerCase() === "cloudflareinsights.com" && x.pathname === "/cdn-cgi/rum"; } catch (e) { return false; } };
+export function rumStub(origin) {
+  let o = null; try { const x = new URL(String(origin)); if (x.protocol === "https:" || x.protocol === "http:") o = x.origin; } catch (e) { o = null; }
+  if (!o || o !== String(origin).replace(/\/$/, "")) throw new Error("rumStub needs an origin such as https://leeroy.party");
+  return { status: 204, body: "", headers: { "access-control-allow-origin": o, "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "content-type", "access-control-allow-credentials": "true", vary: "Origin" } };
+}
 // Once the request budget is spent the probe refuses further /api requests (route.abort("blockedbyclient"), helpers/probe-budget.mjs) and the page logs each refused
 // load as "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector" located at the /api URL. That is our own refusal, already reported as the run's one budget
 // failure, so it is exempt: only that exact message, only from an /api/ URL, only when the budget is spent. Every other console error still fails.
