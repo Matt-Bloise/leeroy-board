@@ -44,7 +44,7 @@ import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero } from "../helpers/clock-arg.mjs";
 import { stubbed, LIVE_API, ALLOW_MISS } from "../helpers/browser-stub.mjs";
 import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mjs";
-import { isBeaconNoise, isInsightsHost } from "../helpers/probe-checks.mjs";
+import { isBeaconNoise, isInsightsHost, isRumUrl, rumStub } from "../helpers/probe-checks.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
@@ -463,6 +463,8 @@ async function cell(browser, size, state, A) {
   const opts = { viewport: { width: size.w, height: size.h }, serviceWorkers: "block", reducedMotion: "reduce" };
   if (size.touch) { opts.hasTouch = true; if (ENGINE !== "firefox") opts.isMobile = true; }
   const ctx = await browser.newContext(opts), page = await ctx.newPage();
+  // issue 303: answer the Cloudflare analytics beacon here, so its live 404 (logged by WebKit as a URL-less CORS line) cannot fail a cell on timing. isBeaconNoise stays as the fallback.
+  if (ORIGIN) await ctx.route((u) => isRumUrl(u.href), (r) => r.fulfill(rumStub(ORIGIN)));
   await ctx.addInitScript(ZOOM_JS, ENGINE === "webkit");
   await ctx.addInitScript(XR_JS);
   if (INJECT_JS) await ctx.addInitScript((js) => { addEventListener("DOMContentLoaded", () => { (0, eval)(js); }); }, INJECT_JS);
