@@ -182,9 +182,9 @@ test("Firefox's harness-eval CSP throttle message (PR 181's ignoredConsoleError)
 test("beacon stub: only https cloudflareinsights.com/cdn-cgi/rum is matched, and the answer allows the site's origin", async () => {
   const { isRumUrl, rumStub } = await import("../helpers/probe-checks.mjs");
   for (const u of ["https://cloudflareinsights.com/cdn-cgi/rum", "https://cloudflareinsights.com/cdn-cgi/rum?x=1"]) assert.equal(isRumUrl(u), true, u);
-  for (const u of ["http://cloudflareinsights.com/cdn-cgi/rum", "https://cloudflareinsights.com.evil.test/cdn-cgi/rum", "https://cloudflareinsights.com/cdn-cgi/other", "https://leeroy.party/cdn-cgi/rum", "https://static.cloudflareinsights.com/beacon.min.js", "not a url", "", null]) assert.equal(isRumUrl(u), false, String(u));
+  for (const u of ["http://cloudflareinsights.com/cdn-cgi/rum", "https://cloudflareinsights.com.evil.test/cdn-cgi/rum", "https://cloudflareinsights.com/cdn-cgi/other", "https://leeroy.party/cdn-cgi/rum", "https://static.cloudflareinsights.com/beacon.min.js", "https://cloudflareinsights.com:8443/cdn-cgi/rum", "not a url", "", null]) assert.equal(isRumUrl(u), false, String(u));
   const s = rumStub("https://leeroy.party");
   assert.equal(s.status, 204); assert.equal(s.body, ""); assert.equal(s.headers["access-control-allow-origin"], "https://leeroy.party");
-  assert.match(s.headers["access-control-allow-methods"], /POST/); assert.match(s.headers["access-control-allow-methods"], /OPTIONS/);
+  assert.match(s.headers["access-control-allow-methods"], /POST/); assert.match(s.headers["access-control-allow-methods"], /OPTIONS/); assert.equal(s.headers["access-control-allow-credentials"], "true"); assert.match(s.headers["access-control-allow-headers"], /content-type/i);
   assert.throws(() => rumStub("*"), /an origin/, "never a wildcard"); assert.throws(() => rumStub("leeroy.party"), /an origin/);
 });
