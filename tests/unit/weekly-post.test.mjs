@@ -301,3 +301,15 @@ test("R4, R5: a shortened name list keeps its markers; one oversized tip does no
   assert.ok(many.text.length <= POST_MAX);
   assert.match(many.text, /Person number 0 [a-z ]+ \(tentative\)/, "the tentative marker survives the shortening (names are cut to 24 characters)");
 });
+
+test("a record or a report about other players is never the tip", async () => {
+  const { TRIVIA_RE } = await import("../../infrastructure/worker/weekly-post.js");
+  assert.ok(TRIVIA_RE.test("fastest reported level 30 was a fictional class at 21 hours"));
+  assert.ok(TRIVIA_RE.test("beta played: a fictional record"));
+  assert.ok(!TRIVIA_RE.test("level 10, 20 minute cooldown"));
+  const classes = { pages: [{ id: "classes/mage", facts: [
+    fact("mage.beta_played", "fastest reported level 30 was a mage at a fictional 21 hours, spec unstated", "good", [ref(1)]),
+    fact("mage.frost_blast", "new trainer spell at 24, a fictional slow on the target for a short while", "good", [ref(2)]),
+  ] }] };
+  for (let w = 0; w < 8; w++) assert.equal(pickTip(classes, { class_key: "mage", role: "damage" }, w).key, "mage.frost_blast");
+});

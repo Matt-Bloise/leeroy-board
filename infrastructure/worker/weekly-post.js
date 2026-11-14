@@ -98,6 +98,8 @@ const quotable = (f, classKey) => f && typeof f.key === "string" && f.key.starts
 
 // Library shorthand a friend reading Discord cannot use (talent tiers, client builds, formula coefficients); such a fact is never the tip.
 export const JARGON_RE = /\bmedal\b|\brow \d|\bcoefficient\b|\bclient \d|\bhotfix\b|\branks? \d|\bdesign pillars?\b|\bspell \d{3,}|\bhas not said\b|\buntestable\b|\bdisputed\b/i; // also: a fact about what is not known is no tip
+// A record or a report about other players ("fastest reported level 30 ... at 21 hours") tells the reader nothing to do: never a tip.
+export const TRIVIA_RE = /\b(fastest|slowest|reported|record|played|census|survey|poll|most players|beta testers?|streamers?|world first)\b/i;
 // A fact a player can act on: when they get something, how it casts, what it does in a fight, what to prioritise.
 export const ACTION_RE = /\b(level \d+|at \d+|instant|cast|cooldown|slow|stun|root|heal(s|ing)?|taunt|threat|interrupt|trainer|first|priority|covers|lasts?)\b/i;
 // The library's provenance at the end of a value ("(Oct 15 notes; Wowhead rank 1 tooltip)") is citation material: the source link carries it.
@@ -120,7 +122,7 @@ export function pickTip(classesDoc, member, weekN) {
   const page = pages(classesDoc).find((p) => p && p.id === `classes/${ck}`);
   const role = roleOf(member);
   const words = [...(role && own(ROLE_WORDS, role) ? ROLE_WORDS[role] : []), ...specWords(member)];
-  const ok = factsOf(page).filter((f) => quotable(f, ck) && !JARGON_RE.test(f.value));
+  const ok = factsOf(page).filter((f) => quotable(f, ck) && !JARGON_RE.test(f.value) && !TRIVIA_RE.test(`${f.key} ${f.value}`));
   const actionable = (f) => f.depth === "good" && ACTION_RE.test(plainValue(f.value));
   const tiers = [ok.filter((f) => actionable(f) && words.some((w) => keyWords(f.key).has(w))), ok.filter(actionable), ok.filter((f) => f.depth === "must")];
   const pool = tiers.find((t) => t.length);
