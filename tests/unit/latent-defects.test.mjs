@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { applySignupChange, tallyEntries, renderSignupCard, renderBoardCard } from "../../infrastructure/worker/cards.js";
 import { rank, expandWords } from "../../vendor/rank-core.js";
 import * as workerRank from "../../infrastructure/worker/rank-core.js";
+import { upsertSignupEntry } from "../../infrastructure/worker/limits.js";
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 const JUNK = [null, undefined, 5, "text", true, [], [1, 2]];
@@ -57,4 +58,28 @@ test("F-6 rank-core: a question or sheet word that is an object-property word ra
     assert.doesNotThrow(() => r("valueof hasownproperty tostring", pages));
   }
   assert.ok(expandWords(["zone"]).has("area"), "a real synonym still expands");
+});
+
+// F-7: upsertSignupEntry merged duplicate rows by comparing `updated` as strings, so "yesterday" (or a zone-less stamp) beat a valid ISO one.
+test("F-7 upsertSignupEntry: a malformed or zone-less stamp never wins a duplicate-row merge over a valid one", () => {
+  const VALID = "2026-11-01T10:00:00.000Z";
+  for (const bad of ["yesterday", "zzz", "2026-11-09T10:00:00", "2026-11-09", "", 9e15, null, {}, ["2027"]]) {
+    for (const order of ["valid first", "bad first"]) {
+      const good = { slug: "red-fox", name: "Red Fox", rsvp: "in", updated: VALID };
+      const junk = { name: "Red Fox", rsvp: "out", meet: "The Crossroads", updated: bad };
+      const doc = { entries: order === "valid first" ? [good, junk] : [junk, good] };
+      const e = upsertSignupEntry(doc, { slug: "red-fox", name: "Red Fox" });
+      const label = `${JSON.stringify(bad)}, ${order}`;
+      assert.equal(doc.entries.length, 1, label);
+      assert.equal(e.rsvp, "in", label);
+      assert.equal(e.updated, VALID, label);
+      assert.equal(e.meet, "The Crossroads", `${label}: a field the valid row lacks is still filled`);
+    }
+  }
+  // Two valid stamps compare by instant, not by spelling: 11:30+01:00 is 10:30Z, later than 10:00Z.
+  const doc = { entries: [{ slug: "red-fox", name: "Red Fox", rsvp: "maybe", updated: "2026-11-01T11:30:00+01:00" }, { name: "Red Fox", rsvp: "late", updated: VALID }] };
+  assert.equal(upsertSignupEntry(doc, { slug: "red-fox", name: "Red Fox" }).rsvp, "maybe");
+  // The newer valid row still wins, as before.
+  const later = { entries: [{ slug: "red-fox", name: "Red Fox", rsvp: "in", updated: VALID }, { name: "Red Fox", rsvp: "out", updated: "2026-11-02T10:00:00.000Z" }] };
+  assert.equal(upsertSignupEntry(later, { slug: "red-fox", name: "Red Fox" }).rsvp, "out");
 });
