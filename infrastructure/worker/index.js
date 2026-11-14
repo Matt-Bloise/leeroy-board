@@ -39,7 +39,7 @@ import { upsertMember } from "./members.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
-import { isPublicAtlasDoc, isPublicDataDoc } from "./public-docs.js";
+import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
@@ -934,16 +934,18 @@ const worker = {
           let resp = await getCachedResponse(url.origin, "/api/state");
           if (!resp) {
             const { results } = await env.DB.prepare(
-              "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
+              "SELECT key, json, updated_at FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','decide')"
             ).all();
             const map = {};
+            const stored = {}; // the stored documents, for reconciling sheets; map holds their public form (public-docs.js publicDataDoc)
             for (const row of results || []) {
               try {
-                map[row.key] = JSON.parse(row.json);
+                stored[row.key] = JSON.parse(row.json);
+                map[row.key] = publicDataDoc(row.key, stored[row.key], row.updated_at);
               } catch {}
             }
             // The party row is already in hand: pass it on so the sheets are reconciled without a second read.
-            const { party } = await buildPartySheetsFromD1(env, { partyDoc: map.party || null });
+            const { party } = await buildPartySheetsFromD1(env, { partyDoc: stored.party || null });
             const now = new Date().toISOString();
             resp = jsonResp(
               webBoardLinksDeep({
@@ -1275,7 +1277,7 @@ const worker = {
         let resp = await getCachedResponse(url.origin, "/api/bootstrap");
         if (!resp) {
           const { results } = await env.DB.prepare(
-            "SELECT key, json FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','marks','decide')"
+            "SELECT key, json, updated_at FROM kv_state WHERE key IN ('party','timeline','stats','signups','tonight','launch','marks','decide')"
           ).all();
           let partyDocRead = null;
           for (const row of results || []) {
@@ -1297,7 +1299,8 @@ const worker = {
           };
           for (const row of results || []) {
             try {
-              bundle[row.key] = JSON.parse(row.json);
+              const doc = JSON.parse(row.json);
+              bundle[row.key] = isPublicDataDoc(row.key) ? publicDataDoc(row.key, doc, row.updated_at) : doc;
             } catch {
               bundle[row.key] = null;
             }
@@ -1358,6 +1361,14 @@ const worker = {
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
             const etag = `"${raw}-${row.updated_at || '1'}"`;
             let docJson = row.json;
+            if (typeof docJson === "string" && path.startsWith("/data/")) {
+              try {
+                docJson = JSON.stringify(publicDataDoc(raw, JSON.parse(docJson), row.updated_at));
+              } catch {
+                // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent)
+                if (raw === "stats") return jsonResp({ error: "Document stats is unreadable" }, 500, cors);
+              }
+            }
             if (typeof docJson === "string" && docJson.includes("{board:")) {
               try {
                 docJson = JSON.stringify(webBoardLinksDeep(JSON.parse(docJson)));
@@ -1392,7 +1403,7 @@ const worker = {
           await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/${area}/${raw}.json`, `/api/${area}/${raw}`]);
           const isPublicDoc = area === "atlas" ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw);
           // Only a public document's content goes to the sockets; any other key announces the change without its data.
-          await broadcastToRoom(env, isPublicDoc ? { type: "data", key: raw, data: body } : { type: "data", key: raw });
+          await broadcastToRoom(env, isPublicDoc ? { type: "data", key: raw, data: area === "data" ? publicDataDoc(raw, body, now) : body } : { type: "data", key: raw });
           return jsonResp({ ok: true, key: raw, updated_at: now }, 200, cors);
         }
       }

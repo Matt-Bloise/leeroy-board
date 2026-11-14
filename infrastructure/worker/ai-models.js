@@ -1353,7 +1353,7 @@ export async function answerWithAi({
         await env.DB.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = 'stats'")
           .bind(JSON.stringify(stats), answeredAt)
           .run();
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/stats.json"]);
+        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/stats.json", "/api/data/stats", "/api/state"]); // the site fetches /api/data/stats (js/board.js apiFetch)
       } catch (e) {
         console.error("Failed updating stats row:", e);
       }
