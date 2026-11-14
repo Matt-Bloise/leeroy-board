@@ -88,7 +88,8 @@ export function applySignupChange(doc, change) {
   const next = structuredClone(doc && typeof doc === "object" ? doc : { entries: [] });
   next.entries = Array.isArray(next.entries) ? next.entries : [];
   const key = String(name || "").toLowerCase();
-  let entry = next.entries.find((e) => String(e.name || "").toLowerCase() === key);
+  // A stored row that is not an object (null, a number, a string, an array) is never matched; it stays where it is.
+  let entry = next.entries.find((e) => e && typeof e === "object" && !Array.isArray(e) && String(e.name || "").toLowerCase() === key);
   if (!entry) {
     entry = { name, ...(slug ? { slug } : {}) };
     next.entries.push(entry);
