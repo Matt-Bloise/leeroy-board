@@ -205,8 +205,21 @@ function settleLaunch() {
 const partyRow = (r) => r && typeof r.slug === "string" && SLUG.test(r.slug) && typeof r.name === "string" && r.fields && typeof r.fields === "object" && !/\d{17,20}/.test(JSON.stringify(r));
 const sheetFields = (f) => { const out = {}; for (const k of SHEET) { const e = f && f[k]; if (e && typeof e === "object" && "value" in e) out[k] = { value: e.value, visible: e.visible !== false, source: typeof e.source === "string" ? e.source : "board", at: e.at || null }; } return out; };
 function takeParty(rows) { if (!Array.isArray(rows)) return; B.party = rows.filter(partyRow).map((r) => ({ slug: r.slug, name: r.name, fields: sheetFields(r.fields), updated: r.updated || null })); emit("party", B.party.slice()); }
+const sameSignups = (a, b) => { try { return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); } catch (e) { return true; } };
+/* The live socket sends each saved sign-up document as { type: "data", key: "signups", data }; it is applied like a state's sign-ups. */
+function onSignupsData(doc) {
+  if (!doc || typeof doc !== "object" || !Array.isArray(doc.entries) || sameSignups(doc, B.signups)) return false;
+  B.signups = doc;
+  emit("state", doc, B.ver);
+  setTimeout(mineFlush, 0);
+  settle();
+  journeyFromMirror();
+  return true;
+}
 function onState(m) {
-  if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups)) return false;
+  /* The Worker's /state always says ver 1, so an equal ver is not proof of the same state: it is taken when its sign-ups differ from the ones
+     in hand (otherwise a waiting web RSVP never reaches Saved or newer). An older ver is still refused. */
+  if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups && sameSignups(m.signups, B.signups))) return false;
   B.ver = m.ver; B.at = m.at || null;
   takeParty(m.party);
   if (m.partyDoc || m.tonight || m.timeline || m.stats) emit("data", { party: m.partyDoc, tonight: m.tonight, timeline: m.timeline, stats: m.stats, ver: m.ver });
@@ -259,7 +272,7 @@ function openWs() {
     if (m && m.type === "state") onState(m);
     if (m && m.type === "library") emit("library", m);
     if (m && m.type === "decide") emit("decide", m);
-    if (m && m.type === "data") emit("data", m);
+    if (m && m.type === "data") { if (m.key === "signups") onSignupsData(m.data); emit("data", m); }
     if (m && m.type === "ask") { const matchMe = !B.me || (m.slug && (m.slug === B.me.slug || m.slug === (B.me.name && B.me.name.toLowerCase()))); if (m.ask && matchMe) { askAdopt(m.ask); askEmit(); } else if (matchMe) { askRead(); } }
   };
   const down = () => {
