@@ -1,0 +1,540 @@
+{
+ "about": "master's flag-off output on the fictional ask-harness corpus; see tests/unit/ask-picked-frozen.test.mjs",
+ "scenarios": 14,
+ "replies": [
+  {
+   "reply": "**The Glass Spire holds 10 players.**\n\n-# Sources: vaults/glass-spire",
+   "scenarios": [
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "**The Glass Spire holds 10 players.**\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "f4a9eef3943fdedf11d7d214645deddea9fbedab16f5c52c912c64074b42451c"
+    },
+    {
+     "question": "when does the glass spire vault open",
+     "answer": "**The Glass Spire holds 10 players.**\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "33b2bdabd9056a32c8606018c97df789a8daabb280fc38fe9a27060501e19bc9"
+    },
+    {
+     "question": "what does a lantern warden do",
+     "answer": "The library does not have that yet.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "c772cf6cd491732df9060929594fa72709ce1cd4052db62acdc3e542f098454d"
+    },
+    {
+     "question": "what should I train first as a lantern",
+     "answer": "The library does not have that yet.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "19dbc4aad773e50f22b6925e5c23e87d30076ee769460e54fa896861c8e79a02"
+    },
+    {
+     "question": "where are the reedcraft trainers",
+     "answer": "The library does not have that yet.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "f4361edbceeda659ec8fec4c681f00516ff4ee3fbc27bdc37fbdc21f982fde6d"
+    },
+    {
+     "question": "what is the best pizza topping for a vault night",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "91ede8bfed5554b4306955800d49889ca64939d42930cee33f5859346ccbe3c3"
+    },
+    {
+     "question": "hi",
+     "answer": "The library does not have that yet.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "40255b0dee0aaaa08570980fef172c6ec1240c37f3cabfc9946b26d2423b9ded"
+    },
+    {
+     "question": "what suits my build",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "6e83151f8dc6cb2ffa62f3b676501186705129d7404ad9b76ffd711ef47c53db"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "**The Glass Spire holds 10 players.**\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "ac9213c1b22806cf26a61b739387c1a028f7ea0899acd6b53bea4044801993f0"
+    },
+    {
+     "question": "how do I tank as a lantern",
+     "answer": "The library does not have that yet.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "b692f48538b5a417a31e18f9c3cf89d01a2fa66df687b5c54d0fb4318934035c"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "**I can't tell which question you mean.**\n\nAsk it again in full and I'll look it up in the Library.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "279b6205dd8a4606155fb471619c369ee48e035a47110cc6a3d8fd2c2df293fa"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "**The Glass Spire holds 10 players.**\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "16ea0aec89705bc4b856a38801d5bd8205b8fcef7f993d23fe748c3244dfb8ae"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "**The Glass Spire holds 10 players.**\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "reused-answer",
+     "sha256": "fe87bfcf36c2720c09daaa736d8132075ca8e2d2c013040d60d1d9d56f038aa0"
+    },
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "**The Glass Spire holds 10 players.**\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "be5588b3c04f82d2fdc8e05ee980b782013a6bc7391f3e324ada929692a4cc5c"
+    }
+   ]
+  },
+  {
+   "reply": "[\"f1\"]",
+   "scenarios": [
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "e02fa4e5cbad93cee49b2bc3a0460b8384c76bb94f139be1061fde2eacfcf5a8"
+    },
+    {
+     "question": "when does the glass spire vault open",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "aa273b5165e2b35f7a43e5ecc0778d413386321dae082b0f08aeffa24b130807"
+    },
+    {
+     "question": "what does a lantern warden do",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "d59bfea89fa6afd482b943821a46e5cdb0dfa0089d43db66cd7d2ab79f873b5b"
+    },
+    {
+     "question": "what should I train first as a lantern",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "8ee340d293e26d7011fd91417607e27514572f36b13a37df37658d540e3b0fd1"
+    },
+    {
+     "question": "where are the reedcraft trainers",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "258ecba8f6637fab9d031700af042f8967ef4b37fa1afeb1326d347f58915922"
+    },
+    {
+     "question": "what is the best pizza topping for a vault night",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "91ede8bfed5554b4306955800d49889ca64939d42930cee33f5859346ccbe3c3"
+    },
+    {
+     "question": "hi",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "e3296a452b492a83eb23658596748f268af682926ba8cec483d271e323bdb06a"
+    },
+    {
+     "question": "what suits my build",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "6e83151f8dc6cb2ffa62f3b676501186705129d7404ad9b76ffd711ef47c53db"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "4245ac2214fc2ad8d169e9a26cbdbb78feed8b6c4aeb5ca53eb9763a2da9e921"
+    },
+    {
+     "question": "how do I tank as a lantern",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "9343978dfac411c61ffd338bb3e8faaa323afa5975764aa5677ae77636d97c0b"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "**I can't tell which question you mean.**\n\nAsk it again in full and I'll look it up in the Library.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "279b6205dd8a4606155fb471619c369ee48e035a47110cc6a3d8fd2c2df293fa"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "4fc6af28c977d5a33120548cd4b72f3c438935bdd4ae4292190579bb5ba63a83"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "[\"f1\"]",
+     "model": "reused-answer",
+     "sha256": "4e382a1252aabdb0fc3d57b4aa2004f48bba10db211ee17da110880e3105c248"
+    },
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "[\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "8cf03f2aebabd74c021e5f3d506dcd2218b5fe7cc08d037fa6b3f9597f2eb316"
+    }
+   ]
+  },
+  {
+   "reply": "[\"f2\",\"f1\"]",
+   "scenarios": [
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "4ca742570443ab2be60aa8d87d37c49a5d9a28adac7984e35b8a4f1e8501ec29"
+    },
+    {
+     "question": "when does the glass spire vault open",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "a26f03a9fc6f3d9a8289a04464d923e7f8b651c2e888594e8083ce40f2cee1d2"
+    },
+    {
+     "question": "what does a lantern warden do",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "4b2f83a7dceabd2463d98be42c7278fdc76c053e315a890c3a825b7a11584383"
+    },
+    {
+     "question": "what should I train first as a lantern",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "3aa41428c439a6a68aee2482e8551d8be7516367033ca3908b4845f3ee1741a0"
+    },
+    {
+     "question": "where are the reedcraft trainers",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "3e1e4b6233df51f8aea7921750358b322d94310e34ca979dddccedbe6ab77336"
+    },
+    {
+     "question": "what is the best pizza topping for a vault night",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "91ede8bfed5554b4306955800d49889ca64939d42930cee33f5859346ccbe3c3"
+    },
+    {
+     "question": "hi",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "93d67498a3722dd2170a4e08c099382481ac948aaf1de7ccab566252fc87acb7"
+    },
+    {
+     "question": "what suits my build",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "6e83151f8dc6cb2ffa62f3b676501186705129d7404ad9b76ffd711ef47c53db"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "116c76514b70b1f61e7ec0428ce882fd8defeb656782cb36d594e22719ed5ea0"
+    },
+    {
+     "question": "how do I tank as a lantern",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "05b16fdbf3f34665f8925f10d0eefe573221248834ed02425f5718c037e29eb9"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "**I can't tell which question you mean.**\n\nAsk it again in full and I'll look it up in the Library.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "279b6205dd8a4606155fb471619c369ee48e035a47110cc6a3d8fd2c2df293fa"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "d629213a212c916c91c6bbc77ed56ff4209747dcf3de5ffc6e7c563f58c76ed7"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "reused-answer",
+     "sha256": "9a6964105de7cf98accade38e40f276a29ffd17839573e41604ff397478fff16"
+    },
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "[\"f2\",\"f1\"]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "75ddd32e137fd42efa39c64ec360776275c6b460a429997bf62340d6688b1165"
+    }
+   ]
+  },
+  {
+   "reply": "[]",
+   "scenarios": [
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "f8e420747f7ded0020939cadd81944558b2b78eb2d4dcfea3184f7ed4913626a"
+    },
+    {
+     "question": "when does the glass spire vault open",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "2b3581493f93ef0494a7938e07d1d44414aa387e4f053672cb0bafef5d930b40"
+    },
+    {
+     "question": "what does a lantern warden do",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "849459ca608378a3258ea7d3ccbd3d7b4157085f21062c5a343c1436b58e2042"
+    },
+    {
+     "question": "what should I train first as a lantern",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "927a9e1c9ee3d4ef789bab3adbde9cab5fcab98a062a896caa1153a1fbc2a5bc"
+    },
+    {
+     "question": "where are the reedcraft trainers",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "46677a14cabebb247a8ae294cdbab6a9f9cdcd2939b6bfe7361a203159962234"
+    },
+    {
+     "question": "what is the best pizza topping for a vault night",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "91ede8bfed5554b4306955800d49889ca64939d42930cee33f5859346ccbe3c3"
+    },
+    {
+     "question": "hi",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "276be70568aa3d5341adfd7ef518ff6f52d59ae528e5bbf3a5fed0f1839961f7"
+    },
+    {
+     "question": "what suits my build",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "6e83151f8dc6cb2ffa62f3b676501186705129d7404ad9b76ffd711ef47c53db"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "5c61bb16508bd6d1f3a502eb195f76454bf9533b475cca6ff1aa29d0392f33eb"
+    },
+    {
+     "question": "how do I tank as a lantern",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "ed728f82681e643b601848b621796bc01cac5c3c966f9f85fa90bea600b2fdce"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "**I can't tell which question you mean.**\n\nAsk it again in full and I'll look it up in the Library.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "279b6205dd8a4606155fb471619c369ee48e035a47110cc6a3d8fd2c2df293fa"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "5f2c61930f113f500cd117a4c4d8dfd3f3c46dc734c41cf44e9bc8895259419c"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "[]",
+     "model": "reused-answer",
+     "sha256": "de4a631b36677e8119b821b9acea844255c3a85675d42ce474705539df81aadb"
+    },
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "[]",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "d54a6de808f43b815fbb7f310b4c4a3027fe5e33d3a7867265c8f30ffbb9dc68"
+    }
+   ]
+  },
+  {
+   "reply": "The Ember Throne drops at level 60. -# Sources: vaults/ember-throne",
+   "scenarios": [
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "a4667a5b8186780b8b5aa5cceb7daa4f26aac0467a6335af5dce4fb8b9499192"
+    },
+    {
+     "question": "when does the glass spire vault open",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "206e1423ac92fe8584597da9127a907b7817368f2e21b27e595a931d3852a805"
+    },
+    {
+     "question": "what does a lantern warden do",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "b9ccf772b30559a599f22d7850d3887143e341de89bb5c1a6f929b615b28f032"
+    },
+    {
+     "question": "what should I train first as a lantern",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "08ab3f92fdacec865bdcb5474b25b4a69b31dcb114e4d23785c77b724b8c1435"
+    },
+    {
+     "question": "where are the reedcraft trainers",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "2f7171fa95717e659eb105191408099fd9fb6655af6cba6e9aea285b5d8f1faf"
+    },
+    {
+     "question": "what is the best pizza topping for a vault night",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "91ede8bfed5554b4306955800d49889ca64939d42930cee33f5859346ccbe3c3"
+    },
+    {
+     "question": "hi",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "5efd99cb0f6c84cec227bdc1f1f7efd9c929036a505c923d573bf0fc5db47751"
+    },
+    {
+     "question": "what suits my build",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "6e83151f8dc6cb2ffa62f3b676501186705129d7404ad9b76ffd711ef47c53db"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "f440287e904654e6feb421bb150c7a819702df75b1834814731adfd456da9c98"
+    },
+    {
+     "question": "how do I tank as a lantern",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "7e82379ab0ebf0fc3c876a4215bbbe29b761a0a23ba1aa7027791520d9a17fb4"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "**I can't tell which question you mean.**\n\nAsk it again in full and I'll look it up in the Library.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "279b6205dd8a4606155fb471619c369ee48e035a47110cc6a3d8fd2c2df293fa"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "db26f42cdb39d94c8f0f6499e687b46f5a2e2beac8270c42c28d7158194bd20a"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "reused-answer",
+     "sha256": "dcfa3ea4fb1582a6229670df970bfff01df1f264dfbfd93855984a51e0225d76"
+    },
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "The Library does not cover that yet, so I won't guess. An official Blizzard post, or someone in the party who has played it, would settle it.",
+     "model": "workers-ai:@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "sha256": "556d01e16bc550fffd3e751e19a9cc821a4406b378160c1a96320f11123458c4"
+    }
+   ]
+  },
+  {
+   "reply": "Error(down)",
+   "scenarios": [
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "the Glass Spire vault holds 10 players the Glass Spire vault opens on 2026-12-09\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "4f9eb33d597f7d0c5e624592fd9dc5516be0a40507ab98d7a596fb9f668be336"
+    },
+    {
+     "question": "when does the glass spire vault open",
+     "answer": "the Glass Spire vault opens on 2026-12-09 the Glass Spire vault holds 10 players 8 crowns, the last on a timer\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "4b6c081358fda9710588a70f72e16e7b8254a6e22388657cbd11441164482c03"
+    },
+    {
+     "question": "what does a lantern warden do",
+     "answer": "tank or support; Warden and Beacon paths Bulwark absorbs 30 percent of damage for 8 seconds\n\n-# Sources: [Lantern](<https://leeroy.party/#library.callings.lantern>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "291609d32d03c71a31cc60a6d8b5d74db826b5229cd5e2e1714b18bdd2a903a0"
+    },
+    {
+     "question": "what should I train first as a lantern",
+     "answer": "Lantern trainers stand in Hollowmere by the bell tower Reedcraft trainers work at the Hollowmere docks general trainers stand at the Hollowmere market\n\n-# Sources: [Lantern](<https://leeroy.party/#library.callings.lantern>) · [Reedcraft](<https://leeroy.party/#library.crafts.reedcraft>) · [Hollowmere](<https://leeroy.party/#library.places.hollowmere>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "79b48221e2a04cacaa67a0a6c0eb8ec2a8228be9e19ff4c00ad51505b5f50d31"
+    },
+    {
+     "question": "where are the reedcraft trainers",
+     "answer": "Reedcraft trainers work at the Hollowmere docks\n\n-# Sources: [Reedcraft](<https://leeroy.party/#library.crafts.reedcraft>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "a6a689c04a88700ccec702f9c76da4aa814d2708ef41460b91ca358cfe3cb280"
+    },
+    {
+     "question": "what is the best pizza topping for a vault night",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "91ede8bfed5554b4306955800d49889ca64939d42930cee33f5859346ccbe3c3"
+    },
+    {
+     "question": "hi",
+     "answer": "down",
+     "model": "workers-ai",
+     "sha256": "3b9e9645cc55bfb8b01b92a231a402eaa1b2a33a4aa3d397272303b190c64e0c"
+    },
+    {
+     "question": "what suits my build",
+     "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "6e83151f8dc6cb2ffa62f3b676501186705129d7404ad9b76ffd711ef47c53db"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "8 crowns, the last on a timer the Glass Spire vault holds 10 players the Glass Spire vault opens on 2026-12-09\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "5b5a32ed3c6f5c5120bed43b2edc0214064ef18aef5e8fd41013b109885ebb20"
+    },
+    {
+     "question": "how do I tank as a lantern",
+     "answer": "tank or support; Warden and Beacon paths\n\n-# Sources: [Lantern](<https://leeroy.party/#library.callings.lantern>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "dc8cebbaffed0ea5db32f7d13aebea6ff9f19579b6dfae4450540dbd8d3768d4"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "**I can't tell which question you mean.**\n\nAsk it again in full and I'll look it up in the Library.\n\nI can answer questions about: callings, kinds, vaults, crafts, places.",
+     "model": "library:abstain",
+     "sha256": "279b6205dd8a4606155fb471619c369ee48e035a47110cc6a3d8fd2c2df293fa"
+    },
+    {
+     "question": "any better answers to my previous question",
+     "answer": "8 crowns, the last on a timer the Glass Spire vault holds 10 players the Glass Spire vault opens on 2026-12-09\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "f5de77fd6824c68068850ac283ea33f88226982f458dcd2a27fa8ffd2bfda054"
+    },
+    {
+     "question": "how many crowns in the glass spire",
+     "answer": "8 crowns, the last on a timer the Glass Spire vault holds 10 players the Glass Spire vault opens on 2026-12-09\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "reused-answer",
+     "sha256": "2d5aba86f4817a8da00123df8860e4265161cc553f7b5e617ca707c0d479b523"
+    },
+    {
+     "question": "how many players does the glass spire vault hold",
+     "answer": "the Glass Spire vault holds 10 players the Glass Spire vault opens on 2026-12-09\n\n-# Sources: [Glass Spire](<https://leeroy.party/#library.vaults.glass-spire>)",
+     "model": "workers-ai:workers-ai-local-d1-rag (after workers-ai: down)",
+     "sha256": "f9dc979b9546e7843a2e5ea15ee0e2ad1b3a53d3e71c5e40530063a695ca7531"
+    }
+   ]
+  }
+ ]
+}
