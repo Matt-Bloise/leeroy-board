@@ -41,6 +41,7 @@ import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MA
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
+import { runWeeklyPost } from "./weekly-post.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
@@ -1861,6 +1862,8 @@ const worker = {
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
     ctx.waitUntil(cleanupAnswerUx(env));
+    // WEEKLY_POST (default off): the weekly board post, due a set time before play night (weekly-post.js). Reads nothing while off.
+    ctx.waitUntil(runWeeklyPost(env).catch(() => {}));
     // CARDS_ENABLED: this tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).
     if (cardsEnabled(env)) ctx.waitUntil(Promise.all([flushBoardLines(env), requestCardEdit(env, { dirty: false })]).catch(() => {}));
   },
