@@ -47,6 +47,7 @@ import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { publicParty, partyForMember } from "./sheet-privacy.js";
+import { sheetValueProblem, ADMIN_SHEET_FIELDS } from "./sheet-values.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
@@ -330,14 +331,17 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
   return partyDoc;
 }
 
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at }) {
+// keepHidden (the admin path): a field its owner has hidden stays hidden. The check runs inside the commit, against the sheet state that is
+// written, so a hide that lands between the admin's request and the write is never undone.
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at, keepHidden = false }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
+  const event = { slug, name: name || slug, field, valJson, visible: Boolean(visible), source: source || "board", at: now };
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
   // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
   const saved = await commitSheetWrite(env, {
-    event: { slug, name: name || slug, field, valJson, visible, source: source || "board", at: now },
+    event,
     compute: async (cur, partyDoc) => {
       // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
@@ -355,7 +359,9 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
         currentParty.push(memberSheet);
       }
       memberSheet.fields = memberSheet.fields || {};
-      memberSheet.fields[field] = { value, visible: Boolean(visible), source: source || "board", at: now };
+      const prior = memberSheet.fields[field];
+      event.visible = keepHidden && prior && prior.visible === false ? false : Boolean(visible); // recomputed on every retry
+      memberSheet.fields[field] = { value, visible: event.visible, source: source || "board", at: now };
       memberSheet.updated = now;
       return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
     },
@@ -364,7 +370,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
 
   await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
   await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
-  return { party: currentParty, at: now };
+  return { party: currentParty, at: now, visible: event.visible };
 }
 
 export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
@@ -384,7 +390,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "GET /wiki/proposals/:id", "POST /wiki/proposals/:id/approve", "POST /wiki/proposals/:id/reject", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -496,6 +502,8 @@ const worker = {
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
           }
+          const problem = sheetValueProblem(field, body.value);
+          if (problem) return jsonResp({ error: problem }, 400, cors);
           const visible = body.visible !== false;
           const value = body.value === undefined ? null : body.value;
           const now = new Date().toISOString();
@@ -650,6 +658,37 @@ const worker = {
         const { state } = await d1Store(env, shadow ? MOMENTS_SHADOW_STATE_KEY : undefined).read();
         const { state: led } = await d1Store(env, MOMENTS_LEDGER_KEY, "entries").read();
         return jsonResp(momentsStatus({ schedule, state, now: Date.now(), enabled: momentsEnabled(env), shadow, dryRun: momentsDryRun(env), ledger: led.entries }), 200, cors);
+      }
+
+      // Admin only: fill one field on a party member's sheet (q-20261114-22: level, which the owner can fill for a friend). Only fields with a
+      // server-side rule (ADMIN_SHEET_FIELDS). The member must be in the party. A field the friend has hidden stays hidden (keepHidden); the admin
+      // may hide a field but never shows one. Same commit, broadcast and intent as a friend's own POST /sheet, with source "admin".
+      if (req.method === "POST" && path === "/admin/sheet") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const read = await readJsonCapped(req);
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body;
+        if (!body || typeof body !== "object" || Array.isArray(body)) return jsonResp({ error: "Body must be a JSON object" }, 400, cors);
+        if (!Object.keys(body).every((k) => k === "slug" || k === "field" || k === "value" || k === "visible")) return jsonResp({ error: "Body carries slug, field, value and an optional visible:false" }, 400, cors);
+        const field = typeof body.field === "string" ? body.field : "";
+        if (!ADMIN_SHEET_FIELDS.includes(field)) return jsonResp({ error: `The admin may fill only: ${ADMIN_SHEET_FIELDS.join(", ")}` }, 400, cors);
+        const problem = sheetValueProblem(field, body.value);
+        if (problem) return jsonResp({ error: problem }, 400, cors);
+        if (body.visible !== undefined && body.visible !== false) return jsonResp({ error: "visible may only be false: the admin never shows a hidden field" }, 400, cors);
+        const slug = typeof body.slug === "string" ? body.slug : "";
+        const member = /^[a-z0-9-]{1,32}$/.test(slug) ? (await loadPartyMembers(env)).find((m) => m.slug === slug) : null;
+        if (!member) return jsonResp({ error: "Unknown party member" }, 404, cors);
+        const now = new Date().toISOString();
+        let saved;
+        try {
+          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, source: "admin", at: now, keepHidden: true });
+        } catch (e) {
+          if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
+          throw e;
+        }
+        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: body.value, visible: saved.visible, source: "admin" }, ver: 1, at: now });
+        return jsonResp({ ok: true, id: seq, seq, at: now, slug: member.slug, field, value: body.value, visible: saved.visible }, 200, cors);
       }
 
       // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.

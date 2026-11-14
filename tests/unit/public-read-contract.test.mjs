@@ -255,6 +255,16 @@ test("every room message reaches an anonymous socket with no private value and o
   assert.ok(fanOut(synthetic[0]).member[0].includes(C.sharedQ.split(" ")[0]));
   // After the sheet writes, the public reads still hold no hidden value or id.
   for (const p of ["/data/party", "/state", "/bootstrap"]) { const l2 = leaks((await get(env, p)).scan); if (l2.length) canaryFailures++; assert.deepEqual(l2, [], p); }
+  // A sheet level is a number, so no text canary can mark it: once hidden (by its owner, then filled again by the admin path), the level key
+  // itself must be absent from red-fox's row in every public read and in every room message sent after the hide.
+  const before = env.sent.length;
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "level", value: 34, visible: false }));
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "level", value: 35, source: "admin", keepHidden: true }));
+  const lv = (rows) => { const r = Array.isArray(rows) ? rows.find((s) => s && s.slug === "red-fox") : null; return r && r.fields ? r.fields.level : undefined; };
+  assert.equal(lv(JSON.parse((await get(env, "/state")).text).party), undefined, "/state");
+  assert.equal(lv(JSON.parse((await get(env, "/bootstrap")).text).partySheets), undefined, "/bootstrap");
+  assert.ok(env.sent.length >= before + 2);
+  for (const m of env.sent.slice(before)) { const j = JSON.parse(m); if (Array.isArray(j.party)) assert.equal(lv(j.party), undefined, "room message"); for (const s of fanOut(m).anon) assert.equal(lv(JSON.parse(s).party), undefined, "anonymous socket"); }
 });
 
 test("room.js: an anonymous message keeps only PUBLIC_TOP_KEYS, and an item or intent only PUBLIC_ITEM_KEYS with scalar values", () => {
