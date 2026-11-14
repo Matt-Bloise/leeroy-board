@@ -6,7 +6,8 @@
         "formFactor": "mobile",
         "screenEmulation": { "mobile": true, "width": 390, "height": 844, "deviceScaleFactor": 2, "disabled": false },
         "onlyCategories": ["performance"],
-        "chromeFlags": "--headless=new --no-sandbox"
+        "chromeFlags": "--headless=new --no-sandbox",
+        "blockedUrlPatterns": ["*cloudflareinsights.com*"]
       }
     },
     "assert": {

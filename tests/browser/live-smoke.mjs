@@ -9,6 +9,7 @@
 // Option: --engine chromium|webkit|firefox runs that engine alone (default: Chromium and WebKit; Firefox only when asked, for the scheduled cross-engine run, .github/workflows/cross-engine.yml).
 // Option: --clock <iso> loads every page with its clock set to that instant (tests/helpers/clock-arg.mjs), e.g. 2026-11-04T10:00:00Z to see the launch hero today.
 // Exit 0 when every check passes, 1 otherwise.
+import { stubbedContext } from "../helpers/probe-checks.mjs";
 import { needsRetry, mergeRuns, RETRY_DELAY_MS } from "./smoke-retry.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 import { parseClock, applyClock } from "../helpers/clock-arg.mjs";
@@ -53,7 +54,7 @@ const row = (r) => `${r.status} ${r.method} ${r.url}`;
 /* one first visit; its checks come back as rows for one() to judge */
 async function visit(browser, engine, size, opts, setup) {
   /* Firefox has no isMobile (Playwright refuses the context); its phone context is the viewport and touch alone (2026-10-31, the cross-engine run) */
-  const { isMobile, ...rest } = opts, tag = `${engine} ${size}`, ctx = await browser.newContext({ ...(engine === "firefox" ? rest : opts), serviceWorkers: "block" }), errs = [], http = [], xo = [], rows = [];
+  const { isMobile, ...rest } = opts, tag = `${engine} ${size}`, ctx = await stubbedContext(browser, { ...(engine === "firefox" ? rest : opts), serviceWorkers: "block" }, BASE), errs = [], http = [], xo = [], rows = [];
   const ok = (name, cond, extra = "") => { rows.push([name, !!cond, extra]); }; /* the file's ok(), held until one() knows whether this visit counts */
   if (setup) await setup(ctx);
   const page = await ctx.newPage();

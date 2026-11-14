@@ -83,6 +83,16 @@ export const isInsightsHost = (u) => /(^|\.)cloudflareinsights\.com$/i.test(host
 // line the sweep can excuse only inside BEACON_WINDOW_MS, so a slow beacon failed a cell (run 43452114041). Answering it in the browser removes the noise at its source.
 // Only https://cloudflareinsights.com/cdn-cgi/rum is answered; the answer allows exactly the site's origin, never a wildcard.
 export const isRumUrl = (u) => { try { const x = new URL(String(u)); return x.origin === "https://cloudflareinsights.com" && x.pathname === "/cdn-cgi/rum"; } catch (e) { return false; } };
+// A browser context whose analytics beacon report is answered in the browser (rumStub), for every QA and probe run against a live site: the run is never
+// counted as a visitor in Cloudflare Web Analytics, and the endpoint's 404 to runner traffic (it answers 404 without CORS to a report it rejects, which
+// WebKit logs as a URL-less CORS error) cannot surface. The beacon script itself still loads, so first-load weight and CSP checks see the real page.
+export async function stubbedContext(browser, opts, siteUrl) {
+  const ctx = await browser.newContext(opts);
+  let origin = null;
+  try { origin = new URL(String(siteUrl)).origin; } catch (e) { origin = null; }
+  if (origin && /^https?:/.test(origin)) await ctx.route((u) => isRumUrl(u.href), (r) => r.fulfill(rumStub(origin)));
+  return ctx;
+}
 export function rumStub(origin) {
   let o = null; try { const x = new URL(String(origin)); if (x.protocol === "https:" || x.protocol === "http:") o = x.origin; } catch (e) { o = null; }
   if (!o || o !== String(origin).replace(/\/$/, "")) throw new Error("rumStub needs an origin such as https://leeroy.party");

@@ -3,6 +3,7 @@
 // Fails on serious or critical violations only; minor and moderate ones are printed as WARN. Reads only, nothing is sent.
 // Exclusions are listed in EXCLUDE below, each with a reason and a narrow selector. Add none without a reason.
 // Exit 0 when every check passes, 1 otherwise.
+import { stubbedContext } from "../helpers/probe-checks.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 import { pageUrl } from "../helpers/page-url.mjs";
 import { parseClock, applyClock, expectedHero, heroStateProblem } from "../helpers/clock-arg.mjs";
@@ -36,7 +37,7 @@ async function scan(page, label, tag) {
    pseudo-elements: "incomplete", reasons pseudoContent / bgGradient / bgOverlap), so failing on every incomplete node would be permanently red; instead the incomplete nodes are counted in a WARN
    line, and the node that once failed, #lh-check-sum (the checklist summary), must be measured and pass: missing, incomplete or failing fails the run. */
 async function heroScan(browser, opts, tag) {
-  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" });
+  const ctx = await stubbedContext(browser, { ...opts, serviceWorkers: "block", reducedMotion: "reduce" }, BASE);
   const page = await ctx.newPage();
   await applyClock(page, CLOCK);
   await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
@@ -77,7 +78,7 @@ async function heroScan(browser, opts, tag) {
 const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
 for (const [size, opts] of CTX) {
   const tag = `[${size}]`;
-  const ctx = await browser.newContext({ ...opts, serviceWorkers: "block", reducedMotion: "reduce" });
+  const ctx = await stubbedContext(browser, { ...opts, serviceWorkers: "block", reducedMotion: "reduce" }, BASE);
   const page = await ctx.newPage();
   await applyClock(page, CLOCK);
   await page.goto(BASE, { waitUntil: "load" });

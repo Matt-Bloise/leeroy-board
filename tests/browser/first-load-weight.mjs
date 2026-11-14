@@ -7,6 +7,7 @@
 // Budget: 20 percent above the value measured when this suite was added (see the PR body). Raise it only with a measured reason.
 // Option: --clock <iso> loads the page with its clock set to that instant, to run these checks inside the launch hero window (B49).
 // Reads only. Exit 0 when every check passes, 1 otherwise.
+import { stubbedContext } from "../helpers/probe-checks.mjs";
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 import { parseClock, applyClock } from "../helpers/clock-arg.mjs";
@@ -23,7 +24,7 @@ let pass = 0, fail = 0;
 const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log(`PASS ${name}`); } else { fail++; console.log(`FAIL ${name}${extra ? `: ${extra}` : ""}`); } };
 
 const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3, serviceWorkers: "block" });
+const ctx = await stubbedContext(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3, serviceWorkers: "block" }, ORIGIN);
 const page = await ctx.newPage();
 await applyClock(page, CLOCK);
 const rows = [], pending = [];
