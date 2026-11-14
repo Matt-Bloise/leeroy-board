@@ -15,6 +15,7 @@
 // Makes no AI call and sends nothing. Chromium only. Exit 0 when every check passes, 1 otherwise.
 // Late rejections from routes or pages that closed with the context are not test failures; anything else still fails the run.
 process.on("unhandledRejection", (e) => { if (/Target page, context or browser has been closed/.test(String(e && e.message || e))) return; console.error(e); process.exit(1); });
+import { stubbedContext } from "../helpers/probe-checks.mjs";
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
@@ -123,7 +124,7 @@ const CONDITIONS = [
 
 async function runOne(browser, cond, [size, sopts], visit, slug) {
   const name = `${cond.label} | ${size} | ${visit} visit`;
-  const ctx = await browser.newContext({ ...sopts, ...(cond.ctx || {}), serviceWorkers: cond.sw || "block" }), errs = [], cons = [];
+  const ctx = await stubbedContext(browser, { ...sopts, ...(cond.ctx || {}), serviceWorkers: cond.sw || "block" }, BASE), errs = [], cons = [];
   try {
     if (visit === "repeat") await ctx.addInitScript((me) => { try { localStorage.setItem("board-me", me); } catch (e) {} }, slug);
     if (cond.init) await ctx.addInitScript(cond.init);

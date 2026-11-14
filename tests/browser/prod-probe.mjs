@@ -37,7 +37,7 @@
 // Exit 0 when everything passes, 1 on any failure, 2 on bad usage or a missing engine under PROBE_REQUIRE_ENGINES=1.
 import fs from "node:fs";
 import { pageUrl, originOf } from "../helpers/page-url.mjs";
-import { WORDS, slugOf, junkIn, wrongCountCopy, memberCountProblem, uniq, consoleFailures, exemptedAdvisories, classifyHttp, isInsightsHost } from "../helpers/probe-checks.mjs";
+import { WORDS, slugOf, junkIn, wrongCountCopy, memberCountProblem, uniq, consoleFailures, exemptedAdvisories, classifyHttp, isInsightsHost, stubbedContext } from "../helpers/probe-checks.mjs";
 import { createBudget, guardContext } from "../helpers/probe-budget.mjs";
 import { parseClock } from "../helpers/clock-arg.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm ci in tests/"); process.exit(2); });
@@ -184,7 +184,7 @@ async function settleCopy(page, n, ms, state) {
 async function probeOne(browser, engine, vp) {
   const tag = `${engine} ${vp.name}`;
   const ctxOpts = { viewport: { width: vp.width, height: vp.height }, serviceWorkers: "block", reducedMotion: "reduce", ...(vp.phone && engine !== "firefox" ? { hasTouch: true, isMobile: true } : {}) };
-  const ctx = await browser.newContext(ctxOpts);
+  const ctx = await stubbedContext(browser, ctxOpts, URL_);
   const errs = [], http = [], failed = [];
   // The only routes: count every Worker request and every socket before it is sent, and refuse it once the budget is spent (helpers/probe-budget.mjs).
   await guardContext(ctx, budget, { mode: API_ROUTE });
