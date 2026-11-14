@@ -333,10 +333,13 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
 
 // keepHidden (the admin path): a field its owner has hidden stays hidden. The check runs inside the commit, against the sheet state that is
 // written, so a hide that lands between the admin's request and the write is never undone.
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at, keepHidden = false }) {
+// newerWins (level): a write whose `at` is older than the stored field's `at` leaves the field as it is (two overlapping requests: the one that
+// started later keeps its value even if it commits first). The event row is still recorded as history; the reply carries stale:true.
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at, keepHidden = false, newerWins = false }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
   const event = { slug, name: name || slug, field, valJson, visible: Boolean(visible), source: source || "board", at: now };
+  let stale = false;
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
   // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
@@ -360,7 +363,9 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       }
       memberSheet.fields = memberSheet.fields || {};
       const prior = memberSheet.fields[field];
-      event.visible = keepHidden && prior && prior.visible === false ? false : Boolean(visible); // recomputed on every retry
+      stale = !!(newerWins && prior && prior.at && Date.parse(prior.at) > Date.parse(now)); // recomputed on every retry
+      event.visible = keepHidden && prior && prior.visible === false ? false : Boolean(visible);
+      if (stale) return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
       memberSheet.fields[field] = { value, visible: event.visible, source: source || "board", at: now };
       memberSheet.updated = now;
       return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
@@ -370,7 +375,9 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
 
   await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
   await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
-  return { party: currentParty, at: now, visible: event.visible };
+  // stale: the stored field (newer than this write) is what the caller is told about, not the value it sent.
+  const kept = stale ? ((currentParty.find((s) => s && s.slug === slug) || {}).fields || {})[field] : null;
+  return { party: currentParty, at: now, visible: kept ? kept.visible !== false : event.visible, stale, kept };
 }
 
 export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
@@ -507,8 +514,9 @@ const worker = {
           const visible = body.visible !== false;
           const value = body.value === undefined ? null : body.value;
           const now = new Date().toISOString();
+          let saved;
           try {
-            await recordSheetEventInD1(env, url.origin, {
+            saved = await recordSheetEventInD1(env, url.origin, {
               slug: m.slug,
               name: m.name,
               field,
@@ -516,6 +524,7 @@ const worker = {
               visible,
               source: "board",
               at: now,
+              newerWins: field === "level",
             });
           } catch (e) {
             if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
@@ -528,6 +537,7 @@ const worker = {
             ver: 1,
             at: now,
           });
+          if (saved && saved.stale && saved.kept) return jsonResp({ ok: true, id: seq, seq, at: saved.kept.at, field, value: saved.kept.value, visible: saved.kept.visible !== false, stale: true }, 200, cors);
           return jsonResp({ ok: true, id: seq, seq, at: now, field, value, visible }, 200, cors);
         }
       }
@@ -682,12 +692,13 @@ const worker = {
         const now = new Date().toISOString();
         let saved;
         try {
-          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, source: "admin", at: now, keepHidden: true });
+          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, source: "admin", at: now, keepHidden: true, newerWins: true });
         } catch (e) {
           if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
           throw e;
         }
         const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: body.value, visible: saved.visible, source: "admin" }, ver: 1, at: now });
+        if (saved.stale && saved.kept) return jsonResp({ ok: true, id: seq, seq, at: saved.kept.at, slug: member.slug, field, value: saved.kept.value, visible: saved.kept.visible !== false, stale: true }, 200, cors);
         return jsonResp({ ok: true, id: seq, seq, at: now, slug: member.slug, field, value: body.value, visible: saved.visible }, 200, cors);
       }
 

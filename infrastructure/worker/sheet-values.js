@@ -7,11 +7,11 @@ export const LEVEL_CAP = 60;
 export const ADMIN_SHEET_FIELDS = ["level"];
 
 // Returns null when the value may be stored, or a short reason. `value` is the raw body value (undefined when the key is absent).
-// level: an integer from 1 to LEVEL_CAP, or null to clear it. A missing value, 0, a float, a numeric string and anything else are refused.
+// level: an integer from 1 to LEVEL_CAP. A missing value, null, 0, a float, a numeric string and anything else are refused. A friend who wants
+// the line off the party table hides it (visible:false with the current value); clearing it is not a write the server takes.
 export function sheetValueProblem(field, value) {
   if (field === "level") {
-    if (value === undefined) return "level needs a value: a whole number from 1 to " + LEVEL_CAP + ", or null to clear it";
-    if (value === null) return null;
+    if (value === undefined || value === null) return "level needs a value: a whole number from 1 to " + LEVEL_CAP;
     if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > LEVEL_CAP) return "level must be a whole number from 1 to " + LEVEL_CAP;
     return null;
   }

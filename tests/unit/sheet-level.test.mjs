@@ -4,10 +4,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import worker, { purgeWorkerCache } from "../../infrastructure/worker/index.js";
+import worker, { purgeWorkerCache, recordSheetEventInD1 } from "../../infrastructure/worker/index.js";
 import { LEVEL_CAP, sheetValueProblem, ADMIN_SHEET_FIELDS } from "../../infrastructure/worker/sheet-values.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
+import { BoardRoom } from "../../infrastructure/worker/room.js";
+import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
+import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
+import { createDiscordSigner } from "../helpers/discord-sign.mjs";
+import vm from "node:vm";
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async () => new Response("blocked in tests", { status: 599 });
@@ -40,6 +45,8 @@ const asAdmin = `Bearer ${ADMIN}`;
 const sheets = (env) => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json);
 const sheetOf = (env, slug) => sheets(env).find((s) => s.slug === slug);
 const levelIn = (party, slug) => { const row = Array.isArray(party) ? party.find((s) => s && s.slug === slug) : null; return row && row.fields ? row.fields.level : undefined; };
+// What an anonymous socket receives for one room message (the room redacts per audience).
+const anonSocket = (msg) => { const got = []; const ctx2 = { getWebSockets: () => [{ deserializeAttachment: () => ({}), send: (m) => got.push(JSON.parse(m)) }], setWebSocketAutoResponse() {} }; new BoardRoom(ctx2, {}).broadcast(JSON.stringify(msg)); return got; };
 const anon = async (env, path) => { await purgeWorkerCache(ORIGIN, [`/api${path}`]); const r = await call(env, "GET", path); return { status: r.status, json: await r.json() }; };
 
 test("the level cap matches data/client.json (the game's cap, not a guess)", () => {
@@ -49,18 +56,23 @@ test("the level cap matches data/client.json (the game's cap, not a guess)", () 
   assert.deepEqual(ADMIN_SHEET_FIELDS, ["level"]);
 });
 
-test("sheetValueProblem: level 0, cap + 1, 'abc', a float, a numeric string and a missing value are refused; 1, the cap and null pass", () => {
-  for (const bad of [0, LEVEL_CAP + 1, "abc", 1.5, 34.2, "12", undefined, -3, NaN, Infinity, true, [12], { v: 12 }]) assert.ok(sheetValueProblem("level", bad), `refused: ${String(bad)}`);
-  for (const ok of [1, LEVEL_CAP, 34, null]) assert.equal(sheetValueProblem("level", ok), null, `accepted: ${ok}`);
+// Every value an adversarial caller tries. JSON cannot carry NaN or Infinity (JSON.stringify turns them into null), so they are checked on the
+// pure function; over HTTP the same body arrives as null and is refused too.
+const BAD = [0, LEVEL_CAP + 1, -1, 1.5, 34.2, "60", "60abc", "abc", "12", null, undefined, NaN, Infinity, -Infinity, true, [12], { v: 12 }, 1e21];
+test("sheetValueProblem: level 0, cap + 1, -1, 1.5, '60', '60abc', null, an array, an object, NaN, Infinity and a missing value are refused; 1 and the cap pass", () => {
+  for (const bad of BAD) assert.ok(sheetValueProblem("level", bad), `refused: ${String(bad)}`);
+  for (const ok of [1, LEVEL_CAP, 34]) assert.equal(sheetValueProblem("level", ok), null, `accepted: ${ok}`);
   assert.equal(sheetValueProblem("goals", "anything"), null, "fields without a server rule are unchanged");
 });
 
 test("POST /sheet: the friend's level write is validated on the server and stored with its own at stamp", async () => {
   const env = await makeEnv();
-  for (const bad of [{ value: 0 }, { value: 61 }, { value: "abc" }, { value: 1.5 }, {}, { visible: false }]) {
+  for (const bad of [...BAD.filter((v) => v !== undefined).map((value) => ({ value })), {}, { visible: false }]) {
     const r = await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", ...bad } });
     assert.equal(r.status, 400, JSON.stringify(bad));
   }
+  const big = await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: 12, pad: "x".repeat(70000) } });
+  assert.equal(big.status, 413, "an oversized body is refused");
   assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events WHERE field = 'level'").get().n, 0, "a refused write leaves no event");
   for (const lv of [1, LEVEL_CAP]) {
     const r = await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: lv } });
@@ -74,9 +86,38 @@ test("POST /sheet: the friend's level write is validated on the server and store
     assert.equal(f.at, j.at, "the field carries the write's own at stamp");
     assert.ok(!Number.isNaN(Date.parse(f.at)));
   }
-  const cleared = await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: null } });
-  assert.equal(cleared.status, 200, "null clears the line");
-  assert.equal(sheetOf(env, "red-fox").fields.level.value, null);
+  const hide = await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: LEVEL_CAP, visible: false } });
+  assert.equal(hide.status, 200, "hiding sends the current value with visible:false");
+  assert.deepEqual([sheetOf(env, "red-fox").fields.level.value, sheetOf(env, "red-fox").fields.level.visible], [LEVEL_CAP, false]);
+});
+
+test("nobody writes another friend's level: no key, a wrong key, or a slug in the body all miss red-fox's sheet", async () => {
+  const env = await makeEnv();
+  assert.equal((await call(env, "POST", "/sheet", { body: { field: "level", value: 20 } })).status, 401, "no key");
+  assert.equal((await call(env, "POST", "/sheet", { auth: "Board not-a-real-key-0123456789", body: { field: "level", value: 20 } })).status, 401, "wrong key");
+  assert.equal((await call(env, "GET", "/sheet")).status, 401, "no unauthenticated view of a sheet");
+  const r = await call(env, "POST", "/sheet", { auth: asMember("blue-owl"), body: { field: "level", value: 20, slug: "red-fox" } });
+  assert.equal(r.status, 200);
+  assert.equal(sheetOf(env, "blue-owl").fields.level.value, 20, "the write lands on the caller's own sheet");
+  assert.equal(levelIn(sheets(env), "red-fox"), undefined, "red-fox's sheet has no level");
+  assert.equal((await call(env, "POST", "/admin/sheet", { auth: asMember("blue-owl"), body: { slug: "red-fox", field: "level", value: 20 } })).status, 401, "a member key on the admin route");
+});
+
+test("an older level write never overwrites a newer one (two overlapping requests)", async () => {
+  const env = await makeEnv();
+  const newer = "2026-11-14T10:00:05.000Z", older = "2026-11-14T10:00:01.000Z";
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 30, at: newer, newerWins: true }));
+  const late = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 29, at: older, newerWins: true }));
+  assert.equal(late.stale, true);
+  assert.deepEqual([late.kept.value, late.kept.at], [30, newer], "the caller is told what is stored");
+  assert.deepEqual([sheetOf(env, "red-fox").fields.level.value, sheetOf(env, "red-fox").fields.level.at], [30, newer]);
+  const after = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 31, at: "2026-11-14T10:00:09.000Z", newerWins: true }));
+  assert.equal(after.stale, false);
+  assert.equal(sheetOf(env, "red-fox").fields.level.value, 31);
+  // the admin path uses the same rule
+  const r = await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { slug: "red-fox", field: "level", value: 32 } });
+  assert.equal(r.status, 200, "a write stamped now is newer than the fixed past stamps above");
+  assert.equal(sheetOf(env, "red-fox").fields.level.value, 32);
 });
 
 test("a hidden level reaches only its owner: never /state, /bootstrap, /data/party, the room, or another member's /sheet", async () => {
@@ -110,16 +151,17 @@ test("POST /admin/sheet: admin token only; fills a friend's level with source ad
   assert.equal((await call(env, "POST", "/admin/sheet", { body })).status, 401, "anonymous");
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: asMember("blue-owl"), body })).status, 401, "a member key is not the admin");
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: "Bearer wrong-token-0123456789", body })).status, 401, "a wrong token");
-  for (const bad of [{ value: 0 }, { value: 61 }, { value: "abc" }, { value: 2.5 }, { value: undefined }]) {
-    const b = { slug: "red-fox", field: "level", ...bad };
-    if (bad.value === undefined) delete b.value;
-    assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: b })).status, 400, JSON.stringify(bad));
+  for (const value of BAD) {
+    const b = { slug: "red-fox", field: "level", value };
+    if (value === undefined) delete b.value;
+    assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: b })).status, 400, String(value));
   }
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { ...body, field: "goals", value: "x" } })).status, 400, "only fields with a server rule");
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { ...body, visible: true } })).status, 400, "the admin never shows a field");
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { ...body, extra: 1 } })).status, 400, "unknown keys");
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { ...body, slug: "green-elk" } })).status, 404, "not in the party");
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: "not json" })).status, 400);
+  assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { ...body, pad: "x".repeat(70000) } })).status, 413, "an oversized body is refused");
   assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events").get().n, 0, "no refused call wrote anything");
   const r = await call(env, "POST", "/admin/sheet", { auth: asAdmin, body });
   assert.equal(r.status, 200);
@@ -146,8 +188,98 @@ test("POST /admin/sheet keeps a level the friend hid hidden, and may hide one", 
   assert.equal(levelIn((await anon(env, "/state")).json.party, "red-fox"), undefined);
   assert.equal(levelIn((await anon(env, "/bootstrap")).json.partySheets, "red-fox"), undefined);
   for (const m of env.sent) if (Array.isArray(m.party)) assert.equal(levelIn(m.party, "red-fox"), undefined, "room message");
+  for (const m of env.sent) for (const a of anonSocket(m)) assert.equal(levelIn(a.party, "red-fox"), undefined, "anonymous socket");
+  const pd = await anon(env, "/data/party");
+  assert.equal(pd.status, 200);
+  assert.ok(!JSON.stringify(pd.json).includes("\"level\""), "/data/party");
   // the admin may hide a visible one
   assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { slug: "blue-owl", field: "level", value: 18, visible: false } })).status, 200);
   assert.equal(sheetOf(env, "blue-owl").fields.level.visible, false);
   assert.equal(levelIn((await anon(env, "/state")).json.party, "blue-owl"), undefined);
+});
+
+test("POST /admin/sheet: a hide that commits between the admin's read and its commit survives the compare-and-set retry", async () => {
+  const env = await makeEnv();
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: 12 } })).status, 200);
+  const batch = env.DB.batch.bind(env.DB);
+  let raced = 0, batches = 0;
+  env.DB.batch = async (list) => {
+    batches++;
+    if (!raced) {
+      raced++;
+      // The friend's hide lands first: the stored sheets row changes under the admin's pending commit, so its guarded UPDATE matches nothing.
+      const row = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json);
+      const fox = row.find((s) => s.slug === "red-fox");
+      fox.fields.level = { ...fox.fields.level, visible: false, at: new Date(Date.now() - 1).toISOString() };
+      env.DB.raw.prepare("UPDATE kv_state SET json = ?, updated_at = 'hide' WHERE key = 'party_sheets'").run(JSON.stringify(row));
+    }
+    return batch(list);
+  };
+  const r = await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { slug: "red-fox", field: "level", value: 40 } });
+  assert.equal(r.status, 200);
+  assert.ok(batches >= 2, "the first commit lost the race and was retried");
+  const j = await r.json();
+  assert.equal(j.visible, false);
+  assert.deepEqual([sheetOf(env, "red-fox").fields.level.value, sheetOf(env, "red-fox").fields.level.visible], [40, false]);
+  assert.equal(env.DB.raw.prepare("SELECT visible FROM sheet_events WHERE source = 'admin'").get().visible, 0);
+  assert.equal(levelIn((await anon(env, "/state")).json.party, "red-fox"), undefined);
+});
+
+test("POST /admin/sheet: an unknown slug is 404 and the reply names nobody", async () => {
+  const env = await makeEnv();
+  for (const slug of ["green-elk", "RED-FOX", "red fox", "../red-fox", "", 7]) {
+    const r = await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { slug, field: "level", value: 20 } });
+    assert.equal(r.status, 404, String(slug));
+    const t = (await r.text()).toLowerCase();
+    for (const n of ["red", "fox", "blue", "owl"]) assert.ok(!t.includes(n), `reply echoes ${n}: ${t}`);
+  }
+});
+
+test("Discord /sheet cannot write level (a slash option is a string), even for an interaction built by hand", async () => {
+  invalidateConfigCache();
+  const env = await makeEnv();
+  const signer = createDiscordSigner();
+  Object.assign(env, { DISCORD_PUBLIC_KEY: signer.publicKeyHex });
+  env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('discord_members', ?, 'x')").run(JSON.stringify([{ slug: "red-fox", name: "Red Fox", match: ["red fox"], id: "100000000000000001" }]));
+  const send = (options) => quiet(() => handleDiscordInteraction(signer.signedRequest({
+    type: 2, id: "1", application_id: "2", token: "t", channel_id: "3", member: { nick: "Red Fox", user: { id: "100000000000000001", username: "redfox" } },
+    data: { name: "sheet", options },
+  }), env, { waitUntil() {} }, ORIGIN));
+  for (const value of ["34", "60", "0", "abc"]) {
+    const res = await send([{ name: "field", type: 3, value: "level" }, { name: "value", type: 3, value }]);
+    assert.equal(res.status, 200);
+    assert.match(JSON.stringify(await res.json()), /set on the board/);
+  }
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events").get().n, 0, "nothing written");
+  const ok = await send([{ name: "field", type: 3, value: "goals" }, { name: "value", type: 3, value: "find a guild" }]);
+  assert.equal(ok.status, 200);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events WHERE field = 'goals'").get().n, 1, "other fields still write as before");
+});
+
+// The board client end to end: js/brain.js in a sandbox, its fetch routed into the Worker. setSheet("level", 34) is saved; hiding it is too.
+test("the existing board client (js/brain.js setSheet) still saves and hides a level through the Worker", async () => {
+  const env = await makeEnv();
+  const src = readFileSync(new URL("../../js/brain.js", import.meta.url), "utf8");
+  const store = new Map([["board-key", KEYS["red-fox"]]]);
+  const win = {};
+  const sandbox = {
+    window: win, console: { ...console, error() {}, warn() {} }, URL, URLSearchParams, Date, JSON, Promise, Math, Request, Response, Headers,
+    location: { hostname: "leeroy.party", protocol: "https:", href: "https://leeroy.party/", search: "", hash: "", pathname: "/", host: "leeroy.party" },
+    history: { replaceState() {} },
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) },
+    fetch: (u, init = {}) => quiet(() => worker.fetch(new Request(u, { method: init.method || "GET", headers: { ...(init.headers || {}), "CF-Connecting-IP": "203.0.113.71" }, body: init.body }), env, ctx)),
+    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+  };
+  vm.runInNewContext(src, sandbox);
+  const B = win.BoardBrain;
+  B.start({});
+  await B.me();
+  assert.equal(B.status().me && B.status().me.slug, "red-fox", "the key resolves through GET /me");
+  const r = await B.setSheet("level", 34);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual([sheetOf(env, "red-fox").fields.level.value, sheetOf(env, "red-fox").fields.level.visible], [34, true]);
+  const h = await B.setSheet("level", 34, false);
+  assert.equal(h.ok, true);
+  assert.equal(sheetOf(env, "red-fox").fields.level.visible, false);
+  assert.equal((await B.setSheet("level", 0)).state, "refused", "the client refuses 0 before sending");
 });
