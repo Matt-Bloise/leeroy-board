@@ -463,6 +463,7 @@ test("every regex path is linear: 200k-character hostile inputs finish quickly",
     edgeRun: "a" + ".".repeat(big) + "a", edgeRun2: "5" + "*".repeat(big) + "5", longNumber: "5".repeat(big), bracketRun: "(".repeat(big) + "1" + ")".repeat(big),
     sourcesLine: "-# Sources: " + "classes/paladin, ".repeat(big / 17), sourcesSpaces: "-# Sources:" + " ".repeat(big), dotsMid: "a" + ".".repeat(big) + "!",
     names: "Red Fox ".repeat(big / 8), midDot: " · ".repeat(big / 3),
+    wikiA: "[a".repeat(big / 2), wikiB: "[".repeat(big) + "a/", wikiC: "[[" + "a".repeat(big), wikiD: "[[a/" + "b".repeat(big), wikiE: "[a/b]".repeat(big / 5), linksMid: "[x](".repeat(big / 4),
   };
   for (const [name, text] of Object.entries(inputs)) {
     const t0 = performance.now();
