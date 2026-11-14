@@ -45,13 +45,61 @@ export function userHash(env, discordId) {
 // Every hash this asker is known by is stored, so either credential finds the question later: the Discord-id hash (the same as userHash, so
 // it also matches answer_feedback and answer_details.asker_hash) and the member-handle hash.
 export const slugAskerHash = (env, slug) => sha256Hex(`${env.USER_SALT}:answer-ux:slug:${slug}`);
-export async function askerHashes(env, { discordId, slug } = {}) {
+// A guest's ask has no identity, so POST /intent gives the asking page a random secret and stores only its salted hash here. GET /api/ask?id=&s= with
+// that secret is the guest's proof of ownership of a private turn; the id alone is not (it travels in URLs, logs and, before PR 308, on the socket).
+export const guestSecretHash = (env, secret) => sha256Hex(`${env.USER_SALT}:answer-ux:guest-ask:${secret}`);
+export const GUEST_SECRET_RE = /^[0-9a-f]{64}$/;
+export function newGuestSecret() {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+export async function askerHashes(env, { discordId, slug, guestSecret } = {}) {
   if (!saltReady(env)) return [];
   const out = [];
   if (discordId) out.push(await userHash(env, String(discordId)));
   if (slug) out.push(await slugAskerHash(env, String(slug)));
-  return out; // a web visitor: nothing identifies them, so nothing is stored
+  if (guestSecret && GUEST_SECRET_RE.test(guestSecret)) out.push(await guestSecretHash(env, guestSecret));
+  return out; // a web visitor without a secret: nothing identifies them, so nothing is stored
 }
+
+// Who may read a PRIVATE (share 0) ask turn through GET /api/ask?id=. Returns "ok", "reload" or "none". Shared turns and the admin are decided by the caller.
+//   a member (key) or web session: only their own turn (an asker hash on record, or the legacy by_name match);
+//   a guest: only with the secret POST /intent gave their page;
+//   a guest turn with no asker row at all predates the secret (asked before this change): readable by id, as it was;
+//   a guest turn whose secret is missing or wrong: "reload", so a page loaded before the change shows a clear line instead of "failed".
+// member: { name, slug } from the board key; ws: { discord_user_id, name } from a web session; secret: the s= parameter.
+export async function privateTurnAccess(env, row, { member = null, ws = null, secret = "" } = {}) {
+  if (!row || !saltReady(env)) return "none";
+  let hashes = [];
+  try {
+    const r = await env.DB.prepare("SELECT asker_hash FROM ask_turn_askers WHERE intent_id = ?").bind(String(row.id)).all();
+    hashes = ((r && r.results) || []).map((x) => x.asker_hash);
+  } catch (e) {
+    if (!/no such table/i.test(String((e && e.message) || e))) throw e;
+  }
+  const has = (h) => hashes.includes(h);
+  // "legacy" is a turn listed in ask_turn_legacy (it existed before migration 0009 wrote asker hashes), as data-rights.js decides it; a turn that merely
+  // lacks a hash row (a failed write, a deleted row) is not legacy and is not readable by name or by id alone.
+  let legacy = false;
+  try { legacy = Boolean(await env.DB.prepare("SELECT 1 AS ok FROM ask_turn_legacy WHERE intent_id = ?").bind(String(row.id)).first()); }
+  catch (e) { if (!/no such table/i.test(String((e && e.message) || e))) throw e; }
+  if (member && member.slug && has(await slugAskerHash(env, String(member.slug)))) return "ok";
+  if (ws && ws.discord_user_id && has(await userHash(env, String(ws.discord_user_id)))) return "ok";
+  if (legacy && row.by_name !== "Visitor") {
+    // a member turn from before migration 0009: the legacy name match, for the member's own key only (a web session's display name is not checked)
+    const mine = [member && member.name, member && member.slug].filter(Boolean);
+    if (mine.includes(row.by_name)) return "ok";
+  }
+  if (row.by_name === "Visitor") {
+    // A guest turn with no hash row predates guest secrets: insertAskTurn never writes a guest turn without its secret's hash (no fallback for guests).
+    if (legacy || !hashes.length) return "ok";
+    if (typeof secret === "string" && GUEST_SECRET_RE.test(secret) && has(await guestSecretHash(env, secret))) return "ok";
+    return "reload";
+  }
+  return "none";
+}
+export const RELOAD_ANSWER_LINE = "This page is out of date, so it cannot show your private answer. Reload the page and ask again.";
 // Writes the ask_turns row and its asker rows in ONE batch: both land or neither does, so a new question can never exist without the hashes
 // we could compute for it. No identifiable asker (a web visitor, or no salt): the row is written alone and, not being legacy, is never matched by name.
 // Only a missing ask_turn_askers table (migration not applied yet) falls back to the plain insert; any other failure fails the ask.
@@ -66,7 +114,9 @@ export async function insertAskTurn(env, row, who) {
   try {
     await env.DB.batch([ins, ...hashes.map((h) => env.DB.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").bind(String(row.id), h))]);
   } catch (e) {
-    if (!/no such table/i.test(String((e && e.message) || e))) throw e;
+    // A guest's turn must never exist without its secret's hash: privateTurnAccess reads "no hash row" as "asked before guest secrets". So a guest ask fails here.
+    if (who && who.guestSecret) throw e;
+    if (!/no such table: ask_turn_askers/i.test(String((e && e.message) || e))) throw e;
     console.error("ask_turn_askers missing: apply migration 0009");
     await ins.run();
   }

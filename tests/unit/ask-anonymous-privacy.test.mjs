@@ -72,9 +72,11 @@ test("a guest still polls their own just-created ask by its random id (and the a
   const env = await makeEnv();
   const posted = await (await api(env, "POST", "/intent", "anon", { kind: "ask", patch: { text: "where is onyxia", share: true } })).json();
   assert.match(posted.id, UUID);
-  const poll = await api(env, "GET", `/ask?id=${encodeURIComponent(posted.id)}`, "anon");
+  const poll = await api(env, "GET", `/ask?id=${encodeURIComponent(posted.id)}&s=${encodeURIComponent(posted.secret)}`, "anon"); // the page sends its secret
   assert.equal(poll.status, 200);
   assert.equal((await poll.json()).ask.text, "where is onyxia");
+  const bare = await (await api(env, "GET", `/ask?id=${encodeURIComponent(posted.id)}`, "anon")).json();
+  assert.ok(!JSON.stringify(bare).includes("onyxia"), "the id alone no longer reads a guest's private turn");
   assert.equal((await (await api(env, "GET", "/ask", "anon")).json()).ask, null, "even a guest's shared ask is not returned to the next visitor");
 });
 
