@@ -1,6 +1,7 @@
 # Review defect classes (2026-11-14)
 
 Built from the full final report of every independent reviewer that ran on 2026-11-14 (raw reports, not summaries). Fictional names only.
+Scope: the reviews of PRs 319, 321 and 322 are not included.
 The shared checklist that comes out of this is `tests/review-brief.md`. Evidence for every row: the reviewer's own repro, quoted from its report.
 
 ## Reviews read, and the tags used below
@@ -49,7 +50,7 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
 | 14 | A test that encodes an impossible sequence | 2 | missing (by nature: a review habit, see brief) |
 | 15 | CI flakes versus real failures | 4 | partly |
 | 16 | A guard test that cannot fail | 3 | missing |
-| 17 | Fail-closed that refuses the valid | 4 | PR 317 branch only |
+| 17 | Fail-closed that refuses the valid | 5 | PR 317 branch only |
 | 18 | Fail-open on a read or parse error | 5 | yes (master) |
 | 19 | Loose identity keys (name, slug, spec word) | 8 | partly |
 | 20 | A claimed week, budget or window that never releases or never opens | 5 | PR 313 branch only |
@@ -62,11 +63,11 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
 - **Real examples:**
   1. S318a HIGH 1: a stale `/state` overwrites a newer socket document; `purgeWorkerCache` cleared `caches.default` but not the isolate copy (30 s). PR 318.
   2. S318a HIGH 2: the same stale document rolls the journey back and persists it to local storage. PR 318.
-  3. S318b F3: `/bootstrap` still writes `B.signups` unchecked; a slow bootstrap lands after a newer socket document. PR 318, left open.
+  3. S318b F3: `/bootstrap` still wrote `B.signups` unchecked; a slow bootstrap landed after a newer socket document. Fixed in PR 318 at `0a079088` (`js/brain.js:79` on that branch routes it through the same age check). No test for the bootstrap path is known: missing.
   4. S318b F1: a journey write sets no stamp, so old and new documents have equal age and both are accepted; it flips back.
   5. S316 finding 2: `/state` hardcodes `ver: 1` and the brain rejects an equal `ver`, so the changed branch is nearly unreachable in production.
   6. S318b informational: a state with a greater `ver` and an older document locks out every later `ver` 1 `/state`.
-  7. PD finding 4: the post-answer purge lists `/api/data/stats.json` but the site fetches `/api/data/stats`; the old body lives up to 60 s. Same shape at the party purges.
+  7. PD finding 4: the post-answer purge listed `/api/data/stats.json` but the site fetches `/api/data/stats`; the old body lived up to 60 s. Fixed on master (`ai-models.js:1356` now lists both). Same shape remains at the party purges: `index.js:365` and `discord.js:1826` purge `/api/data/party.json`, and the site fetches `/api/data/party` (`js/board.js:276`, `dataGet("party")`). Follow-up F-12.
   8. CT2 K1: `get()` purged the cache before every read, so a privileged body cached by URL could not be observed. Fixed in the contract test (`warm`).
   9. WP-5/S318b F7: `putIsolateCache` stores asynchronously; a `/state` built before a write can land after the purge and live 30 s.
 - **Test that catches it:** drive two documents in both orders (old then new, new then old, equal age, no stamp) through each ingress (`/state`, bootstrap, socket) and assert the newest wins and a refused document is reported. For caches: read with the admin token, write, then read anonymously without purging.
@@ -77,7 +78,7 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
 - **What goes wrong:** code or a test assumes the web edit lands before the Discord card click (or the reverse), or that two writes commit in stamp order.
 - **Real examples:**
   1. S316 finding 1 (HIGH): the exemption `e[f] === p.base` hides a real newer answer; the PR's own test had a card click arrive after a web edit that the Worker had already applied. Reverted in `e06a41fe`.
-  2. S316 finding 4: a restored edit has no `base` and no 30 s timer; a pending RSVP restored after reload shows "newer" falsely or stays "waiting".
+  2. S316 finding 4 (D2): a restored edit with an older entry stays "waiting" forever, because the restore path sets no 30 s timer. The path is dead against this Worker (`/me` returns `pending: []`, `index.js:444`). WP-3 adds that a restored edit has no `base`, so the guard at `js/brain.js:197` does not apply to it.
   3. S318b F4: a Discord click stamped 50 ms after a web POST commits first; the final document has the lower stamp and is refused on both paths.
   4. S318b F5: a pending RSVP sticks when the document in hand carries a future stamp that is later corrected.
   5. WP-3 LOW-H and WP-4 MEDIUM-5: an "In" clicked three hours into last week's play night counts for this week (the cutoff is a fixed window).
@@ -89,8 +90,8 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
 - **What goes wrong:** `entries: [null, {...}]`, a number, a string or an array where an object is expected throws, and the throw takes a render or a request with it.
 - **Real examples:**
   1. S318a MEDIUM 3: `mine()` throws on a null row, so `emit("data")` never runs. PR 318 fixed.
-  2. S318b F3: a bootstrap document with a null row makes `mine()` throw; `setRsvp` reports `failed` though the POST returned 200.
-  3. Probed on master for this catalogue: `applySignupChange` throws `Cannot read properties of null (reading 'name')` on a null row (`cards.js:90`).
+  2. S318b F3: a bootstrap document with a null row made `mine()` throw; `setRsvp` reported `failed` though the POST returned 200. Fixed at `0a079088` (the bootstrap path now uses `signupsOk`).
+  3. Probed on master for this catalogue: `applySignupChange` throws `Cannot read properties of null (reading 'name')` on a null row (`cards.js:91`).
   4. Probed on master: `diffRsvp` in `board-lines.js` throws on a null row in `before` or `after`.
   5. WP-A: a `null` entry among sign-ups is ignored (held), a non-string name is ignored (held).
   6. AC-A and WP-A fuzzes: null and non-object rows in weekly-post and the composed path held.
@@ -179,9 +180,9 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
 ## 9. Flag-off output not identical to master
 
 - **What goes wrong:** a feature that ships off changes a byte, a prompt, a stored row, a stats row or a broadcast when its flag is unset, "off", odd-cased, or a non-string.
-- **Real examples:** none found defective. AC-A (d): 700 scenarios, identical hash for 15 off-like values. AP-A: 408 comparisons, 0 differences. AP-B: 2640 runs, 0 differences. WP-A: flag off reads nothing and sends nothing. The class is in the catalogue because the differential is expensive and done by hand each time; AP-B note 9 found that the repo's own ask harness passes no asker hash, so a flag-off differential through it would not exercise follow-ups or reused answers.
+- **Real examples:** none found defective. AC-A (d): 700 scenarios, identical hash for 14 off-like values. AP-A: 408 comparisons, 0 differences. AP-B: 2640 runs, 0 differences. WP-A: flag off reads nothing and sends nothing. The class is in the catalogue because the differential is expensive and done by hand each time; AP-B note 9 found that the repo's own ask harness passes no asker hash, so a flag-off differential through it would not exercise follow-ups or reused answers.
 - **Test that catches it:** a flag-off sweep over every helper (cheap), plus per feature a differential of the full return value, stored rows, prompts and broadcasts against `git archive origin/master`.
-- **Lives now:** added here, `flag-off-values.test.mjs:27, 54` (every `*Enabled` and `*Shadow` helper is off for 21 off-like values; found by scanning the folder). `flags.test.mjs:24, 29` covers the Flagship binding. The per-feature byte-identical differential is **missing** as an automated test (it needs master's tree to compare with; it stays a reviewer task, listed in the brief).
+- **Lives now:** added here, `flag-off-values.test.mjs:35, 52` (every `*Enabled`, `*On`, `*Shadow` and `*DryRun` helper, 19 found by scanning the folder, is off for 21 off-like values and on for "on"; an import error fails it; writers such as `recordShadow` are excluded). Expected result per value: the string "on" (any case, padded) turns a helper on; `"off"`, `""`, `false`, `0`, `"no"`, `{}`, `[]` do not. Not uniform and not forced: `["on"]` and boolean `true` (follow-up F-15; `wrangler.toml` `[vars]` holds strings only). `flags.test.mjs:24, 29` covers the Flagship binding. The per-feature byte-identical differential is **missing** as an automated test (it needs master's tree to compare with; it stays a reviewer task, listed in the brief).
 
 ## 10. A same-value re-stamp, or a missing re-stamp
 
@@ -210,7 +211,7 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
   8. PD: a future-dated `updated_at` is served as is.
   9. WP-A F3: a header time printed from a config row drifted across a DST change.
 - **Test that catches it:** one table of stamps (ISO Z, ISO offset, no zone, date only, epoch number, epoch string, future by 1 h and 1 year, empty, junk, wrong type) fed to every function that compares or prints a stamp, with the expected ordering stated.
-- **Lives now:** `discord-safety.test.mjs:29, 35` (future and malformed request timestamps); `public-data-doc.test.mjs` (nonce and non-ISO `updated_at`); added here `discord-text-limits.test.mjs:72` (footer prints only valid stamps). The merge ordering and the zone-less footer (6, 7) are follow-ups: a test would fail on master.
+- **Lives now:** `discord-safety.test.mjs:29, 35` (future and malformed request timestamps); `public-data-doc.test.mjs` (nonce and non-ISO `updated_at`); added here `discord-text-limits.test.mjs:77` (footer prints only valid stamps). The merge ordering and the zone-less footer (6, 7) are follow-ups: a test would fail on master.
 
 ## 12. Length limits
 
@@ -225,7 +226,7 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
   7. AP-A, AP-B: a fact over about 950 characters, or three of about 290, refuses as "too long".
   8. AC-A: 15 real library facts exceed 600 characters and were not run individually.
 - **Test that catches it:** a sweep from 0 to N (past any realistic roster) with names at the cap, with the limit asserted at every size, and every "dropped" path asserted to say so.
-- **Lives now:** `cards.test.mjs:53` (80 short names); added here `discord-text-limits.test.mjs:20, 33, 61` (300 long entries; total 6000, field 1024, line 120); `board-lines.test.mjs:46`. The weekly post sweep is PR 313's. Over-length facts through the ask path: **missing**.
+- **Lives now:** `cards.test.mjs:53` (80 short names); added here `discord-text-limits.test.mjs:21, 34, 66` (300 long entries; total 6000, field 1024, line 120); `board-lines.test.mjs:46`. The weekly post sweep is PR 313's. Over-length facts through the ask path: **missing**.
 
 ## 13. Mention, link or markup injection
 
@@ -242,7 +243,7 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
   9. WP-A: `@here`, `<@&id>`, `<#id>` in a name, line, fact or label (held).
   10. Discord invite in a library value: sent verbatim by design (AC-A).
 - **Test that catches it:** one hostile-string table (mention, role, channel, here, masked link, titled link, bare URL, invite, heading, quote, code, spoiler, direction override, zero-width, newline) through every builder that prints a name, a free-text field or a fact, asserting no live syntax and `allowed_mentions: {parse: []}`.
-- **Lives now:** `cards.test.mjs:64, 89`; added here `discord-text-limits.test.mjs:46` (names and `meet` on both cards, the board line, `cleanName`); `hostile-rows.test.mjs:43`. Follow-ups: bare `discord.gg/` in a name; free-text `when`.
+- **Lives now:** `cards.test.mjs:64, 89`; added here `discord-text-limits.test.mjs:50` (names and `meet` on both cards, the board line, `cleanName`; mention, link, channel, markdown and direction syntax); `hostile-rows.test.mjs:43, 92` (class, race and role text cleaned and cut). Follow-ups: bare `discord.gg/` in a name; free-text `when`.
 
 ## 14. A test that encodes an impossible sequence
 
@@ -278,10 +279,11 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
 
 - **What goes wrong:** a second proof after formatting refuses a correct answer, so a valid question gets "The Library does not cover that yet".
 - **Real examples (PR 317 and the composed path):**
-  1. AP-A 1, AP-B 1: with `ANSWER_UX=on`, every answer with two or more picked facts is refused (`limitBold` strips the second bold span; the re-proof fails).
-  2. AP-A 2: a page title with " - " or a dot, a value with a space before a comma, an empty key: always refused, 74 pairs.
-  3. AP-B 4: provider down gives "does not cover that yet", untrue during an outage.
-  4. AP-A 3: a provider that returns a parsed array defeats the feature.
+  1. AP-A 1 and AP-B 1 (same cause, found by both): with `ANSWER_UX=on` (or `ANSWER_FORMAT=off`), every answer with two or more picked facts is refused (`limitBold` strips the second bold span; the re-proof fails).
+  2. AP-A 2: facts refused even when picked alone: a page title with " - " or "·", a value with a space before `; , : ! ?`, a `{board:...}` value, a 17 to 20 digit number, an empty key.
+  3. AP-A 2 and AP-B 1: facts refused only in a multi-fact answer: a page title containing `:`, `.`, `!`, `?` or longer than 50 characters (AP-A: 74 pairs; AP-B: six titles).
+  4. AP-B 4: provider down stores "The Library does not cover that yet", untrue during an outage.
+  5. AP-A 3: a provider that returns the reply as a parsed array defeats the feature (confirmed with a stub only).
 - **Test that catches it:** property: for any one retrieved fact, composing and formatting then verifying must accept it (round trip), with titles and values containing each formatter trigger.
 - **Lives now:** PR 317 only. **Missing** on master.
 
@@ -346,7 +348,7 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
   2. AP-A 5: a race or class of "constructor" crashed the ranker (`synonyms[w] || []`), also on master with `__proto__ constructor wardens`.
   3. Probed on master for this catalogue: `renderSignupCard` throws on an entry with `rsvp: "constructor"` (`out.rsvp[e.rsvp].push is not a function`).
   4. Probed on master: `composeLine` prints "function Object() { [native code] }" for a change whose `to` is `"constructor"` (`RSVP_PHRASE[c.to]`).
-  5. Probed on master: `partyEntry` throws on `class: "constructor"`, and `cardMembers` accepts `class_key: "constructor"` as a class key.
+  5. Probed on master: `partyEntry({ cls: "constructor", race: "Orc", startZone })` does not throw; it returns `class_key: "constructor"`, no `class` and `board_line: "Orc undefined"`. `cardMembers` accepts `class_key: "constructor"` as a class key (`classKey` "constructor", no label).
 - **Test that catches it:** each lookup-table function called with `constructor`, `__proto__`, `toString`, `hasOwnProperty` as the key.
 - **Lives now:** added here, `hostile-rows.test.mjs:80` (a name of that kind makes an ordinary row). The throws (2, 3, 4, 5) are follow-ups.
 
@@ -358,14 +360,16 @@ Files marked "added here" are in this PR: `tests/unit/hostile-rows.test.mjs`, `d
 | F-2 | `board-lines.js` `diffRsvp` | a null row in either document does not throw | probed: throws on `e.name` and `e.rsvp` |
 | F-3 | `cards.js` `tallyEntries` / `renderSignupCard` | an `rsvp` of `constructor` is ignored | probed: `out.rsvp[e.rsvp].push is not a function` |
 | F-4 | `board-lines.js` `composeLine` | a `to` of `constructor` prints nothing | probed: prints "function Object() { [native code] }" |
-| F-5 | `member-model.js` `partyEntry`; `card-members.js` `cardMembers` | a `class` or `class_key` of `constructor` is not a class | probed: throws; accepted |
+| F-5 | `member-model.js` `partyEntry`; `card-members.js` `cardMembers` | a `cls` or `class_key` of `constructor` is refused or ignored, not stored as a class | probed: `partyEntry` returns `class_key: "constructor"` and `board_line: "Orc undefined"`; `cardMembers` returns `classKey: "constructor"` |
 | F-6 | `rank-core.js:15` | a sheet word of `constructor` does not crash retrieval | AP-A 5, reproduced on master by the reviewer |
 | F-7 | `limits.js` `upsertSignupEntry` | a malformed or zone-less `updated` never beats a valid ISO stamp in a duplicate-row merge | probed: `"yesterday"` wins |
 | F-8 | `cards.js` `fmtUpdated` | a zone-less `updated` prints no footer (or is read as UTC) | probed in code: `Date.parse` reads local time, label says UTC |
 | F-9 | `cards.js` sign-up card | a free-text `when` is sanitised like `meet` | probed: `<#123456789012345678> # x` prints raw |
 | F-10 | `cards.js` `cleanName` | a bare `discord.gg/` invite is removed | probed: survives in the In list |
-| F-11 | `brain.js` (PR 318) | `/bootstrap` goes through the same age check as `/state` | S318b F3 |
-| F-12 | `index.js` `purgeWorkerCache` | the paths purged equal the URLs the site fetches (`/api/data/stats`) | PD finding 4 |
+| F-11 | tests for PR 318 | missing: a test that a slow `/bootstrap` never rolls sign-ups back or brings in a bad row (the code is fixed at `0a079088`, `js/brain.js:79`) | S318b F3 |
+| F-12 | `index.js:365`, `discord.js:1826` party purges | the paths purged include the URL the site fetches, `/api/data/party` (they list `/api/data/party.json`; the stats purge is fixed at `ai-models.js:1356`) | PD finding 4; `js/board.js:276` |
 | F-13 | `ask-composed.js` (PR 317 base) | `norm` refuses or keeps a token it would change (ZWSP, superscript, fraction) | AC-A (a) |
+| F-14 | `room.js` `BoardRoom.broadcast` | a JSON string that is not an object (`"null"`, `"5"`, `"\"text\""`) reaches no socket | probed: reaches every socket (sent: 2). Not reachable today: `/broadcast` rejects a non-object at `room.js:127` |
+| F-15 | the `*Enabled`, `*On`, `*Shadow` helpers | one shared flag parser | probed: `["on"]` reads as on for all but the three `moments*` helpers; boolean `true` reads as on for 12 helpers (cards family, build, chars, data rights, eval, join, setup, web login) and off for `answerUxEnabled`, `feed*`, `gaugeEnabled`, `eventsEnabled`, `moments*`. Not reachable today: `wrangler.toml` `[vars]` holds strings only |
 
 Branches that are open (PR 313, 317, 318) carry their own tests; items for them belong in those PRs, not here.
