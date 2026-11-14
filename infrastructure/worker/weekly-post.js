@@ -1,18 +1,20 @@
 // Weekly board post (flag WEEKLY_POST, default off): once a week, a set time before play night, one quiet post in the sign-ups channel:
-// who has signed up, which roles nobody has signed up for, and one short library fact per signed-up build, each with its source.
+// who has signed up, which roles none of them has on the board, and one short library fact per signed-up build, each with its sources.
 //
-// Facts composed by code, never by a model: every sentence is a template filled from the public board documents (party, signups)
-// or a library fact copied as the library wrote it, with that fact's own first source. Nothing here calls an AI model.
-// Inputs are the PUBLIC documents only (the same rows GET /api/data/party and /api/data/signups serve, and the library blobs), so a hidden
-// sheet field, a Discord id or a private config row cannot reach the post. Names are the names the board shows.
+// Facts composed by code, never by a model: every sentence is a template filled from the public board documents (party, signups), or a
+// library fact quoted exactly as the library wrote it, with its own sources. Nothing here calls an AI model. The post carries no date or
+// time: those would come from the private schedule row and could contradict the sign-up card.
+// Inputs are the PUBLIC documents only (the rows GET /api/data/party and /api/data/signups serve, and the library blobs), so a hidden sheet
+// field, a Discord id or a private config row cannot reach the post. Names are the names the board shows.
 //
 // Pieces:
 //   composeWeeklyPost(): pure. Documents in, { text, facts, skipped } out. Used by the runner and by tools/weekly-post-dry-run.mjs.
 //   planWeeklyPost(): pure. Schedule, state and clock in, { due, playAt, postAt, week } out.
 //   runWeeklyPost(): the executor. Reads nothing while the flag is off. Needs the admin config row `weekly_post` (PUT /api/config/weekly_post):
-//     { weekday: 0-6 (UTC, 0 = Sunday), hour: 0-23 (UTC), minute?: 0-59, lead_hours?: 1-72 (default 24), channel?: id }
-//   Runs on the 6-hourly cron, so a post goes out within 6 hours after play night minus lead_hours, once per play week (state row
-//   `weekly_post_state`, claimed before the post), and through the noise budget like every unprompted post.
+//     { weekday: 0-6 (UTC, 0 = Sunday), hour: 0-23 (UTC), minute?: 0-59, lead_hours?: 24-72 (default 24), channel?: id }
+//   Runs on the 6-hourly cron. The noise budget holds posts during quiet hours (1 to 9 AM ET by default), so a tick can wait up to 18 hours;
+//   a lead of at least 24 hours leaves room for that. One post per play week (state row `weekly_post_state`, claimed before the post and
+//   released if the post fails).
 
 import { RSVP_STATES, cleanName, discordRest, loadCards } from "./cards.js";
 import { decidePost, noiseDay, readLedger, recordPost } from "./noise.js";
@@ -20,41 +22,57 @@ import { lookupRosterId } from "./announce.js";
 import { loadConfigKey } from "./config.js";
 import { flagOn } from "./flags.js";
 import { ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
-import { validateWeeklyConfig } from "./weekly-post-config.js";
+import { validateWeeklyConfig, DEFAULT_LEAD_HOURS } from "./weekly-post-config.js";
 
-export { validateWeeklyConfig };
+export { validateWeeklyConfig, DEFAULT_LEAD_HOURS };
 
-export const WEEKLY_FLAG = "WEEKLY_POST";
 export const WEEKLY_CONFIG_KEY = "weekly_post";
 export const WEEKLY_STATE_KEY = "weekly_post_state";
-export const POST_MAX = 1900; // under Discord's 2000, with room for the "and N more" line
+export const POST_MAX = 1900; // under Discord's 2000
 export const TIP_MAX = 220; // a library fact longer than this is skipped, never cut (a cut fact can change its meaning)
-export const DEFAULT_LEAD_HOURS = 24;
+export const TIP_MIN = 40; // shorter values are fragments ("16-point medal") that do not stand as a tip
+export const MAX_SOURCES = 3;
 export const SUPPRESS_NOTIFICATIONS = 4096; // a quiet post: it pings nobody and does not buzz phones
 const WEEK_MS = 7 * 24 * 3600 * 1000;
 const SIGNED = ["in", "late", "maybe"]; // "out" is not signed up
+const COUNTED = ["in", "late"]; // a tentative sign-up is listed but does not cover a role
 const STATE_WORD = { in: "in", late: "running late", maybe: "tentative" };
-const ROLE_WORD = { tank: "tank", healer: "healer", damage: "damage" };
+const ROLES = ["tank", "healer", "damage"];
+const ROLE_LABEL = { tank: "tank", healer: "healer", damage: "damage dealer" };
 const ROLE_WORDS = { tank: ["tank", "tanking", "threat"], healer: ["heal", "healer", "healing"], damage: ["damage", "dps"] };
+const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const roleOf = (m) => { const r = String((m && m.role) || "").trim().toLowerCase(); return ROLES.includes(r) ? r : null; };
 
-// Markdown and mention characters are escaped so a name or fact cannot format the post or ping anyone (allowed_mentions is empty too).
-// < and > are dropped (a <@id> or <#id> form), and [ ] escaped (a masked link); parentheses stay as written.
+// Text from documents goes in as written, made inert: escapes stop formatting and masked links, a zero-width space after "<", "@" and "://"
+// stops mentions, channel links, timestamps and link previews, and direction and zero-width characters are removed. allowed_mentions is empty too.
+const ZW = "​";
 export function plain(s) {
-  return String(s == null ? "" : s).replace(/[<>]/g, "").replace(/[\\*_~`|[\]]/g, (c) => `\\${c}`).replace(/@/g, "@​").replace(/\s+/g, " ").trim();
+  return String(s == null ? "" : s)
+    .replace(/[​-‏‪-‮⁠-⁯﻿]/g, "")
+    .replace(/[\\*_~`|[\]]/g, (c) => `\\${c}`)
+    .replace(/</g, `<${ZW}`).replace(/@/g, `@${ZW}`).replace(/:\/\//g, `:${ZW}//`).replace(/\bdiscord\.gg\//gi, (m) => m.replace(".", `${ZW}.`))
+    .replace(/\s+/g, " ").trim();
 }
-// Names compare on letters and digits only: a sign-up written as "=Red Fox=" is the party's "Red Fox".
+// Names compare exactly (case and spacing aside) first, then on letters and digits only: a sign-up "=Red Fox=" is the party's "Red Fox".
 export const nameKey = (s) => String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const exactKey = (s) => String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 
 const httpsUrl = (u) => typeof u === "string" && /^https:\/\/[^\s<>]+$/.test(u);
-function sourceOf(fact) {
-  const r = (Array.isArray(fact && fact.refs) ? fact.refs : []).find((x) => x && httpsUrl(x.url));
-  return r ? { id: r.id || null, label: String(r.label || r.host || "source"), url: r.url } : null;
+export function sourcesOf(fact) {
+  const out = [], seen = new Set();
+  for (const r of Array.isArray(fact && fact.refs) ? fact.refs : []) {
+    if (!r || !httpsUrl(r.url) || seen.has(r.url)) continue;
+    seen.add(r.url);
+    out.push({ id: r.id || null, label: String(r.label || r.host || "source"), url: r.url });
+    if (out.length === MAX_SOURCES) break;
+  }
+  return out;
 }
-const cite = (src) => `(${plain(src.label)}: <${src.url}>)`;
+const cite = (srcs) => `(${srcs.map((s) => `${plain(s.label)}: <${s.url}>`).join("; ")})`;
 const pages = (doc) => (doc && Array.isArray(doc.pages) ? doc.pages : []);
 const factsOf = (page) => (page && Array.isArray(page.facts) ? page.facts : []);
 
-// ISO week number of a time, as "2026-W47". The tip rotates by it, so each week brings a different fact for the same build.
+// ISO week of a time, as "2026-W47". The tip rotates by it, so each week brings a different fact for the same build.
 export function isoWeek(ms) {
   const d = new Date(ms);
   const t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -65,8 +83,8 @@ export function isoWeek(ms) {
   return { key: `${y}-W${String(w).padStart(2, "0")}`, n: y * 53 + w };
 }
 
-// "warlock.curse_of_elements.ranks" on the warlock page reads "Curse of elements, ranks": the fact's own key is its subject, so a value that
-// is a fragment ("every magic school; ranks at 20 ...") still says what it is about.
+// "warlock.curse_of_elements" on the warlock page reads "Curse of elements". Only facts whose key starts with the class's own name are
+// used, so the subject always names something of that class.
 export function subjectOf(key, classKey) {
   const parts = String(key || "").split(".").filter(Boolean);
   if (parts.length > 1 && parts[0] === classKey) parts.shift();
@@ -75,77 +93,104 @@ export function subjectOf(key, classKey) {
 }
 const keyWords = (key) => new Set(String(key || "").toLowerCase().split(/[._\s-]+/).filter(Boolean));
 const specWords = (m) => String((m && m.spec) || "").toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2);
-const quotable = (f) => f && typeof f.key === "string" && typeof f.value === "string" && f.value.length <= TIP_MAX && sourceOf(f);
+const quotable = (f, classKey) => f && typeof f.key === "string" && f.key.startsWith(`${classKey}.`) && typeof f.value === "string"
+  && f.value.length >= TIP_MIN && f.value.length <= TIP_MAX && /\p{L}{3,}.*\s.*\s.*\s/u.test(f.value) && sourcesOf(f).length > 0;
 
-// One library fact for a build, from its class page: short enough to quote whole and with an https source. The pool is the page's core
-// facts (depth must) plus the good facts whose key names the build's role or a word of its spec. The week picks one, so it changes weekly.
+// One library fact for a build, from its class page: a sentence-sized value quoted whole, with https sources. The pool is the page's core
+// facts (depth must) plus the good facts whose key names the build's role or a word of its spec. The week picks one.
 export function pickTip(classesDoc, member, weekN) {
-  const page = pages(classesDoc).find((p) => p && p.id === `classes/${member.class_key}`);
-  const words = [...(ROLE_WORDS[member.role] || []), ...specWords(member)];
-  const pool = factsOf(page).filter(quotable).filter((f) => f.depth === "must" || (f.depth === "good" && words.some((w) => keyWords(f.key).has(w))));
+  const ck = member && member.class_key;
+  if (!ck) return null;
+  const page = pages(classesDoc).find((p) => p && p.id === `classes/${ck}`);
+  const role = roleOf(member);
+  const words = [...(role && own(ROLE_WORDS, role) ? ROLE_WORDS[role] : []), ...specWords(member)];
+  const pool = factsOf(page).filter((f) => quotable(f, ck)).filter((f) => f.depth === "must" || (f.depth === "good" && words.some((w) => keyWords(f.key).has(w))));
   if (!pool.length) return null;
   const f = pool[((weekN % pool.length) + pool.length) % pool.length];
-  return { page: page.id, key: f.key, subject: subjectOf(f.key, member.class_key), value: f.value, source: sourceOf(f) };
+  return { page: page.id, key: f.key, subject: subjectOf(f.key, ck), value: f.value, sources: sourcesOf(f) };
 }
 
-// The library's group-size fact, only when it is short enough to quote whole.
-function groupSizeFact(dungeonsDoc) {
-  for (const p of pages(dungeonsDoc)) for (const f of factsOf(p)) if (f && f.key === "dungeons.people_per_group" && quotable(f)) return { page: p.id, key: f.key, value: f.value, source: sourceOf(f) };
-  return null;
-}
-
-const playLabel = (ms) => new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET";
 const joinList = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
-// Documents in, post out. signups and party are the public documents; classes and dungeons are the library blobs of the same names.
-export function composeWeeklyPost({ signups, party, classes, dungeons, playAt } = {}) {
+// Who a sign-up is: an exact name match wins; otherwise a letters-and-digits match, only when exactly one member has that key.
+function matcher(members) {
+  const exact = new Map(), loose = new Map();
+  for (const m of members) {
+    if (!m || typeof m.name !== "string") continue;
+    const e = exactKey(m.name), l = nameKey(m.name);
+    if (e && !exact.has(e)) exact.set(e, m); else if (e) exact.set(e, null); // two members with the same name: neither is matched
+    if (l) loose.set(l, loose.has(l) ? null : m);
+  }
+  return (name) => {
+    const e = exactKey(name);
+    if (e && exact.has(e)) return exact.get(e);
+    const l = nameKey(name);
+    return l && loose.get(l) ? loose.get(l) : null;
+  };
+}
+
+// Documents in, post out. signups and party are the public documents; classes is the library blob of that name.
+export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
   const facts = [], skipped = [];
   const entries = Array.isArray(signups && signups.entries) ? signups.entries : [];
   const members = Array.isArray(party && party.members) ? party.members : [];
-  const byName = new Map(members.filter((m) => m && m.name).map((m) => [nameKey(m.name), m]));
-  const signed = entries.filter((e) => e && e.name && SIGNED.includes(e.rsvp) && RSVP_STATES.includes(e.rsvp));
-  const lines = [];
-  lines.push(`**This week on the board**${Number.isFinite(playAt) ? `: play night ${plain(playLabel(playAt))}` : ""}`);
+  const find = matcher(members);
+  // One row per person: a second sign-up for the same member (or the same name) is dropped.
+  const seen = new Set(), signed = [];
+  for (const e of entries) {
+    if (!e || typeof e.name !== "string" || !SIGNED.includes(e.rsvp) || !RSVP_STATES.includes(e.rsvp)) continue;
+    const m = find(e.name);
+    if (!m && !nameKey(e.name)) continue; // no letter or digit: not a name
+    const who = m ? `m:${members.indexOf(m)}` : `n:${nameKey(e.name)}`;
+    if (seen.has(who)) continue;
+    seen.add(who);
+    signed.push({ e, m, name: plain(cleanName(m ? m.name : e.name)) });
+  }
+  const head = ["**This week on the board**"];
+  const tail = ["", "Want more on your build? Ask Leeroy with /ask."];
+  const body = [];
+  const tips = [];
   if (!signed.length) {
-    lines.push("Nobody has signed up yet. The sign-up card is in this channel.");
+    body.push("Nobody has signed up yet. The sign-up card is in this channel.");
   } else {
-    const shown = (e) => { const m = byName.get(nameKey(e.name)); return plain(cleanName(m ? m.name : e.name)); }; // the board's name when the sign-up matches a build
-    const say = signed.map((e) => `${shown(e)}${e.rsvp === "in" ? "" : ` (${STATE_WORD[e.rsvp]})`}`);
-    lines.push(`Signed up (${signed.length}): ${joinList(say)}.`);
+    const say = signed.map((s) => `${s.name}${s.e.rsvp === "in" ? "" : ` (${STATE_WORD[s.e.rsvp]})`}`);
+    body.push(`Signed up (${signed.length}): ${joinList(say)}.`);
     const count = { tank: 0, healer: 0, damage: 0 };
-    let unknown = 0;
-    for (const e of signed) { const m = byName.get(nameKey(e.name)); if (m && count[m.role] !== undefined) count[m.role]++; else unknown++; }
-    const missing = Object.keys(count).filter((r) => count[r] === 0).map((r) => ROLE_WORD[r]);
-    lines.push(`Roles signed up: tank ${count.tank}, healer ${count.healer}, damage ${count.damage}${unknown ? `, no build on the board ${unknown}` : ""}.${missing.length ? ` Nobody has signed up as ${joinList(missing)} yet.` : ""}`);
-    const size = groupSizeFact(dungeons);
-    if (size) { lines.push(`Group size, from the library: ${plain(size.value)} ${cite(size.source)}`); facts.push(size); }
-    const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
-    const tips = [];
-    for (const e of signed) {
-      const m = byName.get(nameKey(e.name));
-      if (!m || !m.class_key) { skipped.push({ name: cleanName(e.name), why: "no build on the board" }); continue; }
-      const tip = pickTip(classes, m, week);
-      if (!tip) { skipped.push({ name: cleanName(e.name), why: `no short sourced fact on classes/${m.class_key}` }); continue; }
-      const build = m.board_line || [m.race, m.class].filter(Boolean).join(" ");
-      tips.push(`- ${shown(e)} (${plain(build)}). ${plain(tip.subject)}: ${plain(tip.value)} ${cite(tip.source)}`);
-      facts.push(tip);
+    const counted = signed.filter((s) => COUNTED.includes(s.e.rsvp));
+    let noRole = 0;
+    for (const s of counted) { const r = roleOf(s.m); if (r) count[r]++; else noRole++; }
+    const withRole = counted.length - noRole;
+    if (withRole > 0) {
+      const missing = ROLES.filter((r) => count[r] === 0).map((r) => ROLE_LABEL[r]);
+      const roles = ROLES.map((r) => `${ROLE_LABEL[r]} ${count[r]}`).join(", ");
+      body.push(`Roles on the board for those who are in: ${roles}${noRole ? ` (${noRole} with no role on the board)` : ""}.${missing.length ? ` No ${joinList(missing)} among them yet.` : ""}`);
     }
-    if (tips.length) { lines.push("", "One fact per build, from the library:"); lines.push(...tips); }
+    const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
+    for (const s of signed) {
+      if (!s.m || !s.m.class_key) { skipped.push({ name: s.name, why: "no build on the board" }); continue; }
+      const tip = pickTip(classes, s.m, week);
+      if (!tip) { skipped.push({ name: s.name, why: `no quotable sourced fact on classes/${s.m.class_key}` }); continue; }
+      const build = s.m.board_line || [s.m.race, s.m.class].filter(Boolean).join(" ") || s.m.class_key;
+      tips.push({ line: `- ${s.name} (${plain(build)}). ${plain(tip.subject)}: ${plain(tip.value)} ${cite(tip.sources)}`, tip });
+    }
   }
-  lines.push("", "Want more on your build? Ask Leeroy with /ask.");
-  let text = lines.join("\n");
-  // Too long for one post: drop tips from the end and say how many were left out.
-  const tipStart = lines.indexOf("One fact per build, from the library:");
-  let cut = 0;
-  while (text.length > POST_MAX && tipStart > 0) {
-    const tipEnd = lines.findIndex((l, i) => i > tipStart && !l.startsWith("- "));
-    if (tipEnd - tipStart <= 1) break;
-    lines.splice(tipEnd - 1, 1); facts.pop(); cut++;
-    const more = `(and ${cut} more)`;
-    const at = lines.findIndex((l) => /^\(and \d+ more\)$/.test(l));
-    if (at >= 0) lines[at] = more; else lines.splice(lines.indexOf("", tipStart), 0, more);
-    text = lines.join("\n");
+  // Fit Discord: drop tips from the end ("and N more"), then shorten the name list; the heading goes when no tip is left.
+  const build = (nTips, names) => {
+    const kept = tips.slice(0, nTips);
+    const lines = [...head, ...(names ? [names, ...body.slice(1)] : body)];
+    if (kept.length) { lines.push("", "One fact per build, from the library:", ...kept.map((t) => t.line)); if (nTips < tips.length) lines.push(`(and ${tips.length - nTips} more)`); }
+    return [...lines, ...tail].join("\n");
+  };
+  let n = tips.length, text = build(n);
+  while (text.length > POST_MAX && n > 0) text = build(--n);
+  if (text.length > POST_MAX && signed.length) {
+    for (let k = signed.length - 1; k >= 1 && text.length > POST_MAX; k--) {
+      const shown = signed.slice(0, k).map((s) => s.name);
+      text = build(0, `Signed up (${signed.length}): ${shown.join(", ")} and ${signed.length - k} more.`);
+    }
   }
+  if (text.length > POST_MAX) text = [...head, `Signed up: ${signed.length}.`, ...tail].join("\n");
+  for (const t of tips.slice(0, n)) facts.push(t.tip);
   return { text, facts, skipped };
 }
 
@@ -176,8 +221,8 @@ const KV = "SELECT json FROM kv_state WHERE key = ?";
 const BLOB = "SELECT json FROM lib_blobs WHERE name = ?";
 
 export async function loadWeeklyInput(db) {
-  const [signups, party, classes, dungeons] = await Promise.all([readJson(db, KV, "signups"), readJson(db, KV, "party"), readJson(db, BLOB, "classes.json"), readJson(db, BLOB, "dungeons.json")]);
-  return { signups: signups.value, party: party.value, classes: classes.value, dungeons: dungeons.value };
+  const [signups, party, classes] = await Promise.all([readJson(db, KV, "signups"), readJson(db, KV, "party"), readJson(db, BLOB, "classes.json")]);
+  return { signups: signups.value, party: party.value, classes: classes.value };
 }
 
 // Claim the play week before posting: a compare-and-swap on the state row, so two overlapping runs cannot both post.
@@ -192,6 +237,7 @@ async function releaseWeek(db, claimed, previousRaw, now) {
   if (previousRaw === null) await db.prepare("DELETE FROM kv_state WHERE key = ? AND json = ?").bind(WEEKLY_STATE_KEY, claimed).run();
   else await db.prepare("UPDATE kv_state SET json = ?, updated_at = ? WHERE key = ? AND json = ?").bind(previousRaw, new Date(now).toISOString(), WEEKLY_STATE_KEY, claimed).run();
 }
+const isChannelId = (v) => typeof v === "string" && /^[0-9]{5,25}$/.test(v);
 
 export async function runWeeklyPost(env, { now = Date.now(), fetchImpl = fetch } = {}) {
   try {
@@ -204,7 +250,7 @@ export async function runWeeklyPost(env, { now = Date.now(), fetchImpl = fetch }
     if (!plan.due) return { status: "not_due", why: plan.why, week: plan.week };
     const post = composeWeeklyPost({ ...(await loadWeeklyInput(env.DB)), playAt: plan.playAt });
     const cards = await loadCards(env.DB);
-    const channel = config.channel || (cards && cards.signups && cards.signups.channel) || lookupRosterId(await loadConfigKey(env, "discord_roster"), "channels", "signups");
+    const channel = [config.channel, cards && cards.signups && cards.signups.channel, lookupRosterId(await loadConfigKey(env, "discord_roster"), "channels", "signups")].find(isChannelId);
     if (!channel) return { status: "no_channel" };
     const noise = await loadConfigKey(env, "noise");
     const day = noiseDay(now, noise);
@@ -213,7 +259,12 @@ export async function runWeeklyPost(env, { now = Date.now(), fetchImpl = fetch }
     if (!env.DISCORD_BOT_TOKEN) return { status: "unconfigured_token" };
     const claimed = await claimWeek(env.DB, st.raw, plan.week, now);
     if (!claimed) return { status: "claimed_elsewhere" };
-    const r = await discordRest(env, "POST", `/channels/${channel}/messages`, { content: post.text, flags: SUPPRESS_NOTIFICATIONS, allowed_mentions: ALLOWED_MENTIONS_NONE }, fetchImpl);
+    let r;
+    try {
+      r = await discordRest(env, "POST", `/channels/${channel}/messages`, { content: post.text, flags: SUPPRESS_NOTIFICATIONS, allowed_mentions: ALLOWED_MENTIONS_NONE }, fetchImpl);
+    } catch (e) {
+      r = { ok: false, status: "throw" };
+    }
     if (!r || !r.ok) { await releaseWeek(env.DB, claimed, st.raw, now); return { status: "post_failed", code: r && r.status }; }
     await recordPost(env.DB, channel, day);
     return { status: "posted", week: plan.week, facts: post.facts.length };
