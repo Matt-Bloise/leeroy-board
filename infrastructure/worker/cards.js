@@ -96,9 +96,7 @@ export function applySignupChange(doc, change) {
   const before = entry[field] === undefined ? null : entry[field];
   entry[field] = value;
   const changed = before !== value;
-  // An RSVP click is a confirmation even when the value is the same ("still in" this week), so it re-stamps the entry; the weekly post counts a
-  // sign-up by that stamp. Other fields stamp only on a change.
-  if (changed || field === "rsvp") entry.updated = new Date(now).toISOString();
+  if (changed) entry.updated = new Date(now).toISOString();
   return { ok: true, doc: next, changed, before, after: value };
 }
 

@@ -100,7 +100,7 @@ test("sign-ups from before last play night are not this week's: the post invites
   const old = "2026-11-01T00:00:00.000Z";
   const { text, facts } = composeWeeklyPost(docs({ signups: { updated: old, entries: SIGNUPS().entries.map((e) => ({ ...e, updated: old })) } }));
   assert.match(text, /Nobody has signed up for this week yet\. The sign-up card is in this channel: In, Tentative or Running late\./);
-  assert.match(text, /Still on the card, not counted for this week: Red Fox, Blue Owl and Green Elk\. Click your choice on the card again, or use \/signup, to count for this week\./);
+  assert.match(text, /Still on the card, not counted for this week: Red Fox, Blue Owl and Green Elk\. Use \/signup and pick your RSVP to count for this week\./);
   assert.doesNotMatch(text, /Signed up \(/);
   assert.doesNotMatch(text, /Roles on the board/);
   assert.match(text, /One tip for each build on the board, from the library:/);
@@ -399,12 +399,12 @@ test("review 2: short spec names, hunter specs and druid forms pick the build's 
   assert.deepEqual(keys({ class_key: "druid", role: "healer", spec: "Restoration" }), ["druid.bark", "druid.tree.life"], "a threat fact is a tank's; the tree is resto's");
 });
 
-test("review 2: a re-clicked RSVP counts this week; a click during last week's play night does not; history and comparisons are not tips", async () => {
+test("review 2: a same-value card click does not re-stamp (the post points to /signup); a click during last week's play night does not; history and comparisons are not tips", async () => {
   const { applySignupChange } = await import("../../infrastructure/worker/cards.js");
   const old = { entries: [{ name: "Red Fox", rsvp: "in", updated: "2026-10-27T00:00:00.000Z" }] };
   const again = applySignupChange(old, { name: "Red Fox", field: "rsvp", value: "in", now: NOW - 3600e3 });
   assert.equal(again.changed, false);
-  assert.ok(composeWeeklyPost(docs({ signups: again.doc })).text.includes("Signed up (1): Red Fox."), "the card's same click counts");
+  assert.ok(composeWeeklyPost(docs({ signups: again.doc })).text.includes("not counted for this week: Red Fox."), "the card is unchanged here: a same click is not a new sign-up");
   const during = { entries: [{ name: "Red Fox", rsvp: "late", updated: new Date(PLAY - 7 * 86400e3 + 600e3).toISOString() }] };
   assert.ok(!composeWeeklyPost(docs({ signups: during })).text.includes("Signed up ("));
   const { plainValue, JARGON_RE } = await import("../../infrastructure/worker/weekly-post.js");

@@ -211,6 +211,8 @@ function matcher(members) {
 // click by anyone (an Out, a pack), so it says nothing about the others. A sign-up is this week's when it was made after last week's play night
 // (7 days before this one; 7 days before now with no play time) and not in the future. The stamp must be a full ISO time.
 // An older sign-up still shows on the card, so the post names it as from an earlier week rather than saying nobody is in; it is not counted.
+// Limit (this PR leaves the card alone): a same-value click on the card does not re-stamp the entry (cards.js stamps on a change only), so
+// the post points to /signup with an RSVP, which always stamps. Making the card's same click count is a separate change to live card behaviour.
 export const SIGNUPS_FRESH_MS = 7 * 24 * 3600 * 1000;
 const PLAY_NIGHT_MS = 6 * 3600 * 1000;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
@@ -265,7 +267,7 @@ export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.
   // The card still shows older choices; the post says so instead of contradicting it (names only, at most 8, never counted above).
   if (earlier.length) {
     const shown = earlier.slice(0, 8).map((s) => s.name);
-    body.push(`Still on the card, not counted for this week: ${joinList(earlier.length > 8 ? [...shown, `${earlier.length - 8} more`] : shown)}. Click your choice on the card again, or use /signup, to count for this week.`);
+    body.push(`Still on the card, not counted for this week: ${joinList(earlier.length > 8 ? [...shown, `${earlier.length - 8} more`] : shown)}. Use /signup and pick your RSVP to count for this week.`);
   }
   const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
   for (const s of tipPeople) {
