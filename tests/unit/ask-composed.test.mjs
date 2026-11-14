@@ -61,7 +61,7 @@ test("composeFactsBlock caps the count, drops duplicates, empties and non-facts,
   const dup = { page: "a/b", key: "x.y_z", value: "twelve things", title: "Thing" };
   const b = composeFactsBlock([dup, { ...dup }, { page: "a/b", key: "x.q", value: "", title: "Thing" }, null, 7, "str", { page: "", key: "k", value: "v" }]);
   assert.equal(b.lines.length, 1);
-  assert.equal(b.lines[0], "- **Thing** · y z: twelve things");
+  assert.equal(b.lines[0], "- **Thing** · x y z: twelve things");
   const many = Array.from({ length: 12 }, (_, i) => ({ page: `p/${i}`, key: `k.v${i}`, value: `value ${i}`, title: `T${i}` }));
   assert.equal(composeFactsBlock(many).lines.length, 4);
   assert.equal(composeFactsBlock(many, { max: 2 }).lines.length, 2);
@@ -387,7 +387,7 @@ test("fuzz: verifyComposed never passes an answer holding a number, number word 
     let answer = `${opener}\n\n${block.text}\n\n-# Sources: ${block.ids.join(", ")}`;
     if (r() < 0.5) { const at = Math.floor(r() * answer.length); answer = answer.slice(0, at) + " " + phrase(r, 1 + Math.floor(r() * 3)) + " " + answer.slice(at); }
     const v = verifyComposed(answer, block.used, sheet, { partyNames: names });
-    const allowedText = [...block.used.flatMap((f) => [f.title, f.key.split(".").pop().replace(/[_-]+/g, " "), f.value, f.page]), ...sheetStrings(sheet), ...names].join("\n").normalize("NFKC");
+    const allowedText = [...block.used.flatMap((f) => [f.title, f.key.replace(/[._-]+/g, " "), f.value, f.page]), ...sheetStrings(sheet), ...names].join("\n").normalize("NFKC");
     const aCaps = new Set(oracleCaps(allowedText)), aNums = new Set(oracleNums(allowedText));
     const aNW = new Set((allowedText.match(/[\p{L}\p{M}]+/gu) || []).map((w) => w.toLowerCase()).filter((w) => NUMBER_WORDS.has(w)));
     const ownWords = new Set(sheetStrings(sheet).flatMap((s) => (s.match(/[A-Za-z]+/g) || []).map((w) => w.toLowerCase())));
@@ -441,7 +441,7 @@ test("fuzz: composeAnswer with random and mutated model openers never yields num
     const c = composeAnswer({ question: String(i), rawOpener, retrievedFacts: facts, sheet, askerBuild: sheet, partyNames: ["Santa", "Bible Boi"] });
     if (c.openerSource === "model") model++; else fallback++;
     assert.ok(c.ok, JSON.stringify([rawOpener, c.verify]));
-    const factText = c.used.flatMap((f) => [f.title, f.value, f.key, f.page]).join(" ");
+    const factText = c.used.flatMap((f) => [f.title, f.value, f.key.replace(/[._-]+/g, " "), f.page]).join(" "); // every key word: a superset of the label (labelOf keeps the segments the page does not name)
     const allowedNums = new Set(oracleNums(factText));
     for (const num of oracleNums(c.text.split("\n").filter((l) => !/^-# /.test(l)).join("\n"))) assert.ok(allowedNums.has(num), `${num} in ${c.text}`);
     if (c.openerSource === "model") {
@@ -709,7 +709,7 @@ test("verifyFinished passes the composed text and the formatter's bullet form, a
 test("verifyComposed: a fact that holds a link is rendered as its label; a link whose target is only in the facts is still refused (round 2 findings 4 and 5)", () => {
   const linked = [{ page: "a/b", key: "k.guide", value: "see [level 60](https://example.com/guide) for details", title: "Guide" }];
   const b = composeFactsBlock(linked);
-  assert.equal(b.lines[0], "- **Guide** \u00B7 guide: see level 60 for details");
+  assert.equal(b.lines[0], "- **Guide** \u00B7 k guide: see level 60 for details");
   const c = composeAnswer({ question: "q", rawOpener: "Good question.", retrievedFacts: linked, sheet: null, partyNames: [] });
   assert.ok(c.ok, JSON.stringify(c.verify));
   const facts = [{ page: "a/b", key: "k.link", value: "See https://evil.example", title: "Guide" }];
@@ -760,7 +760,7 @@ test("every real library fact, composed alone and run through the production for
 test("library cross-references and links in a fact value are rendered as plain text; a title with a comma survives the Sources footer", () => {
   const f1 = [{ page: "systems/bunkers", key: "b.list", value: "the list on [[systems/legacy]] and [raids/x-1] and [see](https://example.test/a) accepts it", title: "Bunkers, and more" }];
   const b = composeFactsBlock(f1);
-  assert.equal(b.lines[0], "- **Bunkers, and more** \u00B7 list: the list on systems/legacy and raids/x-1 and see accepts it");
+  assert.equal(b.lines[0], "- **Bunkers, and more** \u00B7 b list: the list on systems/legacy and raids/x-1 and see accepts it");
   const links = "[Bunkers, and more](<https://leeroy.party/#library.systems.bunkers>) \u00B7 [Other, page](<https://leeroy.party/#library.systems.other>)";
   const f2 = [...f1, { page: "systems/other", key: "o.k", value: "v", title: "Other, page" }];
   const c = composeAnswer({ question: "q", rawOpener: "", retrievedFacts: f2, sheet: null, partyNames: [] });

@@ -247,10 +247,19 @@ export function fallbackOpener({ question = "", askerBuild = null, sheet = null,
 }
 
 // ---- the facts block, written by code --------------------------------------------------------------------------------------
-const labelOf = (key) => {
-  const tail = String(key || "").split(".").pop();
-  return norm(tail.replace(/[_-]+/g, " "));
-};
+// A fact's label is its key with the leading segments that the page already names left out, so each line stands alone: under "Raids open Dec 9",
+// hyjal_summit.bosses is "hyjal summit bosses" (the last segment alone, "bosses", lost the raid); under "Races and class combinations",
+// races.alliance.paladin is "alliance paladin" (not "paladin", which lost the faction); under "Onyxia's Lair", onyxia.size is "size". The last segment is
+// always kept. A segment is named by the page when each of its words is a word of the title or the page slug (or one starts the other, 4+ letters).
+export function labelOf(key, page = "", title = "") {
+  const segs = String(key || "").split(".").map((s) => norm(s.replace(/[_-]+/g, " "))).filter(Boolean);
+  if (!segs.length) return "";
+  const known = lc(`${title} ${String(page).split("/").pop()}`).match(/[\p{L}\p{N}]+/gu) || [];
+  const named = (seg) => lc(seg).split(" ").every((w) => known.some((t) => t === w || (w.length >= 4 && t.length >= 4 && (t.startsWith(w) || w.startsWith(t)))));
+  let i = 0;
+  while (i < segs.length - 1 && named(segs[i])) i++;
+  return segs.slice(i).join(" ");
+}
 // One retrieved fact as the text it may contribute: title (or page id), label and value. The same normaliser feeds the rendering and the
 // verification, so the two cannot drift.
 export function factParts(f) {
@@ -258,7 +267,7 @@ export function factParts(f) {
   const page = norm(f.page || f.id || "");
   const title = norm(f.title || (f.p && f.p.title) || "").replace(/\*/g, "");
   const open = f.open === true || String(f.key) === "OPEN";
-  const label = open ? "still open" : labelOf(f.key);
+  const label = open ? "still open" : labelOf(f.key, page, title || page);
   const value = norm(norm(f.value).replace(LINK_RE, "$1").replace(WIKI_REF_RE, "$1")).replace(/\*\*/g, ""); // library link syntax is rendered as its label: a link never travels inside a fact
   if (!page || !value) return null;
   return { page, title: title || page, label, value, open };
@@ -270,7 +279,7 @@ export const factTexts = (f) => { const p = factParts(f); return p ? [p.title, p
 // The block stays under maxChars (the first fact is always kept, whole), so the formatted answer never reaches the 1200-character cut that would split a line.
 export const BLOCK_MAX_CHARS = 600;
 export function composeFactsBlock(retrievedFacts, { max = MAX_FACTS, maxChars = BLOCK_MAX_CHARS } = {}) {
-  const lines = [], ids = [], used = [];
+  const lines = [], ids = [], used = [], dropped = [];
   const seen = new Set();
   let total = 0;
   for (const f of Array.isArray(retrievedFacts) ? retrievedFacts : []) {
@@ -280,14 +289,15 @@ export function composeFactsBlock(retrievedFacts, { max = MAX_FACTS, maxChars = 
     const sig = `${p.page}\u0001${p.label}\u0001${p.value}`;
     if (seen.has(sig)) continue;
     const line = `- **${p.title}** · ${p.label}: ${p.value}`;
-    if (lines.length > 0 && total + line.length + 1 > maxChars) continue;
+    // over the cap: the fact is left out and reported in `dropped` (never silently); the picked path (ask-picked.js) passes maxChars Infinity and never drops
+    if (lines.length > 0 && total + line.length + 1 > maxChars) { dropped.push(f); continue; }
     seen.add(sig);
     total += line.length + 1;
     lines.push(line);
     if (!ids.includes(p.page)) ids.push(p.page);
     used.push(f);
   }
-  return { text: lines.join("\n"), ids, used, lines };
+  return { text: lines.join("\n"), ids, used, lines, dropped };
 }
 
 // ---- the proof -------------------------------------------------------------------------------------------------------------
