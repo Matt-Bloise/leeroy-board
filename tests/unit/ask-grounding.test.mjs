@@ -201,3 +201,17 @@ test("the grounding text puts the asker's words after the mark, so a question ca
   const out = await finishAnswerText(env, { rawAnswer: "The Horde trainers stand in Razor Hill and Brill, with no Hunter trainer in Durotar at all.\n\n-# Sources: systems/trainers", isCoach: false, parsedPages: i.parsedPages, by: "Red Fox", askerIsMember: true, persona: i.persona, intentId: "g6", groundingText: i.groundingText, personalised: false, retrieval: i.retrieval, group: i.group });
   assert.ok(!/Hunter trainer in Durotar/.test(out.answer.split("-# Sources")[0].replace(/\(Durotar: Hunter, Mage\)/g, "")), out.answer);
 });
+
+// ---- review round 2 ----------------------------------------------------------------------------------------------------------
+test("absenceCheck round 2: far-back status words, lower-case subjects, contrasts, unavailable evidence and key-less claims", () => {
+  const long = "Stormwind keeps many class trainers near the cathedral";
+  const a = (answer, library) => absenceCheck(answer, library).answer;
+  assert.equal(a(`${long}, which has no auction house at all.`, "Orgrimmar has an auction house"), `${long}.`);
+  assert.equal(a(`${long}, and paladins have no trainers there.`, "Warriors have no trainers"), `${long}.`);
+  assert.equal(a(`${long}, and paladins have no trainers there.`, "Paladins have no trainers"), `${long}, and paladins have no trainers there.`);
+  assert.equal(a(`${long}, and Stormwind has no trainers.`, "Stormwind has trainers but no auction house"), `${long}.`);
+  assert.equal(a("Trainers for every class are unavailable there.", "Trainers for every class are unavailable"), "Trainers for every class are unavailable there.");
+  assert.equal(a(`${long}. There are none.`, "Stormwind has trainers"), `${long}.`);
+  assert.equal(a(`${long}. There are none.`, "paladin trainers: none in Durotar"), `${long}. There are none.`);
+  assert.equal(a("Blizzard has published no exact figure, and the library has nothing more.", ""), "Blizzard has published no exact figure, and the library has nothing more.", "a status claim stays");
+});

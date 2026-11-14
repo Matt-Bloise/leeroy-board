@@ -83,7 +83,7 @@ const STATUS_RE = /\b(?:library|published|publish|confirm\w*|settled|unresolved|
 // The text the answer may rely on stops where the asker's own words begin (the question, the earlier question, the display name): a question's "no X" is not evidence.
 export const ASKER_TEXT_MARK = "[[asker-text]]";
 const evidenceOf = (text) => { const s = String(text || ""); const i = s.indexOf(ASKER_TEXT_MARK); return i >= 0 ? s.slice(0, i) : s; };
-const NEG_RE = /\b(?:no|none|not|never|nothing|neither|nor|cannot|without|lacks?|absent|unlisted|missing)\b|n't\b/i;
+const NEG_RE = /\b(?:no|none|not|never|nothing|neither|nor|cannot|without|lacks?|lacking|unavailable|absent|unlisted|missing)\b|n't\b/i;
 const STOP = new Set("the and any all for with from that this there here are was were can will would could should may might has have had does did not but into out per via while which who what when where also only still even more than then they them their you your our one ones such yet its it's".split(" "));
 const norm = (w) => String(w || "").toLowerCase().replace(/'s$/, "").replace(/(?:es|s|e)$/, "");
 const wordsOf = (t) => String(t || "").toLowerCase().match(/[a-z][a-z'-]*/g) || [];
@@ -91,8 +91,8 @@ const wordsOf = (t) => String(t || "").toLowerCase().match(/[a-z][a-z'-]*/g) || 
 function clausesOf(text) {
   return String(text || "")
     .replace(/\[\[retrieved:[^\]]*\]\]/g, " ")
-    .split(/[;\n()]+|\.\s+/)
-    .map((c) => ({ neg: NEG_RE.test(c), stems: new Set(wordsOf(c).map(norm)) }))
+    .split(/[;\n()]+|\.\s+|\s(?:but|whereas|however)\s/i) // a contrast splits a clause: "has trainers but no auction house" negates only the second part
+    .map((c) => ({ neg: NEG_RE.test(c), text: c, stems: new Set(wordsOf(c).map(norm)) }))
     .filter((c) => c.neg);
 }
 
@@ -103,17 +103,15 @@ function keysAfter(sentence, m, end, prior = 0) {
   const rest = sentence.slice(m.index + m[0].length, end).split(/[,;:.!?()—]/)[0];
   const before = sentence.slice(prior, m.index).split(/[,;:!?()—]|\s-\s/).pop();
   const caps = [], low = [];
-  const take = (text, capsOnly) => {
+  const take = (text) => {
     for (const w of text.match(/[A-Za-z][A-Za-z'-]*/g) || []) {
       const lw = w.toLowerCase();
       if (lw.length < 3 || STOP.has(lw) || /^(?:or|and|in|at|of|on|to|by)$/.test(lw)) continue;
-      const cap = /^[A-Z]/.test(w);
-      if (capsOnly && !cap) continue;
-      (cap ? caps : low).push(norm(w));
+      (/^[A-Z]/.test(w) ? caps : low).push(norm(w));
     }
   };
-  take(rest, false);
-  take(before, true);
+  take(rest);
+  take(before); // the subject before the marker, lower case too: "paladins have no trainers" needs paladins in the clause
   return { caps, low, text: rest, pre: before };
 }
 const has = (c, k) => { for (const t of c.stems) if (t === k || (k.length >= 5 && t.length >= 5 && t.slice(0, 5) === k.slice(0, 5))) return true; return false; };
@@ -138,8 +136,11 @@ export function absenceCheck(answer, allowedText) {
       const marks = [...sent.matchAll(new RegExp(ABSENCE_RE.source, "gi"))].filter((mk) => !(/^no$/i.test(mk[0]) && /^[\s*]*$/.test(sent.slice(0, mk.index)) && /^\s*[,.:;!—-]/.test(sent.slice(mk.index + 2))));
       const bad = marks.find((mk, j) => {
         const k = keysAfter(sent, mk, j + 1 < marks.length ? marks[j + 1].index : sent.length, j > 0 ? marks[j - 1].index + marks[j - 1][0].length : 0);
-        if (STATUS_RE.test(`${k.pre} ${mk[0]} ${k.text}`)) return false;
-        return k.caps.length + k.low.length > 0 && !clauses.some((c) => supports(c, k));
+        // Status test: the marker, its own words and the three words just before it ("Blizzard has published no figure"); a status word further back cannot exempt a game claim.
+        if (STATUS_RE.test(`${k.pre.split(/\s+/).slice(-3).join(" ")} ${mk[0]} ${k.text}`)) return false;
+        // No key words at all ("There are none."): supported only when a library clause uses the same marker word.
+        if (k.caps.length + k.low.length === 0) return !clauses.some((c) => new RegExp(`\\b${mk[0]}\\b`, "i").test(c.text));
+        return !clauses.some((c) => supports(c, k));
       });
       if (!bad) { out.push(sent); continue; }
       const m = bad;
