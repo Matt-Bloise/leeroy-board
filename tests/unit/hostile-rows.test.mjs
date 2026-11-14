@@ -41,22 +41,22 @@ test("memberFor and claimEntries: a null, numeric or nameless entry claims nobod
 });
 
 test("cardMembers: non-object members, nameless members and non-string names are skipped; the printed name carries no mention or link syntax", () => {
-  const out = cardMembers({ members: [...JUNK, { name: 7 }, { name: "" }, { name: "@everyone <@&123456789012345678> [x](https://e.test) ‮", class: "Frost Mage" }] });
+  const out = cardMembers({ members: [...JUNK, { name: 7 }, { name: "" }, { name: "@everyone <@&123456789012345678> [x](https://e.test) \u202E", class: "Frost Mage" }] });
   assert.equal(out.length, 1);
   assert.ok(out[0].slug && out[0].name);
-  assert.ok(!/[<>@\[\]()‮]/.test(out[0].name + out[0].classLabel), out[0].name);
+  assert.ok(!/[<>@\[\]()\u202E]/.test(out[0].name + out[0].classLabel), out[0].name);
   assert.deepEqual(cardMembers(null), []);
   assert.deepEqual(cardMembers({ members: "x" }), []);
 });
 
 test("nameKey and slugify: width forms, zero-width characters and decoration do not make a different person", () => {
-  const same = ["Ada", "ADA", "=Ada=", "Ａda", "A​da", "A⁠da", " a-d-a "];
+  const same = ["Ada", "ADA", "=Ada=", "\uFF21da", "A\u200Bda", "A\u2060da", " a-d-a "];
   for (const s of same) assert.equal(nameKey(s), "ada", JSON.stringify(s));
   assert.notEqual(nameKey("Ada"), nameKey("Adam"));
-  assert.notEqual(nameKey("José"), nameKey("Jose"), "an accent is a different name");
+  assert.notEqual(nameKey("Jos\u00E9"), nameKey("Jose"), "an accent is a different name");
   assert.equal(nameKey(""), "");
   assert.equal(nameKey(null), "");
-  assert.equal(slugify("Ａda ​"), "ada");
+  assert.equal(slugify("\uFF21da \u200B"), "ada");
   assert.equal(slugify("!!!"), "");
 });
 
@@ -87,4 +87,18 @@ test("applySignupChange: a name that is an object-property word makes an ordinar
     assert.equal(r.doc.entries[0].updated, "2026-11-03T12:00:00.000Z");
   }
   assert.equal({}.rsvp, undefined);
+});
+
+test("cardMembers: a hostile free-text class, race or role is cleaned and cut; a listed class_key wins over the text", () => {
+  const hostile = { name: "Ada", class: "Frost <@123456789012345678> @everyone [x](https://e.test) *b*", race: "Und\u200Bead \u202E`x`", role: "ta`nk` ||s|| ~~t~~" };
+  const [m] = cardMembers({ members: [hostile] });
+  assert.equal(m.classKey, "");
+  for (const field of ["classLabel", "race", "role"]) {
+    assert.ok(!/[<>@\[\]()*_~|`\\\u200B-\u200F\u202A-\u202E]/.test(m[field]), `${field}: ${JSON.stringify(m[field])}`);
+  }
+  assert.ok(m.classLabel.length <= 16 && m.race.length <= 16 && m.role.length <= 12);
+  assert.equal(m.race, "Undead x");
+  const [keyed] = cardMembers({ members: [{ ...hostile, class_key: "mage" }] });
+  assert.equal(keyed.classKey, "mage");
+  assert.ok(!/[<>@\[\]()*]/.test(keyed.classLabel), keyed.classLabel);
 });

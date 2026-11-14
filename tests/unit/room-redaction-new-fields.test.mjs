@@ -69,12 +69,12 @@ test("a member socket gets a new top-level key; that is the documented differenc
   assert.ok(!PUBLIC_TOP_KEYS.includes("summary"));
 });
 
-test("a broadcast that is not valid JSON or not an object reaches no one and does not throw", () => {
+test("a broadcast string that is not valid JSON reaches no one and does not throw", () => {
   const sent = [];
   const ctx = { getWebSockets: () => [{ deserializeAttachment: () => ({ member: true }), send: (m) => sent.push(m) }], setWebSocketAutoResponse() {} };
   const room = new BoardRoom(ctx, {});
-  for (const bad of ["{not json", "null", "5", '"text"']) {
-    assert.doesNotThrow(() => room.broadcast(bad), bad);
-  }
-  assert.ok(!sent.some((m) => m.includes("not json")));
+  assert.doesNotThrow(() => room.broadcast("{not json"));
+  assert.deepEqual(sent, []);
+  // Not asserted: BoardRoom.broadcast("null"), ("5") and ('"text"') do reach sockets. The /broadcast route rejects a non-object body at room.js:127, so nothing
+  // reaches them today; the follow-up (docs/review-classes.md F-14) is to make broadcast() refuse a non-object itself.
 });
