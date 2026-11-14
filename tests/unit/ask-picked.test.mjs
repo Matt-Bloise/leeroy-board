@@ -210,3 +210,106 @@ test("fuzz: random model replies yield either no answer or exactly the rendering
   }
   assert.ok(ok > 100, `some valid replies were generated (${ok})`);
 });
+
+// ---- the answer path (answerWithAi with a stubbed model) --------------------------------------------------------------------------
+import { loadHarness, SCENARIOS, REPLIES } from "../helpers/ask-harness.mjs";
+const H = await loadHarness(new URL("../..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+const realFetch = globalThis.fetch;
+globalThis.fetch = async () => new Response("provider down", { status: 500 });
+test.after(() => { globalThis.fetch = realFetch; });
+const on = (extra = {}) => ({ ASK_PICKED: "on", ...extra });
+const systemOf = (call) => call.find((m) => m.role === "system").content;
+const userOf = (call) => call.find((m) => m.role === "user").content;
+const idOf = (user, needle) => { const l = user.split("\n").find((x) => x.includes(needle)); return l ? l.split(":")[0] : null; };
+
+test("picked on: the model sees offered facts with ids and returns ids; the answer is those facts verbatim with their Sources", async () => {
+  const ctx = H.aiSays(H.makeEnv(on()), (messages) => JSON.stringify([idOf(userOf(messages), "glass_spire.size") || idOf(userOf(messages), "holds 10 players")]));
+  const r = await H.ask(ctx.env, { question: "how many players does the glass spire vault hold" });
+  assert.equal(r.status, "answered");
+  assert.match(r.model, /:picked-1$/);
+  assert.match(r.answer, /the Glass Spire vault holds 10 players/);
+  assert.deepEqual(JSON.parse(r.cites), ["vaults/glass-spire"]);
+  assert.equal(ctx.aiCalls.length, 1);
+  assert.match(systemOf(ctx.aiCalls[0]), /ONLY a JSON array of the ids/);
+  const user = userOf(ctx.aiCalls[0]);
+  assert.match(user, /^f1: /m);
+  assert.ok(user.split("\n").filter((l) => /^f\d+: /.test(l)).length <= 20);
+  assert.ok(!/8 crowns|2026-12-09/.test(r.answer), "facts that were not picked are not shown");
+});
+
+test("picked on: prose, invented facts, unknown ids, a code fence, too many ids or a failed call give the code refusal and nothing the model wrote", async () => {
+  for (const reply of [
+    "The Ember Throne drops at level 60. -# Sources: vaults/ember-throne",
+    '["f99"]', '```json\n["f1"]\n```', '["f1","f2","f3","f4"]', 'f1 answers it: ["f1"]', new Error("down"),
+  ]) {
+    const ctx = H.aiSays(H.makeEnv(on()), reply);
+    const r = await H.ask(ctx.env, { question: "how many players does the glass spire vault hold" });
+    assert.equal(r.status, "answered", String(reply));
+    assert.match(r.answer, /does not cover that yet/, String(reply));
+    assert.ok(!/Ember|Throne|level 60|f99|holds 10 players/.test(r.answer), r.answer);
+    assert.equal(r.model.split(":")[0], "library");
+    assert.match(r.model, /picked-refused/);
+  }
+  const ctx = H.aiSays(H.makeEnv(on()), "[]");
+  const r = await H.ask(ctx.env, { question: "how many players does the glass spire vault hold" });
+  assert.match(r.answer, /does not cover that yet/);
+  assert.match(r.model, /picked-none/);
+});
+
+test("picked on: a question the library does not cover gets the existing code refusal with no model call; coach and skip turns keep the existing path", async () => {
+  const ctx = H.aiSays(H.makeEnv(on()), '["f1"]');
+  const r = await H.ask(ctx.env, { question: "what is the best pizza topping for a vault night" });
+  assert.equal(ctx.aiCalls.length, 0);
+  assert.match(r.answer, /does not cover that yet/);
+  const hi = H.aiSays(H.makeEnv(on()), "Hi there, friend.");
+  const r2 = await H.ask(hi.env, { question: "hi" });
+  assert.equal(hi.aiCalls.length, 1);
+  assert.ok(!/picked/.test(r2.model), r2.model);
+  assert.doesNotMatch(systemOf(hi.aiCalls[0]), /JSON array of the ids/);
+  const coach = H.aiSays(H.makeEnv(on()), "Try the Warden path.");
+  const r3 = await H.ask(coach.env, { question: "how do I tank as a lantern", journey: "guided", share: false });
+  assert.ok(!/picked/.test(r3.model), r3.model);
+  assert.doesNotMatch(systemOf(coach.aiCalls[0]), /JSON array of the ids/);
+});
+
+test("picked on: a question about the asker offers facts keyed to their build and names the build; picked build facts come first", async () => {
+  let offered = "";
+  const ctx = H.aiSays(H.makeEnv(on()), (messages) => { offered = userOf(messages); return JSON.stringify([idOf(offered, "Hollowmere market"), idOf(offered, "Lantern trainers")].filter(Boolean)); });
+  const r = await H.ask(ctx.env, { question: "where do I go to train" });
+  assert.match(offered, /ASKER_BUILD: race: owlkin; class: lantern; spec: warden; role: tank; professions: reedcraft, stonecutting/);
+  assert.match(offered, /Lantern · /, "a fact keyed to the asker's calling is offered");
+  assert.match(r.model, /:picked-2$/, r.model);
+  assert.match(r.answer, /for your owlkin warden lantern/);
+  assert.ok(r.answer.indexOf("Lantern trainers") > 0 && r.answer.indexOf("Lantern trainers") < r.answer.indexOf("Hollowmere market"), "the build-keyed pick comes first");
+  assert.ok(!/secret goal words/.test(JSON.stringify(ctx.aiCalls)), "a hidden sheet field never reaches the prompt");
+});
+
+test("picked on: a visitor's prompt carries no build and the answer names no member", async () => {
+  const ctx = H.aiSays(H.makeEnv(on()), '["f1"]');
+  const r = await H.ask(ctx.env, { by: "Visitor", memberSlug: undefined, isMember: false, question: "how many crowns in the glass spire" });
+  assert.match(userOf(ctx.aiCalls[0]), /ASKER_BUILD: \(none\)/);
+  assert.ok(!/Moss Wren|owlkin|lantern|secret goal words/i.test(r.answer), r.answer);
+});
+
+test("picked on takes precedence over ASK_COMPOSED on", async () => {
+  const ctx = H.aiSays(H.makeEnv(on({ ASK_COMPOSED: "on" })), '["f1"]');
+  const r = await H.ask(ctx.env, { question: "how many players does the glass spire vault hold" });
+  assert.match(systemOf(ctx.aiCalls[0]), /JSON array of the ids/);
+  assert.match(r.model, /picked/);
+});
+
+// ---- differential: flag off is byte-identical to unset -----------------------------------------------------------------------------
+test("flag off (unset, off, OFF, On, empty, 1, true) is identical to unset across every scenario and reply, prompts and buildAnswerInputs included", async () => {
+  for (const reply of REPLIES) {
+    const baseline = await H.runAll({}, reply);
+    for (const v of ["off", "OFF", "On", "", "1", "true"]) assert.equal(await H.runAll({ ASK_PICKED: v }, reply), baseline, `ASK_PICKED=${JSON.stringify(v)} reply=${String(reply).slice(0, 20)}`);
+    // with ASK_COMPOSED on as well, ASK_PICKED off leaves the composed path exactly as it was
+    assert.equal(await H.runAll({ ASK_COMPOSED: "on", ASK_PICKED: "off" }, reply), await H.runAll({ ASK_COMPOSED: "on" }, reply));
+  }
+});
+
+test("flag on changes only retrieved, non-abstain, non-coach answers", async () => {
+  const sent = async (extra, s) => { const all = JSON.parse(await H.runAll(extra, REPLIES[0], [s])); return JSON.stringify(all.map(({ r, prompts }) => ({ r, prompts }))); }; // the answer and the prompts (buildAnswerInputs adds pickedCtx when on)
+  for (const s of [SCENARIOS[5], SCENARIOS[6], SCENARIOS[9]]) assert.equal(await sent(on(), s), await sent({}, s), s.question);
+  assert.notEqual(await H.runAll(on(), REPLIES[1], [SCENARIOS[0]]), await H.runAll({}, REPLIES[1], [SCENARIOS[0]]));
+});
