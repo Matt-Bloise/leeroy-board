@@ -2584,10 +2584,11 @@ function startArt() {
   probe("img/map/zeppelin.png", () => { ART.zep = true; mapArtDone(); }, mapArtDone);
   probe("img/map/town.png", () => { ART.town = true; mapArtDone(); }, mapArtDone);
   probe("img/seal.png", () => { ART.seal = true; try { renderLedger(); } catch (e) { console.error(e); } });
-  probe("img/beam.png", () => {
+  /* the probe fetches the file the beam then shows, so it is downloaded once; the 1920 WebP (tools/images.mjs, 76 KB) replaces the 186 KB PNG */
+  probe("img/beam.w1920.webp", () => {
     ART.beam = true;
     $("#main").classList.add("has-beam"); $("#main").classList.remove("beam-soon");
-    $("#main").prepend(h("img", { class: "beam", src: "img/beam.png", srcset: "img/beam.png 1920w, img/beam-2172.webp 2172w", sizes: "104vw", alt: "", "aria-hidden": "true", decoding: "async" }));
+    $("#main").prepend(h("img", { class: "beam", src: "img/beam.w1920.webp", srcset: "img/beam.w1920.webp 1920w, img/beam-2172.webp 2172w", sizes: "104vw", alt: "", "aria-hidden": "true", decoding: "async" }));
   }, () => {});
 }
 
