@@ -46,7 +46,7 @@ test("the post names who signed up (not who is out), with the board's names, and
   assert.match(text, /^\*\*This week on the board\*\*\n/);
   assert.match(text, /Signed up \(3\): Red Fox, Blue Owl \(tentative\) and Green Elk \(running late\)\./);
   assert.doesNotMatch(text, /Grey Cat/, "an Out sign-up is not listed");
-  assert.match(text, /Roles on the board for those who are in: tank 1, healer 0, damage dealer 0 \(1 with no role on the board\)\. No healer and damage dealer among them yet\./);
+  assert.match(text, /Roles on the board for those who are in: tank 1, healer 0, damage dealer 0 \(1 with no role on the board\)\. No healer or damage dealer among them yet\./);
   assert.match(text, /Ask Leeroy with \/ask\./);
 });
 
@@ -92,7 +92,7 @@ test("the tip changes with the week; its subject comes from the class's own key"
   assert.equal(isoWeek(PLAY).key, "2026-W47");
 });
 
-test("F6: exact names win, colliding names match nobody, duplicate sign-ups count once, empty keys are ignored", () => {
+test("F6, R1: exact names win, colliding names match nobody, a member signs up once, a name of symbols still counts", () => {
   const party = { members: [
     { name: "Red Fox", class_key: "paladin", role: "tank", board_line: "Tank build" },
     { name: "Redfox", class_key: "priest", role: "healer", board_line: "Healer build" },
@@ -100,7 +100,7 @@ test("F6: exact names win, colliding names match nobody, duplicate sign-ups coun
   ] };
   const entries = [{ name: "Red Fox", rsvp: "in" }, { name: "RED FOX", rsvp: "maybe" }, { name: "Twin", rsvp: "in" }, { name: "???", rsvp: "in" }, { name: "!!!", rsvp: "in" }];
   const { text } = composeWeeklyPost(docs({ party, signups: { entries } }));
-  assert.match(text, /Signed up \(2\): Red Fox and Twin\./);
+  assert.match(text, /Signed up \(4\): Red Fox, Twin, \?\?\? and !!!\./, "the sign-up card counts them, so the post does");
   assert.match(text, /- Red Fox \(Tank build\)/);
   assert.doesNotMatch(text, /Healer build/);
   assert.equal(nameKey("=Red Fox="), nameKey("red fox"));
@@ -253,4 +253,22 @@ test("F4: for the same documents and play time, the dry-run's text is the run's 
   await runWeeklyPost(w.env, { now: DUE, fetchImpl: w.fetchImpl });
   const plan = planWeeklyPost({ config: { weekday: 5, hour: 23 }, state: null, now: DUE });
   assert.equal(w.calls[0].body.content, composeWeeklyPost({ ...docs(), playAt: plan.playAt }).text);
+});
+
+test("R2, R3: non-members are told apart by their exact name; combining marks are part of a name", () => {
+  const { text } = composeWeeklyPost(docs({ party: { members: [{ name: "कमल", class_key: "mage", role: "damage" }] }, signups: { entries: [{ name: "Al", rsvp: "in" }, { name: "A.L.", rsvp: "maybe" }, { name: "कमला", rsvp: "in" }] } }));
+  assert.match(text, /Signed up \(3\): Al, A\.L\. \(tentative\) and कमला\./);
+  assert.doesNotMatch(text, /One fact per build/, "the near-match is not given the member's build");
+});
+
+test("R4, R5: a shortened name list keeps its markers; one oversized tip does not cost the others theirs", () => {
+  const members = [{ name: "Red Fox", class_key: "paladin", role: "tank", board_line: "x".repeat(1900) }, { name: "Blue Owl", class_key: "mage", role: "damage", board_line: "Gnome Frost Mage" }];
+  const one = composeWeeklyPost(docs({ party: { members }, signups: { entries: [{ name: "Red Fox", rsvp: "in" }, { name: "Blue Owl", rsvp: "in" }] } }));
+  assert.match(one.text, /- Blue Owl \(Gnome Frost Mage\)/);
+  assert.match(one.text, /\(and 1 more\)/);
+  assert.equal(one.facts.length, 1);
+  const entries = []; for (let i = 0; i < 120; i++) entries.push({ name: `Person number ${i} long name`, rsvp: i < 2 ? "maybe" : "in" });
+  const many = composeWeeklyPost(docs({ party: { members: [] }, signups: { entries } }));
+  assert.ok(many.text.length <= POST_MAX);
+  assert.match(many.text, /Person number 0 [a-z ]+ \(tentative\)/, "the tentative marker survives the shortening (names are cut to 24 characters)");
 });
