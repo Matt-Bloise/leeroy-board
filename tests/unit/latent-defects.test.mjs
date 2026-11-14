@@ -2,7 +2,9 @@
 // Each test failed on master before its fix. Fictional data only. No network, no D1, no AI.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applySignupChange } from "../../infrastructure/worker/cards.js";
+import { applySignupChange, tallyEntries, renderSignupCard, renderBoardCard } from "../../infrastructure/worker/cards.js";
+import { rank, expandWords } from "../../vendor/rank-core.js";
+import * as workerRank from "../../infrastructure/worker/rank-core.js";
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 const JUNK = [null, undefined, 5, "text", true, [], [1, 2]];
@@ -22,4 +24,37 @@ test("F-1 applySignupChange: rows that are not objects are skipped and kept; the
   assert.equal(fresh.ok, true);
   assert.deepEqual(fresh.doc.entries.at(-1), { name: "Blue Owl", when: "8pm", updated: "2026-11-03T12:00:00.000Z" });
   assert.equal(doc.entries.at(-1).rsvp, "maybe", "the input document is not changed");
+});
+
+// F-3 and F-6: a stored value that is also an Object.prototype name was used as a lookup key (`table[value]`), so the sign-up card threw
+// (`out.rsvp[e.rsvp].push is not a function`), the board card printed a function's source, and the ranker threw on `synonyms[w] || []`.
+const PROTO_WORDS = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"];
+
+test("F-3 cards: an rsvp or pack that is an object-property word is plain data, counted nowhere and printed as no answer", () => {
+  const entries = PROTO_WORDS.flatMap((w, i) => [{ name: `Rsvp Word ${i}`, rsvp: w }, { name: `Pack Word ${i}`, rsvp: "in", pack: w }]);
+  const t = tallyEntries({ entries });
+  assert.deepEqual(Object.fromEntries(Object.entries(t.rsvp).map(([k, v]) => [k, v.length])), { in: PROTO_WORDS.length, maybe: 0, late: 0, out: 0 });
+  assert.deepEqual([t.pack.yes.length, t.pack.no.length], [0, 0]);
+  const members = entries.map((e) => ({ slug: e.name.toLowerCase().replace(/ /g, "-"), name: e.name, classKey: "", classLabel: "", race: "", role: "" }));
+  const cards = [renderSignupCard({ entries }), renderSignupCard({ entries, members }), renderBoardCard({ entries }), renderBoardCard({ entries, members })];
+  for (const card of cards) {
+    const text = JSON.stringify(card.embeds[0]);
+    assert.ok(!/native code|function|\[object/i.test(text), text);
+    assert.ok(!/pack (constructor|__proto__|toString|hasOwnProperty|valueOf)\b/.test(text), "a prototype word is not printed as a pack answer");
+  }
+  assert.match(cards[2].embeds[0].fields[0].value, /\*\*Rsvp Word 0\*\*: No answer/);
+  assert.equal({}.push, undefined, "Object.prototype is untouched");
+});
+
+test("F-6 rank-core: a question or sheet word that is an object-property word ranks like any other word", () => {
+  const pages = [{ id: "classes/warden", aliases: ["warden"], facts: [{ key: "warden.role", value: "A constructor of wards." }], open: [] }];
+  for (const set of [expandWords(["constructor"]), workerRank.expandWords(["constructor"])]) assert.deepEqual([...set], ["constructor"]);
+  for (const r of [rank, workerRank.rank]) {
+    const out = r("__proto__ constructor wardens", pages);
+    assert.ok(out.words.includes("constructor"));
+    assert.equal(out.hits[0].key, "warden.role");
+    assert.ok(Number.isFinite(out.hits[0].score) && out.hits[0].score > 0);
+    assert.doesNotThrow(() => r("valueof hasownproperty tostring", pages));
+  }
+  assert.ok(expandWords(["zone"]).has("area"), "a real synonym still expands");
 });

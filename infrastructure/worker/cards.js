@@ -32,6 +32,8 @@ export const boardLinesEnabled = (env) => flag(env && env.BOARD_LINES_ENABLED);
 export const RSVP_STATES = ["in", "maybe", "late", "out"];
 export const RSVP_LABEL = { in: "In", maybe: "Tentative", late: "Running late", out: "Out" };
 export const RSVP_PHRASE = { in: "is in", maybe: "is tentative", late: "is running late", out: "is out" };
+// A stored rsvp is friend data: "constructor" or "__proto__" must read as no answer, not as an inherited property of the table.
+const rsvpLabel = (v) => (typeof v === "string" && Object.hasOwn(RSVP_LABEL, v) ? RSVP_LABEL[v] : "No answer");
 export const DEFAULT_MEET = ["Valley of Strength", "The Crossroads"];
 export const DEFAULT_WHEN = ["6pm", "8pm", "later"];
 
@@ -135,8 +137,8 @@ export function tallyEntries(state) {
   const mopts = meetOptions(state && state.options);
   for (const e of entries) {
     const n = cleanName(e && e.name);
-    if (e && out.rsvp[e.rsvp]) out.rsvp[e.rsvp].push(n);
-    if (e && out.pack[e.pack]) out.pack[e.pack].push(n);
+    if (e && typeof e.rsvp === "string" && Object.hasOwn(out.rsvp, e.rsvp)) out.rsvp[e.rsvp].push(n);
+    if (e && typeof e.pack === "string" && Object.hasOwn(out.pack, e.pack)) out.pack[e.pack].push(n);
     if (e && typeof e.meet === "string" && e.meet) {
       const label = mopts.includes(e.meet) ? e.meet : e.meet === "vos" ? "Valley of Strength" : e.meet === "xroads" ? "The Crossroads" : `Elsewhere: ${sanitiseWriteIn(e.meet)}`;
       out.meet.set(label, [...(out.meet.get(label) || []), n]);
@@ -234,7 +236,7 @@ function assetUrl(state, path) {
 
 const DETAIL_MAX = 1024;
 const detailBits = (e) => {
-  const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
+  const bits = [rsvpLabel(e && e.rsvp)];
   if (e && e.when) bits.push(sanitiseWriteIn(e.when));
   if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
   if (e && (e.pack === "yes" || e.pack === "no")) bits.push(`pack ${e.pack}`);
@@ -294,10 +296,10 @@ export function renderBoardCard(state) {
     fields = fit.values.map((value, i) => ({ name: i === 0 ? "Who" : "\u200b", value, inline: false }));
   } else {
     const lines = entries.map((e) => {
-      const bits = [RSVP_LABEL[e && e.rsvp] || "No answer"];
+      const bits = [rsvpLabel(e && e.rsvp)];
       if (e && e.when) bits.push(String(e.when));
       if (e && e.meet) bits.push(sanitiseWriteIn(e.meet));
-      if (e && e.pack) bits.push(`pack ${e.pack}`);
+      if (e && (e.pack === "yes" || e.pack === "no")) bits.push(`pack ${e.pack}`);
       return `**${cleanName(e && e.name)}**: ${bits.join(" · ")}`;
     });
     fields = lines.length ? [{ name: "Who", value: clampText(lines.join("\n"), 1024), inline: false }] : [];
