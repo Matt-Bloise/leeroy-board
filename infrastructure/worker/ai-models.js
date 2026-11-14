@@ -1412,10 +1412,11 @@ export async function answerWithAi({
       .catch(() => {});
     await broadcastToRoom(env, {
       type: "intent",
-      // A private turn shows no name, question or error text to other sockets.
+      // A private turn shows no name, question or error text to other sockets, and no id: an ask's UUID is its credential at GET /api/ask?id=, and
+      // members' sockets receive this message in full. The asker's own page polls its turn by the id it already holds.
       item: share
         ? { id: intentId, kind: "ask", by, q: question, status: "error", error: msg, at: failedAt }
-        : { id: intentId, kind: "ask", status: "error", at: failedAt },
+        : { kind: "ask", status: "error", at: failedAt },
     });
   }
 }
