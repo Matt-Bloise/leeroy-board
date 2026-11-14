@@ -260,7 +260,7 @@ test("every room message reaches an anonymous socket with no private value and o
 
 // A sheet level is a number, so no text canary can mark it: the level key itself must be absent. Driven through the HTTP routes: the owner
 // hides an empty level (the sheet's switch sends { field, visible: false } with no value), the admin fills 41, the owner changes it while
-// hidden. After each step the level is absent from /data/party, /state, /bootstrap and every message an anonymous socket receives.
+// hidden, then saves a new value with no visible flag (what sheet Save and Import from game send). After each step the level is absent from /data/party, /state, /bootstrap and every message an anonymous socket receives.
 test("a hidden sheet level, filled by the admin through POST /api/admin/sheet, reaches no public read and no anonymous socket", async () => {
   const env = await makeEnv();
   const KEY = "member-key-red-fox-for-contract-01";
@@ -278,7 +278,7 @@ test("a hidden sheet level, filled by the admin through POST /api/admin/sheet, r
     assert.ok(Array.isArray(stParty) && stParty.some((r) => r && r.slug === "red-fox"), `${why}: red-fox has a public row, so the check below is not empty`);
     assert.equal(lv(stParty), undefined, `${why}: /state`);
     assert.equal(lv(JSON.parse((await get(env, "/bootstrap")).text).partySheets), undefined, `${why}: /bootstrap`);
-    for (const m of env.sent) for (const s of fanOut(m).anon) { const j = JSON.parse(s); assert.equal(lv(j.party), undefined, `${why}: anonymous socket`); assert.ok(!JSON.stringify(j).includes("\"value\":41") && !JSON.stringify(j).includes("\"value\":42"), `${why}: socket carries the number`); }
+    for (const m of env.sent) for (const s of fanOut(m).anon) { const j = JSON.parse(s); assert.equal(lv(j.party), undefined, `${why}: anonymous socket`); assert.ok(![41, 42, 43].some((n) => JSON.stringify(j).includes(`"value":${n}`)), `${why}: socket carries the number`); }
   };
   assert.equal(await post("/sheet", `Board ${KEY}`, { field: "level", visible: false }), 200, "the owner hides an empty level");
   await check("after the hide");
@@ -286,8 +286,11 @@ test("a hidden sheet level, filled by the admin through POST /api/admin/sheet, r
   await check("after the admin fill");
   assert.equal(await post("/sheet", `Board ${KEY}`, { field: "level", value: 42, visible: false }), 200, "the owner changes it, still hidden");
   await check("after the owner's change");
+  // the step both real clients take (sheet Save, Import from game): a new value with no visible flag. The hide must hold.
+  assert.equal(await post("/sheet", `Board ${KEY}`, { field: "level", value: 43 }), 200, "the owner saves a new value without visible");
+  await check("after a Save without visible");
   const sheets = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json);
-  assert.deepEqual([lv(sheets).value, lv(sheets).visible], [42, false], "the private row holds it");
+  assert.deepEqual([lv(sheets).value, lv(sheets).visible], [43, false], "the private row holds it");
 });
 test("room.js: an anonymous message keeps only PUBLIC_TOP_KEYS, and an item or intent only PUBLIC_ITEM_KEYS with scalar values", () => {
   const top = redactForPublic({ type: "ask", slug: "red-fox", preview: C.sharedQ, entry: fullItem(), member: { id: IDS.discordId }, turn: fullItem() });
