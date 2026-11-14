@@ -169,10 +169,15 @@ function callAgy(system, user) {
 }
 const hash = (s) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 20);
 // An existing-path row (skip kinds, coach) sends the production prompt on every path: a stored reply to the identical prompt from another path is reused.
-function reusableReply(promptHash) {
+// ASK_EVAL_REUSE=<earlier WORK dirs, comma-separated>: a reply stored there for the same path and the byte-identical prompt is reused too (same model, same prompt).
+function reusableReply(promptHash, mode) {
   for (const p of PATHS) {
-    if (p === PATH) continue;
+    if (p === PATH || mode !== "existing") continue;
     const hit = readJsonl(path.join(WORK, p, "answers.jsonl")).find((a) => a.promptHash === promptHash && a.generator === "agy" && a.mode === "existing");
+    if (hit) return hit.modelOut;
+  }
+  for (const dir of String(process.env.ASK_EVAL_REUSE || "").split(",").filter(Boolean)) {
+    const hit = readJsonl(path.join(dir, PATH, "answers.jsonl")).find((a) => a.promptHash === promptHash && a.generator === "agy" && typeof a.modelOut === "string" && a.modelOut);
     if (hit) return hit.modelOut;
   }
   return null;
@@ -220,7 +225,7 @@ for (let i = 0; i < rows.length; i++) {
       : { system: inp.systemPrompt, user: inp.userPrompt };
     rec.promptHash = hash(`${prompts.system}\n${prompts.user}`);
     let g = codeOpener ? { code: 0, out: "", secs: 0, err: "" } : null;
-    if (!g && mode === "existing") { const reused = reusableReply(rec.promptHash); if (reused != null) { g = { code: 0, out: reused, secs: 0, err: "" }; rec.reused = true; } }
+    if (!g) { const reused = reusableReply(rec.promptHash, mode); if (reused != null) { g = { code: 0, out: reused, secs: 0, err: "" }; rec.reused = true; } }
     if (!g) {
       if (calls >= maxCalls) { console.log(`ask-eval-picked: max-calls ${maxCalls} reached`); break; }
       while (usedLastHour("agy") >= capHour) { if (!wait) break; console.log(`ask-eval-picked: rate guard (${usedLastHour("agy")} agy calls in the last hour, cap ${capHour}); sleeping 5 min`); await sleep(300e3); }
