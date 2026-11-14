@@ -100,7 +100,7 @@ test("sign-ups from before last play night are not this week's: the post invites
   const old = "2026-11-01T00:00:00.000Z";
   const { text, facts } = composeWeeklyPost(docs({ signups: { updated: old, entries: SIGNUPS().entries.map((e) => ({ ...e, updated: old })) } }));
   assert.match(text, /Nobody has signed up for this week yet\. The sign-up card is in this channel: In, Tentative or Running late\./);
-  assert.match(text, /Still on the card from an earlier week, not counted: Red Fox, Blue Owl and Green Elk\. Use \/signup to say you are coming this week\./);
+  assert.match(text, /Still on the card, not counted for this week: Red Fox, Blue Owl and Green Elk\. Click your choice on the card again, or use \/signup, to count for this week\./);
   assert.doesNotMatch(text, /Signed up \(/);
   assert.doesNotMatch(text, /Roles on the board/);
   assert.match(text, /One tip for each build on the board, from the library:/);
@@ -115,15 +115,15 @@ test("review F1: freshness is per sign-up, not the card's stamp; last week's rep
   const card = { updated: new Date(NOW - 3600e3).toISOString(), entries: [{ name: "Red Fox", rsvp: "in", updated: old }, { name: "Blue Owl", rsvp: "in", updated: old }, { name: "Grey Cat", rsvp: "out", updated: new Date(NOW - 3600e3).toISOString() }] };
   const a = composeWeeklyPost(docs({ signups: card }));
   assert.doesNotMatch(a.text, /Signed up \(/);
-  assert.match(a.text, /from an earlier week, not counted: Red Fox and Blue Owl\./);
+  assert.match(a.text, /not counted for this week: Red Fox and Blue Owl\./);
   // a sign-up an hour after last week's post (before last week's play night) is last week's
   const lastPost = PLAY - 7 * 86400e3 - 23 * 3600e3;
   const b = composeWeeklyPost(docs({ signups: { entries: [{ name: "Red Fox", rsvp: "in", updated: new Date(lastPost + 3600e3).toISOString() }] } }));
   assert.doesNotMatch(b.text, /Signed up \(/);
   // one made after last week's play night is this week's; mixed with an old one, only it is counted
-  const c = composeWeeklyPost(docs({ signups: { entries: [{ name: "Red Fox", rsvp: "in", updated: new Date(PLAY - 7 * 86400e3 + 3600e3).toISOString() }, { name: "Blue Owl", rsvp: "in", updated: old }] } }));
+  const c = composeWeeklyPost(docs({ signups: { entries: [{ name: "Red Fox", rsvp: "in", updated: new Date(PLAY - 7 * 86400e3 + 7 * 3600e3).toISOString() }, { name: "Blue Owl", rsvp: "in", updated: old }] } }));
   assert.match(c.text, /Signed up \(1\): Red Fox\./);
-  assert.match(c.text, /not counted: Blue Owl\./);
+  assert.match(c.text, /not counted for this week: Blue Owl\./);
 });
 
 test("review F6: a sign-up time must be a full ISO time, not in the future", async () => {
@@ -147,7 +147,7 @@ test("review F2-F4: a citation does not disqualify a fact; spec names match by p
   ] }] };
   const keys = (m) => { const s = new Set(); for (let w = 0; w < 12; w++) { const t = pickTip(classes, m, w); if (t) s.add(t.key); } return [...s].sort(); };
   assert.deepEqual(keys({ class_key: "priest", role: "healer", spec: "Discipline" }), ["priest.disc.shield"], "Discipline matches disc; the citation does not count as jargon; shadow and trivia are out");
-  assert.equal(pickTip(classes, { class_key: "priest", role: "healer", spec: "Discipline" }, 0).text, "Disc, shield: level 6, absorbs fictional damage, 4 s cooldown.");
+  assert.equal(pickTip(classes, { class_key: "priest", role: "healer", spec: "Discipline" }, 0).text, "Discipline, shield: level 6, absorbs fictional damage, 4 s cooldown.");
   assert.deepEqual(keys({ class_key: "druid", role: "tank", spec: "Feral", board_line: "Feral Druid, bear tank" }), ["druid.bear.regen"], "a Cat only fact is not a bear's tip");
   assert.equal(plainValue("instant, absorbs damage (removed from the game in the Oct 15 notes)"), "instant, absorbs damage (removed from the game in the Oct 15 notes)");
   assert.equal(plainValue("cast it on the first pull (may miss; never on a boss)"), "cast it on the first pull (may miss; never on a boss)");
@@ -366,4 +366,67 @@ test("a record or a report about other players is never the tip", async () => {
     fact("mage.frost_blast", "new trainer spell at 24, a fictional slow on the target for a short while", "good", [ref(2)]),
   ] }] };
   for (let w = 0; w < 8; w++) assert.equal(pickTip(classes, { class_key: "mage", role: "damage" }, w).key, "mage.frost_blast");
+});
+
+test("review 2: short spec names, hunter specs and druid forms pick the build's own facts only", () => {
+  const classes = { pages: [
+    { id: "classes/hunter", facts: [
+      fact("hunter.bm.hawk", "level 20, a fictional hawk that lasts until dismissed", "good", [ref(1)]),
+      fact("hunter.mm.aim", "level 20, a fictional aimed cast with a long cooldown", "good", [ref(2)]),
+      fact("hunter.surv.kick", "level 20, a fictional kick that stuns for a moment", "good", [ref(3)]),
+    ] },
+    { id: "classes/shaman", facts: [
+      fact("shaman.enh.strike", "level 10, a fictional strike on a short cooldown", "good", [ref(4)]),
+      fact("shaman.ele.bolt", "level 10, a fictional bolt with a fast cast time", "good", [ref(5)]),
+    ] },
+    { id: "classes/druid", facts: [
+      fact("druid.forms.cat.prowl", "level 20, a fictional stealth with a short cooldown", "good", [ref(6)]),
+      fact("druid.pounce", "level 20, a fictional stun, usable only in Cat Form", "good", [ref(7)]),
+      fact("druid.ravage", "level 20, a fictional cast that requires Cat Form", "good", [ref(8)]),
+      fact("druid.starfire_tip", "level 20, a fictional cast for Balance druids only", "good", [ref(9)]),
+      fact("druid.bark", "level 20, resists Fire only, a fictional cooldown shell", "good", [ref(1)]),
+      fact("druid.tree.life", "level 40, a fictional tree form that heals the party", "good", [ref(2)]),
+      fact("druid.bear.roar", "level 20, a fictional roar with more threat for a moment", "good", [ref(3)]),
+    ] },
+  ] };
+  const keys = (m) => { const s = new Set(); for (let w = 0; w < 14; w++) { const t = pickTip(classes, m, w); if (t) s.add(t.key); } return [...s].sort(); };
+  assert.deepEqual(keys({ class_key: "hunter", role: "damage", spec: "Marksmanship" }), ["hunter.mm.aim"]);
+  assert.deepEqual(keys({ class_key: "hunter", role: "damage", board_line: "BM hunter" }), ["hunter.bm.hawk"]);
+  assert.equal(pickTip(classes, { class_key: "hunter", role: "damage", spec: "Beast Mastery" }, 0).subject, "Beast mastery, hawk");
+  assert.deepEqual(keys({ class_key: "shaman", role: "damage", spec: "Enhancement" }), ["shaman.enh.strike"]);
+  assert.deepEqual(keys({ class_key: "shaman", role: "damage", spec: "Elemental" }), ["shaman.ele.bolt"]);
+  assert.deepEqual(keys({ class_key: "druid", role: "tank", spec: "Feral", board_line: "Feral Druid, bear tank" }), ["druid.bark", "druid.bear.roar"]);
+  assert.deepEqual(keys({ class_key: "druid", role: "healer", spec: "Restoration" }), ["druid.bark", "druid.tree.life"], "a threat fact is a tank's; the tree is resto's");
+});
+
+test("review 2: a re-clicked RSVP counts this week; a click during last week's play night does not; history and comparisons are not tips", async () => {
+  const { applySignupChange } = await import("../../infrastructure/worker/cards.js");
+  const old = { entries: [{ name: "Red Fox", rsvp: "in", updated: "2026-10-27T00:00:00.000Z" }] };
+  const again = applySignupChange(old, { name: "Red Fox", field: "rsvp", value: "in", now: NOW - 3600e3 });
+  assert.equal(again.changed, false);
+  assert.ok(composeWeeklyPost(docs({ signups: again.doc })).text.includes("Signed up (1): Red Fox."), "the card's same click counts");
+  const during = { entries: [{ name: "Red Fox", rsvp: "late", updated: new Date(PLAY - 7 * 86400e3 + 600e3).toISOString() }] };
+  assert.ok(!composeWeeklyPost(docs({ signups: during })).text.includes("Signed up ("));
+  const { plainValue, JARGON_RE } = await import("../../infrastructure/worker/weekly-post.js");
+  assert.equal(plainValue("threat up 90% (Sep 24 notes cut it to 60%, Oct 15 notes restored 90%)"), "threat up 90%");
+  assert.equal(plainValue("fictional ward for 3 min (Classic fictional race only)"), "fictional ward for 3 min");
+  assert.equal(plainValue("roots for 4 s (Oct 15 notes, bears get it at 12)"), "roots for 4 s (bears get it at 12)");
+  assert.equal(plainValue("a sleep (note: breaks on any damage)"), "a sleep (note: breaks on any damage)");
+  assert.equal(plainValue("a cast (the tooltip is wrong; it is 3 s)"), "a cast (the tooltip is wrong; it is 3 s)");
+  assert.equal(plainValue("a 24 s cooldown (Oct 15 notes)."), "a 24 s cooldown");
+  for (const j of ["can crit since Oct 1", "refund bug fixed", "20% before Oct 1"]) assert.ok(JARGON_RE.test(j), j);
+  const short = { pages: [{ id: "classes/druid", facts: [fact("druid.bear.growl", "cooldown matches Taunt (Sep 30 deep dive)", "good", [ref(1)])] }] };
+  assert.equal(pickTip(short, { class_key: "druid", role: "tank" }, 0), null, "shown text under the minimum is too short");
+});
+
+test("review 2: a threat-raising buff is a tank's; mid-value patch history is not a tip", async () => {
+  const { JARGON_RE } = await import("../../infrastructure/worker/weekly-post.js");
+  assert.ok(JARGON_RE.test("+90% threat (Sep 24 notes cut it to 60%) for a while"));
+  const classes = { pages: [{ id: "classes/paladin", facts: [
+    fact("paladin.righteous_fury", "level 16; +90% Holy threat for a fictional half hour", "good", [ref(1)]),
+    fact("paladin.ward", "level 16, a fictional ward that lasts for a short while", "good", [ref(2)]),
+  ] }] };
+  const keys = (m) => { const s = new Set(); for (let w = 0; w < 6; w++) s.add(pickTip(classes, m, w).key); return [...s].sort(); };
+  assert.deepEqual(keys({ class_key: "paladin", role: "healer", spec: "Holy" }), ["paladin.ward"]);
+  assert.deepEqual(keys({ class_key: "paladin", role: "tank", spec: "Protection" }), ["paladin.righteous_fury", "paladin.ward"]);
 });
