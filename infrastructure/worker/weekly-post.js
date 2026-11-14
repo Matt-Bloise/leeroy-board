@@ -54,7 +54,7 @@ export function plain(s) {
     .replace(/\s+/g, " ").trim();
 }
 // Names compare exactly (case and spacing aside) first, then on letters and digits only: a sign-up "=Red Fox=" is the party's "Red Fox".
-export const nameKey = (s) => String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+export const nameKey = (s) => String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, ""); // combining marks are part of a name
 const exactKey = (s) => String(s == null ? "" : s).normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 
 const httpsUrl = (u) => typeof u === "string" && /^https:\/\/[^\s<>]+$/.test(u);
@@ -110,6 +110,7 @@ export function pickTip(classesDoc, member, weekN) {
   return { page: page.id, key: f.key, subject: subjectOf(f.key, ck), value: f.value, sources: sourcesOf(f) };
 }
 
+const joinOr = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
 const joinList = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 // Who a sign-up is: an exact name match wins; otherwise a letters-and-digits match, only when exactly one member has that key.
@@ -140,8 +141,9 @@ export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
   for (const e of entries) {
     if (!e || typeof e.name !== "string" || !SIGNED.includes(e.rsvp) || !RSVP_STATES.includes(e.rsvp)) continue;
     const m = find(e.name);
-    if (!m && !nameKey(e.name)) continue; // no letter or digit: not a name
-    const who = m ? `m:${members.indexOf(m)}` : `n:${nameKey(e.name)}`;
+    if (!exactKey(e.name)) continue;
+    // A member is one person however the sign-up spells them; anyone else only by the exact name (so "Al" and "A.L." stay two people).
+    const who = m ? `m:${members.indexOf(m)}` : `x:${exactKey(e.name)}`;
     if (seen.has(who)) continue;
     seen.add(who);
     signed.push({ e, m, name: plain(cleanName(m ? m.name : e.name)) });
@@ -153,8 +155,7 @@ export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
   if (!signed.length) {
     body.push("Nobody has signed up yet. The sign-up card is in this channel.");
   } else {
-    const say = signed.map((s) => `${s.name}${s.e.rsvp === "in" ? "" : ` (${STATE_WORD[s.e.rsvp]})`}`);
-    body.push(`Signed up (${signed.length}): ${joinList(say)}.`);
+    body.push(`Signed up (${signed.length}): ${joinList(signed.map((s) => `${s.name}${s.e.rsvp === "in" ? "" : ` (${STATE_WORD[s.e.rsvp]})`}`))}.`);
     const count = { tank: 0, healer: 0, damage: 0 };
     const counted = signed.filter((s) => COUNTED.includes(s.e.rsvp));
     let noRole = 0;
@@ -163,7 +164,7 @@ export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
     if (withRole > 0) {
       const missing = ROLES.filter((r) => count[r] === 0).map((r) => ROLE_LABEL[r]);
       const roles = ROLES.map((r) => `${ROLE_LABEL[r]} ${count[r]}`).join(", ");
-      body.push(`Roles on the board for those who are in: ${roles}${noRole ? ` (${noRole} with no role on the board)` : ""}.${missing.length ? ` No ${joinList(missing)} among them yet.` : ""}`);
+      body.push(`Roles on the board for those who are in: ${roles}${noRole ? ` (${noRole} with no role on the board)` : ""}.${missing.length ? ` No ${joinOr(missing)} among them yet.` : ""}`);
     }
     const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
     for (const s of signed) {
@@ -174,23 +175,26 @@ export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
       tips.push({ line: `- ${s.name} (${plain(build)}). ${plain(tip.subject)}: ${plain(tip.value)} ${cite(tip.sources)}`, tip });
     }
   }
-  // Fit Discord: drop tips from the end ("and N more"), then shorten the name list; the heading goes when no tip is left.
-  const build = (nTips, names) => {
-    const kept = tips.slice(0, nTips);
+  // Fit Discord: drop the longest tips first ("and N more"), so one long line does not cost everyone theirs; then shorten the name list (keeping
+  // the tentative and running-late markers); the tip heading goes when no tip is left.
+  const say = signed.map((s) => `${s.name}${s.e.rsvp === "in" ? "" : ` (${STATE_WORD[s.e.rsvp]})`}`);
+  const build = (keep, names) => {
     const lines = [...head, ...(names ? [names, ...body.slice(1)] : body)];
-    if (kept.length) { lines.push("", "One fact per build, from the library:", ...kept.map((t) => t.line)); if (nTips < tips.length) lines.push(`(and ${tips.length - nTips} more)`); }
+    if (keep.length) { lines.push("", "One fact per build, from the library:", ...keep.map((t) => t.line)); if (keep.length < tips.length) lines.push(`(and ${tips.length - keep.length} more)`); }
     return [...lines, ...tail].join("\n");
   };
-  let n = tips.length, text = build(n);
-  while (text.length > POST_MAX && n > 0) text = build(--n);
-  if (text.length > POST_MAX && signed.length) {
-    for (let k = signed.length - 1; k >= 1 && text.length > POST_MAX; k--) {
-      const shown = signed.slice(0, k).map((s) => s.name);
-      text = build(0, `Signed up (${signed.length}): ${shown.join(", ")} and ${signed.length - k} more.`);
-    }
+  let kept = tips.slice(), text = build(kept);
+  while (text.length > POST_MAX && kept.length) {
+    const longest = kept.reduce((a, t, i) => (t.line.length > kept[a].line.length ? i : a), 0);
+    kept = kept.filter((_, i) => i !== longest);
+    text = build(kept);
   }
-  if (text.length > POST_MAX) text = [...head, `Signed up: ${signed.length}.`, ...tail].join("\n");
-  for (const t of tips.slice(0, n)) facts.push(t.tip);
+  if (text.length > POST_MAX && signed.length) {
+    kept = [];
+    for (let k = signed.length - 1; k >= 1 && text.length > POST_MAX; k--) text = build([], `Signed up (${signed.length}): ${say.slice(0, k).join(", ")} and ${signed.length - k} more.`);
+  }
+  if (text.length > POST_MAX) { kept = []; text = [...head, `Signed up: ${signed.length}.`, ...tail].join("\n"); }
+  for (const t of kept) facts.push(t.tip);
   return { text, facts, skipped };
 }
 
