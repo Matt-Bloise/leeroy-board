@@ -167,12 +167,26 @@ function clearIsolateCache(paths = []) {
   }
 }
 
+// A response read back from caches.default comes with the zone's Browser Cache TTL in place of its own max-age (seen 2026-11-14: max-age=15 became
+// max-age=14400, 4 hours, on every CF-Cache-Status: HIT). The route's own Cache-Control travels with the stored copy in KEPT_CACHE_CONTROL and is put
+// back on the way out, so what the Worker means is what the browser gets, whatever the zone setting.
+export const KEPT_CACHE_CONTROL = "x-board-cache-control";
+export function restoreCacheControl(resp) {
+  if (!resp) return resp;
+  const kept = resp.headers.get(KEPT_CACHE_CONTROL);
+  if (kept === null) return resp;
+  const headers = new Headers(resp.headers);
+  headers.set("Cache-Control", kept);
+  headers.delete(KEPT_CACHE_CONTROL);
+  return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
+}
+
 async function getCachedResponse(origin, path) {
   const local = getIsolateCache(path);
   if (local) return local;
   try {
     const cacheKey = new Request(`${origin}${path}`, { method: "GET" });
-    return await caches.default.match(cacheKey);
+    return restoreCacheControl(await caches.default.match(cacheKey));
   } catch {
     return null;
   }
@@ -182,7 +196,10 @@ function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS
   putIsolateCache(path, resp, ttlMs);
   try {
     const cacheKey = new Request(`${origin}${path}`, { method: "GET" });
-    ctx.waitUntil(caches.default.put(cacheKey, resp.clone()));
+    const copy = resp.clone();
+    const own = copy.headers.get("Cache-Control");
+    const stored = own === null ? copy : new Response(copy.body, { status: copy.status, statusText: copy.statusText, headers: (() => { const h = new Headers(copy.headers); h.set(KEPT_CACHE_CONTROL, own); return h; })() });
+    ctx.waitUntil(caches.default.put(cacheKey, stored));
   } catch {}
 }
 
