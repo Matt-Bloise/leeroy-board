@@ -124,6 +124,10 @@ test("state transitions: new entry, change, same value, unknown field, copy not 
   assert.equal(t1.doc.entries[0].updated, "2026-11-03T12:00:00.000Z");
   const t2 = applySignupChange(t1.doc, { name: "ada", field: "rsvp", value: "maybe", now: NOW + 1 });
   assert.deepEqual([t2.ok, t2.changed, t2.doc.entries.length], [true, false, 1]);
+  assert.equal(t2.doc.entries[0].updated, "2026-11-03T12:00:00.001Z", "the same RSVP again is a confirmation: it re-stamps");
+  const t2b = applySignupChange(t1.doc, { name: "Ada", field: "pack", value: "no", now: NOW + 5 });
+  const t2c = applySignupChange(t2b.doc, { name: "Ada", field: "pack", value: "no", now: NOW + 9 });
+  assert.equal(t2c.doc.entries[0].updated, "2026-11-03T12:00:00.005Z", "the same pack again does not");
   const t3 = applySignupChange(doc, { name: "Bo", slug: "bo", field: "rsvp", value: "late", now: NOW });
   assert.deepEqual([t3.doc.entries.length, t3.before, t3.doc.entries[1].slug], [2, null, "bo"]);
   for (const bad of ["name", "slug", "tallies"]) assert.equal(applySignupChange(doc, { name: "Ada", field: bad, value: "x", now: NOW }).ok, false);
