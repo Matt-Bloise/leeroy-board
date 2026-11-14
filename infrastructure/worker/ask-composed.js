@@ -27,9 +27,21 @@ const SHEET_VALUE_MAX_WORDS = 4;
 // ---- shared text helpers ---------------------------------------------------------------------------------------------------
 // Control and format characters (zero-width joiners, bidi marks, soft hyphens, line separators) are removed from library text before it is rendered and
 // make an answer fail verification: they can split a name into two harmless-looking tokens. (A library value that held one is rendered without it.)
+// They are mapped to a SPACE, never deleted: deleting joined their neighbours into a new token ("60<ZWSP>30" became "6030", "Ashen<ZWSP>Vale" "AshenVale").
 const CTRL_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029\p{Cf}]/gu;
 const HAS_CTRL_RE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029\p{Cf}]/u;
-export const norm = (s) => String(s == null ? "" : s).normalize("NFKC").replace(CTRL_RE, "").replace(/\s+/g, " ").trim();
+export const norm = (s) => String(s == null ? "" : s).replace(CTRL_RE, " ").normalize("NFKC").replace(CTRL_RE, " ").replace(/\s+/g, " ").trim();
+// NFKC can turn a number into another number ("60\u00b9" into "601", "10\u00b2" into "102", "5\u00bd" into "51\u20442", "\u2460" into "1") and a symbol into letters ("Gloom\u2122" into
+// "GloomTM"). A token that NFKC would change and that holds a number or any character other than a letter or mark is never rewritten: the fact (or the answer)
+// that holds it is refused. Letter-only folds (a ligature, fullwidth letters) still render. Returns true when such a token exists.
+export function nfkcChangesNumber(s) {
+  for (const t of String(s == null ? "" : s).replace(CTRL_RE, " ").split(/\s+/)) if (t && t.normalize("NFKC") !== t && (/\p{N}/u.test(t) || /[^\p{L}\p{M}]/u.test(t))) return true;
+  return false;
+}
+// Masked-link syntax ("[label](" with any label, any length, any target) left in library text after the link stripper. Such text is refused, never shown:
+// a link never travels inside a fact. Checked as any "](" (spaces allowed between), which every masked link has whatever its label: stricter, and linear.
+const MASKED_LINK_RE = /\][ \t]*\(/;
+export const hasMaskedLink = (s) => MASKED_LINK_RE.test(String(s == null ? "" : s));
 const WORD_RE = /[\p{L}\p{M}]+/gu;
 const lc = (s) => String(s).toLowerCase();
 
@@ -116,7 +128,8 @@ function nameAt(seqs, lowers, i, adjacent = () => true) {
 //   greeting:= ("hey" | "hi" | "hello") [NAME]  |  "okay" | "alright" | "sure"       NAME = a whole party member's name (the asker's own, when known)
 //   core    := a question core | a found core
 //   core2   := a found core, only after a question core
-//   WHO     := "your" followed by one to three distinct words of the asker's own sheet values (race, class, spec, role)
+//   WHO     := "your" followed by one of the asker's own WHO phrases (whoPhrases): a whole known race, class, spec or role value, or race + class,
+//              spec + class, race + spec + class, each a whole value. Never single words picked out of free-text sheet values, never words mixed across fields.
 const GREET_NAMED = ["hey", "hi", "hello"];
 const GREET_PLAIN = ["okay", "alright", "sure"];
 const QUESTION_CORES = ["good question", "great question", "nice question", "good question for {who}", "great question for {who}"];
@@ -130,10 +143,28 @@ export const OPENER_TEMPLATES = Object.freeze({ greetNamed: GREET_NAMED, greetPl
 export const OPENER_VOCAB = new Set([...GREET_NAMED, ...GREET_PLAIN, ...QUESTION_CORES, ...FOUND_CORES, "your"].flatMap((s) => s.split(" ")).filter((w) => w !== "{who}"));
 export const LEAD_WORDS = OPENER_VOCAB;
 
-// The asker's own words for the WHO slot: short ASCII words from the sheet values, never a number word.
-function sheetWordList(sheet, askerBuild) {
+// The WHO slot names the asker only with KNOWN values: sheet fields are free text ("free", "epic", "mount" would read "your free epic mount"), so a value counts
+// only when it is, whole, one of these. Professions never appear in WHO.
+export const WHO_VOCAB = Object.freeze({
+  race: new Set(["human", "dwarf", "gnome", "night elf", "orc", "undead", "tauren", "troll"]),
+  class: new Set(["warrior", "paladin", "hunter", "rogue", "priest", "shaman", "mage", "warlock", "druid"]),
+  spec: new Set(["holy", "protection", "retribution", "arms", "fury", "frost", "fire", "arcane", "shadow", "discipline", "restoration", "elemental", "enhancement",
+    "balance", "feral", "guardian", "beast mastery", "marksmanship", "survival", "assassination", "combat", "subtlety", "affliction", "demonology", "destruction"]),
+  role: new Set(["tank", "healer", "damage", "dps", "support"]),
+});
+const whoValue = (b, k) => { const v = lc(norm(b && typeof b === "object" ? b[k] : "")); return WHO_VOCAB[k].has(v) ? v : ""; };
+// The whole phrases the WHO slot accepts for this asker, in canonical order. askerBuild wins over sheet when both are given (they are the same object in practice).
+export function whoPhrases(sheet, askerBuild) {
+  const b = askerBuild && typeof askerBuild === "object" ? askerBuild : sheet && typeof sheet === "object" && !Array.isArray(sheet) ? sheet : null;
   const out = new Set();
-  for (const s of sheetStrings(sheet, askerBuild)) for (const w of s.match(WORD_RE) || []) if (/^[A-Za-z]+$/.test(w) && !NUMBER_WORDS.has(lc(w))) out.add(lc(w));
+  if (!b) return out;
+  const race = whoValue(b, "race"), cls = whoValue(b, "class"), spec = whoValue(b, "spec"), role = whoValue(b, "role");
+  for (const v of [race, cls, spec, role]) if (v) out.add(v);
+  if (cls) {
+    if (race) out.add(`${race} ${cls}`);
+    if (spec && spec !== cls) out.add(`${spec} ${cls}`);
+    if (race && spec && spec !== cls) out.add(`${race} ${spec} ${cls}`);
+  }
   return out;
 }
 // "whole name" lookup: lowercase single-spaced ASCII name -> official spelling
@@ -153,10 +184,9 @@ function matchCore(part, kinds, who) {
       if (!part.startsWith(prefix)) continue;
       const rest = part.slice(prefix.length);
       if (!rest.startsWith("your ")) continue;
-      const words = rest.slice(5).split(" ");
-      if (words.length < 1 || words.length > 3 || new Set(words).size !== words.length) continue;
-      if (!words.every((w) => /^[a-z]+$/.test(w) && who.has(w))) continue;
-      return { kind, text: `${prefix}your ${words.join(" ")}` };
+      const phrase = rest.slice(5);
+      if (!who.has(phrase)) continue;
+      return { kind, text: `${prefix}your ${phrase}` };
     }
   }
   return null;
@@ -180,7 +210,7 @@ export function checkOpener(openerText, { sheet = null, partyNames = [], askerBu
   if (body.includes("  ") || body.startsWith(" ") || body.endsWith(" ") || body.includes(" ,") || body.includes(",,")) return fail("spacing");
   const parts = body.split(", ");
   if (parts.some((p) => !p || p.includes(",") || p.startsWith(" ") || p.endsWith(" "))) return fail("comma shape");
-  const who = sheetWordList(sheet, askerBuild);
+  const who = whoPhrases(sheet, askerBuild);
   const names = nameMap(partyNames);
   let i = 0, greet = "", name = "";
   const first = lc(parts[0]);
@@ -229,10 +259,10 @@ const OPENER_BANK_BUILD = [
 ];
 const stable = (s) => { let h = 5381; for (const c of String(s || "").toLowerCase().trim()) h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h; };
 const whoOf = (b) => {
-  const g = (k) => { const v = norm(b && b[k]); return /^[A-Za-z]+(?: [A-Za-z]+)?$/.test(v) && v.length <= 24 ? lc(v) : ""; };
-  const cls = g("class");
+  const cls = whoValue(b, "class");
   if (!cls) return "";
-  return [g("race"), g("spec") && g("spec") !== cls ? g("spec") : "", cls].filter(Boolean).join(" ");
+  const spec = whoValue(b, "spec");
+  return [whoValue(b, "race"), spec && spec !== cls ? spec : "", cls].filter(Boolean).join(" ");
 };
 // A code-written opener that always passes checkOpener (the bank uses only template words and the asker's own class, spec and race after "your").
 export function fallbackOpener({ question = "", askerBuild = null, sheet = null, partyNames = [] } = {}) {
@@ -262,15 +292,32 @@ export function labelOf(key, page = "", title = "") {
 }
 // One retrieved fact as the text it may contribute: title (or page id), label and value. The same normaliser feeds the rendering and the
 // verification, so the two cannot drift.
-export function factParts(f) {
-  if (!f || typeof f !== "object") return null;
+function factFields(f) {
   const page = norm(f.page || f.id || "");
   const title = norm(f.title || (f.p && f.p.title) || "").replace(/\*/g, "");
   const open = f.open === true || String(f.key) === "OPEN";
   const label = open ? "still open" : labelOf(f.key, page, title || page);
   const value = norm(norm(f.value).replace(LINK_RE, "$1").replace(WIKI_REF_RE, "$1")).replace(/\*\*/g, ""); // library link syntax is rendered as its label: a link never travels inside a fact
+  return { page, title, open, label, value };
+}
+export function factParts(f) {
+  if (!f || typeof f !== "object") return null;
+  const { page, title, open, label, value } = factFields(f);
   if (!page || !value) return null;
+  if (refusalOf(f, { title, label, value })) return null; // refused, not rewritten (see factRefusal)
   return { page, title: title || page, label, value, open };
+}
+// Why a library fact may not be shown at all, or "": a number NFKC would change (in the value, title, key or page id), or masked-link syntax left in the
+// value, title or label after the link stripper, whatever its length. Such a fact is refused whole; it is never rewritten.
+function refusalOf(f, { title, label, value }) {
+  const rawTitle = f.title || (f.p && f.p.title) || "";
+  if ([f.value, rawTitle, f.key, f.page || f.id].some(nfkcChangesNumber)) return "a number that NFKC would change";
+  if (hasMaskedLink(value) || hasMaskedLink(title) || hasMaskedLink(label)) return "masked-link syntax";
+  return "";
+}
+export function factRefusal(f) {
+  if (!f || typeof f !== "object") return "";
+  return refusalOf(f, factFields(f));
 }
 export const factTexts = (f) => { const p = factParts(f); return p ? [p.title, p.label, p.value, p.page] : []; };
 
@@ -339,6 +386,7 @@ export function verifyComposed(finalAnswer, retrievedFacts, sheet = null, ctx = 
     if (typeof finalAnswer !== "string" || !finalAnswer.trim()) return fail("empty");
     if (finalAnswer.length > 100000) return fail("too long");
     if (HAS_CTRL_RE.test(finalAnswer)) return fail("control or format character");
+    if (nfkcChangesNumber(finalAnswer)) return fail("a number that NFKC would change");
     const facts = Array.isArray(retrievedFacts) ? retrievedFacts : [];
     const allowedParts = [], ids = new Set();
     for (const f of facts) {
@@ -427,8 +475,11 @@ export function verifyFinished(text, { used = [], sheet = null, askerBuild = nul
     const chk = checkOpener(op, { sheet, partyNames, askerBuild, askerName });
     if (!chk.ok || chk.text !== op) return fail(`opener is not a canonical template opener (${chk.reason || "changed"})`);
     const expected = composeFactsBlock(used, { max: used.length, maxChars: Infinity }).lines;
-    const got = facts.split("\n").map((l) => (l.startsWith("\u2022 ") ? `- ${l.slice(2)}` : l));
-    if (!expected.length || got.length !== expected.length || got.some((l, i) => l !== expected[i])) return fail("facts block differs from the rendering of the retrieved facts");
+    // Bold markers carry no content and the house-voice repair keeps only the first bold span, so a second bullet loses its "**": lines are compared with every
+    // "**" removed on both sides (titles and values never hold "*" after factParts, so nothing else can hide behind them). Every other character must match.
+    const unbold = (l) => l.split("**").join("");
+    const got = facts.split("\n").map((l) => unbold(l.startsWith("\u2022 ") ? `- ${l.slice(2)}` : l));
+    if (!expected.length || got.length !== expected.length || got.some((l, i) => l !== unbold(expected[i]))) return fail("facts block differs from the rendering of the retrieved facts");
     if (foot.includes("\n") || !foot.startsWith("-# Sources: ")) return fail("last block is not one Sources line");
     return { ok: true, reason: "", offending: [] };
   } catch (e) {
@@ -487,6 +538,8 @@ export function buildIsTopical(reason, facts, askerBuild, question = "") {
 // Final answer = opener + facts block + Sources tail. rawOpener is the model's text (or "" when the call failed). Returns
 // { ok, text, opener, openerSource, ids, used, verify, reason }. ok false means nothing renderable or the proof failed: the caller sends the refusal.
 export function composeAnswer({ question = "", rawOpener = "", retrievedFacts = [], sheet = null, askerBuild = null, partyNames = [], askerName, max = MAX_FACTS } = {}) {
+  const refusedFact = (Array.isArray(retrievedFacts) ? retrievedFacts : []).slice(0, max).map(factRefusal).find(Boolean);
+  if (refusedFact) return { ok: false, text: "", opener: "", openerSource: "none", ids: [], used: [], verify: null, reason: `a selected fact is refused: ${refusedFact}` };
   const block = composeFactsBlock(retrievedFacts, { max });
   if (!block.text) return { ok: false, text: "", opener: "", openerSource: "none", ids: [], used: [], verify: null, reason: "no facts" };
   const checked = checkOpener(rawOpener, { sheet, partyNames, askerBuild, askerName });

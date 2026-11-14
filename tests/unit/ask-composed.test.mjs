@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   composeFactsBlock, checkOpener, fallbackOpener, verifyComposed, composeAnswer, openerPrompts, composedEnabled, sheetStrings, numberTokens,
-  OPENER_VOCAB, OPENER_TEMPLATES, NUMBER_WORDS, verifyFinished, norm,
+  OPENER_VOCAB, OPENER_TEMPLATES, NUMBER_WORDS, verifyFinished, norm, factRefusal,
 } from "../../infrastructure/worker/ask-composed.js";
 import { answerWithAi, finishAnswerText, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
@@ -137,7 +137,9 @@ test("a party name counts only whole, and only the asker's own name may be greet
 test("a sheet word is used only as 'your <words>' (one to three distinct words), never as a statement about anyone (review finding 2)", () => {
   const ctx = { sheet: RED_FOX, partyNames: ["Alice Smith", "Bob Jones"], askerBuild: RED_FOX };
   assert.ok(checkOpener("Here is what I found for your human paladin.", ctx).ok);
-  assert.ok(checkOpener("Here is what I found for your paladin human.", ctx).ok, "any order of the asker's own words");
+  assert.equal(checkOpener("Here is what I found for your paladin human.", ctx).ok, false, "whole values in canonical order only (race, spec, class)");
+  assert.ok(checkOpener("Here is what I found for your human protection paladin.", ctx).ok);
+  assert.ok(checkOpener("Here is what I found for your tank.", ctx).ok);
   for (const t of ["Bob is a human paladin.", "Here is what I found for a paladin.", "Hey Bob Jones, human paladin, good question.", "You are a tank.", "Your paladin is a tank.", "Here is what I found, a tank.", "Here is what I found for your human human.", "Here is what I found for your human protection paladin tank.", "Here is what I found for your.", "Here is what I found for your human mage."]) assert.equal(checkOpener(t, ctx).ok, false, t);
 });
 test("checkOpener rejects a URL, markdown, a mention, emoji and other punctuation", () => {
@@ -167,7 +169,7 @@ test("the template words hold no game, negation, quantity, claim or evaluation w
   assert.equal(checkOpener("Here is what I found for your forty.", { sheet: { class: "forty" }, partyNames: [] }).ok, false, "a number word is refused even when a sheet value holds it");
 });
 test("every template, instantiated, is accepted; nothing else is (the finite set, enumerated)", () => {
-  const who = ["your human", "your paladin", "your human paladin", "your paladin human"];
+  const who = ["your human", "your paladin", "your human paladin", "your protection", "your protection paladin", "your human protection paladin", "your tank"];
   const cores = [...OPENER_TEMPLATES.question, ...OPENER_TEMPLATES.found].flatMap((t) => (t.includes("{who}") ? who.map((w) => t.replace("{who}", w)) : [t]));
   const founds = [...OPENER_TEMPLATES.found].flatMap((t) => (t.includes("{who}") ? who.map((w) => t.replace("{who}", w)) : [t]));
   const questions = [...OPENER_TEMPLATES.question].flatMap((t) => (t.includes("{who}") ? who.map((w) => t.replace("{who}", w)) : [t]));
@@ -406,7 +408,7 @@ test("fuzz: verifyComposed never passes an answer holding a number, number word 
 test("fuzz: composeAnswer with random and mutated model openers never yields numbers outside the facts, and a model opener is always a member of the finite template set (seeded, 5000 cases)", () => {
   const r = rng(77);
   // the finite set, enumerated with this sheet and these names
-  const who = ["your human", "your paladin", "your human paladin", "your paladin human"];
+  const who = ["your human", "your paladin", "your human paladin"];
   const inst = (t) => (t.includes("{who}") ? who.map((w) => t.replace("{who}", w)) : [t]);
   const questions = OPENER_TEMPLATES.question.flatMap(inst), founds = OPENER_TEMPLATES.found.flatMap(inst);
   const greets = [["", ""], ...OPENER_TEMPLATES.greetPlain.map((g) => [g, ""]), ...OPENER_TEMPLATES.greetNamed.flatMap((g) => [[g, ""], [g, "Santa"], [g, "Bible Boi"]])];
@@ -439,6 +441,8 @@ test("fuzz: composeAnswer with random and mutated model openers never yields num
     const base = [...FINITE][Math.floor(r() * FINITE.size)];
     const rawOpener = r() < 0.3 ? base : r() < 0.85 ? mutate(base) : phrase(r, Math.floor(r() * 14));
     const c = composeAnswer({ question: String(i), rawOpener, retrievedFacts: facts, sheet, askerBuild: sheet, partyNames: ["Santa", "Bible Boi"] });
+    // a fact holding a number NFKC would change (here ½) is refused whole, so the answer is too
+    if (facts.slice(0, 4).some(factRefusal)) { assert.equal(c.ok, false); assert.match(c.reason, /refused/); continue; }
     if (c.openerSource === "model") model++; else fallback++;
     assert.ok(c.ok, JSON.stringify([rawOpener, c.verify]));
     const factText = c.used.flatMap((f) => [f.title, f.value, f.key.replace(/[._-]+/g, " "), f.page]).join(" "); // every key word: a superset of the label (labelOf keeps the segments the page does not name)
