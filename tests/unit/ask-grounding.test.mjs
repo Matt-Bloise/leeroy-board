@@ -168,3 +168,36 @@ test("the length limit still holds and a long answer ends on a finished sentence
   const main = out.answer.split("\n\n-#")[0];
   assert.match(main, /\.\s…$|\.$/, main.slice(-40));
 });
+
+// ---- review round 1: holes found in the first cut of absenceCheck ------------------------------------------------------------
+test("absenceCheck: a status word elsewhere in the sentence no longer exempts a game claim", () => {
+  const library = "Stormwind has trainers for every class";
+  assert.equal(absenceCheck("Stormwind has many class trainers, yet there are no trainers in Ironforge at all.", library).answer, "Stormwind has many class trainers.");
+  assert.equal(absenceCheck("No trainers exist in Ironforge yet, the beta source says.", library).answer, "The library does not have that yet.");
+});
+
+test("absenceCheck: lacks, unavailable, absent and missing are checked too, and the subject before the marker must be supported", () => {
+  const library = "Orgrimmar has no trainers for paladins";
+  const text = (s) => absenceCheck(s, library).answer;
+  assert.equal(text("Stormwind has many class trainers, while Ironforge lacks trainers for paladins."), "Stormwind has many class trainers.");
+  assert.equal(text("Ironforge has many paladins, and trainers are unavailable in Stormwind."), "Ironforge has many paladins.");
+  assert.equal(text("Stormwind has many class trainers, and Stormwind has no trainers for paladins."), "Stormwind has many class trainers.");
+  assert.equal(text("Mining is slow, and Orgrimmar has no trainers for paladins."), "Mining is slow, and Orgrimmar has no trainers for paladins.", "the supported claim with its subject stands");
+});
+
+test("absenceCheck: the asker's own words (after the mark) are not evidence; a leading No verdict is not a claim", () => {
+  const facts = "Stormwind has trainers for every class";
+  const grounding = `${facts} [[asker-text]] Why are there no trainers in Stormwind?`;
+  assert.equal(absenceCheck("Trainers wait for every class. There are no trainers in Stormwind.", grounding).answer, "Trainers wait for every class.");
+  const fine = "No, Stormwind has trainers for every class.";
+  assert.equal(absenceCheck(fine, `${facts} [[asker-text]] Is Stormwind missing trainers?`).answer, fine);
+  assert.equal(absenceCheck("**No.** Stormwind has trainers for every class.", grounding).ok, true);
+});
+
+test("the grounding text puts the asker's words after the mark, so a question cannot support its own absence claim end to end", async () => {
+  const env = makeEnv([FOX, OWL, ELK]);
+  const i = await ask(env, "why is there no trainer for hunters in Durotar at all");
+  assert.ok(i.groundingText.indexOf("[[asker-text]]") > i.groundingText.indexOf("GROUP_COMPOSITION:"));
+  const out = await finishAnswerText(env, { rawAnswer: "The Horde trainers stand in Razor Hill and Brill, with no Hunter trainer in Durotar at all.\n\n-# Sources: systems/trainers", isCoach: false, parsedPages: i.parsedPages, by: "Red Fox", askerIsMember: true, persona: i.persona, intentId: "g6", groundingText: i.groundingText, personalised: false, retrieval: i.retrieval, group: i.group });
+  assert.ok(!/Hunter trainer in Durotar/.test(out.answer.split("-# Sources")[0].replace(/\(Durotar: Hunter, Mage\)/g, "")), out.answer);
+});

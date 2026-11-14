@@ -76,9 +76,13 @@ export const GROUNDING_RULE =
   "(4) A list of what exists is not a statement of what does not: say that something is missing, absent, unavailable or has no trainer only when a LIBRARY fact says so in those words (no, none, not); otherwise say what the library lists and stop.";
 
 // ---- absence claims -----------------------------------------------------------------------------------------------------------
-const ABSENCE_RE = /\b(?:no|none|never|nothing|neither)\b|\bnot (?:available|offered|trained|taught|sold)\b|\b(?:does not|do not|doesn't|don't) (?:have|offer|train|teach|sell|include|exist)\b/i;
-// A sentence about the library's own coverage or a status ("not published yet", "no decision") is not a claim about the game.
-const STATUS_RE = /\b(?:library|published|publish|confirm\w*|settled|unresolved|speculative|untested|unknown|announced|decision|yet|source|beta|fetched)\b/i;
+const ABSENCE_RE = /\b(?:no|none|never|nothing|neither|lacks?|lacking|absent|unavailable|missing)\b|\bnot (?:available|offered|trained|taught|sold)\b|\b(?:does not|do not|doesn't|don't) (?:have|offer|train|teach|sell|include|exist)\b/i;
+// A claim about the library's own coverage or a status ("no decision announced", "nothing published") is not a claim about the game. Tested on the words of the claim itself
+// (from the marker to the clause end), never on the whole sentence: a status word elsewhere cannot exempt a game claim.
+const STATUS_RE = /\b(?:library|published|publish|confirm\w*|settled|unresolved|speculative|untested|announced|decision|fetched)\b/i;
+// The text the answer may rely on stops where the asker's own words begin (the question, the earlier question, the display name): a question's "no X" is not evidence.
+export const ASKER_TEXT_MARK = "[[asker-text]]";
+const evidenceOf = (text) => { const s = String(text || ""); const i = s.indexOf(ASKER_TEXT_MARK); return i >= 0 ? s.slice(0, i) : s; };
 const NEG_RE = /\b(?:no|none|not|never|nothing|neither|nor|cannot|without|lacks?|absent|unlisted|missing)\b|n't\b/i;
 const STOP = new Set("the and any all for with from that this there here are was were can will would could should may might has have had does did not but into out per via while which who what when where also only still even more than then they them their you your our one ones such yet its it's".split(" "));
 const norm = (w) => String(w || "").toLowerCase().replace(/'s$/, "").replace(/(?:es|s|e)$/, "");
@@ -94,15 +98,23 @@ function clausesOf(text) {
 
 // The key words of one claim: the content words right after its marker, up to the clause end or the next marker. A capitalised word (a class, a place, a name) must be
 // in the supporting clause; of the lower-case words all (two or fewer) or a third must be (a paraphrase such as "automatically matches" for "no automatic matching" still stands).
-function keysAfter(sentence, m, end) {
+// The subject before the marker counts too: "Stormwind has no trainers" needs Stormwind in the clause, not just trainers (capitalised words of the clause before the marker).
+function keysAfter(sentence, m, end, prior = 0) {
   const rest = sentence.slice(m.index + m[0].length, end).split(/[,;:.!?()—]/)[0];
+  const before = sentence.slice(prior, m.index).split(/[,;:!?()—]|\s-\s/).pop();
   const caps = [], low = [];
-  for (const w of rest.match(/[A-Za-z][A-Za-z'-]*/g) || []) {
-    const lw = w.toLowerCase();
-    if (lw.length < 3 || STOP.has(lw) || /^(?:or|and|in|at|of|on|to|by)$/.test(lw)) continue;
-    (/^[A-Z]/.test(w) ? caps : low).push(norm(w));
-  }
-  return { caps, low };
+  const take = (text, capsOnly) => {
+    for (const w of text.match(/[A-Za-z][A-Za-z'-]*/g) || []) {
+      const lw = w.toLowerCase();
+      if (lw.length < 3 || STOP.has(lw) || /^(?:or|and|in|at|of|on|to|by)$/.test(lw)) continue;
+      const cap = /^[A-Z]/.test(w);
+      if (capsOnly && !cap) continue;
+      (cap ? caps : low).push(norm(w));
+    }
+  };
+  take(rest, false);
+  take(before, true);
+  return { caps, low, text: rest, pre: before };
 }
 const has = (c, k) => { for (const t of c.stems) if (t === k || (k.length >= 5 && t.length >= 5 && t.slice(0, 5) === k.slice(0, 5))) return true; return false; };
 const supports = (c, { caps, low }) => caps.every((k) => has(c, k)) && low.filter((k) => has(c, k)).length >= (low.length <= 2 ? low.length : Math.ceil(low.length / 3));
@@ -115,16 +127,18 @@ export function absenceCheck(answer, allowedText) {
   const cut = text.search(/\n-#\s*Sources?:/i);
   const body = cut >= 0 ? text.slice(0, cut) : text;
   const tail = cut >= 0 ? text.slice(cut) : "";
-  const clauses = clausesOf(allowedText);
+  const clauses = clausesOf(evidenceOf(allowedText));
   const removed = [];
   const kept = [];
   for (const line of body.split("\n")) {
     const parts = line.split(/(?<=[.!?])\s+/);
     const out = [];
     for (const sent of parts) {
-      const marks = STATUS_RE.test(sent) ? [] : [...sent.matchAll(new RegExp(ABSENCE_RE.source, "gi"))];
+      // A leading "No," / "No." is the answer's verdict, not a claim about the game: the claims after it are still checked.
+      const marks = [...sent.matchAll(new RegExp(ABSENCE_RE.source, "gi"))].filter((mk) => !(/^no$/i.test(mk[0]) && /^[\s*]*$/.test(sent.slice(0, mk.index)) && /^\s*[,.:;!—-]/.test(sent.slice(mk.index + 2))));
       const bad = marks.find((mk, j) => {
-        const k = keysAfter(sent, mk, j + 1 < marks.length ? marks[j + 1].index : sent.length);
+        const k = keysAfter(sent, mk, j + 1 < marks.length ? marks[j + 1].index : sent.length, j > 0 ? marks[j - 1].index + marks[j - 1][0].length : 0);
+        if (STATUS_RE.test(`${k.pre} ${mk[0]} ${k.text}`)) return false;
         return k.caps.length + k.low.length > 0 && !clauses.some((c) => supports(c, k));
       });
       if (!bad) { out.push(sent); continue; }
@@ -132,7 +146,7 @@ export function absenceCheck(answer, allowedText) {
       removed.push(sent.slice(m.index, m.index + 60));
       const prefix = sent.slice(0, m.index);
       const at = Math.max(prefix.lastIndexOf(", "), prefix.lastIndexOf("; "), prefix.lastIndexOf(" — "));
-      if (at >= 25) {
+      if (at >= 15) {
         const end = /[.!?]$/.test(sent.trim()) ? sent.trim().slice(-1) : ".";
         out.push(`${sent.slice(0, at).replace(/[\s,;:—-]+$/, "").replace(/\s+(?:and|but|or|while|with)$/i, "")}${end}`);
       }

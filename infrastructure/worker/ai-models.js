@@ -25,7 +25,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts, factionOf } from "./ask-opener.js";
-import { groupComposition, factionTag, scopeTag, GROUNDING_RULE, absenceCheck, stripVerdictOpener } from "./ask-grounding.js";
+import { groupComposition, factionTag, scopeTag, GROUNDING_RULE, ASKER_TEXT_MARK, absenceCheck, stripVerdictOpener } from "./ask-grounding.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -1021,7 +1021,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // page the prompt only summarised), plus the build, the party and the question.
     const shownFacts = hits.slice(0, 20).map((h) => h.value).join("\n"); // one fact per line: the absence check reads a clause at a time
     const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
-    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, group.line ? `GROUP_COMPOSITION: ${group.line}` : "", question, prevQ, by].join(" "); // the earlier question was shown too: a name or number only it holds may be repeated
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, group.line ? `GROUP_COMPOSITION: ${group.line}` : "", ASKER_TEXT_MARK, question, prevQ, by].join(" "); // the asker's own words come last, after the mark (ask-grounding.js evidenceOf) // the earlier question was shown too: a name or number only it holds may be repeated
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
     const libraryBlock = !retrieve
