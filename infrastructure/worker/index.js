@@ -47,7 +47,7 @@ import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { publicParty, partyForMember } from "./sheet-privacy.js";
-import { sheetValueProblem, ADMIN_SHEET_FIELDS } from "./sheet-values.js";
+import { sheetValueProblem, ADMIN_SHEET_FIELDS, visibilityOnly, nextLevelField } from "./sheet-values.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
@@ -287,12 +287,11 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } =
       } catch {
         val = r.value_json;
       }
-      row.fields[r.field] = {
-        value: val,
-        visible: Boolean(r.visible),
-        source: r.source || "board",
-        at: r.created_at || now,
-      };
+      // A level event carries the resolved field, so the same rule the live commit used (a same-value event keeps its at and source; an
+      // older new value cannot win) gives the same end state. Other fields replay as before: last event by id wins.
+      row.fields[r.field] = r.field === "level"
+        ? nextLevelField(row.fields[r.field], { value: val, visible: Boolean(r.visible), source: r.source || "board", at: r.created_at || now }).field
+        : { value: val, visible: Boolean(r.visible), source: r.source || "board", at: r.created_at || now };
       row.updated = r.created_at || now;
     }
   } catch {}
@@ -333,13 +332,15 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
 
 // keepHidden (the admin path): a field its owner has hidden stays hidden. The check runs inside the commit, against the sheet state that is
 // written, so a hide that lands between the admin's request and the write is never undone.
-// newerWins (level): a write whose `at` is older than the stored field's `at` leaves the field as it is (two overlapping requests: the one that
-// started later keeps its value even if it commits first). The event row is still recorded as history; the reply carries stale:true.
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at, keepHidden = false, newerWins = false }) {
+// levelRules (level, sheet-values.js nextLevelField): a visibility-only write (valueGiven false) keeps the value; a write of the same value
+// keeps its at and source; an older write of a new value is stale and changes nothing (a hide still hides). A write that changes nothing
+// records no event and broadcasts nothing; the reply carries stale and the stored field. The level event row carries the resolved field
+// (value and visible), so the slow-path replay below ends where this commit ended.
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible = true, source = "board", at, keepHidden = false, levelRules = false }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
   const event = { slug, name: name || slug, field, valJson, visible: Boolean(visible), source: source || "board", at: now };
-  let stale = false;
+  let stale = false, changed = true, stored = null;
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
   // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
@@ -363,23 +364,30 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       }
       memberSheet.fields = memberSheet.fields || {};
       const prior = memberSheet.fields[field];
-      stale = !!(newerWins && prior && prior.at && Date.parse(prior.at) > Date.parse(now)); // recomputed on every retry
+      const project = () => ({ sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined });
+      if (levelRules) { // recomputed on every retry, against the state this attempt writes
+        const next = nextLevelField(prior, { value, valueGiven, visible, source: source || "board", at: now }, { keepHidden });
+        stale = next.stale; changed = next.changed; stored = next.field;
+        event.valJson = stored.value === undefined || stored.value === null ? null : JSON.stringify(stored.value);
+        event.visible = stored.visible !== false;
+        if (!changed) return { ...project(), skipEvent: true };
+        memberSheet.fields[field] = stored;
+        memberSheet.updated = now;
+        return project();
+      }
       event.visible = keepHidden && prior && prior.visible === false ? false : Boolean(visible);
-      // A hide always lands, even when it is older: a friend's hide that started before an admin fill but commits after it must not be lost.
-      if (stale && event.visible === false && prior.visible !== false) memberSheet.fields[field] = { ...prior, visible: false };
-      if (stale) return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
-      memberSheet.fields[field] = { value, visible: event.visible, source: source || "board", at: now };
+      memberSheet.fields[field] = stored = { value, visible: event.visible, source: source || "board", at: now };
       memberSheet.updated = now;
-      return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
+      return project();
     },
   });
   const currentParty = saved.sheets;
 
-  await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
-  await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
-  // stale: the stored field (newer than this write) is what the caller is told about, not the value it sent.
-  const kept = stale ? ((currentParty.find((s) => s && s.slug === slug) || {}).fields || {})[field] : null;
-  return { party: currentParty, at: now, visible: kept ? kept.visible !== false : event.visible, stale, kept };
+  if (changed) {
+    await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
+    await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
+  }
+  return { party: currentParty, at: now, visible: stored ? stored.visible !== false : event.visible, stale, changed, stored };
 }
 
 export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
@@ -511,9 +519,10 @@ const worker = {
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
           }
-          const problem = sheetValueProblem(field, body.value);
+          const problem = sheetValueProblem(field, body.value, body);
           if (problem) return jsonResp({ error: problem }, 400, cors);
           const visible = body.visible !== false;
+          const valueGiven = !visibilityOnly(field, body); // the switch on an empty level line: { field: "level", visible }
           const value = body.value === undefined ? null : body.value;
           const now = new Date().toISOString();
           let saved;
@@ -523,24 +532,29 @@ const worker = {
               name: m.name,
               field,
               value,
+              valueGiven,
               visible,
               source: "board",
               at: now,
-              newerWins: field === "level",
+              levelRules: field === "level",
             });
           } catch (e) {
             if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
             throw e;
           }
+          // The reply is the stored field (for level: the kept value on a visibility change, the stored one on a stale write). A write that
+          // changed nothing (same field, or stale) sends no intent: the PC bot never sees a value that lost.
+          const st = saved.stored || { value, visible, at: now };
+          const out = { ok: true, at: st.at || now, field, value: st.value === undefined ? null : st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
+          if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
           const { seq } = await insertIntent(env, {
             slug: m.slug,
             kind: "sheet",
-            body: { field, value, visible, source: "board" },
+            body: { field, value: out.value, visible: out.visible, source: "board" },
             ver: 1,
             at: now,
           });
-          if (saved && saved.stale && saved.kept) return jsonResp({ ok: true, id: seq, seq, at: saved.kept.at, field, value: saved.kept.value, visible: saved.kept.visible !== false, stale: true }, 200, cors);
-          return jsonResp({ ok: true, id: seq, seq, at: now, field, value, visible }, 200, cors);
+          return jsonResp({ ...out, id: seq, seq }, 200, cors);
         }
       }
 
@@ -675,6 +689,7 @@ const worker = {
       // Admin only: fill one field on a party member's sheet (q-20261114-22: level, which the owner can fill for a friend). Only fields with a
       // server-side rule (ADMIN_SHEET_FIELDS). The member must be in the party. A field the friend has hidden stays hidden (keepHidden); the admin
       // may hide a field but never shows one. Same commit, broadcast and intent as a friend's own POST /sheet, with source "admin".
+      // Follow-up (review LOW-4): there is no expected-value precondition; the admin's fill wins over any older stored value.
       if (req.method === "POST" && path === "/admin/sheet") {
         const denied = adminGate(req, url, env, cors);
         if (denied) return denied;
@@ -694,14 +709,17 @@ const worker = {
         const now = new Date().toISOString();
         let saved;
         try {
-          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, source: "admin", at: now, keepHidden: true, newerWins: true });
+          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, source: "admin", at: now, keepHidden: true, levelRules: true });
         } catch (e) {
           if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
           throw e;
         }
-        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: body.value, visible: saved.visible, source: "admin" }, ver: 1, at: now });
-        if (saved.stale && saved.kept) return jsonResp({ ok: true, id: seq, seq, at: saved.kept.at, slug: member.slug, field, value: saved.kept.value, visible: saved.kept.visible !== false, stale: true }, 200, cors);
-        return jsonResp({ ok: true, id: seq, seq, at: now, slug: member.slug, field, value: body.value, visible: saved.visible }, 200, cors);
+        // The reply is the stored field. A write that changed nothing (same field, or stale) sends no intent.
+        const st = saved.stored;
+        const out = { ok: true, at: st.at, slug: member.slug, field, value: st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
+        if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
+        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: st.value, visible: out.visible, source: "admin" }, ver: 1, at: now });
+        return jsonResp({ ...out, id: seq, seq }, 200, cors);
       }
 
       // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.
