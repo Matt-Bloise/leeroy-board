@@ -39,12 +39,13 @@ const PARTY = () => ({ members: [
 ] });
 const FRESH = "2026-11-18T00:00:00.000Z"; // the sign-up card changed this week
 const SIGNUPS = () => ({ updated: FRESH, entries: [
-  { name: "=Red Fox=", rsvp: "in", when: "8pm" }, { name: "Blue Owl", rsvp: "maybe" }, { name: "Grey Cat", rsvp: "out" }, { name: "Green Elk", rsvp: "late" },
+  { name: "=Red Fox=", rsvp: "in", when: "8pm", updated: FRESH }, { name: "Blue Owl", rsvp: "maybe", updated: FRESH }, { name: "Grey Cat", rsvp: "out", updated: FRESH }, { name: "Green Elk", rsvp: "late", updated: FRESH },
 ] });
 const PLAY = Date.parse("2026-11-20T23:00:00Z");
 const NOW = Date.parse("2026-11-19T23:30:00Z");
-// a test's own sign-ups count as this week's unless it says otherwise
-const docs = (over = {}) => ({ party: PARTY(), classes: CLASSES, playAt: PLAY, now: NOW, ...over, signups: over.signups ? { updated: FRESH, ...over.signups } : SIGNUPS() });
+// a test's own sign-ups count as this week's unless it says otherwise: each entry without a time gets this week's
+const stamp = (s) => ({ updated: FRESH, ...s, entries: (s.entries || []).map((e) => (e && typeof e === "object" && !("updated" in e) ? { ...e, updated: FRESH } : e)) });
+const docs = (over = {}) => ({ party: PARTY(), classes: CLASSES, playAt: PLAY, now: NOW, ...over, signups: stamp(over.signups || SIGNUPS()) });
 
 test("the post names who signed up (not who is out), with the board's names, and counts only those who are in", () => {
   const { text } = composeWeeklyPost(docs());
@@ -95,15 +96,67 @@ test("a tip reads as one plain sentence: the library's provenance at the end goe
   assert.match(text, /- Red Fox \(Human Protection Paladin\)\. Tank, (taunt|shield wall): [^\n]+\. \(Source \d/);
 });
 
-test("a sign-up card older than 7 days is not this week's news: the post invites sign-ups and tips every build", () => {
-  const { text, facts } = composeWeeklyPost(docs({ signups: { ...SIGNUPS(), updated: "2026-11-01T00:00:00.000Z" } }));
+test("sign-ups from before last play night are not this week's: the post invites sign-ups, names them as earlier, and tips every build", () => {
+  const old = "2026-11-01T00:00:00.000Z";
+  const { text, facts } = composeWeeklyPost(docs({ signups: { updated: old, entries: SIGNUPS().entries.map((e) => ({ ...e, updated: old })) } }));
   assert.match(text, /Nobody has signed up for this week yet\. The sign-up card is in this channel: In, Tentative or Running late\./);
+  assert.match(text, /Still on the card from an earlier week, not counted: Red Fox, Blue Owl and Green Elk\. Use \/signup to say you are coming this week\./);
   assert.doesNotMatch(text, /Signed up \(/);
   assert.doesNotMatch(text, /Roles on the board/);
   assert.match(text, /One tip for each build on the board, from the library:/);
   assert.equal(facts.length, 3, "one tip for each of the three builds");
-  const noDate = composeWeeklyPost(docs({ signups: { entries: SIGNUPS().entries, updated: undefined, generated: undefined } }));
-  assert.match(noDate.text, /for this week yet/, "a card with no date is not counted as fresh");
+  const noDate = composeWeeklyPost(docs({ signups: { entries: SIGNUPS().entries.map((e) => ({ ...e, updated: undefined })) } }));
+  assert.match(noDate.text, /for this week yet/, "a sign-up with no time is not counted");
+});
+
+test("review F1: freshness is per sign-up, not the card's stamp; last week's replies do not count this week", () => {
+  const old = "2026-10-27T00:00:00.000Z";
+  // someone else's click an hour ago re-stamps the card; the two old sign-ups stay old
+  const card = { updated: new Date(NOW - 3600e3).toISOString(), entries: [{ name: "Red Fox", rsvp: "in", updated: old }, { name: "Blue Owl", rsvp: "in", updated: old }, { name: "Grey Cat", rsvp: "out", updated: new Date(NOW - 3600e3).toISOString() }] };
+  const a = composeWeeklyPost(docs({ signups: card }));
+  assert.doesNotMatch(a.text, /Signed up \(/);
+  assert.match(a.text, /from an earlier week, not counted: Red Fox and Blue Owl\./);
+  // a sign-up an hour after last week's post (before last week's play night) is last week's
+  const lastPost = PLAY - 7 * 86400e3 - 23 * 3600e3;
+  const b = composeWeeklyPost(docs({ signups: { entries: [{ name: "Red Fox", rsvp: "in", updated: new Date(lastPost + 3600e3).toISOString() }] } }));
+  assert.doesNotMatch(b.text, /Signed up \(/);
+  // one made after last week's play night is this week's; mixed with an old one, only it is counted
+  const c = composeWeeklyPost(docs({ signups: { entries: [{ name: "Red Fox", rsvp: "in", updated: new Date(PLAY - 7 * 86400e3 + 3600e3).toISOString() }, { name: "Blue Owl", rsvp: "in", updated: old }] } }));
+  assert.match(c.text, /Signed up \(1\): Red Fox\./);
+  assert.match(c.text, /not counted: Blue Owl\./);
+});
+
+test("review F6: a sign-up time must be a full ISO time, not in the future", async () => {
+  const { entryIsCurrent } = await import("../../infrastructure/worker/weekly-post.js");
+  const at = (u) => entryIsCurrent({ updated: u }, { playAt: PLAY, now: NOW });
+  assert.equal(at(FRESH), true);
+  for (const u of ["11/18/2026", "2026-11-18", "2026-11-18T00:00:00", ["2026-11-18T00:00:00Z"], 1763424000000, null, undefined, "", new Date(NOW + 86400e3).toISOString(), new Date(NOW + 365 * 86400e3).toISOString()]) assert.equal(at(u), false, String(u));
+  assert.equal(entryIsCurrent({ updated: FRESH }, { playAt: PLAY, now: NaN }), false);
+  assert.equal(entryIsCurrent({ updated: new Date(NOW - 6 * 86400e3).toISOString() }, { now: NOW }), true, "no play time: the last 7 days");
+});
+
+test("review F2-F4: a citation does not disqualify a fact; spec names match by prefix; another spec's or form's fact is never the tip; asides that say something stay", async () => {
+  const { plainValue } = await import("../../infrastructure/worker/weekly-post.js");
+  const classes = { pages: [{ id: "classes/priest", facts: [
+    fact("priest.disc.shield", "level 6, absorbs fictional damage, 4 s cooldown (client 70450)", "good", [ref(1)]),
+    fact("priest.shadow.form", "level 40, a fictional form that lasts until cancelled", "good", [ref(2)]),
+    fact("priest.lore", "one tester called it a design conflict at level 20", "good", [ref(3)]),
+  ] }, { id: "classes/druid", facts: [
+    fact("druid.feral.shifting", "instant, a fictional shift that resets energy, Cat only", "good", [ref(4)]),
+    fact("druid.bear.regen", "heals the bear over ten fictional seconds, 3 min cooldown", "good", [ref(5)]),
+  ] }] };
+  const keys = (m) => { const s = new Set(); for (let w = 0; w < 12; w++) { const t = pickTip(classes, m, w); if (t) s.add(t.key); } return [...s].sort(); };
+  assert.deepEqual(keys({ class_key: "priest", role: "healer", spec: "Discipline" }), ["priest.disc.shield"], "Discipline matches disc; the citation does not count as jargon; shadow and trivia are out");
+  assert.equal(pickTip(classes, { class_key: "priest", role: "healer", spec: "Discipline" }, 0).text, "Disc, shield: level 6, absorbs fictional damage, 4 s cooldown.");
+  assert.deepEqual(keys({ class_key: "druid", role: "tank", spec: "Feral", board_line: "Feral Druid, bear tank" }), ["druid.bear.regen"], "a Cat only fact is not a bear's tip");
+  assert.equal(plainValue("instant, absorbs damage (removed from the game in the Oct 15 notes)"), "instant, absorbs damage (removed from the game in the Oct 15 notes)");
+  assert.equal(plainValue("cast it on the first pull (may miss; never on a boss)"), "cast it on the first pull (may miss; never on a boss)");
+  assert.equal(plainValue("do not cast it before the pull (Method says otherwise)"), "do not cast it before the pull (Method says otherwise)");
+  assert.equal(plainValue("(Oct 15 notes)"), "(Oct 15 notes)", "a value that is only a citation is kept whole");
+  assert.equal(plainValue("24 s cooldown (Oct 15 notes; Wowhead tooltip)"), "24 s cooldown");
+  assert.equal(plainValue("3 min cooldown (Sep 30 deep dive; Wowhead tooltip; fictional Gnome only)"), "3 min cooldown (fictional Gnome only)", "the citations go, the caveat stays");
+  const { JARGON_RE } = await import("../../infrastructure/worker/weekly-post.js");
+  for (const j of ["8 ranks rescaled to 25/29%", "ranks at 20 (-30), 30 (-45)", "the renamed Mangle", "was 25/25/30", "doubled Oct 1", "then vanished from the trainer"]) assert.ok(JARGON_RE.test(j), j);
 });
 
 test("F11: a role named after an object property does not throw", () => {
@@ -159,7 +212,8 @@ test("F7: any number of sign-ups fits one post; no tip heading without tips", ()
 
 test("nobody signed up on a fresh card: one plain line, no roles, a tip for each build on the board", () => {
   const { text, facts } = composeWeeklyPost(docs({ signups: { entries: [] } }));
-  assert.match(text, /Nobody has signed up yet\./);
+  assert.match(text, /Nobody has signed up for this week yet\./);
+  assert.doesNotMatch(text, /earlier week/);
   assert.doesNotMatch(text, /Roles on the board/);
   assert.equal(facts.length, 3);
 });

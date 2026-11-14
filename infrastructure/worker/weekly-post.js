@@ -93,20 +93,37 @@ export function subjectOf(key, classKey) {
 }
 const keyWords = (key) => new Set(String(key || "").toLowerCase().split(/[._\s-]+/).filter(Boolean));
 const specWords = (m) => String((m && m.spec) || "").toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2);
+// "Discipline" on the board and "disc" in a key are the same spec: two words match when one starts the other (four letters at least).
+const wordMatch = (a, b) => a === b || (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)));
+// Spec and form names: a fact keyed to one the build does not have (a Prot fact for a Ret paladin, a Cat fact for a bear) is never its tip.
+const SPEC_NAMES = new Set(["prot", "protection", "holy", "ret", "retribution", "disc", "discipline", "shadow", "frost", "fire", "arcane", "affliction",
+  "demo", "demonology", "destruction", "destro", "feral", "balance", "resto", "restoration", "enhancement", "enh", "elemental", "ele", "arms", "fury",
+  "combat", "assassination", "subtlety", "beast", "marksmanship", "survival", "cat", "bear", "moonkin", "tree"]);
+const ROLE_SEGS = new Set(["tank", "tanking", "healer", "healing", "dps", "damage"]);
 const quotable = (f, classKey) => f && typeof f.key === "string" && f.key.startsWith(`${classKey}.`) && typeof f.value === "string"
   && f.value.length >= TIP_MIN && f.value.length <= TIP_MAX && /\p{L}{3,}.*\s.*\s.*\s/u.test(f.value) && sourcesOf(f).length > 0;
 
 // Library shorthand a friend reading Discord cannot use (talent tiers, client builds, formula coefficients); such a fact is never the tip.
-export const JARGON_RE = /\bmedal\b|\brow \d|\bcoefficient\b|\bclient \d|\bhotfix\b|\branks? \d|\bdesign pillars?\b|\bspell \d{3,}|\bhas not said\b|\buntestable\b|\bdisputed\b/i; // also: a fact about what is not known is no tip
+export const JARGON_RE = /\bmedal\b|\brow \d|\bcoefficient\b|\bclient \d|\bhotfix\b|\branks? \d|\bdesign pillars?\b|\bspell \d{3,}|\bhas not said\b|\buntestable\b|\bdisputed\b|\branks? at \d|\d+ ranks\b|\brescaled\b|\brenamed\b|\bwas \d|\bdoubled \w{3} \d|\bread from the wording\b|\bvanished\b|\babsent from\b/i; // also: what is not known, and patch history (ranks tables, "was 25%", "renamed"), is no tip
 // A record or a report about other players ("fastest reported level 30 ... at 21 hours") tells the reader nothing to do: never a tip.
-export const TRIVIA_RE = /\b(fastest|slowest|reported|record|played|census|survey|poll|most players|beta testers?|streamers?|world first)\b/i;
+export const TRIVIA_RE = /\b(fastest|slowest|reported|record|played|census|survey|poll|most players|beta testers?|testers?|streamers?|world first|called it|design conflict)\b/i;
 // A fact a player can act on: when they get something, how it casts, what it does in a fight, what to prioritise.
 export const ACTION_RE = /\b(level \d+|at \d+|instant|cast|cooldown|slow|stun|root|heal(s|ing)?|taunt|threat|interrupt|trainer|first|priority|covers|lasts?)\b/i;
 // The library's provenance at the end of a value ("(Oct 15 notes; Wowhead rank 1 tooltip)") is citation material: the source link carries it.
-const PROVENANCE_RE = /\b(notes?|client|deep dive|wowhead|tavern|method|guide|hotfix|baseline|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i;
+// Only a citation goes: a dated note, a client build, a named site, a tooltip. An aside that says something (a removal, a warning, a dissent,
+// "only") stays, and so does a value the removal would leave empty.
+const PROVENANCE_RE = /\b(notes?|client \d+|deep dive|wowhead|warcraft tavern|tavern|hotfix|tooltip|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2})\b/i;
+const CONTENT_RE = /\b(removed|never|not|no longer|only|otherwise|miss(es)?|instead|but|except|unless|said|was|were)\b/i;
 export function plainValue(v) {
   let t = String(v == null ? "" : v).trim();
-  for (let i = 0; i < 2; i++) { const m = /\s*\(([^()]*)\)\s*$/.exec(t); if (m && PROVENANCE_RE.test(m[1])) t = t.slice(0, m.index).trim(); else break; }
+  for (let i = 0; i < 2; i++) {
+    const m = /\s*\(([^()]*)\)\s*$/.exec(t);
+    if (!m || !PROVENANCE_RE.test(m[1]) || !t.slice(0, m.index).trim()) break;
+    // "(Sep 30 deep dive; Wowhead tooltip; Classic Dwarf only)": the citations go, the part that says something stays
+    const keep = m[1].split(";").map((x) => x.trim()).filter((x) => x && (!PROVENANCE_RE.test(x) || CONTENT_RE.test(x)));
+    t = `${t.slice(0, m.index).trim()}${keep.length ? ` (${keep.join("; ")})` : ""}`;
+    if (keep.length) break;
+  }
   return t.replace(/[;,]\s*$/, "");
 }
 const tipText = (subject, value) => { const v = plainValue(value); return `${subject}: ${v}${/[.!?]$/.test(v) ? "" : "."}`; };
@@ -122,10 +139,21 @@ export function pickTip(classesDoc, member, weekN) {
   const page = pages(classesDoc).find((p) => p && p.id === `classes/${ck}`);
   const role = roleOf(member);
   const words = [...(role && own(ROLE_WORDS, role) ? ROLE_WORDS[role] : []), ...specWords(member)];
-  const ok = factsOf(page).filter((f) => quotable(f, ck) && !JARGON_RE.test(f.value) && !TRIVIA_RE.test(`${f.key} ${f.value}`));
+  const buildWords = `${(member && member.spec) || ""} ${(member && member.board_line) || ""} ${role || ""}`.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  const mine = (w) => words.some((x) => wordMatch(x, w)) || buildWords.some((x) => wordMatch(x, w));
+  const onlyFor = (v) => [...String(v).toLowerCase().matchAll(/\b([a-z]+)(?: form)? only\b/g)].map((m) => m[1]).filter((w) => SPEC_NAMES.has(w));
+  // the spec is the key's second segment ("paladin.prot.x"), never a word inside a spell name ("mage.frost_blast"); a build with no spec or
+  // board line has no other spec
+  const specSeg = (f) => { const s = String(f.key).toLowerCase().split(".")[1]; return s && (SPEC_NAMES.has(s) || ROLE_SEGS.has(s)) ? [s] : []; };
+  const known = buildWords.some((w) => SPEC_NAMES.has(w)) || specWords(member).length > 0;
+  const otherSpec = (f) => known && [...specSeg(f), ...onlyFor(f.value)].some((w) => !mine(w));
+  // Jargon is judged on the text the friend reads: a citation in the value ("(client 70450)") that plainValue removes does not disqualify it.
+  const ok = factsOf(page).filter((f) => quotable(f, ck) && !JARGON_RE.test(plainValue(f.value)) && !TRIVIA_RE.test(`${f.key} ${f.value}`) && !otherSpec(f));
   const actionable = (f) => f.depth === "good" && ACTION_RE.test(plainValue(f.value));
-  const tiers = [ok.filter((f) => actionable(f) && words.some((w) => keyWords(f.key).has(w))), ok.filter(actionable), ok.filter((f) => f.depth === "must")];
-  const pool = tiers.find((t) => t.length);
+  const ownFact = (f) => [...keyWords(f.key)].some((k) => words.some((w) => wordMatch(w, k)));
+  const tiers = [ok.filter((f) => actionable(f) && ownFact(f)), ok.filter(actionable), ok.filter((f) => f.depth === "must")];
+  // A build-specific pool of one would repeat every week: the class's other actionable facts join it then, the build's own first.
+  const pool = tiers[0].length === 1 ? [...tiers[0], ...tiers[1].filter((f) => f !== tiers[0][0])] : tiers.find((t) => t.length);
   if (!pool) return null;
   const f = pool[((weekN % pool.length) + pool.length) % pool.length];
   return { page: page.id, key: f.key, subject: subjectOf(f.key, ck), value: f.value, text: tipText(subjectOf(f.key, ck), f.value), sources: sourcesOf(f) };
@@ -152,22 +180,29 @@ function matcher(members) {
 }
 
 // Documents in, post out. signups and party are the public documents; classes is the library blob of that name.
-// The sign-up card counts as this week's only if it changed in the last 7 days; an older card (launch night's, say) is not news, so the post invites
-// sign-ups for this week and gives a tip for every build on the board instead of listing who signed up then.
+// Each sign-up is judged on its own time. The card stamps entry.updated when that person's choice changes; the card-level stamp moves on any
+// click by anyone (an Out, a pack), so it says nothing about the others. A sign-up is this week's when it was made after last week's play night
+// (7 days before this one; 7 days before now with no play time) and not in the future. The stamp must be a full ISO time.
+// An older sign-up still shows on the card, so the post names it as from an earlier week rather than saying nobody is in; it is not counted.
 export const SIGNUPS_FRESH_MS = 7 * 24 * 3600 * 1000;
-export function signupsAreFresh(signups, now) {
-  const at = Date.parse((signups && (signups.updated || signups.generated)) || "");
-  return Number.isFinite(at) && Number.isFinite(now) && now - at <= SIGNUPS_FRESH_MS;
+const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+export function entryIsCurrent(entry, { playAt, now } = {}) {
+  const raw = entry && entry.updated;
+  if (typeof raw !== "string" || !ISO_RE.test(raw) || !Number.isFinite(now)) return false;
+  const at = Date.parse(raw);
+  const since = (Number.isFinite(playAt) ? playAt : now) - SIGNUPS_FRESH_MS;
+  return Number.isFinite(at) && at > since && at <= now + 60 * 1000;
 }
 export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.now() } = {}) {
-  const fresh = signupsAreFresh(signups, now);
   const facts = [], skipped = [];
   const entries = Array.isArray(signups && signups.entries) ? signups.entries : [];
   const members = Array.isArray(party && party.members) ? party.members : [];
   const find = matcher(members);
   // One row per person: a second sign-up for the same member (or the same name) is dropped.
-  const seen = new Set(), signed = [];
-  for (const e of fresh ? entries : []) {
+  const seen = new Set(), signed = [], earlier = [];
+  const current = (e) => entryIsCurrent(e, { playAt, now });
+  // this week's sign-ups first, so a person with an old entry and a new one under another spelling counts once, as this week's
+  for (const e of [...entries.filter(current), ...entries.filter((x) => !current(x))]) {
     if (!e || typeof e.name !== "string" || !SIGNED.includes(e.rsvp) || !RSVP_STATES.includes(e.rsvp)) continue;
     const m = find(e.name);
     if (!exactKey(e.name)) continue;
@@ -175,7 +210,7 @@ export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.
     const who = m ? `m:${members.indexOf(m)}` : `x:${exactKey(e.name)}`;
     if (seen.has(who)) continue;
     seen.add(who);
-    signed.push({ e, m, name: plain(cleanName(m ? m.name : e.name)) });
+    (current(e) ? signed : earlier).push({ e, m, name: plain(cleanName(m ? m.name : e.name)) });
   }
   const head = ["**This week on the board**"];
   const tail = ["", "Want more on your build? Ask Leeroy with /ask."];
@@ -184,7 +219,7 @@ export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.
   // whose builds get a tip: the people signed up, or, with no current sign-ups, every build on the board
   const tipPeople = signed.length ? signed : members.filter((m) => m && m.name && m.class_key).map((m) => ({ m, name: plain(cleanName(m.name)), e: { rsvp: "in" } }));
   if (!signed.length) {
-    body.push(fresh ? "Nobody has signed up yet. The sign-up card is in this channel." : "Nobody has signed up for this week yet. The sign-up card is in this channel: In, Tentative or Running late.");
+    body.push("Nobody has signed up for this week yet. The sign-up card is in this channel: In, Tentative or Running late.");
   } else {
     body.push(`Signed up (${signed.length}): ${joinList(signed.map((s) => `${s.name}${s.e.rsvp === "in" ? "" : ` (${STATE_WORD[s.e.rsvp]})`}`))}.`);
     const count = { tank: 0, healer: 0, damage: 0 };
@@ -197,6 +232,11 @@ export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.
       const roles = ROLES.map((r) => `${ROLE_LABEL[r]} ${count[r]}`).join(", ");
       body.push(`Roles on the board for those who are in: ${roles}${noRole ? ` (${noRole} with no role on the board)` : ""}.${missing.length ? ` No ${joinOr(missing)} among them yet.` : ""}`);
     }
+  }
+  // The card still shows older choices; the post says so instead of contradicting it (names only, at most 8, never counted above).
+  if (earlier.length) {
+    const shown = earlier.slice(0, 8).map((s) => s.name);
+    body.push(`Still on the card from an earlier week, not counted: ${joinList(earlier.length > 8 ? [...shown, `${earlier.length - 8} more`] : shown)}. Use /signup to say you are coming this week.`);
   }
   const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
   for (const s of tipPeople) {
