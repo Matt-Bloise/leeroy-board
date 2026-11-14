@@ -365,6 +365,8 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       const prior = memberSheet.fields[field];
       stale = !!(newerWins && prior && prior.at && Date.parse(prior.at) > Date.parse(now)); // recomputed on every retry
       event.visible = keepHidden && prior && prior.visible === false ? false : Boolean(visible);
+      // A hide always lands, even when it is older: a friend's hide that started before an admin fill but commits after it must not be lost.
+      if (stale && event.visible === false && prior.visible !== false) memberSheet.fields[field] = { ...prior, visible: false };
       if (stale) return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
       memberSheet.fields[field] = { value, visible: event.visible, source: source || "board", at: now };
       memberSheet.updated = now;

@@ -114,6 +114,14 @@ test("an older level write never overwrites a newer one (two overlapping request
   const after = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 31, at: "2026-11-14T10:00:09.000Z", newerWins: true }));
   assert.equal(after.stale, false);
   assert.equal(sheetOf(env, "red-fox").fields.level.value, 31);
+  // a hide always lands, even an older one: the friend's hide started before an admin fill that committed first
+  const fill = "2026-11-14T10:00:20.000Z", hideAt = "2026-11-14T10:00:15.000Z";
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 40, source: "admin", at: fill, keepHidden: true, newerWins: true }));
+  const hid = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 31, visible: false, at: hideAt, newerWins: true }));
+  assert.equal(hid.stale, true);
+  assert.equal(hid.visible, false);
+  assert.deepEqual([sheetOf(env, "red-fox").fields.level.value, sheetOf(env, "red-fox").fields.level.visible], [40, false], "newer value kept, hidden");
+  assert.equal(levelIn((await anon(env, "/state")).json.party, "red-fox"), undefined);
   // the admin path uses the same rule
   const r = await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { slug: "red-fox", field: "level", value: 32 } });
   assert.equal(r.status, 200, "a write stamped now is newer than the fixed past stamps above");
