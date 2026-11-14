@@ -88,6 +88,7 @@ ASK_OPENER = "off" # "on" puts one deterministic in-voice line (worker/ask-opene
 CARDS_ENABLED = "off" # sign-up cards, buttons, modals and card edits (docs/runbooks/cards.md); "1", "true", "on" or "yes" turns it on
 CARDS_SHADOW = "off" # with CARDS_ENABLED: count would-edit / would-post rows in noise_ledger, never call Discord
 BOARD_LINES_ENABLED = "off" # needs CARDS_ENABLED too: the first real board decision line
+WEEKLY_POST = "off" # "on" posts the weekly board post in the sign-ups channel before play night (weekly-post.js; needs the weekly_post config row)
 SETUP_COMMAND = "off" # "on" lists and answers the Discord /setup command (worker/setup-command.js)
 EVAL_ENABLED = "off" # "on" (or "true", "1") opens the admin model bake-off route (docs/runbooks/model-bake-off.md); it is 404 while off
 # Read by the Worker but deliberately NOT declared here: ANSWER_FORMAT (defaults ON when unset; set "off" to turn it off), AI_DAILY_NEURON_CAP and ASK_DEADLINE_MS (optional numbers, the code has defaults),

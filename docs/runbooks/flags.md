@@ -34,6 +34,7 @@ Each is a **boolean flag** in the app `leeroy-brain` (the app `1f0b836c-4929-472
 | Flag key | What it does | Fallback in `wrangler.toml` |
 | --- | --- | --- |
 | `D1_FEED` | computes `GET /api/data/stats` from D1 (cached 5 minutes) | `D1_FEED = "off"` |
+| `WEEKLY_POST` | the weekly board post in the sign-ups channel before play night: who signed up, roles nobody covers, one sourced library fact per build (`infrastructure/worker/weekly-post.js`; also needs the admin config row `weekly_post`; preview it with `node tools/weekly-post-dry-run.mjs`) | `WEEKLY_POST = "off"` |
 
 Until `D1_FEED` exists the Worker treats it as off, which is today's behaviour; the first deploy after this change creates it, disabled.
 
