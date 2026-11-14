@@ -44,7 +44,7 @@ const { buildAnswerInputs, finishAnswerText, invalidatePagesCache } = await imp(
 const { invalidatePersonaCache, loadPersona } = await imp("infrastructure/worker/persona.js");
 const { invalidateConfigCache } = await imp("infrastructure/worker/config.js");
 const { schemaDb } = await imp("tests/helpers/sqlite-d1.mjs");
-const { composeAnswer, openerPrompts, verifyFinished } = await imp("infrastructure/worker/ask-composed.js");
+const { composeAnswer, openerPrompts, verifyFinished, buildIsTopical } = await imp("infrastructure/worker/ask-composed.js");
 const { composeAbstain } = await imp("infrastructure/worker/self-rag.js");
 
 const ASKERS = ["Red Fox", "Blue Owl", "Green Elk"];
@@ -137,7 +137,11 @@ for (let i = 0; i < rows.length; i++) {
   const r = rows[i], asker = ASKERS[i % 3];
   const key = rowKey({ id: r.id, asker });
   const inp = await buildAnswerInputs(env, { question: r.question, by: asker, memberSlug: SLUG[asker], journey: r.journey || "curious", share: true });
-  const composedMode = Boolean(inp.composedCtx) && inp.retrieved && !inp.abstain && !inp.isCoach && inp.hits.length > 0;
+  // the same decisions as answerWithAi: only the facts that answer the question (composedCtx.facts), and the build only when topical
+  const composedMode = Boolean(inp.composedCtx) && inp.retrieved && !inp.abstain && !inp.isCoach && inp.composedCtx.facts.length > 0;
+  const composedBuild = composedMode && buildIsTopical(inp.composedCtx.buildReason, inp.composedCtx.facts, inp.composedCtx.askerBuild) ? inp.composedCtx.askerBuild : null;
+  // --code-opener: no model call for composed rows; the code-written opener is used (what production sends when the opener call fails)
+  const codeOpener = flag("--code-opener") && composedMode;
   const mode = inp.abstain ? "abstain" : composedMode ? "composed" : "existing";
   // the judge reads the production prompt context (library facts, builds): the same material the bot saw
   if (!readJsonl(PROMPTS).some((p) => rowKey(p) === key)) {
@@ -150,27 +154,27 @@ for (let i = 0; i < rows.length; i++) {
     fin = await finish(inp.abstainAnswer, { trusted: true });
     rawOut = inp.abstainAnswer;
   } else {
-    const prompts = composedMode ? openerPrompts({ question: r.question, askerName: asker, askerBuild: inp.composedCtx.askerBuild, hasBuild: Boolean(inp.composedCtx.askerBuild) }) : { system: inp.systemPrompt, user: inp.userPrompt };
-    if (calls >= maxCalls) { console.log(`ask-eval-composed: max-calls ${maxCalls} reached`); break; }
-    while (usedLastHour() >= capHour) { if (!wait) break; console.log(`ask-eval-composed: rate guard (${usedLastHour()} agy calls in the last hour, cap ${capHour}); sleeping 5 min`); await sleep(300e3); }
-    if (usedLastHour() >= capHour) { console.log(`ask-eval-composed: rate guard stop (${usedLastHour()}/${capHour}). Resume later or pass --wait.`); break; }
-    const g = await callAgy(prompts.system, prompts.user); calls++;
-    appendJsonl(CALLS, { at: new Date().toISOString(), model: "agy", id: r.id, code: g.code, secs: g.secs, chars: g.out.length });
-    if (g.code !== 0 || !g.out) { fails++; console.log(`ask-eval-composed: FAILED ${r.id} code=${g.code} err=${g.err.replace(/\s+/g, " ").slice(0, 160)}`); if (fails >= 3) { console.log("ask-eval-composed: 3 failures, stopping"); break; } continue; }
+    const prompts = composedMode ? openerPrompts({ question: r.question, askerName: asker, askerBuild: composedBuild, hasBuild: Boolean(composedBuild) }) : { system: inp.systemPrompt, user: inp.userPrompt };
+    if (!codeOpener && calls >= maxCalls) { console.log(`ask-eval-composed: max-calls ${maxCalls} reached`); break; }
+    while (!codeOpener && usedLastHour() >= capHour) { if (!wait) break; console.log(`ask-eval-composed: rate guard (${usedLastHour()} agy calls in the last hour, cap ${capHour}); sleeping 5 min`); await sleep(300e3); }
+    if (!codeOpener && usedLastHour() >= capHour) { console.log(`ask-eval-composed: rate guard stop (${usedLastHour()}/${capHour}). Resume later or pass --wait.`); break; }
+    const g = codeOpener ? { code: 0, out: "", secs: 0, err: "" } : await callAgy(prompts.system, prompts.user);
+    if (!codeOpener) { calls++; appendJsonl(CALLS, { at: new Date().toISOString(), model: "agy", id: r.id, code: g.code, secs: g.secs, chars: g.out.length }); }
+    if (!codeOpener && (g.code !== 0 || !g.out)) { fails++; console.log(`ask-eval-composed: FAILED ${r.id} code=${g.code} err=${g.err.replace(/\s+/g, " ").slice(0, 160)}`); if (fails >= 3) { console.log("ask-eval-composed: 3 failures, stopping"); break; } continue; }
     secs = g.secs;
     if (!composedMode) {
       fin = await finish(g.out);
       rawOut = g.out;
     } else {
       const ctx = inp.composedCtx;
-      const c = composeAnswer({ question: r.question, rawOpener: g.out, retrievedFacts: inp.hits.slice(0, 20), sheet: ctx.askerBuild, askerBuild: ctx.askerBuild, partyNames: ctx.partyNames, askerName: asker });
+      const c = composeAnswer({ question: r.question, rawOpener: g.out, retrievedFacts: ctx.facts, sheet: composedBuild, askerBuild: composedBuild, partyNames: ctx.partyNames, askerName: asker });
       openerSource = c.ok ? c.openerSource : "none";
       guard = { pre: c.ok, post: null };
       if (c.ok) {
         rawOut = c.text;
         fin = await finish(c.text, { trusted: true });
         const titles = inp.parsedPages.filter((p) => c.ids.includes(p.id)).map((p) => p.title);
-        const v = fin.parts.more ? { ok: false } : verifyFinished(fin.parts.main, { used: c.used, sheet: ctx.askerBuild, askerBuild: ctx.askerBuild, partyNames: ctx.partyNames, askerName: asker, extraAllowed: titles, boardUrl: env.BOARD_PUBLIC_URL });
+        const v = fin.parts.more ? { ok: false } : verifyFinished(fin.parts.main, { used: c.used, sheet: composedBuild, askerBuild: composedBuild, partyNames: ctx.partyNames, askerName: asker, extraAllowed: titles, boardUrl: env.BOARD_PUBLIC_URL });
         guard.post = v.ok;
         if (!v.ok) { refused = true; rawOut = composeAbstain({ categories: inp.parsedPages.map((p) => p.category) }); fin = await finish(rawOut, { trusted: true }); }
       } else {
@@ -181,7 +185,7 @@ for (let i = 0; i < rows.length; i++) {
       appendJsonl(path.join(WORK, "openers.jsonl"), { id: r.id, asker, openerSource, openerReason: c.openerReason || "", rawOpenerChars: g.out.length });
     }
   }
-  appendJsonl(ANSWERS, { id: r.id, asker, raw: rawOut, answer: fin.answer, more: (fin.parts && fin.parts.more) || "", sources: (fin.parts && fin.parts.sources) || "", cites: fin.cites, secs, generator: mode === "abstain" ? "code" : "agy", mode, openerSource, guard, refused });
+  appendJsonl(ANSWERS, { id: r.id, asker, raw: rawOut, answer: fin.answer, more: (fin.parts && fin.parts.more) || "", sources: (fin.parts && fin.parts.sources) || "", cites: fin.cites, secs, generator: mode === "abstain" || codeOpener ? "code" : "agy", mode, openerSource, guard, refused });
   console.log(`ask-eval-composed: ok ${i + 1}/${rows.length} mode=${mode}${openerSource ? " opener=" + openerSource : ""}${refused ? " REFUSED" : ""}`);
 }
 console.log(`ask-eval-composed: agy calls ${calls}, failures ${fails}, answers stored ${readJsonl(ANSWERS).length}`);

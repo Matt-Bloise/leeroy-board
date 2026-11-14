@@ -25,7 +25,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
-import { composedEnabled, composeAnswer, openerPrompts, verifyFinished } from "./ask-composed.js";
+import { composedEnabled, composeAnswer, openerPrompts, verifyFinished, selectComposedFacts, buildIsTopical } from "./ask-composed.js";
 import { askerRole, askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -885,7 +885,12 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const rankQuestion = pick ? ranking.words.join(" ") : "";
     const { words } = ranking;
     const rel = pick ? pick.rel : { hits: [], abstain: false };
-    const abstain = retrieve && (noContext || rel.abstain);
+    // ASK_COMPOSED: the composed answer shows only facts that answer the question (ask-composed.js selectComposedFacts); when none does, it abstains like the
+    // library does, with the code-written answer and no model call. Flag off: composedFacts is null and nothing below changes.
+    const composedFacts = composedEnabled(env) && retrieve && !noContext && !rel.abstain && !isCoach
+      ? selectComposedFacts(rel.hits.map((h, i) => ({ h, c: rel.coverage ? rel.coverage[i] : 0 })))
+      : null;
+    const abstain = retrieve && (noContext || rel.abstain || (composedFacts !== null && composedFacts.length === 0));
     const stateMap = {};
     for (const r of stateRows || []) {
       try {
@@ -1029,7 +1034,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses,
       // ASK_COMPOSED (ask-composed.js): the asker's own visible race, class, spec, role and professions (only when the build is relevant to this question) and the party names the opener may use.
-      ...(composedEnabled(env) ? { composedCtx: { askerBuild: hasBuild && buildFactsNow ? { race: buildFactsNow.race, class: buildFactsNow.class, spec: buildFactsNow.spec, role: askerRole(askerSheet, { includeHidden: share === false && askerBySlug }), professions: buildFactsNow.professions } : null, partyNames: askerIsMember ? [...new Set([...ROSTER_DATA.map((r) => r.display), ...sheets.map((x) => x && x.name).filter(Boolean), by])] : [], coverage: { best: rel.best || 0, kept: rel.kept || 0 } } } : {}) };
+      ...(composedEnabled(env) ? { composedCtx: { facts: composedFacts || [], scores: rel.coverage || [], buildReason: hasBuild && buildFactsNow ? buildRelevant(question, buildFactsNow, { skip, previousQuestion: prevQ }).reason : "", askerBuild: hasBuild && buildFactsNow ? { race: buildFactsNow.race, class: buildFactsNow.class, spec: buildFactsNow.spec, role: askerRole(askerSheet, { includeHidden: share === false && askerBySlug }), professions: buildFactsNow.professions } : null, partyNames: askerIsMember ? [...new Set([...ROSTER_DATA.map((r) => r.display), ...sheets.map((x) => x && x.name).filter(Boolean), by])] : [], coverage: { best: rel.best || 0, kept: rel.kept || 0 } } } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1207,10 +1212,13 @@ export async function answerWithAi({
     let rawAnswer, model, provider;
     let fallbackNote = "";
     // ASK_COMPOSED: the model writes only a one-line opener (checked structurally); the facts are written by code. Not for coach turns, skip kinds or abstains.
-    const composedMode = composedEnabled(env) && Boolean(inputs.composedCtx) && inputs.retrieved && !inputs.abstain && !isCoach && hits.length > 0;
+    const composedMode = composedEnabled(env) && Boolean(inputs.composedCtx) && inputs.retrieved && !inputs.abstain && !isCoach && inputs.composedCtx.facts.length > 0;
+    // The build is named only when it is topical (ask-composed.js buildIsTopical): the question is about it, or a shown fact is about the asker's own class, race,
+    // spec or professions. Otherwise the opener and the proof see no build at all.
+    const composedBuild = composedMode && buildIsTopical(inputs.composedCtx.buildReason, inputs.composedCtx.facts, inputs.composedCtx.askerBuild) ? inputs.composedCtx.askerBuild : null;
     let callSystem = systemPrompt, callUser = userPrompt, callCacheKey = cacheKey;
     if (composedMode) {
-      const op = openerPrompts({ question, askerName: askerIsMember ? by : "", askerBuild: inputs.composedCtx.askerBuild, hasBuild: Boolean(inputs.composedCtx.askerBuild) });
+      const op = openerPrompts({ question, askerName: askerIsMember ? by : "", askerBuild: composedBuild, hasBuild: Boolean(composedBuild) });
       callSystem = op.system; callUser = op.user;
       callCacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant: "composed-opener", tier, systemPrompt: callSystem, userPrompt: callUser });
     }
@@ -1328,8 +1336,8 @@ export async function answerWithAi({
     let composedFinal = null;
     if (composedMode) {
       const ctx = inputs.composedCtx;
-      const c = composeAnswer({ question, rawOpener: rawAnswer || "", retrievedFacts: hits.slice(0, 20), sheet: ctx.askerBuild, askerBuild: ctx.askerBuild, partyNames: ctx.partyNames, askerName: askerIsMember ? by : "" });
-      if (c.ok) { rawAnswer = c.text; composedFinal = { facts: c.used, ctx, ids: c.ids, askerName: askerIsMember ? by : "" }; model = `${model}:composed-${c.openerSource}`; }
+      const c = composeAnswer({ question, rawOpener: rawAnswer || "", retrievedFacts: ctx.facts, sheet: composedBuild, askerBuild: composedBuild, partyNames: ctx.partyNames, askerName: askerIsMember ? by : "" });
+      if (c.ok) { rawAnswer = c.text; composedFinal = { facts: c.used, build: composedBuild, ids: c.ids, askerName: askerIsMember ? by : "" }; model = `${model}:composed-${c.openerSource}`; }
       else { rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); composedFinal = { refused: true }; model = "composed-refused"; provider = "library"; }
     }
     const trustedAnswer = Boolean(composed) || Boolean(composedFinal);
@@ -1337,7 +1345,7 @@ export async function answerWithAi({
     if (composedFinal && !composedFinal.refused) {
       // The finished text (voice repair, layout, link masking) is proved again: what is sent is what was verified.
       const titles = parsedPages.filter((p) => composedFinal.ids.includes(p.id)).map((p) => p.title);
-      const v = finished.parts.more ? { ok: false } : verifyFinished(finished.parts.main, { used: composedFinal.facts, sheet: composedFinal.ctx.askerBuild, askerBuild: composedFinal.ctx.askerBuild, partyNames: composedFinal.ctx.partyNames, askerName: composedFinal.askerName, extraAllowed: titles, boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party" });
+      const v = finished.parts.more ? { ok: false } : verifyFinished(finished.parts.main, { used: composedFinal.facts, sheet: composedFinal.build, askerBuild: composedFinal.build, partyNames: inputs.composedCtx.partyNames, askerName: composedFinal.askerName, extraAllowed: titles, boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party" });
       if (!v.ok) {
         rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); composedFinal = { refused: true }; model = "composed-refused"; provider = "library";
         finished = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: true, retrieval, trusted: true, question, opener: inputs.opener });
