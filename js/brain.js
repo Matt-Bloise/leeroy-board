@@ -425,7 +425,7 @@ async function mineFlush() {
 }
 const getAiProvider = () => { if (B.isPrPreview) return "workers-ai"; const saved = store.get("board-ai-provider"); return AI_PROVIDERS.includes(saved) ? saved : (AI_PROVIDERS.includes(B.aiProvider) ? B.aiProvider : "claude"); };
 const setAiProvider = (prov) => { if (B.isPrPreview) { B.aiProvider = "workers-ai"; return "workers-ai"; } if (!AI_PROVIDERS.includes(prov)) return getAiProvider(); B.aiProvider = prov; store.set("board-ai-provider", prov); askEmit(); return prov; };
-const AK = { st: "idle", ask: null, left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
+const AK = { st: "idle", ask: null, secret: "", left: null, retry: 0, err: "", h: [], t: 0, since: 0 };
 const askStatus = () => ({ state: AK.st, provider: !B.key ? "workers-ai" : getAiProvider(), isPrPreview: !!B.isPrPreview, isGuest: !B.key, providers: B.providers || null, ask: AK.ask ? { ...AK.ask, sources: (AK.ask.sources || []).slice() } : null, left: AK.left, retryAfter: AK.retry, error: AK.err, base: !!B.base, key: !!B.key, keyBad: B.keyBad, me: B.me ? B.me.name : (!B.key ? "Visitor" : null) });
 const askEmit = () => { const s = askStatus(); for (const f of AK.h) { try { f(s); } catch (e) { console.error("brain ask", e); } } };
 const askAdopt = (a) => { AK.ask = a || null; AK.st = !a ? "idle" : a.status === "queued" ? "queued" : a.status === "answered" ? "answered" : "failed"; AK.err = ""; AK.retry = 0; if (AK.st === "queued") { if (!AK.since) AK.since = Date.now(); } else AK.since = 0; };
@@ -434,7 +434,8 @@ async function askRead() {
   if (!B.base || AK.st === "sending") return;
   let again = false;
   try {
-    const askIdParam = AK.ask && AK.ask.id ? `?id=${encodeURIComponent(AK.ask.id)}` : "";
+    /* a guest's private answer needs the secret POST /intent gave this page (kept in memory only, never stored) */
+    const askIdParam = AK.ask && AK.ask.id ? `?id=${encodeURIComponent(AK.ask.id)}${AK.secret ? `&s=${encodeURIComponent(AK.secret)}` : ""}` : "";
     const r = await call("GET", `/ask${askIdParam}`);
     if (r.status === 200 && r.data) {
       if (r.data.isPrPreview) B.isPrPreview = true; if (r.data.limit) AK.left = r.data.limit.left;
@@ -461,6 +462,7 @@ async function ask(text, share, provider) {
     if (r.status === 200 && r.data && r.data.ok) {
       AK.left = typeof r.data.left === "number" ? r.data.left : AK.left;
       AK.ask = { id: r.data.id, status: "queued", text: t, share: !isGuest && share === true, provider: (r.data && r.data.provider) || prov, at: r.data.at, answer: null, sources: [] };
+      AK.secret = typeof r.data.secret === "string" ? r.data.secret : "";
       AK.st = "queued"; AK.since = Date.now(); wsAuth(); askEmit(); AK.t = setTimeout(askRead, 3000);
       return { ok: true, state: "queued" };
     }

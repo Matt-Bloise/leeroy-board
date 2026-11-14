@@ -20,7 +20,7 @@ import {
   webBoardLinksDeep,
 } from "./ai-models.js";
 import { runScheduledSourceSweep, recomputeCategoryAndIndex, acquireRefreshCooldown } from "./scraper.js";
-import { feedbackReport, cleanupAnswerUx, insertAskTurn } from "./answer-ux.js";
+import { feedbackReport, cleanupAnswerUx, insertAskTurn, newGuestSecret, privateTurnAccess, RELOAD_ANSWER_LINE } from "./answer-ux.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { handleDiscordInteraction, recomputeSignupTallies, DISCORD_SLASH_COMMANDS_MANIFEST } from "./discord.js";
 import { manifestFor } from "./setup-command.js";
@@ -1071,6 +1071,13 @@ const worker = {
           const ws = auth.ok ? null : await webSessionFrom(req, env, Date.now());
           if (!auth.ok && !ws && !UUID_RE.test(askId)) return jsonResp({ error: "Unauthorized board key" }, 401, cors);
           row = await env.DB.prepare("SELECT * FROM ask_turns WHERE id = ?").bind(askId).first();
+          // A private random-id turn is no longer readable by its id alone: only by its asker's key or session, or a guest's secret (answer-ux.js
+          // privateTurnAccess); the admin sees all. A guest turn asked from a page that predates the secret answers one clear line, never the turn.
+          if (row && UUID_RE.test(String(row.id)) && row.share !== 1 && adminGate(req, url, env, cors)) {
+            const access = await privateTurnAccess(env, row, { member: auth.ok ? auth.member : null, ws, secret: url.searchParams.get("s") || "" });
+            if (access === "reload") row = { id: row.id, status: "answered", question: "", answer: RELOAD_ANSWER_LINE, cites_json: "[]", model: "library", created_at: row.created_at, answered_at: row.created_at };
+            else if (access !== "ok") row = null;
+          }
           // A timestamp id can be guessed: even with a key it shows only shared turns and the caller's own (the admin sees all).
           if (row && !UUID_RE.test(String(row.id)) && row.share !== 1 && adminGate(req, url, env, cors)) {
             const mine = auth.ok ? [auth.member.name, auth.member.slug] : [ws.name];
@@ -1626,8 +1633,10 @@ const worker = {
             guestLeft = Math.max(0, 2 - guestCount);
           }
 
+          // A guest's page gets a secret with its ask (only its salted hash is stored): GET /api/ask?id=&s= needs it to read this private turn.
+          const guestSecret = isGuest ? newGuestSecret() : "";
           try {
-            await insertAskTurn(env, { id: intentId, byName: askBy, question, provider: activeProvider, share, createdAt: now }, isGuest ? {} : { slug: memberSlug });
+            await insertAskTurn(env, { id: intentId, byName: askBy, question, provider: activeProvider, share, createdAt: now }, isGuest ? { guestSecret } : { slug: memberSlug });
           } catch (e) {
             if (!(e instanceof SaltMissingError)) throw e;
             return jsonResp(saltErrorBody(e.missing), 503, cors);
@@ -1679,6 +1688,7 @@ const worker = {
               provider: activeProvider,
               at: now,
               left: isGuest ? guestLeft : 5,
+              ...(isGuest ? { secret: guestSecret } : {}),
               ask: { id: intentId, question, by: askBy, status: "thinking", model: activeProvider, at: now },
             },
             200,

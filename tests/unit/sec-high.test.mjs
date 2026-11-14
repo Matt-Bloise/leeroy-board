@@ -79,7 +79,7 @@ test("1. the id the page polls with (response .id, as js/brain.js uses it) is th
   const posted = await (await api(env, "POST", "/intent", "anon", { kind: "ask", patch: { text: "where is onyxia", share: false } })).json();
   assert.match(posted.id, UUID, "top-level id, not the intent seq");
   assert.equal(typeof posted.seq, "number");
-  const poll = await api(env, "GET", `/ask?id=${encodeURIComponent(posted.id)}`, "anon");
+  const poll = await api(env, "GET", `/ask?id=${encodeURIComponent(posted.id)}&s=${encodeURIComponent(posted.secret)}`, "anon"); // as js/brain.js sends it
   assert.equal(poll.status, 200, "no 401, so the page does not set keyBad");
   assert.equal((await poll.json()).ask.text, "where is onyxia");
 });
