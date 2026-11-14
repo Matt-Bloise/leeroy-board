@@ -4,6 +4,7 @@ import { slugify } from "./member-model.js";
 import { ROSTER_DATA } from "./bot-data.js";
 import { stripFence } from "./prompt-fence.js";
 import { factionOf } from "./ask-opener.js";
+import { officialSource } from "./ask-grounding.js";
 
 export const NOT_PUBLISHED_LINE = "The library does not have that yet.";
 export const EMPTY_BUILD_LINE = "No build on file for the asker yet. Say so once and ask them to fill in their sheet on the board.";
@@ -231,8 +232,6 @@ function tokens(allowed) {
 //     relax anything ("Druid Trainer in Razor Hill" stays flagged), and nothing is split by regex (the words are walked once).
 //  2. The bare phrase "Official Blizzard" passes only when a shown fact names an official Blizzard source (a post, deep dive, blog, announcement, patch notes, "Forever-confirmed")
 //     without negating it; otherwise it stays checked like any other name. "Official Blizzard Guide" and longer phrases are never relaxed.
-const OFFICIAL_SHOWN = /\bblizzard(?:'s)? (?:[\w-]+ ){0,3}(?:posts?|deep dives?|blogs?|announcements?|patch notes|confirmed)\b|\bforever-confirmed\b/;
-const officialShown = (allowed) => OFFICIAL_SHOWN.test(allowed.replace(/\b(?:no|not|never|without)\b[^;()\n]{0,40}\bblizzard\b/g, " "));
 function joinedSidesGrounded(seg, allowed) {
   const ws = words(seg);
   const sides = [[]];
@@ -245,7 +244,7 @@ function badPhrases(text, allowed) {
   for (const m of text.replace(/[*_`]/g, "").matchAll(PHRASE_RE)) {
     const whole = m[0].replace(/'s\b/g, "'s");
     if (allowed.includes(unpossess(whole).toLowerCase()) || allowed.includes(whole.toLowerCase())) continue;
-    if (whole === "Official Blizzard" && officialShown(allowed)) continue;
+    if (whole === "Official Blizzard" && officialSource(allowed)) continue;
     // A possessive ends a name: "Street Rat's Holy Shield" is two names, each checked on its own.
     for (const seg of whole.split(/'s\b\s*/).filter(Boolean)) {
       const full = words(seg).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");

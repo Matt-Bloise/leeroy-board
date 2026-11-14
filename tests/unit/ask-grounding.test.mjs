@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { groupComposition, scopeOf, scopeTag, GROUNDING_RULE } from "../../infrastructure/worker/ask-grounding.js";
+import { groupComposition, scopeOf, scopeTag, officialSource, GROUNDING_RULE } from "../../infrastructure/worker/ask-grounding.js";
 import { unknownNames, groundedOrNotPublished } from "../../infrastructure/worker/ask-build.js";
 import { buildAnswerInputs, finishAnswerText, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
@@ -50,6 +50,7 @@ test("name check: invented names of every shape master caught are still caught",
   assert.ok(unknownNames("Lord Mordrek Vane in Stormwind trains Paladins.", B).length > 0);
   assert.ok(unknownNames("Official Blizzard Guide says respawn is 5 minutes.", CORPUS.allowedA).length > 0, "longer phrases are never relaxed");
   assert.ok(unknownNames("Official Blizzard posts confirm it.", CORPUS.allowedB).length > 0, "without a shown official source, 'Official Blizzard' stays checked");
+  assert.ok(unknownNames("Official Blizzard posts confirm it.", `${CORPUS.allowedB} blizzard has not confirmed this.`).length > 0, "a negated confirmation is not a shown source");
 });
 
 test("name check: the two fixed false positives", () => {
@@ -116,6 +117,9 @@ test("scopeOf: negated Blizzard mentions are not sources; forum, video and commu
   assert.deepEqual(scopeOf("x", "no Blizzard post read; Wowhead says so"), ["guide or fan site"]);
   assert.deepEqual(scopeOf("x", "Blizzard has not confirmed it; the guide says so"), ["guide or fan site"]);
   assert.deepEqual(scopeOf("x", "per the Blizzard Oct 7 deep dive and a guide"), []);
+  assert.deepEqual(scopeOf("x", "Blizzard's post says no guide is needed"), [], "a negative claim INSIDE an official source is not a negated source");
+  assert.equal(officialSource("blizzard has not confirmed this."), false);
+  assert.equal(officialSource("blizzard hasn't posted a deep dive"), false);
   assert.deepEqual(scopeOf("x", "seen on a forum"), ["community source"]);
   assert.deepEqual(scopeOf("x", "a streamer video showed it"), ["community source"]);
   assert.deepEqual(scopeOf("x", "layer moves on invite (beta reports)"), ["beta reports"]);
@@ -126,7 +130,6 @@ test("scopeOf: negated Blizzard mentions are not sources; forum, video and commu
 
 test("scopeOf over the real library: no positively official fact is tagged as fan or guide sourced, and no guide, forum or video fact is left untagged", () => {
   const dir = new URL("../../data/library/", import.meta.url);
-  const strip = (v) => v.replace(/\b(?:no|not|never|nor|without)\b[^;()]{0,40}\bBlizzard\b/gi, " ").replace(/\bBlizzard\b[^;()]{0,30}\b(?:not|no|never)\b/gi, " ");
   let facts = 0, official = 0, wrong = 0, missed = 0, labelled = 0;
   for (const file of readdirSync(dir)) {
     if (!file.endsWith(".json")) continue;
@@ -134,7 +137,7 @@ test("scopeOf over the real library: no positively official fact is tagged as fa
     for (const p of Array.isArray(j.pages) ? j.pages : []) for (const fact of Array.isArray(p.facts) ? p.facts : []) {
       facts++;
       const v = String(fact.value || ""), s = scopeOf(fact.key, v), fan = s.includes("guide or fan site") || s.includes("community source");
-      const pos = /\bBlizzard(?:'s)? (?:[\w-]+ ){0,3}(?:posts?|deep dives?|blogs?|announcements?|patch notes|confirmed)\b|Forever-confirmed/i.test(strip(v));
+      const pos = officialSource(v);
       if (pos) { official++; if (fan) wrong++; }
       else if (/\b(?:guide|wiki|wowhead|icy veins|warcraft tavern|forum|videos?|youtube|reddit|community|streamers?)\b/i.test(v)) { if (fan) labelled++; else missed++; }
     }
