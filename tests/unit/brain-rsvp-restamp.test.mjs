@@ -1,6 +1,7 @@
-// The web RSVP's "Discord has a newer answer" state (js/brain.js settle) must come from a newer ANSWER, not from a newer stamp alone. A
-// same-value RSVP click on the sign-up card re-stamps entry.updated without changing the answer; the web edit waiting for Discord must keep
-// waiting, then show as saved. A real change to another answer still shows as newer. Pure: vm, fake fetch, fake timers, no network.
+// What the board shows for a web RSVP when the sign-up card re-stamps an entry with the same answer (cards.js: an RSVP click always stamps).
+// POST /intent applies the web edit in the same request (infrastructure/worker/index.js), so by the time a card click can re-stamp the entry
+// it already holds the web answer: settle() sees the web value and shows Saved, never "Discord has a newer answer". A different answer
+// clicked after the web edit is a real newer answer and still shows as one. Runs the real js/brain.js in a vm with a fake fetch, unchanged.
 // Fictional data only. Run: node --test tests/unit/brain-rsvp-restamp.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -36,32 +37,34 @@ function rig() {
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
 const entry = (rsvp, updated) => ({ entries: [{ name: "Ada", slug: "ada", rsvp, updated }] });
 
-test("a same-value re-stamp of the entry does not mark the web answer as overtaken; a real change does", async () => {
-  const brain = rig();
+async function sent(brain) {
   let last = null;
   brain.on("pending", (p) => { last = p; });
   brain.start({});
   await flush();
   brain._state({ ver: 1, signups: entry("in", "2026-11-01T00:00:00.000Z") });
   await brain.setRsvp("maybe");
-  assert.equal(last.rsvp.state, "waiting");
-  // Ada clicks In again on the card (already In): the answer is the same, the stamp is newer
-  brain._state({ ver: 2, signups: entry("in", "2026-11-20T20:01:00.000Z") });
-  assert.equal(last.rsvp.state, "waiting", "the same answer with a newer stamp is not a newer answer");
-  // Discord then applies the web edit
-  brain._state({ ver: 3, signups: entry("maybe", "2026-11-20T20:02:00.000Z") });
-  assert.equal(last.rsvp.state, "saved");
+  return () => last;
+}
+
+test("a same-value card click after the web edit (the entry already holds the web answer, newer stamp) shows Saved", async () => {
+  const b = rig(); const l = await sent(b);
+  assert.equal(l().rsvp.state, "waiting");
+  // the Worker applied the web edit at SENT_AT; Ada then clicks Tentative again on the card: same answer, newer stamp
+  b._state({ ver: 2, signups: entry("maybe", "2026-11-20T20:01:00.000Z") });
+  assert.equal(l().rsvp.state, "saved");
 });
 
 test("a different answer after the web edit still shows as newer, with that answer", async () => {
-  const brain = rig();
-  let last = null;
-  brain.on("pending", (p) => { last = p; });
-  brain.start({});
-  await flush();
-  brain._state({ ver: 1, signups: entry("in", "2026-11-01T00:00:00.000Z") });
-  await brain.setRsvp("maybe");
-  brain._state({ ver: 2, signups: entry("late", "2026-11-20T20:01:00.000Z") });
-  assert.equal(last.rsvp.state, "newer");
-  assert.equal(last.rsvp.other, "late");
+  const b = rig(); const l = await sent(b);
+  b._state({ ver: 2, signups: entry("late", "2026-11-20T20:01:00.000Z") });
+  assert.equal(l().rsvp.state, "newer");
+  assert.equal(l().rsvp.other, "late");
+});
+
+test("setting the old answer back after the web edit is a newer answer too", async () => {
+  const b = rig(); const l = await sent(b);
+  b._state({ ver: 2, signups: entry("in", "2026-11-20T20:01:00.000Z") });
+  assert.equal(l().rsvp.state, "newer");
+  assert.equal(l().rsvp.other, "in");
 });

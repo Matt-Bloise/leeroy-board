@@ -192,9 +192,7 @@ function settle() {
   for (const [f, p] of Object.entries(B.pend)) {
     if (!e || p.state === "sending" || p.state === "failed" || p.state === "saved" || p.state === "newer") continue;
     if (e[f] === p.value) { p.state = "saved"; p.done = Date.now(); moved = true; }
-    /* newer: a different ANSWER after the web edit was sent. The stamp is per entry, so a same-value card click or another field's change
-       moves it without changing this answer; while the answer is still the one this edit started from, keep waiting. */
-    else if (p.at && e.updated && Date.parse(e.updated) > Date.parse(p.at) && !("base" in p && e[f] === p.base)) { p.state = "newer"; p.other = e[f]; moved = true; }
+    else if (p.at && e.updated && Date.parse(e.updated) > Date.parse(p.at)) { p.state = "newer"; p.other = e[f]; moved = true; }
   }
   if (moved) emit("pending", pending());
 }
@@ -344,8 +342,7 @@ async function setRsvp(v) {
   if (!B.base) return { ok: false, why: "nowhere to send" };
   if (!B.key) return { ok: false, why: "no key" };
   if (!RSVP.includes(v)) return { ok: false, why: "not an answer" };
-  const was = mine();
-  const p = B.pend.rsvp = { value: v, state: "sending", t: Date.now(), base: was && was.rsvp !== undefined ? was.rsvp : null };
+  const p = B.pend.rsvp = { value: v, state: "sending", t: Date.now() };
   emit("pending", pending());
   try {
     const r = await call("POST", "/intent", { kind: "signup", patch: { rsvp: v }, ...(B.ver ? { ver: B.ver } : {}) }); B.sent++;
