@@ -83,3 +83,25 @@ test("the live socket's sign-up document settles the web RSVP too", async () => 
   ws.onmessage({ data: JSON.stringify({ type: "data", key: "party", data: doc("late", "2026-11-20T21:00:00.000Z") }) });
   assert.equal(w.last().rsvp.state, "saved");
 });
+
+test("review: an older document (cached /state, late socket message) never rolls the board back", async () => {
+  const w = await waiting();
+  const ws = w.sockets[w.sockets.length - 1];
+  ws.onmessage({ data: JSON.stringify({ type: "data", key: "signups", data: doc("maybe", SENT_AT) }) });
+  assert.equal(w.last().rsvp.state, "saved");
+  assert.equal(w.brain._state({ type: "state", ver: 1, at: "2026-11-20T20:00:40.000Z", signups: doc("in", "2026-11-01T00:00:00.000Z") }), false, "the cached older /state is refused");
+  assert.equal(w.brain.mine().rsvp, "maybe");
+  ws.onmessage({ data: JSON.stringify({ type: "data", key: "signups", data: doc("in", "2026-11-01T00:00:00.000Z") }) });
+  assert.equal(w.brain.mine().rsvp, "maybe", "an older socket document is refused too");
+});
+
+test("review: a document with a bad row is ignored without throwing; a /state without sign-ups re-emits nothing", async () => {
+  const w = await waiting();
+  const ws = w.sockets[w.sockets.length - 1];
+  assert.doesNotThrow(() => ws.onmessage({ data: JSON.stringify({ type: "data", key: "signups", data: { entries: [null, { name: "Ada", slug: "ada", rsvp: "maybe", updated: SENT_AT }] } }) }));
+  assert.equal(w.last().rsvp.state, "waiting");
+  let party = 0;
+  w.brain.on("party", () => { party++; });
+  for (let i = 0; i < 3; i++) w.brain._state({ type: "state", ver: 1, at: `2026-11-20T20:0${i}:00.000Z`, party: [], signups: null });
+  assert.equal(party, 0);
+});

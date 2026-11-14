@@ -206,12 +206,17 @@ const partyRow = (r) => r && typeof r.slug === "string" && SLUG.test(r.slug) && 
 const sheetFields = (f) => { const out = {}; for (const k of SHEET) { const e = f && f[k]; if (e && typeof e === "object" && "value" in e) out[k] = { value: e.value, visible: e.visible !== false, source: typeof e.source === "string" ? e.source : "board", at: e.at || null }; } return out; };
 function takeParty(rows) { if (!Array.isArray(rows)) return; B.party = rows.filter(partyRow).map((r) => ({ slug: r.slug, name: r.name, fields: sheetFields(r.fields), updated: r.updated || null })); emit("party", B.party.slice()); }
 const sameSignups = (a, b) => { try { return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); } catch (e) { return true; } };
-/* The live socket sends each saved sign-up document as { type: "data", key: "signups", data }; it is applied like a state's sign-ups. */
+/* A sign-up document is usable when every row is an object. Its age is its newest stamp (a row's updated, or the document's): a cached
+   /state or a late socket message older than the document in hand never replaces it, so the board never rolls back to an older answer. */
+const signupsOk = (d) => !!d && typeof d === "object" && Array.isArray(d.entries) && d.entries.every((e) => e && typeof e === "object");
+const signupsAge = (d) => { let n = Date.parse((d && d.updated) || "") || 0; for (const e of (d && Array.isArray(d.entries) ? d.entries : [])) { const t = Date.parse((e && e.updated) || "") || 0; if (t > n) n = t; } return n; };
+const signupsNewer = (d) => signupsOk(d) && !sameSignups(d, B.signups) && (!B.signups || signupsAge(d) >= signupsAge(B.signups));
+/* The live socket sends each saved sign-up document as { type: "data", key: "signups", data }; it is applied like a state's sign-ups
+   (no kept-answer retry here: that runs on /state only, so other members' clicks do not re-send this client's failed answer). */
 function onSignupsData(doc) {
-  if (!doc || typeof doc !== "object" || !Array.isArray(doc.entries) || sameSignups(doc, B.signups)) return false;
+  if (!signupsNewer(doc)) return false;
   B.signups = doc;
   emit("state", doc, B.ver);
-  setTimeout(mineFlush, 0);
   settle();
   journeyFromMirror();
   return true;
@@ -219,14 +224,14 @@ function onSignupsData(doc) {
 function onState(m) {
   /* The Worker's /state always says ver 1, so an equal ver is not proof of the same state: it is taken when its sign-ups differ from the ones
      in hand (otherwise a waiting web RSVP never reaches Saved or newer). An older ver is still refused. */
-  if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups && sameSignups(m.signups, B.signups))) return false;
+  if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups && !signupsNewer(m.signups))) return false;
   B.ver = m.ver; B.at = m.at || null;
   takeParty(m.party);
   if (m.partyDoc || m.tonight || m.timeline || m.stats) emit("data", { party: m.partyDoc, tonight: m.tonight, timeline: m.timeline, stats: m.stats, ver: m.ver });
   if (m.stamps) emit("library", { stamps: m.stamps, checked: m.checked || m.at || null });
   if (m.decide) emit("decide", m.decide);
   if (Array.isArray(m.launch)) { B.launch = m.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null })); emit("launch", B.launch.slice()); settleLaunch(); }
-  if (!m.signups) return false;
+  if (!m.signups || !signupsOk(m.signups) || (B.signups && signupsAge(m.signups) < signupsAge(B.signups))) return false;
   B.signups = m.signups;
   emit("state", m.signups, m.ver);
   setTimeout(mineFlush, 0);
