@@ -987,8 +987,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           slug: target.slug,
           name: target.name,
           field,
-          value,
-          visible: true,
+          value, // value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
           source: "discord",
           at: now,
         });
@@ -1064,8 +1063,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           slug: member.slug,
           name: byName,
           field: "launch_state",
-          value: state,
-          visible: true,
+          value: state, // value-only: launch_state keeps its visibility
           source: "discord",
           at: now,
         });

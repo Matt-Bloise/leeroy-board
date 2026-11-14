@@ -330,14 +330,20 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
   return partyDoc;
 }
 
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at }) {
+// `visible`: true or false only when the request explicitly sets the field's visibility (the owner's choice). Omitted (undefined), the field
+// keeps the visibility it has now, read inside the atomic commit below, so a value-only write can never un-hide a hidden field. A field with
+// no earlier visibility starts visible, as before.
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible, source = "board", at }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
+  const explicit = typeof visible === "boolean" ? visible : undefined;
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
   // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
+  // event.visible is set in compute() from the fresh read on every attempt, before the event row is bound.
+  const event = { slug, name: name || slug, field, valJson, visible: explicit !== undefined ? explicit : true, source: source || "board", at: now };
   const saved = await commitSheetWrite(env, {
-    event: { slug, name: name || slug, field, valJson, visible, source: source || "board", at: now },
+    event,
     compute: async (cur, partyDoc) => {
       // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
@@ -355,7 +361,10 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
         currentParty.push(memberSheet);
       }
       memberSheet.fields = memberSheet.fields || {};
-      memberSheet.fields[field] = { value, visible: Boolean(visible), source: source || "board", at: now };
+      const prior = memberSheet.fields[field];
+      // No explicit choice: keep what the field has. sheet-privacy.js treats exactly visible === false as hidden, so that is what is kept hidden.
+      event.visible = explicit !== undefined ? explicit : !(prior && typeof prior === "object" && prior.visible === false);
+      memberSheet.fields[field] = { value, visible: event.visible, source: source || "board", at: now };
       memberSheet.updated = now;
       return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
     },
@@ -364,7 +373,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
 
   await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json", "/api/state"]);
   await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
-  return { party: currentParty, at: now };
+  return { party: currentParty, at: now, visible: event.visible };
 }
 
 export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
@@ -496,19 +505,21 @@ const worker = {
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
           }
-          const visible = body.visible !== false;
+          // Only a boolean `visible` changes the field's visibility; without one the field keeps what it has (a value-only write never un-hides).
+          const asked = typeof body.visible === "boolean" ? body.visible : undefined;
           const value = body.value === undefined ? null : body.value;
           const now = new Date().toISOString();
+          let visible;
           try {
-            await recordSheetEventInD1(env, url.origin, {
+            ({ visible } = await recordSheetEventInD1(env, url.origin, {
               slug: m.slug,
               name: m.name,
               field,
               value,
-              visible,
+              visible: asked,
               source: "board",
               at: now,
-            });
+            }));
           } catch (e) {
             if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
             throw e;
@@ -1557,8 +1568,7 @@ const worker = {
                 slug: member.slug,
                 name: member.name,
                 field: "launch_state",
-                value: lState,
-                visible: true,
+                value: lState, // value-only: launch_state keeps its visibility
                 source: "board",
                 at: now,
               });
