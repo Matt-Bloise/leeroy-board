@@ -1364,7 +1364,10 @@ const worker = {
             if (typeof docJson === "string" && path.startsWith("/data/")) {
               try {
                 docJson = JSON.stringify(publicDataDoc(raw, JSON.parse(docJson), row.updated_at));
-              } catch {}
+              } catch {
+                // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent)
+                if (raw === "stats") return jsonResp({ error: "Document stats is unreadable" }, 500, cors);
+              }
             }
             if (typeof docJson === "string" && docJson.includes("{board:")) {
               try {
@@ -1400,7 +1403,7 @@ const worker = {
           await purgeWorkerCache(url.origin, ["/api/bootstrap", `/api/${area}/${raw}.json`, `/api/${area}/${raw}`]);
           const isPublicDoc = area === "atlas" ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw);
           // Only a public document's content goes to the sockets; any other key announces the change without its data.
-          await broadcastToRoom(env, isPublicDoc ? { type: "data", key: raw, data: body } : { type: "data", key: raw });
+          await broadcastToRoom(env, isPublicDoc ? { type: "data", key: raw, data: area === "data" ? publicDataDoc(raw, body, now) : body } : { type: "data", key: raw });
           return jsonResp({ ok: true, key: raw, updated_at: now }, 200, cors);
         }
       }

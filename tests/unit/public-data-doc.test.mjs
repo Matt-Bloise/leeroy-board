@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import worker, { purgeWorkerCache } from "../../infrastructure/worker/index.js";
 import { publicDataDoc, PUBLIC_STATS_KEYS } from "../../infrastructure/worker/public-docs.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
+import { buildStats } from "../../infrastructure/worker/feed.js";
+import { readFileSync } from "node:fs";
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async () => new Response("blocked in tests", { status: 599 });
@@ -62,14 +64,23 @@ test("arrays and non-objects pass through", () => {
   assert.equal(publicDataDoc("party", null, NEWER), null);
 });
 
+test("the allow list covers every key feed.js builds and every key of the committed data/stats.json, and nothing else but updated", () => {
+  const built = Object.keys(buildStats({ wiki_facts: 1, index_generated: OLD }, { totals: {}, window: [], wikiPages: 0 }, NEWER));
+  const committed = Object.keys(JSON.parse(readFileSync(new URL("../../data/stats.json", import.meta.url), "utf8")));
+  for (const k of [...built, ...committed]) assert.ok(PUBLIC_STATS_KEYS.includes(k), k);
+  assert.deepEqual(PUBLIC_STATS_KEYS.filter((k) => !built.includes(k) && !committed.includes(k)), ["updated"]);
+});
+
+const ADMIN = "admin-token-for-tests-0123456789abcdef";
 function makeEnv() {
   const DB = schemaDb();
   const put = (k, v, at) => DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(k, JSON.stringify(v), at);
   put("stats", STATS(), NEWER);
   put("party", PARTY(), NEWER);
   put("signups", { generated: OLD, rows: [] }, OLD);
-  const room = { fetch: async () => new Response("ok") };
-  return { DB, BOARD_ROOM: { idFromName: () => "r", get: () => room }, ALLOWED_ORIGINS: "" };
+  const sent = [];
+  const room = { fetch: async (_u, init) => { if (init && init.body) sent.push(init.body); return new Response("ok"); } };
+  return { DB, sent, BOARD_ADMIN_TOKEN: ADMIN, BOARD_ROOM: { idFromName: () => "r", get: () => room }, ALLOWED_ORIGINS: "" };
 }
 const quiet = async (fn) => { const e = console.error; console.error = () => {}; try { return await fn(); } finally { console.error = e; } };
 const get = async (env, path) => {
@@ -111,4 +122,23 @@ test("GET /api/bootstrap: stats without recent, no question text anywhere", asyn
   assert.equal(body.stats.generated, NEWER);
   assert.equal(body.party.generated, NEWER);
   assert.equal(JSON.stringify(body).includes("paladin trainer"), false);
+});
+
+test("GET /api/data/stats: an unparsable stored row is not served (it cannot be filtered)", async () => {
+  const env = makeEnv();
+  env.DB.raw.prepare("UPDATE kv_state SET json = ? WHERE key = 'stats'").run(JSON.stringify(STATS()).slice(0, -3));
+  await purgeWorkerCache(ORIGIN, ["/api/data/stats"]);
+  const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api/data/stats`, { headers: { "CF-Connecting-IP": "203.0.113.22" } }), env, ctx));
+  assert.equal(res.status, 500);
+  assert.equal((await res.text()).includes("paladin trainer"), false);
+});
+
+test("admin PUT /api/data/stats stores the body as sent but broadcasts only its public form", async () => {
+  const env = makeEnv();
+  const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api/data/stats`, { method: "PUT", headers: { Authorization: `Bearer ${ADMIN}`, "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.23" }, body: JSON.stringify(STATS()) }), env, ctx));
+  assert.equal(res.status, 200, await res.clone().text());
+  const stored = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'stats'").get().json);
+  assert.equal(stored.recent.length, 1);
+  assert.ok(env.sent.length >= 1, "one broadcast");
+  for (const b of env.sent) assert.equal(b.includes("paladin trainer"), false, b);
 });
