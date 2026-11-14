@@ -79,15 +79,21 @@ export async function privateTurnAccess(env, row, { member = null, ws = null, se
     if (!/no such table/i.test(String((e && e.message) || e))) throw e;
   }
   const has = (h) => hashes.includes(h);
+  // "legacy" is a turn listed in ask_turn_legacy (it existed before migration 0009 wrote asker hashes), as data-rights.js decides it; a turn that merely
+  // lacks a hash row (a failed write, a deleted row) is not legacy and is not readable by name or by id alone.
+  let legacy = false;
+  try { legacy = Boolean(await env.DB.prepare("SELECT 1 AS ok FROM ask_turn_legacy WHERE intent_id = ?").bind(String(row.id)).first()); }
+  catch (e) { if (!/no such table/i.test(String((e && e.message) || e))) throw e; }
   if (member && member.slug && has(await slugAskerHash(env, String(member.slug)))) return "ok";
   if (ws && ws.discord_user_id && has(await userHash(env, String(ws.discord_user_id)))) return "ok";
-  if (!hashes.length && row.by_name !== "Visitor") {
-    // a member turn written before migration 0009 recorded asker hashes: the legacy name match, for the member's own key or session only
-    const mine = [member && member.name, member && member.slug, ws && ws.name].filter(Boolean);
+  if (legacy && row.by_name !== "Visitor") {
+    // a member turn from before migration 0009: the legacy name match, for the member's own key only (a web session's display name is not checked)
+    const mine = [member && member.name, member && member.slug].filter(Boolean);
     if (mine.includes(row.by_name)) return "ok";
   }
   if (row.by_name === "Visitor") {
-    if (!hashes.length) return "ok"; // asked before guest secrets existed
+    // A guest turn with no hash row predates guest secrets: insertAskTurn never writes a guest turn without its secret's hash (no fallback for guests).
+    if (legacy || !hashes.length) return "ok";
     if (typeof secret === "string" && GUEST_SECRET_RE.test(secret) && has(await guestSecretHash(env, secret))) return "ok";
     return "reload";
   }
@@ -108,7 +114,9 @@ export async function insertAskTurn(env, row, who) {
   try {
     await env.DB.batch([ins, ...hashes.map((h) => env.DB.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").bind(String(row.id), h))]);
   } catch (e) {
-    if (!/no such table/i.test(String((e && e.message) || e))) throw e;
+    // A guest's turn must never exist without its secret's hash: privateTurnAccess reads "no hash row" as "asked before guest secrets". So a guest ask fails here.
+    if (who && who.guestSecret) throw e;
+    if (!/no such table: ask_turn_askers/i.test(String((e && e.message) || e))) throw e;
     console.error("ask_turn_askers missing: apply migration 0009");
     await ins.run();
   }

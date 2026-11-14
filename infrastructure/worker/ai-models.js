@@ -1382,10 +1382,9 @@ export async function answerWithAi({
     if (share) {
       await broadcastToRoom(env, { type: "data", key: "stats", intent: completedItem });
       await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, ask: completedItem });
-    } else if (isMember === false) {
-      // A guest's private answer goes only to the socket that sent this ask's id (forAsk); everyone else gets the bare nudge.
-      await broadcastToRoom(env, { type: "ask", slug: broadcastSlug, forAsk: String(intentId), ask: completedItem });
     } else {
+      // A private answer never travels on the socket, not even to "its" guest socket: the room can only check the ask id, and the id alone is not
+      // proof of ownership. Every socket gets the bare nudge; the asking page re-reads its turn over HTTP with its key or its guest secret.
       await broadcastToRoom(env, { type: "ask", slug: broadcastSlug });
     }
 

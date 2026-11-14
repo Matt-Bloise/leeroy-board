@@ -1085,7 +1085,7 @@ const worker = {
           }
         } else if (auth.ok && auth.member) {
           row = await env.DB.prepare(
-            "SELECT * FROM ask_turns WHERE by_name = ? OR by_name = ? OR share = 1 ORDER BY created_at DESC LIMIT 1"
+            "SELECT * FROM ask_turns WHERE ((by_name = ? OR by_name = ?) AND by_name <> 'Visitor') OR share = 1 ORDER BY created_at DESC LIMIT 1" // a member named "Visitor" is not every guest
           ).bind(auth.member.name, auth.member.slug).first();
         } else {
           // No key and no id: the visitor is anonymous. The latest shared turn is a member's question and answer, so it is for signed-in
@@ -1113,7 +1113,7 @@ const worker = {
         }
 
         if (!row) {
-          return jsonResp({ ask: null, limit: { left: limitLeft }, isPrPreview, aiProvider: auth.ok ? resolveAiProvider(env) : "workers-ai" }, 200, cors);
+          return jsonResp({ ask: null, limit: { left: limitLeft }, isPrPreview, aiProvider: auth.ok ? resolveAiProvider(env) : "workers-ai" }, 200, { ...cors, "Cache-Control": "no-store" });
         }
         const status =
           row.status === "thinking" || row.status === "pending"
@@ -1149,7 +1149,7 @@ const worker = {
             aiProvider: resolveAiProvider(env),
           },
           200,
-          cors
+          { ...cors, "Cache-Control": "no-store" } // a turn is personal, and its URL may carry a guest secret: never cached
         );
       }
 

@@ -115,3 +115,70 @@ test("privateTurnAccess: no salt or no row is never ok", async () => {
   const env = await makeEnv();
   assert.equal(await privateTurnAccess(env, null, {}), "none");
 });
+
+// ---- from the outside review of the first version ----
+import { readFileSync as readSrc } from "node:fs";
+
+test("R1: the page sends its key on /ask?id= too, so a member's own private answer shows", () => {
+  const src = readSrc(new URL("../../js/brain.js", import.meta.url), "utf8");
+  assert.match(src, /const routePath = String\(route\)\.split\("\?"\)\[0\]/);
+  assert.match(src, /routePath === "\/ask"/);
+  assert.doesNotMatch(src, /\|\| route === "\/ask" \|\|/);
+});
+
+test("R2: a guest's private answer never travels on the socket, not even to a socket that knows the ask id", async () => {
+  const { answerWithAi } = await import("../../infrastructure/worker/ai-models.js");
+  const env = await makeEnv();
+  const sent = [];
+  env.BOARD_ROOM = { idFromName: () => "r", get: () => ({ fetch: async (_u, init) => { if (init && init.body) sent.push(String(init.body)); return new Response("ok"); } }) };
+  const id = "aaaaaaaa-bbbb-4ccc-8ddd-0000000000a2";
+  await insertAskTurn(env, { id, byName: "Visitor", question: Q, provider: "workers-ai", share: false, createdAt: new Date().toISOString() }, { guestSecret: "a".repeat(64) });
+  const q = [console.error, console.warn, console.log]; console.error = console.warn = console.log = () => {};
+  try { await answerWithAi({ env, origin: ORIGIN, intentId: id, by: "Visitor", question: Q, provider: "workers-ai", share: false, isMember: false }); }
+  finally { [console.error, console.warn, console.log] = q; }
+  assert.ok(sent.length > 0);
+  for (const m of sent) { assert.ok(!m.includes("zq"), m); assert.ok(!m.includes("forAsk"), m); }
+});
+
+test("R3: a guest turn listed in ask_turn_legacy reads by id (a new guest turn always has its hash row: see the next test)", async () => {
+  const env = await makeEnv();
+  const id = "aaaaaaaa-bbbb-4ccc-8ddd-0000000000a3";
+  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, share, created_at) VALUES (?, 'Visitor', ?, 'zq a', 'answered', 0, '2026-10-01T00:00:00Z')").run(id, Q);
+  env.DB.raw.prepare("INSERT INTO ask_turn_legacy (intent_id) VALUES (?)").run(id);
+  assert.equal((await api(env, "GET", `/ask?id=${id}`)).body.ask.text, Q);
+});
+
+test("R3: a guest ask whose secret hash cannot be stored fails; no turn is written without it", async () => {
+  const env = await makeEnv();
+  env.DB.raw.exec("DROP TABLE ask_turn_askers");
+  const r = await api(env, "POST", "/intent", "anon", { kind: "ask", patch: { text: Q } });
+  assert.ok(r.status >= 500, `status ${r.status}`);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM ask_turns").get().n, 0);
+});
+
+test("R4a: a member turn without a hash row, not legacy, is not read by name; legacy is read by the member's own key only", async () => {
+  const env = await makeEnv();
+  const id = "aaaaaaaa-bbbb-4ccc-8ddd-0000000000a4";
+  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, answer, status, share, created_at) VALUES (?, 'red-fox', ?, 'zq a', 'answered', 0, '2026-10-01T00:00:00Z')").run(id, Q);
+  assert.equal((await api(env, "GET", `/ask?id=${id}`, "red")).body.ask, null, "no hash, not legacy");
+  env.DB.raw.prepare("INSERT INTO ask_turn_legacy (intent_id) VALUES (?)").run(id);
+  assert.equal((await api(env, "GET", `/ask?id=${id}`, "red")).body.ask.text, Q, "legacy, own key");
+  assert.equal((await api(env, "GET", `/ask?id=${id}`, "blue")).body.ask, null, "legacy, another key");
+});
+
+test("R4b: a member named Visitor does not get guests' private turns from the no-id latest read", async () => {
+  const env = await makeEnv();
+  env.DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES ('visitor', ?, '2026-11-01T00:00:00Z')").run(await sha256Hex(`${KEY_SALT}:member-key-for-tests-visitor-0123456`));
+  WHO.visitor = { Authorization: "Board member-key-for-tests-visitor-0123456" };
+  const g = await api(env, "POST", "/intent", "anon", { kind: "ask", patch: { text: Q } });
+  answered(env, g.body.id);
+  const r = await api(env, "GET", "/ask", "visitor");
+  assert.ok(!JSON.stringify(r.body).includes("zq"), JSON.stringify(r.body));
+});
+
+test("R6: GET /ask answers are never cached", async () => {
+  const env = await makeEnv();
+  const init = { headers: { "CF-Connecting-IP": "198.51.100.250" } };
+  const r = await worker.fetch(new Request(`${ORIGIN}/api/ask?id=aaaaaaaa-bbbb-4ccc-8ddd-0000000000ff`, init), env, ctx);
+  assert.equal(r.headers.get("Cache-Control"), "no-store");
+});

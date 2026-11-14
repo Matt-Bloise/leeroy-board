@@ -172,7 +172,8 @@ async function call(method, route, body) {
   const headers = {};
   /* the key goes only to an allowlisted origin or the page's own origin (the Discord Activity proxy answers /api there), never anywhere else */
   const keyOk = B.base && (B.base.http.startsWith("/") || brainOrigin(B.base.http));
-  if (B.key && keyOk && (route === "/me" || route === "/intent" || route === "/ask" || route === "/probe" || route === "/sheet" || route === "/dispatch")) headers.Authorization = `Board ${B.key}`;
+  const routePath = String(route).split("?")[0]; /* "/ask?id=..." is the /ask route: a member's own private answer needs the key */
+  if (B.key && keyOk && (routePath === "/me" || routePath === "/intent" || routePath === "/ask" || routePath === "/probe" || routePath === "/sheet" || routePath === "/dispatch")) headers.Authorization = `Board ${B.key}`;
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const payload = body === undefined ? undefined : JSON.stringify(safe(body, route));
   let r, data = null;
