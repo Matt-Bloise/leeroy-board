@@ -85,5 +85,5 @@ export function stripVerdictOpener(answer, { mixed = false } = {}) {
   if (!m) return text;
   const rest = text.slice(m[0].length);
   if (!/[A-Za-z]/.test(rest.slice(0, 40))) return text; // nothing but a verdict: leave it
-  return `${m[1].includes("**") ? "**" : ""}${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
+  return `${(m[0].match(/\*\*/g) || []).length === 1 ? "**" : ""}${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
 }

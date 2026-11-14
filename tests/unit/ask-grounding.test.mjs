@@ -58,6 +58,7 @@ test("stripVerdictOpener drops a leading Yes or No for a mixed group only", () =
   assert.equal(stripVerdictOpener("Yes, a group can level together.", { mixed: false }), "Yes, a group can level together.");
   assert.equal(stripVerdictOpener("Yesterday the post went up.", { mixed: true }), "Yesterday the post went up.");
   assert.equal(stripVerdictOpener("Yes.", { mixed: true }), "Yes.");
+  assert.equal(stripVerdictOpener("**Yes,** the group can enter.", { mixed: true }), "The group can enter.");
   // a verdict word without punctuation after it is the first word of a sentence, not a verdict
   for (const t of ["No Druid trainer in Durotar; Thunder Bluff has three.", "No one has signed up.", "No more than five players fit.", "Yes and no: it depends on the ruleset.", "No worries, the library has it.", "Nobody tanks there.", "Yes please"]) {
     assert.equal(stripVerdictOpener(t, { mixed: true }), t, t);

@@ -231,19 +231,19 @@ function badPhrases(text, allowed) {
   for (const m of clean.matchAll(PHRASE_RE)) {
     const whole = m[0].replace(/'s\b/g, "'s");
     if (allowed.includes(unpossess(whole).toLowerCase()) || allowed.includes(whole.toLowerCase())) continue;
-    const atSentenceStart = /(^|[.!?]\s+)$/.test(clean.slice(0, m.index));
     // A possessive ends a name: "Street Rat's Holy Shield" is two names, each checked on its own.
     for (const seg of whole.split(/'s\b\s*/).filter(Boolean)) {
       // "in", "for" and "to" join a name to a place ("Lord Grayson Shadowbreaker in Stormwind", "Call to Arms"): each side is checked on its own, even when it is one word.
-      // ("of" and "the" sit inside names and stay.) A one-word first piece at the start of a sentence is ordinary prose ("Vendors in Orgrimmar sell ...") and is not checked.
+      // ("of" and "the" sit inside names and stay.)
       const pieces = seg.split(/\s+(?:in|for|to)\s+/);
-      pieces.forEach((piece, pi) => {
+      pieces.forEach((piece) => {
         const full = words(piece).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
         if (allowed.includes(full.toLowerCase())) return;
         const core = trimPhrase(full, true).map(unpossess);
         if (core.length < 2) {
-          if (pieces.length < 2 || core.length === 0 || (pi === 0 && atSentenceStart)) return;
+          if (pieces.length < 2 || core.length === 0) return;
           const w = core[0].toLowerCase();
+          if (w.length <= 3 || GENERIC.has(w)) return; // "Go to Thunder Bluff": a short word or a plain prose word is not a name
           if (!(tokens(allowed).has(w) || tokens(allowed).has(w.replace(/s$/, "")) || tokens(allowed).has(w + "s"))) bad.push(full);
           return;
         }

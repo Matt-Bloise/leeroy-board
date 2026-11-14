@@ -29,7 +29,7 @@ const finish = (env, i, rawAnswer, by = "Red Fox") => finishAnswerText(env, { ra
 
 test("the name check catches an invented name of the shape 'One to One' and 'General Name'; ordinary prose stays clean", () => {
   const allowed = "stormwind trainers; thunder bluff; the library lists paladins in stormwind";
-  for (const t of ["Take Call to Arms today.", "Try Ode for Thunderfury soon.", "Farm Rage in Winterspring now.", "Meet General Vexnar at the gate."]) assert.ok(unknownNames(t, allowed).length > 0, t);
+  for (const t of ["Take Call to Arms today.", "Try Ode for Thunderfury soon.", "Farm Rage in Winterspring now.", "Meet General Vexnar at the gate.", "Zorblax in Stormwind sells shields."]) assert.ok(unknownNames(t, allowed).length > 0, t);
   assert.deepEqual(unknownNames("Trainers in Stormwind teach Paladins.", allowed), []);
   assert.deepEqual(unknownNames("Paladins in Stormwind are listed.", allowed), []);
   assert.deepEqual(unknownNames("Go to Thunder Bluff.", allowed), []);
