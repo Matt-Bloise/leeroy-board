@@ -426,6 +426,42 @@ export function verifyFinished(text, { used = [], sheet = null, askerBuild = nul
   }
 }
 
+// ---- which facts, and whether to name the build -----------------------------------------------------------------------------
+// The first composed eval (30 held-out questions) showed the facts block dumping loosely related facts: selectRelevant keeps every hit above
+// max(0.12, 0.4 x best) coverage, which was nearly all of them. The composed answer quotes facts verbatim, so a fact it shows must answer the question:
+// only facts that cover at least COMPOSED_FLOOR of the question's weighted words and COMPOSED_REL_BEST of the best fact's coverage, best first, at most
+// COMPOSED_MAX_FACTS. When the best fact covers less than COMPOSED_FLOOR, nothing is shown and the answer is the code-written refusal (no model call).
+export const COMPOSED_FLOOR = 0.4;
+export const COMPOSED_REL_BEST = 0.8;
+export const COMPOSED_MAX_FACTS = 2;
+// scored: [{ h, c }] the hits selectRelevant kept and their coverage (0 to 1), in ranker order. Returns the hits to render, in order.
+export function selectComposedFacts(scored, { floor = COMPOSED_FLOOR, relBest = COMPOSED_REL_BEST, max = COMPOSED_MAX_FACTS } = {}) {
+  const list = (Array.isArray(scored) ? scored : []).map((x, i) => ({ h: x && x.h, c: Number(x && x.c), i })).filter((x) => x.h && Number.isFinite(x.c));
+  const best = list.reduce((b, x) => Math.max(b, x.c), 0);
+  if (best < floor) return [];
+  const bar = Math.max(floor, relBest * best);
+  return list.filter((x) => x.c >= bar).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, max).map((x) => x.h);
+}
+// buildRelevant answers "relevant" by default (it only says no when the asker claims another class or race), so on its own it named the build in
+// 27 of 30 answers where the judge found it relevant in 11. The composed opener names the build only for a real reason: the question is about the build
+// (buildRelevant's reason is not "default"), or a fact shown is about the asker's own class, race, spec or professions.
+const BUILD_WORD_RE = /[a-z]+/g;
+export function buildIsTopical(reason, facts, askerBuild) {
+  if (!askerBuild) return false;
+  if (reason && reason !== "default") return true;
+  const words = new Set();
+  for (const k of ["class", "race", "spec"]) for (const w of lc(norm(askerBuild[k])).match(BUILD_WORD_RE) || []) if (w.length > 2) words.add(w);
+  for (const p of Array.isArray(askerBuild.professions) ? askerBuild.professions : []) for (const w of lc(norm(p)).match(BUILD_WORD_RE) || []) if (w.length > 2) words.add(w);
+  if (!words.size) return false;
+  for (const f of Array.isArray(facts) ? facts : []) {
+    const p = factParts(f);
+    if (!p) continue;
+    const hay = new Set(lc(`${p.page} ${p.title} ${p.label} ${p.value}`).match(BUILD_WORD_RE) || []);
+    for (const w of words) if (hay.has(w) || hay.has(`${w}s`)) return true;
+  }
+  return false;
+}
+
 // ---- composing -------------------------------------------------------------------------------------------------------------
 // Final answer = opener + facts block + Sources tail. rawOpener is the model's text (or "" when the call failed). Returns
 // { ok, text, opener, openerSource, ids, used, verify, reason }. ok false means nothing renderable or the proof failed: the caller sends the refusal.

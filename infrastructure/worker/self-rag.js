@@ -121,8 +121,10 @@ export function selectRelevant(hits, words, hays) {
   const best = scored.reduce((b, x) => Math.max(b, x.c), 0);
   if (best < ABSTAIN_BELOW) return none({ best, absent: absent.length });
   const floor = Math.max(FACT_FLOOR, FACT_REL_BEST * best);
-  const kept = scored.filter((x) => x.c >= floor).map((x) => x.h);
-  return { hits: kept, abstain: kept.length === 0, best, kept: kept.length, dropped: list.length - kept.length, absent: absent.length };
+  const keptScored = scored.filter((x) => x.c >= floor);
+  const kept = keptScored.map((x) => x.h);
+  // coverage: the share of the question each kept hit covers, parallel to hits (ASK_COMPOSED ranks and thresholds by it; the hits themselves are unchanged)
+  return { hits: kept, coverage: keptScored.map((x) => x.c), abstain: kept.length === 0, best, kept: kept.length, dropped: list.length - kept.length, absent: absent.length };
 }
 
 // ---- prompt text ----------------------------------------------------------------------------------------------------------
