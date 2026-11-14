@@ -250,7 +250,8 @@ function badPhrases(text, allowed) {
         if (allowed.includes(core.join(" ").toLowerCase())) return;
         // Every word of the name is individually grounded and the phrase is just grounded things side by side ("Paladin Deadmines").
         const sig = core.filter((x) => !CONNECTORS.has(x.toLowerCase()));
-        if (sig.every((x) => tokens(allowed).has(x.toLowerCase())) && sig.length <= 3) return;
+        const grounded = (x) => { const w = x.toLowerCase(), t = tokens(allowed); return t.has(w) || t.has(w.replace(/s$/, "")) || t.has(w + "s"); }; // plural or singular of a grounded word is grounded
+        if (sig.every(grounded) && sig.length <= 3) return;
         bad.push(full);
       });
     }
