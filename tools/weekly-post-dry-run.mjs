@@ -33,7 +33,7 @@ const docs = live
   ? { signups: await remote("/api/data/signups"), party: await remote("/api/data/party"), classes: await remote("/api/library/classes.json") }
   : { signups: local("data/signups.json"), party: local("data/party.json"), classes: local("data/library/classes.json") };
 
-const post = composeWeeklyPost({ ...docs, playAt: plan.playAt });
+const post = composeWeeklyPost({ ...docs, playAt: plan.playAt, now });
 const meta = { source: live ? api : "repo", week: plan.week, playAt: new Date(plan.playAt).toISOString(), postAt: new Date(plan.postAt).toISOString(), characters: post.text.length, max: POST_MAX };
 if (argv.includes("--json")) { console.log(JSON.stringify({ ...meta, ...post }, null, 1)); process.exit(0); }
 console.log(`weekly post dry run: ${meta.source}, play week ${meta.week} (play night ${meta.playAt}, posts from ${meta.postAt}), ${meta.characters} of ${POST_MAX} characters. Nothing is posted.\n`);

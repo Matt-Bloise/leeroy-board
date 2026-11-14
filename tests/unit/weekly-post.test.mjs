@@ -20,6 +20,8 @@ const CLASSES = {
       fact("paladin.role", "tank, healer or damage dealer in the fictional realm of the test", "must", [ref(1)]),
       fact("paladin.holy.lay_on_hands", "heals the target for nine fictional units, once per hour", "good", [ref(2)]),
       fact("paladin.tank.taunt", "the fictional taunt holds three enemies for a few seconds", "good", [ref(3), ref(9), ref(3)]),
+      fact("paladin.tank.shield_wall", "a fictional cooldown that halves damage taken while it lasts", "good", [ref(8)]),
+      fact("paladin.tank.medal", "11-point medal, instant, a fictional talent tier for tanks", "good", [ref(8)]),
       fact("paladin.lore.quest", "a fictional quest at level twelve that nobody needs at all", "good", [ref(4)]),
       fact("paladin.long", "x ".repeat(TIP_MAX), "must", [ref(5)]),
       fact("paladin.short", "16-point medal", "must", [ref(5)]),
@@ -35,11 +37,14 @@ const PARTY = () => ({ members: [
   { name: "Blue Owl", class_key: "mage", class: "Mage", race: "Gnome", role: "damage", board_line: "Gnome Frost Mage" },
   { name: "Grey Cat", class_key: "priest", class: "Priest", race: "Dwarf", role: "healer", board_line: "Dwarf Holy Priest" },
 ] });
-const SIGNUPS = () => ({ entries: [
+const FRESH = "2026-11-18T00:00:00.000Z"; // the sign-up card changed this week
+const SIGNUPS = () => ({ updated: FRESH, entries: [
   { name: "=Red Fox=", rsvp: "in", when: "8pm" }, { name: "Blue Owl", rsvp: "maybe" }, { name: "Grey Cat", rsvp: "out" }, { name: "Green Elk", rsvp: "late" },
 ] });
 const PLAY = Date.parse("2026-11-20T23:00:00Z");
-const docs = (over = {}) => ({ signups: SIGNUPS(), party: PARTY(), classes: CLASSES, playAt: PLAY, ...over });
+const NOW = Date.parse("2026-11-19T23:30:00Z");
+// a test's own sign-ups count as this week's unless it says otherwise
+const docs = (over = {}) => ({ party: PARTY(), classes: CLASSES, playAt: PLAY, now: NOW, ...over, signups: over.signups ? { updated: FRESH, ...over.signups } : SIGNUPS() });
 
 test("the post names who signed up (not who is out), with the board's names, and counts only those who are in", () => {
   const { text } = composeWeeklyPost(docs());
@@ -71,11 +76,34 @@ test("F8: every distinct https source is cited, at most three", () => {
   assert.deepEqual(sourcesOf(many).map((s) => s.id), ["S1", "S2", "S3"]);
 });
 
-test("tip pool: core facts plus good facts whose key names the role or spec; never too long, too short, unsourced or another class's", () => {
+test("tip pool: the build's own actionable facts first, no jargon, never too long, too short, unsourced or another class's", () => {
   const keys = (m) => { const s = new Set(); for (let w = 0; w < 24; w++) s.add(pickTip(CLASSES, m, w).key); return [...s].sort(); };
-  assert.deepEqual(keys(PARTY().members[0]), ["paladin.role", "paladin.tank.taunt"]);
-  assert.deepEqual(keys({ ...PARTY().members[0], role: "healer", spec: "Holy" }), ["paladin.holy.lay_on_hands", "paladin.role"]);
+  assert.deepEqual(keys(PARTY().members[0]), ["paladin.tank.shield_wall", "paladin.tank.taunt"], "the tank's own actionable facts; the medal fact is jargon");
+  assert.deepEqual(keys({ ...PARTY().members[0], role: "healer", spec: "Holy" }), ["paladin.holy.lay_on_hands"]);
+  assert.deepEqual(keys({ class_key: "mage", role: "damage" }), ["mage.role"], "no actionable fact: the core fact");
   assert.equal(pickTip(CLASSES, { class_key: "rogue", role: "damage" }, 1), null);
+});
+
+test("a tip reads as one plain sentence: the library's provenance at the end goes, the source link stays", async () => {
+  const { plainValue, JARGON_RE } = await import("../../infrastructure/worker/weekly-post.js");
+  assert.equal(plainValue("level 10, 20 minute cooldown (Oct 15 deep dive; client 70450)"), "level 10, 20 minute cooldown");
+  assert.equal(plainValue("heals the party (rank 3) (Sep 24 notes)"), "heals the party (rank 3)", "only provenance is removed");
+  assert.equal(plainValue("a value with (an aside) in the middle"), "a value with (an aside) in the middle");
+  for (const j of ["16-point medal", "row 5, needs Ice Lance", "client 70450", "Blizzard has not said yet"]) assert.ok(JARGON_RE.test(j), j);
+  assert.ok(!JARGON_RE.test("new trainer spell at 24, 1.5 s cast"));
+  const { text } = composeWeeklyPost(docs());
+  assert.match(text, /- Red Fox \(Human Protection Paladin\)\. Tank, (taunt|shield wall): [^\n]+\. \(Source \d/);
+});
+
+test("a sign-up card older than 7 days is not this week's news: the post invites sign-ups and tips every build", () => {
+  const { text, facts } = composeWeeklyPost(docs({ signups: { ...SIGNUPS(), updated: "2026-11-01T00:00:00.000Z" } }));
+  assert.match(text, /Nobody has signed up for this week yet\. The sign-up card is in this channel: In, Tentative or Running late\./);
+  assert.doesNotMatch(text, /Signed up \(/);
+  assert.doesNotMatch(text, /Roles on the board/);
+  assert.match(text, /One tip for each build on the board, from the library:/);
+  assert.equal(facts.length, 3, "one tip for each of the three builds");
+  const noDate = composeWeeklyPost(docs({ signups: { entries: SIGNUPS().entries, updated: undefined, generated: undefined } }));
+  assert.match(noDate.text, /for this week yet/, "a card with no date is not counted as fresh");
 });
 
 test("F11: a role named after an object property does not throw", () => {
@@ -129,10 +157,11 @@ test("F7: any number of sign-ups fits one post; no tip heading without tips", ()
   }
 });
 
-test("nobody signed up: one plain line, no roles, no tips", () => {
+test("nobody signed up on a fresh card: one plain line, no roles, a tip for each build on the board", () => {
   const { text, facts } = composeWeeklyPost(docs({ signups: { entries: [] } }));
   assert.match(text, /Nobody has signed up yet\./);
-  assert.equal(facts.length, 0);
+  assert.doesNotMatch(text, /Roles on the board/);
+  assert.equal(facts.length, 3);
 });
 
 test("schedule: early, due, already posted, and next week", () => {

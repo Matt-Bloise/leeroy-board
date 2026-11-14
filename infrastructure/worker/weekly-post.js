@@ -96,18 +96,37 @@ const specWords = (m) => String((m && m.spec) || "").toLowerCase().split(/[^a-z]
 const quotable = (f, classKey) => f && typeof f.key === "string" && f.key.startsWith(`${classKey}.`) && typeof f.value === "string"
   && f.value.length >= TIP_MIN && f.value.length <= TIP_MAX && /\p{L}{3,}.*\s.*\s.*\s/u.test(f.value) && sourcesOf(f).length > 0;
 
-// One library fact for a build, from its class page: a sentence-sized value quoted whole, with https sources. The pool is the page's core
-// facts (depth must) plus the good facts whose key names the build's role or a word of its spec. The week picks one.
+// Library shorthand a friend reading Discord cannot use (talent tiers, client builds, formula coefficients); such a fact is never the tip.
+export const JARGON_RE = /\bmedal\b|\brow \d|\bcoefficient\b|\bclient \d|\bhotfix\b|\branks? \d|\bdesign pillars?\b|\bspell \d{3,}|\bhas not said\b|\buntestable\b|\bdisputed\b/i; // also: a fact about what is not known is no tip
+// A fact a player can act on: when they get something, how it casts, what it does in a fight, what to prioritise.
+export const ACTION_RE = /\b(level \d+|at \d+|instant|cast|cooldown|slow|stun|root|heal(s|ing)?|taunt|threat|interrupt|trainer|first|priority|covers|lasts?)\b/i;
+// The library's provenance at the end of a value ("(Oct 15 notes; Wowhead rank 1 tooltip)") is citation material: the source link carries it.
+const PROVENANCE_RE = /\b(notes?|client|deep dive|wowhead|tavern|method|guide|hotfix|baseline|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i;
+export function plainValue(v) {
+  let t = String(v == null ? "" : v).trim();
+  for (let i = 0; i < 2; i++) { const m = /\s*\(([^()]*)\)\s*$/.exec(t); if (m && PROVENANCE_RE.test(m[1])) t = t.slice(0, m.index).trim(); else break; }
+  return t.replace(/[;,]\s*$/, "");
+}
+const tipText = (subject, value) => { const v = plainValue(value); return `${subject}: ${v}${/[.!?]$/.test(v) ? "" : "."}`; };
+
+// One library fact for a build, from its class page, with https sources, as the most actionable one there is:
+//   1. a good fact on the build's own spec or role that a player can act on (a level, a cast, a cooldown, a priority), with no jargon;
+//   2. otherwise any such actionable fact of the class;
+//   3. otherwise the page's core facts (role, difficulty), without jargon.
+// The week picks one within the first tier that has any, so the tip changes from week to week.
 export function pickTip(classesDoc, member, weekN) {
   const ck = member && member.class_key;
   if (!ck) return null;
   const page = pages(classesDoc).find((p) => p && p.id === `classes/${ck}`);
   const role = roleOf(member);
   const words = [...(role && own(ROLE_WORDS, role) ? ROLE_WORDS[role] : []), ...specWords(member)];
-  const pool = factsOf(page).filter((f) => quotable(f, ck)).filter((f) => f.depth === "must" || (f.depth === "good" && words.some((w) => keyWords(f.key).has(w))));
-  if (!pool.length) return null;
+  const ok = factsOf(page).filter((f) => quotable(f, ck) && !JARGON_RE.test(f.value));
+  const actionable = (f) => f.depth === "good" && ACTION_RE.test(plainValue(f.value));
+  const tiers = [ok.filter((f) => actionable(f) && words.some((w) => keyWords(f.key).has(w))), ok.filter(actionable), ok.filter((f) => f.depth === "must")];
+  const pool = tiers.find((t) => t.length);
+  if (!pool) return null;
   const f = pool[((weekN % pool.length) + pool.length) % pool.length];
-  return { page: page.id, key: f.key, subject: subjectOf(f.key, ck), value: f.value, sources: sourcesOf(f) };
+  return { page: page.id, key: f.key, subject: subjectOf(f.key, ck), value: f.value, text: tipText(subjectOf(f.key, ck), f.value), sources: sourcesOf(f) };
 }
 
 const joinOr = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
@@ -131,14 +150,22 @@ function matcher(members) {
 }
 
 // Documents in, post out. signups and party are the public documents; classes is the library blob of that name.
-export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
+// The sign-up card counts as this week's only if it changed in the last 7 days; an older card (launch night's, say) is not news, so the post invites
+// sign-ups for this week and gives a tip for every build on the board instead of listing who signed up then.
+export const SIGNUPS_FRESH_MS = 7 * 24 * 3600 * 1000;
+export function signupsAreFresh(signups, now) {
+  const at = Date.parse((signups && (signups.updated || signups.generated)) || "");
+  return Number.isFinite(at) && Number.isFinite(now) && now - at <= SIGNUPS_FRESH_MS;
+}
+export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.now() } = {}) {
+  const fresh = signupsAreFresh(signups, now);
   const facts = [], skipped = [];
   const entries = Array.isArray(signups && signups.entries) ? signups.entries : [];
   const members = Array.isArray(party && party.members) ? party.members : [];
   const find = matcher(members);
   // One row per person: a second sign-up for the same member (or the same name) is dropped.
   const seen = new Set(), signed = [];
-  for (const e of entries) {
+  for (const e of fresh ? entries : []) {
     if (!e || typeof e.name !== "string" || !SIGNED.includes(e.rsvp) || !RSVP_STATES.includes(e.rsvp)) continue;
     const m = find(e.name);
     if (!exactKey(e.name)) continue;
@@ -152,8 +179,10 @@ export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
   const tail = ["", "Want more on your build? Ask Leeroy with /ask."];
   const body = [];
   const tips = [];
+  // whose builds get a tip: the people signed up, or, with no current sign-ups, every build on the board
+  const tipPeople = signed.length ? signed : members.filter((m) => m && m.name && m.class_key).map((m) => ({ m, name: plain(cleanName(m.name)), e: { rsvp: "in" } }));
   if (!signed.length) {
-    body.push("Nobody has signed up yet. The sign-up card is in this channel.");
+    body.push(fresh ? "Nobody has signed up yet. The sign-up card is in this channel." : "Nobody has signed up for this week yet. The sign-up card is in this channel: In, Tentative or Running late.");
   } else {
     body.push(`Signed up (${signed.length}): ${joinList(signed.map((s) => `${s.name}${s.e.rsvp === "in" ? "" : ` (${STATE_WORD[s.e.rsvp]})`}`))}.`);
     const count = { tank: 0, healer: 0, damage: 0 };
@@ -166,21 +195,22 @@ export function composeWeeklyPost({ signups, party, classes, playAt } = {}) {
       const roles = ROLES.map((r) => `${ROLE_LABEL[r]} ${count[r]}`).join(", ");
       body.push(`Roles on the board for those who are in: ${roles}${noRole ? ` (${noRole} with no role on the board)` : ""}.${missing.length ? ` No ${joinOr(missing)} among them yet.` : ""}`);
     }
-    const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
-    for (const s of signed) {
-      if (!s.m || !s.m.class_key) { skipped.push({ name: s.name, why: "no build on the board" }); continue; }
-      const tip = pickTip(classes, s.m, week);
-      if (!tip) { skipped.push({ name: s.name, why: `no quotable sourced fact on classes/${s.m.class_key}` }); continue; }
-      const build = s.m.board_line || [s.m.race, s.m.class].filter(Boolean).join(" ") || s.m.class_key;
-      tips.push({ line: `- ${s.name} (${plain(build)}). ${plain(tip.subject)}: ${plain(tip.value)} ${cite(tip.sources)}`, tip });
-    }
   }
+  const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
+  for (const s of tipPeople) {
+    if (!s.m || !s.m.class_key) { skipped.push({ name: s.name, why: "no build on the board" }); continue; }
+    const tip = pickTip(classes, s.m, week);
+    if (!tip) { skipped.push({ name: s.name, why: `no quotable sourced fact on classes/${s.m.class_key}` }); continue; }
+    const build = s.m.board_line || [s.m.race, s.m.class].filter(Boolean).join(" ") || s.m.class_key;
+    tips.push({ line: `- ${s.name} (${plain(build)}). ${plain(tip.text)} ${cite(tip.sources)}`, tip });
+  }
+  const tipHead = signed.length ? "One tip per build, from the library:" : "One tip for each build on the board, from the library:";
   // Fit Discord: drop the longest tips first ("and N more"), so one long line does not cost everyone theirs; then shorten the name list (keeping
   // the tentative and running-late markers); the tip heading goes when no tip is left.
   const say = signed.map((s) => `${s.name}${s.e.rsvp === "in" ? "" : ` (${STATE_WORD[s.e.rsvp]})`}`);
   const build = (keep, names) => {
     const lines = [...head, ...(names ? [names, ...body.slice(1)] : body)];
-    if (keep.length) { lines.push("", "One fact per build, from the library:", ...keep.map((t) => t.line)); if (keep.length < tips.length) lines.push(`(and ${tips.length - keep.length} more)`); }
+    if (keep.length) { lines.push("", tipHead, ...keep.map((t) => t.line)); if (keep.length < tips.length) lines.push(`(and ${tips.length - keep.length} more)`); }
     return [...lines, ...tail].join("\n");
   };
   let kept = tips.slice(), text = build(kept);
@@ -252,7 +282,7 @@ export async function runWeeklyPost(env, { now = Date.now(), fetchImpl = fetch }
     const st = await readJson(env.DB, KV, WEEKLY_STATE_KEY);
     const plan = planWeeklyPost({ config, state: st.value, now });
     if (!plan.due) return { status: "not_due", why: plan.why, week: plan.week };
-    const post = composeWeeklyPost({ ...(await loadWeeklyInput(env.DB)), playAt: plan.playAt });
+    const post = composeWeeklyPost({ ...(await loadWeeklyInput(env.DB)), playAt: plan.playAt, now });
     const cards = await loadCards(env.DB);
     const channel = [config.channel, cards && cards.signups && cards.signups.channel, lookupRosterId(await loadConfigKey(env, "discord_roster"), "channels", "signups")].find(isChannelId);
     if (!channel) return { status: "no_channel" };
