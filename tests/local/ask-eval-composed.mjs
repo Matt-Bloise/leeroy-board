@@ -44,7 +44,7 @@ const { buildAnswerInputs, finishAnswerText, invalidatePagesCache } = await imp(
 const { invalidatePersonaCache, loadPersona } = await imp("infrastructure/worker/persona.js");
 const { invalidateConfigCache } = await imp("infrastructure/worker/config.js");
 const { schemaDb } = await imp("tests/helpers/sqlite-d1.mjs");
-const { composeAnswer, openerPrompts, verifyFinished, buildIsTopical } = await imp("infrastructure/worker/ask-composed.js");
+const { composeAnswer, openerPrompts, verifyFinished, buildIsTopical, composeFactsBlock } = await imp("infrastructure/worker/ask-composed.js");
 const { composeAbstain } = await imp("infrastructure/worker/self-rag.js");
 
 const ASKERS = ["Red Fox", "Blue Owl", "Green Elk"];
@@ -139,13 +139,18 @@ for (let i = 0; i < rows.length; i++) {
   const inp = await buildAnswerInputs(env, { question: r.question, by: asker, memberSlug: SLUG[asker], journey: r.journey || "curious", share: true });
   // the same decisions as answerWithAi: only the facts that answer the question (composedCtx.facts), and the build only when topical
   const composedMode = Boolean(inp.composedCtx) && inp.retrieved && !inp.abstain && !inp.isCoach && inp.composedCtx.facts.length > 0;
-  const composedBuild = composedMode && buildIsTopical(inp.composedCtx.buildReason, inp.composedCtx.facts, inp.composedCtx.askerBuild) ? inp.composedCtx.askerBuild : null;
+  const composedBuild = composedMode && buildIsTopical(inp.composedCtx.buildReason, inp.composedCtx.facts, inp.composedCtx.askerBuild, r.question) ? inp.composedCtx.askerBuild : null;
   // --code-opener: no model call for composed rows; the code-written opener is used (what production sends when the opener call fails)
   const codeOpener = flag("--code-opener") && composedMode;
   const mode = inp.abstain ? "abstain" : composedMode ? "composed" : "existing";
   // the judge reads the production prompt context (library facts, builds): the same material the bot saw
   if (!readJsonl(PROMPTS).some((p) => rowKey(p) === key)) {
-    appendJsonl(PROMPTS, { id: r.id, asker, question: r.question, journey: r.journey || "curious", systemPrompt: inp.systemPrompt, userPrompt: inp.userPrompt, groundingText: inp.groundingText, personalised: inp.personalised, isCoach: inp.isCoach, libraryPages: inp.parsedPages.map((p) => p.id), retrieved: inp.ranked.map((p) => p.id), mode });
+    // the judge sees the facts a composed answer quotes: they are library facts the code selected, and may sit outside the prompt's top 20 hits
+    const composedFactsText = composedMode ? `
+
+COMPOSED_FACTS (library facts the answer quotes verbatim, selected by code):
+${composeFactsBlock(inp.composedCtx.facts, { max: inp.composedCtx.facts.length, maxChars: Infinity }).text}` : "";
+    appendJsonl(PROMPTS, { id: r.id, asker, question: r.question, journey: r.journey || "curious", systemPrompt: inp.systemPrompt, userPrompt: inp.userPrompt + composedFactsText, groundingText: inp.groundingText + composedFactsText, personalised: inp.personalised, isCoach: inp.isCoach, libraryPages: inp.parsedPages.map((p) => p.id), retrieved: inp.ranked.map((p) => p.id), mode });
   }
   if (done.has(key)) continue;
   const finish = (rawAnswer, extra = {}) => finishAnswerText(env, { rawAnswer, isCoach: inp.isCoach, parsedPages: inp.parsedPages, by: asker, askerIsMember: true, persona, intentId: String(r.id), groundingText: inp.groundingText, personalised: inp.personalised || extra.trusted === true, retrieval: inp.retrieval, trusted: extra.trusted === true, question: r.question, opener: inp.opener });

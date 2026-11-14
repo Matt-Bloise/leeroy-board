@@ -1215,7 +1215,7 @@ export async function answerWithAi({
     const composedMode = composedEnabled(env) && Boolean(inputs.composedCtx) && inputs.retrieved && !inputs.abstain && !isCoach && inputs.composedCtx.facts.length > 0;
     // The build is named only when it is topical (ask-composed.js buildIsTopical): the question is about it, or a shown fact is about the asker's own class, race,
     // spec or professions. Otherwise the opener and the proof see no build at all.
-    const composedBuild = composedMode && buildIsTopical(inputs.composedCtx.buildReason, inputs.composedCtx.facts, inputs.composedCtx.askerBuild) ? inputs.composedCtx.askerBuild : null;
+    const composedBuild = composedMode && buildIsTopical(inputs.composedCtx.buildReason, inputs.composedCtx.facts, inputs.composedCtx.askerBuild, question) ? inputs.composedCtx.askerBuild : null;
     let callSystem = systemPrompt, callUser = userPrompt, callCacheKey = cacheKey;
     if (composedMode) {
       const op = openerPrompts({ question, askerName: askerIsMember ? by : "", askerBuild: composedBuild, hasBuild: Boolean(composedBuild) });

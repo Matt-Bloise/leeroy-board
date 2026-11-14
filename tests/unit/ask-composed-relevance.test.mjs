@@ -2,7 +2,7 @@
 // Fictional facts and builds only. No AI, no network. Run: node --test tests/unit/ask-composed-relevance.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { selectComposedFacts, buildIsTopical, COMPOSED_FLOOR, COMPOSED_MAX_FACTS } from "../../infrastructure/worker/ask-composed.js";
+import { selectComposedFacts, buildIsTopical, relevanceOf, COMPOSED_FLOOR, COMPOSED_MAX_FACTS } from "../../infrastructure/worker/ask-composed.js";
 import { selectRelevant } from "../../infrastructure/worker/self-rag.js";
 
 const hit = (page, key, value) => ({ page, key, value, score: 1 });
@@ -51,4 +51,19 @@ test("the build is named for a real reason: the question is about it, or a shown
 test("build words match whole words only: Mage is not inside image", () => {
   assert.equal(buildIsTopical("default", [hit("ui/screens", "ui.image", "the loading image shows a castle")], { race: "", class: "Mage", spec: "" }), false);
   assert.equal(buildIsTopical("default", [hit("races/elves", "elf.start", "an elf starts in a grove")], { race: "Elf", class: "", spec: "" }), true);
+});
+
+test("relevance weights coverage by the ranker's score: a low-ranked fact with the same coverage counts for less", () => {
+  assert.equal(relevanceOf(0.8, 10, 10), 0.8);
+  assert.equal(relevanceOf(0.8, 0, 10), 0.4);
+  assert.ok(relevanceOf(0.8, 2, 10) < relevanceOf(0.8, 8, 10));
+  const top = { ...hit("a/a", "k", "1"), score: 10 }, low = { ...hit("b/b", "k", "2"), score: 1 };
+  assert.deepEqual(selectComposedFacts(S([[low, 0.9], [top, 0.8]])), [top], "0.9 x 0.55 = 0.495 is under 0.8 x 0.8");
+});
+
+test("an asker speaking about themselves makes the build part of the question", () => {
+  assert.equal(buildIsTopical("default", [], BUILD, "what should I do first at launch?"), true);
+  assert.equal(buildIsTopical("default", [], BUILD, "is my build good for dungeons"), true);
+  assert.equal(buildIsTopical("default", [], BUILD, "when do raids open?"), false);
+  assert.equal(buildIsTopical("default", [], null, "what should I do"), false, "no build, nothing to name");
 });

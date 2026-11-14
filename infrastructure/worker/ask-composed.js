@@ -431,24 +431,35 @@ export function verifyFinished(text, { used = [], sheet = null, askerBuild = nul
 // max(0.12, 0.4 x best) coverage, which was nearly all of them. The composed answer quotes facts verbatim, so a fact it shows must answer the question:
 // only facts that cover at least COMPOSED_FLOOR of the question's weighted words and COMPOSED_REL_BEST of the best fact's coverage, best first, at most
 // COMPOSED_MAX_FACTS. When the best fact covers less than COMPOSED_FLOOR, nothing is shown and the answer is the code-written refusal (no model call).
-export const COMPOSED_FLOOR = 0.4;
+export const COMPOSED_FLOOR = 0.35;
 export const COMPOSED_REL_BEST = 0.8;
 export const COMPOSED_MAX_FACTS = 2;
-// scored: [{ h, c }] the hits selectRelevant kept and their coverage (0 to 1), in ranker order. Returns the hits to render, in order.
+// Relevance of one kept hit: its coverage of the question, weighted by the ranker's own score relative to the top hit (TF-IDF, stemming, synonyms and
+// role boosts, which coverage alone does not see). A fact that covers the words but ranks low counts for less: rel = coverage x (0.5 + 0.5 x score/top).
+export function relevanceOf(c, score, topScore) {
+  const s = topScore > 0 ? Math.max(0, Math.min(1, Number(score) / topScore)) : 0;
+  return c * (0.5 + 0.5 * (Number.isFinite(s) ? s : 0));
+}
+// scored: [{ h, c }] the hits selectRelevant kept and their coverage (0 to 1), in ranker order; h.score is the ranker's score. Returns the hits to render.
 export function selectComposedFacts(scored, { floor = COMPOSED_FLOOR, relBest = COMPOSED_REL_BEST, max = COMPOSED_MAX_FACTS } = {}) {
   const list = (Array.isArray(scored) ? scored : []).map((x, i) => ({ h: x && x.h, c: Number(x && x.c), i })).filter((x) => x.h && Number.isFinite(x.c));
-  const best = list.reduce((b, x) => Math.max(b, x.c), 0);
+  const top = list.reduce((b, x) => Math.max(b, Number(x.h.score) || 0), 0);
+  for (const x of list) x.r = relevanceOf(x.c, x.h.score, top);
+  const best = list.reduce((b, x) => Math.max(b, x.r), 0);
   if (best < floor) return [];
   const bar = Math.max(floor, relBest * best);
-  return list.filter((x) => x.c >= bar).sort((a, b) => b.c - a.c || a.i - b.i).slice(0, max).map((x) => x.h);
+  return list.filter((x) => x.r >= bar).sort((a, b) => b.r - a.r || a.i - b.i).slice(0, max).map((x) => x.h);
 }
 // buildRelevant answers "relevant" by default (it only says no when the asker claims another class or race), so on its own it named the build in
 // 27 of 30 answers where the judge found it relevant in 11. The composed opener names the build only for a real reason: the question is about the build
 // (buildRelevant's reason is not "default"), or a fact shown is about the asker's own class, race, spec or professions.
 const BUILD_WORD_RE = /[a-z]+/g;
-export function buildIsTopical(reason, facts, askerBuild) {
+// The asker speaking about themselves ("should I", "can I", "my", "I'm") makes the build part of the question even when it names no class.
+const SELF_TALK_RE = /\b(i|i'm|im|i've|me|my|mine|myself)\b/i;
+export function buildIsTopical(reason, facts, askerBuild, question = "") {
   if (!askerBuild) return false;
   if (reason && reason !== "default") return true;
+  if (SELF_TALK_RE.test(String(question || ""))) return true;
   const words = new Set();
   for (const k of ["class", "race", "spec"]) for (const w of lc(norm(askerBuild[k])).match(BUILD_WORD_RE) || []) if (w.length > 2) words.add(w);
   for (const p of Array.isArray(askerBuild.professions) ? askerBuild.professions : []) for (const w of lc(norm(p)).match(BUILD_WORD_RE) || []) if (w.length > 2) words.add(w);
