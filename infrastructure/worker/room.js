@@ -20,19 +20,28 @@ export const LIVE_AUTH_HEADER = "x-board-live-auth";
 const ASK_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // the same shape GET /api/ask?id= accepts as a credential
 const CONTENT_KEYS = ["q", "text", "question", "answer", "cites", "sources", "body", "error"];
 
-// Returns the message every socket may read: no "ask" item, and no question or answer fields on an "item" or "intent" object.
-function redactForPublic(payload) {
+// What an anonymous socket may read of an "item" or "intent" object: an allow list, so a field added to an ask item later never reaches a
+// stranger by default. CONTENT_KEYS above is the subset a member socket gets on top of this. Kept by tests/unit/public-read-contract.test.mjs.
+// No "id": an ask's id is its credential (GET /api/ask?id= answers anyone holding a UUID id), so a stranger who saw it could read the question and
+// answer (review of 2026-11-14, findings A and B). No "by" or "slug": a private ask must not say who asked (finding C), and no anonymous page reads them.
+export const PUBLIC_ITEM_KEYS = Object.freeze(["kind", "provider", "model", "status", "at", "ms", "share"]);
+// The top-level keys of every message the Worker broadcasts today (broadcastToRoom call sites in ai-models.js, ask-answer.js, cards-handler.js,
+// discord.js, index.js), minus "ask", "forAsk" and "slug". Any other top-level key reaches member and guest-owner sockets only. "slug" names the asker
+// of an ask nudge; js/brain.js matches it only for a signed-in member (an anonymous page has no B.me and re-reads its own ask either way).
+export const PUBLIC_TOP_KEYS = Object.freeze(["type", "key", "data", "intent", "item", "party", "categories", "page"]);
+
+// Returns the message every socket may read: only PUBLIC_TOP_KEYS (so no "ask" item), and only PUBLIC_ITEM_KEYS on an "item" or "intent" object.
+export function redactForPublic(payload) {
   const out = { ...payload };
   let changed = false;
-  if ("ask" in out) { delete out.ask; changed = true; }
+  for (const k of Object.keys(out)) if (!PUBLIC_TOP_KEYS.includes(k)) { delete out[k]; changed = true; }
   for (const k of ["item", "intent"]) {
+    if (!(k in out)) continue;
     const o = out[k];
-    if (o && typeof o === "object" && !Array.isArray(o) && CONTENT_KEYS.some((c) => c in o)) {
-      const copy = { ...o };
-      for (const c of CONTENT_KEYS) delete copy[c];
-      out[k] = copy;
-      changed = true;
-    }
+    if (!o || typeof o !== "object" || Array.isArray(o)) { delete out[k]; changed = true; continue; }
+    const copy = {};
+    for (const key of PUBLIC_ITEM_KEYS) if (key in o && (o[key] === null || typeof o[key] !== "object")) copy[key] = o[key];
+    if (Object.keys(copy).length !== Object.keys(o).length) { out[k] = copy; changed = true; }
   }
   return changed ? out : payload;
 }
