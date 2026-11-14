@@ -3,7 +3,7 @@
 // (Red Fox, Blue Owl, Green Elk). Run: node --test tests/unit/ask-grounding.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { groupComposition, factionTag, scopeOf, scopeTag, absenceCheck, stripVerdictOpener, GROUNDING_RULE } from "../../infrastructure/worker/ask-grounding.js";
+import { groupComposition, factionTag, scopeOf, scopeTag, stripVerdictOpener, GROUNDING_RULE } from "../../infrastructure/worker/ask-grounding.js";
 import { unknownNames, groundedOrNotPublished } from "../../infrastructure/worker/ask-build.js";
 import { buildAnswerInputs, finishAnswerText, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
@@ -51,30 +51,6 @@ test("scopeOf labels a fact by the source its own text names", () => {
   assert.equal(scopeTag("x.y", "datamined from client 70450"), " [scope: datamined]");
 });
 
-test("absenceCheck keeps a supported absence and cuts one the library never made", () => {
-  const library = "Valley trainers: Mage Mai'ah; the next trainers stand in Razor Hill (Durotar: Hunter, Priest, Rogue, Shaman, Warlock, Warrior) and Sen'jin Village (Durotar: Mage)\nthe druid trainer: none in Orgrimmar or Durotar, the roster stops at Mulgore";
-  const claim = "Razor Hill trains Hunter, Priest and Rogue, while Sen'jin Village trains Mage, with no Druid or Paladin trainer in Durotar at all.";
-  const r = absenceCheck(`${claim}\n\n-# Sources: a/b`, library);
-  assert.equal(r.ok, false);
-  assert.ok(!/Paladin/.test(r.answer), "the unsupported absence is cut");
-  assert.match(r.answer, /Razor Hill trains Hunter, Priest and Rogue, while Sen'jin Village trains Mage\./, "the rest of the sentence stays, whole");
-  assert.match(r.answer, /-# Sources: a\/b$/);
-  const ok = absenceCheck("There is no Druid trainer in Durotar.", library);
-  assert.equal(ok.ok, true, "a clause that says it (none ... Durotar) supports the claim");
-  assert.equal(ok.answer, "There is no Druid trainer in Durotar.");
-});
-
-test("absenceCheck: a paraphrase of a supported absence stands; a whole-sentence claim with no support goes; status sentences are left alone", () => {
-  const library = "groups list themselves and invite by hand, no automatic matching, no teleport\nnothing teleports a party to the door";
-  assert.equal(absenceCheck("Groups form by hand, and no magic button automatically matches a party or teleports anyone to the door.", library).ok, true);
-  const gone = absenceCheck("Flying mounts cost a lot. There is no flying mount before level sixty at all.", library);
-  assert.equal(gone.answer, "Flying mounts cost a lot.");
-  assert.equal(absenceCheck("There is no flying mount before level sixty at all.", library).answer, "The library does not have that yet.", "nothing substantive left");
-  const status = "Blizzard has published no exact figure, and no decision has been announced.";
-  assert.equal(absenceCheck(status, library).answer, status, "a statement about the library's own coverage is not a game claim");
-  assert.equal(absenceCheck("No, but a Mage can help.", library).ok, true, "a bare No verdict has no claim to check");
-});
-
 test("stripVerdictOpener drops a leading Yes or No for a mixed group only", () => {
   assert.equal(stripVerdictOpener("Yes, a group can level together.", { mixed: true }), "A group can level together.");
   assert.equal(stripVerdictOpener("**Yes. Grouping works within one faction.**", { mixed: true }), "**Grouping works within one faction.**");
@@ -82,6 +58,11 @@ test("stripVerdictOpener drops a leading Yes or No for a mixed group only", () =
   assert.equal(stripVerdictOpener("Yes, a group can level together.", { mixed: false }), "Yes, a group can level together.");
   assert.equal(stripVerdictOpener("Yesterday the post went up.", { mixed: true }), "Yesterday the post went up.");
   assert.equal(stripVerdictOpener("Yes.", { mixed: true }), "Yes.");
+  // a verdict word without punctuation after it is the first word of a sentence, not a verdict
+  for (const t of ["No Druid trainer in Durotar; Thunder Bluff has three.", "No one has signed up.", "No more than five players fit.", "Yes and no: it depends on the ruleset.", "No worries, the library has it.", "Nobody tanks there.", "Yes please"]) {
+    assert.equal(stripVerdictOpener(t, { mixed: true }), t, t);
+  }
+  assert.equal(stripVerdictOpener("No: the Library lists three.", { mixed: true }), "The Library lists three.");
 });
 
 test("the name check no longer deletes a grounded 'Name in Place' sentence, nor a leading 'Official'", () => {
@@ -129,23 +110,16 @@ test("a fact for the other faction and a fact with a source scope are tagged in 
   assert.ok(!owl.userPrompt.includes("not the asker's faction"), "a Horde asker is not told a Horde fact is not theirs");
 });
 
-test("finishAnswerText: Yes is dropped for a mixed group, and an unsupported 'no Paladin trainer' is cut, by construction", async () => {
+test("finishAnswerText: Yes is dropped for a mixed group and kept for a single-faction group", async () => {
   const env = makeEnv([FOX, OWL, ELK]);
   const i = await ask(env, "where do the trainers stand in Razor Hill and Durotar for the group");
-  const raw = "Yes, the Horde trainers stand in Razor Hill and Brill, with no Mage or Paladin trainer in Durotar at all.\n\n-# Sources: systems/trainers";
+  const raw = "Yes, the Horde trainers stand in Razor Hill and Brill.\n\n-# Sources: systems/trainers";
   const out = await finishAnswerText(env, { rawAnswer: raw, isCoach: false, parsedPages: i.parsedPages, by: "Red Fox", askerIsMember: true, persona: i.persona, intentId: "g1", groundingText: i.groundingText, personalised: i.personalised, retrieval: i.retrieval, group: i.group });
   assert.ok(!/^Yes/i.test(out.answer), out.answer);
-  assert.ok(!/Paladin/.test(out.answer), out.answer);
   assert.match(out.answer, /^The Horde trainers stand in Razor Hill and Brill\./);
   assert.deepEqual(out.cites, ["systems/trainers"]);
   assert.ok(out.answer.length <= 1200);
   assert.ok(!/https?:\/\/[^\s<>)]*(?<!\))\s/.test(out.answer.split("-# Sources")[0]), "no bare address in the body");
-  // the supported absence stays, and the same answer is left alone for a single-faction group
-  const okRaw = "Durotar has no Druid trainer; Thunder Bluff has three.\n\n-# Sources: systems/trainers";
-  const d = await ask(env, "is there a druid trainer in Durotar");
-  assert.match(d.groundingText, /no Druid trainer in Durotar/, "the druid fact was retrieved");
-  const kept = await finishAnswerText(env, { rawAnswer: okRaw, isCoach: false, parsedPages: d.parsedPages, by: "Red Fox", askerIsMember: true, persona: d.persona, intentId: "g2", groundingText: d.groundingText, personalised: d.personalised, retrieval: d.retrieval, group: d.group });
-  assert.match(kept.answer, /^Durotar has no Druid trainer; Thunder Bluff has three\./);
   const hordeEnv = makeEnv([OWL, ELK_HORDE]);
   const h = await ask(hordeEnv, "where do the trainers stand in Razor Hill and Durotar", "Blue Owl", "blue-owl");
   const yes = await finishAnswerText(hordeEnv, { rawAnswer: "Yes, the Horde trainers stand in Razor Hill.\n\n-# Sources: systems/trainers", isCoach: false, parsedPages: h.parsedPages, by: "Blue Owl", askerIsMember: true, persona: h.persona, intentId: "g3", groundingText: h.groundingText, personalised: h.personalised, retrieval: h.retrieval, group: h.group });
@@ -167,51 +141,4 @@ test("the length limit still holds and a long answer ends on a finished sentence
   assert.ok(out.answer.length <= 1200, String(out.answer.length));
   const main = out.answer.split("\n\n-#")[0];
   assert.match(main, /\.\s…$|\.$/, main.slice(-40));
-});
-
-// ---- review round 1: holes found in the first cut of absenceCheck ------------------------------------------------------------
-test("absenceCheck: a status word elsewhere in the sentence no longer exempts a game claim", () => {
-  const library = "Stormwind has trainers for every class";
-  assert.equal(absenceCheck("Stormwind has many class trainers, yet there are no trainers in Ironforge at all.", library).answer, "Stormwind has many class trainers.");
-  assert.equal(absenceCheck("No trainers exist in Ironforge yet, the beta source says.", library).answer, "The library does not have that yet.");
-});
-
-test("absenceCheck: lacks, unavailable, absent and missing are checked too, and the subject before the marker must be supported", () => {
-  const library = "Orgrimmar has no trainers for paladins";
-  const text = (s) => absenceCheck(s, library).answer;
-  assert.equal(text("Stormwind has many class trainers, while Ironforge lacks trainers for paladins."), "Stormwind has many class trainers.");
-  assert.equal(text("Ironforge has many paladins, and trainers are unavailable in Stormwind."), "Ironforge has many paladins.");
-  assert.equal(text("Stormwind has many class trainers, and Stormwind has no trainers for paladins."), "Stormwind has many class trainers.");
-  assert.equal(text("Mining is slow, and Orgrimmar has no trainers for paladins."), "Mining is slow, and Orgrimmar has no trainers for paladins.", "the supported claim with its subject stands");
-});
-
-test("absenceCheck: the asker's own words (after the mark) are not evidence; a leading No verdict is not a claim", () => {
-  const facts = "Stormwind has trainers for every class";
-  const grounding = `${facts} [[asker-text]] Why are there no trainers in Stormwind?`;
-  assert.equal(absenceCheck("Trainers wait for every class. There are no trainers in Stormwind.", grounding).answer, "Trainers wait for every class.");
-  const fine = "No, Stormwind has trainers for every class.";
-  assert.equal(absenceCheck(fine, `${facts} [[asker-text]] Is Stormwind missing trainers?`).answer, fine);
-  assert.equal(absenceCheck("**No.** Stormwind has trainers for every class.", grounding).ok, true);
-});
-
-test("the grounding text puts the asker's words after the mark, so a question cannot support its own absence claim end to end", async () => {
-  const env = makeEnv([FOX, OWL, ELK]);
-  const i = await ask(env, "why is there no trainer for hunters in Durotar at all");
-  assert.ok(i.groundingText.indexOf("[[asker-text]]") > i.groundingText.indexOf("GROUP_COMPOSITION:"));
-  const out = await finishAnswerText(env, { rawAnswer: "The Horde trainers stand in Razor Hill and Brill, with no Hunter trainer in Durotar at all.\n\n-# Sources: systems/trainers", isCoach: false, parsedPages: i.parsedPages, by: "Red Fox", askerIsMember: true, persona: i.persona, intentId: "g6", groundingText: i.groundingText, personalised: false, retrieval: i.retrieval, group: i.group });
-  assert.ok(!/Hunter trainer in Durotar/.test(out.answer.split("-# Sources")[0].replace(/\(Durotar: Hunter, Mage\)/g, "")), out.answer);
-});
-
-// ---- review round 2 ----------------------------------------------------------------------------------------------------------
-test("absenceCheck round 2: far-back status words, lower-case subjects, contrasts, unavailable evidence and key-less claims", () => {
-  const long = "Stormwind keeps many class trainers near the cathedral";
-  const a = (answer, library) => absenceCheck(answer, library).answer;
-  assert.equal(a(`${long}, which has no auction house at all.`, "Orgrimmar has an auction house"), `${long}.`);
-  assert.equal(a(`${long}, and paladins have no trainers there.`, "Warriors have no trainers"), `${long}.`);
-  assert.equal(a(`${long}, and paladins have no trainers there.`, "Paladins have no trainers"), `${long}, and paladins have no trainers there.`);
-  assert.equal(a(`${long}, and Stormwind has no trainers.`, "Stormwind has trainers but no auction house"), `${long}.`);
-  assert.equal(a("Trainers for every class are unavailable there.", "Trainers for every class are unavailable"), "Trainers for every class are unavailable there.");
-  assert.equal(a(`${long}. There are none.`, "Stormwind has trainers"), `${long}.`);
-  assert.equal(a(`${long}. There are none.`, "paladin trainers: none in Durotar"), `${long}. There are none.`);
-  assert.equal(a("Blizzard has published no exact figure, and the library has nothing more.", ""), "Blizzard has published no exact figure, and the library has nothing more.", "a status claim stays");
 });

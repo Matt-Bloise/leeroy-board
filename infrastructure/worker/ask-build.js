@@ -185,7 +185,7 @@ export function renderPartyBuilds(sheets, askerSheet) {
 const PHRASE_RE = /\b[A-Z][a-z]+(?:'s)?(?:\s+(?:of|the|in|for|to)\s+[A-Z][a-z]+(?:'s)?|\s+[A-Z][a-z]+(?:'s)?)+/g;
 // A possessive of a name is the name: "Bible Boi's" is checked as "Bible Boi".
 const unpossess = (w) => w.replace(/'s?$/i, "");
-const HOUSE = [...ROSTER_DATA.map((r) => r.display), "leeroy", "leeroy jenkins", "dungeons and drinking", "wow classic", "classic forever", "world of warcraft"];
+const HOUSE = [...ROSTER_DATA.map((r) => r.display), "leeroy", "leeroy jenkins", "dungeons and drinking", "wow classic", "classic forever", "world of warcraft", "official blizzard"];
 const CONNECTORS = new Set(["of", "the", "in", "for", "to", "and", "a", "an", "at", "on", "with"]);
 // Words that make ordinary prose look like a name: sentence openers, heading words, filler.
 const GENERIC = new Set((
@@ -193,7 +193,6 @@ const GENERIC = new Set((
   "have here how if in is it its just key last later less let like luck look make many more most much next no not now of on one only open " +
   "option options or other our overview point points quick recommended remember same see second set should since so some start step steps " +
   "summary take tell tip tips that the their then there these they third this those though three tonight today too try two up use want was " +
-  "official general standard public current latest recent " +
   "way we well what when where which while who why will with without worth would yes you your meet pick keep give note notes plan " +
   "reminder reminders also still once before after during until across about above below over under basics guide info details rundown breakdown comparison pros cons requirements talent tree trees side horde alliance build builds spec specs role roles class classes profession professions gear zone zones dungeon dungeons quest quests level levels leveling rotation stats priority reward rewards requirements location locations route schedule per via ask answer answers question " +
   "questions party board library sign signup signups ups trade offs long short high low early late new old big small full half"
@@ -228,21 +227,32 @@ function tokens(allowed) {
 
 function badPhrases(text, allowed) {
   const bad = [];
-  for (const m of text.replace(/[*_`]/g, "").matchAll(PHRASE_RE)) {
+  const clean = text.replace(/[*_`]/g, "");
+  for (const m of clean.matchAll(PHRASE_RE)) {
     const whole = m[0].replace(/'s\b/g, "'s");
     if (allowed.includes(unpossess(whole).toLowerCase()) || allowed.includes(whole.toLowerCase())) continue;
+    const atSentenceStart = /(^|[.!?]\s+)$/.test(clean.slice(0, m.index));
     // A possessive ends a name: "Street Rat's Holy Shield" is two names, each checked on its own.
-    // "in", "for" and "to" join a name to a place ("Lord Grayson Shadowbreaker in Stormwind"): each side is a name of its own and is checked on its own. ("of" and "the" sit inside names and stay.)
-    for (const seg of whole.split(/'s\b\s*/).filter(Boolean).flatMap((x) => x.split(/\s+(?:in|for|to)\s+/))) {
-      const full = words(seg).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
-      if (allowed.includes(full.toLowerCase())) continue;
-      const core = trimPhrase(full, true).map(unpossess);
-      if (core.length < 2) continue;
-      if (allowed.includes(core.join(" ").toLowerCase())) continue;
-      // Every word of the name is individually grounded and the phrase is just grounded things side by side ("Paladin Deadmines").
-      const sig = core.filter((x) => !CONNECTORS.has(x.toLowerCase()));
-      if (sig.every((x) => tokens(allowed).has(x.toLowerCase())) && sig.length <= 3) continue;
-      bad.push(full);
+    for (const seg of whole.split(/'s\b\s*/).filter(Boolean)) {
+      // "in", "for" and "to" join a name to a place ("Lord Grayson Shadowbreaker in Stormwind", "Call to Arms"): each side is checked on its own, even when it is one word.
+      // ("of" and "the" sit inside names and stay.) A one-word first piece at the start of a sentence is ordinary prose ("Vendors in Orgrimmar sell ...") and is not checked.
+      const pieces = seg.split(/\s+(?:in|for|to)\s+/);
+      pieces.forEach((piece, pi) => {
+        const full = words(piece).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
+        if (allowed.includes(full.toLowerCase())) return;
+        const core = trimPhrase(full, true).map(unpossess);
+        if (core.length < 2) {
+          if (pieces.length < 2 || core.length === 0 || (pi === 0 && atSentenceStart)) return;
+          const w = core[0].toLowerCase();
+          if (!(tokens(allowed).has(w) || tokens(allowed).has(w.replace(/s$/, "")) || tokens(allowed).has(w + "s"))) bad.push(full);
+          return;
+        }
+        if (allowed.includes(core.join(" ").toLowerCase())) return;
+        // Every word of the name is individually grounded and the phrase is just grounded things side by side ("Paladin Deadmines").
+        const sig = core.filter((x) => !CONNECTORS.has(x.toLowerCase()));
+        if (sig.every((x) => tokens(allowed).has(x.toLowerCase())) && sig.length <= 3) return;
+        bad.push(full);
+      });
     }
   }
   return bad;

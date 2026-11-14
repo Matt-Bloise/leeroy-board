@@ -25,7 +25,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts, factionOf } from "./ask-opener.js";
-import { groupComposition, factionTag, scopeTag, GROUNDING_RULE, ASKER_TEXT_MARK, absenceCheck, stripVerdictOpener } from "./ask-grounding.js";
+import { groupComposition, factionTag, scopeTag, GROUNDING_RULE, stripVerdictOpener } from "./ask-grounding.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -917,7 +917,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     }
     // Derived from data, not assumed (ask-grounding.js): the party's factions (visible sheet races only), the asker's faction, and the source scope of each fact.
     const askerRaceFacts = askerFacts(askerSheet, { includeHidden: share === false && askerBySlug });
-    const askerFaction = askerRaceFacts ? factionOf(askerRaceFacts.race) : "";
+    const askerFaction = buildHelps && askerRaceFacts ? factionOf(askerRaceFacts.race) : ""; // same decision as buildHelps: a suppressed build tags nothing
     const group = groupComposition(sheets, { askerSheet, includeHidden: share === false && askerBySlug });
     const topFactHits = hits
       .slice(0, 20)
@@ -1019,9 +1019,9 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const retrievedIds = new Set([...ranked.map((p) => p.id), ...hits.slice(0, 20).map((h) => h.page), ...abstainPages.map((p) => p.id)]);
     // What the answer may draw names and numbers from: exactly what the prompt showed (the fact values and the page lines, no scores, no ids, no facts of a
     // page the prompt only summarised), plus the build, the party and the question.
-    const shownFacts = hits.slice(0, 20).map((h) => h.value).join("\n"); // one fact per line: the absence check reads a clause at a time
+    const shownFacts = hits.slice(0, 20).map((h) => h.value).join(" ");
     const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
-    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, group.line ? `GROUP_COMPOSITION: ${group.line}` : "", ASKER_TEXT_MARK, question, prevQ, by].join(" "); // the asker's own words come last, after the mark (ask-grounding.js evidenceOf) // the earlier question was shown too: a name or number only it holds may be repeated
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, group.line ? `GROUP_COMPOSITION: ${group.line}` : "", question, prevQ, by].join(" ");
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
     const libraryBlock = !retrieve
@@ -1054,8 +1054,6 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       const g = groundedOrNotPublished(repaired, groundingText);
       if (!g.ok) repaired = g.answer;
       repaired = guardRefusal(repaired, groundingText);
-      // A "no X" / "none" claim stands only when a library clause says so; a list of what exists is not a list of what does not (ask-grounding.js).
-      repaired = absenceCheck(repaired, groundingText).answer;
       // The leading Yes or No is dropped for a mixed-faction group: it was assumed, not derived from the group as composed. The caller's group wins; the grounding line is the fallback
       // for callers that only hold the grounding text (the offline eval).
       const mixed = group ? Boolean(group.mixed) : /GROUP_COMPOSITION: mixed faction;/.test(groundingText);
