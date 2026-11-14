@@ -1,15 +1,16 @@
 // =============================================================================
 // Composed /ask answers (`worker/ask-composed.js`), behind the ASK_COMPOSED flag (ships off).
 // Pure, dependency-free, no I/O. The model never writes a fact. An answer is three parts:
-//   1. an opener, written by the model but accepted only if a STRUCTURAL check passes (closed vocabulary of social words, the asker's own sheet
-//      values only right after "your", whole party names only, no digit, no URL, no negation, at most 25 words, one line); otherwise a code-written opener;
+//   1. an opener, chosen by the model from a finite set of complete templates (greeting, "good question", "here is what I found ...", the asker's own sheet
+//      words only as "your <words>", the asker's own name only after a greeting) and accepted only if it parses as exactly one of them; the canonical
+//      code-written rendering is what is used, never the model's string; otherwise a code-written opener;
 //   2. a facts block written by code from the retrieved library facts (title, label, value verbatim);
 //   3. the Sources tail, listing the pages of the facts that were rendered.
 // verifyComposed then proves, by set membership, that every number token and every capitalised word of the final answer occurs in the rendered
 // facts, the asker's sheet or the party names (party names only as whole names), that every link points at a retrieved page, and that the only footer is a
 // Sources footer of retrieved pages. It fails closed: any doubt returns { ok: false } and the caller sends the honest refusal.
-// What it does NOT prove: that a lowercase word of free text is true. That is why free text is confined to the opener and the opener to a vocabulary that
-// holds no game word, no negation, no quantity and no verb of having or saying (so it cannot say "the library has nothing on that").
+// verifyComposed alone does NOT prove that lowercase prose is true ("dragons are harmless" passes it). That is why free text is confined to the opener, the
+// opener to a finite set of templates, and why verifyFinished additionally proves the exact three-block shape of the text that is sent.
 // Nothing here recognises "wrong" text. It restricts what can be produced and checks the product against the inputs.
 // Every regular expression below is linear (no nested or overlapping quantifiers); tests run 200k-character inputs.
 // =============================================================================
