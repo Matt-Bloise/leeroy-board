@@ -257,9 +257,20 @@ function format(raw, ctx) {
       const room = Math.max(40, maxChars - footerLen - 1);
       const head = blocks[0][0];
       let cut = head.slice(0, room);
-      const sp = cut.lastIndexOf(" ");
-      if (sp > room * 0.5) cut = cut.slice(0, sp);
-      blocks[0][0] = `${cut.replace(/[\s,;:]+$/, "")}…`;
+      // End on a finished sentence when one sits in the last 60 percent of the room: an answer that stops mid-clause reads as broken.
+      // The sentence is still a cut answer, so it keeps a visible mark (" …"); one character of room is kept back for it.
+      let end = -1;
+      const sentenceRoom = cut.slice(0, room - 1);
+      for (const m of sentenceRoom.matchAll(/[.!?](?=["')\]*]*(?:\s|$))/g)) end = m.index + 1;
+      if (end > room * 0.4) {
+        let stop = end;
+        while (stop < sentenceRoom.length && /["')\]*]/.test(sentenceRoom[stop])) stop++;
+        blocks[0][0] = `${sentenceRoom.slice(0, stop).replace(/\s+$/, "")} …`;
+      } else {
+        const sp = cut.lastIndexOf(" ");
+        if (sp > room * 0.5) cut = cut.slice(0, sp);
+        blocks[0][0] = `${cut.replace(/[\s,;:]+$/, "")}…`;
+      }
       text = assemble([blocks[0]], sig);
     }
   }

@@ -84,6 +84,7 @@ BUILD_PROJECT = "off" # needs BUILD_MODAL on. "on": a confirmed submit also writ
 JOIN_PROMPT = "off" # needs BUILD_MODAL on. "on": an unknown Discord user of /ask or /sheet gets one ephemeral hint with a Join button
 # Flags the Worker reads that were not declared here. All default off (the code treats unset the same as "off"); declaring them makes the off state visible and reviewable. Behaviour is unchanged.
 ANSWER_UX = "off" # "on" adds the Helpful/Off vote buttons and the More / Sources detail buttons under Discord answers (worker/answer-ux.js; unset reads as off)
+ASK_OPENER = "off" # "on" puts one deterministic in-voice line (worker/ask-opener.js) in front of an answer's cited facts, never on a refusal, abstain, unconfirmed-figure or coach answer and only when a valid citation survives; "off" or unset removes it (ships off until the /ask evaluation has run on the merged code)
 CARDS_ENABLED = "off" # sign-up cards, buttons, modals and card edits (docs/runbooks/cards.md); "1", "true", "on" or "yes" turns it on
 CARDS_SHADOW = "off" # with CARDS_ENABLED: count would-edit / would-post rows in noise_ledger, never call Discord
 BOARD_LINES_ENABLED = "off" # needs CARDS_ENABLED too: the first real board decision line
