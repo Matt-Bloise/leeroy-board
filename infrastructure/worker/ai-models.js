@@ -25,7 +25,8 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
-import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
+import { composedEnabled, buildIsTopical, composeAnswer, openerPrompts, verifyFinished } from "./ask-composed.js";
+import { askerRole, askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
 export const PERSONALISE_RULE =
@@ -1026,7 +1027,9 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses,
+      // ASK_COMPOSED (ask-composed.js): the asker's own visible race, class, spec, role and professions (only when the build is relevant to this question) and the party names the opener may use.
+      ...(composedEnabled(env) ? { composedCtx: { askerBuild: hasBuild && buildFactsNow ? { race: buildFactsNow.race, class: buildFactsNow.class, spec: buildFactsNow.spec, role: askerRole(askerSheet, { includeHidden: share === false && askerBySlug }), professions: buildFactsNow.professions } : null, partyNames: askerIsMember ? [...new Set([...ROSTER_DATA.map((r) => r.display), ...sheets.map((x) => x && x.name).filter(Boolean), by])] : [] } } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1203,6 +1206,14 @@ export async function answerWithAi({
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
     let fallbackNote = "";
+    // ASK_COMPOSED: the model writes only a one-line opener (checked structurally); the facts are written by code. Not for coach turns, skip kinds or abstains.
+    const composedMode = composedEnabled(env) && Boolean(inputs.composedCtx) && inputs.retrieved && !inputs.abstain && !isCoach && hits.length > 0;
+    let callSystem = systemPrompt, callUser = userPrompt, callCacheKey = cacheKey;
+    if (composedMode) {
+      const op = openerPrompts({ question, askerName: askerIsMember ? by : "", askerBuild: inputs.composedCtx.askerBuild, hasBuild: Boolean(inputs.composedCtx.askerBuild) && buildIsTopical(question, hits) });
+      callSystem = op.system; callUser = op.user;
+      callCacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant: "composed-opener", tier, systemPrompt: callSystem, userPrompt: callUser });
+    }
     const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
     if (composed) {
       rawAnswer = composed;
@@ -1232,10 +1243,10 @@ export async function answerWithAi({
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
         env,
-        systemPrompt,
-        userPrompt,
+        systemPrompt: callSystem,
+        userPrompt: callUser,
         deep,
-        cacheKey,
+        cacheKey: callCacheKey,
         metadata,
         budgetKeys: budget,
         timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
@@ -1249,8 +1260,8 @@ export async function answerWithAi({
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: activeProvider,
             env,
-            systemPrompt,
-            userPrompt,
+            systemPrompt: callSystem,
+            userPrompt: callUser,
             deep,
             metadata,
             timeoutMs: ASK_FALLBACK_TIMEOUT_MS,
@@ -1263,11 +1274,11 @@ export async function answerWithAi({
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: "workers-ai",
             env,
-            systemPrompt,
-            userPrompt,
+            systemPrompt: callSystem,
+            userPrompt: callUser,
             deep,
             skipCache: false,
-            cacheKey,
+            cacheKey: callCacheKey,
             metadata,
             budgetKind: "ask",
             budgetKeys: budget,
@@ -1278,7 +1289,11 @@ export async function answerWithAi({
         }
       }
       if (!rawAnswer) {
-        if (hits && hits.length > 0) {
+        if (composedMode) {
+          rawAnswer = ""; // the opener call failed on every provider: the code-written opener is used
+          provider = chosenProvider;
+          model = `${chosenProvider}-opener-fallback`;
+        } else if (hits && hits.length > 0) {
           rawAnswer = hits
             .slice(0, 3)
             .map((h) => `${h.value} [${h.page}~${h.key}]`)
@@ -1309,7 +1324,26 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener });
+    // ASK_COMPOSED: build opener + facts block + Sources by code, then prove every number and capitalised word comes from the rendered facts, the sheet or the party. A failed proof is the honest refusal.
+    let composedFinal = null;
+    if (composedMode) {
+      const ctx = inputs.composedCtx;
+      const c = composeAnswer({ question, rawOpener: rawAnswer || "", retrievedFacts: hits.slice(0, 20), sheet: ctx.askerBuild, askerBuild: ctx.askerBuild, partyNames: ctx.partyNames, askerName: askerIsMember ? by : "" });
+      if (c.ok) { rawAnswer = c.text; composedFinal = { facts: c.used, ctx, ids: c.ids, askerName: askerIsMember ? by : "" }; model = `${model}:composed-${c.openerSource}`; }
+      else { rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); composedFinal = { refused: true }; model = "composed-refused"; provider = "library"; }
+    }
+    const trustedAnswer = Boolean(composed) || Boolean(composedFinal);
+    let finished = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || trustedAnswer, retrieval, trusted: trustedAnswer, question, opener: inputs.opener });
+    if (composedFinal && !composedFinal.refused) {
+      // The finished text (voice repair, layout, link masking) is proved again: what is sent is what was verified.
+      const titles = parsedPages.filter((p) => composedFinal.ids.includes(p.id)).map((p) => p.title);
+      const v = finished.parts.more ? { ok: false } : verifyFinished(finished.parts.main, { used: composedFinal.facts, sheet: composedFinal.ctx.askerBuild, askerBuild: composedFinal.ctx.askerBuild, partyNames: composedFinal.ctx.partyNames, askerName: composedFinal.askerName, extraAllowed: titles, boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party" });
+      if (!v.ok) {
+        rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); composedFinal = { refused: true }; model = "composed-refused"; provider = "library";
+        finished = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: true, retrieval, trusted: true, question, opener: inputs.opener });
+      }
+    }
+    const { answer, cites, parts } = finished;
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.

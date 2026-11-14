@@ -82,6 +82,13 @@ export function renderAskerBuild(sheet, stateMap, { includeHidden = false } = {}
   return [`${clip(stripFence(sheet.name || sheet.slug, { oneLine: true }), 40)} (the asker)`, ...parts, ...stateFor(sheet, stateMap)].join("; ");
 }
 
+// The asker's role as plain text under the same visibility rule (ask-composed.js opener); empty when absent or hidden.
+export function askerRole(sheet, { includeHidden = false } = {}) {
+  if (!sheet) return "";
+  const f = (sheet.fields || {}).role;
+  return !includeHidden && !isVisible(f) ? "" : fieldText(f);
+}
+
 // The asker's class, spec, level, race and professions as plain values, for the code-written abstain answer. Same visibility rule as renderAskerBuild.
 export function askerFacts(sheet, { includeHidden = false } = {}) {
   if (!sheet) return null;
