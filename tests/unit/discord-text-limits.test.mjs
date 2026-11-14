@@ -4,9 +4,10 @@
 // labelled UTC; a free-text `when` is printed as stored) are in docs/review-classes.md as follow-ups.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { renderSignupCard, renderBoardCard, cleanName, EMBED_TEXT_MAX } from "../../infrastructure/worker/cards.js";
-import { composeLine, LINE_MAX } from "../../infrastructure/worker/board-lines.js";
+import { renderSignupCard, renderBoardCard, cleanName } from "../../infrastructure/worker/cards.js";
+import { composeLine } from "../../infrastructure/worker/board-lines.js";
 
+const DISCORD_EMBED_TEXT_MAX = 6000; // Discord's own limit, written out so that a change to the Worker's constant cannot move the test
 const RSVPS = ["in", "maybe", "late", "out"];
 const textLength = (embed) =>
   (embed.title || "").length + (embed.description || "").length + ((embed.footer && embed.footer.text) || "").length +
@@ -22,7 +23,7 @@ test("signup card: 300 long entries stay inside every Discord embed limit", () =
   for (const n of [1, 25, 100, 300]) {
     const card = renderSignupCard({ updated: "2026-11-02T20:15:00.000Z", entries: longRoster(n) });
     const e = card.embeds[0];
-    assert.ok(textLength(e) <= EMBED_TEXT_MAX, `${n}: ${textLength(e)} characters in all`);
+    assert.ok(textLength(e) <= DISCORD_EMBED_TEXT_MAX, `${n}: ${textLength(e)} characters in all`);
     assert.ok(e.fields.length <= 25, `${n}: ${e.fields.length} fields`);
     for (const f of e.fields) assert.ok(f.name.length > 0 && f.name.length <= 256 && f.value.length > 0 && f.value.length <= 1024, `${n}: ${f.name}`);
     assert.ok(card.components.length <= 5);
@@ -37,13 +38,13 @@ test("board card: 300 members with long lines stay inside every Discord embed li
   const members = entries.map((e, i) => ({ slug: `m${i}`, name: e.name, classKey: "", classLabel: "Frost Mage", race: "Undead", role: "damage" }));
   const card = renderBoardCard({ updated: "2026-11-02T20:15:00.000Z", entries, members });
   const e = card.embeds[0];
-  assert.ok(textLength(e) <= EMBED_TEXT_MAX, `${textLength(e)} characters in all`);
+  assert.ok(textLength(e) <= DISCORD_EMBED_TEXT_MAX, `${textLength(e)} characters in all`);
   assert.ok(e.fields.length <= 25);
   for (const f of e.fields) assert.ok(f.value.length > 0 && f.value.length <= 1024);
   assert.ok((e.description || "").length <= 4096);
   assert.ok(e.fields.some((f) => f.value.includes("Meeting place")) && e.fields.some((f) => f.value.includes("late ")), "the member path rendered the meet and when lines");
   const plain = renderBoardCard({ entries });
-  assert.ok(textLength(plain.embeds[0]) <= EMBED_TEXT_MAX);
+  assert.ok(textLength(plain.embeds[0]) <= DISCORD_EMBED_TEXT_MAX);
 });
 
 // A bare discord.gg/ invite in a name is NOT asserted: it survives today (docs/review-classes.md F-10). The entries that carry one are still checked for everything else.
@@ -67,7 +68,7 @@ test("board line: any number of long names still fits in 120 characters and neve
   for (const n of [1, 2, 5, 60]) {
     const changes = Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, { name: `Person with a long fictional name ${i}`, to: RSVPS[i % 3] }]));
     const line = composeLine(changes);
-    assert.ok(line.length > 0 && line.length <= LINE_MAX, `${n}: ${line.length}`);
+    assert.ok(line.length > 0 && line.length <= 120, `${n}: ${line.length}`);
     assert.match(line, /^From the board: .+\.$/);
   }
   assert.equal(composeLine({}), "");
