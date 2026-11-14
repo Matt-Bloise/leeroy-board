@@ -102,6 +102,7 @@ const canon = (w) => (own(SPEC_ALIAS, w) ? SPEC_ALIAS[w] : w);
 // Druid forms: a Cat fact is never a bear tank's tip.
 const FORMS = new Set(["cat", "bear", "moonkin", "tree"]);
 const FORM_OF_SPEC = { balance: "moonkin", restoration: "tree" };
+const RACE_NAMES = new Set(["human", "dwarf", "gnome", "night elf", "orc", "troll", "tauren", "undead", "blood elf", "draenei", "goblin", "worgen"]);
 const ROLE_SEG = { tank: "tank", tanking: "tank", healer: "healer", healing: "healer", dps: "damage", damage: "damage" };
 // a form restriction written in the value: "Cat only", "usable only in Cat Form", "requires Bear Form"; a spec one: "Balance druids only"
 const FORM_ONLY_RE = /\b(cat|bear|moonkin|tree)(?: of life)?(?: form)? only\b|\bonly (?:usable )?in (cat|bear|moonkin|tree)\b|\brequires (cat|bear|moonkin|tree)\b/g;
@@ -111,22 +112,24 @@ const quotable = (f, classKey) => f && typeof f.key === "string" && f.key.starts
   && plainValue(f.value).length >= TIP_MIN && plainValue(f.value).length <= TIP_MAX && /\p{L}{3,}.*\s.*\s.*\s/u.test(f.value) && sourcesOf(f).length > 0;
 
 // Library shorthand a friend reading Discord cannot use (talent tiers, client builds, formula coefficients); such a fact is never the tip.
-export const JARGON_RE = /\bmedal\b|\brow \d|\bcoefficient\b|\bclient \d|\bhotfix\b|\branks? \d|\bdesign pillars?\b|\bspell \d{3,}|\bhas not said\b|\buntestable\b|\bdisputed\b|\branks? at \d|\d+ ranks\b|\brescaled\b|\brenamed\b|\bwas \d|\bdoubled \w{3} \d|\bread from the wording\b|\bvanished\b|\babsent from\b|\b(since|before|after|fixed|until) (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d|\bbug\b|\bnotes (cut|restored|changed|raised|lowered)\b/i; // also: what is not known, and patch history (ranks tables, "was 25%", "renamed"), is no tip
+export const JARGON_RE = /\bmedal\b|\brow \d|\bcoefficient\b|\bclient \d|\bhotfix\b|\branks? \d|\bdesign pillars?\b|\bspell \d{3,}|\bhas not said\b|\buntestable\b|\bdisputed\b|\branks? at \d|\d+ ranks\b|\brescaled\b|\brenamed\b|\bwas \d|\bdoubled \w{3} \d|\bread from the wording\b|\bvanished\b|\babsent from\b|\b(since|before|after|fixed|until) (?:[a-z]+'s (?:[a-z]+ )?)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d|\bbug\b|\bnotes (cut|restored|changed|raised|lowered)\b/i; // also: what is not known, and patch history (ranks tables, "was 25%", "renamed"), is no tip
 // A record or a report about other players ("fastest reported level 30 ... at 21 hours") tells the reader nothing to do: never a tip.
-export const TRIVIA_RE = /\b(fastest|slowest|reported|record|played|census|survey|poll|most players|beta testers?|testers?|streamers?|world first|called it|design conflict)\b/i;
+export const TRIVIA_RE = /\b(fastest|slowest|reported|record|played|census|survey|poll|most players|beta testers?|beta tests?|testers?|streamers?|world first|called it|design conflict)\b/i;
 // A fact a player can act on: when they get something, how it casts, what it does in a fight, what to prioritise.
 export const ACTION_RE = /\b(level \d+|at \d+|instant|cast|cooldown|slow|stun|root|heal(s|ing)?|taunt|threat|interrupt|trainer|first|priority|covers|lasts?|scales with|want|hits \d+)\b/i;
 // The library's provenance at the end of a value ("(Oct 15 notes; Wowhead rank 1 tooltip)") is citation material: the source link carries it.
 // Only a citation goes: a dated note, a client build, a named site, a tooltip. An aside that says something (a removal, a warning, a dissent,
 // "only") stays, and so does a value the removal would leave empty.
-const PROVENANCE_RE = /\b(notes?|client \d+|build \d+|deep dive|wowhead|warcraft tavern|tavern|hotfix|tooltips?|guides?|forums?|method|blizzard watch|mobalytics|icy veins|forever-confirmed|confirmed|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2})\b/i;
+const PROVENANCE_RE = /\b(notes?|client \d+|build \d+|deep dive|wowhead|warcraft tavern|tavern|hotfix|tooltips?|guides?|forums?|method|blizzard watch|mobalytics|icy veins|forever-confirmed|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2})\b/i;
 const CONTENT_RE = /\b(removed|never|not|no longer|only|otherwise|miss(es)?|instead|but|except|unless|wrong|breaks?)\b/i;
 // A part of the aside that is history or a comparison, not advice: it starts with a date ("Sep 30 text said 15") or with "Classic".
 const DATED_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2}\b/i;
 const CLASSIC_RE = /^classic\b/i;
 // One clause of an aside is a citation (a short source or dated note with nothing to say), history (a dated clause with nothing to say), or a
 // comparison with Classic. A ";" part is removed only when every ", " clause in it is one of those; otherwise the part stays as written.
-const citeClause = (x) => CLASSIC_RE.test(x) || (!CONTENT_RE.test(x) && !x.includes(":") && (DATED_RE.test(x) || (PROVENANCE_RE.test(x) && x.split(/\s+/).length <= 6)));
+// an undated source clause that reports a different reading ("the deep dive said 6%", "Wowhead lists 3 s") is a dissent and stays
+const DISSENT_RE = /\b(said|says|lists|reads|shows)\b/i;
+const citeClause = (x) => CLASSIC_RE.test(x) || (!CONTENT_RE.test(x) && !x.includes(":") && (DATED_RE.test(x) || (!DISSENT_RE.test(x) && PROVENANCE_RE.test(x) && x.split(/\s+/).length <= 6)));
 const dropPart = (x) => CLASSIC_RE.test(x) || x.split(/,\s/).every((c) => citeClause(c.trim()));
 export function plainValue(v) {
   let t = String(v == null ? "" : v).trim();
@@ -166,7 +169,16 @@ export function pickTip(classesDoc, member, weekN) {
   // A fact's tags come from whole key segments after the class ("paladin.ret.x", "druid.forms.cat.prowl"), never from a word inside a spell
   // name ("mage.frost_blast"), and from a restriction written in the value. A tag the build does not have excludes the fact; an unknown build
   // (no spec, no board line) excludes nothing.
+  // A racial is the race's own: "priest.racial.dwarf", "warlock.orc_command", "Undead racial (...)" is never a tip for another race.
+  const race = String((member && member.race) || "").toLowerCase().replace(/[^a-z]+/g, " ").trim();
+  const racesOf = (f) => {
+    const kw = String(f.key).toLowerCase().split(/[._]+/), out = [];
+    for (let i = 0; i < kw.length; i++) { const two = kw[i] + " " + (kw[i + 1] || ""); if (RACE_NAMES.has(two)) out.push(two); else if (RACE_NAMES.has(kw[i])) out.push(kw[i]); }
+    for (const m of String(f.value).toLowerCase().matchAll(/\b([a-z]+(?: elf)?) racial\b|\bracial, ([a-z]+(?: elf)?)\b/g)) { const r = m[1] || m[2]; if (RACE_NAMES.has(r)) out.push(r); }
+    return out;
+  };
   const otherBuild = (f) => {
+    if (race && racesOf(f).some((r) => r !== race)) return true;
     const segs = String(f.key).toLowerCase().split(".").slice(1).map(canon);
     const v = plainValue(f.value).toLowerCase();
     const fSpecs = [...segs.filter((s) => SPECS.has(s)), ...[...v.matchAll(SPEC_ONLY_RE)].map((m) => canon(m[1])).filter((s) => SPECS.has(s))];
@@ -178,11 +190,11 @@ export function pickTip(classesDoc, member, weekN) {
     // a threat-raising fact is a tank's; threat reduction is anyone's
     // a fact about raising threat is a tank's; reducing it is anyone's
     const reduces = /\b(reduc\w*|less|lower\w*|no extra|drops?) threat\b|\bthreat (reduction|reduced|drop)\b/i.test(v);
-    return Boolean(role && role !== "tank" && !reduces && (/\bthreat\b|\btaunt\b|\bforces? the target to attack\b/i.test(v)));
+    return Boolean(role && role !== "tank" && !reduces && (/\bthreat\b|\btaunt\w*|\bforce[sd]? (?:\w+ ){0,2}to attack\b|\bforced to attack\b|\bmakes? (?:the )?(?:target|enemies|it) attack\b|\baggro\b/i.test(v)));
   };
   const words = [...(role && own(ROLE_WORDS, role) ? ROLE_WORDS[role] : []), ...specs, ...forms];
   // Jargon is judged on the text the friend reads: a citation in the value ("(client 70450)") that plainValue removes does not disqualify it.
-  const ok = factsOf(page).filter((f) => quotable(f, ck) && !JARGON_RE.test(plainValue(f.value)) && !TRIVIA_RE.test(`${f.key} ${f.value}`) && !otherBuild(f));
+  const ok = factsOf(page).filter((f) => quotable(f, ck) && !String(f.key).split(".").some((x) => /^\d{4,}$/.test(x)) && !JARGON_RE.test(plainValue(f.value)) && !TRIVIA_RE.test(`${f.key} ${f.value}`) && !otherBuild(f));
   const actionable = (f) => f.depth === "good" && ACTION_RE.test(plainValue(f.value));
   const ownFact = (f) => [...keyWords(f.key)].map(canon).some((k) => words.some((w) => wordMatch(w, k)));
   const tiers = [ok.filter((f) => actionable(f) && ownFact(f)), ok.filter(actionable), ok.filter((f) => f.depth === "must")];

@@ -461,3 +461,20 @@ test("review 3: when the post is long, each tip cites one source before any tip 
   assert.deepEqual(urls.sort(), facts.flatMap((f) => f.sources.map((s) => s.url)).sort());
   assert.ok(facts.every((f) => f.sources.length === 1));
 });
+
+test("review 4: a racial is its own race's tip; a build number is never a subject; inflected taunts are a tank's; a source's dissent stays", async () => {
+  const { plainValue } = await import("../../infrastructure/worker/weekly-post.js");
+  const classes = { pages: [{ id: "classes/priest", facts: [
+    fact("priest.racial.dwarf", "level 10, a fictional dwarf prayer with a long cooldown", "good", [ref(1)]),
+    fact("priest.racial.night_elf", "level 10, a fictional night elf star that lasts a while", "good", [ref(2)]),
+    fact("priest.touch", "Undead racial (fictional touch): a cast that heals you at level 10", "good", [ref(3)]),
+    fact("priest.mounts.70532", "level 40, the same fictional read marks the mount cast", "good", [ref(4)]),
+    fact("priest.shield", "level 6, a fictional shield with a short cooldown", "good", [ref(5)]),
+    fact("priest.shout", "level 6, a fictional shout that taunts nearby enemies", "good", [ref(6)]),
+  ] }] };
+  const keys = (m) => { const s = new Set(); for (let w = 0; w < 12; w++) { const t = pickTip(classes, m, w); if (t) s.add(t.key); } return [...s].sort(); };
+  assert.deepEqual(keys({ class_key: "priest", role: "healer", race: "Undead", spec: "Discipline" }), ["priest.shield", "priest.touch"]);
+  assert.deepEqual(keys({ class_key: "priest", role: "healer", race: "Night Elf", spec: "Discipline" }), ["priest.racial.night_elf", "priest.shield"]);
+  assert.equal(plainValue("blocks restore 4% of mana (the deep dive said 6%)"), "blocks restore 4% of mana (the deep dive said 6%)");
+  assert.equal(plainValue("a fictional value (confirmed for Horde)"), "a fictional value (confirmed for Horde)");
+});
