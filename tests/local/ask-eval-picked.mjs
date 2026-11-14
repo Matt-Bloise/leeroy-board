@@ -18,7 +18,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const REPO = process.env.ASK_EVAL_REPO || path.resolve(import.meta.dirname, "../..");
@@ -36,6 +36,13 @@ const PATHS = ["picked", "production", "composed"];
 const PATH = arg("--path", "picked");
 if (!PATHS.includes(PATH)) { console.error(`ask-eval-picked: --path is one of ${PATHS.join(", ")}`); process.exit(2); }
 const DIR = path.join(WORK, PATH);
+// The library the answers came from, pinned: the last commit that touched data/library, its tree hash, and whether the working tree differs from it.
+// Every answer row and WORK/<path>/meta.json carry it; --report compares two paths only when both used the same library.
+function libraryPin() {
+  const git = (...a) => { const r = spawnSync("git", ["-C", REPO, ...a], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : ""; };
+  return { commit: git("log", "-1", "--format=%H", "--", "data/library"), tree: git("rev-parse", "HEAD:data/library"), dirty: git("status", "--porcelain", "--", "data/library") !== "" };
+}
+const pinKey = (p) => (p && p.commit && p.tree && !p.dirty ? `${p.commit}:${p.tree}` : "");
 const PROMPTS = path.join(DIR, "prompts.jsonl"), ANSWERS = path.join(DIR, "answers.jsonl"), CALLS = path.join(WORK, "calls.jsonl");
 
 // ---- report: aggregates by mode, and Fisher's exact test against a baseline path (numbers only) -------------------------------
@@ -55,7 +62,9 @@ if (flag("--report")) {
   const load = (p) => {
     const A = readJsonl(path.join(WORK, p, "answers.jsonl")), J = readJsonl(path.join(WORK, p, "judgments.jsonl"));
     const jm = new Map(J.map((j) => [rowKey(j), j]));
-    return A.map((a) => ({ ...a, j: jm.get(rowKey(a)) || null }));
+    const metaFile = path.join(WORK, p, "meta.json");
+    const meta = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : {};
+    return A.map((a) => ({ ...a, library: a.library || meta.library || null, j: jm.get(rowKey(a)) || null }));
   };
   const inv = (r) => r.j && ((Array.isArray(r.j.invented) ? r.j.invented.length : 0) > 0 || r.j.det_invented > 0);
   const stats = (rows) => {
@@ -82,12 +91,18 @@ if (flag("--report")) {
     return out;
   };
   const cur = load(PATH);
-  const rep = { path: PATH, by: group(cur) };
+  const pinsOf = (rows) => [...new Set(rows.map((r) => pinKey(r.library)))];
+  const rep = { path: PATH, library: pinsOf(cur), by: group(cur) };
   const pick = cur.filter((r) => r.parse);
   if (pick.length) rep.picker = { offered: pick.length, valid: pick.filter((r) => r.parse.ok).length, empty: pick.filter((r) => r.parse.ok && !r.picks.length).length, invalid_reasons: pick.filter((r) => !r.parse.ok).reduce((m, r) => ((m[r.parse.reason] = (m[r.parse.reason] || 0) + 1), m), {}), lenient_would_parse: pick.filter((r) => !r.parse.ok && r.lenientOk).length, proofFailed: pick.filter((r) => r.refused && r.parse.ok && r.picks.length).length, picksMean: +(pick.reduce((s, r) => s + (r.picks ? r.picks.length : 0), 0) / pick.length).toFixed(2) };
   const baseName = arg("--baseline", "");
   if (baseName) {
     const base = load(baseName);
+    const a1 = pinsOf(cur), b1 = pinsOf(base);
+    if (a1.length !== 1 || b1.length !== 1 || !a1[0] || a1[0] !== b1[0]) {
+      console.log(JSON.stringify({ ...rep, vs: { baseline: baseName, refused: "the two paths did not use one and the same clean library commit", [PATH]: a1, [baseName]: b1 } }, null, 1));
+      process.exit(3);
+    }
     const a = stats(cur), b = stats(base);
     const test = (k) => { const [x1, n1] = a[k], [x2, n2] = b[k]; return { [PATH]: `${x1}/${n1}`, [baseName]: `${x2}/${n2}`, fisher_p: +fisher(x1, n1 - x1, x2, n2 - x2).toFixed(4) }; };
     rep.vs = { baseline: baseName, personalisation: test("personalisation"), answers_question: test("answers_question"), answers_question_when_library_has_it: test("answers_question_when_library_has_it"), invented: test("invented") };
@@ -177,17 +192,25 @@ function reusableReply(promptHash, mode) {
     if (hit) return hit.modelOut;
   }
   for (const dir of String(process.env.ASK_EVAL_REUSE || "").split(",").filter(Boolean)) {
-    const hit = readJsonl(path.join(dir, PATH, "answers.jsonl")).find((a) => a.promptHash === promptHash && a.generator === "agy" && typeof a.modelOut === "string" && a.modelOut);
+    const hit = readJsonl(path.join(dir, PATH, "answers.jsonl")).find((a) => a.promptHash === promptHash && a.generator === "agy" && typeof a.modelOut === "string" && a.modelOut); // the prompt holds the offered facts, so an identical prompt means the same library text
     if (hit) return hit.modelOut;
   }
   return null;
 }
 
 const limit = Number(arg("--limit", "60")), capHour = Number(arg("--cap-hour", "20")), maxCalls = Number(arg("--max-calls", "80")), wait = flag("--wait");
+const LIB = libraryPin();
+if (!pinKey(LIB) && !flag("--dry")) { console.error(`ask-eval-picked: data/library has uncommitted changes or no commit (${JSON.stringify(LIB)}); commit it so the run can be pinned`); process.exit(2); }
 const env = makeEnv();
 const persona = await loadPersona(env);
 const rows = evalRows(limit);
 fs.mkdirSync(DIR, { recursive: true });
+{
+  const metaFile = path.join(DIR, "meta.json");
+  const meta = fs.existsSync(metaFile) ? JSON.parse(fs.readFileSync(metaFile, "utf8")) : null;
+  if (meta && pinKey(meta.library) !== pinKey(LIB) && !flag("--dry")) { console.error(`ask-eval-picked: ${DIR} was started on library ${pinKey(meta.library)}, this checkout has ${pinKey(LIB)}; use a new ASK_EVAL_WORK`); process.exit(2); }
+  if (!meta && !flag("--dry")) fs.writeFileSync(metaFile, JSON.stringify({ path: PATH, library: LIB, started: new Date().toISOString() }, null, 1));
+}
 const done = new Set(readJsonl(ANSWERS).map(rowKey));
 let calls = 0, fails = 0;
 const dry = {};
@@ -214,7 +237,7 @@ for (let i = 0; i < rows.length; i++) {
   }
   if (done.has(key)) continue;
   const finish = (rawAnswer, extra = {}) => finishAnswerText(env, { rawAnswer, isCoach: inp.isCoach, parsedPages: inp.parsedPages, by: asker, askerIsMember: true, persona, intentId: String(r.id), groundingText: inp.groundingText, personalised: inp.personalised || extra.trusted === true, retrieval: inp.retrieval, trusted: extra.trusted === true, question: r.question, opener: inp.opener });
-  const rec = { id: r.id, asker, split: r.split, mode, secs: 0, generator: "agy", refused: false };
+  const rec = { id: r.id, asker, split: r.split, mode, secs: 0, generator: "agy", refused: false, library: LIB };
   let fin;
   if (mode === "abstain") {
     rec.raw = inp.abstainAnswer || refusal(inp); rec.generator = "code"; if (pickedEmpty) rec.pickedEmpty = true;
