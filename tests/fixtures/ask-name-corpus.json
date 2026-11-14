@@ -1,0 +1,369 @@
+{
+ "allowedA": "Party: Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward. the Horde trainers stand in Razor Hill (Durotar: Hunter, Mage) and in Brill (guide roster, tier 2); no Druid trainer in Durotar; Thunder Bluff has three Class trainers Where trainers stand Red Fox (the asker); class: paladin; race: human; faction: Alliance; level: 34 Blue Owl: class mage, race orc, level 28 where do the Horde trainers stand in Razor Hill and Durotar Red Fox. Paladin trainers: Arthur the Faithful, Katherine the Pure and Lord Grayson Shadowbreaker in the Cathedral of Light, Stormwind; Divine Intervention level 44; Zul'Farrak; the level cap is 60 at launch (Blizzard post)",
+ "allowedB": "Party: Santa, Bible Boi, Street Rat, Bloise, Handsome Squidward. the Horde trainers stand in Razor Hill (Durotar: Hunter, Mage) and in Brill (guide roster, tier 2); no Druid trainer in Durotar; Thunder Bluff has three Class trainers Where trainers stand Red Fox (the asker); class: paladin; race: human; faction: Alliance; level: 34 Blue Owl: class mage, race orc, level 28 where do the Horde trainers stand in Razor Hill and Durotar Red Fox. Paladin trainers: Arthur the Faithful, Katherine the Pure and Lord Grayson Shadowbreaker in the Cathedral of Light, Stormwind; Divine Intervention level 44; Zul'Farrak; the level cap is 60 at launch",
+ "master": [
+  {
+   "s": "Available to Horde characters, the trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Head to Horde trainers in Razor Hill or Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Limited to Level 60 at launch, per the Blizzard post.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Exclusive to Alliance, the Paladin trainers stand in the Cathedral of Light.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "The Horde trainers stand in Razor Hill. Good for Tanks and everyone else: Brill has trainers too.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "**Trainers for Horde**\nThe Horde trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "**Notes for Everyone**\nThe Horde trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Thanks for Asking, Red Fox. The Horde trainers stand in Razor Hill.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Head to Razor Hill for Hunter and Mage trainers.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Go to Razor Hill for Hunter and Mage trainers.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Vex in Razor Hill trains Hunters and Mages.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Zul in Durotar sells the Horde trainers their shields.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Druid Trainer in Razor Hill teaches every Druid in Durotar.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Official Blizzard posts confirm a Druid trainer in Razor Hill.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Blizzard Official sources say the Horde trainers stand in Brill.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "The Razor Hills trainers are Hunters and Mages.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Lord Grayson Shadowbreaker in Stormwind trains Paladins.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Lord Mordrek Vane in Stormwind trains Paladins.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Arthur the Faithful and Katherine the Pure stand in the Cathedral of Light.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Katherine the Faithful stands in the Cathedral of Light.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Call to Arms is a holiday.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Call to Light is a holiday.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Zul'Farrak holds the Divine Intervention quest at level 44.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Stormwind's Cathedral of Light holds Lord Grayson Shadowbreaker's post.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "The level cap is 60 at launch (Blizzard post), and respawn is 5 minutes.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "The level cap is 70 at launch and respawn is 9 minutes.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "- Razor Hill: Hunter, Mage\n- Brill: guide roster\n- Thunder Bluff: three trainers",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "*Razor Hill* and __Brill__ hold the Horde trainers; see [Class trainers](https://leeroy.party/#library.systems.trainers).",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Yes, the Horde trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "**Yes**, the Horde trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "*Yes*, the Horde trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Yes! The Horde trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "No. Thunder Bluff has three.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "No, and Brill is the nearer of the two.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Yes, but only in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "No, not in Durotar.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Yes, both.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "No. 2 on the list is Brill; the Horde trainers stand there.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Yes, 60 at launch (Blizzard post).",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "No, Durotar has no Druid trainer; Thunder Bluff has three.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Red Fox, yes: the Horde trainers stand in Razor Hill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Oui, the Horde trainers stand in Razor Hill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Sí, los entrenadores de la Horda están en Razor Hill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Yes—the Horde trainers stand in Razor Hill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "> Yes, the Horde trainers stand in Razor Hill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Yes,\nthe Horde trainers stand in Razor Hill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "The library does not have that yet.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Specific to Horde, the trainers stand in Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Unique to Alliance: Lord Grayson Shadowbreaker in the Cathedral of Light.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "The library does not have that yet. Listed for Horde so far: Razor Hill and Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "**Path to Level 60**\nThe level cap is 60 at launch (Blizzard post).",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Stormwind holds the Paladin trainers.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Mordrek trains Paladins. Stormwind holds the Paladin trainers.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Paladin Trainers in Thunder Bluff are Arthur the Faithful and Katherine the Pure.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Katherine's Call to Arms in Brill is a holiday for Hunters.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Arms for Hunters in Thunder Bluff come from Katherine the Pure.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Brills and Thunders are where Mages train.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Official Blizzard Guide says respawn is 5 minutes.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Blizzard's Official Launch Post says the level cap is 60.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Les entraîneurs de la Horde sont à Razor Hill et à Brill.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Élune in Razor Hill trains Mages.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Zul'Gurub in Durotar opens at level 60.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "The Horde trainers stand in Razor Hill (5 minutes away), level 44 for Divine Intervention, 60 at launch.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Razor Hill, Brill and Thunder Bluff: Hunter, Mage, three trainers.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Hunter in Razor Hill. Mage in Razor Hill. Druid in Thunder Bluff.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Rok in Brill and Gor in Durotar train Hunters.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Lord Grayson Shadowbreaker in Stormwind trains Paladins.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Katherine the Pure in Stormwind trains Paladins.",
+   "A": false,
+   "B": false
+  },
+  {
+   "s": "Official Blizzard posts say the level cap is 60.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Arthur the Faithful in Orgrimmar trains Paladins.",
+   "A": true,
+   "B": true
+  },
+  {
+   "s": "Lord Mordrek Vane in Stormwind trains Paladins.",
+   "A": true,
+   "B": true
+  }
+ ],
+ "relaxed": [
+  "Official Blizzard posts confirm a Druid trainer in Razor Hill.",
+  "Lord Grayson Shadowbreaker in Stormwind trains Paladins.",
+  "Lord Grayson Shadowbreaker in Stormwind trains Paladins.",
+  "Lord Grayson Shadowbreaker in Stormwind trains Paladins.",
+  "Lord Grayson Shadowbreaker in Stormwind trains Paladins.",
+  "Official Blizzard posts say the level cap is 60."
+ ]
+}

@@ -185,7 +185,7 @@ export function renderPartyBuilds(sheets, askerSheet) {
 const PHRASE_RE = /\b[A-Z][a-z]+(?:'s)?(?:\s+(?:of|the|in|for|to)\s+[A-Z][a-z]+(?:'s)?|\s+[A-Z][a-z]+(?:'s)?)+/g;
 // A possessive of a name is the name: "Bible Boi's" is checked as "Bible Boi".
 const unpossess = (w) => w.replace(/'s?$/i, "");
-const HOUSE = [...ROSTER_DATA.map((r) => r.display), "leeroy", "leeroy jenkins", "dungeons and drinking", "wow classic", "classic forever", "world of warcraft", "official blizzard"];
+const HOUSE = [...ROSTER_DATA.map((r) => r.display), "leeroy", "leeroy jenkins", "dungeons and drinking", "wow classic", "classic forever", "world of warcraft"];
 const CONNECTORS = new Set(["of", "the", "in", "for", "to", "and", "a", "an", "at", "on", "with"]);
 // Words that make ordinary prose look like a name: sentence openers, heading words, filler.
 const GENERIC = new Set((
@@ -225,35 +225,40 @@ function tokens(allowed) {
   return t;
 }
 
+// Two narrow relaxations of the name check, each only ever ADDS a pass for a shape master flagged wrongly; every invented-name case master flags stays flagged:
+//  1. "Name in Place": a joined phrase of more than three words passes when every word is grounded and every side of the in/for/to join appears verbatim in the grounding text,
+//     with at least one side of three or more words (a full multi-word name the library gave: "Lord Grayson Shadowbreaker in Stormwind"). One-word and two-word sides never
+//     relax anything ("Druid Trainer in Razor Hill" stays flagged), and nothing is split by regex (the words are walked once).
+//  2. The bare phrase "Official Blizzard" passes only when a shown fact names an official Blizzard source (a post, deep dive, blog, announcement, patch notes, "Forever-confirmed")
+//     without negating it; otherwise it stays checked like any other name. "Official Blizzard Guide" and longer phrases are never relaxed.
+const OFFICIAL_SHOWN = /\bblizzard(?:'s)? (?:[\w-]+ ){0,3}(?:posts?|deep dives?|blogs?|announcements?|patch notes|confirmed)\b|\bforever-confirmed\b/;
+const officialShown = (allowed) => OFFICIAL_SHOWN.test(allowed.replace(/\b(?:no|not|never|without)\b[^;()\n]{0,40}\bblizzard\b/g, " "));
+function joinedSidesGrounded(seg, allowed) {
+  const ws = words(seg);
+  const sides = [[]];
+  for (const w of ws) { if (w === "in" || w === "for" || w === "to") sides.push([]); else sides[sides.length - 1].push(w); }
+  if (sides.length < 2 || sides.some((x) => !x.length) || !sides.some((x) => x.length >= 3)) return false;
+  return sides.every((x) => allowed.includes(x.map((w, i) => (i === x.length - 1 ? unpossess(w) : w)).join(" ").toLowerCase()));
+}
 function badPhrases(text, allowed) {
   const bad = [];
-  const clean = text.replace(/[*_`]/g, "");
-  for (const m of clean.matchAll(PHRASE_RE)) {
+  for (const m of text.replace(/[*_`]/g, "").matchAll(PHRASE_RE)) {
     const whole = m[0].replace(/'s\b/g, "'s");
     if (allowed.includes(unpossess(whole).toLowerCase()) || allowed.includes(whole.toLowerCase())) continue;
+    if (whole === "Official Blizzard" && officialShown(allowed)) continue;
     // A possessive ends a name: "Street Rat's Holy Shield" is two names, each checked on its own.
     for (const seg of whole.split(/'s\b\s*/).filter(Boolean)) {
-      // "in", "for" and "to" join a name to a place ("Lord Grayson Shadowbreaker in Stormwind", "Call to Arms"): each side is checked on its own, even when it is one word.
-      // ("of" and "the" sit inside names and stay.)
-      const pieces = seg.split(/\s+(?:in|for|to)\s+/);
-      pieces.forEach((piece) => {
-        const full = words(piece).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
-        if (allowed.includes(full.toLowerCase())) return;
-        const core = trimPhrase(full, true).map(unpossess);
-        if (core.length < 2) {
-          if (pieces.length < 2 || core.length === 0) return;
-          const w = core[0].toLowerCase();
-          if (w.length <= 3 || GENERIC.has(w)) return; // "Go to Thunder Bluff": a short word or a plain prose word is not a name
-          if (!(tokens(allowed).has(w) || tokens(allowed).has(w.replace(/s$/, "")) || tokens(allowed).has(w + "s"))) bad.push(full);
-          return;
-        }
-        if (allowed.includes(core.join(" ").toLowerCase())) return;
-        // Every word of the name is individually grounded and the phrase is just grounded things side by side ("Paladin Deadmines").
-        const sig = core.filter((x) => !CONNECTORS.has(x.toLowerCase()));
-        const grounded = (x) => { const w = x.toLowerCase(), t = tokens(allowed); return t.has(w) || t.has(w.replace(/s$/, "")) || t.has(w + "s"); }; // plural or singular of a grounded word is grounded
-        if (sig.every(grounded) && sig.length <= 3) return;
-        bad.push(full);
-      });
+      const full = words(seg).map((w, i, a) => (i === a.length - 1 ? unpossess(w) : w)).join(" ");
+      if (allowed.includes(full.toLowerCase())) continue;
+      const core = trimPhrase(full, true).map(unpossess);
+      if (core.length < 2) continue;
+      if (allowed.includes(core.join(" ").toLowerCase())) continue;
+      // Every word of the name is individually grounded and the phrase is just grounded things side by side ("Paladin Deadmines").
+      const sig = core.filter((x) => !CONNECTORS.has(x.toLowerCase()));
+      const groundedWords = sig.every((x) => tokens(allowed).has(x.toLowerCase()));
+      if (groundedWords && sig.length <= 3) continue;
+      if (groundedWords && joinedSidesGrounded(seg, allowed)) continue;
+      bad.push(full);
     }
   }
   return bad;

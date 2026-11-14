@@ -24,8 +24,8 @@ import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedId
 import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
-import { buildOpener, buildQueryExtra, pickBuildFacts, factionOf } from "./ask-opener.js";
-import { groupComposition, factionTag, scopeTag, GROUNDING_RULE, stripVerdictOpener } from "./ask-grounding.js";
+import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
+import { groupComposition, scopeTag, GROUNDING_RULE } from "./ask-grounding.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -34,7 +34,7 @@ export const PERSONALISE_RULE =
 
 // Added after PERSONALISE_RULE: the Leeroy voice. Wording only; grounding, citation and length rules are unchanged.
 export const VOICE_RULE =
-  "VOICE: a confident, playful, well-read friend. The first sentence answers the question. One light smile on the first phone screen, taken from the asker's own build or the group as listed in GROUP_COMPOSITION (a dry aside, never an added fact); vary the rhythm, a short sentence after a long one. Never use the words Skippy or honestly. No personal callouts. Inform, never instruct. When the library lacks the answer, the voice never adds facts: say so in one plain sentence, using the exact line from the rule above (The library does not have that yet), name only what the library does say, and stop.";
+  "VOICE: a confident, playful, well-read friend. The first sentence answers the question. One light smile on the first phone screen. Never use the words Skippy or honestly. No personal callouts. Inform, never instruct. When the library lacks the answer, the voice never adds facts: say so in one plain sentence, using the exact line from the rule above (The library does not have that yet), name only what the library does say, and stop.";
 
 // Alias -> display name for the voice guards. Only distinctive single-word aliases that sit inside a longer display name
 // are used ("squidward" -> "Handsome Squidward"); short or common words such as "rat", "tank" or "mage" are never rewritten.
@@ -915,13 +915,11 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       const add = pickBuildFacts(more.ranking.hits, hits, buildFactsNow, 2);
       if (add.length) hits = [...hits.slice(0, 1), ...add, ...hits.slice(1)];
     }
-    // Derived from data, not assumed (ask-grounding.js): the party's factions (visible sheet races only), the asker's faction, and the source scope of each fact.
-    const askerRaceFacts = askerFacts(askerSheet, { includeHidden: share === false && askerBySlug });
-    const askerFaction = buildHelps && askerRaceFacts ? factionOf(askerRaceFacts.race) : ""; // same decision as buildHelps: a suppressed build tags nothing
+    // Derived from data, not assumed (ask-grounding.js): the party's factions (visible sheet races only) and the source scope of each fact. Prompt text only.
     const group = groupComposition(sheets, { askerSheet, includeHidden: share === false && askerBySlug });
     const topFactHits = hits
       .slice(0, 20)
-      .map((h) => `  - [${h.page}~${h.key}] (score ${h.score})${factionTag(h.page, h.value, askerFaction)}${scopeTag(h.key, h.value)}: ${h.value}`);
+      .map((h) => `  - [${h.page}~${h.key}] (score ${h.score})${scopeTag(h.key, h.value)}: ${h.value}`);
 
     const pageHitBonus = new Map();
     for (const h of hits.slice(0, 30)) {
@@ -1021,7 +1019,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // page the prompt only summarised), plus the build, the party and the question.
     const shownFacts = hits.slice(0, 20).map((h) => h.value).join(" ");
     const shownPages = ranked.map((p) => `${p.title}${p.blurb ? ` ${p.blurb}` : ""}`).join(" ");
-    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, group.line ? `GROUP_COMPOSITION: ${group.line}` : "", question, prevQ, by].join(" ");
+    const groundingBase = [partySummary, shownFacts, shownPages, yourBuild, partyBuilds, question, prevQ, by].join(" "); // the earlier question was shown too: a name or number only it holds may be repeated
     const groundingText = groundingWithIds(groundingBase, retrievedIds, abstain);
     const NL = "\n";
     const libraryBlock = !retrieve
@@ -1031,7 +1029,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}${group.line ? `${fence("GROUP_COMPOSITION", group.line)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { group, parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1043,7 +1041,7 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", group = null }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "" }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
@@ -1054,10 +1052,6 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
       const g = groundedOrNotPublished(repaired, groundingText);
       if (!g.ok) repaired = g.answer;
       repaired = guardRefusal(repaired, groundingText);
-      // The leading Yes or No is dropped for a mixed-faction group: it was assumed, not derived from the group as composed. The caller's group wins; the grounding line is the fallback
-      // for callers that only hold the grounding text (the offline eval).
-      const mixed = group ? Boolean(group.mixed) : /GROUP_COMPOSITION: mixed faction;/.test(groundingText);
-      repaired = stripVerdictOpener(repaired, { mixed });
     }
     // IsSup (self-rag.js): a number the library, the build and the question never gave goes; a source that was not retrieved is not cited.
     const retrieved = retrievalOf({ retrieval, groundingText });
@@ -1318,7 +1312,7 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, group: inputs.group });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.

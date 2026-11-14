@@ -1,10 +1,9 @@
 // =============================================================================
-// /ask grounding helpers (`worker/ask-grounding.js`): facts the prompt derives from DATA instead of assuming, and the deterministic checks that
-// keep a claim the library never made out of the answer. Pure: no I/O, no clock, no model call.
+// /ask grounding helpers (`worker/ask-grounding.js`): facts the PROMPT derives from data instead of assuming. Pure: no I/O, no clock, no model call.
 //   groupComposition   the party's factions, read from the visible race of each sheet (never assumed: a mixed group is said to be mixed)
-//   factionTag         marks a library fact that is for the other faction than the asker's
-//   scopeOf            the source scope of a library fact (beta reports, guide, podcast recap, datamined, unsettled), so the answer can carry it
-//   stripVerdictOpener a leading Yes or No is removed when the group is mixed: the verdict was not derived from the group as composed
+//   scopeOf / scopeTag the source scope of a library fact (beta reports, guide or fan site, community, podcast recap, datamined, unsettled), so the answer can carry it
+//   GROUNDING_RULE     the prompt text that uses both, and tells the model not to open with Yes or No or to state an absence the library did not state
+// Nothing here edits an answer. The opener and absence claims are prompt-guided, not code-guaranteed.
 // =============================================================================
 import { factionOf } from "./ask-opener.js";
 import { stripFence } from "./prompt-fence.js";
@@ -41,19 +40,16 @@ export function groupComposition(sheets, { askerSheet = null, includeHidden = fa
   return { horde, alliance, unknown, total, mixed, line };
 }
 
-// A fact that names only one faction is not for an asker of the other. "" when nothing to say.
-export function factionTag(page, value, askerFaction) {
-  if (askerFaction !== "Horde" && askerFaction !== "Alliance") return "";
-  const text = `${page || ""} ${value || ""}`;
-  const h = /\bhorde\b/i.test(text), a = /\balliance\b/i.test(text);
-  if (askerFaction === "Alliance" && h && !a) return " [Horde fact: not the asker's faction]";
-  if (askerFaction === "Horde" && a && !h) return " [Alliance fact: not the asker's faction]";
-  return "";
-}
-
 // The scope of a fact, from the words its own text carries (the library already writes its sources into the value). [] = nothing to label.
-// Facts that name an official Blizzard source (a post, a deep dive, an announcement, "Forever-confirmed") are never labelled as fan or guide sourced, whatever else they cite.
-const OFFICIAL_RE = /\b(?:Blizzard(?:'s)? (?:[\w-]+ ){0,3}(?:posts?|deep dives?|blogs?|announcements?|patch notes|confirmed)|Forever-confirmed)\b/i;
+// A fact that names an official Blizzard source (a post, a deep dive, an announcement, "Forever-confirmed") is never labelled as guide, fan or community sourced, but a NEGATED
+// mention ("not in Blizzard's post", "no Blizzard post read", "Blizzard has not confirmed") is not a source and is removed before that test.
+const OFFICIAL_RE = /\bBlizzard(?:'s)? (?:[\w-]+ ){0,3}(?:posts?|deep dives?|blogs?|announcements?|patch notes|confirmed)\b|\bForever-confirmed\b/i;
+const officialSource = (t) =>
+  OFFICIAL_RE.test(
+    String(t || "")
+      .replace(/\b(?:no|not|never|nor|without)\b[^;()]{0,40}\bBlizzard\b/gi, " ")
+      .replace(/\bBlizzard\b[^;()]{0,30}\b(?:not|no|never)\b/gi, " ")
+  );
 export function scopeOf(key, value) {
   const t = String(value || "");
   const out = [];
@@ -61,29 +57,19 @@ export function scopeOf(key, value) {
   if (/\bbeta (?:reports?|feedback|data|testers?|players?)\b/i.test(t)) out.push("beta reports");
   if (/\bpodcast\b|\brecaps?\b/i.test(t)) out.push("podcast recap");
   if (/\bdatamin\w*|\bwowforevertalents\b|\bclient \d{4,}\b/i.test(t)) out.push("datamined");
-  if (!OFFICIAL_RE.test(t) && /\b(?:guide|wiki|wowhead|icy veins|warcraft tavern)\b/i.test(t)) out.push("guide or fan site");
+  if (!officialSource(t)) {
+    if (/\b(?:guide|wiki|wowhead|icy veins|warcraft tavern)\b/i.test(t)) out.push("guide or fan site");
+    if (/\b(?:forum|videos?|youtube|reddit|community|streamers?)\b/i.test(t)) out.push("community source");
+  }
   return out;
 }
-export const scopeTag =(key, value) => {
+export const scopeTag = (key, value) => {
   const s = scopeOf(key, value);
   return s.length ? ` [scope: ${s.join(", ")}]` : "";
 };
 
 export const GROUNDING_RULE =
-  "GROUNDING: (1) Never assume the party's faction or make-up: use GROUP_COMPOSITION and YOUR_BUILD. A fact tagged [Horde fact ...] or [Alliance fact ...] is not for the asker: say which part applies to the asker's build, in the first two sentences, rather than presenting it as theirs. " +
-  "(2) Do not open with Yes or No unless a LIBRARY fact says exactly that for the group as in GROUP_COMPOSITION; open with the fact that answers. " +
+  "GROUNDING: (1) Never assume the party's faction or make-up: use GROUP_COMPOSITION and YOUR_BUILD. Where a library fact is for one faction only, say which part applies to the asker's build, in the first two sentences, rather than presenting it as theirs. " +
+  "(2) Do not open with Yes or No unless a LIBRARY fact says exactly that for the group as in GROUP_COMPOSITION; when the group is mixed, open with the fact that answers. " +
   "(3) A fact tagged [scope: ...] is not an official Blizzard statement: carry its label in the sentence in plain words (beta reports say, per the guide, the podcast recap says, datamined, not settled yet), and never give a time, date or number from it as settled. " +
   "(4) A list of what exists is not a statement of what does not: say that something is missing, absent, unavailable or has no trainer only when a LIBRARY fact says so in those words (no, none, not); otherwise say what the library lists and stop.";
-
-// ---- verdict opener -----------------------------------------------------------------------------------------------------------
-// "Yes, a Horde group can ..." in front of a mixed-faction group was assumed, not derived. With a mixed group the leading verdict word goes and the fact leads.
-const VERDICT_RE = /^(\s*(?:\*\*)?)(?:yes|no|yep|nope|yeah)(?:\s*[,.:;!—]+|\s+[-–—]\s)\s*(?:\*\*)?\s*/i; // the verdict word must be followed by punctuation: "No Druid trainer ...", "No one ...", "Yes and no: ..." are not verdicts
-export function stripVerdictOpener(answer, { mixed = false } = {}) {
-  const text = String(answer || "");
-  if (!mixed) return text;
-  const m = VERDICT_RE.exec(text);
-  if (!m) return text;
-  const rest = text.slice(m[0].length);
-  if (!/[A-Za-z]/.test(rest.slice(0, 40))) return text; // nothing but a verdict: leave it
-  return `${(m[0].match(/\*\*/g) || []).length === 1 ? "**" : ""}${rest.charAt(0).toUpperCase()}${rest.slice(1)}`;
-}
