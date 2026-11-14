@@ -29,9 +29,11 @@ const ticksOf = (slug) => (slug && typeof K.beforeTicks === "function" ? K.befor
 function snoozeMap() {
   const out = {}; try { for (const [k, v] of Object.entries(JSON.parse(MEM.get("snooze") || "{}") || {})) if (typeof v === "number" && v > Date.now()) out[k] = v; } catch (e) {} return out;
 }
+// The rules see this week's sign-ups only (js/signups-week.js via K.week): an answer older than 7 days is not counted or treated as yours.
+const weekSignups = () => { const S = D.signups; if (!S) return null; const w = K.week ? K.week() : null; return w ? { ...S, entries: w.current } : S; };
 function buildInput() {
   const B = brain(), m = MEM.member(), me = m ? { class_key: m.class_key, name: m.name, slug: MEM.slug(m.name) } : null;
-  return { party: D.party, timeline: D.timeline, tonight: D.tonight, signups: D.signups || null, decide: window.__decide && window.__decide.data ? window.__decide.data : null,
+  return { party: D.party, timeline: D.timeline, tonight: D.tonight, signups: weekSignups(), decide: window.__decide && window.__decide.data ? window.__decide.data : null,
     launch: B && B.launch ? B.launch() : [], partyRows: B && B.party ? B.party() : [], me, partyWord: K.pn.word(), partyOther: K.pn.word(-1), partyNoun: K.pn.noun(), say: K.pn.say, journey: journey(), key: keyed(B), ticks: ticksOf(me && me.slug), snoozed: snoozeMap(), cleanName: K.cleanName };
 }
 
@@ -80,7 +82,8 @@ function tonightLine(t, short) {
   let s = `${String(t.label).split(":")[0].trim()}${when ? `: ${when}` : ""}.`;
   if (!short) {
     const c = t.coming || {}, n = c.in || 0, rest = [[c.maybe, "tentative"], [c.late, "running late"], [c.out, "out"]].filter(([k]) => k > 0), none = ((D.party && D.party.members.length) || 5) - n - rest.reduce((x, [k]) => x + k, 0);
-    s += n ? ` ${n} of the ${K.pn.word()} ${n === 1 ? "has" : "have"} said they're in for launch night.` : " Nobody has said they're in for launch night yet.";
+    const night = K.launchPast && K.launchPast() ? "this week" : "launch night";
+    s += n ? ` ${n} of the ${K.pn.word()} ${n === 1 ? "has" : "have"} said they're in for ${night}.` : ` Nobody has said they're in for ${night} yet.`;
     if (rest.length) s += ` ${K.andList(rest.map(([k, w]) => `${k} ${w}`))}.`;
     if (none > 0) s += ` ${none} ${none === 1 ? "has" : "have"} not answered yet.`;
   }
@@ -176,7 +179,7 @@ function nsApply(out, N) {
   if (!N || !out || !out.step || !P || (!me && !just)) return out;
   const ro = N.roster && N.roster.group ? N.roster : null, slots = ro && Array.isArray(ro.slots) ? ro.slots : [], bench = ro && Array.isArray(ro.bench) ? ro.bench : [];
   const mine = me && ro && slots.concat(bench).some((s) => s && s.character && s.character.name === me.name);
-  const sg = me && D.signups && Array.isArray(D.signups.entries) ? D.signups.entries.find((e) => e.name === me.name) : null;
+  const sg = me && K.launchPast && K.launchPast() && K.weekMine ? K.weekMine(me) : me && D.signups && Array.isArray(D.signups.entries) ? D.signups.entries.find((e) => e.name === me.name) : null; /* after launch: this week's answer only */
   let r = null;
   try {
     r = N.mod.nextStep({ build: me ? { class_key: me.class_key, role: me.role, faction: P.faction, ruleset: P.ruleset } : null,

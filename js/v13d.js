@@ -63,7 +63,7 @@ function nextDeadline() {
   for (const q of (D.party && D.party.polls) || []) if (q.closes_epoch && q.closes_epoch > now) out.push({ t: q.closes_epoch, text: `The ${q.title.toLowerCase()} poll closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` });
   return out.sort((a, b) => a.t - b.t)[0] || null;
 }
-const Q = { timeline: "When is launch, and what comes after?", five: "Who plays what?", roads: "Where do I wake up, and where do we meet?", racials: "What does my race give me?", legacy: "What are bonus points, and when do they start?", buffs: "What do I give, and what do I get?", ledger: "What is still open, and which one is mine?", signups: "Am I in for launch night?", librarian: "How do I ask Leeroy?", library: "What should I read first?", decide: "What do I still decide, and by when?" };
+const Q = { timeline: "When is launch, and what comes after?", five: "Who plays what?", roads: "Where do I wake up, and where do we meet?", racials: "What does my race give me?", legacy: "What are bonus points, and when do they start?", buffs: "What do I give, and what do I get?", ledger: "What is still open, and which one is mine?", get signups() { return K.launchPast && K.launchPast() ? "Am I in this week?" : "Am I in for launch night?"; }, librarian: "How do I ask Leeroy?", library: "What should I read first?", decide: "What do I still decide, and by when?" };
 const cut = (t, n = 38) => { const w = String(t).split(/\s+/); return w.length > n ? `${w.slice(0, n).join(" ").replace(/[,;:]$/, "")}.` : String(t); };
 const few = (l, n = 3) => (l.length > n ? `${l.slice(0, n).join(", ")} and ${l.length - n} more` : K.andList(l));
 const evOf = (k) => (D.timeline && D.timeline.events.find((e) => e.key === k)) || null;
@@ -106,8 +106,8 @@ const CORE = {
   },
   signups() {
     const S = D.signups, me = MEM.member(); if (!S || !S.tallies) return null;
-    const e = me && (S.entries || []).find((x) => K.cleanName(x.name).toLowerCase() === me.name.toLowerCase()), n = (S.tallies.rsvp.in || {}).count || 0;
-    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(), le = K.launchEvent(); return { a: `Launch night was ${le.when}. ${n} of ${D.party.members.length} had said they were in.${me ? (e && e.rsvp ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you was recorded.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: me ? ["See the answers", () => unfold("signups", "rsvp")] : null, who: signupWho }; }
+    const w = K.week(), e = me ? K.weekMine(me) : null, n = (w.rsvp.in || {}).count || 0; // this week's answers only (js/signups-week.js)
+    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(); return { a: `${w.empty ? `${w.empty.nobody} ${w.empty.last}` : `This week: ${n} of ${D.party.members.length} are in.`}${me ? (e ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you for this week yet.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: me ? ["See the answers", () => unfold("signups", "rsvp")] : null, who: signupWho }; }
     return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: me ? ["Change my answer", () => unfold("signups", "rsvp")] : null, who: signupWho };
   },
   librarian() { const st = D.stats; return st ? { a: `Type /ask in #wow-forever, or write below. Median answer: ${Math.round(st.median_s)} s.`, go: ["Ask Leeroy", () => { const t = $("#ask-text"); if (t) t.focus(); else unfold("librarian"); }] } : null; },
@@ -117,10 +117,10 @@ const CORE = {
     return { a: x ? `${x.title}: ${x.state_text}. ${x.by && x.by.text ? x.by.text : ""}` : me ? "Nothing of yours is open." : "Pick your name to see your own choices.", go: ["Open that decision", () => unfold("decide")] };
   },
 };
-// B65: who is in, by time slot, under the Sign-ups card. Read from the tallies the board already shows (rsvp + when), never from a new endpoint.
+// B65: who is in, by time slot, under the Sign-ups card. Read from the tallies the board already shows (rsvp + when, this week's answers only: K.week), never from a new endpoint.
 // Every member lands in exactly one group: In at <slot>, In (no time picked), Tentative / Running late / Out, or Not answered yet.
 function signupWho() {
-  const S = D.signups, T = S && S.tallies, M = D.party && D.party.members; if (!T || !T.rsvp || !M) return null;
+  const S = D.signups, w = S && S.tallies ? K.week() : null, T = w ? { rsvp: w.rsvp, when: w.when } : null, M = D.party && D.party.members; if (!T || !M) return null;
   const key = (n) => K.cleanName(n).toLowerCase(), has = (slot, m) => !!slot && (slot.names || []).some((n) => key(n) === key(m.name));
   const left = new Set(M), take = (pred) => { const l = M.filter((m) => left.has(m) && pred(m)); l.forEach((m) => left.delete(m)); return l; };
   const groups = [];
@@ -128,7 +128,7 @@ function signupWho() {
   groups.push({ id: "in-open", label: "In, no time picked", list: take((m) => has(T.rsvp.in, m)) });
   for (const k of ["maybe", "late", "out"]) groups.push({ id: k, label: K.RSVP_SAY[k] || k, list: take((m) => has(T.rsvp[k], m)) });
   groups.push({ id: "none", label: "Not answered yet", list: [...left], keep: true });
-  return h("section", { class: "jr-who", "aria-label": "Who is in for launch night" }, groups.filter((g) => g.keep || g.list.length).map((g) => h("div", { class: "jr-wg", "data-g": g.id }, h("h4", { class: "jr-wh", text: g.label }), g.list.length ? h("ul", { class: "jr-wl" }, g.list.map((m) => h("li", { class: "jr-wn", "data-member": m.name, text: m.name }))) : h("p", { class: "jr-w0", text: "Nobody yet" }))));
+  return h("section", { class: "jr-who", "aria-label": K.launchPast && K.launchPast() ? "Who is in this week" : "Who is in for launch night" }, groups.filter((g) => g.keep || g.list.length).map((g) => h("div", { class: "jr-wg", "data-g": g.id }, h("h4", { class: "jr-wh", text: g.label }), g.list.length ? h("ul", { class: "jr-wl" }, g.list.map((m) => h("li", { class: "jr-wn", "data-member": m.name, text: m.name }))) : h("p", { class: "jr-w0", text: "Nobody yet" }))));
 }
 const deepLine = (key) => { const C = D.client; return ["racials", "legacy", "buffs"].includes(key) && C ? `Numbers here are from the game client's tables, build ${C.build}.` : key === "timeline" ? `Launch: ${(evOf("launch") || {}).epoch}, raids: ${(evOf("raids") || {}).epoch} (seconds since 1970, UTC).` : `Built from the board's own records on ${String((D.party || {}).generated || "").slice(0, 10)}.`; };
 function fold(panel) {
@@ -559,6 +559,7 @@ function suControls() {
 K.on("signups", () => { suControls(); });
 function mirrorIn(sig) {
   if (!sig || !Array.isArray(sig.entries)) return;
+  if (window.BoardWeek && !BoardWeek.accept(sig, D.signups)) return; // a late socket document older than the one in hand, or the same one again: no change, no second render
   D.signups = { ...(D.signups || {}), updated: sig.updated || (D.signups && D.signups.updated) || null, entries: sig.entries, ...(sig.tallies ? { tallies: { ...(D.signups && D.signups.tallies), ...sig.tallies } } : {}) };
   for (const f of ["tiles", "signups", "tonight"]) { try { K.render[f](); } catch (e) { console.error(f, e); } }
   core("signups");
