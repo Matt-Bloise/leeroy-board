@@ -1,8 +1,6 @@
 {
  "about": "Every key path an anonymous caller may read, per surface (route without /api and .json, or 'socket' for what an anonymous WebSocket receives). Arrays are [], data-valued object keys are *. Kept by tests/unit/public-read-contract.test.mjs. A new path means a new public field: confirm it is meant to be public before adding it (UPDATE_PUBLIC_ALLOWLIST=1 regenerates; read the diff).",
- "known": {
-  "socket: intent.by": "An anonymous socket learns who asked each shared question (the asker display name) and when, not the text. Same names as the public party list. Kept as of 2026-11-14 pending an owner decision."
- },
+ "known": {},
  "surfaces": {
   "/": [
    "at",
@@ -2232,24 +2230,18 @@
    "data.wiki_facts",
    "data.wiki_pages",
    "intent.at",
-   "intent.by",
-   "intent.id",
    "intent.kind",
    "intent.model",
    "intent.ms",
    "intent.provider",
    "intent.share",
-   "intent.slug",
    "intent.status",
    "item.at",
-   "item.by",
-   "item.id",
    "item.kind",
    "item.model",
    "item.ms",
    "item.provider",
    "item.share",
-   "item.slug",
    "item.status",
    "key",
    "party[].fields.class.at",
@@ -2271,7 +2263,6 @@
    "party[].name",
    "party[].slug",
    "party[].updated",
-   "slug",
    "type"
   ]
  }

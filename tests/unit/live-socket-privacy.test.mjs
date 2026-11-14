@@ -44,7 +44,7 @@ test("shared ask: member key and web session sockets get the text; an anonymous 
   for (const s of [sockets.anon, sockets.guestA, sockets.guestB]) {
     assert.equal(s.got.length, 1);
     assert.ok(!text(s).includes("PRIVATE-PROBE"), "no text for a non-member");
-    assert.deepEqual(JSON.parse(s.got[0]), { type: "ask", slug: "santa" });
+    assert.deepEqual(JSON.parse(s.got[0]), { type: "ask" }, "no slug: it would say who asked");
   }
 });
 
@@ -55,7 +55,8 @@ test("shared ask in flight: the intent item and the stats row lose the question,
   await push(room, { type: "intent", item: { id: 5, kind: "ask", by: "Santa", q: Q, status: "error", error: A } });
   assert.ok(text(sockets.member).includes(Q) && text(sockets.member).includes(A));
   assert.ok(!text(sockets.anon).includes("PRIVATE-PROBE"));
-  assert.deepEqual(JSON.parse(sockets.anon.got[0]).item, { id: 5, kind: "ask", by: "Santa", status: "thinking", at: "t" });
+  // no id (an ask id is its credential at GET /api/ask?id=), no by: a stranger learns that someone is asking, not who or which turn
+  assert.deepEqual(JSON.parse(sockets.anon.got[0]).item, { kind: "ask", status: "thinking", at: "t" });
   assert.equal(JSON.parse(sockets.anon.got[1]).intent.status, "answered");
 });
 
@@ -65,7 +66,7 @@ test("guest ask: only the socket that sent that ask's id gets the answer; not an
   assert.ok(text(sockets.guestA).includes(A), "the owner");
   for (const s of [sockets.guestB, sockets.anon, sockets.member, sockets.web]) assert.ok(!text(s).includes("PRIVATE-PROBE"));
   assert.ok(!text(sockets.guestA).includes("forAsk"), "the routing field never leaves the room");
-  assert.deepEqual(JSON.parse(sockets.member.got[0]), { type: "ask", slug: "guest" });
+  assert.deepEqual(JSON.parse(sockets.member.got[0]), { type: "ask" });
 });
 
 test("a bad member key, or someone else's ask id guess, earns nothing", async () => {
@@ -78,10 +79,14 @@ test("a bad member key, or someone else's ask id guess, earns nothing", async ()
   assert.ok(!text(sockets.anon).includes("PRIVATE-PROBE"));
 });
 
-test("messages with no text (presence, state, library) reach every socket unchanged", async () => {
+test("messages with nothing private (state, library) reach every socket unchanged; an ask nudge keeps its slug for members only", async () => {
   const { room, sockets } = await authedRoom();
+  await push(room, { type: "library", categories: ["classes"], page: "classes/mage" });
+  for (const s of Object.values(sockets)) assert.equal(s.got[0], '{"type":"library","categories":["classes"],"page":"classes/mage"}');
+  for (const s of Object.values(sockets)) s.got.length = 0;
   await push(room, { type: "ask", slug: "santa" });
-  for (const s of Object.values(sockets)) assert.equal(s.got[0], '{"type":"ask","slug":"santa"}');
+  for (const s of [sockets.member, sockets.web]) assert.equal(s.got[0], '{"type":"ask","slug":"santa"}');
+  for (const s of [sockets.anon, sockets.guestA, sockets.guestB]) assert.equal(s.got[0], '{"type":"ask"}');
 });
 
 test("Worker /live: a client-supplied live-auth header never reaches the room", async () => {

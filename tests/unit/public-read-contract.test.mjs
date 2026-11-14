@@ -43,9 +43,10 @@ const C = {
   privateQ: "zqpq private question", privateA: "zqpa private answer", privateBy: "zqpb hidden asker",
   hidden: "zqhs hidden sheet value",
   persona: "zqpr persona text", members: "zqmr members row", config: "zqcf config row", feed: "zqfd feed cache",
-  snapshot: "zqss source snapshot", proposal: "zqwp wiki proposal",
+  snapshot: "zqss source snapshot", proposal: "zqwp wiki proposal", askerSlug: "zqsl-asker-slug",
 };
-const IDS = { discordId: "112233445566778899", discordId2: "998877665544332211", keyHash: "c".repeat(64), sessionHash: "d".repeat(64) };
+const ASK_UUID = "11111111-1111-4111-8111-111111111111"; // a shared turn's id: GET /api/ask?id= answers whoever holds it, so a stranger must never see it
+const IDS = { discordId: "112233445566778899", discordId2: "998877665544332211", keyHash: "c".repeat(64), sessionHash: "d".repeat(64), askId: ASK_UUID };
 const SECRETS = { ADMIN: "admin-token-for-tests-0123456789abcdef", KEY_SALT: "key-salt-for-tests-0123456789", USER_SALT: "user-salt-for-tests-0123456789" };
 const HASHES = {}; // vote voter hashes, computed in makeEnv
 
@@ -102,7 +103,7 @@ async function makeEnv() {
   kv("votes:index", { ids: ["ab12cd34"] });
   for (const f of LIB_NAMES) sql("INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES (?, ?, ?, ?)", f, "s1", JSON.stringify(fileJson(new URL(f, LIB))), AT);
   const turn = (id, by, q, a, share, at) => sql("INSERT INTO ask_turns (id, by_name, question, answer, status, share, created_at, answered_at) VALUES (?, ?, ?, ?, 'answered', ?, ?, ?)", id, by, q, a, share, at, at);
-  turn("11111111-1111-4111-8111-111111111111", "Red Fox", C.sharedQ, C.sharedA, 1, AT);
+  turn(ASK_UUID, "Red Fox", C.sharedQ, C.sharedA, 1, AT);
   turn("1700000000001", C.privateBy, C.privateQ, C.privateA, 0, PRIVATE_AT);
   sql("INSERT INTO users (discord_user_id, display_name, created_at) VALUES (?, ?, ?)", IDS.discordId, "Red Fox", AT);
   sql("INSERT INTO sessions_v2 (token_hash, discord_user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", IDS.sessionHash, IDS.discordId, AT, "2026-12-12T00:00:00.000Z");
@@ -124,10 +125,16 @@ const NEEDLES = () => [
 const leaks = (text, except = []) => { const t = String(text).toLowerCase(); return NEEDLES().filter((n) => !except.includes(n) && t.includes(n)); };
 let canaryFailures = 0; // the allow list is never regenerated while a canary test fails
 const quiet = async (fn) => { const e = console.error, w = console.warn, l = console.log; console.error = console.warn = console.log = () => {}; try { return await fn(); } finally { console.error = e; console.warn = w; console.log = l; } };
-const get = async (env, path, init = {}) => {
+const fetchApi = (env, path, headers = {}) => quiet(() => worker.fetch(new Request(`${ORIGIN}/api${path}`, { redirect: "manual", headers: { "CF-Connecting-IP": "203.0.113.40", ...headers } }), env, ctx));
+// An anonymous read. With warm, the same path is first read with the admin token and the cache is NOT purged in between, so a privileged body
+// cached by URL would be served to the anonymous caller and caught here. The text checked is the body and every response header.
+const get = async (env, path, { warm = false } = {}) => {
   await purgeWorkerCache(ORIGIN, [`/api${path.replace(/\?.*$/, "")}`, `/api${path}`]);
-  const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api${path}`, { redirect: "manual", ...init, headers: { "CF-Connecting-IP": "203.0.113.40", ...(init.headers || {}) } }), env, ctx));
-  return { status: res.status, text: await res.text(), type: res.headers.get("content-type") || "" };
+  if (warm) await (await fetchApi(env, path, { Authorization: `Bearer ${SECRETS.ADMIN}` })).text();
+  const res = await fetchApi(env, path);
+  const body = await res.text();
+  const headers = [...res.headers].map(([k, v]) => `${k}: ${v}`).join("\n");
+  return { status: res.status, text: body, scan: `${headers}\n${body}`, type: res.headers.get("content-type") || "" };
 };
 const asJson = (text) => { try { return JSON.parse(text); } catch { return undefined; } };
 
@@ -169,8 +176,8 @@ test("an anonymous GET of every route, name and query holds no private value; pu
     for (const [p, isPublic] of concrete(route)) {
       for (const q of ["", QUERY]) {
         const path = p.includes("?") ? `${p}${q.replace("?", "&")}` : `${p}${q}`;
-        const r = await get(env, path);
-        const l = leaks(r.text);
+        const r = await get(env, path, { warm: true });
+        const l = leaks(r.scan);
         if (l.length) found.push(`${path} (${r.status}): ${l.join(", ")}`);
         if (cls === "auth") assert.ok(r.status < 200 || r.status >= 300, `${path} answered ${r.status} with no credentials`);
         const j = asJson(r.text);
@@ -189,9 +196,9 @@ test("an anonymous GET of every route, name and query holds no private value; pu
 
 test("the ask capability: a UUID id shows that one shared turn and nothing private; a guessable id needs a key", async () => {
   const env = await makeEnv();
-  const shared = await get(env, "/ask?id=11111111-1111-4111-8111-111111111111");
+  const shared = await get(env, `/ask?id=${ASK_UUID}`);
   assert.equal(shared.status, 200, "the holder of the random id reads that turn (by design)");
-  const own = [C.sharedQ, C.sharedA].map((v) => v.split(" ")[0]);
+  const own = [...[C.sharedQ, C.sharedA].map((v) => v.split(" ")[0]), ASK_UUID];
   const l = leaks(shared.text, own);
   if (l.length) canaryFailures++;
   assert.deepEqual(l, []);
@@ -199,7 +206,9 @@ test("the ask capability: a UUID id shows that one shared turn and nothing priva
   for (const id of ["1700000000001", "17000000000%25", "1700000000001%20"]) {
     const guess = await get(env, `/ask?id=${id}`);
     assert.ok(guess.status === 401 || guess.status === 403 || guess.status === 404, `id ${id} answered ${guess.status}`);
-    assert.deepEqual(leaks(guess.text), []);
+    const g = leaks(guess.scan);
+    if (g.length) canaryFailures++;
+    assert.deepEqual(g, []);
   }
 });
 
@@ -212,7 +221,7 @@ function fanOut(payloadText) {
   return got;
 }
 // The shapes ai-models.js and index.js send, with every content key room.js knows and a few it does not.
-const fullItem = () => ({ id: "w1", kind: "ask", by: "Red Fox", slug: "red-fox", q: C.sharedQ, text: C.sharedQ, question: C.sharedQ, answer: C.sharedA, body: C.sharedA, error: C.sharedA, cites: [{ id: "c1", text: C.sharedA }], sources: [{ id: "c1" }], model: "m", provider: "p", share: true, ms: 900, status: "answered", at: AT, prompt: C.sharedQ, preview: C.sharedQ, asker: IDS.discordId, member: { id: IDS.discordId } });
+const fullItem = () => ({ id: ASK_UUID, kind: "ask", by: C.privateBy, slug: "zqsl-asker-slug", q: C.sharedQ, text: C.sharedQ, question: C.sharedQ, answer: C.sharedA, body: C.sharedA, error: C.sharedA, cites: [{ id: "c1", text: C.sharedA }], sources: [{ id: "c1" }], model: "m", provider: "p", share: true, ms: 900, status: "answered", at: AT, prompt: C.sharedQ, preview: C.sharedQ, asker: IDS.discordId, member: { id: IDS.discordId } });
 
 test("every room message reaches an anonymous socket with no private value and only allow-listed keys", async () => {
   const env = await makeEnv();
@@ -224,8 +233,8 @@ test("every room message reaches an anonymous socket with no private value and o
   await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "level", value: 12 }));
   assert.ok(env.sent.length >= 7, `the Worker broadcast ${env.sent.length} messages`);
   const synthetic = [
-    { type: "data", key: "stats", intent: fullItem() }, { type: "ask", slug: "red-fox", ask: fullItem() },
-    { type: "ask", slug: "red-fox", forAsk: "owned-ask", ask: fullItem() }, { type: "intent", item: fullItem() },
+    { type: "data", key: "stats", intent: fullItem() }, { type: "ask", slug: "zqsl-asker-slug", ask: fullItem() },
+    { type: "ask", slug: "zqsl-asker-slug" }, { type: "ask", slug: "zqsl-asker-slug", forAsk: "owned-ask", ask: fullItem() }, { type: "intent", item: fullItem() },
     { type: "intent", item: "a string item" }, { type: "intent", item: [fullItem()] }, { type: "intent", item: { ...fullItem(), nested: { q: C.sharedQ } } },
   ].map((m) => JSON.stringify(m));
   const found = [];
@@ -239,22 +248,22 @@ test("every room message reaches an anonymous socket with no private value and o
   if (found.length) canaryFailures++;
   assert.deepEqual(found, []);
   // The redaction is per audience: a member sees the shared text; the owner of a guest ask sees its own answer, and only that socket does.
-  const forAsk = fanOut(synthetic[2]);
+  const forAsk = fanOut(synthetic[3]);
   assert.ok(forAsk.owner[0].includes(C.sharedQ.split(" ")[0]));
   assert.ok(!forAsk.anon[0].includes(C.sharedQ.split(" ")[0]));
   assert.ok(!forAsk.member[0].includes("forAsk"), "forAsk never leaves the room");
   assert.ok(fanOut(synthetic[0]).member[0].includes(C.sharedQ.split(" ")[0]));
   // After the sheet writes, the public reads still hold no hidden value or id.
-  for (const p of ["/data/party", "/state", "/bootstrap"]) assert.deepEqual(leaks((await get(env, p)).text), [], p);
+  for (const p of ["/data/party", "/state", "/bootstrap"]) { const l2 = leaks((await get(env, p)).scan); if (l2.length) canaryFailures++; assert.deepEqual(l2, [], p); }
 });
 
 test("room.js: an anonymous message keeps only PUBLIC_TOP_KEYS, and an item or intent only PUBLIC_ITEM_KEYS with scalar values", () => {
   const top = redactForPublic({ type: "ask", slug: "red-fox", preview: C.sharedQ, entry: fullItem(), member: { id: IDS.discordId }, turn: fullItem() });
-  assert.deepEqual(Object.keys(top).sort(), ["slug", "type"]);
+  assert.deepEqual(Object.keys(top).sort(), ["type"], "no slug: it names the asker of an ask nudge");
   const out = redactForPublic({ type: "intent", item: { ...fullItem(), brand_new_field: "x" } });
   assert.deepEqual(Object.keys(out.item).sort(), PUBLIC_ITEM_KEYS.filter((k) => k in fullItem()).sort());
   assert.equal("item" in redactForPublic({ type: "intent", item: "text" }), false);
-  const same = { type: "intent", item: { id: 1, kind: "ask", status: "thinking" } };
+  const same = { type: "intent", item: { kind: "ask", status: "thinking" } };
   assert.equal(redactForPublic(same), same, "a message with nothing to remove is passed on as it is");
 });
 
