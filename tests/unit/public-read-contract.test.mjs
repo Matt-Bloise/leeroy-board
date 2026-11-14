@@ -1,18 +1,26 @@
-// Public read contract: nothing private leaves through an anonymous read or an anonymous socket.
-// Fixture state carries private values (canaries) in every place the Worker keeps them: shared and private /ask turns, stats.recent,
-// a hidden sheet field, Discord ids, member key hashes, private kv rows, admin-only library tables, vote ballots. Then:
-//   1. every GET or ANY route in the Worker's ROUTES table is listed below as public, auth or capability (a new route fails until it is);
-//   2. every GET route is called with no credentials and its body, whatever the status, must hold no canary;
-//   3. every public JSON body must use only the key paths in tests/contract/public-read-allowlist.json;
-//   4. every payload the Worker sends to the room (admin PUTs, a sheet write, the ask-completion shapes) is fanned out by BoardRoom to an
-//      anonymous socket, which must hold no canary and only allow-listed key paths.
-// Fictional data only. No network, no AI. Regenerate the allow list (and read its diff) with: UPDATE_PUBLIC_ALLOWLIST=1 node --test tests/unit/public-read-contract.test.mjs
+// Public read contract: a regression guard for private data leaving through an anonymous read or an anonymous socket.
+// Fixture state carries private values (canaries) in every place the Worker keeps them: shared and private /ask turns (with a private
+// asker and a private time), stats.recent, a hidden sheet field, Discord ids, member key and session hashes, private kv rows, admin-only
+// library tables, vote ballots, and the Worker's own secrets (admin token, salts). Then:
+//   1. every GET or ANY route in ROUTES is classified (public, auth, capability, redirect, socket); a new one fails until it is.
+//      (Dispatch without a ROUTES entry is caught by tests/unit/authz.test.mjs.)
+//   2. every GET is called with no credentials, with and without a query string, and with denied and unknown document names. No body,
+//      whatever its status or content type, may hold a canary, even cut short or re-spaced (each canary starts with its own marker).
+//   3. a public route must answer 200 JSON, and every JSON body an anonymous caller gets (any route, any status) may use only the key paths
+//      in tests/contract/public-read-allowlist.json; every public surface must have been read.
+//   4. every message the Worker hands the room (admin PUTs, sheet writes, the ask and intent shapes of ai-models.js and index.js, with every
+//      content key and a guest-owned forAsk message) goes through BoardRoom to an anonymous socket: no canary, allow-listed keys only.
+//      room.js keeps an allow list of item and intent keys for anonymous sockets, so a new field at a call site this test does not drive
+//      is dropped by construction; a new TOP-LEVEL field at such a site is not covered here.
+// Fictional data only. No network, no AI. The fixtures are the repo's data/*.json and data/library/*.json, so a data commit that adds a public
+// field fails here until the field is allow-listed. Regenerate (outside CI, and only while every canary test passes), then read the diff:
+//   UPDATE_PUBLIC_ALLOWLIST=1 node --test tests/unit/public-read-contract.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import worker, { ROUTES, purgeWorkerCache, recordSheetEventInD1 } from "../../infrastructure/worker/index.js";
 import { PUBLIC_DATA_DOCS, PUBLIC_ATLAS_DOCS } from "../../infrastructure/worker/public-docs.js";
-import { BoardRoom } from "../../infrastructure/worker/room.js";
+import { BoardRoom, redactForPublic, PUBLIC_ITEM_KEYS } from "../../infrastructure/worker/room.js";
 import { createVote, voterHash } from "../../infrastructure/worker/votes.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
@@ -22,27 +30,27 @@ test.after(() => { globalThis.fetch = realFetch; });
 
 const ORIGIN = "https://api.test";
 const ctx = { waitUntil() {}, passThroughOnException() {} };
-const ADMIN = "admin-token-for-tests-0123456789abcdef";
 const ALLOW_URL = new URL("../contract/public-read-allowlist.json", import.meta.url);
 const DATA = new URL("../../data/", import.meta.url);
 const LIB = new URL("../../data/library/", import.meta.url);
 const AT = "2026-11-12T00:00:00.000Z";
+const PRIVATE_AT = "2026-11-03T03:03:03.333Z"; // when the private turn was asked: a time is private too
 
-// The private values. Each must never appear in an anonymous read or socket message (compared case-insensitively).
+// The private values. Each starts with its own marker (zq + letters, no dash, no space), and a leak is the marker anywhere in the output,
+// so a value cut to its first few characters or with its dashes replaced is still caught. Secrets are matched whole and by their first 16.
 const C = {
-  sharedQ: "canary-shared-question-q7x", sharedA: "canary-shared-answer-a7x",
-  privateQ: "canary-private-question-p7x", privateA: "canary-private-answer-p7x",
-  hidden: "canary-hidden-sheet-value-h7x",
-  discordId: "112233445566778899", discordId2: "998877665544332211",
-  keyHash: "c".repeat(64), sessionHash: "d".repeat(64),
-  persona: "canary-persona-text-r7x", members: "canary-members-row-m7x", config: "canary-config-row-k7x",
-  snapshot: "canary-source-snapshot-s7x", proposal: "canary-wiki-proposal-w7x", fix: "canary-fact-fix-f7x",
-  voterHash: null, voterHash2: null, // computed in makeEnv
+  sharedQ: "zqsq shared question", sharedA: "zqsa shared answer",
+  privateQ: "zqpq private question", privateA: "zqpa private answer", privateBy: "zqpb hidden asker",
+  hidden: "zqhs hidden sheet value",
+  persona: "zqpr persona text", members: "zqmr members row", config: "zqcf config row", feed: "zqfd feed cache",
+  snapshot: "zqss source snapshot", proposal: "zqwp wiki proposal",
 };
-const SALT = "user-salt-for-tests-0123456789";
+const IDS = { discordId: "112233445566778899", discordId2: "998877665544332211", keyHash: "c".repeat(64), sessionHash: "d".repeat(64) };
+const SECRETS = { ADMIN: "admin-token-for-tests-0123456789abcdef", KEY_SALT: "key-salt-for-tests-0123456789", USER_SALT: "user-salt-for-tests-0123456789" };
+const HASHES = {}; // vote voter hashes, computed in makeEnv
 
-// Every GET or ANY route of ROUTES, classified. public: called anonymously and its JSON key paths checked. auth: must refuse an anonymous
-// caller (any status but 2xx). capability: the caller must hold an unguessable id; called with a canary-free fictional id. redirect: OAuth hops.
+// Every GET or ANY route of ROUTES, classified. public: anonymous, must answer 200 JSON, key paths checked. auth: must refuse an anonymous
+// caller. capability: the caller must hold an unguessable id. redirect: OAuth hops. socket: the WebSocket upgrade (covered by test 4).
 const CLASS = {
   "GET /discord/commands": "public", "GET /votes": "public", "GET /me": "auth", "ANY /sheet": "auth", "GET /admin/feedback": "auth",
   "GET /admin/export": "auth", "GET /admin/requests": "auth", "GET /admin/moments": "auth", "GET /intents": "auth", "GET /signups": "public",
@@ -51,17 +59,20 @@ const CLASS = {
   "GET /wiki/proposals": "auth", "GET /wiki/proposals/:id": "auth", "GET /bootstrap": "public", "GET /library/*": "public",
   "GET /data/*": "public", "GET /atlas/*": "public", "GET /": "public", "GET /health": "public",
 };
-// Concrete anonymous GETs for the parameterised routes.
 const LIB_NAMES = readdirSync(LIB).filter((f) => f.endsWith(".json"));
+// Names the public document routes must refuse: every private row the fixture holds, and names that are not documents at all.
+const DENIED = ["persona", "discord_members", "name_map", "config:x", "feed_cache:stats", "vote:ab12cd34", "votes:index", "party_sheets", "moments", "noise", "cards", "nope", "..%2Fpersona", "PERSONA", "persona%20"];
+const QUERY = "?full=1&all=1&raw=1&debug=1&admin=1&include=recent&private=1";
+// Concrete anonymous GETs: [path, isPublicSurface]
 const concrete = (route) => {
   const p = route.split(" ")[1];
-  if (p === "/data/*") return [...PUBLIC_DATA_DOCS].flatMap((n) => [`/data/${n}`, `/data/${n}.json`]);
-  if (p === "/atlas/*") return [...PUBLIC_ATLAS_DOCS].map((n) => `/atlas/${n}.json`);
-  if (p === "/library/*") return LIB_NAMES.map((n) => `/library/${n}`);
-  if (p === "/state/:doc") return ["/state/settings", "/state/party_sheets", "/state/persona"];
-  if (p === "/wiki/proposals/:id") return ["/wiki/proposals/wp1"];
-  if (p === "/ask") return ["/ask?id=00000000-0000-4000-8000-000000000000", "/ask?id=1700000000000", "/ask"];
-  return [p];
+  if (p === "/data/*") return [...[...PUBLIC_DATA_DOCS].flatMap((n) => [[`/data/${n}`, true], [`/data/${n}.json`, true]]), ...DENIED.map((n) => [`/data/${n}`, false])];
+  if (p === "/atlas/*") return [...[...PUBLIC_ATLAS_DOCS].map((n) => [`/atlas/${n}.json`, true]), ...DENIED.map((n) => [`/atlas/${n}.json`, false])];
+  if (p === "/library/*") return [...LIB_NAMES.map((n) => [`/library/${n}`, true]), ...["persona.json", "seed.stamp", "stats.json", "party_sheets.json", "nope.json"].map((n) => [`/library/${n}`, false])];
+  if (p === "/state/:doc") return ["/state/settings", "/state/party_sheets", "/state/persona", "/state/stats"].map((x) => [x, false]);
+  if (p === "/wiki/proposals/:id") return [["/wiki/proposals/wp1", false]];
+  if (p === "/ask") return ["/ask?id=00000000-0000-4000-8000-000000000000", "/ask?id=1700000000001", "/ask?id=17", "/ask"].map((x) => [x, false]);
+  return [[p, CLASS[route] === "public"]];
 };
 
 const fileJson = (u) => JSON.parse(readFileSync(u, "utf8"));
@@ -72,68 +83,75 @@ async function makeEnv() {
   for (const n of ["party", "timeline", "client", "signups", "tonight", "launch", "decide", "guided-atlas"]) { try { kv(n, fileJson(new URL(`${n}.json`, DATA))); } catch {} }
   for (const n of ["marks", "links"]) { try { kv(n, fileJson(new URL(`atlas/${n}.json`, DATA))); } catch {} }
   const stats = fileJson(new URL("stats.json", DATA));
-  stats.recent = [{ id: "a1", by: "Red Fox", q: C.sharedQ, a: C.sharedA, cites: [], model: "m", provider: "p", at: AT, ms: 900 }];
+  stats.recent = [{ id: "a1", by: "Red Fox", q: C.sharedQ, a: C.sharedA, cites: [], model: "m", provider: "p", at: AT, ms: 900 }, { id: "a2", by: C.privateBy, q: C.privateQ, a: C.privateA, at: PRIVATE_AT }];
   kv("stats", stats);
   const party = fileJson(new URL("party.json", DATA));
-  const first = party.members[0];
-  kv("party_sheets", [{ slug: "red-fox", name: first.name, fields: { class: { value: "paladin", visible: true, source: "board", at: AT }, notes: { value: C.hidden, visible: false, source: "board", at: AT } }, updated: AT }]);
+  kv("party_sheets", [{ slug: "red-fox", name: party.members[0].name, fields: { class: { value: "paladin", visible: true, source: "board", at: AT }, notes: { value: C.hidden, visible: false, source: "board", at: AT } }, updated: AT }]);
   kv("persona", { text: C.persona });
-  kv("discord_members", [{ name: "Red Fox", id: C.discordId, note: C.members }]);
-  kv("name_map", { [C.discordId2]: "Blue Owl" });
+  kv("discord_members", [{ name: "Red Fox", id: IDS.discordId, note: C.members }]);
+  kv("name_map", { [IDS.discordId2]: "Blue Owl" });
   kv("config:x", { v: C.config });
-  kv("feed_cache:stats", { recent: [{ q: C.sharedQ }] });
+  kv("feed_cache:stats", { recent: [{ q: C.feed }] });
+  kv("moments", { note: C.config }); kv("noise", { note: C.config }); kv("cards", { note: C.config });
   const made = createVote({ id: "ab12cd34", title: "Raid night", choices: "Fri|Sat", hours: 720, now: Date.parse(AT) });
   assert.ok(made.ok, made.error);
-  C.voterHash = await voterHash(C.discordId, "ab12cd34", SALT);
-  C.voterHash2 = await voterHash(C.discordId2, "ab12cd34", SALT);
-  kv("vote:ab12cd34", { ...made.vote, ballots: { [C.voterHash2]: 1 } }); // an old document that still holds a ballot
-  sql("INSERT INTO vote_ballots (vote_id, voter_hash, choice, cast_at) VALUES ('ab12cd34', ?, 0, ?)", C.voterHash, AT);
+  HASHES.v1 = await voterHash(IDS.discordId, "ab12cd34", SECRETS.USER_SALT);
+  HASHES.v2 = await voterHash(IDS.discordId2, "ab12cd34", SECRETS.USER_SALT);
+  kv("vote:ab12cd34", { ...made.vote, ballots: { [HASHES.v2]: 1 } }); // an old document that still holds a ballot
+  sql("INSERT INTO vote_ballots (vote_id, voter_hash, choice, cast_at) VALUES ('ab12cd34', ?, 0, ?)", HASHES.v1, AT);
   kv("votes:index", { ids: ["ab12cd34"] });
   for (const f of LIB_NAMES) sql("INSERT OR REPLACE INTO lib_blobs (name, stamp, json, updated_at) VALUES (?, ?, ?, ?)", f, "s1", JSON.stringify(fileJson(new URL(f, LIB))), AT);
-  const turn = (id, q, a, share) => sql("INSERT INTO ask_turns (id, by_name, question, answer, status, share, created_at, answered_at) VALUES (?, ?, ?, ?, 'answered', ?, ?, ?)", id, "Red Fox", q, a, share, AT, AT);
-  turn("11111111-1111-4111-8111-111111111111", C.sharedQ, C.sharedA, 1);
-  turn("1700000000001", C.privateQ, C.privateA, 0);
-  sql("INSERT INTO users (discord_user_id, display_name, created_at) VALUES (?, ?, ?)", C.discordId, "Red Fox", AT);
-  sql("INSERT INTO sessions_v2 (token_hash, discord_user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", C.sessionHash, C.discordId, AT, "2026-12-12T00:00:00.000Z");
+  const turn = (id, by, q, a, share, at) => sql("INSERT INTO ask_turns (id, by_name, question, answer, status, share, created_at, answered_at) VALUES (?, ?, ?, ?, 'answered', ?, ?, ?)", id, by, q, a, share, at, at);
+  turn("11111111-1111-4111-8111-111111111111", "Red Fox", C.sharedQ, C.sharedA, 1, AT);
+  turn("1700000000001", C.privateBy, C.privateQ, C.privateA, 0, PRIVATE_AT);
+  sql("INSERT INTO users (discord_user_id, display_name, created_at) VALUES (?, ?, ?)", IDS.discordId, "Red Fox", AT);
+  sql("INSERT INTO sessions_v2 (token_hash, discord_user_id, created_at, expires_at) VALUES (?, ?, ?, ?)", IDS.sessionHash, IDS.discordId, AT, "2026-12-12T00:00:00.000Z");
   sql("INSERT INTO accounts (id, name, slug, created_at) VALUES ('acct1', 'Red Fox', 'red-fox', ?)", AT);
-  sql("INSERT INTO account_keys (key_hash, account_id, label, created_at) VALUES (?, 'acct1', 'k', ?)", C.keyHash, AT);
+  sql("INSERT INTO account_keys (key_hash, account_id, label, created_at) VALUES (?, 'acct1', 'k', ?)", IDS.keyHash, AT);
   sql("INSERT INTO lib_source_snapshots (id, source_id, url, sha8, body_text, fetched_at) VALUES ('s1', 'src', 'https://example.test/', 'abcd1234', ?, ?)", C.snapshot, AT);
   sql("INSERT INTO wiki_proposals (id, source_id, page_id, fact_key, proposed_value, status, created_at) VALUES ('wp1', 'src', 'p', 'f', ?, 'pending', ?)", C.proposal, AT);
   const sent = [];
   const room = { fetch: async (_u, init) => { if (init && init.body) sent.push(String(init.body)); return new Response(JSON.stringify({ ok: true, sent: 0, skipped: 0 })); } };
-  return { DB, sent, BOARD_ADMIN_TOKEN: ADMIN, USER_SALT: SALT, KEY_SALT: "key-salt-for-tests-0123456789", ALLOWED_ORIGINS: "", BOARD_ROOM: { idFromName: () => "r", get: () => room } };
+  return { DB, sent, BOARD_ADMIN_TOKEN: SECRETS.ADMIN, USER_SALT: SECRETS.USER_SALT, KEY_SALT: SECRETS.KEY_SALT, ALLOWED_ORIGINS: "", BOARD_ROOM: { idFromName: () => "r", get: () => room } };
 }
 
-const CANARIES = () => Object.values(C).filter(Boolean).map((v) => String(v).toLowerCase());
-const leaks = (text) => { const t = String(text).toLowerCase(); return CANARIES().filter((c) => t.includes(c)); };
+// A leak: a canary's marker (zq + 2 letters), an id, a hash, a secret (whole or its first 16 characters), or the private turn's time.
+const NEEDLES = () => [
+  ...Object.values(C).map((v) => v.split(" ")[0]),
+  ...Object.values(IDS), ...Object.values(HASHES).filter(Boolean),
+  ...Object.values(SECRETS).flatMap((s) => [s, s.slice(0, 16)]), PRIVATE_AT, PRIVATE_AT.slice(0, 19),
+].map((x) => String(x).toLowerCase());
+const leaks = (text, except = []) => { const t = String(text).toLowerCase(); return NEEDLES().filter((n) => !except.includes(n) && t.includes(n)); };
+let canaryFailures = 0; // the allow list is never regenerated while a canary test fails
 const quiet = async (fn) => { const e = console.error, w = console.warn, l = console.log; console.error = console.warn = console.log = () => {}; try { return await fn(); } finally { console.error = e; console.warn = w; console.log = l; } };
 const get = async (env, path, init = {}) => {
-  await purgeWorkerCache(ORIGIN, [`/api${path}`]);
+  await purgeWorkerCache(ORIGIN, [`/api${path.replace(/\?.*$/, "")}`, `/api${path}`]);
   const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api${path}`, { redirect: "manual", ...init, headers: { "CF-Connecting-IP": "203.0.113.40", ...(init.headers || {}) } }), env, ctx));
   return { status: res.status, text: await res.text(), type: res.headers.get("content-type") || "" };
 };
+const asJson = (text) => { try { return JSON.parse(text); } catch { return undefined; } };
 
-// Key paths: arrays become [], and object keys that are data (ids, dates, times, counts, hashes) become *.
+// Key paths: arrays become [], and object keys that are data (ids, dates, times, place slugs, keys of a map of more than 40) become *.
 const DYNAMIC = /^(\d.*|[0-9a-f]{8,}|.*\d{1,2}(am|pm)|.*[ :/].*|[A-Z][a-z]+ [A-Z].*)$/;
-export function keyPaths(v, p = "", out = new Set(), dynamicAt = []) {
-  if (Array.isArray(v)) { if (!v.length) out.add(`${p}[]`); for (const x of v) keyPaths(x, `${p}[]`, out, dynamicAt); return out; }
+export function keyPaths(v, p = "", out = new Set()) {
+  if (Array.isArray(v)) { if (!v.length) out.add(`${p}[]`); for (const x of v) keyPaths(x, `${p}[]`, out); return out; }
   if (v && typeof v === "object") {
     const keys = Object.keys(v);
     if (!keys.length) out.add(p || "{}");
     for (const k of keys) {
-      const star = DYNAMIC.test(k) || /-/.test(k) || keys.length > 40 || dynamicAt.some((d) => d === p); // place slugs and big maps are data
-      keyPaths(v[k], p ? `${p}.${star ? "*" : k}` : (star ? "*" : k), out, dynamicAt);
+      const star = DYNAMIC.test(k) || /-/.test(k) || keys.length > 40;
+      keyPaths(v[k], p ? `${p}.${star ? "*" : k}` : (star ? "*" : k), out);
     }
     return out;
   }
   out.add(p || "(value)");
   return out;
 }
-const ALLOW = (() => { try { return fileJson(ALLOW_URL); } catch { return { dynamicKeysUnder: [], surfaces: {} }; } })();
-const pathsOf = (json) => keyPaths(json, "", new Set(), ALLOW.dynamicKeysUnder || []);
-const observed = {}; // surface -> Set of key paths, for the allow list
-const note = (surface, json) => { const s = (observed[surface] ||= new Set()); for (const p of pathsOf(json)) s.add(p); };
+const ALLOW = (() => { try { return fileJson(ALLOW_URL); } catch { return { surfaces: {} }; } })();
+const observed = {}; // surface -> Set of key paths
+const note = (surface, json) => { const s = (observed[surface] ||= new Set()); for (const p of keyPaths(json)) s.add(p); };
 const surfaceOf = (path) => path.replace(/\?.*$/, "").replace(/\.json$/, "");
+const expectedSurfaces = new Set();
 
 test("every GET or ANY route is classified (a new route fails here until someone decides who may read it)", () => {
   const reads = ROUTES.filter((r) => /^(GET|ANY) /.test(r));
@@ -143,70 +161,111 @@ test("every GET or ANY route is classified (a new route fails here until someone
   assert.deepEqual(stale, [], `no longer in ROUTES: ${stale.join(", ")}`);
 });
 
-test("an anonymous GET of every route holds no private value, whatever its status", async () => {
+test("an anonymous GET of every route, name and query holds no private value; public routes answer 200 JSON", async () => {
   const env = await makeEnv();
-  const found = [];
+  const found = [], shape = [];
   for (const [route, cls] of Object.entries(CLASS)) {
     if (cls === "socket") continue;
-    for (const p of concrete(route)) {
-      const r = await get(env, p);
-      const l = leaks(r.text);
-      if (l.length) found.push(`${p} (${r.status}): ${l.join(", ")}`);
-      if (cls === "auth") assert.ok(r.status < 200 || r.status >= 300, `${p} answered ${r.status} with no credentials`);
-      if (cls === "public" && r.status === 200 && /json/.test(r.type)) note(surfaceOf(p), JSON.parse(r.text));
+    for (const [p, isPublic] of concrete(route)) {
+      for (const q of ["", QUERY]) {
+        const path = p.includes("?") ? `${p}${q.replace("?", "&")}` : `${p}${q}`;
+        const r = await get(env, path);
+        const l = leaks(r.text);
+        if (l.length) found.push(`${path} (${r.status}): ${l.join(", ")}`);
+        if (cls === "auth") assert.ok(r.status < 200 || r.status >= 300, `${path} answered ${r.status} with no credentials`);
+        const j = asJson(r.text);
+        if (isPublic) {
+          expectedSurfaces.add(surfaceOf(p));
+          if (r.status !== 200 || !/json/.test(r.type) || j === undefined) shape.push(`${path}: ${r.status} ${r.type}`);
+        }
+        if (j !== undefined) note(isPublic ? surfaceOf(p) : r.status >= 400 ? "error" : `other:${surfaceOf(p)}`, j);
+      }
     }
   }
+  if (found.length) canaryFailures++;
   assert.deepEqual(found, []);
+  assert.deepEqual(shape, [], "a public route must answer 200 with a JSON body");
 });
 
-test("the ask capability: a UUID id shows that turn only, a guessable timestamp id needs a key", async () => {
+test("the ask capability: a UUID id shows that one shared turn and nothing private; a guessable id needs a key", async () => {
   const env = await makeEnv();
   const shared = await get(env, "/ask?id=11111111-1111-4111-8111-111111111111");
   assert.equal(shared.status, 200, "the holder of the random id reads that turn (by design)");
-  assert.deepEqual(leaks(shared.text).filter((c) => c.includes("private")), []);
-  const guess = await get(env, "/ask?id=1700000000001");
-  assert.ok(guess.status === 401 || guess.status === 403 || guess.status === 404, `timestamp id answered ${guess.status}`);
-  assert.deepEqual(leaks(guess.text), []);
+  const own = [C.sharedQ, C.sharedA].map((v) => v.split(" ")[0]);
+  const l = leaks(shared.text, own);
+  if (l.length) canaryFailures++;
+  assert.deepEqual(l, []);
+  note("/ask (capability)", JSON.parse(shared.text));
+  for (const id of ["1700000000001", "17000000000%25", "1700000000001%20"]) {
+    const guess = await get(env, `/ask?id=${id}`);
+    assert.ok(guess.status === 401 || guess.status === 403 || guess.status === 404, `id ${id} answered ${guess.status}`);
+    assert.deepEqual(leaks(guess.text), []);
+  }
 });
 
-// Every message the Worker hands the room, sent through BoardRoom to one anonymous and one member socket.
+// Every message the Worker hands the room, sent through BoardRoom to an anonymous, a member and a guest-owner socket.
 function fanOut(payloadText) {
-  const got = { anon: [], member: [] };
+  const got = { anon: [], member: [], owner: [] };
   const sock = (aud, sink) => ({ deserializeAttachment: () => aud, send: (m) => sink.push(m) });
-  const roomCtx = { getWebSockets: () => [sock({}, got.anon), sock({ member: true }, got.member)], setWebSocketAutoResponse() {} };
-  const room = new BoardRoom(roomCtx, {});
-  room.broadcast(payloadText);
+  const roomCtx = { getWebSockets: () => [sock({}, got.anon), sock({ member: true }, got.member), sock({ ask: "owned-ask" }, got.owner)], setWebSocketAutoResponse() {} };
+  new BoardRoom(roomCtx, {}).broadcast(payloadText);
   return got;
 }
-// The ask-completion messages ai-models.js sends for a shared turn (step 4 there): the same keys as completedItem.
-const askItem = () => ({ id: "w1", kind: "ask", by: "Red Fox", q: C.sharedQ, text: C.sharedQ, answer: C.sharedA, cites: [{ id: "c1" }], sources: [{ id: "c1" }], model: "m", provider: "p", share: true, ms: 900, status: "answered", at: AT });
+// The shapes ai-models.js and index.js send, with every content key room.js knows and a few it does not.
+const fullItem = () => ({ id: "w1", kind: "ask", by: "Red Fox", slug: "red-fox", q: C.sharedQ, text: C.sharedQ, question: C.sharedQ, answer: C.sharedA, body: C.sharedA, error: C.sharedA, cites: [{ id: "c1", text: C.sharedA }], sources: [{ id: "c1" }], model: "m", provider: "p", share: true, ms: 900, status: "answered", at: AT, prompt: C.sharedQ, preview: C.sharedQ, asker: IDS.discordId, member: { id: IDS.discordId } });
 
 test("every room message reaches an anonymous socket with no private value and only allow-listed keys", async () => {
   const env = await makeEnv();
-  const put = (path, body) => quiet(() => worker.fetch(new Request(`${ORIGIN}/api${path}`, { method: "PUT", headers: { Authorization: `Bearer ${ADMIN}`, "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.41" }, body: JSON.stringify(body) }), env, ctx));
+  const put = (path, body) => quiet(() => worker.fetch(new Request(`${ORIGIN}/api${path}`, { method: "PUT", headers: { Authorization: `Bearer ${SECRETS.ADMIN}`, "Content-Type": "application/json", "CF-Connecting-IP": "203.0.113.41" }, body: JSON.stringify(body) }), env, ctx));
   const stored = (k) => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(k).json);
   for (const k of ["stats", "party", "signups", "timeline", "tonight", "decide"]) assert.equal((await put(`/data/${k}`, stored(k))).status, 200, k);
-  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: stored("party").members[0].name, field: "notes", value: C.hidden, visible: false }));
-  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: stored("party").members[0].name, field: "level", value: 12 }));
-  const messages = [...env.sent, JSON.stringify({ type: "data", key: "stats", intent: askItem() }), JSON.stringify({ type: "ask", slug: "red-fox", ask: askItem() })];
+  const name = stored("party").members[0].name;
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "notes", value: C.hidden, visible: false }));
+  await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name, field: "level", value: 12 }));
   assert.ok(env.sent.length >= 7, `the Worker broadcast ${env.sent.length} messages`);
+  const synthetic = [
+    { type: "data", key: "stats", intent: fullItem() }, { type: "ask", slug: "red-fox", ask: fullItem() },
+    { type: "ask", slug: "red-fox", forAsk: "owned-ask", ask: fullItem() }, { type: "intent", item: fullItem() },
+    { type: "intent", item: "a string item" }, { type: "intent", item: [fullItem()] }, { type: "intent", item: { ...fullItem(), nested: { q: C.sharedQ } } },
+  ].map((m) => JSON.stringify(m));
   const found = [];
-  for (const m of messages) {
-    const { anon, member } = fanOut(m);
-    assert.equal(anon.length, 1);
-    assert.equal(member.length, 1);
-    for (const a of anon) { const l = leaks(a); if (l.length) found.push(`${m.slice(0, 60)}: ${l.join(", ")}`); note("socket", JSON.parse(a)); }
+  for (const m of [...env.sent, ...synthetic]) {
+    const { anon, member, owner } = fanOut(m);
+    assert.equal(anon.length + member.length + owner.length, 3);
+    const l = leaks(anon[0]);
+    if (l.length) found.push(`${m.slice(0, 60)}: ${l.join(", ")}`);
+    note("socket", JSON.parse(anon[0]));
   }
+  if (found.length) canaryFailures++;
   assert.deepEqual(found, []);
-  const memberSaw = fanOut(messages[messages.length - 1]).member[0];
-  assert.ok(memberSaw.includes(C.sharedQ), "a member socket still gets the shared question (the redaction is per audience)");
+  // The redaction is per audience: a member sees the shared text; the owner of a guest ask sees its own answer, and only that socket does.
+  const forAsk = fanOut(synthetic[2]);
+  assert.ok(forAsk.owner[0].includes(C.sharedQ.split(" ")[0]));
+  assert.ok(!forAsk.anon[0].includes(C.sharedQ.split(" ")[0]));
+  assert.ok(!forAsk.member[0].includes("forAsk"), "forAsk never leaves the room");
+  assert.ok(fanOut(synthetic[0]).member[0].includes(C.sharedQ.split(" ")[0]));
+  // After the sheet writes, the public reads still hold no hidden value or id.
+  for (const p of ["/data/party", "/state", "/bootstrap"]) assert.deepEqual(leaks((await get(env, p)).text), [], p);
 });
 
-test("every public key path is in tests/contract/public-read-allowlist.json", () => {
-  assert.ok(Object.keys(observed).length > 10, "the read tests above ran first and recorded their surfaces");
+test("room.js: an anonymous message keeps only PUBLIC_TOP_KEYS, and an item or intent only PUBLIC_ITEM_KEYS with scalar values", () => {
+  const top = redactForPublic({ type: "ask", slug: "red-fox", preview: C.sharedQ, entry: fullItem(), member: { id: IDS.discordId }, turn: fullItem() });
+  assert.deepEqual(Object.keys(top).sort(), ["slug", "type"]);
+  const out = redactForPublic({ type: "intent", item: { ...fullItem(), brand_new_field: "x" } });
+  assert.deepEqual(Object.keys(out.item).sort(), PUBLIC_ITEM_KEYS.filter((k) => k in fullItem()).sort());
+  assert.equal("item" in redactForPublic({ type: "intent", item: "text" }), false);
+  const same = { type: "intent", item: { id: 1, kind: "ask", status: "thinking" } };
+  assert.equal(redactForPublic(same), same, "a message with nothing to remove is passed on as it is");
+});
+
+test("every public key path is in tests/contract/public-read-allowlist.json, and every public surface was read", () => {
+  assert.ok(expectedSurfaces.size > 10, "the read tests above ran first");
+  for (const s of expectedSurfaces) assert.ok(observed[s], `${s} answered no JSON`);
   if (process.env.UPDATE_PUBLIC_ALLOWLIST === "1") {
+    assert.ok(!process.env.CI, "the allow list is never regenerated in CI");
+    assert.equal(canaryFailures, 0, "a canary test failed: fix the leak first; the allow list is not regenerated over it");
     const surfaces = Object.fromEntries(Object.keys(observed).sort().map((s) => [s, [...observed[s]].sort()]));
-    writeFileSync(ALLOW_URL, JSON.stringify({ about: ALLOW.about, known: ALLOW.known || {}, dynamicKeysUnder: ALLOW.dynamicKeysUnder || [], surfaces }, null, 1) + "\n");
+    writeFileSync(ALLOW_URL, JSON.stringify({ about: ALLOW.about, known: ALLOW.known || {}, surfaces }, null, 1) + "\n");
     return;
   }
   const extra = [];

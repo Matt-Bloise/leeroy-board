@@ -3,7 +3,6 @@
  "known": {
   "socket: intent.by": "An anonymous socket learns who asked each shared question (the asker display name) and when, not the text. Same names as the public party list. Kept as of 2026-11-14 pending an owner decision."
  },
- "dynamicKeysUnder": [],
  "surfaces": {
   "/": [
    "at",
@@ -12,6 +11,20 @@
    "ok",
    "runtime",
    "service"
+  ],
+  "/ask (capability)": [
+   "aiProvider",
+   "ask.answer",
+   "ask.answeredAt",
+   "ask.at",
+   "ask.id",
+   "ask.model",
+   "ask.provider",
+   "ask.sources[]",
+   "ask.status",
+   "ask.text",
+   "isPrPreview",
+   "limit.left"
   ],
   "/atlas/links": [
    "build",
@@ -1940,6 +1953,16 @@
    "votes[].open",
    "votes[].title"
   ],
+  "error": [
+   "error",
+   "path"
+  ],
+  "other:/ask": [
+   "aiProvider",
+   "ask",
+   "isPrPreview",
+   "limit.left"
+  ],
   "socket": [
    "data.actions[]",
    "data.answers",
@@ -2216,7 +2239,18 @@
    "intent.ms",
    "intent.provider",
    "intent.share",
+   "intent.slug",
    "intent.status",
+   "item.at",
+   "item.by",
+   "item.id",
+   "item.kind",
+   "item.model",
+   "item.ms",
+   "item.provider",
+   "item.share",
+   "item.slug",
+   "item.status",
    "key",
    "party[].fields.class.at",
    "party[].fields.class.source",
