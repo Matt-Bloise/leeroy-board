@@ -47,6 +47,7 @@ import { XR_JS, sameOrigin, captureConsoleError } from "../helpers/sweep-diag.mj
 import { isBeaconNoise, isInsightsHost, isRumUrl, rumStub } from "../helpers/probe-checks.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 import { readFileSync, writeFileSync } from "node:fs";
+import { withDeadline, watchdog, DeadlineError } from "../helpers/deadline.mjs";
 const argv = process.argv.slice(2), arg = (k, d = null) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
 if (!BASE && !argv.includes("--zoom-selftest")) { console.error("usage: node layout-sweep.mjs --url <pages origin> (or set PREVIEW_PAGES) [--engine chromium|webkit|firefox] [--out report.json]"); process.exit(2); }
@@ -58,6 +59,9 @@ const ENGINE = arg("--engine", "chromium");
 if (!["chromium", "webkit", "firefox"].includes(ENGINE) || !pw[ENGINE]) { console.error(`unknown engine ${ENGINE}`); process.exit(2); }
 const OUT = arg("--out"), BUDGET_MS = Number(arg("--budget-min", "7")) * 60000, CONC = Math.max(1, Number(arg("--concurrency", "4")));
 const T0 = Date.now();
+// A hung page or engine call has no timeout of its own (QA runs 43253520683 and 43603335149: Firefox at a faked clock, cancelled at the 50 min job limit with no FAIL line).
+// Each attempt at a cell gets --cell-timeout-s (default 300); the whole run gets the budget plus two cell timeouts plus a minute, then it prints what was still running and exits 1.
+const CELL_MS = Number(arg("--cell-timeout-s", "300")) * 1000, CLOSE_MS = 30000, HARD_MS = BUDGET_MS + 2 * CELL_MS + 60000;
 
 const ALL_SIZES = ["1920x1080", "1536x864", "1440x900", "1366x768", "1280x720", "1280x600", "1024x768", "1024x576", "960x540", "800x600", "768x1024", "600x800", "430x932", "390x844", "360x640", "320x568", "568x320", "844x390",
   "2560x1440", "3840x2160", "5120x2880", "7680x4320", "640x360", "384x216", "3440x1440", "860x360"]; /* the last eight: large screens, an ultrawide, a short landscape window and browser zoom (zoomed-out and zoomed-in windows are just different CSS viewports) */
@@ -566,7 +570,18 @@ if (argv.includes("--zoom-selftest")) {
 /* The huge sizes (5120x2880, 7680x4320) render in software on a CI runner and fail now and then for no layout reason. A cell (one size in one state, all its scenes) that fails is thrown away and
    run once more in a fresh browser context; only the retry counts. A cell that passed only on the retry prints a WARN, so a real flake stays visible. --no-retry turns this off. */
 async function runCell(browser, size, state) {
-  const attempt = () => { const a = { cells: 0, checks: 0, skipped: 0, failures: [] }; return cell(browser, size, state, a).then(() => a); };
+  const label = `${size.w}x${size.h} ${state}`;
+  const attempt = async () => {
+    const a = { cells: 0, checks: 0, skipped: 0, failures: [] };
+    guard.add(label);
+    try { await withDeadline(cell(browser, size, state, a), CELL_MS, `cell ${label}`); }
+    catch (e) {
+      if (!(e instanceof DeadlineError)) throw e;
+      // the hung attempt is abandoned (its context stays open); its partial tally is replaced by one named failure
+      return { cells: 0, checks: 0, skipped: 0, failures: [fail(size, state, "-", "harness", `${e.message}: a page or engine call hung (no FAIL line would appear otherwise; the job would sit until its time limit)`, [])] };
+    } finally { guard.remove(label); }
+    return a;
+  };
   let a = await attempt();
   if (a.failures.length && !argv.includes("--no-retry")) {
     const first = a.failures.length, kinds = [...new Set(a.failures.map((f) => f.invariant))].join(",");
@@ -576,6 +591,12 @@ async function runCell(browser, size, state) {
   }
   cells += a.cells; checks += a.checks; skipped += a.skipped; failures.push(...a.failures);
 }
+const guard = watchdog(HARD_MS, (running) => {
+  const detail = `the sweep did not end within ${Math.round(HARD_MS / 60000)} min; still running: ${running.join(", ") || "none (a hang outside a cell, such as browser.close)"}`;
+  console.log(`FAIL ${ENGINE} watchdog: ${detail}`);
+  if (OUT) { try { writeFileSync(OUT, JSON.stringify({ summary: { url: BASE, engine: ENGINE, clock: CLOCK ? CLOCK.toISOString() : null, watchdog: true, cells, invariantChecks: checks, failures: failures.length + 1, seconds: Math.round((Date.now() - T0) / 1000) }, failures: [...failures, { w: 0, h: 0, engine: ENGINE, state: "-", scene: "-", invariant: "harness", detail }] }, null, 1)); } catch (e) {} }
+  process.exit(1);
+});
 const browser = stubbed(await pw[ENGINE].launch(launch), { label: "layout-sweep api-stub" });
 const jobs = [];
 for (const size of SIZES) for (const state of STATES) jobs.push([size, state]);
@@ -589,7 +610,8 @@ await Promise.all(Array.from({ length: CONC }, async () => {
 }));
 const stubReport = browser.apiStubReport ? browser.apiStubReport() : null;
 if (stubReport && !ALLOW_MISS) for (const m of stubReport.misses) fail({ w: 0, h: 0 }, "-", "-", "stub-miss", `the page asked for ${m}, which tests/fixtures/api-snapshot does not have: re-record it (tools/local-browser.sh record-fixtures) or run with --live-api`);
-await browser.close();
+await withDeadline(browser.close(), CLOSE_MS, "browser.close").catch((e) => console.log(`WARN ${ENGINE} ${e.message}; the process exits anyway`));
+guard.stop();
 
 failures.sort((a, b) => b.w - a.w || b.h - a.h || a.state.localeCompare(b.state) || a.scene.localeCompare(b.scene) || a.invariant.localeCompare(b.invariant));
 const byInv = {}, bySize = {}, byScene = {};
