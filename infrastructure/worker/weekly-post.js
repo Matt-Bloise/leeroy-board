@@ -108,7 +108,7 @@ const FORM_ONLY_RE = /\b(cat|bear|moonkin|tree)(?: of life)?(?: form)? only\b|\b
 const SPEC_ONLY_RE = /\b([a-z]+) [a-z]+s only\b/g;
 const wordMatch = (a, b) => a === b || (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)));
 const quotable = (f, classKey) => f && typeof f.key === "string" && f.key.startsWith(`${classKey}.`) && typeof f.value === "string"
-  && plainValue(f.value).length >= TIP_MIN && f.value.length <= TIP_MAX && /\p{L}{3,}.*\s.*\s.*\s/u.test(f.value) && sourcesOf(f).length > 0;
+  && plainValue(f.value).length >= TIP_MIN && plainValue(f.value).length <= TIP_MAX && /\p{L}{3,}.*\s.*\s.*\s/u.test(f.value) && sourcesOf(f).length > 0;
 
 // Library shorthand a friend reading Discord cannot use (talent tiers, client builds, formula coefficients); such a fact is never the tip.
 export const JARGON_RE = /\bmedal\b|\brow \d|\bcoefficient\b|\bclient \d|\bhotfix\b|\branks? \d|\bdesign pillars?\b|\bspell \d{3,}|\bhas not said\b|\buntestable\b|\bdisputed\b|\branks? at \d|\d+ ranks\b|\brescaled\b|\brenamed\b|\bwas \d|\bdoubled \w{3} \d|\bread from the wording\b|\bvanished\b|\babsent from\b|\b(since|before|after|fixed|until) (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d|\bbug\b|\bnotes (cut|restored|changed|raised|lowered)\b/i; // also: what is not known, and patch history (ranks tables, "was 25%", "renamed"), is no tip
@@ -119,18 +119,24 @@ export const ACTION_RE = /\b(level \d+|at \d+|instant|cast|cooldown|slow|stun|ro
 // The library's provenance at the end of a value ("(Oct 15 notes; Wowhead rank 1 tooltip)") is citation material: the source link carries it.
 // Only a citation goes: a dated note, a client build, a named site, a tooltip. An aside that says something (a removal, a warning, a dissent,
 // "only") stays, and so does a value the removal would leave empty.
-const PROVENANCE_RE = /\b(notes?|client \d+|deep dive|wowhead|warcraft tavern|tavern|hotfix|tooltip|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2})\b/i;
+const PROVENANCE_RE = /\b(notes?|client \d+|build \d+|deep dive|wowhead|warcraft tavern|tavern|hotfix|tooltips?|guides?|forums?|method|blizzard watch|mobalytics|icy veins|forever-confirmed|confirmed|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2})\b/i;
 const CONTENT_RE = /\b(removed|never|not|no longer|only|otherwise|miss(es)?|instead|but|except|unless|wrong|breaks?)\b/i;
 // A part of the aside that is history or a comparison, not advice: it starts with a date ("Sep 30 text said 15") or with "Classic".
-const HISTORY_RE = /^((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2}\b|classic\b)/i;
-const dropPart = (x) => HISTORY_RE.test(x) || (PROVENANCE_RE.test(x) && !CONTENT_RE.test(x) && !x.includes(":"));
+const DATED_RE = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{1,2}\b/i;
+const CLASSIC_RE = /^classic\b/i;
+// One clause of an aside is a citation (a short source or dated note with nothing to say), history (a dated clause with nothing to say), or a
+// comparison with Classic. A ";" part is removed only when every ", " clause in it is one of those; otherwise the part stays as written.
+const citeClause = (x) => CLASSIC_RE.test(x) || (!CONTENT_RE.test(x) && !x.includes(":") && (DATED_RE.test(x) || (PROVENANCE_RE.test(x) && x.split(/\s+/).length <= 6)));
+const dropPart = (x) => CLASSIC_RE.test(x) || x.split(/,\s/).every((c) => citeClause(c.trim()));
 export function plainValue(v) {
   let t = String(v == null ? "" : v).trim();
   for (let i = 0; i < 2; i++) {
     const m = /\s*\(([^()]*)\)(\.?)\s*$/.exec(t);
-    if (!m || !(PROVENANCE_RE.test(m[1]) || m[1].split(/[;,]/).some((x) => HISTORY_RE.test(x.trim()))) || !t.slice(0, m.index).trim()) break;
+    if (!m || !t.slice(0, m.index).trim()) break;
     // "(Sep 30 deep dive; Wowhead tooltip; fictional caveat only)": the citations and history go, the part that says something stays
-    const keep = m[1].split(/;|,\s/).map((x) => x.trim()).filter((x) => x && !dropPart(x));
+    const parts = m[1].split(";").map((x) => x.trim()).filter(Boolean);
+    const keep = parts.filter((x) => !dropPart(x));
+    if (keep.length === parts.length) break;
     t = `${t.slice(0, m.index).trim()}${keep.length ? ` (${keep.join("; ")})` : ""}`;
     if (keep.length) break;
   }
@@ -170,7 +176,9 @@ export function pickTip(classesDoc, member, weekN) {
     if (forms.size && fForms.some((s) => !forms.has(s))) return true;
     if (role && fRoles.some((r) => r !== role)) return true;
     // a threat-raising fact is a tank's; threat reduction is anyone's
-    return Boolean(role && role !== "tank" && /\b(generates?|more|high|extra|bonus|holds?) threat\b|\+\d+% (\w+ )?threat\b|\btaunt\b/i.test(v));
+    // a fact about raising threat is a tank's; reducing it is anyone's
+    const reduces = /\b(reduc\w*|less|lower\w*|no extra|drops?) threat\b|\bthreat (reduction|reduced|drop)\b/i.test(v);
+    return Boolean(role && role !== "tank" && !reduces && (/\bthreat\b|\btaunt\b|\bforces? the target to attack\b/i.test(v)));
   };
   const words = [...(role && own(ROLE_WORDS, role) ? ROLE_WORDS[role] : []), ...specs, ...forms];
   // Jargon is judged on the text the friend reads: a citation in the value ("(client 70450)") that plainValue removes does not disqualify it.
@@ -267,7 +275,7 @@ export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.
   // The card still shows older choices; the post says so instead of contradicting it (names only, at most 8, never counted above).
   if (earlier.length) {
     const shown = earlier.slice(0, 8).map((s) => s.name);
-    body.push(`Still on the card, not counted for this week: ${joinList(earlier.length > 8 ? [...shown, `${earlier.length - 8} more`] : shown)}. Use /signup and pick your RSVP to count for this week.`);
+    body.push(`Still on the card, not counted for this week: ${joinList(earlier.length > 8 ? [...shown, `${earlier.length - 8} more`] : shown)}. Use /signup and fill in its rsvp option to count for this week.`);
   }
   const week = isoWeek(Number.isFinite(playAt) ? playAt : Date.now()).n;
   for (const s of tipPeople) {
@@ -275,7 +283,8 @@ export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.
     const tip = pickTip(classes, s.m, week);
     if (!tip) { skipped.push({ name: s.name, why: `no quotable sourced fact on classes/${s.m.class_key}` }); continue; }
     const build = s.m.board_line || [s.m.race, s.m.class].filter(Boolean).join(" ") || s.m.class_key;
-    tips.push({ line: `- ${s.name} (${plain(build)}). ${plain(tip.text)} ${cite(tip.sources)}`, tip });
+    const lead = `- ${s.name} (${plain(build)}). ${plain(tip.text)}`;
+    tips.push({ line: `${lead} ${cite(tip.sources)}`, short: `${lead} ${cite(tip.sources.slice(0, 1))}`, tip });
   }
   const tipHead = signed.length ? "One tip per build, from the library:" : "One tip for each build on the board, from the library:";
   // Fit Discord: drop the longest tips first ("and N more"), so one long line does not cost everyone theirs; then shorten the name list (keeping
@@ -287,6 +296,8 @@ export function composeWeeklyPost({ signups, party, classes, playAt, now = Date.
     return [...lines, ...tail].join("\n");
   };
   let kept = tips.slice(), text = build(kept);
+  // first cite one source per tip (the post keeps every friend's tip), then drop the longest tips
+  if (text.length > POST_MAX) { kept = kept.map((t) => ({ ...t, line: t.short, tip: { ...t.tip, sources: t.tip.sources.slice(0, 1) } })); text = build(kept); }
   while (text.length > POST_MAX && kept.length) {
     const longest = kept.reduce((a, t, i) => (t.line.length > kept[a].line.length ? i : a), 0);
     kept = kept.filter((_, i) => i !== longest);

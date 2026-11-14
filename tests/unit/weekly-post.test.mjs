@@ -100,7 +100,7 @@ test("sign-ups from before last play night are not this week's: the post invites
   const old = "2026-11-01T00:00:00.000Z";
   const { text, facts } = composeWeeklyPost(docs({ signups: { updated: old, entries: SIGNUPS().entries.map((e) => ({ ...e, updated: old })) } }));
   assert.match(text, /Nobody has signed up for this week yet\. The sign-up card is in this channel: In, Tentative or Running late\./);
-  assert.match(text, /Still on the card, not counted for this week: Red Fox, Blue Owl and Green Elk\. Use \/signup and pick your RSVP to count for this week\./);
+  assert.match(text, /Still on the card, not counted for this week: Red Fox, Blue Owl and Green Elk\. Use \/signup and fill in its rsvp option to count for this week\./);
   assert.doesNotMatch(text, /Signed up \(/);
   assert.doesNotMatch(text, /Roles on the board/);
   assert.match(text, /One tip for each build on the board, from the library:/);
@@ -410,7 +410,7 @@ test("review 2: a same-value card click does not re-stamp (the post points to /s
   const { plainValue, JARGON_RE } = await import("../../infrastructure/worker/weekly-post.js");
   assert.equal(plainValue("threat up 90% (Sep 24 notes cut it to 60%, Oct 15 notes restored 90%)"), "threat up 90%");
   assert.equal(plainValue("fictional ward for 3 min (Classic fictional race only)"), "fictional ward for 3 min");
-  assert.equal(plainValue("roots for 4 s (Oct 15 notes, bears get it at 12)"), "roots for 4 s (bears get it at 12)");
+  assert.equal(plainValue("roots for 4 s (Oct 15 notes, bears get it at 12)"), "roots for 4 s (Oct 15 notes, bears get it at 12)", "a part that says something stays as written");
   assert.equal(plainValue("a sleep (note: breaks on any damage)"), "a sleep (note: breaks on any damage)");
   assert.equal(plainValue("a cast (the tooltip is wrong; it is 3 s)"), "a cast (the tooltip is wrong; it is 3 s)");
   assert.equal(plainValue("a 24 s cooldown (Oct 15 notes)."), "a 24 s cooldown");
@@ -429,4 +429,35 @@ test("review 2: a threat-raising buff is a tank's; mid-value patch history is no
   const keys = (m) => { const s = new Set(); for (let w = 0; w < 6; w++) s.add(pickTip(classes, m, w).key); return [...s].sort(); };
   assert.deepEqual(keys({ class_key: "paladin", role: "healer", spec: "Holy" }), ["paladin.ward"]);
   assert.deepEqual(keys({ class_key: "paladin", role: "tank", spec: "Protection" }), ["paladin.righteous_fury", "paladin.ward"]);
+});
+
+test("review 3: an aside is never rewritten into a different claim; source residue goes; raising threat is a tank's", async () => {
+  const { plainValue } = await import("../../infrastructure/worker/weekly-post.js");
+  assert.equal(plainValue("fictional imbues stack with oils (Oct 7 deep dive; Classic 5 min, exclusive)"), "fictional imbues stack with oils", "the Classic comparison goes whole, never as \"(exclusive)\"");
+  assert.equal(plainValue("fictional gear (Warcraft Tavern; Red Helm, Blue Belt and Grey Cloak levels per the Wowhead tooltips)"), "fictional gear (Red Helm, Blue Belt and Grey Cloak levels per the Wowhead tooltips)");
+  for (const cite of ["Oct 2 notes, one guide", "Method", "Blizzard Watch", "forum", "build 70291", "Forever-confirmed"]) assert.equal(plainValue("a fictional value here (" + cite + ")"), "a fictional value here", cite);
+  assert.equal(plainValue("a fictional value (Oct 15: no longer works in dungeons)"), "a fictional value (Oct 15: no longer works in dungeons)");
+  assert.equal(plainValue("a fictional value (a, b)"), "a fictional value (a, b)");
+  const classes = { pages: [{ id: "classes/warrior", facts: [
+    fact("warrior.sunder", "level 10, a fictional sunder whose threat scales with power", "good", [ref(1)]),
+    fact("warrior.shout", "level 10, a fictional shout that forces the target to attack you", "good", [ref(2)]),
+    fact("warrior.calm", "level 10, a fictional calm that reduces threat for a while", "good", [ref(3)]),
+  ] }] };
+  const keys = (m) => { const s = new Set(); for (let w = 0; w < 6; w++) s.add(pickTip(classes, m, w).key); return [...s].sort(); };
+  assert.deepEqual(keys({ class_key: "warrior", role: "damage", spec: "Arms" }), ["warrior.calm"]);
+  assert.deepEqual(keys({ class_key: "warrior", role: "tank", spec: "Protection" }), ["warrior.calm", "warrior.shout", "warrior.sunder"]);
+});
+
+test("review 3: when the post is long, each tip cites one source before any tip is dropped; cited sources match the facts", () => {
+  const long = (i) => ({ id: `L${i}`, label: "Source", url: `https://example.test/${"x".repeat(150)}/${i}` });
+  const classes = { pages: [{ id: "classes/paladin", facts: [fact("paladin.ward", "level 16, a fictional ward that lasts for a short while", "good", [long(1), long(2), long(3)])] }] };
+  const members = [], entries = [];
+  for (let i = 0; i < 4; i++) { members.push({ name: `Member ${i}`, class_key: "paladin", role: "healer", board_line: `Fictional build ${i}` }); entries.push({ name: `Member ${i}`, rsvp: "in" }); }
+  const { text, facts } = composeWeeklyPost(docs({ classes, party: { members }, signups: { entries } }));
+  assert.ok(text.length <= POST_MAX, String(text.length));
+  assert.doesNotMatch(text, /and \d+ more\)/, "no tip dropped");
+  assert.equal(facts.length, 4);
+  const urls = [...text.matchAll(/<(https:[^>]+)>/g)].map((m) => m[1]);
+  assert.deepEqual(urls.sort(), facts.flatMap((f) => f.sources.map((s) => s.url)).sort());
+  assert.ok(facts.every((f) => f.sources.length === 1));
 });
