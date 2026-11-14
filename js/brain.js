@@ -76,7 +76,7 @@ function bootstrap(force = false) { if (force) BOOT_P = null;
       if (j && typeof j === "object" && !j.error) {
         if (typeof j.ver === "number" && j.ver > B.ver) B.ver = j.ver;
         if (Array.isArray(j.launch)) B.launch = j.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null }));
-        if (j.signups) B.signups = j.signups;
+        if (signupsOk(j.signups) && (!B.signups || signupsAge(j.signups) >= signupsAge(B.signups))) B.signups = j.signups; /* same guard as /state and the socket: a slow bootstrap never rolls back */
         if (j.isPrPreview) B.isPrPreview = true;
         if (j.providers && typeof j.providers === "object") B.providers = j.providers;
         if (AI_PROVIDERS.includes(j.aiProvider)) {
