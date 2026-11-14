@@ -292,6 +292,7 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } =
       row.fields[r.field] = r.field === "level"
         ? nextLevelField(row.fields[r.field], { value: val, visible: Boolean(r.visible), source: r.source || "board", at: r.created_at || now }).field
         : { value: val, visible: Boolean(r.visible), source: r.source || "board", at: r.created_at || now };
+      if (row.fields[r.field] === null) delete row.fields[r.field];
       row.updated = r.created_at || now;
     }
   } catch {}
@@ -336,7 +337,7 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
 // keeps its at and source; an older write of a new value is stale and changes nothing (a hide still hides). A write that changes nothing
 // records no event and broadcasts nothing; the reply carries stale and the stored field. The level event row carries the resolved field
 // (value and visible), so the slow-path replay below ends where this commit ended.
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible = true, source = "board", at, keepHidden = false, levelRules = false }) {
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible = true, visibleGiven = true, source = "board", at, keepHidden = false, levelRules = false }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
   const event = { slug, name: name || slug, field, valJson, visible: Boolean(visible), source: source || "board", at: now };
@@ -366,12 +367,13 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       const prior = memberSheet.fields[field];
       const project = () => ({ sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined });
       if (levelRules) { // recomputed on every retry, against the state this attempt writes
-        const next = nextLevelField(prior, { value, valueGiven, visible, source: source || "board", at: now }, { keepHidden });
+        const next = nextLevelField(prior, { value, valueGiven, visible, visibleGiven, source: source || "board", at: now }, { keepHidden });
         stale = next.stale; changed = next.changed; stored = next.field;
-        event.valJson = stored.value === undefined || stored.value === null ? null : JSON.stringify(stored.value);
-        event.visible = stored.visible !== false;
+        event.valJson = !stored || stored.value === undefined || stored.value === null ? null : JSON.stringify(stored.value);
+        event.visible = !stored || stored.visible !== false;
         if (!changed) return { ...project(), skipEvent: true };
-        memberSheet.fields[field] = stored;
+        if (stored) memberSheet.fields[field] = stored;
+        else delete memberSheet.fields[field]; // no value and not hidden: no level line at all
         memberSheet.updated = now;
         return project();
       }
@@ -519,7 +521,7 @@ const worker = {
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
           }
-          const problem = sheetValueProblem(field, body.value, body);
+          const problem = sheetValueProblem(field, body.value, body, { allowClear: true }); // the owner may clear a level (value null)
           if (problem) return jsonResp({ error: problem }, 400, cors);
           const visible = body.visible !== false;
           const valueGiven = !visibilityOnly(field, body); // the switch on an empty level line: { field: "level", visible }
@@ -534,6 +536,7 @@ const worker = {
               value,
               valueGiven,
               visible,
+              visibleGiven: typeof body.visible === "boolean", // level: a value write without visible (sheet Save, Import) keeps the stored visibility
               source: "board",
               at: now,
               levelRules: field === "level",
@@ -709,13 +712,13 @@ const worker = {
         const now = new Date().toISOString();
         let saved;
         try {
-          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, source: "admin", at: now, keepHidden: true, levelRules: true });
+          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, visibleGiven: body.visible === false, source: "admin", at: now, keepHidden: true, levelRules: true });
         } catch (e) {
           if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
           throw e;
         }
         // The reply is the stored field. A write that changed nothing (same field, or stale) sends no intent.
-        const st = saved.stored;
+        const st = saved.stored || { value: null, visible: true, at: now };
         const out = { ok: true, at: st.at, slug: member.slug, field, value: st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
         if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
         const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: st.value, visible: out.visible, source: "admin" }, ver: 1, at: now });

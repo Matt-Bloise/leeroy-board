@@ -67,7 +67,7 @@ test("sheetValueProblem: level 0, cap + 1, -1, 1.5, '60', '60abc', null, an arra
 
 test("POST /sheet: the friend's level write is validated on the server and stored with its own at stamp", async () => {
   const env = await makeEnv();
-  for (const bad of [...BAD.filter((v) => v !== undefined).map((value) => ({ value })), {}, { visible: "no" }, { visible: null }]) {
+  for (const bad of [...BAD.filter((v) => v !== undefined && v !== null && !Number.isNaN(v) && Math.abs(v) !== Infinity).map((value) => ({ value })), {}, { visible: "no" }, { visible: null }]) {
     const r = await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", ...bad } });
     assert.equal(r.status, 400, JSON.stringify(bad));
   }
@@ -218,7 +218,7 @@ test("POST /admin/sheet: a hide that commits between the admin's read and its co
       // The friend's hide lands first: the stored sheets row changes under the admin's pending commit, so its guarded UPDATE matches nothing.
       const row = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json);
       const fox = row.find((s) => s.slug === "red-fox");
-      fox.fields.level = { ...fox.fields.level, visible: false, at: new Date(Date.now() - 1).toISOString() };
+      fox.fields.level = { ...fox.fields.level, visible: false }; // a hide keeps the value's at (LOW-5)
       env.DB.raw.prepare("UPDATE kv_state SET json = ?, updated_at = 'hide' WHERE key = 'party_sheets'").run(JSON.stringify(row));
     }
     return batch(list);
@@ -431,4 +431,98 @@ test("LOW-6: one cap across the Worker, data/client.json, js/brain.js and the sh
   }
   assert.equal(sheetValueProblem("level", LEVEL_CAP), null);
   assert.ok(sheetValueProblem("level", LEVEL_CAP + 1));
+});
+// ---- re-review of 65b8f27b ---------------------------------------------------------------------------------------------------------
+const lvl = (env, slug = "red-fox") => { const s = sheetOf(env, slug); return s && s.fields ? s.fields.level : undefined; };
+const noPublicNull = async (env, why) => {
+  for (const [path, key] of [["/state", "party"], ["/bootstrap", "partySheets"]]) {
+    const j = (await anon(env, path)).json;
+    assert.ok(!JSON.stringify(j[key]).includes("\"level\":{\"value\":null"), `${why}: ${path} carries an empty level`);
+  }
+};
+
+test("M-A: a value write without visible (sheet Save, Import from game) keeps a hidden level hidden", async () => {
+  const env = await makeEnv();
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: 30, visible: false } })).status, 200);
+  const r = await (await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: 34 } })).json();
+  assert.deepEqual([r.value, r.visible], [34, false], "the reply says it is still off the party table");
+  assert.deepEqual([lvl(env).value, lvl(env).visible], [34, false]);
+  await publicLevelGone(env, "red-fox", "after a Save without visible");
+  // after an admin fill onto the hidden line, the owner's next Save keeps it hidden too
+  assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { slug: "red-fox", field: "level", value: 41 } })).status, 200);
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: 42 } })).status, 200);
+  assert.deepEqual([lvl(env).value, lvl(env).visible], [42, false]);
+  await publicLevelGone(env, "red-fox", "after admin fill then Save");
+  assert.deepEqual([(await rebuilt(env, "red-fox")).value, (await rebuilt(env, "red-fox")).visible], [42, false], "the replay agrees");
+  // a shown level stays shown; a first level with no stored line is shown by default (unchanged)
+  const env2 = await makeEnv();
+  assert.equal((await call(env2, "POST", "/sheet", { auth: asMember("blue-owl"), body: { field: "level", value: 12 } })).status, 200);
+  assert.equal(lvl(env2, "blue-owl").visible, true);
+  assert.equal((await call(env2, "POST", "/sheet", { auth: asMember("blue-owl"), body: { field: "level", value: 13 } })).status, 200);
+  assert.deepEqual([lvl(env2, "blue-owl").value, lvl(env2, "blue-owl").visible], [13, true]);
+  // the admin's fill without visible keeps the stored visibility as well
+  assert.equal((await call(env2, "POST", "/admin/sheet", { auth: asAdmin, body: { slug: "blue-owl", field: "level", value: 14 } })).status, 200);
+  assert.equal(lvl(env2, "blue-owl").visible, true);
+});
+
+test("M-A through the real client: js/brain.js setSheet(level, n) after a hide keeps it hidden (the Save and Import call)", async () => {
+  const env = await makeEnv();
+  const src = readFileSync(new URL("../../js/brain.js", import.meta.url), "utf8");
+  const store = new Map([["board-key", KEYS["red-fox"]]]);
+  const win = {};
+  vm.runInNewContext(src, {
+    window: win, console: { ...console, error() {}, warn() {} }, URL, URLSearchParams, Date, JSON, Promise, Math, Request, Response, Headers,
+    location: { hostname: "leeroy.party", protocol: "https:", href: "https://leeroy.party/", search: "", hash: "", pathname: "/", host: "leeroy.party" },
+    history: { replaceState() {} },
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) },
+    fetch: (u, init = {}) => quiet(() => worker.fetch(new Request(u, { method: init.method || "GET", headers: { ...(init.headers || {}), "CF-Connecting-IP": "203.0.113.72" }, body: init.body }), env, ctx)),
+    setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
+  });
+  const B = win.BoardBrain;
+  B.start({}); await B.me();
+  assert.equal((await B.setSheet("level", 20, false)).ok, true);
+  const r = await B.setSheet("level", 21); // scenes/sheet.js Save and scenes/import.js send no visible
+  assert.equal(r.ok, true);
+  assert.deepEqual([lvl(env).value, lvl(env).visible], [21, false]);
+  assert.equal(B.sheet().fields.level.visible, false, "the client's copy agrees with the server");
+  await publicLevelGone(env, "red-fox", "after the client's Save");
+  const c = await B.setSheet("level", null);
+  assert.equal(c.ok, true, "L-1: the owner's clear is accepted");
+  assert.deepEqual([lvl(env).value, lvl(env).visible], [null, false], "a cleared hidden level keeps the hide as a placeholder");
+});
+
+test("L-1: the owner clears a level with value null; the stored visibility stays; the admin route still refuses null", async () => {
+  const env = await makeEnv();
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: 30, visible: false } })).status, 200);
+  const r = await (await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: null } })).json();
+  assert.deepEqual([r.value, r.visible], [null, false]);
+  assert.deepEqual(lvl(env), { ...lvl(env), value: null, visible: false });
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", value: 33 } })).status, 200);
+  assert.deepEqual([lvl(env).value, lvl(env).visible], [33, false], "the hide held through the clear");
+  await publicLevelGone(env, "red-fox", "after clear and refill");
+  assert.equal((await call(env, "POST", "/admin/sheet", { auth: asAdmin, body: { slug: "red-fox", field: "level", value: null } })).status, 400);
+  // a shown level, cleared: no level line at all (L-2), and a later value is shown again
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("blue-owl"), body: { field: "level", value: 18 } })).status, 200);
+  const c = await (await call(env, "POST", "/sheet", { auth: asMember("blue-owl"), body: { field: "level", value: null } })).json();
+  assert.deepEqual([c.value, c.ok], [null, true]);
+  assert.equal(lvl(env, "blue-owl"), undefined, "no { value: null } line is stored for a shown level");
+  assert.equal(levelIn((await anon(env, "/state")).json.party, "blue-owl"), undefined);
+  assert.equal((await rebuilt(env, "blue-owl")), undefined, "the replay removes it too");
+});
+
+test("L-2: showing an empty level never publishes { level: { value: null } }", async () => {
+  const env = await makeEnv();
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", visible: false } })).status, 200);
+  assert.deepEqual([lvl(env).value, lvl(env).visible], [null, false]);
+  const s = await call(env, "POST", "/sheet", { auth: asMember("red-fox"), body: { field: "level", visible: true } });
+  assert.equal(s.status, 200);
+  assert.equal(lvl(env), undefined, "nothing to show: the line is removed instead of published empty");
+  await noPublicNull(env, "after show on an empty line");
+  assert.equal((await call(env, "POST", "/sheet", { auth: asMember("blue-owl"), body: { field: "level", visible: true } })).status, 200, "show with nothing stored");
+  assert.equal(lvl(env, "blue-owl"), undefined);
+  assert.equal(events(env).filter((e) => e.slug === "blue-owl").length, 0, "a write that changed nothing leaves no event");
+  await noPublicNull(env, "after show with nothing stored");
+  for (const m of env.sent) for (const a of anonSocket(m)) assert.ok(!JSON.stringify(a).includes("\"level\":{\"value\":null"), "socket");
+  assert.equal(nextLevelField(null, { value: null, visible: true, at: "2026-11-14T10:00:00.000Z" }).field, null);
+  assert.deepEqual(nextLevelField({ value: 5, visible: true, at: "2026-11-14T10:00:00.000Z" }, { value: null, visibleGiven: false, at: "2026-11-14T10:00:01.000Z" }), { field: null, stale: false, changed: true });
 });
