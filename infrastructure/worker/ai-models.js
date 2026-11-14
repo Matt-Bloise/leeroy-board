@@ -935,7 +935,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       let extraHits = [];
       const bw = eligible && about ? buildQueryWords(pb, question) : "";
       if (bw && rankPasses < MAX_RANK_PASSES) extraHits = retrieveFor(`${question} ${bw}`).rel.hits;
-      pickedCtx = { offer: eligible ? buildPickOffer(hits, { build: pb, about, extraHits }) : [], askerBuild: pb, buildReason, about, partyNames: askerIsMember ? [...new Set([...ROSTER_DATA.map((r) => r.display), ...sheets.map((x) => x && x.name).filter(Boolean), by])] : [] };
+      pickedCtx = { offer: eligible ? buildPickOffer(hits, { build: pb, about, extraHits }) : [], eligible, previousQuestion: prevQ, askerBuild: pb, buildReason, about, partyNames: askerIsMember ? [...new Set([...ROSTER_DATA.map((r) => r.display), ...sheets.map((x) => x && x.name).filter(Boolean), by])] : [] };
     }
     const topFactHits = hits
       .slice(0, 20)
@@ -1232,6 +1232,8 @@ export async function answerWithAi({
     // ASK_COMPOSED: the model writes only a one-line opener (checked structurally); the facts are written by code. Not for coach turns, skip kinds or abstains.
     // ASK_PICKED: the model returns only ids of the offered facts; the facts are rendered by code. Not for coach turns, skip kinds or abstains. Takes precedence over ASK_COMPOSED.
     const pickedMode = pickedEnabled(env) && Boolean(inputs.pickedCtx) && inputs.retrieved && !inputs.abstain && !isCoach && inputs.pickedCtx.offer.length > 0;
+    // Retrieved and not an abstain, but no fact is renderable (all refused by factParts): the code refusal, never a model-written answer.
+    const pickedEmpty = pickedEnabled(env) && Boolean(inputs.pickedCtx) && inputs.pickedCtx.eligible === true && !isCoach && inputs.pickedCtx.offer.length === 0;
     const composedMode = !pickedMode && composedEnabled(env) && Boolean(inputs.composedCtx) && inputs.retrieved && !inputs.abstain && !isCoach && inputs.composedCtx.facts.length > 0;
     // The build is named only when it is topical (ask-composed.js buildIsTopical): the question is about it, or a shown fact is about the asker's own class, race,
     // spec or professions. Otherwise the opener and the proof see no build at all.
@@ -1243,14 +1245,14 @@ export async function answerWithAi({
       callCacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant: "composed-opener", tier, systemPrompt: callSystem, userPrompt: callUser });
     }
     if (pickedMode) {
-      const pp = pickerPrompts({ question, offer: inputs.pickedCtx.offer, askerBuild: inputs.pickedCtx.askerBuild });
+      const pp = pickerPrompts({ question, offer: inputs.pickedCtx.offer, askerBuild: inputs.pickedCtx.askerBuild, previousQuestion: inputs.pickedCtx.previousQuestion });
       callSystem = pp.system; callUser = pp.user;
       callCacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant: "picked-ids", tier, systemPrompt: callSystem, userPrompt: callUser });
     }
-    const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
+    const composed = inputs.abstainAnswer || (pickedEmpty ? composeAbstain({ categories: parsedPages.map((p) => p.category) }) : null); // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
     if (composed) {
       rawAnswer = composed;
-      model = "abstain";
+      model = inputs.abstainAnswer ? "abstain" : "picked-nothing-offered";
       provider = "library";
     } else {
     {
@@ -1372,9 +1374,10 @@ export async function answerWithAi({
     // ASK_PICKED: the ids are parsed strictly and checked against the offer; the picked facts are rendered verbatim under a code opener and proved. No ids or a failed proof is the code refusal.
     if (pickedMode) {
       const ctx = inputs.pickedCtx;
-      const c = composePicked({ question, rawPicks: rawAnswer || "", offer: ctx.offer, askerBuild: ctx.askerBuild, about: ctx.about, buildReason: ctx.buildReason, partyNames: ctx.partyNames, askerName: askerIsMember ? by : "" });
-      if (c.ok) { rawAnswer = c.text; composedFinal = { facts: c.used, build: c.build, ids: c.ids, askerName: askerIsMember ? by : "", partyNames: ctx.partyNames }; model = `${model}:picked-${c.picks.length}`; }
-      else { rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); composedFinal = { refused: true }; model = c.reason === "none picked" ? "picked-none" : "picked-refused"; provider = "library"; }
+      const chatMaxP = Number(persona && persona.format && persona.format.chatMaxChars);
+      const c = composePicked({ question, rawPicks: rawAnswer || "", offer: ctx.offer, askerBuild: ctx.askerBuild, about: ctx.about, buildReason: ctx.buildReason, partyNames: ctx.partyNames, askerName: askerIsMember ? by : "", pages: parsedPages, boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party", ...(chatMaxP > 0 ? { maxChars: chatMaxP } : {}) });
+      if (c.ok) { rawAnswer = c.text; composedFinal = { facts: c.used, build: c.build, ids: c.ids, askerName: askerIsMember ? by : "", partyNames: ctx.partyNames, path: "picked" }; model = `${model}:picked-${c.picks.length}`; }
+      else { const failedCall = /-picker-failed$/.test(String(model)); rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); composedFinal = { refused: true }; model = failedCall ? "picked-provider-failed" : c.reason === "none picked" ? "picked-none" : "picked-refused"; provider = "library"; }
     }
     const trustedAnswer = Boolean(composed) || Boolean(composedFinal);
     let finished = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || trustedAnswer, retrieval, trusted: trustedAnswer, question, opener: inputs.opener });
@@ -1383,7 +1386,7 @@ export async function answerWithAi({
       const titles = parsedPages.filter((p) => composedFinal.ids.includes(p.id)).map((p) => p.title);
       const v = finished.parts.more ? { ok: false } : verifyFinished(finished.parts.main, { used: composedFinal.facts, sheet: composedFinal.build, askerBuild: composedFinal.build, partyNames: composedFinal.partyNames, askerName: composedFinal.askerName, extraAllowed: titles, boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party" });
       if (!v.ok) {
-        rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); composedFinal = { refused: true }; model = "composed-refused"; provider = "library";
+        rawAnswer = composeAbstain({ categories: parsedPages.map((p) => p.category) }); model = composedFinal.path === "picked" ? "picked-refused-format" : "composed-refused"; composedFinal = { refused: true }; provider = "library";
         finished = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: true, retrieval, trusted: true, question, opener: inputs.opener });
       }
     }

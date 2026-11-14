@@ -196,7 +196,8 @@ for (let i = 0; i < rows.length; i++) {
   const composedMode = PATH === "composed" && Boolean(inp.composedCtx) && inp.retrieved && !inp.abstain && !inp.isCoach && inp.composedCtx.facts.length > 0;
   const composedBuild = composedMode && buildIsTopical(inp.composedCtx.buildReason, inp.composedCtx.facts, inp.composedCtx.askerBuild, r.question) ? inp.composedCtx.askerBuild : null;
   const codeOpener = PATH === "composed" && flag("--code-opener") && composedMode;
-  const mode = inp.abstain ? "abstain" : pickedMode ? "picked" : composedMode ? "composed" : "existing";
+  const pickedEmpty = PATH === "picked" && Boolean(inp.pickedCtx) && inp.pickedCtx.eligible === true && !inp.isCoach && inp.pickedCtx.offer.length === 0;
+  const mode = inp.abstain || pickedEmpty ? "abstain" : pickedMode ? "picked" : composedMode ? "composed" : "existing";
   if (flag("--dry")) { dry[mode] = (dry[mode] || 0) + 1; dry[r.split] = (dry[r.split] || 0) + 1; if (pickedMode) { dry.about = (dry.about || 0) + (inp.pickedCtx.about ? 1 : 0); dry.offerMean = (dry.offerMean || 0) + inp.pickedCtx.offer.length; } continue; }
   if (!readJsonl(PROMPTS).some((p) => rowKey(p) === key)) {
     // the judge reads the production prompt context; for picked and composed rows it also sees the facts the code offered or selected (library facts that may sit
@@ -211,10 +212,10 @@ for (let i = 0; i < rows.length; i++) {
   const rec = { id: r.id, asker, split: r.split, mode, secs: 0, generator: "agy", refused: false };
   let fin;
   if (mode === "abstain") {
-    rec.raw = inp.abstainAnswer; rec.generator = "code";
-    fin = await finish(inp.abstainAnswer, { trusted: true });
+    rec.raw = inp.abstainAnswer || refusal(inp); rec.generator = "code"; if (pickedEmpty) rec.pickedEmpty = true;
+    fin = await finish(rec.raw, { trusted: true });
   } else {
-    const prompts = pickedMode ? pickerPrompts({ question: r.question, offer: inp.pickedCtx.offer, askerBuild: inp.pickedCtx.askerBuild })
+    const prompts = pickedMode ? pickerPrompts({ question: r.question, offer: inp.pickedCtx.offer, askerBuild: inp.pickedCtx.askerBuild, previousQuestion: inp.pickedCtx.previousQuestion })
       : composedMode ? openerPrompts({ question: r.question, askerName: asker, askerBuild: composedBuild, hasBuild: Boolean(composedBuild) })
       : { system: inp.systemPrompt, user: inp.userPrompt };
     rec.promptHash = hash(`${prompts.system}\n${prompts.user}`);
@@ -234,7 +235,7 @@ for (let i = 0; i < rows.length; i++) {
       rec.raw = g.out; fin = await finish(g.out);
     } else if (pickedMode) {
       const ctx = inp.pickedCtx;
-      const c = composePicked({ question: r.question, rawPicks: g.out, offer: ctx.offer, askerBuild: ctx.askerBuild, about: ctx.about, buildReason: ctx.buildReason, partyNames: ctx.partyNames, askerName: asker });
+      const c = composePicked({ question: r.question, rawPicks: g.out, offer: ctx.offer, askerBuild: ctx.askerBuild, about: ctx.about, buildReason: ctx.buildReason, partyNames: ctx.partyNames, askerName: asker, pages: inp.parsedPages, boardUrl: env.BOARD_PUBLIC_URL });
       rec.parse = c.parse ? { ok: c.parse.ok, reason: c.parse.reason } : null; rec.picks = c.picks || []; rec.pickReason = c.reason; rec.about = ctx.about;
       // diagnostic only (never used for the answer): would a reply wrapped in a code fence or with prose around one array have parsed?
       if (rec.parse && !rec.parse.ok) { const m = /\[[^\[\]]*\]/.exec(g.out); rec.lenientOk = Boolean(m && parsePicks(m[0], ctx.offer.map((o) => o.id)).ok); }

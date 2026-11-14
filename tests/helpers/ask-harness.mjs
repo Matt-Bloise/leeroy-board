@@ -35,6 +35,8 @@ export const SCENARIOS = [
   { question: "how many crowns in the glass spire", by: "Visitor", memberSlug: undefined, isMember: false },
   { question: "how do I tank as a lantern", journey: "guided", share: false },
   { question: "any better answers to my previous question" },
+  { question: "any better answers to my previous question", before: ["how many crowns in the glass spire"] },
+  { question: "how many crowns in the glass spire", before: ["how many crowns in the glass spire"] },
   { question: "how many players does the glass spire vault hold", by: "Tern Vale", memberSlug: "tern-vale" },
 ];
 export const REPLIES = [
@@ -72,7 +74,8 @@ export async function loadHarness(root) {
   let n = 0;
   async function ask(env, { by = "Moss Wren", memberSlug = "moss-wren", question, share = false, journey = "curious", isMember = true } = {}) {
     const id = `p${++n}`;
-    await insertAskTurn(env, { id, byName: by, question, provider: "workers-ai", share, createdAt: "2026-11-01T00:00:00Z" }, {});
+    // the member's slug hash is stored, so the follow-up and reused-answer lookups (by asker hash, within a day) can find their earlier turns
+    await insertAskTurn(env, { id, byName: by, question, provider: "workers-ai", share, createdAt: new Date(Date.now() - 60e3 + n).toISOString() }, isMember && memberSlug ? { slug: memberSlug } : {});
     const silence = [console.error, console.warn, console.log]; console.error = () => {}; console.warn = () => {}; console.log = () => {};
     try { await ai.answerWithAi({ env, origin: "https://worker.test", intentId: id, by, memberSlug, question, provider: "workers-ai", share, journey, isMember }); } finally { [console.error, console.warn, console.log] = silence; }
     const row = env.DB.raw.prepare("SELECT answer, cites_json, model, status FROM ask_turns WHERE id = ?").get(id);
@@ -90,6 +93,7 @@ export async function loadHarness(root) {
     n = 0; // the same turn ids on every run: the answer tail is seeded by them (the rare egg line)
     for (const s of scenarios) {
       const ctx = aiSays(makeEnv(extraEnv), reply);
+      for (const q of s.before || []) await ask(ctx.env, { ...s, question: q }); // earlier turns of the same asker in the same database
       const r = await ask(ctx.env, s);
       const inp = await inputs(makeEnv(extraEnv).env, s);
       out.push({ s: s.question, r, prompts: ctx.aiCalls, inp });
