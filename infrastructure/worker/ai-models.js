@@ -25,7 +25,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
-import { composedEnabled, buildIsTopical, composeAnswer, openerPrompts, verifyFinished } from "./ask-composed.js";
+import { composedEnabled, composeAnswer, openerPrompts, verifyFinished } from "./ask-composed.js";
 import { askerRole, askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -1029,7 +1029,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 
     return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses,
       // ASK_COMPOSED (ask-composed.js): the asker's own visible race, class, spec, role and professions (only when the build is relevant to this question) and the party names the opener may use.
-      ...(composedEnabled(env) ? { composedCtx: { askerBuild: hasBuild && buildFactsNow ? { race: buildFactsNow.race, class: buildFactsNow.class, spec: buildFactsNow.spec, role: askerRole(askerSheet, { includeHidden: share === false && askerBySlug }), professions: buildFactsNow.professions } : null, partyNames: askerIsMember ? [...new Set([...ROSTER_DATA.map((r) => r.display), ...sheets.map((x) => x && x.name).filter(Boolean), by])] : [] } } : {}) };
+      ...(composedEnabled(env) ? { composedCtx: { askerBuild: hasBuild && buildFactsNow ? { race: buildFactsNow.race, class: buildFactsNow.class, spec: buildFactsNow.spec, role: askerRole(askerSheet, { includeHidden: share === false && askerBySlug }), professions: buildFactsNow.professions } : null, partyNames: askerIsMember ? [...new Set([...ROSTER_DATA.map((r) => r.display), ...sheets.map((x) => x && x.name).filter(Boolean), by])] : [], coverage: { best: rel.best || 0, kept: rel.kept || 0 } } } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1210,7 +1210,7 @@ export async function answerWithAi({
     const composedMode = composedEnabled(env) && Boolean(inputs.composedCtx) && inputs.retrieved && !inputs.abstain && !isCoach && hits.length > 0;
     let callSystem = systemPrompt, callUser = userPrompt, callCacheKey = cacheKey;
     if (composedMode) {
-      const op = openerPrompts({ question, askerName: askerIsMember ? by : "", askerBuild: inputs.composedCtx.askerBuild, hasBuild: Boolean(inputs.composedCtx.askerBuild) && buildIsTopical(question, hits) });
+      const op = openerPrompts({ question, askerName: askerIsMember ? by : "", askerBuild: inputs.composedCtx.askerBuild, hasBuild: Boolean(inputs.composedCtx.askerBuild) });
       callSystem = op.system; callUser = op.user;
       callCacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant: "composed-opener", tier, systemPrompt: callSystem, userPrompt: callUser });
     }

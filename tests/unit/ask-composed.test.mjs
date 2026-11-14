@@ -4,10 +4,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  composeFactsBlock, checkOpener, fallbackOpener, verifyComposed, composeAnswer, openerPrompts, composedEnabled, sheetStrings, buildIsTopical, numberTokens,
+  composeFactsBlock, checkOpener, fallbackOpener, verifyComposed, composeAnswer, openerPrompts, composedEnabled, sheetStrings, numberTokens,
   OPENER_VOCAB, OPENER_TEMPLATES, NUMBER_WORDS, verifyFinished, norm,
 } from "../../infrastructure/worker/ask-composed.js";
-import { answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
+import { answerWithAi, finishAnswerText, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { insertAskTurn } from "../../infrastructure/worker/answer-ux.js";
@@ -354,16 +354,12 @@ test("the opener prompt lists the templates, tells the model it writes a one-lin
 });
 
 
-test("the build is named only when the question is about a class, a race or a role", () => {
-  const cls = [{ page: "classes/paladin", key: "p.k", value: "x", title: "Paladin" }];
+test("the code opener names the asker's own build whenever there is one, and never a build the asker does not have", () => {
   const dun = [{ page: "dungeons/the-mines", key: "m.k", value: "x", title: "The Mines" }];
-  assert.equal(buildIsTopical("how does a paladin work", cls), true);
-  assert.equal(buildIsTopical("how many tanks for a dungeon", dun), true);
-  assert.equal(buildIsTopical("when does the dungeon open", dun), false);
-  assert.equal(buildIsTopical("", []), false);
-  const mines = composeAnswer({ question: "when does the dungeon open", rawOpener: "", retrievedFacts: dun, sheet: RED_FOX, askerBuild: RED_FOX, partyNames: PARTY });
-  assert.ok(!/paladin|human/i.test(mines.opener), mines.opener);
-  assert.ok(composeAnswer({ question: "how does a paladin work", rawOpener: "", retrievedFacts: cls, sheet: RED_FOX, askerBuild: RED_FOX, partyNames: PARTY }).ok);
+  const withBuild = composeAnswer({ question: "when does the dungeon open", rawOpener: "", retrievedFacts: dun, sheet: RED_FOX, askerBuild: RED_FOX, partyNames: PARTY });
+  assert.match(withBuild.opener, /your human protection paladin/);
+  const noBuild = composeAnswer({ question: "when does the dungeon open", rawOpener: "", retrievedFacts: dun, sheet: null, askerBuild: null, partyNames: PARTY });
+  assert.ok(!/your /.test(noBuild.opener), noBuild.opener);
 });
 
 // ---- fuzz --------------------------------------------------------------------------------------------------------------------------
@@ -736,4 +732,39 @@ test("composed on, with the answer layout on: the formatted answer still verifie
   const huge = [{ page: "a/b", key: "k.long", value: `word ${"long text ".repeat(120)}`.trim(), title: "Big" }, { page: "c/d", key: "k.second", value: "second fact", title: "Second" }];
   const c = composeAnswer({ question: "q", rawOpener: "", retrievedFacts: huge, sheet: null, partyNames: [] });
   assert.equal(c.used.length, 1, "the block budget leaves the second fact out instead of splitting anything");
+});
+
+// ---- what the formatter does to a composed answer -----------------------------------------------------------------------------------------
+test("every real library fact, composed alone and run through the production formatter (layout off and on), still verifies as sent", async () => {
+  const pages = libPages.filter((p) => Array.isArray(p.facts));
+  const parsed = pages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
+  let n = 0;
+  for (const ux of ["off", "on"]) {
+    invalidatePagesCache(); invalidatePersonaCache(); invalidateConfigCache();
+    const env = { DB: schemaDb(), BOARD_PUBLIC_URL: "https://leeroy.party", ANSWER_UX: ux };
+    for (const p of pages) for (const fct of p.facts) {
+      const hit = { page: p.id, key: fct.key, value: fct.value, title: p.title };
+      const c = composeAnswer({ question: "q", rawOpener: "", retrievedFacts: [hit], sheet: null, partyNames: [] });
+      assert.ok(c.ok, `${p.id} ${fct.key}: ${c.reason}`);
+      const fin = await finishAnswerText(env, { rawAnswer: c.text, isCoach: false, parsedPages: parsed, by: "Red Fox", askerIsMember: true, persona: null, intentId: "x", groundingText: "", personalised: true, retrieval: { ids: [p.id], abstain: false }, trusted: true, question: "q", opener: "" });
+      assert.equal(fin.parts.more || "", "", `${p.id} ${fct.key}: overflow`);
+      const v = verifyFinished(fin.parts.main, { used: c.used, partyNames: [], askerName: "Red Fox", extraAllowed: [p.title], boardUrl: "https://leeroy.party" });
+      assert.ok(v.ok, `${ux} ${p.id} ${fct.key}: ${v.reason} ${JSON.stringify(v.offending)}`);
+      n++;
+    }
+  }
+  assert.ok(n > 2000, `${n} fact renderings`);
+});
+
+test("library cross-references and links in a fact value are rendered as plain text; a title with a comma survives the Sources footer", () => {
+  const f1 = [{ page: "systems/bunkers", key: "b.list", value: "the list on [[systems/legacy]] and [raids/x-1] and [see](https://example.test/a) accepts it", title: "Bunkers, and more" }];
+  const b = composeFactsBlock(f1);
+  assert.equal(b.lines[0], "- **Bunkers, and more** \u00B7 list: the list on systems/legacy and raids/x-1 and see accepts it");
+  const links = "[Bunkers, and more](<https://leeroy.party/#library.systems.bunkers>) \u00B7 [Other, page](<https://leeroy.party/#library.systems.other>)";
+  const f2 = [...f1, { page: "systems/other", key: "o.k", value: "v", title: "Other, page" }];
+  const c = composeAnswer({ question: "q", rawOpener: "", retrievedFacts: f2, sheet: null, partyNames: [] });
+  assert.ok(c.ok);
+  const sent = c.text.replace(/-# Sources: .*$/, `-# Sources: ${links}`);
+  assert.ok(verifyFinished(sent, { used: c.used, partyNames: [], boardUrl: "https://leeroy.party", extraAllowed: ["Bunkers, and more", "Other, page"] }).ok);
+  assert.equal(verifyFinished(sent.replace("systems.other", "systems.nope"), { used: c.used, partyNames: [], boardUrl: "https://leeroy.party", extraAllowed: ["Bunkers, and more", "Other, page"] }).ok, false);
 });

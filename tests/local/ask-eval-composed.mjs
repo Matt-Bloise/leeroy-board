@@ -44,7 +44,7 @@ const { buildAnswerInputs, finishAnswerText, invalidatePagesCache } = await imp(
 const { invalidatePersonaCache, loadPersona } = await imp("infrastructure/worker/persona.js");
 const { invalidateConfigCache } = await imp("infrastructure/worker/config.js");
 const { schemaDb } = await imp("tests/helpers/sqlite-d1.mjs");
-const { composeAnswer, openerPrompts, verifyFinished, buildIsTopical } = await imp("infrastructure/worker/ask-composed.js");
+const { composeAnswer, openerPrompts, verifyFinished } = await imp("infrastructure/worker/ask-composed.js");
 const { composeAbstain } = await imp("infrastructure/worker/self-rag.js");
 
 const ASKERS = ["Red Fox", "Blue Owl", "Green Elk"];
@@ -114,6 +114,25 @@ fs.mkdirSync(WORK, { recursive: true });
 const done = new Set(readJsonl(ANSWERS).map(rowKey));
 let calls = 0, fails = 0;
 
+// ASK_EVAL_REPLAY=<id,id>: no model call and no file written; compose with the code opener for those rows and print why the proof passed or failed (reasons only).
+if (process.env.ASK_EVAL_REPLAY) {
+  const want = new Set(process.env.ASK_EVAL_REPLAY.split(","));
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i], asker = ASKERS[i % 3];
+    if (!want.has(r.id)) continue;
+    const inp = await buildAnswerInputs(env, { question: r.question, by: asker, memberSlug: SLUG[asker], journey: r.journey || "curious", share: true });
+    const ctx = inp.composedCtx;
+    const c = composeAnswer({ question: r.question, rawOpener: "", retrievedFacts: inp.hits.slice(0, 20), sheet: ctx.askerBuild, askerBuild: ctx.askerBuild, partyNames: ctx.partyNames, askerName: asker });
+    const fin = await finishAnswerText(env, { rawAnswer: c.text, isCoach: false, parsedPages: inp.parsedPages, by: asker, askerIsMember: true, persona, intentId: String(r.id), groundingText: inp.groundingText, personalised: true, retrieval: inp.retrieval, trusted: true, question: r.question, opener: inp.opener });
+    const titles = inp.parsedPages.filter((p) => c.ids.includes(p.id)).map((p) => p.title);
+    const v = verifyFinished(fin.parts.main, { used: c.used, sheet: ctx.askerBuild, askerBuild: ctx.askerBuild, partyNames: ctx.partyNames, askerName: asker, extraAllowed: titles, boardUrl: env.BOARD_PUBLIC_URL });
+    const exp = c.text.split("\n\n")[1].split("\n"), got = fin.parts.main.split("\n\n")[1].split("\n").map((l) => (l.startsWith("\u2022 ") ? `- ${l.slice(2)}` : l));
+    exp.forEach((l, k) => { if (l !== got[k]) { let d = 0; while (l[d] === (got[k] || "")[d]) d++; console.log("line", k, "differs at", d, JSON.stringify(l.slice(Math.max(0, d - 15), d + 25)), "=>", JSON.stringify((got[k] || "").slice(Math.max(0, d - 15), d + 25))); } });
+    console.log(JSON.stringify({ id: r.id, composeOk: c.ok, composeReason: c.reason, moreChars: (fin.parts.more || "").length, mainChars: fin.parts.main.length, finishedVerify: v, facts: c.used.length, blocks: fin.parts.main.split("\n\n").length }));
+  }
+  process.exit(0);
+}
+
 for (let i = 0; i < rows.length; i++) {
   const r = rows[i], asker = ASKERS[i % 3];
   const key = rowKey({ id: r.id, asker });
@@ -131,7 +150,7 @@ for (let i = 0; i < rows.length; i++) {
     fin = await finish(inp.abstainAnswer, { trusted: true });
     rawOut = inp.abstainAnswer;
   } else {
-    const prompts = composedMode ? openerPrompts({ question: r.question, askerName: asker, askerBuild: inp.composedCtx.askerBuild, hasBuild: Boolean(inp.composedCtx.askerBuild) && buildIsTopical(r.question, inp.hits) }) : { system: inp.systemPrompt, user: inp.userPrompt };
+    const prompts = composedMode ? openerPrompts({ question: r.question, askerName: asker, askerBuild: inp.composedCtx.askerBuild, hasBuild: Boolean(inp.composedCtx.askerBuild) }) : { system: inp.systemPrompt, user: inp.userPrompt };
     if (calls >= maxCalls) { console.log(`ask-eval-composed: max-calls ${maxCalls} reached`); break; }
     while (usedLastHour() >= capHour) { if (!wait) break; console.log(`ask-eval-composed: rate guard (${usedLastHour()} agy calls in the last hour, cap ${capHour}); sleeping 5 min`); await sleep(300e3); }
     if (usedLastHour() >= capHour) { console.log(`ask-eval-composed: rate guard stop (${usedLastHour()}/${capHour}). Resume later or pass --wait.`); break; }
