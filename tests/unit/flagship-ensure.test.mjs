@@ -178,13 +178,15 @@ test("CLI: creates the missing key disabled, leaves the existing key, exit 0", (
   const f = fake({ list: JSON.stringify([{ key: "OTHER" }]) });
   const r = cli(f);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.deepEqual(f.calls().map((c) => c.slice(2, 3)[0]), ["list", "create"]);
+  assert.deepEqual(f.calls().map((c) => c.slice(2, 3)[0]), ["list", "create", "create"]);
   assert.deepEqual(f.calls()[1], ["flagship", "flags", "create", APP, "D1_FEED", "--disabled", "--remote"]);
+  assert.deepEqual(f.calls()[2], ["flagship", "flags", "create", APP, "INTEREST_NUDGES", "--disabled", "--remote"]);
   assert.match(r.stdout, /created D1_FEED \(disabled/);
+  assert.match(r.stdout, /created INTEREST_NUDGES \(disabled/);
 });
 
 test("CLI: the key already exists: no create, exit 0", () => {
-  const f = fake({ list: JSON.stringify({ flags: [{ key: "D1_FEED", enabled: true }] }) });
+  const f = fake({ list: JSON.stringify({ flags: [{ key: "D1_FEED", enabled: true }, { key: "INTEREST_NUDGES", enabled: false }] }) });
   const r = cli(f);
   assert.equal(r.status, 0);
   assert.equal(f.calls().length, 1);
