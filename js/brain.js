@@ -20,7 +20,7 @@ const PROBE = {
 };
 const POLL_MS = 15000, PING_MS = 45000, WS_RETRY_MS = 120000, SLOW_MS = 30000;
 const SHEET = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"], SLUGGED = ["race", "class", "spec_path", "spec_at_40", "plan_zone"], SLUG = /^[a-z0-9-]{1,32}$/, GOALS_MAX = 140, PROF_MAX = 2, DISPATCH_MAX = 3;
-const B = { vocab: null, sheet: null, party: [], sheetOff: false, key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, subs: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, sent: 0, polls: 0, wsMsgs: 0, launch: [], lPend: null, launchRefused: false };
+const B = { vocab: null, sheet: null, party: [], sheetOff: false, key: null, base: null, ver: 0, at: null, signups: null, me: null, keyBad: false, ws: null, via: "off", started: false, pend: {}, h: {}, subs: {}, pollT: 0, pingT: 0, wsT: 0, journeyRefused: false, mirrorJ: undefined, jWant: null, jWantAt: 0, errors: 0, pollFail: 0, bootFail: false, sent: 0, polls: 0, wsMsgs: 0, launch: [], lPend: null, launchRefused: false };
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
@@ -68,9 +68,11 @@ B.base = baseFor();
 const LEGACY = (location.hostname || "") === "matt-bloise.github.io";
 const apiUrl = (path) => (B.base && path && !(LEGACY && /^\/?(data|atlas|library)\//.test(path)) ? `${B.base.http}${path.startsWith("/") ? path : `/${path}`}` : null);
 let BOOT_P = null;
+/* A failed bootstrap is not kept: BOOT_P is cleared so the next caller retries. A good one is shared by every caller for the session. */
 function bootstrap(force = false) { if (force) BOOT_P = null;
   if (!B.base || LEGACY) return Promise.resolve(null);
-  return (BOOT_P ||= fetch(`${B.base.http}/bootstrap`, { cache: "no-cache", credentials: "omit" })
+  if (BOOT_P) return BOOT_P;
+  const p = fetch(`${B.base.http}/bootstrap`, { cache: "no-cache", credentials: "omit" })
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
       if (j && typeof j === "object" && !j.error) {
@@ -86,7 +88,9 @@ function bootstrap(force = false) { if (force) BOOT_P = null;
       }
       return null;
     })
-    .catch(() => null));
+    .catch(() => null)
+    .then((j) => { const was = B.bootFail; B.bootFail = !j; if (!j && BOOT_P === p) BOOT_P = null; if (was !== B.bootFail) emit("status", status()); return j; });
+  return (BOOT_P = p);
 }
 
 function probeOk(b) {
@@ -249,16 +253,19 @@ function journeyFromMirror() {
 
 const hidden = () => typeof document !== "undefined" && (document.hidden || document.visibilityState === "hidden");
 function schedulePoll(ms) { clearTimeout(B.pollT); B.pollT = setTimeout(pollOnce, ms); }
-async function pollOnce() {
-  if (!B.base) return;
-  if (B.via === "ws") return;
-  if (hidden()) return;
+/* One poll at a time: a tab return fires visibilitychange and focus together, and one bad answer must count once. */
+let POLLING = null;
+function pollOnce() {
+  if (!B.base || B.via === "ws" || hidden()) return POLLING || Promise.resolve();
+  return (POLLING ||= pollRun().finally(() => { POLLING = null; }));
+}
+async function pollRun() {
   try {
     const r = await call("GET", `/state${B.ver ? `?ver=${B.ver}` : ""}`); B.polls++;
-    if (r.status === 200) { onState(r.data); B.errors = 0; } else B.errors++;
-  } catch (e) { B.errors++; }
+    if (r.status === 200) { onState(r.data); B.errors = 0; B.pollFail = 0; B.bootFail = false; } else { B.errors++; B.pollFail++; }
+  } catch (e) { B.errors++; B.pollFail++; }
   emit("status", status());
-  if (B.via !== "ws") schedulePoll(B.offline ? WS_RETRY_MS : POLL_MS);
+  if (B.via !== "ws") schedulePoll(POLL_MS); /* also while offline: a dead API is asked every 15 s, so the board notices it coming back (and going away) in seconds, not minutes */
 }
 // The room sends question and answer text only to sockets that prove who they are: a member key, or the id of the visitor's own ask.
 function wsSend(o) { try { if (B.ws && B.ws.readyState === 1) B.ws.send(JSON.stringify(o)); } catch (e) {} }
@@ -269,7 +276,7 @@ function openWs() {
   if (B.offline) { B.wsT = setTimeout(openWs, WS_RETRY_MS); return false; }
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
-  ws.onopen = () => { if (B.ws !== ws) return; opened = true; wsAuth(); B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
+  ws.onopen = () => { if (B.ws !== ws) return; opened = true; wsAuth(); B.via = "ws"; B.pollFail = 0; B.bootFail = false; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
   ws.onmessage = (e) => {
     const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return;
     let m; try { m = JSON.parse(d); } catch (er) { return; }
@@ -354,7 +361,9 @@ async function dispatch(ids) {
 
 function pending() { const out = {}; for (const [f, p] of Object.entries(B.pend)) out[f] = { value: p.value, state: p.state, ...(p.other ? { other: p.other } : {}), ...(p.error ? { error: p.error } : {}) }; return out; }
 function launchPending() { const p = B.lPend; return p ? { value: p.value, state: p.state, ...(p.error ? { error: p.error } : {}) } : null; }
-function status() { return { via: B.offline && B.via !== "ws" ? "off" : B.via, offline: !!B.offline, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused, launch: B.launch.length, launchPending: launchPending(), launchRefused: B.launchRefused, sheetOff: B.sheetOff, party: B.party.length }; }
+/* down: the API cannot be reached and no live socket covers for it (two polls in a row failed, or one after a failed bootstrap). A dead socket alone is not an outage while polls succeed. */
+const isDown = () => B.via !== "ws" && (B.pollFail >= 2 || (B.bootFail && B.pollFail >= 1));
+function status() { return { down: isDown(), via: B.offline && B.via !== "ws" ? "off" : B.via, offline: !!B.offline, base: B.base ? B.base.http : null, key: !!B.key, keyBad: B.keyBad, me: B.me ? { ...B.me } : null, ver: B.ver, pending: pending(), errors: B.errors, polls: B.polls, wsMsgs: B.wsMsgs, sent: B.sent, journeyRefused: B.journeyRefused, launch: B.launch.length, launchPending: launchPending(), launchRefused: B.launchRefused, sheetOff: B.sheetOff, party: B.party.length }; }
 
 async function setRsvp(v) {
   if (!B.base) return { ok: false, why: "nowhere to send" };
