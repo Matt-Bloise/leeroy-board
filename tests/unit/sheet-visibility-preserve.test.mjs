@@ -158,7 +158,10 @@ test("web POST /sheet: a value-only write keeps the field hidden; only an explic
 test("launch state from Discord /launch or the board's launch intent never un-hides a hidden launch_state", async () => {
   const env = await makeEnv();
   await hide(env, "launch_state", HIDDEN_LAUNCH);
-  await discordLaunch(env, "queue");
+  // Discord /launch only records a state before launch (after launch it answers one line and records nothing), so pin the clock before it.
+  const realNow = Date.now;
+  Date.now = () => 1793833200000 - 3600000;
+  try { await discordLaunch(env, "queue"); } finally { Date.now = realNow; }
   assert.equal(field(env, "launch_state").value, "queue");
   assert.equal(field(env, "launch_state").visible, false, "Discord /launch");
   const res = await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "in" } });
