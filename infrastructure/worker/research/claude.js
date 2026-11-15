@@ -314,6 +314,11 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
           pauseClaude();
           return { reason: "claude:counter-error" };
         }
+        if (deadlineAt - Date.now() < RETRY_MIN_MS) {
+          // The reservation write itself ate the budget: do not start a send that cannot finish. Give the unused reservation back.
+          await settle(-estimate);
+          return { reason: failReason(e) };
+        }
         res = await attempt(fastModel);
       } else throw e;
     }

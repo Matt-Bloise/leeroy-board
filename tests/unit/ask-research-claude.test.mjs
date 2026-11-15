@@ -1,10 +1,10 @@
 // W-wire: /ask research mode provider order Claude -> Workers AI -> library facts, with every outside call after tokenisation and the outbound guards.
 // Offline: a fake Anthropic endpoint (fake fetch), a fake Workers AI binding, an in-memory D1. Fake key only. Fictional names only; the real roster is read at
 // runtime from bot-data.js (never copied here, never printed). Run: node --test tests/unit/ask-research-claude.test.mjs
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
+import { answerWithAi, invalidatePagesCache, fetchWithGatewayFallback } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
@@ -730,4 +730,85 @@ test("R3. an ask whose usage block is partial settles at the estimate end to end
     await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) });
     assert.equal(Number(rowOf(db, `claude_tokens_${month()}`).json), E, JSON.stringify(usage));
   }
+});
+
+// ======================= review round: real fetch timeouts, single-hop budget, slow reservation, missing 5-5 ids =======================
+function recordTimeouts() {
+  const real = AbortSignal.timeout;
+  const seen = [];
+  AbortSignal.timeout = (ms) => { seen.push(ms); return real.call(AbortSignal, ms); };
+  return { seen, stop: () => { AbortSignal.timeout = real; } };
+}
+const GW = (e) => { e.CLOUDFLARE_ACCOUNT_ID = "acct"; e.AI_GATEWAY_ID = "gw"; };
+
+test("F1. research sends get the budget they were promised, with and without a gateway: compose ~6000 ms, the retry the remaining budget (>= 2500 ms)", async () => {
+  for (const [label, envPatch] of [["gateway", GW], ["no gateway", () => {}]]) {
+    const rec = recordTimeouts();
+    try {
+      await ask(ABSTAIN_Q, { env: envPatch, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT }) });
+    } finally { rec.stop(); }
+    const [compose, retry] = rec.seen;
+    assert.ok(compose > 5800 && compose <= 6000, `${label} compose ${compose}`);
+    assert.ok(retry >= 2500 && retry <= 9000, `${label} retry ${retry}`);
+  }
+});
+
+test("F1b. fetchWithGatewayFallback: single-hop gets the whole remaining time; the legacy two-hop path keeps its 0.6 gateway share and a full-remainder direct hop (unchanged)", async () => {
+  const env = { CLOUDFLARE_ACCOUNT_ID: "acct", AI_GATEWAY_ID: "gw" };
+  const run = async (singleHop) => {
+    const rec = recordTimeouts();
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("{}", { status: 500 });
+    try {
+      await fetchWithGatewayFallback({ env, providerSlug: "anthropic/v1/messages", defaultEndpoint: "https://api.anthropic.com/v1/messages", headers: {}, body: "{}", deadlineAt: Date.now() + 10000, singleHop });
+    } catch {} finally { rec.stop(); globalThis.fetch = prevFetch; }
+    return rec.seen;
+  };
+  const single = await run(true);
+  assert.equal(single.length, 1);
+  assert.ok(single[0] > 9800 && single[0] <= 10000, String(single[0]));
+  const legacy = await run(false);
+  assert.equal(legacy.length, 2, "gateway then direct");
+  assert.ok(legacy[0] > 5800 && legacy[0] <= 6000, `legacy gateway hop ${legacy[0]}`);
+  assert.ok(legacy[1] > 9800 && legacy[1] <= 10000, `legacy direct hop keeps the full remaining budget ${legacy[1]}`);
+});
+
+test("F3. a slow second reservation write cannot push the retry past the Claude budget: the retry is skipped, its reservation refunded, Workers AI answers", async () => {
+  const E = await learnE();
+  const db = schemaDb();
+  const real = db.prepare;
+  let reserves = 0;
+  db.prepare = (sql) => {
+    const st = real(sql);
+    const bind = st.bind;
+    st.bind = (...a) => {
+      const o = bind(...a);
+      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 2) {
+        const all = o.all.bind(o);
+        o.all = async () => { mock.timers.tick(7000); return all(); }; // the second reservation "takes" 7 s of the 9 s budget
+      }
+      return o;
+    };
+    return st;
+  };
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  let r;
+  try {
+    r = await ask(ABSTAIN_Q, { db, claude: () => errOf(529) });
+  } finally { mock.timers.reset(); }
+  assert.equal(r.anth.length, 1, "no retry started past the budget");
+  assert.equal(r.wai.length >= 1, true);
+  assert.match(r.answer, /Workers answer first/);
+  assert.equal(counter(db), E, "the unused second reservation was given back");
+});
+
+test("F5. if the 5-5 ids do not exist, every ask spends 2 sends (the 4.5 ids); the cost is documented and RESEARCH_CLAUDE_FALLBACK_FAST is documented as unused", async () => {
+  const NF = (m) => ({ status: 404, errBody: { type: "error", error: { type: "not_found_error", message: `model: ${m}` } } });
+  for (let i = 0; i < 2; i++) {
+    const r = await ask(ABSTAIN_Q, { claude: (b) => (/-5-5$/.test(b.model) ? NF(b.model) : { status: 200, text: OKT }) });
+    assert.deepEqual(r.anth.map((a) => a.model), [SONNET, "claude-sonnet-4-5-20250929"]);
+  }
+  const flags = readFileSync(new URL("../../docs/runbooks/flags.md", import.meta.url), "utf8");
+  assert.ok(/do(es)? not exist[^.]*2 (Anthropic )?sends/i.test(flags), "flags.md states the 2-sends-per-ask cost when the 5-5 ids are missing");
+  assert.ok(/RESEARCH_CLAUDE_FALLBACK_FAST[^.]*unused/i.test(flags));
 });

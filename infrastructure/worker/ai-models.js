@@ -417,7 +417,8 @@ export async function fetchWithGatewayFallback({
           ...(allowDirectFallback ? {} : { redirect: "manual" }), // BYOK: never follow a redirect with the gateway token attached
         },
         "AI provider request",
-        deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS
+        // The 0.6 share leaves time for the direct hop that follows a gateway failure; a single-hop send has no second hop, so it gets the whole remaining budget.
+        deadlineAt ? (singleHop ? msLeft(deadlineAt) : Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6))) : AI_TIMEOUT_MS
       );
       // If gateway returns success (2xx), return immediately
       if (resp.ok) return resp;

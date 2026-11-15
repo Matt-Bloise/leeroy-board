@@ -567,3 +567,13 @@ test("scan: new files and tests contain no values from the live roster", () => {
     }
   }
 });
+
+test("detokenise is a single pass: a restored display is never re-resolved", () => {
+  const members = [{ display: "{P2.abcd}", aliases: [], firstNames: [], discordIds: [], characterNames: [] }, { display: "Mossbeard", aliases: [], firstNames: [], discordIds: [], characterNames: [] }];
+  const m = buildNameMap(members, null, { nonce: NONCE });
+  assert.equal(detokenise(`{P1.${NONCE}}`, m), "{P2.abcd}", "a display that looks like a token stays as the display");
+  assert.equal(detokenise("{P1.zzzz}", m), "{P2.abcd}", "same for a mis-copied nonce");
+  const f = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+  assert.equal(detokenise("{{P1.zzzz}}", f), "{Thornwick}", "nested braces: the inner group restores once, the outer braces stay");
+  assert.equal(detokenise("Wait for {P2.5} of the patch.", f), "Wait for Mossbeard of the patch.");
+});

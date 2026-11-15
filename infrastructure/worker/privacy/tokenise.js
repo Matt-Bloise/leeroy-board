@@ -324,22 +324,38 @@ export function tokenise(text, map) {
 export function detokenise(text, map) {
   if (text == null) return "";
   const m = map && map.byToken ? map : buildNameMap([]);
-  m.tokRe.lastIndex = 0;
-  return String(text)
-    .replace(m.tokRe, (tokStr, kind) => {
+  return scanBraces(String(text), m, (cls, tokStr, kind, n) => {
+    if (cls === "exact") {
       if (kind === "ID") return "someone";
       if (kind === "ALL") return "everyone";
       if (kind === "INVITE") return "a link";
       if (kind === "GUILD") return "the server";
       return m.byToken.get(tokStr)?.display ?? "someone";
-    })
-    .replace(LOOSE_P_RE, (_t, n) => m.byToken.get(`{P${n}.${m.nonce}}`)?.display ?? "someone")
-    .replace(USER_TOKEN_RE, "someone");
+    }
+    if (cls === "loose") return m.byToken.get(`{P${n}.${m.nonce}}`)?.display ?? "someone";
+    return "someone"; // token-looking but not ours (bare, spaced, lowercase, unknown index, other kinds with a wrong nonce)
+  });
+}
+
+// ONE pass over the ORIGINAL text: each brace group is classified once and its replacement is never re-scanned, so a display name that itself looks like a token is
+// not resolved a second time. Classes: exact (this request's nonce), loose (a P token, any 1-8 alnum nonce, index in this map), foreign (any other token-looking group).
+const BRACE_GROUP_RE = /\{[^{}]{0,40}\}/g;
+const FOREIGN_ANCHORED_RE = new RegExp(`^(?:${USER_TOKEN_RE.source})$`, "i");
+const LOOSE_ANCHORED_RE = new RegExp(`^${LOOSE_P_RE.source}$`);
+function scanBraces(text, m, fn) {
+  const exactRe = new RegExp(`^${m.tokRe.source}$`);
+  return text.replace(BRACE_GROUP_RE, (g) => {
+    const e = exactRe.exec(g);
+    if (e) return fn("exact", g, e[1], null);
+    const l = LOOSE_ANCHORED_RE.exec(g);
+    if (l && m.byToken.has(`{P${l[1]}.${m.nonce}}`)) return fn("loose", g, null, l[1]);
+    if (l || FOREIGN_ANCHORED_RE.test(g)) return fn("foreign", g, null, null);
+    return g;
+  });
 }
 
 /** The text with this request's tokens (exact nonce, or a mis-copied nonce on an index in the map) removed: what is left must hold no token-looking text. */
 export function stripRestorableTokens(text, map) {
   const m = map && map.byToken ? map : buildNameMap([]);
-  m.tokRe.lastIndex = 0;
-  return String(text ?? "").replace(m.tokRe, "").replace(LOOSE_P_RE, (t, n) => (m.byToken.has(`{P${n}.${m.nonce}}`) ? "" : t));
+  return scanBraces(String(text ?? ""), m, (cls, g) => (cls === "foreign" ? g : ""));
 }
