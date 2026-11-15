@@ -366,3 +366,47 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   if (text === null) return { reason: "claude:reply-flagged" };
   return { answer: text, model: res.model, provider: "claude" };
 }
+
+// ---- one capped call that is not an ask (the group-wiki refresher, research/group-wiki.js) ---------------------------------------------------------------
+// The same spend guard as an ask: the estimate is RESERVED in the same kv_state counter against the same RESEARCH_CLAUDE_MONTHLY_TOKENS cap (one alert row per month when it is spent), the
+// counter is settled on the real usage, a counter that cannot be written pauses Claude for 10 minutes, and the always-on outbound protections run over the final body (the host allow-list is
+// in callAnthropicClaude; secrets and long ids here). One send on the fast (Haiku-class) model; the only second send is the 4.5 id after a model-not-found answer, which is not billed.
+// Returns { answer, model } or { reason } with a short fixed code. call: callAnthropicClaude from ai-models.js (injected, as for tryResearchClaude).
+export const CAPPED_TIMEOUT_MS = 30000;
+export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, maxTokens, now = () => new Date(), timeoutMs = CAPPED_TIMEOUT_MS }) {
+  if (typeof call !== "function") return { reason: "claude:no-call" };
+  if (!anthropicAvailable(env)) return { reason: "claude:no-key" };
+  if (Date.now() < pausedUntil) return { reason: "claude:paused" };
+  const at = now();
+  const cap = monthlyTokenCap(env);
+  const estimate = Math.max(1, estimateTokens(systemPrompt, userPrompt) - RESEARCH_MAX_TOKENS + Math.max(1, Math.floor(maxTokens)));
+  try {
+    if (!(await reserveTokens(env, estimate, cap, at))) {
+      await alertOnce(env, cap, at);
+      return { reason: "claude:cap" };
+    }
+  } catch {
+    pauseClaude();
+    return { reason: "claude:counter-error" };
+  }
+  const settle = async (delta) => { try { await adjustTokens(env, delta, at); } catch { pauseClaude(); } };
+  const { primary, fallback } = researchClaudeModels(env, false);
+  const deadlineAt = Date.now() + timeoutMs;
+  const beforeSend = (body, secretKey) => guardSecretsInBody(body, env, secretKey ? [secretKey] : []);
+  const attempt = (modelOverride) => call({ env, systemPrompt, userPrompt, deep: false, skipCache: true, metadata: null, deadlineAt, maxTokens, modelOverride, wantUsage: true, beforeSend });
+  let res;
+  try {
+    try {
+      res = await attempt(primary);
+    } catch (e) {
+      if (e && e.modelMissing === true && fallback && fallback !== primary) res = await attempt(fallback);
+      else throw e;
+    }
+  } catch (e) {
+    if (notBilled(e)) await settle(-estimate);
+    if (e && GUARD_CODES.includes(e.code)) return { reason: guardReason(e) };
+    return { reason: failReason(e) };
+  }
+  await settle(usageTokens(res.usage, estimate) - estimate);
+  return { answer: String(res.answer ?? ""), model: res.model };
+}

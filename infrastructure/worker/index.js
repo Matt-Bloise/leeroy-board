@@ -11,6 +11,7 @@
 import { BoardRoom, LIVE_AUTH_HEADER } from "./room.js";
 import {
   answerWithAi,
+  callAnthropicClaude,
   resolveAiProvider,
   isProviderConfigured,
   isPrPreviewEnv,
@@ -36,6 +37,7 @@ import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
 import { loadBudget, dailyCap, utcDayKey, hashId } from "./budget.js";
 import { askWallPlan } from "./research/no-wall.js";
+import { groupWikiCronOn, maybeRefreshGroupWiki } from "./research/group-wiki.js";
 import { upsertMember } from "./members.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
@@ -2095,6 +2097,8 @@ const worker = {
     const origin = env.API_ORIGIN || "https://api.leeroy.party";
     ctx.waitUntil(runScheduledSourceSweep(env, origin));
     ctx.waitUntil(cleanupAnswerUx(env));
+    // GROUP_MEMORY (with ASK_RESEARCH): the wiki refresher, one Claude call at most, when 10 new rows or 24 hours have gathered (research/group-wiki.js). No D1 read and no call while either flag is off.
+    if (groupWikiCronOn(env)) ctx.waitUntil(maybeRefreshGroupWiki(env, { call: callAnthropicClaude }).catch(() => {}));
     // INTEREST_NUDGES: read-only counts of Interested clicks and reactions on Leeroy's own events and posts (no D1 read, no Discord call while off).
     ctx.waitUntil(collectInterest({ env }).catch((err) => console.error("interest counts failed:", String((err && err.message) || err))));
     // CARDS_ENABLED: this tick also flushes a due board line and retries an unfinished card edit (both no-ops when there is nothing to do).

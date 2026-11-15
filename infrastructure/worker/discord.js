@@ -828,7 +828,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         askerId: String(user.id || ""),
         memberOpen: noWall,
         wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
-        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
+        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || "") }),
       })
     );
 
@@ -1960,7 +1960,7 @@ ${GATE_OFF_NOTE}` : ""}`,
           memberOpen: noWall,
           wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
           askerId: String(user.id || ""),
-          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true }),
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true, channel: String(interaction.channel_id || "") }),
         })
       );
 

@@ -40,7 +40,7 @@ Until `D1_FEED` exists the Worker treats it as off, which is today's behaviour; 
 
 ## Not yet on Flagship (still legacy `[vars]`)
 
-`WEB_LOGIN`, `DATA_RIGHTS`, `EVENTS_ENABLED`, `MOMENTS_ENABLED`, `MOMENTS_SHADOW`, `MOMENTS_DRY_RUN`, `CHARS_V1`, `BUILD_MODAL`, `BUILD_PROJECT`, `JOIN_PROMPT`, `ANSWER_UX`, `ASK_RESEARCH` (`/ask` research mode, `worker/research/`: a member is answered by Claude only, then the honest degraded line plus library facts, see "ASK_RESEARCH: RESEARCH_NAMES and the degraded chain"; no other provider; `RESEARCH_NAMES` is its companion [vars] setting; a question the library cannot answer gets a model answer instead of the abstain, unsupported numbers and names are labelled not deleted; never on in a PR preview), `CARDS_ENABLED`, `CARDS_SHADOW`, `BOARD_LINES_ENABLED`, `SETUP_COMMAND`, `EVAL_ENABLED`, `REQUEST_GAUGE`, `ANTHROPIC_BYOK` (Claude key held in the AI Gateway, never in the Worker; no direct fallback; see `secrets.md`). They are still flipped by editing `wrangler.toml` and deploying.
+`WEB_LOGIN`, `DATA_RIGHTS`, `EVENTS_ENABLED`, `MOMENTS_ENABLED`, `MOMENTS_SHADOW`, `MOMENTS_DRY_RUN`, `CHARS_V1`, `BUILD_MODAL`, `BUILD_PROJECT`, `JOIN_PROMPT`, `ANSWER_UX`, `ASK_RESEARCH` (`/ask` research mode, `worker/research/`: a member is answered by Claude only, then the honest degraded line plus library facts, see "ASK_RESEARCH: RESEARCH_NAMES and the degraded chain"; no other provider; `RESEARCH_NAMES` is its companion [vars] setting; a question the library cannot answer gets a model answer instead of the abstain, unsupported numbers and names are labelled not deleted; never on in a PR preview), `GROUP_MEMORY` (group memory for the research path: `group-memory.md`; only has effect with `ASK_RESEARCH` on; never in a PR preview), `CARDS_ENABLED`, `CARDS_SHADOW`, `BOARD_LINES_ENABLED`, `SETUP_COMMAND`, `EVAL_ENABLED`, `REQUEST_GAUGE`, `ANTHROPIC_BYOK` (Claude key held in the AI Gateway, never in the Worker; no direct fallback; see `secrets.md`). They are still flipped by editing `wrangler.toml` and deploying.
 
 Flip, rollback line and the first-ask checklist for `ASK_RESEARCH`: `ask-research-first-ask.md`. Rollback is `ASK_RESEARCH = "off"` plus a deploy.
 
@@ -129,6 +129,14 @@ These four restores from the original bot apply only with `ASK_RESEARCH` on. Wit
 - **Advice.** The imperative-opener stripper in `repairHouseVoice` is skipped under research, so "what should I" keeps its plain pick.
 
 Limits: library-grounded research asks still carry the old "Inform, never instruct" voice line, because the research voice rules are added only when the library has nothing. Memory carries the asker's own turns only; channel history needs a separate owner decision.
+
+## GROUP_MEMORY: the group's memory for the research path
+
+`GROUP_MEMORY` is a `[vars]` flag, read with `legacyOn` (only the word `on`, any case, trimmed) and shipped `off`. It has an effect only when `ASK_RESEARCH` is also on, and never in a PR preview (research mode is never on there). Full description, the flip and the rollback: [`group-memory.md`](group-memory.md).
+
+- **Off or unset: no D1 read, no D1 write, no prompt text, no cron work.** The ask row, the Claude request and the cron are byte for byte what they were (checked by the flag-off differential against `origin/master`, see the PR). Erase and export cover the two new tables whether or not the flag is on.
+- **On:** a roster member's answered ask is filed in `group_log` (one INSERT); the member's research prompt gets one fenced `GROUP_MEMORY` block (wiki pages about the asker and the people named, plus the last 12 rows of the channel, at most about 3,500 characters) when `RESEARCH_NAMES` is `real`; the 6-hour cron runs the wiki refresher (one Haiku-class call, at most 60 rows, when 10 new rows or 24 hours have gathered).
+- **Token cap.** The refresher reserves and settles in the same `claude_tokens_YYYYMM` counter against the same `RESEARCH_CLAUDE_MONTHLY_TOKENS` bound as compose. Worst case for one run: the estimate counts at most 6,000 reply tokens plus the prompt (60 rows at 400 characters, up to 6 existing pages at 4,000 characters: roughly 55,000 characters, about 18,000 tokens), so about 24,000 tokens per run; the cron fires four times a day, so the worst case is about 96,000 tokens a day, roughly 2.9 million a month, which is more than the default 2,000,000 bound. In practice a run needs 10 new rows, the reservation settles on the real usage, and a spent cap skips the run without a call (and the ask path then degrades as it does today). Raise `RESEARCH_CLAUDE_MONTHLY_TOKENS` or lower `GROUP_WIKI_MAX_ROWS` if both are wanted at full tilt.
 
 ## Migrate another flag
 
