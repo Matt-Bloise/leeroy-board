@@ -58,6 +58,7 @@ function placeRow(inSheet) {
   const go = h("button", { type: "button", class: "lib-btn mine-opt", "aria-disabled": live() ? null : "true", "aria-describedby": why(inSheet), onclick: () => { M.place = cut(clean(input.value), 40); if (!M.place) { say("Type a place first, up to 40 characters."); hap("refusal"); return; } onMeet("other"); } }, "Set meeting point");
   return h("div", { class: "mine-place-row", ...(inSheet ? {} : { id: "mine-place-row" }) }, input, go);
 }
+const nightTitle = () => (K.launchPast && K.launchPast() ? "Your answers" : "Your launch night");
 function groups(inSheet) {
   const g = (id, label, kids) => h("div", { class: "mine-grp", role: "group", "aria-label": label, ...(inSheet ? {} : { id }) }, h("p", { class: "mine-k", text: label }), kids);
   return [
@@ -72,7 +73,7 @@ function openSheet() {
   const S = window.BoardSheets;
   if (!S) { say("The sheet is not available on this page."); return; }
   seeded();
-  S.open({ id: "mine-night", title: "Your launch night", snaps: ["peek", "full"], peek: 0.6, start: "peek",
+  S.open({ id: "mine-night", title: nightTitle(), snaps: ["peek", "full"], peek: 0.6, start: "peek",
     build(body) { body.append(h("div", { class: "mine-sheet" }, ...groups(true), h("p", { class: "mine-status", id: "mine-sheet-status", role: "status", "aria-live": "polite", text: M.say }))); } });
 }
 function paint() {
@@ -88,7 +89,7 @@ function renderSignups() {
   seeded();
   const status = h("p", { class: "mine-status", id: "mine-status", role: "status", "aria-live": "polite", text: M.say });
   const body = phone()
-    ? [h("button", { type: "button", class: "lib-btn mine-night", id: "mine-night-btn", "aria-haspopup": "dialog", onclick: openSheet }, "Your launch night"), status]
+    ? [h("button", { type: "button", class: "lib-btn mine-night", id: "mine-night-btn", "aria-haspopup": "dialog", onclick: openSheet }, nightTitle()), status]
     : [...groups(false), status];
   act.append(h("div", { class: "mine-act", id: "mine-act" }, ...body));
 }

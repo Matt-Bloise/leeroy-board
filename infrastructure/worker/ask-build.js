@@ -185,7 +185,7 @@ export function renderPartyBuilds(sheets, askerSheet) {
 const PHRASE_RE = /\b[A-Z][a-z]+(?:'s)?(?:\s+(?:of|the|in|for|to)\s+[A-Z][a-z]+(?:'s)?|\s+[A-Z][a-z]+(?:'s)?)+/g;
 // A possessive of a name is the name: "Bible Boi's" is checked as "Bible Boi".
 const unpossess = (w) => w.replace(/'s?$/i, "");
-const HOUSE = [...ROSTER_DATA.map((r) => r.display), "leeroy", "leeroy jenkins", "dungeons and drinking", "wow classic", "classic forever", "world of warcraft"];
+export const HOUSE = [...ROSTER_DATA.map((r) => r.display), "leeroy", "leeroy jenkins", "dungeons and drinking", "wow classic", "classic forever", "world of warcraft"];
 const CONNECTORS = new Set(["of", "the", "in", "for", "to", "and", "a", "an", "at", "on", "with"]);
 // Words that make ordinary prose look like a name: sentence openers, heading words, filler.
 const GENERIC = new Set((
@@ -225,7 +225,7 @@ function tokens(allowed) {
   return t;
 }
 
-function badPhrases(text, allowed) {
+export function badPhrases(text, allowed) {
   const bad = [];
   for (const m of text.replace(/[*_`]/g, "").matchAll(PHRASE_RE)) {
     const whole = m[0].replace(/'s\b/g, "'s");
