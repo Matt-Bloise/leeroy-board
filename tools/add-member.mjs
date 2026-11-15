@@ -18,7 +18,7 @@
 //
 // Uses only routes and tables that already exist (infrastructure/worker/index.js):
 //   POST /api/admin/members   admin token   add or update one entry in the private roster (discord_members): Discord id -> slug and name
-//   GET  /api/data/party      public        read the party document
+//   GET  /api/data/party?stored=1  admin token   read the STORED party document, whole (the public read hides what members hid; writing that back would delete it)
 //   PUT  /api/data/party      admin token   replace the party document (the board's cards, medallions, chips and tables all read it)
 // What has no route is printed as manual steps, never invented: the member key (members table), the Worker's built-in roster, name_map.
 // The script never reads, makes or prints a member key, and never takes a real name.
@@ -121,8 +121,9 @@ export async function applyPlan(plan, { api, env, fetchImpl = fetch, backupPath 
   const dup = plan.requests[1].skipped;
   let backup = null, doc = null;
   if (!dup) {
-    const g = await fetchImpl(`${base}/api/data/party`, { headers: { accept: "application/json" } });
-    if (!g.ok) return { ok: false, log: [`GET /api/data/party answered ${g.status}; nothing was sent`] };
+    // The STORED document (admin token, never cached): the public read has the hidden fields cut out, and writing that back would delete them.
+    const g = await fetchImpl(`${base}/api/data/party?stored=1`, { headers: { accept: "application/json", authorization: head.authorization } });
+    if (!g.ok) return { ok: false, log: [`GET /api/data/party?stored=1 answered ${g.status}; nothing was sent`] };
     doc = await g.json();
     if (!doc || !Array.isArray(doc.members)) return { ok: false, log: ["the party document has no members list; nothing was sent"] };
     if (doc.members.some((m) => String(m.name).toLowerCase() === plan.entry.name.toLowerCase())) { log.push("already on the board: party step skipped"); doc = null; }

@@ -1,0 +1,123 @@
+{
+ "race": {
+  "orc": "Orc",
+  "troll": "Troll",
+  "tauren": "Tauren",
+  "undead": "Undead",
+  "human": "Human",
+  "dwarf": "Dwarf",
+  "gnome": "Gnome",
+  "night-elf": "Night Elf"
+ },
+ "class": {
+  "warrior": "Warrior",
+  "paladin": "Paladin",
+  "hunter": "Hunter",
+  "rogue": "Rogue",
+  "priest": "Priest",
+  "shaman": "Shaman",
+  "mage": "Mage",
+  "warlock": "Warlock",
+  "druid": "Druid"
+ },
+ "spec": {
+  "arcane": "Arcane",
+  "fire": "Fire",
+  "frost": "Frost",
+  "holy": "Holy",
+  "protection": "Protection",
+  "retribution": "Retribution",
+  "discipline": "Discipline",
+  "shadow": "Shadow",
+  "arms": "Arms",
+  "fury": "Fury",
+  "beast-mastery": "Beast Mastery",
+  "marksmanship": "Marksmanship",
+  "survival": "Survival",
+  "assassination": "Assassination",
+  "combat": "Combat",
+  "subtlety": "Subtlety",
+  "elemental": "Elemental",
+  "enhancement": "Enhancement",
+  "restoration": "Restoration",
+  "affliction": "Affliction",
+  "demonology": "Demonology",
+  "destruction": "Destruction",
+  "balance": "Balance",
+  "feral-combat": "Feral Combat"
+ },
+ "spec_of": {
+  "warrior": [
+   "arms",
+   "fury",
+   "protection"
+  ],
+  "paladin": [
+   "holy",
+   "protection",
+   "retribution"
+  ],
+  "hunter": [
+   "beast-mastery",
+   "marksmanship",
+   "survival"
+  ],
+  "rogue": [
+   "assassination",
+   "combat",
+   "subtlety"
+  ],
+  "priest": [
+   "discipline",
+   "holy",
+   "shadow"
+  ],
+  "shaman": [
+   "elemental",
+   "enhancement",
+   "restoration"
+  ],
+  "mage": [
+   "arcane",
+   "fire",
+   "frost"
+  ],
+  "warlock": [
+   "affliction",
+   "demonology",
+   "destruction"
+  ],
+  "druid": [
+   "balance",
+   "feral-combat",
+   "restoration"
+  ]
+ },
+ "professions": {
+  "alchemy": "Alchemy",
+  "blacksmithing": "Blacksmithing",
+  "enchanting": "Enchanting",
+  "engineering": "Engineering",
+  "herbalism": "Herbalism",
+  "leatherworking": "Leatherworking",
+  "mining": "Mining",
+  "skinning": "Skinning",
+  "tailoring": "Tailoring"
+ },
+ "plan_zone": {
+  "durotar": "Durotar",
+  "mulgore": "Mulgore",
+  "tirisfal-glades": "Tirisfal Glades",
+  "elwynn-forest": "Elwynn Forest",
+  "coldridge-valley": "Coldridge Valley",
+  "teldrassil": "Teldrassil",
+  "orgrimmar": "Orgrimmar",
+  "thunder-bluff": "Thunder Bluff",
+  "undercity": "Undercity",
+  "stormwind-city": "Stormwind City",
+  "ironforge": "Ironforge",
+  "darnassus": "Darnassus",
+  "valley-of-strength": "Valley of Strength",
+  "the-crossroads": "The Crossroads"
+ }
+}
