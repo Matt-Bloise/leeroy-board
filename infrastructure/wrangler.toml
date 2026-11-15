@@ -50,11 +50,22 @@ binding = "AI"
 binding = "FLAGS"
 app_id = "1f0b836c-4929-4728-8bee-6b8bde677e79"
 
+# Anthropic key route 2 (not enabled): a Cloudflare Secrets Store binding (open beta). Create the secret in the dashboard, never here;
+# read in code with `await env.ANTHROPIC_KEY_STORE.get()` (worker/ai-keys.js). Production only: the value cannot be read in local dev.
+# [[secrets_store_secrets]]
+# binding = "ANTHROPIC_KEY_STORE"
+# store_id = "<your-store-id>"
+# secret_name = "anthropic_api_key"
+
 [vars]
 # Default AI provider ("claude", "gemini", "workers-ai", "groq", "cerebras", "github", or "openrouter")
 # Can also be switched per-question in the UI or Discord `/ask` command.
 AI_PROVIDER = "claude"
 AI_GATEWAY_ID = "leeroy-ai-gateway"
+# Anthropic key route 1 (preferred): "on" = BYOK. The key is stored in the AI Gateway (dashboard, AI Gateway, Provider Keys) and never enters the Worker;
+# Claude requests carry only cf-aig-authorization (no x-api-key) and never fall back to the direct endpoint (a gateway failure falls back to Workers AI).
+# Needs AI_GATEWAY_TOKEN and an authenticated gateway. "off" keeps the Secrets Store / ANTHROPIC_API_KEY routes. Never put a key in this file.
+ANTHROPIC_BYOK = "off"
 AI_GATEWAY_CACHE_TTL = "21600" # 6 hours: aligned with the 6-hour cron sweep ("0 */6 * * *")
 CLOUDFLARE_ACCOUNT_ID = ""
 CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"

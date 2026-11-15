@@ -16,6 +16,7 @@ import { classPageFallback } from "./ask-fallback.js";
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
+import { anthropicAuth, anthropicAvailable, scrubSecrets, scrubError } from "./ai-keys.js";
 import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
@@ -192,7 +193,7 @@ export function isProviderConfigured(env, provider) {
 
   switch (provider) {
     case "claude":
-      return Boolean(env.ANTHROPIC_API_KEY);
+      return anthropicAvailable(env); // cheap presence check (BYOK var, Secrets Store binding or legacy secret); never reads the key
     case "gemini":
       return Boolean(env.GEMINI_API_KEY);
     case "workers-ai":
@@ -386,9 +387,15 @@ export async function fetchWithGatewayFallback({
   cacheKey = null,
   metadata = null,
   deadlineAt = null,
+  allowDirectFallback = true, // false only for Anthropic BYOK: the key lives in the gateway, so a direct request would be unauthenticated
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
   const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
+  if (!allowDirectFallback) {
+    if (gwUrl === defaultEndpoint || !aigToken || !(env && env.AI_GATEWAY_ID)) {
+      throw new Error("Anthropic BYOK needs the AI Gateway configured (account id, gateway id and gateway token)");
+    }
+  }
   const cacheHeaders = env && env.AI_GATEWAY_ID ? {
     "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
     "cf-aig-metadata": gatewayMetadata(metadata),
@@ -411,10 +418,13 @@ export async function fetchWithGatewayFallback({
       );
       // If gateway returns success (2xx), return immediately
       if (resp.ok) return resp;
+      // BYOK: no direct hop; the caller sees the gateway's error and falls back to Workers AI
+      if (!allowDirectFallback) return resp;
       // If gateway returns 401/403/404 or server error, fall back to direct endpoint
       console.warn(`[AI-Gateway] HTTP ${resp.status} from ${gwUrl}, falling back to direct endpoint`);
     } catch (err) {
-      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${err.message}, falling back to direct endpoint`);
+      if (!allowDirectFallback) throw scrubError(err);
+      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${scrubSecrets(err && err.message)}, falling back to direct endpoint`);
     }
   }
 
@@ -431,9 +441,11 @@ export async function fetchWithGatewayFallback({
 }
 
 async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY secret is not configured on the Cloudflare Worker");
+  const auth = await anthropicAuth(env);
+  if (auth.mode === "none") {
+    throw new Error("Anthropic credential is not configured on the Cloudflare Worker (BYOK, Secrets Store binding or ANTHROPIC_API_KEY)");
   }
+  const secretKey = auth.headers["x-api-key"] || "";
   const model = deep
     ? env.CLAUDE_MODEL_DEEP || "claude-sonnet-4-5-20250929"
     : env.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001";
@@ -452,13 +464,14 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     messages: [{ role: "user", content: userPrompt }],
   });
 
+  try {
   const resp = await fetchWithGatewayFallback({
     env,
     providerSlug: "anthropic/v1/messages",
     defaultEndpoint,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
+      ...auth.headers, // x-api-key in store/legacy mode; empty for BYOK (the gateway holds the key)
       "anthropic-version": "2023-06-01",
     },
     body,
@@ -466,11 +479,12 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     cacheKey,
     metadata,
     deadlineAt,
+    allowDirectFallback: auth.mode !== "gateway-byok",
   });
 
   if (!resp.ok) {
     const errTxt = await resp.text();
-    throw new Error(`Anthropic API HTTP ${resp.status}: ${errTxt.slice(0, 200)}`);
+    throw new Error(`Anthropic API HTTP ${resp.status}: ${scrubSecrets(errTxt, secretKey).slice(0, 200)}`);
   }
 
   const data = await resp.json();
@@ -479,8 +493,10 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     .map((b) => b.text)
     .join("\n")
     .trim();
-
   return { answer, model, provider: "claude" };
+  } catch (err) {
+    throw scrubError(err, secretKey); // a provider error, a JSON parse error or a network error must never carry the key
+  }
 }
 
 async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
@@ -827,7 +843,7 @@ export async function getParsedLibraryPages(env) {
 // Short, secret-free reason a provider was skipped, for the stored model field.
 export function shortProviderError(err) {
   const raw = String((err && (err.code === "ai_timeout" ? `timeout ${err.message}` : err.message)) || err || "error");
-  return raw
+  return scrubSecrets(raw)
     .replace(/[?&]key=[^\s&"]+/gi, "")
     .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
     .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "")

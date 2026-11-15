@@ -42,6 +42,20 @@ Added to previews only by the workflow: `IS_PR_PREVIEW`, `WORKER_NAME` (`pr-prev
 | `REQUEST_GAUGE` | `gauge.js` | Plain var in `wrangler.toml`, default `"off"`. `"on"` makes the Worker count its own requests per UTC day (in memory, written to D1 table `request_gauge` about every 25 requests) and enables `GET /api/admin/requests` (admin token; 404 while off). While off, a request costs one string comparison and no D1 access. Needs migration 0008. An approximation: the Cloudflare dashboard stays the source of truth (`cloudflare-requests.md`). Roll back by setting it to `"off"`; the rows stay. |
 | `WEB_LOGIN` | `web-auth.js` (`webLoginOn`) | Plain var in `wrangler.toml`, default `"off"`. Q18 web Discord login: `"on"` enables `GET /api/auth/discord/start`, `GET /api/auth/discord/callback`, `POST /api/auth/logout` and cookie sessions on `GET /api/me`. While off, those routes answer 404 and cookies are ignored. |
 
+### Where the Anthropic (Claude) credential comes from
+
+One resolver, `infrastructure/worker/ai-keys.js` (`anthropicAuth`), picks the route in this order. Owner's rule: the key is stored safely in Cloudflare and fetched from a variable; it is never pasted plainly into the repo, `wrangler.toml`, a log or a chat.
+
+| Order | Route | How | Where the key lives |
+| :--- | :--- | :--- | :--- |
+| 1 (preferred) | AI Gateway BYOK | `ANTHROPIC_BYOK = "on"` in `wrangler.toml` `[vars]` (default `"off"`). The owner adds the key in the Cloudflare dashboard, AI Gateway, Provider Keys. | Inside the gateway only. It never enters the Worker. Requests carry `cf-aig-authorization` and no `x-api-key`; the gateway must be authenticated (`AI_GATEWAY_TOKEN`). The direct `api.anthropic.com` fallback is disabled for this route (it would be unauthenticated); a gateway failure falls back to Workers AI. Plan availability of BYOK is unverified. |
+| 2 | Secrets Store | Uncomment the `[[secrets_store_secrets]]` block in `wrangler.toml` (binding `ANTHROPIC_KEY_STORE`, your `store_id`, `secret_name`). Secrets Store is open beta; production only (not readable in local dev). Read with `await env.ANTHROPIC_KEY_STORE.get()`, cached 5 minutes per isolate. | In the Cloudflare Secrets Store. An empty or failing read falls through to route 3. |
+| 3 (legacy) | Worker secret | `ANTHROPIC_API_KEY`, copied from the GitHub secret on deploy (above). | In the Worker secret store; unchanged behaviour. |
+
+Provider selection only checks presence (`anthropicAvailable`: BYOK var on, or a store binding exists, or the legacy secret exists); it never reads the key. The key is never logged, never in an error string (a defensive `sk-ant-` scrub runs on every Claude error path), a trace row, a response, a cache key or a metadata header.
+
+VAREN checks only that the route exists, never the value: `ANTHROPIC_BYOK` is `"on"` in `wrangler.toml`, or the binding `ANTHROPIC_KEY_STORE` is declared, or `wrangler secret list --name leeroy-brain` shows the name `ANTHROPIC_API_KEY`. Whether the gateway or store really holds a working key is verified only by one real `/ask` that reports provider `claude`.
+
 ### Cloudflare-side state with no repository record
 
 Worker secrets live in Cloudflare; list names (not values) with `cd infrastructure && npx wrangler secret list --name leeroy-brain`. D1 private rows (`persona`, `name_map`, `discord_members`, `discord_roster`, `vocab`) are data, not secrets, but are equally private (`backup-restore.md`). Member keys are never stored, only `sha256(KEY_SALT:key)` (`auth.js:14-16`); sessions are stored hashed (`account.js`, `schema.sql:167-173`).
