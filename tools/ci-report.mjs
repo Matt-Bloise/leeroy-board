@@ -68,6 +68,8 @@ export function buildReport(i) {
       ran = i.apiNeeded === false ? "unit, stamps" : "unit, stamps, api";
       notRun = i.apiNeeded === false ? "api, browser, layout (scope rules: no Worker, API, site, tools, .github, wrangler or package*.json file changed)" : "browser, layout (scope rule: no site, tools, .github, wrangler or package*.json file changed)";
     }
+    // The recover job restores the preview before any reader; a failed (or missing) recover never earns the gate phrase, whatever the scope said.
+    if (i.recoverResult !== undefined && !ok(i.recoverResult)) pass = false;
   } else {
     mode = "light";
     pass = unitStamps && skipped(r.api) && skipped(r.browser) && skipped(r.layout);
@@ -163,7 +165,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || "").href && process.arg
     apiNeeded: e.API_NEEDED !== "false", // fails closed: only the literal "false" lets the API suite be absent
     full: e.FULL === "true",
     previewResult: e.PREVIEW_RESULT,
-    results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, crawl: e.CRAWL_RESULT || "missing", browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT },
+    recoverResult: e.RECOVER_RESULT || "missing", results: { unit: e.UNIT_RESULT, stamps: e.STAMPS_RESULT, api: e.API_RESULT, crawl: e.CRAWL_RESULT || "missing", browser: e.BROWSER_RESULT, layout: e.LAYOUT_RESULT },
     counts, failing, pagesUrl: e.PAGES_URL || "", visual: e.VISUAL === "true", runUrl: e.RUN_URL || "",
   });
   writeFileSync(process.argv[2], out.body, "utf8");

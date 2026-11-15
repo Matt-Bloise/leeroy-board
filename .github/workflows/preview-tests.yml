@@ -548,6 +548,7 @@ jobs:
           STAMPS_RESULT: ${{ needs.stamps.result }}
           API_RESULT: ${{ needs.api.result }}
           CRAWL_RESULT: ${{ needs.crawl.result }}
+          RECOVER_RESULT: ${{ needs.recover.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
           LAYOUT_RESULT: ${{ needs.layout.result }}
           PREVIEW_SECRETS: ${{ needs.preview-secrets.outputs.enabled }}
