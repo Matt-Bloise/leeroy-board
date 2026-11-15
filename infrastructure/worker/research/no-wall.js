@@ -33,8 +33,8 @@ export const MEMBER_FAILED_LINE = "Something broke on my side, and I have logged
 
 // In-voice lines for a member when a reply could not be produced at all (deadline, an unexpected error). None says "try again", none names a limit or a time.
 export const MEMBER_FALLBACK_LINES = [
-  "That one got away from me this time, and I have nothing solid to show for it yet.",
-  "I could not pull a proper answer together on that one just now.",
+  "That one got away from me this time. A Blizzard post or someone in the party who has played it would settle it, and I will take a proper run at it next.",
+  "I could not pull a proper answer together on that one just now; a patch note or a player who has seen it would settle it.",
 ];
 
 const hash = (seed) => { let h = 2166136261; for (const c of String(seed)) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0; return h; };

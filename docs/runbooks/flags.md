@@ -85,6 +85,17 @@ With the flag on, a **member** (a roster member on Discord, or a signed-in web m
 - **Known approximation: the guests' row clamp.** The reservation settles to the real cost clamped to the share. When several reservations are outstanding, a clamped settlement can leave the row slightly under the true spend (a bounded undercount, at most the overrun of the calls in flight; the global row still records the real cost). It is not redesigned.
 - Refusals, errors and Off-voted answers are never reused: research mode does not use the 10-minute same-answer reuse at all.
 
+## ASK_RESEARCH: carry-list restores (memory, length, abstain, advice)
+
+These four restores from the original bot apply only with `ASK_RESEARCH` on. With it off the prompt, the stored answer and the D1 reads are byte-identical to before (checked by the flag-off differential against `origin/master`: 2,880 runs, 0 differences).
+
+- **Conversation memory.** `worker/research/turns.js` reads the asker's own last 3 answered turns from `ask_turns` in one D1 query, scoped by the salted asker hash in `ask_turn_askers` (a visitor has none; another person's rows never match). A public ask sees only public turns. Rows older than 24 hours, unanswered, errored, budget, outage and abstain rows are excluded, and an erased turn is a deleted row so it cannot match. Each question is capped at 280 characters, each answer at 400, the block at 1,800; links, mentions and footer lines are removed. The block goes into the prompt as a `PRIOR_TURNS` fence and through the tokeniser and the strict guard like the question, so a guard hit stops the Claude call and Workers AI answers. The earlier turns are not added to the grounding text for numbers, only the earlier questions.
+- **Length.** The live path already sent 700 tokens and finished at 1,500 body and 1,900 total. What still cut it short was the prompt: a stored persona line "Keep the reply under N characters" with N below 1,500, and the built-in "2 to 4 sentences" line when no persona exists. Under research `RESEARCH_LENGTH_OVERRIDE` replaces both for that ask.
+- **Abstain in voice.** The code-written "library does not cover that yet" answer was already unreachable under research (the model answers, and refusal sentences it writes are stripped). The two remaining code-written fallbacks, the outage answer and the member error lines, now name what would settle the question.
+- **Advice.** The imperative-opener stripper in `repairHouseVoice` is skipped under research, so "what should I" keeps its plain pick.
+
+Limits: library-grounded research asks still carry the old "Inform, never instruct" voice line, because the research voice rules are added only when the library has nothing. Memory carries the asker's own turns only; channel history needs a separate owner decision.
+
 ## Migrate another flag
 
 1. Add the **same key as the var** (for example `CARDS_ENABLED`) to `infrastructure/flagship-flags.txt`; the next production deploy creates the boolean flag, disabled.
