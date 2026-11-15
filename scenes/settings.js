@@ -116,6 +116,8 @@ function paintAcct() {
   if (!S.el || !K.api) return;
   const A = window.BoardAccount, on = A ? A.signedIn() : !!get("board-session"), live = !!window.__sdk;
   const i = S.el.querySelector("#st-acct-in"), o = S.el.querySelector("#st-acct-out"), x = S.el.querySelector("#st-acct-del");
+  /* A web visitor who is not signed in has nothing to do here: the board has no web sign-in flow and the site is never told whether WEB_LOGIN is on, so the row is hidden instead of showing a button that cannot work. */
+  if (S.rows.acct) S.rows.acct.hidden = !live && !on;
   if (i) { i.hidden = on; i.disabled = !live; i.setAttribute("aria-disabled", String(!live)); }
   if (o) o.hidden = !on;
   if (x) { x.hidden = !on; if (!S.arm) x.textContent = "Delete my saved data"; }
