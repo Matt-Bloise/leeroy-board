@@ -13,7 +13,7 @@
 // in code: the token cap is the bound (docs/runbooks/flags.md has the worst-case arithmetic).
 import { anthropicAvailable } from "../ai-keys.js";
 import { stripFence } from "../prompt-fence.js";
-import { buildNameMap, tokenise, detokenise, stripRestorableTokens } from "../privacy/tokenise.js";
+import { buildNameMap, tokenise, detokenise, stripRestorableTokens, makeNonce } from "../privacy/tokenise.js";
 import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
 import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
@@ -124,11 +124,6 @@ function contextFor(members) {
   }
   return c;
 }
-function makeNonce() {
-  const bytes = new Uint8Array(3);
-  globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 4);
-}
 function cloneMap(t, nonce) {
   const re = (s) => (typeof s === "string" ? s.split(".tmpl}").join(`.${nonce}}`) : s);
   const esc = nonce.replace(/[^a-z0-9]/gi, "");
@@ -138,6 +133,7 @@ function cloneMap(t, nonce) {
     byToken: new Map([...t.byToken].map(([k, v]) => [re(k), { ...v }])),
     ids: new Map([...t.ids].map(([k, v]) => [k, re(v)])),
     nonce,
+    typedNonces: new Set(),
     special: Object.fromEntries(Object.entries(t.special).map(([k, v]) => [k, re(v)])),
     tokenFor: (i) => `{P${i + 1}.${nonce}}`,
     askerToken: null,
@@ -262,7 +258,8 @@ const notBilled = (e) => Boolean(e) && (e.code === "OUTBOUND_IDENTIFIER_LEAK" ||
 
 // Returns { answer, model, provider: "claude" } or { reason } (reason may be null: silent skip, e.g. no key configured).
 // call: callAnthropicClaude from ai-models.js (injected: this file must not import it back).
-export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date() }) {
+// hardEndAt: absolute epoch ms the whole Claude hop must end by (the ask's start + its deadline - margin, from ai-models.js); the reservation writes count inside it.
+export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null }) {
   if (!anthropicAvailable(env)) return { reason: null };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
@@ -273,6 +270,9 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   } catch (e) { return { reason: guardReason(e) }; }
   if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
 
+  const budgetStart = Date.now(); // the 9 s / 6 s budgets start here, so the reservation write is inside them
+  const hardEnd = Number(hardEndAt) > 0 ? Number(hardEndAt) : Infinity;
+  if (hardEnd - budgetStart < RETRY_MIN_MS) return { reason: "claude:no-time" };
   const at = now();
   const cap = monthlyTokenCap(env);
   const estimate = estimateTokens(priv.system, priv.user);
@@ -291,9 +291,12 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   // At most 2 Anthropic sends per ask: compose, then ONE of (a) the 4.5 id of the same family on a model-not-found, or (b) the Haiku-class model on 529/5xx/timeout.
   const { primary, fallback } = researchClaudeModels(env, true);
   const { primary: fastModel } = researchClaudeModels(env, false);
-  const startedAt = Date.now();
-  const deadlineAt = startedAt + CLAUDE_TIMEOUT_MS;
-  const composeDeadlineAt = startedAt + CLAUDE_COMPOSE_MS; // leaves the Haiku-class retry its share of the budget after a compose timeout
+  const deadlineAt = Math.min(budgetStart + CLAUDE_TIMEOUT_MS, hardEnd);
+  const composeDeadlineAt = Math.min(budgetStart + CLAUDE_COMPOSE_MS, hardEnd); // leaves the Haiku-class retry its share of the budget after a compose timeout
+  if (composeDeadlineAt - Date.now() < RETRY_MIN_MS) {
+    await settle(-estimate); // the reservation write ate the budget: no send is started that cannot finish; the unused reservation goes back
+    return { reason: "claude:no-time" };
+  }
   const beforeSend = (body) => guardBody(body, priv.roster);
   const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: priv.system, userPrompt: priv.user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
   let res;
