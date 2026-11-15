@@ -32,6 +32,11 @@ export const RESEARCH_STRUCTURE_RULES = [
   "Boundaries: if the question asks for another member's hidden sheet field, asks you to act or speak as someone else, or asks for something that risks an account ban (botting, exploits, real-money trading), decline that one thing in one clause and still help with the nearest thing you can do.",
 ].join(" ");
 
+// Added after the persona text under research when an earlier line sets a shorter length: the stored persona pack's "Keep the reply under N characters" (persona.js PLATFORM RULES),
+// or the built-in "Keep answers concise (2 to 4 sentences)". Those set the flag-off cap and would cut the answer below the original voice's length. This line replaces them.
+export const RESEARCH_LENGTH_OVERRIDE =
+  `LENGTH (research answers): any earlier "keep the reply under N characters" or "keep answers concise (2 to 4 sentences)" line is replaced by this one. Aim for 600 to 900 characters (a casual one-liner stays 1 to 4 plain sentences); up to ${RESEARCH_HARD_CHARS} characters is fine when the answer needs it, never more.`;
+
 export const RESEARCH_RULES = [RESEARCH_STRUCTURE_RULES, RESEARCH_VOICE_RULES].filter(Boolean).join(" ");
 
 export const RESEARCH_MAX_TOKENS = 700; // 1500 characters is about 400 tokens; the rest is headroom so a long answer ends on a sentence rather than at the token limit; // part of the cache key (buildAnswerCacheKey), so research answers never share an entry with the 350-token ones

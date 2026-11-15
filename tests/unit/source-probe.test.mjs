@@ -1,4 +1,4 @@
-// tools/source-probe.mjs, dry-run only: fixtures, no network. A test that reaches fetch fails the run.
+// tools/source-probe.mjs: offline by default (fixtures, no network); the --live path is exercised only with a stubbed fetch. A test that reaches the real fetch fails the run.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -62,8 +62,12 @@ test("robots: longest match wins, Allow wins a tie, wildcard and end anchor work
 
 test("robots: a named group for our agent beats *, empty Disallow allows, no group allows", () => {
   const g = parseRobots("User-agent: *\nDisallow: /\n\nUser-agent: LeeroyBoard-CloudflareWorker\nDisallow: /x\n");
-  assert.equal(robotsAllows(g, UA, "/anything").allowed, true);
+  // Every matching group applies (see the merge test below), so the * group's "Disallow: /" now also binds us.
+  assert.equal(robotsAllows(g, UA, "/anything").allowed, false);
   assert.equal(robotsAllows(g, UA, "/x/y").allowed, false);
+  const specificOnly = parseRobots("User-agent: LeeroyBoard-CloudflareWorker\nDisallow: /x\n\nUser-agent: other\nDisallow: /\n");
+  assert.equal(robotsAllows(specificOnly, UA, "/anything").allowed, true);
+  assert.equal(robotsAllows(specificOnly, UA, "/x/y").allowed, false);
   assert.equal(robotsAllows(parseRobots("User-agent: *\nDisallow:\n"), UA, "/z").allowed, true);
   assert.equal(robotsAllows(parseRobots("User-agent: other\nDisallow: /\n"), UA, "/z").allowed, true);
   assert.equal(robotsAllows(parseRobots(""), UA, "/z").allowed, true);
@@ -228,7 +232,7 @@ test("full dry run over the shipped config: outcomes, report shape, markdown, no
   assert.match(md, /Mode: dry-run/);
   assert.match(md, /\| P7 \| robots_deny/);
   assert.match(md, /cross_host_not_followed/);
-  assert.equal(md.includes("—"), false);
+  assert.equal(md.includes("\u2014"), false);
 });
 
 test("CLI main in dry-run writes JSON and markdown to --out", async () => {
@@ -251,6 +255,66 @@ test("CLI main in dry-run writes JSON and markdown to --out", async () => {
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }
+});
+
+async function runMain(argv, fetchStub) {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), "source-probe-live-"));
+  const orig = console.log;
+  const prev = globalThis.fetch;
+  globalThis.fetch = fetchStub;
+  console.log = () => {};
+  try {
+    const report = await main([...argv, "--out", out]);
+    return report;
+  } finally {
+    console.log = orig;
+    globalThis.fetch = prev;
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+}
+
+test("default run is offline: it never calls fetch, with or without --dry-run", async () => {
+  const calls = [];
+  const spy = async (u) => {
+    calls.push(String(u));
+    return new Response("", { status: 404 });
+  };
+  const bare = await runMain([], spy);
+  const dry = await runMain(["--dry-run"], spy);
+  assert.equal(calls.length, 0, `fetch was called: ${calls.join(",")}`);
+  assert.equal(bare.mode, "dry-run");
+  assert.equal(bare.network, false);
+  assert.equal(dry.mode, "dry-run");
+});
+
+test("--live is the only way to reach the network, and --live with --dry-run is refused", async () => {
+  const calls = [];
+  const stub = async (u) => {
+    calls.push(String(u));
+    if (String(u).endsWith("/robots.txt")) return new Response("User-agent: *\nDisallow:\n", { status: 200 });
+    return new Response("<html><body><p>" + "text ".repeat(200) + "</p></body></html>", { status: 200, headers: { "content-type": "text/html" } });
+  };
+  const report = await runMain(["--live", "--delay", "0"], stub);
+  assert.equal(report.mode, "live");
+  assert.equal(report.network, true);
+  assert.ok(calls.length > 0, "the stubbed fetch was used");
+  assert.ok(calls.every((u) => u.startsWith("https://")));
+  await assert.rejects(() => runMain(["--live", "--dry-run"], stub), /--live.*--dry-run|--dry-run.*--live/);
+});
+
+test("robots: every matching group is merged (our agent and *), so a Disallow in any of them applies", () => {
+  const star = parseRobots("User-agent: LeeroyBoard-CloudflareWorker\nDisallow: /a\n\nUser-agent: *\nDisallow: /private\n");
+  assert.equal(robotsAllows(star, UA, "/private/x").allowed, false, "the * group still applies beside the specific group");
+  assert.equal(robotsAllows(star, UA, "/a/b").allowed, false);
+  assert.equal(robotsAllows(star, UA, "/open").allowed, true);
+  const twoSpecific = parseRobots("User-agent: LeeroyBoard-CloudflareWorker\nDisallow: /a\n\nUser-agent: leeroyboard-cloudflareworker\nDisallow: /b\n");
+  assert.equal(robotsAllows(twoSpecific, UA, "/b/x").allowed, false, "the second matching group disallows");
+  assert.equal(robotsAllows(twoSpecific, UA, "/a/x").allowed, false);
+  const second = parseRobots("User-agent: *\nAllow: /\n\nUser-agent: LeeroyBoard\nDisallow: /secret\n");
+  assert.equal(robotsAllows(second, UA, "/secret/page").allowed, false);
+  assert.equal(robotsAllows(second, UA, "/ok").allowed, true);
+  const tie = parseRobots("User-agent: *\nAllow: /p\n\nUser-agent: LeeroyBoard-CloudflareWorker\nDisallow: /p\n");
+  assert.equal(robotsAllows(tie, UA, "/p").allowed, true, "merged: equal-length Allow wins a tie");
 });
 
 test("config allow-list: every source host is listed, all https, and hosts exist in data/library-sources.json", () => {

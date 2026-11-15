@@ -1,0 +1,35 @@
+{
+  "params": { "k": 3 },
+  "cpuModel": { "parseMsPerKB": 0.01, "stringifyMsPerKB": 0.02 },
+  "limits": {
+    "requests": { "label": "requests", "field": "req", "limit": 1000, "file": "infrastructure/wrangler.toml", "a": "1000 requests" },
+    "d1Reads": { "label": "rows read", "field": "rr", "limit": 5000, "file": "infrastructure/wrangler.toml", "a": "5000 rows read" },
+    "d1Writes": { "label": "rows written", "field": "rw", "limit": 100, "file": "infrastructure/wrangler.toml", "a": "100 rows written" }
+  },
+  "perRequest": {},
+  "endpoints": {
+    "GET /a": {
+      "file": "infrastructure/worker/index.js", "cache": { "ttlSec": 100 }, "browserTtlSec": 50,
+      "miss": { "stmts": [
+        { "a": "SELECT json FROM kv_state WHERE key = ?", "table": "kv_state", "op": "read", "rows": "$k" },
+        { "a": "SELECT slug FROM ev WHERE slug = ? LIMIT 10", "table": "ev", "op": "read", "rows": 10, "n": 2 }
+      ] }
+    },
+    "POST /b": {
+      "file": "infrastructure/worker/index.js",
+      "miss": { "stmts": [
+        { "a": "INSERT INTO ev (slug) VALUES (?)", "table": "ev", "op": "insert" },
+        { "a": "UPDATE kv_state SET json = ? WHERE key = ?", "table": "kv_state", "op": "update", "readRows": 1 },
+        { "a": "INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)", "table": "kv_state", "op": "replace" }
+      ], "do": 1, "ext": 2, "neurons": 7, "cpu": { "fixedMs": 1, "parseKB": 100, "stringifyKB": 50 } }
+    }
+  },
+  "drivers": {
+    "poll": { "unit": "tab-hour", "calls": [{ "ep": "GET /a", "everySec": 10, "hours": 1 }] },
+    "write": { "unit": "write", "calls": [{ "ep": "POST /b", "n": 1, "purges": ["GET /a"] }] },
+    "cron": { "unit": "tick", "baseline": true, "calls": [], "flat": { "req": 1, "stmts": [{ "file": "infrastructure/worker/index.js", "a": "SELECT json FROM kv_state WHERE key = ?", "table": "kv_state", "op": "read", "rows": 1 }], "ext": 12 } }
+  },
+  "scenarios": [
+    { "name": "fixture day", "spanHours": 1, "colos": 2, "loads": [{ "driver": "poll", "count": 4 }, { "driver": "write", "count": 5 }, { "driver": "cron", "count": 3 }] }
+  ]
+}

@@ -24,7 +24,7 @@ const labelled = readJson("labelled-answers.json").answers;
 const heldOut = readJson("heldout-labelled-answers.json").answers;
 const gradeFor = (caseId, answer) => { const c = caseById.get(caseId); return gradeAnswer({ question: c.question, answer, slice: c.slice, reference: c.reference, expect: c.expect }); };
 
-// ---- privacy scan (built at runtime from the code's own roster: nothing real is typed in this file) ----
+// ---- privacy scan (terms come from the code's own roster and party data at runtime; two further first names are assembled from fragments by J() so no real name is typed whole in this file) ----
 const J = (...p) => p.join("");
 const CANARY_A = "LEEROY";
 const CANARY_B = "CANARY";

@@ -1,0 +1,8 @@
+{
+  "_how": "Worked out by hand, not by the script. GET /a: one tab-hour is 3600 / max(10 s poll, 50 s browser cache) = 72 requests, 4 tab-hours = 288. Edge cache: floor(3600 s / 100 s) = 36 entries x 2 data centres = 72 misses, plus 5 purges from the 5 writes = 77 misses, so 211 hits. A miss reads kv_state 3 rows + 2 statements x 10 rows of ev = 3 statements, 23 rows. So GET /a: req 288, d1q 231, rr 1771. POST /b (x5): ev insert = 1 table row + 2 indexes (INTEGER key adds none) = 3 rows written; kv_state update = 1 row written and 1 read; kv_state replace = 1 row + 1 automatic index of the TEXT key = 2 rows written. Per write: d1q 3, rr 1, rw 6, req 1, do 1, ext 2, neurons 7, cpu (1 + 100 x 0.01 + 50 x 0.02) = 3 ms. x5: d1q 15, rr 5, rw 30, req 5, do 5, ext 10, neurons 35. Cron x3: req 3, d1q 3, rr 3, ext 36. Totals: req 288+5+3 = 296, d1q 231+15+3 = 249, rr 1771+5+3 = 1779, rw 30, do 5, ext 46, neurons 35. Shares: requests 29.6 %, rows read 35.58 %, rows written 30 %, so rows read is first.",
+  "total": { "req": 296, "d1q": 249, "rr": 1779, "rw": 30, "doReq": 5, "ext": 46, "neurons": 35 },
+  "first": "d1Reads",
+  "maxCpuMs": 3,
+  "get_a": { "demand": 288, "misses": 77, "hits": 211 },
+  "schema": { "kv_state": { "pk": "auto", "indexes": 0 }, "ev": { "pk": "rowid", "indexes": 2 } }
+}

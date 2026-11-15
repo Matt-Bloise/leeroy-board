@@ -1,10 +1,10 @@
 // W-wire: /ask research mode provider order Claude -> Workers AI -> library facts, with every outside call after tokenisation and the outbound guards.
 // Offline: a fake Anthropic endpoint (fake fetch), a fake Workers AI binding, an in-memory D1. Fake key only. Fictional names only; the real roster is read at
 // runtime from bot-data.js (never copied here, never printed). Run: node --test tests/unit/ask-research-claude.test.mjs
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
+import { answerWithAi, invalidatePagesCache, fetchWithGatewayFallback } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
@@ -77,18 +77,20 @@ test("order: Claude answers first, with the research model, 700 tokens, no cache
   const r = await ask(ABSTAIN_Q);
   assert.equal(r.anth.length, 1, r.row.model);
   assert.equal(r.wai.length, 0);
-  assert.equal(r.anth[0].model, "claude-haiku-5-5");
+  assert.equal(r.anth[0].model, "claude-sonnet-5-5", "research compose is the Sonnet-class (deep) model");
   assert.equal(r.anth[0].body.max_tokens, 700);
-  assert.match(r.row.model, /^claude:claude-haiku-5-5\+research/);
+  assert.match(r.row.model, /^claude:claude-sonnet-5-5\+research/);
   assert.match(r.answer, /Short answer first/);
   assert.equal(r.anth[0].headers["x-api-key"], FAKE_KEY);
   assert.ok(!r.anth[0].raw.includes(FAKE_KEY), "the key is a header, never in the body");
   assert.deepEqual(r.others.filter((u) => /groq|gemini|googleapis|openrouter|cerebras|azure/.test(u)), [], "no other provider ever sees the ask");
 });
 
-test("deep uses the deep research model", async () => {
-  const r = await ask(ABSTAIN_Q, { deep: true });
-  assert.equal(r.anth[0].model, "claude-sonnet-5-5");
+test("compose always uses the deep research model: the ask's deep flag no longer picks the Haiku-class one", async () => {
+  for (const deep of [false, true]) {
+    const r = await ask(ABSTAIN_Q, { deep });
+    assert.deepEqual(r.anth.map((a) => a.model), ["claude-sonnet-5-5"], `deep=${deep}`);
+  }
 });
 
 test("Claude unavailable: Workers AI answers and no Anthropic request is made", async () => {
@@ -127,14 +129,14 @@ test("both down: library facts with the honest line, and still no other provider
 
 test("model id: a 404 on the new id retries once with the 4.5 fallback id", async () => {
   const NF = (m) => ({ status: 404, errBody: { type: "error", error: { type: "not_found_error", message: `model: ${m}` } } });
-  const r = await ask(ABSTAIN_Q, { claude: (body) => (body.model === "claude-haiku-5-5" ? NF(body.model) : { status: 200, text: "**Fallback model answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
-  assert.deepEqual(r.anth.map((a) => a.model), ["claude-haiku-5-5", "claude-haiku-4-5-20251001"]);
+  const r = await ask(ABSTAIN_Q, { claude: (body) => (body.model === "claude-sonnet-5-5" ? NF(body.model) : { status: 200, text: "**Fallback model answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
+  assert.deepEqual(r.anth.map((a) => a.model), ["claude-sonnet-5-5", "claude-sonnet-4-5-20250929"]);
   assert.match(r.answer, /Fallback model answer/);
   assert.equal(r.wai.length, 0);
-  const both = await ask(ABSTAIN_Q, { deep: true, claude: (b) => NF(b.model) });
+  const both = await ask(ABSTAIN_Q, { claude: (b) => NF(b.model) });
   assert.deepEqual(both.anth.map((a) => a.model), ["claude-sonnet-5-5", "claude-sonnet-4-5-20250929"], "exactly one retry");
   assert.equal(both.wai.length, 1);
-  const custom = await ask(ABSTAIN_Q, { env: (e) => { e.RESEARCH_CLAUDE_MODEL_FAST = "model-x"; e.RESEARCH_CLAUDE_FALLBACK_FAST = "model-y"; }, claude: (b) => (b.model === "model-x" ? { status: 400, errBody: { type: "error", error: { type: "invalid_request_error", message: "model: model-x does not exist" } } } : { status: 200, text: "**Ok answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
+  const custom = await ask(ABSTAIN_Q, { env: (e) => { e.RESEARCH_CLAUDE_MODEL_DEEP = "model-x"; e.RESEARCH_CLAUDE_FALLBACK_DEEP = "model-y"; }, claude: (b) => (b.model === "model-x" ? { status: 400, errBody: { type: "error", error: { type: "invalid_request_error", message: "model: model-x does not exist" } } } : { status: 200, text: "**Ok answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
   assert.deepEqual(custom.anth.map((a) => a.model), ["model-x", "model-y"]);
 });
 
@@ -203,9 +205,51 @@ test("a Claude request never carries a roster name: the prompt is tokenised, tok
   assert.deepEqual(scanBody(r.anth[0].body, researchRoster()), []);
 });
 
-test("a reply with a bare token, a foreign-nonce token or an id token is discarded and Workers AI answers", async () => {
-  for (const bad of ["{P1}", "{P2.zzzz}", "{ID.zzzz}", "{ p1 }"]) {
-    const r = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: `**${bad} should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed` }) });
+const TAIL = "\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed";
+const realNonceOf = (body) => body.messages[0].content.match(/\{P\d+\.([0-7][0-9a-z][0-7][0-9a-z])\}/)[1];
+const otherNonce = (n) => `${(Number(n[0]) + 1) % 8}${n.slice(1)}`; // same shape, never equal
+
+test("nonce tolerance: a reply whose token has a mis-copied nonce (real shape, valid index) is NOT discarded and restores the display name", async () => {
+  const target = NAMES[2];
+  const r = await ask(`what should ${target} play and what is the weather like`, {
+    claude: (body) => {
+      const [, idx, nonce] = body.messages[0].content.match(/what should \{P(\d+)\.([a-z0-9]+)\} play/);
+      return { status: 200, text: `**{P${idx}.${otherNonce(nonce)}} should play whatever is fun.**${TAIL}` };
+    },
+  });
+  assert.equal(r.anth.length, 1);
+  assert.equal(r.wai.length, 0, "answered by Claude, not discarded");
+  assert.match(r.row.model, /^claude:/);
+  assert.ok(r.answer.includes(target), "display name restored");
+  assert.ok(!/\{P\d/.test(r.answer));
+});
+
+test("nonce tolerance: a mis-copied nonce on an index that is not in the map is still discarded (derived from the real nonce)", async () => {
+  const r = await ask(ABSTAIN_Q, { claude: (body) => ({ status: 200, text: `**{P99.${otherNonce(realNonceOf(body))}} should play whatever is fun.**${TAIL}` }) });
+  assert.equal(r.wai.length >= 1, true);
+  assert.match(r.answer, /Workers answer first/);
+  assert.ok(!r.answer.includes("someone"));
+});
+
+test("nonce tolerance: a token typed in the QUESTION is escaped to brackets; when the model relays it as braces (any case, any index) the reply is discarded", async () => {
+  const q = "what about {P1.abcd} and {P2.7a1b} and {P3.7A1B} in the weather";
+  const quiet = await ask(q, { claude: () => ({ status: 200, text: `**Plain answer.**${TAIL}` }) });
+  assert.equal(quiet.anth.length, 1);
+  const body = quiet.anth[0].body.messages[0].content;
+  assert.ok(body.includes("[P1.ABCD]") && body.includes("[P2.7A1B]") && body.includes("[P3.7A1B]"), "escaped to brackets");
+  assert.ok(!body.includes("{P1.abcd}") && !body.includes("{P2.7a1b}"));
+  assert.match(quiet.answer, /Plain answer/);
+  for (const echo of ["{P2.7a1b}", "{P3.7A1B}", "{P1.7a1b}", "{P1.abcd}"]) {
+    const r = await ask(q, { claude: () => ({ status: 200, text: `**${echo} should play whatever is fun.**${TAIL}` }) });
+    assert.equal(r.wai.length >= 1, true, echo);
+    assert.match(r.answer, /Workers answer first/, echo);
+    assert.ok(!r.answer.includes("someone"), echo);
+  }
+});
+
+test("a reply with a bare token, a foreign token on an unknown index, ordinary brace text that looks like a token, or an id token is discarded and Workers AI answers", async () => {
+  for (const bad of ["{P1}", "{P99.zzzz}", "{ID.zzzz}", "{ p1 }", "{P2.5}", "{P1.name}"]) {
+    const r = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: `**${bad} should play whatever is fun.**${TAIL}` }) });
     assert.equal(r.wai.length >= 1, true, bad);
     assert.match(r.answer, /Workers answer first/, bad);
     assert.ok(!r.answer.includes("someone"), bad);
@@ -432,13 +476,13 @@ test("4. the model fallback retries only on a model-not-found signal, never on c
     assert.equal(r.anth.length, 1, `${c.status} ${c.errBody ? c.errBody.error.type : "no body"} must not retry`);
     assert.equal(r.wai.length >= 1, true);
   }
-  const miss = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-haiku-5-5" ? e(404, "not_found_error", "model: claude-haiku-5-5") : { status: 200, text: OKTEXT }) });
-  assert.deepEqual(miss.anth.map((a) => a.model), ["claude-haiku-5-5", "claude-haiku-4-5-20251001"]);
-  const bad400 = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-haiku-5-5" ? e(400, "invalid_request_error", "model: claude-haiku-5-5 does not exist") : { status: 200, text: OKTEXT }) });
+  const miss = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-sonnet-5-5" ? e(404, "not_found_error", "model: claude-sonnet-5-5") : { status: 200, text: OKTEXT }) });
+  assert.deepEqual(miss.anth.map((a) => a.model), ["claude-sonnet-5-5", "claude-sonnet-4-5-20250929"]);
+  const bad400 = await ask(ABSTAIN_Q, { claude: (b) => (b.model === "claude-sonnet-5-5" ? e(400, "invalid_request_error", "model: claude-sonnet-5-5 does not exist") : { status: 200, text: OKTEXT }) });
   assert.equal(bad400.anth.length, 2);
   const gw = await ask(ABSTAIN_Q, { env: (x) => { x.CLOUDFLARE_ACCOUNT_ID = "acct"; x.AI_GATEWAY_ID = "gw"; }, claude: () => ({ status: 500 }) });
-  assert.equal(gw.anth.length, 1, "one send per attempt: no gateway-then-direct double hop");
-  assert.match(gw.anth[0].url, /gateway\.ai\.cloudflare\.com/);
+  assert.equal(gw.anth.length, 2, "a 500 is retried once on the Haiku-class model; still one send per attempt: no gateway-then-direct double hop");
+  for (const a of gw.anth) assert.match(a.url, /gateway\.ai\.cloudflare\.com/);
   assert.equal(gw.wai.length >= 1, true);
 });
 
@@ -539,6 +583,137 @@ test("minor. stale 'Workers AI only' wording is gone from the ASK_RESEARCH comme
   for (const k of ["cache_creation_input_tokens", "cpu:budget", "8 ms"]) assert.ok(flags.includes(k), k);
 });
 
+// ======================= compose on the Sonnet-class model, Haiku-class only as the fallback =======================
+const OKT = "**Composed answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed";
+const SONNET = "claude-sonnet-5-5";
+const HAIKU = "claude-haiku-5-5";
+const errOf = (status) => ({ status, errBody: { type: "error", error: { type: status === 529 ? "overloaded_error" : "api_error", message: "try later" } } });
+const slow = () => ({ status: 200, throws: Object.assign(new Error("t"), { name: "TimeoutError" }) });
+const counter = (db) => Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(`claude_tokens_${month()}`).json);
+
+test("C1. the Haiku-class model is used only after 529, 5xx or a timeout on compose, once, and its answer is used", async () => {
+  for (const [label, first] of [["529", errOf(529)], ["500", errOf(500)], ["503", errOf(503)], ["timeout", slow()]]) {
+    const r = await ask(ABSTAIN_Q, { claude: (b) => (b.model === SONNET ? first : { status: 200, text: OKT }) });
+    assert.deepEqual(r.anth.map((a) => a.model), [SONNET, HAIKU], label);
+    assert.equal(r.wai.length, 0, label);
+    assert.match(r.answer, /Composed answer/, label);
+    assert.match(r.row.model, new RegExp(`^claude:${HAIKU}\\+research`), label);
+  }
+});
+
+test("C2. at most 2 Anthropic sends per ask: both models failing goes to Workers AI, and a Haiku-class not-found does not add a third", async () => {
+  const both = await ask(ABSTAIN_Q, { claude: () => errOf(529) });
+  assert.deepEqual(both.anth.map((a) => a.model), [SONNET, HAIKU]);
+  assert.equal(both.wai.length >= 1, true);
+  assert.match(both.answer, /Workers answer first/);
+  const NF = { status: 404, errBody: { type: "error", error: { type: "not_found_error", message: "model: x" } } };
+  const hk = await ask(ABSTAIN_Q, { claude: (b) => (b.model === SONNET ? errOf(500) : NF) });
+  assert.equal(hk.anth.length, 2, "no third send");
+  const sn = await ask(ABSTAIN_Q, { claude: (b) => (b.model === SONNET ? NF : errOf(500)) });
+  assert.deepEqual(sn.anth.map((a) => a.model), [SONNET, "claude-sonnet-4-5-20250929"], "a not-found goes to the 4.5 id, not the Haiku-class one");
+  assert.equal(sn.wai.length >= 1, true);
+});
+
+test("C3. 401, 403, 400 credit, 429 and an unrelated 404 never retry on the Haiku-class model", async () => {
+  const mk = (status, type, message) => ({ status, errBody: { type: "error", error: { type, message } } });
+  for (const c of [mk(401, "authentication_error", "invalid x-api-key"), mk(403, "permission_error", "nope"), mk(400, "invalid_request_error", "Your credit balance is too low to access the API"), mk(429, "rate_limit_error", "slow down"), mk(404, "not_found_error", "route")]) {
+    const r = await ask(ABSTAIN_Q, { claude: () => c });
+    assert.equal(r.anth.length, 1, `${c.status} ${c.errBody.error.type}`);
+    assert.equal(r.anth[0].model, SONNET);
+    assert.equal(r.wai.length >= 1, true);
+  }
+});
+
+test("C4. cap: each attempt reserves and settles its own estimate; the cap and the pause still apply to the retry", async () => {
+  const E = await learnE();
+  // a failed 5xx attempt keeps its reservation (possibly billed); the Haiku-class retry reserves its own and settles to its real usage
+  const db = schemaDb();
+  const r = await ask(ABSTAIN_Q, { db, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT, usage: { input_tokens: 100, output_tokens: 20 } }) });
+  assert.deepEqual(r.anth.map((a) => a.model), [SONNET, HAIKU]);
+  assert.equal(counter(db), E + 120, "one kept reservation for the failed send plus the real usage of the retry");
+  // room for only one reservation: compose is sent, the retry is refused by the cap, Workers AI answers, one alert row
+  const db2 = schemaDb();
+  const r2 = await ask(ABSTAIN_Q, { db: db2, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = String(Math.floor(1.5 * E)); }, claude: () => errOf(529) });
+  assert.equal(r2.anth.length, 1, "the retry never goes out over the cap");
+  assert.equal(r2.wai.length >= 1, true);
+  assert.equal(db2.raw.prepare("SELECT COUNT(*) AS n FROM kv_state WHERE key LIKE 'alert:claude-cap:%'").get().n, 1);
+  assert.ok(counter(db2) <= Math.floor(1.5 * E));
+  // a retry that fails with a not-billed 4xx gives its own reservation back
+  const db3 = schemaDb();
+  await ask(ABSTAIN_Q, { db: db3, claude: (b) => (b.model === SONNET ? errOf(500) : { status: 401 }) });
+  assert.equal(counter(db3), E, "only the first (kept) reservation remains");
+});
+
+test("C5. ASK_RESEARCH off: the legacy provider path is byte-for-byte the old request and row", async () => {
+  const off = await ask("who tanks tonight", { research: false, provider: "claude", deep: true });
+  assert.equal(off.anth.length, 1);
+  const b = off.anth[0].body;
+  assert.equal(b.model, "claude-sonnet-4-5-20250929", "legacy deep id");
+  assert.equal(b.max_tokens, 350);
+  assert.deepEqual(Object.keys(b), ["model", "max_tokens", "system", "messages"]);
+  assert.equal(off.anth[0].raw, JSON.stringify({ model: b.model, max_tokens: 350, system: [{ type: "text", text: b.system[0].text, cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: b.messages[0].content }] }), "serialised exactly as before: cache_control kept, no extra fields");
+  assert.match(off.row.model, /^claude:claude-sonnet-4-5-20250929$/);
+  assert.ok(!/\{P\d|\[P\d/.test(off.anth[0].raw), "no tokens flag-off");
+  const fast = await ask("who tanks tonight", { research: false, provider: "claude" });
+  assert.equal(fast.anth[0].model, "claude-haiku-4-5-20251001");
+});
+
+// ======================= review round 2: the Claude chain stays inside the ask's own hard end =======================
+test("R2-1. the Claude chain is clamped to the ask's hard end: with ASK_DEADLINE_MS=5000 (hard end 4166 ms) no send is given more than the time left", async () => {
+  const rec = recordTimeouts();
+  let r;
+  try {
+    r = await ask(ABSTAIN_Q, { env: (e) => { e.ASK_DEADLINE_MS = "5000"; }, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT }) });
+  } finally { rec.stop(); }
+  assert.ok(rec.seen.length >= 1);
+  for (const ms of rec.seen) assert.ok(ms <= 4200, `a fetch was given ${ms} ms, past the hard end`);
+  assert.deepEqual(r.anth.map((a) => a.model), [SONNET, HAIKU]);
+});
+
+test("R2-2. with under 2.5 s before the hard end Claude is not called at all and Workers AI answers", async () => {
+  const r = await ask(ABSTAIN_Q, { env: (e) => { e.ASK_DEADLINE_MS = "3000"; } });
+  assert.equal(r.anth.length, 0);
+  assert.equal(r.wai.length >= 1, true);
+});
+
+test("R2-3. a slow FIRST reservation write counts inside the budget: compose is skipped when too little is left, the reservation is refunded, Workers AI answers", async () => {
+  const db = schemaDb();
+  const real = db.prepare;
+  let reserves = 0;
+  db.prepare = (sql) => {
+    const st = real(sql);
+    const bind = st.bind;
+    st.bind = (...a) => {
+      const o = bind(...a);
+      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 1) {
+        const all = o.all.bind(o);
+        o.all = async () => { mock.timers.tick(5500); return all(); };
+      }
+      return o;
+    };
+    return st;
+  };
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  let r;
+  try {
+    r = await ask(ABSTAIN_Q, { db, env: (e) => { e.ASK_DEADLINE_MS = "12000"; }, claude: () => ({ status: 200, text: OKT }) });
+  } finally { mock.timers.reset(); }
+  assert.equal(r.anth.length, 0, "no compose send started with <2.5 s of its budget left");
+  assert.equal(r.wai.length >= 1, true);
+  assert.equal(counter(db), 0, "the reservation was given back");
+});
+
+test("R2-4. the ASK_DEADLINE_MS override reaches the flag-off last-resort Workers AI gate too (same value as discord.js)", async () => {
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (u, i) => { if (/groq/.test(String(u))) throw new Error("groq down"); return prev(u, i); };
+  try {
+    const base = await ask("who tanks tonight", { research: false, provider: "groq" });
+    assert.equal(base.wai.length >= 1, true, "default deadline: the last-resort hop runs");
+    const tight = await ask("who tanks tonight", { research: false, provider: "groq", env: (e) => { e.ASK_DEADLINE_MS = "5000"; } });
+    assert.equal(tight.wai.length, 0, "a 5 s deadline leaves no room for the last-resort hop");
+  } finally { globalThis.fetch = prev; }
+});
+
 // ======================= round 3 (second-family review of the budget code) =======================
 async function learnE() {
   const db = schemaDb();
@@ -626,4 +801,85 @@ test("R3. an ask whose usage block is partial settles at the estimate end to end
     await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) });
     assert.equal(Number(rowOf(db, `claude_tokens_${month()}`).json), E, JSON.stringify(usage));
   }
+});
+
+// ======================= review round: real fetch timeouts, single-hop budget, slow reservation, missing 5-5 ids =======================
+function recordTimeouts() {
+  const real = AbortSignal.timeout;
+  const seen = [];
+  AbortSignal.timeout = (ms) => { seen.push(ms); return real.call(AbortSignal, ms); };
+  return { seen, stop: () => { AbortSignal.timeout = real; } };
+}
+const GW = (e) => { e.CLOUDFLARE_ACCOUNT_ID = "acct"; e.AI_GATEWAY_ID = "gw"; };
+
+test("F1. research sends get the budget they were promised, with and without a gateway: compose ~6000 ms, the retry the remaining budget (>= 2500 ms)", async () => {
+  for (const [label, envPatch] of [["gateway", GW], ["no gateway", () => {}]]) {
+    const rec = recordTimeouts();
+    try {
+      await ask(ABSTAIN_Q, { env: envPatch, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT }) });
+    } finally { rec.stop(); }
+    const [compose, retry] = rec.seen;
+    assert.ok(compose > 5800 && compose <= 6000, `${label} compose ${compose}`);
+    assert.ok(retry >= 2500 && retry <= 9000, `${label} retry ${retry}`);
+  }
+});
+
+test("F1b. fetchWithGatewayFallback: single-hop gets the whole remaining time; the legacy two-hop path keeps its 0.6 gateway share and a full-remainder direct hop (unchanged)", async () => {
+  const env = { CLOUDFLARE_ACCOUNT_ID: "acct", AI_GATEWAY_ID: "gw" };
+  const run = async (singleHop) => {
+    const rec = recordTimeouts();
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("{}", { status: 500 });
+    try {
+      await fetchWithGatewayFallback({ env, providerSlug: "anthropic/v1/messages", defaultEndpoint: "https://api.anthropic.com/v1/messages", headers: {}, body: "{}", deadlineAt: Date.now() + 10000, singleHop });
+    } catch {} finally { rec.stop(); globalThis.fetch = prevFetch; }
+    return rec.seen;
+  };
+  const single = await run(true);
+  assert.equal(single.length, 1);
+  assert.ok(single[0] > 9800 && single[0] <= 10000, String(single[0]));
+  const legacy = await run(false);
+  assert.equal(legacy.length, 2, "gateway then direct");
+  assert.ok(legacy[0] > 5800 && legacy[0] <= 6000, `legacy gateway hop ${legacy[0]}`);
+  assert.ok(legacy[1] > 9800 && legacy[1] <= 10000, `legacy direct hop keeps the full remaining budget ${legacy[1]}`);
+});
+
+test("F3. a slow second reservation write cannot push the retry past the Claude budget: the retry is skipped, its reservation refunded, Workers AI answers", async () => {
+  const E = await learnE();
+  const db = schemaDb();
+  const real = db.prepare;
+  let reserves = 0;
+  db.prepare = (sql) => {
+    const st = real(sql);
+    const bind = st.bind;
+    st.bind = (...a) => {
+      const o = bind(...a);
+      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 2) {
+        const all = o.all.bind(o);
+        o.all = async () => { mock.timers.tick(7000); return all(); }; // the second reservation "takes" 7 s of the 9 s budget
+      }
+      return o;
+    };
+    return st;
+  };
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  let r;
+  try {
+    r = await ask(ABSTAIN_Q, { db, claude: () => errOf(529) });
+  } finally { mock.timers.reset(); }
+  assert.equal(r.anth.length, 1, "no retry started past the budget");
+  assert.equal(r.wai.length >= 1, true);
+  assert.match(r.answer, /Workers answer first/);
+  assert.equal(counter(db), E, "the unused second reservation was given back");
+});
+
+test("F5. if the 5-5 ids do not exist, every ask spends 2 sends (the 4.5 ids); the cost is documented and RESEARCH_CLAUDE_FALLBACK_FAST is documented as unused", async () => {
+  const NF = (m) => ({ status: 404, errBody: { type: "error", error: { type: "not_found_error", message: `model: ${m}` } } });
+  for (let i = 0; i < 2; i++) {
+    const r = await ask(ABSTAIN_Q, { claude: (b) => (/-5-5$/.test(b.model) ? NF(b.model) : { status: 200, text: OKT }) });
+    assert.deepEqual(r.anth.map((a) => a.model), [SONNET, "claude-sonnet-4-5-20250929"]);
+  }
+  const flags = readFileSync(new URL("../../docs/runbooks/flags.md", import.meta.url), "utf8");
+  assert.ok(/do(es)? not exist[^.]*2 (Anthropic )?sends/i.test(flags), "flags.md states the 2-sends-per-ask cost when the 5-5 ids are missing");
+  assert.ok(/RESEARCH_CLAUDE_FALLBACK_FAST[^.]*unused/i.test(flags));
 });
