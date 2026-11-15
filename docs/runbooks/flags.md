@@ -42,6 +42,8 @@ Until `D1_FEED` exists the Worker treats it as off, which is today's behaviour; 
 
 `WEB_LOGIN`, `DATA_RIGHTS`, `EVENTS_ENABLED`, `MOMENTS_ENABLED`, `MOMENTS_SHADOW`, `MOMENTS_DRY_RUN`, `CHARS_V1`, `BUILD_MODAL`, `BUILD_PROJECT`, `JOIN_PROMPT`, `ANSWER_UX`, `ASK_RESEARCH` (`/ask` research mode, `worker/research/`: Claude first (tokenised and guarded, see "ASK_RESEARCH provider order"), then Workers AI, then library facts; no other provider; a question the library cannot answer gets a model answer instead of the abstain, unsupported numbers and names are labelled not deleted; never on in a PR preview), `CARDS_ENABLED`, `CARDS_SHADOW`, `BOARD_LINES_ENABLED`, `SETUP_COMMAND`, `EVAL_ENABLED`, `REQUEST_GAUGE`, `ANTHROPIC_BYOK` (Claude key held in the AI Gateway, never in the Worker; no direct fallback; see `secrets.md`). They are still flipped by editing `wrangler.toml` and deploying.
 
+Flip, rollback line and the first-ask checklist for `ASK_RESEARCH`: `ask-research-first-ask.md`. Rollback is `ASK_RESEARCH = "off"` plus a deploy.
+
 ## ASK_RESEARCH provider order, guards and the Claude token cap
 
 With `ASK_RESEARCH = "on"` (never in a PR preview) the `/ask` model call runs this chain and nothing else. Gemini, Groq, Cerebras, GitHub Models and OpenRouter never see friend text, and the asker's chosen provider is ignored.
