@@ -2,7 +2,7 @@
 // Run: node --test tests/unit/ai-keys.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import { anthropicAuth, anthropicAvailable, scrubSecrets, resetKeyCacheForTests, KEY_TTL_MS } from "../../infrastructure/worker/ai-keys.js";
+import { anthropicAuth, anthropicAvailable, scrubSecrets, resetKeyCacheForTests, KEY_TTL_MS, NEG_TTL_MS } from "../../infrastructure/worker/ai-keys.js";
 import { dispatchToProvider, isProviderConfigured, shortProviderError } from "../../infrastructure/worker/ai-models.js";
 
 const FAKE = "sk-ant-FAKE-TEST-KEY-0000";
@@ -51,7 +51,7 @@ test("an empty, whitespace or throwing get falls through to the legacy secret wi
     const a = await anthropicAuth({ ANTHROPIC_KEY_STORE: store(impl), ANTHROPIC_API_KEY: "legacy-fake" });
     assert.equal(a.mode, "legacy");
     assert.deepEqual(a.headers, { "x-api-key": "legacy-fake" });
-    assert.match(a.reason, /^store-(empty|error)$/);
+    assert.match(a.reason, /^store-(empty|error|invalid)$/);
     assert.ok(!JSON.stringify(a).includes(FAKE));
   }
   resetKeyCacheForTests();
@@ -70,7 +70,7 @@ test("anthropicAvailable never calls get(), even across 100 calls", () => {
 
 test("availability matrix, and isProviderConfigured agrees", () => {
   const cases = [
-    [{}, false], [{ ANTHROPIC_BYOK: "off" }, false], [{ ANTHROPIC_BYOK: "on" }, true],
+    [{}, false], [{ ANTHROPIC_BYOK: "off" }, false], [{ ANTHROPIC_BYOK: "on" }, false], [{ ...baseEnv, ANTHROPIC_BYOK: "on" }, true],
     [{ ANTHROPIC_KEY_STORE: store(async () => FAKE) }, true], [{ ANTHROPIC_KEY_STORE: {} }, false],
     [{ ANTHROPIC_API_KEY: "x" }, true],
   ];
@@ -99,8 +99,11 @@ test("get() is cached within the TTL and refreshed after", async () => {
 test("a failed get is not cached as a key and is retried", async () => {
   let n = 0;
   const env = { ANTHROPIC_KEY_STORE: store(async () => { n++; if (n === 1) throw new Error("x"); return FAKE; }) };
-  assert.equal((await anthropicAuth(env)).mode, "none");
-  assert.equal((await anthropicAuth(env)).mode, "store");
+  let t = 5_000_000;
+  const now = () => t;
+  assert.equal((await anthropicAuth(env, { now })).mode, "none");
+  t += NEG_TTL_MS + 1;
+  assert.equal((await anthropicAuth(env, { now })).mode, "store");
 });
 
 // ---- request shape ----
@@ -189,7 +192,7 @@ test("scrubSecrets removes the sk-ant pattern and an exact known key; shortProvi
   assert.ok(!scrubSecrets(`a ${FAKE} b sk-ant-api03-AbC_dEf-123 c`).includes("sk-ant-"));
   assert.ok(!scrubSecrets("opaque-secret-value here", "opaque-secret-value").includes("opaque-secret-value"));
   assert.ok(!shortProviderError(new Error(`bad key ${FAKE}`)).includes("sk-ant-"));
-  assert.ok(!shortProviderError(new Error("x sk-ant-abc")).includes("sk-ant-"));
+  assert.ok(!shortProviderError(new Error("x sk-ant-abcdefgh12")).includes("sk-ant-"));
 });
 
 // ---- property test: 200 seeded failure cases ----

@@ -16,7 +16,7 @@ import { classPageFallback } from "./ask-fallback.js";
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
-import { anthropicAuth, anthropicAvailable, scrubSecrets, scrubError } from "./ai-keys.js";
+import { anthropicAuth, anthropicAvailable, scrubSecrets, scrubError, clearStoreKey, gatewayReady } from "./ai-keys.js";
 import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
@@ -392,7 +392,7 @@ export async function fetchWithGatewayFallback({
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
   const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
   if (!allowDirectFallback) {
-    if (gwUrl === defaultEndpoint || !aigToken || !(env && env.AI_GATEWAY_ID)) {
+    if (gwUrl === defaultEndpoint || !gatewayReady(env)) {
       throw new Error("Anthropic BYOK needs the AI Gateway configured (account id, gateway id and gateway token)");
     }
   }
@@ -412,6 +412,7 @@ export async function fetchWithGatewayFallback({
           method: "POST",
           headers: { ...headers, ...cacheHeaders },
           body,
+          ...(allowDirectFallback ? {} : { redirect: "manual" }), // BYOK: never follow a redirect with the gateway token attached
         },
         "AI provider request",
         deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS
@@ -424,7 +425,7 @@ export async function fetchWithGatewayFallback({
       console.warn(`[AI-Gateway] HTTP ${resp.status} from ${gwUrl}, falling back to direct endpoint`);
     } catch (err) {
       if (!allowDirectFallback) throw scrubError(err);
-      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${scrubSecrets(err && err.message)}, falling back to direct endpoint`);
+      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${scrubSecrets(err && err.message, headers["x-api-key"])}, falling back to direct endpoint`);
     }
   }
 
@@ -483,8 +484,8 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
   });
 
   if (!resp.ok) {
-    const errTxt = await resp.text();
-    throw new Error(`Anthropic API HTTP ${resp.status}: ${scrubSecrets(errTxt, secretKey).slice(0, 200)}`);
+    if ((resp.status === 401 || resp.status === 403) && auth.mode === "store") clearStoreKey(env); // a rotated key is re-read on the next ask
+    throw new Error(`Anthropic API HTTP ${resp.status}`); // status only: the provider body never reaches an error, a trace row or a user
   }
 
   const data = await resp.json();
@@ -493,7 +494,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     .map((b) => b.text)
     .join("\n")
     .trim();
-  return { answer, model, provider: "claude" };
+  return { answer: scrubSecrets(answer, secretKey), model, provider: "claude" }; // a model answer must not echo the key onward
   } catch (err) {
     throw scrubError(err, secretKey); // a provider error, a JSON parse error or a network error must never carry the key
   }
@@ -843,6 +844,8 @@ export async function getParsedLibraryPages(env) {
 // Short, secret-free reason a provider was skipped, for the stored model field.
 export function shortProviderError(err) {
   const raw = String((err && (err.code === "ai_timeout" ? `timeout ${err.message}` : err.message)) || err || "error");
+  const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
+  if (http) return `${http[1]} API HTTP ${http[2]}`; // status only: never a provider body
   return scrubSecrets(raw)
     .replace(/[?&]key=[^\s&"]+/gi, "")
     .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
