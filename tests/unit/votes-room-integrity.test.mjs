@@ -145,7 +145,7 @@ test("sheet: a field that turns hidden stops being published in the party docume
   const env = makeEnv();
   env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, 'x')").run(JSON.stringify({ members: [{ name: "Santa", race: "Orc", class: "Rogue", spec: "Sub" }] }));
   const party = () => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json).members[0];
-  const ev = (field, value, visible) => recordSheetEventInD1(env, ORIGIN, { slug: "santa", name: "Santa", field, value, visible });
+  const ev = (field, value, visible) => recordSheetEventInD1(env, ORIGIN, { slug: "santa", name: "Santa", field, value, visible, visibleGiven: typeof visible === "boolean" });
   await ev("race", "Troll", true);
   assert.equal(party().race, "Troll");
   await ev("race", "Troll", false);
