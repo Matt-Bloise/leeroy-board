@@ -32,6 +32,7 @@ const HIDE = [["race", "class", "spec_path", "spec_at_40", "professions", "plan_
 const sheets = party0.members.map((m, i) => ({ slug: slug(m.name), name: m.name, updated: "x", fields: Object.fromEntries(["race", "class", "spec_path", "spec_at_40", "professions", "plan_zone", "level", "goals"].map((f) => [f, { value: "x", visible: !(HIDE[i] || []).includes(f), source: "board", at: "x" }])) }));
 const party = projectForAnonymous(party0, sheets);
 delete party.members[4].role; // a card with no role at all
+ok("fixture: the glossary is served whole while members hide fields", party.withheld === WITHHELD_LINE && JSON.stringify(party.glossary) === JSON.stringify(party0.glossary) && party.glossary.length >= 15);
 const PARTY = JSON.stringify(party), DECIDE = JSON.stringify(projectDecide(decide0, party0, sheets)), TONIGHT = JSON.stringify(projectTonight(tonight0, party0, sheets)), ATLAS = JSON.stringify(projectGuidedAtlas(atlas0, party0, sheets)), CLIENT = JSON.stringify(projectClient(client0, party0, sheets));
 ok("fixture: the first member shows a name and a role only", JSON.stringify(Object.keys(party.members[0]).sort()) === JSON.stringify(["name", "role"]), Object.keys(party.members[0]).join(","));
 ok("fixture: the last member has no role and no start zone", party.members[4].role === undefined && party.members[4].start_zone === undefined && party.members[4].class !== undefined, JSON.stringify(Object.keys(party.members[4])));
@@ -129,6 +130,23 @@ try {
     }
     const known = new Set([...Object.keys(SHEET_VOCAB.race), ...Object.keys(SHEET_VOCAB.class), ...Object.keys(SHEET_VOCAB.spec), ...Object.keys(SHEET_VOCAB.professions), ...Object.keys(SHEET_VOCAB.plan_zone), "queue", "in", "done"]);
     if (member) ok(`${t} the sheet page offers only vocabulary values (${opts.length} options seen)`, opts.length > 0 && opts.every((o) => known.has(o)), opts.length === 0 ? "0 options seen" : opts.filter((o) => !known.has(o)).join(","));
+    // the plain-word popovers (glDef in js/board.js) read party.glossary: with the glossary kept, a glossary word is a button and its card opens with the definition
+    let glBtn = null;
+    for (const hash of [...SCENES, "five.party"]) {
+      await openHash(page, hash);
+      if (await page.locator("#scene .gl[data-term]:visible").count()) { glBtn = hash; break; }
+    }
+    ok(`${t} a glossary word is a popover button on some scene while a member hides fields (${glBtn})`, !!glBtn);
+    if (glBtn) {
+      const btn = page.locator("#scene .gl[data-term]:visible").first();
+      const term = await btn.getAttribute("data-term").catch(() => null);
+      await btn.scrollIntoViewIfNeeded().catch(() => {});
+      await btn.click().catch(() => {});
+      await page.waitForTimeout(300);
+      const pop = await page.evaluate(() => { const p = document.querySelector("#glpop"); return p ? { hidden: p.hidden, text: p.textContent } : null; });
+      const def = party0.glossary.find((g) => g.term === term);
+      ok(`${t} the popover for "${term}" opens with the plain definition`, !!pop && !pop.hidden && !!def && pop.text.includes(def.def), JSON.stringify(pop).slice(0, 160));
+    }
     ok(`${t} no page error and no console error`, errors.length === 0, errors.slice(0, 3).join(" | "));
     await ctx.close();
   }
