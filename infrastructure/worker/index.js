@@ -47,6 +47,7 @@ import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { publicParty, partyForMember } from "./sheet-privacy.js";
+import { sheetValueProblem, ADMIN_SHEET_FIELDS, visibilityOnly, nextLevelField } from "./sheet-values.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
@@ -204,7 +205,8 @@ function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS
 }
 
 export async function purgeWorkerCache(origin, paths = []) {
-  clearIsolateCache(paths);
+  // /api/state and /api/bootstrap carry every document, so any purge clears their isolate copies too (not only the edge cache below)
+  clearIsolateCache([...new Set([...paths, "/api/state", "/api/bootstrap"])]);
   invalidatePagesCache();
   try {
     const cache = caches.default;
@@ -291,12 +293,12 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } =
       } catch {
         val = r.value_json;
       }
-      row.fields[r.field] = {
-        value: val,
-        visible: Boolean(r.visible),
-        source: r.source || "board",
-        at: r.created_at || now,
-      };
+      // A level event carries the resolved field, so the same rule the live commit used (a same-value event keeps its at and source; an
+      // older new value cannot win) gives the same end state. Other fields replay as before: last event by id wins.
+      row.fields[r.field] = r.field === "level"
+        ? nextLevelField(row.fields[r.field], { value: val, visible: Boolean(r.visible), source: r.source || "board", at: r.created_at || now }).field
+        : { value: val, visible: Boolean(r.visible), source: r.source || "board", at: r.created_at || now };
+      if (row.fields[r.field] === null) delete row.fields[r.field];
       row.updated = r.created_at || now;
     }
   } catch {}
@@ -335,14 +337,22 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
   return partyDoc;
 }
 
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, visible = true, source = "board", at }) {
+// keepHidden (the admin path): a field its owner has hidden stays hidden. The check runs inside the commit, against the sheet state that is
+// written, so a hide that lands between the admin's request and the write is never undone.
+// levelRules (level, sheet-values.js nextLevelField): a visibility-only write (valueGiven false) keeps the value; a write of the same value
+// keeps its at and source; an older write of a new value is stale and changes nothing (a hide still hides). A write that changes nothing
+// records no event and broadcasts nothing; the reply carries stale and the stored field. The level event row carries the resolved field
+// (value and visible), so the slow-path replay below ends where this commit ended.
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible = true, visibleGiven = true, source = "board", at, keepHidden = false, levelRules = false }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
+  const event = { slug, name: name || slug, field, valJson, visible: Boolean(visible), source: source || "board", at: now };
+  let stale = false, changed = true, stored = null;
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
   // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
   const saved = await commitSheetWrite(env, {
-    event: { slug, name: name || slug, field, valJson, visible, source: source || "board", at: now },
+    event,
     compute: async (cur, partyDoc) => {
       // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
@@ -360,16 +370,32 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
         currentParty.push(memberSheet);
       }
       memberSheet.fields = memberSheet.fields || {};
-      memberSheet.fields[field] = { value, visible: Boolean(visible), source: source || "board", at: now };
+      const prior = memberSheet.fields[field];
+      const project = () => ({ sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined });
+      if (levelRules) { // recomputed on every retry, against the state this attempt writes
+        const next = nextLevelField(prior, { value, valueGiven, visible, visibleGiven, source: source || "board", at: now }, { keepHidden });
+        stale = next.stale; changed = next.changed; stored = next.field;
+        event.valJson = !stored || stored.value === undefined || stored.value === null ? null : JSON.stringify(stored.value);
+        event.visible = !stored || stored.visible !== false;
+        if (!changed) return { ...project(), skipEvent: true };
+        if (stored) memberSheet.fields[field] = stored;
+        else delete memberSheet.fields[field]; // no value and not hidden: no level line at all
+        memberSheet.updated = now;
+        return project();
+      }
+      event.visible = keepHidden && prior && prior.visible === false ? false : Boolean(visible);
+      memberSheet.fields[field] = stored = { value, visible: event.visible, source: source || "board", at: now };
       memberSheet.updated = now;
-      return { sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined };
+      return project();
     },
   });
   const currentParty = saved.sheets;
 
-  await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
-  await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
-  return { party: currentParty, at: now };
+  if (changed) {
+    await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
+    await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
+  }
+  return { party: currentParty, at: now, visible: stored ? stored.visible !== false : event.visible, stale, changed, stored };
 }
 
 export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
@@ -389,7 +415,7 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
-  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
+  "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
   "GET /intents", "POST /ack", "POST /answer", "GET /signups", "POST /signups", "ANY /live", "GET /state",
   "POST /token", "POST /auth/discord", "GET /auth/discord/start", "GET /auth/discord/callback", "POST /auth/logout", "ANY /me", "GET /me/export", "POST /me/erase", "POST /me/characters", "ANY /state/:doc", "GET /ask", "GET /wiki/snapshots",
   "GET /wiki/proposals", "GET /wiki/proposals/:id", "POST /wiki/proposals/:id/approve", "POST /wiki/proposals/:id/reject", "PUT /wiki/page", "GET /bootstrap", "GET /library/*", "GET /data/*", "PUT /data/*",
@@ -501,31 +527,43 @@ const worker = {
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
           }
+          const problem = sheetValueProblem(field, body.value, body, { allowClear: true }); // the owner may clear a level (value null)
+          if (problem) return jsonResp({ error: problem }, 400, cors);
           const visible = body.visible !== false;
+          const valueGiven = !visibilityOnly(field, body); // the switch on an empty level line: { field: "level", visible }
           const value = body.value === undefined ? null : body.value;
           const now = new Date().toISOString();
+          let saved;
           try {
-            await recordSheetEventInD1(env, url.origin, {
+            saved = await recordSheetEventInD1(env, url.origin, {
               slug: m.slug,
               name: m.name,
               field,
               value,
+              valueGiven,
               visible,
+              visibleGiven: typeof body.visible === "boolean", // level: a value write without visible (sheet Save, Import) keeps the stored visibility
               source: "board",
               at: now,
+              levelRules: field === "level",
             });
           } catch (e) {
             if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
             throw e;
           }
+          // The reply is the stored field (for level: the kept value on a visibility change, the stored one on a stale write). A write that
+          // changed nothing (same field, or stale) sends no intent: the PC bot never sees a value that lost.
+          const st = saved.stored || { value, visible, at: now };
+          const out = { ok: true, at: st.at || now, field, value: st.value === undefined ? null : st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
+          if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
           const { seq } = await insertIntent(env, {
             slug: m.slug,
             kind: "sheet",
-            body: { field, value, visible, source: "board" },
+            body: { field, value: out.value, visible: out.visible, source: "board" },
             ver: 1,
             at: now,
           });
-          return jsonResp({ ok: true, id: seq, seq, at: now, field, value, visible }, 200, cors);
+          return jsonResp({ ...out, id: seq, seq }, 200, cors);
         }
       }
 
@@ -655,6 +693,42 @@ const worker = {
         const { state } = await d1Store(env, shadow ? MOMENTS_SHADOW_STATE_KEY : undefined).read();
         const { state: led } = await d1Store(env, MOMENTS_LEDGER_KEY, "entries").read();
         return jsonResp(momentsStatus({ schedule, state, now: Date.now(), enabled: momentsEnabled(env), shadow, dryRun: momentsDryRun(env), ledger: led.entries }), 200, cors);
+      }
+
+      // Admin only: fill one field on a party member's sheet (q-20261114-22: level, which the owner can fill for a friend). Only fields with a
+      // server-side rule (ADMIN_SHEET_FIELDS). The member must be in the party. A field the friend has hidden stays hidden (keepHidden); the admin
+      // may hide a field but never shows one. Same commit, broadcast and intent as a friend's own POST /sheet, with source "admin".
+      // Follow-up (review LOW-4): there is no expected-value precondition; the admin's fill wins over any older stored value.
+      if (req.method === "POST" && path === "/admin/sheet") {
+        const denied = adminGate(req, url, env, cors);
+        if (denied) return denied;
+        const read = await readJsonCapped(req);
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body;
+        if (!body || typeof body !== "object" || Array.isArray(body)) return jsonResp({ error: "Body must be a JSON object" }, 400, cors);
+        if (!Object.keys(body).every((k) => k === "slug" || k === "field" || k === "value" || k === "visible")) return jsonResp({ error: "Body carries slug, field, value and an optional visible:false" }, 400, cors);
+        const field = typeof body.field === "string" ? body.field : "";
+        if (!ADMIN_SHEET_FIELDS.includes(field)) return jsonResp({ error: `The admin may fill only: ${ADMIN_SHEET_FIELDS.join(", ")}` }, 400, cors);
+        const problem = sheetValueProblem(field, body.value);
+        if (problem) return jsonResp({ error: problem }, 400, cors);
+        if (body.visible !== undefined && body.visible !== false) return jsonResp({ error: "visible may only be false: the admin never shows a hidden field" }, 400, cors);
+        const slug = typeof body.slug === "string" ? body.slug : "";
+        const member = /^[a-z0-9-]{1,32}$/.test(slug) ? (await loadPartyMembers(env)).find((m) => m.slug === slug) : null;
+        if (!member) return jsonResp({ error: "Unknown party member" }, 404, cors);
+        const now = new Date().toISOString();
+        let saved;
+        try {
+          saved = await recordSheetEventInD1(env, url.origin, { slug: member.slug, name: member.name, field, value: body.value, visible: body.visible !== false, visibleGiven: body.visible === false, source: "admin", at: now, keepHidden: true, levelRules: true });
+        } catch (e) {
+          if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
+          throw e;
+        }
+        // The reply is the stored field. A write that changed nothing (same field, or stale) sends no intent.
+        const st = saved.stored || { value: null, visible: true, at: now };
+        const out = { ok: true, at: st.at, slug: member.slug, field, value: st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
+        if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
+        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: st.value, visible: out.visible, source: "admin" }, ver: 1, at: now });
+        return jsonResp({ ...out, id: seq, seq }, 200, cors);
       }
 
       // Admin only: add or update one roster entry in discord_members. The reply never echoes other members.

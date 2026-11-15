@@ -948,6 +948,73 @@ paths:
                   ok: { type: boolean }
                   error: { type: string }
         "503": { $ref: '#/components/responses/NotConfigured' }
+  /api/admin/sheet:
+    post:
+      summary: Admin only. Fills one field on a party member's sheet (today only `level`).
+      description: |
+        q-20261114-22. The field must have a server-side rule (worker/sheet-values.js ADMIN_SHEET_FIELDS). level is a whole number from 1 to 60
+        (data/client.json level); null, strings, floats and a missing value are 400. The member must be in the party (404 otherwise; the reply
+        names nobody). A field its owner has hidden stays hidden: the check runs inside the compare-and-set commit, so a hide that lands first
+        survives. `visible` may only be false; without it the stored visibility stays (a hidden level stays hidden). A value is always required (null is refused here; the owner clears a level through POST /api/sheet). A new value older than the stored one leaves it as it is and
+        answers `stale: true` with the stored field. Writing the stored value again changes nothing (`unchanged: true`, no event, no intent)
+        and keeps its `at` and source, so the age shown is the age of the value. Stored with source `admin` and its own `at`; same broadcast
+        and intent as POST /api/sheet when something changed.
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [slug, field, value]
+              properties:
+                slug: { type: string, pattern: '^[a-z0-9-]{1,32}$' }
+                field: { type: string, enum: [level] }
+                value: { type: integer, minimum: 1, maximum: 60 }
+                visible: { type: boolean, enum: [false] }
+      responses:
+        "200":
+          description: Saved, or kept as stored when the stored field is newer (`stale`).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, slug, field, value, visible, at]
+                properties:
+                  ok: { type: boolean, enum: [true] }
+                  id: { type: integer }
+                  seq: { type: integer }
+                  at: { type: string, format: date-time }
+                  slug: { type: string }
+                  field: { type: string }
+                  value: { type: integer }
+                  visible: { type: boolean }
+                  stale: { type: boolean }
+                  unchanged: { type: boolean }
+        "400":
+          description: Not a JSON object, an unknown key or field, a value outside the rule, or visible other than false.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "404":
+          description: Not a party member.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "409":
+          description: The sheet stayed busy through every retry. Try again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "413":
+          description: Body too large.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        "503": { $ref: '#/components/responses/NotConfigured' }
   /api/persona:
     put:
       summary: Admin only. Replaces the persona pack. Write only.

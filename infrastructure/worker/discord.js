@@ -63,6 +63,7 @@ import { loadRoster } from "./party-source.js";
 import { tonightLines } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember } from "./sheet-privacy.js";
+import { sheetValueProblem } from "./sheet-values.js";
 import { canManageGuild } from "./setup-command.js";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 
@@ -983,6 +984,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         );
       }
       if (field && value) {
+        // Same server rule as POST /sheet. A slash option is always a string, so level ("34") is refused here: it is set on the board.
+        // The registered command does not offer level; this holds even for an interaction built by hand.
+        if (sheetValueProblem(field, value)) {
+          return new Response(
+            JSON.stringify({ type: 4, data: { content: `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
         const now = new Date().toISOString();
         await recordSheetEventInD1(env, origin, {
           slug: target.slug,

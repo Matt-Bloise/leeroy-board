@@ -76,7 +76,7 @@ function bootstrap(force = false) { if (force) BOOT_P = null;
       if (j && typeof j === "object" && !j.error) {
         if (typeof j.ver === "number" && j.ver > B.ver) B.ver = j.ver;
         if (Array.isArray(j.launch)) B.launch = j.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null }));
-        if (j.signups) B.signups = j.signups;
+        if (signupsOk(j.signups) && (!B.signups || signupsAge(j.signups) >= signupsAge(B.signups))) B.signups = j.signups; /* same guard as /state and the socket: a slow bootstrap never rolls back */
         if (j.isPrPreview) B.isPrPreview = true;
         if (j.providers && typeof j.providers === "object") B.providers = j.providers;
         if (AI_PROVIDERS.includes(j.aiProvider)) {
@@ -205,15 +205,33 @@ function settleLaunch() {
 const partyRow = (r) => r && typeof r.slug === "string" && SLUG.test(r.slug) && typeof r.name === "string" && r.fields && typeof r.fields === "object" && !/\d{17,20}/.test(JSON.stringify(r));
 const sheetFields = (f) => { const out = {}; for (const k of SHEET) { const e = f && f[k]; if (e && typeof e === "object" && "value" in e) out[k] = { value: e.value, visible: e.visible !== false, source: typeof e.source === "string" ? e.source : "board", at: e.at || null }; } return out; };
 function takeParty(rows) { if (!Array.isArray(rows)) return; B.party = rows.filter(partyRow).map((r) => ({ slug: r.slug, name: r.name, fields: sheetFields(r.fields), updated: r.updated || null })); emit("party", B.party.slice()); }
+const sameSignups = (a, b) => { try { return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); } catch (e) { return true; } };
+/* A sign-up document is usable when every row is an object. Its age is its newest stamp (a row's updated, or the document's): a cached
+   /state or a late socket message older than the document in hand never replaces it, so the board never rolls back to an older answer. */
+const signupsOk = (d) => !!d && typeof d === "object" && Array.isArray(d.entries) && d.entries.every((e) => e && typeof e === "object");
+const signupsAge = (d) => { let n = Date.parse((d && d.updated) || "") || 0; for (const e of (d && Array.isArray(d.entries) ? d.entries : [])) { const t = Date.parse((e && e.updated) || "") || 0; if (t > n) n = t; } return n; };
+const signupsNewer = (d) => signupsOk(d) && !sameSignups(d, B.signups) && (!B.signups || signupsAge(d) >= signupsAge(B.signups));
+/* The live socket sends each saved sign-up document as { type: "data", key: "signups", data }; it is applied like a state's sign-ups
+   (no kept-answer retry here: that runs on /state only, so other members' clicks do not re-send this client's failed answer). */
+function onSignupsData(doc) {
+  if (!signupsNewer(doc)) return false;
+  B.signups = doc;
+  emit("state", doc, B.ver);
+  settle();
+  journeyFromMirror();
+  return true;
+}
 function onState(m) {
-  if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups)) return false;
+  /* The Worker's /state always says ver 1, so an equal ver is not proof of the same state: it is taken when its sign-ups differ from the ones
+     in hand (otherwise a waiting web RSVP never reaches Saved or newer). An older ver is still refused. */
+  if (!m || typeof m.ver !== "number" || m.unchanged || m.ver < B.ver || (m.ver === B.ver && B.signups && !signupsNewer(m.signups))) return false;
   B.ver = m.ver; B.at = m.at || null;
   takeParty(m.party);
   if (m.partyDoc || m.tonight || m.timeline || m.stats) emit("data", { party: m.partyDoc, tonight: m.tonight, timeline: m.timeline, stats: m.stats, ver: m.ver });
   if (m.stamps) emit("library", { stamps: m.stamps, checked: m.checked || m.at || null });
   if (m.decide) emit("decide", m.decide);
   if (Array.isArray(m.launch)) { B.launch = m.launch.filter(launchRow).map((r) => ({ slug: r.slug, name: r.name, state: r.state, at: r.at || null })); emit("launch", B.launch.slice()); settleLaunch(); }
-  if (!m.signups) return false;
+  if (!m.signups || !signupsOk(m.signups) || (B.signups && signupsAge(m.signups) < signupsAge(B.signups))) return false;
   B.signups = m.signups;
   emit("state", m.signups, m.ver);
   setTimeout(mineFlush, 0);
@@ -259,7 +277,7 @@ function openWs() {
     if (m && m.type === "state") onState(m);
     if (m && m.type === "library") emit("library", m);
     if (m && m.type === "decide") emit("decide", m);
-    if (m && m.type === "data") emit("data", m);
+    if (m && m.type === "data") { if (m.key === "signups") onSignupsData(m.data); emit("data", m); }
     if (m && m.type === "ask") { const matchMe = !B.me || (m.slug && (m.slug === B.me.slug || m.slug === (B.me.name && B.me.name.toLowerCase()))); if (m.ask && matchMe) { askAdopt(m.ask); askEmit(); } else if (matchMe) { askRead(); } }
   };
   const down = () => {
