@@ -197,7 +197,7 @@ const LEFTOVER_TOKEN = /\{\s{0,3}(?:p\s{0,3}\d|id\b|all\b|invite\b|guild\b)/i;
 // Builds the per-request name map and the tokenised prompts. Never throws: { ok:false, reason } means "do not call Claude; Workers AI uses the prompts as they are".
 // An asker who is a known member is tokenised like any name. An unknown asker is tokenised BY CONSTRUCTION: only the two labels the code writes ("Asker: X (" and
 // "Question from X (journey") become a token; the asker string is never a key over the rest of the prompt (an asker called "The" must not turn every "the" into a token).
-export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by, party }) {
+export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, priorTurns, by, party }) {
   try {
     if (party && party.failed) return { ok: false, reason: "tokenise:error" };
     const members = party && party.members ? party.members : researchMembers();
@@ -207,6 +207,8 @@ export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, pre
     const askerRaw = String(by ?? "").trim();
     const userSegments = [tokenise(question, map)];
     if (previousQuestion) userSegments.push(tokenise(previousQuestion, map));
+    // The asker's own earlier turns (research/turns.js): both the question and the earlier answer are friend-writable or model-written text, so each is tokenised and guarded like the question.
+    if (Array.isArray(priorTurns)) for (const t of priorTurns) userSegments.push(tokenise(String(t.q ?? ""), map), tokenise(String(t.a ?? ""), map));
     if (askerRaw && askerRaw.toLowerCase() !== "visitor") userSegments.push(tokenise(askerRaw, map)); // the asker string is guarded like any typed text (never used as a key)
     const partySegments = (party && party.mandatory ? party.mandatory : []).map((t) => tokenise(t, map));
     const system = tokenise(systemPrompt, map);
