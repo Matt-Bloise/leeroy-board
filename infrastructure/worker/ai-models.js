@@ -31,7 +31,7 @@ import { researchEnabled, researchAnswer } from "./research/index.js";
 import { assertAnthropicUrl, namesAreReal } from "./research/real-names.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_LENGTH_OVERRIDE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { findAskerTurns, renderTurns, PRIOR_TURNS_RULE } from "./research/turns.js";
-import { groupMemoryOn, buildGroupMemoryBlock, groupRowsForAsk, appendGroupLog, GROUP_MEMORY_RULE } from "./research/group-memory.js";
+import { groupMemoryOn, buildGroupMemoryBlock, groupRowsForAsk, appendGroupLog, isGroupSlug, GROUP_MEMORY_RULE } from "./research/group-memory.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
@@ -1065,8 +1065,14 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       "Keep answers concise (2 to 4 sentences), warm and plain-spoken. End with one line `-# Sources: id1, id2` listing only the library page ids you actually used (plain ids separated by commas, no brackets); the system turns them into links. Never write bare web addresses.",
     ].join(" ");
     // GROUP_MEMORY (research + the Claude path with real names + a roster member + the flag; the caller passes groupMemory only then): the group's notes and recent rows as one fenced block, one or two D1 reads.
-    const groupText = groupMemory && researchReal && askerIsMember && memberSlug
-      ? await buildGroupMemoryBlock(env, { askerSlug: memberSlug, isMember: true, channel: groupMemory.channel, names: sheets0.filter((s) => s && s.slug).map((s) => ({ slug: s.slug, display: s.name || s.slug })), mentionText: `${question}\n${prevText}` })
+    // The asker's slug must exist on the party sheets or in the roster: a board-key holder who is on neither (a web "member" in name only) gets and leaves nothing.
+    let groupMember = false;
+    if (groupMemory && askerIsMember && isGroupSlug(memberSlug)) {
+      groupMember = sheets0.some((s) => s && s.slug === memberSlug);
+      if (!groupMember) { const roster = await loadConfigKey(env, "discord_members"); groupMember = Array.isArray(roster) && roster.some((m) => m && m.slug === memberSlug); }
+    }
+    const groupText = groupMember && researchReal
+      ? await buildGroupMemoryBlock(env, { askerSlug: memberSlug, isMember: true, channel: groupMemory.channel, share: groupMemory.share !== false, names: sheets0.filter((s) => s && s.slug).map((s) => ({ slug: s.slug, display: s.name || s.slug })), mentionText: `${question}\n${prevText}` })
       : "";
     const persona = await loadPersona(env);
     const usePersona = persona && promptVariant !== "plain";
@@ -1131,7 +1137,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const turnsText = research && priorTurns ? renderTurns(priorTurns) : ""; // ASK_RESEARCH only: the asker's own last turns (research/turns.js); empty when off, so the prompt is byte-identical
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${turnsText ? `${fence("PRIOR_TURNS", turnsText)}\n${PRIOR_TURNS_RULE}\n\n` : ""}${groupText ? `${groupText}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, groupMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1271,6 +1277,7 @@ export async function answerWithAi({
   isMember, // is the asker a party member? Defaults to "not the Visitor placeholder".
   storeDetails = false, // ANSWER_UX: keep the ---more--- and ---sources--- text in answer_details for the Discord buttons
   channel = "", // the Discord channel id of the ask ("" for the website): group memory (GROUP_MEMORY) files and reads by channel
+  messageTarget = null, // the right-click "Ask Leeroy": { authorSlug } of the message asked about; group memory files that text as the author's message, not as this asker's ask
 }) {
   const t0 = Date.now();
   const nowIso = () => new Date().toISOString();
@@ -1319,7 +1326,7 @@ export async function answerWithAi({
     // RESEARCH_NAMES (research code only): "real" sends the Claude hop the real names and the asker's turns untokenised; "tokenised" is the earlier behaviour. Guests never reach Claude.
     const namesReal = research && namesAreReal(env);
     const groupOn = research && groupMemoryOn(env); // GROUP_MEMORY: only with research mode on (so never in a PR preview); off means no read, no write, no prompt text
-    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal && memberNoWall, ...(groupOn ? { groupMemory: { channel } } : {}) }); // real only for a member: a guest's Workers AI prompt always takes the tokenised, dropping path
+    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal && memberNoWall, ...(groupOn ? { groupMemory: { channel, share: Boolean(share) } } : {}) }); // real only for a member: a guest's Workers AI prompt always takes the tokenised, dropping path
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
     // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
     // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
@@ -1565,8 +1572,8 @@ export async function answerWithAi({
 
     // GROUP_MEMORY: a roster member's answered ask goes into the group log, one INSERT, never failing the ask (appendGroupLog swallows its own errors). Claude's own answer only is filed as Leeroy's:
     // a degraded line, library facts and a code-written abstain are not. Flag off, a guest or a missing slug: nothing runs.
-    if (groupOn && memberNoWall && memberSlug) {
-      await appendGroupLog(env, groupRowsForAsk({ channel, slug: memberSlug, question, answer, intentId, share: Boolean(share), at: answeredAt, answered: provider === "claude" && !degraded }));
+    if (groupOn && memberNoWall && inputs.groupMember) {
+      await appendGroupLog(env, groupRowsForAsk({ channel, slug: memberSlug, question, answer, intentId, share: Boolean(share), at: answeredAt, answered: provider === "claude" && !degraded, messageTarget }));
     }
 
     const statsRow =await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();

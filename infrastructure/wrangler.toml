@@ -76,7 +76,7 @@ RESEARCH_CLAUDE_MODEL_FAST = "claude-haiku-5-5"
 RESEARCH_CLAUDE_MODEL_DEEP = "claude-sonnet-5-5"
 RESEARCH_CLAUDE_FALLBACK_FAST = "claude-haiku-4-5-20251001"
 RESEARCH_CLAUDE_FALLBACK_DEEP = "claude-sonnet-4-5-20250929"
-RESEARCH_CLAUDE_MONTHLY_TOKENS = "2000000" # monthly Claude token bound (input + output, UTC month, D1 kv_state claude_tokens_YYYYMM); at or over it the degraded line answers (research/provider.js) and one alert row is written; a bad value means this default, never unlimited
+RESEARCH_CLAUDE_MONTHLY_TOKENS = "5000000" # monthly Claude token bound (input + output, UTC month, D1 kv_state claude_tokens_YYYYMM); at or over it the degraded line answers (research/provider.js) and one alert row is written; a bad value means this default, never unlimited
 # ASK_RESEARCH only, read in worker/research/ only (never Flagship): "real" sends the Claude hop real names, sheet fields, builds and the asker's turns untokenised and does not run the name guard (the friends have consented; docs/privacy.md); "tokenised" keeps the per-request tokens and the strict name guard. Unset or any other value reads as "tokenised". Secrets, ids, pings and the host allow-list are guarded in both modes.
 RESEARCH_NAMES = "real"
 GEMINI_MODEL_FAST = "gemini-3.5-flash-lite"

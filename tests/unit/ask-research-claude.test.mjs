@@ -371,7 +371,7 @@ test("wrangler.toml declares the research Claude vars; the key is not in the fil
   assert.match(toml, /^RESEARCH_CLAUDE_MODEL_DEEP = "claude-sonnet-5-5"/m);
   assert.match(toml, /^RESEARCH_CLAUDE_FALLBACK_FAST = "claude-haiku-4-5-20251001"/m);
   assert.match(toml, /^RESEARCH_CLAUDE_FALLBACK_DEEP = "claude-sonnet-4-5-20250929"/m);
-  assert.match(toml, /^RESEARCH_CLAUDE_MONTHLY_TOKENS = "2000000"/m);
+  assert.match(toml, /^RESEARCH_CLAUDE_MONTHLY_TOKENS = "5000000"/m); // CHANGED from 2000000 (owner decision with GROUP_MEMORY)
   assert.match(toml, /^CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"/m, "legacy vars unchanged");
   assert.ok(!/sk-ant-/.test(toml));
 });

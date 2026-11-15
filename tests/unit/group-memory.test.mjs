@@ -299,14 +299,17 @@ test("nothing stored means an empty string (no empty fence)", async () => {
   assert.equal(await buildGroupMemoryBlock(mkEnv(schemaDb()), { askerSlug: "red-fox", isMember: true, channel: CH, names: NAMES }), "");
   assert.equal(await buildGroupMemoryBlock({ DB: { prepare() { throw new Error("down"); } } }, { askerSlug: "red-fox", isMember: true, channel: CH, names: NAMES }), "", "a read error is silent");
 });
-test("another member's private ask is not shown to the asker; the asker's own private ask is", async () => {
+test("a private ask of another member is never shown; the asker's own private ask is shown only to a later PRIVATE ask (CHANGED: a public ask no longer sees them)", async () => {
   const DB = schemaDb();
   logRow(DB, 1, "blue-owl", "ask", "OWLPRIVATE secret question", { source: "ask-private" });
   logRow(DB, 2, "red-fox", "ask", "FOXPRIVATE my own", { source: "ask-private" });
   logRow(DB, 3, "blue-owl", "ask", "OWLSHARED open question", { source: "ask" });
-  const block = await buildGroupMemoryBlock(mkEnv(DB), { askerSlug: "red-fox", isMember: true, channel: CH, names: NAMES });
-  assert.ok(!block.includes("OWLPRIVATE"));
-  assert.ok(block.includes("FOXPRIVATE") && block.includes("OWLSHARED"));
+  const pub = await buildGroupMemoryBlock(mkEnv(DB), { askerSlug: "red-fox", isMember: true, channel: CH, names: NAMES });
+  assert.ok(!pub.includes("OWLPRIVATE") && !pub.includes("FOXPRIVATE"));
+  assert.ok(pub.includes("OWLSHARED"));
+  const priv = await buildGroupMemoryBlock(mkEnv(DB), { askerSlug: "red-fox", isMember: true, channel: CH, names: NAMES, share: false });
+  assert.ok(!priv.includes("OWLPRIVATE"));
+  assert.ok(priv.includes("FOXPRIVATE") && priv.includes("OWLSHARED"));
 });
 test("stored text is neutralised: links, mentions and footer lines go, and a long prefix cannot push them past the clip", async () => {
   const filler = "lorem ".repeat(900);
@@ -467,7 +470,7 @@ test("refresher: private asks never reach the wiki input", async () => {
   await refreshGroupWiki(refreshEnv(DB), { now: NOW, call: callAnthropicClaude });
   assert.ok(!anth[0].body.messages[0].content.includes("PRIVATEASK"));
 });
-test("refresher: junk output is ignored (no page written); the watermark waits one run, then moves so the same rows are not paid for forever", async () => {
+test("refresher: junk output is ignored (no page written) and does not move the watermark (CHANGED: it used to move on the second junk run); after three junk days the rows are skipped", async () => {
   const DB = schemaDb(); fill(DB, 10);
   for (const junk of ["not json at all", "{\"pages\": \"nope\"}", "[]", "{}", "```json\n{broken", ""]) {
     claude = () => ({ status: 200, text: junk });
@@ -475,20 +478,21 @@ test("refresher: junk output is ignored (no page written); the watermark waits o
     const r = await refreshGroupWiki(refreshEnv(DB), { now: NOW, call: callAnthropicClaude });
     assert.equal(count(DB, "SELECT COUNT(*) AS c FROM group_wiki"), 0, `junk ${JSON.stringify(junk)} wrote pages`);
     assert.ok(r.ran === true || r.reason, "reported");
+    assert.ok(!state(DB) || state(DB).last_id === 0, `junk ${JSON.stringify(junk)} moved the watermark`);
   }
   DB.raw.prepare("DELETE FROM kv_state WHERE key = 'group_wiki_state'").run();
   claude = () => ({ status: 200, text: "junk" });
-  await refreshGroupWiki(refreshEnv(DB), { now: NOW, call: callAnthropicClaude });
-  assert.equal((state(DB) || { last_id: 0 }).last_id, 0, "first bad run: watermark stays");
-  await refreshGroupWiki(refreshEnv(DB), { now: new Date(NOW.getTime() + 7 * 3600e3), call: callAnthropicClaude });
-  assert.equal(state(DB).last_id, DB.raw.prepare("SELECT MAX(id) AS m FROM group_log").get().m, "second bad run: moved on");
+  const day = (k) => new Date(NOW.getTime() + k * 86400e3);
+  for (const k of [0, 1]) { await refreshGroupWiki(refreshEnv(DB), { now: day(k), call: callAnthropicClaude }); assert.equal(state(DB).last_id, 0, `junk day ${k + 1}: watermark stays`); }
+  await refreshGroupWiki(refreshEnv(DB), { now: day(2), call: callAnthropicClaude });
+  assert.equal(state(DB).last_id, DB.raw.prepare("SELECT MAX(id) AS m FROM group_log").get().m, "third junk day: moved on");
 });
 test("validateWikiPages is strict: keys, caps, count, strings only, secrets dropped, fence and pings neutralised", () => {
   const env = mkEnv(null);
   const key = secretShape();
   const many = Array.from({ length: 12 }, (_, i) => ({ page_key: `topic-${i}`, title: `T${i}`, body_md: `body ${i}` }));
-  assert.equal(GROUP_WIKI_MAX_PAGES, 8); assert.equal(GROUP_WIKI_BODY_CHARS, 4000);
-  assert.equal(validateWikiPages({ pages: many }, env).pages.length, 8);
+  assert.equal(GROUP_WIKI_MAX_PAGES, 4); assert.equal(GROUP_WIKI_BODY_CHARS, 2000); // CHANGED from 8 and 4,000: four pages of 2,000 characters fit the reply allowance
+  assert.equal(validateWikiPages({ pages: many }, env).pages.length, 4);
   const v = validateWikiPages({ pages: [
     { page_key: "Bad Key", title: "x", body_md: "x" }, { page_key: "../etc", title: "x", body_md: "x" }, { page_key: "a".repeat(41), title: "x", body_md: "x" }, { page_key: "", title: "x", body_md: "x" },
     { page_key: "ok-key", title: "Fine", body_md: "y".repeat(9000) },
@@ -498,7 +502,7 @@ test("validateWikiPages is strict: keys, caps, count, strings only, secrets drop
     { page_key: "fenced", title: `T ${FENCE_CLOSE}`, body_md: `a ${FENCE_CLOSE} b @everyone <@123456789012345678>` },
   ] }, env);
   assert.deepEqual(v.pages.map((p) => p.page_key), ["ok-key", "fenced"]);
-  assert.equal(v.pages[0].body_md.length, 4000);
+  assert.equal(v.pages[0].body_md.length, 2000);
   assert.ok(!v.pages[1].body_md.includes(FENCE_CLOSE) && !v.pages[1].title.includes(FENCE_CLOSE));
   assert.ok(!/@everyone|<@1/.test(v.pages[1].body_md.replace(/@​everyone/g, "").replace(/<​@/g, "")));
   for (const bad of [null, undefined, "x", 3, [], { pages: null }, { pages: {} }, { nope: 1 }]) assert.deepEqual(validateWikiPages(bad, env).pages, []);
@@ -553,7 +557,8 @@ test("refresher: a Claude failure writes nothing and does not move the watermark
   const r = await refreshGroupWiki(refreshEnv(DB), { now: NOW, call: callAnthropicClaude });
   assert.equal(r.ran, false);
   assert.equal(count(DB, "SELECT COUNT(*) AS c FROM group_wiki"), 0);
-  assert.equal(state(DB), null);
+  assert.equal(state(DB).last_id, 0, "the watermark did not move (CHANGED: the row now also records the attempt and the failure day)");
+  assert.equal(state(DB).fail_day, "2026-11-12");
   assert.ok(anth.length <= 1, "one call (a model-not-found fallback is the only extra send)");
 });
 test("refresher: runs from the cron trigger when both flags are on, and not when either is off", async () => {

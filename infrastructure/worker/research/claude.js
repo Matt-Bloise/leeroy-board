@@ -98,14 +98,17 @@ const RESERVE_SQL =
   "ON CONFLICT(key) DO UPDATE SET json = CAST(CAST(json AS INTEGER) + CAST(?2 AS INTEGER) AS TEXT), updated_at = ?3 WHERE CAST(json AS INTEGER) + CAST(?2 AS INTEGER) <= ?4 AND json NOT GLOB '*[^0-9]*' RETURNING json";
 const ADJUST_SQL = "UPDATE kv_state SET json = CAST(CAST(MAX(0, CAST(json AS INTEGER) + CAST(?2 AS INTEGER)) AS INTEGER) AS TEXT), updated_at = ?3 WHERE key = ?1";
 
-export async function reserveTokens(env, estimate, cap, now = new Date()) {
-  const res = await env.DB.prepare(RESERVE_SQL).bind(counterKey(now), Math.max(1, Math.floor(estimate)), now.toISOString(), cap).all();
+export async function reserveTokens(env, estimate, cap, now = new Date(), key = counterKey(now)) {
+  const res = await env.DB.prepare(RESERVE_SQL).bind(key, Math.max(1, Math.floor(estimate)), now.toISOString(), cap).all();
   return Boolean(res && Array.isArray(res.results) && res.results.length === 1);
 }
-async function adjustTokens(env, delta, now = new Date()) {
+async function adjustTokens(env, delta, now = new Date(), key = counterKey(now)) {
   if (!delta) return;
-  await env.DB.prepare(ADJUST_SQL).bind(counterKey(now), Math.trunc(delta), now.toISOString()).run();
+  await env.DB.prepare(ADJUST_SQL).bind(key, Math.trunc(delta), now.toISOString()).run();
 }
+// The group-wiki refresher's own counter (UTC month) and its share of the monthly cap: it can never use more than a tenth of it, so asks always have room.
+export const SUBCAP_FRACTION = 0.1;
+export const subCounterKey = (now) => `claude_tokens_group_${monthTag(now)}`;
 async function alertOnce(env, cap, now = new Date()) {
   try {
     await env.DB.prepare("INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
@@ -368,7 +371,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
 }
 
 // ---- one capped call that is not an ask (the group-wiki refresher, research/group-wiki.js) ---------------------------------------------------------------
-// The same spend guard as an ask: the estimate is RESERVED in the same kv_state counter against the same RESEARCH_CLAUDE_MONTHLY_TOKENS cap (one alert row per month when it is spent), the
+// The same spend guard as an ask, plus a sub-cap of 10% of the monthly cap in its own counter (subCounterKey): the estimate is RESERVED in the same kv_state counter against the same RESEARCH_CLAUDE_MONTHLY_TOKENS cap (one alert row per month when it is spent), the
 // counter is settled on the real usage, a counter that cannot be written pauses Claude for 10 minutes, and the always-on outbound protections run over the final body (the host allow-list is
 // in callAnthropicClaude; secrets and long ids here). One send on the fast (Haiku-class) model; the only second send is the 4.5 id after a model-not-found answer, which is not billed.
 // Returns { answer, model } or { reason } with a short fixed code. call: callAnthropicClaude from ai-models.js (injected, as for tryResearchClaude).
@@ -380,8 +383,12 @@ export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, ma
   const at = now();
   const cap = monthlyTokenCap(env);
   const estimate = Math.max(1, estimateTokens(systemPrompt, userPrompt) - RESEARCH_MAX_TOKENS + Math.max(1, Math.floor(maxTokens)));
+  const subKey = subCounterKey(at);
   try {
+    // The refresher's own sub-cap first (a tenth of the monthly cap), then the monthly cap itself; a reservation the second refuses is given back to the first.
+    if (!(await reserveTokens(env, estimate, Math.floor(cap * SUBCAP_FRACTION), at, subKey))) return { reason: "claude:subcap" };
     if (!(await reserveTokens(env, estimate, cap, at))) {
+      await adjustTokens(env, -estimate, at, subKey);
       await alertOnce(env, cap, at);
       return { reason: "claude:cap" };
     }
@@ -389,7 +396,7 @@ export async function claudeCappedCall({ env, call, systemPrompt, userPrompt, ma
     pauseClaude();
     return { reason: "claude:counter-error" };
   }
-  const settle = async (delta) => { try { await adjustTokens(env, delta, at); } catch { pauseClaude(); } };
+  const settle = async (delta) => { try { await adjustTokens(env, delta, at); await adjustTokens(env, delta, at, subKey); } catch { pauseClaude(); } };
   const { primary, fallback } = researchClaudeModels(env, false);
   const deadlineAt = Date.now() + timeoutMs;
   const beforeSend = (body, secretKey) => guardSecretsInBody(body, env, secretKey ? [secretKey] : []);

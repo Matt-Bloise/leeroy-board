@@ -125,17 +125,40 @@ async function groupWho(env, who) {
   }
   return isGroupSlug(slug) ? { slug, name: name && name !== slug ? name : null } : null;
 }
-const hasGroupTables = async (env) => (await rows(env, "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('group_log', 'group_wiki')")).length === 2; // migration 0011 may not be applied yet
+// One existence read, and nothing else when there is no group data: a database where the tables are missing (the statement fails) or empty (no row) is treated as having none, so a member
+// with no group data gets exactly the export and erase answer they got before the feature existed, and no catalogue lookup or roster read is added for them. Once ANY group row or page exists the
+// full path runs, whether or not GROUP_MEMORY is still on: export and erase protect the friends, so they do not depend on the flag.
+async function groupPresent(env) {
+  try {
+    const r = await env.DB.prepare("SELECT (SELECT 1 FROM group_log LIMIT 1) AS l, (SELECT 1 FROM group_wiki LIMIT 1) AS w").first();
+    return Boolean(r && (r.l || r.w));
+  } catch { return false; } // migration 0011 not applied yet
+}
 const FORMER = "a former member";
-const groupSpellings = (g) => [...new Set([g.slug, g.slug.replace(/-/g, " "), g.name, g.name && g.name.toLowerCase(), g.name && g.name.toUpperCase()].filter((x) => typeof x === "string" && x.length >= 2))];
 const keyedPages = (g) => [`person-${g.slug}`, g.slug];
-const mentionCond = (n) => `(${Array(n).fill("instr(lower(title || char(10) || body_md), ?) > 0").join(" OR ")})`;
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// The person's slug and name as whole words, tolerant of case and of spaces, hyphens, underscores or nothing between the parts ("Red Fox", "red-fox", "RedFox", "red_fox"), never inside a longer word
+// ("hundred foxes" is not a mention). Returns fresh regexes (global flag): .replace uses them as they are; test with a copy without g.
+function nameRegexes(g) {
+  const seen = new Set(), out = [];
+  for (const form of [g.slug, g.name]) {
+    const parts = String(form || "").split(/[\s_-]+/).filter(Boolean);
+    const key = parts.join("-").toLowerCase();
+    if (!parts.length || parts.join("").length < 3 || seen.has(key)) continue;
+    seen.add(key);
+    out.push(new RegExp(`(?<![\\p{L}\\p{N}])${parts.map(escRe).join("[\\s_-]*")}(?![\\p{L}\\p{N}])`, "giu"));
+  }
+  return out;
+}
+const mentions = (res, text) => res.some((re) => new RegExp(re.source, re.flags.replace("g", "")).test(text));
+const allPages = (env) => rows(env, "SELECT page_key, title, body_md, updated_at, rev, note FROM group_wiki ORDER BY page_key LIMIT 1000");
 
 async function groupExport(env, g) {
   const log = await rows(env, "SELECT id, at, channel, author_slug, kind, text, reply_to, source FROM group_log WHERE author_slug = ? ORDER BY id", g.slug);
-  const keyed = await rows(env, "SELECT page_key, title, body_md, updated_at, rev, note FROM group_wiki WHERE page_key IN (?, ?) ORDER BY page_key", ...keyedPages(g));
-  const spell = groupSpellings(g).map((s) => s.toLowerCase());
-  const mention = await rows(env, `SELECT page_key, title, updated_at FROM group_wiki WHERE page_key NOT IN (?, ?) AND ${mentionCond(spell.length)} ORDER BY page_key`, ...keyedPages(g), ...spell); // key and title only: the text holds other people's words
+  const res = nameRegexes(g), keys = keyedPages(g);
+  const pages = await allPages(env);
+  const keyed = pages.filter((p) => keys.includes(p.page_key));
+  const mention = pages.filter((p) => !keys.includes(p.page_key) && mentions(res, `${p.title}\n${p.body_md}`)).map((p) => ({ page_key: p.page_key, title: p.title, updated_at: p.updated_at })); // key and title only: the text holds other people's words
   return { log, pages: [...keyed.map((p) => ({ relation: "about you", ...p })), ...mention.map((p) => ({ relation: "mentions you", ...p }))] };
 }
 
@@ -245,11 +268,13 @@ async function collect(env, who) {
   const pk = await personalKeys(env, who);
   out.legacy.ask_turns = await rows(env, `SELECT id, by_name, question, answer, cites_json, model, status, share, latency_ms, created_at, answered_at FROM ask_turns WHERE ${MINE_ASK}`, ...askArgs(pk, who));
   out.legacy.answer_details = await rows(env, `SELECT intent_id, more, sources, message_id, created_at FROM answer_details WHERE asker_hash = ? OR intent_id IN (SELECT id FROM ask_turns WHERE ${MINE_ASK})`, pk.answerHash, ...askArgs(pk, who));
-  const g = await groupWho(env, who);
-  if (g && (await hasGroupTables(env))) {
-    const gx = await groupExport(env, g);
-    out.legacy.group_log = gx.log;
-    out.legacy.group_wiki = gx.pages;
+  out.group = false; // true only when the member has group data: the new sections and the note appear then, and never otherwise
+  if (await groupPresent(env)) {
+    const g = await groupWho(env, who);
+    if (g) {
+      const gx = await groupExport(env, g);
+      if (gx.log.length || gx.pages.length) { out.legacy.group_log = gx.log; out.legacy.group_wiki = gx.pages; out.group = true; }
+    }
   }
   out.legacy.ai_budget = [];
   for (const b of pk.budgetIds) out.legacy.ai_budget.push(...await rows(env, "SELECT key, json, updated_at FROM kv_state WHERE key LIKE ?", kvLike(b)));
@@ -291,7 +316,7 @@ async function exportData(env, who, now) {
       "Board documents in kv_state (signups, party, party_sheets, votes, feed_posts and similar) that may mention you by name.",
       "Cloudflare request logs, Cloudflare AI Gateway logs and cache, and Discord-side data.",
       "Account rows (accounts, account_keys: name, slug, label) are not part of this export; ask the owner for them.",
-      "Group memory written by other friends that mentions you; wiki pages that mention you are listed by key and title only because their text holds other people's words.",
+      ...(data.group ? ["Group memory written by other friends that mentions you; wiki pages that mention you are listed by key and title only because their text holds other people's words."] : []),
       ...(who.via === "web-session" ? ["Rows keyed only by a member slug or display name (sheet_events, dispatches, intents, ask_turns, fact_fixes): a web session cannot be tied to a slug."] : []),
       ...(!who.discordId ? ["Tenancy tables (users, characters, builds, signups_v2 and others): this member key has no linked Discord id."] : []),
     ],
@@ -340,15 +365,26 @@ async function eraseData(request, env, who, now) {
     st.push(db.prepare("DELETE FROM members WHERE slug = ?").bind(who.slug));
   }
   // Group memory: the person's log rows and their own pages go; a page that merely mentions them keeps its other content with their slug and name replaced, and waits for a rewrite (note rebuild:erase).
-  const g = await groupWho(env, who);
-  if (g && (await hasGroupTables(env))) {
-    const spell = groupSpellings(g);
-    const nest = (col) => spell.reduce((e) => `replace(${e}, ?, ?)`, col);
-    const swaps = spell.flatMap((s) => [s, FORMER]);
-    st.push(db.prepare("DELETE FROM group_log WHERE author_slug = ?").bind(g.slug));
-    st.push(db.prepare("DELETE FROM group_wiki WHERE page_key IN (?, ?)").bind(...keyedPages(g)));
-    st.push(db.prepare(`UPDATE group_wiki SET body_md = ${nest("body_md")}, title = ${nest("title")}, note = 'rebuild:erase', rev = rev + 1, updated_at = ? WHERE ${mentionCond(spell.length)}`)
-      .bind(...swaps, ...swaps, new Date(now).toISOString(), ...spell.map((s) => s.toLowerCase())));
+  // The rewrite is done here with a case-insensitive, whole-word regex (nameRegexes), only for the pages that actually match, each guarded by the revision it was read at.
+  let groupTouched = false;
+  if (await groupPresent(env)) {
+    const g = await groupWho(env, who);
+    if (g) {
+      const res = nameRegexes(g), keys = keyedPages(g);
+      const pages = await allPages(env);
+      const own = Number((await db.prepare("SELECT COUNT(*) AS n FROM group_log WHERE author_slug = ?").bind(g.slug).first()).n) > 0;
+      const keyed = pages.some((p) => keys.includes(p.page_key));
+      st.push(db.prepare("DELETE FROM group_log WHERE author_slug = ?").bind(g.slug));
+      st.push(db.prepare("DELETE FROM group_wiki WHERE page_key IN (?, ?)").bind(...keys));
+      let rewritten = 0;
+      for (const p of pages) {
+        if (keys.includes(p.page_key) || !mentions(res, `${p.title}\n${p.body_md}`)) continue;
+        const swap = (t) => res.reduce((s, re) => s.replace(re, FORMER), String(t));
+        st.push(db.prepare("UPDATE group_wiki SET title = ?, body_md = ?, note = 'rebuild:erase', rev = rev + 1, updated_at = ? WHERE page_key = ? AND rev = ?").bind(swap(p.title), swap(p.body_md), new Date(now).toISOString(), p.page_key, p.rev));
+        rewritten++;
+      }
+      groupTouched = own || keyed || rewritten > 0;
+    }
   }
   if (id) {
     st.push(db.prepare("DELETE FROM sessions_v2 WHERE discord_user_id = ?").bind(id));
@@ -368,7 +404,7 @@ async function eraseData(request, env, who, now) {
     not_erased: [
       "Board documents in kv_state that mention you by name (party, signups, the Discord roster and similar); ask the owner to review them.",
       "Account rows (accounts, account_keys: name, slug, label) are not erased by this route; ask the owner to remove them.",
-      "Group memory: your own asks, Leeroy's answers to you and your wiki page are erased. What other friends wrote in the group log that mentions you stays, and a wiki page that mentions you keeps its other content with your slug and name replaced and is rewritten at the next refresh; spellings other than your slug and name (a nickname) are caught only when that page is rewritten.",
+      ...(groupTouched ? ["Group memory: your own asks, Leeroy's answers to you and your wiki page are erased. What other friends wrote in the group log that mentions you stays, and a wiki page that mentions you keeps its other content with your slug and name replaced and is rewritten at the next refresh; spellings other than your slug and name (a nickname) are caught only when that page is rewritten."] : []),
       "Copies held by Cloudflare (request logs, AI Gateway logs and its cached answers, up to 6 hours for the cache) and by Discord and the AI vendor; D1 backups (Time Travel) until they expire.",
       "The Discord roster entry (kv_state discord_members) stays, so the bot still treats you as a member until an admin edits the roster.",
       "Your display name, your question and the party's names and builds were sent to the AI vendor; AI Gateway request logs may keep the full request. This service cannot erase those.",
