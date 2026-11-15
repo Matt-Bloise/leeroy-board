@@ -2,10 +2,11 @@
 // Each test failed on master before its fix. Fictional data only. No network, no D1, no AI.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applySignupChange, tallyEntries, renderSignupCard, renderBoardCard } from "../../infrastructure/worker/cards.js";
+import { applySignupChange, tallyEntries, renderSignupCard, renderBoardCard, cleanName, sanitiseWriteIn } from "../../infrastructure/worker/cards.js";
 import { rank, expandWords } from "../../vendor/rank-core.js";
 import * as workerRank from "../../infrastructure/worker/rank-core.js";
 import { upsertSignupEntry } from "../../infrastructure/worker/limits.js";
+import { composeLine } from "../../infrastructure/worker/board-lines.js";
 
 const NOW = Date.UTC(2026, 10, 3, 12);
 const JUNK = [null, undefined, 5, "text", true, [], [1, 2]];
@@ -104,4 +105,20 @@ test("F-9 cards: a free-text when is cleaned like meet before it is printed; the
   // A when that cleans to nothing is not shown as an empty arrival.
   const empty = renderSignupCard({ entries: [{ name: "Only Links", rsvp: "in", when: "https://e.test/x" }] }).embeds[0];
   assert.equal(empty.fields.find((f) => f.name === "Arriving"), undefined);
+});
+
+// F-10: cleanName removed https:// links but kept a bare `discord.gg/` invite, which Discord turns into a live invite in the In list.
+test("F-10 cleanName: a bare Discord invite is removed from a printed name; other names print as before", () => {
+  const INVITES = ["discord.gg/abcdef", "Ada discord.gg/abcdef", "DISCORD.GG/AbC", "www.discord.gg/x1", "discord.com/invite/abcdef", "discordapp.com/invite/x", "ｄｉｓｃｏｒｄ．ｇｇ/abc", "join discord.gg/abc now"];
+  for (const raw of INVITES) {
+    const n = cleanName(raw);
+    assert.ok(!/discord(app)?\.(gg|com)|\/invite|gg\//i.test(n), `${JSON.stringify(raw)} -> ${JSON.stringify(n)}`);
+  }
+  assert.equal(cleanName("discord.gg/abcdef"), "Someone");
+  assert.equal(cleanName("Ada discord.gg/abcdef"), "Ada");
+  assert.equal(cleanName("join discord.gg/abc now"), "join now");
+  for (const name of ["Discord Fan", "Red Fox", "gg wp", "A".repeat(40), "@Ada [x](https://e.test)"]) assert.equal(cleanName(name), sanitiseWriteIn(name, 24), name);
+  const card = renderSignupCard({ entries: [{ name: "Blue Owl discord.gg/abcdef", rsvp: "in" }] }).embeds[0];
+  assert.equal(card.fields[0].value, "Blue Owl");
+  assert.equal(composeLine({ k: { name: "discord.gg/abc Blue Owl", to: "in" } }), "From the board: Blue Owl is in.");
 });

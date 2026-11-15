@@ -59,9 +59,12 @@ export function sanitiseWriteIn(raw, max = WRITE_IN_MAX) {
   return [...s].slice(0, max).join("").trim();
 }
 
-// A display name safe to print in a card or a board line.
+// A display name safe to print in a card or a board line. A bare Discord invite (no scheme, so sanitiseWriteIn keeps it) is removed too:
+// Discord renders discord.gg/<code> as a live invite. Removed before the cut, so a half invite never survives.
+const BARE_INVITE = /(?:www\.)?(?:discord\.gg|discord(?:app)?\.com\/invite)\/\S*/gi;
 export function cleanName(raw) {
-  return sanitiseWriteIn(raw, NAME_MAX) || "Someone";
+  const s = sanitiseWriteIn(raw, Infinity).replace(BARE_INVITE, " ").replace(/\s+/g, " ").trim();
+  return [...s].slice(0, NAME_MAX).join("").trim() || "Someone";
 }
 
 // Turn a button token or select value into the stored value, or null when it is not an allowed choice.
