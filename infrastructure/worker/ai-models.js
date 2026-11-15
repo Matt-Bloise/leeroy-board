@@ -17,6 +17,7 @@ import { projectWithStoredSheets } from "./public-party.js";
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
+import { anthropicAuth, anthropicAvailable, scrubSecrets, scrubError, clearStoreKey, gatewayReady } from "./ai-keys.js";
 import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
 import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
@@ -26,6 +27,11 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
+import { researchEnabled, researchAnswer } from "./research/index.js";
+import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
+import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
+import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
+import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -189,7 +195,7 @@ export function isProviderConfigured(env, provider) {
 
   switch (provider) {
     case "claude":
-      return Boolean(env.ANTHROPIC_API_KEY);
+      return anthropicAvailable(env); // cheap presence check (BYOK var, Secrets Store binding or legacy secret); never reads the key
     case "gemini":
       return Boolean(env.GEMINI_API_KEY);
     case "workers-ai":
@@ -350,10 +356,13 @@ export function answerModelLabel(env, provider, deep = false) {
   }
 }
 
-export async function buildAnswerCacheKey({ provider, model, deep = false, variant = "production", tier = "guest", systemPrompt, userPrompt }) {
+export async function buildAnswerCacheKey({ provider, model, deep = false, variant = "production", tier = "guest", systemPrompt, userPrompt, research = false }) {
   // JSON.stringify of an array is an unambiguous encoding (no separator character can be forged by prompt text). The exact model id
   // and the output-affecting params are hashed too, so a model or params change misses; the 40 char label below is for reading only.
-  const payload = JSON.stringify([String(model), ANSWER_GEN_PARAMS.max_tokens, ANSWER_GEN_PARAMS.temperature, String(systemPrompt), String(userPrompt)]);
+  // Research mode (ASK_RESEARCH on) hashes its own token budget and a mode marker, so its answers never share an entry with the standard ones; off is unchanged.
+  const payload = JSON.stringify(research
+    ? [String(model), RESEARCH_MAX_TOKENS, ANSWER_GEN_PARAMS.temperature, String(systemPrompt), String(userPrompt), "research"]
+    : [String(model), ANSWER_GEN_PARAMS.max_tokens, ANSWER_GEN_PARAMS.temperature, String(systemPrompt), String(userPrompt)]);
   const promptHash = (await sha256Hex(payload)).slice(0, 32);
   return ["ask", keyPart(provider, "p"), keyPart(model, "m"), deep ? "deep" : "fast", keyPart(variant, "production"), keyPart(tier, "guest"), promptHash].join(":");
 }
@@ -380,9 +389,16 @@ export async function fetchWithGatewayFallback({
   cacheKey = null,
   metadata = null,
   deadlineAt = null,
+  allowDirectFallback = true, // false only for Anthropic BYOK: the key lives in the gateway, so a direct request would be unauthenticated
+  singleHop = false, // research mode: one send per attempt (the gateway if configured, else direct), never a gateway send followed by a direct one
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
   const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
+  if (!allowDirectFallback) {
+    if (gwUrl === defaultEndpoint || !gatewayReady(env)) {
+      throw new Error("Anthropic BYOK needs the AI Gateway configured (account id, gateway id and gateway token)");
+    }
+  }
   const cacheHeaders = env && env.AI_GATEWAY_ID ? {
     "cf-aig-cache-ttl": String(env.AI_GATEWAY_CACHE_TTL || 21600), // 6 hours matching the cron update cycle
     "cf-aig-metadata": gatewayMetadata(metadata),
@@ -399,16 +415,20 @@ export async function fetchWithGatewayFallback({
           method: "POST",
           headers: { ...headers, ...cacheHeaders },
           body,
+          ...(allowDirectFallback ? {} : { redirect: "manual" }), // BYOK: never follow a redirect with the gateway token attached
         },
         "AI provider request",
         deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS
       );
       // If gateway returns success (2xx), return immediately
       if (resp.ok) return resp;
+      // BYOK: no direct hop; the caller sees the gateway's error and falls back to Workers AI
+      if (!allowDirectFallback || singleHop) return resp;
       // If gateway returns 401/403/404 or server error, fall back to direct endpoint
       console.warn(`[AI-Gateway] HTTP ${resp.status} from ${gwUrl}, falling back to direct endpoint`);
     } catch (err) {
-      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${err.message}, falling back to direct endpoint`);
+      if (!allowDirectFallback || singleHop) throw scrubError(err);
+      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${scrubSecrets(err && err.message, headers["x-api-key"])}, falling back to direct endpoint`);
     }
   }
 
@@ -424,35 +444,41 @@ export async function fetchWithGatewayFallback({
   );
 }
 
-async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null }) {
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY secret is not configured on the Cloudflare Worker");
+// modelOverride / wantUsage / beforeSend are research-mode only (research/claude.js); the defaults leave the legacy call exactly as it was.
+export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, modelOverride = null, wantUsage = false, beforeSend = null }) {
+  const auth = await anthropicAuth(env);
+  if (auth.mode === "none") {
+    throw new Error("Anthropic credential is not configured on the Cloudflare Worker (BYOK, Secrets Store binding or ANTHROPIC_API_KEY)");
   }
-  const model = deep
+  const secretKey = auth.headers["x-api-key"] || "";
+  const model = modelOverride || (deep
     ? env.CLAUDE_MODEL_DEEP || "claude-sonnet-4-5-20250929"
-    : env.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001";
+    : env.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001");
 
   const defaultEndpoint = "https://api.anthropic.com/v1/messages";
-  const body = JSON.stringify({
+  const bodyObject = {
     model,
-    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
+    max_tokens: maxTokens,
     system: [
       {
         type: "text",
         text: systemPrompt,
-        cache_control: { type: "ephemeral" },
+        ...(wantUsage ? {} : { cache_control: { type: "ephemeral" } }), // research mode: no cached friend text
       },
     ],
     messages: [{ role: "user", content: userPrompt }],
-  });
+  };
+  const body = JSON.stringify(bodyObject);
+  if (beforeSend) beforeSend(bodyObject); // research mode: the outbound guard over the final body; a throw means nothing is sent
 
+  try {
   const resp = await fetchWithGatewayFallback({
     env,
     providerSlug: "anthropic/v1/messages",
     defaultEndpoint,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
+      ...auth.headers, // x-api-key in store/legacy mode; empty for BYOK (the gateway holds the key)
       "anthropic-version": "2023-06-01",
     },
     body,
@@ -460,11 +486,25 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     cacheKey,
     metadata,
     deadlineAt,
+    allowDirectFallback: auth.mode !== "gateway-byok",
+    singleHop: Boolean(wantUsage),
   });
 
   if (!resp.ok) {
-    const errTxt = await resp.text();
-    throw new Error(`Anthropic API HTTP ${resp.status}: ${errTxt.slice(0, 200)}`);
+    if ((resp.status === 401 || resp.status === 403) && auth.mode === "store") clearStoreKey(env); // a rotated key is re-read on the next ask
+    const httpErr = new Error(`Anthropic API HTTP ${resp.status}`); // status only: the provider body never reaches an error, a trace row or a user
+    if (wantUsage) {
+      // Research mode keeps two internal facts (never shown, never logged): the status, and whether the answer says the MODEL is missing (not_found_error naming the model,
+      // or invalid_request_error saying the model does not exist). Credit, auth, rate and every other error never trigger the fallback model.
+      httpErr.status = resp.status;
+      try {
+        const j = await resp.json();
+        const type = j && j.error && typeof j.error.type === "string" ? j.error.type : "";
+        const msg = j && j.error && typeof j.error.message === "string" ? j.error.message : "";
+        httpErr.modelMissing = (type === "not_found_error" && /model/i.test(msg)) || (type === "invalid_request_error" && /model/i.test(msg) && /not found|does not exist|unknown model|invalid model/i.test(msg));
+      } catch { httpErr.modelMissing = false; }
+    }
+    throw httpErr;
   }
 
   const data = await resp.json();
@@ -473,11 +513,13 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     .map((b) => b.text)
     .join("\n")
     .trim();
-
-  return { answer, model, provider: "claude" };
+  return { answer: scrubSecrets(answer, secretKey), model, provider: "claude", ...(wantUsage ? { usage: data.usage || null } : {}) }; // a model answer must not echo the key onward
+  } catch (err) {
+    throw scrubError(err, secretKey); // a provider error, a JSON parse error or a network error must never carry the key
+  }
 }
 
-async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, modelOverride = null }) {
+async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
   if (!env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY secret is not configured on the Cloudflare Worker");
   }
@@ -500,7 +542,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
       },
     ],
     generationConfig: {
-      maxOutputTokens: ANSWER_GEN_PARAMS.max_tokens,
+      maxOutputTokens: maxTokens,
       temperature: ANSWER_GEN_PARAMS.temperature,
     },
   });
@@ -571,7 +613,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model: activeModel, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
@@ -581,13 +623,13 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
+    max_tokens: maxTokens,
     temperature: ANSWER_GEN_PARAMS.temperature,
   };
 
   // Reserve the estimated cost (prompt tokens plus the full answer allowance) before the call; a read/write error refuses a guest ask.
   const reserveAt = new Date();
-  const estimate = estimateNeurons(model, tokensFromChars(systemPrompt.length + userPrompt.length), ANSWER_GEN_PARAMS.max_tokens);
+  const estimate = estimateNeurons(model, tokensFromChars(systemPrompt.length + userPrompt.length), maxTokens);
   const reservation = await reserveNeurons(env, budgetKind, estimate, capFor(env, budgetKind), reserveAt);
   if (!reservation.ok) {
     if (reservation.over) throw Object.assign(new Error("Workers AI daily budget reached"), { code: "budget_global" });
@@ -644,13 +686,13 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   return { answer, model, provider: "workers-ai" };
 }
 
-async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, env, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null }) {
+async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, env, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
   if (!apiKey) {
     throw new Error(`API key secret for provider '${provider}' is not configured on the Cloudflare Worker`);
   }
   const body = JSON.stringify({
     model,
-    max_tokens: ANSWER_GEN_PARAMS.max_tokens,
+    max_tokens: maxTokens,
     temperature: ANSWER_GEN_PARAMS.temperature,
     messages: [
       { role: "system", content: systemPrompt },
@@ -689,7 +731,7 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
   if (modelOverride && !modelAllowed(provider, modelOverride)) {
     throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
   }
@@ -699,9 +741,9 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
   const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
   switch (provider) {
     case "gemini":
-      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, modelOverride });
+      return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, modelOverride, maxTokens });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride, maxTokens });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -717,6 +759,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         cacheKey,
         metadata,
         deadlineAt,
+        maxTokens,
       });
     case "cerebras":
       return await callOpenAiCompatible({
@@ -731,6 +774,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         cacheKey,
         metadata,
         deadlineAt,
+        maxTokens,
       });
     case "github":
       return await callOpenAiCompatible({
@@ -745,6 +789,7 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         cacheKey,
         metadata,
         deadlineAt,
+        maxTokens,
       });
     case "openrouter":
       return await callOpenAiCompatible({
@@ -763,10 +808,11 @@ export async function dispatchToProvider({ provider, env, systemPrompt, userProm
         cacheKey,
         metadata,
         deadlineAt,
+        maxTokens,
       });
     case "claude":
     default:
-      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt });
+      return await callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, maxTokens });
   }
 }
 
@@ -817,7 +863,9 @@ export async function getParsedLibraryPages(env) {
 // Short, secret-free reason a provider was skipped, for the stored model field.
 export function shortProviderError(err) {
   const raw = String((err && (err.code === "ai_timeout" ? `timeout ${err.message}` : err.message)) || err || "error");
-  return raw
+  const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
+  if (http) return `${http[1]} API HTTP ${http[2]}`; // status only: never a provider body
+  return scrubSecrets(raw)
     .replace(/[?&]key=[^\s&"]+/gi, "")
     .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
     .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "")
@@ -837,7 +885,7 @@ const FORMAT_REMINDER =
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
 
 const MAX_RANK_PASSES = 4; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups (class + two professions) share this; a plain abstain keeps full coverage, an opener that abstains gets class + one profession
-export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null }) {
+export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false }) {
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
@@ -897,7 +945,10 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
 
     if (stateMap.party && typeof stateMap.party === "object") await projectWithStoredSheets(env, stateMap.party);
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
-    const sheets = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
+    const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
+    // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
+    const rparty = research ? researchParty(sheets0, stateMap) : null;
+    const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
     const partyBuilds = renderPartyBuilds(sheets, askerSheet);
@@ -916,9 +967,11 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       const add = pickBuildFacts(more.ranking.hits, hits, buildFactsNow, 2);
       if (add.length) hits = [...hits.slice(0, 1), ...add, ...hits.slice(1)];
     }
+    // Research mode: nothing derived from a library title or fact may carry a live mention into the prompt (and from there into the answer).
+    const safe = research ? neutraliseMentions : (t) => t;
     const topFactHits = hits
       .slice(0, 20)
-      .map((h) => `  - [${h.page}~${h.key}] (score ${h.score}): ${h.value}`);
+      .map((h) => safe(`  - [${h.page}~${h.key}] (score ${h.score}): ${h.value}`));
 
     const pageHitBonus = new Map();
     for (const h of hits.slice(0, 30)) {
@@ -945,7 +998,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
           .map((x) => x.p);
 
     const topPagesSummary = ranked
-      .map((p) => `  - ${p.title} (${p.id})${p.blurb ? `: ${p.blurb}` : ""}`)
+      .map((p) => safe(`  - ${p.title} (${p.id})${p.blurb ? `: ${p.blurb}` : ""}`))
       .join("\n");
 
     let partySummary = "";
@@ -978,13 +1031,14 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
         })
       : isCoach ? `${baseSystemPrompt}\n\n${COACH_PROMPT}` : baseSystemPrompt;
     if (promptVariant === "format-reminder") systemPrompt = `${systemPrompt}\n\n${FORMAT_REMINDER}`;
-    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}\n\n${FENCE_RULE}`;
+    // Research mode with nothing in the library: the research rules go after VOICE_RULE and override the "only from LIBRARY" lines for this question.
+    systemPrompt = `${systemPrompt}\n\n${PERSONALISE_RULE}\n\n${VOICE_RULE}${research && abstain ? `\n\n${RESEARCH_RULES}` : ""}\n\n${FENCE_RULE}`;
 
     // Text the answer may draw names from: the retrieved facts and pages, the build, the party and the question itself.
     // The abstain answer is written by code (self-rag.js composeAbstain): the Library pages that cover the asker's own class, spec and professions.
     let abstainPages = [];
     let abstainAnswer = null;
-    if (abstain) {
+    if (abstain && !research) {
       // The asker's own coverage is offered only when the question is about the game (fewer than half its content words are ones the Library never uses): "what is the
       // best pizza topping" gets the honest line and the subject areas, not a list of Paladin pages.
       // A tie (exactly half unknown) still counts as about the game, and so does any question that names the asker's own class, spec or profession.
@@ -1024,11 +1078,11 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const libraryBlock = !retrieve
       ? ["(not needed for this message)", skip === "build" ? BUILD_RULE : SKIP_RULE].join(NL)
       : abstain
-        ? ["(no library fact matches this question)", ABSTAIN_RULE].join(NL)
+        ? ["(no library fact matches this question)", research ? RESEARCH_NOTHING_RULE : ABSTAIN_RULE].join(NL)
         : [topFactHits.join(NL), "", "Top Matching Pages:", topPagesSummary].join(NL);
     const userPrompt = `Party Context:\n${fence("PARTY_STATE", partySummary)}\n\n${yourBuild === BUILD_NOT_RELEVANT_LINE ? BUILD_NOT_RELEVANT_LINE : fence("YOUR_BUILD", yourBuild)}\n\n${partyBuilds ? `${fence("PARTY_BUILDS", partyBuilds)}\n\n` : ""}Top Library Facts and Pages:\n${prevQ ? `${fence("PREVIOUS_QUESTION", prevQ)}\n${FOLLOWUP_RULE}\n\n` : ""}${fence("LIBRARY", libraryBlock)}\n\nAsker: ${stripFence(by, { oneLine: true })} (${askerIsMember ? "party member" : "visitor"})\nAddress the asker by display name only when they are a party member, and never address other party members as if they were the asker.\n\nQuestion from ${stripFence(by, { oneLine: true })} (journey: ${journey}):\n${fence("USER_QUESTION", question)}`;
 
-    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses };
+    return { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, isCoach, groundingText, personalised: hasBuild, retrieved: retrieve, abstain, opener: retrieve && !abstain && !isCoach ? buildOpener({ question, topPageId: hits[0] && hits[0].page, facts: hasBuild ? buildFactsNow : null, shownFacts }) : "", retrievedIds: [...retrievedIds], retrieval: { ids: [...retrievedIds], abstain }, abstainAnswer, abstainPages, followUp: Boolean(prevQ), rankPasses, ...(rparty ? { researchParty: rparty } : {}) };
 }
 
 // Voice repair, formatting and cite extraction on raw model text: the exact tail of answerWithAi, shared with the admin evaluation.
@@ -1040,24 +1094,36 @@ const eggFor = (persona) => {
   return { ...e, line: eggSettings(e).line, oneIn: Math.max(25, Math.floor(Number(e.oneIn)) || 25) };
 };
 
-export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "" }) {
+export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised = false, retrieval, trusted = false, question, opener = "", research = false }) {
     const nameMap = (await loadConfigKey(env, "name_map")) || {};
     let repaired = repairHouseVoice(rawAnswer, { isCoach, nameMap });
     // The model sometimes writes the chicken line itself (the persona text mentions it): only the deterministic egg may add it.
     repaired = stripEggLine(repaired, eggFor(persona).line);
     repaired = stripPersonaIntro(repaired);
     // A spell, place or item the library never gave is replaced by the honest line.
-    if (typeof groundingText === "string" && !trusted) {
+    // Research mode (ASK_RESEARCH on) replaces these deleters with labellers (research/label.js): the same checks tag a sentence "Classic value, not confirmed for Forever" instead of cutting it.
+    if (typeof groundingText === "string" && !trusted && !research) {
       const g = groundedOrNotPublished(repaired, groundingText);
       if (!g.ok) repaired = g.answer;
       repaired = guardRefusal(repaired, groundingText);
     }
     // IsSup (self-rag.js): a number the library, the build and the question never gave goes; a source that was not retrieved is not cited.
     const retrieved = retrievalOf({ retrieval, groundingText });
-    if (retrieved && !trusted) {
+    if (retrieved && !trusted && !research) {
       const n = supportCheck(repaired, groundingText);
       if (!n.ok) repaired = n.answer;
       repaired = stripUnretrievedCites(repaired, retrieved.ids).answer || ABSTAIN_LINE;
+    }
+    // Research text step: refusal sentences out, labels, mention and link safety, whole-sentence trim, one sources line with one confidence word (appended after formatting).
+    let researchBasis = null;
+    // The original voice runs 600-900 characters, hard 1500 for the body (the persona's 1200 chat cap would cut it); the finished answer, sources and confidence line included, stays at or under 1900 (Discord's limit is 2000).
+    const researchCap = research ? RESEARCH_FINAL_CHARS : 0;
+    let boardHost = "";
+    if (research) { try { boardHost = new URL(env.BOARD_PUBLIC_URL || "https://leeroy.party").hostname; } catch {} }
+    if (research && !trusted) {
+      const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: RESEARCH_HARD_CHARS, allow: boardHost ? [boardHost] : [] });
+      repaired = rp.text;
+      researchBasis = rp.basis;
     }
     const libPages = parsedPages.map((p) => ({ id: p.id, category: p.category, title: p.title }));
     const known = new Set(libPages.map((p) => p.id));
@@ -1074,11 +1140,17 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
           pages: libPages,
           asker: { name: by, isMember: askerIsMember },
           boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party",
-          maxChars: chatMax > 0 ? chatMax : 1200,
+          maxChars: research ? researchCap - 150 : chatMax > 0 ? chatMax : 1200, // research: room left for the Sources/confidence line appended after formatting
           ...(uxOn ? { ux: true, roster: rosterAliases(), intentId, isCoach, egg: eggFor(persona), noEgg: personalised } : {}),
         })
       : { main: repaired, more: "", sources: "" };
     parts.main = classPageFallback(parts.main, { question, pages: parsedPages, boardUrl: env.BOARD_PUBLIC_URL }); // ask-fallback.js hook
+    // The confidence line is for answers the library did not ground (the research prompt state); a library-backed answer keeps its own Sources line.
+    if (research && researchBasis && retrieved && retrieved.abstain) parts.main = appendBasis(parts.main, researchBasis);
+    if (research) {
+      // Last step, on the FINAL assembled text (formatter links, class-page fallback, the basis line): link and mention safety, then the length guarantee (also with ANSWER_FORMAT off).
+      parts.main = fitToCap(neutraliseMentions(defuseLinks(parts.main, { allow: boardHost ? [boardHost] : [] })), Math.min(researchCap, 1999));
+    }
     return { answer: parts.main, cites, parts };
 }
 
@@ -1092,7 +1164,7 @@ export async function findRecentSameAnswer(env, { intentId, question, share }) {
     const { results } = await env.DB.prepare(
       "SELECT DISTINCT t.id, t.answer, t.cites_json, t.question, t.answered_at FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
         "WHERE a1.intent_id = ? AND t.id <> ? AND t.status = 'answered' AND t.answer IS NOT NULL AND t.share = ? AND t.answered_at > ? " +
-        "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' AND COALESCE(t.model, '') <> 'reused-answer' ORDER BY t.answered_at DESC LIMIT 50"
+        "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' AND COALESCE(t.model, '') <> 'reused-answer' AND COALESCE(t.model, '') NOT LIKE '%+research%' ORDER BY t.answered_at DESC LIMIT 50"
     ).bind(String(intentId), String(intentId), share ? 1 : 0, since).all();
     const want = normQuestion(question);
     return (results || []).find((r) => normQuestion(r.question) === want) || null;
@@ -1156,8 +1228,12 @@ export async function answerWithAi({
   let budgetCode = null;
 
   try {
+    // ASK_RESEARCH (off by default; never in a PR preview, which is already Workers AI only): the research prompt state, labellers, Workers-AI-only provider and token budget.
+    // Fails closed: a flag read that throws counts as ON for provider forcing (research/provider.js).
+    const research = await researchModeOn(env, { preview: isPrPreviewEnv(env) });
     // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
-    const prior = await findRecentSameAnswer(env, { intentId, question, share });
+    // Not in research mode: a stored refusal or abstain row from before the flag was turned on must never come back as the answer (W5 decides what reuse means for research).
+    const prior = research ? null : await findRecentSameAnswer(env, { intentId, question, share });
     if (prior) {
       const reusedAt = nowIso();
       // Bad stored JSON must not turn a good stored answer into an error row.
@@ -1186,29 +1262,54 @@ export async function answerWithAi({
 
     // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
     const previousQuestion = isFollowUp(question) ? await findPreviousQuestion(env, { intentId, share: Boolean(share) }) : null;
-    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion });
+    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research });
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
+    // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
+    // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
+    const priv = research ? prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by, party: inputs.researchParty }) : null;
+    const sendSystem = priv && priv.ok ? priv.system : systemPrompt;
+    const sendUser = priv && priv.ok ? priv.user : userPrompt;
+    let researchNote = "";
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
-    const chosenProvider = isPrPreviewEnv(env)
+    // Research mode: every prompt carries group context, so the call goes to the Workers AI binding only (research/provider.js), with no outside fallback hop.
+    const chosenProvider = research
+      ? forceResearchProvider(true, requestedProvider)
+      : isPrPreviewEnv(env)
       ? "workers-ai"
       : (Object.prototype.hasOwnProperty.call(AI_PROVIDER_LABELS, reqClean) && isProviderConfigured(env, reqClean))
         ? reqClean
         : resolveAiProvider(env, requestedProvider);
-    const activeProvider = resolveAiProvider(env, chosenProvider);
+    const activeProvider = research ? chosenProvider : resolveAiProvider(env, chosenProvider);
     const variant = "production"; // answerWithAi always runs the live prompt; the evaluation variants never reach the cache
     const tier = askerIsMember ? "member" : "guest";
     const metadata = { variant, tier, journey };
-    const cacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant, tier, systemPrompt, userPrompt });
+    const cacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant, tier, systemPrompt: sendSystem, userPrompt: sendUser, research });
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
     let fallbackNote = "";
     const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
+    // ASK_RESEARCH seam (off by default; never in a PR preview). The stub handles nothing; any error, empty answer or "not handled" runs the path below unchanged.
+    let researched = null;
+    if (!composed && !isPrPreviewEnv(env)) {
+      try {
+        if (await researchEnabled(env)) {
+          const r = await researchAnswer({ env, question, by, memberSlug, journey, share, isMember, deep, inputs });
+          if (r && r.handled === true && typeof r.answer === "string" && r.answer.trim()) researched = r.answer;
+        }
+      } catch (e) {
+        console.error("research seam failed, using the standard answer path:", e && e.message);
+      }
+    }
     if (composed) {
       rawAnswer = composed;
       model = "abstain";
+      provider = "library";
+    } else if (researched) {
+      rawAnswer = researched;
+      model = "research";
       provider = "library";
     } else {
     {
@@ -1231,17 +1332,37 @@ export async function answerWithAi({
     }
 
     try {
+      // Research mode: Claude first (tokenised, guarded, token-capped; research/claude.js). Any skip or failure leaves rawAnswer unset and Workers AI answers below.
+      if (research) {
+        const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude });
+        if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
+        else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
+      }
+      if (!rawAnswer) {
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
         env,
-        systemPrompt,
-        userPrompt,
+        systemPrompt: sendSystem,
+        userPrompt: sendUser,
         deep,
         cacheKey,
         metadata,
         budgetKeys: budget,
         timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
+        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
       }));
+      if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? ""; // a name we never send, or a token that is not ours: the reply is dropped (the retry below, then library facts)
+      }
+      // Research mode: an empty, refusal-only, banter-only or sources-only model answer is not shown. One retry of the same Workers AI call, then (via the catch below)
+      // library facts with an honest line, or the honest line alone.
+      if (research && !usableAnswer(rawAnswer)) {
+        rawAnswer = undefined;
+        if (Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
+          if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? "";
+        }
+        if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
+      }
       // Workers AI records its own use; any other provider counts as one ask (no neurons) so the per-user cap still fills up.
       if (chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
@@ -1285,6 +1406,7 @@ export async function answerWithAi({
             .slice(0, 3)
             .map((h) => `${h.value} [${h.page}~${h.key}]`)
             .join(" ");
+          if (research) rawAnswer += `\n${RESEARCH_DOWN_NOTE}`;
           rawAnswer += `\n-# Sources: ${[...new Set(hits.slice(0, 3).map((h) => h.page))].join(", ")}`;
           provider = chosenProvider;
           model = `${chosenProvider}-local-d1-rag`;
@@ -1298,9 +1420,15 @@ export async function answerWithAi({
             snippets.push(topFact);
           }
           rawAnswer = snippets.join(" ");
+          if (research) rawAnswer += `\n${RESEARCH_DOWN_NOTE}`;
           rawAnswer += `\n-# Sources: ${ranked.slice(0, 3).map((p) => p.id).join(", ")}`;
           provider = chosenProvider;
           model = `${chosenProvider}-local-d1-rag`;
+        } else if (research) {
+          // Workers AI failed and the library has nothing: an honest in-voice line, never the old refusal text, never another outside provider.
+          rawAnswer = RESEARCH_DOWN_ANSWER;
+          provider = chosenProvider;
+          model = `${chosenProvider}-research-down`;
         } else {
           throw providerErr;
         }
@@ -1311,7 +1439,7 @@ export async function answerWithAi({
 
     // House-voice repair, layout, link masking and visitor-safe addressing (kill switch ANSWER_FORMAT=off); see finishAnswerText.
     const uxOn = answerUxEnabled(env);
-    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener });
+    const { answer, cites, parts } = await finishAnswerText(env, { rawAnswer, isCoach, parsedPages, by, askerIsMember, persona, intentId, groundingText, personalised: personalised || Boolean(composed), retrieval, trusted: Boolean(composed), question, opener: inputs.opener, research });
     const latencyMs = Date.now() - t0;
     const answeredAt = nowIso();
     // "More" and "Sources" text for the Discord buttons (ANSWER_UX only). A failed write only means no buttons.
@@ -1329,7 +1457,8 @@ export async function answerWithAi({
     await env.DB.prepare(
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
+      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
       .run();
 
     const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();
