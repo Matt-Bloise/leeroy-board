@@ -272,11 +272,15 @@ export function trimToSentences(text, budget) {
   if (out.length) return balanceMarkdown(out.join("\n"));
   const first = src.replace(/\s+/g, " ").trim().slice(0, Math.max(40, budget - 1));
   const sp = first.lastIndexOf(" ");
-  return `${balanceMarkdown((sp > budget * 0.5 ? first.slice(0, sp) : first).replace(/[\s,;:]+$/, ""))}…`;
+  return `${balanceMarkdown(linkFragmentless((sp > budget * 0.5 ? first.slice(0, sp) : first).replace(/[\s,;:]+$/, "")))}…`;
 }
 
 // The final length guarantee on the assembled answer (body, Sources/confidence footer, fallback lines): footer lines are shortened to 300 characters (whole " · " items first),
 // then the body is trimmed to whole sentences in what is left. Always returns at most `cap` characters.
+// A hard cut must not leave the front of a masked link ("[Page](<https://leeroy.party/#li"): that reads as a bare address and can embed.
+// It also breaks a "@everyone" the cut itself has just exposed at the end ("@everyone123..." has no word boundary, "@everyone…" does).
+const linkFragmentless = (t) => t.replace(/\[[^\]\n]*(?:\]\([^)\n]*)?$/, "").replace(/<?https?:\/\/\S*$/i, "").trimEnd().replace(/@(everyone|here)$/i, `@${ZWSP}$1`);
+const cutClean = (text, n) => `${linkFragmentless(text.slice(0, n))}…`;
 export function fitToCap(text, cap) {
   const src = String(text || "");
   if (src.length <= cap) return src;
@@ -286,13 +290,13 @@ export function fitToCap(text, cap) {
     const parts = l.split(" · ");
     while (parts.length > 1 && parts.join(" · ").length > 300) parts.pop();
     const j = parts.join(" · ");
-    return j.length > 300 ? `${j.slice(0, 299)}…` : j;
+    return j.length > 300 ? cutClean(j, 299) : j;
   };
   const footer = lines.filter(isFooter).map(shorten);
   const body = lines.filter((l) => !isFooter(l)).join("\n").trim();
   const room = Math.max(60, cap - footer.join("\n").length - 1);
   let out = [trimToSentences(body, room), ...footer].filter(Boolean).join("\n");
-  if (out.length > cap) out = `${out.slice(0, cap - 1)}…`;
+  if (out.length > cap) out = cutClean(out, cap - 1);
   return out;
 }
 
