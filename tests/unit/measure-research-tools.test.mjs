@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { measure as measureCpu, format as formatCpu, parseArgs as parseCpuArgs, PROXY_NOTICE } from "../../tools/measure-research-cpu.mjs";
-import { measure as measureLat, format as formatLat, parseArgs as parseLatArgs, scrub, resolveTarget, runPhase, callOnce, buildBody } from "../../tools/measure-claude-latency.mjs";
-import { researchMembers } from "../../infrastructure/worker/privacy/roster-config.js";
+import { measure as measureCpu, format as formatCpu, parseArgs as parseCpuArgs, verdict as cpuVerdict, PROXY_NOTICE } from "../../tools/measure-research-cpu.mjs";
+import { measure as measureLat, format as formatLat, parseArgs as parseLatArgs, scrub, resolveTarget, runPhase, callOnce, buildBody, DEFAULTS } from "../../tools/measure-claude-latency.mjs";
+import { researchMembers, genericAliases } from "../../infrastructure/worker/privacy/roster-config.js";
 import { questionFor, summarise, percentile } from "../../tools/research-synthetic.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -108,7 +108,7 @@ test("latency tool: the key is sent as a header only and never printed, even whe
 });
 
 test("latency tool: a live run with no credential refuses with exit 2; gateway BYOK needs only the token", () => {
-  const p = run("measure-claude-latency.mjs", ["--n", "1"]);
+  const p = run("measure-claude-latency.mjs", ["--live", "--n", "1"]);
   assert.equal(p.status, 2);
   assert.match(p.stderr, /no credential/);
   assert.throws(() => resolveTarget({ LATENCY_GATEWAY_URL: "https://gw.invalid/v1/a/b/anthropic" }));
@@ -119,6 +119,98 @@ test("latency tool: a live run with no credential refuses with exit 2; gateway B
   assert.equal(resolveTarget({ LATENCY_ENDPOINT: "https://preview.invalid/x", ANTHROPIC_API_KEY: FAKE_KEY }).url, "https://preview.invalid/x");
 });
 
+test("latency tool: each endpoint gets only the credential it needs", () => {
+  const key = FAKE_KEY, tok = "tokentokentoken";
+  const both = { ANTHROPIC_API_KEY: key, CF_AIG_TOKEN: tok };
+  // LATENCY_ENDPOINT is a direct-style endpoint: x-api-key only, never the gateway token.
+  const ep = resolveTarget({ ...both, LATENCY_ENDPOINT: "https://preview.invalid/x", LATENCY_GATEWAY_URL: "https://gw.invalid/v1/a/b/anthropic" });
+  assert.equal(ep.headers["x-api-key"], key);
+  assert.ok(!("cf-aig-authorization" in ep.headers));
+  // endpoint with only the gateway token: no credential at all is sent
+  const epTok = resolveTarget({ CF_AIG_TOKEN: tok, LATENCY_ENDPOINT: "https://preview.invalid/x" });
+  assert.ok(!("cf-aig-authorization" in epTok.headers) && !("x-api-key" in epTok.headers));
+  // direct Anthropic: x-api-key only
+  const direct = resolveTarget(both);
+  assert.equal(direct.url, "https://api.anthropic.com/v1/messages");
+  assert.equal(direct.headers["x-api-key"], key);
+  assert.ok(!("cf-aig-authorization" in direct.headers));
+  // gateway: token, plus the key for non-BYOK
+  const gw = resolveTarget({ ...both, LATENCY_GATEWAY_URL: "https://gw.invalid/v1/a/b/anthropic" });
+  assert.equal(gw.headers["cf-aig-authorization"], `Bearer ${tok}`);
+  assert.equal(gw.headers["x-api-key"], key);
+});
+
+test("latency tool: any failed call fails the phase (1 ok + 29 timeouts, 29 x 429)", async () => {
+  const target = { url: "http://x.invalid/v1/messages", headers: {} };
+  let c = 0;
+  const oneOkThenTimeouts = async () => {
+    if (c++ === 0) return new Response(JSON.stringify({ usage: { input_tokens: 1, output_tokens: 1 } }), { status: 200 });
+    const e = new Error("t"); e.name = "AbortError"; throw e;
+  };
+  const a = await runPhase({ label: "compose", model: "m", n: 30, limitMs: 6000, p95GateMs: 5000, target, fetchImpl: oneOkThenTimeouts, promptChars: 600 });
+  assert.equal(a.ok, 1);
+  assert.equal(a.failed, 29);
+  assert.equal(a.pass, false);
+  assert.deepEqual(a.status, { "200": 1, "hard-cap": 29 });
+  let d = 0;
+  const oneOkThen429 = async () => new Response(d++ === 0 ? JSON.stringify({ usage: {} }) : "{}", { status: d === 1 ? 200 : 429 });
+  const b = await runPhase({ label: "retry", model: "m", n: 30, limitMs: 3000, p95GateMs: 2500, target, fetchImpl: oneOkThen429, promptChars: 600 });
+  assert.equal(b.failed, 29);
+  assert.equal(b.pass, false);
+  const text = formatLat({ dryRun: false, promptChars: 600, phases: [a, b], ok: false });
+  assert.match(text, /RESULT: FAIL/);
+  assert.match(text, /29 failed calls/);
+  // all-success with the same gates still passes
+  const good = async () => new Response(JSON.stringify({ usage: {} }), { status: 200 });
+  assert.equal((await runPhase({ label: "x", model: "m", n: 5, limitMs: 6000, p95GateMs: 5000, target, fetchImpl: good, promptChars: 600 })).pass, true);
+});
+
+test("latency tool: dry run is the default; a key without --live sends nothing off the machine", async () => {
+  assert.deepEqual(parseLatArgs([]), { live: false, dryRun: true, json: false });
+  assert.deepEqual(parseLatArgs(["--live"]), { live: true, dryRun: false, json: false });
+  const urls = [];
+  const spy = async (url, init) => { urls.push(String(url)); return fetch(url, init); };
+  const r = await measureLat({ n: 2 }, { ANTHROPIC_API_KEY: FAKE_KEY, CF_AIG_TOKEN: "tokentokentoken", LATENCY_ENDPOINT: "https://preview.invalid/x" }, spy);
+  assert.equal(r.dryRun, true);
+  assert.equal(urls.length, 4);
+  for (const u of urls) assert.ok(u.startsWith("http://127.0.0.1:"), "only the loopback fake is contacted");
+  const p = run("measure-claude-latency.mjs", ["--n", "2"], { ANTHROPIC_API_KEY: FAKE_KEY, LATENCY_ENDPOINT: "http://127.0.0.1:9/never" });
+  assert.equal(p.status, 0, p.stderr);
+  assert.match(p.stdout, /DRY RUN/);
+  assert.match(p.stdout, /add --live/);
+  assert.ok(!(p.stdout + p.stderr).includes(FAKE_KEY));
+});
+
+test("latency tool: guard pins (roster-name refusal, no credential in dry run, default gates, exit code)", async () => {
+  // refuseFriendText: removing the call in buildBody makes this stop throwing.
+  const name = friendStrings().find((n) => !genericAliases.includes(n.toLowerCase()));
+  assert.ok(name);
+  assert.throws(() => buildBody(0, "m", { promptChars: 600, question: `please ask about ${name} tonight` }), /roster name/);
+  // dry run sends no credential of any kind, even with both set in the environment.
+  const seen = [];
+  const spy = async (url, init) => { seen.push(init.headers); return fetch(url, init); };
+  await measureLat({ n: 1 }, { ANTHROPIC_API_KEY: FAKE_KEY, CF_AIG_TOKEN: "tokentokentoken" }, spy);
+  assert.ok(seen.length === 2);
+  for (const h of seen) assert.deepEqual(Object.keys(h).sort(), ["anthropic-version", "content-type"]);
+  // default gates
+  assert.equal(DEFAULTS.composeP95Ms, 5000);
+  assert.equal(DEFAULTS.retryP95Ms, 2500);
+  const r = await measureLat({ n: 1 }, {});
+  assert.deepEqual(r.phases.map((p) => p.p95GateMs), [5000, 2500]);
+  // dry-run exit code follows RESULT
+  const fail = run("measure-claude-latency.mjs", ["--n", "2", "--compose-p95-ms", "0", "--retry-p95-ms", "0"]);
+  assert.equal(fail.status, 1);
+  assert.match(fail.stdout, /RESULT: FAIL/);
+  assert.equal(run("measure-claude-latency.mjs", ["--n", "2"]).status, 0);
+});
+
+test("cpu tool: the verdict needs the p95 term and the gate is inclusive", () => {
+  assert.equal(cpuVerdict({ median: 1, p95: 20 }, 10, 1).ok, false, "median under, p95 over must fail");
+  assert.equal(cpuVerdict({ median: 20, p95: 1 }, 10, 1).ok, false);
+  assert.equal(cpuVerdict({ median: 10, p95: 10 }, 10, 1).ok, true, "equal to the budget passes");
+  assert.equal(cpuVerdict({ median: 1, p95: 1 }, 10, 50).ok, true, "the mean does not gate");
+});
+
 test("latency tool: request shape is non-streaming, max_tokens 700, prompt of a few thousand tokens, unique per call, no roster name", () => {
   const a = JSON.parse(buildBody(0, "model-x"));
   assert.equal(a.max_tokens, 700);
@@ -127,5 +219,5 @@ test("latency tool: request shape is non-streaming, max_tokens 700, prompt of a 
   const chars = JSON.stringify(a).length;
   assert.ok(chars > 10000 && chars < 20000, `prompt chars ${chars}`);
   assert.notEqual(buildBody(1, "m"), buildBody(2, "m"));
-  assert.deepEqual(parseLatArgs(["--n", "7", "--dry-run"]), { dryRun: true, json: false, n: 7 });
+  assert.deepEqual(parseLatArgs(["--n", "7", "--dry-run"]), { live: false, dryRun: true, json: false, n: 7 });
 });

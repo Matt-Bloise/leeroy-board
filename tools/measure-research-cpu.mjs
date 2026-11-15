@@ -1,6 +1,6 @@
 // Measures the offline CPU of the /ask research path: name-map clone + tokenise, strict and cheap outbound guards, reply clean, label/lint.
 // Inputs:  --iterations N (default 100) --budget-ms M (default 10, or env RESEARCH_CPU_BUDGET_MS) --prompt-chars C (prompt size, default 9000) --json
-// Output:  median / p95 / max per stage and for the whole path, plus the first (cold) call, compared with the budget. Exit 1 when the median or p95 is over budget.
+// Output:  median / p95 / max per stage and for the whole path, plus the first (cold) call, compared with the budget. Exit 1 when the median or p95 is over budget (a value equal to the budget passes).
 // Safety:  reads nothing but the repo, sends nothing, prints only numbers (no question text, no names, no prompt text). No key is read or needed.
 //
 // PROXY WARNING: this is Node CPU on this PC (process.cpuUsage, plus performance.now wall time). It is only a PROXY for Worker CPU. Different engine build, different
@@ -78,9 +78,13 @@ export function measure({ iterations = 100, budgetMs = DEFAULT_BUDGET_MS, prompt
     promptChars,
     cold: { cpu: cold.total.cpu, wall: cold.total.wall },
     stages,
-    pass: { median: t.median <= budgetMs, p95: t.p95 <= budgetMs, mean: cpuMean <= budgetMs },
-    ok: t.median <= budgetMs && t.p95 <= budgetMs,
+    ...verdict(t, budgetMs, cpuMean),
   };
+}
+
+// Inclusive gates: median <= budget and p95 <= budget. The mean is informational and does not gate.
+export function verdict(t, budgetMs, cpuMean) {
+  return { pass: { median: t.median <= budgetMs, p95: t.p95 <= budgetMs, mean: cpuMean <= budgetMs }, ok: t.median <= budgetMs && t.p95 <= budgetMs };
 }
 
 const f = (n) => (Number.isFinite(n) ? n.toFixed(2) : "n/a");
