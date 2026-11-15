@@ -51,7 +51,7 @@ async function get(env, path) {
   } finally { console.error = q; }
 }
 
-for (const [path, own] of [["/data/stats", "public, max-age=15, s-maxage=60, stale-while-revalidate=300"], ["/bootstrap", "public, max-age=15, s-maxage=60, stale-while-revalidate=300"], ["/state", "public, max-age=10, s-maxage=30, stale-while-revalidate=60"]]) {
+for (const [path, own] of [["/data/stats", "public, max-age=15, s-maxage=60, stale-while-revalidate=300"], ["/signups", "public, max-age=15, stale-while-revalidate=60"]]) {
   test(`GET /api${path}: a cache hit carries the route's own Cache-Control, not the zone's 4 hours`, async () => {
     const cache = edgeLikeCache();
     globalThis.caches = cache;
@@ -76,3 +76,23 @@ test("restoreCacheControl leaves a response without the kept header alone", () =
   assert.equal(restoreCacheControl(r), r);
   assert.equal(restoreCacheControl(undefined), undefined);
 });
+
+// Member documents, /state and /bootstrap are the opposite case: never stored in the isolate memory or caches.default (a purge reaches one isolate and one data centre only, so a stored copy
+// kept serving a value a member had just hidden), and sent no-store. Found on the real preview, 2026-11-15.
+for (const path of ["/bootstrap", "/state", "/data/party", "/data/client", "/data/decide", "/data/tonight", "/data/guided-atlas"]) {
+  test(`GET /api${path}: never stored in a cache, always no-store, served fresh every time`, async () => {
+    const cache = edgeLikeCache();
+    globalThis.caches = cache;
+    Date.now = realNow;
+    const env = makeEnv();
+    env.DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party', ?, 'x')").run(JSON.stringify({ members: [{ name: "Alpha", class_key: "mage" }] }));
+    for (const k of ["decide", "tonight", "guided-atlas"]) env.DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(k, JSON.stringify({ people: [], classes: {} }));
+    const first = await get(env, path);
+    assert.ok(first.status === 200, `${path} answers ${first.status}`);
+    assert.equal(first.headers.get("Cache-Control"), "no-store");
+    await get(env, path);
+    assert.equal([...cache.store.keys()].filter((k) => k.endsWith(`/api${path}`)).length, 0, "nothing of it is in the edge cache");
+    const second = await get(env, path);
+    assert.equal(second.headers.get("X-Isolate-Cache"), null, "nor in the isolate memory");
+  });
+}

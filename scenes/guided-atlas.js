@@ -18,7 +18,7 @@ const focus = (el) => { try { if (el) el.focus({ preventScroll: true }); } catch
 function facts() {
   const own = () => (window.BoardFetch ? window.BoardFetch.json("data/guided-atlas.json", { cache: "no-cache" }) : fetch("data/guided-atlas.json", { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)));
   const u = (window.BoardBrain && window.BoardBrain.url && window.BoardBrain.url("/data/guided-atlas.json")) || "";
-  return (G.dataP ||= (u ? fetch(u, { cache: "no-cache" }).then((r) => (r.ok ? r.json() : null)).catch(() => null).then((j) => (j != null ? j : own())) : own()).catch(() => { G.dataP = null; return null; }).then((d) => { G.data = d; return d; }));
+  return (G.dataP ||= (u ? fetch(u, { cache: "no-cache", mode: "cors", credentials: "omit" }).then((r) => (r.ok ? r.json() : null)) /* a brain base: the Worker or nothing; never the static file, which is the whole party */ : own()).catch(() => { G.dataP = null; return null; }).then((d) => { G.data = d; return d; }));
 }
 const mine = () => { const m = MEM.member(), d = G.data; return m && d && d.classes ? d.classes[m.class_key] || null : null; };
 function meetLine() {
@@ -32,7 +32,7 @@ function steps() {
   const c = mine(), d = G.data; if (!c) return [];
   const m = MEM.member(), out = [];
   const cap = d.starter_cap ? ` Trainers inside a starting area teach up to level ${d.starter_cap.level}.` : "";
-  out.push({ icon: "start-star", id: c.start.id, head: `Start: ${c.start.name}, in ${c.start.zone_name}.`, sub: `Your ${m.race} ${m.class} begins here.` });
+  out.push({ icon: "start-star", id: c.start.id, head: `Start: ${c.start.name}, in ${c.start.zone_name}.`, sub: `Your ${K.raceClass(m)} begins here.` });
   out.push({ icon: "start-star", id: c.start.id, head: c.trainer.name ? `Your class trainer: ${c.trainer.name}.` : "Your class trainer is in your start area.", sub: `A trainer teaches your class new abilities.${cap}` });
   if (c.town) out.push({ icon: "town", id: c.town.id, head: `Your first town: ${c.town.name}.`, sub: c.town.trainer ? `After level ${d.starter_cap ? d.starter_cap.level : 6}, your next trainer is ${c.town.trainer}.` : "The next town on your way." });
   const ml = meetLine(); out.push({ icon: "meeting-banner", id: d.meet ? d.meet.id : null, head: ml.head, sub: ml.sub });
@@ -62,7 +62,7 @@ function build() {
 }
 function head() {
   const m = MEM.member(); if (!m || !G.title) return;
-  G.title.replaceChildren(`${m.name}, ${m.race} ${m.class}`, h("small", { text: K.launchPast() ? "Your map. Your route through the world." : "Your map. Your route to launch night." }));
+  G.title.replaceChildren(`${m.name}, ${K.raceClass(m)}`, h("small", { text: K.launchPast() ? "Your map. Your route through the world." : "Your map. Your route to launch night." }));
 }
 function mirror() {
   if (!G.card || !G.shown) return;
@@ -87,6 +87,7 @@ function extra(src) {
   if (min) out.push(h("p", { class: "ga-meta", text: min }));
   const week = src && $(".nx-week", src); if (week) out.push(h("p", { class: "ga-meta", text: [...week.querySelectorAll("li")].map((li) => li.textContent).join(" ") }));
   const st = steps();
+  if (G.data && G.data.withheld) out.push(h("p", { class: "ga-meta ga-withheld", role: "note", text: G.data.withheld }));
   if (st.length) out.push(h("div", { class: "ga-subrow" }, h("h3", { class: "ga-sub", text: "Your route" }), G.stops.length ? h("button", { type: "button", class: "ga-link ga-stopsbtn", id: "ga-stopsbtn", "aria-expanded": String(G.stopsOpen), "aria-controls": "ga-stopsd", onclick: toggleStops }, G.stopsOpen ? "Hide stops" : "Stops on the map") : null),
     h("ol", { class: "ga-steps" }, ...st.map((s) => h("li", {}, h("button", { type: "button", class: "ga-step", onclick: () => fly(s.id) },
     h("img", { src: `img/atlas/C-${s.icon}.webp`, alt: "", width: 28, height: 28, decoding: "async" }), h("span", { class: "ga-step-t" }, h("b", { text: s.head }), s.sub ? h("small", { text: s.sub }) : null))))));

@@ -24,8 +24,9 @@ const AT = "2026-11-12T00:00:00.000Z";
 const SLUG = "red-fox", NAME = "Red Fox", DISCORD_ID = "100000000000000042";
 const MEMBER_KEY = "member-key-for-tests-0123456789ab", KEY_SALT = "salt-for-tests-0123456789";
 // Hidden values. Each starts with the marker "zqhv", and a leak is that marker anywhere in a public body or socket message.
-const HIDDEN_RACE = "zqhv-hidden-race", HIDDEN_GOALS = "zqhv hidden goal", HIDDEN_EDIT = "zqhv-edited-race", HIDDEN_LAUNCH = "zqhv-launch";
+const HIDDEN_RACE = "zqhv-hidden-race", HIDDEN_GOALS = "zqhv hidden goal", HIDDEN_EDIT = "orc", HIDDEN_LAUNCH = "zqhv-launch";
 const MARKER = "zqhv";
+const NEEDLES = [MARKER, '"orc"']; // a race typed in Discord must be on the board's list (sheet-vocab.js), so the edited value is the real one, "orc", not a marker
 
 const quiet = async (fn) => { const e = console.error, w = console.warn, l = console.log; console.error = console.warn = console.log = () => {}; try { return await fn(); } finally { console.error = e; console.warn = w; console.log = l; } };
 
@@ -89,9 +90,9 @@ async function anonymousLeaks(env) {
     const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api${p}`, { headers: { "CF-Connecting-IP": "203.0.113.40" } }), env, ctx));
     const text = `${[...res.headers].map(([k, v]) => `${k}: ${v}`).join("\n")}\n${await res.text()}`;
     if (res.status !== 200) found.push(`${p}: status ${res.status}`);
-    if (text.toLowerCase().includes(MARKER)) found.push(`${p}: hidden value`);
+    if (NEEDLES.some((n) => text.toLowerCase().includes(n))) found.push(`${p}: hidden value`);
   }
-  env.sent.forEach((m, i) => { if (anonSocket(m).toLowerCase().includes(MARKER)) found.push(`socket message ${i}: hidden value`); });
+  env.sent.forEach((m, i) => { if (NEEDLES.some((n) => anonSocket(m).toLowerCase().includes(n))) found.push(`socket message ${i}: hidden value`); });
   // The slow path (sheets rebuilt from sheet_events alone) must agree: the event rows carry the visibility that was kept.
   const { party } = await quiet(() => buildPartySheetsFromD1(env, { persist: false }));
   for (const s of party) for (const [k, f] of Object.entries(s.fields || {})) {
@@ -99,6 +100,7 @@ async function anonymousLeaks(env) {
   }
   return found;
 }
+const publicPartyDoc = async (env) => { await purgeWorkerCache(ORIGIN, ["/api/data/party"]); const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api/data/party`, { headers: { "CF-Connecting-IP": "203.0.113.41" } }), env, ctx)); return JSON.parse(await res.text()); };
 
 test("hide a field, then /sheet edits ANOTHER field: the hidden field stays hidden everywhere", async () => {
   const env = await makeEnv();
@@ -121,7 +123,7 @@ test("hide a field, then /sheet edits the SAME field's value: the field stays hi
   assert.equal(f.visible, false, "a value-only write never un-hides");
   assert.equal(f.source, "discord");
   assert.equal(lastEvent(env, "race").visible, 0, "the event row keeps the visibility too, so a rebuild from events agrees");
-  const doc = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json);
+  const doc = await publicPartyDoc(env);
   assert.equal("race" in doc.members[0], false, "the public party document still has no race for the member");
   assert.deepEqual(await anonymousLeaks(env), []);
 });
@@ -248,7 +250,7 @@ test("an empty party_sheets row ([]) is rebuilt from sheet_events: a hidden fiel
   const race = field(env, "race");
   assert.ok(race, "the hidden field was rebuilt from the events, not dropped");
   assert.equal(race.visible, false);
-  const doc = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json);
+  const doc = await publicPartyDoc(env);
   assert.equal("race" in doc.members[0], false, "the public party document has no race for a member whose race is hidden");
   assert.deepEqual(await anonymousLeaks(env), []);
 });
@@ -265,4 +267,35 @@ test("Discord /sheet refuses a field name that is not a sheet field: ephemeral r
   assert.equal(countOf(env, "sheet_events"), before.events, "no event");
   assert.equal(countOf(env, "intents"), before.intents, "no intent");
   assert.deepEqual(await anonymousLeaks(env), []);
+});
+test("the board's launch intent for a hidden launch_state stores no state in the intents mailbox", async () => {
+  const env = await makeEnv();
+  await hide(env, "launch_state", HIDDEN_LAUNCH);
+  const res = await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "done" } });
+  assert.equal(res.status, 200);
+  const rows = env.DB.raw.prepare("SELECT body FROM intents WHERE kind = 'launch'").all();
+  assert.equal(rows.length, 1);
+  assert.equal(JSON.parse(rows[0].body).state, undefined, "no state in the intent body");
+  assert.deepEqual(JSON.parse(rows[0].body), { field: "launch_state", visible: false });
+  assert.ok(!rows[0].body.includes("done"));
+});
+test("a launch write whose sheet log cannot be read stores NO launch row, from the board's intent and from Discord /launch", async () => {
+  const env = await makeEnv();
+  const launchRow = () => env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'launch'").get();
+  const events = () => env.DB.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events").get().n;
+  const intents = () => env.DB.raw.prepare("SELECT COUNT(*) AS n FROM intents").get().n;
+  const before = { launch: launchRow(), events: events(), intents: intents(), sent: env.sent.length };
+  const real = env.DB.prepare.bind(env.DB);
+  env.DB.prepare = (sql) => { if (/sheet_events/.test(sql) && /^\s*SELECT/i.test(sql)) throw new Error("D1_ERROR: sheet_events unreadable"); return real(sql); };
+  const res = await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "in" } });
+  assert.ok([409, 500, 503].includes(res.status), `board intent refused (status ${res.status})`);
+  assert.deepEqual({ launch: launchRow(), events: events(), intents: intents(), sent: env.sent.length }, before, "board intent: nothing stored, nothing broadcast");
+  const realNow = Date.now;
+  Date.now = () => LAUNCH_EPOCH * 1000 - 3600000;
+  try { await discordLaunch(env, "queue").catch(() => {}); } finally { Date.now = realNow; }
+  assert.deepEqual({ launch: launchRow(), events: events(), intents: intents(), sent: env.sent.length }, before, "Discord /launch: nothing stored, nothing broadcast");
+  // and once the log is readable again both paths store the row together with its event
+  env.DB.prepare = real;
+  assert.equal((await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "in" } })).status, 200);
+  assert.ok(launchRow() && events() === before.events + 1);
 });
