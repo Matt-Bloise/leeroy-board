@@ -46,7 +46,7 @@ import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
-import { publicParty, partyForMember } from "./sheet-privacy.js";
+import { publicParty, partyForMember, sheetIntentBody, redactIntentBody } from "./sheet-privacy.js";
 import { sheetValueProblem, ADMIN_SHEET_FIELDS, nextLevelField } from "./sheet-values.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
@@ -572,7 +572,7 @@ const worker = {
           const { seq } = await insertIntent(env, {
             slug: m.slug,
             kind: "sheet",
-            body: { field, value: out.value, visible: out.visible, source: "board" },
+            body: sheetIntentBody(field, out.value, out.visible, "board"),
             ver: 1,
             at: now,
           });
@@ -740,7 +740,7 @@ const worker = {
         const st = saved.stored || { value: null, visible: true, at: now };
         const out = { ok: true, at: st.at, slug: member.slug, field, value: st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
         if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
-        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: st.value, visible: out.visible, source: "admin" }, ver: 1, at: now });
+        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: sheetIntentBody(field, st.value, out.visible, "admin"), ver: 1, at: now });
         return jsonResp({ ...out, id: seq, seq }, 200, cors);
       }
 
@@ -884,7 +884,7 @@ const worker = {
             at: r.at,
             slug: r.slug,
             kind: r.kind,
-            body: parsed,
+            body: redactIntentBody(parsed), // rows from before hide intents dropped the value may still hold one
             ver: r.ver,
           };
         });

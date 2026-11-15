@@ -63,7 +63,7 @@ import {
 import { loadRoster } from "./party-source.js";
 import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
-import { partyForMember } from "./sheet-privacy.js";
+import { partyForMember, redactIntentBody } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
 import { canManageGuild } from "./setup-command.js";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
@@ -315,6 +315,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   {
     name: "intents",
     description: "View pending intents in the mailbox waiting for the bot or consumers",
+    default_member_permissions: "32", // Manage Server, as /setup: hides it from everyone else in Discord. The handler enforces the same rule, so this is cosmetic until commands are re-registered.
     options: [
       { name: "after", description: "Sequence number to start after", type: 4, required: false },
       { name: "limit", description: "Maximum intents to return (default 10)", type: 4, required: false },
@@ -1636,6 +1637,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2r. `/intents`
     if (cmd === "intents") {
+      // Staff only, like GET /intents: the mailbox holds every member's changes. Same rule as /ack's whole-mailbox clear and /setup.
+      if (!canManageGuild(interaction.member && interaction.member.permissions)) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: "That command is for server admins.", flags: 64 } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       if (!member) return unknownMemberResponse();
       const after = parseInt(getOpt("after") || "0", 10) || 0;
       const limit = Math.min(parseInt(getOpt("limit") || "10", 10) || 10, 50);
@@ -1665,7 +1673,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
       const list = intents
         .map((i) => {
-          const bodyPreview = (i.body || "").slice(0, 60);
+          // A hidden field's value never prints, including in rows stored before hide intents dropped it.
+          const shown = redactIntentBody(i.body || "");
+          const bodyPreview = (shown === null ? "(unreadable)" : typeof shown === "string" ? shown : JSON.stringify(shown)).slice(0, 60);
           return `• **#${i.seq}** [\`${i.kind}\`] by **${i.slug}** at <t:${Math.floor(Date.parse(i.at) / 1000)}:R>: \`${bodyPreview}\``;
         })
         .join("\n");
