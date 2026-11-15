@@ -320,3 +320,60 @@ test("shared vector: entryIsCurrent agrees with the board without a play time, a
     assert.equal(entryIsCurrent(e, { now: NOW, playAt: PLAY }), withPlay, `play time ${iso(PLAY)}: ${stamp}`);
   }
 });
+
+// Review of PR 322 (HIGH-1): the seal shelf above the sign-up panel (js/seals.js) read the server's tallies and said "Launch night so far" after launch.
+const fnBody = (src, start, endRe) => { const at = src.indexOf(start); assert.ok(at >= 0, start); const rest = src.slice(at + start.length), end = rest.search(endRe); return src.slice(at, at + start.length + (end < 0 ? rest.length : end)); };
+test("the seal shelf counts this week's answers after launch, and the server's tallies before it", () => {
+  const seals = read("js/seals.js");
+  const counts = fnBody(seals, "const shelfCounts = () => {", /\n  \};/);
+  assert.match(counts, /if \(past\(\) && K\.week\) \{ const w = K\.week\(\); if \(w\) rs = w\.rsvp; \}/, "after launch the counts come from K.week()");
+  assert.match(counts, /let rs = S && S\.tallies && S\.tallies\.rsvp; if \(!rs\) return null;/, "before launch: the server's tallies, as on master");
+  assert.match(seals, /"aria-label": `\$\{past\(\) \? "This week" : "Launch night so far"\}: /, "the shelf's label follows the launch date");
+  assert.match(seals, /sy\(`\$\{past\(\) \? "This week" : "Launch night"\}: /, "the pressed-seal line follows the launch date");
+  assert.doesNotMatch(seals, /"aria-label": `Launch night so far: /);
+  // what the shelf now counts for the live launch-night document after launch: nothing
+  const w = W.week({ entries: [entry("Ada", "in", "2026-10-29T02:42:02.549Z"), entry("Bram", "in", "2026-10-27T00:45:52.346Z")], tallies: { rsvp: { in: { count: 2, names: ["Ada", "Bram"] } } } }, NOW, LAUNCH);
+  assert.equal(w.rsvp.in.count, 0); assert.deepEqual(plain(w.rsvp.in.names), []);
+});
+
+test("your own pressed answer (shelf seal, answer buttons) is this week's only after launch", () => {
+  const board = read("js/board.js");
+  assert.match(board, /const weekOwn = \(e\) => \(!e \|\| !launchPast\(\) \|\| !window\.BoardWeek \? e : BoardWeek\.isCurrent\(e, Date\.now\(\)\) \? e : null\);/);
+  assert.match(read("js/seals.js"), /mine = K\.weekOwn \? K\.weekOwn\(mine0\) : mine0/);
+  assert.match(read("js/v13d.js"), /mine = K\.weekOwn \? K\.weekOwn\(mine0\) : mine0/);
+  assert.match(read("js/v13d.js"), /K\.launchPast && K\.launchPast\(\) \? "Your answer for this week, from the board" : "Your answer for launch night, from the board"/);
+  assert.match(read("js/mine.js"), /const nightTitle = \(\) => \(K\.launchPast && K\.launchPast\(\) \? "Your answers" : "Your launch night"\);/);
+});
+
+test("the last answers ignore a pack-only click, so the copy never says nobody answered but the last answer was today", () => {
+  const w = W.week({ entries: [entry("Ada", "in", "2026-10-29T02:42:02.549Z"), entry("Bram", null, iso(NOW - 3600e3), { pack: "yes", when: null })] }, NOW, LAUNCH);
+  assert.ok(w.empty);
+  assert.equal(w.last, Date.parse("2026-10-29T02:42:02.549Z"));
+  assert.equal(w.empty.last, "Last answers: Oct 28, for launch night.");
+  assert.equal(W.week({ entries: [entry("Bram", null, iso(NOW - 3600e3), { pack: "yes" })] }, NOW, LAUNCH).empty.last, "Nobody has answered the card yet.");
+});
+
+test("names match the way the board's cleanName does: decorated and plain spellings are one person", () => {
+  const w = W.week({ entries: [entry("=Ada=", "in", "2026-10-29T02:42:02.549Z"), entry("Ada", "late", iso(NOW - DAY)), entry("*Bram*", "in", "2026-10-29T02:42:02.549Z")] }, NOW, LAUNCH);
+  assert.deepEqual(plain(w.earlier.map((e) => e.name)), ["*Bram*"], "=Ada= is this week's Ada, not an earlier-week row");
+});
+
+test("a non-array options.when never throws and falls back to the three time slots", () => {
+  for (const when of ["6pm", { a: 1 }, 5, null, [null, 7, "8pm"]]) {
+    const w = W.week({ entries: [entry("Ada", "in", iso(NOW - DAY))], options: { when } }, NOW, LAUNCH);
+    assert.equal(w.total, 1);
+    assert.ok(Object.keys(w.when).length >= 1);
+  }
+  assert.deepEqual(plain(Object.keys(W.week({ entries: [], options: { when: "6pm" } }, NOW, LAUNCH).when)), ["6pm", "8pm", "later"]);
+  assert.deepEqual(plain(Object.keys(W.week({ entries: [], options: { when: [null, 7, "8pm"] } }, NOW, LAUNCH).when)), ["8pm"]);
+});
+
+test("a long unbroken name in the earlier-week line wraps instead of widening the card", () => {
+  assert.match(read("css/board.css"), /\.su-earlier, \.su-empty \{ overflow-wrap: anywhere; \}/);
+});
+
+test("the known limit is written down: one stamp per entry, so a non-RSVP click this week revives an older RSVP", () => {
+  assert.match(read("js/signups-week.js"), /Known limit[\s\S]{0,200}re-stamps the entry and its older RSVP counts again/);
+  const w = W.week({ entries: [entry("Ada", "in", iso(NOW - DAY), { pack: "yes" })] }, NOW, LAUNCH); // the card stamped Ada's pack click today; her RSVP is from launch night
+  assert.equal(w.rsvp.in.count, 1, "documented behaviour: counted, as in the weekly post");
+});
