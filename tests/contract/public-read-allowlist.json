@@ -1043,6 +1043,7 @@
    "week_one.trainers.warlock"
   ],
   "/discord/commands": [
+   "commands[].default_member_permissions",
    "commands[].description",
    "commands[].name",
    "commands[].options[].autocomplete",
