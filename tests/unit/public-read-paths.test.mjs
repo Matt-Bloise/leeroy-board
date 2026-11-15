@@ -55,7 +55,7 @@ const ROUTE_CLASS = {
   "POST /intent": "member", "POST /refresh": "none", "GET /": "none", "GET /health": "none",
 };
 // The Discord commands. tonight lists the party, sheet shows another member's sheet, signup redraws the cards, ask builds a prompt with the party's builds.
-const DISCORD_CLASS = { ack: "none", answer: "none", ask: "member", build: "none", countdown: "none", dates: "none", didyouknow: "none", help: "none", intents: "none", journey: "none", launch: "none", leeroy: "none", library: "none", map: "none", page: "none", quiz: "none", sheet: "member", signup: "member", start: "none", tonight: "member", tooltip: "none", vote: "none" };
+const DISCORD_CLASS = { ack: "none", answer: "none", ask: "member", build: "none", countdown: "none", dates: "none", didyouknow: "none", help: "none", intents: "none", journey: "none", launch: "none", leeroy: "none", library: "none", map: "none", page: "none", quiz: "none", say: "none", sheet: "member", signup: "member", start: "none", tonight: "member", tooltip: "none", vote: "none" };
 // Public documents whose repo copy carries no member data. Every other public document must be one the projection knows (MEMBER_DOCS).
 const NON_MEMBER_DOCS = ["timeline", "stats", "signups"];
 // Literal keys the Worker broadcasts as {type:"data", key}. Member documents go through the one choke point (broadcastToRoom -> projectBroadcast).
