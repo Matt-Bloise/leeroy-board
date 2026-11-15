@@ -13,7 +13,7 @@
 | Groq | AI answers | Question and context | provider `groq` | Same | (to confirm) |
 | Cerebras | AI answers | Question and context | provider `cerebras` | Same | (to confirm) |
 | OpenRouter (and the model hosts behind it) | AI answers | Question and context | provider `openrouter` | Same | (to confirm); onward hosts are a gap |
-| Cloudflare Workers AI | AI answers | Question and context | provider `workers-ai` | Default and used in previews | Same as Cloudflare |
+| Cloudflare Workers AI | AI answers | Question and context | provider `workers-ai` | Used in previews (`AI_PROVIDER=workers-ai`) and as the fallback provider; the production default provider is `claude` (`wrangler.toml:56`) | Same as Cloudflare |
 | GitHub | Source code and CI; GitHub Models provider | Code, CI logs; question text if the GitHub Models provider is enabled | Repo, workflows, provider `github` | Repo active; provider unverified | (to confirm) |
 
 ## Open items
