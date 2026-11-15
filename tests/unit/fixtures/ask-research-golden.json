@@ -1,0 +1,40 @@
+{
+  "who tanks tonight": {
+    "row": {
+      "answer": "Mira tanks tonight. -# Sources: classes/tanking",
+      "cites_json": "[]",
+      "model": "groq:llama-3.3-70b-versatile",
+      "status": "answered"
+    },
+    "prompts": [
+      "1747140c07fb6b239a1342769bfe37f21ac38159de1fbf11366dc644ca21ea07"
+    ]
+  },
+  "what does Mira bring to the raid": {
+    "row": {
+      "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: classes.",
+      "cites_json": "[]",
+      "model": "library:abstain",
+      "status": "answered"
+    },
+    "prompts": []
+  },
+  "how do I get the tanking gear": {
+    "row": {
+      "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: classes.",
+      "cites_json": "[]",
+      "model": "library:abstain",
+      "status": "answered"
+    },
+    "prompts": []
+  },
+  "tell me about the weather": {
+    "row": {
+      "answer": "**The Library does not cover that yet, so I won't guess.**\n\nWhat would settle it: an official Blizzard post, or someone in the party who has played it.\n\nI can answer questions about: classes.",
+      "cites_json": "[]",
+      "model": "library:abstain",
+      "status": "answered"
+    },
+    "prompts": []
+  }
+}

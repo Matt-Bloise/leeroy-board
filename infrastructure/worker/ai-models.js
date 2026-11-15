@@ -25,6 +25,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
+import { researchEnabled, researchAnswer } from "./research/index.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -1204,9 +1205,25 @@ export async function answerWithAi({
     let rawAnswer, model, provider;
     let fallbackNote = "";
     const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
+    // ASK_RESEARCH seam (off by default; never in a PR preview). The stub handles nothing; any error, empty answer or "not handled" runs the path below unchanged.
+    let researched = null;
+    if (!composed && !isPrPreviewEnv(env)) {
+      try {
+        if (await researchEnabled(env)) {
+          const r = await researchAnswer({ env, question, by, memberSlug, journey, share, isMember, deep, inputs });
+          if (r && r.handled === true && typeof r.answer === "string" && r.answer.trim()) researched = r.answer;
+        }
+      } catch (e) {
+        console.error("research seam failed, using the standard answer path:", e && e.message);
+      }
+    }
     if (composed) {
       rawAnswer = composed;
       model = "abstain";
+      provider = "library";
+    } else if (researched) {
+      rawAnswer = researched;
+      model = "research";
       provider = "library";
     } else {
     {
