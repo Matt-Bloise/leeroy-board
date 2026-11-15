@@ -61,6 +61,13 @@ async function ask(question, { research = true, pages = [TANK_PAGE], sheets = SH
 const ABSTAIN_Q = "tell me about the weather";
 const SOURCES = "\n-# Sources: general Classic-era knowledge, unconfirmed";
 
+// Scaling check instead of a wall-clock limit (CI machines vary): linear work grows about 4x for 4x input, quadratic about 16x.
+function scalesLinearly(run) {
+  run(2000);
+  const time = (n) => { const t = process.hrtime.bigint(); run(n); return Number(process.hrtime.bigint() - t) / 1e6; };
+  const small = Math.max(time(5000), 1), big = time(20000);
+  return { small, big, ok: big < 400 || big / small < 9 };
+}
 test("mention-in-title: @everyone, <@id> and <@&id> from a library title never reach the prompt or the answer", async () => {
   const bad = { ...TANK_PAGE, title: "Tanking @everyone <@123456> <@&987654> <@!555>" };
   const r = await ask("who tanks tonight", { pages: [bad], respond: () => "Read Tanking @everyone <@123456> <@&987654> <@!555> for who tanks tonight.\n-# Sources: classes/tanking" });
@@ -348,11 +355,8 @@ test("hostile input: forged placeholders do not clone links or print undefined; 
   const out = defuseLinks(forged, { allow: ["leeroy.party"] });
   assert.ok(!/undefined/.test(out) && (out.match(/\]\(</g) || []).length === 1, out);
   assert.ok(!/[\u0000-\u0008]/.test(out));
-  const t0 = Date.now();
-  defuseLinks("[".repeat(100000));
-  labelClassic("[".repeat(100000) + "](x)", "");
-  researchPrepare("[".repeat(100000), { groundingText: "" });
-  assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0}ms`);
+  const lin = scalesLinearly((n) => { defuseLinks("[".repeat(n * 5)); labelClassic("[".repeat(n * 5) + "](x)", ""); researchPrepare("[".repeat(n * 5), { groundingText: "" }); });
+  assert.ok(lin.ok, `not linear: ${lin.small.toFixed(1)}ms -> ${lin.big.toFixed(1)}ms`);
 });
 
 // ---- round 3 ----
@@ -498,13 +502,14 @@ test("round 4 (3): italic banter alone is not an answer; the advice clause after
   const bullets = trimToSentences("* first bullet is here and long enough to count\n* second bullet is here and long enough too\n* third bullet fills the rest of the space", 100);
   assert.match(bullets, /^\* first bullet/m);
   assert.match(trimToSentences("Compute 5 * 3 now please. Another long sentence follows here and here.", 40), /5 \* 3/);
-  const t0 = Date.now();
-  splitSentenceText("*".repeat(20000));
-  splitSentenceText("a. " + "* ".repeat(10000));
-  stripRefusals("*".repeat(20000));
-  labelClassic("a. " + "*".repeat(20000) + " 9999", "");
-  trimToSentences("*".repeat(20000) + " b. " + "*".repeat(20000), 500);
-  assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0}ms`);
+  const lin2 = scalesLinearly((n) => {
+    splitSentenceText("*".repeat(n));
+    splitSentenceText("a. " + "* ".repeat(n / 2));
+    stripRefusals("*".repeat(n));
+    labelClassic("a. " + "*".repeat(n) + " 9999", "");
+    trimToSentences("*".repeat(n) + " b. " + "*".repeat(n), 500);
+  });
+  assert.ok(lin2.ok, `not linear: ${lin2.small.toFixed(1)}ms -> ${lin2.big.toFixed(1)}ms`);
   assert.ok(lintResearchAnswer(`${RESEARCH_DOWN_ANSWER}\n-# Sources: general · unconfirmed`).failures.includes("outage_line"));
   assert.ok(lintResearchAnswer(RESEARCH_DOWN_ANSWER).failures.includes("outage_line"));
   for (const src of ["wowhead/classic guides", "and/or"]) assert.ok(lintResearchAnswer(`**Take Frost.**\n-# Sources: ${src}`).failures.includes("no_confidence_word"), src);
