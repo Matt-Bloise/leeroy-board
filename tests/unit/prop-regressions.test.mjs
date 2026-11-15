@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { repairHouseVoice } from "../../infrastructure/worker/ai-models.js";
-import { applyVoiceGuards, formatAnswer } from "../../infrastructure/worker/answer-format.js";
+import { applyVoiceGuards, formatAnswer, formatAnswerParts, MENTIONS_ONLY_LINE } from "../../infrastructure/worker/answer-format.js";
 import { fitToCap } from "../../infrastructure/worker/research/label.js";
 import { scanUserText } from "../../infrastructure/worker/privacy/outbound-guard.js";
 import { lintAnswer } from "../../infrastructure/worker/answer-lint.js";
@@ -67,4 +67,29 @@ test("fitToCap never cuts a link into a bare address or exposes @everyone at the
 test("guard catches a name that is both reversed and written with digits", () => {
   const roster = { members: [{ display: "Brindlewick", aliases: [], firstNames: [], characterNames: [] }], genericAliases: [] };
   for (const t of ["kc1w3ldn1rB", "k c 1 w 3 l d n 1 r B", "KC1W3LDN1RB"]) assert.ok(scanUserText([t], roster).length > 0, t);
+});
+
+test("an answer that is only mentions becomes a plain substitute line, not an empty string", () => {
+  for (const t of ["@everyone", "<@123456789012345678>", "<@1<@2>2> @here"]) {
+    const out = applyVoiceGuards(t, { full: true });
+    assert.equal(out, MENTIONS_ONLY_LINE);
+    assert.ok(!PING.test(out));
+    assert.equal(applyVoiceGuards(out, { full: true }), out, "the substitute is a fixed point");
+    const parts = formatAnswerParts(t, { ux: true });
+    assert.equal(parts.main, MENTIONS_ONLY_LINE, "the channel body is never empty");
+    assert.ok(parts.main.length > 0);
+  }
+  assert.equal(applyVoiceGuards("<@123456789012345678>", { full: false }), "", "a detail section stays empty and is omitted");
+});
+
+test("fitToCap output is never longer than the cap (cutClean used to return cap + 1, or +2 with a ZWSP)", () => {
+  const cases = [
+    ["a".repeat(400), 40],
+    ["a".repeat(400), 300],
+    ["word ".repeat(10) + "@everyone123456789", 55],
+    ["x ".repeat(5) + "[Page](<https://leeroy.party/#links>) " + "y".repeat(400), 40],
+    ["Body.\n-# Sources: " + "s".repeat(400), 120],
+    ["Body.\n-# Sources: " + "a · ".repeat(200), 500],
+  ];
+  for (const [t, cap] of cases) assert.ok(fitToCap(t, cap).length <= cap, `cap ${cap} got ${fitToCap(t, cap).length}`);
 });

@@ -96,3 +96,8 @@ test("lintAnswer and repair never throw on pathological strings", () => {
     assert.doesNotThrow(() => applyVoiceGuards(s, { full: true }));
   }
 });
+
+property("fitToCap: length is always <= cap, for any text and any cap (links, mentions and footers included)", (r) => ({ t: genText(r) + genText(r) + (r.bool(0.4) ? "\n-# Sources: " + genText(r) : ""), cap: r.range(1, 700) }), ({ t, cap }) => {
+  const out = fitToCap(t, cap);
+  assert.ok(out.length <= cap, `output ${out.length} past cap ${cap}`);
+}, { runs: 400 });

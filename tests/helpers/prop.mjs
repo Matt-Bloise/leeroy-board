@@ -1,12 +1,13 @@
 // Tiny property-test kit. Zero dependencies. A seeded generator (mulberry32) plus `property()`, which runs a check over many generated
 // cases and, on the first failure, throws an error that carries the seed, the case index and the shrunk-by-hand input so the failure
-// replays exactly. Seed: PROP_SEED=<n> replays; otherwise a fresh seed per run (printed on failure only). PROP_RUNS scales the case count.
+// replays exactly. Seed: a fixed constant (DEFAULT_SEED) so CI is deterministic; PROP_SEED=<n> overrides it to explore other cases (a failure prints the seed and a replay line). PROP_RUNS scales the case count.
 import test from "node:test";
 
+export const DEFAULT_SEED = 0x1eeb0a4d;
 export const BASE_SEED = (() => {
   const e = process.env.PROP_SEED;
   if (e !== undefined && e !== "" && Number.isFinite(Number(e))) return Number(e) >>> 0;
-  return (Date.now() ^ (process.pid << 8)) >>> 0;
+  return DEFAULT_SEED;
 })();
 const SCALE = Number(process.env.PROP_RUNS) > 0 ? Number(process.env.PROP_RUNS) : 1;
 

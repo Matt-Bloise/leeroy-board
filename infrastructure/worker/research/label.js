@@ -280,7 +280,14 @@ export function trimToSentences(text, budget) {
 // A hard cut must not leave the front of a masked link ("[Page](<https://leeroy.party/#li"): that reads as a bare address and can embed.
 // It also breaks a "@everyone" the cut itself has just exposed at the end ("@everyone123..." has no word boundary, "@everyone…" does).
 const linkFragmentless = (t) => t.replace(/\[[^\]\n]*(?:\]\([^)\n]*)?$/, "").replace(/<?https?:\/\/\S*$/i, "").trimEnd().replace(/@(everyone|here)$/i, `@${ZWSP}$1`);
-const cutClean = (text, n) => `${linkFragmentless(text.slice(0, n))}…`;
+// Always at most n characters INCLUDING the ellipsis (linkFragmentless can add a ZWSP, so shrink the slice until the result fits).
+const cutClean = (text, n) => {
+  for (let k = Math.max(0, n - 1); k > 0; k--) {
+    const r = `${linkFragmentless(text.slice(0, k))}…`;
+    if (r.length <= n) return r;
+  }
+  return "…".slice(0, n);
+};
 export function fitToCap(text, cap) {
   const src = String(text || "");
   if (src.length <= cap) return src;
@@ -290,13 +297,13 @@ export function fitToCap(text, cap) {
     const parts = l.split(" · ");
     while (parts.length > 1 && parts.join(" · ").length > 300) parts.pop();
     const j = parts.join(" · ");
-    return j.length > 300 ? cutClean(j, 299) : j;
+    return j.length > 300 ? cutClean(j, 300) : j;
   };
   const footer = lines.filter(isFooter).map(shorten);
   const body = lines.filter((l) => !isFooter(l)).join("\n").trim();
   const room = Math.max(60, cap - footer.join("\n").length - 1);
   let out = [trimToSentences(body, room), ...footer].filter(Boolean).join("\n");
-  if (out.length > cap) out = cutClean(out, cap - 1);
+  if (out.length > cap) out = cutClean(out, cap);
   return out;
 }
 

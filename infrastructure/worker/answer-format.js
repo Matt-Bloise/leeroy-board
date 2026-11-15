@@ -407,6 +407,8 @@ function stripMentions(text) {
   return out.trim();
 }
 
+// What the asker sees when the whole answer was mentions (all removed). Plain text, no mention, no opener, so applyVoiceGuards stays idempotent over it.
+export const MENTIONS_ONLY_LINE = "I have nothing to add to that one.";
 export function applyVoiceGuards(text, opts = {}) {
   if (typeof text !== "string" || !text) return text;
   try {
@@ -429,7 +431,7 @@ export function applyVoiceGuards(text, opts = {}) {
       .replace(/\n{3,}/g, "\n\n")
       .trim();
     // An answer that was only mentions has nothing left: return "" (never the original, which would ping). Blank input stays as it was.
-    if (!out) return text.trim() ? "" : text;
+    if (!out) return text.trim() ? (opts.full ? MENTIONS_ONLY_LINE : "") : text; // full: a plain substitute line, never an empty channel message; detail sections stay "" and are omitted
     if (opts.full && !opts.isCoach && !opts.noEgg && eggDue(opts.intentId, opts.egg)) {
       const { line } = eggSettings(opts.egg);
       if (!out.toLowerCase().includes(line.toLowerCase())) out = `${out}\n\n${line}`;
