@@ -8,6 +8,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import worker from "../../infrastructure/worker/index.js";
 import { authenticate, keyFromRequest, getMembers, invalidateMembersCache, hashKey } from "../../infrastructure/worker/auth.js";
 import { publicParty, partyForMember } from "../../infrastructure/worker/sheet-privacy.js";
+import { anyHidden, sheetsHideAnything, projectDecide, WITHHELD_LINE } from "../../infrastructure/worker/public-party.js";
 import { allowedOrigins, originVerdict } from "../../infrastructure/worker/cors.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, MAX_BODY_BYTES, MAX_QUESTION_CHARS, SIGNUP_VALUE_MAX } from "../../infrastructure/worker/limits.js";
 import { verifyDiscordSignature } from "../../infrastructure/worker/discord.js";
@@ -115,6 +116,24 @@ test("publicParty: a field name the code has never heard of is hidden unless it 
   assert.deepEqual(Object.keys(out[0].fields), ["shown_field"]);
 });
 
+test("a failed or junk sheets read fails closed: everything is hidden and the composites are withheld (the fail-open rule that PR 333 replaced must not return)", () => {
+  const partyDoc = { members: [{ name: "Member A" }] };
+  const decide = { generated: "x", picks: ["secret-derived"] };
+  for (const bad of [null, undefined, "junk", 7, {}]) {
+    assert.equal(anyHidden(partyDoc, bad), true, `anyHidden ${JSON.stringify(bad)}`);
+    assert.equal(sheetsHideAnything(bad), true, `sheetsHideAnything ${JSON.stringify(bad)}`);
+    const out = projectDecide(decide, partyDoc, bad);
+    assert.equal(out.withheld, WITHHELD_LINE, `decide withheld ${JSON.stringify(bad)}`);
+  }
+  // a sheet whose fields are junk (not an object) hides every field, and its sheet row carries none
+  for (const fields of [null, "junk", ["x"], undefined]) {
+    assert.equal(sheetsHideAnything([{ slug: "a", fields }]), true, `fields ${JSON.stringify(fields)}`);
+    assert.deepEqual(publicParty([{ slug: "a", fields }])[0].fields ?? {}, {}, `public fields ${JSON.stringify(fields)}`);
+  }
+  for (const visible of [undefined, 0, null, "true"]) assert.equal(sheetsHideAnything([{ slug: "a", fields: { class: { value: "y", visible } } }]), true, `visible ${JSON.stringify(visible)} counts as hidden`);
+  assert.equal(projectDecide(decide, partyDoc, [{ slug: "a", name: "Member A", fields: { class: { value: "y", visible: true } } }]).withheld, undefined, "all-visible sheets do not withhold the composite");
+});
+
 test("partyForMember: with no owner slug every sheet is stripped, including a slug-less sheet (kills the dropped ownerSlug guard)", () => {
   const sheet = { name: "Member A", fields: { goals: { value: "secret", visible: false }, level: { value: 5, visible: true } } }; // no slug at all
   for (const owner of [undefined, null, ""]) {
@@ -215,17 +234,18 @@ test("web login start: 20 requests a minute per IP, the 21st is a 429 with Retry
 const acctEnv = (db = {}) => ({ USER_SALT, DISCORD_CLIENT_ID: "123456789012345678", DISCORD_CLIENT_SECRET: "throwaway-secret-0123456789", DB: db });
 const post = (path, body, headers = {}) => new Request(`https://w.test/api${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body });
 const NOW = Date.parse("2026-11-02T12:00:30Z");
+const NOFETCH = { fetch: () => { throw new Error("unexpected network call"); } };
 
 test("POST /auth/discord: refuses a request with no Origin header (kills the dropped Origin check)", async () => {
   _resetAccountLimits();
-  const [status, body] = await handleAccount(post("/auth/discord", '{"code":"abcdef123"}'), acctEnv(), { path: "/auth/discord", ip: "198.51.100.1", now: NOW });
+  const [status, body] = await handleAccount(post("/auth/discord", '{"code":"abcdef123"}'), acctEnv(), { path: "/auth/discord", ip: "198.51.100.1", now: NOW, deps: NOFETCH });
   assert.equal(status, 403);
   assert.equal(body.error, "origin not allowed");
 });
 
 test("POST /auth/discord: 10 a minute per IP, the 11th is a 429 (kills a removed or loosened limiter)", async () => {
   _resetAccountLimits();
-  const go = (ip, t = NOW) => handleAccount(post("/auth/discord", '{"code":"!"}', { Origin: "https://leeroy.party" }), acctEnv(), { path: "/auth/discord", ip, now: t });
+  const go = (ip, t = NOW) => handleAccount(post("/auth/discord", '{"code":"!"}', { Origin: "https://leeroy.party" }), acctEnv(), { path: "/auth/discord", ip, now: t, deps: NOFETCH });
   for (let i = 1; i <= ACCOUNT.loginPerMin; i++) assert.equal((await go("198.51.100.2"))[0], 400, `request ${i}`);
   const [status, , headers] = await go("198.51.100.2");
   assert.equal(status, 429);
@@ -237,7 +257,7 @@ test("POST /auth/discord: 10 a minute per IP, the 11th is a 429 (kills a removed
 test("POST /auth/discord: a body over 1 KiB is a 413 before it is parsed (kills the loosened body cap)", async () => {
   _resetAccountLimits();
   const big = JSON.stringify({ code: "abcdef123", pad: "x".repeat(ACCOUNT.bodyMax + 10) });
-  const [status, body] = await handleAccount(post("/auth/discord", big, { Origin: "https://leeroy.party" }), acctEnv(), { path: "/auth/discord", ip: "198.51.100.4", now: NOW });
+  const [status, body] = await handleAccount(post("/auth/discord", big, { Origin: "https://leeroy.party" }), acctEnv(), { path: "/auth/discord", ip: "198.51.100.4", now: NOW, deps: NOFETCH });
   assert.equal(status, 413);
   assert.equal(body.error, "body too large");
   _resetAccountLimits();
