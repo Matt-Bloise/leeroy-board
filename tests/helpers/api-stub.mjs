@@ -16,12 +16,12 @@ let cached = null;
 // The Worker serves /api/data/<x>, /api/library/<x> and /api/atlas/<x> from D1 rows seeded from the repo's data/ files, byte for byte the same JSON
 // (checked when the snapshot was recorded), so the stub reads those from data/ instead of duplicating 1.5 MB in the snapshot.
 const DATA = path.join(here, "..", "..", "data");
-const MEMBER_DOCS = new Set(["party", "decide", "tonight", "client", "guided-atlas"]);
+const MEMBER_DOCS = new Set(["party", "decide", "tonight", "client", "guided-atlas", "signups"]);
 export function repoDoc(key) {
   const m = key.match(/^\/(data|library|atlas)\/([A-Za-z0-9._-]+)$/);
   if (!m) return null;
   let f = path.join(DATA, m[1] === "data" ? "" : m[1], m[2]);
-  // the five member documents are asked for WITHOUT an extension (js/board.js memberUrl: <brain>/data/<name>); the Worker answers them with nobody hiding, i.e. the repo file of the same name
+  // the member documents (the five and the sign-ups) are asked for WITHOUT an extension (js/board.js memberUrl: <brain>/data/<name>); the Worker answers them with nobody hiding, i.e. the repo file of the same name
   if (m[1] === "data" && !/\./.test(m[2]) && MEMBER_DOCS.has(m[2])) f = path.join(DATA, m[2] + ".json");
   // data/ documents are served with the member names swapped for fictional ones (tests/helpers/fictional-party.mjs), the same swap the recorded snapshot carries, so the repo documents and the snapshot agree
   // and no browser suite's page, screenshot or log says which real person plays what.

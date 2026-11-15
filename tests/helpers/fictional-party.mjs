@@ -3,12 +3,12 @@
 // The real names are never written here or in the fixtures: they are read from data/party.json (members, in order) at the moment of use and mapped by position, so this
 // file stays free of them and keeps working when the party document changes. A member whose name is already one of the stand-ins is left alone.
 //   fictionalise(text)  ->  text with every real member name and member slug replaced (whole words only: "Matt-Bloise" in a URL is not a member)
-// The builds (class, race, spec, professions) are not touched: they are the table's, and what a test needs; only the link from a person to them is cut.
+// These are not the names in data/sample/* (the sample roster would put a viewer of the same name in its group). The builds (class, race, spec, professions) are not touched: they are the table's, and what a test needs; only the link from a person to them is cut.
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const STAND_INS = Object.freeze(["Brindle Oakhand", "Pip Candlewick", "Mossback Dunn", "Quill Frostmere", "Gloam Hexley", "Tansy Rooke", "Fenwick Lark", "Ottoline Brack", "Harlan Vesper", "Sorrel Pike"]);
+export const STAND_INS = Object.freeze(["Aldous Thorne", "Mirelle Voss", "Dagny Pell", "Quill Frostmere", "Gloam Hexley", "Tansy Rooke", "Fenwick Lark", "Ottoline Brack", "Harlan Vesper", "Sorrel Pike"]);
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 let cache = null;

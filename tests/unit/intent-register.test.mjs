@@ -80,7 +80,7 @@ test("every visible element on both views is covered by an entry", async (t) => 
     await fresh.close();
 
     const member = await ctx.newPage();
-    await member.addInitScript(() => { try { localStorage.setItem("board-as", "Brindle Oakhand"); localStorage.setItem("board-hinted", "1"); } catch { /* storage blocked */ } });
+    await member.addInitScript(() => { try { localStorage.setItem("board-as", "Aldous Thorne"); localStorage.setItem("board-hinted", "1"); } catch { /* storage blocked */ } });
     await member.goto(base, { waitUntil: "load" });
     await member.waitForTimeout(3500);
     await member.click("#scene-close");
