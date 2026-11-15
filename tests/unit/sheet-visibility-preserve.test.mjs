@@ -167,3 +167,98 @@ test("launch state from Discord /launch or the board's launch intent never un-hi
   assert.equal(field(env, "launch_state").visible, false, "board launch intent");
   assert.equal(lastEvent(env, "launch_state").visible, 0);
 });
+
+// Wraps env.DB so that the first read of the commit's two documents (kv-cas.js: key IN ('party_sheets', 'party')) is followed by `after()`,
+// which commits something to the DB before that attempt writes. The attempt's compare-and-set then loses and the commit recomputes.
+function afterFirstSheetRead(env, after) {
+  let fired = false;
+  const DB = env.DB;
+  const wrapped = new Proxy(DB, {
+    get(target, prop) {
+      if (prop === "prepare") {
+        return (sql) => {
+          const stmt = target.prepare(sql);
+          if (fired || !/key IN \('party_sheets',\s*'party'\)/.test(sql)) return stmt;
+          return new Proxy(stmt, {
+            get(s, p) {
+              if (p !== "all") { const v = s[p]; return typeof v === "function" ? v.bind(s) : v; }
+              return async (...a) => { const r = await s.all(...a); if (!fired) { fired = true; after(); } return r; };
+            },
+          });
+        };
+      }
+      const v = target[prop];
+      return typeof v === "function" ? v.bind(target) : v;
+    },
+  });
+  return { ...env, DB: wrapped, raw: DB, wasFired: () => fired };
+}
+const setSheets = (env, rows) => env.DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, ?)").run(JSON.stringify(rows), AT);
+const countOf = (env, table) => env.DB.raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+
+test("a hide committed between the read and the write of a Discord value edit: the field stays hidden, the retry sees the hide", async () => {
+  const env0 = await makeEnv();
+  setSheets(env0, [{ slug: SLUG, name: NAME, fields: { race: { value: "human", visible: true, source: "board", at: AT } }, updated: AT }]);
+  const hideNow = () => setSheets(env0, [{ slug: SLUG, name: NAME, fields: { race: { value: HIDDEN_RACE, visible: false, source: "board", at: AT } }, updated: "2026-11-12T00:00:01.000Z" }]);
+  const env = afterFirstSheetRead(env0, hideNow);
+  env.DB.raw = env0.DB.raw;
+  const body = await discordSheet(env, "race", HIDDEN_EDIT);
+  assert.ok(env.wasFired(), "the hide was committed after the attempt's read");
+  assert.equal(body.data.flags, 64);
+  const f = field(env0, "race");
+  assert.equal(f.value, HIDDEN_EDIT, "the edit landed");
+  assert.equal(f.visible, false, "the hide that committed during the attempt was not undone");
+  assert.equal(lastEvent(env0, "race").visible, 0);
+  assert.deepEqual(await anonymousLeaks(env0), []);
+});
+
+test("web POST /sheet with only { field, visible } changes the visibility and keeps the stored value, for every field", async () => {
+  const env = await makeEnv();
+  await memberApi(env, "POST", "/sheet", { field: "race", value: "dwarf", visible: true });
+  const r1 = await memberApi(env, "POST", "/sheet", { field: "race", visible: false });
+  assert.equal(r1.status, 200);
+  const b1 = await r1.json();
+  assert.equal(b1.value, "dwarf", "the reply carries the kept value");
+  assert.equal(b1.visible, false);
+  assert.equal(field(env, "race").value, "dwarf", "the value was not replaced by null");
+  assert.equal(field(env, "race").visible, false);
+  assert.equal(JSON.parse(lastEvent(env, "race").value_json), "dwarf", "the event row carries the kept value, so a rebuild agrees");
+  assert.equal(lastEvent(env, "race").visible, 0);
+  const r2 = await memberApi(env, "POST", "/sheet", { field: "race", visible: true });
+  assert.equal((await r2.json()).value, "dwarf");
+  assert.equal(field(env, "race").value, "dwarf");
+  assert.equal(field(env, "race").visible, true);
+  const { party } = await quiet(() => buildPartySheetsFromD1(env, { persist: false }));
+  assert.equal(party.find((s) => s.slug === SLUG).fields.race.value, "dwarf", "rebuilt from events");
+  // An explicit null still clears the value.
+  const r3 = await memberApi(env, "POST", "/sheet", { field: "race", value: null, visible: true });
+  assert.equal((await r3.json()).value, null);
+  assert.equal(field(env, "race").value, null, "{ value: null } clears");
+});
+
+test("an empty party_sheets row ([]) is rebuilt from sheet_events: a hidden field stays hidden after a Discord edit", async () => {
+  const env = await makeEnv();
+  env.DB.raw.prepare("INSERT INTO sheet_events (slug, name, field, value_json, visible, source, created_at) VALUES (?, ?, 'race', ?, 0, 'board', ?)").run(SLUG, NAME, JSON.stringify(HIDDEN_RACE), AT);
+  setSheets(env, []);
+  await discordSheet(env, "plan_zone", "elwynn-forest");
+  const race = field(env, "race");
+  assert.ok(race, "the hidden field was rebuilt from the events, not dropped");
+  assert.equal(race.visible, false);
+  const doc = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json);
+  assert.equal("race" in doc.members[0], false, "the public party document has no race for a member whose race is hidden");
+  assert.deepEqual(await anonymousLeaks(env), []);
+});
+
+test("Discord /sheet refuses a field name that is not a sheet field: ephemeral refusal, nothing written", async () => {
+  const env = await makeEnv();
+  const before = { sheets: JSON.stringify(sheets(env)), events: countOf(env, "sheet_events"), intents: countOf(env, "intents") };
+  for (const name of ["constructor", "toString", "hasOwnProperty", "__proto__", "valueOf", "no_such_field"]) {
+    const body = await discordSheet(env, name, "zqhv-should-not-store");
+    assert.equal(body.data.flags, 64, `${name}: ephemeral`);
+    assert.ok(/not a sheet field/i.test(body.data.content), `${name}: refusal text`);
+  }
+  assert.equal(JSON.stringify(sheets(env)), before.sheets, "no sheet changed");
+  assert.equal(countOf(env, "sheet_events"), before.events, "no event");
+  assert.equal(countOf(env, "intents"), before.intents, "no intent");
+  assert.deepEqual(await anonymousLeaks(env), []);
+});
