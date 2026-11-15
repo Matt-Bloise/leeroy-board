@@ -40,7 +40,7 @@ import { JOIN_COMMAND_NAME, JOIN_BUTTON_ID, shouldHint, joinHintBody } from "./j
 import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-command.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordBallot, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
-import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
+import { loadConfigKey, loadConfigKeyStrict, libraryShelfLine, buildThreadMention } from "./config.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { updateKvJson, KvConflictError } from "./kv-cas.js";
@@ -63,9 +63,27 @@ import {
 import { loadRoster } from "./party-source.js";
 import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
-import { partyForMember, redactIntentBody } from "./sheet-privacy.js";
+import { partyForMember, redactIntentBody, sheetIntentBody } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
 import { canManageGuild } from "./setup-command.js";
+
+// Staff check for the mailbox commands (/intents, /ack, /answer). Two conditions:
+//  1. The signed Manage Server / Administrator bit in interaction.member.permissions (nothing a user types is read).
+//  2. The interaction comes from the guild in discord_roster.
+// The server gate is OFF (ok with gateOff: true) only when the discord_roster row is cleanly absent or is an object with no guildId key:
+// the permission check still applies and the reply says so (GATE_OFF_NOTE). Anything else fails closed (ok: false): a failed D1 read,
+// a corrupt or non-object row, or a guildId that is present but not a string of 5 to 25 digits. A failed read is never cached as absent.
+async function rosterAdminCheck(env, interaction) {
+  if (!canManageGuild(interaction.member && interaction.member.permissions)) return { ok: false, gateOff: false };
+  const read = await loadConfigKeyStrict(env, "discord_roster");
+  if (read.status === "absent") return { ok: true, gateOff: true };
+  const roster = read.value;
+  if (read.status !== "ok" || !roster || typeof roster !== "object" || Array.isArray(roster)) return { ok: false, gateOff: false };
+  if (!Object.prototype.hasOwnProperty.call(roster, "guildId")) return { ok: true, gateOff: true };
+  if (typeof roster.guildId !== "string" || !/^[0-9]{5,25}$/.test(roster.guildId)) return { ok: false, gateOff: false };
+  return { ok: String(interaction.guild_id || "") === roster.guildId, gateOff: false };
+}
+export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
@@ -1037,7 +1055,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           );
         }
         const now = new Date().toISOString();
-        await recordSheetEventInD1(env, origin, {
+        const saved = await recordSheetEventInD1(env, origin, {
           slug: target.slug,
           name: target.name,
           field,
@@ -1048,7 +1066,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         await insertIntent(env, {
           slug: target.slug,
           kind: "sheet",
-          body: { field, value, source: "discord" },
+          body: sheetIntentBody(field, value, saved.visible, "discord"), // a field that is hidden stays hidden: its intent carries no value
           ver: 1,
           at: now,
         });
@@ -1120,7 +1138,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
           .bind(JSON.stringify(rows), now)
           .run();
-        await recordSheetEventInD1(env, origin, {
+        const savedLaunch = await recordSheetEventInD1(env, origin, {
           slug: member.slug,
           name: byName,
           field: "launch_state",
@@ -1131,7 +1149,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         await insertIntent(env, {
           slug: member.slug,
           kind: "launch",
-          body: { state },
+          body: savedLaunch.visible === false ? { field: "launch_state", visible: false } : { state }, // hidden launch_state: no value in the mailbox
           ver: 1,
           at: now,
         });
@@ -1638,7 +1656,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     // 2r. `/intents`
     if (cmd === "intents") {
       // Staff only, like GET /intents: the mailbox holds every member's changes. Same rule as /ack's whole-mailbox clear and /setup.
-      if (!canManageGuild(interaction.member && interaction.member.permissions)) {
+      const gate = await rosterAdminCheck(env, interaction);
+      if (!gate.ok) {
         return new Response(
           JSON.stringify({ type: 4, data: { content: "That command is for server admins.", flags: 64 } }),
           { status: 200, headers: { "Content-Type": "application/json" } }
@@ -1663,7 +1682,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           JSON.stringify({
             type: 4,
             data: {
-              content: `📬 **Intents Mailbox:** No pending intents (total pending: ${countRow ? countRow.count : 0}).`,
+              content: `📬 **Intents Mailbox:** No pending intents (total pending: ${countRow ? countRow.count : 0}).${gate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
               flags: 64,
             },
           }),
@@ -1684,7 +1703,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         JSON.stringify({
           type: 4,
           data: {
-            content: `📬 **Intents Mailbox** (${intents.length} shown, ${countRow ? countRow.count : 0} total pending):\n${list}`,
+            content: `📬 **Intents Mailbox** (${intents.length} shown, ${countRow ? countRow.count : 0} total pending):\n${list}${gate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
@@ -1707,7 +1726,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       }
 
       // Only a server admin clears the whole mailbox; any other roster member clears their own intents.
-      const adminCaller = canManageGuild(interaction.member && interaction.member.permissions);
+      const ackGate = await rosterAdminCheck(env, interaction);
+      const adminCaller = ackGate.ok;
       const res = adminCaller
         ? await env.DB.prepare("DELETE FROM intents WHERE seq <= ?").bind(upTo).run()
         : await env.DB.prepare("DELETE FROM intents WHERE seq <= ? AND slug = ?").bind(upTo, member.slug).run();
@@ -1718,7 +1738,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         JSON.stringify({
           type: 4,
           data: {
-            content: `✅ Acknowledged and cleared intents up to seq **${upTo}**. Deleted **${deleted}** intent(s) (${countRow ? countRow.count : 0} still pending).`,
+            content: `✅ Acknowledged and cleared intents up to seq **${upTo}**. Deleted **${deleted}** intent(s) (${countRow ? countRow.count : 0} still pending).${adminCaller && ackGate.gateOff ? `
+${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
@@ -1745,13 +1766,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         );
       }
 
+      const answerGate = await rosterAdminCheck(env, interaction);
       const applied = await applyManualAnswer(env, {
         id,
         answer,
         sources,
         failed,
         byName,
-        isAdmin: canManageGuild(interaction.member && interaction.member.permissions),
+        isAdmin: answerGate.ok,
         now,
       });
       if (!applied.ok) {
@@ -1773,7 +1795,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         JSON.stringify({
           type: 4,
           data: {
-            content: `✅ Answer recorded for question **#${id}**${applied.share ? " and sent to the Living Board" : " (private, not broadcast)"}.`,
+            content: `✅ Answer recorded for question **#${id}**${applied.share ? " and sent to the Living Board" : " (private, not broadcast)"}.${answerGate.ok && answerGate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),
