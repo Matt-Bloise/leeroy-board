@@ -24,13 +24,15 @@
 //   21. Context menus — "Ask Leeroy" & "Fix this fact" on any Discord message
 // =============================================================================
 
-import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
+import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS, isPrPreviewEnv } from "./ai-models.js";
+import { askWallPlan, memberLine, memberAck, guestLibraryOnly, MEMBER_FAILED_LINE } from "./research/no-wall.js";
+import { researchModeOn } from "./research/provider.js";
 import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
-import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
+import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
@@ -599,7 +601,7 @@ export async function patchOriginalWithRetry(interaction, content, components = 
 // the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
 // (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
 // stored by answerWithAi in ask_turns (the website shows it) and is never sent a second time.
-export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "" }) {
+export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "", memberOpen = false }) {
   const startedAt = Date.now();
   const deadlineMs = Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS;
   const work = Promise.resolve().then(answer).then(() => "done", () => "failed");
@@ -622,8 +624,13 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
     } catch {}
   }
   if (!text) {
-    const line = pickLine(persona, "errorLines", intentId);
-    text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+    if (memberOpen) {
+      // ASK_RESEARCH on, a member: an in-voice line with no "try again", no limit, no time (research/no-wall.js).
+      text = memberLine(persona, intentId);
+    } else {
+      const line = pickLine(persona, "errorLines", intentId);
+      text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+    }
   }
   // ANSWER_UX: More, Sources, Helpful and Off buttons on a real answer. Any failure here only means no buttons.
   const ux = answerUxEnabled(env);
@@ -662,7 +669,7 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
 
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
-  const state = { verified: false, type: null };
+  const state = { verified: false, type: null, member: false };
   let res;
   try {
     res = await handleDiscordInteractionInner(req, env, ctx, origin, state);
@@ -671,9 +678,14 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     if (!state.verified || state.type === 1) throw err;
     // Name and a fixed tag only: err.message can carry a slice of user input.
     console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
+    // ASK_RESEARCH on, a roster member: the old line says "before you try again"; a member never reads retry wording (research/no-wall.js). Everyone else, and flag off: unchanged.
+    let failedLine = SLASH_COPY.interactionFailed();
+    if (state.member && state.type !== 4) {
+      try { if (await researchModeOn(env, { preview: isPrPreviewEnv(env) })) failedLine = MEMBER_FAILED_LINE; } catch {}
+    }
     const body = state.type === 4
       ? { type: 8, data: { choices: [] } }
-      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+      : { type: 4, data: { content: failedLine, flags: 64 } };
     // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
     res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }
@@ -739,6 +751,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     "Guest";
   const membersConfig = await loadConfigKey(env, "discord_members");
   const member = resolveMember(user.id, rawUser, membersConfig); // null when the user is not a recognised party member
+  state.member = Boolean(member); // read by the catch in handleDiscordInteraction
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   // CARDS_ENABLED: flush a due board line and retry an unfinished card edit. Cheap D1 reads; the scheduled ticks do the same.
@@ -761,11 +774,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         headers: { "Content-Type": "application/json" },
       });
     }
-    const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
+    // ASK_RESEARCH on: a roster member is never walled (noWall); everyone else keeps the check, on the guests' budget keys (research/no-wall.js). Flag off: exactly askBudgetKeys.
+    const { research, noWall, budget: askBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) });
     // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
-    if (askBudget) {
+    if (askBudget && !noWall) {
       const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
-      if (verdict && verdict.code !== "budget_global") {
+      if (verdict && verdict.code !== "budget_global" && !guestLibraryOnly(research, verdict)) { // research: a guest at the guests' share gets library facts from answerWithAi, not this refusal
         return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -799,6 +813,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         persona,
         isPrivate,
         askerId: String(user.id || ""),
+        memberOpen: noWall,
         wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
         answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
       })
@@ -807,7 +822,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
     if (persona) {
       return new Response(
-        JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
+        JSON.stringify({ type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -1856,20 +1871,22 @@ ${GATE_OFF_NOTE}` : ""}`,
       });
 
       const persona = await loadPersona(env);
+      const { noWall, budget: menuBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) }); // same plan as /ask: no pre-check for a member, the guests' keys otherwise
       ctx.waitUntil(
         answerAndDeliver({
           env,
           interaction,
           intentId,
           persona,
+          memberOpen: noWall,
           wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
           askerId: String(user.id || ""),
-          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }), isMember: Boolean(member), storeDetails: true }),
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true }),
         })
       );
 
       return new Response(
-        JSON.stringify(persona ? { type: 4, data: { content: pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
+        JSON.stringify(persona ? { type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
