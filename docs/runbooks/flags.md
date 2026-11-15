@@ -35,6 +35,7 @@ Each is a **boolean flag** in the app `leeroy-brain` (the app `1f0b836c-4929-472
 | --- | --- | --- |
 | `D1_FEED` | computes `GET /api/data/stats` from D1 (cached 5 minutes) | `D1_FEED = "off"` |
 | `INTEREST_NUDGES` | adds the "Ask: what should I do at my level?" and "How many are interested?" buttons to `/tonight` and `/signup` (plus "I'm in tonight" on `/tonight` while the RSVP is empty), and lets the 6-hour cron read the Interested count of Leeroy's own scheduled events and the reaction counts of Leeroy's own sign-up cards and recent timed posts (`worker/interest.js`). GET only, counts only, stored in the private kv_state row `interest_counts`; it never writes a sign-up. Needs the bot to be able to read the channels it posts in (View Channel, Read Message History) | `INTEREST_NUDGES = "off"` |
+| `ROSTER_FROM_D1` | reads the member roster, the default admin and the redaction names from the private kv_state row `party_roster` (admin `PUT /api/config/party_roster`; shape and rollout in `docs/adr/0002-member-roster-from-d1.md`) instead of the built-in lists. A missing or invalid row falls back to the built-ins. Off: today's behaviour, and D1 is never asked for the key | `ROSTER_FROM_D1 = "off"` |
 
 Until `D1_FEED` exists the Worker treats it as off, which is today's behaviour; the first deploy after this change creates it, disabled.
 

@@ -18,13 +18,33 @@ export function setFirstNameSource(fn) {
 }
 export const getFirstNameSource = () => firstNameSource;
 
-// [{ display, aliases, firstNames }] built from ROSTER_DATA (display and aliases only).
+// ROSTER_FROM_D1 (ADR 0002): roster-source.js hands the D1 roster in here. null (the default, and always while the flag is off) means the built-in list only.
+// With an override the members are the override first, then every built-in member the override does not already cover: the redaction roster is a superset
+// of both while built-ins exist, so switching the flag on can never uncover a name the built-ins covered.
+let rosterOverride = null;
+let overrideKey = "null";
+export function setRosterOverride(list) {
+  const next = Array.isArray(list) && list.length ? list.map((m) => ({ display: m.display, aliases: [...(m.aliases || [])], firstNames: [...(m.firstNames || [])] })) : null;
+  const key = JSON.stringify(next);
+  if (key === overrideKey) return; // unchanged: keep the cached roster object (the guard caches its parse per object)
+  rosterOverride = next;
+  overrideKey = key;
+  cached = null;
+}
+
+// [{ display, aliases, firstNames }] built from ROSTER_DATA (display and aliases only), plus the override when one is set.
 export function researchMembers() {
-  return ROSTER_DATA.map((r, i) => ({
+  const base = ROSTER_DATA.map((r, i) => ({
     display: r.display,
     aliases: [...(r.aliases || [])],
     firstNames: firstNameSource ? firstNameSource(r, i) ?? [] : [],
   }));
+  if (!rosterOverride) return base;
+  const covered = new Set(rosterOverride.map((r) => skeleton(String(r.display))));
+  return [
+    ...rosterOverride.map((r, i) => ({ display: r.display, aliases: [...r.aliases], firstNames: [...r.firstNames, ...(firstNameSource ? firstNameSource(r, i) ?? [] : [])] })),
+    ...base.filter((b) => !covered.has(skeleton(String(b.display)))),
+  ];
 }
 
 let cached = null;
