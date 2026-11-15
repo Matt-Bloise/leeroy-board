@@ -634,7 +634,7 @@ function bench(rd) {
 // Command line
 // ------------------------------------------------------------------------------------------------------------------------------------------
 export function run(argv, out = (s) => process.stdout.write(s + "\n")) {
-  const opt = { root: DEFAULT_ROOT, json: false, check: false, pr333: false, bench: false, model: null, scenario: null };
+  const opt = { root: DEFAULT_ROOT, json: false, check: false, pr333: false, bench: false, model: null, scenario: null, noAnchors: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--root") opt.root = path.resolve(argv[++i]);
@@ -645,6 +645,7 @@ export function run(argv, out = (s) => process.stdout.write(s + "\n")) {
     else if (a === "--diff") opt.diff = true;
     else if (a === "--model") opt.model = argv[++i];
     else if (a === "--scenario") opt.scenario = argv[++i];
+    else if (a === "--no-anchors") opt.noAnchors = true; // price a pinned snapshot of schema.sql and wrangler.toml: skip the check that the code still contains each anchor
     else if (a === "--md") { /* default */ }
     else throw new Error(`unknown argument ${a}`);
   }
@@ -652,7 +653,7 @@ export function run(argv, out = (s) => process.stdout.write(s + "\n")) {
   const model = opt.model ? JSON.parse(fs.readFileSync(opt.model, "utf8")) : MODEL;
   if (opt.scenario) model.scenarios = JSON.parse(fs.readFileSync(opt.scenario, "utf8"));
   const schema = parseSchema(rd.read("infrastructure/schema.sql"));
-  const anchors = checkAnchors(model, rd);
+  const anchors = opt.noAnchors ? { checked: 0, missing: [] } : checkAnchors(model, rd);
   const wr = parseWrangler(rd.read("infrastructure/wrangler.toml"));
   const warnings = [];
   for (const f of model.flagsOff || []) if (wr.vars[f] !== undefined && wr.vars[f].toLowerCase() !== "off") warnings.push(`wrangler.toml sets ${f} = "${wr.vars[f]}" but the model prices it off`);

@@ -1,7 +1,7 @@
 # Worker cost model on the Cloudflare free plan
 
 Audit of 2026-11-15. Code read: `master` at 714cbf0 (after PR 344). Open PR 333 (`git fetch origin pull/333/head`, head 1372901) is priced separately in section 6.
-Reproduce every number here with `node tools/cost-model.mjs` (zero dependencies, no network, reads the checkout only). The test `tests/unit/cost-model.test.mjs` runs it against a fixture whose totals were worked out by hand, and fails when a statement the model is built from has left the code.
+Reproduce every number here with `node tools/cost-model.mjs` (zero dependencies, no network, reads the checkout only). The gating test `tests/unit/cost-model.test.mjs` runs it against a fixture whose totals were worked out by hand and against pinned copies of `schema.sql` and `wrangler.toml` (`tests/fixtures/cost-model-pinned`). Whether the live code still contains each anchor is a separate non-gating check, `npm --prefix tests run cost-model:check`, to be run when the model is refreshed (it fails when a statement the model is built from has left the code).
 
 ## 1. Answer first
 
@@ -37,6 +37,7 @@ node tools/cost-model.mjs --diff          # master against PR 333
 node tools/cost-model.mjs --root <worktree of pull/333/head>   # price the real PR tree
 node tools/cost-model.mjs --bench         # time JSON.parse and stringify of the seeded documents (node, not workerd)
 node --test tests/unit/cost-model.test.mjs
+npm --prefix tests run cost-model:check     # non-gating: are all anchors still in the live code
 ```
 
 ## 3. What one open tab does

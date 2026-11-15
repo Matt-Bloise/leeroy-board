@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { run, parseSchema, writeRows, MODEL, runScenario, limitsReport, checkAnchors, makeReader } from "../../tools/cost-model.mjs";
+import { run, parseSchema, writeRows, MODEL, runScenario, limitsReport, anchorsOf } from "../../tools/cost-model.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const FX = path.join(ROOT, "tests/fixtures/cost-model");
@@ -78,39 +78,44 @@ test("a model anchor that is no longer in the code fails the run", () => {
   assert.match(lines.join("\n"), /no longer contains/);
 });
 
-test("the real model is still tied to the code (every anchor is found)", () => {
-  const res = checkAnchors(MODEL, makeReader(ROOT));
-  assert.deepEqual(res.missing.map((m) => `${m.where}: ${m.text}`), []);
-  assert.ok(res.checked > 100);
+// Tests below price the real MODEL against PINNED copies of infrastructure/schema.sql and wrangler.toml (tests/fixtures/cost-model-pinned),
+// never the live tree, so a SQL reformat or a flag flip elsewhere cannot turn the gating unit job red. Whether the live code still
+// contains every anchor is a separate, non-gating check: `npm --prefix tests run cost-model:check` (node tools/cost-model.mjs --check).
+const PINNED = path.join(ROOT, "tests/fixtures/cost-model-pinned");
+const PIN = ["--root", PINNED, "--no-anchors"];
+
+test("every anchor of the real model names a file and a non-empty fragment", () => {
+  const list = anchorsOf(MODEL, { pr333Tree: false }), list333 = anchorsOf(MODEL, { pr333Tree: true });
+  assert.ok(list.length > 100 && list333.length > list.length);
+  for (const a of [...list, ...list333]) assert.ok(a.file && typeof a.text === "string" && a.text.trim().length >= 4, `${a.where}`);
 });
 
-test("the real model runs on this checkout and stays inside what the code says", () => {
-  const master = runJson([]);
+test("the real model runs on the pinned snapshot and stays inside what the snapshot says", () => {
+  const master = runJson(PIN);
   assert.equal(master.code, 0);
   assert.equal(master.json.scenarios.length, MODEL.scenarios.length);
-  assert.deepEqual(master.json.warnings, [], "a flag the model prices as off is on, or the crons changed");
+  assert.deepEqual(master.json.warnings, [], "the pinned wrangler.toml sets a flag the model prices as off, or the crons changed");
   for (const s of master.json.scenarios) {
     for (const v of Object.values(s.total)) assert.ok(Number.isFinite(v) && v >= 0);
     assert.ok(["requests", "d1Reads", "d1Writes", "neurons", "doRequests"].includes(s.first));
   }
   // the PR 333 overlay only adds work: no scenario gets cheaper (rows read within 1 percent), and the polling scenario pays for the lost cache
-  const pr = runJson(["--assume-pr333"]);
+  const pr = runJson([...PIN, "--assume-pr333"]);
   assert.equal(pr.code, 0);
   for (let i = 0; i < master.json.scenarios.length; i++) {
     const m = master.json.scenarios[i].total, p = pr.json.scenarios[i].total;
     assert.ok(p.d1q >= m.d1q && p.rr >= m.rr * 0.99 && p.req >= m.req, master.json.scenarios[i].name); // the ask path reads one row fewer (the party row moves to the sheets read)
   }
   const poll = (j) => j.scenarios.find((s) => s.name === "Ten polling tabs").total;
-  if (fs.existsSync(path.join(ROOT, "infrastructure/worker/public-party.js"))) assert.equal(poll(pr.json).d1q, poll(master.json).d1q, "PR 333 is in this tree: master and overlay are the same");
-  else assert.ok(poll(pr.json).d1q > 1.5 * poll(master.json).d1q);
+  assert.ok(poll(pr.json).d1q > 1.5 * poll(master.json).d1q);
 });
 
 test("the markdown report has its tables", () => {
   const lines = [];
-  assert.equal(run([], (s) => lines.push(s)), 0);
+  assert.equal(run(PIN, (s) => lines.push(s)), 0);
   const md = lines.join("\n");
   const diff = [];
-  assert.equal(run(["--diff"], (x) => diff.push(x)), 0);
+  assert.equal(run([...PIN, "--diff"], (x) => diff.push(x)), 0);
   assert.match(diff.join("\n"), /### PR 333 against master: a day each/);
   for (const h of ["### Limits used", "### Cost of one request, per route", "### Scenarios (a day each)", "### What alone exhausts each limit"]) assert.ok(md.includes(h), h);
 });
