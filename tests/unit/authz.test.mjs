@@ -31,6 +31,7 @@ const TABLE = {
   "PUT /vocab": ADMIN,
   "PUT /config/:key": ADMIN, // admin-gated config rows (name_map, discord_members, ...), write only
   "POST /admin/members": ADMIN,
+  "POST /admin/sheet": ADMIN, // q-20261114-22: the owner fills a friend's level; a hidden field stays hidden
   "POST /admin/cards/post": ADMIN, // CARDS_ENABLED; 404 while off. Posts or recreates a pinned card and records its message id
   "GET /admin/feedback": ADMIN,
   "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
@@ -179,6 +180,7 @@ const CALLS = {
   "PUT /vocab": ["PUT", "/api/vocab", "{}"],
   "PUT /config/:key": ["PUT", `/api/config/${CONFIG_KEYS[0]}`, "{}"],
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],
+  "POST /admin/sheet": ["POST", "/api/admin/sheet", "{}"],
   "POST /admin/cards/post": ["POST", "/api/admin/cards/post", "{}"],
   "GET /admin/feedback": ["GET", "/api/admin/feedback"],
   "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
