@@ -447,7 +447,7 @@ export async function fetchWithGatewayFallback({
       console.warn(`[AI-Gateway] HTTP ${resp.status} from ${gwUrl}, falling back to direct endpoint`);
     } catch (err) {
       if (!allowDirectFallback || singleHop) throw scrubError(err);
-      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${scrubSecrets(err && err.message, headers["x-api-key"])}, falling back to direct endpoint`);
+      console.warn(`[AI-Gateway] Error for ${gwUrl}: ${shortProviderError(err)}, falling back to direct endpoint`);
     }
   }
 
@@ -691,7 +691,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
           },
         }, strictDeadline && deadlineAt ? Math.max(1, Math.round((deadlineAt - Date.now()) * 0.6)) : deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
       } catch (gwErr) {
-        console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${gwErr.message}, falling back to direct run`);
+        console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${shortProviderError(gwErr)}, falling back to direct run`);
         result = null;
       }
     }
@@ -908,9 +908,23 @@ export function shortProviderError(err) {
   const raw = String((err && (err.code === "ai_timeout" ? `timeout ${err.message}` : err.message)) || err || "error");
   const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
   if (http) return `${http[1]} API HTTP ${http[2]}`; // status only: never a provider body
+  // No provider text at all: a fixed message plus the error name and, when numeric, its status. Provider message text can carry a body, a binding or a key.
+  if (err && err.code === "ai_timeout") return "provider timeout";
+  const name = err && typeof err.name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(err.name) ? err.name : "Error";
+  const status = err && Number.isInteger(err.status) && err.status >= 100 && err.status <= 599 ? ` status ${err.status}` : "";
+  return `provider error (${name}${status})`;
+}
+
+// An operator-typed failure reason (admin POST /answer, Discord /answer): the operator wrote it, so it is kept readable, but secrets, key-shaped tokens and
+// bearer values are stripped and it is cut to 60 characters. It is stored on the model field (the asker-facing read strips it, but the asker's own data export returns the stored model, so it is scrubbed) and goes in the room broadcast.
+export function operatorFailureReason(failed) {
+  const raw = String((failed && failed.message) || failed || "error");
+  const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
+  if (http) return `${http[1]} API HTTP ${http[2]}`; // status only, as before: never a provider body
   return scrubSecrets(raw)
     .replace(/[?&]key=[^\s&"]+/gi, "")
     .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
+    .replace(/\bhttps?:\/\/\S+/gi, "")
     .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "")
     .replace(/\s+/g, " ")
     .trim()
@@ -923,6 +937,16 @@ export function shortProviderError(err) {
 export const PROMPT_VARIANTS = ["production", "plain", "examples-6", "format-reminder"];
 const FORMAT_REMINDER =
   "Format contract: the first line is one bold sentence that answers the question. Then at most a few short bullets (`- **Name** · value`). Then `-# Sources: id1, id2`. No emoji, no greeting, no filler opener, no bare web addresses.";
+
+// What a failed ask may show to anyone: the bare "<known provider> API HTTP <status>" (never a body) or one fixed line.
+// The prefixes the throw sites really use: "Anthropic" (callAnthropicClaude), "Gemini" (callGemini) and the lowercase provider id of the generic OpenAI-style call (groq, cerebras, github, openrouter).
+const PUBLIC_ERROR_PROVIDERS = { Anthropic: 1, Gemini: 1, groq: 1, cerebras: 1, github: 1, openrouter: 1 };
+export const ASK_FAILED_LINE = "Leeroy could not answer that just now. Try again in a moment.";
+export function publicAskError(err) {
+  const short = shortProviderError(err);
+  const m = /^([A-Za-z0-9_.-]+) API HTTP \d{3}$/.exec(short);
+  return m && Object.prototype.hasOwnProperty.call(PUBLIC_ERROR_PROVIDERS, m[1]) ? short : ASK_FAILED_LINE; // only our own provider names; anything else is the fixed line
+}
 
 // Timestamp ids go to the page as numbers, random (UUID) ids whole, so the page can poll GET /api/ask?id= with them.
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
@@ -1367,7 +1391,7 @@ export async function answerWithAi({
           if (r && r.handled === true && typeof r.answer === "string" && r.answer.trim()) researched = r.answer;
         }
       } catch (e) {
-        console.error("research seam failed, using the standard answer path:", e && e.message);
+        console.error("research seam failed, using the standard answer path:", shortProviderError(e));
       }
     }
     if (composed) {
@@ -1505,7 +1529,7 @@ export async function answerWithAi({
             timeoutMs: ASK_FALLBACK_TIMEOUT_MS,
           }));
         } catch (waiErr) {
-          console.warn("[AI-Failover] Workers AI fallback failed:", waiErr.message);
+          console.warn("[AI-Failover] Workers AI fallback failed:", shortProviderError(waiErr));
         }
       }
       if (!rawAnswer) {
@@ -1558,7 +1582,7 @@ export async function answerWithAi({
           .bind(String(intentId), parts.more || null, parts.sources || null, answeredAt)
           .run();
       } catch (e) {
-        console.error("answer_details write failed:", e && e.message);
+        console.error("answer_details write failed:", shortProviderError(e));
       }
     }
 
@@ -1601,7 +1625,7 @@ export async function answerWithAi({
           .run();
         await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/stats.json", "/api/data/stats", "/api/state"]); // the site fetches /api/data/stats (js/board.js apiFetch)
       } catch (e) {
-        console.error("Failed updating stats row:", e);
+        console.error("Failed updating stats row:", shortProviderError(e));
       }
     }
 
@@ -1650,9 +1674,12 @@ export async function answerWithAi({
     }
   } catch (err) {
     const failedAt = nowIso();
-    let msg = String((err && err.message) || err);
-    // Research mode, member: the stored error text is shown on the board and in Discord, so it is an in-voice line, never a raw message that could read as a wall.
-    if (memberNoWall) { console.error("ask failed:", msg); msg = memberLine(null, intentId); }
+    // The turn is read back by its asker (a guest included) and, for a shared ask, by member sockets: it gets the public text only. The log line carries
+    // no provider text either: shortProviderError is a fixed message plus the error name and status.
+    console.error("ask failed:", shortProviderError(err));
+    let msg = publicAskError(err);
+    // Research mode, member: the stored error text is shown on the board and in Discord, so it is an in-voice line, never a message that could read as a wall.
+    if (memberNoWall) msg = memberLine(null, intentId);
     await env.DB.prepare("UPDATE ask_turns SET status = 'error', answer = ?, answered_at = ? WHERE id = ?")
       .bind(msg, failedAt, intentId)
       .run()

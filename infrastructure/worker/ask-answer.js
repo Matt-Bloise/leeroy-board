@@ -1,11 +1,11 @@
 // Manual answers to an ask turn (Discord /answer and the admin POST /answer). One implementation so both agree:
 //   - real columns only: ask_turns has no `sources` column, sources live in answer_details
 //   - status 'answered' (what GET /ask and the feed read), or 'error' when the answer failed; never 'done'/'failed'
-//   - a provider error is stored and sent only as shortProviderError (secret-free, 60 characters)
+//   - a provider error is stored and sent only as operatorFailureReason (secrets and URLs stripped, 60 characters)
 //   - a private ask (share = 0) puts no question or answer on the sockets, only a nudge to re-read
 //   - a non-admin may only answer an ask that carries their own name, and only while it is still waiting ("thinking", or "pending" by the
 //     schema default). An answered or errored ask is final for them; an admin may still correct it.
-import { shortProviderError } from "./ai-models.js";
+import { operatorFailureReason } from "./ai-models.js";
 
 const MAX_SOURCES_CHARS = 1000;
 
@@ -25,7 +25,7 @@ export async function applyManualAnswer(env, { id, answer, sources, failed, byNa
   const waiting = row.status === "thinking" || row.status === "pending";
   if (!isAdmin && !waiting) return { ok: false, code: "already_answered" };
 
-  const reason = failed ? shortProviderError(failed) : "";
+  const reason = failed ? operatorFailureReason(failed) : "";
   const status = failed ? "error" : "answered";
   const model = failed ? `manual (failed: ${reason})`.slice(0, 120) : "manual";
   // The status test is inside the UPDATE, so a second non-admin answer racing the first changes nothing instead of overwriting it.

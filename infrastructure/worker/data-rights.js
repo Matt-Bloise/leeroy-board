@@ -16,6 +16,9 @@
 // Name-keyed tables (ask_turns, fact_fixes) are matched only for a member-key caller: a web display name is chosen by its owner
 // and could collide with someone else's name, so it is never used to select rows.
 import { sha256Hex } from "./crypto.js";
+import { readTextCapped } from "./limits.js";
+// The erase body is {"confirm":"<phrase>"}: far below this.
+const ERASE_BODY_MAX = 2048;
 import { saltProblems, saltErrorBody } from "./salts.js";
 import { authenticate, invalidateMembersCache } from "./auth.js";
 import { userKey } from "./account.js";
@@ -327,7 +330,9 @@ async function exportData(env, who, now) {
 async function eraseData(request, env, who, now) {
   if (!request.headers.get("Origin")) return respond(403, { error: "origin not allowed" }); // a form post or curl; the allow-list check already ran in the Worker
   let body = null;
-  try { body = JSON.parse(await request.text()); } catch (e) { body = null; }
+  const read = await readTextCapped(request, ERASE_BODY_MAX).catch(() => ({ text: "" }));
+  if (read.tooLarge) return respond(413, { error: "body too large" });
+  try { body = JSON.parse(read.text); } catch (e) { body = null; }
   if (!body || typeof body !== "object" || body.confirm !== CONFIRM_PHRASE) return respond(400, { error: `body must be {"confirm":"${CONFIRM_PHRASE}"}` });
   const id = who.discordId, db = env.DB;
   const st = [];
