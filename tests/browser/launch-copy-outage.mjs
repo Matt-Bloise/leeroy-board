@@ -193,7 +193,8 @@ try {
   // LOW: a failed first load says one plain thing. "Out of date" is wrong when nothing loaded, and the detail line is not repeated in the footer.
   {
     const { ctx, page } = await open(SIZES[0][1], LAUNCH_CLOCKS.before), t = "[390x844 first load fails]";
-    await ctx.route((u) => /\/data\/[^/]+\.json$/.test(u.pathname), (route) => route.fulfill({ status: 500, body: "no" }).catch(() => {}));
+    /* fail every read the first load makes: the static files (local server), and the Worker reads the board uses when a brain exists (the preview and production): /data/<name>, /api/data/<name>, /bootstrap, /state */
+    await ctx.route((u) => /(^|\/)(data\/[^/]+|bootstrap|state)$/.test(u.pathname), (route) => route.fulfill({ status: 500, body: "no" }).catch(() => {}));
     await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
     await page.waitForFunction(() => document.getElementById("offline-line").textContent.trim().length > 0, null, { timeout: 30000 }).catch(() => {});
     const o = await page.evaluate(() => ({ line: document.getElementById("offline-line").textContent.trim(), foot: document.getElementById("footer").textContent.replace(/\s+/g, " ") }));
