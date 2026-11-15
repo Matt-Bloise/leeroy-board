@@ -89,8 +89,10 @@ export function modelAllowed(provider, model) {
   return Boolean(list && list.includes(model));
 }
 
+// The sentence boundary is a lookbehind, not part of the match: with it consumed, two imperative sentences in a row left the second one
+// for a second pass (repairHouseVoice was not idempotent).
 const ORDERS_RE = new RegExp(
-  String.raw`(^|[.!?]\s+)(?:Don't|Do not|Make sure|Start with|Treat (?:it|this|that) as|Go with|Get it done|You should|Remember to|Be sure to)\b[^.!?\n]*[.!?]?`,
+  String.raw`(?<=^|[.!?]\s+)(?:Don't|Do not|Make sure|Start with|Treat (?:it|this|that) as|Go with|Get it done|You should|Remember to|Be sure to)\b[^.!?\n]*[.!?]?`,
   "gm"
 );
 
@@ -112,13 +114,8 @@ export function repairHouseVoice(rawText, opts = {}) {
   // 2. Strip bare 17-20 digit Discord snowflake IDs outside URLs
   out = out.replace(/(?<!https:\/\/discord\.com\/[^\s"]*)\b\d{17,20}\b/g, "");
 
-  // 3. Inform, never instruct (strip imperative openers unless in private Guided coach mode)
-  if (!opts.isCoach) {
-    const stripped = out.replace(ORDERS_RE, "$1").trim();
-    if (stripped.length >= 16) out = stripped;
-  }
-
-  // 4. Keep at most one bold span (`**...**`) per `api-brain.mjs` house-style rule
+  // 3. Keep at most one bold span (`**...**`) per `api-brain.mjs` house-style rule. Runs BEFORE the imperative strip: dropping the bold markers
+  // of a later span can put a sentence boundary right in front of an order, which a second pass would then strip (not idempotent).
   let seenBold = false;
   out = out.replace(/\*\*([^*]+)\*\*/g, (match, inner) => {
     if (!seenBold) {
@@ -127,6 +124,17 @@ export function repairHouseVoice(rawText, opts = {}) {
     }
     return inner;
   });
+
+  // 4. Inform, never instruct (strip imperative openers unless in private Guided coach mode)
+  if (!opts.isCoach) {
+    // To a fixed point: dropping a sentence can put the next order right behind a sentence end, and one pass would leave it for the next call.
+    let stripped = out;
+    for (let prev = null; prev !== stripped; ) {
+      prev = stripped;
+      stripped = stripped.replace(ORDERS_RE, "").trim();
+    }
+    if (stripped.length >= 16) out = stripped;
+  }
 
   // Collapse spaces and tabs only; newlines carry the answer's line structure.
   return out
