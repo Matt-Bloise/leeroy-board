@@ -54,14 +54,15 @@ test("F-12: PARTY_CACHE_PATHS names every URL the party document is served from"
   for (const p of PARTY_URLS) assert.ok(PARTY_CACHE_PATHS.includes(p), `${p} is not purged after a party write`);
 });
 
-test("F-12: a sheet write purges /api/data/party and /api/data/party.json, and the next read of each is fresh", async () => {
+test("F-12: a sheet write purges every party URL, and the next read of each (primed beforehand) is fresh", async () => {
   const env = await makeEnv();
   const realCaches = globalThis.caches;
   const edge = fakeEdgeCache();
   globalThis.caches = edge;
+  const READ_URLS = [...PARTY_URLS, "/data/party", "/data/party.json"];
   try {
-    // prime every cached copy with the old party
-    for (const p of ["/api/data/party", "/api/data/party.json"]) {
+    // prime every cached URL with the old party; each read must show the stored race
+    for (const p of READ_URLS) {
       const r = await call(env, "GET", p);
       assert.equal(r.status, 200, `${p} answers`);
       assert.equal(raceIn(await r.text()), "Human", `${p} starts with the stored race`);
@@ -70,9 +71,11 @@ test("F-12: a sheet write purges /api/data/party and /api/data/party.json, and t
     const w = await call(env, "POST", "/api/sheet", { field: "race", value: "Gnome", visible: true });
     assert.equal(w.status, 200, "the sheet write is accepted");
     for (const p of PARTY_URLS) assert.ok(edge.deleted.includes(p), `${p} was not purged; purged: ${edge.deleted.join(", ")}`);
-    // the site's URL and the public API's URL both answer with the new party at once, not after the cache expires
-    for (const p of ["/api/data/party", "/api/data/party.json", "/data/party"]) {
-      assert.equal(raceIn(await (await call(env, "GET", p)).text()), "Gnome", `${p} still serves the old party`);
+    // after the write each URL answers with the new party at once, not after the cache expires
+    for (const p of READ_URLS) {
+      const r = await call(env, "GET", p);
+      assert.equal(r.status, 200, `${p} answers after the write`);
+      assert.equal(raceIn(await r.text()), "Gnome", `${p} still serves the old party`);
     }
   } finally {
     globalThis.caches = realCaches;

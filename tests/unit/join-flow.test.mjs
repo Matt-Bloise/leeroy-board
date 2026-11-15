@@ -174,6 +174,19 @@ test("F-12: a saved /build purges every URL the party document is served from (t
   for (const p of ["/api/data/party", "/api/data/party.json", "/api/state", "/api/bootstrap"]) assert.ok(deleted.includes(p), `${p} was not purged; purged: ${deleted.join(", ")}`);
 });
 
+test("F-12: when API_ORIGIN differs from the request origin, a saved /build purges the party URLs under both hosts", async () => {
+  const deleted = [];
+  const realCaches = globalThis.caches;
+  globalThis.caches = { default: { delete: async (r) => (deleted.push(r.url), true), match: async () => undefined, put: async () => {} } };
+  try {
+    const { edits } = await run(submit(), { env: { ...flags, API_ORIGIN: "https://api.test/" } });
+    assert.match(edits[0].content, /^Saved/);
+  } finally { globalThis.caches = realCaches; }
+  for (const host of ["https://worker.test", "https://api.test"]) {
+    for (const p of ["/api/data/party", "/api/data/party.json", "/api/state", "/api/bootstrap"]) assert.ok(deleted.includes(host + p), `${host}${p} was not purged; purged: ${deleted.join(", ")}`);
+  }
+});
+
 test("A7: the slug is slugify(handle) and a spaced handle keeps its name for the board to find", async () => {
   const { db } = await run(submit({ handle: "Moon  Walker" }));
   assert.equal(kv(db, "discord_members").at(-1).slug, "moon-walker");
