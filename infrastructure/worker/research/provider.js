@@ -18,4 +18,4 @@ export const forceResearchProvider = (research, requested) => (research ? RESEAR
 
 // Honest in-voice lines for when Workers AI cannot answer. Neither is the old refusal text, and neither sends the asker elsewhere.
 export const RESEARCH_DOWN_NOTE = "My research hand is out of reach right now, so this is only what the library holds, nothing from outside.";
-export const RESEARCH_DOWN_ANSWER = "**My research hand is out of reach right now, so I have nothing solid on that yet.**\nOnce my research hand is free I will take a proper run at it.";
+export const RESEARCH_DOWN_ANSWER = "**My research hand is out of reach right now, so I have nothing solid on that yet.**\nA Blizzard post, a patch note or someone in the party who has played it would settle it in the meantime, and I will take a proper run at it once my research hand is free.";
