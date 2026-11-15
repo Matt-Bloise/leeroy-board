@@ -10,7 +10,8 @@ import { lintResearchAnswer } from "../../infrastructure/worker/answer-lint.js";
 import { ABSTAIN_LINE } from "../../infrastructure/worker/self-rag.js";
 import { NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
 import { RESEARCH_RULES } from "../../infrastructure/worker/research/rules.js";
-import { defuseLinks, neutraliseMentions } from "../../infrastructure/worker/research/label.js";
+import { defuseLinks, neutraliseMentions, labelClassic, stripRefusals, takeSources, trimToSentences, fitToCap, researchPrepare, usableAnswer } from "../../infrastructure/worker/research/label.js";
+import { runEval } from "../../infrastructure/worker/eval.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
 const realFetch = globalThis.fetch;
@@ -37,18 +38,20 @@ const SHEETS = [
 const TANK_PAGE = { id: "classes/tanking", category: "classes", title: "Tanking", blurb: "Who tanks", facts: [{ key: "tanking.tonight", value: "Who tanks tonight is agreed in the party channel." }] };
 
 let n = 0;
-async function ask(question, { research = true, pages = [TANK_PAGE], sheets = SHEETS, share = true, by = "Red Fox", memberSlug = "red-fox", respond, provider = "groq", throws = false } = {}) {
+async function ask(question, { research = true, pages = [TANK_PAGE], sheets = SHEETS, share = true, by = "Red Fox", memberSlug = "red-fox", respond, provider = "groq", throws = false, db = null, envPatch = null, deep = false } = {}) {
   invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache();
-  const DB = schemaDb();
-  for (const p of pages) DB.raw.prepare("INSERT INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES (?, ?, ?, ?, '[]', ?, '2026-11-01T00:00:00Z')").run(p.id, p.category, p.title, p.blurb, JSON.stringify(p.facts));
+  const DB = db || schemaDb();
+  for (const p of pages) DB.raw.prepare("INSERT OR REPLACE INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES (?, ?, ?, ?, '[]', ?, '2026-11-01T00:00:00Z')").run(p.id, p.category, p.title, p.blurb, JSON.stringify(p.facts));
   DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify(sheets));
   const env = { DB, AI: fakeAi, GROQ_API_KEY: "test-key-not-real", GEMINI_API_KEY: "test-gemini-not-real", AI_GATEWAY_ID: "gw", CLOUDFLARE_ACCOUNT_ID: "acct", ...(research ? { ASK_RESEARCH: "on" } : {}), BOARD_ROOM: { idFromName: () => "r", get: () => ({ fetch: async () => new Response("ok") }) } };
+  if (envPatch) envPatch(env);
   const id = `rc${++n}`;
   DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, 'groq', 'thinking', ?, 'x')").run(id, by, question, share ? 1 : 0);
+  if (db) DB.raw.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").run(id, "a".repeat(64));
   sent = []; fetchUrls = []; aiCalls = 0; aiThrows = throws;
   reply = respond || (() => "Mira tanks tonight.\n-# Sources: classes/tanking");
   const silence = console.error; console.error = () => {};
-  try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by, memberSlug, question, provider, share, journey: "curious", isMember: true }); } finally { console.error = silence; }
+  try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by, memberSlug, question, provider, share, deep, journey: "curious", isMember: true }); } finally { console.error = silence; }
   const row = DB.raw.prepare("SELECT answer, cites_json, model, status FROM ask_turns WHERE id = ?").get(id);
   return { answer: row.answer, row: { ...row }, calls: sent.length, aiCalls, fetchUrls: fetchUrls.slice(), bodies: sent.slice(), prompt: sent.map((b) => (b.messages || []).map((m) => m.content).join("\n")).join("\n=====\n") };
 }
@@ -72,7 +75,7 @@ test("masked-link host spoof is rejected: the visible host must be the real host
   assert.ok(!/evil\.example/.test(r.answer.replace(/`[^`]*`/g, "")), `a clickable evil host survived: ${r.answer}`);
   assert.ok(!/\]\(<?https?:\/\/evil/.test(r.answer));
   // helper: an honest label stays, a spoofed one and a userinfo url go
-  assert.match(defuseLinks("[the docs](<https://example.org/a>)"), /\[the docs\]\(<https:\/\/example\.org\/a>\)/);
+  assert.match(defuseLinks("[the docs](<https://example.org/a>)", { allow: ["example.org"] }), /\[the docs\]\(<https:\/\/example\.org\/a>\)/);
   assert.ok(!/\]\(/.test(defuseLinks("[example.org](<https://evil.test/a>)")));
   assert.ok(!/\]\(/.test(defuseLinks("[example.org](<https://example.org@evil.test/a>)")));
   assert.ok(!/\]\(/.test(defuseLinks("[x](<javascript:alert(1)>)")));
@@ -176,6 +179,176 @@ test("provider forcing (b): Workers AI throws -> no Gemini or other outside call
   assert.deepEqual(noLib.fetchUrls, []);
   assert.ok(noLib.answer.trim().length > 0 && /out of reach/i.test(noLib.answer), noLib.answer);
   for (const a of [withLib.answer, noLib.answer]) assert.ok(!a.includes(ABSTAIN_LINE) && !a.includes(NOT_PUBLISHED_LINE) && !/won't guess/i.test(a), a);
+});
+
+// ---- W4a review round: fail-closed provider, eval, reuse, no dead end, links, length, takeSources, labeller, refusals, hostile input ----
+
+test("fail-closed: a flag read that throws counts as ON for provider forcing; requested provider and deep never reach an outside provider", async () => {
+  const boom = (env) => Object.defineProperty(env, "ASK_RESEARCH", { get() { throw new Error("flag read failed"); }, enumerable: true });
+  for (const [p, deep] of [["gemini", false], ["gemini", true], ["claude", true]]) {
+    const r = await ask(ABSTAIN_Q, { research: false, envPatch: boom, provider: p, deep });
+    assert.equal(r.aiCalls, 1, `${p}/${deep}`);
+    assert.deepEqual(r.fetchUrls, []);
+  }
+  const down = await ask("who tanks tonight", { research: false, envPatch: boom, provider: "gemini", throws: true });
+  assert.deepEqual(down.fetchUrls, []);
+});
+
+test("eval: with the flag on every candidate is forced to Workers AI and gets the research prompt; a throwing flag read counts as on; flag off is unchanged", async () => {
+  const run = async (envOver, depsOver) => {
+    const seen = { dispatch: [], build: [], finish: [] };
+    const deps = {
+      now: () => 1_000_000, sleep: async () => {}, lastCallAt: new Map(), cooldownUntil: new Map(), configured: () => true, budgetVerdict: async () => null,
+      buildInputs: async (_e, a) => { seen.build.push(a); return { systemPrompt: "S", userPrompt: "U", isCoach: false, parsedPages: [], askerIsMember: true, persona: null, groundingText: "", retrieval: { ids: [], abstain: true } }; },
+      dispatch: async (a) => { seen.dispatch.push(a); return { answer: "**Use a shield.**", model: "m" }; },
+      finish: async (_e, a) => { seen.finish.push(a); return { answer: "**Use a shield.**" }; },
+      ...depsOver,
+    };
+    const req = { questions: [{ id: "q1", text: "Blue Owl asks about shields", journey: "curious" }], candidates: [{ label: "g", provider: "gemini", promptVariant: "production" }, { label: "c", provider: "claude", promptVariant: "production" }], cursor: 0, maxCalls: 5, jobId: "j" };
+    await runEval(envOver, req, deps);
+    return seen;
+  };
+  const on = await run({ ASK_RESEARCH: "on" });
+  assert.deepEqual(on.dispatch.map((d) => d.provider), ["workers-ai", "workers-ai"]);
+  assert.ok(on.build.every((b) => b.research === true) && on.finish.every((f) => f.research === true));
+  const boom = {}; Object.defineProperty(boom, "ASK_RESEARCH", { get() { throw new Error("x"); }, enumerable: true });
+  const failed = await run(boom);
+  assert.deepEqual(failed.dispatch.map((d) => d.provider), ["workers-ai", "workers-ai"]);
+  const off = await run({});
+  assert.deepEqual(off.dispatch.map((d) => d.provider), ["gemini", "claude"]);
+  assert.ok(off.build.every((b) => b.research === undefined));
+});
+
+test("reuse: a flag-off refusal followed by the same ask with the flag on is not returned; flag off still reuses it", async () => {
+  const DB = schemaDb();
+  const first = await ask(ABSTAIN_Q, { research: false, db: DB });
+  assert.equal(first.calls, 0);
+  DB.raw.prepare("UPDATE ask_turns SET answered_at = ? , status = 'answered' WHERE id = ?").run(new Date().toISOString(), `rc${n}`);
+  const offAgain = await ask(ABSTAIN_Q, { research: false, db: DB });
+  assert.equal(offAgain.row.model, "reused-answer", "flag off reuses within the window (control)");
+  DB.raw.prepare("UPDATE ask_turns SET answered_at = ?, status = 'answered' WHERE id = ?").run(new Date().toISOString(), `rc${n - 1}`);
+  const on = await ask(ABSTAIN_Q, { research: true, db: DB });
+  assert.notEqual(on.row.model, "reused-answer");
+  assert.equal(on.aiCalls, 1);
+  assert.ok(!on.answer.includes(ABSTAIN_LINE));
+});
+
+test("no dead end: empty, refusal-only, banter-only and sources-only model output is retried once, then library facts or an honest line; never a fixed refusal", async () => {
+  for (const bad of ["", "   ", `**${ABSTAIN_LINE}**`, "No idea, sorry.", "Check Wowhead for that one.", "*Ha, weather.*", "-# Sources: general knowledge · unconfirmed"]) {
+    const r = await ask(ABSTAIN_Q, { respond: () => bad });
+    // an empty reply already makes Workers AI throw (no retry, straight to the fallback); the others are retried once
+    if (bad.trim()) assert.equal(r.aiCalls, 2, `one retry for ${JSON.stringify(bad)}`); else assert.ok(r.aiCalls >= 1);
+    assert.ok(r.answer.trim().length > 0 && !r.answer.includes(ABSTAIN_LINE) && !/I can't confirm that/.test(r.answer), r.answer);
+  }
+  // the retry can succeed
+  let k = 0;
+  const r2 = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "*Ha, weather.*" : `**Weather is flavour only.**${SOURCES}`) });
+  assert.equal(r2.aiCalls, 2);
+  assert.match(r2.answer, /flavour only/);
+  // with library facts the fallback is the facts plus the honest line
+  const lib = await ask("who tanks tonight", { respond: () => "" });
+  assert.match(lib.answer, /Who tanks tonight is agreed/);
+  // a short real answer survives
+  assert.ok(usableAnswer("**Use a shield.**"));
+  const short = await ask(ABSTAIN_Q, { respond: () => `Use a shield.${SOURCES}` });
+  assert.equal(short.aiCalls, 1);
+  assert.match(short.answer, /Use a shield/);
+  assert.ok(lintResearchAnswer("**Frost.**\n-# Sources: x · likely").failures.length === 0);
+  for (const s of ["No idea, sorry.", "Check Wowhead for that one.", "The library does not cover that yet."]) assert.ok(lintResearchAnswer(`**${s}**\n-# Sources: x · likely`).failures.includes("refusal"), s);
+});
+
+test("refusals: only a sentence that IS a refusal is dropped; quoting the wording is advice and stays", () => {
+  const keep = "The tooltip says not published yet, so use the shield build.";
+  assert.equal(stripRefusals(keep), keep);
+  assert.equal(stripRefusals("Use the shield build. The library does not cover that yet."), "Use the shield build.");
+  assert.ok(!lintResearchAnswer(`**${keep}**\n-# Sources: x · likely`).failures.includes("refusal"));
+});
+
+test("links: exact host comparison, unicode dots, subdomain tricks, brand-word labels, invites, hostile board url, final assembled text", () => {
+  const allow = { allow: ["github.com", "leeroy.party"] };
+  const dead = (s) => !/\]\(/.test(defuseLinks(s, allow));
+  assert.ok(dead("[github.com](<https://evil.github.io/x>)"), "github.io is not github.com");
+  assert.ok(dead("[github.com](<https://github.com.evil.test/x>)"));
+  assert.ok(dead("[github․com](<https://evil.test/x>)"), "U+2024 one dot leader");
+  assert.ok(dead("[git hub . com](<https://evil.test/x>)"));
+  assert.ok(dead("[GitHub login](<https://evil.example/login>)"), "brand label, host not on the allow-list");
+  assert.match(defuseLinks("[GitHub login](<https://evil.example/login>)"), /GitHub login \(`evil\.example`\)/);
+  assert.match(defuseLinks("[repo](<https://github.com/a/b>)", allow), /\]\(<https:\/\/github\.com\/a\/b>\)/);
+  assert.ok(!/discord\.gg\/abc123/.test(defuseLinks("join discord.gg/abc123 or https://discord.com/invite/xyz")));
+  assert.match(defuseLinks("join discord.gg/abc123"), /`discord\.gg`/);
+});
+
+test("links: the FINAL answer is defused (library Sources link on a hostile BOARD_PUBLIC_URL)", async () => {
+  const r = await ask("who tanks tonight", { envPatch: (env) => { env.BOARD_PUBLIC_URL = "https://leeroy.party@evil.example"; } });
+  assert.ok(!/\]\(<?https?:\/\/leeroy\.party@/.test(r.answer), r.answer);
+  assert.ok(!/\]\(<?https?:\/\/[^)]*evil\.example/.test(r.answer), r.answer);
+});
+
+test("length: 2000 is enforced after sources, fallback and basis, also with ANSWER_FORMAT off", async () => {
+  const long = Array.from({ length: 120 }, (_, i) => `Sentence ${i % 5} says the same plain thing about the weather again.`).join(" ");
+  const bigSources = `-# Sources: ${Array.from({ length: 40 }, (_, i) => `a very long source label number ${i}`).join(" · ")} · unconfirmed`;
+  for (const fmt of ["on", "off"]) {
+    const r = await ask(ABSTAIN_Q, { respond: () => `**Weather is flavour only.**\n${long}\n${bigSources}`, envPatch: (env) => { env.ANSWER_FORMAT = fmt; } });
+    assert.ok(r.answer.length <= 2000 && r.answer.length > 0, `${fmt}: ${r.answer.length}`);
+    assert.equal((r.answer.match(/^-# Sources:/gm) || []).length, 1);
+  }
+  assert.ok(fitToCap("x ".repeat(3000) + "\n-# Sources: " + "y ".repeat(500), 1500).length <= 1500);
+  const t = trimToSentences("Intro sentence here.\n```\ncode line one\ncode line two\n```\nAfter the fence we continue with more words here.", 60);
+  assert.equal((t.match(/```/g) || []).length % 2, 0, t);
+  assert.equal((trimToSentences("*An italic joke that runs long and long and long and long. More text here and here.*", 60).replace(/\*\*/g, "").match(/\*/g) || []).length % 2, 0);
+});
+
+test("takeSources: only '-# Sources:' lines, an inline one is split onto its own line, body lines are never swallowed, one confidence word", () => {
+  const a = takeSources("Use a shield. -# Sources: classes/tanking · likely");
+  assert.equal(a.body, "Use a shield.");
+  assert.deepEqual(a.ids, ["classes/tanking"]);
+  const b = takeSources("Sources: this plain line stays in the body\nUse a shield.\n  \n-# Sources: x · likely\n-# Sources: y · confirmed");
+  assert.match(b.body, /Sources: this plain line stays/);
+  assert.match(b.body, /Use a shield/);
+  assert.equal(b.count, 2);
+  const p = researchPrepare("Use a shield.\n-# Sources: x · likely\n-# Sources: y · confirmed", { groundingText: "", retrievedIds: new Set() });
+  assert.equal(p.basis.confidence, "likely");
+});
+
+test("labeller: code fences, table rows, link labels, italics, abbreviations, existing disclaimers, markdown kept", () => {
+  const G = "";
+  const fence = labelClassic("Intro.\n```\nboss has 4500000 health\n```\nOutro.", G);
+  assert.match(fence.text, /```\nboss has 4500000 health\n```\n\(Classic value, not confirmed for Forever\)\nOutro\./);
+  const row = labelClassic("| Boss | HP |\n| Ragnaros | 4500000 |", G).text;
+  assert.match(row, /\| Ragnaros \| 4500000 \| \(Classic value/);
+  assert.ok(!/4500000 \(Classic/.test(row));
+  const link = labelClassic("See [Patch 1.12 notes 9999](<https://example.org/a>) for it.", G);
+  assert.equal(link.text, "See [Patch 1.12 notes 9999](<https://example.org/a>) for it.");
+  assert.match(labelClassic("*The boss has 4500000 health.*", G).text, /^\*The boss has 4500000 health \(Classic value, not confirmed for Forever\)\.\*$/, "italics are not exempt");
+  const abbr = labelClassic("It drops gear, e.g. a 9000 gold item, and more.", G).text;
+  assert.equal((abbr.match(/\(Classic/g) || []).length, 1);
+  assert.match(abbr, /e\.g\. a 9000 gold item, and more \(Classic value/);
+  // an existing disclaimer covers only the clause it follows, not the rest of the sentence
+  const partial = labelClassic("It lasts 4500 minutes (Classic), and drops 7777 gold.", G).text;
+  assert.match(partial, /7777 gold, ?\(?|7777 gold \(Classic value/);
+  assert.ok((partial.match(/\(Classic/g) || []).length >= 2, partial);
+  const full = labelClassic("It lasts 4500 minutes (Classic value, not confirmed for Forever).", G).text;
+  assert.equal(full, "It lasts 4500 minutes (Classic value, not confirmed for Forever).");
+});
+
+test("research finishing never uses the cite deleter: an unretrieved cited id is dropped from the link line and lowers confidence, nothing is restored", () => {
+  const p = researchPrepare("**Use a shield.**\n-# Sources: classes/tanking, classes/ghost · confirmed", { groundingText: "", retrievedIds: new Set(["classes/tanking"]) });
+  assert.match(p.text, /-# Sources: classes\/tanking$/);
+  assert.equal(p.basis.confidence, "likely");
+  const none = researchPrepare("**Use a shield.**\n-# Sources: classes/ghost · confirmed", { groundingText: "", retrievedIds: new Set() });
+  assert.ok(!/ghost/.test(none.text) && none.basis.confidence !== "confirmed");
+});
+
+test("hostile input: forged placeholders do not clone links or print undefined; a long run of '[' is linear", () => {
+  const forged = "[a](<https://leeroy.party/x>) \u00001\u0000 \u00009\u0000 \u0001 5 \u0001";
+  const out = defuseLinks(forged, { allow: ["leeroy.party"] });
+  assert.ok(!/undefined/.test(out) && (out.match(/\]\(</g) || []).length === 1, out);
+  assert.ok(!/[\u0000-\u0008]/.test(out));
+  const t0 = Date.now();
+  defuseLinks("[".repeat(100000));
+  labelClassic("[".repeat(100000) + "](x)", "");
+  researchPrepare("[".repeat(100000), { groundingText: "" });
+  assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0}ms`);
 });
 
 test("provider forcing (c): flag off, the requested provider is used as before (Gemini asked -> Gemini fetch, no Workers AI)", async () => {

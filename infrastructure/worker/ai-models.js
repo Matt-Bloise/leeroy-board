@@ -27,8 +27,8 @@ import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, st
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
 import { researchEnabled, researchAnswer } from "./research/index.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS } from "./research/rules.js";
-import { researchPrepare, appendBasis, neutraliseMentions } from "./research/label.js";
-import { forceResearchProvider, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
+import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
+import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -1100,9 +1100,14 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
         })
       : { main: repaired, more: "", sources: "" };
     parts.main = classPageFallback(parts.main, { question, pages: parsedPages, boardUrl: env.BOARD_PUBLIC_URL }); // ask-fallback.js hook
-    if (research) parts.main = neutraliseMentions(parts.main); // the formatter's Sources links carry library titles
     // The confidence line is for answers the library did not ground (the research prompt state); a library-backed answer keeps its own Sources line.
     if (research && researchBasis && retrieved && retrieved.abstain) parts.main = appendBasis(parts.main, researchBasis);
+    if (research) {
+      // Last step, on the FINAL assembled text (formatter links, class-page fallback, the basis line): link and mention safety, then the length guarantee (also with ANSWER_FORMAT off).
+      let boardHost = "";
+      try { boardHost = new URL(env.BOARD_PUBLIC_URL || "https://leeroy.party").hostname; } catch {}
+      parts.main = fitToCap(neutraliseMentions(defuseLinks(parts.main, { allow: boardHost ? [boardHost] : [] })), Math.min(researchCap, 1999));
+    }
     return { answer: parts.main, cites, parts };
 }
 
@@ -1180,8 +1185,12 @@ export async function answerWithAi({
   let budgetCode = null;
 
   try {
+    // ASK_RESEARCH (off by default; never in a PR preview, which is already Workers AI only): the research prompt state, labellers, Workers-AI-only provider and token budget.
+    // Fails closed: a flag read that throws counts as ON for provider forcing (research/provider.js).
+    const research = await researchModeOn(env, { preview: isPrPreviewEnv(env) });
     // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
-    const prior = await findRecentSameAnswer(env, { intentId, question, share });
+    // Not in research mode: a stored refusal or abstain row from before the flag was turned on must never come back as the answer (W5 decides what reuse means for research).
+    const prior = research ? null : await findRecentSameAnswer(env, { intentId, question, share });
     if (prior) {
       const reusedAt = nowIso();
       // Bad stored JSON must not turn a good stored answer into an error row.
@@ -1210,9 +1219,6 @@ export async function answerWithAi({
 
     // 1. Retrieval, party state and prompts (shared with the admin evaluation, see buildAnswerInputs)
     const previousQuestion = isFollowUp(question) ? await findPreviousQuestion(env, { intentId, share: Boolean(share) }) : null;
-    // ASK_RESEARCH (off by default; never in a PR preview, which is already Workers AI only): the research prompt state, labellers, Workers-AI-only provider and token budget.
-    let research = false;
-    if (!isPrPreviewEnv(env)) { try { research = Boolean(await researchEnabled(env)); } catch { research = false; } }
     const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research });
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
 
@@ -1289,6 +1295,15 @@ export async function answerWithAi({
         timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
         ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
       }));
+      // Research mode: an empty, refusal-only, banter-only or sources-only model answer is not shown. One retry of the same Workers AI call, then (via the catch below)
+      // library facts with an honest line, or the honest line alone.
+      if (research && !usableAnswer(rawAnswer)) {
+        rawAnswer = undefined;
+        if (Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt, userPrompt, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS }));
+        }
+        if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
+      }
       // Workers AI records its own use; any other provider counts as one ask (no neurons) so the per-user cap still fills up.
       if (chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {

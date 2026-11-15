@@ -68,14 +68,29 @@ function checkSources(text) {
 //   italic line), at most one banter line, and no refusal wording. -> { failures: [], pass }
 const CONFIDENCE_RE = /\b(?:unconfirmed|confirmed|likely)\b/gi;
 const BANTER_LINE_RE = /^\s*(?:(?<!\*)\*(?!\*)[^*\n]+\*|_[^_\n]+_)\s*$/;
-const REFUSAL_WORDS_RE = /does not (?:cover|have) that yet|doesn'?t confirm that figure|not published yet|won'?t guess|ask (?:someone|somebody|a party member|the party) else|(?:cannot|can'?t|can not) (?:answer|help with) (?:that|this)/i;
+const REFUSAL_PHRASE_RE = /does not (?:cover|have) that yet|doesn'?t confirm that figure|not published yet|won'?t guess|ask (?:someone|somebody|a party member|the party|an officer|anyone) else|(?:cannot|can'?t|can not) (?:answer|help with) (?:that|this)|nothing on this question|would settle it|(?:check|try|see|consult|look at) (?:wowhead|google|the wiki|the forums|blizzard|the official)/i;
+const REFUSAL_START_RE = /^(?:no idea|i (?:do not|don'?t) know|sorry|unfortunately,? i)\b/i;
+const REPORTING_RE = /\b(?:says?|said|reads?|shows?|states?|tooltip|label|quote[sd]?|reads as|written)\b/i;
+// A sentence that IS a refusal: opens with a refusal opener, or is short (14 words or fewer) and holds refusal wording that is not being quoted or reported
+// ("the tooltip says not published yet, so use the shield build" is advice and stays). A long sentence that merely contains the wording is kept.
+export function isRefusalSentence(sentence) {
+  const plain = String(sentence || "").replace(/[*_`>#]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!plain) return false;
+  if (REFUSAL_START_RE.test(plain)) return true;
+  const m = REFUSAL_PHRASE_RE.exec(plain);
+  if (!m) return false;
+  const before = plain.slice(0, m.index);
+  if ((before.match(/["“”]/g) || []).length % 2 === 1 || REPORTING_RE.test(before)) return false;
+  return plain.split(" ").length <= 18;
+}
+export const hasSubstance = (text) => /[A-Za-z]{3,}/.test(String(text || ""));
 export function lintResearchAnswer(answer) {
   const text = typeof answer === "string" ? answer : "";
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const sourceLines = lines.filter((l) => SOURCES_LINE_RE.test(l));
   const body = lines.filter((l) => !/^-#/.test(l));
   const banter = body.filter((l) => BANTER_LINE_RE.test(l));
-  const substance = body.filter((l) => !BANTER_LINE_RE.test(l) && l.replace(/[^A-Za-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 0).length >= 3);
+  const substance = body.filter((l) => !BANTER_LINE_RE.test(l) && hasSubstance(l));
   const failures = [];
   if (!text.trim()) failures.push("empty");
   if (sourceLines.length === 0) failures.push("no_sources_line");
@@ -85,7 +100,7 @@ export function lintResearchAnswer(answer) {
   if (conf.length > 1) failures.push("two_confidence_words");
   if (text.trim() && substance.length === 0) failures.push(banter.length ? "banter_only" : "no_answer");
   if (banter.length > 1) failures.push("multiple_banter");
-  if (REFUSAL_WORDS_RE.test(body.join(" "))) failures.push("refusal");
+  if (body.some((l) => l.split(/(?<=[.!?])\s+/).some(isRefusalSentence))) failures.push("refusal");
   return { failures, pass: failures.length === 0, confidenceWords: conf.map((w) => w.toLowerCase()), banterLines: banter.length };
 }
 

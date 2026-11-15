@@ -1,21 +1,27 @@
 // /ask research mode (ASK_RESEARCH on): the finishing steps that replace the old deleters. Pure: no I/O, no clock, never throws on text.
 //   labelClassic      supportCheck / groundedOrNotPublished DELETED a sentence holding a number or name the library never gave; this one TAGS it
-//                     ("Classic value, not confirmed for Forever") and keeps it. Advice is kept. Nothing is cut.
+//                     ("Classic value, not confirmed for Forever") and keeps it. Advice is kept. Nothing is cut. Code fences, table rows, link labels
+//                     and inline code are never edited inside: the tag goes outside them.
 //   neutraliseMentions / defuseLinks   mention and link safety for anything the model wrote or echoed from a library or fetched title.
 //   researchPrepare   the whole text step (refusal sentences out, labels, safety, one sources/confidence line, whole-sentence trim).
-// What it cannot catch is listed in docs/answer-claims.md terms in the report of W4a: a wrong number that equals a grounded number, a fact in words the
-// regexes do not read ("a dozen", fractions), a lower-case or single-word name, and any claim that is false but carries no number or capitalised name.
-import { unsupportedIn, allowedValues, sourceIdsOf, stripUnretrievedCites } from "../self-rag.js";
+//   fitToCap          the final length guarantee, run on the assembled answer.
+// Blind spots (see the W4a report): a wrong number that equals a grounded number, "a dozen"/fractions, lower-case or single-word names, a false claim with no number or capitalised name.
+import { unsupportedIn, allowedValues, sourceIdsOf } from "../self-rag.js";
 import { badPhrases, HOUSE } from "../ask-build.js";
+import { isRefusalSentence, hasSubstance } from "../answer-lint.js";
+import { RESEARCH_DOWN_ANSWER } from "./provider.js";
 
 export const CLASSIC_TAG = "Classic value, not confirmed for Forever";
 export const CLASSIC_NAME_TAG = "Classic-era name, not confirmed for Forever";
 export const CLASSIC_SHORT_TAG = "Classic";
-export const RESEARCH_EMPTY = "**I can't confirm that for Forever.**\nNothing in the library covers it, and a Classic guess would not be a Forever fact.";
+export const MAX_INPUT_CHARS = 20000; // a model answer is a few hundred characters; this bounds every regex below
 
 const ZWSP = "​";
+// Control characters 0x00-0x08 are used as internal placeholders; strip them from any input so a forged placeholder can never be restored.
+const stripCtl = (t) => String(t == null ? "" : t).replace(/[\u0000-\u0008]/g, "");
+
 // ---- mentions ---------------------------------------------------------------------------------------------------------------
-// @everyone, @here, <@id>, <@!id>, <@&id> in anything derived from a title or the model: a zero-width space breaks the token (allowed_mentions is none as well; this is the second lock).
+// @everyone, @here, <@id>, <@!id>, <@&id>: a zero-width space breaks the token (allowed_mentions is none as well; this is the second lock).
 export function neutraliseMentions(text) {
   return String(text == null ? "" : text)
     .replace(/@(everyone|here)\b/gi, `@${ZWSP}$1`)
@@ -23,10 +29,14 @@ export function neutraliseMentions(text) {
 }
 
 // ---- links ------------------------------------------------------------------------------------------------------------------
-const MASKED_RE = /\[([^\]\n]*)\]\(\s*<?([^)>\s]*)>?\s*\)/g;
-const HOSTISH_RE = /\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi;
+// The label class excludes "[" so a run of "[" is linear (each one stops at the next), and the input is capped.
+const MASKED_RE = /\[([^\[\]\n]{0,300})\]\(\s*<?([^)>\s]{0,600})>?\s*\)/g;
+const HOSTISH_RE = /(?:[a-z0-9-]+\.)+[a-z]{2,}/gi;
 const BARE_URL_RE = /<?https?:\/\/[^\s<>)\]]+>?/gi;
+const INVITE_RE = /\b(?:discord\.gg|discord(?:app)?\.com\/invite)\/[A-Za-z0-9-]+/gi;
 const bareHost = (h) => String(h || "").toLowerCase().replace(/^www\./, "");
+// Hosts a masked link may point at without a label check against the board: official game sources. The board's own host is passed in by the caller.
+export const LINK_ALLOW_DEFAULT = ["wowhead.com", "classic.wowhead.com", "blizzard.com", "news.blizzard.com", "us.forums.blizzard.com", "worldofwarcraft.blizzard.com", "battle.net"];
 function parseHttp(href) {
   try {
     const u = new URL(href);
@@ -35,52 +45,101 @@ function parseHttp(href) {
     return u;
   } catch { return null; }
 }
-const sameSite = (a, b) => a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
-// A masked link stays only when its target is plain http(s) with no userinfo AND no host-looking text in the visible label names a different site.
-// Anything else becomes the real host in a code span (not clickable, not auto-linked). A bare address becomes its host in a code span too.
-export function defuseLinks(text) {
+// A label with whitespace, zero-width characters and look-alike dots removed ("github․com" -> "github.com").
+const normLabel = (l) => String(l).replace(/[․。．﹒‥·]/g, ".").replace(/[\s​-‏⁠﻿­]+/g, "");
+// A masked link stays only when its target is plain http(s) with no userinfo, the host is on the allow-list (the board host plus LINK_ALLOW_DEFAULT) and no host-looking
+// text in the label names a different host (exact comparison: a subdomain is a different host). Anything else is shown as its label plus the real host in a code span,
+// not clickable. A bare address and a bare Discord invite become their host in a code span.
+export function defuseLinks(text, { allow = [] } = {}) {
+  const allowed = new Set([...LINK_ALLOW_DEFAULT, ...allow].map(bareHost));
   const kept = [];
-  let out = String(text == null ? "" : text).replace(MASKED_RE, (m, label, href) => {
+  let out = stripCtl(text).slice(0, MAX_INPUT_CHARS).replace(MASKED_RE, (m, label, href) => {
+    const clean = String(label).replace(/[`]/g, "");
     const u = parseHttp(href);
-    if (!u) return String(label).replace(/[`]/g, "");
+    if (!u) return clean;
     const host = bareHost(u.hostname);
-    const shown = (String(label).match(HOSTISH_RE) || []).map(bareHost);
-    if (shown.some((h) => !sameSite(h, host))) return `\`${host}\``;
-    kept.push(`[${String(label).replace(/[\[\]]/g, "")}](<${u.href}>)`);
+    const shown = (normLabel(clean).match(HOSTISH_RE) || []).map(bareHost);
+    if (!allowed.has(host) || shown.some((h) => h !== host)) return `${clean} (\`${host}\`)`;
+    kept.push(`[${clean}](<${u.href}>)`);
     return `\u0000${kept.length - 1}\u0000`;
   });
   out = out.replace(BARE_URL_RE, (m) => {
     const u = parseHttp(m.replace(/^<|>$/g, "").replace(/[.,;:!?]+$/, ""));
     return u ? `\`${bareHost(u.hostname)}\`` : "";
   });
-  return out.replace(/\u0000(\d+)\u0000/g, (_m, i) => kept[Number(i)]);
+  out = out.replace(INVITE_RE, (m) => `\`${m.split("/")[0].toLowerCase()}\``);
+  return out.replace(/\u0000(\d+)\u0000/g, (_m, i) => kept[Number(i)] ?? "");
 }
 
-// ---- refusal sentences ---------------------------------------------------------------------------------------------------------
-const REFUSAL_SENT_RE = /does not (?:cover|have) that yet|doesn'?t confirm that figure|not published yet|won'?t guess|ask (?:someone|somebody|a party member|the party) else|(?:cannot|can'?t|can not) (?:answer|help with) (?:that|this)|nothing on this question/i;
-const BANTER_RE = /^\s*(?:(?<!\*)\*(?!\*)[^*\n]+\*|_[^_\n]+_)\s*$/;
+// ---- markdown-aware sentence handling ---------------------------------------------------------------------------------------------
+const ABBR_RE = /\b(?:e\.g|i\.e|approx|vs|etc|incl|cf)\./gi;
+const LINK_SPAN_RE = /\[[^\[\]\n]{0,300}\]\([^)\n]{0,600}\)/g;
+const CODE_SPAN_RE = /`[^`\n]*`/g;
+// Hide link spans, inline code and abbreviation dots from the sentence splitter and the detectors; returns { text, restore }.
+function protect(line) {
+  const store = [];
+  const keep = (m) => { store.push(m); return `\u0001${store.length - 1}\u0001`; };
+  const text = stripCtl(line).replace(CODE_SPAN_RE, keep).replace(LINK_SPAN_RE, keep).replace(ABBR_RE, (m) => m.replace(/\./g, "\u0002"));
+  return { text, restore: (s) => s.replace(/\u0002/g, ".").replace(/\u0001(\d+)\u0001/g, (_m, i) => store[Number(i)] ?? "") };
+}
+const splitProtected = (t) => t.split(/(?<=[.!?])\s+/);
+export function splitSentences(line) {
+  const p = protect(line);
+  return splitProtected(p.text).map(p.restore);
+}
+
 const isFooter = (l) => /^\s*-#/.test(l);
-const sentencesOf = (line) => line.split(/(?<=[.!?])\s+/);
+const isFence = (l) => /^\s*(?:```|~~~)/.test(l);
+const isTableRow = (l) => /^\s*\|/.test(l) || (l.match(/\|/g) || []).length >= 2;
+const BANTER_RE = /^\s*(?:(?<!\*)\*(?!\*)[^*\n]+\*|_[^_\n]+_)\s*$/;
 const balanceBold = (s) => ((s.match(/\*\*/g) || []).length % 2 ? s.replace(/\*\*/g, "") : s);
+// Open bold, open italics and an open code fence are closed by dropping the stray markers (or the open fence), never by leaving them to swallow the rest of the message.
+function balanceMarkdown(text) {
+  let s = text;
+  if ((s.match(/^\s*(?:```|~~~)/gm) || []).length % 2) {
+    const at = Math.max(s.lastIndexOf("\n```"), s.lastIndexOf("\n~~~"));
+    s = at >= 0 ? s.slice(0, at) : s.replace(/^\s*(?:```|~~~).*$/m, "");
+  }
+  s = s.split("\n").map((l) => {
+    if (isFence(l)) return l;
+    let x = balanceBold(l);
+    if ((x.replace(/\*\*/g, "").match(/\*/g) || []).length % 2) x = x.replace(/(?<!\*)\*(?!\*)/g, "");
+    return x;
+  }).join("\n");
+  return s.trim();
+}
+
+// ---- refusals -----------------------------------------------------------------------------------------------------------------
+// Drops a sentence only when the whole sentence is a refusal (answer-lint.js isRefusalSentence); a sentence that quotes or reports the wording stays.
 export function stripRefusals(text) {
   const out = [];
-  for (const line of String(text || "").split("\n")) {
-    if (isFooter(line)) { out.push(line); continue; }
-    const parts = sentencesOf(line);
-    const ok = parts.filter((s) => !REFUSAL_SENT_RE.test(s));
+  let inFence = false;
+  for (const line of stripCtl(text).split("\n")) {
+    if (isFence(line)) { inFence = !inFence; out.push(line); continue; }
+    if (inFence || isFooter(line) || isTableRow(line)) { out.push(line); continue; }
+    const parts = splitSentences(line);
+    const ok = parts.filter((s) => !isRefusalSentence(s));
     if (ok.length === parts.length) out.push(line);
     else if (ok.length) out.push(balanceBold(ok.join(" ")));
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// True when the text, after refusal sentences, footer lines and banter-only lines are removed, still says something.
+export function usableAnswer(text) {
+  const t = splitInlineSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
+  return t.split("\n").some((l) => l.trim() && !isFooter(l) && !BANTER_RE.test(l) && hasSubstance(l));
+}
+
 // ---- the labeller ------------------------------------------------------------------------------------------------------------
-const ALREADY_RE = /not confirmed for Forever|\(Classic\)/i;
+const DISCLAIMER_AFTER_RE = /^[^,;.()\n]{0,60}\((?:Classic|Classic value[^)]*|[^)]*not confirmed for Forever[^)]*)\)|^[^,;.()\n]{0,40}not confirmed for Forever/i;
+const covered = (sent, token) => {
+  const at = sent.indexOf(token);
+  return at >= 0 && DISCLAIMER_AFTER_RE.test(sent.slice(at + token.length));
+};
 function tagSentence(sent, tag) {
-  const m = /^([\s\S]*?)((?:[.!?]+["')\]]*)?\**\s*)$/.exec(sent);
-  const head = m ? m[1] : sent;
-  const end = m ? m[2] : "";
-  return `${head} (${tag})${end}`;
+  const m = /^([\s\S]*?)((?:[.!?]+["')\]]*)?[*_]*\s*)$/.exec(sent);
+  return `${m ? m[1] : sent} (${tag})${m ? m[2] : ""}`;
 }
 // groundingText: the same text the deleters used (library facts as shown, build, party, the question). Returns the labelled text and what was tagged.
 export function labelClassic(text, groundingText) {
@@ -88,55 +147,114 @@ export function labelClassic(text, groundingText) {
   const allowedNames = `${groundingText || ""} ${HOUSE.join(" ")}`.toLowerCase();
   const tagged = { numbers: [], names: [] };
   let tags = 0;
-  const lines = String(text || "").split("\n").map((line) => {
-    if (isFooter(line) || BANTER_RE.test(line) || !line.trim()) return line;
-    return sentencesOf(line).map((sent) => {
-      if (ALREADY_RE.test(sent)) return sent;
-      const nums = unsupportedIn(sent, allowedNums);
-      const names = badPhrases(sent, allowedNames);
-      if (!nums.length && !names.length) return sent;
-      tagged.numbers.push(...nums); tagged.names.push(...names);
-      const tag = tags === 0 ? (nums.length ? CLASSIC_TAG : CLASSIC_NAME_TAG) : tags === 1 && nums.length ? CLASSIC_TAG : CLASSIC_SHORT_TAG;
-      tags += 1;
-      return tagSentence(sent, tag);
-    }).join(" ");
-  });
-  return { text: lines.join("\n"), tagged, labelled: tags > 0 };
+  const nextTag = (nums) => { const tag = tags === 0 ? (nums.length ? CLASSIC_TAG : CLASSIC_NAME_TAG) : tags === 1 && nums.length ? CLASSIC_TAG : CLASSIC_SHORT_TAG; tags += 1; return tag; };
+  // What is unsupported in one run of text (links and inline code already hidden by the caller).
+  const flagged = (t) => {
+    const clean = t.replace(/\u0002/g, ".");
+    const nums = unsupportedIn(clean, allowedNums).filter((x) => !covered(clean, x));
+    const names = badPhrases(clean, allowedNames).filter((x) => !covered(clean, x));
+    return { nums, names, any: nums.length + names.length > 0 };
+  };
+  const out = [];
+  let inFence = false;
+  let fenceFlag = null;
+  for (const line of stripCtl(text).split("\n")) {
+    if (isFence(line)) {
+      out.push(line);
+      if (inFence && fenceFlag) { out.push(`(${nextTag(fenceFlag.nums)})`); fenceFlag = null; }
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      const f = flagged(line);
+      if (f.any) { fenceFlag = fenceFlag || { nums: [], names: [] }; fenceFlag.nums.push(...f.nums); fenceFlag.names.push(...f.names); tagged.numbers.push(...f.nums); tagged.names.push(...f.names); }
+      out.push(line);
+      continue;
+    }
+    if (isFooter(line) || !line.trim()) { out.push(line); continue; }
+    if (isTableRow(line)) {
+      const p = protect(line);
+      const f = flagged(p.text);
+      tagged.numbers.push(...f.nums); tagged.names.push(...f.names);
+      out.push(f.any ? `${line.replace(/\s+$/, "")} (${nextTag(f.nums)})` : line);
+      continue;
+    }
+    const p = protect(line);
+    out.push(splitProtected(p.text).map((sent) => {
+      const f = flagged(sent);
+      if (!f.any) return p.restore(sent);
+      tagged.numbers.push(...f.nums); tagged.names.push(...f.names);
+      return p.restore(tagSentence(sent, nextTag(f.nums)));
+    }).join(" "));
+  }
+  if (inFence && fenceFlag) out.push(`(${nextTag(fenceFlag.nums)})`);
+  return { text: out.join("\n"), tagged, labelled: tags > 0 };
 }
 
 // ---- length: whole sentences only -----------------------------------------------------------------------------------------------
-// Keeps whole sentences (and whole lines) until the budget is used; only when not even the first sentence fits does it cut at a word, with an ellipsis.
+// Keeps whole sentences (and whole lines) until the budget is used; only when not even the first sentence fits does it cut at a word, with an ellipsis. An open fence or
+// stray bold/italic marker left by the cut is dropped (balanceMarkdown).
 export function trimToSentences(text, budget) {
   const src = String(text || "");
   if (src.length <= budget) return src;
   const out = [];
   let used = 0;
   for (const line of src.split("\n")) {
+    const parts = isFence(line) || isTableRow(line) ? [line] : splitSentences(line);
     const kept = [];
-    for (const s of sentencesOf(line)) {
+    for (const s of parts) {
       const add = (kept.length ? 1 : 0) + s.length + (out.length && !kept.length ? 1 : 0);
       if (used + add > budget) break;
       kept.push(s);
       used += add;
     }
-    if (kept.length) out.push(balanceBold(kept.join(" ")));
-    if (kept.length < sentencesOf(line).length) break;
+    if (kept.length) out.push(kept.join(" "));
+    if (kept.length < parts.length) break;
   }
-  if (out.length) return out.join("\n").trim();
+  if (out.length) return balanceMarkdown(out.join("\n"));
   const first = src.replace(/\s+/g, " ").trim().slice(0, Math.max(40, budget - 1));
   const sp = first.lastIndexOf(" ");
-  return `${balanceBold((sp > budget * 0.5 ? first.slice(0, sp) : first).replace(/[\s,;:]+$/, ""))}…`;
+  return `${balanceMarkdown((sp > budget * 0.5 ? first.slice(0, sp) : first).replace(/[\s,;:]+$/, ""))}…`;
+}
+
+// The final length guarantee on the assembled answer (body, Sources/confidence footer, fallback lines): footer lines are shortened to 300 characters (whole " · " items first),
+// then the body is trimmed to whole sentences in what is left. Always returns at most `cap` characters.
+export function fitToCap(text, cap) {
+  const src = String(text || "");
+  if (src.length <= cap) return src;
+  const lines = src.split("\n");
+  const shorten = (l) => {
+    if (l.length <= 300) return l;
+    const parts = l.split(" · ");
+    while (parts.length > 1 && parts.join(" · ").length > 300) parts.pop();
+    const j = parts.join(" · ");
+    return j.length > 300 ? `${j.slice(0, 299)}…` : j;
+  };
+  const footer = lines.filter(isFooter).map(shorten);
+  const body = lines.filter((l) => !isFooter(l)).join("\n").trim();
+  const room = Math.max(60, cap - footer.join("\n").length - 1);
+  let out = [trimToSentences(body, room), ...footer].filter(Boolean).join("\n");
+  if (out.length > cap) out = `${out.slice(0, cap - 1)}…`;
+  return out;
 }
 
 // ---- the one sources line, one confidence word -----------------------------------------------------------------------------------
 const CONF_ORDER = ["unconfirmed", "likely", "confirmed"]; // most conservative first
 const CONF_RE = /\b(?:unconfirmed|confirmed|likely)\b/gi;
-const SOURCES_RE = /^\s*(?:-#\s*)?Sources?\s*:\s*(.*)$/gim;
-const LINK_ANY = /\[[^\]\n]*\]\(<?[^)>\s]*>?\)/g;
-// Pull every Sources line out of the text; returns the text without them and the pieces: ids (as written), free-text labels, the confidence words found.
+const SRC_LINE_RE = /^[^\S\n]*-#[^\S\n]*Sources?[^\S\n]*:[^\S\n]*(.*)$/i;
+const SRC_INLINE_RE = /(\S)[^\S\n]+(-#[^\S\n]*Sources?[^\S\n]*:)/gi;
+const LINK_ANY = /\[[^\[\]\n]{0,300}\]\(<?[^)>\s]{0,600}>?\)/g;
+// "... tonight. -# Sources: x" on one line becomes two lines.
+export const splitInlineSources = (t) => String(t || "").replace(SRC_INLINE_RE, "$1\n$2");
+// Pull every "-# Sources:" line (and only those) out of the text; returns the text without them and the pieces: ids, free-text labels, the confidence words found.
 export function takeSources(text) {
   const rests = [];
-  const body = String(text || "").replace(SOURCES_RE, (_l, rest) => { rests.push(rest); return ""; }).replace(/\n{3,}/g, "\n\n").trim();
+  const kept = [];
+  for (const line of splitInlineSources(stripCtl(text)).split("\n")) {
+    const m = SRC_LINE_RE.exec(line);
+    if (m) rests.push(m[1]); else kept.push(line);
+  }
+  const body = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   const rest = rests.join(" · ");
   const ids = sourceIdsOf(rest);
   const found = (rest.match(CONF_RE) || []).map((w) => w.toLowerCase());
@@ -148,35 +266,37 @@ export function takeSources(text) {
     if (!seg || /^[a-z0-9_-]+\/[a-z0-9_.-]+$/i.test(seg) || labels.includes(seg)) continue;
     labels.push(seg.slice(0, 60));
   }
-  return { body, ids, labels: labels.slice(0, 2), found };
+  return { body, ids, labels: labels.slice(0, 2), found, count: rests.length };
 }
-export function chooseConfidence({ found, hasLibraryIds, labelled }) {
+export function chooseConfidence({ found, hasLibraryIds, labelled, unverifiedCites = false }) {
   let c = CONF_ORDER.find((w) => found.includes(w)) || (hasLibraryIds ? "confirmed" : "unconfirmed");
   if (c === "confirmed" && !hasLibraryIds) c = "unconfirmed"; // model knowledge alone is never "confirmed"
-  if (c === "confirmed" && labelled) c = "likely"; // a tagged Classic value sits in the answer
+  if (c === "confirmed" && (labelled || unverifiedCites)) c = "likely"; // a tagged Classic value, or a cited page the lookup never showed
   return c;
 }
+// One Sources line only: the first one gets the label and the confidence word, any further Sources lines are removed.
 export function appendBasis(main, { labels, confidence }) {
   const label = labels.length ? labels.join(" · ") : "general Classic-era knowledge";
   const lines = String(main || "").split("\n");
-  const at = lines.findLastIndex ? lines.findLastIndex((l) => /^\s*-#\s*Sources?\s*:/i.test(l)) : lines.map((l) => /^\s*-#\s*Sources?\s*:/i.test(l)).lastIndexOf(true);
-  if (at >= 0) { lines[at] = `${lines[at].trimEnd()} · ${label} · ${confidence}`; return lines.join("\n"); }
-  return `${String(main || "").trimEnd()}\n-# Sources: ${label} · ${confidence}`;
+  const at = lines.findIndex((l) => /^\s*-#\s*Sources?\s*:/i.test(l));
+  if (at < 0) return `${String(main || "").trimEnd()}\n-# Sources: ${label} · ${confidence}`;
+  const out = lines.filter((l, i) => i === at || !/^\s*-#\s*Sources?\s*:/i.test(l));
+  out[out.indexOf(lines[at])] = `${lines[at].trimEnd()} · ${label} · ${confidence}`;
+  return out.join("\n");
 }
 
-// The whole text step. `retrievedIds`: ids the prompt showed (a Set, or null for "no filter"). Returns { text, basis: { labels, confidence }, labelled }.
+// The whole text step. `retrievedIds`: ids the prompt showed (a Set, or null for "no filter"). Returns { text, basis, labelled, tagged, usable, unverifiedCites }.
 // `text` ends with a bare `-# Sources: id, id` line when library ids survive (the formatter turns it into links); the labels and the confidence word are appended after formatting (appendBasis).
+// A cited page the prompt never showed is not deleted as a claim: its id leaves the link line, and the answer's confidence is capped at "likely".
 export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1700 } = {}) {
-  let t = stripRefusals(String(text || ""));
-  const src = takeSources(t);
-  let body = src.body;
-  if (body.replace(/[^A-Za-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 2).length < 4) body = RESEARCH_EMPTY;
+  const usable = usableAnswer(text);
+  const src = takeSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
+  let body = usable ? src.body : RESEARCH_DOWN_ANSWER; // callers retry or fall back to library facts before this; this keeps the eval and format paths from emitting nothing
   const lab = labelClassic(body, groundingText);
-  body = neutraliseMentions(defuseLinks(lab.text));
+  body = trimToSentences(neutraliseMentions(defuseLinks(lab.text)), budget);
   const ids = retrievedIds ? src.ids.filter((id) => retrievedIds.has(id)) : src.ids;
-  body = trimToSentences(body, budget);
-  let pre = ids.length ? `${body}\n-# Sources: ${ids.join(", ")}` : body;
-  if (retrievedIds) pre = stripUnretrievedCites(pre, retrievedIds).answer || body;
+  const unverifiedCites = src.ids.length > ids.length;
+  const pre = ids.length ? `${body}\n-# Sources: ${ids.join(", ")}` : body;
   const labels = src.labels.map((l) => neutraliseMentions(defuseLinks(l)).replace(/[`\[\]()<>]/g, "")).filter(Boolean);
-  return { text: pre, basis: { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0, labelled: lab.labelled }) }, labelled: lab.labelled, tagged: lab.tagged };
+  return { text: pre, basis: { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0, labelled: lab.labelled, unverifiedCites }) }, labelled: lab.labelled, tagged: lab.tagged, usable, unverifiedCites };
 }

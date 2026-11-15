@@ -66,13 +66,26 @@ test("stub-never-ships: the stub reports not handled", async () => {
 const OLD = (q) => ask(q, { ASK_RESEARCH: "off" });
 // W4a: flag on changes the provider (Workers AI only) and the model label, and, for a question the library cannot answer, calls the model instead of returning the code-written abstain.
 // For a question the library answers, the answer, cites, status and the outbound prompt are still the old ones.
-const same = (r) => ({ answer: r.row.answer, cites_json: r.row.cites_json, status: r.row.status, prompts: r.prompts });
+// (W4a review: research finishing puts an inline "-# Sources:" on its own line and turns the cited id into a link, so the text is compared up to the Sources line.)
+const same = (r) => ({ answer: r.row.answer.split(/\s*-#\s*Sources?:/)[0].trim(), status: r.row.status, prompts: r.prompts });
 
 test("flag on with the stub: a library-answered question gets the old answer and prompt, never an empty answer", async () => {
   for (const q of QUESTIONS.slice(0, 1)) {
     const on = await ask(q, { ASK_RESEARCH: "on" });
     assert.deepEqual(same(on), same(await OLD(q)));
     assert.ok(on.row.answer && on.row.answer.length > 0);
+  }
+});
+
+test("flag on, the other golden questions: a question the library cannot answer gets a model answer of the research shape, not the code-written abstain", async () => {
+  const { lintResearchAnswer } = await import("../../infrastructure/worker/answer-lint.js");
+  for (const q of QUESTIONS.slice(1)) {
+    const on = await ask(q, { ASK_RESEARCH: "on" });
+    assert.equal(on.row.status, "answered");
+    assert.equal(on.prompts.length, 1, `${q}: the model is called`);
+    assert.ok(!/does not cover that yet|won't guess/i.test(on.row.answer), on.row.answer);
+    assert.ok(on.row.answer.length > 0 && on.row.answer.length <= 2000);
+    assert.deepEqual(lintResearchAnswer(on.row.answer).failures, [], `${q}: ${on.row.answer}`);
   }
 });
 
