@@ -1,7 +1,7 @@
 // Member data is Worker-only: the static Pages bundle (leeroy.party/data/*.json) must not carry the files that describe the group's members.
 // The Worker serves them through a read-time privacy projection (infrastructure/worker/public-party.js); a static copy would bypass it for ever.
 // tools/pages-bundle.mjs is the one place that stages the bundle; both deploy workflows and the local static server use it. This file pins:
-//   - the exclusion list exists, names the five member documents and the reduced links file, and every entry is a real repo file;
+//   - the exclusion list exists, names the five member documents, the sign-ups and the reduced links file, and every entry is a real repo file;
 //   - both workflows stage the bundle through the script (and no longer copy the data folder themselves), the production deploy and the PR preview alike;
 //   - a simulated bundle (the script run into a temp folder) holds none of the private paths and no member field next to a member name, in any file;
 //   - the final assertion fires: a stale private file in the output folder makes the script exit 1;
@@ -23,10 +23,10 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "pages-bundle-"));
 const rmrf = (d) => fs.rmSync(d, { recursive: true, force: true });
 function* walk(dir) { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) yield* walk(p); else yield p; } }
 
-const EXPECTED_PRIVATE = ["data/party.json", "data/decide.json", "data/tonight.json", "data/guided-atlas.json", "data/client.json"];
+const EXPECTED_PRIVATE = ["data/party.json", "data/decide.json", "data/tonight.json", "data/guided-atlas.json", "data/client.json", "data/signups.json"];
 const WORKFLOWS = [".github/workflows/deploy-cloudflare.yml", ".github/workflows/pr-preview-cloudflare.yml"];
 
-test("the exclusion list names the five member documents and every entry is a real repo file", () => {
+test("the exclusion list names the five member documents plus the sign-ups, and every entry is a real repo file", () => {
   assert.deepEqual([...PRIVATE_DATA_FILES].sort(), [...EXPECTED_PRIVATE].sort());
   for (const rel of PRIVATE_DATA_FILES) assert.ok(fs.existsSync(path.join(root, rel)), `${rel} is listed as private but is not in the repository: a rename would silently stop protecting it`);
   assert.deepEqual(Object.keys(STRIPPED_FILES), ["data/atlas/links.json"]);
@@ -164,7 +164,6 @@ test("the local static server answers like the deploy: 404 for the private files
     assert.equal(links.status, 200);
     assert.ok(!(await links.json()).records.some((r) => r.kind === "start_zone"));
     assert.equal((await fetch(`http://127.0.0.1:${port}/data/timeline.json`)).status, 200);
-    assert.equal((await fetch(`http://127.0.0.1:${port}/data/signups.json`)).status, 200);
   } finally { srv.kill(); }
 });
 

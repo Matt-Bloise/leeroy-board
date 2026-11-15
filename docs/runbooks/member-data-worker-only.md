@@ -1,6 +1,6 @@
 # Member data is Worker-only
 
-The files that describe the group's members are never published as static files. `https://leeroy.party/data/party.json` (and `decide`, `tonight`, `guided-atlas`, `client`) answer 404. The page reads those documents from the Worker (`/api/data/<name>`, `/api/bootstrap`, `/api/state`), which removes what a member hides at read time (`infrastructure/worker/public-party.js`). A static copy would hand out the whole document whatever a member hides.
+The files that describe the group's members are never published as static files. `https://leeroy.party/data/party.json` (and `decide`, `tonight`, `guided-atlas`, `client`, and the sign-ups in `signups`) answer 404. The page reads those documents from the Worker (`/api/data/<name>`, `/api/bootstrap`, `/api/state`), which removes what a member hides at read time (`infrastructure/worker/public-party.js`). A static copy would hand out the whole document whatever a member hides.
 
 ## What keeps it that way
 
@@ -19,6 +19,5 @@ The files that describe the group's members are never published as static files.
 
 ## Not covered here
 
-- `data/signups.json` is still published: the Worker serves the same document anonymously (`/api/data/signups`, `/api/bootstrap`) with no projection, so the static copy adds nothing the API does not already give. Withholding it is a product decision about the sign-up list, not a bundle change.
 - The Worker's `/api/atlas/links` still carries the `start_zone` records (no projection yet); only the static copy is reduced.
 - Files stay in git history, and in the repository on GitHub, whatever the bundle holds.

@@ -102,7 +102,7 @@ test("Pages: baseline security headers are served on the preview origin", async 
 
 // Member data is Worker-only (tools/pages-bundle.mjs): the member documents are not static files, so the Pages origin answers 404 for each, and the atlas links file ships without its start_zone records.
 test("Pages: the member data files are not published (404) and data/atlas/links.json carries no start_zone record", async () => {
-  for (const p of ["party", "decide", "tonight", "guided-atlas", "client"]) {
+  for (const p of ["party", "decide", "tonight", "guided-atlas", "client", "signups"]) {
     const r = await fetch(`${PAGES}/data/${p}.json`, { redirect: "manual" });
     await r.arrayBuffer();
     assert.equal(r.status, 404, `/data/${p}.json answered ${r.status}: member data must come from the Worker only`);

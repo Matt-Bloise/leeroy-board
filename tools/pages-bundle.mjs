@@ -19,8 +19,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const BUNDLE_ITEMS = Object.freeze(["index.html", "404.html", "privacy", "terms", "_headers", "og-1200x630.jpg", "robots.txt", "atlas", "cloth", "css", "data", "fonts", "img", "js", "landing", "rate", "next", "room", "scenes", "vendor"]);
 
 // Repo-relative, forward-slash paths that must never be in the bundle. party/decide/tonight/guided-atlas/client are the five documents
-// public-party.js MEMBER_DOCS projects ("client" carries the classes and races at the table: the same facts by elimination).
-export const PRIVATE_DATA_FILES = Object.freeze(["data/party.json", "data/decide.json", "data/tonight.json", "data/guided-atlas.json", "data/client.json"]);
+// public-party.js MEMBER_DOCS projects ("client" carries the classes and races at the table: the same facts by elimination), plus signups (who is on, with their RSVP and meeting choice: read from the Worker only).
+export const PRIVATE_DATA_FILES = Object.freeze(["data/party.json", "data/decide.json", "data/tonight.json", "data/guided-atlas.json", "data/client.json", "data/signups.json"]);
 
 // Files that ship in a reduced form because they also hold public records the page uses. The value is a function text -> text.
 // data/atlas/links.json: the `start_zone` records (one per member class) and the per-place `counts[*].records` they add to are removed.
