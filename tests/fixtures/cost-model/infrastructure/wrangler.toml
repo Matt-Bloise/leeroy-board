@@ -1,0 +1,4 @@
+# fixture: a limits comment the model anchors on: 1000 requests, 5000 rows read, 100 rows written
+[triggers]
+crons = ["* * * * *"]
+[vars]
