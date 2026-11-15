@@ -14,8 +14,8 @@ export function tonightLines({ now, byName, party, signups, boardUrl }) {
   // /tonight gets the PROJECTED party document: a hidden race or class is absent. Print only what is a non-empty string, and skip a member with no usable name.
   const str = (v) => (typeof v === "string" && v.trim() ? v.trim() : "");
   const shown = (Array.isArray(members) ? members : []).filter((m) => m && typeof m === "object" && str(m.name)).map((m) => {
-    const build = { race: str(m.race), class: str(m.class) };
-    return build.race || build.class ? `${str(m.name)} (${raceClass(build)})` : str(m.name); // raceClass says "Build hidden" for neither: the roster prints the bare name
+    const build = { race: str(m.race), class: str(m.class) }, hasBoth = !!(build.race && build.class);
+    return `${str(m.name)} (${hasBoth ? raceClass(build) : "Build hidden"})`; // a member who hides race or class (or both) is never printed bare, and a part is never printed alone
   });
   // Roster line, capped so the whole reply stays inside Discord's 2000-char content limit; a cut says "and N more".
   const rosterLine = (budget) => {

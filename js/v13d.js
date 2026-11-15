@@ -87,6 +87,7 @@ const CORE = {
   },
   racials() {
     const C = D.client, me = MEM.member(); if (!C) return null;
+    if (C.withheld) return { a: C.withheld, go: ["Open the race skills", () => openPanel($("#panel-racials"))] };
     const line = (r) => `${r}: ${(C.racials[r] || []).filter((x) => x.kind === "active").map((x) => (x.client && x.client.cooldown_ms ? `${x.name} (${x.client.cooldown_ms / 1000} s cooldown)` : x.name)).join(", ")}.`;
     return { a: me && C.racials[me.race] ? line(me.race) : Object.keys(C.racials).map(line).join(" "), go: ["Compare the other two races", () => openPanel($("#panel-racials"))] };
   },
@@ -96,11 +97,13 @@ const CORE = {
   },
   buffs() {
     const C = D.client, d = decideData(), me = MEM.member(); if (!C || !C.buffs) return null;
+    if (C.withheld) return { a: C.withheld, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
     const give = me ? C.buffs.list.filter((b) => !b.sixth && b.class === me.class_key).map((b) => b.name) : [], get = me && d && d.party ? d.party.buffs.filter((b) => b.giver !== me.class_key && (b.to || []).includes(me.class_key)).map((b) => b.name) : [];
     return { a: me ? `${K.classOf(me)} gives: ${give.length ? few(give) : "no group buffs"}. You get: ${get.length ? few(get) : "none from this party"}.` : `${C.buffs.list.filter((b) => !b.sixth).length} buffs pass between the ${K.pn.word()} classes.`, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
   },
   ledger() {
     const P = D.party, d = decideData(), me = MEM.member(), pe = d && me && d.people ? d.people.find((x) => x.class_key === me.class_key) : null; if (!P) return null;
+    if (P.withheld) return { a: P.withheld, go: ["Go to that decision", "#decide"] };
     const own = pe ? pe.decisions.filter((x) => x.state === "open" || x.state === "chat").map((x) => x.title) : [], titles = P.open.map((o) => o.title).sort((x, y) => own.includes(y) - own.includes(x));
     return { a: `${P.open.length} things are open: ${few(titles, 5)}.${own.length ? ` Yours: ${K.andList(own)}.` : ""}`, go: ["Go to that decision", "#decide"] };
   },
@@ -114,6 +117,7 @@ const CORE = {
   library() { const me = MEM.member(); return { a: me ? `Start with your class page (${K.classOf(me)}) and the page for ${me.race ? `${me.race}s` : "your race"}.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
   decide() {
     const d = decideData(), me = MEM.member(), pe = d && me && d.people ? d.people.find((x) => x.class_key === me.class_key) : null, x = pe && pe.decisions.find((y) => y.state === "open" || y.state === "chat");
+    if (d && d.withheld) return { a: d.withheld, go: ["Open that decision", () => unfold("decide")] };
     return { a: x ? `${x.title}: ${x.state_text}. ${x.by && x.by.text ? x.by.text : ""}` : me ? "Nothing of yours is open." : "Pick your name to see your own choices.", go: ["Open that decision", () => unfold("decide")] };
   },
 };

@@ -3,15 +3,22 @@
 // therefore loses nothing, showing it again brings back the stored value, and a write that races a hide cannot leak: the stored row may hold the
 // value, no read shows it. Pure: no I/O except loadPublicInputs. Imports nothing but the cycle-free sheet-match.js.
 //
-// Who calls what (tests/unit/public-read-paths.test.mjs lists every anonymous read path and fails when one is missing a call):
-//   projectForAnonymous(partyDoc, sheets)    the party document (members, settled lines, open items)
+// Two rules, and no text matching anywhere:
+//   1. A member's own fields (the party document's member keys, the public sheet list) are removed by the cascade table below when that member hides the field.
+//   2. The COMPOSITES (decide, client, guided-atlas, tonight, the party document's settled/open lines and glossary, the cards' build parts, the ask prompt's party builds) are built from
+//      the whole party, so they give a hidden value back directly or by elimination. While ANY member hides ANY of the nine sheet lines (or the sheets cannot be read), every
+//      member-derived section of every composite is withheld whole and WITHHELD_LINE stands in its place. Sections that do not depend on the party stay.
+//
+// Who calls what (tests/unit/public-read-paths.test.mjs and public-read-enumerate.test.mjs list every anonymous read path and fail when one is missing a call):
+//   projectForAnonymous(partyDoc, sheets)    the party document (members by the cascade; settled, settled_extra, open and glossary withheld while anyone hides)
 //   projectSheets(sheets, ownerSlug)         the sheet list ({slug, name, fields}); the owner's own sheet stays whole
-//   projectDataDoc(name, doc, inputs)        any /data/<name> document: party, decide, tonight carry member data; every other name passes through
+//   projectDataDoc(name, doc, inputs)        any /data/<name> document: party, decide, tonight, guided-atlas, client, launch carry member data; every other name passes through
 //   projectBroadcast(payload, inputs)        a socket message ({type:"state", party: sheets} and {type:"data", key, data})
 //   loadPublicInputs(env, opts)              reads the stored party row and the sheets once, for the callers that have neither in hand
+//   anyHidden / sheetsHideAnything           the question rule 2 asks (the ask prompt has no party document in hand)
 import { sheetForDocMember } from "./sheet-match.js";
 
-// The sheet fields a member can hide, as bits. `level`, `launch_state` and `goals` are not in the party document and derive nothing.
+// The sheet fields a member can hide, as bits: every line of the sheet has a hide switch. `level`, `launch_state` and `goals` are not in the party document and derive nothing.
 const BIT = { race: 1, class: 2, spec_path: 4, spec_at_40: 8, professions: 16, plan_zone: 32, level: 64, launch_state: 128, goals: 256 };
 const FIELDS = Object.keys(BIT);
 const SPEC = BIT.spec_path | BIT.spec_at_40;
@@ -82,36 +89,17 @@ function masksFor(members, rows) {
   return members.map((m) => (isObj(m) ? maskOf(find(m)) : 0));
 }
 
-const lines = (v) => (Array.isArray(v) ? v : null);
-const lineText = (l) => (typeof l === "string" ? l : l && typeof l === "object" && typeof l.text === "string" ? l.text : "");
-
 // The party document an anonymous reader may see. Non-mutating (the stored row and any cached copy are never touched); members that hide nothing are
-// shared, not copied. `settled` and `settled_extra` lines that name a member who hid class or spec are dropped (they carry role words and
-// "from level N"). When someone hides their professions, the open "Gap: ..." clause is dropped (it is the professions nobody has).
+// shared, not copied. Each member loses the keys their hidden fields and the cascade name. Whenever ANY member hides ANY field, the lines that summarise the table
+// (settled, settled_extra, open: "Tank: ... Healers: ...", "Gap: Alchemy", "Three starting zones, one square") and the glossary (its examples are the table's own:
+// "such as Undead, Troll or Tauren", "a Mage who studies Frost") are withheld whole and `withheld` carries the one plain line. polls, play and the links hold nothing of a member and stay.
 export function projectForAnonymous(partyDoc, sheets) {
   if (!isObj(partyDoc) || !Array.isArray(partyDoc.members)) return partyDoc;
   const st = stateOf(partyDoc, sheets);
-  const masks = st.masks;
-  const names = [];
-  let anyPro = false;
-  const members = partyDoc.members.map((m, i) => {
-    const mask = masks[i];
-    if (!mask) return m;
-    if (mask & (BIT.class | SPEC) && isObj(m) && typeof m.name === "string" && m.name) names.push(m.name.toLowerCase());
-    if (mask & BIT.professions) anyPro = true;
-    return isObj(m) ? strip(m, docKeysFor(mask)) : m;
-  });
+  const members = partyDoc.members.map((m, i) => (st.masks[i] && isObj(m) ? strip(m, docKeysFor(st.masks[i])) : m));
   const out = { ...partyDoc, members };
-  if (names.length) {
-    for (const key of ["settled", "settled_extra"]) {
-      const list = lines(partyDoc[key]);
-      if (list) out[key] = list.filter((l) => { const t = lineText(l).toLowerCase(); return !names.some((n) => t.includes(n)); });
-    }
-  }
-  if (anyPro && lines(partyDoc.open)) {
-    out.open = partyDoc.open.map((o) => (isObj(o) && /profession/i.test(String(o.title || "")) && typeof o.text === "string" ? { ...o, text: o.text.replace(/\s*Gap:[^.]*\.?/i, "").trim() } : o));
-  }
-  return scrubDoc(out, st, ["members"]); // the other text of the document (open items, polls, glossary) must not carry a hiding member's value either
+  if (st.union) return withhold(out, { settled: [], settled_extra: [], open: [], glossary: [] });
+  return out;
 }
 
 // The public sheet list. Hidden fields and what the cascade removes with them are gone; null and junk rows are dropped; the owner's own sheet is whole.
@@ -132,28 +120,12 @@ export function projectSheets(sheets, ownerSlug = null) {
 }
 
 // ---- documents derived from the party (kv_state 'decide', 'tonight', 'guided-atlas', 'client', 'launch') ----------------------------------------
-// decide and tonight list people in party order, keyed by class_key. decide.people entries are dropped when the person hides race, class or spec (the entry
-// says "Tauren Feral Druid" in its locked line, its spec40 and talents cards are class-specific); with professions hidden only the professions card goes.
-// Dropping, not reordering: the entries carry no names, the page pairs them with members by class_key, and a dropped entry says nothing about the class.
-// decide.party (roles by level, buffs, the classes and professions "nobody at this table" has) is a composition of the whole party: when anyone hides
-// class, spec or professions it would give the hidden value back by elimination, so it is withheld and the page says so.
-// Then every member document is scrubbed as text (scrubDoc): a line that carries a {class} token of a member who hid class, spec or professions, or a word that
-// only a hiding member has (their race, class, spec, profession or zone), is dropped. "Only" = no member who shows that field has the same value.
-// The hidden mask that applies to one people entry. By position when the entry and the stored member at that position agree on class_key (the documents are
-// generated together, in party order); else the union over the stored members with that class_key AND over every stored member that has no class_key (an old
-// row a writer stripped cannot be told apart from this entry); else (no member to pair with, or no stored party document) the union over every member,
-// which is the strict choice. Unreadable sheets are everything.
-function personMask(st, p, i, byIndex) {
-  if (st.unreadable) return ALL;
-  if (byIndex && st.members[i] && st.members[i].class_key === p.class_key) return st.masks[i];
-  let m = 0, found = false;
-  for (let j = 0; j < st.members.length; j++) {
-    const k = isObj(st.members[j]) ? st.members[j].class_key : undefined;
-    if (k === p.class_key && k !== undefined) { m |= st.masks[j]; found = true; }
-    else if (k === undefined || k === null || k === "") m |= st.masks[j];
-  }
-  return found ? m : st.union;
-}
+// Design (fail closed): decide, client, guided-atlas, tonight and the open/settled lines of the party document are COMPOSITES. Each is built from the whole party
+// (which classes, races, specs and professions the table has, and so which ones it does not), so any section of them that depends on a member gives a hidden value
+// back, directly or by elimination. This code does not try to find the words: whenever ANY member hides ANY field, every member-derived section of every composite is
+// withheld whole and the one plain line WITHHELD_LINE stands in its place. Sections that do not depend on the party (dates, labels, the launch
+// event, the dungeon, the meeting place, the level cap, the legacy challenges, the glossary) stay. Nothing here reads or matches text.
+export const WITHHELD_LINE = "Part of this is hidden because a member keeps their build private.";
 function stateOf(partyDoc, sheets) {
   const members = isObj(partyDoc) && Array.isArray(partyDoc.members) ? partyDoc.members : [];
   const rows = indexSheets(sheets);
@@ -163,221 +135,40 @@ function stateOf(partyDoc, sheets) {
   if (rows) for (const s of rows) union |= maskOf(s); // sheets of people the stored party document does not list
   return { members, masks, rows, unreadable: !rows, union: rows ? union : ALL };
 }
-
-// ---- what is hidden, as text ------------------------------------------------------------------------------------------------------------------
-const NEEDLE_DOC_KEYS = ["race", "class", "class_key", "color", "spec", "start_zone", "board_line", "role_detail", "plan_zone"];
-const lc = (v) => String(v).trim().toLowerCase();
-const named = (x) => (typeof x === "string" ? x : isObj(x) ? x.name : null);
-function valuesOf(obj, keys) {
-  const out = [];
-  for (const k of keys) {
-    const v = obj[k];
-    if (typeof v === "string" && v.trim().length >= 3) out.push(lc(v));
-    else if (k === "professions" && Array.isArray(v)) for (const x of v) { const n = named(x); if (typeof n === "string" && n.trim().length >= 3) out.push(lc(n)); }
-  }
-  return out;
-}
-function sheetValues(s, fieldNames) {
-  const out = [];
-  if (!isObj(s) || !isObj(s.fields)) return out;
-  for (const k of fieldNames) {
-    const f = s.fields[k];
-    const v = isObj(f) ? f.value : undefined;
-    if (typeof v === "string" && v.trim().length >= 3) out.push(lc(v));
-    else if (Array.isArray(v)) for (const x of v) { const n = named(x); if (typeof n === "string" && n.trim().length >= 3) out.push(lc(n)); }
-  }
-  return out;
-}
-// Everything a reader could learn from a text line: the words and phrases only hiding members have, and the class_keys whose {token} must not appear.
-function exposureOf(st) {
-  if (st.exposure) return st.exposure;
-  const hide = new Set(), show = new Set();
-  const restricted = new Set(), shownKeys = new Set(), allKeys = new Set();
-  st.members.forEach((m, i) => {
-    if (!isObj(m)) return;
-    const mask = st.unreadable ? ALL : st.masks[i];
-    const gone = new Set(docKeysFor(mask));
-    const key = typeof m.class_key === "string" && m.class_key ? lc(m.class_key) : null;
-    if (key) { allKeys.add(key); if (mask & (BIT.class | SPEC | BIT.professions)) restricted.add(key); if (!(mask & BIT.class)) shownKeys.add(key); }
-    const goneKeys = NEEDLE_DOC_KEYS.filter((k) => gone.has(k)), keptKeys = NEEDLE_DOC_KEYS.filter((k) => !gone.has(k));
-    for (const v of valuesOf(m, goneKeys)) hide.add(v);
-    for (const v of valuesOf(m, keptKeys)) show.add(v);
-    for (const v of valuesOf(m, ["professions"])) (gone.has("professions") ? hide : show).add(v);
-  });
-  if (st.rows) for (const s of st.rows) {
-    const goneS = new Set(sheetKeysFor(maskOf(s)));
-    const all = ["race", "class", "spec_path", "spec_at_40", "professions", "plan_zone"];
-    for (const v of sheetValues(s, all.filter((k) => goneS.has(k)))) hide.add(v);
-    for (const v of sheetValues(s, all.filter((k) => !goneS.has(k)))) show.add(v);
-  }
-  const words = new Set(), phrases = [];
-  for (const v of hide) {
-    if (show.has(v)) continue;
-    if (/^[\p{L}\p{N}_]+$/u.test(v)) words.add(v); else phrases.push(v);
-  }
-  st.exposure = { memo: new Map(), words, phrases, restricted, shownKeys, allKeys, anyClassHidden: st.unreadable || !!(st.union & BIT.class), unreadable: st.unreadable };
-  return st.exposure;
-}
-function lineIsBad(s, ex) {
-  if (typeof s !== "string" || !s) return false;
-  let r = ex.memo.get(s); // a document repeats its phrases (every people entry carries the same lines): each distinct string is judged once per read
-  if (r === undefined) { r = judge(s, ex); ex.memo.set(s, r); }
-  return r;
-}
-function judge(s, ex) {
-  const low = s.toLowerCase();
-  if (low.includes("{")) for (const m of low.matchAll(/\{([a-z0-9_-]+)\}/g)) {
-    const k = m[1];
-    if (ex.unreadable || ex.restricted.has(k) || (ex.allKeys.has(k) && ex.anyClassHidden && !ex.shownKeys.has(k))) return true;
-  }
-  if (ex.words.size) for (const w of low.split(/[^\p{L}\p{N}_]+/u)) if (w && ex.words.has(w)) return true;
-  for (const p of ex.phrases) if (low.includes(p)) return true;
+// True when any member hides any hideable field (all nine), or the sheets could not be read.
+export function anyHidden(partyDoc, sheets) { return stateOf(partyDoc, sheets).union !== 0; }
+// The same question for the sheet list alone (the ask prompt has no party document in hand).
+export function sheetsHideAnything(sheets) {
+  const rows = indexSheets(sheets);
+  if (!rows) return true;
+  for (const s of rows) if (maskOf(s)) return true;
   return false;
 }
-// True when one of the object's own strings (or a list of strings it holds) is bad. No allocation: this runs once per array element of a document that can be a megabyte.
-function ownTextIsBad(o, ex) {
-  for (const k in o) {
-    if (k === "src") continue;
-    const v = o[k];
-    if (typeof v === "string") { if (lineIsBad(v, ex)) return true; }
-    else if (Array.isArray(v)) for (let i = 0; i < v.length; i++) if (typeof v[i] === "string" && lineIsBad(v[i], ex)) return true;
-  }
-  return false;
-}
-// Walks a document and drops every array element, and every object key, whose own text is bad. `src` objects (citations) are left alone. Never mutates.
-function scrubNode(node, ex, depth = 0) {
-  if (depth > 12) return node;
-  if (Array.isArray(node)) {
-    let out = null;
-    node.forEach((it, i) => {
-      let next = it, drop = false;
-      if (typeof it === "string") drop = lineIsBad(it, ex);
-      else if (isObj(it)) drop = ownTextIsBad(it, ex);
-      if (!drop && (isObj(it) || Array.isArray(it))) next = scrubNode(it, ex, depth + 1);
-      if ((drop || next !== it) && !out) out = node.slice(0, i);
-      if (out && !drop) out.push(next);
-    });
-    return out || node;
-  }
-  if (isObj(node)) {
-    let out = null;
-    for (const k in node) {
-      if (k === "src") continue;
-      const v = node[k];
-      let next = v, drop = false;
-      if (typeof v === "string") drop = lineIsBad(v, ex);
-      else if (isObj(v) || Array.isArray(v)) next = scrubNode(v, ex, depth + 1);
-      if (drop || next !== v) { if (!out) out = { ...node }; if (drop) delete out[k]; else out[k] = next; }
-    }
-    return out || node;
-  }
-  return node;
-}
-function scrubDoc(doc, st, skip = []) {
-  const ex = exposureOf(st);
-  if (!ex.words.size && !ex.phrases.length && !ex.restricted.size && !(ex.anyClassHidden && ex.allKeys.size)) return doc;
-  const out = { ...doc };
-  for (const k of Object.keys(doc)) {
-    if (skip.includes(k)) continue;
-    if (typeof doc[k] === "string") { if (lineIsBad(doc[k], ex)) delete out[k]; } // a top-level text (tonight.launch, party.party) goes whole
-    else out[k] = scrubNode(doc[k], ex);
-  }
-  return out;
-}
+const withhold = (doc, replace) => ({ ...doc, ...replace, withheld: WITHHELD_LINE });
 
 export function projectDecide(doc, partyDoc, sheets) {
-  if (!isObj(doc)) return doc;
-  const st = stateOf(partyDoc, sheets);
-  if (!st.union) return doc;
-  const out = { ...doc };
-  if (Array.isArray(doc.people)) {
-    const byIndex = doc.people.length === st.members.length;
-    const noGroup = !!(st.union & BIT.professions); // "also {class}'s" lines under a decision name the profession of someone who hid it
-    out.people = doc.people.flatMap((p, i) => {
-      if (!isObj(p)) return [];
-      const mask = personMask(st, p, i, byIndex);
-      if (mask & (BIT.race | BIT.class | SPEC)) return [];
-      if (!Array.isArray(p.decisions)) return [p];
-      const decisions = p.decisions
-        .filter((d) => !(mask & BIT.professions && isObj(d) && d.key === "professions"))
-        .map((d) => { if (!(noGroup && isObj(d) && "group" in d)) return d; const { group, ...rest } = d; return rest; });
-      return [{ ...p, decisions }];
-    });
-  }
-  if (st.union & (BIT.class | SPEC | BIT.professions) && isObj(doc.party)) out.party = { withheld: true, brackets: [], role_lines: [], buffs: [], nobody: { classes: [], professions: [], secondaries: [], buffs: [] }, lines: Array.isArray(doc.party.lines) ? doc.party.lines : [] }; // same shape, so the page never reads a missing key
-  return scrubDoc(out, st);
+  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  // people (every entry is one member's choices), party (roles, buffs, what nobody has): all member-derived. Same shapes, empty, so the page never reads a missing key.
+  return withhold(doc, { people: [], party: { brackets: [], role_lines: [], buffs: [], nobody: { classes: [], professions: [], secondaries: [], buffs: [] }, lines: [] } });
 }
 
-// tonight.people: { member: index into the party members, class_key, step }. A hidden class loses class_key; a step ("Choose your spec", "Choose
-// Enchanting or Alchemy") is dropped when the class, spec or professions are hidden. week_one.trainers is keyed by class: a class only a hiding member has is dropped.
 export function projectTonight(doc, partyDoc, sheets) {
-  if (!isObj(doc)) return doc;
-  const st = stateOf(partyDoc, sheets);
-  if (!(st.union & (BIT.class | SPEC | BIT.professions | BIT.race | BIT.plan_zone))) return doc;
-  const out = { ...doc };
-  const shown = new Set();
-  if (!st.unreadable) st.members.forEach((m, i) => { if (isObj(m) && m.class_key && !(st.masks[i] & BIT.class)) shown.add(m.class_key); });
-  if (Array.isArray(doc.people)) {
-    out.people = doc.people.map((p) => {
-      if (!isObj(p)) return p;
-      const mask = Number.isInteger(p.member) && p.member >= 0 && p.member < st.members.length && !st.unreadable ? st.masks[p.member] : personMask(st, p, -1, false);
-      if (!(mask & (BIT.class | SPEC | BIT.professions))) return p;
-      const q = { ...p, step: null };
-      if (mask & BIT.class) delete q.class_key;
-      return q;
-    });
-  }
-  const trainers = doc.week_one && doc.week_one.trainers;
-  if (isObj(trainers) && st.union & BIT.class) {
-    const kept = {};
-    for (const [k, v] of Object.entries(trainers)) if (shown.has(k)) kept[k] = v;
-    out.week_one = { ...doc.week_one, trainers: kept };
-  }
-  return scrubDoc(out, st);
+  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  // people (member, class_key, step) and week_one.trainers (keyed by the party's classes) are member-derived.
+  return withhold(doc, { people: [], week_one: isObj(doc.week_one) ? { ...doc.week_one, trainers: {} } : doc.week_one });
 }
 
-// guided-atlas: classes is keyed by class_key and each entry names the start zone, the trainer town and the route (race and plan_zone decide the start).
-// A class key survives only when some member who shows their class has it; its start and town survive only when some such member shows race and plan_zone.
-// Applied whenever anyone hides class, race or plan_zone (and always when the sheets are unreadable).
 export function projectGuidedAtlas(doc, partyDoc, sheets) {
-  if (!isObj(doc)) return doc;
-  const st = stateOf(partyDoc, sheets);
-  if (!(st.union & (BIT.class | BIT.race | BIT.plan_zone))) return doc;
-  const out = { ...doc };
-  if (isObj(doc.classes)) {
-    const classes = {};
-    for (const [key, v] of Object.entries(doc.classes)) {
-      const showers = st.unreadable ? [] : st.members.map((m, i) => ({ m, mask: st.masks[i] })).filter(({ m, mask }) => isObj(m) && typeof m.class_key === "string" && lc(m.class_key) === lc(key) && !(mask & BIT.class));
-      if (!showers.length) continue;
-      const startOk = showers.some(({ mask }) => !(mask & (BIT.race | BIT.plan_zone)));
-      if (!isObj(v) || startOk) { classes[key] = v; continue; }
-      const { start, town, ...rest } = v;
-      classes[key] = rest;
-    }
-    out.classes = classes;
-  }
-  return scrubDoc(out, st);
+  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  // classes (one entry per class at the table: the start zone, the trainer, the town) is member-derived; the dungeon, the meeting place and the level cap are not.
+  return withhold(doc, { classes: {} });
 }
 
-// client: classes keyed by the class name ("Mage"), racials keyed by the race name, synergy lists class_keys in from and to.
 export function projectClient(doc, partyDoc, sheets) {
-  if (!isObj(doc)) return doc;
-  const st = stateOf(partyDoc, sheets);
-  if (!(st.union & (BIT.class | BIT.race))) return doc;
-  const out = { ...doc };
-  const names = new Set(), keys = new Set(), races = new Set();
-  if (!st.unreadable) st.members.forEach((m, i) => {
-    if (!isObj(m)) return;
-    if (!(st.masks[i] & BIT.class)) { if (typeof m.class === "string") names.add(lc(m.class)); if (typeof m.class_key === "string") { keys.add(lc(m.class_key)); names.add(lc(m.class_key)); } }
-    if (!(st.masks[i] & BIT.race) && typeof m.race === "string") races.add(lc(m.race));
-  });
-  const keep = (obj, set) => Object.fromEntries(Object.entries(obj).filter(([k]) => set.has(lc(k))));
-  if (st.union & BIT.class) {
-    if (isObj(doc.classes)) out.classes = keep(doc.classes, names);
-    if (Array.isArray(doc.synergy)) out.synergy = doc.synergy.filter((s) => isObj(s) && keys.has(lc(s.from))).map((s) => (Array.isArray(s.to) ? { ...s, to: s.to.filter((t) => keys.has(lc(t))) } : s));
-  }
-  if (st.union & BIT.race && isObj(doc.racials)) out.racials = keep(doc.racials, races);
-  return scrubDoc(out, st, ["classes", "racials", "legacy", "buffs", "flags"]); // the spell and racial tables hold no member text; the keys were filtered above
+  if (!isObj(doc) || !stateOf(partyDoc, sheets).union) return doc;
+  // classes (spell tables of the classes at the table), racials (races at the table), synergy and buffs.list / buffs.rules (what the table's classes give each other)
+  // are member-derived. The level cap, the build, the legacy challenges, the flags and the buff levels and marks are not.
+  return withhold(doc, { classes: {}, racials: {}, synergy: [], buffs: isObj(doc.buffs) ? { ...doc.buffs, list: [], rules: [] } : doc.buffs });
 }
 
 // launch: the stored document is a list of {slug, name, state, at} rows, or {rows: [...], voice, checklist, ...}. A member who hid launch_state loses `state`.

@@ -117,7 +117,6 @@ function allView(d) {
 }
 const tick = () => [s("svg", { class: "dc-tick", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: "M5 12.5l4.5 4.5L19 7" })), h("span", { class: "sr-only", text: "yes" })];
 function partyView(d) {
-  if (d.party && d.party.withheld) return h("p", { class: "dc-note dc-withheld", text: "Party composition is not shown: a member keeps part of their build private, and the composition would give it away." });
   const P = d.party, ms = members(), names = (ks) => (ks.length ? K.andList(ks.map(nameOf)) : "nobody");
   const roles = h("div", { class: "dc-sect" }, h("h4", { class: "dc-h4", text: "Roles by level" }),
     h("table", { class: "dc-table" }, h("thead", {}, h("tr", {}, h("th", { scope: "col", text: "Levels" }), h("th", { scope: "col", text: "Tank" }), h("th", { scope: "col", text: "Healers" }), h("th", { scope: "col", text: "Damage" }))),
@@ -148,6 +147,12 @@ function partyView(d) {
 function render() {
   const panel = $("#panel-decide"), d = DV.data; if (!panel || !d || !D.party) return;
   const w = who();
+  if (d.withheld) { /* a member keeps part of their build private: the Worker withheld every member-derived section (people, party composition) and sent the one line */
+    $("#dc-who").replaceChildren(); $("#dc-dates").replaceChildren(...dateLines(d));
+    $("#dc-main").replaceChildren(h("p", { class: "dc-note dc-withheld", text: d.withheld })); $("#dc-party").replaceChildren();
+    DV.j = K.JR(); const old0 = $("#dc-all-btn"); if (old0) old0.remove();
+    K.emit("decide", w); return;
+  }
   $("#dc-who").replaceChildren(h("b", { class: "dc-q", text: "Whose choices?" }),
     ...members().map((m) => h("button", { type: "button", class: "lib-tool dc-pill", "data-who": m.class_key, "aria-pressed": String(w === m.class_key), style: `--cc: ${K.classVar(m.class_key)}`, onclick: () => pick(m.class_key) }, crest(m), m.name)),
     h("button", { type: "button", class: "lib-tool dc-pill", "data-who": "all", "aria-pressed": String(w === "all"), onclick: () => pick("all") }, `All ${K.pn.word()}`));
@@ -212,7 +217,7 @@ function stepWho(by) {
   const B = window.BoardSeals, el = $("#seal"), m = next === "all" ? null : byKey(next), p = next === "all" ? null : d.people.find((x) => x.class_key === next);
   const openAll = d.people.reduce((n, x) => n + x.decisions.filter((y) => y.state === "open").length, 0);
   const openN = p ? p.decisions.filter((x) => x.state === "open").length : openAll;
-  const line = next === "all" ? `All ${K.pn.word()}: ${openAll === 1 ? "one thing" : `${openAll} things`} still open on the Party Board between you.` : `${m.name}: ${summary(p)}`;
+  const line = d.withheld ? d.withheld : next === "all" ? `All ${K.pn.word()}: ${openAll === 1 ? "one thing" : `${openAll} things`} still open on the Party Board between you.` : `${m.name}: ${summary(p)}`;
   const btn = $("#seal .seal-btn"); if (btn) btn.setAttribute("aria-label", `${TITLE} seal, showing ${next === "all" ? `all ${K.pn.word()}` : m.name}. Press for the next friend; arrow keys go either way.`);
   if (!B || !el) return;
   snd("latch");

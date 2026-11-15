@@ -4,7 +4,8 @@
 //   - every scene opens with no page error and no console error;
 //   - no visible text, label or title says "undefined", "null" or "NaN";
 //   - the party formation (js/seals.js) puts a coin in a lane for EVERY member, including the one with no role and the one with no class (it used to throw and show none);
-//   - the card of the member who hides race and class says "Build hidden", and the decide scene says the composition is withheld.
+//   - the card of the member who hides race and class says "Build hidden", and every view of a withheld document (decide, ledger, racials, buffs, tonight, the wall tiles) shows the one plain line where the section was;
+//   - the sheet page offers only values that are on the board's vocabulary (the lists the Worker checks a write against), whoever hides what.
 //   node tools/static-server.mjs 8123 &   node tests/browser/hidden-build.mjs --url http://127.0.0.1:8123/        optional: env PW_CHROMIUM = path to a Chromium binary
 // Nothing is sent and there is no AI call: both the static path and the Worker path of each document are answered here, /api/bootstrap is refused so the board falls back to them.
 // Fictional data only (the names are the repo's own made-up party). Exit 0 when every check passes, 1 otherwise.
@@ -13,7 +14,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pageUrl } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
-import { projectForAnonymous, projectDecide, projectTonight, projectGuidedAtlas, projectClient } from "../../infrastructure/worker/public-party.js";
+import { projectForAnonymous, projectDecide, projectTonight, projectGuidedAtlas, projectClient, WITHHELD_LINE } from "../../infrastructure/worker/public-party.js";
+import { SHEET_VOCAB } from "../../infrastructure/worker/sheet-vocab.js";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const BASE = arg("--url") || process.env.PREVIEW_PAGES;
@@ -51,7 +53,7 @@ async function setup(browser, width, { member = null } = {}) {
   const look = page.locator("#nx-fr2-look");
   if (await look.isVisible().catch(() => false)) await look.click();
   await page.waitForSelector(".tn-name", { state: "visible", timeout: 20000 }).catch(() => {});
-  if (member) await page.locator(".tn-name", { hasText: member }).first().click().catch(() => {});
+  if (member) { await page.locator(".tn-name", { hasText: member }).first().click().catch(() => {}); await page.locator("#nx-show").click({ timeout: 3000 }).catch(() => {}); } // pick the name, then "Show me": the page is then signed in as that member
   await page.waitForTimeout(1000);
   return { ctx, page, errors };
 }
@@ -101,8 +103,24 @@ try {
     ok(`${t} the formation summary counts every member`, /\d/.test(sum) && !BAD.test(sum), sum);
     const cards = await page.evaluate(() => (document.querySelector("#cards") || {}).textContent || ""); // a carousel on a phone: the card is there, off screen
     ok(`${t} the card of the member who hides race and class says "Build hidden"`, /Build hidden/.test(cards), cards.slice(0, 160));
-    await openHash(page, "decide");
-    ok(`${t} the decide scene says the party composition is not shown`, /Party composition is not shown/.test(await page.evaluate(() => (document.querySelector("#panel-decide") || {}).textContent || "")));
+    const panelText = (sel) => page.evaluate((q) => (document.querySelector(q) || {}).textContent || "", sel);
+    for (const [hash, sel] of [["decide", "#panel-decide"], ["ledger", "#ledger-slip"], ["racials", "#races"], ["buffs", "#wheel"], ["buffs", "#buffs-deep"], ["tonight", "#panel-tonight"]]) {
+      await openHash(page, hash);
+      const text = await panelText(sel);
+      ok(`${t} #${hash} (${sel}): the one withheld line stands where the section was`, text.includes(WITHHELD_LINE), text.slice(0, 120));
+    }
+    if (member && width >= 1000) { // the signed-in guided atlas: "Your route" is member-derived, so the guide says the line where the route was
+      await page.evaluate(() => { location.hash = ""; }); await page.waitForTimeout(1200);
+      const ga = await panelText("#ga");
+      ok(`${t} the guided atlas guide says the line where "Your route" was`, ga.includes(WITHHELD_LINE), ga.slice(0, 160));
+    }
+    for (const id of ["ts-ledger", "ts-racials", "ts-buffs"]) ok(`${t} the wall tile #${id} says the line`, (await panelText(`#${id}`)).includes(WITHHELD_LINE));
+    ok(`${t} the wall tile of the roles does not say "All five have picked a spec"`, !/have picked a spec/.test(await panelText("#ts-five")));
+    // the sheet page: every option of every list is on the vocabulary, with a whole party withheld
+    await openHash(page, `five.sheet-${slug(party0.members[3].name)}`);
+    const opts = await page.evaluate(() => Array.from(document.querySelectorAll("#ps-sheet select option")).map((o) => o.value).filter(Boolean));
+    const known = new Set([...Object.keys(SHEET_VOCAB.race), ...Object.keys(SHEET_VOCAB.class), ...Object.keys(SHEET_VOCAB.spec), ...Object.keys(SHEET_VOCAB.professions), ...Object.keys(SHEET_VOCAB.plan_zone), "queue", "in", "out", "later"]);
+    ok(`${t} the sheet page offers only vocabulary values (${opts.length} options seen)`, opts.every((o) => known.has(o)), opts.filter((o) => !known.has(o)).join(","));
     ok(`${t} no page error and no console error`, errors.length === 0, errors.slice(0, 3).join(" | "));
     await ctx.close();
   }

@@ -9,7 +9,9 @@ const clean = (v, max = 24) => String(v === undefined || v === null ? "" : v).no
 export const EMOJI_RE = /^<a?:[A-Za-z0-9_]{2,32}:[0-9]{15,25}>$/;
 
 // Party document -> [{ slug, name, classKey, classLabel, race, role }]. Members without a usable name are skipped.
+// A projected document that carries `withheld` (some member keeps part of their build private) gives no member's class, class icon or race: only name and role.
 export function cardMembers(partyDoc) {
+  const bare = !!(partyDoc && partyDoc.withheld);
   const list = partyDoc && Array.isArray(partyDoc.members) ? partyDoc.members : [];
   const out = [];
   const seen = new Set();
@@ -19,7 +21,8 @@ export function cardMembers(partyDoc) {
     if (!slug || seen.has(slug)) continue;
     seen.add(slug);
     const key = typeof m.class_key === "string" && Object.hasOwn(CLASSES, m.class_key) ? m.class_key : "";
-    out.push({ slug, name: clean(m.name) || "Someone", classKey: key, classLabel: key ? CLASSES[key].label : clean(m.class, 16), race: clean(m.race, 16), role: clean(m.role, 12) });
+    out.push(bare ? { slug, name: clean(m.name) || "Someone", classKey: "", classLabel: "", race: "", role: clean(m.role, 12) }
+      : { slug, name: clean(m.name) || "Someone", classKey: key, classLabel: key ? CLASSES[key].label : clean(m.class, 16), race: clean(m.race, 16), role: clean(m.role, 12) });
   }
   return out;
 }

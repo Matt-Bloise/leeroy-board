@@ -386,13 +386,13 @@ test("F2. a hidden race/class/spec_path is stored whole but never read from the 
   const env = await makeEnv();
   await resetCaches();
   env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, 'x')").run(JSON.stringify({ members: [{ name: "santa", race: "Human", class: "Mage", spec: "Frost" }] }));
-  await api(env, "POST", "/sheet", "member", { field: "class", value: "Warlock-HIDDEN", visible: false });
+  await api(env, "POST", "/sheet", "member", { field: "class", value: "warlock", visible: false }); // a value on the board's list (sheet-vocab.js): anything else is a 400
   const read = async () => (await api(env, "GET", "/data/party")).text();
-  assert.ok(!(await read()).includes("HIDDEN"));
+  assert.ok(!(await read()).toLowerCase().includes("warlock"));
   assert.ok(!(await read()).includes("Mage"), "the class, and the spec that names it, are not read");
-  await api(env, "POST", "/sheet", "member", { field: "race", value: "Gnome", visible: true });
-  assert.ok(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json.includes("Gnome"), "a visible field still syncs");
-  assert.ok((await read()).includes("Gnome"));
+  await api(env, "POST", "/sheet", "member", { field: "race", value: "gnome", visible: true });
+  assert.ok(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json.includes("gnome"), "a visible field still syncs");
+  assert.ok((await read()).includes("gnome"));
 });
 
 test("F3. Discord /sheet for another member omits their hidden fields; the owner sees their own", async () => {

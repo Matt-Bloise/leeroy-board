@@ -13,7 +13,7 @@
 
 import { noiseDay, recordShadow } from "./noise.js";
 import { cardMembers, parseClassEmoji, iconFor, claimEntries } from "./card-members.js";
-import { loadPublicInputs, projectForAnonymous } from "./public-party.js";
+import { loadPublicInputs, projectForAnonymous, WITHHELD_LINE } from "./public-party.js";
 
 export const CARDS_KEY = "cards";
 export const CARD_EDIT_KEY = "cards_edit";
@@ -202,7 +202,7 @@ export function renderSignupCard(state) {
   }
   const embed = {
     title: "Launch-night sign-ups",
-    description: "Tap a button to sign up. This card updates itself.",
+    description: `Tap a button to sign up. This card updates itself.${state && state.withheld ? ` ${WITHHELD_LINE}` : ""}`,
     color: GOLD,
     fields,
   };
@@ -307,7 +307,7 @@ export function renderBoardCard(state) {
   const t = tallyEntries(state);
   let fields;
   let omitted = 0;
-  const description = clampText(`${t.rsvp.in.length} in \u00b7 ${t.rsvp.maybe.length} tentative \u00b7 ${t.rsvp.late.length} running late \u00b7 ${t.rsvp.out.length} out`, 4096);
+  const description = clampText(`${t.rsvp.in.length} in \u00b7 ${t.rsvp.maybe.length} tentative \u00b7 ${t.rsvp.late.length} running late \u00b7 ${t.rsvp.out.length} out${state && state.withheld ? ` · ${WITHHELD_LINE}` : ""}`, 4096);
   const updatedText = fmtUpdated(state && state.updated);
   if (state && Array.isArray(state.members)) {
     const fit = fitBlocks(boardBlocks(state, entries), "Party board".length + description.length + (updatedText ? `Updated ${updatedText}`.length : 0));
@@ -413,7 +413,9 @@ export async function loadCardState(env) {
     if (row && row.json) {
       // The stored row holds the whole document; a card is public, so it is projected here, at render time (public-party.js).
       const stored = JSON.parse(row.json);
-      state.members = cardMembers(projectForAnonymous(stored, (await loadPublicInputs(env, { partyDoc: stored })).sheets));
+      const shown = projectForAnonymous(stored, (await loadPublicInputs(env, { partyDoc: stored })).sheets);
+      state.members = cardMembers(shown);
+      state.withheld = !!(shown && shown.withheld); // some member keeps part of their build private: the cards show the one line (WITHHELD_LINE) and no build part
     }
   } catch { /* legacy shape */ }
   state.classEmoji = parseClassEmoji(env.CARD_CLASS_EMOJI);

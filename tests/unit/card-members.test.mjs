@@ -1,5 +1,6 @@
 // Discord cards with party-member data (slice 8): same members as /api/state, class icons, phone-first lines, privacy. Fictional people, no network.
 import test from "node:test";
+import { WITHHELD_LINE } from "../../infrastructure/worker/public-party.js";
 import assert from "node:assert/strict";
 import { renderSignupCard, renderBoardCard, loadCardState, requestCardEdit } from "../../infrastructure/worker/cards.js";
 import { cardMembers, parseClassEmoji, memberFor, claimEntries } from "../../infrastructure/worker/card-members.js";
@@ -189,7 +190,11 @@ test("privacy through the real public-party path: the STORED document is whole; 
   assert.deepEqual([ada.classKey, ada.classLabel, ada.race], ["", "", ""]);
   const text = JSON.stringify([renderBoardCard(st), renderSignupCard(st)]);
   assert.ok(!/Mage|Undead|Tailoring/.test(text), text);
-  assert.ok(/Priest/.test(text) && /Troll/.test(text)); // visible fields still show
+  // Ada hides, so the cards carry the one line and NO member's build part (not Bo's Priest and Troll either); names and roles stay
+  assert.equal(st.withheld, true);
+  assert.ok(text.includes(WITHHELD_LINE), "the one line is on both cards");
+  assert.ok(!/Priest|Troll/.test(text), "no member's build part while anyone hides");
+  assert.ok(text.includes("Ada") && text.includes("Bo"));
   // loadCardState reads the party row and the sheets row (to project at render time), never the sheet events
   assert.deepEqual(DB.log.filter((q) => /sheet_events/.test(q)), []);
   assert.ok(DB.log.some((q) => /key = 'party'/.test(q)));

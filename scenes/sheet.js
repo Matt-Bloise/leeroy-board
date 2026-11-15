@@ -84,23 +84,12 @@ const crest = (m) => { const i = K.crestMark(m); i.removeAttribute("title"); ret
 const snd = (n) => { try { if (window.BoardSound) window.BoardSound.play(n); } catch (e) {} };
 const dayOf = (iso) => { try { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(iso)); } catch (e) { return ""; } };
 
-function vocab(d) {
-  const L = { race: {}, class: {}, spec: {}, professions: {}, plan_zone: {} }, specs = {};
-  const add = (t, n) => { const k = slugOf(n); if (k) L[t][k] = n; return k; };
-  for (const r of Object.keys((D.client && D.client.racials) || {})) add("race", r);
-  for (const m of members()) { add("race", m.race); add("class", m.class); if (m.start_zone) add("plan_zone", m.start_zone); }
-  if (d) {
-    for (const c of d.party.nobody.classes) add("class", c.name);
-    for (const p of d.people) for (const x of p.decisions) {
-      if (x.key === "spec40") specs[p.class_key] = x.options.map((o) => add("spec", o.name));
-      if (x.key === "professions") for (const o of x.options) add("professions", o.name);
-    }
-    for (const o of d.party.nobody.professions) add("professions", o.name);
-  }
-  const S = D.signups, meet = (S && S.options && S.options.meet) || [], other = (S && S.tallies && S.tallies.meet && S.tallies.meet.other && S.tallies.meet.other.places) || [];
-  for (const pl of [...meet, ...other]) add("plan_zone", pl);
+/* The lists the sheet offers are the board's reference vocabulary (data/sheet-vocab.json, the same lists the Worker checks a write against: infrastructure/worker/sheet-vocab.js).
+   They do not depend on who is in the party, so they are whole while the party's own pages are withheld. */
+function vocab() {
+  const R = PS.ref || {}, L = { race: { ...(R.race || {}) }, class: { ...(R.class || {}) }, spec: { ...(R.spec || {}) }, professions: { ...(R.professions || {}) }, plan_zone: { ...(R.plan_zone || {}) } };
   const keys = (t) => Object.keys(L[t]).sort();
-  return { labels: L, specs, lists: { race: keys("race"), class: keys("class"), spec_path: keys("spec"), spec_at_40: keys("spec"), professions: keys("professions"), plan_zone: keys("plan_zone"), levelMax: (D.client && D.client.level) || 60 } };
+  return { labels: L, specs: { ...(R.spec_of || {}) }, lists: { race: keys("race"), class: keys("class"), spec_path: keys("spec"), spec_at_40: keys("spec"), professions: keys("professions"), plan_zone: keys("plan_zone"), levelMax: (D.client && D.client.level) || 60 } };
 }
 const labelOf = (f, v) => { const L = PS.voc ? PS.voc.labels : {}, t = f === "spec_path" || f === "spec_at_40" ? L.spec : L[f]; return (t && t[v]) || words(v); };
 function textOf(f, v) {
@@ -397,7 +386,8 @@ function mineLink() {
 }
 async function ready() {
   if (!PS.data && K.decideData) { try { PS.data = await K.decideData(); } catch (e) { PS.data = null; } }
-  PS.voc = vocab(PS.data);
+  if (!PS.ref) { try { const r = await fetch("data/sheet-vocab.json", { cache: "no-cache" }); PS.ref = r.ok ? await r.json() : null; } catch (e) { PS.ref = null; } }
+  PS.voc = vocab();
   const B = BB(); if (B && B.sheetVocab) B.sheetVocab(PS.voc.lists);
   return PS.voc;
 }

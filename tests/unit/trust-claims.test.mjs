@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import worker, { purgeWorkerCache } from "../../infrastructure/worker/index.js";
 import { cardMembers } from "../../infrastructure/worker/card-members.js";
-import { projectForAnonymous } from "../../infrastructure/worker/public-party.js";
+import { projectForAnonymous, WITHHELD_LINE } from "../../infrastructure/worker/public-party.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 
@@ -69,15 +69,16 @@ test("anyone who asks the server can read names, builds and sign-ups, with no ke
 
 // The real sheet fields (the Worker's SHEET_FIELDS), read from the source so a new field cannot be missed.
 const SHEET_FIELDS = JSON.parse(/const SHEET_FIELDS = (\[[^\]]*\])/.exec(read("infrastructure/worker/index.js"))[1]);
-const SHEET_VALUE = { race: "zqrace-sheet", class: "zqclass-sheet", spec_path: "zqspec-sheet", spec_at_40: "zqspec40-sheet", professions: ["zqprof-sheet"], level: 47, launch_state: "zqlaunch-sheet", plan_zone: "zqzone-sheet", goals: "zqgoal-sheet" };
+// The six vocabulary fields hold values from the board's list (sheet-vocab.js: POST /sheet refuses anything else), chosen so that none of them stands in the repo's real party document.
+const SHEET_VALUE = { race: "gnome", class: "warrior", spec_path: "arms", spec_at_40: "fury", professions: ["herbalism"], level: 47, launch_state: "zqlaunch-sheet", plan_zone: "teldrassil", goals: "zqgoal-sheet" };
 // What a reader could learn from each field's echoes in the public party document. Written by hand here, not taken from the Worker.
 const CANARIES = {
-  race: ["Zqrace", "Zqzone", "zqrace-sheet", "zqzone-sheet"],
-  class: ["Zqclass", "zqclasskey", "#c0ffee", "zqspecname", "zqroledetail", "zqclass-sheet", "zqspec-sheet", "zqspec40-sheet"],
-  spec_path: ["zqspecname", "zqroledetail", "zqspec-sheet"],
-  spec_at_40: ["zqspecname", "zqroledetail", "zqspec40-sheet"],
-  professions: ["Zqprof", "zqprof-sheet"],
-  plan_zone: ["Zqzone", "zqzone-sheet"],
+  race: ["Zqrace", "Zqzone", '"gnome"', '"teldrassil"'],
+  class: ["Zqclass", "zqclasskey", "#c0ffee", "zqspecname", "zqroledetail", '"warrior"', '"arms"', '"fury"'],
+  spec_path: ["zqspecname", "zqroledetail", '"arms"'],
+  spec_at_40: ["zqspecname", "zqroledetail", '"fury"'],
+  professions: ["Zqprof", '"herbalism"'],
+  plan_zone: ["Zqzone", '"teldrassil"'],
   level: [], launch_state: ["zqlaunch-sheet"], goals: ["zqgoal-sheet"],
 };
 // Canaries that must STILL be shown when only this field is hidden (so a read of an empty document cannot pass).
@@ -136,8 +137,8 @@ for (const field of SHEET_FIELDS) {
 
 test("an admin write of the party document is stored whole, and no read or broadcast brings a hidden field back", async () => {
   const env = await envWithFullMember();
-  assert.equal((await postSheet(env, { field: "class", value: "zqclass-sheet", visible: false })).status, 200);
-  assert.equal((await postSheet(env, { field: "plan_zone", value: "zqzone-sheet", visible: false })).status, 200);
+  assert.equal((await postSheet(env, { field: "class", value: SHEET_VALUE.class, visible: false })).status, 200);
+  assert.equal((await postSheet(env, { field: "plan_zone", value: SHEET_VALUE.plan_zone, visible: false })).status, 200);
   const full = JSON.parse(storedParty(env));
   const fox = full.members.find((x) => x.name === "Red Fox");
   Object.assign(fox, { class: "Zqclass", color: "#c0ffee", start_zone: "Zqzone" }); // a hand edit that carries the old build
@@ -194,20 +195,27 @@ test("the key adds the member's own identity and own hidden field, and nobody el
   assert.equal(sj.party.find((s) => s.slug === "blue-owl").fields.goals, undefined);
 });
 
-test("trust card: 'sees' says anyone can read names, builds and sign-ups, hidden fields are not shown, settings and sheet need a key", () => {
+test("trust card: 'sees' says what the enumeration proves, and nothing stronger", async () => {
   const sees = line("sees").what;
-  assert.match(sees, /anyone/i);
-  assert.match(sees, /anyone with the link/i);
-  assert.match(sees, /names, builds and sign-ups/);
-  assert.match(sees, /field you hide on your sheet is removed from those pages/i);
-  assert.match(sees, /A member who hides every field still shows a name, a role \(tank, healer or damage\), a level and goals \(no control hides those\), a place in the party, their sign-up, and that they are on the launch list\./);
-  assert.doesNotMatch(sees, /nothing gives|nor is anything|give them away/i, "no claim stronger than the enumeration test proves");
-  assert.match(sees, /need your key/i);
-  assert.match(sees, /public code and older commits/i);
-  assert.match(sees, /hiding a field does not remove them there/i);
+  assert.match(sees, /Anyone with the link, or anyone who asks the server, can read names, builds and sign-ups./);
+  assert.match(sees, /Every line of your sheet has a hide switch./);
+  assert.ok(sees.includes("A line you hide is removed from the sheet list and the party list, together with the lines that come from it (hide your class and your spec goes too)."));
+  assert.match(sees, /Your name and role always stay shown, and so do your sign-up answers, the meeting place, and the times your sheet and your launch row last changed./);
+  assert.ok(sees.includes(`the shared planning pages (decide, buffs, the atlas guide, tonight's suggestions) go blank and show one line: ${WITHHELD_LINE}`), "the line on the card is the one the Worker sends");
+  assert.match(sees, /While any member hides anything/);
+  assert.match(sees, /A change can take up to about 60 seconds to show, because pages are cached./);
+  assert.match(sees, /The first members' builds are also written into the board's public code and older commits of the repo, and hiding a field does not remove them there./);
+  assert.match(sees, /Your settings and your own sheet need your key./);
   assert.match(sees, /named on the privacy page/i);
-  assert.doesNotMatch(sees, /Matt and the group admins/);
-  assert.doesNotMatch(JSON.stringify(trust), /Members of your own guild see/);
+  assert.ok(!sees.includes("no control hides those"), "level and goals have a hide switch");
+  assert.doesNotMatch(sees, /nothing gives|nor is anything|give them away|cannot be guessed|nobody can learn/i, "no claim stronger than the enumeration test proves");
+  assert.doesNotMatch(JSON.stringify(trust), /Members of your own guild see|Matt and the group admins/);
+  // What stays, listed on the card, is what the enumeration shows for a member who hides all nine lines: the party document gives name and role, the sheet list gives name, slug and
+  // the time the sheet changed (no line), the launch list gives name, slug and when. tests/unit/public-read-enumerate.test.mjs asserts those key sets; here they are asserted again from the card's own words.
+  assert.ok(/name and role/.test(sees) && /sign-up answers/.test(sees) && /meeting place/.test(sees) && /times your sheet and your launch row last changed/.test(sees));
+  const md = read("docs/privacy.md");
+  for (const needle of ["Every line of your sheet has a hide switch", WITHHELD_LINE, "about 60 seconds", "older commits of the repo. Hiding a field does not remove them there", "Last changed: 15 November 2026"]) assert.ok(md.includes(needle), `docs/privacy.md says: ${needle}`);
+  assert.ok(read("privacy/index.html").includes(WITHHELD_LINE), "the rendered page says the line");
 });
 
 test("trust card: 'reads' names only what the code reads (no avatar, no guild roles, no email)", () => {

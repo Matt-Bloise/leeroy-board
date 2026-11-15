@@ -321,6 +321,10 @@ const DATA_P = { need: DATA_NAMES.map((n) => dataGet(n)), opt: ["signups", "toni
 DATA_P.need.forEach((p) => p.catch(() => {}));
 const RT = { db: null, user: null, room: null, myId: null, readOnly: true, signups: new Map(), mine: {}, peers: [] };
 function memberByKey(key) { return (D.party && D.party.members.find((m) => m.class_key === key)) || null; }
+/* A document the Worker withheld because a member keeps part of their build private carries the one plain line in `withheld` (infrastructure/worker/public-party.js WITHHELD_LINE).
+   Every view that would have drawn a withheld section draws that line where the section was. */
+const wLine = (doc) => (doc && typeof doc.withheld === "string" ? doc.withheld : "");
+const wNote = (doc, cls) => { const t = wLine(doc); return t ? h("p", { class: `withheld-note ${cls || ""}`.trim(), role: "note", text: t }) : null; };
 function memberByName(name) { return (D.party && D.party.members.find((m) => m.name === name)) || null; }
 
 const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M12 5v14M5 12h14", damage: "M5 19L17 7M14 4h6v6M7 15l2 2M4 20l2-2" };
@@ -502,7 +506,7 @@ function renderTiles() {
     h("span", { class: "tile-viz list five-viz", ...(pnOn() ? { style: `--party-n: ${p.members.length}` } : {}) }, p.members.map((m) => h("span", { class: "med", "data-k": m.class_key, "data-land": `five.${MEM.slug(m.name)}`, style: `--cc: ${classVar(m.class_key)}` }, h("span", { class: "med-ico" }, ART.crest[m.class_key] ? crestImg(m.class_key, "med-img") : h("i")), h("b", { text: m.name }), h("small", { text: `${raceClass(m)}` })))),
     h("span", { class: "tile-line five-strip" }, h("span", { class: "strip-k", text: "Roles:" }), " ", ...[["tank", "tank", "tanks"], ["healer", "healer", "healers"], ["damage", "damage", "damage"]].flatMap(([r, one, many], i) => [i ? ", " : "", h("span", {}, h("b", { text: String(count(r)) }), ` ${count(r) === 1 ? one : many}`)]),
       later.length ? ` (${andList(later.map((m) => `${count(m.role_from.role) === 1 ? "a second" : "a"} ${m.role_from.role} from ${m.role_from.level}`))}).` : ".", " ",
-      h("span", { class: "strip-2" }, (() => { const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : `All ${pnWord()} have picked a spec.`; })())));
+      h("span", { class: "strip-2" }, (() => { if (wLine(p)) return wLine(p); const o = p.members.filter((m) => m.spec_status && m.spec_status.status === "open").map((m) => m.name); return o.length ? `Still choosing a spec: ${andList(o)}.` : `All ${pnWord()} have picked a spec.`; })())));
   const zones = Object.keys(ZONES).map((z) => [z, p.members.filter((m) => m.start_zone === z)]).filter(([, ms]) => ms.length);
   fill("roads",
     h("span", { class: "tile-line" }, zones.flatMap(([z, ms], i) => [i ? ", " : "", h("b", { text: z }), `\u00a0${ms.length}`])),
@@ -511,6 +515,7 @@ function renderTiles() {
   const races = Object.entries(c.racials);
   const changed = races.reduce((n, [, list]) => n + list.filter((r) => r.changed_oct26).length, 0);
   fill("racials",
+    wLine(c) ? h("span", { class: "tile-line", text: wLine(c) }) : null,
     races.map(([race, list]) => { const a = list.find((r) => r.kind === "active") || list[0]; return h("span", { class: "tile-line", "data-land": `racials.${MEM.slug(race)}` }, h("span", { class: "dots", "aria-hidden": "true" }, p.members.filter((m) => m.race === race).map((m) => crestMark(m, undefined, null))), " ", h("b", { text: race }), a ? ["\u00a0· ", h("span", { class: "rk-n", text: a.name })] : ""); }),
     changed ? h("span", { class: "tile-line", "data-land": "racials.changed", text: `${plural(changed, "race skill", "race skills")} changed since Oct 26` }) : null);
   fill("legacy",
@@ -518,13 +523,15 @@ function renderTiles() {
     h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
   fill("buffs",
     h("span", { class: "tile-line", text: "How can you help? Who covers whom." }),
-    h("span", { class: "tile-viz" }, miniWheel()), h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
+    wLine(c) ? h("span", { class: "tile-line", text: wLine(c) }) : h("span", { class: "tile-viz" }, miniWheel()), wLine(c) ? null : h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
   const settled = [...p.settled, ...p.settled_extra];
   const stillOpen = p.open.filter((o) => !p.polls.some((q) => q.title === o.title));
   fill("ledger",
+    wLine(p) ? h("span", { class: "tile-line", text: wLine(p) }) : null,
     settled.length ? h("span", { class: "tile-line", "data-land": "ledger.settled" }, h("b", { text: "Last settled: " }), wholeClause(settled[settled.length - 1].text, 70)) : null,
     (() => { /* the pending action: an open decision first, else a poll still taking votes; "nothing open" only when BOTH are empty */
       const first = stillOpen[0], poll = !first && p.polls[0];
+      if (wLine(p) && !first && !poll) return null; /* the line above stands in for "nothing is open": it would be a claim */
       return h("span", { class: "tile-line", ...(first ? { "data-land": "ledger.open-0" } : {}) }, h("b", { text: first ? "Needs a vote: " : poll ? "A poll is taking votes: " : "" }), first ? wholeClause(first.title, 70) : poll ? wholeClause(poll.title, 70) : "Nothing is open right now.");
     })(),
     h("span", { class: "tile-viz list" }, h("ul", { class: "viz-list" }, stillOpen.slice(0, 3).map((o, i) => h("li", { "data-land": `ledger.open-${i}`, text: o.title })))));
@@ -734,7 +741,7 @@ function renderCards() {
     const names = h("ul", { class: "sp-names", "data-j": "g c", "aria-label": `${m.class ? `${m.class} spells` : "Spells"} at ${lvl}` }, spells.map((sp, si) => h("li", {}, h("button", { type: "button", class: "sp-tt", "data-cls": m.class || "", "data-sp": si, "aria-expanded": "false", "aria-controls": "ttc" }, sp.name, sp.rank ? h("small", { text: ` ${sp.rank}` }) : null))));
     const back = h("div", { class: "face back" },
       h("div", { class: "back-head" }, h("h3", { text: m.class ? `${m.class} at ${lvl}` : `At ${lvl}` }), h("span", { class: "label", text: `client ${D.client.build}` })),
-      names, list, flipBtn(`Back to ${m.name}`));
+      wLine(D.client) ? wNote(D.client, "spells-withheld") : names, wLine(D.client) ? null : list, flipBtn(`Back to ${m.name}`));
     back.inert = true;
     card.append(h("div", { class: "card-inner" }, front, back));
     wrap.append(card);
@@ -1024,6 +1031,7 @@ function raceRow(r, i) {
 const wideMQ = window.matchMedia("(min-width: 900px)");
 function renderRaces() {
   const wrap = $("#races"); wrap.replaceChildren();
+  if (wLine(D.client)) { wrap.append(wNote(D.client, "races-withheld")); return; }
   Object.entries(D.client.racials).forEach(([race, list], idx) => {
     const ms = D.party.members.filter((m) => m.race === race);
     wrap.append(h("details", { class: "slip race", "data-race": MEM.slug(race), open: wideMQ.matches || idx === 0 || JR() === "everything" },
@@ -1071,6 +1079,7 @@ function renderLegacy() {
 
 function renderWheel() {
   const wrap = $("#wheel"); wrap.replaceChildren();
+  if (wLine(D.client)) { wrap.append(wNote(D.client, "wheel-withheld")); return; }
   const keys = D.party.members.map((m) => m.class_key);
   const R = 112, pos = {};
   keys.forEach((k, i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / keys.length; pos[k] = [Math.cos(a) * R, Math.sin(a) * R]; });
@@ -1136,6 +1145,7 @@ function buffWho(b, m) {
 }
 function renderBuffsDeep() {
   const box = $("#buffs-deep"), B = D.client && D.client.buffs; if (!box || !B) return;
+  if (wLine(D.client)) { box.replaceChildren(wNote(D.client, "buffs-withheld")); return; }
   try { const v = Number(localStorage.getItem("board-buff-level")); if (v >= 1 && v <= 60) BD.level = v; } catch (e) {}
   const P = D.party, me = MEM.member(), L = BD.level;
   const giverOf = (cls) => P.members.find((m) => m.class_key === cls);
@@ -1279,11 +1289,12 @@ function renderLedger() {
     : "Settled things and open things. No poll is taking votes right now.";
   wrap.append(h("div", { class: "ledger-col" },
     h("h3", { "data-j": "c e", text: "Settled" }),
+    wLine(p) ? wNote(p, "settled-withheld") : null,
     h("ul", { "data-j": "c e" }, [...p.settled, ...p.settled_extra].map((x, i, all) => h("li", { class: "settled-li", style: `--di: ${i}`, ...(i === all.length - 1 ? { "data-land-to": "settled" } : {}) }, h("span", {}, seal(), x.text), srcTag(x.source))),
       p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), p.play.text), srcTag(p.play.source)) : null),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
     ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.closes_epoch ? `Closes ${fmtWhen(q.closes_epoch)}.` : cardDates(q.text.replace(/\s*Add names in chat\.?/i, "")) }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `The ${q.title.toLowerCase()} poll in Discord` })))),
-    h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }),
+    h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }), wLine(p) ? wNote(p, "open-withheld") : null,
     h("ul", {}, p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).map((o, i) => h("li", { class: "open-li", style: `--di: ${i}`, "data-land-to": `open-${i}`, "data-title": o.title },
       h("strong", { text: o.title }),
       h("span", { "data-j": "c e" }, ...openLine(o, link),
@@ -3547,10 +3558,10 @@ function renderTonight() {
   const groups = RSVP_KEYS.map((k) => [T.labels[k] || RSVP_SAY[k], who(k)]).filter(([, n]) => n.length);
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
   box.replaceChildren(...[
-    card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl))),
+    card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl)), wNote(T, "tn-withheld")),
     card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
     card(launchPast() ? "This week" : T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), ...(!mine && !groups.length ? (w && w.empty ? emptyWeekEls(w, "tn-line") : [h("p", { text: T.labels.nobody })]) : []), earlierLine(w, "tn-line"))].filter(Boolean));
-  const gets = member && D.client && D.client.buffs ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
+  const gets = member && D.client && D.client.buffs && !wLine(D.client) ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
   act.replaceChildren(...[gets, h("button", { type: "button", class: "lib-btn strong", onclick: () => requestClose() }, T.actions[0]), h("button", { type: "button", class: "lib-btn", onclick: () => LIBUI.focusSearch() }, T.actions[1]), h("a", { class: "lib-btn tn-decide", href: "#decide", text: TITLES.decide })].filter(Boolean));
   const left = (() => { try { return JSON.parse(MEM.get("left") || "null"); } catch (e) { return null; } })();

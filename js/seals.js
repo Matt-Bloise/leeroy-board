@@ -368,6 +368,7 @@
   MECH.ledger = { hint: "to stamp the ledger again", press: ({ say: sy }) => {
     replayOn("#ledger-slip", "stamping");
     const p = K.D && K.D.party; if (!p) return;
+    if (p.withheld) { sy(p.withheld); return; }
     const settled = p.settled.length + (p.settled_extra || []).length + (p.play ? 1 : 0), open = p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).length;
     sy(`${plural(settled, "thing")} settled, ${open} still open${p.polls.length ? `, ${plural(p.polls.length, "poll")} taking votes` : ""}.`);
   } };

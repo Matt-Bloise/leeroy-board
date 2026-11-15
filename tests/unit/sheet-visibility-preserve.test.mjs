@@ -10,6 +10,7 @@ import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js
 import { BoardRoom } from "../../infrastructure/worker/room.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
+import { LAUNCH_EPOCH } from "../../infrastructure/worker/tonight-copy.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 
@@ -23,8 +24,9 @@ const AT = "2026-11-12T00:00:00.000Z";
 const SLUG = "red-fox", NAME = "Red Fox", DISCORD_ID = "100000000000000042";
 const MEMBER_KEY = "member-key-for-tests-0123456789ab", KEY_SALT = "salt-for-tests-0123456789";
 // Hidden values. Each starts with the marker "zqhv", and a leak is that marker anywhere in a public body or socket message.
-const HIDDEN_RACE = "zqhv-hidden-race", HIDDEN_GOALS = "zqhv hidden goal", HIDDEN_EDIT = "zqhv-edited-race", HIDDEN_LAUNCH = "zqhv-launch";
+const HIDDEN_RACE = "zqhv-hidden-race", HIDDEN_GOALS = "zqhv hidden goal", HIDDEN_EDIT = "orc", HIDDEN_LAUNCH = "zqhv-launch";
 const MARKER = "zqhv";
+const NEEDLES = [MARKER, '"orc"']; // a race typed in Discord must be on the board's list (sheet-vocab.js), so the edited value is the real one, "orc", not a marker
 
 const quiet = async (fn) => { const e = console.error, w = console.warn, l = console.log; console.error = console.warn = console.log = () => {}; try { return await fn(); } finally { console.error = e; console.warn = w; console.log = l; } };
 
@@ -88,9 +90,9 @@ async function anonymousLeaks(env) {
     const res = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api${p}`, { headers: { "CF-Connecting-IP": "203.0.113.40" } }), env, ctx));
     const text = `${[...res.headers].map(([k, v]) => `${k}: ${v}`).join("\n")}\n${await res.text()}`;
     if (res.status !== 200) found.push(`${p}: status ${res.status}`);
-    if (text.toLowerCase().includes(MARKER)) found.push(`${p}: hidden value`);
+    if (NEEDLES.some((n) => text.toLowerCase().includes(n))) found.push(`${p}: hidden value`);
   }
-  env.sent.forEach((m, i) => { if (anonSocket(m).toLowerCase().includes(MARKER)) found.push(`socket message ${i}: hidden value`); });
+  env.sent.forEach((m, i) => { if (NEEDLES.some((n) => anonSocket(m).toLowerCase().includes(n))) found.push(`socket message ${i}: hidden value`); });
   // The slow path (sheets rebuilt from sheet_events alone) must agree: the event rows carry the visibility that was kept.
   const { party } = await quiet(() => buildPartySheetsFromD1(env, { persist: false }));
   for (const s of party) for (const [k, f] of Object.entries(s.fields || {})) {
@@ -159,7 +161,10 @@ test("web POST /sheet: a value-only write keeps the field hidden; only an explic
 test("launch state from Discord /launch or the board's launch intent never un-hides a hidden launch_state", async () => {
   const env = await makeEnv();
   await hide(env, "launch_state", HIDDEN_LAUNCH);
-  await discordLaunch(env, "queue");
+  // Discord /launch only records a state before launch (after launch it answers one line and records nothing), so pin the clock before it.
+  const realNow = Date.now;
+  Date.now = () => LAUNCH_EPOCH * 1000 - 3600000;
+  try { await discordLaunch(env, "queue"); } finally { Date.now = realNow; }
   assert.equal(field(env, "launch_state").value, "queue");
   assert.equal(field(env, "launch_state").visible, false, "Discord /launch");
   const res = await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "in" } });

@@ -7,7 +7,8 @@
 //   2. The fixture STORES unprojected rows (every hidden value is in kv_state party, decide and tonight), and 8 fictional members hide 0, 1 or every field.
 //      Every read path is then run and each hidden canary, and each canary derived from it (the cascade table below, written by hand), must be absent; role and
 //      the visible fields must still be there (so an empty read cannot pass).
-//   3. Round trip, junk rows, unreadable sheets, the admin PUT that races a hide, the cascade, settled text, decide.people, tonight.
+//   3. Round trip, junk rows, unreadable sheets, the admin PUT that races a hide, the cascade, and the composites: while ANY member hides ANY field, every member-derived
+//      section of decide, client, guided-atlas, tonight and the party document's lines is withheld whole (WITHHELD_LINE), not scrubbed.
 // Fictional data only. No network, no AI.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -15,13 +16,14 @@ import { readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import worker, { ROUTES, PARTY_CACHE_PATHS, purgeWorkerCache, broadcastToRoom } from "../../infrastructure/worker/index.js";
-import { projectForAnonymous, projectSheets, projectDataDoc, projectDecide, projectTonight, projectGuidedAtlas, projectClient, projectLaunch, projectBroadcast, loadPublicInputs, MEMBER_DOCS, CASCADE } from "../../infrastructure/worker/public-party.js";
+import { projectForAnonymous, projectSheets, projectDataDoc, projectDecide, projectTonight, projectGuidedAtlas, projectClient, projectLaunch, projectBroadcast, loadPublicInputs, MEMBER_DOCS, CASCADE, WITHHELD_LINE, SHEET_FIELD_NAMES, anyHidden } from "../../infrastructure/worker/public-party.js";
 import { PUBLIC_DATA_DOCS } from "../../infrastructure/worker/public-docs.js";
 import { loadCardState, renderBoardCard, renderSignupCard } from "../../infrastructure/worker/cards.js";
 import { buildAnswerInputs, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { handleDiscordInteraction } from "../../infrastructure/worker/discord.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { slugify } from "../../infrastructure/worker/member-model.js";
+import { LAUNCH_EPOCH } from "../../infrastructure/worker/tonight-copy.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
@@ -219,7 +221,8 @@ function clientDoc() {
     classes: Object.fromEntries(NAMES.map((_, i) => [cDoc(i, "class"), [{ id: i, name: `zqspell${i}x` }]])),
     racials: Object.fromEntries(NAMES.map((_, i) => [cDoc(i, "race"), [{ name: `zqracial${i}x`, kind: "active" }]])),
     synergy: NAMES.map((_, i) => ({ from: cDoc(i, "class_key"), to: NAMES.map((__, j) => cDoc(j, "class_key")), what: `zqsynergy${i}x`, refs: [] })),
-    legacy: { total: 65 }, buffs: [], flags: {},
+    legacy: { total: 65 }, flags: {},
+    buffs: { build: "1.0", levels: [1, 60], marks: [20, 40, 60], list: NAMES.map((_, i) => ({ key: `zqbuff${i}x`, class: cDoc(i, "class_key"), name: `zqbuffname${i}x` })), rules: [{ text: `zqbuffrule ${cDoc(0, "class")}`, status: "classic" }] },
   };
 }
 function launchDoc() { return NAMES.map((name, i) => ({ slug: SLUG[i], name, state: cSheet(i, "launch_state"), at: AT })); }
@@ -231,14 +234,17 @@ function sheetList(hides = HIDES) {
 }
 
 // A database holding the whole, unprojected documents.
-async function makeEnv({ hides = HIDES, sheets } = {}) {
+// apiControl: the control member's sheet row holds values that are on the board's list (sheet-vocab.js), so a POST /sheet of the same value is a hide or a show and not a new value
+// (a new value is copied into the party document). Every other row keeps the canaries.
+const API_VAL = { race: "orc", class: "mage", spec_path: "fire", spec_at_40: "frost", professions: ["mining"], plan_zone: "durotar" };
+async function makeEnv({ hides = HIDES, sheets, apiControl = false } = {}) {
   invalidatePagesCache(); invalidateConfigCache();
   await purgeWorkerCache(ORIGIN, [...PARTY_CACHE_PATHS]);
   const DB = schemaDb();
   const kv = (k, v) => DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)").run(k, typeof v === "string" ? v : JSON.stringify(v), AT);
   kv("party", partyDoc()); kv("decide", decideDoc()); kv("tonight", tonightDoc()); kv("guided-atlas", atlasDoc()); kv("client", clientDoc()); kv("launch", launchDoc());
   kv("signups", { generated: AT, present: true, updated: AT, options: { meet: [], when: [] }, entries: [{ name: NAMES[1], rsvp: "in", pack: "no", meet: null, when: "8pm", updated: AT }, { name: NAMES[CONTROL], rsvp: "maybe", updated: AT }], tallies: {} });
-  kv("party_sheets", sheets === undefined ? sheetList(hides) : sheets);
+  kv("party_sheets", sheets !== undefined ? sheets : apiControl ? sheetList(hides).map((r, i) => (i === CONTROL ? { ...r, fields: Object.fromEntries(Object.entries(r.fields).map(([f, v]) => [f, API_VAL[f] === undefined ? v : { ...v, value: API_VAL[f] }])) } : r)) : sheetList(hides));
   kv("discord_members", [{ slug: "asker-x", name: "Asker X", match: ["asker x"], id: "100000000000000900" }, ...NAMES.map((name, i) => ({ slug: SLUG[i], name, match: [name.toLowerCase()], id: `10000000000000010${i}` }))]);
   DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES ('asker-x', ?, ?)").run(await sha256Hex(`${KEY_SALT}:${ASKER_KEY}`), AT);
   const sent = [];
@@ -288,19 +294,12 @@ function leaks(text, { member } = {}) {
     if (!lo(i) && member !== undefined) continue;
     for (const k of docGone(i)) if (text.includes(cDoc(i, k))) bad.push(`${NAMES[i]} doc ${k}`);
     for (const f of sheetGone(i)) { if (f === "level") continue; if (text.includes(cSheet(i, f))) bad.push(`${NAMES[i]} sheet ${f}`); }
-    // decide and tonight
-    const entryGone = HIDES[i].some((f) => ["race", "class", "spec_path", "spec_at_40"].includes(f));
-    if (entryGone) for (const k of ["race", "prof", "spec", "talents", "locked"]) if (text.includes(cDecide(i, k))) bad.push(`${NAMES[i]} decide ${k}`);
-    if (hidden(i, "professions") && text.includes(cDecide(i, "prof"))) bad.push(`${NAMES[i]} decide prof`);
-    if (hidden(i, "class") && text.includes(cTonight(i, "classkey"))) bad.push(`${NAMES[i]} tonight classkey`);
-    if (HIDES[i].some((f) => ["class", "spec_path", "spec_at_40", "professions"].includes(f)) && text.includes(cTonight(i, "step"))) bad.push(`${NAMES[i]} tonight step`);
   }
-  for (let i = 0; i < NAMES.length; i++) {
-    if (HIDES[i].some((f) => ["class", "race", "plan_zone"].includes(f))) for (const c of [`zqatlasstart${i}x`, `zqtown${i}x`, `zqtowntrainer${i}x`]) if (text.includes(c)) bad.push(`${NAMES[i]} atlas ${c}`);
-    if (hidden(i, "class")) for (const c of [`zqtrainer${i}x`, `zqspell${i}x`, `zqsynergy${i}x`]) if (text.includes(c)) bad.push(`${NAMES[i]} ${c}`);
-    if (hidden(i, "race") && text.includes(`zqracial${i}x`)) bad.push(`${NAMES[i]} racial`);
-  }
-  for (const c of ["zqdgroupdrop", "zqdgroupdrop2", "zqdoptiondrop", "zqdraceline", "zqdlinetokendrop", "zqsettleddrop1x", "zqsettleddrop2x", "zqsettleddrop3x", "zqextradrop1x", "zqgapdrop", "zqdrolelines", "zqdnobodyclass", "zqdnobodyprof", "zqdbuff", "zqdnobodybuff", "zqdsecondary", "zqdnote"]) if (text.includes(c)) bad.push(c);
+  // The composites. Every fixture reader has a member who hides something, so NO member-derived section of any composite may appear, for anyone: not the entries of members who hide
+  // nothing, not a line that names none. These are the canaries of every such section; each one is in the stored rows.
+  const composite = ["zqdprof", "zqdspec", "zqdtalents", "zqdlocked", "zqdrace", "zqdgroup", "zqdoption", "zqdline", "zqdrole", "zqdnobody", "zqdbuff", "zqdsecondary", "zqdnote", "zqdgeneric",
+    "zqtstep", "zqatlasstart", "zqtown", "zqtrainer", "zqspell", "zqracial", "zqsynergy", "zqbuff", "zqsettled", "zqextra", "zqgap", "zqopenkept"];
+  for (const c of composite) if (text.includes(c)) bad.push(c);
   return bad;
 }
 test("the fixture itself is unprojected: every hidden value is in the stored rows", async () => {
@@ -347,35 +346,35 @@ test("what stays shown: role for every member, names, the control's whole build,
   assert.deepEqual(Object.keys(st.party[ALLHID].fields), [], "all hidden: no sheet field");
   assert.deepEqual(Object.keys(st.party[1].fields).sort(), ["goals", "launch_state", "level", "plan_zone", "professions", "race"], "class hidden also removes spec_path and spec_at_40 from the sheet");
   assert.deepEqual(Object.keys(st.party[0].fields).sort(), ["class", "goals", "launch_state", "level", "professions", "spec_at_40", "spec_path"], "race hidden also removes plan_zone from the sheet");
+  // the composites: withheld whole, with the one line; what does not depend on the party stays
   const d = JSON.parse((await http(env, "GET", "/data/decide")).text);
-  assert.deepEqual(d.people.map((p) => p.class_key), [4, 5, CONTROL].map((i) => cDecide(i, "classkey")), "decide.people drops entries of members who hide race, class or spec, in party order");
-  assert.ok(!d.people.find((p) => p.class_key === cDecide(4, "classkey")).decisions.some((x) => x.key === "professions"), "professions hidden: only the professions card goes");
-  assert.equal(d.party.withheld, true);
-  assert.ok(d.party.lines.some((l) => l.label === "zqdgeneric"), "the generic group lines stay");
+  assert.equal(d.withheld, WITHHELD_LINE); assert.deepEqual(d.people, []); assert.deepEqual(d.party.brackets, []); assert.deepEqual(d.party.lines, []);
   const t = JSON.parse((await http(env, "GET", "/data/tonight")).text);
-  assert.equal(t.people[1].class_key, undefined); assert.equal(t.people[1].step, null); assert.equal(t.people[1].member, 1);
-  assert.equal(t.people[0].class_key, cTonight(0, "classkey")); assert.equal(t.people[0].step, cTonight(0, "step"), "race hidden: class and step stay");
-  assert.ok(!(cTonight(1, "classkey") in t.week_one.trainers) && (cTonight(0, "classkey") in t.week_one.trainers));
-  assert.ok(party.settled.map((l) => l.text).join("|").includes("zqsettledkept0x") && party.settled.some((l) => l.text.includes("zqsettledkeptf")));
-  assert.deepEqual(party.settled.map((l) => l.text.match(/zqsettled(?:kept|drop)\w+/)[0]), ["zqsettledkept0x", "zqsettledkept6x", "zqsettledkeptf"]);
-  assert.deepEqual(party.settled_extra.map((l) => l.text), ["Raids open zqextrakept"]);
-  assert.ok(!party.open[0].text.includes("Gap") && party.open[0].text.startsWith("the options"), "the professions gap is dropped when someone hides professions");
-  assert.ok(party.open[1].text.includes("zqopenkept"));
+  assert.equal(t.withheld, WITHHELD_LINE); assert.deepEqual(t.people, []); assert.deepEqual(t.week_one.trainers, {}); assert.equal(t.launch, "Launch zqtgeneric", "the launch line does not depend on the party");
+  const a = JSON.parse((await http(env, "GET", "/data/guided-atlas")).text);
+  assert.equal(a.withheld, WITHHELD_LINE); assert.deepEqual(a.classes, {}); assert.equal(a.dungeon.name, "zqdungeonkept"); assert.equal(a.meet.name, "zqmeetkept"); assert.equal(a.starter_cap.level, 5);
+  const c = JSON.parse((await http(env, "GET", "/data/client")).text);
+  assert.equal(c.withheld, WITHHELD_LINE); assert.deepEqual([c.classes, c.racials, c.synergy, c.buffs.list, c.buffs.rules], [{}, {}, [], [], []]);
+  assert.deepEqual(c.buffs.marks, [20, 40, 60]); assert.equal(c.level, 60); assert.equal(c.legacy.total, 65);
+  assert.equal(party.withheld, WITHHELD_LINE); assert.deepEqual([party.settled, party.settled_extra, party.open], [[], [], []]);
+  assert.equal(st.decide.withheld, WITHHELD_LINE); assert.equal(st.partyDoc.withheld, WITHHELD_LINE); assert.equal(st.tonight.withheld, WITHHELD_LINE);
+  const bs = JSON.parse((await http(env, "GET", "/bootstrap")).text);
+  assert.ok(JSON.stringify(bs).includes(WITHHELD_LINE), "the bootstrap bundle carries the line too");
 });
 
 // ---- the stored rows are whole, and every writer keeps them whole ---------------------------------------------------------------------------
 test("a hide (POST /sheet) stores the whole party document; showing the field again changes nothing stored", async () => {
-  const env = await makeEnv({ hides: NAMES.map(() => []) });
+  const env = await makeEnv({ hides: NAMES.map(() => []), apiControl: true });
   const auth = { Authorization: `Board ${ASKER_KEY}` };
   const before = stored(env, "party");
   // the asker has no party-document card, so use the member whose card it is: add a key for the control member
   env.DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES (?, ?, ?)").run(SLUG[CONTROL], await sha256Hex(`${KEY_SALT}:ctl-key-0123456789abcdef0123`), AT);
   const ctl = { Authorization: "Board ctl-key-0123456789abcdef0123" };
   for (const field of ["race", "class", "spec_path", "professions", "plan_zone"]) {
-    const h = await http(env, "POST", "/sheet", { headers: ctl, body: { field, value: sheetValue(CONTROL, field), visible: false } });
+    const h = await http(env, "POST", "/sheet", { headers: ctl, body: { field, value: API_VAL[field], visible: false } });
     assert.equal(h.status, 200, h.text);
     assert.equal(stored(env, "party"), before, `hide ${field}: the stored party row is unchanged`);
-    const s = await http(env, "POST", "/sheet", { headers: ctl, body: { field, value: sheetValue(CONTROL, field), visible: true } });
+    const s = await http(env, "POST", "/sheet", { headers: ctl, body: { field, value: API_VAL[field], visible: true } });
     assert.equal(s.status, 200, s.text);
     assert.equal(stored(env, "party"), before, `show ${field}: the stored party row is byte-identical`);
   }
@@ -421,10 +420,12 @@ test("when the sheets cannot be read at all, every projection hides everything (
   const doc = partyDoc();
   const out = projectForAnonymous(doc, null);
   for (const m of out.members) assert.deepEqual(Object.keys(m).sort(), ["name", "role"]);
-  assert.deepEqual(out.settled.map((l) => l.text), ["Faction: Horde zqsettledkeptf"], "no line that names anyone survives");
+  assert.deepEqual([out.settled, out.settled_extra, out.open, out.withheld], [[], [], [], WITHHELD_LINE], "unreadable sheets: the party document's lines are withheld");
   assert.deepEqual(projectDecide(decideDoc(), doc, null).people, []);
-  assert.equal(projectDecide(decideDoc(), doc, null).party.withheld, true);
-  assert.ok(projectTonight(tonightDoc(), doc, null).people.every((p) => p.class_key === undefined && p.step === null));
+  assert.equal(projectDecide(decideDoc(), doc, null).withheld, WITHHELD_LINE);
+  assert.deepEqual(projectTonight(tonightDoc(), doc, null).people, []);
+  assert.deepEqual(projectGuidedAtlas(atlasDoc(), doc, null).classes, {});
+  assert.deepEqual(projectClient(clientDoc(), doc, null).classes, {});
   assert.deepEqual(projectSheets(null), []);
   const broken = { DB: { prepare: () => { throw new Error("D1 down"); } } };
   const inputs = await loadPublicInputs(broken);
@@ -461,13 +462,6 @@ test("the owner's own sheet stays whole; the projection never changes its input"
   assert.equal(JSON.stringify(sheets), copy); assert.equal(JSON.stringify(doc), docCopy);
 });
 
-test("a settled line is dropped only when it names a member who hid class or spec", () => {
-  const doc = { members: [{ name: "Ada Fox", role: "tank" }, { name: "Bo Reed", role: "healer" }], settled: [{ text: "Tank: Ada Fox, Healers: Bo Reed" }, "Bo Reed is in", { text: "Ruleset: Normal" }], settled_extra: [] };
-  const hide = (f) => [{ slug: "ada-fox", name: "Ada Fox", fields: { [f]: { value: "x", visible: false } } }, { slug: "bo-reed", name: "Bo Reed", fields: {} }];
-  assert.equal(projectForAnonymous(doc, hide("race")).settled.length, 3, "race hidden: nothing dropped");
-  assert.equal(projectForAnonymous(doc, hide("professions")).settled.length, 3);
-  for (const f of ["class", "spec_path", "spec_at_40"]) assert.deepEqual(projectForAnonymous(doc, hide(f)).settled, ["Bo Reed is in", { text: "Ruleset: Normal" }].filter((l) => !(typeof l === "string" ? l : l.text).includes("Ada")), f);
-});
 
 // ---- the choke points -------------------------------------------------------------------------------------------------------------------
 test("a mutation guard: reading the stored documents without the projection leaks, so every path above is doing real work", async () => {
@@ -488,70 +482,16 @@ const getJson = async (env, p, headers) => { const r = await http(env, "GET", p,
 const keyFor = async (env, i) => { const k = `member-key-${i}-0123456789abcdef0123`; env.DB.raw.prepare("INSERT INTO members (slug, key_hash, created_at) VALUES (?, ?, ?)").run(SLUG[i], await sha256Hex(`${KEY_SALT}:${k}`), AT); return { Authorization: `Board ${k}` }; };
 const KEYS = (c) => Object.keys(c).sort();
 
-test("guided-atlas: a class only a hider has is not a key; a start and town survive only when a member who shows class, race and plan_zone has them", async () => {
-  const env = await makeEnv();
-  const a = await getJson(env, "/data/guided-atlas");
-  // classes: 0 shows class and hides race (start gone), 1 hides class (key gone), 2 and 3 hide spec only (whole entry), 4 hides professions (whole), 5 hides plan_zone (start gone), 6 control (whole), 7 hides all
-  assert.deepEqual(KEYS(a.classes), [0, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "class_key")).sort());
-  for (const i of [0, 5]) assert.deepEqual(KEYS(a.classes[cDoc(i, "class_key")]), ["trainer"], `member ${i}: no start and no town`);
-  for (const i of [2, 3, 4, CONTROL]) assert.deepEqual(KEYS(a.classes[cDoc(i, "class_key")]), ["start", "town", "trainer"]);
-  assert.equal(a.dungeon.name, "zqdungeonkept"); assert.equal(a.meet.name, "zqmeetkept");
-  const text = JSON.stringify(a);
-  for (const c of [cDoc(0, "start_zone"), cDoc(5, "start_zone"), cDoc(1, "class_key"), cDoc(7, "class_key"), "zqtrainer1x", "zqtrainer7x"]) assert.ok(!text.includes(c), c);
-});
 
-test("guided-atlas: two members of one class, one hides the race: the entry stays whole because the other shows both", () => {
-  const doc = { classes: { mage: { start: { zone_name: "Elsewhere" }, town: { name: "T" }, trainer: { name: "Tr" } } } };
-  const party = { members: [{ name: "Ann Ash", class_key: "mage", race: "Gnome", start_zone: "Elsewhere" }, { name: "Bo Birch", class_key: "mage", race: "Gnome", start_zone: "Elsewhere" }] };
-  const sheet = (name, hide) => ({ slug: slugify(name), name, fields: hide ? { race: { value: "Gnome", visible: false } } : {} });
-  assert.deepEqual(projectGuidedAtlas(doc, party, [sheet("Ann Ash", true), sheet("Bo Birch", false)]).classes.mage, doc.classes.mage);
-  assert.deepEqual(KEYS(projectGuidedAtlas(doc, party, [sheet("Ann Ash", true), sheet("Bo Birch", true)]).classes.mage), ["trainer"]);
-  assert.deepEqual(projectGuidedAtlas(doc, party, null).classes, {}, "unreadable sheets: no class at all");
-});
 
-test("client: classes, racials and synergy keep only what a member who shows that field has", async () => {
-  const env = await makeEnv();
-  const c = await getJson(env, "/data/client");
-  assert.deepEqual(KEYS(c.classes), [0, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "class")).sort());
-  assert.deepEqual(KEYS(c.racials), [1, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "race")).sort());
-  const shownKeys = [0, 2, 3, 4, 5, CONTROL].map((i) => cDoc(i, "class_key"));
-  assert.deepEqual(c.synergy.map((x) => x.from).sort(), shownKeys.slice().sort());
-  for (const x of c.synergy) assert.deepEqual(x.to.slice().sort(), shownKeys.slice().sort(), "to lists only shown classes");
-  assert.deepEqual(projectClient(clientDoc(), partyDoc(), null).classes, {});
-});
 
-test("decide: nobody who hides professions leaves a group line, a {class} token of a member who hid class, spec or professions, or a race line behind", async () => {
-  const env = await makeEnv();
-  const d = await getJson(env, "/data/decide");
-  const text = JSON.stringify(d);
-  for (const c of ["zqdgroupdrop", "zqdgroupdrop2", "zqdoptiondrop", "zqdraceline", "zqdlinetokendrop"]) assert.ok(!text.includes(c), c);
-  for (const p of d.people) for (const x of p.decisions) assert.ok(!("group" in x), "no group on any entry once anyone hides professions");
-  assert.ok(d.people.length > 0 && d.party.lines.some((l) => l.label === "zqdgeneric"), "the rest is still there");
-  // a member who hides nothing: their own entry still names nobody else's value, and a token of a visible class survives when nobody hides professions
-  const pristine = await makeEnv({ hides: NAMES.map((_, i) => (i === 0 ? ["race"] : [])) });
-  const only = await getJson(pristine, "/data/decide");
-  assert.ok(!JSON.stringify(only).includes("zqdraceline"), "race hidden by one member: the 'for the <race> at this table' line goes");
-  assert.ok(JSON.stringify(only).includes(cDoc(1, "class_key")), "the tokens of visible classes stay");
-  const grp = only.people.flatMap((p) => p.decisions).filter((x) => "group" in x);
-  assert.ok(grp.length > 0, "with nobody hiding professions the groups stay (only text that names a hidden value goes)");
-});
 
-test("every member document, text as well as keys: a line that carries a hider's value, whoever's entry it sits in, is dropped (hand-written examples)", () => {
-  const members = [{ name: "Ann Ash", class_key: "mage", class: "Mage", race: "Gnome", spec: "Frost", start_zone: "Dun Morogh", professions: [{ name: "Alchemy" }] }, { name: "Bo Birch", class_key: "druid", class: "Druid", race: "Tauren", spec: "Feral", start_zone: "Mulgore", professions: [{ name: "Herbalism" }] }];
-  const party = { members };
-  const sheet = (name, hide) => ({ slug: slugify(name), name, fields: Object.fromEntries(hide.map((f) => [f, { value: "x", visible: false }])) });
-  const decide = { people: [{ class_key: "mage", decisions: [{ key: "spec40", lines: [{ label: "Frost, for the Tauren at this table", text: "a" }, { label: "plain", text: "kept" }, { label: "x", text: "also {druid}'s." }] }] }], party: { lines: [{ label: "Gnome racial", text: "g" }, { label: "Group", text: "5 players" }] } };
-  const out = projectDecide(decide, party, [sheet("Ann Ash", []), sheet("Bo Birch", ["race", "class"])]);
-  const text = JSON.stringify(out);
-  assert.ok(!/tauren|druid/i.test(text), text);
-  assert.ok(text.includes("kept") && text.includes("5 players") && text.includes("Gnome racial"), "lines that name only shown values stay");
-});
 
 test("tools/add-member.mjs reads the STORED party document (admin token), so hide, add a member, un-hide loses nothing", async () => {
   const { applyPlan, buildPlan } = await import("../../tools/add-member.mjs");
-  const env = await makeEnv({ hides: NAMES.map(() => []) });
+  const env = await makeEnv({ hides: NAMES.map(() => []), apiControl: true });
   const ctl = await keyFor(env, CONTROL);
-  for (const f of ["class", "race", "professions"]) assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field: f, value: sheetValue(CONTROL, f), visible: false } })).status, 200);
+  for (const f of ["class", "race", "professions"]) assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field: f, value: API_VAL[f], visible: false } })).status, 200);
   // the public read has the control's class cut out; the stored read has it
   assert.ok(!(await http(env, "GET", "/data/party")).text.includes(cDoc(CONTROL, "class")));
   const anon = await http(env, "GET", "/data/party?stored=1");
@@ -570,7 +510,7 @@ test("tools/add-member.mjs reads the STORED party document (admin token), so hid
   assert.equal(after.members[CONTROL].class, cDoc(CONTROL, "class"), "the hidden class is still in the stored row");
   assert.equal(after.members[CONTROL].race, cDoc(CONTROL, "race"));
   assert.deepEqual(after.members[CONTROL].professions, docValue(CONTROL, "professions"));
-  for (const f of ["class", "race", "professions"]) assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field: f, value: sheetValue(CONTROL, f), visible: true } })).status, 200);
+  for (const f of ["class", "race", "professions"]) assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field: f, value: API_VAL[f], visible: true } })).status, 200);
   const shown = await getJson(env, "/data/party");
   for (const k of ["class", "race", "class_key", "professions", "spec", "color"]) assert.deepEqual(shown.members[CONTROL][k], docValue(CONTROL, k), `un-hidden: ${k} is back`);
   try { unlinkSync(res.backup); } catch {}
@@ -581,11 +521,11 @@ const SPELLINGS = (n) => [`/data/${n}`, `/data/${n}.json`, `/data//${n}`, `/data
 const HIDE_FOR = { party: ["class", cDoc(CONTROL, "class")], decide: ["class", cDoc(CONTROL, "class_key")], tonight: ["class", cDoc(CONTROL, "class_key")], "guided-atlas": ["class", cDoc(CONTROL, "class_key")], client: ["class", cDoc(CONTROL, "class")], launch: ["launch_state", cSheet(CONTROL, "launch_state")] };
 for (const name of MEMBER_DOCS) {
   test(`cache: read ${name} in every spelling, hide, read again: nothing stale (the hide purges every member document and every spelling shares one entry)`, async () => {
-    const env = await makeEnv({ hides: NAMES.map(() => []) });
+    const env = await makeEnv({ hides: NAMES.map(() => []), apiControl: true });
     const [field, canary] = HIDE_FOR[name];
     const ctl = await keyFor(env, CONTROL);
     for (const p of SPELLINGS(name)) { const r = await http(env, "GET", p); assert.equal(r.status, 200, p); assert.ok(r.text.includes(canary), `before the hide ${p} shows the value`); }
-    const value = field === "launch_state" ? "in" : sheetValue(CONTROL, field);
+    const value = field === "launch_state" ? "in" : API_VAL[field];
     assert.equal((await http(env, "POST", "/sheet", { headers: ctl, body: { field, value, visible: false } })).status, 200);
     for (const p of SPELLINGS(name)) { const r = await http(env, "GET", p); assert.equal(r.status, 200, p); assert.ok(!r.text.includes(canary), `after the hide ${p} is fresh`); }
   });
@@ -634,16 +574,6 @@ test("sheet_events cannot be read and the sheets row is empty: nothing is shown 
   assert.equal(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json, "[]", "nothing was persisted from the failed read");
 });
 
-test("personMask: a stored member with no class_key (an old row a writer stripped) cannot be told apart, so its hide applies to every entry that has nobody else to pair with", () => {
-  const party = { members: [{ name: "Ann Ash", role: "tank" }, { name: "Bo Birch", role: "healer", class_key: "druid" }] };
-  const doc = { people: [{ class_key: "mage", decisions: [{ key: "professions" }, { key: "spec40" }] }, { class_key: "druid", decisions: [{ key: "professions" }] }], party: { lines: [] } };
-  const sheet = (name, f) => ({ slug: slugify(name), name, fields: { [f]: { value: "x", visible: false } } });
-  const out = projectDecide(doc, party, [sheet("Ann Ash", "professions"), sheet("Bo Birch", "level")]);
-  assert.deepEqual(out.people[0].decisions.map((d) => d.key), ["spec40"], "the entry that matches no class_key takes the union");
-  assert.deepEqual(out.people[1].decisions.map((d) => d.key), ["professions"], "the druid entry pairs with Bo by position and class_key: Ann's hide does not touch it");
-  const raceHide = projectDecide(doc, party, [sheet("Ann Ash", "race"), sheet("Bo Birch", "level")]);
-  assert.deepEqual(raceHide.people.map((p) => p.class_key), ["druid"], "race hidden on a row with no class_key: the entry with no partner goes; the paired druid entry stays");
-});
 
 // F8: launch
 test("launch: a member who hid launch_state is not in /state.launch, /data/launch, the broadcast or the Discord /launch reply; the stored row keeps it", async () => {
@@ -657,7 +587,11 @@ test("launch: a member who hid launch_state is not in /state.launch, /data/launc
   env.sent.length = 0;
   await quiet(() => broadcastToRoom(env, { type: "data", key: "launch", data: JSON.parse(stored(env, "launch")) }));
   assert.ok(env.sent.length === 1 && !env.sent[0].includes(cSheet(ALLHID, "launch_state")) && env.sent[0].includes(cSheet(0, "launch_state")));
-  const reply = await discord(env, slash("launch"));
+  // Discord /launch only lists the states before launch (after launch it answers one line and records nothing), so pin the clock before it.
+  const realNow = Date.now;
+  Date.now = () => LAUNCH_EPOCH * 1000 - 3600000;
+  let reply;
+  try { reply = await discord(env, slash("launch")); } finally { Date.now = realNow; }
   assert.ok(!reply.includes(cSheet(ALLHID, "launch_state")), "the Discord reply");
   assert.ok(reply.includes(cSheet(0, "launch_state")), "and it still lists the others");
   assert.ok(stored(env, "launch").includes(cSheet(ALLHID, "launch_state")), "reading /launch did not rewrite the stored list");
@@ -672,20 +606,7 @@ test("launch: {rows:[...]} form, owner sees own row, unreadable sheets show no s
 
 // ---- surviving mutations ------------------------------------------------------------------------------------------------------------------
 const hideOne = (f) => NAMES.map((_, i) => (i === 3 ? [f] : []));
-test("decide.party is withheld when anyone hides class, spec_path, spec_at_40 or professions, and only then (each field on its own)", () => {
-  for (const f of ["class", "spec_path", "spec_at_40", "professions"]) assert.equal(projectDecide(decideDoc(), partyDoc(), sheetList(hideOne(f))).party.withheld, true, f);
-  for (const f of ["race", "plan_zone", "level", "launch_state", "goals"]) { const p = projectDecide(decideDoc(), partyDoc(), sheetList(hideOne(f))).party; assert.equal(p.withheld, undefined, f); assert.equal(p.brackets.length, 1, `${f}: the composition is shown`); }
-  assert.equal(projectDecide(decideDoc(), partyDoc(), sheetList(NAMES.map(() => []))).party.brackets.length, 1);
-});
 
-test("a decide entry that pairs with no stored member takes the mask of the whole party", () => {
-  const doc = { people: [{ class_key: "zq-nobody", decisions: [{ key: "spec40" }, { key: "professions" }] }], party: {} };
-  assert.deepEqual(projectDecide(doc, partyDoc(), sheetList(hideOne("race"))).people, [], "race hidden by someone: an entry nobody can be matched to goes");
-  assert.deepEqual(projectDecide(doc, partyDoc(), sheetList(hideOne("professions"))).people[0].decisions.map((d) => d.key), ["spec40"], "professions hidden by someone: its card goes");
-  assert.equal(projectDecide(doc, partyDoc(), sheetList(NAMES.map(() => []))).people.length, 1);
-  const t = { people: [{ member: 99, class_key: "zq-nobody", step: "Choose your spec" }], week_one: { trainers: {} } };
-  assert.equal(projectTonight(t, partyDoc(), sheetList(hideOne("class"))).people[0].step, null, "tonight: an unpaired entry takes the union too");
-});
 
 test("loadPublicInputs: a failed sheets read is null (fail closed), never an empty list; and the party read failing is null too", async () => {
   const env = await makeEnv();
@@ -713,31 +634,8 @@ test("projectSheets: a sheet whose fields are junk (a list, a string, a number, 
   assert.deepEqual(projectSheets(rows, "a")[0].fields, rows[0].fields, "the owner's own row is returned as it is");
 });
 
-// ---- round 3, mutation survivors: text scrub of every member document, the unpaired-row rule, the failed event log on the fast path -------------
-const hideFields = (names) => (name, fields) => ({ slug: slugify(name), name, fields: Object.fromEntries(fields.map((f) => [f, { value: "x", visible: false }])) });
-const mini = { members: [{ name: "Ann Ash", class_key: "mage", class: "Mage", race: "Gnome", spec: "Frost, ice tank", role: "tank" }, { name: "Bo Birch", class_key: "druid", class: "Druid", race: "Tauren", spec: "Feral", role: "healer" }] };
-const miniSheets = (annHides) => [hideFields()("Ann Ash", annHides), hideFields()("Bo Birch", [])];
-test("every member document is scrubbed as text: a word only a hider has (the guided-atlas, tonight and party text included), and a multi-word value", () => {
-  const sheetsRace = miniSheets(["race"]), sheetsSpec = miniSheets(["spec_path"]);
-  const atlas = { classes: { druid: { start: {}, trainer: {} } }, meet: { name: "Meet where the Gnome pair start" }, dungeon: { name: "Deeps" } };
-  assert.ok(!JSON.stringify(projectGuidedAtlas(atlas, mini, sheetsRace)).includes("Gnome"), "guided-atlas text");
-  const tonight = { people: [], launch: "Launch night for the Gnome table", week_one: { trainers: {} } };
-  assert.ok(!JSON.stringify(projectTonight(tonight, mini, sheetsRace)).includes("Gnome"), "tonight text");
-  const party = { ...mini, settled: [], open: [{ title: "Meet", text: "the Gnome pair" }, { title: "Other", text: "kept text" }] };
-  const out = projectForAnonymous(party, sheetsRace);
-  assert.ok(!JSON.stringify(out.open).includes("Gnome") && JSON.stringify(out.open).includes("kept text"), "party text");
-  // a value with a space or a comma is matched as a phrase
-  const decide = { people: [], party: { lines: [{ label: "Frost, ice tank is open", text: "x" }, { label: "plain", text: "y" }] } };
-  const d = projectDecide(decide, mini, sheetsSpec);
-  assert.ok(!JSON.stringify(d).includes("ice tank") && JSON.stringify(d).includes("plain"), "phrase");
-});
+// ---- round 4: mutation survivors ------------------------------------------------------------------------------------------------------------
 
-test("personMask: an entry that pairs by class_key also takes the hide of a stored member that has no class_key", () => {
-  const party = { members: [{ name: "Ann Ash", role: "tank" }, { name: "Bo Birch", role: "healer", class_key: "druid" }] };
-  const doc = { people: [{ class_key: "druid", decisions: [{ key: "professions" }, { key: "spec40" }] }, { class_key: "x1", decisions: [] }, { class_key: "x2", decisions: [] }], party: {} };
-  const out = projectDecide(doc, party, [hideFields()("Ann Ash", ["professions"]), hideFields()("Bo Birch", [])]);
-  assert.deepEqual(out.people[0].decisions.map((d) => d.key), ["spec40"], "Ann's stripped row might be the druid");
-});
 
 test("sheet_events cannot be read while party_sheets holds only junk: every read fails closed (name and role only)", async () => {
   const env = await makeEnv({ sheets: [null, 5, "x"] });
@@ -745,4 +643,51 @@ test("sheet_events cannot be read while party_sheets holds only junk: every read
   const e2 = { ...env, DB: { ...env.DB, prepare: (sql) => { if (/sheet_events/i.test(sql) && /select/i.test(sql)) throw new Error("D1 down"); return real(sql); } } };
   assert.equal((await loadPublicInputs(e2)).sheets, null);
   for (const m of JSON.parse((await http(e2, "GET", "/data/party")).text).members) assert.deepEqual(Object.keys(m).sort(), ["name", "role"]);
+});
+
+// ---- round 4: the composites are withheld whole (the design: fail closed, no text matching) ------------------------------------------------------------
+// One member of eight hides one field. Every composite must then lose every member-derived section and carry the one line; what does not depend on the party stays.
+const NOBODY = () => NAMES.map(() => []);
+const COMPOSITES = {
+  party: { project: (sh) => projectForAnonymous(partyDoc(), sh), sections: (o) => [o.settled, o.settled_extra, o.open], empty: [[], [], []], stays: (o) => o.faction === "Horde" && o.members.length === 8 },
+  decide: { project: (sh) => projectDecide(decideDoc(), partyDoc(), sh), sections: (o) => [o.people, o.party.brackets, o.party.role_lines, o.party.buffs, o.party.nobody, o.party.lines], empty: [[], [], [], [], { classes: [], professions: [], secondaries: [], buffs: [] }, []], stays: (o) => o.generated === AT && typeof o.labels === "object" },
+  tonight: { project: (sh) => projectTonight(tonightDoc(), partyDoc(), sh), sections: (o) => [o.people, o.week_one.trainers], empty: [[], {}], stays: (o) => o.launch === "Launch zqtgeneric" && o.week_one.first_dungeon === null },
+  "guided-atlas": { project: (sh) => projectGuidedAtlas(atlasDoc(), partyDoc(), sh), sections: (o) => [o.classes], empty: [{}], stays: (o) => o.dungeon.name === "zqdungeonkept" && o.meet.name === "zqmeetkept" && o.starter_cap.level === 5 },
+  client: { project: (sh) => projectClient(clientDoc(), partyDoc(), sh), sections: (o) => [o.classes, o.racials, o.synergy, o.buffs.list, o.buffs.rules], empty: [{}, {}, [], [], []], stays: (o) => o.level === 60 && o.legacy.total === 65 && o.buffs.marks.length === 3 && o.buffs.levels.length === 2 },
+};
+for (const [name, c] of Object.entries(COMPOSITES)) {
+  for (const f of SHEET_FIELD_NAMES) {
+    test(`composite ${name}: one member hiding only ${f} withholds every member-derived section and carries the one line`, () => {
+      const out = c.project(sheetList(hideOne(f)));
+      assert.equal(out.withheld, WITHHELD_LINE);
+      assert.deepEqual(c.sections(out), c.empty, `${name}: sections`);
+      assert.ok(c.stays(out), `${name}: what does not depend on the party stays`);
+    });
+  }
+  test(`composite ${name}: nobody hides anything: the document is served as it is; unreadable sheets withhold`, () => {
+    const whole = c.project(sheetList(NOBODY()));
+    assert.equal(whole.withheld, undefined);
+    assert.deepEqual(whole, c.project(sheetList(NOBODY())));
+    assert.notDeepEqual(c.sections(whole), c.empty, `${name}: the sections are there when nobody hides`);
+    assert.equal(c.project(null).withheld, WITHHELD_LINE, "sheets that cannot be read");
+  });
+}
+test("a sheet of a person the party document does not list still withholds when it hides a field", () => {
+  const rows = [...sheetList(NOBODY()), { slug: "outsider", name: "Outsider", fields: { goals: { value: "x", visible: false } } }];
+  assert.equal(anyHidden(partyDoc(), rows), true);
+  assert.equal(projectDecide(decideDoc(), partyDoc(), rows).withheld, WITHHELD_LINE);
+  assert.equal(anyHidden(partyDoc(), sheetList(NOBODY())), false);
+  assert.equal(anyHidden(partyDoc(), [{ slug: "a", name: "A", fields: { race: { value: "orc", visible: true } } }]), false, "a shown field hides nothing");
+});
+test("the composites do not mutate their input, and the line is one constant that the site never copies", () => {
+  const sheets = sheetList(hideOne("race")), docs = [partyDoc(), decideDoc(), tonightDoc(), atlasDoc(), clientDoc()], before = JSON.stringify(docs);
+  projectForAnonymous(docs[0], sheets); projectDecide(docs[1], docs[0], sheets); projectTonight(docs[2], docs[0], sheets); projectGuidedAtlas(docs[3], docs[0], sheets); projectClient(docs[4], docs[0], sheets);
+  assert.equal(JSON.stringify(docs), before);
+  assert.equal(WITHHELD_LINE, "Part of this is hidden because a member keeps their build private.");
+  for (const dir of ["js/", "scenes/"]) for (const n of readdirSync(new URL(dir, ROOT)).filter((x) => x.endsWith(".js"))) assert.ok(!readSrc(dir + n).includes("keeps their build private"), `${dir}${n} carries its own copy of the line: it must render what the Worker sends`);
+});
+test("the text scrub is gone: no judge, no word or phrase matching of hidden values, in the module or in any test", () => {
+  const src = readSrc("infrastructure/worker/public-party.js");
+  for (const gone of ["judge", "scrubDoc", "scrubNode", "lineIsBad", "exposureOf", "ownTextIsBad", "personMask", "NEEDLE_DOC_KEYS", "valuesOf(", "sheetValues("]) assert.ok(!src.includes(gone), `public-party.js still has ${gone}`);
+  assert.ok(!/\.split\(\/\[\^\p\{L\}/.test(src), "no word splitting of document text");
 });

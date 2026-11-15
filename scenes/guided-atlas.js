@@ -87,6 +87,7 @@ function extra(src) {
   if (min) out.push(h("p", { class: "ga-meta", text: min }));
   const week = src && $(".nx-week", src); if (week) out.push(h("p", { class: "ga-meta", text: [...week.querySelectorAll("li")].map((li) => li.textContent).join(" ") }));
   const st = steps();
+  if (G.data && G.data.withheld) out.push(h("p", { class: "ga-meta ga-withheld", role: "note", text: G.data.withheld }));
   if (st.length) out.push(h("div", { class: "ga-subrow" }, h("h3", { class: "ga-sub", text: "Your route" }), G.stops.length ? h("button", { type: "button", class: "ga-link ga-stopsbtn", id: "ga-stopsbtn", "aria-expanded": String(G.stopsOpen), "aria-controls": "ga-stopsd", onclick: toggleStops }, G.stopsOpen ? "Hide stops" : "Stops on the map") : null),
     h("ol", { class: "ga-steps" }, ...st.map((s) => h("li", {}, h("button", { type: "button", class: "ga-step", onclick: () => fly(s.id) },
     h("img", { src: `img/atlas/C-${s.icon}.webp`, alt: "", width: 28, height: 28, decoding: "async" }), h("span", { class: "ga-step-t" }, h("b", { text: s.head }), s.sub ? h("small", { text: s.sub }) : null))))));

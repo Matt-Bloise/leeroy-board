@@ -66,6 +66,7 @@ import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
+import { VOCAB_LIST, canonicalVocab } from "./sheet-vocab.js";
 import { canManageGuild } from "./setup-command.js";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
@@ -1031,9 +1032,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         }
         // Same server rule as POST /sheet. A slash option is always a string, so level ("34") is refused here: it is set on the board.
         // The registered command does not offer level; this holds even for an interaction built by hand.
-        if (sheetValueProblem(field, value)) {
+        if (sheetValueProblem(field, value, undefined, { loose: true })) {
+          const listed = VOCAB_LIST[field]; // race, class, spec, professions, plan zone: refused unless the value is on the board's list (sheet-vocab.js); nothing is written
           return new Response(
-            JSON.stringify({ type: 4, data: { content: `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            JSON.stringify({ type: 4, data: { content: listed ? `That is not on the board's list for ${field.replace(/_/g, " ")}. Pick it on your sheet: ${boardUrl}/#five` : `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -1042,7 +1044,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           slug: target.slug,
           name: target.name,
           field,
-          value, // value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
+          value: canonicalVocab(field, value, { loose: true }), // the stored form (a slug, or a list of slugs for professions); value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
           source: "discord",
           at: now,
         });
