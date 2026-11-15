@@ -189,7 +189,7 @@ test("helpers: redactIntentBody and sheetIntentBody", () => {
 test("Discord /sheet of an already-hidden field stores an intent with no value", async () => {
   const env = await makeEnv();
   await memberApi(env, "POST", "/sheet", { field: "race", value: "undead", visible: false });
-  const res = await discordCmd(env, "sheet", undefined, [{ name: "field", type: 3, value: "race" }, { name: "value", type: 3, value: `orc ${HIDDEN}` }]);
+  const res = await discordCmd(env, "sheet", undefined, [{ name: "field", type: 3, value: "race" }, { name: "value", type: 3, value: "orc" }]);
   assert.ok(res.data.content);
   for (const r of intentRows(env)) assert.ok(!r.body.includes(MARKER) && !r.body.includes("orc") && !r.body.includes("undead"), `no hidden value in intent ${r.seq}`);
   const last = JSON.parse(intentRows(env).at(-1).body);

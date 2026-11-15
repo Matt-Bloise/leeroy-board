@@ -46,6 +46,6 @@ test("advisor follow-up: a .txt inside infrastructure/ still needs the API suite
   const dir = path.join(import.meta.dirname, "..", "..", "infrastructure", "worker");
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".js"))) {
     const src = fs.readFileSync(path.join(dir, f), "utf8");
-    for (const m of src.matchAll(/(?:import|from)\s*["']([^"']+)["']/g)) assert.ok(!m[1].startsWith("../"), f + " imports " + m[1] + " outside infrastructure/worker: extend tools/api-scope.mjs first");
+    for (const m of src.matchAll(/(?:import|from)\s*["']([^"']+)["']/g)) assert.ok(!m[1].startsWith("../") || /^\.\.\/\.\.\/data\/[a-z-]+\.json$/.test(m[1]) /* a bundled data document: data/ is in FORCE_DIRS, so a change to it runs the API suite */, f + " imports " + m[1] + " outside infrastructure/worker: extend tools/api-scope.mjs first");
   }
 });
