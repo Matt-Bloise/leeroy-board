@@ -6,7 +6,7 @@ Status: draft, 2026-11-02. This is a statement of intent and current testing, no
 WCAG 2.2 Level AA for the first-run flow and the main board: open the site, identify yourself, read the next step, open the sheet, sign up. Other scenes are in scope but are not yet checked to the same depth.
 
 ## What is tested
-- **axe-core in CI**: `tests/browser/axe.mjs` runs on every pull request preview (`Preview Tests`). It scans the first screen and the Next steps sheet in Chromium at 390x844 (touch) and 1366x768, with motion reduced. It fails on serious or critical violations and prints minor and moderate ones as warnings. It currently loads the WCAG 2.0/2.1 A and AA rule tags only, not the 2.2 tags (`wcag22aa`); adding them is an open task.
+- **axe-core in CI**: `tests/browser/axe.mjs` runs in the browser suite of the `Preview Tests` workflow on pull requests that get the full run (label `ci-full`). It scans the first screen and the Next steps sheet in Chromium at 390x844 (touch) and 1366x768, with motion reduced. It fails on serious or critical violations and prints minor and moderate ones as warnings. It currently loads the WCAG 2.0/2.1 A and AA rule tags only, not the 2.2 tags (`wcag22aa`); adding them is an open task.
 - Automated checks find only a part of the problems (commonly cited as roughly a third); they do not replace manual review.
 
 ## What is not tested yet
@@ -18,7 +18,7 @@ WCAG 2.2 Level AA for the first-run flow and the main board: open the site, iden
 - The WebSocket live room and the Discord side, which is not web content.
 
 ## Known gaps (unverified until tested; listed so nobody assumes otherwise)
-1. The board has many tabs and a ribbon; the roadmap decision is that the ribbon is a navigation list, not an ARIA `tablist` (Q49). Not yet confirmed in code.
+1. The board has many tabs and a ribbon; the roadmap decision is that the ribbon is a navigation list, not an ARIA `tablist` (Q49). Not what the code does today: `index.html:165` still marks the ribbon `role="tablist"` with `role="tab"` buttons, so either the markup or this decision needs to change.
 2. Canvas or art-driven scenes may lack text alternatives.
 3. Countdowns and live updates may not be announced to assistive technology.
 4. Drag or pointer-only interactions, if any, need a single-pointer alternative (2.5.7).

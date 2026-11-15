@@ -1,6 +1,6 @@
 # Visual quality audit
 
-`tests/visual/audit.mjs` measures how the board looks and performs across screen sizes, pixel densities, colour schemes and motion settings. It is a measurement, not a gate: findings never fail CI. Preview Tests run it after the browser smoke step and attach the result as the `visual-audit` artifact; the result comment gets one line with the counts by category.
+`tests/visual/audit.mjs` measures how the board looks and performs across screen sizes, pixel densities, colour schemes and motion settings. It is a measurement, not a gate: findings never fail CI. Preview Tests run it as the separate `visual-audit` job (`preview-tests.yml:377`), only for PRs that carry the label `visual`, and attach the result as the `visual-audit` artifact; the result comment gets one line pointing to that artifact (`tools/ci-report.mjs:122`).
 
 Run it by hand:
 
@@ -9,7 +9,7 @@ cd tests && npm ci && npx playwright install chromium webkit
 node visual/audit.mjs https://pr-NN.leeroy-board.pages.dev/      # or PREVIEW_PAGES=...
 ```
 
-Options: `--out DIR` (default `visual-audit/`), `--budget-min N` (default 10; contexts that do not fit are skipped and listed), `--only TEXT` (run contexts whose id contains TEXT). The script exits 0 whatever it finds and exits 1 only when it crashes (no browser starts, or no page loads). It makes no AI calls and sends nothing to the Worker.
+Options: `--out DIR` (default `visual-audit/`), `--budget-min N` (default 10; contexts that do not fit are skipped and listed), `--only TEXT` (run contexts whose id contains TEXT), `--live-api` (use the real API instead of the recorded one). The script exits 0 whatever it finds and exits 1 only when it crashes (no browser starts, or no page loads) or when a path is missing from the API snapshot. It makes no AI calls, and by default answers `/api/` from `tests/fixtures/api-snapshot`, so it sends nothing to the Worker.
 
 ## What it runs
 
