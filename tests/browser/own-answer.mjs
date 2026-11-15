@@ -1,7 +1,7 @@
 // Your own answer on the Sign-ups scene (fix/own-answer-after-launch). Two checks, both on made-up data:
 //  A. the seal shelf repaints when /me arrives. The sign-ups come first and /me is held until the shelf is painted; the seal for your own answer is marked ("mine") only after /me answers
 //     (before the fix the shelf listened to the sign-ups alone and never marked it on this path).
-//  B. a 40-character name with no spaces in a tally row does not widen the page or the tally at 390x844 (scrollWidth <= clientWidth), and an ordinary name keeps one line.
+//  C. after launch (page clock 2026-11-14), an answer from an earlier week: the time slot is not pressed, but pack and meeting point are; a slot saved now stays pressed through re-renders\n//     before the new document arrives (the POST answers ok, the document never changes), and typed "Somewhere else" text survives a re-render.\n//  B. a 40-character name with no spaces in a tally row does not widen the page or the tally at 390x844 (scrollWidth <= clientWidth), and an ordinary name keeps one line.
 //   node own-answer.mjs --url http://127.0.0.1:8080/   (or env PREVIEW_PAGES)   optional: env PW_CHROMIUM = path to a Chromium binary
 // Everything under /api/ is answered by interception (a made-up member key); nothing real is sent and there is no AI call. Exit 0 when every check passes, 1 otherwise.
 import fs from "node:fs";
@@ -27,9 +27,9 @@ const [ME, OTHER] = MEMBERS.map((m) => ({ name: m.name, slug: slugOf(m.name) }))
 const stamp = new Date(Date.now() - 3600e3).toISOString();
 
 // Everyone answers "in"; the member signed in answers "maybe", so their seal is the one the shelf must mark. One more entry carries the long name.
-function signups() {
+function signups(mineStamp) {
   const rows = [{ name: ME.name, slug: ME.slug, rsvp: "maybe" }, { name: OTHER.name, slug: OTHER.slug, rsvp: "in" }, { name: LONG, slug: "long-name", rsvp: "in" }];
-  const entries = rows.map((r) => ({ name: r.name, slug: r.slug, pack: null, meet: null, rsvp: r.rsvp, when: "8pm", updated: stamp }));
+  const entries = rows.map((r) => ({ name: r.name, slug: r.slug, pack: r.slug === ME.slug && mineStamp ? "yes" : null, meet: r.slug === ME.slug && mineStamp ? "The Crossroads" : null, rsvp: r.rsvp, when: "8pm", updated: r.slug === ME.slug && mineStamp ? mineStamp : stamp }));
   const names = (k) => rows.filter((r) => r.rsvp === k).map((r) => r.name);
   const tally = (o) => Object.fromEntries(Object.entries(o).map(([k, n]) => [k, { count: n.length, names: n }]));
   return { generated: stamp, present: true, updated: stamp, options: { meet: ["Valley of Strength", "The Crossroads"], when: ["6pm", "8pm", "later"] }, entries,
@@ -37,19 +37,21 @@ function signups() {
       rsvp: tally({ in: names("in"), maybe: names("maybe"), late: [], out: [] }), when: tally({ "6pm": [], "8pm": rows.map((r) => r.name), later: [] }) } };
 }
 
-async function open(browser, width, height, meDelayMs) {
+async function open(browser, width, height, meDelayMs, { clock = null, mineStamp = null } = {}) {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height }, hasTouch: phone, isMobile: phone, serviceWorkers: "block", reducedMotion: "reduce" });
   await ctx.addInitScript(([key, slug]) => { try { localStorage.setItem("board-journey", "everything"); localStorage.setItem("board-walked", "1"); localStorage.setItem("board-me", slug); localStorage.setItem("board-key", key); } catch (e) {} }, [KEY, ME.slug]);
-  const doc = signups(), meAt = { t: 0 }; let release; const gate = new Promise((r) => { release = r; }); // /me waits for release() when meDelayMs is -1, else for that many ms
+  const doc = signups(mineStamp), meAt = { t: 0 }; let release; const gate = new Promise((r) => { release = r; }); // /me waits for release() when meDelayMs is -1, else for that many ms
   meAt.release = release;
   await ctx.route("**/api/**", async (route) => {
     const u = new URL(route.request().url()), m = route.request().method();
     if (m === "GET" && u.pathname.endsWith("/api/me")) { await (meDelayMs < 0 ? gate : new Promise((r) => setTimeout(r, meDelayMs))); meAt.t = Date.now(); return json(route, { slug: ME.slug, name: ME.name }); }
+    if (m === "POST" && u.pathname.endsWith("/api/intent")) { await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true }); }
     if (m === "GET" && u.pathname.endsWith("/api/state")) return json(route, { type: "state", ver: 1, at: stamp, party: [], signups: doc });
     return route.abort();
   });
   await ctx.route(DATA_RE, (route) => json(route, DATA_RE.exec(route.request().url())[1] === "party" ? PARTY : doc));
+  if (clock) await ctx.clock.setSystemTime(new Date(clock));
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" }, hash: "signups" }), { waitUntil: "load" });
@@ -72,7 +74,32 @@ try {
     } catch (e) { ok(`${t} ran to the end without an exception`, false, String((e && e.message) || e).split("\n")[0]); }
     finally { await ctx.close().catch(() => {}); }
   }
-  for (const [width, height] of [[390, 844], [360, 640]]) { // B: a long unbroken name
+  { // C: after launch, an answer from an earlier week
+    const CLOCK = "2026-11-14T18:00:00Z", t = "[after launch, earlier-week answer @1280x900]";
+    const { ctx, page, errors } = await open(browser, 1280, 900, 0, { clock: CLOCK, mineStamp: new Date(Date.parse(CLOCK) - 9 * 24 * 3600e3).toISOString() });
+    const pressed = (sel) => page.evaluate((s) => { const n = document.querySelector(s); return n ? n.getAttribute("aria-pressed") : "missing"; }, sel);
+    try {
+      await page.waitForSelector("#mine-act .mine-opt", { state: "attached", timeout: 20000 });
+      await page.waitForFunction(() => window.BoardBrain && window.BoardBrain.mine && window.BoardBrain.mine(), null, { timeout: 15000 });
+      await page.evaluate(() => window.__mine.render());
+      const past = await page.evaluate(() => window.__boardKit.launchPast());
+      ok(`${t} the page clock is after launch`, past === true);
+      ok(`${t} the earlier week's time slot is not pressed`, (await pressed('#mine-act [data-when="8pm"]')) === "false");
+      ok(`${t} pack and meeting point from the same answer stay pressed`, (await pressed('#mine-act [data-pack="yes"]')) === "true" && (await pressed('#mine-act [data-meet="xroads"]')) === "true");
+      await page.fill("#mine-act .mine-place", "By the old mill");
+      await page.evaluate(() => window.__mine.render());
+      ok(`${t} typed "Somewhere else" text survives a re-render`, (await page.evaluate(() => window.__mine.state().place)) === "By the old mill");
+      await page.click('#mine-act [data-when="later"]');
+      ok(`${t} the slot is pressed while the answer is in flight`, (await pressed('#mine-act [data-when="later"]')) === "true");
+      await page.evaluate(() => window.__mine.render());
+      ok(`${t} a re-render in flight keeps it pressed`, (await pressed('#mine-act [data-when="later"]')) === "true");
+      await page.waitForFunction(() => /Saved/.test((document.querySelector("#mine-status") || {}).textContent || ""), null, { timeout: 10000 });
+      await page.evaluate(() => window.__mine.render());
+      ok(`${t} after Saved, a re-render before the new document keeps it pressed`, (await pressed('#mine-act [data-when="later"]')) === "true");
+      ok(`${t} no page errors`, errors.length === 0, errors.join(" | "));
+    } catch (e) { ok(`${t} ran to the end without an exception`, false, String((e && e.message) || e).split("\n")[0]); }
+    finally { await ctx.close().catch(() => {}); }
+  }  for (const [width, height] of [[390, 844], [360, 640]]) { // B: a long unbroken name
     const t = `[long name @${width}x${height}]`, { ctx, page, errors } = await open(browser, width, height, 0);
     try {
       await page.waitForSelector("#dsu-body .trow-who .who", { state: "attached", timeout: 20000 });

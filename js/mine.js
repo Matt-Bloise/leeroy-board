@@ -22,16 +22,17 @@ const clean = (t) => { const b = BB(); return b && b.cleanPlace ? b.cleanPlace(t
 const cut = (t, n) => Array.from(String(t)).slice(0, n).join("");
 
 let inflight = 0;
+const answered = { when: false }; /* the slot was saved from this page and the document has not shown it as this week's yet (a slow device clock can reject the server stamp) */
 function seeded() {
   const b = BB(), e0 = b && b.mine ? b.mine() : null, e = K.weekOwn ? K.weekOwn(e0) : e0, loc = b && b.mineLocal ? b.mineLocal() : {};
   const pick = (list, v) => (list.some((x) => x[0] === v) ? v : null);
   const meetKey = (v) => (!v ? null : v === "Valley of Strength" ? "vos" : v === "The Crossroads" ? "xroads" : "other");
-  const stale = !!e0 && !e && !inflight; /* after launch: the stored answer is from an earlier week, so nothing it set stays pressed */
-  if (loc.when) M.when = loc.when.value; else if (stale) M.when = null; else if (!M.when && e) M.when = pick(WHEN, e.when);
-  if (loc.pack) M.pack = loc.pack.value; else if (stale) M.pack = null; else if (!M.pack && e) M.pack = pick(PACK, e.pack);
+  if (e) answered.when = false;
+  const staleWhen = !!e0 && !e && !inflight && !answered.when; /* after launch only the time slot is week-scoped: an earlier week's slot does not stay pressed. Pack, meeting point and place are launch-night answers and keep the server tallies */
+  if (loc.when) M.when = loc.when.value; else if (staleWhen) M.when = null; else if (!M.when && e) M.when = pick(WHEN, e.when);
+  if (loc.pack) M.pack = loc.pack.value; else if (!M.pack && e0) M.pack = pick(PACK, e0.pack);
   if (loc.meet) { M.meet = loc.meet.value; if (loc.meet.place) M.place = loc.meet.place; }
-  else if (stale) { M.meet = null; M.place = ""; }
-  else if (!M.meet && e && e.meet) { M.meet = meetKey(e.meet); if (M.meet === "other") M.place = cut(clean(e.meet), 40); }
+  else if (!M.meet && e0 && e0.meet) { M.meet = meetKey(e0.meet); if (M.meet === "other") M.place = cut(clean(e0.meet), 40); }
 }
 function say(text) {
   M.say = text;
@@ -42,6 +43,7 @@ async function write(slot, k, send) {
   const prev = M[slot]; M[slot] = k; paint();
   inflight++; let r; try { r = await send(); } finally { inflight--; }
   if (!(r && (r.ok || r.why === "not-yet"))) { M[slot] = prev; paint(); }
+  if (r && r.ok && slot === "when") answered.when = true;
   if (r && r.ok) { say("Saved. Discord catches up when Leeroy is back."); hap("confirm"); snd("latch"); }
   else if (r && r.why === "not-yet") { say(NOT_YET); hap("select"); }
   else if (r && r.why === "busy") { say("Too many answers at once. Try again in a moment."); hap("refusal"); }
