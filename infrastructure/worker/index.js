@@ -1133,10 +1133,9 @@ const worker = {
       }
 
       if (req.method === "POST" && path === "/token") {
-        let body = {};
-        try {
-          body = await req.json();
-        } catch {}
+        const read = await readJsonCapped(req, 2048); // open to anyone: a code is under 512 characters
+        if (read.tooLarge) return jsonResp({ error: "Body too large" }, 413, cors);
+        const body = read.body;
         const code = typeof body?.code === "string" ? body.code.trim() : "";
         if (!code || code.length > 512) {
           return jsonResp({ error: "Invalid authorization code" }, 400, cors);

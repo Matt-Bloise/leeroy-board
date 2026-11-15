@@ -880,6 +880,13 @@ export const PROMPT_VARIANTS = ["production", "plain", "examples-6", "format-rem
 const FORMAT_REMINDER =
   "Format contract: the first line is one bold sentence that answers the question. Then at most a few short bullets (`- **Name** · value`). Then `-# Sources: id1, id2`. No emoji, no greeting, no filler opener, no bare web addresses.";
 
+// What a failed ask may show to anyone: the bare "<provider> API HTTP <status>" (shortProviderError never carries a body) or one fixed line.
+export const ASK_FAILED_LINE = "Leeroy could not answer that just now. Try again in a moment.";
+export function publicAskError(err) {
+  const short = shortProviderError(err);
+  return /^[A-Za-z0-9_.-]+ API HTTP \d{3}$/.test(short) ? short : ASK_FAILED_LINE;
+}
+
 // Timestamp ids go to the page as numbers, random (UUID) ids whole, so the page can poll GET /api/ask?id= with them.
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
 
@@ -1533,7 +1540,10 @@ export async function answerWithAi({
     }
   } catch (err) {
     const failedAt = nowIso();
-    const msg = String((err && err.message) || err);
+    // The turn is read back by its asker (a guest included) and, for a shared ask, by member sockets: it gets the public text only. The real error
+    // (a provider body, a binding or secret name) goes to the log, scrubbed, and nowhere else.
+    console.error("ask failed:", scrubSecrets(String((err && err.message) || err)).slice(0, 300));
+    const msg = publicAskError(err);
     await env.DB.prepare("UPDATE ask_turns SET status = 'error', answer = ?, answered_at = ? WHERE id = ?")
       .bind(msg, failedAt, intentId)
       .run()
