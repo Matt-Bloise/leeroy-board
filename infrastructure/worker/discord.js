@@ -40,7 +40,7 @@ import { JOIN_COMMAND_NAME, JOIN_BUTTON_ID, shouldHint, joinHintBody } from "./j
 import { SETUP_COMMAND_NAME, setupCommandEnabled, runSetup } from "./setup-command.js";
 import { isOpen, voterHash, newVoteId, createVote, castVote, renderMessage, tallyLines, parseVoteCustomId, loadVote, saveVote, recordBallot, recordInIndex } from "./votes.js";
 import { isFreshTimestamp, clampContent, hardenInteractionBody, ALLOWED_MENTIONS_NONE, DISCORD_MAX_AGE_SECONDS } from "./discord-safety.js";
-import { loadConfigKey, libraryShelfLine, buildThreadMention } from "./config.js";
+import { loadConfigKey, loadConfigKeyStrict, libraryShelfLine, buildThreadMention } from "./config.js";
 import { cardsEnabled, requestCardEdit, sanitiseWriteIn, resolveChoice, whenOptions, WRITE_IN_MAX, DEFAULT_MEET, DEFAULT_WHEN } from "./cards.js";
 import { handleCardInteraction, afterSignupChange, signupSelectModal } from "./cards-handler.js";
 import { updateKvJson, KvConflictError } from "./kv-cas.js";
@@ -67,20 +67,22 @@ import { partyForMember, redactIntentBody, sheetIntentBody } from "./sheet-priva
 import { sheetValueProblem } from "./sheet-values.js";
 import { canManageGuild } from "./setup-command.js";
 
-// Staff for the roster server only: Manage Server or Administrator in interaction.member.permissions (the field Discord signs; nothing a
-// user types is read), AND the interaction comes from the guild configured in discord_roster. An admin of any other server that installs
-// the bot is not staff here. Fails closed when no roster guild is configured.
-// Staff check for the mailbox commands: the signed Manage Server / Administrator bit and, once a roster guild is
-// configured, a call from that guild. With no roster guild set the server gate is OFF (the permission check still
-// applies), so admins keep /intents, /ack and /answer; /intents says so in its reply (GATE_OFF_NOTE).
+// Staff check for the mailbox commands (/intents, /ack, /answer). Two conditions:
+//  1. The signed Manage Server / Administrator bit in interaction.member.permissions (nothing a user types is read).
+//  2. The interaction comes from the guild in discord_roster.
+// The server gate is OFF (ok with gateOff: true) only when the discord_roster row is cleanly absent or is an object with no guildId key:
+// the permission check still applies and the reply says so (GATE_OFF_NOTE). Anything else fails closed (ok: false): a failed D1 read,
+// a corrupt or non-object row, or a guildId that is present but not a string of 5 to 25 digits. A failed read is never cached as absent.
 async function rosterAdminCheck(env, interaction) {
   if (!canManageGuild(interaction.member && interaction.member.permissions)) return { ok: false, gateOff: false };
-  const roster = await loadConfigKey(env, "discord_roster");
-  const rosterGuild = roster && roster.guildId != null ? String(roster.guildId) : "";
-  if (!/^[0-9]{5,25}$/.test(rosterGuild)) return { ok: true, gateOff: true };
-  return { ok: String(interaction.guild_id || "") === rosterGuild, gateOff: false };
+  const read = await loadConfigKeyStrict(env, "discord_roster");
+  if (read.status === "absent") return { ok: true, gateOff: true };
+  const roster = read.value;
+  if (read.status !== "ok" || !roster || typeof roster !== "object" || Array.isArray(roster)) return { ok: false, gateOff: false };
+  if (!Object.prototype.hasOwnProperty.call(roster, "guildId")) return { ok: true, gateOff: true };
+  if (typeof roster.guildId !== "string" || !/^[0-9]{5,25}$/.test(roster.guildId)) return { ok: false, gateOff: false };
+  return { ok: String(interaction.guild_id || "") === roster.guildId, gateOff: false };
 }
-async function isRosterAdmin(env, interaction) { return (await rosterAdminCheck(env, interaction)).ok; }
 export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
@@ -1764,13 +1766,14 @@ ${GATE_OFF_NOTE}` : ""}`,
         );
       }
 
+      const answerGate = await rosterAdminCheck(env, interaction);
       const applied = await applyManualAnswer(env, {
         id,
         answer,
         sources,
         failed,
         byName,
-        isAdmin: await isRosterAdmin(env, interaction),
+        isAdmin: answerGate.ok,
         now,
       });
       if (!applied.ok) {
@@ -1792,7 +1795,7 @@ ${GATE_OFF_NOTE}` : ""}`,
         JSON.stringify({
           type: 4,
           data: {
-            content: `✅ Answer recorded for question **#${id}**${applied.share ? " and sent to the Living Board" : " (private, not broadcast)"}.`,
+            content: `✅ Answer recorded for question **#${id}**${applied.share ? " and sent to the Living Board" : " (private, not broadcast)"}.${answerGate.ok && answerGate.gateOff ? `\n${GATE_OFF_NOTE}` : ""}`,
             flags: 64,
           },
         }),

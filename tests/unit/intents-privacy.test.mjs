@@ -256,6 +256,97 @@ test("no roster guild configured: the server gate is off, admins keep /intents a
   invalidateConfigCache();
 });
 
+const seedAsk = (env, id, by) => env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, status, share, created_at) VALUES (?, ?, 'a question', 'thinking', 1, ?)").run(id, by, AT);
+const askAnswer = (env, id, permissions, opts) => discordCmd(env, "answer", permissions, [{ name: "id", type: 3, value: id }, { name: "answer", type: 3, value: "an answer" }], opts);
+const askRow = (env, id) => env.DB.raw.prepare("SELECT answer, status FROM ask_turns WHERE id = ?").get(id);
+const setRoster = (env, json) => { env.DB.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('discord_roster', ?, ?)").run(json, AT); invalidateConfigCache(); };
+
+test("/answer admin rights are bound to the roster guild: a foreign-guild admin cannot answer another member's ask", async () => {
+  const env = await makeEnv();
+  seedAsk(env, "ask-g1", "Someone Else");
+  const denied = (await askAnswer(env, "ask-g1", "32", { guild: "500000000000000005" })).data.content;
+  assert.match(denied, /only answer your own/);
+  assert.equal(askRow(env, "ask-g1").answer, null, "nothing written");
+  const ok = (await askAnswer(env, "ask-g1", "32")).data.content;
+  assert.match(ok, /Answer recorded/);
+  assert.ok(!ok.includes(GATE_OFF_NOTE), "roster configured: no note");
+  assert.equal(askRow(env, "ask-g1").answer, "an answer");
+});
+
+test("a malformed roster guildId refuses every admin command; it is not the gate-off case", async () => {
+  for (const bad of ['{"guildId":"abc"}', '{"guildId":""}', '{"guildId":"1234"}', '{"guildId":400000000000000004}', '{"guildId":null}', '{"guildId":["400000000000000004"]}']) {
+    const env = await makeEnv();
+    setRoster(env, bad);
+    addRow(env, "journey", { journey: "curious" });
+    seedAsk(env, "ask-m1", "Someone Else");
+    const intents = (await discordCmd(env, "intents", "32")).data.content;
+    assert.ok(!intents.includes("curious") && !intents.includes(GATE_OFF_NOTE) && /admin/i.test(intents), `intents refused for ${bad}`);
+    env.DB.raw.prepare("UPDATE intents SET slug = 'someone-else'").run();
+    await discordCmd(env, "ack", "32", [{ name: "up_to", type: 4, value: 99 }]);
+    assert.equal(intentRows(env).length, 1, `ack cleared nothing for ${bad}`);
+    assert.match((await askAnswer(env, "ask-m1", "32")).data.content, /only answer your own/);
+    assert.equal(askRow(env, "ask-m1").answer, null, `answer wrote nothing for ${bad}`);
+  }
+  invalidateConfigCache();
+});
+
+test("a corrupt or non-object roster row refuses admins", async () => {
+  for (const bad of ["{not json", "null", "[]", '"400000000000000004"', "7"]) {
+    const env = await makeEnv();
+    setRoster(env, bad);
+    addRow(env, "journey", { journey: "curious" });
+    const text = (await discordCmd(env, "intents", "32")).data.content;
+    assert.ok(!text.includes("curious") && !text.includes(GATE_OFF_NOTE), `refused for ${bad}`);
+  }
+  invalidateConfigCache();
+});
+
+test("a throwing roster read refuses admins and is not cached as absent", async () => {
+  const env = await makeEnv();
+  env.DB.raw.prepare("DELETE FROM kv_state WHERE key = 'discord_roster'").run();
+  invalidateConfigCache();
+  addRow(env, "journey", { journey: "curious" });
+  const realPrepare = env.DB.prepare.bind(env.DB);
+  let failing = true;
+  env.DB.prepare = (sql) => { if (failing && /FROM kv_state WHERE key = \?/.test(sql)) throw new Error("D1 down"); return realPrepare(sql); };
+  const down = (await discordCmd(env, "intents", "32")).data.content;
+  assert.ok(!down.includes("curious") && !down.includes(GATE_OFF_NOTE), "read error refuses");
+  const stillDown = (await discordCmd(env, "intents", "32")).data.content;
+  assert.ok(!stillDown.includes("curious"), "a second call re-reads and still refuses");
+  failing = false;
+  invalidateConfigCache("discord_members"); // other callers keep their own 60 s null on a failed read; only the roster gate is under test
+  const back = (await discordCmd(env, "intents", "32")).data.content;
+  assert.ok(back.includes("curious") && back.includes(GATE_OFF_NOTE), "the failure was not cached: a clean absent row is gate-off");
+  invalidateConfigCache();
+});
+
+test("a roster object with no guildId key is gate-off; a cleanly absent row is gate-off", async () => {
+  const env = await makeEnv();
+  setRoster(env, '{"buildThreads":{}}');
+  addRow(env, "journey", { journey: "curious" });
+  const text = (await discordCmd(env, "intents", "32")).data.content;
+  assert.ok(text.includes("curious") && text.includes(GATE_OFF_NOTE));
+  invalidateConfigCache();
+});
+
+test("gate-off note on /ack and /answer: shown to an admin, never to a non-admin", async () => {
+  const env = await makeEnv();
+  env.DB.raw.prepare("DELETE FROM kv_state WHERE key = 'discord_roster'").run();
+  invalidateConfigCache();
+  addRow(env, "journey", { journey: "curious" });
+  const nonAdminAck = (await discordCmd(env, "ack", "0", [{ name: "up_to", type: 4, value: 99 }])).data.content;
+  assert.ok(!nonAdminAck.includes(GATE_OFF_NOTE), "non-admin /ack: no note");
+  seedAsk(env, "ask-n1", NAME);
+  const nonAdminAnswer = (await askAnswer(env, "ask-n1", "0")).data.content;
+  assert.match(nonAdminAnswer, /Answer recorded/);
+  assert.ok(!nonAdminAnswer.includes(GATE_OFF_NOTE), "non-admin /answer: no note");
+  const adminAnswer = (await askAnswer(env, "ask-n1", "32")).data.content;
+  assert.ok(adminAnswer.includes(GATE_OFF_NOTE), "admin /answer: note");
+  const adminAck = (await discordCmd(env, "ack", "32", [{ name: "up_to", type: 4, value: 99 }])).data.content;
+  assert.ok(adminAck.includes(GATE_OFF_NOTE), "admin /ack: note");
+  assert.equal(intentRows(env).length, 0, "admin cleared the mailbox");
+  invalidateConfigCache();
+});
 test("roster guild configured: no gate-off note", async () => {
   const env = await makeEnv();
   addRow(env, "journey", { journey: "curious" });
