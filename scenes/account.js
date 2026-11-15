@@ -19,7 +19,8 @@ function make(d) {
   const put = (k, v) => { try { if (v === null || v === undefined) store.removeItem(k); else store.setItem(k, v); } catch (e) {} };
   const tell = () => { try { if (d.onChange) d.onChange(); } catch (e) {} };
   const sdk = () => (typeof d.sdk === "function" ? d.sdk() : d.sdk) || null;
-  const base = () => (sdk() ? d.activityBase : d.base) || null;
+  const actBase = () => (typeof d.activityBase === "function" ? d.activityBase() : d.activityBase) || null;
+  const base = () => (sdk() ? actBase() : d.base) || null;
   let sync = { snap: {}, etag: {}, t: {} };
   try { const j = JSON.parse(get(SYNC) || "null"); if (j && typeof j === "object") sync = { snap: j.snap || {}, etag: j.etag || {}, t: j.t || {} }; } catch (e) {}
   const saveSync = () => put(SYNC, JSON.stringify(sync));
@@ -141,12 +142,17 @@ function make(d) {
   };
 }
 
+/* Inside the Activity the Developer Portal maps /api to the Worker, and js/brain.js already picks that base (BoardBrain.url gives "/api/..."). Reuse it: call paths here start with /api, so only its origin is needed. */
+function activityOrigin() {
+  try { const u = root.BoardBrain && typeof root.BoardBrain.url === "function" ? root.BoardBrain.url("/auth/discord") : null; return u ? new URL(u, root.location.href).origin : null; } catch (e) { return null; }
+}
 root.__makeAccount = make;
+root.__accountActivityOrigin = activityOrigin;
 const K = root.__boardKit;
 if (K && K.api && typeof document !== "undefined" && typeof root.fetch === "function") {
   const A = make({
     fetch: (...a) => root.fetch(...a), storage: root.localStorage, base: K.api,
-    activityBase: `${root.location.origin}/board-api`, sdk: () => root.__sdk || null,
+    activityBase: activityOrigin, sdk: () => root.__sdk || null,
     setTimeout: (f, ms) => setTimeout(f, ms), clearTimeout: (t) => clearTimeout(t), setInterval: (f, ms) => setInterval(f, ms),
     hidden: () => document.hidden, now: () => Date.now(),
     onChange: () => { try { root.dispatchEvent(new Event("board-account")); } catch (e) {} },

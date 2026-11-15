@@ -63,7 +63,7 @@ function nextDeadline() {
   for (const q of (D.party && D.party.polls) || []) if (q.closes_epoch && q.closes_epoch > now) out.push({ t: q.closes_epoch, text: `The ${q.title.toLowerCase()} poll closes ${K.fmtWhen(q.closes_epoch, { rel: true })}` });
   return out.sort((a, b) => a.t - b.t)[0] || null;
 }
-const Q = { timeline: "When is launch, and what comes after?", five: "Who plays what?", roads: "Where do I wake up, and where do we meet?", racials: "What does my race give me?", legacy: "What are bonus points, and when do they start?", buffs: "What do I give, and what do I get?", ledger: "What is still open, and which one is mine?", signups: "Am I in for launch night?", librarian: "How do I ask Leeroy?", library: "What should I read first?", decide: "What do I still decide, and by when?" };
+const Q = { timeline: "When is launch, and what comes after?", five: "Who plays what?", roads: "Where do I wake up, and where do we meet?", racials: "What does my race give me?", legacy: "What are bonus points, and when do they start?", buffs: "What do I give, and what do I get?", ledger: "What is still open, and which one is mine?", get signups() { return K.launchPast && K.launchPast() ? "Am I in this week?" : "Am I in for launch night?"; }, librarian: "How do I ask Leeroy?", library: "What should I read first?", decide: "What do I still decide, and by when?" };
 const cut = (t, n = 38) => { const w = String(t).split(/\s+/); return w.length > n ? `${w.slice(0, n).join(" ").replace(/[,;:]$/, "")}.` : String(t); };
 const few = (l, n = 3) => (l.length > n ? `${l.slice(0, n).join(", ")} and ${l.length - n} more` : K.andList(l));
 const evOf = (k) => (D.timeline && D.timeline.events.find((e) => e.key === k)) || null;
@@ -77,16 +77,17 @@ const CORE = {
   timeline() { const l = evOf("launch"), r = evOf("raids"); return l && l.epoch ? { a: `${K.launchSay(l)}${r && r.epoch ? ` Raids ${r.epoch * 1000 > Date.now() ? "open" : "opened"} ${K.fmtWhen(r.epoch)}.` : ""}`, go: K.launchPast() ? null : ["Add launch to my calendar", () => saveIcs(l), "ics"] } : null; },
   five() {
     const P = D.party, me = MEM.member(); if (!P) return null;
-    const a = me ? `${me.name}: ${me.race} ${me.class}, ${typeof me.role_detail === "string" ? me.role_detail : me.role}. With you: ${K.andList(P.members.filter((x) => x !== me).map((x) => x.name))}.` : `${K.pn.word()[0].toUpperCase() + K.pn.word().slice(1)} of you: ${P.members.map((x) => `${x.name} (${x.race} ${x.class})`).join(", ")}.`;
+    const a = me ? `${me.name}: ${K.raceClass(me)}, ${typeof me.role_detail === "string" ? me.role_detail : me.role || "role not shown"}. With you: ${K.andList(P.members.filter((x) => x !== me).map((x) => x.name))}.` : `${K.pn.word()[0].toUpperCase() + K.pn.word().slice(1)} of you: ${P.members.map((x) => `${x.name} (${K.raceClass(x)})`).join(", ")}.`;
     return { a, go: ["Turn my card", () => unfold("five", me && MEM.slug(me.name))] };
   },
   roads() {
     const P = D.party, me = MEM.member(), meet = meetOf(); if (!P) return null;
-    const a = me && me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${roadHow(me.start_zone)} to Orgrimmar.` : `The ${K.pn.word()} wake in ${K.andList([...new Set(P.members.map((x) => x.start_zone))])} and meet in Orgrimmar.`;
+    const a = me && me.start_zone ? `${me.name} wakes in ${me.start_zone}, then takes ${roadHow(me.start_zone)} to Orgrimmar.` : (() => { const zs = [...new Set(P.members.map((x) => x.start_zone).filter((z) => typeof z === "string" && z))]; return zs.length ? `The ${K.pn.word()} wake in ${K.andList(zs)} and meet in Orgrimmar.` : `The ${K.pn.word()} meet in Orgrimmar.`; })();
     return { a: `${a} Meeting point: ${meet || "not picked yet"}.`, go: meet ? ["Open the Atlas", `#atlas.plan.${MEM.slug(meet)}${me ? `~${me.class_key}` : ""}`] : ["Pick where we meet", "#signups"] };
   },
   racials() {
     const C = D.client, me = MEM.member(); if (!C) return null;
+    if (C.withheld) return { a: C.withheld, go: ["Open the race skills", () => openPanel($("#panel-racials"))] };
     const line = (r) => `${r}: ${(C.racials[r] || []).filter((x) => x.kind === "active").map((x) => (x.client && x.client.cooldown_ms ? `${x.name} (${x.client.cooldown_ms / 1000} s cooldown)` : x.name)).join(", ")}.`;
     return { a: me && C.racials[me.race] ? line(me.race) : Object.keys(C.racials).map(line).join(" "), go: ["Compare the other two races", () => openPanel($("#panel-racials"))] };
   },
@@ -96,31 +97,34 @@ const CORE = {
   },
   buffs() {
     const C = D.client, d = decideData(), me = MEM.member(); if (!C || !C.buffs) return null;
+    if (C.withheld) return { a: C.withheld, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
     const give = me ? C.buffs.list.filter((b) => !b.sixth && b.class === me.class_key).map((b) => b.name) : [], get = me && d && d.party ? d.party.buffs.filter((b) => b.giver !== me.class_key && (b.to || []).includes(me.class_key)).map((b) => b.name) : [];
-    return { a: me ? `${me.class} gives: ${give.length ? few(give) : "no group buffs"}. You get: ${get.length ? few(get) : "none from this party"}.` : `${C.buffs.list.filter((b) => !b.sixth).length} buffs pass between the ${K.pn.word()} classes.`, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
+    return { a: me ? `${K.classOf(me)} gives: ${give.length ? few(give) : "no group buffs"}. You get: ${get.length ? few(get) : "none from this party"}.` : `${C.buffs.list.filter((b) => !b.sixth).length} buffs pass between the ${K.pn.word()} classes.`, go: ["Show the whole table", () => openPanel($("#panel-buffs"))] };
   },
   ledger() {
     const P = D.party, d = decideData(), me = MEM.member(), pe = d && me && d.people ? d.people.find((x) => x.class_key === me.class_key) : null; if (!P) return null;
+    if (P.withheld) return { a: P.withheld, go: ["Go to that decision", "#decide"] };
     const own = pe ? pe.decisions.filter((x) => x.state === "open" || x.state === "chat").map((x) => x.title) : [], titles = P.open.map((o) => o.title).sort((x, y) => own.includes(y) - own.includes(x));
     return { a: `${P.open.length} things are open: ${few(titles, 5)}.${own.length ? ` Yours: ${K.andList(own)}.` : ""}`, go: ["Go to that decision", "#decide"] };
   },
   signups() {
     const S = D.signups, me = MEM.member(); if (!S || !S.tallies) return null;
-    const e = me && (S.entries || []).find((x) => K.cleanName(x.name).toLowerCase() === me.name.toLowerCase()), n = (S.tallies.rsvp.in || {}).count || 0;
-    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(), le = K.launchEvent(); return { a: `Launch night was ${le.when}. ${n} of ${D.party.members.length} had said they were in.${me ? (e && e.rsvp ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you was recorded.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: me ? ["See the answers", () => unfold("signups", "rsvp")] : null, who: signupWho }; }
+    const w = K.week(), e = me ? K.weekMine(me) : null, n = (w.rsvp.in || {}).count || 0; // this week's answers only (js/signups-week.js)
+    if (K.launchPast && K.launchPast()) { const nx = K.nextDated(); return { a: `${w.empty ? `${w.empty.nobody} ${w.empty.last}` : `This week: ${n} of ${D.party.members.length} are in.`}${me ? (e ? ` Your answer: ${K.RSVP_SAY[e.rsvp] || e.rsvp}.` : " No answer from you for this week yet.") : ""} ${nx ? `Next dated event: ${nx.label}, ${nx.when}.` : "Next gathering: not picked yet."}`, go: me ? ["See the answers", () => unfold("signups", "rsvp")] : null, who: signupWho }; }
     return { a: `${me ? (e && e.rsvp ? `${K.RSVP_SAY[e.rsvp] || e.rsvp} for launch night.` : "No launch-night answer from you yet.") : "Launch night:"} ${n} of ${D.party.members.length} are in. Times on offer: ${S.options.when.join(", ")}.`, go: me ? ["Change my answer", () => unfold("signups", "rsvp")] : null, who: signupWho };
   },
   librarian() { const st = D.stats; return st ? { a: `Type /ask in #wow-forever, or write below. Median answer: ${Math.round(st.median_s)} s.`, go: ["Ask Leeroy", () => { const t = $("#ask-text"); if (t) t.focus(); else unfold("librarian"); }] } : null; },
-  library() { const me = MEM.member(); return { a: me ? `Start with your class page (${me.class}) and the page for ${me.race}s.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
+  library() { const me = MEM.member(); return { a: me ? `Start with your class page (${K.classOf(me)}) and the page for ${me.race ? `${me.race}s` : "your race"}.` : "Start with the class overview, then the page for your class.", go: me ? ["Open my class page", `#library.classes.${MEM.slug(me.class_key)}`] : ["Open the class overview", "#library.classes.overview"] }; },
   decide() {
     const d = decideData(), me = MEM.member(), pe = d && me && d.people ? d.people.find((x) => x.class_key === me.class_key) : null, x = pe && pe.decisions.find((y) => y.state === "open" || y.state === "chat");
+    if (d && d.withheld) return { a: d.withheld, go: ["Open that decision", () => unfold("decide")] };
     return { a: x ? `${x.title}: ${x.state_text}. ${x.by && x.by.text ? x.by.text : ""}` : me ? "Nothing of yours is open." : "Pick your name to see your own choices.", go: ["Open that decision", () => unfold("decide")] };
   },
 };
-// B65: who is in, by time slot, under the Sign-ups card. Read from the tallies the board already shows (rsvp + when), never from a new endpoint.
+// B65: who is in, by time slot, under the Sign-ups card. Read from the tallies the board already shows (rsvp + when, this week's answers only: K.week), never from a new endpoint.
 // Every member lands in exactly one group: In at <slot>, In (no time picked), Tentative / Running late / Out, or Not answered yet.
 function signupWho() {
-  const S = D.signups, T = S && S.tallies, M = D.party && D.party.members; if (!T || !T.rsvp || !M) return null;
+  const S = D.signups, w = S && S.tallies ? K.week() : null, T = w ? { rsvp: w.rsvp, when: w.when } : null, M = D.party && D.party.members; if (!T || !M) return null;
   const key = (n) => K.cleanName(n).toLowerCase(), has = (slot, m) => !!slot && (slot.names || []).some((n) => key(n) === key(m.name));
   const left = new Set(M), take = (pred) => { const l = M.filter((m) => left.has(m) && pred(m)); l.forEach((m) => left.delete(m)); return l; };
   const groups = [];
@@ -128,7 +132,7 @@ function signupWho() {
   groups.push({ id: "in-open", label: "In, no time picked", list: take((m) => has(T.rsvp.in, m)) });
   for (const k of ["maybe", "late", "out"]) groups.push({ id: k, label: K.RSVP_SAY[k] || k, list: take((m) => has(T.rsvp[k], m)) });
   groups.push({ id: "none", label: "Not answered yet", list: [...left], keep: true });
-  return h("section", { class: "jr-who", "aria-label": "Who is in for launch night" }, groups.filter((g) => g.keep || g.list.length).map((g) => h("div", { class: "jr-wg", "data-g": g.id }, h("h4", { class: "jr-wh", text: g.label }), g.list.length ? h("ul", { class: "jr-wl" }, g.list.map((m) => h("li", { class: "jr-wn", "data-member": m.name, text: m.name }))) : h("p", { class: "jr-w0", text: "Nobody yet" }))));
+  return h("section", { class: "jr-who", "aria-label": K.launchPast && K.launchPast() ? "Who is in this week" : "Who is in for launch night" }, groups.filter((g) => g.keep || g.list.length).map((g) => h("div", { class: "jr-wg", "data-g": g.id }, h("h4", { class: "jr-wh", text: g.label }), g.list.length ? h("ul", { class: "jr-wl" }, g.list.map((m) => h("li", { class: "jr-wn", "data-member": m.name, text: m.name }))) : h("p", { class: "jr-w0", text: "Nobody yet" }))));
 }
 const deepLine = (key) => { const C = D.client; return ["racials", "legacy", "buffs"].includes(key) && C ? `Numbers here are from the game client's tables, build ${C.build}.` : key === "timeline" ? `Launch: ${(evOf("launch") || {}).epoch}, raids: ${(evOf("raids") || {}).epoch} (seconds since 1970, UTC).` : `Built from the board's own records on ${String((D.party || {}).generated || "").slice(0, 10)}.`; };
 function fold(panel) {
@@ -235,7 +239,7 @@ function zoneCard(zone) {
   return h("div", { class: "zone-card", role: "region", "aria-label": `${zone}, zoomed in` },
     h("h3", { text: zone }),
     h("ol", { class: "zone-steps" },
-      h("li", {}, ms.length ? `${K.andList(ms.map((m) => `${m.name} (${m.race} ${m.class})`))} wake${ms.length === 1 ? "s" : ""} here.` : "Nobody at this table starts here."),
+      h("li", {}, ms.length ? `${K.andList(ms.map((m) => `${m.name} (${K.raceClass(m)})`))} wake${ms.length === 1 ? "s" : ""} here.` : "Nobody at this table starts here."),
       r ? h("li", { text: `${r.how.charAt(0).toUpperCase()}${r.how.slice(1)} to Orgrimmar.` }) : null,
       h("li", { text: zone === "Mulgore" ? "The road passes the Crossroads, then the Valley of Strength in Orgrimmar." : "Into Orgrimmar through the Valley of Strength." })),
     whole);
@@ -550,15 +554,16 @@ function suControls() {
   rm(act.querySelector(".su-states"));
   const B = window.BoardBrain, st = B ? B.status() : { base: null, key: false };
   const live = !!(st.base && st.key && BR.me);
-  const mine = B && B.mine ? B.mine() : null, p = BR.pend.rsvp;
+  const mine0 = B && B.mine ? B.mine() : null, mine = K.weekOwn ? K.weekOwn(mine0) : mine0, p = BR.pend.rsvp; // after launch an answer from an earlier week is not pressed
   const btns = K.RSVP_KEYS.map((k) => h("button", { type: "button", class: `su-st${p && p.value === k ? ` ${p.state}` : ""}`, "data-rsvp": k, "aria-pressed": String(!!((p && p.value === k && p.state !== "failed" && p.state !== "newer") || (!p && mine && mine.rsvp === k))), "aria-disabled": live ? null : "true", onclick: (e) => { if (!live) {  const pl = e.currentTarget.closest(".su-states"), pn = pl && pl.querySelector(".su-pend"), as = pl && pl.querySelector(".su-as"); if (pn && as) { pn.textContent = ""; requestAnimationFrame(() => { pn.textContent = as.textContent; }); as.classList.remove("nudge"); void as.offsetWidth; as.classList.add("nudge"); } sfx("chip"); return; } if (B) B.setRsvp(k); sfx("latch"); } }, h("img", { class: "su-pint", src: `img/pints/${k}.png`, srcset: `img/pints/${k}.png 1x, img/pints/${k}@2x.png 2x`, alt: "", width: 32, height: 32, loading: "lazy", decoding: "async" }), K.RSVP_SAY[k]));
-  const say = !st.base ? "Answers from this view go through Discord: the Sign-ups card." : !st.key ? "To answer here, tap My board link on the Sign-ups card in Discord. It opens this board as you." : st.keyBad ? "This board link is no longer valid. Tap My board link on the Sign-ups card again." : !BR.me ? "Checking who this board link belongs to." : `Answering as ${BR.me.name}.`;
-  act.append(h("div", { class: `su-states${live ? "" : " off"}`, role: "group", "aria-label": "Your answer for launch night, from the board" }, h("p", { class: "su-as", text: say }), h("div", { class: "su-row" }, btns), h("p", { class: "su-pend", role: "status", "aria-live": "polite", text: p ? `${K.RSVP_SAY[p.value]}: ${PEND_SAY[p.state] || ""}${p.state === "newer" && p.other ? ` (${K.RSVP_SAY[p.other] || p.other})` : ""}.` : "" })));
+  const say = !st.base ? "Answers from this view go through Discord: the Sign-ups card." : !st.key ? (window.__sdk ? "Answer on the Sign-ups card in Discord. My board link there opens the web board, not this Activity." : "To answer here, tap My board link on the Sign-ups card in Discord. It opens this board as you.") : st.keyBad ? (window.__sdk ? "The board link for this answer is no longer valid. Answer on the Sign-ups card in Discord." : "This board link is no longer valid. Tap My board link on the Sign-ups card again.") : !BR.me ? "Checking who this board link belongs to." : `Answering as ${BR.me.name}.`;
+  act.append(h("div", { class: `su-states${live ? "" : " off"}`, role: "group", "aria-label": K.launchPast && K.launchPast() ? "Your answer for this week, from the board" : "Your answer for launch night, from the board" }, h("p", { class: "su-as", text: say }), h("div", { class: "su-row" }, btns), h("p", { class: "su-pend", role: "status", "aria-live": "polite", text: p ? `${K.RSVP_SAY[p.value]}: ${PEND_SAY[p.state] || ""}${p.state === "newer" && p.other ? ` (${K.RSVP_SAY[p.other] || p.other})` : ""}.` : "" })));
   if (window.BoardSeals && BoardSeals.ready) BoardSeals.ready(act.querySelector(".su-row"), "pints");
 }
 K.on("signups", () => { suControls(); });
 function mirrorIn(sig) {
   if (!sig || !Array.isArray(sig.entries)) return;
+  if (window.BoardWeek && !BoardWeek.accept(sig, D.signups)) return; // a late socket document older than the one in hand, or the same one again: no change, no second render
   D.signups = { ...(D.signups || {}), updated: sig.updated || (D.signups && D.signups.updated) || null, entries: sig.entries, ...(sig.tallies ? { tallies: { ...(D.signups && D.signups.tallies), ...sig.tallies } } : {}) };
   for (const f of ["tiles", "signups", "tonight"]) { try { K.render[f](); } catch (e) { console.error(f, e); } }
   core("signups");

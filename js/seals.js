@@ -160,7 +160,8 @@
   const F = { lane: {}, built: false };
   const members = () => (K.D && K.D.party ? K.D.party.members : []);
   const cardOf = (m) => $(`#cards .card[data-slug="${K.MEM.slug(m.name)}"]`);
-  const roleNow = (m) => m.role_now || (/^damage until \d+/i.test(m.role_detail || "") ? "damage" : m.role);
+  const lane = (r) => (LANES.some(([k]) => k === r) ? r : "damage"); // a member with no role shown (or one this board has no lane for) sits in the damage lane; the lanes are the three roles
+  const roleNow = (m) => lane(m.role_now || (/^damage until \d+/i.test(m.role_detail || "") ? "damage" : m.role));
   const roleFrom = (m) => (m.role_from && (m.role_from.role || (typeof m.role_from === "string" && m.role_from))) || ((/healer from level (\d+)/i.exec(m.role_detail || "") || [])[1] ? "healer" : null);
   function fiveSum() {
     const ms = members(), n = Object.fromEntries(LANES.map(([r]) => [r, 0])), diff = [];
@@ -184,7 +185,7 @@
       h("p", { class: "sr-only", text: "Press a coin to turn its card over. Drag a coin between lanes to try a different formation; arrow keys move the focused coin." }));
     lede.parentNode.insertBefore(form, lede.nextSibling);
     ms.forEach((m) => {
-      const b = h("button", { class: "fc", type: "button", "data-name": m.name, "data-k": m.class_key, "aria-pressed": "false", style: `--cc: ${K.classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.class}. Turn the card over. Arrow keys move between lanes.` },
+      const b = h("button", { class: "fc", type: "button", "data-name": m.name, "data-k": m.class_key, "aria-pressed": "false", style: `--cc: ${K.classVar(m.class_key)}`, "aria-label": `${m.name}, ${m.class || "build hidden"}. Turn the card over. Arrow keys move between lanes.` },
         h("span", { class: "fc-in" }, h("span", { class: "fc-face fc-f" }, window.BoardCrest.guard(h("img", { src: window.BoardCrest.src(m.class_key), alt: "", width: 320, height: 320, decoding: "async" }), m.class_key), h("span", { class: "fc-nm", text: m.name })), h("span", { class: "fc-face fc-b" }, h("b", { text: m.class }), h("i", { text: "spells" }))));
       coinInput(b, m); F.lane[m.name] = roleNow(m); $(`.fl[data-role="${roleNow(m)}"] .fl-tray`, form).append(b);
     });
@@ -322,14 +323,16 @@
     setTimeout(() => b.classList.remove("lift"), 620);
   }, true);
   const SH = { prev: {} };
+  const past = () => !!(K.launchPast && K.launchPast());
   const shelfCounts = () => {
-    const S = K.D && K.D.signups, rs = S && S.tallies && S.tallies.rsvp; if (!rs) return null;
+    const S = K.D && K.D.signups; let rs = S && S.tallies && S.tallies.rsvp; if (!rs) return null;
+    if (past() && K.week) { const w = K.week(); if (w) rs = w.rsvp; } /* after launch: this week's answers only (js/signups-week.js); before it, the server's tallies as before */
     const c = K.RSVP_KEYS.map((k) => [k, K.RSVP_SAY[k], rs[k] ? rs[k].count : 0, rs[k] ? rs[k].names.map(K.cleanName) : []]), said = c.reduce((n, x) => n + x[2], 0), ms = K.D.party.members;
     return [...c, ["none", "No answer", Math.max(0, ms.length - said), null]];
   };
   function shelf() {
     const body = $("#dsu-body"), items = shelfCounts(); if (!body || !items) return;
-    const B = window.BoardBrain, mine = B && B.mine ? B.mine() : null, old = $("#su-shelf"); if (old && old.parentNode) old.parentNode.removeChild(old); if (!body.parentNode) return;
+    const B = window.BoardBrain, mine0 = B && B.mine ? B.mine() : null, mine = K.weekOwn ? K.weekOwn(mine0) : mine0, old = $("#su-shelf"); if (old && old.parentNode) old.parentNode.removeChild(old); if (!body.parentNode) return;
     const who = h("p", { class: "sh-who", id: "sh-who", role: "status", "aria-live": "polite" });
     const list = (x) => (x[3] ? `${x[1]}: ${x[3].length ? x[3].join(", ") : "nobody yet"}.` : `${x[2]} of ${K.D.party.members.length} have not answered yet.`);
     const seals = items.map((x, i) => h("button", { class: `sh-seal${x[0] === "none" ? " none" : ""}${mine && mine.rsvp === x[0] ? " mine" : ""}${SH.prev[x[0]] != null && SH.prev[x[0]] !== x[2] ? " bump" : ""}`, type: "button", "data-k": x[0], "aria-pressed": "false", style: `--i:${i}`, "aria-label": `${x[1]}: ${x[2]}${mine && mine.rsvp === x[0] ? ", your answer" : ""}. Press to see who.`,
@@ -337,7 +340,7 @@
       h("span", { class: "sh-wax" }, x[0] === "none" ? null : h("img", { class: "sh-blob", src: `img/wax/${WAXC[x[0]]}.webp`, width: 256, height: 256, alt: "", loading: "lazy", decoding: "async", onerror: noArt }), h("img", { class: "sh-pint", src: `img/pints/${x[0]}.png`, srcset: `img/pints/${x[0]}.png 1x, img/pints/${x[0]}@2x.png 2x`, alt: "", width: 36, height: 36, loading: "lazy", decoding: "async", onerror: noArt }), h("span", { class: "sh-lit" })),
       h("b", { class: "sh-n", text: String(x[2]) }), h("span", { class: "sh-l", text: x[1] })));
     items.forEach((x) => { SH.prev[x[0]] = x[2]; });
-    const el = h("div", { class: "su-shelf", id: "su-shelf", role: "group", "aria-label": `Launch night so far: ${items.map((x) => `${x[1]} ${x[2]}`).join(", ")}` }, h("div", { class: "sh-row" }, seals), h("span", { class: "sh-plank", "aria-hidden": "true" }), who);
+    const el = h("div", { class: "su-shelf", id: "su-shelf", role: "group", "aria-label": `${past() ? "This week" : "Launch night so far"}: ${items.map((x) => `${x[1]} ${x[2]}`).join(", ")}` }, h("div", { class: "sh-row" }, seals), h("span", { class: "sh-plank", "aria-hidden": "true" }), who);
     body.parentNode.insertBefore(el, body);
     ready(el, "shelf");
     setTimeout(() => el.querySelectorAll(".bump").forEach((x) => x.classList.remove("bump")), 900);
@@ -350,10 +353,11 @@
   }
   const shelfSeals = () => [...document.querySelectorAll("#su-shelf .sh-seal")];
   K.on("signups", shelf);
+  { const bb = window.BoardBrain; if (bb && typeof bb.on === "function") bb.on("me", shelf); } /* /me arrives after the sign-ups: repaint so your own seal is marked */
   MECH.signups = { hint: "to stamp the shelf of counts again, then raise a mug below", press: ({ say: sy }) => {
     const items = shelfCounts(); if (!items) return;
     shelfSeals().forEach((x) => { x.classList.remove("bump"); void x.offsetWidth; x.classList.add("bump"); setTimeout(() => x.classList.remove("bump"), 900); });
-    sy(`Launch night: ${items.filter((x) => x[0] !== "none").map((x) => `${x[1]} ${x[2]}`).join(", ")}${items[items.length - 1][2] ? `, ${items[items.length - 1][2]} yet to answer` : ""}.`);
+    sy(`${past() ? "This week" : "Launch night"}: ${items.filter((x) => x[0] !== "none").map((x) => `${x[1]} ${x[2]}`).join(", ")}${items[items.length - 1][2] ? `, ${items[items.length - 1][2]} yet to answer` : ""}.`);
     const b = $("#dsu-act .su-st[aria-pressed=\"true\"]") || $("#dsu-act .su-st"); if (b) b.focus({ preventScroll: true });
   } };
 
@@ -364,6 +368,7 @@
   MECH.ledger = { hint: "to stamp the ledger again", press: ({ say: sy }) => {
     replayOn("#ledger-slip", "stamping");
     const p = K.D && K.D.party; if (!p) return;
+    if (p.withheld) { sy(p.withheld); return; }
     const settled = p.settled.length + (p.settled_extra || []).length + (p.play ? 1 : 0), open = p.open.filter((o) => !p.polls.some((q) => q.title === o.title)).length;
     sy(`${plural(settled, "thing")} settled, ${open} still open${p.polls.length ? `, ${plural(p.polls.length, "poll")} taking votes` : ""}.`);
   } };

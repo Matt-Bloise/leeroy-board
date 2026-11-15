@@ -286,7 +286,7 @@ function clockHours(text) {
   return hours;
 }
 
-function allowedValues(text) {
+export function allowedValues(text) {
   const src = String(text || "").replace(/\[\[retrieved:[^\]]*\]\]/g, " ");
   const set = new Set();
   for (const t of numberTokens(src)) set.add(canon(t.value));
@@ -299,7 +299,7 @@ function allowedValues(text) {
 }
 
 // The unsupported checked numbers of one sentence, as display strings.
-function unsupportedIn(sentence, allowed) {
+export function unsupportedIn(sentence, allowed) {
   const bad = [];
   const consumed = [];
   for (const r of sentence.matchAll(RANGE_RE)) {

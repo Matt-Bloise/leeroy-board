@@ -31,6 +31,7 @@ const TABLE = {
   "PUT /vocab": ADMIN,
   "PUT /config/:key": ADMIN, // admin-gated config rows (name_map, discord_members, ...), write only
   "POST /admin/members": ADMIN,
+  "POST /admin/sheet": ADMIN, // q-20261114-22: the owner fills a friend's level; a hidden field stays hidden
   "POST /admin/cards/post": ADMIN, // CARDS_ENABLED; 404 while off. Posts or recreates a pinned card and records its message id
   "GET /admin/feedback": ADMIN,
   "POST /admin/events/sync": ADMIN, // flag EVENTS_ENABLED; dry run by default
@@ -179,6 +180,7 @@ const CALLS = {
   "PUT /vocab": ["PUT", "/api/vocab", "{}"],
   "PUT /config/:key": ["PUT", `/api/config/${CONFIG_KEYS[0]}`, "{}"],
   "POST /admin/members": ["POST", "/api/admin/members", "{}"],
+  "POST /admin/sheet": ["POST", "/api/admin/sheet", "{}"],
   "POST /admin/cards/post": ["POST", "/api/admin/cards/post", "{}"],
   "GET /admin/feedback": ["GET", "/api/admin/feedback"],
   "POST /admin/events/sync": ["POST", "/api/admin/events/sync", "{}"],
@@ -424,4 +426,16 @@ test("GET /api/admin/export is admin only: anonymous and a member key are 401, t
     const res = await call(await makeEnv(), "GET /admin/export", principal);
     assert.equal(res.status, want, principal);
   }
+});
+
+// tools/add-member.mjs reads the party document in order to write it back. The public read has what members hid cut out, so the tool reads the stored one: admin only, never cached.
+test("GET /api/data/party?stored=1 (the stored document, for a read-then-write tool) is admin only: anonymous and a member key are 401, the admin token is let in and the answer is no-store", async () => {
+  for (const [principal, want] of [[A, 401], [M, 401], [D, 200]]) {
+    const res = await call(await makeEnv(), "GET /data/*", principal, ["GET", "/api/data/party?stored=1"]);
+    assert.equal(res.status, want, principal);
+    if (want === 200) assert.equal(res.headers.get("Cache-Control"), "no-store");
+  }
+  const plain = await call(await makeEnv(), "GET /data/*", A, ["GET", "/api/data/party"]);
+  assert.equal(plain.status, 200, "the public read is unchanged");
+  assert.equal(plain.headers.get("Cache-Control"), "no-store", "member documents are never held in a cache (index.js memberPath), so the plain read is no-store too; the point of this test is that it is 200 and the projection, not the stored document");
 });
