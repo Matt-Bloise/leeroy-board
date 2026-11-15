@@ -397,6 +397,18 @@ function limitEmoji(text, max) {
 
 // opts: roster ({ alias: display }), full (chat answers: also openers, bold, emoji and the chicken egg), intentId,
 // egg ({ line, oneIn }), isCoach (no egg).
+// Repeats until stable: removing the inner "<@2>" of "<@1<@2>2>" would otherwise leave a fresh "<@12>".
+function stripMentions(text) {
+  let out = text;
+  for (let prev = null; prev !== out; ) {
+    prev = out;
+    out = out.replace(MENTION_RE, "");
+  }
+  return out.trim();
+}
+
+// What the asker sees when the whole answer was mentions (all removed). Plain text, no mention, no opener, so applyVoiceGuards stays idempotent over it.
+export const MENTIONS_ONLY_LINE = "I have nothing to add to that one.";
 export function applyVoiceGuards(text, opts = {}) {
   if (typeof text !== "string" || !text) return text;
   try {
@@ -404,18 +416,22 @@ export function applyVoiceGuards(text, opts = {}) {
     out = renameSkippy(out);
     out = outsideUrls(out, (part) => part.replace(/\bMatt\b/g, "Bloise"));
     out = applyRoster(out, opts.roster);
-    out = out.replace(MENTION_RE, "");
+    out = stripMentions(out);
+    // A mention at the very start leaves a space that would hide an opener from the (^|...) anchors below: trim now, not only at the end.
+    out = out.trim();
     if (opts.full) {
-      out = stripOpeners(out);
+      // Openers last: dropping an emoji or a bold marker in front of "Short answer:" would otherwise reveal it only to a second pass.
       out = limitBold(out);
       out = limitEmoji(out, 3);
+      out = stripOpeners(out);
     }
     out = out
       .replace(/[ \t]{2,}/g, " ")
       .replace(/[ \t]+$/gm, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    if (!out) return text;
+    // An answer that was only mentions has nothing left: return "" (never the original, which would ping). Blank input stays as it was.
+    if (!out) return text.trim() ? (opts.full ? MENTIONS_ONLY_LINE : "") : text; // full: a plain substitute line, never an empty channel message; detail sections stay "" and are omitted
     if (opts.full && !opts.isCoach && !opts.noEgg && eggDue(opts.intentId, opts.egg)) {
       const { line } = eggSettings(opts.egg);
       if (!out.toLowerCase().includes(line.toLowerCase())) out = `${out}\n\n${line}`;
@@ -508,7 +524,7 @@ export function formatAnswer(raw, ctx = {}) {
   if (typeof raw !== "string") return raw;
   try {
     const out = formatAnswerParts(raw, ctx).main;
-    return typeof out === "string" && out.length ? out : raw;
+    return typeof out === "string" && out.length ? out : ctx && ctx.ux ? stripMentions(raw) : raw;
   } catch {
     return raw;
   }

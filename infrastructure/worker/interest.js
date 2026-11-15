@@ -191,19 +191,21 @@ export async function collectInterest({ env, fetchImpl = fetch, now = Date.now()
       await markFailed(env.DB, now);
       return { ok: false, stopped: stop(r), wrote: false };
     }
-    if (broken(r, Array.isArray)) return fail("events_read");
-    if (r.ok) events = eventCounts(r.json, map);
+    // Any answer that is not a usable list (404, 408, 400, 5xx, a network error, a wrong shape) fails the run and keeps the last counts.
+    if (!r.ok || !Array.isArray(r.json)) return fail("events_read");
+    events = eventCounts(r.json, map);
   }
 
   const posts = {};
   for (const p of ownPosts({ cards, momentsState, momentsSchedule, now })) {
     const r = await get(`/channels/${p.channel}/messages/${p.message}`);
-    if (stop(r)) {
+    // A 403 on one message means the bot cannot read that channel or message: skip that post like a 404. 401 and 429 still stop the run.
+    if (r.status !== 403 && stop(r)) {
       await markFailed(env.DB, now);
       return { ok: false, stopped: stop(r), wrote: false };
     }
     if (broken(r, (j) => j && typeof j === "object" && !Array.isArray(j))) return fail("post_read");
-    if (!r.ok) continue; // deleted (404) or not ours to read: leave it out
+    if (!r.ok) continue; // deleted (404) or not readable (403): leave it out
     const counts = reactionCounts(r.json);
     if (counts) posts[p.ref] = counts;
   }
