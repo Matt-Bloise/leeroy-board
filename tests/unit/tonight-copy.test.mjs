@@ -73,12 +73,13 @@ const pre = LAUNCH_EPOCH - 60, post = LAUNCH_EPOCH + 86400;
 const rosterOf = (members, now) => tonightLines({ ...base, now, party: { members } }).find((l) => l.startsWith("• **Party"));
 test("roster: missing or odd race/class never prints as text, before and after launch", () => {
   const cases = [
-    [{ name: "Aa", class: "Druid" }, "Aa (Druid)"],
-    [{ name: "Aa", race: "Orc" }, "Aa (Orc)"],
-    [{ name: "Aa" }, "Aa"],
-    [{ name: "Aa", race: "", class: "" }, "Aa"],
-    [{ name: "Aa", race: 5, class: { x: 1 } }, "Aa"],
-    [{ name: "Aa", race: null, class: ["Druid"] }, "Aa"],
+    // a member who hides race or class (or both) is never printed bare, and a half build is never printed: "(Build hidden)"
+    [{ name: "Aa", class: "Druid" }, "Aa (Build hidden)"],
+    [{ name: "Aa", race: "Orc" }, "Aa (Build hidden)"],
+    [{ name: "Aa" }, "Aa (Build hidden)"],
+    [{ name: "Aa", race: "", class: "" }, "Aa (Build hidden)"],
+    [{ name: "Aa", race: 5, class: { x: 1 } }, "Aa (Build hidden)"],
+    [{ name: "Aa", race: null, class: ["Druid"] }, "Aa (Build hidden)"],
     [{ name: "Aa", race: "constructor", class: "__proto__" }, "Aa (constructor __proto__)"],
     [{ name: "toString", race: "valueOf", class: "Druid" }, "toString (valueOf Druid)"],
   ];

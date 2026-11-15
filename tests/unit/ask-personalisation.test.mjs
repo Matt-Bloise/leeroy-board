@@ -2,6 +2,7 @@
 // honestly, invented names are replaced by the "not published" line, and the chicken egg is rare and never on a personalised answer.
 // Fictional members only. Run: node --test tests/unit/ask-personalisation.test.mjs
 import test from "node:test";
+import { WITHHELD_LINE } from "../../infrastructure/worker/public-party.js";
 import assert from "node:assert/strict";
 import { buildAnswerInputs, buildAnswerCacheKey, finishAnswerText, invalidatePagesCache, PERSONALISE_RULE } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
@@ -58,10 +59,11 @@ test("other members: visible fields only; hidden values never reach the prompt (
   for (const journey of ["curious", "guided"]) {
     const { userPrompt } = await inputs(makeEnv(), { by: "Red Fox", memberSlug: "red-fox", journey });
     assert.match(userPrompt, /PARTY_BUILDS/);
-    assert.match(userPrompt, /Blue Owl: class mage/);
+    // A member of this fixture hides a field, so the prompt carries the one withheld line instead of every other member's build (public-party.js WITHHELD_LINE).
+    assert.ok(userPrompt.includes(WITHHELD_LINE), "the one line stands in for the other members' builds");
+    assert.ok(!/Blue Owl: class mage|Green Elk: no public build yet/.test(userPrompt), "no member's build part");
     assert.ok(!userPrompt.includes("secretspec"), "hidden spec");
     assert.ok(!userPrompt.includes("hidden goal text"), "hidden goal");
-    assert.match(userPrompt, /Green Elk: no public build yet/);
   }
 });
 

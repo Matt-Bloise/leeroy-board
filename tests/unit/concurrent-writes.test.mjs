@@ -89,7 +89,7 @@ test("12 parallel POST /intent signup: every field survives", async () => {
 
 test("12 parallel POST /sheet: every field of both members survives", async () => {
   const env = await makeEnv(null);
-  const FIELDS = [["race", "tauren"], ["class", "druid"], ["spec_path", "feral-tank"], ["level", 12], ["plan_zone", "mulgore"], ["goals", ["a pack"]]];
+  const FIELDS = [["race", "tauren"], ["class", "druid"], ["spec_path", "feral-combat"], ["level", 12], ["plan_zone", "mulgore"], ["goals", ["a pack"]]];
   const res = await Promise.all(["bloise", "santa"].flatMap((who) => FIELDS.map(([field, value]) => postRetry(env, who, "/sheet", { field, value }))));
   assert.deepEqual(res.map((r) => r.status), Array(12).fill(200));
   const party = kv(env, "party_sheets");
@@ -121,50 +121,60 @@ async function envWithParty() {
   env.raw.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, '2026-10-29T00:00:00Z')").run(JSON.stringify(PARTY_DOC()));
   return env;
 }
-const bloiseParty = (env) => kv(env, "party").members.find((m) => m.name === "Bloise");
+const bloiseParty = (env) => kv(env, "party").members.find((m) => m.name === "Bloise"); // the STORED document: whole, never projected
+// What an anonymous reader gets (every read projects, public-party.js).
+async function anonBloise(env) {
+  const silence = console.error; console.error = () => {};
+  try {
+    const res = await worker.fetch(new Request("https://api.test/api/data/party", { headers: { "CF-Connecting-IP": "203.0.113.77" } }), env, ctx);
+    return JSON.parse(await res.text()).members.find((m) => m.name === "Bloise");
+  } finally { console.error = silence; }
+}
 
 for (const order of ["visible-then-hide", "hide-then-visible", "parallel"]) {
-  test(`hidden field never stays in the public party doc (${order}, repeated)`, async () => {
+  test(`a hidden field is never READ from the party doc, in any write order (${order}, repeated)`, async () => {
     for (let round = 0; round < 8; round++) {
       const env = await envWithParty();
-      const show = () => post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: true });
-      const hide = () => post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: false });
+      const show = () => post(env, "bloise", "/sheet", { field: "race", value: "orc", visible: true });
+      const hide = () => post(env, "bloise", "/sheet", { field: "race", value: "orc", visible: false });
       let res;
       if (order === "visible-then-hide") res = [await show(), await hide()];
       else if (order === "hide-then-visible") res = [await hide(), await show()];
       else res = await Promise.all([show(), hide()]);
       assert.ok(res.every((r) => r.status === 200), "both writes succeed");
       const sheet = kv(env, "party_sheets").find((p) => p.slug === "bloise").fields.race;
-      const pub = bloiseParty(env).race;
-      // the invariant: whenever the final sheet says hidden, the public doc has no race; when visible, it shows exactly the sheet value
+      assert.equal(bloiseParty(env).race, "orc", "the stored document is whole, whatever the order");
+      const pub = (await anonBloise(env)).race;
+      // the invariant: whenever the final sheet says hidden, the read has no race; when visible, it shows the value
       if (sheet.visible === false) assert.equal(pub, undefined, `hidden race leaked: ${pub}`);
-      else assert.equal(pub, String(sheet.value));
+      else assert.equal(pub, "orc");
       if (order === "visible-then-hide") assert.equal(pub, undefined);
-      if (order === "hide-then-visible") assert.equal(pub, "Orc");
+      if (order === "hide-then-visible") assert.equal(pub, "orc");
     }
   });
 }
 
-test("hide removes a value published earlier, and a later write self-heals a stale public value of another member", async () => {
+test("hide removes a value from every read, and an out-of-band re-publish of the hidden value in the stored row is still not served", async () => {
   const env = await envWithParty();
-  await post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: true });
-  assert.equal(bloiseParty(env).race, "Orc");
-  await post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: false });
-  assert.equal(bloiseParty(env).race, undefined);
-  // someone re-publishes the hidden value out of band; the next write re-derives it away
-  const doc = kv(env, "party"); doc.members[0].race = "Orc";
+  await post(env, "bloise", "/sheet", { field: "race", value: "orc", visible: true });
+  assert.equal((await anonBloise(env)).race, "orc");
+  await post(env, "bloise", "/sheet", { field: "race", value: "orc", visible: false });
+  assert.equal((await anonBloise(env)).race, undefined);
+  // someone writes the hidden value into the stored row out of band: reads still project it away
+  const doc = kv(env, "party"); doc.members[0].race = "orc";
   env.raw.raw.prepare("UPDATE kv_state SET json = ? WHERE key = 'party'").run(JSON.stringify(doc));
   await post(env, "bloise", "/sheet", { field: "level", value: 5 });
-  assert.equal(bloiseParty(env).race, undefined);
+  assert.equal(bloiseParty(env).race, "orc");
+  assert.equal((await anonBloise(env)).race, undefined);
 });
 
 test("a failing public update fails the request and writes nothing (no hidden value left public, no ghost event)", async () => {
   const env = await envWithParty();
-  await post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: true });
+  await post(env, "bloise", "/sheet", { field: "race", value: "orc", visible: true });
   const before = { party: kv(env, "party"), sheets: kv(env, "party_sheets"), events: env.raw.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events").get().n };
   const real = env.DB.batch;
   env.DB.batch = async () => { throw new Error("D1 down"); };
-  const res = await post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: false });
+  const res = await post(env, "bloise", "/sheet", { field: "race", value: "orc", visible: false });
   env.DB.batch = real;
   assert.equal(res.status, 500);
   assert.deepEqual(kv(env, "party"), before.party);
@@ -185,13 +195,13 @@ test("a 409 after exhausted retries leaves no ghost event for a later rebuild", 
     return st;
   };
   env.raw.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party_sheets', '[]', 'x')").run();
-  const res = await post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: true });
+  const res = await post(env, "bloise", "/sheet", { field: "race", value: "orc", visible: true });
   env.DB.prepare = realPrepare;
   assert.equal(res.status, 409);
   assert.equal(env.raw.raw.prepare("SELECT COUNT(*) AS n FROM sheet_events").get().n, 0, "no committed event");
   const { party } = await (await import("../../infrastructure/worker/index.js")).buildPartySheetsFromD1({ DB: env.raw }, { persist: false });
   const sheet = party.find((p) => p.slug === "bloise");
-  assert.notEqual(sheet && sheet.fields.race && sheet.fields.race.value, "Orc", "rebuild does not resurrect the rejected write");
+  assert.notEqual(sheet && sheet.fields.race && sheet.fields.race.value, "orc", "rebuild does not resurrect the rejected write");
 });
 
 test("first write on an empty kv_state succeeds on attempt 1, with no retry sleep", async () => {
@@ -213,8 +223,8 @@ test("first write on an empty kv_state succeeds on attempt 1, with no retry slee
 test("a caller that omits visible leaves the field visible (default true) and published", async () => {
   const env = await envWithParty();
   const { recordSheetEventInD1 } = await import("../../infrastructure/worker/index.js");
-  await recordSheetEventInD1(env, "https://api.test", { slug: "bloise", name: "Bloise", field: "race", value: "Orc" });
-  assert.equal(bloiseParty(env).race, "Orc");
+  await recordSheetEventInD1(env, "https://api.test", { slug: "bloise", name: "Bloise", field: "race", value: "orc" });
+  assert.equal(bloiseParty(env).race, "orc");
   const f = kv(env, "party_sheets").find((p) => p.slug === "bloise").fields.race;
   assert.equal(f.visible, true); assert.equal(f.source, "board");
 });
@@ -240,7 +250,7 @@ test("contention never costs more than 8 attempts (subrequest budget)", async ()
   let calls = 0;
   const real = env.DB.prepare;
   env.DB.prepare = (sql) => { calls++; const st = real(sql); if (/FROM kv_state WHERE key IN \('party_sheets', 'party'\)/.test(sql)) { const all = st.all; st.all = async () => { const r = await all.call(st); env.raw.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('party_sheets', ?, 'x')").run(JSON.stringify([{ slug: "n", name: "n", fields: {}, updated: String(Math.random()) }])); return r; }; } return st; };
-  const res = await post(env, "bloise", "/sheet", { field: "race", value: "Orc" });
+  const res = await post(env, "bloise", "/sheet", { field: "race", value: "orc" });
   env.DB.prepare = real;
   assert.equal(res.status, 409);
   assert.ok(calls < 50, `${calls} D1 statements prepared`);
