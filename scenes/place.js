@@ -244,7 +244,7 @@ function roads(M) {
     const m = id.member, others = ms.filter((x) => x !== m);
     const lines = m ? [`Wakes in ${r.zone}.`, `To Orgrimmar: ${r.how}.`, others.length ? `Same road: ${names(others)}.` : "Nobody else starts here."]
       : [ms.length ? `${names(ms)} wake${ms.length === 1 ? "s" : ""} here.` : "Nobody starts here.", `To Orgrimmar: ${r.how}.`];
-    return { rc: K.classVar((m || ms[0] || {}).class_key), title: m ? m.name : r.zone, sub: m ? `${m.race} ${m.class}` : "", crest: m ? m.class_key : null, lines };
+    return { rc: K.classVar((m || ms[0] || {}).class_key), title: m ? m.name : r.zone, sub: m ? K.raceClass(m) : "", crest: m ? m.class_key : null, lines };
   };
   const sticky = () => legend.querySelector('.road-btn[aria-pressed="true"]');
   let cur = null, pinned = null;
