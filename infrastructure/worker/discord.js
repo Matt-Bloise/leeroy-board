@@ -10,7 +10,7 @@
 //   7.  `/countdown`  — Launch countdown with hype and stress test status
 //   8.  `/dates`      — Every WoW: Forever date we know, with certainty ratings
 //   9.  `/library`    — The reference threads: what's on the shelves and what's coming
-//   10. `/quiz`       — Random Pop Quiz question (spoiler bar or reaction reveal)
+//   10. `/quiz`       — Random Pop Quiz question (answer behind a spoiler bar)
 //   11. `/didyouknow` — Random did-you-know fact from the verified library
 //   12. `/build`      — Link to someone's build thread with party roster choices
 //   13. `/leeroy`     — The yell with channel cooldown: "LEEROOOOOOOOY JENKINS!"
@@ -30,6 +30,7 @@ import { researchModeOn } from "./research/provider.js";
 import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
+import { mapPlanChoices, resolveMapPlan, MAP_PLAN_ALIASES } from "./map-plan.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
@@ -94,6 +95,14 @@ import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromMo
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
+// /tooltip: "Verified in" is true only when the page's title or an alias contains the name asked for; a facts-only hit is "Mentioned on".
+function tooltipNamedBy(row, name) {
+  const needle = String(name || "").trim().toLowerCase();
+  if (!needle) return false;
+  let aliases = [];
+  try { const a = JSON.parse((row && row.aliases_json) || "[]"); if (Array.isArray(a)) aliases = a; } catch { /* unreadable aliases: title only */ }
+  return [row && row.title, ...aliases].some((t) => typeof t === "string" && t.toLowerCase().includes(needle));
+}
 export const STRESS_UTC = Date.UTC(2026, 9, 21, 21, 0, 0); // Wed Oct 21 2026, 5:00 PM EDT
 
 // Channel cooldown tracking for /leeroy (in-memory per isolate)
@@ -175,7 +184,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     description: "Open a place, zone or route plan on the Living Board Azeroth Atlas",
     options: [
       { name: "place", description: "Place or zone slug (e.g. orgrimmar, crossroads, tirisfal-glades)", type: 3, required: false, autocomplete: true },
-      { name: "plan", description: "Meeting route plan slug (e.g. vos, xroads)", type: 3, required: false, autocomplete: true },
+      { name: "plan", description: "Place to chart a route plan to (e.g. orgrimmar, the-crossroads, or a sign-up meeting point)", type: 3, required: false, autocomplete: true },
     ],
   },
   {
@@ -255,19 +264,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   },
   {
     name: "quiz",
-    description: "One random Pop Quiz question (answer hidden)",
-    options: [
-      {
-        name: "reveal",
-        description: "How the answer shows",
-        type: 3,
-        required: false,
-        choices: [
-          { name: "Spoiler bar (default)", value: "spoiler" },
-          { name: "React with eyes to reveal", value: "reaction" },
-        ],
-      },
-    ],
+    description: "One random Pop Quiz question (answer behind a spoiler bar)",
   },
   {
     name: "didyouknow",
@@ -881,6 +878,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       );
     }
 
+    if (cmd === "map" && focused && focused.name === "plan") {
+      let signups = null;
+      try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+      const planChoices = mapPlanChoices(signups).filter((m) => m.name.toLowerCase().includes(query) || m.value.includes(query) || Object.entries(MAP_PLAN_ALIASES).some(([a, v]) => v === m.value && a.includes(query))).slice(0, 25).map((m) => ({ name: m.name, value: m.value }));
+      return new Response(JSON.stringify({ type: 8, data: { choices: planChoices } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
     if (cmd === "map") {
       const places = [
         { name: "Orgrimmar (Horde Capital)", value: "orgrimmar" },
@@ -1021,7 +1025,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         {
           type: 1,
           components: [
-            { type: 2, style: 5, label: "Open Tonight on Board", url: `${boardUrl}/#tonight` },
+            { type: 2, style: 5, label: Date.now() >= LAUNCH_UTC ? "Open the Board" : "Open Tonight on Board", url: `${boardUrl}/#tonight` },
           ],
         },
       ];
@@ -1198,8 +1202,20 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     if (cmd === "map") {
       const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
-      const hash = plan ? `#atlas.plan.${plan}` : place ? `#atlas.${place}` : "#atlas";
-      const label = plan ? `Meeting Route Plan (${plan})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
+      let planMeet = null;
+      if (plan) {
+        let signups = null;
+        try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+        planMeet = resolveMapPlan(plan, signups);
+      }
+      if (plan && !planMeet) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: `No route plan for "${plan}". Pick a place from the \`plan\` list (e.g. \`orgrimmar\`, \`the-crossroads\`, \`valley-of-strength\`).`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const hash = planMeet ? `#atlas.plan.${planMeet.value}` : place ? `#atlas.${place}` : "#atlas";
+      const label = planMeet ? `Meeting Route Plan (${planMeet.value})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
       return new Response(
         JSON.stringify({
           type: 4,
@@ -1367,7 +1383,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           name: "Free Server Stress Test",
           value: `<t:${stressSec}:F> (<t:${stressSec}:R>)\n**${humanDuration(toStress)}** to go. Battle.net > WoW > Game Version "World of Warcraft: Forever Stress Test".`,
         });
-      } else {
+      } else if (toLaunch > 0) {
         fields.push({
           name: "Character Name Reservation",
           value: "Names open for pack buyers: up to three characters per account until Nov 3.",
@@ -1453,13 +1469,11 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2j. `/quiz`
     if (cmd === "quiz") {
-      const reveal = getOpt("reveal") || "spoiler";
       const qList = QUIZ_DATA.questions || [];
       const q = qList[Math.floor(Math.random() * qList.length)] || qList[0];
       const head = `**${q.round}** #${q.n}`;
-      const content = reveal === "reaction"
-        ? `${head}\n${q.q}\n-# React with 👀 to reveal the answer. Full quiz on the Living Board.`
-        : `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
+      // Always the spoiler bar: the Worker has no reaction handling, so an old registered "reveal: reaction" choice is ignored.
+      const content = `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
 
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
@@ -1525,15 +1539,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2n. `/help`
     if (cmd === "help") {
+      // The mailbox commands are admin-only, so only an admin sees them (same check as /intents).
+      const staffHelp = (await rosterAdminCheck(env, interaction)).ok;
       const help = [
         helpIntro(await loadPersona(env), "**Leeroy Jenkins, party assistant.** Ask anything about WoW: Forever."),
         `**The Living Board:** [open it](<${boardUrl}>) in any browser, nothing to install.`,
-        "**Ask:** `/ask <question>` plus your question, or set `private: True` to keep the answer to yourself.",
+        "**Ask:** `/ask` with your question, or set `private: True` to keep the answer to yourself.",
         "**Ask about a message:** computer, right-click it; phone, press and hold it. Then Apps -> **Ask Leeroy** (or **Fix this fact**).",
-        "**Quick:** `/tonight` your launch night, `/countdown` the clock, `/dates` every date, `/signup` sign up, `/page` a library page, `/tooltip` a spell, `/map` the Atlas, `/library` the shelves.",
+        "**Quick:** `/tonight` " + (Date.now() >= LAUNCH_UTC ? "the launch-night recap" : "your launch night") + ", `/countdown` the clock, `/dates` every date, `/signup` sign up, `/page` a library page, `/tooltip` a spell, `/map` the Atlas, `/library` the shelves.",
         "**Fun:** `/quiz` Pop Quiz, `/didyouknow` random facts, `/build` party builds, `/leeroy` the yell.",
         "**Votes:** `/vote start` with a title and 2 to 5 choices separated by |; everyone presses buttons to vote.",
-        "**Worker Mailbox:** `/intents` view pending mailbox changes, `/ack` clear intents, `/answer` answer an ask turn.",
+        ...(staffHelp ? ["**Worker Mailbox (admins):** `/intents` view pending mailbox changes, `/ack` clear intents, `/answer` answer an ask turn."] : []),
         "-# Leeroy never pings anyone. At least he has chicken.",
       ].join("\n");
 
@@ -1608,7 +1624,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     if (cmd === "tooltip") {
       const name = getOpt("name");
       const row = await env.DB.prepare(
-        "SELECT id, category, title FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
+        "SELECT id, category, title, aliases_json FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
       )
         .bind(likePattern(name), likePattern(name), likePattern(name))
         .first();
@@ -1634,7 +1650,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
               {
                 color: GOLD,
                 title: `Tooltip: ${name}`,
-                description: `Verified in **${row.title}** (\`${row.category}\`).\nView the full tooltip and item stats on the Living Board.`,
+                description: `${tooltipNamedBy(row, name) ? "Verified in" : "Mentioned on"} **${row.title}** (\`${row.category}\`).\nView the full tooltip and item stats on the Living Board.`,
                 url: `${boardUrl}/#lib.${row.id}`,
               },
             ],
@@ -2001,12 +2017,18 @@ ${GATE_OFF_NOTE}` : ""}`,
     if (!vote) return ephemeral("That vote no longer exists.");
     const nowMs = Date.now();
     if (parsed.action === "results") return ephemeral(`**${vote.title}**\n${tallyLines(vote).join("\n")}`);
-    if (!isOpen(vote, nowMs)) return ephemeral("That vote is closed. No new votes are counted.");
+    // A closed vote answers by updating the message itself, so the client's stale buttons turn disabled and "Closed." shows.
+    // If the stored vote cannot be rendered, fall back to the plain ephemeral "closed" answer.
+    const closedUpdate = (v) => {
+      try { return new Response(JSON.stringify({ type: 7, data: renderMessage(v, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } }); } catch { return ephemeral("That vote is closed. No new votes are counted."); }
+    };
+    if (!isOpen(vote, nowMs)) return closedUpdate(vote);
     const discordId = String(user.id || "");
     if (!discordId) return ephemeral("I can't tell who you are, so I can't count that vote.");
     if (saltProblems(env, ["USER_SALT"]).length) return ephemeral("Voting is unavailable: the Worker is missing its USER_SALT secret.");
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
-    if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
+    // isOpen was checked above with the same nowMs, so castVote cannot report "closed" here.
+    if (!result.ok) return ephemeral("That choice does not exist.");
     await recordBallot(env.DB, vote.id, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     const fresh = (await loadVote(env.DB, vote.id)) || result.vote; // re-read so the counts shown include ballots cast at the same moment
     await purgeWorkerCache(origin, ["/api/votes"]);
@@ -2113,7 +2135,7 @@ ${GATE_OFF_NOTE}` : ""}`,
   }
 
   return new Response(
-    JSON.stringify({ type: 4, data: { content: "Command received by Leeroy.", flags: 64 } }),
+    JSON.stringify({ type: 4, data: { content: "Nothing was done: Leeroy does not recognise that command or button.", flags: 64 } }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
 }
