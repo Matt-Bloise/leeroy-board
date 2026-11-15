@@ -911,6 +911,22 @@ export function shortProviderError(err) {
   return `provider error (${name}${status})`;
 }
 
+// An operator-typed failure reason (admin POST /answer, Discord /answer): the operator wrote it, so it is kept readable, but secrets, key-shaped tokens and
+// bearer values are stripped and it is cut to 60 characters. Only ever stored on a model field the asker-facing read strips, and in the room broadcast.
+export function operatorFailureReason(failed) {
+  const raw = String((failed && failed.message) || failed || "error");
+  const http = /^([A-Za-z0-9_.-]+) API HTTP (\d{3})/.exec(raw);
+  if (http) return `${http[1]} API HTTP ${http[2]}`; // status only, as before: never a provider body
+  return scrubSecrets(raw)
+    .replace(/[?&]key=[^\s&"]+/gi, "")
+    .replace(/\b(?:Bearer|Basic)\s+\S+/gi, "")
+    .replace(/\bhttps?:\/\/\S+/gi, "")
+    .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
 // Retrieval, party state and prompt assembly for one question. Pure of side effects except D1 reads. Used by answerWithAi and by the
 // admin evaluation, so both run the same path. promptVariant (evaluation only) is one of PROMPT_VARIANTS; absent or "production" is
 // exactly what production sends.
@@ -918,11 +934,12 @@ export const PROMPT_VARIANTS = ["production", "plain", "examples-6", "format-rem
 const FORMAT_REMINDER =
   "Format contract: the first line is one bold sentence that answers the question. Then at most a few short bullets (`- **Name** · value`). Then `-# Sources: id1, id2`. No emoji, no greeting, no filler opener, no bare web addresses.";
 
-// What a failed ask may show to anyone: the bare "<provider> API HTTP <status>" (shortProviderError never carries a body) or one fixed line.
+// What a failed ask may show to anyone: the bare "<known provider> API HTTP <status>" (never a body) or one fixed line.
 export const ASK_FAILED_LINE = "Leeroy could not answer that just now. Try again in a moment.";
 export function publicAskError(err) {
   const short = shortProviderError(err);
-  return /^[A-Za-z0-9_.-]+ API HTTP \d{3}$/.test(short) ? short : ASK_FAILED_LINE;
+  const m = /^([A-Za-z0-9_.-]+) API HTTP \d{3}$/.exec(short);
+  return m && Object.prototype.hasOwnProperty.call(AI_PROVIDER_LABELS, m[1]) ? short : ASK_FAILED_LINE; // only our own provider names; anything else is the fixed line
 }
 
 // Timestamp ids go to the page as numbers, random (UUID) ids whole, so the page can poll GET /api/ask?id= with them.

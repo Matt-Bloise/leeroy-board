@@ -103,6 +103,55 @@ test("a failed ask: every log line is free of the provider text, including the g
   assert.doesNotMatch(logged, /PROVIDER-MARKER|secret-binding/);
 });
 
+// ---- manual-answer failure reason, fallback provenance, public error allow-list
+import { applyManualAnswer } from "../../infrastructure/worker/ask-answer.js";
+import { operatorFailureReason, publicAskError, ASK_FAILED_LINE, answerWithAi, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
+
+test("a manual-answer failure reason is kept readable and scrubbed in the stored model, and a guest never sees it", async () => {
+  assert.equal(operatorFailureReason("bot crashed: out of tokens"), "bot crashed: out of tokens");
+  const dirty = operatorFailureReason(new Error("bot died https://internal.example/x?key=abc123 Bearer sk-live-aaaaaaaaaaaaaaaaaaaaaaaaaaaa " + "z".repeat(80)));
+  assert.doesNotMatch(dirty, /internal\.example|abc123|sk-live|Bearer|zzzzzz/);
+  assert.ok(dirty.length <= 60 && dirty.startsWith("bot died"));
+  assert.equal(operatorFailureReason(new Error("gemini API HTTP 429: quota body")), "gemini API HTTP 429");
+  const DB = schemaDb();
+  const env = { DB, USER_SALT: "user-salt-for-tests-0123456789", KEY_SALT: "key-salt-for-tests-0123456789", ALLOWED_ORIGINS: "", BOARD_ROOM: { idFromName: () => "r", get: () => room } };
+  DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, status, share, model, created_at) VALUES ('11111111-1111-4111-8111-111111111111', 'Guest', 'q', 'thinking', 1, 'x', '2026-11-15T00:00:00Z')").run();
+  const r = await applyManualAnswer(env, { id: "11111111-1111-4111-8111-111111111111", failed: "bot crashed: out of tokens", isAdmin: true });
+  assert.equal(r.status, "error");
+  assert.equal(DB.raw.prepare("SELECT model FROM ask_turns WHERE id = '11111111-1111-4111-8111-111111111111'").get().model, "manual (failed: bot crashed: out of tokens)");
+  // the guest-facing read strips it
+  const keep = console.log; console.log = () => {};
+  try {
+    const { ask } = await (await worker.fetch(new Request("https://api.test/api/ask?id=11111111-1111-4111-8111-111111111111", { headers: { "CF-Connecting-IP": "203.0.113.8" } }), env, { waitUntil() {}, passThroughOnException() {} })).json();
+    assert.ok(ask && ask.status === "failed", "the turn is served");
+    assert.doesNotMatch(JSON.stringify(ask), /bot crashed|out of tokens/);
+  } finally { console.log = keep; }
+});
+
+test("raw provider text never reaches the stored model (which the data export and the Discord log read), HTTP-style or not", async () => {
+  const PAGES = [{ id: "raids/onyxias-lair", category: "raids", title: "Onyxia's Lair", as_of: "2026-11-01", blurb: "Onyxia's Lair", aliases_json: "[]", facts_json: JSON.stringify([{ key: "onyxia.opens", value: "Onyxia's Lair opens on 2026-12-09." }]), open_json: "[]" }];
+  for (const behave of [() => new Response("PROVIDER-MARKER-88 hidden-binding", { status: 500 }), () => { throw new Error("PROVIDER-MARKER-88 hidden-binding"); }]) {
+    const turns = new Map();
+    const prepare = (sql) => { let args = []; const st = { bind: (...a) => ((args = a), st), first: async () => null, all: async () => ({ results: /FROM lib_pages/i.test(sql) ? PAGES : [] }),
+      run: async () => { if (/^UPDATE ask_turns SET answer = \?, cites_json/i.test(sql)) turns.set(args[5], { model: args[2] }); return { success: true, meta: { changes: 1 } }; } }; return st; };
+    const env = { DB: { prepare, batch: async (s) => s.map(() => ({ success: true, meta: { changes: 1 } })) }, BOARD_ROOM: { idFromName: () => "r", get: () => room }, ANTHROPIC_API_KEY: "test-key", AI: { run: async () => ({ response: "ok" }) } };
+    invalidatePagesCache();
+    globalThis.fetch = async () => behave();
+    const keep = { e: console.error, w: console.warn }; console.error = () => {}; console.warn = () => {};
+    try { await answerWithAi({ env, origin: "https://worker.test", intentId: "t1", by: "Visitor", question: "when does onyxia open", provider: "claude", isMember: false }); }
+    finally { console.error = keep.e; console.warn = keep.w; globalThis.fetch = async () => new Response("blocked in tests", { status: 599 }); }
+    const model = turns.get("t1") && turns.get("t1").model;
+    assert.ok(model && /after claude/.test(model), `the fallback path ran: ${model}`);
+    assert.doesNotMatch(model, /PROVIDER-MARKER|hidden-binding/);
+  }
+});
+
+test("publicAskError keeps a status only for our own provider names; any other prefix is the fixed line", () => {
+  assert.equal(publicAskError(new Error("claude API HTTP 503")), "claude API HTTP 503");
+  assert.equal(publicAskError(new Error("evil.host-leak_token123 API HTTP 999")), ASK_FAILED_LINE);
+  assert.equal(publicAskError(new Error("constructor API HTTP 500")), ASK_FAILED_LINE);
+});
+
 // The gateway and fallback warnings only run against live providers, so they are pinned at the source: no console call in ai-models.js prints raw error text.
 test("ai-models.js: no console.error/warn argument is a raw err.message or a bare caught error", () => {
   const src = readFileSync(new URL("../../infrastructure/worker/ai-models.js", import.meta.url), "utf8");
