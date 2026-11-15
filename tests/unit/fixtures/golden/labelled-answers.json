@@ -37,7 +37,7 @@
     { "id": "L31", "caseId": "p02", "label": "ok", "answer": "**No raid called Skyforge Citadel is announced for Forever that I can find.** The Classic value for raid size was 40 players, not confirmed for Forever." },
     { "id": "L32", "caseId": "f05", "label": "ok", "answer": "**You have spent 31 talent points by level 40**, and dual spec unlocks then for 10 gold." },
     { "id": "L33", "caseId": "a01", "label": "ok", "answer": "**Take Herbalism with Skinning.** Both gather in the same zones and it pays better early. Choose Mining instead if your group needs smelted bars." },
-    { "id": "L34", "caseId": "g01", "label": "ok", "answer": "**Start with the Sunken Vault.** A tank, a healer and three damage dealers is a standard five-player group. Pick another dungeon if your levels fall outside 28 to 34." },
+    { "id": "L34", "caseId": "g01", "label": "ok", "answer": "**Start with the Sunken Vault.** A frontliner, a healer and three damage dealers is a standard five-player group. Pick another dungeon if your levels fall outside 28 to 34." },
     { "id": "L35", "caseId": "x01", "label": "ok", "answer": "**Reply Yes on the Friday run post and you are in.** I cannot see the clock from here, so confirm the time on the post itself." },
     { "id": "L36", "caseId": "p06", "label": "ok", "answer": "**No quest in the Ember Rite chain is confirmed to give a flute.** The attunement has 9 quests starting at Cinder Post, and none lists one." },
     { "id": "L37", "caseId": "f04", "label": "ok", "answer": "**Dungeon lockouts reset daily at 04:00 server time**, per the 2026-11-10 hotfix." },

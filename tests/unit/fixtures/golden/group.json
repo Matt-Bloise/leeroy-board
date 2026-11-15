@@ -2,14 +2,14 @@
   "note": "Authored. Group-composition questions using fictional characters only.",
   "slice": "group",
   "cases": [
-    { "id": "g01", "slice": "group", "question": "Our five-player group has a tank, a healer and three damage dealers. Which dungeon first?", "expect": "ok",
+    { "id": "g01", "slice": "group", "question": "Our five-player group has a frontliner, a healer and three damage dealers. Which dungeon first?", "expect": "ok",
       "reference": { "text": "The Sunken Vault entrance is in Mossback Ridge. The dungeon is tuned for levels 28 to 34 and takes five players.", "url": "https://example.test/ref/sunken-vault", "asOf": "2026-10-30" } },
-    { "id": "g02", "slice": "group", "question": "Testbard tanks and Examplemage heals. Who should pick up the bag-making profession?", "expect": "ok" },
-    { "id": "g03", "slice": "group", "question": "We are two mages, a priest, a paladin and a rogue. What is our weakest spot?", "expect": "ok" },
+    { "id": "g02", "slice": "group", "question": "Testbard holds the line and Examplemage heals. Who should pick up the bag-making profession?", "expect": "ok" },
+    { "id": "g03", "slice": "group", "question": "We are two casters, a priest, a paladin and a rogue. What is our weakest spot?", "expect": "ok" },
     { "id": "g04", "slice": "group", "question": "Which professions should the five of us split so we cover the basics?", "expect": "ok" },
     { "id": "g05", "slice": "group", "question": "Our group is split between levels 31 and 36. Can we still run together?", "expect": "ok",
       "reference": { "text": "The Sunken Vault is tuned for levels 28 to 34 and takes five players.", "url": "https://example.test/ref/sunken-vault", "asOf": "2026-10-30" } },
-    { "id": "g06", "slice": "group", "question": "Who should open the pull when our tank is offline?", "expect": "ok" },
+    { "id": "g06", "slice": "group", "question": "Who should open the pull when our frontliner is offline?", "expect": "ok" },
     { "id": "g07", "slice": "group", "question": "How should the group split loot when two people need the same item?", "expect": "ok" }
   ]
 }

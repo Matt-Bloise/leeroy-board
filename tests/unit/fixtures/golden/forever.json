@@ -14,7 +14,7 @@
       "reference": { "text": "At level 40 a character has spent 31 talent points. Dual spec unlocks at level 40 and costs 10 gold.", "url": "https://example.test/ref/talents", "asOf": "2026-11-02" } },
     { "id": "f06", "slice": "forever", "question": "Which professions can make the bigger bags?", "expect": "ok",
       "reference": { "text": "Tailoring makes bags of up to 16 slots from Mooncloth. Leatherworking makes ammo pouches, not general bags.", "url": "https://example.test/ref/bags", "asOf": "2026-10-28" } },
-    { "id": "f07", "slice": "forever", "question": "What does the Frostward spell do for a mage?", "expect": "ok",
+    { "id": "f07", "slice": "forever", "question": "What does the Frostward spell do for a frost caster?", "expect": "ok",
       "reference": { "text": "Frostward absorbs the next 120 damage from a single school for 30 seconds and has a 45 second cooldown.", "url": "https://example.test/ref/frostward", "asOf": "2026-10-28" } }
   ]
 }
