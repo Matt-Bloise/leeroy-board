@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleDiscordInteraction, DISCORD_SLASH_COMMANDS_MANIFEST } from "../../infrastructure/worker/discord.js";
+import { handleDiscordInteraction, LAUNCH_UTC, DISCORD_SLASH_COMMANDS_MANIFEST } from "../../infrastructure/worker/discord.js";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "discord");
@@ -115,7 +115,8 @@ test("fixtures contain no real-looking Discord ids or secrets", () => {
 test("the handler writes to D1 for a state-changing fixture", async () => {
   const { env, writes } = makeEnv(signer.publicKeyHex);
   const fx = fixtures.find((f) => f.file === "cmd-launch.json");
-  await dispatch(signer.signedRequest(fx.interaction), env);
+  const realNow = Date.now; Date.now = () => LAUNCH_UTC - 3600000; // /launch only records before launch
+  try { await dispatch(signer.signedRequest(fx.interaction), env); } finally { Date.now = realNow; }
   assert.ok(writes.some((w) => /kv_state/.test(w.sql)), "launch state is written to kv_state");
 });
 

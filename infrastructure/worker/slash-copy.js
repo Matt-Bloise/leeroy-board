@@ -5,6 +5,7 @@ export const SLASH_COPY = {
   sheetUpdated: (name, field, value, url) => `Done. **${name}**'s sheet now reads **${field}** = \`${value}\`. The board has it: ${url}`,
   sheetEmpty: () => "Nothing custom on the sheet yet. Even legends start blank.",
   launchHeader: () => "**Launch Night Status**: who is in the queue, who is in the world, who is done. Leeroy keeps count so nobody has to.",
+  launchOver: (url) => `Launch has come and gone, so there is nothing to count down. Ask me with \`/ask\`, or check the board: ${url}`,
   mapLine: (label, url) => `**${label}**, charted for you on the Living Board: ${url}`,
   signupLogged: (name, summary, url) => `Logged, **${name}**: ${summary}. The board knows: ${url}`,
   signupStatusHeader: (name) => `**${name}'s sign-up status**, as the board has it:`,
