@@ -215,12 +215,136 @@ test("LAUNCH_UTC is LAUNCH_EPOCH in ms and matches data/timeline.json", () => {
   assert.equal(launch.epoch, LAUNCH_EPOCH);
 });
 
-test("/map caps a 60-character place and plan: label <= 80 and a short slug", async () => {
-  for (const [name, hashPrefix] of [["place", "#atlas."], ["plan", "#atlas.plan."]]) {
+test("/map caps a 60-character place: label <= 80 and a short slug (a long plan is refused, see below)", async () => {
+  for (const [name, hashPrefix] of [["place", "#atlas."]]) {
     const body = await send(slash("map", [opt(name, "a".repeat(60))]));
     const btn = body.data.components[0].components[0];
     assert.ok(btn.label.length >= 1 && btn.label.length <= 80, `${name}: label ${btn.label.length}`);
     const slug = btn.url.split(hashPrefix)[1];
     assert.ok(slug && slug.length <= 40, `${name}: slug ${slug && slug.length}`);
   }
+});
+
+// ---- honest copy after launch, closed votes, and commands that promise only what they do (fictional data) ----
+const button = (customId, extra = {}) => ({ type: 3, id: nextId(), application_id: "400000000000000004", token: "t", channel_id: CH, member: who, message: { id: "500000000000000001" }, data: { custom_id: customId, component_type: 2 }, ...extra });
+const asAt = async (ms, fn) => { Date.now = () => ms; try { return await fn(); } finally { Date.now = realNow; } };
+const allText = (b) => JSON.stringify(b);
+
+test("/countdown after launch no longer offers name reservation; before launch it still does", async () => {
+  const after = await asAt(LAUNCH_UTC + 3600000, () => send(slash("countdown")));
+  assert.doesNotMatch(allText(after), /Names open|Name Reservation|until Nov 3/);
+  const before = await asAt(LAUNCH_UTC - 86400000, () => send(slash("countdown")));
+  assert.match(allText(before), /Names open for pack buyers/);
+});
+
+test("/tonight link button: 'Open Tonight on Board' only before launch; after launch it does not say tonight", async () => {
+  const label = async (ms) => {
+    const body = await asAt(ms, () => send(slash("tonight")));
+    assertComponentsValid(body.data.components, "/tonight");
+    return body.data.components[0].components[0].label;
+  };
+  assert.equal(await label(LAUNCH_UTC - 86400000), "Open Tonight on Board");
+  assert.doesNotMatch(await label(LAUNCH_UTC + 86400000), /tonight/i);
+});
+
+test("/help: no 'plus your question', launch-night wording gated, staff commands only for admins", async () => {
+  const text = async (ms, member) => asAt(ms, async () => (await (await call({ ...slash("help"), member }, mkEnv())).json()).data.content);
+  const user = { user: who.user };
+  const admin = { user: who.user, permissions: "8" };
+  const plain = await text(LAUNCH_UTC - 86400000, user);
+  assert.doesNotMatch(plain, /plus your question/);
+  assert.match(plain, /`\/ask`/);
+  assert.doesNotMatch(plain, /\/intents|\/ack|\/answer|Mailbox/, "a non-admin is not shown staff commands");
+  assert.match(plain, /your launch night/);
+  assert.match(await text(LAUNCH_UTC - 86400000, admin), /\/intents/);
+  const post = await text(LAUNCH_UTC + 86400000, user);
+  assert.doesNotMatch(post, /your launch night/, "after launch /tonight is not 'your launch night'");
+  assert.doesNotMatch(post, /\/intents|\/ack|\/answer/);
+  assert.match(await text(LAUNCH_UTC + 86400000, admin), /\/intents/);
+});
+
+test("an unrecognised command, button or modal says nothing was done", async () => {
+  for (const i of [slash("nosuchcommand"), button("zzz:unknown"), { ...button("zzz:modal"), type: 5, data: { custom_id: "zzz:modal", components: [] } }]) {
+    const body = await send(i);
+    assert.equal(body.type, 4);
+    assert.doesNotMatch(body.data.content, /received/i);
+    assert.match(body.data.content, /nothing was done/i);
+    assert.equal(body.data.flags, 64);
+  }
+});
+
+const VOTE_ID = "abcdef01";
+const mkVote = (closesAt) => ({ id: VOTE_ID, title: "Which snack", choices: ["Chicken", "Bread"], closes_at: new Date(closesAt).toISOString(), ballots: {} });
+test("a click on a closed vote updates the message in place with disabled buttons", async () => {
+  const NOW = Date.UTC(2026, 10, 20, 12, 0, 0);
+  for (const id of [`vote:${VOTE_ID}:0`, `vote:${VOTE_ID}:1`]) {
+    const body = await asAt(NOW, () => send(button(id), { [`vote:${VOTE_ID}`]: mkVote(NOW - 60000) }));
+    assert.equal(body.type, 7, "update message, not an ephemeral reply");
+    assert.equal(body.data.flags, undefined);
+    assert.match(body.data.content, /Closed\./);
+    assertComponentsValid(body.data.components, "closed vote");
+    const choices = body.data.components.flatMap((r) => r.components).filter((c) => /^vote:abcdef01:\d$/.test(c.custom_id));
+    assert.equal(choices.length, 2);
+    assert.ok(choices.every((c) => c.disabled === true), "every choice button is disabled");
+  }
+  // Results stays a private read.
+  const results = await asAt(NOW, () => send(button(`vote:${VOTE_ID}:results`), { [`vote:${VOTE_ID}`]: mkVote(NOW - 60000) }));
+  assert.equal(results.type, 4);
+  assert.equal(results.data.flags, 64);
+});
+
+test("/quiz offers no reaction reveal and always shows the answer behind a spoiler bar", async () => {
+  const { DISCORD_SLASH_COMMANDS_MANIFEST } = await import("../../infrastructure/worker/discord.js");
+  const quiz = DISCORD_SLASH_COMMANDS_MANIFEST.find((c) => c.name === "quiz");
+  assert.doesNotMatch(JSON.stringify(quiz), /reaction|React with|eyes/i);
+  for (const v of ["reaction", "spoiler", ""]) {
+    const body = await send(slash("quiz", v ? [opt("reveal", v)] : []));
+    assert.doesNotMatch(body.data.content, /React with/);
+    assert.match(body.data.content, /\|\|[^|]+\|\|/, `reveal=${v || "none"}: the answer sits behind a spoiler bar`);
+  }
+});
+
+test("/tooltip says Verified in only when the title or an alias matches; a facts-only match says Mentioned on", async () => {
+  const embedFor = async (row) => {
+    const env = mkEnv({}, (DB) => {
+      const prepare = DB.prepare.bind(DB);
+      DB.prepare = (sql) => {
+        const o = prepare(sql);
+        if (!/FROM lib_pages/.test(sql)) return o;
+        return { ...o, bind: (...a) => { const b = o.bind(...a); return { ...b, first: async () => row }; } };
+      };
+    });
+    return (await (await call(slash("tooltip", [opt("name", "Frostbolt")]), env)).json()).data.embeds[0].description;
+  };
+  const base = { id: "mage-spells", category: "spells", title: "Mage Spells", aliases_json: "[]", facts_json: "[]" };
+  assert.match(await embedFor({ ...base, title: "Frostbolt" }), /Verified in \*\*Frostbolt\*\*/);
+  assert.match(await embedFor({ ...base, aliases_json: JSON.stringify(["frostbolt rank 1"]) }), /Verified in/);
+  const facts = await embedFor({ ...base, facts_json: JSON.stringify([{ t: "Frostbolt slows" }]) });
+  assert.match(facts, /Mentioned on \*\*Mage Spells\*\*/);
+  assert.doesNotMatch(facts, /Verified/);
+});
+
+test("/map plan: a plan that is not a meeting point is refused with no link; real ones chart; place is unchanged", async () => {
+  const bad = await send(slash("map", [opt("plan", "no-such-place")]));
+  assert.equal(bad.type, 4);
+  assert.doesNotMatch(allText(bad), /charted|atlas\.plan\.no-such/i);
+  assert.equal(bad.data.components, undefined);
+  assert.equal(bad.data.flags, 64);
+  for (const ok of ["valley-of-strength", "the-crossroads"]) {
+    const body = await send(slash("map", [opt("plan", ok)]));
+    const btn = body.data.components[0].components[0];
+    assert.equal(btn.url, `${URL_}/#atlas.plan.${ok}`);
+    assert.ok(btn.label.length <= 80);
+    assertComponentsValid(body.data.components, `/map plan:${ok}`);
+  }
+  const place = await send(slash("map", [opt("place", "orgrimmar")]));
+  assert.equal(place.data.components[0].components[0].url, `${URL_}/#atlas.orgrimmar`);
+});
+
+test("/map autocomplete for plan offers meeting points, not the place list", async () => {
+  const ac = (focusedName, value) => ({ type: 4, id: nextId(), application_id: "400000000000000004", token: "t", channel_id: CH, member: who, data: { name: "map", options: [{ name: focusedName, type: 3, value, focused: true }] } });
+  const plan = await send(ac("plan", ""));
+  assert.deepEqual(plan.data.choices.map((c) => c.value).sort(), ["the-crossroads", "valley-of-strength"]);
+  const place = await send(ac("place", "mul"));
+  assert.deepEqual(place.data.choices.map((c) => c.value), ["mulgore", "bloodhoof-village"]);
 });

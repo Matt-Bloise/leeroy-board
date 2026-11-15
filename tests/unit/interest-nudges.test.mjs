@@ -300,7 +300,7 @@ test("flag on: the counts button shows the stored counts and writes nothing; fla
   assert.equal(JSON.stringify(db.raw.prepare("SELECT key, json FROM kv_state WHERE key != 'replay' ORDER BY key").all()), snap);
   assert.equal(outbound.length, 0, "no Discord call to show counts");
   const off = await send(interaction(3, { custom_id: COUNTS_BUTTON_ID, component_type: 2 }), chatEnv("off"));
-  assert.equal(off.data.content, "Command received by Leeroy.");
+  assert.match(off.data.content, /nothing was done/i);
 });
 
 // ---- review fixes (PR 326 review) -----------------------------------------------------------------------------------------------
