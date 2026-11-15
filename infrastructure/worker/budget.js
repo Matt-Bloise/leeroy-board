@@ -254,20 +254,20 @@ export async function reserveRow(env, key, neurons, cap, now = new Date()) {
       .bind(rowKey(now, key), JSON.stringify({ neurons: est, asks: 0 }), now.toISOString(), est, cap)
       .run();
     const changes = res && res.meta ? res.meta.changes : undefined;
-    return changes === 0 ? { ok: false, over: true } : { ok: true, rowKey: rowKey(now, key), reserved: est };
+    return changes === 0 ? { ok: false, over: true } : { ok: true, rowKey: rowKey(now, key), reserved: est, cap };
   } catch {
     return { ok: false, error: true };
   }
 }
 
-// Replaces a row reservation with the real cost; counted: false gives it back without counting an ask. Fails open (the reservation then stays, which is the careful side).
+// Replaces a row reservation with the real cost, clamped to the ceiling the reservation was made under (an overrun is charged to the global row only); counted: false gives it back without counting an ask. Fails open (the reservation then stays, which is the careful side).
 export async function reconcileRow(env, reservation, actual, { counted = true } = {}, now = new Date()) {
   const delta = Math.round(((Number(actual) || 0) - (Number(reservation.reserved) || 0)) * 100) / 100;
   try {
     await env.DB.prepare(
-      "UPDATE kv_state SET json = json_set(json, '$.neurons', MAX(0, ROUND(COALESCE(json_extract(json, '$.neurons'), 0) + ?1, 2)), '$.asks', COALESCE(json_extract(json, '$.asks'), 0) + ?2), updated_at = ?3 WHERE key = ?4"
+      "UPDATE kv_state SET json = json_set(json, '$.neurons', MIN(?5, MAX(0, ROUND(COALESCE(json_extract(json, '$.neurons'), 0) + ?1, 2))), '$.asks', COALESCE(json_extract(json, '$.asks'), 0) + ?2), updated_at = ?3 WHERE key = ?4"
     )
-      .bind(delta, counted ? 1 : 0, now.toISOString(), reservation.rowKey)
+      .bind(delta, counted ? 1 : 0, now.toISOString(), reservation.rowKey, Number.isFinite(reservation.cap) ? reservation.cap : 1e12)
       .run();
   } catch {
     // fail open

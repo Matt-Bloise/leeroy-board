@@ -31,7 +31,7 @@ import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HA
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
-import { memberLine, researchTimeoutMs } from "./research/no-wall.js";
+import { memberLine, researchTimeoutMs, guestLibraryOnly } from "./research/no-wall.js";
 const RESEARCH_RETRY_MAX_START_MS = 12000;
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
@@ -614,7 +614,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model: activeModel, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, strictDeadline = false }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
@@ -650,6 +650,13 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
       if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
       throw Object.assign(new Error(shareRes.over ? "Workers AI guest share reached" : "Workers AI budget unavailable"), { code: shareRes.over ? "budget_tenant" : "budget_unavailable" });
     }
+  }
+
+  // Research mode: the reservations above took time. With under 1 s left before the hard end, give both back and skip the call (the caller answers from library facts).
+  if (strictDeadline && deadlineAt && deadlineAt - Date.now() < 1000) {
+    if (shareRes) await reconcileRow(env, shareRes, 0, { counted: false }, reserveAt);
+    if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
+    throw new AiTimeoutError("Workers AI call", 0);
   }
 
   let result = null;
@@ -745,19 +752,21 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, hardDeadlineAt = null }) {
   if (modelOverride && !modelAllowed(provider, modelOverride)) {
     throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
   }
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
-  const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
+  let deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
+  // Research mode passes an absolute end (ask start + deadline - 4 s): the attempt never runs past it, whatever the reservations before the call cost.
+  if (hardDeadlineAt) deadlineAt = deadlineAt ? Math.min(deadlineAt, hardDeadlineAt) : hardDeadlineAt;
   switch (provider) {
     case "gemini":
       return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, modelOverride, maxTokens });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride, maxTokens });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride, maxTokens, strictDeadline: Boolean(hardDeadlineAt) });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -1245,7 +1254,7 @@ export async function answerWithAi({
     // ASK_RESEARCH (off by default; never in a PR preview, which is already Workers AI only): the research prompt state, labellers, Workers-AI-only provider and token budget.
     // Fails closed: a flag read that throws counts as ON for provider forcing (research/provider.js).
     const research = await researchModeOn(env, { preview: isPrPreviewEnv(env) });
-    memberNoWall = research && (isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember)); // the same rule buildAnswerInputs uses for askerIsMember
+    memberNoWall = research && isMember === true; // only an explicit true opens the no-wall path; an omitted isMember is a guest here (buildAnswerInputs keeps its own name rule for the prompt)
     // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
     // Not in research mode: a stored refusal or abstain row from before the flag was turned on must never come back as the answer (W5 decides what reuse means for research).
     const prior = research ? null : await findRecentSameAnswer(env, { intentId, question, share });
@@ -1305,6 +1314,7 @@ export async function answerWithAi({
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
     let fallbackNote = "";
+    let libOnly = false; // research guest with a spent budget: library facts only
     const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
     // ASK_RESEARCH seam (off by default; never in a PR preview). The stub handles nothing; any error, empty answer or "not handled" runs the path below unchanged.
     let researched = null;
@@ -1332,7 +1342,8 @@ export async function answerWithAi({
       // Research mode, member asker: no verdict. The counters keep counting (recordAttributed) but nothing refuses; the chain below degrades instead: Claude, Workers AI (which stops
       // at the neuron cap by itself), library facts. Guests keep the check, on their own keys.
       const verdict = memberNoWall ? null : await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai", failClosed: chosenProvider === "workers-ai" && Boolean(budget && budget.guest) });
-      if (verdict) {
+      libOnly = guestLibraryOnly(research, verdict); // research guest over the share, the global cap or unreadable counters: library facts, no model, no refusal text
+      if (verdict && !libOnly) {
         budgetCode = verdict.code;
         const limitedAt = nowIso();
         const retryAfter = verdict.retryAfter;
@@ -1349,6 +1360,7 @@ export async function answerWithAi({
     }
 
     try {
+      if (libOnly) throw new Error("research: guest budget spent, library facts only");
       // Research mode: Claude first (tokenised, guarded, token-capped; research/claude.js). Any skip or failure leaves rawAnswer unset and Workers AI answers below.
       if (research && memberNoWall) { // Claude is for members only: a guest never spends the Claude token cap
         const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude });
@@ -1356,6 +1368,8 @@ export async function answerWithAi({
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
       if (!rawAnswer) {
+      const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, ASK_DEADLINE_MS) : ASK_CHOSEN_TIMEOUT_MS;
+      if (waiMs === null) throw new Error("research: no time left for Workers AI"); // under 1 s before the margin: library facts, never an attempt past it
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
         env,
@@ -1365,8 +1379,8 @@ export async function answerWithAi({
         cacheKey,
         metadata,
         budgetKeys: budget,
-        timeoutMs: research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, ASK_DEADLINE_MS) : ASK_CHOSEN_TIMEOUT_MS,
-        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
+        timeoutMs: waiMs,
+        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS, hardDeadlineAt: t0 + ASK_DEADLINE_MS - 4000 } : {}),
       }));
       if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? ""; // a name we never send, or a token that is not ours: the reply is dropped (the retry below, then library facts)
       }
@@ -1374,8 +1388,9 @@ export async function answerWithAi({
       // library facts with an honest line, or the honest line alone.
       if (research && !usableAnswer(rawAnswer)) {
         rawAnswer = undefined;
-        if (Date.now() - t0 <= RESEARCH_RETRY_MAX_START_MS) { // the second send only starts early enough that its own timeout still ends 4 s before the deadline
-          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: researchTimeoutMs(Date.now() - t0, ASK_FALLBACK_TIMEOUT_MS, ASK_DEADLINE_MS), maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
+        const retryMs = researchTimeoutMs(Date.now() - t0, ASK_FALLBACK_TIMEOUT_MS, ASK_DEADLINE_MS);
+        if (Date.now() - t0 <= RESEARCH_RETRY_MAX_START_MS && retryMs !== null) { // the second send only starts early enough that its own timeout still ends 4 s before the deadline
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: retryMs, hardDeadlineAt: t0 + ASK_DEADLINE_MS - 4000, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
           if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? "";
         }
         if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
@@ -1385,7 +1400,7 @@ export async function answerWithAi({
       if (research ? provider !== "workers-ai" : chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
       fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
-      if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
+      if (!research && activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) { // research: only Workers AI ever answers a non-member, never a configured outside provider
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: activeProvider,

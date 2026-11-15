@@ -8,7 +8,7 @@ import { researchModeOn } from "./provider.js";
 import { askBudgetKeys } from "../budget.js";
 
 // What counts as a wall in a member-facing string. Nothing a member can be shown on /ask with the flag on may match.
-export const WALL_RE = /try again|limit|midnight|back at|quota|too many/i;
+export const WALL_RE = /try again|try (?:me|it|that|asking) again|limit|midnight|back at|quota|too many|tomorrow|come back|(?:you(?:'ve| have)|already|have) reached|reached (?:your|the|today)|\b(?:daily|monthly|usage|ask|question)s? cap\b|\bcap (?:is |was )?(?:hit|reached|used)\b|out of (?:questions|asks|credits)|used up|all (?:your|today's) (?:questions|asks)/i;
 
 export const GUEST_TENANT = "guests";
 export const GUEST_SHARE_PCT = 25; // guests together may use this share of the daily neuron cap; members keep the rest
@@ -50,5 +50,13 @@ export function memberAck(persona, seed = "") {
   return pool[hash(seed) % pool.length];
 }
 
-// Timeout for one Workers AI attempt in research mode: never past (deadline - 4 s), so the worst case after Claude's 9 s still leaves 4 s to store and deliver. Floor 1 s.
-export const researchTimeoutMs = (elapsedMs, maxMs, deadlineMs = 24000, marginMs = 4000) => Math.max(1000, Math.min(maxMs, deadlineMs - marginMs - elapsedMs));
+// Timeout for one Workers AI attempt in research mode: never past (deadline - 4 s), so the worst case after Claude's 9 s still leaves 4 s to store and deliver.
+// Returns null when less than 1 s is left: the caller skips the attempt (library facts), it never starts one past the margin.
+export const researchTimeoutMs = (elapsedMs, maxMs, deadlineMs = 24000, marginMs = 4000) => {
+  const left = deadlineMs - marginMs - elapsedMs;
+  return left < 1000 ? null : Math.min(maxMs, left);
+};
+
+// A guest (never a member) whose verdict is anything but the per-user cap is answered from library facts with no model call, instead of a refusal text.
+// Only research mode; with the flag off every verdict keeps its old refusal.
+export const guestLibraryOnly = (research, verdict) => Boolean(research && verdict && verdict.code !== "budget_user");

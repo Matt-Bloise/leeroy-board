@@ -25,7 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS, isPrPreviewEnv } from "./ai-models.js";
-import { askWallPlan, memberLine, memberAck } from "./research/no-wall.js";
+import { askWallPlan, memberLine, memberAck, guestLibraryOnly } from "./research/no-wall.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
@@ -746,11 +746,11 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       });
     }
     // ASK_RESEARCH on: a roster member is never walled (noWall); everyone else keeps the check, on the guests' budget keys (research/no-wall.js). Flag off: exactly askBudgetKeys.
-    const { noWall, budget: askBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) });
+    const { research, noWall, budget: askBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) });
     // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
     if (askBudget && !noWall) {
       const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
-      if (verdict && verdict.code !== "budget_global") {
+      if (verdict && verdict.code !== "budget_global" && !guestLibraryOnly(research, verdict)) { // research: a guest at the guests' share gets library facts from answerWithAi, not this refusal
         return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
           status: 200,
           headers: { "Content-Type": "application/json" },

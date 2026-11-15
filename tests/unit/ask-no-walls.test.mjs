@@ -205,7 +205,7 @@ test("3. a guest flood (guest tenant share spent): guests are refused, the membe
   setRow(env, `ai_budget:${day()}:tenant:guests`, { neurons: spent, asks: 30 });
   const guest = await webAsk(env, { member: false, ip: "198.51.100.7" });
   assert.equal(guest.res.status, 200);
-  assert.match(guest.row.model, /budget|daily-limit/, "the guest is refused by the guest share");
+  assert.match(guest.row.model, /local-d1-rag/, "a guest at the share gets library facts, not a refusal"); assert.doesNotMatch(guest.row.answer, /midnight|used your questions|back at/i);
   assert.equal(env.__wai, undefined);
   const before = JSON.stringify([getRow(env, `ai_budget:${day()}:tenant:default`), getRow(env, await userKey("santa"))]);
   const member = await webAsk(env);
@@ -234,7 +234,7 @@ test("4. body and patch parameters cannot raise the cap or claim membership: a g
   setRow(env, `ai_budget:${day()}:tenant:guests`, { neurons: spent, asks: 30 });
   const lie = { isMember: true, member: true, memberSlug: "santa", slug: "santa", userDailyAsks: 99999, tenantSharePct: 100, cap: 99999, limit: 99999, budget: { guest: false }, patch: { userDailyAsks: 99999, isMember: true, member: true, cap: 99999 }, deep: true };
   const r = await webAsk(env, { member: false, ip: "198.51.100.9", body: lie });
-  assert.match(r.row.model, /budget|daily-limit/, "still refused by the guest share");
+  assert.match(r.row.model, /local-d1-rag/, "still library facts for the guest share, no refusal");
   assert.equal(env.__wai, undefined);
   const lim = [];
   for (let i = 0; i < 3; i++) lim.push((await webAsk(env, { member: false, ip: "198.51.100.10", body: { ...lie, q: `q ${i}` } })).res.status);
@@ -444,7 +444,9 @@ test("12. researchTimeoutMs keeps every Workers AI attempt inside deadline minus
   assert.equal(researchTimeoutMs(0, 12000), 12000);
   assert.equal(researchTimeoutMs(9000, 12000), 11000);
   assert.equal(researchTimeoutMs(12000, 9000), 8000);
-  assert.equal(researchTimeoutMs(19900, 9000), 1000, "never below 1 s");
+  assert.equal(researchTimeoutMs(19900, 9000), null, "less than 1 s left: skip the attempt, never start one past the margin");
+  assert.equal(researchTimeoutMs(20500, 8000, 24000), null);
+  assert.equal(researchTimeoutMs(19000, 9000), 1000, "exactly 1 s left still runs");
 });
 
 test("12. worst case with a faked clock: Claude takes 9 s, then Workers AI; every Workers AI attempt ends by 20 s, and a retry only starts at or before 12 s", async () => {
@@ -467,5 +469,87 @@ test("12. worst case with a faked clock: Claude takes 9 s, then Workers AI; ever
     for (const a of ai) assert.ok(a.at + a.ms <= 20000, `attempt at ${a.at} with ${a.ms} ms ends after 20 s`);
     assert.equal(ai[0].ms, 11000);
     if (expectRetry) assert.ok(ai[1].at <= 12000);
+  }
+});
+
+
+// ---- review round 2 -------------------------------------------------------------------------------------------------------------------------------------
+test("13. the wall pattern catches cap, quota, tomorrow, come-back and reached wording, and leaves ordinary lines alone", () => {
+  for (const s of ["Try me again tomorrow.", "You've reached your daily cap. Come back tomorrow.", "Daily cap hit for today.", "You have used up your questions.", "Try it again later, quota spent.", "Come back later", "Out of questions for now", "Try again in a moment."]) assert.match(s, WALL_RE, s);
+  for (const s of ["Try the tank spec again.", "Leeroy reached for his axe.", "Cap'n Leeroy is on it.", "Leeroy is thinking...", "Warming up the forge...", "I could not pull a proper answer together on that one just now."]) assert.doesNotMatch(s, WALL_RE, s);
+  assert.equal(memberLine({ errorLines: ["Try me again tomorrow.", "You've reached your daily cap. Come back tomorrow.", "The forge is cold."] }, "s"), "The forge is cold.");
+  assert.equal(memberAck({ ackLines: ["Come back tomorrow", "Try the tank spec again."] }, "s"), "Try the tank spec again.", "an ordinary line is not filtered");
+});
+
+test("14. isMember left undefined is a guest, not a member: only isMember === true opens the no-wall path", async () => {
+  const env = await makeEnv();
+  const keys = askBudgetKeys({ userPart: await hashId("santa") });
+  setRow(env, await userKey("santa"), { neurons: 1, asks: 99 });
+  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES ('u1', 'Red Fox', ?, 'x', 'thinking', 1, ?)").run(Q, new Date().toISOString());
+  const out = await quiet(() => answerWithAi({ env, origin: "https://worker.test", intentId: "u1", by: "Red Fox", memberSlug: "red-fox", question: Q, provider: "workers-ai", share: true, budget: keys }));
+  assert.equal(out && out.code, "budget_user", "no isMember given: the cap applies");
+  env.DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES ('u2', 'Red Fox', ?, 'x', 'thinking', 1, ?)").run(Q, new Date().toISOString());
+  await quiet(() => answerWithAi({ env, origin: "https://worker.test", intentId: "u2", by: "Red Fox", memberSlug: "red-fox", question: Q, provider: "workers-ai", share: true, budget: keys, isMember: true }));
+  assert.equal(turn(env, "u2").status, "answered");
+  assert.ok(!/budget_/.test(turn(env, "u2").model));
+});
+
+test("15. a research guest who asks for provider claude (and whose Workers AI call fails) never reaches Anthropic", async () => {
+  const env = await makeEnv({ extra: { ANTHROPIC_API_KEY: FAKE_KEY, GROQ_API_KEY: "k" } });
+  env.AI.run = async () => { throw new Error("workers ai down"); };
+  const r = await webAsk(env, { member: false, ip: "198.51.100.77", body: { provider: "claude", patch: { provider: "claude" } } });
+  assert.equal(anth.length, 0);
+  assert.equal(r.row.status, "answered");
+  assert.equal(getRow(env, monthKey()), null);
+});
+
+test("16. the guests' row cannot pass its ceiling when actual use beats the estimate, including concurrent underestimates", async () => {
+  const { reserveRow, reconcileRow } = await import("../../infrastructure/worker/budget.js");
+  const env = await makeEnv();
+  const key = "tenant:guests", cap = 2000, row = () => getRow(env, `ai_budget:${day()}:${key}`);
+  setRow(env, `ai_budget:${day()}:${key}`, { neurons: 1800, asks: 5 });
+  const a = await reserveRow(env, key, 100, cap), b = await reserveRow(env, key, 100, cap);
+  assert.ok(a.ok && b.ok);
+  assert.equal((await reserveRow(env, key, 1, cap)).ok, false, "full");
+  await Promise.all([reconcileRow(env, a, 300), reconcileRow(env, b, 300)]);
+  assert.ok(row().neurons <= cap, `row ${row().neurons} passed the ceiling ${cap}`);
+  setRow(env, `ai_budget:${day()}:${key}`, { neurons: 1900, asks: 5 }); // the example: used 1900 incl. the estimate of 100, actual 300
+  await reconcileRow(env, { rowKey: `ai_budget:${day()}:${key}`, reserved: 100, cap }, 300);
+  assert.equal(row().neurons, 2000);
+  await reconcileRow(env, { rowKey: `ai_budget:${day()}:${key}`, reserved: 100, cap }, 0, { counted: false });
+  assert.equal(row().neurons, 1900, "giving a reservation back still works below the ceiling");
+});
+
+test("17. a non-roster Discord user at the guests' share gets library facts, not the refusal text; at the per-user cap they still get it", async () => {
+  const env = await makeEnv();
+  const share = (8000 * guestBudgetKeys({ userPart: "x" }).tenantSharePct) / 100;
+  setRow(env, `ai_budget:${day()}:tenant:guests`, { neurons: share + 1, asks: 30 });
+  const r = await discordRun(env, { ...base("100000000000000778"), data: { name: "ask", type: 1, options: [{ name: "question", type: 3, value: Q }] } });
+  assert.doesNotMatch(JSON.stringify(r.ack), /midnight|used your questions|share of today/i);
+  assert.match(r.row.model, /local-d1-rag/, r.row.model);
+  assert.equal(env.__wai, undefined, "no model call");
+  assert.match(String(r.patches.at(-1) && r.patches.at(-1).content), /Onyxia/);
+});
+
+test("18. reservation latency comes out of the attempt's time, and an attempt with under 1 s left is skipped (library facts), never started past the margin", async () => {
+  const realNow = Date.now, realTimeout = AbortSignal.timeout;
+  for (const [latency, expectCall] of [[3000, true], [11000, false]]) {
+    const env = await makeEnv({ extra: { ANTHROPIC_API_KEY: FAKE_KEY } });
+    let clock = 1_800_000_000_000; const start = clock;
+    Date.now = () => clock;
+    let lastMs = null; const ai = [];
+    AbortSignal.timeout = (ms) => { lastMs = ms; return new AbortController().signal; };
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => { if (String(url).includes("anthropic")) { clock += 9000; return new Response("down", { status: 500 }); } return prevFetch(url, init); };
+    const prep = env.DB.prepare;
+    env.DB.prepare = (sql) => { if (/json_set\(kv_state\.json, '\$\.neurons'/.test(sql) && /WHERE COALESCE/.test(sql)) clock += latency; return prep.call(env.DB, sql); };
+    env.AI.run = async () => { ai.push({ at: clock - start, ms: lastMs }); return { response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } }; };
+    try {
+      const r = await webAsk(env);
+      assert.equal(r.row.status, "answered", r.row.model);
+      if (!expectCall) assert.match(r.row.model, /local-d1-rag/, r.row.model);
+    } finally { Date.now = realNow; AbortSignal.timeout = realTimeout; globalThis.fetch = prevFetch; }
+    assert.equal(ai.length, expectCall ? 1 : 0, JSON.stringify(ai));
+    for (const a of ai) assert.ok(a.at + a.ms <= 20000, `attempt at ${a.at} with ${a.ms} ms ends after 20 s`);
   }
 });
