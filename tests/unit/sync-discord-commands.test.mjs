@@ -199,13 +199,80 @@ test("429 honours retry_after once, then continues", async () => {
   assert.match(r.text, /created: ping, ack, say/);
 });
 
-test("a second 429 stops with a warning and exits 0", async () => {
-  const w = world({ live: [], status: { "POST discord": [{ status: 429, body: { retry_after: 1 } }, { status: 429, body: { retry_after: 1 } }] } });
+// CHANGED (first production run: "rate limited by Discord twice; stopped after 6 write(s)"): a 429 is no longer fatal the second time. The
+// sync honours Retry-After (body retry_after or the header) and keeps going up to a cap of retries and total waiting, then stops with a warning.
+test("repeated 429s are waited out and the sync carries on (retry_after honoured each time)", async () => {
+  const rl = (n) => ({ status: 429, body: { retry_after: n } });
+  const w = world({ live: [], status: { "POST discord": [rl(1), rl(2), rl(3), rl(4)] } });
   const r = await go(w);
   assert.equal(r.code, 0);
-  assert.equal(r.sleeps.length, 1, "waits once only");
+  assert.deepEqual(r.sleeps, [1000, 2000, 3000, 4000]);
+  assert.match(r.text, /created: ping, ack, say/);
+  assert.ok(!/rate limited/.test(r.text));
+});
+
+test("the Retry-After header is honoured when the body has no retry_after", async () => {
+  const w = world({ live: [] });
+  const base = w.fetchImpl; let first = true;
+  w.fetchImpl = async (url, init = {}) => {
+    if ((init.method || "GET") === "POST" && first) { first = false; w.calls.push({ url: String(url), method: "POST", headers: init.headers || {}, body: init.body }); return new Response("{}", { status: 429, headers: { "Retry-After": "7" } }); }
+    return base(url, init);
+  };
+  const r = await go(w);
+  assert.deepEqual(r.sleeps, [7000]);
+  assert.match(r.text, /created: ping, ack, say/);
+});
+
+test("endless 429s stop at the cap with a warning, exit 0, and the total wait is bounded", async () => {
+  const rl = { status: 429, body: { retry_after: 20 } };
+  const w = world({ live: [], status: { "POST discord": Array.from({ length: 50 }, () => rl) } });
+  const r = await go(w);
+  assert.equal(r.code, 0);
   assert.match(r.text, /::warning::.*rate limited/);
-  assert.equal(w.posts().length, 2);
+  assert.ok(r.sleeps.reduce((a, b) => a + b, 0) <= 150000, "total waiting is capped");
+  assert.ok(r.sleeps.length <= 8);
+});
+
+test("every write is logged by name and kind as it happens, before a rate-limit stop", async () => {
+  const rl = { status: 429, body: { retry_after: 1 } };
+  const w = world({ live: [], status: { "POST discord": [null, null, ...Array.from({ length: 50 }, () => rl)] } });
+  const r = await go(w);
+  const text = r.lines.join(String.fromCharCode(10));
+  assert.match(text, /created: ping/);
+  assert.match(text, /created: ack/);
+  assert.ok(text.indexOf("created: ping") < text.indexOf("::warning::"), "the writes are logged before the stop");
+  assert.match(text, /::warning::.*2 write\(s\)/);
+  assert.match(text, /ping, ack/, "the stop names what was written");
+});
+
+test("missing commands are created before changed ones are updated", async () => {
+  const live = [asDiscord({ ...PING, description: "Old text" }), asDiscord(ACK)];
+  const w = world({ live });
+  const r = await go(w);
+  assert.equal(r.code, 0);
+  assert.deepEqual(postedNames(w), ["say", "ping"], "the missing /say is written first, then the changed ping");
+});
+
+test("a changed command is logged with the NAMES of the fields that differ, never their values", async () => {
+  const live = [asDiscord(PING), asDiscord({ ...ACK, description: "SECRET-OLD-TEXT", options: [{ name: "up_to", description: "Highest", type: 4, required: false }] }), asDiscord(SAY, { default_member_permissions: "32", dm_permission: false, contexts: [0] })];
+  const w = world({ live });
+  const r = await go(w);
+  assert.match(r.text, /updated: ack \(fields: .*description/);
+  assert.match(r.text, /options:up_to\.required/);
+  assert.ok(!r.text.includes("SECRET-OLD-TEXT") && !r.text.includes("Acknowledge"), "no values in the log");
+  const dry = await go(world({ live }), ["--dry-run"]);
+  assert.match(dry.text, /would update: ack \(fields: /);
+});
+
+test("DM availability is not compared: Discord's dm_permission and contexts defaults never cause a write", async () => {
+  const live = MANIFEST.map((c) => asDiscord(c, { dm_permission: true, contexts: [0, 1, 2] }));
+  const w = world({ live });
+  const r = await go(w);
+  assert.equal(w.posts().length, 0, r.text);
+  // but a new command is still created with the manifest's own dm_permission
+  const w2 = world({ live: live.filter((c) => c.name !== "say") });
+  await go(w2);
+  assert.equal(JSON.parse(w2.posts()[0].body).dm_permission, false);
 });
 
 test("dry run (the default) reads both sides and makes zero writes", async () => {
