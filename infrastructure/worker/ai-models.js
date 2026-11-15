@@ -20,7 +20,7 @@ import { sha256Hex } from "./crypto.js";
 import { anthropicAuth, anthropicAvailable, scrubSecrets, scrubError, clearStoreKey, gatewayReady } from "./ai-keys.js";
 import { loadPersona, buildSystemPrompt, pickLine } from "./persona.js";
 import { loadConfigKey } from "./config.js";
-import { estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
+import { reserveRow, reconcileRow, estimateNeurons, tokensFromChars, loadBudget, recordUsage, recordAttributed, reserveNeurons, reconcileNeurons, capFor, checkAskBudget, loadAskCaps, overCap, dailyCap, secondsToUtcMidnight, CRON_RESERVE } from "./budget.js";
 import { clampContent, ALLOWED_MENTIONS_NONE } from "./discord-safety.js";
 import { formatAnswerParts, answerFormatEnabled, answerUxEnabled, extractCitedIds, stripEggLine, eggSettings, stripPersonaIntro } from "./answer-format.js";
 import { ROSTER_DATA } from "./bot-data.js";
@@ -32,6 +32,7 @@ import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HA
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
+import { memberLine, researchTimeoutMs, guestLibraryOnly, hardEndMs } from "./research/no-wall.js";
 import { sheetsHideAnything, WITHHELD_LINE } from "./public-party.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
@@ -259,6 +260,8 @@ const AI_TIMEOUT_MS = 20000;
 export const ASK_CHOSEN_TIMEOUT_MS = 12000;
 export const ASK_FALLBACK_TIMEOUT_MS = 9000;
 export const ASK_DEADLINE_MS = 24000;
+// The delivery deadline in force (discord.js answerAndDeliver reads the same override): research mode takes its margin from this, not from the constant.
+export const askDeadlineMs = (env) => (Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS);
 
 export class AiTimeoutError extends Error {
   constructor(what, ms = AI_TIMEOUT_MS) {
@@ -614,7 +617,7 @@ async function callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCac
   return { answer, model: activeModel, provider: "gemini" };
 }
 
-async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
+async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache = false, budgetKind = "ask", budgetKeys = null, metadata = null, deadlineAt = null, modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, strictDeadline = false }) {
   if (!env.AI || typeof env.AI.run !== "function") {
     throw new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml");
   }
@@ -641,6 +644,24 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
   }
   const reserved = reservation.ok ? reservation.reserved : 0;
 
+  // Research mode, guests only (keys carry tenantSharePct): the same estimate is reserved atomically on the guests' row before the call, so a flood cannot pass the share
+  // between the check and the add. A refused reserve gives the global reservation back and the guest falls to library facts; members never reach this.
+  let shareRes = null;
+  if (budgetKind === "ask" && budgetKeys && budgetKeys.tenantSharePct && budgetKeys.tenantKey) {
+    shareRes = await reserveRow(env, budgetKeys.tenantKey, estimate, (dailyCap(env) * budgetKeys.tenantSharePct) / 100, reserveAt);
+    if (!shareRes.ok) {
+      if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
+      throw Object.assign(new Error(shareRes.over ? "Workers AI guest share reached" : "Workers AI budget unavailable"), { code: shareRes.over ? "budget_tenant" : "budget_unavailable" });
+    }
+  }
+
+  // Research mode: the reservations above took time. With under 1 s left before the hard end, give both back and skip the call (the caller answers from library facts).
+  if (strictDeadline && deadlineAt && deadlineAt - Date.now() < 1000) {
+    if (shareRes) await reconcileRow(env, shareRes, 0, { counted: false }, reserveAt);
+    if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
+    throw new AiTimeoutError("Workers AI call", 0);
+  }
+
   let result = null;
   let answer;
   try {
@@ -653,7 +674,7 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
             metadata: JSON.parse(gatewayMetadata(metadata)),
             cacheTtl: Number(env.AI_GATEWAY_CACHE_TTL) || 21600, // 6 hours: matches the cron update cycle
           },
-        }, deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
+        }, strictDeadline && deadlineAt ? Math.max(1, Math.round((deadlineAt - Date.now()) * 0.6)) : deadlineAt ? Math.max(1000, Math.round(msLeft(deadlineAt) * 0.6)) : AI_TIMEOUT_MS);
       } catch (gwErr) {
         console.warn(`[AI-Gateway] Workers AI gateway error (${env.AI_GATEWAY_ID}): ${gwErr.message}, falling back to direct run`);
         result = null;
@@ -661,7 +682,9 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
     }
 
     if (!result) {
-      result = await runWorkersAiWithTimeout(env, model, inputs, undefined, msLeft(deadlineAt));
+      // Research mode: no 1 s floor. A direct run after a failed gateway run only starts when 1 s or more is left before the hard end.
+      if (strictDeadline && deadlineAt && deadlineAt - Date.now() < 1000) throw new AiTimeoutError("Workers AI call", 0);
+      result = await runWorkersAiWithTimeout(env, model, inputs, undefined, strictDeadline && deadlineAt ? Math.floor(deadlineAt - Date.now()) : msLeft(deadlineAt));
     }
 
     answer = String(
@@ -678,8 +701,10 @@ async function callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCach
     // The reservation becomes the real cost (and counts the ask). With no reservation (budget error, fail open) this adds the cost as before.
     if (reservation.ok) await reconcileNeurons(env, budgetKind, reserved, neurons, { counted: true, key: reservation.key }, reserveAt);
     else await recordUsage(env, budgetKind, neurons);
-    if (budgetKind === "ask") await recordAttributed(env, budgetKeys, neurons);
+    if (shareRes) await reconcileRow(env, shareRes, neurons, { counted: true }, reserveAt);
+    if (budgetKind === "ask") await recordAttributed(env, shareRes ? { ...budgetKeys, tenantKey: null } : budgetKeys, neurons); // the guests' row was already settled above
   } catch (callErr) {
+    if (shareRes) await reconcileRow(env, shareRes, 0, { counted: false }, reserveAt);
     if (!reservation.ok) throw callErr;
     await reconcileNeurons(env, budgetKind, reserved, 0, { counted: false, key: reservation.key }, reserveAt);
     throw callErr;
@@ -732,19 +757,21 @@ async function callOpenAiCompatible({ provider, endpoint, apiKey, model, systemP
   return { answer, model, provider };
 }
 
-export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
+export async function dispatchToProvider({ provider, env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, budgetKind = "ask", budgetKeys = null, timeoutMs = null, model: modelOverride = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, hardDeadlineAt = null }) {
   if (modelOverride && !modelAllowed(provider, modelOverride)) {
     throw new Error(`model ${String(modelOverride).slice(0, 60)} is not allowed for provider ${provider}`);
   }
   if (isPrPreviewEnv(env) && provider !== "workers-ai") {
     provider = "workers-ai";
   }
-  const deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
+  let deadlineAt = timeoutMs > 0 ? Date.now() + timeoutMs : null;
+  // Research mode passes an absolute end (ask start + deadline - 4 s): the attempt never runs past it, whatever the reservations before the call cost.
+  if (hardDeadlineAt) deadlineAt = deadlineAt ? Math.min(deadlineAt, hardDeadlineAt) : hardDeadlineAt;
   switch (provider) {
     case "gemini":
       return await callGeminiFreeTier({ env, systemPrompt, userPrompt, deep, skipCache, cacheKey, metadata, deadlineAt, modelOverride, maxTokens });
     case "workers-ai":
-      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride, maxTokens });
+      return await callCloudflareWorkersAi({ env, systemPrompt, userPrompt, skipCache, budgetKind, budgetKeys, metadata, deadlineAt, modelOverride, maxTokens, strictDeadline: Boolean(hardDeadlineAt) });
     case "groq":
       return await callOpenAiCompatible({
         provider: "groq",
@@ -1226,11 +1253,13 @@ export async function answerWithAi({
   const nowIso = () => new Date().toISOString();
   const isCoach = journey === "guided" && share !== true;
   let budgetCode = null;
+  let memberNoWall = false; // ASK_RESEARCH on and the asker is a member: no budget verdict can refuse this ask (research/no-wall.js)
 
   try {
     // ASK_RESEARCH (off by default; never in a PR preview, which is already Workers AI only): the research prompt state, labellers, Workers-AI-only provider and token budget.
     // Fails closed: a flag read that throws counts as ON for provider forcing (research/provider.js).
     const research = await researchModeOn(env, { preview: isPrPreviewEnv(env) });
+    memberNoWall = research && isMember === true; // only an explicit true opens the no-wall path; an omitted isMember is a guest here (buildAnswerInputs keeps its own name rule for the prompt)
     // 0. The same member asking the same question again within 10 minutes gets the same answer text, with no new model call.
     // Not in research mode: a stored refusal or abstain row from before the flag was turned on must never come back as the answer (W5 decides what reuse means for research).
     const prior = research ? null : await findRecentSameAnswer(env, { intentId, question, share });
@@ -1290,6 +1319,7 @@ export async function answerWithAi({
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
     let fallbackNote = "";
+    let libOnly = false; // research guest with a spent budget: library facts only
     const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
     // ASK_RESEARCH seam (off by default; never in a PR preview). The stub handles nothing; any error, empty answer or "not handled" runs the path below unchanged.
     let researched = null;
@@ -1314,8 +1344,11 @@ export async function answerWithAi({
     } else {
     {
       // The global cap counts Workers AI neurons only, so it is skipped for other providers; the user and tenant caps still apply.
-      const verdict = await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai", failClosed: chosenProvider === "workers-ai" && Boolean(budget && budget.guest) });
-      if (verdict) {
+      // Research mode, member asker: no verdict. The counters keep counting (recordAttributed) but nothing refuses; the chain below degrades instead: Claude, Workers AI (which stops
+      // at the neuron cap by itself), library facts. Guests keep the check, on their own keys.
+      const verdict = memberNoWall ? null : await checkAskBudget(env, budget, budget ? await loadAskCaps(env) : null, new Date(), { skipGlobal: chosenProvider !== "workers-ai", failClosed: chosenProvider === "workers-ai" && Boolean(budget && budget.guest) });
+      libOnly = guestLibraryOnly(research, verdict); // research guest over the share, the global cap or unreadable counters: library facts, no model, no refusal text
+      if (verdict && !libOnly) {
         budgetCode = verdict.code;
         const limitedAt = nowIso();
         const retryAfter = verdict.retryAfter;
@@ -1332,13 +1365,24 @@ export async function answerWithAi({
     }
 
     try {
+      if (libOnly) {
+        await recordAttributed(env, budget, 0); // a library answer counts toward the per-user cap too, so it cannot be asked for without bound
+        throw new Error("research: guest budget spent, library facts only");
+      }
       // Research mode: Claude first (tokenised, guarded, token-capped; research/claude.js). Any skip or failure leaves rawAnswer unset and Workers AI answers below.
-      if (research) {
-        const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude });
+      if (research && memberNoWall) { // Claude is for members only: a guest never spends the Claude token cap
+        // The Claude hop ends no later than the hard end (research/claude.js hands its own 9 s deadline to the call; this clamps it), and is skipped with under 2.5 s left.
+        const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
+        const viaClaude = hardEnd - Date.now() < 2500
+          ? { reason: "claude:no-time" }
+          : await tryResearchClaude({ env, priv, deep, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
       if (!rawAnswer) {
+      const deadlineMs = askDeadlineMs(env);
+      const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, deadlineMs) : ASK_CHOSEN_TIMEOUT_MS;
+      if (waiMs === null) throw new Error("research: no time left for Workers AI"); // under 1 s before the margin: library facts, never an attempt past it
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
         env,
@@ -1348,8 +1392,8 @@ export async function answerWithAi({
         cacheKey,
         metadata,
         budgetKeys: budget,
-        timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
-        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
+        timeoutMs: waiMs,
+        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS, hardDeadlineAt: t0 + hardEndMs(deadlineMs) } : {}),
       }));
       if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? ""; // a name we never send, or a token that is not ours: the reply is dropped (the retry below, then library facts)
       }
@@ -1357,17 +1401,20 @@ export async function answerWithAi({
       // library facts with an honest line, or the honest line alone.
       if (research && !usableAnswer(rawAnswer)) {
         rawAnswer = undefined;
-        if (Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
-          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
+        const retryDeadline = askDeadlineMs(env);
+        const retryMs = researchTimeoutMs(Date.now() - t0, ASK_FALLBACK_TIMEOUT_MS, retryDeadline);
+        if (Date.now() - t0 <= retryDeadline / 2 && retryMs !== null) { // half the deadline (12 s of 24 s) // the second send only starts early enough that its own timeout still ends 4 s before the deadline
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: retryMs, hardDeadlineAt: t0 + hardEndMs(retryDeadline), maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
           if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? "";
         }
         if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
       }
       // Workers AI records its own use; any other provider counts as one ask (no neurons) so the per-user cap still fills up.
-      if (chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
+      // (Research mode: a Claude answer counts too, so the per-user counter fills the same way on either hop.)
+      if (research ? provider !== "workers-ai" : chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
       fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
-      if (activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) {
+      if (!research && activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) { // research: only Workers AI ever answers a non-member, never a configured outside provider
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: activeProvider,
@@ -1535,7 +1582,9 @@ export async function answerWithAi({
     }
   } catch (err) {
     const failedAt = nowIso();
-    const msg = String((err && err.message) || err);
+    let msg = String((err && err.message) || err);
+    // Research mode, member: the stored error text is shown on the board and in Discord, so it is an in-voice line, never a raw message that could read as a wall.
+    if (memberNoWall) { console.error("ask failed:", msg); msg = memberLine(null, intentId); }
     await env.DB.prepare("UPDATE ask_turns SET status = 'error', answer = ?, answered_at = ? WHERE id = ?")
       .bind(msg, failedAt, intentId)
       .run()
