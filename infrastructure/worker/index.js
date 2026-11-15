@@ -204,7 +204,8 @@ function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS
 }
 
 export async function purgeWorkerCache(origin, paths = []) {
-  clearIsolateCache(paths);
+  // /api/state and /api/bootstrap carry every document, so any purge clears their isolate copies too (not only the edge cache below)
+  clearIsolateCache([...new Set([...paths, "/api/state", "/api/bootstrap"])]);
   invalidatePagesCache();
   try {
     const cache = caches.default;
