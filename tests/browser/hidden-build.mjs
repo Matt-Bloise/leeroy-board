@@ -46,7 +46,7 @@ async function setup(browser, width, { member = null } = {}) {
   await ctx.route(DATA_RE, (route) => json(route, { party: PARTY, decide: DECIDE, tonight: TONIGHT, "guided-atlas": ATLAS, client: CLIENT }[DATA_RE.exec(route.request().url())[1]]));
   const page = await ctx.newPage(), errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource|net::ERR|favicon|ERR_FAILED/.test(m.text())) errors.push(`console: ${m.text()}`); });
+  page.on("console", (m) => { /* the Cloudflare Web Analytics beacon Pages injects on a preview host is blocked by CORS: third-party, not our code (live-smoke.mjs and nextstep.mjs ignore it the same way) */ if (m.type() === "error" && !/Failed to load resource|net::ERR|favicon|ERR_FAILED|cloudflareinsights\.com/.test(m.text() + " " + (m.location().url || ""))) errors.push(`console: ${m.text()}`); });
   await page.goto(pageUrl(BASE, { params: { preview: "1" } }), { waitUntil: "load" });
   await page.waitForSelector("#nx-fr2-look, .tn-name", { state: "attached", timeout: 20000 }).catch(() => {});
   await page.waitForFunction(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return vis(document.querySelector("#nx-fr2-look")) || Array.from(document.querySelectorAll(".tn-name")).some(vis); }, null, { timeout: 20000 }).catch(() => {});
