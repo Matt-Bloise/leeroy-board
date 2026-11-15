@@ -189,7 +189,7 @@ const discord = async (env, payload) => quiet(async () => (await (await handleDi
 // the search: canaries, the prefix, in the body (keys and values) and the headers
 function leaksIn(fx, where, ...texts) {
   const hay = texts.join("\n").toLowerCase();
-  const bad = fx.canaries.filter((c) => hay.includes(c.toLowerCase())).map((c) => `${where}: ${c}`);
+  const bad = fx.canaries.filter((c) => (/^\d+$/.test(c) ? new RegExp(`(?<![0-9])${c}(?![0-9])`).test(hay) : hay.includes(c.toLowerCase()))).map((c) => `${where}: ${c}`);
   if (/qz[a-z0-9]/.test(hay)) bad.push(`${where}: a string that starts with qz`);
   return bad;
 }

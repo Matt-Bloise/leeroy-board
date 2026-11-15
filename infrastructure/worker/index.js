@@ -1735,6 +1735,7 @@ const worker = {
         // 5c. `launch` (`{ kind: "launch", patch: { state: "queue"|"in"|"done" } }`)
         if (kind === "launch") {
           const lState = body.patch && body.patch.state;
+          let savedLaunch;
           if (["queue", "in", "done"].includes(lState)) {
             const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'launch'").first();
             let rows = [];
@@ -1749,7 +1750,7 @@ const worker = {
             if (idx >= 0) rows[idx] = item;
             else rows.push(item);
             try {
-              await recordSheetEventInD1(env, url.origin, {
+              savedLaunch = await recordSheetEventInD1(env, url.origin, {
                 slug: member.slug,
                 name: member.name,
                 field: "launch_state",
@@ -1771,7 +1772,7 @@ const worker = {
           const { seq } = await insertIntent(env, {
             slug: member.slug,
             kind: "launch",
-            body: { state: lState },
+            body: savedLaunch && savedLaunch.visible === false ? { field: "launch_state", visible: false } : { state: lState }, // hidden launch_state: no value in the mailbox
             ver: 1,
             at: now,
           });

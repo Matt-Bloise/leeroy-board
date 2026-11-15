@@ -268,6 +268,17 @@ test("Discord /sheet refuses a field name that is not a sheet field: ephemeral r
   assert.equal(countOf(env, "intents"), before.intents, "no intent");
   assert.deepEqual(await anonymousLeaks(env), []);
 });
+test("the board's launch intent for a hidden launch_state stores no state in the intents mailbox", async () => {
+  const env = await makeEnv();
+  await hide(env, "launch_state", HIDDEN_LAUNCH);
+  const res = await memberApi(env, "POST", "/intent", { kind: "launch", patch: { state: "done" } });
+  assert.equal(res.status, 200);
+  const rows = env.DB.raw.prepare("SELECT body FROM intents WHERE kind = 'launch'").all();
+  assert.equal(rows.length, 1);
+  assert.equal(JSON.parse(rows[0].body).state, undefined, "no state in the intent body");
+  assert.deepEqual(JSON.parse(rows[0].body), { field: "launch_state", visible: false });
+  assert.ok(!rows[0].body.includes("done"));
+});
 test("a launch write whose sheet log cannot be read stores NO launch row, from the board's intent and from Discord /launch", async () => {
   const env = await makeEnv();
   const launchRow = () => env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'launch'").get();

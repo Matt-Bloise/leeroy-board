@@ -12,7 +12,7 @@ import { BoardRoom } from "../../infrastructure/worker/room.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
-import { crawlPaths, runPreviewCrawl, canaryRegex, buildCanaries, formatTable, assertPreviewBase, compositeHits, MIN_CANARY_LENGTH } from "../helpers/preview-crawl.mjs";
+import { GAME_REFERENCE_SECTIONS, crawlPaths, runPreviewCrawl, canaryRegex, buildCanaries, formatTable, assertPreviewBase, compositeHits, MIN_CANARY_LENGTH } from "../helpers/preview-crawl.mjs";
 
 const realFetch = globalThis.fetch;
 globalThis.fetch = async () => new Response("blocked in tests", { status: 599 });
@@ -318,6 +318,10 @@ test("the same word is still a leak anywhere else in /bootstrap or a library doc
   const cases = [
     ["in /bootstrap outside `marks` (an unnamed list)", chain(withMarks, rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, at_the_table: [WORD] }))), "class_key"],
     ["in a /bootstrap section other than marks that carries the class label", rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, stats: { ...(j.stats || {}), note: TARGET_DOC.class } })), "class"],
+    ["an unnamed class word inside the /bootstrap `party` member section", rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, party: { ...(j.party || {}), note: WORD } })), "class_key"],
+    ["an unnamed class word inside the /bootstrap `decide` member section", rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, decide: { ...(j.decide || {}), note: [WORD] } })), "class_key"],
+    ["a library news item whose free text names the target together with their class", rewrite(/^\/api\/library\/news\.json(\?|$)/, () => ({ generated: AT, items: [{ title: "Invented note", snippet: `${TARGET.name} plays ${WORD}` }], updates: [] })), "class_key"],
+    ["the class word in a library response header", async (m, p, headers, res) => (m === "GET" && /^\/api\/library\/news\.json(\?|$)/.test(p) && !headers.Authorization ? { ...res, headers: [...res.headers, ["x-invented-note", WORD]] } : res), "class_key"],
     ["a private key inside `marks` (structural check still runs there)", rewrite(/^\/api\/bootstrap(\?|$)/, (j) => ({ ...j, marks: { ...gameMarks, who: { name: TARGET.name, class_key: WORD } } })), "class_key"],
   ];
   for (const [what, tamper, want] of cases) {
@@ -325,6 +329,10 @@ test("the same word is still a leak anywhere else in /bootstrap or a library doc
     assert.equal(error, null, error && error.message);
     assert.ok(report.hits.includes(want), `${what}: ${want} must be reported; hits: ${report.hits}`);
   }
+});
+
+test("the game-reference allow list is pinned: exactly /bootstrap marks, plus the library rule", () => {
+  assert.deepEqual(GAME_REFERENCE_SECTIONS, { "/bootstrap": ["marks"] });
 });
 
 test("a projection pass-through is red with the game-reference skip in force: the stored party document in /bootstrap", async () => {

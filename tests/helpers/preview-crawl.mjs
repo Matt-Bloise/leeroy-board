@@ -185,20 +185,23 @@ export function structuralHits(text, identity, canaries = []) {
 // The target's class word is a common game word, and two public documents are static game text that every visitor gets and no member's build shapes:
 //   - /library/<doc>: the library pages (data/library/*.json: news, classes, glossary ...). They name classes by design (a news item about "class fixes" lists them).
 //   - the `marks` section of /bootstrap: the atlas place-mark index (data/atlas/marks.json, one of PUBLIC_ATLAS_DOCS): keys such as "systems/class-trainers~trainers.<class>.capital".
-// For these two only, the class and class_key VALUE search is skipped (classHaystackOf returns null for a library document and the answer without `marks` for /bootstrap). Every other
-// canary, the structural check (a private key, or a canary value inside an object that names the target) and the composite check still run over the WHOLE answer, and the rest of
-// /bootstrap (partySheets, decide, party, tonight, launch, signups ...) is searched as before. A projection that passes member data through is still caught by those.
+// For these two only, the class and class_key VALUE search is ATTRIBUTED-ONLY: the class word counts there when it stands in an object that names the target, or in a string or line that
+// names the target (free text naming the target together with their class is a hit). The word alone is game text. The response HEADERS of a library document are still searched unconditionally.
+// Every other canary, the structural check (a private key, or a canary value inside an object that names the target) and the composite check still run over the WHOLE answer, and the rest of
+// /bootstrap (partySheets, decide, party, tonight, launch, signups ...) is searched unconditionally as before. A projection that passes member data through is still caught by those.
 export const GAME_REFERENCE_SECTIONS = { "/bootstrap": ["marks"] };
 const pathOnly = (p) => String(p || "").split("?")[0];
+// -> { hay, ref }: hay is searched unconditionally for the class and class_key; ref is the game-reference text (or null), searched attributed-only
 export function classHaystackOf(a, full) {
   const p = pathOnly(a.path);
-  if (/^\/library\/[^/]+$/.test(p)) return null;
+  if (/^\/library\/[^/]+$/.test(p)) return { hay: haystackOf({ text: "", headers: a.headers }), ref: a.text };
   const skip = GAME_REFERENCE_SECTIONS[p];
-  if (!skip) return full;
-  let j; try { j = JSON.parse(a.text); } catch { return full; }
-  if (!j || typeof j !== "object" || Array.isArray(j)) return full;
-  for (const k of skip) delete j[k];
-  return haystackOf({ text: JSON.stringify(j), headers: a.headers });
+  if (!skip) return { hay: full, ref: null };
+  let j; try { j = JSON.parse(a.text); } catch { return { hay: full, ref: null }; }
+  if (!j || typeof j !== "object" || Array.isArray(j)) return { hay: full, ref: null };
+  const ref = {};
+  for (const k of skip) { if (k in j) ref[k] = j[k]; delete j[k]; }
+  return { hay: haystackOf({ text: JSON.stringify(j), headers: a.headers }), ref: JSON.stringify(ref) };
 }
 // canaries: [{ field, value, generic?, unconditional? }]; answers: [{ text, headers }]; ctx: { identity: [name, slug] }
 // returns the sorted field names with at least one value found
@@ -206,14 +209,21 @@ export function findHits(canaries, answers, ctx = { identity: [] }) {
   const hit = new Set();
   for (const a of answers) {
     const hay = haystackOf(a);
-    const classHay = classHaystackOf(a, hay);
+    const { hay: classHay, ref } = classHaystackOf(a, hay);
+    let refAttr = null;
     let attr = null, vocab = null;
     const composite = compositeDocsOf(a.path, a.text).length > 0;
     for (const h of structuralHits(a.text, ctx.identity, canaries)) hit.add(h);
     for (const h of compositeHits(a.path, a.text)) hit.add(h);
     for (const c of canaries) {
+      if (hit.has(c.field)) continue;
+      if (c.unconditional && ref !== null && !canaryRegex(c.value).test(classHay)) {
+        if (refAttr === null) refAttr = attributable(ref, ctx.identity);
+        if (canaryRegex(c.value).test(refAttr)) hit.add(c.field);
+        continue;
+      }
       const h = c.unconditional ? classHay : hay;
-      if (hit.has(c.field) || h === null || !canaryRegex(c.value).test(h)) continue;
+      if (!canaryRegex(c.value).test(h)) continue;
       if (c.unconditional && vocab === null) vocab = !composite && listsClassVocab(h);
       if (c.generic || (c.unconditional && vocab)) {
         if (attr === null) attr = attributable(a.text, ctx.identity);

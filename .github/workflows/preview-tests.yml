@@ -512,7 +512,7 @@ jobs:
 
   report:
     name: report
-    needs: [scope, unit, stamps, preview-secrets, preview, api, crawl, browser, layout]
+    needs: [scope, unit, stamps, preview-secrets, preview, recover, api, crawl, browser, layout]
     # Not on cancel: a newer push cancels this run and its own run posts the result for the newer commit.
     # The comment is the merge gate, so skipped dependencies are judged by tools/ci-report.mjs, never by a blanket `!= 'failure'`.
     if: always() && !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && github.event.action != 'unlabeled' && (github.event.action != 'labeled' || github.event.label.name == 'ci-full')
