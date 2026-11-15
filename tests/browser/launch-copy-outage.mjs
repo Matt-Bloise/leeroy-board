@@ -95,9 +95,38 @@ try {
     await waitLine(page); await page.waitForTimeout(1200);
     const o = await hits(page);
     console.log(t, JSON.stringify(o));
-    ok(`${t} the line is shown`, o.line[2] > 0);
+    ok(`${t} the line is shown (a real height, not the 1px empty region)`, o.line[2] > 0 && o.line[1] - o.line[0] > 8, `line ${o.line}`);
     if (opts.viewport.width < 700) { ok(`${t} the phone bottom bar is there and every button is the element hit at its centre`, !!o.bar && o.n >= 3 && o.bad.length === 0, o.bad.join("; ") || `${o.n} buttons`); ok(`${t} the line does not overlap the bottom bar`, o.overlap === false, `line ${o.line} bar ${o.bar}`); }
     else ok(`${t} the line is full width, not a narrow box`, o.line[2] >= o.vw - 1, `width ${o.line[2]} of ${o.vw}`);
+    await ctx.close();
+  }
+  // Phone regressions: (1) the line drops to the screen foot once the scene closes and no bar shows; (2) the line never covers the end of a scene body.
+  const PHONES = { "390": { width: 390, height: 844 }, "360": { width: 360, height: 640 } };
+  for (const [tag, hash, sel] of [["390x844", "#tonight", null], ["390x844", "#librarian", "#ch-model"], ["360x640", "#librarian", "#ch-model"], ["360x640", "#signups", null], ["360x640", "#tonight", null]]) {
+    const { ctx, page } = await outagePage({ viewport: PHONES[tag.slice(0, 3)], hasTouch: true, isMobile: true }, { hash }), t = `[${tag} ${hash} outage end of scene]`;
+    await waitLine(page); await page.waitForTimeout(3500);
+    const o = await page.evaluate((sel) => {
+      const body = document.getElementById("sheet-body"), line = document.getElementById("offline-line"); if (!body || !body.getClientRects().length) return { found: false };
+      body.scrollTop = body.scrollHeight; if (sel) { const c = document.querySelector(sel); if (c) c.scrollIntoView({ block: "nearest" }); }
+      const lr = line.getBoundingClientRect(); let low = null, lowB = -1;
+      for (const e of body.querySelectorAll("*")) { if (e.children.length) continue; const r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden" && r.bottom > lowB && r.top < innerHeight) { lowB = r.bottom; low = e; } }
+      const out = { found: !!low, text: (body.textContent || "").trim().length, last: low && (low.id || low.className || low.tagName), lastBottom: Math.round(lowB), lineTop: Math.round(lr.top), clear: lowB <= lr.top + 0.5 };
+      if (sel) { const c = document.querySelector(sel), r = c && c.getBoundingClientRect(), h = r && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); out.hit = !!(c && h && (h === c || c.contains(h))); out.sel = !!c; } else out.hit = true;
+      out.pad = parseFloat(getComputedStyle(body).paddingBottom); out.lineH = Math.round(lr.height); out.padOk = out.pad >= lr.height + 32 - 0.5; /* the scene body keeps its own 32px plus the line height, not the bare 64px of the phone rule */
+      return out;
+    }, sel);
+    console.log(t, JSON.stringify(o));
+    ok(`${t} the last element of the scene body (${sel || "lowest visible node"}) is not under the line at end of scroll`, o.found && o.text > 20 && o.clear && o.hit && o.padOk, JSON.stringify(o));
+    if (hash === "#librarian") {
+      const sc = await page.evaluate(() => { const b = document.querySelector("#scene .sheet-close, #scene-close"); return !!b; });
+      for (let n = 0; n < 3 && await page.evaluate(() => document.documentElement.classList.contains("scene-open")); n++) { await page.keyboard.press("Escape"); await page.waitForTimeout(1500); }
+      await page.waitForFunction(() => { const b = document.getElementById("bottombar").getBoundingClientRect(); return !document.documentElement.classList.contains("scene-open") && b.width === 0; }, null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1500);
+      const c = await page.evaluate(() => { const b = document.getElementById("bottombar").getBoundingClientRect(), l = document.getElementById("offline-line"); return { open: document.documentElement.classList.contains("scene-open"), barW: b.width, barH: b.height, barTop: b.top, cls: document.documentElement.className, lift: getComputedStyle(l).bottom, lineBottom: Math.round(l.getBoundingClientRect().bottom), vh: innerHeight }; });
+      console.log(t, "closed", JSON.stringify(c), sc);
+      ok(`${t} after the scene closes the lift follows the bar: 0 and the line at the screen foot with no bar, the line above the bar when one shows`, !c.open && (c.barW === 0 ? parseFloat(c.lift) === 0 && Math.abs(c.lineBottom - c.vh) <= 1 : c.lineBottom <= c.barTop + 0.5), JSON.stringify(c));
+      if (c.barW === 0) ok(`${t} (no bar after close) lift is exactly 0`, parseFloat(c.lift) === 0);
+    }
     await ctx.close();
   }
   {

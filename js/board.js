@@ -365,6 +365,10 @@ function setOffline(on, msg) {
   document.documentElement.classList.toggle("offline", !!t); if (t) placeOffline(); else { document.documentElement.classList.remove("offline-lifted"); }
 }
 addEventListener("resize", () => placeOffline());
+/* The lift depends on whether the phone bottom bar is showing, which changes when a scene opens or closes: re-place on every such change (the "scene" event covers open; close and the scene-open class cover the rest). */
+KIT.on("closed", () => { requestAnimationFrame(placeOffline); setTimeout(placeOffline, 700); });
+if (typeof ResizeObserver === "function") { const bb = document.getElementById("bottombar"); if (bb) new ResizeObserver(() => placeOffline()).observe(bb); } /* any other show or hide of the bar (focus, viewport) */
+if (typeof MutationObserver === "function") { let was = document.documentElement.classList.contains("scene-open"); new MutationObserver(() => { const now = document.documentElement.classList.contains("scene-open"); if (now !== was) { was = now; placeOffline(); requestAnimationFrame(placeOffline); setTimeout(placeOffline, 700); } }).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] }); }
 /* "Launch: ..." reads as a promise; once the epoch has passed it is "Launched: ...". Called on render and on every tick so a tab left open across launch turns over. */
 function setLaunchLine() { const el = $("#clock-launch"); if (!el) return; const ll = launchLine(), t = ll ? `${launchPast() ? "Launched" : "Launch"}: ${ll}` : ""; if (el.textContent !== t) el.textContent = t; }
 function launchLine() {
