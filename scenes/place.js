@@ -351,6 +351,8 @@ function rows() {
 
 function tips() {
   let card = $("#place-tip"); if (!card) { card = h("div", { class: "place-card place-tip", id: "place-tip", role: "tooltip", hidden: "" }); document.body.append(card); }
+  /* a hover tip on something INSIDE a link or button (a crest in a name chip) is the control's own tip: the control already has its name, so the inner element must not become a second Tab stop or carry a duplicate label */
+  const inControl = (e) => !!(e.parentElement && e.parentElement.closest("a[href], button, summary, [role=button], [role=link], [role=tab], [role=menuitem]"));
   const strip = (root) => {
     const list = root.nodeType === 1 ? [root, ...root.querySelectorAll("[title]")] : [];
     for (const e of list) {
@@ -358,11 +360,11 @@ function tips() {
       const t = e.getAttribute("title"); e.removeAttribute("title");
       if (!t) continue;
       e.setAttribute("data-tip", t);
-      if (!(e.textContent || "").trim() && !e.getAttribute("aria-label") && !e.getAttribute("aria-labelledby")) e.setAttribute("aria-label", t);
+      if (!(e.textContent || "").trim() && !e.getAttribute("aria-label") && !e.getAttribute("aria-labelledby") && !inControl(e)) e.setAttribute("aria-label", t);
     }
     if (root.nodeType === 1) root.querySelectorAll("svg title").forEach((x) => { const p = x.parentElement; if (p && !p.getAttribute("data-tip")) p.setAttribute("data-tip", x.textContent); x.remove(); });
     if (root.nodeType === 1) for (const p of [root, ...root.querySelectorAll("[data-tip]")]) {
-      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip") || (p.closest && p.closest('[aria-hidden="true"]'))) continue;
+      if (!p.hasAttribute || !p.hasAttribute("data-tip") || p.matches("a[href], button, input, select, textarea, summary, [tabindex], [disabled], #place-tip") || inControl(p) || (p.closest && p.closest('[aria-hidden="true"]'))) continue;
       p.setAttribute("tabindex", "0");
       if (!p.getAttribute("aria-label") && !p.getAttribute("aria-labelledby") && !(p.textContent || "").trim()) p.setAttribute("aria-label", p.getAttribute("data-tip"));
       else if (!p.getAttribute("aria-description")) p.setAttribute("aria-description", p.getAttribute("data-tip"));
