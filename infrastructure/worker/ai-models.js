@@ -30,6 +30,7 @@ import { researchEnabled, researchAnswer } from "./research/index.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
+import { prepareResearchPrivacy, tryResearchClaude } from "./research/claude.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -441,18 +442,19 @@ export async function fetchWithGatewayFallback({
   );
 }
 
-async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens }) {
+// modelOverride / wantUsage / beforeSend are research-mode only (research/claude.js); the defaults leave the legacy call exactly as it was.
+export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCache = false, cacheKey = null, metadata = null, deadlineAt = null, maxTokens = ANSWER_GEN_PARAMS.max_tokens, modelOverride = null, wantUsage = false, beforeSend = null }) {
   const auth = await anthropicAuth(env);
   if (auth.mode === "none") {
     throw new Error("Anthropic credential is not configured on the Cloudflare Worker (BYOK, Secrets Store binding or ANTHROPIC_API_KEY)");
   }
   const secretKey = auth.headers["x-api-key"] || "";
-  const model = deep
+  const model = modelOverride || (deep
     ? env.CLAUDE_MODEL_DEEP || "claude-sonnet-4-5-20250929"
-    : env.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001";
+    : env.CLAUDE_MODEL_FAST || "claude-haiku-4-5-20251001");
 
   const defaultEndpoint = "https://api.anthropic.com/v1/messages";
-  const body = JSON.stringify({
+  const bodyObject = {
     model,
     max_tokens: maxTokens,
     system: [
@@ -463,7 +465,9 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
       },
     ],
     messages: [{ role: "user", content: userPrompt }],
-  });
+  };
+  const body = JSON.stringify(bodyObject);
+  if (beforeSend) beforeSend(bodyObject); // research mode: the outbound guard over the final body; a throw means nothing is sent
 
   try {
   const resp = await fetchWithGatewayFallback({
@@ -494,7 +498,7 @@ async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep, skipCa
     .map((b) => b.text)
     .join("\n")
     .trim();
-  return { answer: scrubSecrets(answer, secretKey), model, provider: "claude" }; // a model answer must not echo the key onward
+  return { answer: scrubSecrets(answer, secretKey), model, provider: "claude", ...(wantUsage ? { usage: data.usage || null } : {}) }; // a model answer must not echo the key onward
   } catch (err) {
     throw scrubError(err, secretKey); // a provider error, a JSON parse error or a network error must never carry the key
   }
@@ -1241,6 +1245,12 @@ export async function answerWithAi({
     const previousQuestion = isFollowUp(question) ? await findPreviousQuestion(env, { intentId, share: Boolean(share) }) : null;
     const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research });
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
+    // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
+    // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
+    const priv = research ? prepareResearchPrivacy({ systemPrompt, userPrompt, question, previousQuestion, by }) : null;
+    const sendSystem = priv && priv.ok ? priv.system : systemPrompt;
+    const sendUser = priv && priv.ok ? priv.user : userPrompt;
+    let researchNote = "";
 
     // 2. Route to selected AI provider (with local D1 RAG synthesis fallback for offline `wrangler dev --local`)
     const reqClean = String(requestedProvider || "").toLowerCase().trim();
@@ -1256,7 +1266,7 @@ export async function answerWithAi({
     const variant = "production"; // answerWithAi always runs the live prompt; the evaluation variants never reach the cache
     const tier = askerIsMember ? "member" : "guest";
     const metadata = { variant, tier, journey };
-    const cacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant, tier, systemPrompt, userPrompt, research });
+    const cacheKey = await buildAnswerCacheKey({ provider: chosenProvider, model: answerModelLabel(env, chosenProvider, deep), deep, variant, tier, systemPrompt: sendSystem, userPrompt: sendUser, research });
     // Daily budget: past the soft cap (or a per-user / per-tenant cap), answer in voice without calling AI. Every provider is checked,
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
@@ -1303,11 +1313,18 @@ export async function answerWithAi({
     }
 
     try {
+      // Research mode: Claude first (tokenised, guarded, token-capped; research/claude.js). Any skip or failure leaves rawAnswer unset and Workers AI answers below.
+      if (research) {
+        const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude });
+        if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
+        else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
+      }
+      if (!rawAnswer) {
       ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
         provider: chosenProvider,
         env,
-        systemPrompt,
-        userPrompt,
+        systemPrompt: sendSystem,
+        userPrompt: sendUser,
         deep,
         cacheKey,
         metadata,
@@ -1315,12 +1332,15 @@ export async function answerWithAi({
         timeoutMs: ASK_CHOSEN_TIMEOUT_MS,
         ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
       }));
+      if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? ""; // a name we never send, or a token that is not ours: the reply is dropped (the retry below, then library facts)
+      }
       // Research mode: an empty, refusal-only, banter-only or sources-only model answer is not shown. One retry of the same Workers AI call, then (via the catch below)
       // library facts with an honest line, or the honest line alone.
       if (research && !usableAnswer(rawAnswer)) {
         rawAnswer = undefined;
         if (Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
-          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt, userPrompt, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt: sendSystem, userPrompt: sendUser, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
+          if (priv && priv.ok) rawAnswer = priv.clean(rawAnswer) ?? "";
         }
         if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
       }
@@ -1419,7 +1439,7 @@ export async function answerWithAi({
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
       // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
       .run();
 
     const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();

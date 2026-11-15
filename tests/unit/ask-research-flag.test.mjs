@@ -67,7 +67,9 @@ const OLD = (q) => ask(q, { ASK_RESEARCH: "off" });
 // W4a: flag on changes the provider (Workers AI only) and the model label, and, for a question the library cannot answer, calls the model instead of returning the code-written abstain.
 // For a question the library answers, the answer, cites, status and the outbound prompt are still the old ones.
 // (W4a review: research finishing puts an inline "-# Sources:" on its own line and turns the cited id into a link, so the text is compared up to the Sources line.)
-const same = (r) => ({ answer: r.row.answer.split(/\s*-#\s*Sources?:/)[0].trim(), status: r.row.status, prompts: r.prompts });
+// W-wire: with the flag on the prompt is tokenised (names become per-request tokens with a random nonce, research/claude.js), so its hash can no longer equal the flag-off prompt; it is checked in
+// ask-research-claude.test.mjs. Here the answer and status still match the old ones, and the model is called exactly once (the prompt count).
+const same = (r) => ({ answer: r.row.answer.split(/\s*-#\s*Sources?:/)[0].trim(), status: r.row.status, prompts: r.prompts.length });
 
 test("flag on with the stub: a library-answered question gets the old answer and prompt, never an empty answer", async () => {
   for (const q of QUESTIONS.slice(0, 1)) {

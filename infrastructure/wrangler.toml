@@ -70,6 +70,13 @@ AI_GATEWAY_CACHE_TTL = "21600" # 6 hours: aligned with the 6-hour cron sweep ("0
 CLOUDFLARE_ACCOUNT_ID = ""
 CLAUDE_MODEL_FAST = "claude-haiku-4-5-20251001"
 CLAUDE_MODEL_DEEP = "claude-sonnet-4-5-20250929"
+# ASK_RESEARCH only (worker/research/claude.js): Claude is the first hop of the research chain, after tokenising and the outbound guards. The 5-5 ids are UNVERIFIED against the
+# provider's model list; a 404/400 "model not found" answer retries once with the fallback id. The legacy CLAUDE_MODEL_* vars above are untouched and still serve the flag-off path.
+RESEARCH_CLAUDE_MODEL_FAST = "claude-haiku-5-5"
+RESEARCH_CLAUDE_MODEL_DEEP = "claude-sonnet-5-5"
+RESEARCH_CLAUDE_FALLBACK_FAST = "claude-haiku-4-5-20251001"
+RESEARCH_CLAUDE_FALLBACK_DEEP = "claude-sonnet-4-5-20250929"
+RESEARCH_CLAUDE_MONTHLY_TOKENS = "2000000" # monthly Claude token bound (input + output, UTC month, D1 kv_state claude_tokens_YYYYMM); at or over it Workers AI answers and one alert row is written; a bad value means this default, never unlimited
 GEMINI_MODEL_FAST = "gemini-3.5-flash-lite"
 GEMINI_MODEL_DEEP = "gemini-3.8-pro"
 WORKERS_AI_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
