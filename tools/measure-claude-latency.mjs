@@ -73,7 +73,7 @@ export async function callOnce({ fetchImpl = fetch, target, bodyText, hardCapMs 
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), hardCapMs);
   try {
-    const resp = await fetchImpl(target.url, { method: "POST", headers: target.headers, body: bodyText, signal: ctl.signal });
+    const resp = await fetchImpl(target.url, { method: "POST", headers: target.headers, body: bodyText, redirect: "error", signal: ctl.signal });
     const ttfbMs = performance.now() - t0;
     const raw = await resp.text();
     const totalMs = performance.now() - t0;

@@ -35,8 +35,8 @@ const LOOKALIKE = {
 export function normalizeText(input) {
   let t;
   t = String(input).replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x660)).replace(/[\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) - 0x6f0));
-  t = t.normalize("NFKD").replace(/[̀-ͯ]/g, "").normalize("NFKC");
-  t = t.replace(/[​-‏‪-‮⁠-⁤﻿­]/g, "");
+  t = t.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").normalize("NFKC");
+  t = t.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u00ad]/g, "");
   t = t.replace(/[‘’‛′ʼ]/g, "'").replace(/[“”„″]/g, '"').replace(/[‐-―−]/g, "-");
   t = t.replace(/[\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/g, " ");
   t = t.replace(/[Ѐ-ӿͰ-Ͽ]/g, (c) => LOOKALIKE[c] || c);
@@ -461,6 +461,7 @@ function loadCases(dir) {
 export function runCli(argv, out = (s) => process.stdout.write(s), err = (s) => process.stderr.write(s)) {
   try {
     const args = argv.slice(2);
+    for (const a of args) if (a.startsWith("--") && !["--cases", "--expect-count", "--tripwire", "--gate"].includes(a)) throw new CliError(`unknown flag ${JSON.stringify(a).slice(0, 40)} (a mistyped --tripwire must not run without it)`);
     const strict = args.includes("--tripwire") || args.includes("--gate"); // --gate is an alias kept for scripts
     const opt = (name) => { const i = args.indexOf(name); if (i < 0) return undefined; const v = args[i + 1]; if (v === undefined || v.startsWith("--")) throw new CliError(`${name} needs a value`); return v; };
     const casesOpt = opt("--cases");
