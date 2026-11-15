@@ -141,21 +141,26 @@ test("room: new sockets are refused (503) once MAX_SOCKETS are open", async () =
 });
 
 // ---- 3. hidden-to-visible leftovers ----------------------------------------------------------------------------------------------
-test("sheet: a field that turns hidden stops being published in the party document", async () => {
+test("sheet: a field that turns hidden is stored whole and projected on every read, and showing it again brings it back", async () => {
+  const { projectForAnonymous } = await import("../../infrastructure/worker/public-party.js");
   const env = makeEnv();
   env.DB.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, 'x')").run(JSON.stringify({ members: [{ name: "Santa", race: "Orc", class: "Rogue", spec: "Sub", title: "kept" }] }));
-  const party = () => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json).members[0];
+  const stored = () => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json).members[0];
+  const sheets = () => JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json);
+  const read = () => projectForAnonymous(JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party'").get().json), sheets()).members[0];
   const ev = (field, value, visible) => recordSheetEventInD1(env, ORIGIN, { slug: "santa", name: "Santa", field, value, visible });
   await ev("race", "Troll", true);
-  assert.equal(party().race, "Troll");
+  assert.equal(read().race, "Troll");
   await ev("race", "Troll", false);
-  assert.equal(party().race, undefined, "the old public value is gone once hidden");
+  assert.equal(stored().race, "Troll", "the stored document is whole");
+  assert.equal(read().race, undefined, "the value is not read once hidden");
   await ev("class", null, false);
-  assert.equal(party().class, undefined, "hiding with no value also unpublishes");
-  assert.equal(party().spec, undefined, "a spec names its class, so it goes with a hidden class");
-  assert.equal(party().title, "kept", "fields that come from no sheet field are untouched");
+  assert.equal(stored().class, "Rogue", "hiding with no value changes nothing stored");
+  assert.equal(read().class, undefined, "hiding with no value also hides it from every read");
+  assert.equal(read().spec, undefined, "a spec names its class, so it goes with a hidden class");
+  assert.equal(read().title, "kept", "fields that come from no sheet field are untouched");
   await ev("race", "Dwarf", true);
-  assert.equal(party().race, "Dwarf", "showing it again publishes the new value");
+  assert.equal(read().race, "Dwarf", "showing it again shows the new value");
 });
 
 // ---- 4. answered-ask overwrite guard ---------------------------------------------------------------------------------------------

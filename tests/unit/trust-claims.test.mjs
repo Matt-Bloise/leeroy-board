@@ -7,8 +7,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import worker from "../../infrastructure/worker/index.js";
+import worker, { purgeWorkerCache } from "../../infrastructure/worker/index.js";
 import { cardMembers } from "../../infrastructure/worker/card-members.js";
+import { projectForAnonymous } from "../../infrastructure/worker/public-party.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 
@@ -71,16 +72,16 @@ const SHEET_FIELDS = JSON.parse(/const SHEET_FIELDS = (\[[^\]]*\])/.exec(read("i
 const SHEET_VALUE = { race: "zqrace-sheet", class: "zqclass-sheet", spec_path: "zqspec-sheet", spec_at_40: "zqspec40-sheet", professions: ["zqprof-sheet"], level: 47, launch_state: "zqlaunch-sheet", plan_zone: "zqzone-sheet", goals: "zqgoal-sheet" };
 // What a reader could learn from each field's echoes in the public party document. Written by hand here, not taken from the Worker.
 const CANARIES = {
-  race: ["Zqrace", "Zqzone", "zqrace-sheet"],
-  class: ["Zqclass", "zqclasskey", "#c0ffee", "zqspecname", "zqrole", "zqroledetail", "zqclass-sheet"],
-  spec_path: ["zqspecname", "zqrole", "zqroledetail", "zqspec-sheet"],
-  spec_at_40: ["zqroledetail", "zqrole", "zqspec40-sheet"],
+  race: ["Zqrace", "Zqzone", "zqrace-sheet", "zqzone-sheet"],
+  class: ["Zqclass", "zqclasskey", "#c0ffee", "zqspecname", "zqroledetail", "zqclass-sheet", "zqspec-sheet", "zqspec40-sheet"],
+  spec_path: ["zqspecname", "zqroledetail", "zqspec-sheet"],
+  spec_at_40: ["zqspecname", "zqroledetail", "zqspec40-sheet"],
   professions: ["Zqprof", "zqprof-sheet"],
   plan_zone: ["Zqzone", "zqzone-sheet"],
   level: [], launch_state: ["zqlaunch-sheet"], goals: ["zqgoal-sheet"],
 };
 // Canaries that must STILL be shown when only this field is hidden (so a read of an empty document cannot pass).
-const STILL_SHOWN = { race: ["Zqclass"], class: ["Zqrace", "Zqprof"], spec_path: ["Zqrace", "Zqclass"], spec_at_40: ["Zqrace", "zqspecname"], professions: ["Zqrace", "Zqclass"], plan_zone: ["Zqrace", "Zqprof"], level: ["Zqrace"], launch_state: ["Zqrace"], goals: ["Zqrace"] };
+const STILL_SHOWN = { race: ["Zqclass", "zqrole"], class: ["Zqrace", "Zqprof", "zqrole"], spec_path: ["Zqrace", "Zqclass", "zqrole"], spec_at_40: ["Zqrace", "Zqclass", "zqrole"], professions: ["Zqrace", "Zqclass"], plan_zone: ["Zqrace", "Zqprof"], level: ["Zqrace"], launch_state: ["Zqrace"], goals: ["Zqrace"] };
 const LEVEL_SHEET = /"level"\s*:\s*\{\s*"value"/;
 
 async function envWithFullMember() {
@@ -107,8 +108,12 @@ async function assertHidden(env, field) {
     surfaces.push([p, await r.text(), headers]);
   }
   for (const body of env.sent) surfaces.push(["socket broadcast", body, ""]);
-  surfaces.push(["stored party row (what Discord /tonight and the cards read)", storedParty(env), ""]);
-  surfaces.push(["card members", JSON.stringify(cardMembers(JSON.parse(storedParty(env)))), ""]);
+  // the stored row is whole by design (so a hidden field can be shown again); what Discord /tonight and the cards read is the stored row PROJECTED
+  const stored = JSON.parse(storedParty(env));
+  const sheetsRow = JSON.parse(env.DB.raw.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").get().json);
+  const projected = projectForAnonymous(stored, sheetsRow);
+  surfaces.push(["stored party row, projected (Discord /tonight)", JSON.stringify(projected), ""]);
+  surfaces.push(["card members", JSON.stringify(cardMembers(projected)), ""]);
   for (const [name, text, headers] of surfaces) {
     for (const c of CANARIES[field]) {
       assert.ok(!text.includes(c), `hide ${field}: ${name} still holds ${c}`);
@@ -129,7 +134,7 @@ for (const field of SHEET_FIELDS) {
   });
 }
 
-test("an admin write of the party document does not bring a hidden field back", async () => {
+test("an admin write of the party document is stored whole, and no read or broadcast brings a hidden field back", async () => {
   const env = await envWithFullMember();
   assert.equal((await postSheet(env, { field: "class", value: "zqclass-sheet", visible: false })).status, 200);
   assert.equal((await postSheet(env, { field: "plan_zone", value: "zqzone-sheet", visible: false })).status, 200);
@@ -138,20 +143,32 @@ test("an admin write of the party document does not bring a hidden field back", 
   Object.assign(fox, { class: "Zqclass", color: "#c0ffee", start_zone: "Zqzone" }); // a hand edit that carries the old build
   const put = await quiet(() => worker.fetch(new Request(`${ORIGIN}/api/data/party`, { method: "PUT", headers: { "CF-Connecting-IP": "203.0.113.50", Authorization: "Board admin-token-for-tests-0123456789abcdef", "Content-Type": "application/json" }, body: JSON.stringify(full) }), env, ctx));
   assert.equal(put.status, 200);
+  assert.ok(storedParty(env).includes("Zqclass"), "the stored row holds the value (it is stored whole)");
   const text = (await anon(env, "/data/party")).text;
   for (const c of ["Zqclass", "#c0ffee", "Zqzone"]) assert.ok(!text.includes(c), c);
   for (const body of env.sent) for (const c of ["Zqclass", "#c0ffee", "Zqzone"]) assert.ok(!body.includes(c), `socket ${c}`);
 });
 
-test("showing a hidden field again brings back what it hid (the card is not lost)", async () => {
-  const env = await envWithFullMember();
-  for (const [field, value] of [["race", "orc"], ["class", "mage"]]) assert.equal((await postSheet(env, { field, value, visible: false })).status, 200);
-  for (const [field, value] of [["race", "orc"], ["class", "mage"]]) assert.equal((await postSheet(env, { field, value, visible: true })).status, 200);
-  const m = JSON.parse((await anon(env, "/data/party")).text).members.find((x) => x.name === "Red Fox");
-  assert.equal(m.class_key, "mage");
-  assert.equal(m.color, "#3fc7eb");
-  assert.equal(m.board_line, "Orc Mage");
-});
+const VOLATILE = /"(at|updated|generated)":"[^"]*"/g;
+const normalise = (t) => t.replace(VOLATILE, '"$1":"T"');
+for (const field of SHEET_FIELDS) {
+  test(`round trip: hide then show ${field}; the stored row and every read are byte-identical to before the hide`, async () => {
+    const env = await envWithFullMember();
+    await purgeWorkerCache(ORIGIN, ["/api/bootstrap", "/api/state", "/api/data/party", "/api/data/party.json"]); // the Worker caches reads across tests
+    const reads = async () => Object.fromEntries(await Promise.all(ANON_PATHS.map(async (p) => [p, normalise((await anon(env, p)).text)])));
+    const before = { stored: storedParty(env), reads: await reads() };
+    const hide = await postSheet(env, { field, value: SHEET_VALUE[field], visible: false });
+    assert.equal(hide.status, 200, await hide.clone().text());
+    assert.equal(storedParty(env), before.stored, "hiding stores nothing different: the document is whole");
+    const hidden = await reads();
+    assert.notDeepEqual(hidden, before.reads, `hiding ${field} changes at least one read`);
+    const show = await postSheet(env, { field, value: SHEET_VALUE[field], visible: true });
+    assert.equal(show.status, 200, await show.clone().text());
+    assert.equal(storedParty(env), before.stored, "the stored row is byte-identical after show");
+    const after = await reads();
+    for (const p of ANON_PATHS) assert.equal(after[p], before.reads[p], `${p} is byte-identical after hide then show`);
+  });
+}
 
 test("/api/me and /api/sheet need the member's key", async () => {
   const env = await makeEnv();
@@ -183,6 +200,7 @@ test("trust card: 'sees' says anyone can read names, builds and sign-ups, hidden
   assert.match(sees, /anyone with the link/i);
   assert.match(sees, /names, builds and sign-ups/);
   assert.match(sees, /hide on your sheet are not shown/i);
+  assert.match(sees, /Your role \(tank, healer or damage\) is always shown; it is not one of the fields you can hide\./);
   assert.match(sees, /need your key/i);
   assert.match(sees, /public code and older commits/i);
   assert.match(sees, /hiding a field does not remove them there/i);
@@ -194,7 +212,7 @@ test("trust card: 'sees' says anyone can read names, builds and sign-ups, hidden
 test("trust card: 'reads' names only what the code reads (no avatar, no guild roles, no email)", () => {
   const reads = line("reads").what;
   assert.match(reads, /Discord name/);
-  assert.match(reads, /what you send to Leeroy \(commands, button presses, messages that mention it\)/);
+  assert.match(reads, /what you send to Leeroy \(commands, button presses, direct messages to it, and messages that mention it\)/);
   assert.match(reads, /Not your role list or your email\. It does check whether Discord says you can manage the server\./);
   assert.match(reads, /The board does not read your picture\. A party card posted in Discord in October 2026 used profile pictures\./);
   assert.doesNotMatch(reads, /Not your picture/);

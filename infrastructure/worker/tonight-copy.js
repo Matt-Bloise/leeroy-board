@@ -1,4 +1,5 @@
 import { SLASH_COPY } from "./slash-copy.js";
+import { raceClass } from "./member-model.js";
 // Copy for `/tonight`. Dates are the ones in data/tonight.json (events); a test keeps them in step.
 export const LAUNCH_EPOCH = 1793833200; // Wed, Nov 4, 2026, 6 PM ET
 export const NEXT_DATED = { label: "Raids open", when: "Wed, Dec 9", epoch: 1796857200 };
@@ -10,7 +11,7 @@ export function nextDated(now) { return DATED_AFTER_LAUNCH.find((e) => e.epoch >
 export function tonightLines({ now, byName, party, signups, boardUrl }) {
   const members = (party && party.members) || [], entries = (signups && signups.entries) || [];
   const inList = entries.filter((e) => e.rsvp === "in").map((e) => e.name);
-  const roster = `• **Party (${members.length}):** ${members.map((m) => `${m.name} (${m.race} ${m.class})`).join(" · ")}`;
+  const roster = `• **Party (${members.length}):** ${members.map((m) => `${m.name} (${raceClass(m)})`).join(" · ")}`;
   if (now >= LAUNCH_EPOCH) {
     return [
       `**Launch night was Wed Nov 4, 6:00 PM ET** (<t:${LAUNCH_EPOCH}:F>)`,

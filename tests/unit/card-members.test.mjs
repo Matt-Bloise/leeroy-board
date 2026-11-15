@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { renderSignupCard, renderBoardCard, loadCardState, requestCardEdit } from "../../infrastructure/worker/cards.js";
 import { cardMembers, parseClassEmoji, memberFor, claimEntries } from "../../infrastructure/worker/card-members.js";
 import { fakeD1, fakeFetch } from "./fake-d1.mjs";
-import { projectPublicParty } from "../../infrastructure/worker/index.js";
 
 const CH = "100000000000000001", MSG = "200000000000000002";
 const PARTY = {
@@ -174,7 +173,7 @@ test("claimEntries: explicit slug wins over name; each entry and member is paire
   assert.equal(sc.value, "Ada, Di, Hidden Hal");
 });
 
-test("privacy through the real public-party path: hidden class, race and profession never reach card data", async () => {
+test("privacy through the real public-party path: the STORED document is whole; hidden class, race and profession never reach card data", async () => {
   const stored = { members: [
     { name: "Ada", class_key: "mage", class: "Mage", race: "Undead", role: "damage", professions: [{ name: "Tailoring" }] },
     { name: "Bo", class_key: "priest", class: "Priest", race: "Troll", role: "healer", professions: [{ name: "Herbalism" }] },
@@ -184,16 +183,16 @@ test("privacy through the real public-party path: hidden class, race and profess
     { slug: "ada", name: "Ada", fields: { class: f("mage", false), race: f("undead", false), professions: f(["tailoring"], false) } },
     { slug: "bo", name: "Bo", fields: { class: f("priest"), race: f("troll") } },
   ];
-  const published = projectPublicParty(structuredClone(stored), sheets, "ada", "class"); // what GET /api/state publishes as partyDoc and stores as kv_state `party`
-  const DB = fakeD1({ signups: { entries: [{ name: "Ada", rsvp: "in" }] }, party: published });
+  const DB = fakeD1({ signups: { entries: [{ name: "Ada", rsvp: "in" }] }, party: stored, party_sheets: sheets }); // the row holds Ada's class, race and professions
   const st = await loadCardState({ DB, BOARD_PUBLIC_URL: "https://leeroy.test" });
   const ada = st.members.find((m) => m.slug === "ada");
   assert.deepEqual([ada.classKey, ada.classLabel, ada.race], ["", "", ""]);
   const text = JSON.stringify([renderBoardCard(st), renderSignupCard(st)]);
   assert.ok(!/Mage|Undead|Tailoring/.test(text), text);
   assert.ok(/Priest/.test(text) && /Troll/.test(text)); // visible fields still show
-  // loadCardState reads only the public party row, never the raw sheets or sheet events
-  const reads = DB.log.filter((q) => /sheet_events|party_sheets/.test(q));
-  assert.deepEqual(reads, []);
+  // loadCardState reads the party row and the sheets row (to project at render time), never the sheet events
+  assert.deepEqual(DB.log.filter((q) => /sheet_events/.test(q)), []);
   assert.ok(DB.log.some((q) => /key = 'party'/.test(q)));
+  assert.ok(DB.log.some((q) => /key = 'party_sheets'/.test(q)));
+  assert.ok(JSON.stringify(JSON.parse(DB.kv.get("party"))).includes("Mage"), "the stored row is untouched");
 });

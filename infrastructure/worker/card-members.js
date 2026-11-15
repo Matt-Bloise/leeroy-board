@@ -1,5 +1,5 @@
 // Member data for the Discord cards, shaped from the same public party document /api/state serves (kv_state `party`).
-// Hidden sheet fields are absent from that document (index.js publicParty path), so a hidden class or race never reaches a card.
+// The caller projects the stored document first (cards.js loadCardState -> public-party.js projectForAnonymous), so a hidden class or race never reaches a card.
 // Pure: no I/O. The one D1 read lives in cards.js (loadCardState), outside the interaction hot path (cards redraw after the reply).
 import { slugify, CLASSES } from "./member-model.js";
 

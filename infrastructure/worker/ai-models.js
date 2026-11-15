@@ -13,7 +13,7 @@
 // =============================================================================
 
 import { classPageFallback } from "./ask-fallback.js";
-import { projectWithStoredSheets } from "./public-party.js";
+import { partyForMember } from "./sheet-privacy.js";
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
@@ -890,7 +890,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
       getParsedLibraryData(env),
-      env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
+      env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('signups', 'timeline', 'tonight')").all(),
       buildPartySheetsFromD1(env),
       env.DB.prepare("SELECT stamp FROM lib_blobs WHERE name = 'index.json'").first(),
     ]);
@@ -943,7 +943,6 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
       }
     }
 
-    if (stateMap.party && typeof stateMap.party === "object") await projectWithStoredSheets(env, stateMap.party);
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
@@ -951,7 +950,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
-    const partyBuilds = renderPartyBuilds(sheets, askerSheet);
+    const partyBuilds = renderPartyBuilds(partyForMember(sheets, askerSheet ? askerSheet.slug : null), askerSheet); // other members: only what they show, and what is derived from a hidden field is hidden too (public-party.js)
     // The stored build is shown only when the question makes it relevant (ask-build.js buildRelevant); otherwise the model is told once to leave it out.
     const buildHelps = Boolean(askerSheet) && hasBuildText(fullBuild)
       && buildRelevant(question, askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }), { skip, previousQuestion: prevQ }).relevant;

@@ -13,6 +13,7 @@
 
 import { noiseDay, recordShadow } from "./noise.js";
 import { cardMembers, parseClassEmoji, iconFor, claimEntries } from "./card-members.js";
+import { loadPublicInputs, projectForAnonymous } from "./public-party.js";
 
 export const CARDS_KEY = "cards";
 export const CARD_EDIT_KEY = "cards_edit";
@@ -386,7 +387,11 @@ export async function loadCardState(env) {
   state.siteBase = base || undefined;
   try {
     const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
-    if (row && row.json) state.members = cardMembers(JSON.parse(row.json));
+    if (row && row.json) {
+      // The stored row holds the whole document; a card is public, so it is projected here, at render time (public-party.js).
+      const stored = JSON.parse(row.json);
+      state.members = cardMembers(projectForAnonymous(stored, (await loadPublicInputs(env, { partyDoc: stored })).sheets));
+    }
   } catch { /* legacy shape */ }
   state.classEmoji = parseClassEmoji(env.CARD_CLASS_EMOJI);
   return state;

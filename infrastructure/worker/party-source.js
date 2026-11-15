@@ -78,7 +78,8 @@ export async function loadRoster(env) {
 export const normName = (n) => slugify(String(n || "").replace(/[(][^)]*[)]/g, " "));
 
 export function reconcileSheetsWithDoc(sheets, partyDoc, fields = ["race", "class", "spec_path", "professions", "plan_zone"]) {
-  const list = Array.isArray(sheets) ? sheets : [];
+  const isRow = (s) => s && typeof s === "object" && !Array.isArray(s);
+  const list = Array.isArray(sheets) ? (sheets.every(isRow) ? sheets : sheets.filter(isRow)) : []; // a null or junk row in the stored list is skipped, never thrown on; a clean list comes back as the same array
   const docMembers = partyDoc && Array.isArray(partyDoc.members) ? partyDoc.members : [];
   const docSlugs = new Set(), docNames = new Set();
   for (const m of docMembers) {
@@ -108,7 +109,7 @@ export function reconcileSheetsWithDoc(sheets, partyDoc, fields = ["race", "clas
 }
 
 // The sheet that belongs to one party-document member: exact lowercase name, else the sheet of a true rename (same name minus a
-// parenthetical, and that sheet's own name is not in the document). Used by projectPublicParty so a hide reaches a renamed person.
+// parenthetical, and that sheet's own name is not in the document). The read-time projection (public-party.js, through sheet-match.js) uses the same rule so a hide reaches a renamed person.
 // The stored sheet a sheet WRITE belongs to: exact slug, else exact lowercase name, else the one sheet that has left the document and has the
 // same name minus a parenthetical (a true rename, the same identity rule reconcileSheetsWithDoc uses). That last rule needs a party document and EXACTLY ONE such sheet; two candidates are ambiguous and mean a new person. Undefined means a new person.
 export function sheetForWrite(sheets, partyDoc, slug, name) {

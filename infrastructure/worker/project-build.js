@@ -12,7 +12,6 @@ import { SQL as BUILD_SQL, buildTitle, cleanHandle, isSnowflake } from "./build-
 import { SQL as SETUP_SQL } from "./setup-command.js";
 import { upsertMember } from "./members.js";
 import { PARTY_MEMBERS } from "./party-source.js";
-import { projectPublicParty } from "./public-party.js";
 import { slugify } from "./member-model.js";
 import { validateConfigValue, loadConfigKey, invalidateConfigCache } from "./config.js";
 
@@ -69,11 +68,10 @@ export async function projectBuild(env, { discordUserId, displayName, guildId, h
 
     const lower = plan.partyEntry.name.toLowerCase();
     const has = partyDoc.members.some((m) => String(m.name).toLowerCase() === lower);
-    const sheetsRead = await readDoc(env, "party_sheets").catch(() => ({ doc: null }));
-    const nextParty = projectPublicParty({
+    const nextParty = {
       ...partyDoc,
       members: has ? partyDoc.members.map((m) => (String(m.name).toLowerCase() === lower ? plan.partyEntry : m)) : [...partyDoc.members, plan.partyEntry],
-    }, Array.isArray(sheetsRead.doc) ? sheetsRead.doc : [], null, null); // a rebuilt card must not bring back what its owner hid
+    }; // stored whole; a rebuilt card is projected on every read like any other (public-party.js)
 
     const at = now.toISOString();
     const created = !tenant;

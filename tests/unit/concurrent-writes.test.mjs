@@ -121,10 +121,18 @@ async function envWithParty() {
   env.raw.raw.prepare("INSERT INTO kv_state (key, json, updated_at) VALUES ('party', ?, '2026-10-29T00:00:00Z')").run(JSON.stringify(PARTY_DOC()));
   return env;
 }
-const bloiseParty = (env) => kv(env, "party").members.find((m) => m.name === "Bloise");
+const bloiseParty = (env) => kv(env, "party").members.find((m) => m.name === "Bloise"); // the STORED document: whole, never projected
+// What an anonymous reader gets (every read projects, public-party.js).
+async function anonBloise(env) {
+  const silence = console.error; console.error = () => {};
+  try {
+    const res = await worker.fetch(new Request("https://api.test/api/data/party", { headers: { "CF-Connecting-IP": "203.0.113.77" } }), env, ctx);
+    return JSON.parse(await res.text()).members.find((m) => m.name === "Bloise");
+  } finally { console.error = silence; }
+}
 
 for (const order of ["visible-then-hide", "hide-then-visible", "parallel"]) {
-  test(`hidden field never stays in the public party doc (${order}, repeated)`, async () => {
+  test(`a hidden field is never READ from the party doc, in any write order (${order}, repeated)`, async () => {
     for (let round = 0; round < 8; round++) {
       const env = await envWithParty();
       const show = () => post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: true });
@@ -135,27 +143,29 @@ for (const order of ["visible-then-hide", "hide-then-visible", "parallel"]) {
       else res = await Promise.all([show(), hide()]);
       assert.ok(res.every((r) => r.status === 200), "both writes succeed");
       const sheet = kv(env, "party_sheets").find((p) => p.slug === "bloise").fields.race;
-      const pub = bloiseParty(env).race;
-      // the invariant: whenever the final sheet says hidden, the public doc has no race; when visible, it shows exactly the sheet value
+      assert.equal(bloiseParty(env).race, "Orc", "the stored document is whole, whatever the order");
+      const pub = (await anonBloise(env)).race;
+      // the invariant: whenever the final sheet says hidden, the read has no race; when visible, it shows the value
       if (sheet.visible === false) assert.equal(pub, undefined, `hidden race leaked: ${pub}`);
-      else assert.equal(pub, String(sheet.value));
+      else assert.equal(pub, "Orc");
       if (order === "visible-then-hide") assert.equal(pub, undefined);
       if (order === "hide-then-visible") assert.equal(pub, "Orc");
     }
   });
 }
 
-test("hide removes a value published earlier, and a later write self-heals a stale public value of another member", async () => {
+test("hide removes a value from every read, and an out-of-band re-publish of the hidden value in the stored row is still not served", async () => {
   const env = await envWithParty();
   await post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: true });
-  assert.equal(bloiseParty(env).race, "Orc");
+  assert.equal((await anonBloise(env)).race, "Orc");
   await post(env, "bloise", "/sheet", { field: "race", value: "Orc", visible: false });
-  assert.equal(bloiseParty(env).race, undefined);
-  // someone re-publishes the hidden value out of band; the next write re-derives it away
+  assert.equal((await anonBloise(env)).race, undefined);
+  // someone writes the hidden value into the stored row out of band: reads still project it away
   const doc = kv(env, "party"); doc.members[0].race = "Orc";
   env.raw.raw.prepare("UPDATE kv_state SET json = ? WHERE key = 'party'").run(JSON.stringify(doc));
   await post(env, "bloise", "/sheet", { field: "level", value: 5 });
-  assert.equal(bloiseParty(env).race, undefined);
+  assert.equal(bloiseParty(env).race, "Orc");
+  assert.equal((await anonBloise(env)).race, undefined);
 });
 
 test("a failing public update fails the request and writes nothing (no hidden value left public, no ghost event)", async () => {

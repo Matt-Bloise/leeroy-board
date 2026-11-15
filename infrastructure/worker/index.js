@@ -56,10 +56,10 @@ import { eventsEnabled, runSync } from "./scheduled-events.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { projectPublicParty } from "./public-party.js";
+import { projectDataDoc, projectBroadcast, loadPublicInputs, writeSheetValueToDoc, MEMBER_DOCS as MEMBER_DOC_KEYS } from "./public-party.js";
 import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
-export { BoardRoom, projectPublicParty };
+export { BoardRoom };
 
 const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"];
 
@@ -225,14 +225,19 @@ export async function purgeWorkerCache(origin, paths = []) {
 // GET /data/* caches under the path as requested, so the two spellings are two cache entries (review catalogue F-12).
 export const PARTY_CACHE_PATHS = Object.freeze(["/api/bootstrap", "/api/state", "/api/data/party", "/api/data/party.json"]);
 
+// Every message to the room passes here, so this is where a message that carries member data is projected for anonymous readers (public-party.js):
+// the sheet list, and the party, decide and tonight documents. A message that carries none costs nothing extra.
 export async function broadcastToRoom(env, payload) {
   try {
     const id = env.BOARD_ROOM.idFromName("global");
     const stub = env.BOARD_ROOM.get(id);
+    let out = payload;
+    if (payload && payload.type === "data" && MEMBER_DOC_KEYS.includes(payload.key) && payload.data !== undefined) out = projectBroadcast(payload, await loadPublicInputs(env));
+    else if (payload && payload.type === "state" && "party" in payload) out = projectBroadcast(payload);
     const res = await stub.fetch("https://room.internal/broadcast", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(webBoardLinksDeep(payload)),
+      body: JSON.stringify(webBoardLinksDeep(out)),
     });
     if (res && res.ok === false) console.error("BoardRoom refused a broadcast:", res.status); // e.g. 413 payload_too_large
   } catch (err) {
@@ -351,7 +356,8 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       }
       memberSheet.fields = memberSheet.fields || {};
       const prior = memberSheet.fields[field];
-      const project = () => ({ sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined });
+      // The document is stored whole: a written value is copied into it whether or not it is hidden; every read projects (public-party.js).
+      const project = () => ({ sheets: currentParty, party: partyDoc ? writeSheetValueToDoc(partyDoc, currentParty, memberSheet, field, value, prior) : undefined });
       if (levelRules) { // recomputed on every retry, against the state this attempt writes
         const next = nextLevelField(prior, { value, valueGiven, visible, visibleGiven, source: source || "board", at: now }, { keepHidden });
         stale = next.stale; changed = next.changed; stored = next.field;
@@ -373,7 +379,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
 
   if (changed) {
     await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
-    await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
+    await broadcastToRoom(env, { type: "state", party: currentParty }); // projected for anonymous sockets inside broadcastToRoom
   }
   return { party: currentParty, at: now, visible: stored ? stored.visible !== false : event.visible, stale, changed, stored };
 }
@@ -393,7 +399,6 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // Every route this Worker answers, as "METHOD pattern" (":name" is one path segment, a trailing "*" is a prefix, ANY is every
 // method). A description only: dispatch below does not read it. tests/unit/authz.test.mjs checks it against the handlers in
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
-const area0 = (p) => (p.startsWith("/atlas/") ? "atlas" : "data");
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
@@ -1022,21 +1027,20 @@ const worker = {
               } catch {}
             }
             // The party row is already in hand: pass it on so the sheets are reconciled without a second read.
-            const { party } = await buildPartySheetsFromD1(env, { partyDoc: stored.party || null });
+            const inputs = await loadPublicInputs(env, { partyDoc: stored.party || null });
             const now = new Date().toISOString();
-            if (map.party) projectPublicParty(map.party, party, null, null); // belt and braces: a hide holds even if the stored document was written some other way
             resp = jsonResp(
               webBoardLinksDeep({
                 type: "state",
                 ver: 1,
                 at: now,
-                party: publicParty(party), // the cached body is public: hidden sheet fields never enter it
+                party: inputs.sheets ? publicParty(inputs.sheets) : [], // the cached body is public: hidden sheet fields never enter it
                 signups: map.signups || null,
-                partyDoc: map.party || null,
-                tonight: map.tonight || null,
+                partyDoc: map.party ? projectDataDoc("party", map.party, inputs) : null,
+                tonight: map.tonight ? projectDataDoc("tonight", map.tonight, inputs) : null,
                 timeline: map.timeline || null,
                 stats: map.stats || null,
-                decide: map.decide || null,
+                decide: map.decide ? projectDataDoc("decide", map.decide, inputs) : null,
                 launch: Array.isArray(map.launch)
                   ? map.launch
                   : map.launch && Array.isArray(map.launch.rows)
@@ -1370,7 +1374,7 @@ const worker = {
               try { partyDocRead = JSON.parse(row.json); } catch {}
             }
           }
-          const { party: partySheets } = await buildPartySheetsFromD1(env, { partyDoc: partyDocRead });
+          const inputs = await loadPublicInputs(env, { partyDoc: partyDocRead });
           const isPrPreview = isPrPreviewEnv(env);
           const providers = {};
           for (const k of Object.keys(AI_PROVIDER_LABELS)) {
@@ -1380,17 +1384,16 @@ const worker = {
             aiProvider: resolveAiProvider(env),
             isPrPreview,
             providers,
-            partySheets: publicParty(partySheets), // the cached body is public: hidden sheet fields never enter it
+            partySheets: inputs.sheets ? publicParty(inputs.sheets) : [], // the cached body is public: hidden sheet fields never enter it
           };
           for (const row of results || []) {
             try {
               const doc = JSON.parse(row.json);
-              bundle[row.key] = isPublicDataDoc(row.key) ? publicDataDoc(row.key, doc, row.updated_at) : doc;
+              bundle[row.key] = isPublicDataDoc(row.key) ? projectDataDoc(row.key, publicDataDoc(row.key, doc, row.updated_at), inputs) : doc;
             } catch {
               bundle[row.key] = null;
             }
           }
-          if (bundle.party) projectPublicParty(bundle.party, partySheets, null, null);
           resp = jsonResp(webBoardLinksDeep(bundle), 200, {
             ...cors,
             "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
@@ -1449,15 +1452,12 @@ const worker = {
             let docJson = row.json;
             if (typeof docJson === "string" && path.startsWith("/data/")) {
               try {
-                const pubDoc = publicDataDoc(raw, JSON.parse(docJson), row.updated_at);
-                if (raw === "party" && pubDoc && Array.isArray(pubDoc.members)) {
-                  const { party: sheets } = await buildPartySheetsFromD1(env, { persist: false, partyDoc: pubDoc });
-                  projectPublicParty(pubDoc, sheets, null, null);
-                }
+                let pubDoc = publicDataDoc(raw, JSON.parse(docJson), row.updated_at);
+                if (MEMBER_DOC_KEYS.includes(raw)) pubDoc = projectDataDoc(raw, pubDoc, await loadPublicInputs(env, raw === "party" ? { partyDoc: pubDoc } : {}));
                 docJson = JSON.stringify(pubDoc);
               } catch {
-                // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent)
-                if (raw === "stats") return jsonResp({ error: "Document stats is unreadable" }, 500, cors);
+                // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent); nor is a member document that cannot be projected
+                if (raw === "stats" || MEMBER_DOC_KEYS.includes(raw)) return jsonResp({ error: `Document ${raw} is unreadable` }, 500, cors);
               }
             }
             if (typeof docJson === "string" && docJson.includes("{board:")) {
@@ -1487,11 +1487,7 @@ const worker = {
           if (isDeniedKvKey(raw) || !(path.startsWith("/atlas/") ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw))) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
           const body = await req.json();
           const now = new Date().toISOString();
-          // The party document is public: an admin write must not bring back what a member hid on their sheet.
-          if (raw === "party" && area0(path) === "data" && body && Array.isArray(body.members)) {
-            const { party: sheets } = await buildPartySheetsFromD1(env, { persist: false, partyDoc: body });
-            projectPublicParty(body, sheets, null, null);
-          }
+          // The document is stored whole, as sent. A hide that commits between a sheet read and this write cannot leak: every read, and the broadcast below, projects.
           await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
             .bind(raw, JSON.stringify(body), now)
             .run();
