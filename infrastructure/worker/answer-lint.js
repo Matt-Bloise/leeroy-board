@@ -77,7 +77,7 @@ const REFUSAL_OPENER_RE = /^(?:no idea|i (?:do not|don'?t) know|sorry|unfortunat
 const GENERIC_REFUSAL_RE = /^(?:i|we)\b[^.!?]*?\b(?:cannot|can'?t|can not|am unable|are unable|unable to|have no|has no|do not have|don'?t have|could not|couldn'?t)\b|\b(?:the |my |our )?(?:library|available (?:material|information|sources?|data)|sources?|notes|knowledge|data|material)\b[^.!?]*?\b(?:does not|doesn'?t|do not|don'?t|contains? no|has no|have no|cannot|can'?t|is not available|not available)\b|^no (?:relevant )?(?:information|details|data)\b|\bno (?:relevant )?(?:information|details|data) (?:is |are )?(?:available|provided|found)\b/i;
 const INTERJECTION_RE = /^(?:oh|ah+|ha+h*|heh|hah|well|aww?|ooh|hmm+|ahem|ugh|lol)\b/i;
 const REPORTING_RE = /\b(?:says?|said|reads?|shows?|states?|tooltip|label|quote[sd]?|reads as|written)\b/i;
-const OUTAGE_RE = /out of reach right now|^try me again in a bit\b/i;
+const OUTAGE_RE = /out of reach right now|^try me again in a bit\b|^once my research hand is free\b/i;
 const SETTLE_RE = /would settle it/i;
 // Sentence split that also breaks after a closing * _ " ) ] ("**Frost.** Check Wowhead." is two sentences). A line over 5000 characters is not split (bounds the regex).
 export const splitSentenceText = (line) => { const s = String(line || ""); return s.length > 5000 ? [s] : s.split(/(?<=[.!?][*_"')\]]*)\s+/); };
