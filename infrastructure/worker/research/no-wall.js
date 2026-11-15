@@ -42,5 +42,13 @@ export function memberLine(persona, seed = "") {
   return pool[hash(seed) % pool.length];
 }
 
-// Text a member is about to be shown: unchanged unless it reads as a wall, in which case the in-voice line replaces it. Used on error text only, never on a model answer.
-export const memberSafeText = (text, persona, seed = "") => (WALL_RE.test(String(text || "")) || !String(text || "").trim() ? memberLine(persona, seed) : String(text));
+// The "thinking" line a member sees first. Filtered exactly like the error lines: a persona ack line that reads as a wall is skipped; the default is Leeroy's plain one.
+export const DEFAULT_ACK = "Leeroy is thinking...";
+export function memberAck(persona, seed = "") {
+  const own = persona && Array.isArray(persona.ackLines) ? persona.ackLines.filter((l) => typeof l === "string" && l && !WALL_RE.test(l)) : [];
+  const pool = own.length ? own : [DEFAULT_ACK];
+  return pool[hash(seed) % pool.length];
+}
+
+// Timeout for one Workers AI attempt in research mode: never past (deadline - 4 s), so the worst case after Claude's 9 s still leaves 4 s to store and deliver. Floor 1 s.
+export const researchTimeoutMs = (elapsedMs, maxMs, deadlineMs = 24000, marginMs = 4000) => Math.max(1000, Math.min(maxMs, deadlineMs - marginMs - elapsedMs));

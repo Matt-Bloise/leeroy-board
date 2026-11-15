@@ -238,3 +238,38 @@ export async function reconcileNeurons(env, kind, reserved, actual, { counted = 
     // fail open: the reservation stays, which only makes the soft cap slightly more careful
   }
 }
+
+// ---- Reserve, then reconcile, on a per-key row (the guests' share, research mode) ----
+// Same atomic pattern as reserveNeurons, on ai_budget:<day>:<key>: one conditional upsert that adds the estimate only while the row stays within cap.
+// Returns { ok: true, rowKey, reserved } | { ok: false, over: true } | { ok: false, error: true }.
+export async function reserveRow(env, key, neurons, cap, now = new Date()) {
+  const est = Math.max(0, Math.round((Number(neurons) || 0) * 100) / 100);
+  try {
+    if (est > cap) return { ok: false, over: true };
+    const res = await env.DB.prepare(
+      "INSERT INTO kv_state (key, json, updated_at) VALUES (?1, ?2, ?3) " +
+        "ON CONFLICT(key) DO UPDATE SET json = json_set(kv_state.json, '$.neurons', ROUND(COALESCE(json_extract(kv_state.json, '$.neurons'), 0) + ?4, 2)), updated_at = excluded.updated_at " +
+        "WHERE COALESCE(json_extract(kv_state.json, '$.neurons'), 0) + ?4 <= ?5"
+    )
+      .bind(rowKey(now, key), JSON.stringify({ neurons: est, asks: 0 }), now.toISOString(), est, cap)
+      .run();
+    const changes = res && res.meta ? res.meta.changes : undefined;
+    return changes === 0 ? { ok: false, over: true } : { ok: true, rowKey: rowKey(now, key), reserved: est };
+  } catch {
+    return { ok: false, error: true };
+  }
+}
+
+// Replaces a row reservation with the real cost; counted: false gives it back without counting an ask. Fails open (the reservation then stays, which is the careful side).
+export async function reconcileRow(env, reservation, actual, { counted = true } = {}, now = new Date()) {
+  const delta = Math.round(((Number(actual) || 0) - (Number(reservation.reserved) || 0)) * 100) / 100;
+  try {
+    await env.DB.prepare(
+      "UPDATE kv_state SET json = json_set(json, '$.neurons', MAX(0, ROUND(COALESCE(json_extract(json, '$.neurons'), 0) + ?1, 2)), '$.asks', COALESCE(json_extract(json, '$.asks'), 0) + ?2), updated_at = ?3 WHERE key = ?4"
+    )
+      .bind(delta, counted ? 1 : 0, now.toISOString(), reservation.rowKey)
+      .run();
+  } catch {
+    // fail open
+  }
+}

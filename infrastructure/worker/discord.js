@@ -25,7 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS, isPrPreviewEnv } from "./ai-models.js";
-import { askWallPlan, memberLine } from "./research/no-wall.js";
+import { askWallPlan, memberLine, memberAck } from "./research/no-wall.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
@@ -941,7 +941,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
       if (persona) {
         return new Response(
-          JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
+          JSON.stringify({ type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
       }
@@ -1786,7 +1786,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       );
 
       return new Response(
-        JSON.stringify(persona ? { type: 4, data: { content: pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
+        JSON.stringify(persona ? { type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }

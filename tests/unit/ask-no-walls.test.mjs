@@ -12,7 +12,7 @@ import { invalidatePersonaCache, pickLine } from "../../infrastructure/worker/pe
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { askBudgetKeys, hashId, budgetMessage, checkAskBudget, DEFAULT_USER_DAILY_ASKS, utcDayKey } from "../../infrastructure/worker/budget.js";
 import { RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "../../infrastructure/worker/research/provider.js";
-import { WALL_RE, MEMBER_FALLBACK_LINES, memberLine, memberSafeText, guestBudgetKeys } from "../../infrastructure/worker/research/no-wall.js";
+import { WALL_RE, MEMBER_FALLBACK_LINES, memberLine, memberAck, researchTimeoutMs, guestBudgetKeys } from "../../infrastructure/worker/research/no-wall.js";
 import { sha256Hex } from "../../infrastructure/worker/crypto.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { resetResearchClaudeForTests, privacyBudget } from "../../infrastructure/worker/research/claude.js";
@@ -257,10 +257,12 @@ test("5. the strings the ask paths can emit for a member (flag on) match no wall
     strings.push(memberLine({ errorLines: ["Leeroy tripped. Try again in a moment.", "Past the limit, back at midnight.", "Too many questions, quota used."] }, seed));
     strings.push(memberLine({ errorLines: ["Leeroy tripped over a footnote."] }, seed));
   }
-  strings.push(memberSafeText("Workers AI daily budget reached, back at midnight", null, "s"));
-  strings.push(memberSafeText("Leeroy is thinking... Try again in a moment.", { errorLines: [] }, "s"));
+  for (const seed of ["a", "b", "c"]) {
+    strings.push(memberAck(null, seed));
+    strings.push(memberAck({ ackLines: ["Back at it in a tick, no limit on patience.", "Thinking, too many questions today"] }, seed));
+    strings.push(memberAck({ ackLines: ["Leeroy is warming up..."] }, seed));
+  }
   for (const s of strings) assert.doesNotMatch(s, WALL_RE, s);
-  assert.equal(memberSafeText("Onyxia opens on 2026-12-09.", null, "s"), "Onyxia opens on 2026-12-09.", "a real answer passes through untouched");
   // The persona default and the old budget lines are the walls themselves: they are not on the member path any more.
   assert.match(pickLine(null, "errorLines", "x"), WALL_RE, "(the flag-off default still says it: it is only used for non-members and with the flag off)");
   assert.match(budgetMessage("budget_user"), WALL_RE);
@@ -359,4 +361,111 @@ test("7. flag off: a failed ask still ends with the persona line plus Try again 
   const env = await makeEnv({ research: false, persona, extra: { ASK_DEADLINE_MS: "30" } });
   await quiet(() => answerAndDeliver({ env, interaction: { application_id: "a", token: "t" }, intentId: "none", persona, answer: () => Promise.reject(new Error("x")), memberOpen: false }));
   assert.match(patches[0].content, /Leeroy tripped over a footnote\. Try again in a moment\./);
+});
+
+
+// ---- W5 follow-ups: 1. guests never spend the Claude cap ---------------------------------------------------------------------------------------
+const FAKE_KEY = "sk-ant-FAKE-TEST-0000";
+const monthKey = () => `claude_tokens_${new Date().toISOString().slice(0, 7).replace("-", "")}`;
+
+test("8. 60 guests (web, distinct IPs, plus a non-roster Discord user) never reach Claude and never touch its token counter; then a member gets Claude and only the member moves the counter", async () => {
+  const env = await makeEnv({ extra: { ANTHROPIC_API_KEY: FAKE_KEY } });
+  claudeText = "**Onyxia's Lair opens on 2026-12-09.**\n-# Sources: raids/onyxias-lair";
+  for (let i = 0; i < 60; i++) {
+    const g = await webAsk(env, { member: false, ip: `198.51.${i}.9`, body: { q: `guest question ${i}` } });
+    assert.equal(g.row.status, "answered");
+    assert.ok(!/^claude:/.test(g.row.model), g.row.model);
+  }
+  const d = await discordRun(env, { ...base("100000000000000777"), data: { name: "ask", type: 1, options: [{ name: "question", type: 3, value: Q }] } });
+  assert.ok(!/^claude:/.test(d.row.model), d.row.model);
+  assert.equal(anth.length, 0, "no request to Anthropic for any guest");
+  assert.equal(getRow(env, monthKey()), null, "the Claude counter row was never created by guests");
+  const m = await discordAsk(env);
+  assert.match(m.row.model, /^claude:/, m.row.model);
+  assert.equal(anth.length, 1);
+  assert.notEqual(getRow(env, monthKey()), null, "the member moved the counter");
+});
+
+// ---- 2. the guest neuron share is reserved atomically -------------------------------------------------------------------------------------------
+test("9. 60 concurrent guests on distinct IPs: the guests' neurons never pass their share while the asks are in flight, and a member asked during the flood is answered", async () => {
+  const env = await makeEnv();
+  const share = (8000 * guestBudgetKeys({ userPart: "x" }).tenantSharePct) / 100;
+  let inflight = 0, peak = 0, maxSeen = 0;
+  env.AI.run = async () => {
+    inflight++; peak = Math.max(peak, inflight);
+    await new Promise((r) => setTimeout(r, 25)); // hold the reservation while the others arrive
+    const row = getRow(env, `ai_budget:${day()}:tenant:guests`);
+    maxSeen = Math.max(maxSeen, row ? row.neurons : 0);
+    inflight--;
+    return { response: WORKERS_TEXT, usage: { prompt_tokens: 5, completion_tokens: 5 } };
+  };
+  const guests = Array.from({ length: 60 }, (_, i) => webAsk(env, { member: false, ip: `203.0.${i}.7`, body: { q: `flood ${i}` } }));
+  const member = webAsk(env, { body: { q: "member during the flood" } });
+  const results = await Promise.all([member, ...guests]);
+  assert.equal(results[0].row.status, "answered");
+  assert.match(results[0].row.answer, /Onyxia/);
+  assert.ok(!/budget_/.test(results[0].row.model), results[0].row.model);
+  assert.ok(maxSeen <= share, `guest neurons in flight ${maxSeen} passed the share ${share}`);
+  assert.ok(peak < 60, `peak concurrent Workers AI calls ${peak}: the reservation must have refused some`);
+  for (const g of results.slice(1)) assert.equal(g.row.status, "answered", "a refused guest reservation falls back to library facts, still an answer");
+  const after = getRow(env, `ai_budget:${day()}:tenant:guests`);
+  assert.ok(after.neurons <= share, "settled total within the share");
+});
+
+// ---- 3. ack lines are filtered like error lines ------------------------------------------------------------------------------------------------------
+test("10. persona ackLines that read as a wall never reach a member (Discord /ask and Ask Leeroy); a clean line is still used", async () => {
+  for (const run of [discordAsk, discordMenu]) {
+    let env = await makeEnv({ persona: { system: "S", ackLines: ["Back at it in a tick, no limit on patience."], errorLines: [] } });
+    let r = await run(env);
+    assert.doesNotMatch(r.ack.data.content, WALL_RE, r.ack.data.content);
+    assert.ok(r.ack.data.content.length > 3);
+    env = await makeEnv({ persona: { system: "S", ackLines: ["Back at it in a tick, no limit on patience.", "Leeroy is warming up..."], errorLines: [] } });
+    invalidatePersonaCache();
+    r = await run(env);
+    assert.equal(r.ack.data.content, "Leeroy is warming up...");
+  }
+});
+
+// ---- 4. validation strings are not walls, said explicitly --------------------------------------------------------------------------------------------
+// The client's own input checks ("That is 12 over the 280 character limit.") say "limit" about what the member typed, not about how many questions they may ask.
+// They are the only strings in the ask UI allowed to match WALL_RE, and only in this exact shape. WALL_RE itself stays strict.
+const VALIDATION_OK = /^That is (?:\$\{n - MAX\} )?over the \$\{MAX\} character limit\.$|^Model: Cloudflare Workers AI \(2\/hr limit\)$/; // the second alternative is the model label shown only when isGuest (scenes/chamber.js); a member sees the Llama label
+test("11. every wall-pattern string in the ask UI files is the typed-length validation message", async () => {
+  const { readFileSync } = await import("node:fs");
+  for (const f of ["js/ask.js", "scenes/chamber.js"]) {
+    const src = readFileSync(new URL(`../../${f}`, import.meta.url), "utf8");
+    const found = [...src.matchAll(/`([^`\n]*)`|"([^"\n]*)"/g)].map((m) => m[1] ?? m[2]).filter((t) => /^[A-Z][a-z]/.test(t) && WALL_RE.test(t)); // user-facing text only: a bare token like the "limited" state name is not a string anyone reads
+    for (const t of found) assert.match(t, VALIDATION_OK, `${f}: ${t}`);
+  }
+});
+
+// ---- 5. deadline margin ---------------------------------------------------------------------------------------------------------------------------------
+test("12. researchTimeoutMs keeps every Workers AI attempt inside deadline minus 4 s", () => {
+  assert.equal(researchTimeoutMs(0, 12000), 12000);
+  assert.equal(researchTimeoutMs(9000, 12000), 11000);
+  assert.equal(researchTimeoutMs(12000, 9000), 8000);
+  assert.equal(researchTimeoutMs(19900, 9000), 1000, "never below 1 s");
+});
+
+test("12. worst case with a faked clock: Claude takes 9 s, then Workers AI; every Workers AI attempt ends by 20 s, and a retry only starts at or before 12 s", async () => {
+  const realNow = Date.now, realTimeout = AbortSignal.timeout;
+  for (const [firstCost, expectRetry] of [[3000, true], [4000, false]]) {
+    const env = await makeEnv({ extra: { ANTHROPIC_API_KEY: FAKE_KEY } });
+    let clock = 1_800_000_000_000;
+    const start = clock;
+    Date.now = () => clock;
+    let lastMs = null; const ai = [];
+    AbortSignal.timeout = (ms) => { lastMs = ms; return new AbortController().signal; };
+    const prevFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init) => { if (String(url).includes("anthropic")) { clock += 9000; return new Response("down", { status: 500 }); } return prevFetch(url, init); };
+    env.AI.run = async () => { ai.push({ at: clock - start, ms: lastMs }); clock += firstCost; return { response: "I can't help with that.", usage: { prompt_tokens: 5, completion_tokens: 5 } }; };
+    try {
+      const r = await webAsk(env);
+      assert.equal(r.row.status, "answered", r.row.model);
+    } finally { Date.now = realNow; AbortSignal.timeout = realTimeout; globalThis.fetch = prevFetch; }
+    assert.equal(ai.length, expectRetry ? 2 : 1, JSON.stringify(ai));
+    for (const a of ai) assert.ok(a.at + a.ms <= 20000, `attempt at ${a.at} with ${a.ms} ms ends after 20 s`);
+    assert.equal(ai[0].ms, 11000);
+    if (expectRetry) assert.ok(ai[1].at <= 12000);
+  }
 });
