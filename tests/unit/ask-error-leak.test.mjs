@@ -41,7 +41,7 @@ test("a failed guest ask never returns the raw provider error", async () => {
 });
 
 test("publicAskError keeps only a bare provider status, never a body, a binding or a secret name", () => {
-  assert.equal(publicAskError(new Error("gemini API HTTP 429: {\"error\":\"quota key=abc\"}")), "gemini API HTTP 429");
+  assert.equal(publicAskError(new Error("Gemini API HTTP 429: {\"error\":\"quota key=abc\"}")), "Gemini API HTTP 429");
   assert.equal(publicAskError(new Error("GEMINI_API_KEY secret is not configured on the Cloudflare Worker")), ASK_FAILED_LINE);
   assert.equal(publicAskError(new Error("Cloudflare Workers AI binding (env.AI) is not configured in wrangler.toml")), ASK_FAILED_LINE);
   assert.equal(publicAskError(undefined), ASK_FAILED_LINE);

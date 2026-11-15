@@ -147,7 +147,10 @@ test("raw provider text never reaches the stored model (which the data export an
 });
 
 test("publicAskError keeps a status only for our own provider names; any other prefix is the fixed line", () => {
-  assert.equal(publicAskError(new Error("claude API HTTP 503")), "claude API HTTP 503");
+  for (const p of ["Anthropic", "Gemini", "groq", "cerebras", "github", "openrouter"]) assert.equal(publicAskError(new Error(`${p} API HTTP 503`)), `${p} API HTTP 503`);
+  assert.equal(publicAskError(new Error("Gemini API HTTP 429: {\"error\":\"quota\"}")), "Gemini API HTTP 429");
+  assert.equal(publicAskError(new Error("__proto__ API HTTP 500")), ASK_FAILED_LINE);
+  assert.equal(publicAskError(new Error("Claude API HTTP 500")), ASK_FAILED_LINE);
   assert.equal(publicAskError(new Error("evil.host-leak_token123 API HTTP 999")), ASK_FAILED_LINE);
   assert.equal(publicAskError(new Error("constructor API HTTP 500")), ASK_FAILED_LINE);
 });
