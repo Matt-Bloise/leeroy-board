@@ -39,15 +39,17 @@ import { upsertMember } from "./members.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
-import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc } from "./public-docs.js";
+import { defaultDocRow } from "./default-docs.js";
+import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc, dataCachePath } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
 import { timingSafeEqualStr, sha256Hex } from "./crypto.js";
 import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
-import { publicParty, partyForMember } from "./sheet-privacy.js";
+import { publicParty, partyForMember, sheetIntentBody, redactIntentBody } from "./sheet-privacy.js";
 import { sheetValueProblem, ADMIN_SHEET_FIELDS, nextLevelField } from "./sheet-values.js";
+import { VOCAB_LIST } from "./sheet-vocab.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
@@ -57,7 +59,8 @@ import { collectInterest } from "./interest.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
+import { projectDataDoc, projectBroadcast, loadPublicInputs, writeSheetValueToDoc, SHEET_FIELD_NAMES, MEMBER_DOCS as MEMBER_DOC_KEYS } from "./public-party.js";
+import { PARTY_MEMBERS, loadPartyMembers, normName, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
 export { BoardRoom };
 
@@ -183,7 +186,14 @@ export function restoreCacheControl(resp) {
   return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
 }
 
+// Member documents, /state and /bootstrap (PARTY_CACHE_PATHS) are never held in the isolate memory or in caches.default, and are sent no-store. A purge clears only the isolate and the data
+// centre that handled the write, so a copy held anywhere else kept serving a value the member had just hidden for up to the TTL (seen on the real preview, 2026-11-15: plain GET /data/party.json
+// returned the hidden values 3 s after the hide). Every read of these paths is a fresh projection of the stored rows (about 3 to 5 D1 reads), so a hide is in force on the next request, everywhere.
+const memberPath = (path) => PARTY_CACHE_PATHS.includes(path);
+export const MEMBER_NO_STORE = "no-store";
+
 async function getCachedResponse(origin, path) {
+  if (memberPath(path)) return null;
   const local = getIsolateCache(path);
   if (local) return local;
   try {
@@ -195,6 +205,7 @@ async function getCachedResponse(origin, path) {
 }
 
 function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS) {
+  if (memberPath(path)) return;
   putIsolateCache(path, resp, ttlMs);
   try {
     const cacheKey = new Request(`${origin}${path}`, { method: "GET" });
@@ -223,16 +234,23 @@ export async function purgeWorkerCache(origin, paths = []) {
 // Every cached URL the party document is served from, purged after any party write (sheet edit, Discord /build). js/board.js apiFetch
 // requests /api/data/party (no ".json"); the public API also answers /api/data/party.json; /api/state and /api/bootstrap embed the party.
 // GET /data/* caches under the path as requested, so the two spellings are two cache entries (review catalogue F-12).
-export const PARTY_CACHE_PATHS = Object.freeze(["/api/bootstrap", "/api/state", "/api/data/party", "/api/data/party.json"]);
+// A hide changes every document that carries member data (public-party.js MEMBER_DOCS), so every one of them is purged, both spellings. The cache itself is keyed by the
+// decoded document name (docCachePath in the /data route), so /data/part%79 and //party are the same entry as /data/party.
+export const PARTY_CACHE_PATHS = Object.freeze(["/api/bootstrap", "/api/state", ...MEMBER_DOC_KEYS.flatMap((n) => [dataCachePath(n), `${dataCachePath(n)}.json`])]);
 
+// Every message to the room passes here, so this is where a message that carries member data is projected for anonymous readers (public-party.js):
+// the sheet list, and the party, decide and tonight documents. A message that carries none costs nothing extra.
 export async function broadcastToRoom(env, payload) {
   try {
     const id = env.BOARD_ROOM.idFromName("global");
     const stub = env.BOARD_ROOM.get(id);
+    let out = payload;
+    if (payload && payload.type === "data" && MEMBER_DOC_KEYS.includes(payload.key) && payload.data !== undefined) out = projectBroadcast(payload, await loadPublicInputs(env));
+    else if (payload && payload.type === "state" && "party" in payload) out = projectBroadcast(payload);
     const res = await stub.fetch("https://room.internal/broadcast", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(webBoardLinksDeep(payload)),
+      body: JSON.stringify(webBoardLinksDeep(out)),
     });
     if (res && res.ok === false) console.error("BoardRoom refused a broadcast:", res.status); // e.g. 413 payload_too_large
   } catch (err) {
@@ -240,30 +258,103 @@ export async function broadcastToRoom(env, payload) {
   }
 }
 
-export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } = {}) {
+// The sheet list as GET /state and the public reads see it. Two things here exist for privacy (public-party.js reads this list to decide what is hidden):
+//  - a party-document member with NO stored sheet row (a junk row, a rename by an admin PUT, a person added after the row was written) gets a reconciled
+//    sheet that says "everything visible". That is only true if they never hid anything, so the sheet_events log is replayed for them, and a stored sheet that
+//    belongs to nobody in the document (the old name of a rename) hides its hidden fields on every such row (the link is unknowable: fail closed).
+//  - strict: a failed read throws instead of falling back to a visible-everything list, so the caller (loadPublicInputs) can fail closed.
+// A write could not read the log of who hid what (a failed sheet_events read) and must not guess: nothing was stored, the caller answers 503. A write that guessed "all hidden" would persist a
+// member with no stored sheet as all-hidden, which blanks every composite for everyone (a read may fall back to that; a write may not).
+export class SheetLogUnreadableError extends Error {
+  constructor(cause) { super("The sheet log could not be read"); this.name = "SheetLogUnreadableError"; this.cause = cause; }
+}
+
+// The log of hide/show events, read once per isolate and database while nothing changed. Every uncached read that has a party-document member without a stored sheet needs it, and an
+// unmemoised read scans the whole table each time. The key is MAX(id) plus COUNT(*) (one cheap statement), read BEFORE the log so a later event can only make the key older than the content, never newer:
+// the next read then rescans. An erasure that deletes a row other than the newest leaves MAX(id) alone but lowers COUNT(*), so it changes the key too, in every isolate (a memo that kept a deleted
+// row would say "shown" for a name another slug had hidden, while a fresh read says "hidden"). `last` memoises the result per row (slug + name): the last visibility of each field.
+const EVENT_LOGS = new WeakMap();
+async function sheetEventLog(env) {
+  const m = await env.DB.prepare("SELECT MAX(id) AS m, COUNT(*) AS c FROM sheet_events").first();
+  const max = `${m && m.m !== undefined && m.m !== null ? m.m : ""}:${m && m.c !== undefined && m.c !== null ? m.c : ""}`;
+  const hit = EVENT_LOGS.get(env.DB);
+  if (hit && hit.max === max) return hit;
+  const events = (await env.DB.prepare("SELECT slug, name, field, visible FROM sheet_events ORDER BY id ASC").all()).results || [];
+  const log = { max, events, last: new Map() };
+  EVENT_LOGS.set(env.DB, log);
+  return log;
+}
+// For tests: forget what this isolate memoised.
+export function forgetSheetEventLogs(db) { if (db) EVENT_LOGS.delete(db); }
+
+async function hideFromEvents(env, rows, known, partyDoc, strict, memo = null) {
+  const added = rows.filter((r) => !known.has(r));
+  if (!added.length) return rows;
+  const ALLNAMES = SHEET_FIELD_NAMES;
+  const hideAll = (r) => ({ ...r, fields: { ...Object.fromEntries(ALLNAMES.map((k) => [k, { value: null, visible: false, source: "board" }])), ...Object.fromEntries(Object.entries(r.fields || {}).map(([k, v]) => [k, { ...v, visible: false }])) } });
+  let log;
+  try {
+    // memo: a sheet write retries its compute on a lost race, and the log is read once per write (the subrequest budget). It is scoped to ONE write (a hide recorded by an earlier write must be seen
+    // by the next one: tests/unit/sheet-events-memo.test.mjs). A hide recorded in between lands in the stored sheets the retry reads, not here.
+    log = (memo && memo.log) || (await sheetEventLog(env));
+    if (memo) memo.log = log;
+  } catch (err) {
+    if (strict) throw err;
+    return rows.map((r) => (known.has(r) ? r : hideAll(r)));
+  }
+  const docMembers = partyDoc && Array.isArray(partyDoc.members) ? partyDoc.members : [];
+  const docNames = new Set(docMembers.map((m) => String(m && m.name || "").toLowerCase()));
+  const docNorm = new Set(docMembers.map((m) => normName(m && m.name)));
+  const orphanHidden = new Set(); // fields hidden on a stored sheet that no document member claims
+  for (const r of rows) {
+    if (!known.has(r) || !r.fields || typeof r.fields !== "object") continue;
+    if (docNames.has(String(r.name || "").toLowerCase()) || docNorm.has(normName(r.name))) continue;
+    for (const [k, v] of Object.entries(r.fields)) if (v && v.visible === false) orphanHidden.add(k);
+  }
+  return rows.map((r) => {
+    if (known.has(r)) return r;
+    const memoKey = `${r.slug} ${normName(r.name)}`;
+    let seen = log.last.get(memoKey);
+    if (!seen) {
+      seen = new Map();
+      for (const e of log.events) if (e.slug === r.slug || (e.name && normName(e.name) === normName(r.name))) seen.set(e.field, Boolean(e.visible));
+      if (log.last.size >= 500) log.last.clear();
+      log.last.set(memoKey, seen);
+    }
+    const last = new Map(seen);
+    for (const k of orphanHidden) last.set(k, false);
+    let out = r;
+    for (const [field, visible] of last) {
+      if (visible) continue;
+      if (out === r) out = { ...r, fields: { ...(r.fields || {}) } };
+      out.fields[field] = { ...(out.fields[field] || { value: null, source: "board" }), visible: false };
+    }
+    return out;
+  });
+}
+
+export async function buildPartySheetsFromD1(env, { persist = true, partyDoc, strict = false } = {}) {
   const now = new Date().toISOString();
 
   // 1. Fast path: Read pre-materialized party sheets from kv_state (single point lookup)
-  try {
-    const cachedRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").first();
-    if (cachedRow && cachedRow.json) {
-      const parsed = JSON.parse(cachedRow.json);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        // A person added to the party document after this row was stored has no sheet here: add theirs (reads one more row; nothing is written).
-        // A caller that already read the party row passes it as partyDoc (null means "read, none"); otherwise it is read here.
-        let reconciled = parsed;
-        try {
-          let doc = partyDoc;
-          if (doc === undefined) {
-            const partyRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
-            doc = partyRow && partyRow.json ? JSON.parse(partyRow.json) : null;
-          }
-          if (doc) reconciled = reconcileSheetsWithDoc(parsed, doc);
-        } catch {}
-        return { party: reconciled, seq: Date.now() };
+  let cachedRow = null;
+  try { cachedRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party_sheets'").first(); } catch (err) { if (strict) throw err; }
+  let parsed = null;
+  if (cachedRow && cachedRow.json) { try { parsed = JSON.parse(cachedRow.json); } catch { parsed = null; } }
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    // A person added to the party document after this row was stored has no sheet here: add theirs (reads one more row; nothing is written).
+    // A caller that already read the party row passes it as partyDoc (null means "read, none"); otherwise it is read here.
+    let reconciled = parsed, doc = partyDoc;
+    try {
+      if (doc === undefined) {
+        const partyRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first();
+        doc = partyRow && partyRow.json ? JSON.parse(partyRow.json) : null;
       }
-    }
-  } catch {}
+      if (doc) reconciled = reconcileSheetsWithDoc(parsed, doc);
+    } catch (err) { if (strict) throw err; }
+    if (reconciled !== parsed) reconciled = await hideFromEvents(env, reconciled, new Set(parsed), doc, strict);
+    return { party: reconciled, seq: Date.now() };
+  }
 
   // 2. Slow path / bootstrap fallback: Reconstruct from base + sheet_events
   const bySlug = new Map();
@@ -302,7 +393,12 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } =
       if (row.fields[r.field] === null) delete row.fields[r.field];
       row.updated = r.created_at || now;
     }
-  } catch {}
+  } catch (err) {
+    // The log of who hid what could not be read: the seeds below say "everything visible", which would be a lie. Strict callers get the error; the others get every field hidden, and nothing is persisted.
+    if (strict) throw err;
+    persist = false;
+    for (const r of bySlug.values()) r.fields = { ...Object.fromEntries(SHEET_FIELD_NAMES.map((k) => [k, { value: null, visible: false, source: "board" }])), ...Object.fromEntries(Object.entries(r.fields).map(([k, v]) => [k, { ...v, visible: false }])) };
+  }
 
   const party = [...bySlug.values()];
   if (!persist) return { party, seq: Date.now() };
@@ -315,27 +411,6 @@ export async function buildPartySheetsFromD1(env, { persist = true, partyDoc } =
   } catch {}
 
   return { party, seq: Date.now() };
-}
-
-// The three public keys of the party document that come from a member's sheet.
-const PUBLIC_KEY = { race: "race", class: "class", spec_path: "spec" };
-
-// The public party document, re-derived from the final sheet state (never from the request that just arrived), so concurrent visible and hide
-// writes in any order end in the same place: a hidden field is absent from the document. Hidden fields are removed for every member (self-healing);
-// a visible value is copied only for the member and field written, as before. Mutates and returns partyDoc.
-export function projectPublicParty(partyDoc, sheets, slug, field) {
-  if (!partyDoc || !Array.isArray(partyDoc.members)) return partyDoc;
-  for (const m of partyDoc.members) {
-    const sheet = sheetForDocMember(sheets, partyDoc.members, m);
-    if (!sheet) continue;
-    for (const [sheetField, key] of Object.entries(PUBLIC_KEY)) {
-      const f = sheet.fields && sheet.fields[sheetField];
-      if (!f) continue;
-      if (f.visible === false) { delete m[key]; if (key === "class") delete m.class_key; }
-      else if (sheet.slug === slug && sheetField === field && f.value !== undefined && f.value !== null) m[key] = String(f.value);
-    }
-  }
-  return partyDoc;
 }
 
 // Visibility: `visible` counts only when visibleGiven is true and it is a boolean (the owner's explicit choice). Otherwise the field keeps the
@@ -354,6 +429,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
   // event.visible and event.valJson are set in compute() from the fresh read on every attempt, before the event row is bound.
   const event = { slug, name: name || slug, field, valJson, visible: true, source: source || "board", at: now };
   let stale = false, changed = true, stored = null;
+  const eventsMemo = {};
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
   // recomputes everything from the fresh documents; running out of retries throws KvConflictError and nothing was written.
@@ -362,7 +438,13 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
     compute: async (cur, partyDoc) => {
       // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
-      const currentParty = reconcileSheetsWithDoc(Array.isArray(cur) && cur.length > 0 ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party, partyDoc);
+      // The rows reconcile adds (a person added or renamed through the document) are all-visible by construction. That is only true if they never hid anything, so they get the same
+      // events / orphaned-sheet rule the read path applies (hideFromEvents) BEFORE anything is persisted: otherwise this write would store an all-visible sheet for a renamed member who had hidden fields.
+      // strict: a read of the sheet log that fails stops the write (SheetLogUnreadableError, 503, nothing stored). The lenient fallback "all hidden" is for reads; a write would persist it.
+      const unreadable = async (read) => { try { return await read(); } catch (err) { throw new SheetLogUnreadableError(err); } };
+      const base = Array.isArray(cur) && cur.length > 0 ? cur : (await unreadable(() => buildPartySheetsFromD1(env, { persist: false, partyDoc, strict: true }))).party;
+      const reconciled = reconcileSheetsWithDoc(base, partyDoc);
+      const currentParty = reconciled === base ? reconciled : await unreadable(() => hideFromEvents(env, reconciled, new Set(base), partyDoc, true, eventsMemo));
       // Same identity as the reconcile above: a write that arrives under a renamed document member's new slug lands on the person's existing
       // sheet (which takes the new slug and name) instead of starting a second one-field sheet. Events keyed by the old slug stay as history.
       let memberSheet = sheetForWrite(currentParty, partyDoc, slug, name);
@@ -377,10 +459,11 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       }
       memberSheet.fields = memberSheet.fields || {};
       const prior = memberSheet.fields[field];
+      // The document is stored whole: a written value is copied into it whether or not it is hidden; every read projects (public-party.js).
       // sheet-privacy.js treats exactly visible === false as hidden, so that is what is kept hidden. Read from `prior` of THIS attempt.
       const priorHidden = !!(prior && typeof prior === "object" && prior.visible === false);
       const explicit = visibleGiven && typeof visible === "boolean";
-      const project = () => ({ sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined });
+      const project = () => ({ sheets: currentParty, party: partyDoc ? writeSheetValueToDoc(partyDoc, currentParty, memberSheet, field, value, prior) : undefined });
       if (levelRules) { // recomputed on every retry, against the state this attempt writes
         const next = nextLevelField(prior, { value, valueGiven, visible, visibleGiven: explicit, source: source || "board", at: now }, { keepHidden });
         stale = next.stale; changed = next.changed; stored = next.field;
@@ -404,7 +487,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
 
   if (changed) {
     await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
-    await broadcastToRoom(env, { type: "state", party: publicParty(currentParty) });
+    await broadcastToRoom(env, { type: "state", party: currentParty }); // projected for anonymous sockets inside broadcastToRoom
   }
   return { party: currentParty, at: now, visible: stored ? stored.visible !== false : event.visible, stale, changed, stored };
 }
@@ -424,6 +507,9 @@ export async function insertIntent(env, { slug, kind, body, ver = 1, at }) {
 // Every route this Worker answers, as "METHOD pattern" (":name" is one path segment, a trailing "*" is a prefix, ANY is every
 // method). A description only: dispatch below does not read it. tests/unit/authz.test.mjs checks it against the handlers in
 // this file and account.js and against a hand-written table of who may call each route, so a new route must be added here.
+// FNV-1a of a string, base 36: a short tag for a projected body (ETag marker). Not a secret and not a security boundary.
+export function projectionTag(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); }
+
 export const ROUTES = [
   "POST /discord", "GET /discord/commands", "GET /votes", "GET /me", "POST /probe", "ANY /sheet",
   "POST /announce", "PUT /vocab", "PUT /config/:key", "POST /admin/members", "POST /admin/sheet", "POST /admin/cards/post", "GET /admin/feedback", "GET /admin/export", "GET /admin/requests", "PUT /persona", "POST /dispatch", "POST /admin/events/sync", "GET /admin/moments", "POST /admin/eval",
@@ -538,7 +624,16 @@ const worker = {
           if (!SHEET_FIELDS.includes(field)) {
             return jsonResp({ error: `Unknown sheet field: ${field}` }, 400, cors);
           }
-          const problem = sheetValueProblem(field, body.value, body, { allowClear: true }); // the owner may clear a level (value null)
+          let problem = sheetValueProblem(field, body.value, body, { allowClear: true }); // the owner may clear a level (value null)
+          // A value the line already stores is never refused: a stored production value can pre-date the vocabulary, and re-sending it (or hiding the line) must work.
+          // Only a vocabulary line is looked up, and only after the vocabulary refused, so the normal write costs no extra read.
+          if (problem && VOCAB_LIST[field] && body.value !== undefined && body.value !== null) {
+            try {
+              const cur = (await buildPartySheetsFromD1(env, { persist: false })).party.find((p) => p.slug === m.slug);
+              const stored = cur && cur.fields && cur.fields[field];
+              if (stored && stored.value !== undefined && JSON.stringify(stored.value) === JSON.stringify(body.value)) problem = null;
+            } catch { /* unreadable: the refusal stands */ }
+          }
           if (problem) return jsonResp({ error: problem }, 400, cors);
           // Only a boolean `visible` changes the field's visibility; without one the field keeps what it has (a write of a value never un-hides).
           // { field, visible } with no value key is a visibility change for every field: the stored value stays. { value: null } still clears.
@@ -572,7 +667,7 @@ const worker = {
           const { seq } = await insertIntent(env, {
             slug: m.slug,
             kind: "sheet",
-            body: { field, value: out.value, visible: out.visible, source: "board" },
+            body: sheetIntentBody(field, out.value, out.visible, "board"),
             ver: 1,
             at: now,
           });
@@ -740,7 +835,7 @@ const worker = {
         const st = saved.stored || { value: null, visible: true, at: now };
         const out = { ok: true, at: st.at, slug: member.slug, field, value: st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
         if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
-        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: { field, value: st.value, visible: out.visible, source: "admin" }, ver: 1, at: now });
+        const { seq } = await insertIntent(env, { slug: member.slug, kind: "sheet", body: sheetIntentBody(field, st.value, out.visible, "admin"), ver: 1, at: now });
         return jsonResp({ ...out, id: seq, seq }, 200, cors);
       }
 
@@ -877,14 +972,14 @@ const worker = {
           try {
             parsed = JSON.parse(r.body);
           } catch {
-            parsed = { raw: r.body };
+            parsed = { unreadable: true }; // never echo the stored text: a row that is not JSON may still hold a hidden value
           }
           return {
             seq: r.seq,
             at: r.at,
             slug: r.slug,
             kind: r.kind,
-            body: parsed,
+            body: redactIntentBody(parsed), // rows from before hide intents dropped the value may still hold one
             ver: r.ver,
           };
         });
@@ -1030,7 +1125,7 @@ const worker = {
             at: now,
           });
 
-          await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
           await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
 
           return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
@@ -1054,30 +1149,26 @@ const worker = {
               } catch {}
             }
             // The party row is already in hand: pass it on so the sheets are reconciled without a second read.
-            const { party } = await buildPartySheetsFromD1(env, { partyDoc: stored.party || null });
+            const inputs = await loadPublicInputs(env, { partyDoc: stored.party || null });
             const now = new Date().toISOString();
             resp = jsonResp(
               webBoardLinksDeep({
                 type: "state",
                 ver: 1,
                 at: now,
-                party: publicParty(party), // the cached body is public: hidden sheet fields never enter it
+                party: inputs.sheets ? publicParty(inputs.sheets) : [], // the cached body is public: hidden sheet fields never enter it
                 signups: map.signups || null,
-                partyDoc: map.party || null,
-                tonight: map.tonight || null,
+                partyDoc: map.party ? projectDataDoc("party", map.party, inputs) : null,
+                tonight: map.tonight ? projectDataDoc("tonight", map.tonight, inputs) : null,
                 timeline: map.timeline || null,
                 stats: map.stats || null,
-                decide: map.decide || null,
-                launch: Array.isArray(map.launch)
-                  ? map.launch
-                  : map.launch && Array.isArray(map.launch.rows)
-                  ? map.launch.rows
-                  : [],
+                decide: map.decide ? projectDataDoc("decide", map.decide, inputs) : null,
+                launch: (() => { const L = map.launch ? projectDataDoc("launch", map.launch, inputs) : null; return Array.isArray(L) ? L : L && Array.isArray(L.rows) ? L.rows : []; })(), // a hidden launch_state is not in the public list
               }),
               200,
               {
                 ...cors,
-                "Cache-Control": "public, max-age=10, s-maxage=30, stale-while-revalidate=60",
+                "Cache-Control": MEMBER_NO_STORE,
               }
             );
             setCachedResponse(ctx, url.origin, "/api/state", resp, 30000);
@@ -1401,7 +1492,7 @@ const worker = {
               try { partyDocRead = JSON.parse(row.json); } catch {}
             }
           }
-          const { party: partySheets } = await buildPartySheetsFromD1(env, { partyDoc: partyDocRead });
+          const inputs = await loadPublicInputs(env, { partyDoc: partyDocRead });
           const isPrPreview = isPrPreviewEnv(env);
           const providers = {};
           for (const k of Object.keys(AI_PROVIDER_LABELS)) {
@@ -1411,19 +1502,19 @@ const worker = {
             aiProvider: resolveAiProvider(env),
             isPrPreview,
             providers,
-            partySheets: publicParty(partySheets), // the cached body is public: hidden sheet fields never enter it
+            partySheets: inputs.sheets ? publicParty(inputs.sheets) : [], // the cached body is public: hidden sheet fields never enter it
           };
           for (const row of results || []) {
             try {
               const doc = JSON.parse(row.json);
-              bundle[row.key] = isPublicDataDoc(row.key) ? publicDataDoc(row.key, doc, row.updated_at) : doc;
+              bundle[row.key] = isPublicDataDoc(row.key) ? projectDataDoc(row.key, publicDataDoc(row.key, doc, row.updated_at), inputs) : doc;
             } catch {
               bundle[row.key] = null;
             }
           }
           resp = jsonResp(webBoardLinksDeep(bundle), 200, {
             ...cors,
-            "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
+            "Cache-Control": MEMBER_NO_STORE,
           });
           setCachedResponse(ctx, url.origin, "/api/bootstrap", resp, 60000);
         } else {
@@ -1463,26 +1554,41 @@ const worker = {
       // 4. GET or PUT /data/:name or GET /atlas/:name -> Single document in D1 `kv_state`
       if (path.startsWith("/data/") || path.startsWith("/atlas/")) {
         const raw = decodeURIComponent(path.split("/").pop() || "").replace(/\.json$/, "");
-        const cachePath = `/api${path.startsWith("/") ? path : `/${path}`}`;
+        const cachePath = `/api/${path.startsWith("/atlas/") ? "atlas" : "data"}/${raw}`; // keyed by the decoded name: "/data/part%79", "//party" and "/party.json" are one entry
         if (req.method === "GET") {
           // Config and private working rows live in the same table: serve only documents the public site fetches
           // (allow list in public-docs.js), and keep the private-key guard as a second check.
           const allowed = path.startsWith("/atlas/") ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw);
           if (!allowed || isPrivateKvKey(raw)) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
+          // ?stored=1 (admin token only): the stored document, whole. A tool that reads a document in order to write it back (tools/add-member.mjs) must not start from the public
+          // projection, or the write would store a document with the hidden fields cut out. Never cached, never shared.
+          if (path.startsWith("/data/") && url.searchParams.get("stored") === "1") {
+            const denied = adminGate(req, url, env, cors);
+            if (denied) return denied;
+            const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(raw).first();
+            if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
+            return jsonResp(row.json, 200, { ...cors, "Cache-Control": "no-store" });
+          }
           let resp = await getCachedResponse(url.origin, cachePath);
           if (!resp) {
             // D1_FEED (default off): stats is computed from D1 and cached 5 minutes; null means serve the stored row as before.
             const fed = path.startsWith("/data/") && (await feedOn(env)) ? await serveFeedDoc(env, raw) : null;
-            const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first());
+            // A document with no row falls back to the copy bundled with the Worker (default-docs.js: `client`, which seed-d1 never wrote), and that copy is projected like a stored row. Without it the board
+            // would read 404 for a member document and show nothing; with it the page and the privacy rule do not depend on a row existing.
+            const row = fed || (await env.DB.prepare("SELECT json, updated_at FROM kv_state WHERE key = ?").bind(raw).first()) || (path.startsWith("/data/") ? defaultDocRow(raw) : null);
             if (!row) return jsonResp({ error: `Document ${raw} not found` }, 404, cors);
-            const etag = `"${raw}-${row.updated_at || '1'}"`;
+            let etag = `"${raw}-${row.updated_at || '1'}"`;
             let docJson = row.json;
             if (typeof docJson === "string" && path.startsWith("/data/")) {
               try {
-                docJson = JSON.stringify(publicDataDoc(raw, JSON.parse(docJson), row.updated_at));
+                let pubDoc = publicDataDoc(raw, JSON.parse(docJson), row.updated_at);
+                if (MEMBER_DOC_KEYS.includes(raw)) pubDoc = projectDataDoc(raw, pubDoc, await loadPublicInputs(env, raw === "party" ? { partyDoc: pubDoc } : {}));
+                docJson = JSON.stringify(pubDoc);
+                // The stored row did not change but what is served did (a member hid or showed a line): the tag of a member document carries a hash of the projected body, so a full and a withheld body never share an ETag.
+                if (MEMBER_DOC_KEYS.includes(raw)) etag = `"${raw}-${row.updated_at || '1'}-p${projectionTag(docJson)}"`;
               } catch {
-                // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent)
-                if (raw === "stats") return jsonResp({ error: "Document stats is unreadable" }, 500, cors);
+                // an unparsable stats row cannot be filtered, so it is not served (it may hold stats.recent); nor is a member document that cannot be projected
+                if (raw === "stats" || MEMBER_DOC_KEYS.includes(raw)) return jsonResp({ error: `Document ${raw} is unreadable` }, 500, cors);
               }
             }
             if (typeof docJson === "string" && docJson.includes("{board:")) {
@@ -1493,7 +1599,7 @@ const worker = {
             resp = jsonResp(docJson, 200, {
               ...cors,
               ETag: etag,
-              "Cache-Control": "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
+              "Cache-Control": MEMBER_DOC_KEYS.includes(raw) ? MEMBER_NO_STORE : "public, max-age=15, s-maxage=60, stale-while-revalidate=300",
             });
             setCachedResponse(ctx, url.origin, cachePath, resp, 60000);
           } else {
@@ -1512,6 +1618,7 @@ const worker = {
           if (isDeniedKvKey(raw) || !(path.startsWith("/atlas/") ? isPublicAtlasDoc(raw) : isPublicDataDoc(raw))) return jsonResp({ error: `Document ${raw} cannot be written here` }, 403, cors);
           const body = await req.json();
           const now = new Date().toISOString();
+          // The document is stored whole, as sent. A hide that commits between a sheet read and this write cannot leak: every read, and the broadcast below, projects.
           await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
             .bind(raw, JSON.stringify(body), now)
             .run();
@@ -1591,7 +1698,7 @@ const worker = {
             ver: 1,
             at: now,
           });
-          await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+          await purgeWorkerCache(url.origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
           await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
           return jsonResp({ ok: true, id: seq, seq, at: now }, 200, cors);
         }
@@ -1628,6 +1735,7 @@ const worker = {
         // 5c. `launch` (`{ kind: "launch", patch: { state: "queue"|"in"|"done" } }`)
         if (kind === "launch") {
           const lState = body.patch && body.patch.state;
+          let savedLaunch;
           if (["queue", "in", "done"].includes(lState)) {
             const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'launch'").first();
             let rows = [];
@@ -1641,11 +1749,8 @@ const worker = {
             const item = { slug: member.slug, name: member.name, state: lState, at: now };
             if (idx >= 0) rows[idx] = item;
             else rows.push(item);
-            await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
-              .bind(JSON.stringify(rows), now)
-              .run();
             try {
-              await recordSheetEventInD1(env, url.origin, {
+              savedLaunch = await recordSheetEventInD1(env, url.origin, {
                 slug: member.slug,
                 name: member.name,
                 field: "launch_state",
@@ -1657,13 +1762,17 @@ const worker = {
               if (e instanceof KvConflictError) return jsonResp({ error: "The sheet is busy. Try again." }, 409, cors);
               throw e;
             }
-            await purgeWorkerCache(url.origin, ["/api/bootstrap", "/api/data/launch.json"]);
+            // the sheet event first: a refused or unreadable events log (503/409/500) must leave NO launch row behind
+            await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
+              .bind(JSON.stringify(rows), now)
+              .run();
+            await purgeWorkerCache(url.origin, ["/api/bootstrap", dataCachePath("launch")]);
             await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
           }
           const { seq } = await insertIntent(env, {
             slug: member.slug,
             kind: "launch",
-            body: { state: lState },
+            body: savedLaunch && savedLaunch.visible === false ? { field: "launch_state", visible: false } : { state: lState }, // hidden launch_state: no value in the mailbox
             ver: 1,
             at: now,
           });
@@ -1952,6 +2061,7 @@ const worker = {
       return jsonResp({ error: "Not found", path }, 404, cors);
     } catch (err) {
       console.error("Worker error:", err, String((err && err.message) || err));
+      if (err instanceof SheetLogUnreadableError) return jsonResp({ error: "The sheet could not be saved right now. Try again." }, 503, { ...cors, "Retry-After": "5" });
       return jsonResp({ error: "Internal error" }, 500, cors);
     }
   },

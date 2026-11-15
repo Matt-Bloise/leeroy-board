@@ -44,8 +44,8 @@ async function open(browser, opts, c) {
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights|net::ERR|WebSocket connection/.test(m.text())) errors.push(m.text()); });
   await ctx.addInitScript(([me, wl]) => { try { if (!localStorage.getItem("board-journey")) localStorage.setItem("board-journey", "guided"); localStorage.setItem("board-me", me); if (wl) localStorage.setItem("board-wl", "1"); } catch (e) {} }, [c.me, c.signedIn !== false]);
-  await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": !!c.flag }; await json(route, j); });
-  await ctx.route("**/api/**", (route) => route.abort());
+  await ctx.route("**/data/client*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "chars.v1": !!c.flag }; await json(route, j); });
+  await ctx.route("**/api/**", (route) => (/\/api\/data\/[a-z-]+(?:\.json)?$/.test(new URL(route.request().url()).pathname) ? route.fallback() : route.abort())); // the member documents: the API stub answers them
   await ctx.route("**/api/me", (route) => (route.request().method() === "GET" ? json(route, { user: "abcd1234", expires_at: 4102444800, characters: c.chars }) : route.abort()));
   await ctx.route("**/api/me/characters", (route) => { posts.push(route.request().postDataJSON()); return c.post === 404 ? json(route, { error: "not found" }, 404) : json(route, { character: { id: "t-new", ...route.request().postDataJSON() } }, 201); });
   await page.goto(pageUrl(BASE, { params: { preview: "1" }, defaults: { brain: "local" } }), { waitUntil: "load" });
