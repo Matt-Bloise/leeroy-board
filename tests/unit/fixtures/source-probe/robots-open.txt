@@ -1,0 +1,4 @@
+# fictional robots file: open
+User-agent: *
+Disallow: /admin/
+Allow: /

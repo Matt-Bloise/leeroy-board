@@ -1,0 +1,16 @@
+{
+ "comment": "Allow-list for tools/source-probe.mjs. Public pages only. Hosts come from data/library-sources.json (hand-read) plus Blizzard and Wowhead pages. The exact paths below are NOT verified to exist or to be the right hotfix pages: that is part of what the probe finds out (docs/adr/0011). Add a host here only after adding it to data/library-sources.json.",
+ "version": 1,
+ "userAgent": "LeeroyBoard-CloudflareWorker/1.0",
+ "allowedHosts": ["news.blizzard.com", "us.forums.blizzard.com", "www.wowhead.com", "www.icy-veins.com", "www.method.gg"],
+ "limits": { "timeoutMs": 10000, "maxBytes": 262144, "maxRedirects": 3, "delayMs": 1500 },
+ "sources": [
+  { "id": "P1", "url": "https://news.blizzard.com/en-us/", "kind": "blizzard-news", "note": "news front page" },
+  { "id": "P2", "url": "https://news.blizzard.com/en-us/world-of-warcraft", "kind": "blizzard-news", "note": "game section; may redirect with a trailing slash" },
+  { "id": "P3", "url": "https://us.forums.blizzard.com/en/wow/", "kind": "blizzard-forum", "note": "forum root; the blue-post tracker path is unknown" },
+  { "id": "P4", "url": "https://www.wowhead.com/news", "kind": "wowhead", "note": "news index" },
+  { "id": "P5", "url": "https://www.wowhead.com/classic", "kind": "wowhead", "note": "Classic section; the Forever section path is unknown" },
+  { "id": "P6", "url": "https://www.icy-veins.com/wow/", "kind": "guide", "note": "guide site front page" },
+  { "id": "P7", "url": "https://www.method.gg/", "kind": "guide", "note": "guide site front page" }
+ ]
+}
