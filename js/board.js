@@ -345,6 +345,11 @@ const GLYPH = { tank: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z", healer: "M
 const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", role: "img", "aria-label": role || "role not shown" }, s("path", { d: GLYPH[role] || GLYPH.damage }));
 
 let clockTimer = null;
+/* An outage is said once, plainly, in the page-level status line (#offline-line, role=status). Set by the brain's status (js/v13d.js) and by a failed data load below; empty text hides it. */
+const OFFLINE_SAY = "The board could not reach Leeroy. What you see may be out of date.";
+function setOffline(on) { const el = $("#offline-line"); if (!el) return; const t = on ? OFFLINE_SAY : ""; if (el.textContent !== t) el.textContent = t; }
+/* "Launch: ..." reads as a promise; once the epoch has passed it is "Launched: ...". Called on render and on every tick so a tab left open across launch turns over. */
+function setLaunchLine() { const el = $("#clock-launch"); if (!el) return; const ll = launchLine(), t = ll ? `${launchPast() ? "Launched" : "Launch"}: ${ll}` : ""; if (el.textContent !== t) el.textContent = t; }
 function launchLine() {
   const e = D.timeline && D.timeline.events.find((x) => x.key === "launch");
   if (!e || !e.epoch) return "";
@@ -375,7 +380,7 @@ function startMiniClock() {
 function renderHero() {
   const p = D.party;
   $("#kicker").textContent = `The Living Board · ${p.faction} · ${p.ruleset} ruleset`;
-  const ll = launchLine(); $("#clock-launch").textContent = ll ? `Launch: ${ll}` : "";
+  setLaunchLine();
   renderTimeline();
   tick();
   if (!clockTimer) clockTimer = setInterval(tick, 1000);
@@ -503,8 +508,9 @@ function tick() {
   const leftText = parts.filter(([u]) => u !== "seconds").map(([u, v]) => `${v} ${v === 1 ? u.replace(/s$/, "") : u}`).join(", ") + " left";
   const cl = $("#clock-left"); if (cl && cl.textContent !== leftText) { cl.textContent = leftText; $("#clock").removeAttribute("aria-label"); }
   $("#clock-when").textContent = next.format === "D" ? `${eventWhen(next)}. The board has the date only, no start time.` : fmtWhen(next.epoch, { mine: true });
+  setLaunchLine();
   const mc = $("#mini-clock");
-  if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? dtf("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
+  if (mc) { const t = next.format === "D" ? `${parts[0][1]} days` : `${parts[0][1]} d ${parts[1][1]} h ${parts[2][1]} m`; const l = D.timeline.events.find((x) => x.key === "launch"); const lw = l && l.epoch ? dtf("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(l.epoch * 1000)).replace(":00", "") : ""; const lbl = next.label.split(":")[0]; const txt = next.key === "launch" ? `${lbl} in ${t} · ${lw}` : launchPast() ? `${lbl} in ${t}` : `${lbl} in ${t} · Launch ${lw}`; if (mc.textContent !== txt) mc.textContent = txt; }
 }
 
 const minis = (pairs) => h("span", { class: "minis" }, pairs.map(([v, l]) => h("span", { class: "mini" }, h("b", { text: String(v) }), h("small", { text: l }))));
@@ -534,7 +540,7 @@ function renderTiles() {
     changed ? h("span", { class: "tile-line", "data-land": "racials.changed", text: `${plural(changed, "race skill", "race skills")} changed since Oct 26` }) : null);
   fill("legacy",
     wallGloss(L.gloss || {}, [["Legacy points", "legacy points"], " come from ", ["challenges", "challenge"], "."]), wallGloss(L.gloss || {}, ["They buy perks for every character, plus a pet, a ", ["tabard", "tabard"], " and a bear mount."], "tl-more"),
-    h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : "earning starts at launch"}` }));
+    h("span", { class: "tile-viz", "data-land": "legacy.ring" }, miniRing(L)), h("span", { class: "viz-cap", text: `${L.earned_now} of ${L.total} points: ${L.earned_now ? "earned so far" : launchPast() ? "none earned yet" : "earning starts at launch"}` }));
   fill("buffs",
     h("span", { class: "tile-line", text: "How can you help? Who covers whom." }),
     wLine(c) ? h("span", { class: "tile-line", text: wLine(c) }) : h("span", { class: "tile-viz" }, miniWheel()), wLine(c) ? null : h("span", { class: "viz-cap", text: `Buff links between the ${pnWord()}` }));
@@ -1305,7 +1311,7 @@ function renderLedger() {
     h("h3", { "data-j": "c e", text: "Settled" }),
     wLine(p) ? wNote(p, "settled-withheld") : null,
     h("ul", { "data-j": "c e" }, [...p.settled, ...p.settled_extra].map((x, i, all) => h("li", { class: "settled-li", style: `--di: ${i}`, ...(i === all.length - 1 ? { "data-land-to": "settled" } : {}) }, h("span", {}, seal(), x.text), srcTag(x.source))),
-      p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), p.play.text), srcTag(p.play.source)) : null),
+      p.play ? h("li", { class: "settled-li next-li", style: `--di: ${p.settled.length + p.settled_extra.length}` }, h("span", {}, seal(), playSay(p.play.text)), srcTag(p.play.source)) : null),
     p.polls.length ? h("h3", { text: "Polls taking votes" }) : null,
     ...p.polls.map((q) => h("div", { class: "poll" }, h("strong", { text: q.title }), h("span", { text: q.closes_epoch ? `Closes ${fmtWhen(q.closes_epoch)}.` : cardDates(q.text.replace(/\s*Add names in chat\.?/i, "")) }), h("a", { href: q.url, target: "_blank", rel: "noopener noreferrer", text: `The ${q.title.toLowerCase()} poll in Discord` })))),
     h("div", { class: "ledger-col" }, h("h3", { text: "Still open" }), wLine(p) ? wNote(p, "open-withheld") : null,
@@ -3546,7 +3552,10 @@ function settleLaunch() {
   p.settled_extra = [...(p.settled_extra || []), ...mv.map((o) => ({ text: /meeting point/i.test(o.title) ? `Launch-night meeting point: launch night has passed (${e.when}).` : `Launch night happened: ${e.when}.`, source: o.source || "group notes" }))];
   return true;
 }
-function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `Launch: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
+function launchWhen() { const e = D.timeline && D.timeline.events.find((x) => x.key === "launch"); return e && e.epoch ? `${launchPast() ? "Launched" : "Launch"}: ${fmtWhen(e.epoch, { rel: true })}` : ""; }
+/* tonight.json says "To play from launch: ..."; after launch it is "To play: ..." (same facts, no future tense) */
+const playSay = (x) => (x && launchPast() ? String(x).replace(/^To play from launch:/, "To play:") : x);
+const playText = (T) => playSay(T.play);
 /* the first screen for a visitor with no saved name: what the board is for, in four plain lines, and the one action that follows */
 const FIRST_RUN = Object.freeze({ go: "Show me what is next", purpose: Object.freeze(["This is the party board for our World of Warcraft: Forever group.", "It tells you what to do next, shows who is playing what, and collects the group's votes.", "Whatever you post in Discord (forms, build threads, votes) shows up here.", "Pick who you are below, or just look around."]) });
 function renderTonight() {
@@ -3587,7 +3596,7 @@ function renderTonight() {
   const card = (title, ...kids) => h("section", { class: "tn-card", "aria-label": title }, h("h3", { text: title }), ...kids);
   box.replaceChildren(...[
     card(T.cards[1], h("ul", { class: "tn-steps" }, steps.map(stepEl)), wNote(T, "tn-withheld")),
-    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, T.play ? h("p", { class: "tn-play", text: T.play }) : null),
+    card(T.cards[0], h("p", { class: "tn-big", text: ev.label }), h("p", { class: "tn-when", text: ev.when }), h("p", { text: ev.meaning }), ev.key !== "launch" && T.launch ? h("p", { class: "tn-launch", text: launchWhen() || T.launch + yourTime(T) }) : null, playText(T) ? h("p", { class: "tn-play", text: playText(T) }) : null),
     card(launchPast() ? "This week" : T.cards[2], meetP(), mine ? line(T.labels.you, [T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || T.labels.maybe]) : null, ...groups.map(([l, n]) => line(l, n)), ...(!mine && !groups.length ? (w && w.empty ? emptyWeekEls(w, "tn-line") : [h("p", { text: T.labels.nobody })]) : []), earlierLine(w, "tn-line"))].filter(Boolean));
   const gets = member && D.client && D.client.buffs && !wLine(D.client) ? h("div", { class: "tn-gets", role: "group", "aria-label": "What the others give you: open Buffs at a level" }, h("span", { class: "tn-gets-l", text: "What the others give you" }),
     h("div", { class: "deep-marks tn-buffs" }, D.client.buffs.marks.map((k) => h("button", { type: "button", class: "lib-tool", "aria-label": `Buffs at level ${k}`, onclick: () => { BD.level = k; try { localStorage.setItem("board-buff-level", String(k)); } catch (e) {} renderBuffsDeep(); goScene("buffs"); } }, `At ${k}`)))) : null;
@@ -3613,7 +3622,7 @@ function beforeItems(T, P, member, mine) {
   if (member) out.push({ id: "signup", text: mine ? `Sign-up card: you answered "${T.labels[mine.rsvp] || RSVP_SAY[mine.rsvp] || mine.rsvp}".` : "Sign-up card: no answer from you yet.", href: L.signup });
   const meet = open(/meeting point/i);
   if (meet) out.push({ id: "meet", text: unchosen(meet) ? "Meeting point: nothing chosen yet." : `Meeting point: ${meet.status}.`, href: unchosen(meet) ? P.signup_url : null, more: meet.detail || "" });
-  if (launch && launch.epoch) { const night = open(/launch night/i); out.push({ id: "launch", text: `Launch: ${fmtWhen(launch.epoch, { rel: true })}.`, href: night && night.links && night.links[0] ? night.links[0].url : null, more: `${night ? night.detail + " " : ""}${T.play || ""}`.trim(), stamp: launch.epoch }); }
+  if (launch && launch.epoch) { const night = open(/launch night/i); out.push({ id: "launch", text: `${launchPast() ? "Launched" : "Launch"}: ${fmtWhen(launch.epoch, { rel: true })}.`, href: night && night.links && night.links[0] ? night.links[0].url : null, more: `${night ? night.detail + " " : ""}${playText(T) || ""}`.trim(), stamp: launch.epoch }); }
   return out;
 }
 function groupOpenLine(T, P) {
@@ -3767,7 +3776,7 @@ async function boot(mode, sdk) {
     splitPolls(); roles();
     try { performance.mark("board-data"); } catch (e) {}
   } catch (e) {
-    setClockLabel("The data files did not load", "");
+    setClockLabel("The data files did not load", ""); setOffline(true);
     const again = () => dataGet("party").then(() => location.reload());
     BF.fail($("#footer"), "the board's data", again, 1, MEMBER_DOWN);
     $("#footer").append(h("small", { text: `Could not read the board's data: ${e.message}.` }));
@@ -3811,7 +3820,7 @@ async function boot(mode, sdk) {
 let bootDone = false, lateSdk = null, discordOn = false;
 function goDiscord(sdk) { if (discordOn || !sdk) return; discordOn = true; startDiscordPresence(sdk); if (bootDone) KIT.emit("signups"); } /* a late upgrade re-renders the sign-ups hint so the Activity wording shows */
 function lateDiscord(sdk) { if (discordOn || !sdk) return; if (bootDone) goDiscord(sdk); else lateSdk = sdk; }
-Object.assign(KIT, { raceClass, classOf, pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
+Object.assign(KIT, { setOffline, raceClass, classOf, pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
 KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
