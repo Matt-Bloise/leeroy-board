@@ -25,7 +25,7 @@ export async function findAskerTurns(env, { intentId, share = false }) {
     const { results } = await env.DB.prepare(
       "SELECT DISTINCT t.id, t.question, t.answer, t.created_at FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
         `WHERE a1.intent_id = ? AND t.id <> ? AND t.created_at > ? AND t.status = 'answered' AND t.answer IS NOT NULL AND t.answer <> '' ${share ? "AND t.share = 1 " : ""}` +
-        "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' AND COALESCE(t.model, '') NOT LIKE '%research-down%' AND COALESCE(t.model, '') NOT LIKE '%abstain%' AND COALESCE(t.model, '') <> 'reused-answer' " +
+        "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' AND COALESCE(t.model, '') NOT LIKE '%research-down%' AND COALESCE(t.model, '') NOT LIKE '%degraded%' AND COALESCE(t.model, '') NOT LIKE '%abstain%' AND COALESCE(t.model, '') <> 'reused-answer' " +
         "ORDER BY t.created_at DESC LIMIT ?"
     ).bind(String(intentId), String(intentId), since, TURNS_LIMIT).all();
     const out = [];
