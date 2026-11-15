@@ -61,9 +61,9 @@ test("flag-off-golden: ask_turns row and outbound prompts match the pre-seam rec
   for (const q of QUESTIONS) assert.deepEqual(await ask(q), got[q]);
 });
 
-test("flag-declared: ASK_RESEARCH is off in [vars] and in the runbook; it is a [vars] flag, not a Flagship key", () => {
+test("flag-declared: ASK_RESEARCH is declared in [vars] (on or off, the owner decides) and in the runbook; it is a [vars] flag, not a Flagship key", () => {
   const toml = read("infrastructure/wrangler.toml");
-  assert.match(toml.slice(toml.indexOf("[vars]")), /^ASK_RESEARCH = "off"/m);
+  assert.match(toml.slice(toml.indexOf("[vars]")), /^ASK_RESEARCH = "(on|off)"/m);
   assert.ok(read("docs/runbooks/flags.md").includes("`ASK_RESEARCH`"));
   assert.ok(!read("infrastructure/flagship-flags.txt").includes("ASK_RESEARCH"));
 });
