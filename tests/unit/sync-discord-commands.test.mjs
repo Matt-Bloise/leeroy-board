@@ -199,13 +199,80 @@ test("429 honours retry_after once, then continues", async () => {
   assert.match(r.text, /created: ping, ack, say/);
 });
 
-test("a second 429 stops with a warning and exits 0", async () => {
-  const w = world({ live: [], status: { "POST discord": [{ status: 429, body: { retry_after: 1 } }, { status: 429, body: { retry_after: 1 } }] } });
+// CHANGED (first production run: "rate limited by Discord twice; stopped after 6 write(s)"): a 429 is no longer fatal the second time. The
+// sync honours Retry-After (body retry_after or the header) and keeps going up to a cap of retries and total waiting, then stops with a warning.
+test("repeated 429s are waited out and the sync carries on (retry_after honoured each time)", async () => {
+  const rl = (n) => ({ status: 429, body: { retry_after: n } });
+  const w = world({ live: [], status: { "POST discord": [rl(1), rl(2), rl(3), rl(4)] } });
   const r = await go(w);
   assert.equal(r.code, 0);
-  assert.equal(r.sleeps.length, 1, "waits once only");
+  assert.deepEqual(r.sleeps, [1000, 2000, 3000, 4000]);
+  assert.match(r.text, /created: ping, ack, say/);
+  assert.ok(!/rate limited/.test(r.text));
+});
+
+test("the Retry-After header is honoured when the body has no retry_after", async () => {
+  const w = world({ live: [] });
+  const base = w.fetchImpl; let first = true;
+  w.fetchImpl = async (url, init = {}) => {
+    if ((init.method || "GET") === "POST" && first) { first = false; w.calls.push({ url: String(url), method: "POST", headers: init.headers || {}, body: init.body }); return new Response("{}", { status: 429, headers: { "Retry-After": "7" } }); }
+    return base(url, init);
+  };
+  const r = await go(w);
+  assert.deepEqual(r.sleeps, [7000]);
+  assert.match(r.text, /created: ping, ack, say/);
+});
+
+test("endless 429s stop at the cap with a warning, exit 0, and the total wait is bounded", async () => {
+  const rl = { status: 429, body: { retry_after: 20 } };
+  const w = world({ live: [], status: { "POST discord": Array.from({ length: 50 }, () => rl) } });
+  const r = await go(w);
+  assert.equal(r.code, 0);
   assert.match(r.text, /::warning::.*rate limited/);
-  assert.equal(w.posts().length, 2);
+  assert.ok(r.sleeps.reduce((a, b) => a + b, 0) <= 150000, "total waiting is capped");
+  assert.ok(r.sleeps.length <= 8);
+});
+
+test("every write is logged by name and kind as it happens, before a rate-limit stop", async () => {
+  const rl = { status: 429, body: { retry_after: 1 } };
+  const w = world({ live: [], status: { "POST discord": [null, null, ...Array.from({ length: 50 }, () => rl)] } });
+  const r = await go(w);
+  const text = r.lines.join(String.fromCharCode(10));
+  assert.match(text, /created: ping/);
+  assert.match(text, /created: ack/);
+  assert.ok(text.indexOf("created: ping") < text.indexOf("::warning::"), "the writes are logged before the stop");
+  assert.match(text, /::warning::.*2 write\(s\)/);
+  assert.match(text, /ping, ack/, "the stop names what was written");
+});
+
+test("missing commands are created before changed ones are updated", async () => {
+  const live = [asDiscord({ ...PING, description: "Old text" }), asDiscord(ACK)];
+  const w = world({ live });
+  const r = await go(w);
+  assert.equal(r.code, 0);
+  assert.deepEqual(postedNames(w), ["say", "ping"], "the missing /say is written first, then the changed ping");
+});
+
+test("a changed command is logged with the NAMES of the fields that differ, never their values", async () => {
+  const live = [asDiscord(PING), asDiscord({ ...ACK, description: "SECRET-OLD-TEXT", options: [{ name: "up_to", description: "Highest", type: 4, required: false }] }), asDiscord(SAY, { default_member_permissions: "32", dm_permission: false, contexts: [0] })];
+  const w = world({ live });
+  const r = await go(w);
+  assert.match(r.text, /updated: ack \(fields: .*description/);
+  assert.match(r.text, /options:up_to\.required/);
+  assert.ok(!r.text.includes("SECRET-OLD-TEXT") && !r.text.includes("Acknowledge"), "no values in the log");
+  const dry = await go(world({ live }), ["--dry-run"]);
+  assert.match(dry.text, /would update: ack \(fields: /);
+});
+
+test("DM availability is not compared: Discord's dm_permission and contexts defaults never cause a write", async () => {
+  const live = MANIFEST.map((c) => asDiscord(c, { dm_permission: true, contexts: [0, 1, 2] }));
+  const w = world({ live });
+  const r = await go(w);
+  assert.equal(w.posts().length, 0, r.text);
+  // but a new command is still created with the manifest's own dm_permission
+  const w2 = world({ live: live.filter((c) => c.name !== "say") });
+  await go(w2);
+  assert.equal(JSON.parse(w2.posts()[0].body).dm_permission, false);
 });
 
 test("dry run (the default) reads both sides and makes zero writes", async () => {
@@ -286,4 +353,52 @@ test("the deploy runs the command sync as a non-failing step after the Worker de
   assert.ok(i > idx(/^Deploy Cloudflare Worker/), "after the Worker deploy");
   assert.ok(i > idx(/^Sync Worker Secrets/), "after the secret sync");
   assert.ok(i > idx(/^Post-deploy health check/), "after the health check, so the manifest is the new version's");
+});
+
+// ---- the real production manifest (fetched 2026-11-15 from /api/discord/commands) -----------------------------------------------------------
+// It holds two message context-menu commands (type 3) named "Ask Leeroy" and "Fix this fact": capitals and spaces are valid for types 2 and 3,
+// and they carry no description. The first production run failed with "manifest command has no valid name" because the validator applied the
+// slash-command rules to every command.
+import { validateManifest } from "../../tools/sync-discord-commands.mjs";
+const REAL = JSON.parse(readFileSync(new URL("../fixtures/manifest/live-manifest-2026-11-15.json", import.meta.url), "utf8"));
+const MENUS = REAL.commands.filter((c) => c.type === 3);
+
+test("the real manifest validates: 25 commands, two message context-menu commands", () => {
+  assert.equal(REAL.commands.length, 25);
+  assert.deepEqual(MENUS.map((c) => c.name).sort(), ["Ask Leeroy", "Fix this fact"]);
+  assert.equal(validateManifest(REAL).length, 25);
+});
+
+test("validation is per type: slash names stay strict, context-menu names may have capitals and spaces", () => {
+  const slash = (name) => ({ commands: [{ name, description: "d" }] });
+  for (const bad of ["Ask Leeroy", "has space", "UPPER", "", "x".repeat(33), "a.b"]) assert.throws(() => validateManifest(slash(bad)), /valid name/, bad);
+  for (const type of [2, 3]) {
+    assert.doesNotThrow(() => validateManifest({ commands: [{ name: "Ask Leeroy", type }] }));
+    assert.throws(() => validateManifest({ commands: [{ name: "x".repeat(33), type }] }), /valid name/);
+    assert.throws(() => validateManifest({ commands: [{ name: "", type }] }), /valid name/);
+    assert.throws(() => validateManifest({ commands: [{ name: "Ask Leeroy", type, options: [{ name: "o", description: "d", type: 3 }] }] }), /context-menu|options/);
+    assert.throws(() => validateManifest({ commands: [{ name: "Ask Leeroy", type, description: "must be empty" }] }), /description/);
+  }
+  assert.throws(() => validateManifest({ commands: [{ name: "ask", type: 1 }] }), /description/);
+  assert.throws(() => validateManifest({ commands: [{ name: "Ask Leeroy", type: 99 }] }), /type/);
+});
+
+test("with the real manifest the sync writes only what is missing and never touches the two context-menu commands", async () => {
+  // Discord already holds every command except /say, in the shape it hands back (ids, version, null localizations, description "").
+  const live = REAL.commands.filter((c) => c.name !== "say").map((c) => asDiscord(c, { type: c.type ?? 1, description: c.description ?? "" }));
+  const w = world({ manifest: REAL, live });
+  const r = await go(w);
+  assert.equal(r.code, 0, r.text);
+  assert.deepEqual(postedNames(w), ["say"]);
+  assert.match(r.text, /created: say/);
+  assert.ok(!w.calls.some((c) => c.method === "PUT" || c.method === "DELETE"));
+  for (const m of MENUS) assert.ok(!r.text.includes(`updated: ${m.name}`) && !postedNames(w).includes(m.name));
+});
+
+test("with the real manifest and Discord already in sync, nothing is posted", async () => {
+  const live = REAL.commands.map((c) => asDiscord(c, { type: c.type ?? 1, description: c.description ?? "" }));
+  const w = world({ manifest: REAL, live });
+  const r = await go(w);
+  assert.equal(r.code, 0, r.text);
+  assert.equal(w.posts().length, 0);
 });

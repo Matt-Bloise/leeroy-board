@@ -18,7 +18,9 @@ import { pathToFileURL } from "node:url";
 export const DEFAULT_APP_ID = "1561857940174938114";
 export const DEFAULT_WORKER_URL = "https://api.leeroy.party";
 const DISCORD_API = "https://discord.com/api/v10";
-const MAX_RETRY_WAIT_MS = 30000;
+const MAX_RETRY_WAIT_MS = 30000; // one wait
+const MAX_TOTAL_WAIT_MS = 150000; // all waits in one run
+const MAX_RATE_LIMIT_RETRIES = 8;
 
 // ---- comparison ------------------------------------------------------------------------------------------------------------------------
 // Reduce a command (ours or Discord's copy) to the fields Discord stores, with the defaults Discord adds or drops made explicit, so equal commands compare equal.
@@ -53,7 +55,26 @@ export function normalize(cmd) {
   };
 }
 const sortKeys = (v) => (Array.isArray(v) ? v.map(sortKeys) : isObj(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])])) : v);
-export const canonical = (cmd) => JSON.stringify(sortKeys(normalize(cmd)));
+// DM availability (dm_permission / contexts) is NOT compared: Discord's returned shape for it differs from what the manifest holds (the first
+// production run rewrote commands on every deploy because of it). It is still sent when a command is created or updated.
+const comparable = (cmd) => { const n = normalize(cmd); delete n.dm_permission; return n; };
+export const canonical = (cmd) => JSON.stringify(sortKeys(comparable(cmd)));
+
+// Names of the fields that differ between Discord's copy and the manifest's, never their values: "description", "options:channel.required".
+export function diffFields(have, want) {
+  const a = comparable(have), b = comparable(want), out = [];
+  for (const k of ["name", "type", "description", "default_member_permissions"]) if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push(k);
+  const byName = (list) => new Map(list.map((o) => [o && o.name, o]));
+  const ha = byName(a.options), hb = byName(b.options);
+  for (const [n, o] of hb) {
+    const q = ha.get(n);
+    if (!q) { out.push(`options:${String(n)}(added)`); continue; }
+    const keys = new Set([...Object.keys(o), ...Object.keys(q)]);
+    for (const k of keys) if (JSON.stringify(sortKeys(o[k])) !== JSON.stringify(sortKeys(q[k]))) out.push(`options:${String(n)}.${k}`);
+  }
+  for (const n of ha.keys()) if (!hb.has(n)) out.push(`options:${String(n)}(removed)`);
+  return out.length ? out : ["other"];
+}
 
 // ---- manifest --------------------------------------------------------------------------------------------------------------------------
 export function validateManifest(body) {
@@ -61,10 +82,22 @@ export function validateManifest(body) {
   if (body.commands.length === 0) throw new Error("manifest has no commands");
   const seen = new Set();
   for (const c of body.commands) {
-    if (!isObj(c) || typeof c.name !== "string" || !/^[\w-]{1,32}$/.test(c.name)) throw new Error("manifest command has no valid name");
-    if (typeof c.description !== "string") throw new Error(`manifest command ${c.name} has no description`);
-    if (c.options !== undefined && !Array.isArray(c.options)) throw new Error(`manifest command ${c.name} has malformed options`);
-    const key = `${c.type ?? 1}:${c.name}`;
+    if (!isObj(c) || typeof c.name !== "string") throw new Error("manifest command has no valid name");
+    const type = c.type ?? 1;
+    if (![1, 2, 3, 4].includes(type)) throw new Error(`manifest command ${c.name} has an unknown type`);
+    if (type === 1) {
+      // Slash command: lowercase word characters and hyphens, 1 to 32, and a description.
+      if (!/^[\w-]{1,32}$/.test(c.name) || c.name !== c.name.toLowerCase()) throw new Error("manifest command has no valid name");
+      if (typeof c.description !== "string") throw new Error(`manifest command ${c.name} has no description`);
+      if (c.options !== undefined && !Array.isArray(c.options)) throw new Error(`manifest command ${c.name} has malformed options`);
+    } else {
+      // User (2) and message (3) context-menu commands and the primary entry point (4): names may have capitals and spaces (1 to 32
+      // characters), there are no options, and the description must be empty or absent.
+      if (c.name.length < 1 || c.name.length > 32 || c.name !== c.name.trim()) throw new Error("manifest command has no valid name");
+      if (c.options !== undefined && !(Array.isArray(c.options) && c.options.length === 0)) throw new Error(`manifest context-menu command ${c.name} must not have options`);
+      if (c.description !== undefined && c.description !== "") throw new Error(`manifest context-menu command ${c.name} must have an empty description`);
+    }
+    const key = `${type}:${c.name}`;
     if (seen.has(key)) throw new Error(`manifest lists ${c.name} twice`);
     seen.add(key);
   }
@@ -89,7 +122,7 @@ export async function run({ argv = [], env = {}, fetchImpl = globalThis.fetch, o
   const workerUrl = (env.WORKER_URL || DEFAULT_WORKER_URL).replace(/\/+$/, "");
   if (!/^\d{5,25}$/.test(appId)) { warn("DISCORD_APP_ID is not a numeric id; nothing was changed."); return 0; }
 
-  let retried = false;
+  let waited = 0, retries = 0;
   const discord = async (method, path, body) => {
     for (;;) {
       const res = await fetchImpl(`${DISCORD_API}${path}`, {
@@ -98,11 +131,15 @@ export async function run({ argv = [], env = {}, fetchImpl = globalThis.fetch, o
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(20000),
       });
-      if (res.status === 429 && !retried) {
-        retried = true;
-        let secs = 1;
-        try { const j = await res.json(); if (typeof j?.retry_after === "number") secs = j.retry_after; } catch { /* default wait */ }
-        await sleep(Math.min(Math.max(secs, 0) * 1000, MAX_RETRY_WAIT_MS));
+      if (res.status === 429 && retries < MAX_RATE_LIMIT_RETRIES) {
+        // Honour Retry-After (the body's retry_after, else the header, else 1 s), within one wait cap and a cap on all waiting.
+        let secs = NaN;
+        try { const j = await res.json(); if (typeof j?.retry_after === "number") secs = j.retry_after; } catch { /* no body */ }
+        if (!Number.isFinite(secs)) { const h = Number(res.headers && res.headers.get && res.headers.get("retry-after")); secs = Number.isFinite(h) ? h : 1; }
+        const ms = Math.min(Math.max(secs, 0) * 1000, MAX_RETRY_WAIT_MS);
+        if (waited + ms > MAX_TOTAL_WAIT_MS) return res;
+        retries++; waited += ms;
+        await sleep(ms);
         continue;
       }
       return res;
@@ -140,17 +177,21 @@ export async function run({ argv = [], env = {}, fetchImpl = globalThis.fetch, o
     if (!apply) {
       out("Dry run: no changes written.");
       out(`would create: ${names(created) || "none"}`);
-      out(`would update: ${names(updated) || "none"}`);
+      out(`would update: ${updated.map((c) => `${c.name} (fields: ${diffFields(liveByKey.get(`${c.type ?? 1}:${c.name}`), c).join(", ")})`).join("; ") || "none"}`);
       out(`unchanged: ${unchanged.length}`);
       return 0;
     }
     const done = { created: [], updated: [] };
+    // Missing commands first, then changed ones; each write is logged by name and kind as it happens so a stop still shows what was written.
     for (const [kind, list] of [["created", created], ["updated", updated]]) {
       for (const cmd of list) {
         const res = await discord("POST", `/applications/${appId}/commands`, cmd);
-        if (res.status === 429) throw new Stop(`rate limited by Discord twice; stopped after ${done.created.length + done.updated.length} write(s).`);
-        if (!res.ok) throw new Stop(`Discord returned HTTP ${res.status} when writing ${cmd.name}; stopped.`);
+        const total = done.created.length + done.updated.length;
+        const so_far = [...done.created, ...done.updated].join(", ") || "none";
+        if (res.status === 429) throw new Stop(`rate limited by Discord; stopped after ${total} write(s) (${so_far}).`);
+        if (!res.ok) throw new Stop(`Discord returned HTTP ${res.status} when writing ${cmd.name}; stopped after ${total} write(s) (${so_far}).`);
         done[kind].push(cmd.name);
+        out(kind === "updated" ? `updated: ${cmd.name} (fields: ${diffFields(liveByKey.get(`${cmd.type ?? 1}:${cmd.name}`), cmd).join(", ")})` : `created: ${cmd.name}`);
       }
     }
     out(`created: ${done.created.join(", ") || "none"}`);
