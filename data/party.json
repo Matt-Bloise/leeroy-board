@@ -229,7 +229,7 @@
     "racial ability",
     "racial abilities"
    ],
-   "def": "A special ability every character of one race gets for free, like a Troll's faster attacks."
+   "def": "A special ability every character of one race gets for free, such as a speed boost or a resistance to one kind of damage."
   },
   {
    "term": "spec",
@@ -238,7 +238,7 @@
     "specs",
     "specialization"
    ],
-   "def": "The way a character focuses its class, for example a Mage who studies Frost rather than Fire."
+   "def": "The way a character focuses its class, for example one that heals rather than one that deals damage."
   },
   {
    "term": "talent",
@@ -334,7 +334,7 @@
     "class",
     "classes"
    ],
-   "def": "A character's job, such as Mage, Priest or Warlock; it sets the spells, the armor and whether it can tank, heal or deal damage. Forever has nine."
+   "def": "A character's job; it sets the spells, the armor and whether it can tank, heal or deal damage. Forever has nine."
   },
   {
    "term": "race",
@@ -342,7 +342,7 @@
     "race",
     "races"
    ],
-   "def": "A character's people, such as Undead, Troll or Tauren; it sets the look, a few special abilities and which classes are open."
+   "def": "A character's people; it sets the look, a few special abilities and which classes are open."
   },
   {
    "term": "faction",

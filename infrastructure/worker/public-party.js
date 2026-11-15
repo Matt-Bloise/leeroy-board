@@ -5,12 +5,12 @@
 //
 // Two rules, and no text matching anywhere:
 //   1. A member's own fields (the party document's member keys, the public sheet list) are removed by the cascade table below when that member hides the field.
-//   2. The COMPOSITES (decide, client, guided-atlas, tonight, the party document's settled/open lines and glossary, the cards' build parts, the ask prompt's party builds) are built from
+//   2. The COMPOSITES (decide, client, guided-atlas, tonight, the party document's settled/open lines, the cards' build parts, the ask prompt's party builds) are built from
 //      the whole party, so they give a hidden value back directly or by elimination. While ANY member hides ANY of the nine sheet lines (or the sheets cannot be read), every
 //      member-derived section of every composite is withheld whole and WITHHELD_LINE stands in its place. Sections that do not depend on the party stay.
 //
 // Who calls what (tests/unit/public-read-paths.test.mjs and public-read-enumerate.test.mjs list every anonymous read path and fail when one is missing a call):
-//   projectForAnonymous(partyDoc, sheets)    the party document (members by the cascade; settled, settled_extra, open and glossary withheld while anyone hides)
+//   projectForAnonymous(partyDoc, sheets)    the party document (members by the cascade; settled, settled_extra, open withheld while anyone hides)
 //   projectSheets(sheets, ownerSlug)         the sheet list ({slug, name, fields}); the owner's own sheet stays whole
 //   projectDataDoc(name, doc, inputs)        any /data/<name> document: party, decide, tonight, guided-atlas, client, launch carry member data; every other name passes through
 //   projectBroadcast(payload, inputs)        a socket message ({type:"state", party: sheets} and {type:"data", key, data})
@@ -113,17 +113,17 @@ function masksFor(members, rows) {
 
 // The party document an anonymous reader may see. Non-mutating (the stored row and any cached copy are never touched); members that hide nothing are
 // shared, not copied. Each member loses the keys their hidden fields and the cascade name. Whenever ANY member hides ANY field, the lines that summarise the table
-// (settled, settled_extra, open: "Tank: ... Healers: ...", "Gap: Alchemy", "Three starting zones, one square") and the glossary (its examples are the table's own:
-// "such as Undead, Troll or Tauren", "a Mage who studies Frost") are withheld whole and `withheld` carries the one plain line. polls, play and the links hold nothing of a member and stay.
+// (settled, settled_extra, open: "Tank: ... Healers: ...", "Gap: Alchemy", "Three starting zones, one square")
+// are withheld whole and `withheld` carries the one plain line. polls, play and the links hold nothing of a member and stay.
 export function projectForAnonymous(partyDoc, sheets) {
   // A document that is not an object, or whose `members` is not a list, cannot be filtered member by member: it is withheld whole (fail closed), never returned as stored.
-  if (!isObj(partyDoc)) return withhold({}, { members: [], settled: [], settled_extra: [], open: [], glossary: [] });
-  if (!Array.isArray(partyDoc.members)) return withhold({ ...partyDoc }, { members: [], settled: [], settled_extra: [], open: [], glossary: [] });
+  if (!isObj(partyDoc)) return withhold({}, { members: [], settled: [], settled_extra: [], open: [] });
+  if (!Array.isArray(partyDoc.members)) return withhold({ ...partyDoc }, { members: [], settled: [], settled_extra: [], open: [] });
   const st = stateOf(partyDoc, sheets);
   // a member row that is not an object is dropped: there is nothing to strip, and nothing of it is shown
   const members = partyDoc.members.flatMap((m, i) => (!isObj(m) ? [] : st.masks[i] ? [strip(m, docKeysFor(st.masks[i]))] : [m]));
   const out = { ...partyDoc, members };
-  if (st.union) return withhold(out, { settled: [], settled_extra: [], open: [], glossary: [] });
+  if (st.union) return withhold(out, { settled: [], settled_extra: [], open: [] });
   return out;
 }
 
