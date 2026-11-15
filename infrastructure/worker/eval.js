@@ -8,6 +8,7 @@
 // All collaborators arrive through `deps` so the unit tests run with fake providers: no network, no D1, no AI.
 
 import { researchModeOn, forceResearchProvider } from "./research/provider.js";
+import { prepareResearchPrivacy } from "./research/claude.js";
 import { buildAnswerInputs, finishAnswerText, dispatchToProvider, isProviderConfigured, isPrPreviewEnv, modelAllowed, EVAL_MODEL_ALLOWLIST, PROMPT_VARIANTS, shortProviderError } from "./ai-models.js";
 import { lintAnswer, lintResearchAnswer } from "./answer-lint.js";
 import { RESEARCH_MAX_TOKENS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
@@ -195,6 +196,18 @@ export async function runEval(env, req, depsIn = {}) {
       inputsCache.set(key, inputs);
     }
 
+    // Research mode: the evaluation prompt carries real party context, so it is tokenised (names become per-request tokens, as for a guest) before Workers AI sees it; if that cannot be
+    // done the candidate fails and nothing is sent. Flag off: the prompts are sent untouched.
+    let sendSystem = inputs.systemPrompt;
+    let sendUser = inputs.userPrompt;
+    let evalPriv = null;
+    if (research) {
+      evalPriv = prepareResearchPrivacy({ systemPrompt: inputs.systemPrompt, userPrompt: inputs.userPrompt, question: q.text, previousQuestion: null, priorTurns: [], by: q.asker === "visitor" ? "Visitor" : "Santa", party: inputs.researchParty });
+      if (!evalPriv.ok) { fail("research_prompt_not_tokenised"); i++; continue; }
+      sendSystem = evalPriv.system;
+      sendUser = evalPriv.user;
+    }
+
     const callStart = deps.now();
     lastAnyCall = callStart;
     deps.lastCallAt.set(c.provider, callStart);
@@ -204,15 +217,16 @@ export async function runEval(env, req, depsIn = {}) {
         provider: c.provider,
         model: c.model || undefined,
         env,
-        systemPrompt: inputs.systemPrompt,
-        userPrompt: inputs.userPrompt,
+        systemPrompt: sendSystem,
+        userPrompt: sendUser,
         deep: false,
         skipCache: true,
         budgetKind: "eval",
         timeoutMs: L.callTimeoutMs,
         ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
       });
-      const raw = String((out && out.answer) || "");
+      let raw = String((out && out.answer) || "");
+      if (evalPriv) raw = evalPriv.clean(raw) ?? ""; // detokenise to display text; a reply naming a name we never sent is dropped
       const { answer } = await deps.finish(env, {
         rawAnswer: raw,
         isCoach: inputs.isCoach,

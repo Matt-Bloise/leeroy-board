@@ -7,7 +7,8 @@
     "test:api": "node --test --test-concurrency=1 --test-reporter=spec api/api.test.mjs api/contract.test.mjs",
     "test:crawl": "node --test --test-concurrency=1 --test-reporter=spec api/preview-crawl.test.mjs",
     "test:recover": "node api/recover-preview.mjs",
-    "test:browser": "node browser/run.mjs"
+    "test:browser": "node browser/run.mjs",
+    "cost-model:check": "node ../tools/cost-model.mjs --check"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

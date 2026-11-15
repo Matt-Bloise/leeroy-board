@@ -34,7 +34,7 @@ import { mapPlanChoices, resolveMapPlan, MAP_PLAN_ALIASES } from "./map-plan.js"
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
 import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
-import { buildStartReply } from "./announce.js";
+import { buildStartReply, buildAnnounceBody, lookupRosterId, postChannelMessage, DISCORD_CONTENT_MAX } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
 import { saltProblems, SaltMissingError } from "./salts.js";
@@ -87,6 +87,12 @@ async function rosterAdminCheck(env, interaction) {
   if (!Object.prototype.hasOwnProperty.call(roster, "guildId")) return { ok: true, gateOff: true };
   if (typeof roster.guildId !== "string" || !/^[0-9]{5,25}$/.test(roster.guildId)) return { ok: false, gateOff: false };
   return { ok: String(interaction.guild_id || "") === roster.guildId, gateOff: false };
+}
+// The names of the roster's channels whose ids are well formed (what /say can post to). Names only: ids never leave this module.
+function sayChannelKeys(roster) {
+  const map = roster && roster.channels;
+  if (!map || typeof map !== "object" || Array.isArray(map)) return [];
+  return Object.keys(map).filter((k) => lookupRosterId(roster, "channels", k) !== null);
 }
 export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
@@ -339,6 +345,16 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     options: [
       { name: "after", description: "Sequence number to start after", type: 4, required: false },
       { name: "limit", description: "Maximum intents to return (default 10)", type: 4, required: false },
+    ],
+  },
+  {
+    name: "say",
+    description: "Post a message as the bot to a configured channel (server admins only)",
+    default_member_permissions: "32", // Manage Server: hides it from everyone else in Discord; the handler enforces the same admin gate as /intents.
+    dm_permission: false,
+    options: [
+      { name: "channel", description: "Channel key from the roster (pick from the list)", type: 3, required: true, autocomplete: true },
+      { name: "text", description: "What to post (max 2000 characters)", type: 3, required: true, max_length: 2000 },
     ],
   },
   {
@@ -836,6 +852,24 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     const focused = opts.find((o) => o.focused);
     const query = focused ? String(focused.value).trim().toLowerCase() : "";
 
+    if (cmd === "say") {
+      // Admin only (same gate as the command); channel KEYS only, never ids. Anyone else gets an empty list.
+      let choices = [];
+      try {
+        const gate = await rosterAdminCheck(env, interaction);
+        if (gate.ok && focused && focused.name === "channel") {
+          const roster = await loadConfigKey(env, "discord_roster");
+          choices = sayChannelKeys(roster).filter((k) => k.toLowerCase().startsWith(query)).slice(0, 25).map((k) => ({ name: k.slice(0, 100), value: k.slice(0, 100) }));
+        }
+      } catch (e) {
+        console.error("autocomplete /say failed:", e && e.message);
+      }
+      return new Response(
+        JSON.stringify({ type: 8, data: { choices } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     if (cmd === "page") {
       let choices = [];
       try {
@@ -1032,7 +1066,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
       // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only before launch and while this member's RSVP is empty:
       // after launch the sign-up record is history, and a click would write rsvp:in into it.
       if (await interestOn(env)) {
-        const mine = (signups.entries || []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
+        const mine = (signups && Array.isArray(signups.entries) ? signups.entries : []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
         const beforeLaunch = Math.floor(Date.now() / 1000) < LAUNCH_EPOCH;
         const nudges = [...(member && beforeLaunch && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
         tonightRows.push({ type: 1, components: nudges });
@@ -1748,6 +1782,35 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    // 2r2. `/say`: an admin posts as the bot. Same gate as /intents; the channel is a roster KEY, never an id; one inline fetch, ephemeral replies only.
+    if (cmd === "say") {
+      const sayReply = (content) => new Response(
+        JSON.stringify({ type: 4, data: { content, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+      const sayGate = await rosterAdminCheck(env, interaction);
+      if (!sayGate.ok) return sayReply("That command is for server admins.");
+      const roster = await loadConfigKey(env, "discord_roster");
+      const channelKey = getOpt("channel");
+      const channelId = lookupRosterId(roster, "channels", channelKey);
+      if (!channelId) {
+        const keys = sayChannelKeys(roster);
+        return sayReply(`Unknown channel. Valid channels: ${keys.length ? keys.join(", ") : "none configured"}.`);
+      }
+      const rawText = opts.find((x) => x.name === "text");
+      const text = rawText && typeof rawText.value === "string" ? rawText.value : "";
+      if (!text.trim()) return sayReply("Nothing to post: text is empty.");
+      if (text.length > DISCORD_CONTENT_MAX) return sayReply(`Text is too long (${text.length} characters). The limit is ${DISCORD_CONTENT_MAX}.`);
+      if (!env.DISCORD_BOT_TOKEN) return sayReply("Discord bot token not configured");
+      const built = buildAnnounceBody({ text });
+      if (!built.ok) return sayReply("Nothing to post: text is empty.");
+      const posted = await postChannelMessage(env, channelId, built.body);
+      if (posted.timedOut) return sayReply("Discord was slow to answer. The post may have gone through: check the channel before posting again.");
+      if (!posted.ok) return sayReply("Discord refused the post");
+      return sayReply(`Posted to ${channelKey}.${sayGate.gateOff ? `
+${GATE_OFF_NOTE}` : ""}`);
     }
 
     // 2s. `/ack`

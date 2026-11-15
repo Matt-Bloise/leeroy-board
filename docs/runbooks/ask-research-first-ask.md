@@ -6,7 +6,9 @@ Status: DRAFT, prepared 2026-11-15. This runbook and the one-line flag change in
 
 `infrastructure/wrangler.toml`, `[vars]`: `ASK_RESEARCH = "on"`. It is a `[vars]` flag, so it takes effect on deploy (Josh deploys). It is never on in a PR preview.
 
-Land first, in this order: PR 339 (nonce tolerance, Sonnet-class compose), PRs 348 and 360 (carry-list restores, privacy conditions). This change must not merge before them: with the flag on and without them the guards and the voice are the older, narrower versions.
+Landed before this change: PR 339 (nonce tolerance, Sonnet-class compose), 348 (asker memory, length and advice restores), 370 (real names to Claude, RESEARCH_NAMES, the honest degraded chain, privacy page) and 371 (/say and the Discord command sync). PR 360 (tokenising conditions) is parked: `RESEARCH_NAMES = "tokenised"` keeps the tokeniser path available. `RESEARCH_NAMES` is already `"real"` in `[vars]`.
+
+Owner decision (2026-11-15): the friends consented, the voice comes first, and friend text goes only to the paid Claude API. The degraded chain is Claude Sonnet-class, then Claude Haiku-class, then an honest in-voice line plus library facts, marked `+degraded`; there is no Workers AI or Gemini for member friend text.
 
 ## The rollback (one line)
 
@@ -35,5 +37,6 @@ Ask one ordinary question as the owner, then check each line:
 4. Answer: show the owner the answer as posted. The owner's reading is the voice test; the A/B judge was unreliable, so no number replaces it.
 5. Privacy: the answer must contain no member name that the question did not contain; look at the row once by eye.
 6. Spend: read the monthly Claude counter row and confirm it moved by roughly one compose.
+7. Commands: the production deploy log shows `created: say` from the Discord command sync step on the first deploy after PR 371; then `/say` shows for an admin and not for a normal member.
 
 If any of 1 to 3 or 5 fails, roll back (above) and report the label and reason. Do not retry in a loop.

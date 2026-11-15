@@ -122,7 +122,7 @@ test("round trip: fake answers for every emitted prompt produce 3 arm files with
   assert.ok(existsSync(join(dir, "arm1.jsonl")));
 });
 
-test("finishing differs by arm: the flag-off deleters cut an unsupported number that research mode keeps and labels; an imperative opener is cut in every arm", async () => {
+test("finishing differs by arm: the flag-off deleters cut an unsupported number that research mode keeps and labels; an imperative opener is cut in the flag-off arm and kept in research arms", async () => {
   const dir = tmp();
   await emit(dir);
   const reply = "Moonpetal gathering is quick if you plan it. Go with the northern route first. It takes 45 minutes in total and drops 99 petals.";
@@ -134,8 +134,10 @@ test("finishing differs by arm: the flag-off deleters cut an unsupported number 
   assert.ok(!/45|99/.test(a), `arm A keeps an unsupported number: ${a}`);
   for (const t of [b, c]) { assert.match(t, /45 minutes/); assert.match(t, /Classic value, not confirmed for Forever/); }
   assert.equal(b, c);
-  // repairHouseVoice (the "inform, never instruct" step) runs in all arms, so this imperative opener is not a differentiator.
-  for (const t of [a, b, c]) assert.ok(!/Go with the northern route/.test(t), t);
+  // The advice stripper (repairHouseVoice "inform, never instruct") runs flag-off and is OFF under research (keepAdvice, PR 348),
+  // so the imperative opener is a differentiator: cut in the production arm, kept in both research arms.
+  assert.ok(!/Go with the northern route/.test(a), a);
+  for (const t of [b, c]) assert.match(t, /Go with the northern route/);
 });
 
 test("tokens in a research reply are detokenised; a token that is not ours is flagged", async () => {

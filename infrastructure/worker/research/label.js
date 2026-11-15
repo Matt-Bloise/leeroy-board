@@ -9,7 +9,8 @@
 import { unsupportedIn, allowedValues, sourceIdsOf } from "../self-rag.js";
 import { badPhrases, HOUSE } from "../ask-build.js";
 import { isRefusalSentence, refusalRemainder, contentSentences, splitBanter, splitSentenceText } from "../answer-lint.js";
-import { RESEARCH_DOWN_ANSWER } from "./provider.js";
+import { RESEARCH_DOWN_ANSWER, DEGRADED_ANSWERS } from "./provider.js";
+import { defangPings } from "./real-names.js";
 
 export const CLASSIC_TAG = "Classic value, not confirmed for Forever";
 export const CLASSIC_NAME_TAG = "Classic-era name, not confirmed for Forever";
@@ -23,9 +24,7 @@ const stripCtl = (t) => String(t == null ? "" : t).replace(/[\u0000-\u0008]/g, "
 // ---- mentions ---------------------------------------------------------------------------------------------------------------
 // @everyone, @here, <@id>, <@!id>, <@&id>: a zero-width space breaks the token (allowed_mentions is none as well; this is the second lock).
 export function neutraliseMentions(text) {
-  return String(text == null ? "" : text)
-    .replace(/@(everyone|here)\b/gi, `@${ZWSP}$1`)
-    .replace(/<@([!&]?)(\d+)>/g, `<${ZWSP}@$1$2>`);
+  return defangPings(text);
 }
 
 // ---- links ------------------------------------------------------------------------------------------------------------------
@@ -272,11 +271,22 @@ export function trimToSentences(text, budget) {
   if (out.length) return balanceMarkdown(out.join("\n"));
   const first = src.replace(/\s+/g, " ").trim().slice(0, Math.max(40, budget - 1));
   const sp = first.lastIndexOf(" ");
-  return `${balanceMarkdown((sp > budget * 0.5 ? first.slice(0, sp) : first).replace(/[\s,;:]+$/, ""))}…`;
+  return `${balanceMarkdown(linkFragmentless((sp > budget * 0.5 ? first.slice(0, sp) : first).replace(/[\s,;:]+$/, "")))}…`;
 }
 
 // The final length guarantee on the assembled answer (body, Sources/confidence footer, fallback lines): footer lines are shortened to 300 characters (whole " · " items first),
 // then the body is trimmed to whole sentences in what is left. Always returns at most `cap` characters.
+// A hard cut must not leave the front of a masked link ("[Page](<https://leeroy.party/#li"): that reads as a bare address and can embed.
+// It also breaks a "@everyone" the cut itself has just exposed at the end ("@everyone123..." has no word boundary, "@everyone…" does).
+const linkFragmentless = (t) => t.replace(/\[[^\]\n]*(?:\]\([^)\n]*)?$/, "").replace(/<?https?:\/\/\S*$/i, "").trimEnd().replace(/@(everyone|here)$/i, `@${ZWSP}$1`);
+// Always at most n characters INCLUDING the ellipsis (linkFragmentless can add a ZWSP, so shrink the slice until the result fits).
+const cutClean = (text, n) => {
+  for (let k = Math.max(0, n - 1); k > 0; k--) {
+    const r = `${linkFragmentless(text.slice(0, k))}…`;
+    if (r.length <= n) return r;
+  }
+  return "…".slice(0, n);
+};
 export function fitToCap(text, cap) {
   const src = String(text || "");
   if (src.length <= cap) return src;
@@ -286,13 +296,13 @@ export function fitToCap(text, cap) {
     const parts = l.split(" · ");
     while (parts.length > 1 && parts.join(" · ").length > 300) parts.pop();
     const j = parts.join(" · ");
-    return j.length > 300 ? `${j.slice(0, 299)}…` : j;
+    return j.length > 300 ? cutClean(j, 300) : j;
   };
   const footer = lines.filter(isFooter).map(shorten);
   const body = lines.filter((l) => !isFooter(l)).join("\n").trim();
   const room = Math.max(60, cap - footer.join("\n").length - 1);
   let out = [trimToSentences(body, room), ...footer].filter(Boolean).join("\n");
-  if (out.length > cap) out = `${out.slice(0, cap - 1)}…`;
+  if (out.length > cap) out = cutClean(out, cap);
   return out;
 }
 
@@ -349,7 +359,7 @@ export function appendBasis(main, { labels, confidence }) {
 export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1500, allow = [] } = {}) {
   const usable = usableAnswer(text);
   const src = takeSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
-  const outage = !usable || String(text || "").trim() === RESEARCH_DOWN_ANSWER;
+  const outage = !usable || String(text || "").trim() === RESEARCH_DOWN_ANSWER || DEGRADED_ANSWERS.has(String(text || "").trim()); // both code-written outage lines carry no sources/confidence tag
   let body = usable ? src.body : RESEARCH_DOWN_ANSWER; // callers retry or fall back to library facts before this; this keeps the eval and format paths from emitting nothing
   const lab = labelClassic(body, groundingText);
   body = trimToSentences(neutraliseMentions(defuseLinks(lab.text, { allow })), budget);

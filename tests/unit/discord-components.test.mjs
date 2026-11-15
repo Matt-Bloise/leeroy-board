@@ -6,6 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handleDiscordInteraction, LAUNCH_UTC } from "../../infrastructure/worker/discord.js";
 import { LAUNCH_EPOCH } from "../../infrastructure/worker/tonight-copy.js";
+import { ASK_LEVEL_BUTTON_ID } from "../../infrastructure/worker/interest.js";
 import { readFileSync } from "node:fs";
 import { SLASH_COPY } from "../../infrastructure/worker/slash-copy.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
@@ -417,4 +418,47 @@ test("a closed vote whose stored document cannot be rendered answers with the pl
     assert.match(body.data.content, /That vote is closed/);
     assert.doesNotMatch(body.data.content, /broke on my side/i);
   }
+});
+
+// ---- INTEREST_NUDGES on: the same checker and catch-line rule over the replies the flag changes -------------------------------------
+test("flag on: /tonight and /signup, before and after launch, have valid components and never fall into the catch path (also with a null sign-ups row)", async () => {
+  const nullSignups = (DB) => {
+    const prepare = DB.prepare.bind(DB);
+    DB.prepare = (sql) => (/key = 'signups'/.test(sql) ? { bind: () => ({ first: async () => ({ json: "null" }) }), first: async () => ({ json: "null" }) } : prepare(sql));
+  };
+  try {
+    for (const [label, now] of [["before launch", LAUNCH_UTC - 86400000], ["after launch", LAUNCH_UTC + 86400000]]) {
+      Date.now = () => now;
+      for (const patch of [undefined, nullSignups]) {
+        // A null sign-ups row is a /tonight case here; /signup with a null row is not part of the nudge change.
+        for (const i of patch ? [slash("tonight")] : [slash("tonight"), slash("signup"), slash("signup", [opt("rsvp", "maybe")])]) {
+          const env = { ...mkEnv({}, patch), INTEREST_NUDGES: "on" };
+          const body = await (await call(i, env)).json();
+          const where = `/${i.data.name} ${label}${patch ? " (null sign-ups)" : ""}`;
+          assert.equal(body.type, 4, `${where}: reply type`);
+          assert.notEqual(body.data.content, SLASH_COPY.interactionFailed(), `${where} fell into the catch path`);
+          assertEmbedUrls(body.data, where);
+          assertComponentsValid(body.data.components, where);
+          if (i.data.name === "tonight" || !i.data.options.length) assert.ok(body.data.components.flatMap((r) => r.components).some((c) => c.custom_id === ASK_LEVEL_BUTTON_ID), `${where}: ask button present`);
+        }
+      }
+    }
+  } finally { Date.now = realNow; }
+});
+
+test("flag on: a throw inside the ask-form modal submit still answers with the catch line and logs only err.name plus a fixed tag", async () => {
+  const env = { ...mkEnv({}, (DB) => { DB.prepare = () => { throw new Error("db down"); }; }), INTEREST_NUDGES: "on", USER_SALT: "fixture-salt-0123456789" };
+  const modal = { type: 5, id: nextId(), application_id: "400000000000000004", token: "t", channel_id: CH, member: who, data: { custom_id: "nudge:ask-modal", components: [{ type: 18, component: { type: 4, custom_id: "question", value: "What is the plan?" } }] } };
+  const seen = [];
+  const realErr = console.error; console.error = (...a) => seen.push(a.join(" "));
+  try {
+    const res = await call(modal, env);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.type, 4);
+    assert.equal(body.data.flags, 64);
+    assert.equal(body.data.content, SLASH_COPY.interactionFailed());
+    const catchLines = seen.filter((s) => s.includes("[interaction_catch]"));
+    assert.deepEqual(catchLines, ["Discord interaction failed: Error [interaction_catch]"], "the catch line is err.name plus a fixed tag, no err.message");
+  } finally { console.error = realErr; }
 });
