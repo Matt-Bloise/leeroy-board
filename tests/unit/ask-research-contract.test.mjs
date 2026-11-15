@@ -62,11 +62,13 @@ const ABSTAIN_Q = "tell me about the weather";
 const SOURCES = "\n-# Sources: general Classic-era knowledge, unconfirmed";
 
 // Scaling check instead of a wall-clock limit (CI machines vary): linear work grows about 4x for 4x input, quadratic about 16x.
+// Warm-up first, then the MEDIAN of 3 timings at n=5000 and at n=20000. ok when the big run is fast in absolute terms (under 50 ms) or the ratio stays under 9.
 function scalesLinearly(run) {
-  run(2000);
+  for (const n of [2000, 5000, 20000]) run(n);
   const time = (n) => { const t = process.hrtime.bigint(); run(n); return Number(process.hrtime.bigint() - t) / 1e6; };
-  const small = Math.max(time(5000), 1), big = time(20000);
-  return { small, big, ok: big < 400 || big / small < 9 };
+  const median = (n) => [time(n), time(n), time(n)].sort((x, y) => x - y)[1];
+  const small = Math.max(median(5000), 1), big = median(20000);
+  return { small, big, ok: big < 50 || big / small < 9 };
 }
 test("mention-in-title: @everyone, <@id> and <@&id> from a library title never reach the prompt or the answer", async () => {
   const bad = { ...TANK_PAGE, title: "Tanking @everyone <@123456> <@&987654> <@!555>" };
@@ -358,6 +360,23 @@ test("hostile input: forged placeholders do not clone links or print undefined; 
   const lin = scalesLinearly((n) => { defuseLinks("[".repeat(n * 5)); labelClassic("[".repeat(n * 5) + "](x)", ""); researchPrepare("[".repeat(n * 5), { groundingText: "" }); });
   assert.ok(lin.ok, `not linear: ${lin.small.toFixed(1)}ms -> ${lin.big.toFixed(1)}ms`);
 });
+
+// Each function gets its own scaling check, so a quadratic loop in ANY ONE of them fails by name (a combined workload would let a fast one hide behind the rest).
+const SCALE_WORKLOADS = {
+  "splitSentenceText (star run)": (n) => splitSentenceText("*".repeat(n)),
+  "splitSentenceText (dotted star run)": (n) => splitSentenceText("a. " + "* ".repeat(n / 2)),
+  "stripRefusals (star run)": (n) => stripRefusals("*".repeat(n)),
+  "labelClassic (bracket run)": (n) => labelClassic("[".repeat(n) + "](x)", ""),
+  "labelClassic (star run then a flagged number)": (n) => labelClassic("a. " + "*".repeat(n) + " 9999", ""),
+  "trimToSentences (star runs)": (n) => trimToSentences("*".repeat(n) + " b. " + "*".repeat(n), 500),
+  "defuseLinks (bracket run)": (n) => defuseLinks("[".repeat(n)),
+};
+for (const [name, work] of Object.entries(SCALE_WORKLOADS)) {
+  test(`scaling: ${name} is linear in the input`, () => {
+    const lin = scalesLinearly(work);
+    assert.ok(lin.ok, `${name} not linear: ${lin.small.toFixed(1)}ms -> ${lin.big.toFixed(1)}ms (ratio ${(lin.big / lin.small).toFixed(1)})`);
+  });
+}
 
 // ---- round 3 ----
 

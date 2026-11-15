@@ -159,9 +159,19 @@ const covered = (sent, token) => {
   }
   return any;
 };
+// The tag goes before the sentence's tail: optional end punctuation with its closers, then trailing * and _, then whitespace. Found by walking back from the end, once:
+// the old lazy regex /^([\s\S]*?)((?:[.!?]+["')\]]*)?[*_]*\s*)$/ retried the star-run tail at every start position, which is quadratic on a long run of "*" (70 ms at 5,000, 1.2 s at 20,000).
 function tagSentence(sent, tag) {
-  const m = /^([\s\S]*?)((?:[.!?]+["')\]]*)?[*_]*\s*)$/.exec(sent);
-  return `${m ? m[1] : sent} (${tag})${m ? m[2] : ""}`;
+  let e = sent.length;
+  while (e > 0 && /\s/.test(sent[e - 1])) e--;
+  let s = e;
+  while (s > 0 && (sent[s - 1] === "*" || sent[s - 1] === "_")) s--;
+  let c = s;
+  while (c > 0 && `"')]`.includes(sent[c - 1])) c--;
+  let p = c;
+  while (p > 0 && ".!?".includes(sent[p - 1])) p--;
+  const start = p < c ? p : s;
+  return `${sent.slice(0, start)} (${tag})${sent.slice(start)}`;
 }
 // groundingText: the same text the deleters used (library facts as shown, build, party, the question). Returns the labelled text and what was tagged.
 export function labelClassic(text, groundingText) {
