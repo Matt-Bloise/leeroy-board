@@ -46,6 +46,7 @@ export function fakeD1(seed = {}, { lenient = false } = {}) {
             if (kv.has(a[0])) return { results: [] };
             kv.set(a[0], a[1]); return { results: [{ key: a[0] }] };
           }
+          if (/FROM sheet_events/.test(sql)) return { results: [] }; // the log of who hid what (public-party.js reads it for a member with no sheet row): empty
           if (lenient) return { results: [] }; throw new Error(`fake D1: unhandled all(): ${sql}`);
         },
       };

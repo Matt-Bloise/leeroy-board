@@ -33,6 +33,8 @@ The Cloudflare rollback page documents only the dashboard method; no `wrangler p
 
 Note: the deployed `js/brain.js` has the Worker URL stamped in at deploy time (`deploy-cloudflare.yml:280-286`). Production resolves to `https://api.leeroy.party` (`:239-245`), which is stable, so an old Pages build still talks to the current Worker. If the Worker API changed incompatibly, roll back both layers.
 
+Pages and Worker are a pair for the member documents: the board reads `client`, `party`, `decide`, `tonight` and `guided-atlas` from the Worker only (`/api/data/<name>`, no static fallback). A newer Pages build with an older Worker gives `/api/data/client` a 404 (the older Worker has no bundled client document), so the board shows the could-not-load line. Roll back the Worker and Pages together (sections 1 and 2), never one of them alone across that change.
+
 ## 2. Worker and Durable Object
 
 ```

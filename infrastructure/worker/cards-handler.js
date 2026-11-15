@@ -5,6 +5,7 @@
 //   Replies are ephemeral: one of six rotating confirmation lines. The card itself is redrawn in place by cards.js (coalesced).
 
 import { readModalValues } from "./build-modal.js";
+import { dataCachePath } from "./public-docs.js";
 import {
   RSVP_STATES, RSVP_LABEL, cardsEnabled, loadCards, loadSignups, channelAllowed, resolveChoice, sanitiseWriteIn, applySignupChange,
   confirmationLine, describeChange, requestCardEdit, whenOptions, DEFAULT_MEET, WRITE_IN_MAX,
@@ -90,7 +91,7 @@ async function applyAndSave({ env, ctx, member, byName, patches, deps, now }) {
   const doc = saved.doc;
   await defer(ctx, async () => {
     await deps.insertIntent(env, { slug: member.slug, kind: "signup", body: { patch: Object.fromEntries(patches.map((p) => [p.field, p.value])), entry }, ver: 1, at: new Date(now).toISOString() });
-    await deps.purgeWorkerCache(deps.origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+    await deps.purgeWorkerCache(deps.origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
     await deps.broadcastToRoom(env, { type: "data", key: "signups", data: doc });
   });
   await afterSignupChange(env, ctx, before, doc, now);
