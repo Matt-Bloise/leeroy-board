@@ -20,6 +20,10 @@ export const RACES = {
   gnome: { label: "Gnome", zone: "Coldridge Valley", faction: "Alliance" },
   "night-elf": { label: "Night Elf", zone: "Teldrassil", faction: "Alliance" },
 };
+// "Race Class" for a party-document member, or "Build hidden" when the member hides both (and anything missing): the one helper behind every place
+// that used to join race and class by hand. The page has the same function in js/board.js (tests/unit/race-class.test.mjs pins the two together).
+export const raceClass = (m) => [m && m.race, m && m.class].filter(Boolean).join(" ") || "Build hidden";
+
 // The names this board shows are game handles. Refuse anything that looks like contact details, and anything carrying a publisher's mark.
 export const BAD_NAME = /[@<>\\/\u0000-\u001f]|https?:|www\.|blizzard|warcraft|battle\.net|activision/i;
 

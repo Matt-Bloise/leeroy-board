@@ -427,3 +427,15 @@ test("GET /api/admin/export is admin only: anonymous and a member key are 401, t
     assert.equal(res.status, want, principal);
   }
 });
+
+// tools/add-member.mjs reads the party document in order to write it back. The public read has what members hid cut out, so the tool reads the stored one: admin only, never cached.
+test("GET /api/data/party?stored=1 (the stored document, for a read-then-write tool) is admin only: anonymous and a member key are 401, the admin token is let in and the answer is no-store", async () => {
+  for (const [principal, want] of [[A, 401], [M, 401], [D, 200]]) {
+    const res = await call(await makeEnv(), "GET /data/*", principal, ["GET", "/api/data/party?stored=1"]);
+    assert.equal(res.status, want, principal);
+    if (want === 200) assert.equal(res.headers.get("Cache-Control"), "no-store");
+  }
+  const plain = await call(await makeEnv(), "GET /data/*", A, ["GET", "/api/data/party"]);
+  assert.equal(plain.status, 200, "the public read is unchanged");
+  assert.equal(plain.headers.get("Cache-Control"), "no-store", "member documents are never held in a cache (index.js memberPath), so the plain read is no-store too; the point of this test is that it is 200 and the projection, not the stored document");
+});
