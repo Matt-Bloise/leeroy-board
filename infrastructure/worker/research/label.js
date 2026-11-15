@@ -9,7 +9,7 @@
 import { unsupportedIn, allowedValues, sourceIdsOf } from "../self-rag.js";
 import { badPhrases, HOUSE } from "../ask-build.js";
 import { isRefusalSentence, refusalRemainder, contentSentences, splitBanter, splitSentenceText } from "../answer-lint.js";
-import { RESEARCH_DOWN_ANSWER } from "./provider.js";
+import { RESEARCH_DOWN_ANSWER, DEGRADED_ANSWER } from "./provider.js";
 
 export const CLASSIC_TAG = "Classic value, not confirmed for Forever";
 export const CLASSIC_NAME_TAG = "Classic-era name, not confirmed for Forever";
@@ -349,7 +349,7 @@ export function appendBasis(main, { labels, confidence }) {
 export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1500, allow = [] } = {}) {
   const usable = usableAnswer(text);
   const src = takeSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
-  const outage = !usable || String(text || "").trim() === RESEARCH_DOWN_ANSWER;
+  const outage = !usable || String(text || "").trim() === RESEARCH_DOWN_ANSWER || String(text || "").trim() === DEGRADED_ANSWER; // both code-written outage lines carry no sources/confidence tag
   let body = usable ? src.body : RESEARCH_DOWN_ANSWER; // callers retry or fall back to library facts before this; this keeps the eval and format paths from emitting nothing
   const lab = labelClassic(body, groundingText);
   body = trimToSentences(neutraliseMentions(defuseLinks(lab.text, { allow })), budget);

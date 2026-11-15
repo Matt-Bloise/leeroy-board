@@ -11,7 +11,7 @@ import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { resetKeyCacheForTests } from "../../infrastructure/worker/ai-keys.js";
 import { resetResearchClaudeForTests, privacyBudget } from "../../infrastructure/worker/research/claude.js";
-import { RESEARCH_DOWN_ANSWER } from "../../infrastructure/worker/research/provider.js";
+import { RESEARCH_DOWN_ANSWER, DEGRADED_ANSWER } from "../../infrastructure/worker/research/provider.js";
 import { MEMBER_FALLBACK_LINES, WALL_RE } from "../../infrastructure/worker/research/no-wall.js";
 import { ABSTAIN_LINE } from "../../infrastructure/worker/self-rag.js";
 import { NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
@@ -49,7 +49,9 @@ const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
 
 let n = 0;
 // seed: [{ q, a, hash, hoursAgo, share, status, model, id }]
-async function ask(question, { research = true, seed = [], key = false, share = true, hash = H_ME, persona = null, respond = null, by = "Red Fox", memberSlug = "red-fox" } = {}) {
+// CHANGED (real-names PR): a member's ask never reaches Workers AI under research (Claude, then the degraded line), so the harness gives research asks the fake key by default
+// and the prompt the model saw is read from the Claude request as well as from Workers AI. key: false still means "no Claude" (the degraded line).
+async function ask(question, { research = true, seed = [], key = research, share = true, hash = H_ME, persona = null, respond = null, by = "Red Fox", memberSlug = "red-fox" } = {}) {
   invalidatePersonaCache(); invalidatePagesCache(); invalidateConfigCache();
   const DB = schemaDb();
   DB.raw.prepare("INSERT OR REPLACE INTO lib_pages (id, category, title, blurb, aliases_json, facts_json, updated_at) VALUES (?, ?, ?, ?, '[]', ?, '2026-11-01T00:00:00Z')").run(TANK_PAGE.id, TANK_PAGE.category, TANK_PAGE.title, TANK_PAGE.blurb, JSON.stringify(TANK_PAGE.facts));
@@ -72,7 +74,7 @@ async function ask(question, { research = true, seed = [], key = false, share = 
   for (const k of Object.keys(real)) console[k] = () => {};
   try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by, memberSlug, question, provider: "groq", share, deep: false, journey: "curious", isMember: true }); } finally { Object.assign(console, real); }
   const row = DB.raw.prepare("SELECT answer, model, status FROM ask_turns WHERE id = ?").get(id);
-  return { row: { ...row }, answer: row.answer, reads, anth: anth.slice(), wai: wai.slice(), prompt: wai.map((b) => (b.messages || []).map((m) => m.content).join("\n")).join("\n====\n"), claudePrompt: anth.map((a) => JSON.stringify(a.body)).join("\n====\n") };
+  return { row: { ...row }, answer: row.answer, reads, anth: anth.slice(), wai: wai.slice(), prompt: [...wai.map((b) => (b.messages || []).map((m) => m.content).join("\n")), ...anth.map((a) => [...(a.body.system || []).map((s) => s.text), ...(a.body.messages || []).map((m) => m.content)].join("\n"))].join("\n====\n"), claudePrompt: anth.map((a) => JSON.stringify(a.body)).join("\n====\n") };
 }
 const reset = () => {
   claudeText = () => "**Short answer first.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed";
@@ -143,7 +145,8 @@ test("a: the turns go through the tokeniser and the privacy guard like every oth
   assert.equal(g.anth.length, 0, "an obfuscated name in an earlier question stops the Claude call");
   assert.match(g.row.model, /guard:/);
   assert.ok(g.answer && g.answer.length > 5, "never a refusal");
-  assert.ok(!g.prompt.includes("PRIOR_TURNS") || g.wai.length >= 1, "Workers AI (inside Cloudflare) answers the same tokenised prompt");
+  assert.equal(g.wai.length, 0, "CHANGED: friend text never reaches Workers AI under research; the honest degraded line answers instead");
+  assert.match(g.row.model, /\+degraded$/);
   const ga = await ask("and the other thing", { key: true, seed: [{ q: "fine question", a: `what does ${b64} think` }] });
   assert.equal(ga.anth.length, 0, "the earlier ANSWER is guarded too");
   assert.match(ga.row.model, /guard:/);
@@ -169,7 +172,7 @@ test("a: a different asker with the same question text sees nothing of the first
 test("b: the live research path sends 700 tokens and finishes at 1900; the persona's shorter 'under N characters' line is overridden in the research prompt", async () => {
   const persona = { system: "You are Leeroy.", format: { chatMaxChars: 1200 } };
   const on = await ask(ABSTAIN_Q, { persona });
-  assert.equal(on.wai[0].max_tokens, 700);
+  assert.equal(on.anth[0].body.max_tokens, 700); // CHANGED: the member ask is answered by Claude, not Workers AI
   assert.match(on.prompt, /under 1200 characters/, "sanity: the stored persona line is there");
   assert.match(on.prompt, /replaced by this one[^\n]*1500 characters/i, "the research rules replace it with the 1500 cap");
   const off = await ask(ABSTAIN_Q, { research: false, persona });
@@ -191,7 +194,7 @@ test("c: no code-written abstain line reaches the user under research, even when
 });
 
 test("c: the code-written research fallbacks are in voice and name what would settle it; none is a wall", () => {
-  for (const line of [RESEARCH_DOWN_ANSWER, ...MEMBER_FALLBACK_LINES]) {
+  for (const line of [RESEARCH_DOWN_ANSWER, DEGRADED_ANSWER, ...MEMBER_FALLBACK_LINES]) {
     assert.match(line, /settle it/i, line);
     assert.doesNotMatch(line, WALL_RE, line);
     assert.doesNotMatch(line, /library does not|not published yet|won't guess|cannot answer/i, line);

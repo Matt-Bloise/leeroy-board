@@ -19,3 +19,10 @@ export const forceResearchProvider = (research, requested) => (research ? RESEAR
 // Honest in-voice lines for when Workers AI cannot answer. Neither is the old refusal text, and neither sends the asker elsewhere.
 export const RESEARCH_DOWN_NOTE = "My research hand is out of reach right now, so this is only what the library holds, nothing from outside.";
 export const RESEARCH_DOWN_ANSWER = "**My research hand is out of reach right now, so I have nothing solid on that yet.**\nA Blizzard post, a patch note or someone in the party who has played it would settle it in the meantime, and I will take a proper run at it once my research hand is free.";
+
+// The degraded chain (RESEARCH_NAMES era): a member's ask is answered by Claude (Sonnet-class compose, Haiku-class retry) or not at all by a model. When neither answers (no key, the monthly cap,
+// a guard stop on a secret or a host, a timeout, an error) there is NO Workers AI, NO Gemini and NO other provider for friend text: an honest in-voice line, plus the library's own facts
+// when the question matches the library. The stored model label ends with DEGRADED_SUFFIX so it is never silent. Neither line matches the no-walls WALL_RE (research/no-wall.js).
+export const DEGRADED_SUFFIX = "+degraded";
+export const DEGRADED_NOTE = "My good brain is out right now, so that is only what the library holds. Put it to me again in a few minutes for the full take.";
+export const DEGRADED_ANSWER = "**My good brain is out right now, so I am not going to guess at that one.**\nA Blizzard post or a party member who has played it would settle it, and I will take a proper run at it when you put it to me again in a few minutes.";

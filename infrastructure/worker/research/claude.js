@@ -1,11 +1,13 @@
-// /ask research mode (ASK_RESEARCH on): the Claude hop. Provider order is Claude (compose on the deep model, one Haiku-class retry on 529/5xx/timeout, max 2 sends) -> Workers AI -> library facts; no other provider ever sees friend text.
+// /ask research mode (ASK_RESEARCH on): the Claude hop. Provider order for a member is Claude (compose on the deep model, one Haiku-class retry on 529/5xx/timeout, max 2 sends) -> the honest degraded line (+ library facts); no other provider ever sees friend text.
 //
-// Every outside call happens only after (1) the whole prompt is tokenised (privacy/tokenise.js: names become per-request tokens; the name list is the roster PLUS
-// every name on the party sheets, so a sixth member or a character name is a key too), (2) the strict guard passes over EVERY friend-writable segment (question,
-// previous turn, structured sheet fields, sign-up keys and values, the tonight title; free-text sheet fields are sent only if they pass, else dropped) and
-// (3) the cheap guard passes over the final request body. Any guard hit, any error, an unavailable key, a spent monthly token budget, a counter that cannot be
-// read or written, or a privacy step over its CPU budget means: no Claude call, Workers AI (Cloudflare-internal) answers the same tokenised prompt. Never a wall,
-// never a refusal. Reasons are short fixed codes (claude:*, guard:*, tokenise:*, cpu:*), never values.
+// RESEARCH_NAMES (research/real-names.js) picks how the prompt leaves. "real" (the wrangler.toml value): the Claude hop gets real names, sheet fields, builds and the asker's turns
+// untokenised; the name guard and the whole-prompt name scan do not run and a name never fails the ask over. "tokenised": every outside call happens only after (1) the whole prompt
+// is tokenised (privacy/tokenise.js: names become per-request tokens; the name list is the roster PLUS every name on the party sheets), (2) the strict guard passes over EVERY
+// friend-writable segment (free-text sheet fields are sent only if they pass, else dropped) and (3) the cheap guard passes over the final request body.
+// In BOTH modes these stay on: the host allow-list (Anthropic only), the secret and long-id scan of the body and the reply, pings defanged, friend text fenced as data.
+// Any guard hit, any error, an unavailable key, a spent monthly token budget, a counter that cannot be read or written, or a privacy step over its CPU budget means: no Claude call.
+// For a member that now means the honest degraded line (research/provider.js, ai-models.js), NEVER Workers AI or any other provider. Reasons are short fixed codes
+// (claude:*, guard:*, tokenise:*, cpu:*), never values.
 //
 // Spend guard: an estimate is RESERVED atomically in D1 (kv_state key claude_tokens_YYYYMM, UTC month) before the call, then reconciled to the real usage
 // (all four usage fields, clamped). RESEARCH_CLAUDE_MONTHLY_TOKENS (default 2,000,000) is the bound; when the reserve fails Claude is skipped and one alert row per
@@ -18,6 +20,7 @@ import { skeleton } from "../privacy/skeleton.js";
 import { guardUserText, guardBody, replyLeaksIdentity } from "../privacy/outbound-guard.js";
 import { researchMembers, researchMembersFor, genericAliases } from "../privacy/roster-config.js";
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
+import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets } from "./real-names.js";
 
 export const DEFAULT_MONTHLY_TOKENS = 2000000;
 export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
@@ -156,7 +159,7 @@ const strings = (v, out = []) => {
 
 // Called by buildAnswerInputs in research mode, BEFORE the prompt blocks are rendered. Returns the sheets to render (free-text fields that fail the guard removed),
 // the member list for the name map, and `mandatory`: raw strings that must pass the guard before Claude is called. Never throws: { failed: true } means skip Claude.
-export function researchParty(sheets, stateMap) {
+export function researchParty(sheets, stateMap, { real = false } = {}) {
   try {
     const list = Array.isArray(sheets) ? sheets : [];
     const members = researchMembersFor(list);
@@ -171,7 +174,7 @@ export function researchParty(sheets, stateMap) {
         const text = fieldString(f);
         if (!text) { fields[k] = f; continue; }
         if (classifyField(k) === "structured") { mandatory.push(text); fields[k] = f; }
-        else if (passes(text)) fields[k] = f;
+        else if (real || passes(text)) fields[k] = f; // RESEARCH_NAMES "real": the name guard does not run, so no free-text field is dropped for a name
         else dropped++;
       }
       return { ...s, fields };
@@ -242,6 +245,8 @@ export function prepareResearchPrivacy({ systemPrompt, userPrompt, question, pre
 }
 
 const guardReason = (e) => {
+  if (e && e.code === "OUTBOUND_SECRET") return "guard:secret";
+  if (e && e.code === "OUTBOUND_HOST") return "guard:host";
   if (e && e.code === "OUTBOUND_IDENTIFIER_LEAK") {
     const k = String((e.leaks && e.leaks[0] && e.leaks[0].kind) || "hit").toLowerCase().replace(/[^a-z]+/g, "-").slice(0, 16) || "hit";
     return `guard:${k}`;
@@ -256,28 +261,47 @@ const failReason = (e) => {
 // Overload-class failures that justify the one Haiku-class retry: Anthropic 529, any 5xx, or a timeout. Never 401/403/400/429/other 4xx.
 const overloaded = (e) => Boolean(e) && (e.code === "ai_timeout" || e.name === "AiTimeoutError" || e.name === "TimeoutError" || Number(e.status) === 529 || (Number(e.status) >= 500 && Number(e.status) < 600));
 // Billed or possibly billed: keep the reservation. Known not billed (a guard stop, a 4xx that is not a rate limit): give it back.
-const notBilled = (e) => Boolean(e) && (e.code === "OUTBOUND_IDENTIFIER_LEAK" || e.code === "OUTBOUND_GUARD_CONFIG" || (Number(e.status) >= 400 && Number(e.status) < 500 && Number(e.status) !== 429 && Number(e.status) !== 408));
+const GUARD_CODES = ["OUTBOUND_IDENTIFIER_LEAK", "OUTBOUND_GUARD_CONFIG", "OUTBOUND_SECRET", "OUTBOUND_HOST"];
+const notBilled = (e) => Boolean(e) && (GUARD_CODES.includes(e.code) || (Number(e.status) >= 400 && Number(e.status) < 500 && Number(e.status) !== 429 && Number(e.status) !== 408));
 
 // Returns { answer, model, provider: "claude" } or { reason } (reason may be null: silent skip, e.g. no key configured).
 // call: callAnthropicClaude from ai-models.js (injected: this file must not import it back).
 // hardEndAt: absolute epoch ms the whole Claude hop must end by (the ask's start + its deadline - margin, from ai-models.js); the reservation writes count inside it.
-export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null }) {
+// real: { system, user } when RESEARCH_NAMES is "real" (research/real-names.js): the prompt is sent with real names, no name guard and no tokenising; only the always-on
+// protections run (host allow-list, secrets and ids, pings, fencing). Without it (tokenised mode) priv drives everything exactly as before, plus the same always-on protections.
+export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), hardEndAt = null, real = null }) {
   if (!anthropicAvailable(env)) return { reason: null };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
-  if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
-  const g0 = performance.now();
-  try {
-    guardUserText(priv.userSegments, priv.roster);
-    for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
-  } catch (e) { return { reason: guardReason(e) }; }
-  if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
+  let sendSystem;
+  let sendUser;
+  let cleanReply;
+  let roster = null;
+  if (real) {
+    try {
+      ({ system: sendSystem, user: sendUser } = prepareRealPrompt(real, env));
+    } catch (e) { return { reason: guardReason(e) }; }
+    if (sendSystem.length + sendUser.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
+    cleanReply = (raw) => cleanRealReply(raw, env);
+  } else {
+    if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
+    const g0 = performance.now();
+    try {
+      guardUserText(priv.userSegments, priv.roster);
+      for (const seg of priv.partySegments) guardUserText([seg], priv.roster);
+    } catch (e) { return { reason: guardReason(e) }; }
+    if (priv.ms + (performance.now() - g0) > privacyBudget.ms || priv.system.length + priv.user.length > MAX_PROMPT_CHARS) return { reason: "cpu:budget" };
+    sendSystem = priv.system;
+    sendUser = priv.user;
+    roster = priv.roster;
+    cleanReply = (raw) => (scanSecrets(raw, env, { ids: false }).length ? null : priv.clean(raw)); // a secret in the reply stops it in both modes
+  }
 
   const budgetStart = Date.now(); // the 9 s / 6 s budgets start here, so the reservation write is inside them
   const hardEnd = Number(hardEndAt) > 0 ? Number(hardEndAt) : Infinity;
   if (hardEnd - budgetStart < RETRY_MIN_MS) return { reason: "claude:no-time" };
   const at = now();
   const cap = monthlyTokenCap(env);
-  const estimate = estimateTokens(priv.system, priv.user);
+  const estimate = estimateTokens(sendSystem, sendUser);
   try {
     if (!(await reserveTokens(env, estimate, cap, at))) {
       await alertOnce(env, cap, at);
@@ -299,8 +323,12 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
     await settle(-estimate); // the reservation write ate the budget: no send is started that cannot finish; the unused reservation goes back
     return { reason: "claude:no-time" };
   }
-  const beforeSend = (body) => guardBody(body, priv.roster);
-  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: priv.system, userPrompt: priv.user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+  // The final body check. Tokenised mode keeps the cheap name guard; BOTH modes always scan for secrets and long ids (the key is passed in by callAnthropicClaude).
+  const beforeSend = (body, secretKey) => {
+    if (roster) guardBody(body, roster);
+    guardSecretsInBody(body, env, secretKey ? [secretKey] : []);
+  };
+  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: sendSystem, userPrompt: sendUser, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
   let res;
   try {
     try {
@@ -329,11 +357,11 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
     }
   } catch (e) {
     if (notBilled(e)) await settle(-estimate);
-    if (e && (e.code === "OUTBOUND_IDENTIFIER_LEAK" || e.code === "OUTBOUND_GUARD_CONFIG")) return { reason: guardReason(e) };
+    if (e && GUARD_CODES.includes(e.code)) return { reason: guardReason(e) };
     return { reason: failReason(e) };
   }
   await settle(usageTokens(res.usage, estimate) - estimate);
-  const text = priv.clean(res.answer);
+  const text = cleanReply(res.answer);
   if (text === null) return { reason: "claude:reply-flagged" };
   return { answer: text, model: res.model, provider: "claude" };
 }
