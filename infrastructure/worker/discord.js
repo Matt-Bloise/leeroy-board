@@ -48,6 +48,7 @@ import { flushBoardLines } from "./board-lines.js";
 import {
   broadcastToRoom,
   purgeWorkerCache,
+  PARTY_CACHE_PATHS,
   buildPartySheetsFromD1,
   recordSheetEventInD1,
   insertIntent,
@@ -1832,7 +1833,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
             handle: parsed.handle,
             build: parsed.build,
             after: async ({ partyDoc }) => {
-              await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json"]);
+              await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
+              // Discord may call the workers.dev host while the site reads api.leeroy.party: the cache is keyed by host, so purge both.
+              const apiOrigin = env.API_ORIGIN ? String(env.API_ORIGIN).replace(/\/+$/, "") : "";
+              if (apiOrigin && apiOrigin !== origin) await purgeWorkerCache(apiOrigin, PARTY_CACHE_PATHS);
               await broadcastToRoom(env, { type: "data", key: "party", data: partyDoc });
             },
           });
