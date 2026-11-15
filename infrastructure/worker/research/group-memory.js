@@ -35,13 +35,15 @@ export const normChannel = (c) => String(c ?? "").trim().slice(0, 40) || "web";
 const KINDS = new Set(["ask", "answer", "message"]);
 
 // ---- cleaning ------------------------------------------------------------------------------------------------------------------------------------
-const INVISIBLE = new RegExp("[\\u200b-\\u200f\\u2060\\ufeff\\u00ad\\u202a-\\u202e]", "g");
+// every format, control, line and paragraph separator character (zero-width and joiner characters, bidi marks, U+2060 to U+2064, U+2063, tag characters), variation selectors, and the blank-looking fillers
+// (Mongolian vowel separator, Hangul fillers, halfwidth Hangul filler): none may survive between letters, or "SYS<U+2063>TEM:" would slip past the role-label step. Newline and tab are kept.
+const INVISIBLE = new RegExp("[\\p{Cf}\\p{Cc}\\p{Zl}\\p{Zp}\\uFE00-\\uFE0F\\u{E0100}-\\u{E01EF}\\u180E\\u3164\\uFFA0\\u115F\\u1160]", "gu");
 const NEWLINES = new RegExp("[\\u0085\\u2028\\u2029\\r]", "g");
 // look-alike colons that NFKC leaves alone (ratio sign, modifier-letter colon, Armenian full stop, triangular colon)
 const COLONS = new RegExp("[\\u2236\\ua789\\u0589\\u02d0]", "g");
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+
 // NFKC first: a fullwidth colon, fullwidth angle brackets or hyphens, a compatibility space all become the plain character the later steps look for. Bounded by STORE_TEXT_CHARS.
-export const normaliseText = (text) => String(text ?? "").slice(0, STORE_TEXT_CHARS).normalize("NFKC").replace(NEWLINES, "\n").replace(INVISIBLE, "").replace(CONTROL, "").replace(COLONS, ":");
+export const normaliseText = (text) => String(text ?? "").slice(0, STORE_TEXT_CHARS).normalize("NFKC").replace(NEWLINES, "\n").replace(INVISIBLE, (m) => (m === "\n" || m === "\t" ? m : "")).replace(COLONS, ":");
 
 const MARKS = /[*_`~|]+/g;
 // True when the text, as written or with markup and invisible characters taken out, holds a secret-shaped string ("-----BEGIN PRIV*ATE KEY-----" counts).
@@ -191,8 +193,26 @@ export async function buildGroupMemoryBlock(env, { askerSlug, isMember, names = 
       if (rows.length) rows.shift(); else pages.pop();
       text = render();
     }
+    // The same whole-text screen the sender runs (research/real-names.js prepareRealPrompt: a line-by-line drop, then one scan of the whole prompt that fails the send). Run it over the assembled
+    // block and drop the offending ROWS or pages, one at a time, until it is clean, so stored text alone can never make the sender stop (or silently shorten) a member's ask.
+    const trouble = (t) => { try { return scanSecrets(redactHex(t), env, { ids: false }).length + (dropSecretLines(t, env) === t ? 0 : 1); } catch { return 1; } };
+    while (text && trouble(text) > 0 && (rows.length || pages.length)) {
+      const saveRows = rows.slice(), savePages = pages.slice();
+      let best = null;
+      for (const [kind, list] of [["r", saveRows], ["p", savePages]]) {
+        for (let i = 0; i < list.length; i++) {
+          rows.length = 0; rows.push(...saveRows); pages.length = 0; pages.push(...savePages);
+          (kind === "r" ? rows : pages).splice(i, 1);
+          const score = trouble(render());
+          if (best === null || score < best.score) best = { kind, i, score };
+        }
+      }
+      rows.length = 0; rows.push(...saveRows); pages.length = 0; pages.push(...savePages);
+      (best.kind === "r" ? rows : pages).splice(best.i, 1);
+      text = render();
+    }
     if (!text) return "";
-    return fence("GROUP_MEMORY", guardLines(text, env));
+    return fence("GROUP_MEMORY", text); // clean by construction: the loop above ends only when the sender's own screen finds nothing to drop or stop on
   } catch {
     return "";
   }

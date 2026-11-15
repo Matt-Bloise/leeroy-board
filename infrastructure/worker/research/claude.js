@@ -10,7 +10,7 @@
 // (claude:*, guard:*, tokenise:*, cpu:*), never values.
 //
 // Spend guard: an estimate is RESERVED atomically in D1 (kv_state key claude_tokens_YYYYMM, UTC month) before the call, then reconciled to the real usage
-// (all four usage fields, clamped). RESEARCH_CLAUDE_MONTHLY_TOKENS (default 2,000,000) is the bound; when the reserve fails Claude is skipped and one alert row per
+// (all four usage fields, clamped). RESEARCH_CLAUDE_MONTHLY_TOKENS (default 5,000,000) is the bound; when the reserve fails Claude is skipped and one alert row per
 // month is written (alert:claude-cap:YYYYMM, no names, no text). A counter write that fails pauses Claude for 10 minutes (module memory). Prices are NOT modelled
 // in code: the token cap is the bound (docs/runbooks/flags.md has the worst-case arithmetic).
 import { anthropicAvailable } from "../ai-keys.js";
@@ -22,7 +22,7 @@ import { researchMembers, researchMembersFor, genericAliases } from "../privacy/
 import { RESEARCH_MAX_TOKENS } from "./rules.js";
 import { prepareRealPrompt, guardSecretsInBody, cleanRealReply, scanSecrets, defangPings, redactHex } from "./real-names.js";
 
-export const DEFAULT_MONTHLY_TOKENS = 2000000;
+export const DEFAULT_MONTHLY_TOKENS = 5000000;
 export const CLAUDE_TIMEOUT_MS = 9000; // one budget for the first call and the model-id retry together; Workers AI keeps its own 12s after it, inside the 24s ask deadline
 export const CLAUDE_COMPOSE_MS = 6000; // the compose send's own deadline inside CLAUDE_TIMEOUT_MS; a timeout there still leaves >= RETRY_MIN_MS for the Haiku-class retry
 export const PAUSE_MS = 10 * 60 * 1000;

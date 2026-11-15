@@ -113,10 +113,11 @@ export async function refreshGroupWiki(env, { now = new Date(), call } = {}) {
 
 async function run(env, now, call) {
   const nowMs = now.getTime(), today = dayOf(now), iso = now.toISOString();
+  const runStart = new Date().toISOString(); // the real clock: an erase (data-rights.js) stamps group_erase_marker with its own, and a marker newer than this means a member erased while the call was out
   const stRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = ?").bind(GROUP_WIKI_STATE_KEY).first();
   let st = {};
   try { st = stRow && stRow.json ? JSON.parse(stRow.json) : {}; } catch { st = {}; }
-  const lastId = intOr0(st.last_id), bad = intOr0(st.bad);
+  const lastId = intOr0(st.last_id), bad = intOr0(st.bad), rej = intOr0(st.rej);
   const runs = st.day === today ? intOr0(st.runs) : 0;
   const lastRun = Date.parse(st.last_run || "");
   if (st.fail_day === today) return { ran: false, reason: "backoff" };
@@ -193,12 +194,26 @@ async function run(env, now, call) {
     }
     written.push(p.page_key);
   }
-  if (valid) for (const k of offered) if (flagged.includes(k) && !written.includes(k)) stmts.push(env.DB.prepare("UPDATE group_wiki SET note = NULL WHERE page_key = ? AND note LIKE ?").bind(k, REBUILD)); // shown once: not offered forever
-  const advance = valid || bad + 1 >= POISON_RUNS;
-  const next = valid
-    ? { last_id: maxId, last_run: iso, bad: 0, day: today, runs: runs + 1 }
-    : { last_id: advance ? maxId : lastId, last_run: advance ? iso : st.last_run || null, bad: advance ? 0 : bad + 1, day: today, runs: runs + 1, fail_day: today };
+  const refusedAll = valid && parsed.pages.length > 0 && written.length === 0;
+  if (valid && !refusedAll) for (const k of offered) if (flagged.includes(k) && !written.includes(k)) stmts.push(env.DB.prepare("UPDATE group_wiki SET note = NULL WHERE page_key = ? AND note LIKE ?").bind(k, REBUILD)); // shown once: not offered forever
+  // A valid reply of which nothing was accepted (every page refused by the shrink rule, the offered rule or the screens) is not progress: the rows wait. A truly junk reply and a fully refused reply each
+  // count their own days; after POISON_RUNS of either, the rows are skipped (and a short code is logged) so one stubborn batch is not paid for forever.
+  const junk = !valid;
+  const advance = (valid && !refusedAll) || (junk && bad + 1 >= POISON_RUNS) || (refusedAll && rej + 1 >= POISON_RUNS);
+  if (advance && !valid) console.warn("group-wiki: rows skipped after repeated junk replies");
+  if (advance && refusedAll) console.warn("group-wiki: rows skipped after repeated refused replies");
+  const next = advance
+    ? { last_id: maxId, last_run: iso, bad: 0, rej: 0, day: today, runs: runs + 1 }
+    : { last_id: lastId, last_run: st.last_run || null, bad: junk ? bad + 1 : bad, rej: refusedAll ? rej + 1 : rej, day: today, runs: runs + 1, fail_day: today };
+  const erasedSince = async () => { const m = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'group_erase_marker'").first(); return Boolean(m && String(m.json) > runStart); };
+  if (written.length && (await erasedSince())) { // a member erased while the call was out: the pages may hold their words, so nothing is written, the watermark stays, and the next run starts from the log as it is now
+    await setState({ ...st, last_id: lastId, bad, rej, day: today, runs: runs + 1 }).run();
+    return { ran: false, reason: "erased-during-run" };
+  }
   stmts.push(setState(next));
   await env.DB.batch(stmts);
+  if (written.length && (await erasedSince())) { // an erase landed between the check and the write: the pages this run wrote wait for a rebuild
+    await env.DB.batch(written.map((k) => env.DB.prepare("UPDATE group_wiki SET note = 'rebuild:erase' WHERE page_key = ?").bind(k)));
+  }
   return { ran: true, rows: rows.length, pages: written.length, advanced: advance };
 }
