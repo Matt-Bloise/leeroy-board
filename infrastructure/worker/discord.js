@@ -52,6 +52,7 @@ import {
   buildPartySheetsFromD1,
   recordSheetEventInD1,
   insertIntent,
+  SHEET_FIELDS,
 } from "./index.js";
 import {
   DATES_DATA,
@@ -1019,6 +1020,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         );
       }
       if (field && value) {
+        // Same field allow-list as POST /sheet: Array.includes is exact, so constructor, toString, __proto__ and unknown names are refused and nothing is written.
+        if (!SHEET_FIELDS.includes(field)) {
+          return new Response(
+            JSON.stringify({ type: 4, data: { content: `That is not a sheet field. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
         // Same server rule as POST /sheet. A slash option is always a string, so level ("34") is refused here: it is set on the board.
         // The registered command does not offer level; this holds even for an interaction built by hand.
         if (sheetValueProblem(field, value)) {
@@ -1032,8 +1040,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           slug: target.slug,
           name: target.name,
           field,
-          value,
-          visible: true,
+          value, // value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
           source: "discord",
           at: now,
         });
@@ -1116,8 +1123,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           slug: member.slug,
           name: byName,
           field: "launch_state",
-          value: state,
-          visible: true,
+          value: state, // value-only: launch_state keeps its visibility
           source: "discord",
           at: now,
         });

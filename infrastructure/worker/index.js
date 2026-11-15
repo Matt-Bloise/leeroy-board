@@ -47,7 +47,7 @@ import { extractKey } from "./request-key.js";
 import { guestIpKey } from "./guest-key.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { publicParty, partyForMember } from "./sheet-privacy.js";
-import { sheetValueProblem, ADMIN_SHEET_FIELDS, visibilityOnly, nextLevelField } from "./sheet-values.js";
+import { sheetValueProblem, ADMIN_SHEET_FIELDS, nextLevelField } from "./sheet-values.js";
 import { saltProblems, saltErrorBody, SaltMissingError } from "./salts.js";
 import { loadPublicVotes } from "./votes.js";
 import { cardsEnabled, cardsShadow, postCard, requestCardEdit, CARD_NAMES } from "./cards.js";
@@ -61,7 +61,7 @@ import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMem
 
 export { BoardRoom };
 
-const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"];
+export const SHEET_FIELDS = ["race", "class", "spec_path", "spec_at_40", "professions", "level", "launch_state", "plan_zone", "goals"];
 
 async function resolveMemberAuth(req, url, env) {
   // 1. Try cryptographic salted hash lookup in `members` table
@@ -338,16 +338,21 @@ export function projectPublicParty(partyDoc, sheets, slug, field) {
   return partyDoc;
 }
 
+// Visibility: `visible` counts only when visibleGiven is true and it is a boolean (the owner's explicit choice). Otherwise the field keeps the
+// visibility it has now, read inside the atomic commit below on every attempt, so a value-only write can never un-hide a hidden field, not even
+// one hidden between this request's read and its write. A field with no earlier visibility starts visible, as before.
+// valueGiven false (a visibility-only write, any field): the stored value stays.
 // keepHidden (the admin path): a field its owner has hidden stays hidden. The check runs inside the commit, against the sheet state that is
 // written, so a hide that lands between the admin's request and the write is never undone.
 // levelRules (level, sheet-values.js nextLevelField): a visibility-only write (valueGiven false) keeps the value; a write of the same value
 // keeps its at and source; an older write of a new value is stale and changes nothing (a hide still hides). A write that changes nothing
 // records no event and broadcasts nothing; the reply carries stale and the stored field. The level event row carries the resolved field
 // (value and visible), so the slow-path replay below ends where this commit ended.
-export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible = true, visibleGiven = true, source = "board", at, keepHidden = false, levelRules = false }) {
+export async function recordSheetEventInD1(env, origin, { slug, name, field, value, valueGiven = true, visible, visibleGiven = false, source = "board", at, keepHidden = false, levelRules = false }) {
   const now = at || new Date().toISOString();
   const valJson = value === undefined || value === null ? null : JSON.stringify(value);
-  const event = { slug, name: name || slug, field, valJson, visible: Boolean(visible), source: source || "board", at: now };
+  // event.visible and event.valJson are set in compute() from the fresh read on every attempt, before the event row is bound.
+  const event = { slug, name: name || slug, field, valJson, visible: true, source: source || "board", at: now };
   let stale = false, changed = true, stored = null;
 
   // One atomic commit (kv-cas.js): the event, the materialised sheets and the public party projection succeed or fail together. A lost race
@@ -357,7 +362,7 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
     compute: async (cur, partyDoc) => {
       // Reconcile first: a person who is in the party document but has no stored sheet gets theirs (race, class, zone) before this write adds its
       // field, so the write cannot turn a synthesized member into a one-field sheet that reconcile would then skip.
-      const currentParty = reconcileSheetsWithDoc(Array.isArray(cur) ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party, partyDoc);
+      const currentParty = reconcileSheetsWithDoc(Array.isArray(cur) && cur.length > 0 ? cur : (await buildPartySheetsFromD1(env, { persist: false, partyDoc })).party, partyDoc);
       // Same identity as the reconcile above: a write that arrives under a renamed document member's new slug lands on the person's existing
       // sheet (which takes the new slug and name) instead of starting a second one-field sheet. Events keyed by the old slug stay as history.
       let memberSheet = sheetForWrite(currentParty, partyDoc, slug, name);
@@ -372,9 +377,12 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
       }
       memberSheet.fields = memberSheet.fields || {};
       const prior = memberSheet.fields[field];
+      // sheet-privacy.js treats exactly visible === false as hidden, so that is what is kept hidden. Read from `prior` of THIS attempt.
+      const priorHidden = !!(prior && typeof prior === "object" && prior.visible === false);
+      const explicit = visibleGiven && typeof visible === "boolean";
       const project = () => ({ sheets: currentParty, party: partyDoc ? projectPublicParty(partyDoc, currentParty, slug, field) : undefined });
       if (levelRules) { // recomputed on every retry, against the state this attempt writes
-        const next = nextLevelField(prior, { value, valueGiven, visible, visibleGiven, source: source || "board", at: now }, { keepHidden });
+        const next = nextLevelField(prior, { value, valueGiven, visible, visibleGiven: explicit, source: source || "board", at: now }, { keepHidden });
         stale = next.stale; changed = next.changed; stored = next.field;
         event.valJson = !stored || stored.value === undefined || stored.value === null ? null : JSON.stringify(stored.value);
         event.visible = !stored || stored.visible !== false;
@@ -384,8 +392,10 @@ export async function recordSheetEventInD1(env, origin, { slug, name, field, val
         memberSheet.updated = now;
         return project();
       }
-      event.visible = keepHidden && prior && prior.visible === false ? false : Boolean(visible);
-      memberSheet.fields[field] = stored = { value, visible: event.visible, source: source || "board", at: now };
+      event.visible = keepHidden && priorHidden ? false : explicit ? visible : !priorHidden;
+      const nextValue = valueGiven ? value : prior && typeof prior === "object" && prior.value !== undefined ? prior.value : null;
+      event.valJson = nextValue === undefined || nextValue === null ? null : JSON.stringify(nextValue); // the event row carries the resolved value too
+      memberSheet.fields[field] = stored = { value: nextValue, visible: event.visible, source: source || "board", at: now };
       memberSheet.updated = now;
       return project();
     },
@@ -530,8 +540,10 @@ const worker = {
           }
           const problem = sheetValueProblem(field, body.value, body, { allowClear: true }); // the owner may clear a level (value null)
           if (problem) return jsonResp({ error: problem }, 400, cors);
-          const visible = body.visible !== false;
-          const valueGiven = !visibilityOnly(field, body); // the switch on an empty level line: { field: "level", visible }
+          // Only a boolean `visible` changes the field's visibility; without one the field keeps what it has (a write of a value never un-hides).
+          // { field, visible } with no value key is a visibility change for every field: the stored value stays. { value: null } still clears.
+          const visibleGiven = typeof body.visible === "boolean";
+          const valueGiven = !(body.value === undefined && visibleGiven);
           const value = body.value === undefined ? null : body.value;
           const now = new Date().toISOString();
           let saved;
@@ -542,8 +554,8 @@ const worker = {
               field,
               value,
               valueGiven,
-              visible,
-              visibleGiven: typeof body.visible === "boolean", // level: a value write without visible (sheet Save, Import) keeps the stored visibility
+              visible: body.visible,
+              visibleGiven,
               source: "board",
               at: now,
               levelRules: field === "level",
@@ -554,7 +566,7 @@ const worker = {
           }
           // The reply is the stored field (for level: the kept value on a visibility change, the stored one on a stale write). A write that
           // changed nothing (same field, or stale) sends no intent: the PC bot never sees a value that lost.
-          const st = saved.stored || { value, visible, at: now };
+          const st = saved.stored || { value, visible: saved.visible, at: now };
           const out = { ok: true, at: st.at || now, field, value: st.value === undefined ? null : st.value, visible: st.visible !== false, ...(saved.stale ? { stale: true } : {}) };
           if (!saved.changed) return jsonResp({ ...out, unchanged: true }, 200, cors);
           const { seq } = await insertIntent(env, {
@@ -1637,8 +1649,7 @@ const worker = {
                 slug: member.slug,
                 name: member.name,
                 field: "launch_state",
-                value: lState,
-                visible: true,
+                value: lState, // value-only: launch_state keeps its visibility
                 source: "board",
                 at: now,
               });

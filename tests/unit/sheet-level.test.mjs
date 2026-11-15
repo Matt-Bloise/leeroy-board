@@ -117,7 +117,7 @@ test("an older level write never overwrites a newer one (two overlapping request
   // a hide always lands, even an older one: the friend's hide started before an admin fill that committed first
   const fill = "2026-11-14T10:00:20.000Z", hideAt = "2026-11-14T10:00:15.000Z";
   await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 40, source: "admin", at: fill, keepHidden: true, levelRules: true }));
-  const hid = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 31, visible: false, at: hideAt, levelRules: true }));
+  const hid = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 31, visible: false, visibleGiven: true, at: hideAt, levelRules: true }));
   assert.equal(hid.stale, true);
   assert.equal(hid.visible, false);
   assert.deepEqual([sheetOf(env, "red-fox").fields.level.value, sheetOf(env, "red-fox").fields.level.visible], [40, false], "newer value kept, hidden");
@@ -379,7 +379,7 @@ test("LOW-2/3: a stale write records no event and no intent; a rebuild cannot re
   const before = { ev: events(env2).length, in: intents(env2) };
   const stored = sheetOf(env2, "red-fox").fields.level;
   const old = new Date(Date.parse(stored.at) - 60000).toISOString();
-  const lost = await quiet(() => recordSheetEventInD1(env2, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 32, visible: true, at: old, levelRules: true }));
+  const lost = await quiet(() => recordSheetEventInD1(env2, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 32, visible: true, visibleGiven: true, at: old, levelRules: true }));
   assert.deepEqual([lost.stale, lost.changed], [true, false]);
   assert.deepEqual({ ev: events(env2).length, in: intents(env2) }, before);
   const b = await rebuilt(env2, "red-fox");
@@ -396,7 +396,7 @@ test("LOW-2/3: a stale write records no event and no intent; a rebuild cannot re
 test("a stale hide is recorded as the resolved field, so the replay also ends hidden", async () => {
   const env = await makeEnv();
   await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 40, source: "admin", at: "2026-11-14T10:00:20.000Z", keepHidden: true, levelRules: true }));
-  const h = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 31, visible: false, at: "2026-11-14T10:00:15.000Z", levelRules: true }));
+  const h = await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "red-fox", name: "Red Fox", field: "level", value: 31, visible: false, visibleGiven: true, at: "2026-11-14T10:00:15.000Z", levelRules: true }));
   assert.deepEqual([h.stale, h.changed, h.stored.value, h.stored.visible], [true, true, 40, false]);
   assert.deepEqual(events(env).at(-1), { slug: "red-fox", field: "level", value_json: "40", visible: 0, source: "board" });
   const b = await rebuilt(env, "red-fox");
