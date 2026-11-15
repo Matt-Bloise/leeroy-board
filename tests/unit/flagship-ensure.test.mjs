@@ -20,6 +20,8 @@ test("parseKeyList: one key per line, comments and blanks ignored, duplicates dr
   for (const bad of ["two words", "$(rm -rf)", "a;b", "--disabled", "-x", "KEY\u0000", "a".repeat(80)]) assert.throws(() => parseKeyList(bad), /not a flag key/, bad);
 });
 
+const committedKeys = () => parseKeyList(fs.readFileSync(path.join(ROOT, "infrastructure/flagship-flags.txt"), "utf8"));
+
 test("the committed key list parses and is not empty", () => {
   const keys = parseKeyList(fs.readFileSync(path.join(ROOT, "infrastructure/flagship-flags.txt"), "utf8"));
   assert.ok(keys.includes("D1_FEED"));
@@ -178,17 +180,21 @@ test("CLI: creates the missing key disabled, leaves the existing key, exit 0", (
   const f = fake({ list: JSON.stringify([{ key: "OTHER" }]) });
   const r = cli(f);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.deepEqual(f.calls().map((c) => c.slice(2, 3)[0]), ["list", "create"]);
-  assert.deepEqual(f.calls()[1], ["flagship", "flags", "create", APP, "D1_FEED", "--disabled", "--remote"]);
-  assert.match(r.stdout, /created D1_FEED \(disabled/);
+  const keys = committedKeys(); // every key in the committed list is created, in file order: nothing is hardcoded here
+  assert.deepEqual(f.calls().map((c) => c.slice(2, 3)[0]), ["list", ...keys.map(() => "create")]);
+  keys.forEach((k, i) => {
+    assert.deepEqual(f.calls()[i + 1], ["flagship", "flags", "create", APP, k, "--disabled", "--remote"]);
+    assert.match(r.stdout, new RegExp(`created ${k} \\(disabled`));
+  });
 });
 
 test("CLI: the key already exists: no create, exit 0", () => {
-  const f = fake({ list: JSON.stringify({ flags: [{ key: "D1_FEED", enabled: true }] }) });
+  const keys = committedKeys();
+  const f = fake({ list: JSON.stringify({ flags: keys.map((key, i) => ({ key, enabled: i % 2 === 0 })) }) });
   const r = cli(f);
   assert.equal(r.status, 0);
   assert.equal(f.calls().length, 1);
-  assert.match(r.stdout, /D1_FEED exists, left as it is/);
+  for (const k of keys) assert.match(r.stdout, new RegExp(`${k} exists, left as it is`));
 });
 
 test("CLI: unreadable list output -> no create, a ::warning:: annotation, exit 1", () => {
@@ -234,14 +240,38 @@ test("CLI: --dry-run creates nothing", () => {
   assert.match(r.stdout, /would create D1_FEED/);
 });
 
+// Records every spawnSync the TOOL makes, in the tool's own process, before the child exists (preloaded with --require). The fake's own log is written only once
+// node has started inside it, and a loaded machine can take longer than the 400 ms timeout to get there: the child is then killed before it logs anything.
+// So "what was run" is read from this record, which does not depend on how far the killed child got.
+function spawnRecorder() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flagspawn-"));
+  const log = path.join(dir, "spawns.jsonl"), pre = path.join(dir, "record-spawns.cjs");
+  fs.writeFileSync(pre, `const cp=require("child_process"),fs=require("fs"),orig=cp.spawnSync;
+cp.spawnSync=function(cmd,args,...rest){fs.appendFileSync(${JSON.stringify(log)},JSON.stringify([cmd,...(args||[])])+"\\n");return orig.call(this,cmd,args,...rest);};
+require("module").syncBuiltinESMExports();\n`);
+  const spawns = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+  return { nodeOptions: `--require="${pre.replace(/\\/g, "/")}"`, spawns };
+}
+
 test("CLI: a hung wrangler is killed after the timeout, nothing more runs, a warning is raised, exit 1", () => {
   const f = fake({ hang: true });
+  const rec = spawnRecorder();
   const t0 = Date.now();
-  const r = cli(f, [], { FLAGSHIP_TIMEOUT_MS: "400" });
+  const r = cli(f, [], { FLAGSHIP_TIMEOUT_MS: "400", NODE_OPTIONS: rec.nodeOptions });
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.ok(Date.now() - t0 < 8000, "returned promptly, not after the full 60 s");
-  assert.equal(f.calls().length, 1, "only the list was attempted");
-  assert.match(r.stdout, /::warning.*timed out after 400 ms.*Created nothing/s);
+  assert.deepEqual(rec.spawns(), [[process.execPath, f.prog, "flagship", "flags", "list", APP, "--json", "--all", "--remote"]], "only the list was attempted");
+  assert.ok(f.calls().every((c) => c[2] === "list") && f.calls().length <= 1, "the fake saw nothing but that list (it may have been killed before it could log)");
+  assert.match(r.stdout, /::warning.*could not list Flagship flags.*timed out after 400 ms.*Created nothing/s);
+});
+
+test("the spawn recorder sees what the fake sees (so the hung-wrangler check above reads the same calls)", () => {
+  const f = fake({ list: JSON.stringify([{ key: "OTHER" }]) });
+  const rec = spawnRecorder();
+  assert.equal(cli(f, [], { NODE_OPTIONS: rec.nodeOptions }).status, 0);
+  assert.deepEqual(rec.spawns().map((s) => s.slice(2)), f.calls());
+  const keys = parseKeyList(fs.readFileSync(path.join(ROOT, "infrastructure/flagship-flags.txt"), "utf8"));
+  assert.deepEqual(rec.spawns().map((s) => s[4]), ["list", ...keys.map(() => "create")], "one list, then one create per key in the key file");
 });
 
 test("every spawn has a timeout and the default is 60 s", () => {

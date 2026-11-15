@@ -113,7 +113,7 @@ export function buildThreadMention(person, roster) {
 
 // kv_state rows that hold configuration or private working data. GET /api/data/<key> must never serve them:
 // that route is public and serves any kv_state key. Exact keys plus prefixes; matching is case-insensitive.
-const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "events_schedule", "scheduled_events", "vocab", "votes:index", "feed_posts", "moments", "moments_state", "moments_shadow_state", "moments_ledger", "cards", "cards_edit", "board_lines_pending", "noise"]);
+const PRIVATE_EXACT = new Set(["persona", "name_map", "discord_members", "discord_roster", "ai_budget_caps", "events_schedule", "scheduled_events", "vocab", "votes:index", "feed_posts", "moments", "moments_state", "moments_shadow_state", "moments_ledger", "cards", "cards_edit", "board_lines_pending", "noise", "interest_counts"]);
 const PRIVATE_PREFIXES = ["ai_budget:", "vote:", "votes:", "feed_", "private:", "config:", "secret"];
 const PUBLIC_KV_KEYS = new Set([...PUBLIC_DATA_DOCS, ...PUBLIC_ATLAS_DOCS, "party_sheets"]);
 // Config and working rows that are never readable or writable through the public document routes (deny list; PUT /data/:name refuses these).

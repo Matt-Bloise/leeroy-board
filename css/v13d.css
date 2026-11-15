@@ -197,7 +197,7 @@ button.cal-day.win { background: var(--hi-brass); }
 #dsu-body .trow.zero .trow-n b { font-size: 1em; color: var(--ink-soft); }
 #dsu-body .trow.zero .trow-who { font-size: 0; gap: 0; }
 #dsu-body .trow.zero .trow-who > span { font-size: max(var(--fs-small), 0.92rem); }
-#dsu-body .trow-who .who { white-space: nowrap; }
+#dsu-body .trow-who .who { white-space: normal; overflow-wrap: anywhere; min-width: 0; max-width: calc(100% - 20px); } /* a name stays on one line unless it is wider than the row; then it breaks inside the word instead of widening the page. 20px = its own 8px margin plus the 12px after the row */
 #sheet-body #panel-signups #dsu-seats svg { max-width: 100%; }
 @media (min-width: 1100px) {
   #sheet-body #panel-signups .signup-grid { width: max-content; max-width: 100%; }

@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleDiscordInteraction, DISCORD_SLASH_COMMANDS_MANIFEST } from "../../infrastructure/worker/discord.js";
+import { handleDiscordInteraction, LAUNCH_UTC, DISCORD_SLASH_COMMANDS_MANIFEST } from "../../infrastructure/worker/discord.js";
+import { SLASH_COPY } from "../../infrastructure/worker/slash-copy.js";
 import { createDiscordSigner } from "../helpers/discord-sign.mjs";
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "discord");
@@ -86,6 +87,8 @@ for (const fx of fixtures) {
     if (fx.expectEphemeral) assert.equal(body.data.flags & 64, 64, "response should be ephemeral");
     if (body.data && typeof body.data.content === "string") assert.ok(body.data.content.length <= 2000, "content is clamped");
     if (body.type === 4 || body.type === 7) assert.ok(body.data.allowed_mentions, "allowed_mentions is set on every message reply");
+    // The catch reply now carries allowed_mentions too, so that check no longer notices a command that fell into the catch.
+    assert.notEqual(body.data && body.data.content, SLASH_COPY.interactionFailed(), `${fx.file} fell into the catch path`);
   });
 }
 
@@ -115,7 +118,8 @@ test("fixtures contain no real-looking Discord ids or secrets", () => {
 test("the handler writes to D1 for a state-changing fixture", async () => {
   const { env, writes } = makeEnv(signer.publicKeyHex);
   const fx = fixtures.find((f) => f.file === "cmd-launch.json");
-  await dispatch(signer.signedRequest(fx.interaction), env);
+  const realNow = Date.now; Date.now = () => LAUNCH_UTC - 3600000; // /launch only records before launch
+  try { await dispatch(signer.signedRequest(fx.interaction), env); } finally { Date.now = realNow; }
   assert.ok(writes.some((w) => /kv_state/.test(w.sql)), "launch state is written to kv_state");
 });
 

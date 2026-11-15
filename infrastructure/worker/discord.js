@@ -52,6 +52,7 @@ import {
   buildPartySheetsFromD1,
   recordSheetEventInD1,
   insertIntent,
+  SHEET_FIELDS,
 } from "./index.js";
 import {
   DATES_DATA,
@@ -60,12 +61,13 @@ import {
   QUIZ_DATA,
 } from "./bot-data.js";
 import { loadRoster } from "./party-source.js";
-import { tonightLines } from "./tonight-copy.js";
+import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
 import { canManageGuild } from "./setup-command.js";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
+import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
@@ -401,6 +403,9 @@ const signupRejection = (what) =>
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
 
+// Own keys only: a value like "constructor" or "__proto__" must not reach Object.prototype.
+const hasTally = (bucket, key) => typeof key === "string" && key !== "" && Object.hasOwn(bucket, key);
+
 export async function recomputeSignupTallies(signupsDoc) {
   const entries = Array.isArray(signupsDoc.entries) ? signupsDoc.entries : [];
   const meetOpts = (signupsDoc.options && signupsDoc.options.meet) || ["Valley of Strength", "The Crossroads"];
@@ -424,15 +429,16 @@ export async function recomputeSignupTallies(signupsDoc) {
   };
 
   for (const e of entries) {
+    if (!e || typeof e !== "object" || Array.isArray(e)) continue; // a null or non-object row is kept in the doc but never tallied
     const name = e.name || "Someone";
-    if (e.pack && tallies.pack[e.pack]) {
+    if (hasTally(tallies.pack, e.pack)) {
       tallies.pack[e.pack].count++;
       tallies.pack[e.pack].names.push(name);
     }
     if (e.meet) {
       const meetLabel =
         e.meet === "vos" ? "Valley of Strength" : e.meet === "xroads" ? "The Crossroads" : e.meet;
-      if (tallies.meet[meetLabel] && meetLabel !== "other") {
+      if (hasTally(tallies.meet, meetLabel) && meetLabel !== "other") {
         tallies.meet[meetLabel].count++;
         tallies.meet[meetLabel].names.push(name);
       } else {
@@ -443,11 +449,11 @@ export async function recomputeSignupTallies(signupsDoc) {
         }
       }
     }
-    if (e.rsvp && tallies.rsvp[e.rsvp]) {
+    if (hasTally(tallies.rsvp, e.rsvp)) {
       tallies.rsvp[e.rsvp].count++;
       tallies.rsvp[e.rsvp].names.push(name);
     }
-    if (e.when && tallies.when[e.when]) {
+    if (hasTally(tallies.when, e.when)) {
       tallies.when[e.when].count++;
       tallies.when[e.when].names.push(name);
     }
@@ -634,7 +640,21 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
 
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
-  const res = await handleDiscordInteractionInner(req, env, ctx, origin);
+  const state = { verified: false, type: null };
+  let res;
+  try {
+    res = await handleDiscordInteractionInner(req, env, ctx, origin, state);
+  } catch (err) {
+    // Before the signature is verified, or for a PING, keep the old behaviour (the caller's 500). Afterwards Discord must get an answer.
+    if (!state.verified || state.type === 1) throw err;
+    // Name and a fixed tag only: err.message can carry a slice of user input.
+    console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
+    const body = state.type === 4
+      ? { type: 8, data: { choices: [] } }
+      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+    // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
+    res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
   if (res.status !== 200 || !(res.headers.get("Content-Type") || "").includes("application/json")) return res;
   try {
     const body = JSON.parse(await res.clone().text());
@@ -651,7 +671,7 @@ export function likePattern(term) {
   return `%${String(term ?? "").replace(/[\\%_]/g, "\\$&")}%`;
 }
 
-async function handleDiscordInteractionInner(req, env, ctx, origin) {
+async function handleDiscordInteractionInner(req, env, ctx, origin, state = { verified: false, type: null }) {
   const rawBody = await req.text();
   if (!env.DISCORD_PUBLIC_KEY) {
     return new Response(JSON.stringify({ error: "DISCORD_PUBLIC_KEY not configured" }), { status: 500 });
@@ -668,7 +688,9 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     return new Response("Invalid request signature", { status: 401 });
   }
 
+  state.verified = true;
   const interaction = JSON.parse(rawBody);
+  state.type = interaction.type;
 
   // Replay: a signed interaction id is accepted once. PING carries no id and is exempt. Rows older than 10 minutes are purged.
   if (interaction.type !== 1) {
@@ -707,6 +729,70 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     const person = (await loadRoster(env)).find((r) => r.display.toLowerCase().replace(/ /g, "-") === t.slug) || { display: t.name };
     const mention = buildThreadMention(person, await loadConfigKey(env, "discord_roster"));
     return SLASH_COPY.build(t.name, mention || "(thread link not configured)", `${boardUrl}/#five`);
+  };
+
+  // `/ask` and the INTEREST_NUDGES ask form share one path: length check, budget, the stored turn, the intent, then the answer.
+  const startAsk = async ({ question, provider, isPrivate }) => {
+    if (Array.from(question).length > MAX_QUESTION_CHARS) {
+      return new Response(JSON.stringify({ type: 4, data: { content: `That question is too long. Keep it under ${MAX_QUESTION_CHARS} characters.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
+    // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
+    if (askBudget) {
+      const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
+      if (verdict && verdict.code !== "budget_global") {
+        return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+    const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
+    const now = new Date().toISOString();
+
+    try {
+      await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
+    } catch (e) {
+      if (!(e instanceof SaltMissingError)) throw e;
+      return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
+    await insertIntent(env, {
+      slug: intentSlug,
+      kind: "ask",
+      body: { id: intentId, question, by: byName, provider, private: isPrivate },
+      ver: 1,
+      at: now,
+    });
+
+    const persona = await loadPersona(env);
+    ctx.waitUntil(
+      answerAndDeliver({
+        env,
+        interaction,
+        intentId,
+        persona,
+        isPrivate,
+        askerId: String(user.id || ""),
+        wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
+        answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
+      })
+    );
+
+    // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
+    if (persona) {
+      return new Response(
+        JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }
+    return new Response(
+      JSON.stringify({ type: 5, data: isPrivate ? { flags: 64 } : {} }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   };
 
   // 4. Autocomplete (Type 4) -> Application Command Autocomplete Result (Type 8)
@@ -881,66 +967,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const question = getOpt("question") || getOpt("q") || String((opts[0] && opts[0].value) || "").trim();
       const provider = resolveAiProvider(env, getOpt("model") || getOpt("provider"));
       const isPrivate = Boolean(getOpt("private"));
-      if (Array.from(question).length > MAX_QUESTION_CHARS) {
-        return new Response(JSON.stringify({ type: 4, data: { content: `That question is too long. Keep it under ${MAX_QUESTION_CHARS} characters.`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
-      // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
-      if (askBudget) {
-        const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
-        if (verdict && verdict.code !== "budget_global") {
-          return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        }
-      }
-      const intentId = crypto.randomUUID(); // unguessable: GET /api/ask?id= answers whoever holds the id
-      const now = new Date().toISOString();
-
-      try {
-        await insertAskTurn(env, { id: intentId, byName, question, provider, share: !isPrivate, createdAt: now }, { discordId: user.id, slug: member && member.slug });
-      } catch (e) {
-        if (!(e instanceof SaltMissingError)) throw e;
-        return new Response(JSON.stringify({ type: 4, data: { content: "Asking is unavailable: the Worker is missing its USER_SALT secret.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-
-      await insertIntent(env, {
-        slug: intentSlug,
-        kind: "ask",
-        body: { id: intentId, question, by: byName, provider, private: isPrivate },
-        ver: 1,
-        at: now,
-      });
-
-      const persona = await loadPersona(env);
-      ctx.waitUntil(
-        answerAndDeliver({
-          env,
-          interaction,
-          intentId,
-          persona,
-          isPrivate,
-          askerId: String(user.id || ""),
-          wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
-          answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
-        })
-      );
-
-      // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
-      if (persona) {
-        return new Response(
-          JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        );
-      }
-      return new Response(
-        JSON.stringify({ type: 5, data: isPrivate ? { flags: 64 } : {} }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      );
+      return startAsk({ question, provider, isPrivate });
     }
 
     // 2b. `/tonight`
@@ -952,20 +979,29 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
       const party = partyRow ? JSON.parse(partyRow.json) : { members: [] };
       const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
+      const tonightRows = [
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 5, label: "Open Tonight on Board", url: `${boardUrl}/#tonight` },
+          ],
+        },
+      ];
+      // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only before launch and while this member's RSVP is empty:
+      // after launch the sign-up record is history, and a click would write rsvp:in into it.
+      if (await interestOn(env)) {
+        const mine = (signups.entries || []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
+        const beforeLaunch = Math.floor(Date.now() / 1000) < LAUNCH_EPOCH;
+        const nudges = [...(member && beforeLaunch && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
+        tonightRows.push({ type: 1, components: nudges });
+      }
       return new Response(
         JSON.stringify({
           type: 4,
           data: {
             content: lines.join("\n"),
             flags: 64,
-            components: [
-              {
-                type: 1,
-                components: [
-                  { type: 2, style: 5, label: "Open Tonight on Board", url: `${boardUrl}/#tonight` },
-                ],
-              },
-            ],
+            components: tonightRows,
           },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -984,6 +1020,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         );
       }
       if (field && value) {
+        // Same field allow-list as POST /sheet: Array.includes is exact, so constructor, toString, __proto__ and unknown names are refused and nothing is written.
+        if (!SHEET_FIELDS.includes(field)) {
+          return new Response(
+            JSON.stringify({ type: 4, data: { content: `That is not a sheet field. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          );
+        }
         // Same server rule as POST /sheet. A slash option is always a string, so level ("34") is refused here: it is set on the board.
         // The registered command does not offer level; this holds even for an interaction built by hand.
         if (sheetValueProblem(field, value)) {
@@ -997,8 +1040,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           slug: target.slug,
           name: target.name,
           field,
-          value,
-          visible: true,
+          value, // value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
           source: "discord",
           at: now,
         });
@@ -1052,6 +1094,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
     // 2d. `/launch`
     if (cmd === "launch") {
       if (!member) return unknownMemberResponse();
+      // After launch there is nothing to track or count down: one line that points to /ask and the board.
+      if (Date.now() >= LAUNCH_UTC) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: SLASH_COPY.launchOver(boardUrl), flags: 64 } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       const state = getOpt("state");
       const now = new Date().toISOString();
       const row = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'launch'").first();
@@ -1074,8 +1123,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
           slug: member.slug,
           name: byName,
           field: "launch_state",
-          value: state,
-          visible: true,
+          value: state, // value-only: launch_state keeps its visibility
           source: "discord",
           at: now,
         });
@@ -1106,8 +1154,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
 
     // 2e. `/map`
     if (cmd === "map") {
-      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
-      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+      const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
+      const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const hash = plan ? `#atlas.plan.${plan}` : place ? `#atlas.${place}` : "#atlas";
       const label = plan ? `Meeting Route Plan (${plan})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
       return new Response(
@@ -1122,7 +1170,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
                   {
                     type: 2,
                     style: 5,
-                    label: `${label} on the Atlas`,
+                    label: `${label} on the Atlas`.slice(0, 80),
                     url: `${boardUrl}/${hash}`,
                   },
                 ],
@@ -1234,24 +1282,29 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
         `• **Pre-order Pack:** \`${myEntry.pack || "not answered"}\``,
         `• **Arrival Time:** \`${myEntry.when || "not answered"}\``,
       ].join("\n");
+      const signupRows = [
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 3, label: "I'm In!", custom_id: "signup:rsvp:in" },
+            { type: 2, style: 2, label: "Maybe", custom_id: "signup:rsvp:maybe" },
+            { type: 2, style: 4, label: "Can't Make It", custom_id: "signup:rsvp:out" },
+            { type: 2, style: 5, label: "Open Sign-ups", url: `${boardUrl}/#signups` },
+          ],
+        },
+      ];
+      const nudge = await interestOn(env);
+      // INTEREST_NUDGES: a clearer first line while the RSVP is empty, and the ask and counts buttons on a second row.
+      if (nudge) signupRows.push({ type: 1, components: [askLevelButton(), countsButton()] });
+      const signupContent = nudge && !myEntry.rsvp ? `${SLASH_COPY.signupNudge()}\n${statusText}` : statusText;
 
       return new Response(
         JSON.stringify({
           type: 4,
           data: {
-            content: statusText,
+            content: signupContent,
             flags: 64,
-            components: [
-              {
-                type: 1,
-                components: [
-                  { type: 2, style: 3, label: "I'm In!", custom_id: "signup:rsvp:in" },
-                  { type: 2, style: 2, label: "Maybe", custom_id: "signup:rsvp:maybe" },
-                  { type: 2, style: 4, label: "Can't Make It", custom_id: "signup:rsvp:out" },
-                  { type: 5, style: 5, label: "Open Sign-ups", url: `${boardUrl}/#signups` },
-                ],
-              },
-            ],
+            components: signupRows,
           },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
@@ -1865,6 +1918,20 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
       return new Response(JSON.stringify({ type: 4, data: { content: "Use /join inside the server.", flags: 64 } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     return new Response(JSON.stringify(buildModalResponse()), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+
+  // 3-nudge. INTEREST_NUDGES buttons and the ask form (`nudge:*`). Read-only except the ask form, which takes the /ask path.
+  // Flag off: these ids fall through to the generic reply at the end, as any unknown button does.
+  if ((interaction.type === 3 || interaction.type === 5) && interaction.data && String(interaction.data.custom_id || "").startsWith("nudge:") && (await interestOn(env))) {
+    const id = String(interaction.data.custom_id);
+    const json = (body) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (interaction.type === 3 && id === ASK_LEVEL_BUTTON_ID) return json(askLevelModal());
+    if (interaction.type === 3 && id === COUNTS_BUTTON_ID) return json({ type: 4, data: { content: await loadCountsReply(env), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } });
+    if (interaction.type === 5 && id === ASK_LEVEL_MODAL_ID) {
+      const question = questionFromModal(interaction.data.components);
+      if (!question) return json({ type: 4, data: { content: "Type a question and Leeroy will answer it.", flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } });
+      return startAsk({ question, provider: resolveAiProvider(env), isPrivate: true });
+    }
   }
 
   // 3a. Vote buttons (`vote:<id>:<index>` and `vote:<id>:results`). Handled before the generic sign-up buttons below.
