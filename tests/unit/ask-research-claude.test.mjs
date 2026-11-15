@@ -19,7 +19,9 @@ import { schemaDb } from "../helpers/sqlite-d1.mjs";
 const FAKE_KEY = "sk-ant-FAKE-TEST-0000";
 const DEFAULT_BUDGET_MS = privacyBudget.ms;
 const realFetch = globalThis.fetch;
-let anth = []; // every request to an Anthropic URL: { model, body, headers }
+let anth = []; // every compose-side request to an Anthropic URL: { model, body, headers }
+const understandSends = [];
+const UNDERSTAND_TOKENS = 1; // what the fake understand reply reports as usage
 let others = []; // every other fetch URL
 let wai = []; // Workers AI inputs
 let claudeAnswer = () => ({ status: 200, text: "**Short answer first.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" });
@@ -29,6 +31,9 @@ globalThis.fetch = async (url, init) => {
   const u = String(url);
   if (u.includes("anthropic")) {
     const body = JSON.parse(init.body);
+    // The understand step (research/understand.js, 120-token Haiku-class send, own test file) is answered here and kept out of `anth`, so these tests keep counting COMPOSE sends only.
+    // It reports 1 token of usage, so each ask adds UNDERSTAND_TOKENS to the monthly counter.
+    if (body.max_tokens === 120) { understandSends.push(body); return new Response(JSON.stringify({ content: [{ type: "text", text: '{"kind":"game_fact","depth":"standard"}' }], usage: { input_tokens: 1, output_tokens: 0 } }), { status: 200, headers: { "content-type": "application/json" } }); }
     anth.push({ model: body.model, body, raw: init.body, headers: { ...init.headers }, url: u });
     const r = claudeAnswer(body, anth.length);
     if (r.throws) throw r.throws;
@@ -147,11 +152,11 @@ test("token counter: usage is added to claude_tokens_YYYYMM; the cap sends later
   const r1 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = cap; } });
   assert.equal(r1.anth.length, 1);
   const key = `claude_tokens_${month()}`;
-  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 133);
+  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 133 + UNDERSTAND_TOKENS);
   // 133 < 200: still allowed; this one pushes it to 266
   const r2 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = cap; } });
   assert.equal(r2.anth.length, 1);
-  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 266);
+  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 266 + 2 * UNDERSTAND_TOKENS);
   assert.equal(db.raw.prepare("SELECT COUNT(*) c FROM kv_state WHERE key LIKE 'alert:claude-cap:%'").get().c, 0);
   db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(key, String(2 * E + 1)); // 2E+1 used of 3E: the whole reservation no longer fits
   for (let i = 0; i < 3; i++) {
@@ -443,7 +448,7 @@ test("2. the structured vs free-text field table is in flags.md and matches the 
 
 test("3. the cap counts all four usage fields, clamps each call, and treats bad usage as an estimated maximum", async () => {
   const key = `claude_tokens_${month()}`;
-  const run = async (usage) => { const db = schemaDb(); await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) }); const row = db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key); return row ? Number(row.json) : null; };
+  const run = async (usage) => { const db = schemaDb(); await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) }); const row = db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key); return row ? Number(row.json) - UNDERSTAND_TOKENS : null; };
   assert.equal(await run({ input_tokens: 3, output_tokens: 2, cache_creation_input_tokens: 5000, cache_read_input_tokens: 4000 }), 9005);
   assert.equal(await run({ input_tokens: 10, output_tokens: 5 }), 15);
   assert.equal(await run({ input_tokens: 1e15, output_tokens: 1 }), 200001, "clamped per field, never months of budget in one call");
@@ -503,14 +508,15 @@ test("5. a counter write failure stops Claude for a while (spend must not go unr
   const db = schemaDb();
   const real = db.prepare;
   let failWrites = true;
+  let updates = 0; // the 1st UPDATE is the understand step's settle; the compose settle is the 2nd
   db.prepare = (sql) => {
     const s = real(sql);
     const bind = s.bind;
-    s.bind = (...a) => (failWrites && /^\s*UPDATE/i.test(sql) && a.some((x) => String(x).startsWith("claude_tokens_")) ? { first: async () => { throw new Error("d1"); }, all: async () => { throw new Error("d1"); }, run: async () => { throw new Error("d1"); } } : bind(...a));
+    s.bind = (...a) => (failWrites && /^\s*UPDATE/i.test(sql) && a.some((x) => String(x).startsWith("claude_tokens_")) && ++updates >= 2 ? { first: async () => { throw new Error("d1"); }, all: async () => { throw new Error("d1"); }, run: async () => { throw new Error("d1"); } } : bind(...a));
     return s;
   };
   const first = await ask(ABSTAIN_Q, { db });
-  assert.equal(first.anth.length, 1);
+  assert.equal(first.anth.length, 1, first.row.model);
   failWrites = false;
   const second = await ask(ABSTAIN_Q, { db });
   assert.equal(second.anth.length, 0, "paused after a failed counter write");
@@ -690,11 +696,11 @@ test("R1. an ask whose estimate alone exceeds the cap skips Claude, Workers AI a
 
 test("R2. the estimate is a conservative upper bound: non-ASCII text counts at 1.5 tokens per character, not 1/3", () => {
   const ascii = "a".repeat(3000);
-  assert.equal(estimateTokens(ascii, ""), 1000 + RESEARCH_MAX_TOKENS);
-  const cjk = "中文字".repeat(1000); // 3000 CJK characters
-  assert.ok(estimateTokens(cjk, "") >= 3000 * 1.5 + RESEARCH_MAX_TOKENS);
-  const emoji = "\u{1F600}".repeat(1000); // 2000 UTF-16 units
-  assert.ok(estimateTokens("", emoji) >= 2000 * 1.5 + RESEARCH_MAX_TOKENS);
+  assert.ok(estimateTokens(ascii, "") > 1000 + RESEARCH_MAX_TOKENS, "ASCII is no longer chars/3 (see ask-research-estimate.test.mjs for the full bound)");
+  const cjk = "中文字".repeat(1000); // 3000 CJK characters, 9000 UTF-8 bytes
+  assert.ok(estimateTokens(cjk, "") >= 9000 + RESEARCH_MAX_TOKENS);
+  const emoji = "\u{1F600}".repeat(1000); // 4000 UTF-8 bytes
+  assert.ok(estimateTokens("", emoji) >= 4000 + RESEARCH_MAX_TOKENS);
   // scales with the input: ten times the CJK text is about ten times the estimate
   const ratio = (estimateTokens(cjk.repeat(10), "") - RESEARCH_MAX_TOKENS) / (estimateTokens(cjk, "") - RESEARCH_MAX_TOKENS);
   assert.ok(ratio > 9.5 && ratio < 10.5, String(ratio));
@@ -747,7 +753,7 @@ test("F1. research sends get the budget they were promised, with and without a g
     try {
       await ask(ABSTAIN_Q, { env: envPatch, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT }) });
     } finally { rec.stop(); }
-    const [compose, retry] = rec.seen;
+    const [, compose, retry] = rec.seen;
     assert.ok(compose > 5800 && compose <= 6000, `${label} compose ${compose}`);
     assert.ok(retry >= 2500 && retry <= 9000, `${label} retry ${retry}`);
   }
@@ -783,7 +789,7 @@ test("F3. a slow second reservation write cannot push the retry past the Claude 
     const bind = st.bind;
     st.bind = (...a) => {
       const o = bind(...a);
-      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 2) {
+      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 3) {
         const all = o.all.bind(o);
         o.all = async () => { mock.timers.tick(7000); return all(); }; // the second reservation "takes" 7 s of the 9 s budget
       }

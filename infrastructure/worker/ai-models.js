@@ -26,7 +26,7 @@ import { ROSTER_DATA } from "./bot-data.js";
 import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
-import { researchEnabled, researchAnswer } from "./research/index.js";
+import { researchEnabled, researchAnswer, researchPlan } from "./research/index.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
@@ -1333,7 +1333,8 @@ export async function answerWithAi({
     try {
       // Research mode: Claude first (tokenised, guarded, token-capped; research/claude.js). Any skip or failure leaves rawAnswer unset and Workers AI answers below.
       if (research) {
-        const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude });
+        const plan = await researchPlan({ env, priv, call: callAnthropicClaude }); // understand step: picks answer mode and depth only; never blocks (research/understand.js)
+        const viaClaude = await tryResearchClaude({ env, priv, deep, call: callAnthropicClaude, modeRule: plan.rule });
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }

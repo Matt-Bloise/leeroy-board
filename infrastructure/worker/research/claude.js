@@ -61,7 +61,8 @@ export const alertKey = (now) => `alert:claude-cap:${monthTag(now)}`;
 
 // ---- spend guard ------------------------------------------------------------------------------------------------------------------------------------
 let pausedUntil = 0;
-const pauseClaude = () => { pausedUntil = Date.now() + PAUSE_MS; };
+export const claudePaused = () => Date.now() < pausedUntil;
+export const pauseClaude = () => { pausedUntil = Date.now() + PAUSE_MS; };
 export function resetResearchClaudeForTests() { pausedUntil = 0; ctxCache.clear(); }
 
 // Counts all four usage fields (cache writes and reads are billed), each clamped to [0, USAGE_CLAMP]. A missing block, NaN, a non-number or a negative means the
@@ -82,11 +83,26 @@ export function usageTokens(usage, estimate) {
   return sum > 0 ? Math.ceil(sum) : estimate; // a real response always used some input; 0 total is not believable
 }
 
-// Conservative upper bound on what a prompt costs: ASCII at 3 characters per token, every other UTF-16 unit (CJK, emoji, accents) at 1.5 tokens, plus the full answer allowance.
-export function estimateTokens(systemText, userText) {
-  const text = `${systemText ?? ""}${userText ?? ""}`;
-  const nonAscii = (text.match(/[^\u0000-\u007f]/g) || []).length;
-  return Math.ceil((text.length - nonAscii) / 3 + nonAscii * 1.5) + RESEARCH_MAX_TOKENS;
+// Safe upper bound on what one send costs, from the bytes actually sent (the JSON-escaped system and user strings, so quotes, newlines and control characters count as the
+// extra bytes they are). A token is never shorter than one byte, so UTF-8 bytes are a hard ceiling: every non-ASCII byte (CJK, emoji, accents, combining marks) counts as a whole
+// token, which is above any real tokenizer. ASCII counts at 0.65 token per byte (3 characters per token is the optimistic prose figure; dense code, digits and base64 run near
+// 0.75 and the 25% margin covers that (0.81 effective)). Then the margin, a fixed framing allowance, and the FULL max_tokens answer allowance, because a response is billed up to max_tokens.
+export const INPUT_ASCII_RATIO = 0.65;
+export const INPUT_MARGIN = 1.25;
+export const INPUT_FRAMING_TOKENS = 128;
+export function estimateTokens(systemText, userText, maxTokens = RESEARCH_MAX_TOKENS) {
+  let ascii = 0;
+  let wide = 0; // UTF-8 bytes of everything above U+007F
+  for (const part of [JSON.stringify(String(systemText ?? "")), JSON.stringify(String(userText ?? ""))]) {
+    for (let i = 0; i < part.length; i++) {
+      const c = part.charCodeAt(i);
+      if (c < 0x80) ascii++;
+      else if (c < 0x800) wide += 2;
+      else if (c >= 0xd800 && c <= 0xdbff) { wide += 4; i++; } // a surrogate pair is one 4-byte character
+      else wide += 3;
+    }
+  }
+  return Math.ceil((ascii * INPUT_ASCII_RATIO + wide) * INPUT_MARGIN) + INPUT_FRAMING_TOKENS + Math.max(0, Math.floor(maxTokens));
 }
 
 // One atomic statement: add the estimate only if the WHOLE reservation fits under the cap (both branches) (and the stored value is a plain integer). Rows come back only on success.
@@ -99,11 +115,11 @@ export async function reserveTokens(env, estimate, cap, now = new Date()) {
   const res = await env.DB.prepare(RESERVE_SQL).bind(counterKey(now), Math.max(1, Math.floor(estimate)), now.toISOString(), cap).all();
   return Boolean(res && Array.isArray(res.results) && res.results.length === 1);
 }
-async function adjustTokens(env, delta, now = new Date()) {
+export async function adjustTokens(env, delta, now = new Date()) {
   if (!delta) return;
   await env.DB.prepare(ADJUST_SQL).bind(counterKey(now), Math.trunc(delta), now.toISOString()).run();
 }
-async function alertOnce(env, cap, now = new Date()) {
+export async function alertOnce(env, cap, now = new Date()) {
   try {
     await env.DB.prepare("INSERT OR IGNORE INTO kv_state (key, json, updated_at) VALUES (?, ?, ?)")
       .bind(alertKey(now), JSON.stringify({ kind: "claude-monthly-token-cap", month: monthTag(now), cap }), now.toISOString()).run();
@@ -262,7 +278,7 @@ const notBilled = (e) => Boolean(e) && (e.code === "OUTBOUND_IDENTIFIER_LEAK" ||
 
 // Returns { answer, model, provider: "claude" } or { reason } (reason may be null: silent skip, e.g. no key configured).
 // call: callAnthropicClaude from ai-models.js (injected: this file must not import it back).
-export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date() }) {
+export async function tryResearchClaude({ env, priv, deep, call, now = () => new Date(), modeRule = "" }) {
   if (!anthropicAvailable(env)) return { reason: null };
   if (Date.now() < pausedUntil) return { reason: "claude:paused" };
   if (!priv || !priv.ok) return { reason: (priv && priv.reason) || "tokenise:error" };
@@ -275,7 +291,8 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
 
   const at = now();
   const cap = monthlyTokenCap(env);
-  const estimate = estimateTokens(priv.system, priv.user);
+  const system = modeRule ? `${priv.system}\n\n${modeRule}` : priv.system; // the understand step's static mode line (research/index.js), nothing else
+  const estimate = estimateTokens(system, priv.user);
   try {
     if (!(await reserveTokens(env, estimate, cap, at))) {
       await alertOnce(env, cap, at);
@@ -295,7 +312,7 @@ export async function tryResearchClaude({ env, priv, deep, call, now = () => new
   const deadlineAt = startedAt + CLAUDE_TIMEOUT_MS;
   const composeDeadlineAt = startedAt + CLAUDE_COMPOSE_MS; // leaves the Haiku-class retry its share of the budget after a compose timeout
   const beforeSend = (body) => guardBody(body, priv.roster);
-  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: priv.system, userPrompt: priv.user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
+  const attempt = (modelOverride, dl = deadlineAt) => call({ env, systemPrompt: system, userPrompt: priv.user, deep: true, skipCache: true, metadata: null, deadlineAt: dl, maxTokens: RESEARCH_MAX_TOKENS, modelOverride, wantUsage: true, beforeSend });
   let res;
   try {
     try {
