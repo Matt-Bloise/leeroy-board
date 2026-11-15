@@ -9,7 +9,8 @@
 
 import { researchModeOn, forceResearchProvider } from "./research/provider.js";
 import { buildAnswerInputs, finishAnswerText, dispatchToProvider, isProviderConfigured, isPrPreviewEnv, modelAllowed, EVAL_MODEL_ALLOWLIST, PROMPT_VARIANTS, shortProviderError } from "./ai-models.js";
-import { lintAnswer } from "./answer-lint.js";
+import { lintAnswer, lintResearchAnswer } from "./answer-lint.js";
+import { RESEARCH_MAX_TOKENS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { checkAskBudget, loadBudget, dailyCap } from "./budget.js";
 
 // One place for every limit and pacing constant.
@@ -209,6 +210,7 @@ export async function runEval(env, req, depsIn = {}) {
         skipCache: true,
         budgetKind: "eval",
         timeoutMs: L.callTimeoutMs,
+        ...(research ? { maxTokens: RESEARCH_MAX_TOKENS } : {}),
       });
       const raw = String((out && out.answer) || "");
       const { answer } = await deps.finish(env, {
@@ -222,7 +224,13 @@ export async function runEval(env, req, depsIn = {}) {
       });
       const chatMax = Number(inputs.persona && inputs.persona.format && inputs.persona.format.chatMaxChars);
       const chatMin = Number(inputs.persona && inputs.persona.format && inputs.persona.format.chatMinChars);
-      const lint = lintAnswer(answer, { ...ctxFor(q), maxChars: chatMax > 0 ? chatMax : undefined, minChars: chatMin > 0 ? chatMin : undefined });
+      let lint = lintAnswer(answer, { ...ctxFor(q), maxChars: research ? RESEARCH_FINAL_CHARS : chatMax > 0 ? chatMax : undefined, minChars: research ? undefined : chatMin > 0 ? chatMin : undefined });
+      if (research) {
+        // Research answers end with the Sources/confidence line (plain text, not masked links) and need not open with a whole bold sentence: those two house checks do not apply; the research lint does.
+        const rl = lintResearchAnswer(answer);
+        const failures = [...new Set([...lint.failures.filter((f) => f !== "sources_unmasked" && f !== "first_sentence_not_bold"), ...rl.failures])];
+        lint = { ...lint, failures, pass: failures.length === 0, research: rl };
+      }
       results.push({ ...base, model: (out && out.model) || base.model, ok: true, ms: deps.now() - callStart, chars: answer.length, answer, rawChars: raw.length, lint });
     } catch (err) {
       const msg = shortProviderError(err);

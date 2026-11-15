@@ -26,7 +26,7 @@ import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
 import { researchEnabled, researchAnswer } from "./research/index.js";
-import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS } from "./research/rules.js";
+import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
@@ -1074,9 +1074,12 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
     }
     // Research text step: refusal sentences out, labels, mention and link safety, whole-sentence trim, one sources line with one confidence word (appended after formatting).
     let researchBasis = null;
-    const researchCap = research ? RESEARCH_HARD_CHARS : 0; // the original voice runs 600-900 characters, hard 1500; the persona's 1200 chat cap would cut it (Discord's limit is 2000)
+    // The original voice runs 600-900 characters, hard 1500 for the body (the persona's 1200 chat cap would cut it); the finished answer, sources and confidence line included, stays at or under 1900 (Discord's limit is 2000).
+    const researchCap = research ? RESEARCH_FINAL_CHARS : 0;
+    let boardHost = "";
+    if (research) { try { boardHost = new URL(env.BOARD_PUBLIC_URL || "https://leeroy.party").hostname; } catch {} }
     if (research && !trusted) {
-      const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: researchCap - 200 });
+      const rp = researchPrepare(repaired, { groundingText: typeof groundingText === "string" ? groundingText : "", retrievedIds: retrieved ? retrieved.ids : null, budget: RESEARCH_HARD_CHARS, allow: boardHost ? [boardHost] : [] });
       repaired = rp.text;
       researchBasis = rp.basis;
     }
@@ -1095,7 +1098,7 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
           pages: libPages,
           asker: { name: by, isMember: askerIsMember },
           boardUrl: env.BOARD_PUBLIC_URL || "https://leeroy.party",
-          maxChars: research ? researchCap - 150 : chatMax > 0 ? chatMax : 1200,
+          maxChars: research ? researchCap - 150 : chatMax > 0 ? chatMax : 1200, // research: room left for the Sources/confidence line appended after formatting
           ...(uxOn ? { ux: true, roster: rosterAliases(), intentId, isCoach, egg: eggFor(persona), noEgg: personalised } : {}),
         })
       : { main: repaired, more: "", sources: "" };
@@ -1104,8 +1107,6 @@ export async function finishAnswerText(env, { rawAnswer, isCoach, parsedPages, b
     if (research && researchBasis && retrieved && retrieved.abstain) parts.main = appendBasis(parts.main, researchBasis);
     if (research) {
       // Last step, on the FINAL assembled text (formatter links, class-page fallback, the basis line): link and mention safety, then the length guarantee (also with ANSWER_FORMAT off).
-      let boardHost = "";
-      try { boardHost = new URL(env.BOARD_PUBLIC_URL || "https://leeroy.party").hostname; } catch {}
       parts.main = fitToCap(neutraliseMentions(defuseLinks(parts.main, { allow: boardHost ? [boardHost] : [] })), Math.min(researchCap, 1999));
     }
     return { answer: parts.main, cites, parts };
@@ -1121,7 +1122,7 @@ export async function findRecentSameAnswer(env, { intentId, question, share }) {
     const { results } = await env.DB.prepare(
       "SELECT DISTINCT t.id, t.answer, t.cites_json, t.question, t.answered_at FROM ask_turns t JOIN ask_turn_askers a2 ON a2.intent_id = t.id JOIN ask_turn_askers a1 ON a1.asker_hash = a2.asker_hash " +
         "WHERE a1.intent_id = ? AND t.id <> ? AND t.status = 'answered' AND t.answer IS NOT NULL AND t.share = ? AND t.answered_at > ? " +
-        "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' AND COALESCE(t.model, '') <> 'reused-answer' ORDER BY t.answered_at DESC LIMIT 50"
+        "AND COALESCE(t.model, '') NOT LIKE '%budget%' AND COALESCE(t.model, '') NOT LIKE '%daily-limit%' AND COALESCE(t.model, '') <> 'reused-answer' AND COALESCE(t.model, '') NOT LIKE '%+research%' ORDER BY t.answered_at DESC LIMIT 50"
     ).bind(String(intentId), String(intentId), share ? 1 : 0, since).all();
     const want = normQuestion(question);
     return (results || []).find((r) => normQuestion(r.question) === want) || null;
@@ -1300,7 +1301,7 @@ export async function answerWithAi({
       if (research && !usableAnswer(rawAnswer)) {
         rawAnswer = undefined;
         if (Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
-          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt, userPrompt, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS }));
+          ({ answer: rawAnswer, model, provider } = await dispatchToProvider({ provider: chosenProvider, env, systemPrompt, userPrompt, deep, metadata, budgetKeys: budget, timeoutMs: ASK_FALLBACK_TIMEOUT_MS, maxTokens: RESEARCH_MAX_TOKENS, skipCache: true })); // skipCache: the gateway would otherwise return the same cached empty answer for 6 hours
         }
         if (!usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from the model"); }
       }
@@ -1398,7 +1399,8 @@ export async function answerWithAi({
     await env.DB.prepare(
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
+      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
       .run();
 
     const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();

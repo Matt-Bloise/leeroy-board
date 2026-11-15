@@ -3,13 +3,14 @@
 // Fictional names only; no network (fetch stubbed). Run: node --test tests/unit/ask-research-contract.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { answerWithAi, buildAnswerCacheKey, invalidatePagesCache } from "../../infrastructure/worker/ai-models.js";
 import { invalidatePersonaCache } from "../../infrastructure/worker/persona.js";
 import { invalidateConfigCache } from "../../infrastructure/worker/config.js";
 import { lintResearchAnswer } from "../../infrastructure/worker/answer-lint.js";
 import { ABSTAIN_LINE } from "../../infrastructure/worker/self-rag.js";
 import { NOT_PUBLISHED_LINE } from "../../infrastructure/worker/ask-build.js";
-import { RESEARCH_RULES, RESEARCH_VOICE_RULES, RESEARCH_STRUCTURE_RULES, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS } from "../../infrastructure/worker/research/rules.js";
+import { RESEARCH_RULES, RESEARCH_VOICE_RULES, RESEARCH_STRUCTURE_RULES, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "../../infrastructure/worker/research/rules.js";
 import { defuseLinks, neutraliseMentions, labelClassic, stripRefusals, takeSources, trimToSentences, fitToCap, researchPrepare, usableAnswer } from "../../infrastructure/worker/research/label.js";
 import { runEval } from "../../infrastructure/worker/eval.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
@@ -27,7 +28,8 @@ globalThis.fetch = async (url, init) => {
   fetchUrls.push(String(url));
   return new Response(JSON.stringify({ choices: [{ message: { content: reply(body) } }], candidates: [{ content: { parts: [{ text: reply(body) }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
 };
-const fakeAi = { run: async (_model, inputs) => { aiCalls++; sent.push(inputs); if (aiThrows) throw new Error("workers ai down"); return { response: reply(inputs), usage: { prompt_tokens: 5, completion_tokens: 5 } }; } };
+let aiOpts = [];
+const fakeAi = { run: async (_model, inputs, opts) => { aiCalls++; aiOpts.push(opts); sent.push(inputs); if (aiThrows) throw new Error("workers ai down"); return { response: reply(inputs), usage: { prompt_tokens: 5, completion_tokens: 5 } }; } };
 test.after(() => { globalThis.fetch = realFetch; });
 
 const f = (value, visible = true) => ({ value, visible, source: "board", at: "2026-11-01T00:00:00.000Z" });
@@ -48,12 +50,12 @@ async function ask(question, { research = true, pages = [TANK_PAGE], sheets = SH
   const id = `rc${++n}`;
   DB.raw.prepare("INSERT INTO ask_turns (id, by_name, question, model, status, share, created_at) VALUES (?, ?, ?, 'groq', 'thinking', ?, 'x')").run(id, by, question, share ? 1 : 0);
   if (db) DB.raw.prepare("INSERT OR IGNORE INTO ask_turn_askers (intent_id, asker_hash) VALUES (?, ?)").run(id, "a".repeat(64));
-  sent = []; fetchUrls = []; aiCalls = 0; aiThrows = throws;
+  sent = []; fetchUrls = []; aiCalls = 0; aiThrows = throws; aiOpts = [];
   reply = respond || (() => "Mira tanks tonight.\n-# Sources: classes/tanking");
   const silence = console.error; console.error = () => {};
   try { await answerWithAi({ env, origin: "https://worker.test", intentId: id, by, memberSlug, question, provider, share, deep, journey: "curious", isMember: true }); } finally { console.error = silence; }
   const row = DB.raw.prepare("SELECT answer, cites_json, model, status FROM ask_turns WHERE id = ?").get(id);
-  return { answer: row.answer, row: { ...row }, calls: sent.length, aiCalls, fetchUrls: fetchUrls.slice(), bodies: sent.slice(), prompt: sent.map((b) => (b.messages || []).map((m) => m.content).join("\n")).join("\n=====\n") };
+  return { answer: row.answer, row: { ...row }, calls: sent.length, aiCalls, aiOpts: aiOpts.slice(), fetchUrls: fetchUrls.slice(), bodies: sent.slice(), prompt: sent.map((b) => (b.messages || []).map((m) => m.content).join("\n")).join("\n=====\n") };
 }
 const ABSTAIN_Q = "tell me about the weather";
 const SOURCES = "\n-# Sources: general Classic-era knowledge, unconfirmed";
@@ -98,9 +100,9 @@ test("lint: two confidence words fail, banter-only fails, a clean answer passes"
   assert.ok(lintResearchAnswer(ok.replace("likely", "likely and unconfirmed")).failures.includes("two_confidence_words"));
   assert.ok(lintResearchAnswer(ok.replace("likely", "confirmed likely")).failures.includes("two_confidence_words"));
   assert.ok(lintResearchAnswer(ok.replace("Sources: Classic-era knowledge · likely · about 2 years old", "Sources: Classic-era knowledge")).failures.includes("no_confidence_word"));
-  const banter = "*Ha, the weather is always cursed in Azeroth.*\n-# Sources: general knowledge · unconfirmed";
-  assert.ok(lintResearchAnswer(banter).failures.includes("banter_only"));
-  assert.ok(lintResearchAnswer("*One joke.*\n*Two jokes.*\n**A real answer sentence here.**\n-# Sources: x · likely").failures.includes("multiple_banter"));
+  // round 3: a whole-italic answer is an answer; banter is the trailing italic run after real content
+  assert.deepEqual(lintResearchAnswer("_Go to Blackrock Depths._\n-# Sources: general knowledge · unconfirmed").failures, []);
+  assert.ok(lintResearchAnswer("**A real answer sentence here.**\n*One joke.*\n*Two jokes.*\n-# Sources: x · likely").failures.includes("multiple_banter"));
   assert.ok(lintResearchAnswer(`**${ABSTAIN_LINE}**\n-# Sources: none · unconfirmed`).failures.includes("refusal"));
   assert.ok(lintResearchAnswer("**Ask someone else about that.**\n-# Sources: none · unconfirmed").failures.includes("refusal"));
 });
@@ -235,7 +237,7 @@ test("reuse: a flag-off refusal followed by the same ask with the flag on is not
 });
 
 test("no dead end: empty, refusal-only, banter-only and sources-only model output is retried once, then library facts or an honest line; never a fixed refusal", async () => {
-  for (const bad of ["", "   ", `**${ABSTAIN_LINE}**`, "No idea, sorry.", "Check Wowhead for that one.", "*Ha, weather.*", "-# Sources: general knowledge · unconfirmed"]) {
+  for (const bad of ["", "   ", `**${ABSTAIN_LINE}**`, "No idea, sorry.", "Check Wowhead for that one.", "I am unable to help with this request.", "As an AI I have no information on this.", "The tooltip says the library does not cover that yet.", "I cannot answer that because the available material contains no relevant details about it.", "https://example.org/only-a-link", "Sources: classes/tanking", "-# Sources: general knowledge · unconfirmed"]) {
     const r = await ask(ABSTAIN_Q, { respond: () => bad });
     // an empty reply already makes Workers AI throw (no retry, straight to the fallback); the others are retried once
     if (bad.trim()) assert.equal(r.aiCalls, 2, `one retry for ${JSON.stringify(bad)}`); else assert.ok(r.aiCalls >= 1);
@@ -243,7 +245,7 @@ test("no dead end: empty, refusal-only, banter-only and sources-only model outpu
   }
   // the retry can succeed
   let k = 0;
-  const r2 = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "*Ha, weather.*" : `**Weather is flavour only.**${SOURCES}`) });
+  const r2 = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "No idea, sorry." : `**Weather is flavour only.**${SOURCES}`) });
   assert.equal(r2.aiCalls, 2);
   assert.match(r2.answer, /flavour only/);
   // with library facts the fallback is the facts plus the honest line
@@ -319,7 +321,7 @@ test("labeller: code fences, table rows, link labels, italics, abbreviations, ex
   assert.match(row, /\| Ragnaros \| 4500000 \| \(Classic value/);
   assert.ok(!/4500000 \(Classic/.test(row));
   const link = labelClassic("See [Patch 1.12 notes 9999](<https://example.org/a>) for it.", G);
-  assert.equal(link.text, "See [Patch 1.12 notes 9999](<https://example.org/a>) for it.");
+  assert.equal(link.text, "See [Patch 1.12 notes 9999](<https://example.org/a>) for it (Classic value, not confirmed for Forever).", "a number in a link label is tagged, outside the link");
   assert.match(labelClassic("*The boss has 4500000 health.*", G).text, /^\*The boss has 4500000 health \(Classic value, not confirmed for Forever\)\.\*$/, "italics are not exempt");
   const abbr = labelClassic("It drops gear, e.g. a 9000 gold item, and more.", G).text;
   assert.equal((abbr.match(/\(Classic/g) || []).length, 1);
@@ -352,6 +354,106 @@ test("hostile input: forged placeholders do not clone links or print undefined; 
   assert.ok(Date.now() - t0 < 1500, `took ${Date.now() - t0}ms`);
 });
 
+// ---- round 3 ----
+
+test("round 3 (1): voice-compliant answers that point at what would settle it are answers, not refusals (one call, no outage line)", async () => {
+  for (const reply of [
+    "**Take Frost for levelling.** A Blizzard post would settle it.",
+    "**Frost, probably.** Check Wowhead for the exact talent order.",
+    "**Take Frost.** Blizzard has not published yet the Forever numbers, so treat Frost as the safe pick.",
+  ]) {
+    const r = await ask(ABSTAIN_Q, { respond: () => `${reply}${SOURCES}` });
+    assert.equal(r.aiCalls, 1, reply);
+    assert.match(r.answer, /Take Frost|Frost, probably/);
+    assert.ok(!/out of reach/i.test(r.answer), r.answer);
+  }
+  assert.deepEqual(lintResearchAnswer("**Take Frost for levelling.** A Blizzard post would settle it.\n-# Sources: general · likely").failures, []);
+  assert.deepEqual(lintResearchAnswer("**Frost, probably.** Check Wowhead for the exact talent order.\n-# Sources: general · likely").failures, []);
+});
+
+test("round 3 (2): the retry skips the gateway cache; the first call does not", async () => {
+  let k = 0;
+  const r = await ask(ABSTAIN_Q, { respond: () => (k++ === 0 ? "No idea, sorry." : `**Weather is flavour only.**${SOURCES}`) });
+  assert.equal(r.aiCalls, 2);
+  assert.equal(Boolean(r.aiOpts[0] && r.aiOpts[0].gateway && r.aiOpts[0].gateway.skipCache), false);
+  assert.equal(r.aiOpts[1].gateway.skipCache, true);
+});
+
+test("round 3 (3,4,7,12): covered() on digit boundaries and every occurrence; one-line fences; code and link labels; nested code in a link; trim keeps the tag; U.S.", () => {
+  const two = labelClassic("Frostbolt hits for 450 (Classic), and costs 50 gold in Forever.", "").text;
+  assert.match(two, /450 \(Classic\), and costs 50 gold in Forever \(Classic value, not confirmed for Forever\)\.$/, two);
+  const oneLine = labelClassic("A ```x 9999``` span.\nThen 8888 gold more.", "").text;
+  assert.match(oneLine, /8888 gold more \(Classic value/, "a one-line fence does not open a block");
+  assert.match(stripRefusals("| Use a shield. The library does not cover that yet. |"), /Use a shield/);
+  assert.ok(!/does not cover/.test(stripRefusals("| Use a shield. The library does not cover that yet. |")), "pipe lines are not exempt");
+  assert.match(labelClassic("Run `rank 9999 gear` first.", "").text, /Run `rank 9999 gear` first \(Classic value/);
+  const nested = labelClassic("See [`Item 9999`](<https://example.org/a>) now.", "").text;
+  assert.equal(nested, "See [`Item 9999`](<https://example.org/a>) now (Classic value, not confirmed for Forever).");
+  assert.ok(!/[\u0000-\u0008]|undefined/.test(nested));
+  assert.match(labelClassic("-# Note: it lasts 4500 minutes.", "").text, /^-# Note: it lasts 4500 minutes \(Classic value/, "a -# footer that is not Sources is labelled");
+  const t = trimToSentences(`${labelClassic("Intro sentence here today. The boss has 4500000 health.", "").text}\nPadding sentence number one is here. Padding sentence number two is here too.`, 70);
+  assert.ok(!t.includes("4500000") || t.includes("Classic value"), t);
+  const us = labelClassic("Raids in the U.S. realm last 4500 minutes.", "").text;
+  assert.match(us, /U\.S\. realm last 4500 minutes \(Classic value, not confirmed for Forever\)\.$/, us);
+});
+
+test("round 3 (5,6): refusal wordings that must not pass as answers; a whole-italic answer is an answer and its claims are tagged", async () => {
+  for (const s of ["I am unable to help with this request.", "As an AI I have no information on this.", "The tooltip says the library does not cover that yet.", "I cannot answer that because the available material contains no relevant details.", "https://example.org/x"]) assert.equal(usableAnswer(s), false, s);
+  assert.equal(usableAnswer("Sources: x\n"), false);
+  assert.equal(usableAnswer("_Go to Blackrock Depths._"), true);
+  assert.equal(usableAnswer("The tooltip says not published yet, so use the shield build."), true);
+  const r = await ask(ABSTAIN_Q, { respond: () => `_Go to Blackrock Depths._${SOURCES}` });
+  assert.equal(r.aiCalls, 1);
+  assert.match(r.answer, /Go to Blackrock Depths \(Classic-era name, not confirmed for Forever\)\./);
+});
+
+test("round 3 (8): the first link pass keeps the board host", () => {
+  const p = researchPrepare("**Go.** See [builds](<https://leeroy.party/builds/tank>) for it.", { groundingText: "", allow: ["leeroy.party"] });
+  assert.match(p.text, /\[builds\]\(<https:\/\/leeroy\.party\/builds\/tank>\)/);
+});
+
+test("round 3 (9): a research row is marked and never reused by a flag-off ask after a rollback", async () => {
+  const DB = schemaDb();
+  const on = await ask(ABSTAIN_Q, { research: true, db: DB });
+  assert.match(on.row.model, /\+research/);
+  const off = await ask(ABSTAIN_Q, { research: false, db: DB });
+  assert.notEqual(off.row.model, "reused-answer");
+  assert.equal(off.row.model, "library:abstain", "the old abstain path answers again; the research text is not handed back");
+});
+
+test("round 3 (10): eval in research mode asks for the research token budget and does not fail the Sources/confidence line as unmasked", async () => {
+  const seen = [];
+  const deps = {
+    now: () => 1_000_000, sleep: async () => {}, lastCallAt: new Map(), cooldownUntil: new Map(), configured: () => true, budgetVerdict: async () => null, research: true,
+    buildInputs: async () => ({ systemPrompt: "S", userPrompt: "U", isCoach: false, parsedPages: [], askerIsMember: true, persona: { format: { chatMaxChars: 1200 } }, groundingText: "", retrieval: { ids: [], abstain: true } }),
+    dispatch: async (a) => { seen.push(a); return { answer: "x", model: "m" }; },
+    finish: async () => ({ answer: "Use a shield, it holds.\n-# Sources: general Classic-era knowledge · likely" }),
+  };
+  const out = await runEval({}, { questions: [{ id: "q1", text: "shields", journey: "curious" }], candidates: [{ label: "g", provider: "gemini", promptVariant: "production" }], cursor: 0, maxCalls: 2, jobId: "j" }, deps);
+  assert.equal(seen[0].maxTokens, RESEARCH_MAX_TOKENS);
+  assert.ok(!out.results[0].lint.failures.includes("sources_unmasked"), out.results[0].lint.failures.join(","));
+  assert.ok(out.results[0].lint.research);
+});
+
+test("round 3 (11): research lint fails the stock dead ends, and not the library-backed or would-settle-it answers", () => {
+  const f = (s) => lintResearchAnswer(s).failures;
+  assert.ok(f("**I can't confirm that for Forever.**\n-# Sources: x · unconfirmed").includes("refusal"));
+  assert.ok(f("**Ask an officer about that.**\n-# Sources: x · likely").includes("refusal"));
+  assert.ok(f("**Take Frost.**\n-# Sources: x · likely\n-# Confidence: likely").includes("second_confidence_footer"));
+  assert.ok(f("**My research hand is out of reach right now, so I have nothing solid on that yet.**").includes("outage_line"));
+  assert.deepEqual(f("**Mira tanks tonight.**\n-# Sources: [Tanking](<https://leeroy.party/#library.classes.tanking>)"), [], "library-backed: no confidence word needed");
+});
+
+test("round 3 (12): the outage line carries no Sources/confidence tag; the wrangler comment describes research mode", async () => {
+  const r = await ask(ABSTAIN_Q, { throws: true });
+  assert.match(r.answer, /out of reach/i);
+  assert.ok(!/-# Sources/.test(r.answer), r.answer);
+  const toml = readFileSync(new URL("../../infrastructure/wrangler.toml", import.meta.url), "utf8");
+  const line = toml.split("\n").find((l) => l.startsWith("ASK_RESEARCH"));
+  assert.match(line, /Workers AI only/);
+  assert.ok(!/stub handles nothing/.test(line));
+});
+
 // ---- voice pass: the original Leeroy (archaeology 2026-11-15 sections 2b and 4) ----
 
 test("voice: the research prompt carries the original-voice rules (testable features 1-13) after the structure rules, and persona.js is untouched", async () => {
@@ -366,7 +468,7 @@ test("voice: the research prompt carries the original-voice rules (testable feat
     ["one voice beat in the first screen", /one voice beat in the first screen/],
     ["at most one signature opener, only with a fact", /At most one signature opener or closing flourish, and only when it carries a fact/],
     ["running bits only if true", /running bit[^.]*only when it is true/],
-    ["tease game/chat never real life, end warm", /tease game and chat behaviour[^.]*never real life[^.]*end warm/],
+    ["tease only the asker, never real life, end warm", /tease the ASKER, and only the asker[^;]*; never another member, and never real life[^.]*end warm/],
     ["match register, casual 1 to 4 sentences, no headers", /1 to 4 plain sentences and no headers/],
     ["information: bold labels, bullets, sources", /bold labels, short bullets and the sources line/],
     ["imperative advice with trade-offs", /imperative advice is fine[^.]*\./],
@@ -390,8 +492,10 @@ test("voice: length bounds, hard 1500 and always under 2000, with a typical 600-
   assert.ok(t.answer.includes("loudest thing in the dungeon") && t.answer.includes("Do try to stay out of the fire"), "a 600-900 character answer is not cut");
   const long = Array.from({ length: 80 }, (_, i) => `Sentence ${i % 5} keeps going about the weather in plain words.`).join(" ");
   const l = await ask(ABSTAIN_Q, { respond: () => `**Weather is flavour only.**\n${long}${SOURCES}` });
-  assert.ok(l.answer.length <= RESEARCH_HARD_CHARS, String(l.answer.length));
   const body = l.answer.split("\n").filter((x) => !/^\s*-#/.test(x)).join(" ").trim();
+  assert.ok(body.length <= RESEARCH_HARD_CHARS, `body ${body.length}`);
+  assert.ok(l.answer.length <= RESEARCH_FINAL_CHARS && RESEARCH_FINAL_CHARS < 2000, `total ${l.answer.length}`);
+  assert.ok(!/about 2 years old/.test(RESEARCH_STRUCTURE_RULES), "the invented-age example is gone");
   assert.match(body, /[.!?…*]$/);
 });
 

@@ -68,39 +68,78 @@ function checkSources(text) {
 //   italic line), at most one banter line, and no refusal wording. -> { failures: [], pass }
 const CONFIDENCE_RE = /\b(?:unconfirmed|confirmed|likely)\b/gi;
 const BANTER_LINE_RE = /^\s*(?:(?<!\*)\*(?!\*)[^*\n]+\*|_[^_\n]+_)\s*$/;
-const REFUSAL_PHRASE_RE = /does not (?:cover|have) that yet|doesn'?t confirm that figure|not published yet|won'?t guess|ask (?:someone|somebody|a party member|the party|an officer|anyone) else|(?:cannot|can'?t|can not) (?:answer|help with) (?:that|this)|nothing on this question|would settle it|(?:check|try|see|consult|look at) (?:wowhead|google|the wiki|the forums|blizzard|the official)/i;
-const REFUSAL_START_RE = /^(?:no idea|i (?:do not|don'?t) know|sorry|unfortunately,? i)\b/i;
+// Strong refusal wording (a refusal wherever it stands) and weak wording (a pointer such as "check Wowhead", a refusal only when nothing else is said).
+const STRONG_REFUSAL_RE = /does not (?:cover|have) that yet|doesn'?t confirm that figure|not published yet|won'?t guess|ask (?:someone|somebody|a party member|the party|an? officers?|the officers?|anyone)\b|(?:cannot|can'?t|can not) (?:answer|help with|confirm) (?:that|this)|nothing on this question/i;
+const WEAK_REFUSAL_RE = /(?:check|try|see|consult|look at) (?:wowhead|google|the wiki|the forums|blizzard|the official)/i;
+const REFUSAL_OPENER_RE = /^(?:no idea|i (?:do not|don'?t) know|sorry|unfortunately,? i|i(?: am|'m) (?:unable|not able)|as an ai|i (?:cannot|can'?t|can not|couldn'?t|could not) (?:answer|help|provide|find|confirm)|i (?:have|has) no (?:information|details|data|idea))\b/i;
+const GENERIC_REFUSAL_RE = /\b(?:cannot|can'?t|unable|no relevant|no information|no details|does not (?:have|contain|cover)|do not (?:have|contain)|not available)\b/i;
 const REPORTING_RE = /\b(?:says?|said|reads?|shows?|states?|tooltip|label|quote[sd]?|reads as|written)\b/i;
-// A sentence that IS a refusal: opens with a refusal opener, or is short (14 words or fewer) and holds refusal wording that is not being quoted or reported
-// ("the tooltip says not published yet, so use the shield build" is advice and stays). A long sentence that merely contains the wording is kept.
-export function isRefusalSentence(sentence) {
+const OUTAGE_RE = /out of reach right now/i;
+const SETTLE_RE = /would settle it/i;
+// Sentence split that also breaks after a closing * _ " ) ] ("**Frost.** Check Wowhead." is two sentences).
+export const splitSentenceText = (line) => String(line || "").split(/(?<=[.!?][*_"')\]]*)\s+/);
+// "strong" | "weak" | null. A sentence IS a refusal when it opens with a refusal opener, or holds strong refusal wording and is short (18 words or fewer), or
+// quotes/reports that wording and ENDS with it (nothing after it but two words: "The tooltip says the library does not cover that yet."), or says it cannot
+// / has no information and carries no concrete content (no digit, no capitalised word after the first). "the tooltip says not published yet, so use the shield build"
+// is advice and stays; a long sentence that merely contains the wording is kept.
+export function refusalKind(sentence) {
   const plain = String(sentence || "").replace(/[*_`>#]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!plain) return false;
-  if (REFUSAL_START_RE.test(plain)) return true;
-  const m = REFUSAL_PHRASE_RE.exec(plain);
-  if (!m) return false;
-  const before = plain.slice(0, m.index);
-  if ((before.match(/["“”]/g) || []).length % 2 === 1 || REPORTING_RE.test(before)) return false;
-  return plain.split(" ").length <= 18;
+  if (!plain) return null;
+  const words = plain.split(" ");
+  if (REFUSAL_OPENER_RE.test(plain)) return "strong";
+  const m = STRONG_REFUSAL_RE.exec(plain);
+  if (m) {
+    const before = plain.slice(0, m.index);
+    const after = plain.slice(m.index + m[0].length).split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).length;
+    const guarded = (before.match(/["“”]/g) || []).length % 2 === 1 || REPORTING_RE.test(before);
+    if (guarded ? after <= 2 : words.length <= 18) return "strong";
+    return null;
+  }
+  if (WEAK_REFUSAL_RE.test(plain) && words.length <= 12) return "weak";
+  if (words.length <= 30 && GENERIC_REFUSAL_RE.test(plain) && !/\d/.test(plain) && !words.slice(1).some((w) => /^[A-Z][a-z]/.test(w) && w !== "I")) return "strong";
+  return null;
 }
-export const hasSubstance = (text) => /[A-Za-z]{3,}/.test(String(text || ""));
+export const isRefusalSentence = (s) => refusalKind(s) !== null;
+export const hasSubstance = (text) => /[A-Za-z]{3,}/.test(String(text || "").replace(/https?:\/\/\S+/gi, " "));
+// Lines (trimmed, non-empty, footers already removed) -> { content, banter }. Banter is the trailing run of whole-italic lines, and only when other content comes before it:
+// a body that is italic from start to end is an answer ("_Go to Blackrock Depths._"), its first line is content.
+export function splitBanter(lines) {
+  const ls = lines.filter((l) => l && l.trim());
+  let k = ls.length;
+  while (k > 0 && BANTER_LINE_RE.test(ls[k - 1])) k--;
+  if (k === ls.length) return { content: ls, banter: [] };
+  if (k === 0) return { content: ls.slice(0, 1), banter: ls.slice(1) };
+  return { content: ls.slice(0, k), banter: ls.slice(k) };
+}
+// Sentences that say something: not a refusal, not only "what would settle it", not only the outage note, not a bare address.
+export function contentSentences(lines) {
+  const out = [];
+  for (const line of lines) for (const s of splitSentenceText(line.replace(/^\s*(?:[-*•]\s+)/, ""))) {
+    if (hasSubstance(s) && !isRefusalSentence(s) && !SETTLE_RE.test(s) && !OUTAGE_RE.test(s)) out.push(s);
+  }
+  return out;
+}
 export function lintResearchAnswer(answer) {
   const text = typeof answer === "string" ? answer : "";
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const sourceLines = lines.filter((l) => SOURCES_LINE_RE.test(l));
-  const body = lines.filter((l) => !/^-#/.test(l));
-  const banter = body.filter((l) => BANTER_LINE_RE.test(l));
-  const substance = body.filter((l) => !BANTER_LINE_RE.test(l) && hasSubstance(l));
+  const footerish = (l) => /^-#/.test(l) || /^Sources?\s*:/i.test(l);
+  const body = lines.filter((l) => !footerish(l));
+  const { content, banter } = splitBanter(body);
+  const said = contentSentences(content);
+  const libraryBacked = sourceLines.some((l) => /\]\(<?[^)]*#library\.|(?:^|[\s,:])[a-z0-9_-]+\/[a-z0-9_.-]+(?:[\s,.]|$)/i.test(l));
   const failures = [];
   if (!text.trim()) failures.push("empty");
   if (sourceLines.length === 0) failures.push("no_sources_line");
   else if (sourceLines.length > 1) failures.push("multiple_sources_lines");
   const conf = sourceLines.flatMap((l) => l.match(CONFIDENCE_RE) || []);
-  if (sourceLines.length && conf.length === 0) failures.push("no_confidence_word");
+  if (sourceLines.length && conf.length === 0 && !libraryBacked) failures.push("no_confidence_word");
   if (conf.length > 1) failures.push("two_confidence_words");
-  if (text.trim() && substance.length === 0) failures.push(banter.length ? "banter_only" : "no_answer");
+  if (lines.filter((l) => /^-#\s*Confidence\s*:/i.test(l)).length) failures.push("second_confidence_footer");
+  if (text.trim() && said.length === 0) failures.push("no_answer");
   if (banter.length > 1) failures.push("multiple_banter");
-  if (body.some((l) => l.split(/(?<=[.!?])\s+/).some(isRefusalSentence))) failures.push("refusal");
+  if (body.some((l) => splitSentenceText(l).some((s) => refusalKind(s) === "strong")) || (said.length === 0 && body.some((l) => splitSentenceText(l).some(isRefusalSentence)))) failures.push("refusal");
+  if (said.length === 0 && body.some((l) => OUTAGE_RE.test(l))) failures.push("outage_line");
   return { failures, pass: failures.length === 0, confidenceWords: conf.map((w) => w.toLowerCase()), banterLines: banter.length };
 }
 

@@ -8,7 +8,7 @@
 // Blind spots (see the W4a report): a wrong number that equals a grounded number, "a dozen"/fractions, lower-case or single-word names, a false claim with no number or capitalised name.
 import { unsupportedIn, allowedValues, sourceIdsOf } from "../self-rag.js";
 import { badPhrases, HOUSE } from "../ask-build.js";
-import { isRefusalSentence, hasSubstance } from "../answer-lint.js";
+import { isRefusalSentence, contentSentences, splitBanter } from "../answer-lint.js";
 import { RESEARCH_DOWN_ANSWER } from "./provider.js";
 
 export const CLASSIC_TAG = "Classic value, not confirmed for Forever";
@@ -72,24 +72,34 @@ export function defuseLinks(text, { allow = [] } = {}) {
 }
 
 // ---- markdown-aware sentence handling ---------------------------------------------------------------------------------------------
-const ABBR_RE = /\b(?:e\.g|i\.e|approx|vs|etc|incl|cf)\./gi;
+const ABBR_RE = /\b(?:e\.g|i\.e|approx|vs|etc|incl|cf|(?:Mr|Mrs|Ms|Dr|St|Mt|Lv|Lvl|No))\.|\b(?:[A-Za-z]\.){2,}/g; // also U.S. and the like
 const LINK_SPAN_RE = /\[[^\[\]\n]{0,300}\]\([^)\n]{0,600}\)/g;
 const CODE_SPAN_RE = /`[^`\n]*`/g;
-// Hide link spans, inline code and abbreviation dots from the sentence splitter and the detectors; returns { text, restore }.
+// Hide link spans, inline code and abbreviation dots from the sentence splitter; returns { text, restore, plain }. Code is hidden first, so a code span inside a link label
+// leaves a placeholder in the stored link: restore resolves placeholders recursively. plain() is the text the detectors read: links reduced to their label, code spans to their
+// content, so a number inside a code span or a link label is still seen (and the tag is put on the sentence, outside the code or link).
 function protect(line) {
   const store = [];
   const keep = (m) => { store.push(m); return `\u0001${store.length - 1}\u0001`; };
   const text = stripCtl(line).replace(CODE_SPAN_RE, keep).replace(LINK_SPAN_RE, keep).replace(ABBR_RE, (m) => m.replace(/\./g, "\u0002"));
-  return { text, restore: (s) => s.replace(/\u0002/g, ".").replace(/\u0001(\d+)\u0001/g, (_m, i) => store[Number(i)] ?? "") };
+  const restore = (s) => {
+    let out = s.replace(/\u0002/g, ".");
+    for (let i = 0; i < 6 && /\u0001\d+\u0001/.test(out); i++) out = out.replace(/\u0001(\d+)\u0001/g, (_m, k) => store[Number(k)] ?? "");
+    return out.replace(/\u0001\d*\u0001?/g, "");
+  };
+  const plain = (s) => restore(s).replace(/\[([^\[\]\n]*)\]\([^)\n]*\)/g, "$1").replace(/`([^`\n]*)`/g, "$1");
+  return { text, restore, plain };
 }
-const splitProtected = (t) => t.split(/(?<=[.!?])\s+/);
+const splitProtected = (t) => t.split(/(?<=[.!?][*_"')\]]*)\s+/);
 export function splitSentences(line) {
   const p = protect(line);
   return splitProtected(p.text).map(p.restore);
 }
 
 const isFooter = (l) => /^\s*-#/.test(l);
-const isFence = (l) => /^\s*(?:```|~~~)/.test(l);
+const isSourcesFooter = (l) => SRC_LINE_RE.test(l);
+// A fence line opens or closes a block only when it holds ONE fence marker ("```x```" is a one-line span, not a block).
+const isFence = (l) => /^\s*(?:```|~~~)/.test(l) && (l.match(/```|~~~/g) || []).length === 1;
 const isTableRow = (l) => /^\s*\|/.test(l) || (l.match(/\|/g) || []).length >= 2;
 const BANTER_RE = /^\s*(?:(?<!\*)\*(?!\*)[^*\n]+\*|_[^_\n]+_)\s*$/;
 const balanceBold = (s) => ((s.match(/\*\*/g) || []).length % 2 ? s.replace(/\*\*/g, "") : s);
@@ -116,7 +126,7 @@ export function stripRefusals(text) {
   let inFence = false;
   for (const line of stripCtl(text).split("\n")) {
     if (isFence(line)) { inFence = !inFence; out.push(line); continue; }
-    if (inFence || isFooter(line) || isTableRow(line)) { out.push(line); continue; }
+    if (inFence || isFooter(line)) { out.push(line); continue; }
     const parts = splitSentences(line);
     const ok = parts.filter((s) => !isRefusalSentence(s));
     if (ok.length === parts.length) out.push(line);
@@ -125,17 +135,26 @@ export function stripRefusals(text) {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-// True when the text, after refusal sentences, footer lines and banter-only lines are removed, still says something.
+// True when the text still says something after refusal sentences, "what would settle it" sentences, the outage note, footer lines (a "Sources:" line without "-#" too),
+// bare addresses and trailing banter are set aside. A whole-italic answer is an answer.
 export function usableAnswer(text) {
-  const t = splitInlineSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
-  return t.split("\n").some((l) => l.trim() && !isFooter(l) && !BANTER_RE.test(l) && hasSubstance(l));
+  const t = splitInlineSources(String(text || "").slice(0, MAX_INPUT_CHARS));
+  const body = t.split("\n").map((l) => l.trim()).filter((l) => l && !isFooter(l) && !/^Sources?\s*:/i.test(l));
+  return contentSentences(splitBanter(body).content).length > 0;
 }
 
 // ---- the labeller ------------------------------------------------------------------------------------------------------------
 const DISCLAIMER_AFTER_RE = /^[^,;.()\n]{0,60}\((?:Classic|Classic value[^)]*|[^)]*not confirmed for Forever[^)]*)\)|^[^,;.()\n]{0,40}not confirmed for Forever/i;
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// A token is covered only when EVERY occurrence of it (on word/digit boundaries: "50" is not inside "450") is followed by a disclaimer for that clause.
 const covered = (sent, token) => {
-  const at = sent.indexOf(token);
-  return at >= 0 && DISCLAIMER_AFTER_RE.test(sent.slice(at + token.length));
+  const re = new RegExp(`(?<![A-Za-z0-9])${escapeRe(token)}(?![A-Za-z0-9])`, "g");
+  let any = false;
+  for (const m of sent.matchAll(re)) {
+    any = true;
+    if (!DISCLAIMER_AFTER_RE.test(sent.slice(m.index + m[0].length))) return false;
+  }
+  return any;
 };
 function tagSentence(sent, tag) {
   const m = /^([\s\S]*?)((?:[.!?]+["')\]]*)?[*_]*\s*)$/.exec(sent);
@@ -148,9 +167,8 @@ export function labelClassic(text, groundingText) {
   const tagged = { numbers: [], names: [] };
   let tags = 0;
   const nextTag = (nums) => { const tag = tags === 0 ? (nums.length ? CLASSIC_TAG : CLASSIC_NAME_TAG) : tags === 1 && nums.length ? CLASSIC_TAG : CLASSIC_SHORT_TAG; tags += 1; return tag; };
-  // What is unsupported in one run of text (links and inline code already hidden by the caller).
-  const flagged = (t) => {
-    const clean = t.replace(/\u0002/g, ".");
+  // What is unsupported in one run of text. `clean` has links reduced to their label and code spans to their content (protect().plain), so a number in either is seen.
+  const flagged = (clean) => {
     const nums = unsupportedIn(clean, allowedNums).filter((x) => !covered(clean, x));
     const names = badPhrases(clean, allowedNames).filter((x) => !covered(clean, x));
     return { nums, names, any: nums.length + names.length > 0 };
@@ -171,17 +189,16 @@ export function labelClassic(text, groundingText) {
       out.push(line);
       continue;
     }
-    if (isFooter(line) || !line.trim()) { out.push(line); continue; }
+    if (isSourcesFooter(line) || !line.trim()) { out.push(line); continue; } // every other line, a "-#" footer included, is labelled
+    const p = protect(line);
     if (isTableRow(line)) {
-      const p = protect(line);
-      const f = flagged(p.text);
+      const f = flagged(p.plain(p.text));
       tagged.numbers.push(...f.nums); tagged.names.push(...f.names);
       out.push(f.any ? `${line.replace(/\s+$/, "")} (${nextTag(f.nums)})` : line);
       continue;
     }
-    const p = protect(line);
     out.push(splitProtected(p.text).map((sent) => {
-      const f = flagged(sent);
+      const f = flagged(p.plain(sent));
       if (!f.any) return p.restore(sent);
       tagged.numbers.push(...f.nums); tagged.names.push(...f.names);
       return p.restore(tagSentence(sent, nextTag(f.nums)));
@@ -199,8 +216,18 @@ export function trimToSentences(text, budget) {
   if (src.length <= budget) return src;
   const out = [];
   let used = 0;
-  for (const line of src.split("\n")) {
-    const parts = isFence(line) || isTableRow(line) ? [line] : splitSentences(line);
+  // A fenced block (with the tag line that follows it) and a table row are atomic: kept whole or dropped whole, so a trimmed answer never keeps a claim without its tag.
+  const rows = src.split("\n");
+  const units = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (isFence(rows[i])) {
+      const u = [rows[i]];
+      while (++i < rows.length) { u.push(rows[i]); if (isFence(rows[i])) break; }
+      if (i + 1 < rows.length && /^\(.*Classic.*\)$/.test(rows[i + 1])) u.push(rows[++i]);
+      units.push([u.join("\n")]);
+    } else units.push(isTableRow(rows[i]) ? [rows[i]] : splitSentences(rows[i]));
+  }
+  for (const parts of units) {
     const kept = [];
     for (const s of parts) {
       const add = (kept.length ? 1 : 0) + s.length + (out.length && !kept.length ? 1 : 0);
@@ -288,15 +315,17 @@ export function appendBasis(main, { labels, confidence }) {
 // The whole text step. `retrievedIds`: ids the prompt showed (a Set, or null for "no filter"). Returns { text, basis, labelled, tagged, usable, unverifiedCites }.
 // `text` ends with a bare `-# Sources: id, id` line when library ids survive (the formatter turns it into links); the labels and the confidence word are appended after formatting (appendBasis).
 // A cited page the prompt never showed is not deleted as a claim: its id leaves the link line, and the answer's confidence is capped at "likely".
-export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1700 } = {}) {
+export function researchPrepare(text, { groundingText = "", retrievedIds = null, budget = 1500, allow = [] } = {}) {
   const usable = usableAnswer(text);
   const src = takeSources(stripRefusals(String(text || "").slice(0, MAX_INPUT_CHARS)));
+  const outage = !usable || String(text || "").trim() === RESEARCH_DOWN_ANSWER;
   let body = usable ? src.body : RESEARCH_DOWN_ANSWER; // callers retry or fall back to library facts before this; this keeps the eval and format paths from emitting nothing
   const lab = labelClassic(body, groundingText);
-  body = trimToSentences(neutraliseMentions(defuseLinks(lab.text)), budget);
+  body = trimToSentences(neutraliseMentions(defuseLinks(lab.text, { allow })), budget);
   const ids = retrievedIds ? src.ids.filter((id) => retrievedIds.has(id)) : src.ids;
   const unverifiedCites = src.ids.length > ids.length;
   const pre = ids.length ? `${body}\n-# Sources: ${ids.join(", ")}` : body;
   const labels = src.labels.map((l) => neutraliseMentions(defuseLinks(l)).replace(/[`\[\]()<>]/g, "")).filter(Boolean);
-  return { text: pre, basis: { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0, labelled: lab.labelled, unverifiedCites }) }, labelled: lab.labelled, tagged: lab.tagged, usable, unverifiedCites };
+  // The outage line is not a researched answer: it carries no sources/confidence tag.
+  return { text: pre, basis: outage ? null : { labels, confidence: chooseConfidence({ found: src.found, hasLibraryIds: ids.length > 0, labelled: lab.labelled, unverifiedCites }) }, labelled: lab.labelled, tagged: lab.tagged, usable, unverifiedCites };
 }
