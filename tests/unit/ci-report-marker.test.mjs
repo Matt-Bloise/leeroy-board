@@ -53,3 +53,17 @@ test("preview secrets absent but unit failed, or an executed suite is not skippe
   assert.equal(b.pass, false);
   assert.equal(b.gate, false);
 });
+
+// The recover job restores the preview before any reader. A full run whose recover did not succeed never earns the gate phrase,
+// including the scope where api, browser and layout are all skipped (only tests/unit changed).
+test("a failed or missing recover never posts 'Preview tests: passed', whatever the scope", () => {
+  const quiet = { siteChanged: false, apiNeeded: false, previewResult: "success", results: { unit: "success", stamps: "success", api: "skipped", crawl: "skipped", browser: "skipped", layout: "skipped" } };
+  for (const rec of ["failure", "cancelled", "skipped", "missing"]) {
+    for (const scope of [quiet, {}]) {
+      const body = buildReport(base({ ...scope, recoverResult: rec })).body;
+      assert.ok(!/Preview tests: passed/.test(body), `recover=${rec} scope=${JSON.stringify(Object.keys(scope))}`);
+    }
+  }
+  assert.match(buildReport(base({ ...quiet, recoverResult: "success" })).body, /Preview tests: passed/);
+  assert.match(buildReport(base({ recoverResult: "success" })).body, /Preview tests: passed/);
+});

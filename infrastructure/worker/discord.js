@@ -25,6 +25,7 @@
 // =============================================================================
 
 import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
+import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
 import { mapPlanChoices, resolveMapPlan, MAP_PLAN_ALIASES } from "./map-plan.js";
@@ -66,6 +67,7 @@ import { tonightLines, LAUNCH_EPOCH } from "./tonight-copy.js";
 import { applyManualAnswer } from "./ask-answer.js";
 import { partyForMember, redactIntentBody, sheetIntentBody } from "./sheet-privacy.js";
 import { sheetValueProblem } from "./sheet-values.js";
+import { VOCAB_LIST, canonicalVocab } from "./sheet-vocab.js";
 import { canManageGuild } from "./setup-command.js";
 
 // Staff check for the mailbox commands (/intents, /ack, /answer). Two conditions:
@@ -86,6 +88,7 @@ async function rosterAdminCheck(env, interaction) {
 }
 export const GATE_OFF_NOTE = "Server check is off: no roster server is set, so any server admin can use this.";
 import { recordInteraction, purgeOldInteractions } from "./replay.js";
+import { dataCachePath } from "./public-docs.js";
 import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromModal, loadCountsReply, ASK_LEVEL_BUTTON_ID, ASK_LEVEL_MODAL_ID, COUNTS_BUTTON_ID } from "./interest.js";
 
 export const GOLD = 0xffd100; // WoW UI Gold
@@ -1000,7 +1003,8 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         env.DB.prepare("SELECT json FROM kv_state WHERE key = 'party'").first(),
       ]);
       const signups = signupsRow ? JSON.parse(signupsRow.json) : { entries: [] };
-      const party = partyRow ? JSON.parse(partyRow.json) : { members: [] };
+      const stored = partyRow ? JSON.parse(partyRow.json) : { members: [] };
+      const party = projectForAnonymous(stored, (await loadPublicInputs(env, { partyDoc: stored })).sheets);
       const lines = tonightLines({ now: Math.floor(Date.now() / 1000), byName, party, signups, boardUrl });
       const tonightRows = [
         {
@@ -1052,9 +1056,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         }
         // Same server rule as POST /sheet. A slash option is always a string, so level ("34") is refused here: it is set on the board.
         // The registered command does not offer level; this holds even for an interaction built by hand.
-        if (sheetValueProblem(field, value)) {
+        if (sheetValueProblem(field, value, undefined, { loose: true })) {
+          const listed = VOCAB_LIST[field]; // race, class, spec, professions, plan zone: refused unless the value is on the board's list (sheet-vocab.js); nothing is written
           return new Response(
-            JSON.stringify({ type: 4, data: { content: `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
+            JSON.stringify({ type: 4, data: { content: listed ? `That is not on the board's list for ${field.replace(/_/g, " ")}. Pick it on your sheet: ${boardUrl}/#five` : `${field === "level" ? "Level" : "That field"} is set on the board, not here. Open your sheet: ${boardUrl}/#five`, flags: 64 } }),
             { status: 200, headers: { "Content-Type": "application/json" } }
           );
         }
@@ -1063,7 +1068,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           slug: target.slug,
           name: target.name,
           field,
-          value, // value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
+          value: canonicalVocab(field, value, { loose: true }), // the stored form (a slug, or a list of slugs for professions); value-only: /sheet has no visibility option, so the field keeps the visibility it has (never un-hides)
           source: "discord",
           at: now,
         });
@@ -1139,9 +1144,6 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         const entry = { slug: member.slug, name: byName, state, at: now };
         if (idx >= 0) rows[idx] = entry;
         else rows.push(entry);
-        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
-          .bind(JSON.stringify(rows), now)
-          .run();
         const savedLaunch = await recordSheetEventInD1(env, origin, {
           slug: member.slug,
           name: byName,
@@ -1150,6 +1152,10 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           source: "discord",
           at: now,
         });
+        // the sheet event first: an unreadable events log must leave no launch row behind
+        await env.DB.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES ('launch', ?, ?)")
+          .bind(JSON.stringify(rows), now)
+          .run();
         await insertIntent(env, {
           slug: member.slug,
           kind: "launch",
@@ -1157,11 +1163,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           ver: 1,
           at: now,
         });
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/launch.json"]);
+        await purgeWorkerCache(origin, PARTY_CACHE_PATHS); // /state and /data/launch carry the launch list, both spellings
         await broadcastToRoom(env, { type: "data", key: "launch", data: rows });
       }
-      const summary = rows.length
-        ? rows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
+      // The stored rows stay whole (they were written above); the reply is the public form: a member who hid launch_state shows no state to anyone else.
+      const shownRows = rows.length ? projectLaunch(rows, (await loadPublicInputs(env)).sheets, member.slug).filter((r) => r && r.state) : [];
+      const summary = shownRows.length
+        ? shownRows.map((r) => `• **${r.name}:** \`${r.state}\``).join("\n")
         : "No launch states set yet.";
       return new Response(
         JSON.stringify({
@@ -1283,7 +1291,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           at: entry.updated,
         });
 
-        await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+        await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
         await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
         if (cardsBefore) await afterSignupChange(env, ctx, cardsBefore, doc);
 
@@ -2097,7 +2105,7 @@ ${GATE_OFF_NOTE}` : ""}`,
         at: entry.updated,
       });
 
-      await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/signups.json", "/api/signups"]);
+      await purgeWorkerCache(origin, ["/api/bootstrap", dataCachePath("signups"), "/api/signups"]);
       await broadcastToRoom(env, { type: "data", key: "signups", data: doc });
       return new Response(
         JSON.stringify({

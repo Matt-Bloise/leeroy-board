@@ -89,3 +89,6 @@ html:not(#k) details[open]>:is(.tnb-sum,.tnh-sum,.cal-sum,.lh-check-sum){border-
 html:not(#k) :is(.tnb-sum,.tnh-sum,.cal-wrap>.cal-sum,.lh-check-sum)::before{content:"";position:absolute;left:7px;top:50%;width:26px;height:26px;margin-top:-13px;background:url("../img/kit/dc-g-r.webp") center/contain no-repeat}
 html:not(#k) details[open]>:is(.tnb-sum,.tnh-sum,.cal-sum,.lh-check-sum)::before{background-image:url("../img/kit/dc-g-d.webp")}
 html:not(#k) :is(.tnb-sum,.tnh-sum,.cal-sum,.lh-check-sum)::-webkit-details-marker{display:none}
+
+/* the one line a withheld section is replaced by (a member keeps their build private): plain text where the section was */
+.withheld-note{margin:.4em 0;max-width:60ch;line-height:1.45}
