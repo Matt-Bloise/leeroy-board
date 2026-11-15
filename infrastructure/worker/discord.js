@@ -48,6 +48,7 @@ import { flushBoardLines } from "./board-lines.js";
 import {
   broadcastToRoom,
   purgeWorkerCache,
+  PARTY_CACHE_PATHS,
   buildPartySheetsFromD1,
   recordSheetEventInD1,
   insertIntent,
@@ -1823,7 +1824,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin) {
             handle: parsed.handle,
             build: parsed.build,
             after: async ({ partyDoc }) => {
-              await purgeWorkerCache(origin, ["/api/bootstrap", "/api/data/party.json"]);
+              await purgeWorkerCache(origin, PARTY_CACHE_PATHS);
               await broadcastToRoom(env, { type: "data", key: "party", data: partyDoc });
             },
           });
