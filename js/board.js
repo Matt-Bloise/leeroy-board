@@ -346,8 +346,25 @@ const roleGlyph = (role) => s("svg", { class: "glyph", viewBox: "0 0 24 24", rol
 
 let clockTimer = null;
 /* An outage is said once, plainly, in the page-level status line (#offline-line, role=status). Set by the brain's status (js/v13d.js) and by a failed data load below; empty text hides it. */
-const OFFLINE_SAY = "The board could not reach Leeroy. What you see may be out of date.";
-function setOffline(on) { const el = $("#offline-line"); if (!el) return; const t = on ? OFFLINE_SAY : ""; if (el.textContent !== t) el.textContent = t; }
+const OFFLINE_SAY = "The board could not reach Leeroy. What you see may be out of date.", OFFLOAD_SAY = "The board's data did not load. Reload the page to try again.";
+let offlineLoad = false;
+/* The line sits above the phone bottom bar (and its coin), never over it, and the page keeps room for it: a fixed line over the bar made Next, The five, My sheet, Leeroy and More untappable during an outage. */
+function placeOffline() {
+  const el = $("#offline-line"), de = document.documentElement; if (!el || !el.textContent) return;
+  const bar = $("#bottombar"), br = bar && bar.getBoundingClientRect(); let top = innerHeight;
+  if (br && br.width > 0 && br.height > 0) { top = br.top; bar.querySelectorAll("button").forEach((b) => { const r = b.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && r.bottom > innerHeight / 2) top = Math.min(top, r.top); }); }
+  const lift = top < innerHeight ? Math.ceil(innerHeight - top) + 2 : 0;
+  el.style.setProperty("--offline-lift", `${lift}px`); de.classList.toggle("offline-lifted", lift > 0);
+  de.style.setProperty("--offline-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+}
+function setOffline(on, msg) {
+  const el = $("#offline-line"); if (!el) return;
+  if (msg === OFFLOAD_SAY) offlineLoad = true; else if (offlineLoad) on = true, msg = OFFLOAD_SAY; /* a failed first load stays said: later polls do not wipe it */
+  const t = on ? (msg || OFFLINE_SAY) : "";
+  if (el.textContent !== t) el.textContent = t;
+  document.documentElement.classList.toggle("offline", !!t); if (t) placeOffline(); else { document.documentElement.classList.remove("offline-lifted"); }
+}
+addEventListener("resize", () => placeOffline());
 /* "Launch: ..." reads as a promise; once the epoch has passed it is "Launched: ...". Called on render and on every tick so a tab left open across launch turns over. */
 function setLaunchLine() { const el = $("#clock-launch"); if (!el) return; const ll = launchLine(), t = ll ? `${launchPast() ? "Launched" : "Launch"}: ${ll}` : ""; if (el.textContent !== t) el.textContent = t; }
 function launchLine() {
@@ -1090,7 +1107,7 @@ function renderLegacy() {
   const rewards = h("ul", { class: "rewards" }, L.thresholds.map((t) => h("li", { "data-n": t.n }, h("b", { text: t.alt ? `${t.n} (${t.alt})` : String(t.n) }), h("span", { text: `${t.reward}, ${KIND_WORD[t.kind] || t.kind}` }))));
   wrap.append(h("div", { class: "ring-box", "data-land-to": "ring" }, svg),
     h("div", { class: "stack" },
-      h("p", { text: `Earned so far: ${L.earned_now}, because ${L.earned_note}.` }),
+      h("p", { text: launchPast() ? `Earned so far: ${L.earned_now}.` : `Earned so far: ${L.earned_now}, because ${L.earned_note}.` }), /* earned_note is about the time before launch */
       h("div", {}, h("div", { class: "label", text: `Reward track, ${L.thresholds_label}` }), rewards),
       h("p", { class: "label", "data-j": "c e", text: `Claimed from ${L.claim}.` }),
       legend));
@@ -3776,10 +3793,10 @@ async function boot(mode, sdk) {
     splitPolls(); roles();
     try { performance.mark("board-data"); } catch (e) {}
   } catch (e) {
-    setClockLabel("The data files did not load", ""); setOffline(true);
+    setClockLabel("The data files did not load", ""); setOffline(true, OFFLOAD_SAY);
     const again = () => dataGet("party").then(() => location.reload());
     BF.fail($("#footer"), "the board's data", again, 1, MEMBER_DOWN);
-    $("#footer").append(h("small", { text: `Could not read the board's data: ${e.message}.` }));
+    try { console.warn(`Could not read the board's data: ${e.message}`); } catch (x) {}
     document.querySelectorAll(".tile-body").forEach((b) => b.replaceChildren(h("span", { class: "tile-line", text: "Not loaded." })));
     [...document.querySelectorAll(".panel")].filter((pn) => pn.id !== "panel-library").forEach((pn) => { const bx = h("div", { class: "data-box data-down" }); pn.insertBefore(bx, pn.firstChild); BF.fail(bx, "this scene's data", again, 1, MEMBER_DOWN); });
     route();
@@ -3822,7 +3839,7 @@ function goDiscord(sdk) { if (discordOn || !sdk) return; discordOn = true; start
 function lateDiscord(sdk) { if (discordOn || !sdk) return; if (bootDone) goDiscord(sdk); else lateSdk = sdk; }
 Object.assign(KIT, { setOffline, raceClass, classOf, pn: Object.freeze({ on: pnOn, count: pnCount, word: pnWord, say: pnSay, noun: pnNoun, title: pnTitle, refresh: partyCopy }), whenSettled, wallCold, api: API, prepare, unfold, flipPut, flickPut, medalSet, medalLoad, libCore, libIndex, $, h, s, emb, D, MEM, SC, JR, sfx, crestMark, crestSrc, crestGuard, classVar, fmtWhen, fmtDay, cardDates, relWhen, reduceMQ, MOTION, motionMs, sceneHooks, TITLES, SCENES, RSVP_KEYS, RSVP_SAY, cleanName, week: wk, weekMine, weekOwn, launchWhen, launchSay, launchPast, launchEvent, nextDated, wholeClause, andList, glDef, dotBtn, glClose, glPlace, glShow, GL, ttPlace, ttShow, ttClose, TT, LIBUI, libRender, goScene, switchTab, requestClose, setHash, fitScene, startSwipe, aimAt, FIT, focusBuff, nextEvent, eventTs, fmtMs, fmtVal, fmtCost, nf, beforeTicks,
   render: { tonight: renderTonight, tiles: renderTiles, cards: renderCards, races: renderRaces, legacy: renderLegacy, timeline: renderTimeline, ledger: renderLedger, signups: renderDiscordSignups, buffs: renderBuffsDeep, wheel: renderWheel, librarian: renderLibrarian, map: renderMap } });
-KIT.on("scene", partyCopy); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
+KIT.on("scene", partyCopy); KIT.on("scene", () => { requestAnimationFrame(placeOffline); setTimeout(placeOffline, 700); }); KIT.on("rendered", partyCopy); /* nodes built after the party loaded (bars, menus, sheets) get the same words */
 document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG") { t.classList.add("img-missing"); try { console.warn("image missing:", t.getAttribute("src")); } catch (x) {} } }, true);
 (function grain() { try { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"), d = x.createImageData(128, 128); for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; } x.putImageData(d, 0, 0); document.documentElement.style.setProperty("--noise", `url(${c.toDataURL("image/png")})`); } catch (e) {} })();
 (function burnIn() {

@@ -253,16 +253,19 @@ function journeyFromMirror() {
 
 const hidden = () => typeof document !== "undefined" && (document.hidden || document.visibilityState === "hidden");
 function schedulePoll(ms) { clearTimeout(B.pollT); B.pollT = setTimeout(pollOnce, ms); }
-async function pollOnce() {
-  if (!B.base) return;
-  if (B.via === "ws") return;
-  if (hidden()) return;
+/* One poll at a time: a tab return fires visibilitychange and focus together, and one bad answer must count once. */
+let POLLING = null;
+function pollOnce() {
+  if (!B.base || B.via === "ws" || hidden()) return POLLING || Promise.resolve();
+  return (POLLING ||= pollRun().finally(() => { POLLING = null; }));
+}
+async function pollRun() {
   try {
     const r = await call("GET", `/state${B.ver ? `?ver=${B.ver}` : ""}`); B.polls++;
-    if (r.status === 200) { onState(r.data); B.errors = 0; B.pollFail = 0; } else { B.errors++; B.pollFail++; }
+    if (r.status === 200) { onState(r.data); B.errors = 0; B.pollFail = 0; B.bootFail = false; } else { B.errors++; B.pollFail++; }
   } catch (e) { B.errors++; B.pollFail++; }
   emit("status", status());
-  if (B.via !== "ws") schedulePoll(B.offline ? WS_RETRY_MS : POLL_MS);
+  if (B.via !== "ws") schedulePoll(POLL_MS); /* also while offline: a dead API is asked every 15 s, so the board notices it coming back (and going away) in seconds, not minutes */
 }
 // The room sends question and answer text only to sockets that prove who they are: a member key, or the id of the visitor's own ask.
 function wsSend(o) { try { if (B.ws && B.ws.readyState === 1) B.ws.send(JSON.stringify(o)); } catch (e) {} }
@@ -273,7 +276,7 @@ function openWs() {
   if (B.offline) { B.wsT = setTimeout(openWs, WS_RETRY_MS); return false; }
   let ws; try { ws = new WebSocket(B.base.ws); } catch (e) { return false; }
   B.ws = ws; let opened = false;
-  ws.onopen = () => { if (B.ws !== ws) return; opened = true; wsAuth(); B.via = "ws"; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
+  ws.onopen = () => { if (B.ws !== ws) return; opened = true; wsAuth(); B.via = "ws"; B.pollFail = 0; B.bootFail = false; clearTimeout(B.pollT); clearInterval(B.pingT); B.pingT = setInterval(() => { try { ws.send("ping"); } catch (e) {} }, PING_MS); emit("status", status()); };
   ws.onmessage = (e) => {
     const d = typeof e.data === "string" ? e.data : ""; if (d === "pong") return;
     let m; try { m = JSON.parse(d); } catch (er) { return; }
