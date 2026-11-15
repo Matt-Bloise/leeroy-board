@@ -1045,6 +1045,7 @@
   "/discord/commands": [
    "commands[].default_member_permissions",
    "commands[].description",
+   "commands[].dm_permission",
    "commands[].name",
    "commands[].options[].autocomplete",
    "commands[].options[].choices[].name",

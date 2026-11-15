@@ -9,7 +9,7 @@
 | Blizzard Entertainment | Game data and attribution; character verification if built | Battle.net identifier (optional, proposed) | Planned in ADR 0001 | Not built (unverified) | (to confirm) |
 | Google | Optional attached sign-in identity | Google account id | Planned in ADR 0001 | Not built (unverified) | (to confirm) |
 | Google (Gemini) | AI answers | Question and context | `worker/ai-models.js` provider `gemini` | Configured if `GEMINI_API_KEY` is set (unverified) | (to confirm) |
-| Anthropic | AI answers | Question and context | provider `claude` | Configured if `ANTHROPIC_API_KEY` is set (unverified) | (to confirm) |
+| Anthropic | AI answers | Question and context; with `ASK_RESEARCH` on and `RESEARCH_NAMES = "real"`, real names, shown sheet lines, builds and the asker's recent turns (`docs/privacy.md`) | provider `claude`; the only provider for a member under `ASK_RESEARCH` | Configured if `ANTHROPIC_API_KEY` is set (unverified) | (to confirm) |
 | Groq | AI answers | Question and context | provider `groq` | Same | (to confirm) |
 | Cerebras | AI answers | Question and context | provider `cerebras` | Same | (to confirm) |
 | OpenRouter (and the model hosts behind it) | AI answers | Question and context | provider `openrouter` | Same | (to confirm); onward hosts are a gap |

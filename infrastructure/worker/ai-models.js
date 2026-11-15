@@ -28,10 +28,11 @@ import { FENCE_RULE, fence, stripFence } from "./prompt-fence.js";
 import { isFollowUp, refersToPrevious, isFollowUpOpener, FOLLOWUP_OWN_STRONG, stripFollowUpScaffold, FOLLOWUP_RULE, composeAbstain, skipKind, cleanQuestion, askerNameToStrip, selectRelevant, ABSTAIN_RULE, SKIP_RULE, BUILD_RULE, ABSTAIN_LINE, NUMBER_UNCONFIRMED_LINE, groundingWithIds, retrievalOf, stripUnretrievedCites, supportCheck } from "./self-rag.js";
 import { buildOpener, buildQueryExtra, pickBuildFacts } from "./ask-opener.js";
 import { researchEnabled, researchAnswer } from "./research/index.js";
+import { assertAnthropicUrl, namesAreReal } from "./research/real-names.js";
 import { RESEARCH_RULES, RESEARCH_NOTHING_RULE, RESEARCH_LENGTH_OVERRIDE, RESEARCH_MAX_TOKENS, RESEARCH_HARD_CHARS, RESEARCH_FINAL_CHARS } from "./research/rules.js";
 import { findAskerTurns, renderTurns, PRIOR_TURNS_RULE } from "./research/turns.js";
 import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap, usableAnswer } from "./research/label.js";
-import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
+import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER, degradedLines, DEGRADED_SUFFIX } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
 import { memberLine, researchTimeoutMs, guestLibraryOnly, hardEndMs } from "./research/no-wall.js";
 import { sheetsHideAnything, WITHHELD_LINE } from "./public-party.js";
@@ -407,6 +408,8 @@ export async function fetchWithGatewayFallback({
   singleHop = false, // research mode: one send per attempt (the gateway if configured, else direct), never a gateway send followed by a direct one
 }) {
   const gwUrl = resolveGatewayUrl(env, providerSlug, defaultEndpoint);
+  // Research mode (singleHop): friend text goes only to Anthropic's API, direct or through the gateway's anthropic route; any other URL is refused before a send (research/real-names.js).
+  if (singleHop) { assertAnthropicUrl(defaultEndpoint); assertAnthropicUrl(gwUrl); }
   const aigToken = (env && (env.AI_GATEWAY_TOKEN || env.CLOUDFLARE_AIG_TOKEN)) || ""; // never the account-wide deploy token
   if (!allowDirectFallback) {
     if (gwUrl === defaultEndpoint || !gatewayReady(env)) {
@@ -484,7 +487,7 @@ export async function callAnthropicClaude({ env, systemPrompt, userPrompt, deep,
     messages: [{ role: "user", content: userPrompt }],
   };
   const body = JSON.stringify(bodyObject);
-  if (beforeSend) beforeSend(bodyObject); // research mode: the outbound guard over the final body; a throw means nothing is sent
+  if (beforeSend) beforeSend(bodyObject, secretKey); // research mode: the outbound guard over the final body (and the secret scan, which knows the key); a throw means nothing is sent
 
   try {
   const resp = await fetchWithGatewayFallback({
@@ -924,7 +927,7 @@ const FORMAT_REMINDER =
 const wireId = (id) => (/^\d+$/.test(String(id)) ? Number(String(id).slice(0, 13)) : String(id));
 
 const MAX_RANK_PASSES = 4; // the question itself, one more for a follow-up's combined retry, and the abstain page lookups (class + two professions) share this; a plain abstain keeps full coverage, an opener that abstains gets class + one profession
-export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false, priorTurns = null }) {
+export async function buildAnswerInputs(env, { question, by, memberSlug, journey = "curious", share = true, isMember, promptVariant = "production", previousQuestion = null, research = false, priorTurns = null, researchReal = false }) {
   const isCoach = journey === "guided" && share !== true;
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
@@ -985,7 +988,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const askerIsMember = isMember === undefined ? String(by).trim().toLowerCase() !== "visitor" : Boolean(isMember);
     const sheets0 = partySheets && Array.isArray(partySheets.party) ? partySheets.party : [];
     // Research mode: names on the sheets join the roster as keys, and a free-text field that fails the strict guard is dropped before any block is rendered (research/claude.js).
-    const rparty = research ? researchParty(sheets0, stateMap) : null;
+    const rparty = research ? researchParty(sheets0, stateMap, { real: researchReal, env }) : null; // RESEARCH_NAMES "real": nothing is dropped for a name (the Claude path sends real names)
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
@@ -1307,7 +1310,9 @@ export async function answerWithAi({
     const previousQuestion = isFollowUp(question) ? await findPreviousQuestion(env, { intentId, share: Boolean(share) }) : null;
     // Research mode only: the asker's own last turns, one D1 read (research/turns.js). Flag off: no read.
     const priorTurns = research ? await findAskerTurns(env, { intentId, share: Boolean(share) }) : [];
-    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns });
+    // RESEARCH_NAMES (research code only): "real" sends the Claude hop the real names and the asker's turns untokenised; "tokenised" is the earlier behaviour. Guests never reach Claude.
+    const namesReal = research && namesAreReal(env);
+    const inputs = await buildAnswerInputs(env, { question, by, memberSlug, journey, share, isMember, previousQuestion, research, priorTurns, researchReal: namesReal && memberNoWall }); // real only for a member: a guest's Workers AI prompt always takes the tokenised, dropping path
     const { parsedPages, hits, ranked, libraryStamp, persona, askerIsMember, systemPrompt, userPrompt, groundingText, personalised, retrieval } = inputs;
     // Research mode: names become per-request tokens before any model sees the prompt (research/claude.js). Workers AI gets the same tokenised prompt; with the flag off these are the
     // untouched prompts. If tokenising fails Claude is skipped and Workers AI (inside Cloudflare) takes the prompt as it is.
@@ -1335,6 +1340,8 @@ export async function answerWithAi({
     // so choosing a different model does not skip the caps.
     let rawAnswer, model, provider;
     let fallbackNote = "";
+    let guestUntokenised = false; // a guest whose prompt could not be tokenised: library facts only, labelled +degraded
+    let degraded = false; // ASK_RESEARCH member: Claude could not answer, so the row is marked +degraded (never silent)
     let libOnly = false; // research guest with a spent budget: library facts only
     const composed = inputs.abstainAnswer || null; // nothing relevant to say: the answer is written by code, no model is called (self-rag.js composeAbstain)
     // ASK_RESEARCH seam (off by default; never in a PR preview). The stub handles nothing; any error, empty answer or "not handled" runs the path below unchanged.
@@ -1391,10 +1398,14 @@ export async function answerWithAi({
         const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
         const viaClaude = hardEnd - Date.now() < 2500
           ? { reason: "claude:no-time" }
-          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
+          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, real: namesReal ? { system: systemPrompt, user: userPrompt, friend: [question, previousQuestion, by, ...(Array.isArray(priorTurns) ? priorTurns.flatMap((t) => [t.q, t.a]) : [])] } : null, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
+      // A member's friend text never reaches Workers AI (or any other provider) under ASK_RESEARCH: no Claude answer means the honest degraded line below.
+      if (!rawAnswer && research && memberNoWall) throw new Error("research: Claude gave no answer");
+      // A guest whose prompt could not be tokenised gets library facts only: the raw prompt (real names) never goes to Workers AI.
+      if (!rawAnswer && research && !memberNoWall && !(priv && priv.ok)) { guestUntokenised = true; researchNote = " [guard:tokenise]"; throw new Error("research: the prompt could not be tokenised"); }
       if (!rawAnswer) {
       const deadlineMs = askDeadlineMs(env);
       const waiMs = research ? researchTimeoutMs(Date.now() - t0, ASK_CHOSEN_TIMEOUT_MS, deadlineMs) : ASK_CHOSEN_TIMEOUT_MS;
@@ -1415,6 +1426,7 @@ export async function answerWithAi({
       }
       // Research mode: an empty, refusal-only, banter-only or sources-only model answer is not shown. One retry of the same Workers AI call, then (via the catch below)
       // library facts with an honest line, or the honest line alone.
+      if (research && memberNoWall && !usableAnswer(rawAnswer)) { rawAnswer = undefined; throw new Error("research: no usable answer from Claude"); }
       if (research && !usableAnswer(rawAnswer)) {
         rawAnswer = undefined;
         const retryDeadline = askDeadlineMs(env);
@@ -1430,6 +1442,25 @@ export async function answerWithAi({
       if (research ? provider !== "workers-ai" : chosenProvider !== "workers-ai" && provider !== "workers-ai") await recordAttributed(env, budget, 0);
     } catch (providerErr) {
       fallbackNote = ` (after ${chosenProvider}: ${shortProviderError(providerErr)})`;
+      if (research && (memberNoWall || guestUntokenised)) {
+        // Degraded (ASK_RESEARCH, member): Claude (compose, then the Haiku-class retry) could not answer. No Workers AI, no Gemini, no other provider ever sees the question.
+        // An honest in-voice line, plus the library's own facts when the question matches the library. The row is marked +degraded so it is never silent.
+        degraded = true;
+        fallbackNote = "";
+        const lines = degradedLines(researchNote);
+        const facts = hits && hits.length > 0
+          ? hits.slice(0, 3).map((h) => `${h.value} [${h.page}~${h.key}]`)
+          : ranked.length > 0 ? ranked.slice(0, 3).map((p) => { const t = (p.facts || [])[0]; return t ? `${t.value} [${p.id}~${t.key}]` : `${p.blurb || p.title} [${p.id}]`; }) : [];
+        if (facts.length) {
+          const pages = hits && hits.length > 0 ? hits.slice(0, 3).map((h) => h.page) : ranked.slice(0, 3).map((p) => p.id);
+          rawAnswer = `${facts.join(" ")}\n${lines.note}\n-# Sources: ${[...new Set(pages)].join(", ")}`;
+          model = "degraded-library-facts";
+        } else {
+          rawAnswer = lines.answer;
+          model = "degraded-honest-line";
+        }
+        provider = "library";
+      } else {
       if (!research && activeProvider !== chosenProvider && isProviderConfigured(env, activeProvider)) { // research: only Workers AI ever answers a non-member, never a configured outside provider
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
@@ -1496,6 +1527,7 @@ export async function answerWithAi({
           throw providerErr;
         }
       }
+      } // end of the non-degraded fallback chain
     }
 
     }
@@ -1521,7 +1553,7 @@ export async function answerWithAi({
       "UPDATE ask_turns SET answer = ?, cites_json = ?, model = ?, status = 'answered', latency_ms = ?, answered_at = ? WHERE id = ?"
     )
       // A research answer is marked "+research" so reuse (findRecentSameAnswer) never hands it to a flag-off ask after a rollback.
-      .bind(answer, JSON.stringify(cites), `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
+      .bind(answer, JSON.stringify(cites), degraded ? `${provider}:${model}+research${researchNote}`.slice(0, 120 - DEGRADED_SUFFIX.length) + DEGRADED_SUFFIX : `${provider}:${model}${research ? "+research" : ""}${researchNote}${fallbackNote}`.slice(0, 120), latencyMs, answeredAt, intentId)
       .run();
 
     const statsRow = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'stats'").first();

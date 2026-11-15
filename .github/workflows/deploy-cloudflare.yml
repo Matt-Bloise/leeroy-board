@@ -429,6 +429,15 @@ jobs:
           echo "::error::Post-deploy health check failed: $URL did not return HTTP 200 JSON with ok true and db ok after 5 tries. The Worker or its D1 database may be broken. Roll back: docs/runbooks/rollback.md."
           exit 1
 
+      # Runs only after the Worker is deployed, its secrets are synced and the health check passed, so the manifest it reads already lists every command in this commit
+      # (for example /say). POSTs only the missing or different commands, one by one; never a bulk PUT, never a DELETE. Never fails the deploy: any trouble is a ::warning::.
+      - name: Sync Discord slash commands (idempotent, never deletes)
+        continue-on-error: true
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          WORKER_URL: https://api.leeroy.party
+        run: node tools/sync-discord-commands.mjs --apply
+
   # B53: the production probe (tests/browser/prod-probe.mjs) runs ONCE after each production deploy, as its own job so that it holds no secret (no environment, no
   # job-level env, GITHUB_TOKEN read-only) and so that a failing probe turns the run red without touching anything that was deployed: nothing here rolls back, redeploys or
   # edits Cloudflare. It tests what a person sees (console errors, 4xx/5xx, junk text, blank scenes, member count, typed party size) with the real API, in Chromium, WebKit
