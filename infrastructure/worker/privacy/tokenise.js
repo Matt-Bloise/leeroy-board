@@ -35,8 +35,12 @@ export const LONG_NAME_MIN = 7;
 const RESERVED = new Set(["id", "all", "guild", "invite", "everyone", "here", "someone"]);
 const SUFFIXES = new Set(["", "s", "es", "y", "ie", "ies"]);
 // A model sometimes mis-copies the per-request nonce ({P8.702f} for {P8.1n70}). Only the model can emit a brace token (user-typed ones are escaped to [P8.1N70]
-// before tokenising), and a restored DISPLAY name is allowed reply content, so a P token with ANY 1-8 alphanumeric nonce whose index exists in THIS map restores.
-const LOOSE_P_RE = /\{P([1-9]\d{0,3})\.[A-Za-z0-9]{1,8}\}/g;
+// before tokenising), and a restored DISPLAY name is allowed reply content, so a P token whose nonce has the SHAPE of a real nonce and whose index exists in THIS map
+// restores. The shape is exactly what makeNonce produces: 4 characters, a digit 0-7 first and third (each byte is 1-2 base-36 characters, zero padded), any case.
+// Ordinary brace text ({P2.5}, {P1.name}) and a shifted dot ({P13.h4a}) never have that shape. A nonce the USER typed (recorded when the text is escaped) never restores,
+// so a crafted token the model relays back cannot resolve.
+const NONCE_SHAPE_SRC = "[0-7][0-9A-Za-z][0-7][0-9A-Za-z]";
+const LOOSE_P_RE = new RegExp(String.raw`\{P([1-9]\d{0,3})\.(` + NONCE_SHAPE_SRC + String.raw`)\}`, "g");
 const USER_TOKEN_RE = /\{\s{0,3}(?:p\s{0,3}\d{1,4}|id|all|invite|guild)[^{}]{0,14}\}/gi;
 
 const INVITE_RE = /(?:https?:\/\/)?(?:www\.)?(?:discord\s{0,3}\.\s{0,3}gg|dsc\s{0,3}\.\s{0,3}gg|discord(?:app)?\s{0,3}\.\s{0,3}com\s{0,3}\/\s{0,3}invites?|discord\s{0,3}\.\s{0,3}me)\s{0,3}\/\s{0,3}[\w-]+/gi;
@@ -56,8 +60,13 @@ function baseNormalise(text) {
   return s;
 }
 
-function escapeUserTokens(s) {
-  return s.replace(USER_TOKEN_RE, (m) => `[${m.slice(1, -1).replace(/\s+/g, "").toUpperCase()}]`);
+function escapeUserTokens(s, map) {
+  return s.replace(USER_TOKEN_RE, (m) => {
+    const compact = m.slice(1, -1).replace(/\s+/g, "");
+    const typed = /^P\d+\.([A-Za-z0-9]+)$/i.exec(compact);
+    if (typed && map && map.typedNonces) map.typedNonces.add(typed[1].toLowerCase());
+    return `[${compact.toUpperCase()}]`;
+  });
 }
 
 function structural(s, map) {
@@ -84,7 +93,7 @@ function lastWordLen(raw) {
   return n;
 }
 
-function makeNonce() {
+export function makeNonce() {
   const bytes = new Uint8Array(3);
   globalThis.crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(36).padStart(2, "0")).join("").slice(0, 4);
@@ -195,6 +204,7 @@ export function buildNameMap(members, asker, opts = {}) {
   const esc = nonce.replace(/[^a-z0-9]/gi, "");
   return {
     entries, names, byToken, ids, nonce, special, tokenFor,
+    typedNonces: new Set(),
     askerToken: askerIndex >= 0 ? tokenFor(askerIndex) : null,
     splitRe: new RegExp(`(\\{(?:P\\d+|ID|ALL|INVITE|GUILD)\\.${esc}\\})`),
     tokRe: new RegExp(`\\{(P\\d+|ID|ALL|INVITE|GUILD)\\.${esc}\\}`, "g"),
@@ -297,7 +307,7 @@ function findMatches(seg, map) {
 export function tokenise(text, map) {
   if (text == null) return "";
   const m = map && map.entries ? map : buildNameMap([]);
-  let s = escapeUserTokens(baseNormalise(text));
+  let s = escapeUserTokens(baseNormalise(text), m);
   s = structural(s, m);
   const parts = s.split(m.splitRe);
   for (let p = 0; p < parts.length; p += 2) {
@@ -348,7 +358,7 @@ function scanBraces(text, m, fn) {
     const e = exactRe.exec(g);
     if (e) return fn("exact", g, e[1], null);
     const l = LOOSE_ANCHORED_RE.exec(g);
-    if (l && m.byToken.has(`{P${l[1]}.${m.nonce}}`)) return fn("loose", g, null, l[1]);
+    if (l && m.byToken.has(`{P${l[1]}.${m.nonce}}`) && !(m.typedNonces && m.typedNonces.has(l[2].toLowerCase()))) return fn("loose", g, null, l[1]);
     if (l || FOREIGN_ANCHORED_RE.test(g)) return fn("foreign", g, null, null);
     return g;
   });

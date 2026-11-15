@@ -19,9 +19,7 @@ import { schemaDb } from "../helpers/sqlite-d1.mjs";
 const FAKE_KEY = "sk-ant-FAKE-TEST-0000";
 const DEFAULT_BUDGET_MS = privacyBudget.ms;
 const realFetch = globalThis.fetch;
-let anth = []; // every compose-side request to an Anthropic URL: { model, body, headers }
-const understandSends = [];
-const UNDERSTAND_TOKENS = 1; // what the fake understand reply reports as usage
+let anth = []; // every request to an Anthropic URL: { model, body, headers }
 let others = []; // every other fetch URL
 let wai = []; // Workers AI inputs
 let claudeAnswer = () => ({ status: 200, text: "**Short answer first.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" });
@@ -31,9 +29,6 @@ globalThis.fetch = async (url, init) => {
   const u = String(url);
   if (u.includes("anthropic")) {
     const body = JSON.parse(init.body);
-    // The understand step (research/understand.js, 120-token Haiku-class send, own test file) is answered here and kept out of `anth`, so these tests keep counting COMPOSE sends only.
-    // It reports 1 token of usage, so each ask adds UNDERSTAND_TOKENS to the monthly counter.
-    if (body.max_tokens === 120) { understandSends.push(body); return new Response(JSON.stringify({ content: [{ type: "text", text: '{"kind":"game_fact","depth":"standard"}' }], usage: { input_tokens: 1, output_tokens: 0 } }), { status: 200, headers: { "content-type": "application/json" } }); }
     anth.push({ model: body.model, body, raw: init.body, headers: { ...init.headers }, url: u });
     const r = claudeAnswer(body, anth.length);
     if (r.throws) throw r.throws;
@@ -152,11 +147,11 @@ test("token counter: usage is added to claude_tokens_YYYYMM; the cap sends later
   const r1 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = cap; } });
   assert.equal(r1.anth.length, 1);
   const key = `claude_tokens_${month()}`;
-  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 133 + UNDERSTAND_TOKENS);
+  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 133);
   // 133 < 200: still allowed; this one pushes it to 266
   const r2 = await ask(ABSTAIN_Q, { db, env: (e) => { e.RESEARCH_CLAUDE_MONTHLY_TOKENS = cap; } });
   assert.equal(r2.anth.length, 1);
-  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 266 + 2 * UNDERSTAND_TOKENS);
+  assert.equal(Number(db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key).json), 266);
   assert.equal(db.raw.prepare("SELECT COUNT(*) c FROM kv_state WHERE key LIKE 'alert:claude-cap:%'").get().c, 0);
   db.raw.prepare("INSERT OR REPLACE INTO kv_state (key, json, updated_at) VALUES (?, ?, 'x')").run(key, String(2 * E + 1)); // 2E+1 used of 3E: the whole reservation no longer fits
   for (let i = 0; i < 3; i++) {
@@ -210,15 +205,16 @@ test("a Claude request never carries a roster name: the prompt is tokenised, tok
   assert.deepEqual(scanBody(r.anth[0].body, researchRoster()), []);
 });
 
-test("nonce tolerance: a reply whose token has a mis-copied nonce on a valid index is NOT discarded and restores the display name", async () => {
+const TAIL = "\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed";
+const realNonceOf = (body) => body.messages[0].content.match(/\{P\d+\.([0-7][0-9a-z][0-7][0-9a-z])\}/)[1];
+const otherNonce = (n) => `${(Number(n[0]) + 1) % 8}${n.slice(1)}`; // same shape, never equal
+
+test("nonce tolerance: a reply whose token has a mis-copied nonce (real shape, valid index) is NOT discarded and restores the display name", async () => {
   const target = NAMES[2];
   const r = await ask(`what should ${target} play and what is the weather like`, {
     claude: (body) => {
       const [, idx, nonce] = body.messages[0].content.match(/what should \{P(\d+)\.([a-z0-9]+)\} play/);
-      const wrongNonce = nonce === "702f" ? "0abc" : "702f";
-      return { status: 200, text: `**{P${idx}.${wrongNonce}} should play whatever is fun.**
-That is how Classic handled it.
--# Sources: general Classic-era knowledge · unconfirmed` };
+      return { status: 200, text: `**{P${idx}.${otherNonce(nonce)}} should play whatever is fun.**${TAIL}` };
     },
   });
   assert.equal(r.anth.length, 1);
@@ -228,24 +224,32 @@ That is how Classic handled it.
   assert.ok(!/\{P\d/.test(r.answer));
 });
 
-test("nonce tolerance: a wrong nonce on an index that is not in the map is still discarded", async () => {
-  const r = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: "**{P99.702f} should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed" }) });
+test("nonce tolerance: a mis-copied nonce on an index that is not in the map is still discarded (derived from the real nonce)", async () => {
+  const r = await ask(ABSTAIN_Q, { claude: (body) => ({ status: 200, text: `**{P99.${otherNonce(realNonceOf(body))}} should play whatever is fun.**${TAIL}` }) });
   assert.equal(r.wai.length >= 1, true);
   assert.match(r.answer, /Workers answer first/);
+  assert.ok(!r.answer.includes("someone"));
 });
 
-test("nonce tolerance: a token typed in the QUESTION is escaped to brackets, never sent as a brace token, and a reply echoing it as a brace token stays discarded when the index is absent", async () => {
-  const r = await ask("what about {P1.abcd} and {P77.abcd} in the weather", { claude: () => ({ status: 200, text: "**Plain answer.**\nThat is how Classic handled it.\n-# Sources: general Classic-era knowledge · unconfirmed" }) });
-  assert.equal(r.anth.length, 1);
-  const body = r.anth[0].body.messages[0].content;
-  assert.ok(body.includes("[P1.ABCD]") && body.includes("[P77.ABCD]"), "escaped to brackets");
-  assert.ok(!body.includes("{P1.abcd}") && !body.includes("{P77.abcd}"));
-  assert.match(r.answer, /Plain answer/);
+test("nonce tolerance: a token typed in the QUESTION is escaped to brackets; when the model relays it as braces (any case, any index) the reply is discarded", async () => {
+  const q = "what about {P1.abcd} and {P2.7a1b} and {P3.7A1B} in the weather";
+  const quiet = await ask(q, { claude: () => ({ status: 200, text: `**Plain answer.**${TAIL}` }) });
+  assert.equal(quiet.anth.length, 1);
+  const body = quiet.anth[0].body.messages[0].content;
+  assert.ok(body.includes("[P1.ABCD]") && body.includes("[P2.7A1B]") && body.includes("[P3.7A1B]"), "escaped to brackets");
+  assert.ok(!body.includes("{P1.abcd}") && !body.includes("{P2.7a1b}"));
+  assert.match(quiet.answer, /Plain answer/);
+  for (const echo of ["{P2.7a1b}", "{P3.7A1B}", "{P1.7a1b}", "{P1.abcd}"]) {
+    const r = await ask(q, { claude: () => ({ status: 200, text: `**${echo} should play whatever is fun.**${TAIL}` }) });
+    assert.equal(r.wai.length >= 1, true, echo);
+    assert.match(r.answer, /Workers answer first/, echo);
+    assert.ok(!r.answer.includes("someone"), echo);
+  }
 });
 
-test("a reply with a bare token, a foreign-nonce token on an unknown index, or an id token is discarded and Workers AI answers", async () => {
-  for (const bad of ["{P1}", "{P99.zzzz}", "{ID.zzzz}", "{ p1 }"]) {
-    const r = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: `**${bad} should play whatever is fun.**\nThat is how Classic handled it.\n-# Sources: general knowledge · unconfirmed` }) });
+test("a reply with a bare token, a foreign token on an unknown index, ordinary brace text that looks like a token, or an id token is discarded and Workers AI answers", async () => {
+  for (const bad of ["{P1}", "{P99.zzzz}", "{ID.zzzz}", "{ p1 }", "{P2.5}", "{P1.name}"]) {
+    const r = await ask(ABSTAIN_Q, { claude: () => ({ status: 200, text: `**${bad} should play whatever is fun.**${TAIL}` }) });
     assert.equal(r.wai.length >= 1, true, bad);
     assert.match(r.answer, /Workers answer first/, bad);
     assert.ok(!r.answer.includes("someone"), bad);
@@ -448,7 +452,7 @@ test("2. the structured vs free-text field table is in flags.md and matches the 
 
 test("3. the cap counts all four usage fields, clamps each call, and treats bad usage as an estimated maximum", async () => {
   const key = `claude_tokens_${month()}`;
-  const run = async (usage) => { const db = schemaDb(); await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) }); const row = db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key); return row ? Number(row.json) - UNDERSTAND_TOKENS : null; };
+  const run = async (usage) => { const db = schemaDb(); await ask(ABSTAIN_Q, { db, claude: () => ({ status: 200, usage }) }); const row = db.raw.prepare("SELECT json FROM kv_state WHERE key = ?").get(key); return row ? Number(row.json) : null; };
   assert.equal(await run({ input_tokens: 3, output_tokens: 2, cache_creation_input_tokens: 5000, cache_read_input_tokens: 4000 }), 9005);
   assert.equal(await run({ input_tokens: 10, output_tokens: 5 }), 15);
   assert.equal(await run({ input_tokens: 1e15, output_tokens: 1 }), 200001, "clamped per field, never months of budget in one call");
@@ -508,15 +512,14 @@ test("5. a counter write failure stops Claude for a while (spend must not go unr
   const db = schemaDb();
   const real = db.prepare;
   let failWrites = true;
-  let updates = 0; // the 1st UPDATE is the understand step's settle; the compose settle is the 2nd
   db.prepare = (sql) => {
     const s = real(sql);
     const bind = s.bind;
-    s.bind = (...a) => (failWrites && /^\s*UPDATE/i.test(sql) && a.some((x) => String(x).startsWith("claude_tokens_")) && ++updates >= 2 ? { first: async () => { throw new Error("d1"); }, all: async () => { throw new Error("d1"); }, run: async () => { throw new Error("d1"); } } : bind(...a));
+    s.bind = (...a) => (failWrites && /^\s*UPDATE/i.test(sql) && a.some((x) => String(x).startsWith("claude_tokens_")) ? { first: async () => { throw new Error("d1"); }, all: async () => { throw new Error("d1"); }, run: async () => { throw new Error("d1"); } } : bind(...a));
     return s;
   };
   const first = await ask(ABSTAIN_Q, { db });
-  assert.equal(first.anth.length, 1, first.row.model);
+  assert.equal(first.anth.length, 1);
   failWrites = false;
   const second = await ask(ABSTAIN_Q, { db });
   assert.equal(second.anth.length, 0, "paused after a failed counter write");
@@ -641,12 +644,74 @@ test("C4. cap: each attempt reserves and settles its own estimate; the cap and t
   assert.equal(counter(db3), E, "only the first (kept) reservation remains");
 });
 
-test("C5. ASK_RESEARCH off: the legacy provider path is untouched by the compose-model change", async () => {
+test("C5. ASK_RESEARCH off: the legacy provider path is byte-for-byte the old request and row", async () => {
   const off = await ask("who tanks tonight", { research: false, provider: "claude", deep: true });
   assert.equal(off.anth.length, 1);
-  assert.equal(off.anth[0].model, "claude-sonnet-4-5-20250929", "legacy deep id");
+  const b = off.anth[0].body;
+  assert.equal(b.model, "claude-sonnet-4-5-20250929", "legacy deep id");
+  assert.equal(b.max_tokens, 350);
+  assert.deepEqual(Object.keys(b), ["model", "max_tokens", "system", "messages"]);
+  assert.equal(off.anth[0].raw, JSON.stringify({ model: b.model, max_tokens: 350, system: [{ type: "text", text: b.system[0].text, cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content: b.messages[0].content }] }), "serialised exactly as before: cache_control kept, no extra fields");
+  assert.match(off.row.model, /^claude:claude-sonnet-4-5-20250929$/);
+  assert.ok(!/\{P\d|\[P\d/.test(off.anth[0].raw), "no tokens flag-off");
   const fast = await ask("who tanks tonight", { research: false, provider: "claude" });
   assert.equal(fast.anth[0].model, "claude-haiku-4-5-20251001");
+});
+
+// ======================= review round 2: the Claude chain stays inside the ask's own hard end =======================
+test("R2-1. the Claude chain is clamped to the ask's hard end: with ASK_DEADLINE_MS=5000 (hard end 4166 ms) no send is given more than the time left", async () => {
+  const rec = recordTimeouts();
+  let r;
+  try {
+    r = await ask(ABSTAIN_Q, { env: (e) => { e.ASK_DEADLINE_MS = "5000"; }, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT }) });
+  } finally { rec.stop(); }
+  assert.ok(rec.seen.length >= 1);
+  for (const ms of rec.seen) assert.ok(ms <= 4200, `a fetch was given ${ms} ms, past the hard end`);
+  assert.deepEqual(r.anth.map((a) => a.model), [SONNET, HAIKU]);
+});
+
+test("R2-2. with under 2.5 s before the hard end Claude is not called at all and Workers AI answers", async () => {
+  const r = await ask(ABSTAIN_Q, { env: (e) => { e.ASK_DEADLINE_MS = "3000"; } });
+  assert.equal(r.anth.length, 0);
+  assert.equal(r.wai.length >= 1, true);
+});
+
+test("R2-3. a slow FIRST reservation write counts inside the budget: compose is skipped when too little is left, the reservation is refunded, Workers AI answers", async () => {
+  const db = schemaDb();
+  const real = db.prepare;
+  let reserves = 0;
+  db.prepare = (sql) => {
+    const st = real(sql);
+    const bind = st.bind;
+    st.bind = (...a) => {
+      const o = bind(...a);
+      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 1) {
+        const all = o.all.bind(o);
+        o.all = async () => { mock.timers.tick(5500); return all(); };
+      }
+      return o;
+    };
+    return st;
+  };
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  let r;
+  try {
+    r = await ask(ABSTAIN_Q, { db, env: (e) => { e.ASK_DEADLINE_MS = "12000"; }, claude: () => ({ status: 200, text: OKT }) });
+  } finally { mock.timers.reset(); }
+  assert.equal(r.anth.length, 0, "no compose send started with <2.5 s of its budget left");
+  assert.equal(r.wai.length >= 1, true);
+  assert.equal(counter(db), 0, "the reservation was given back");
+});
+
+test("R2-4. the ASK_DEADLINE_MS override reaches the flag-off last-resort Workers AI gate too (same value as discord.js)", async () => {
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (u, i) => { if (/groq/.test(String(u))) throw new Error("groq down"); return prev(u, i); };
+  try {
+    const base = await ask("who tanks tonight", { research: false, provider: "groq" });
+    assert.equal(base.wai.length >= 1, true, "default deadline: the last-resort hop runs");
+    const tight = await ask("who tanks tonight", { research: false, provider: "groq", env: (e) => { e.ASK_DEADLINE_MS = "5000"; } });
+    assert.equal(tight.wai.length, 0, "a 5 s deadline leaves no room for the last-resort hop");
+  } finally { globalThis.fetch = prev; }
 });
 
 // ======================= round 3 (second-family review of the budget code) =======================
@@ -697,10 +762,10 @@ test("R1. an ask whose estimate alone exceeds the cap skips Claude, Workers AI a
 test("R2. the estimate is a conservative upper bound: non-ASCII text counts at 1.5 tokens per character, not 1/3", () => {
   const ascii = "a".repeat(3000);
   assert.ok(estimateTokens(ascii, "") > 1000 + RESEARCH_MAX_TOKENS, "ASCII is no longer chars/3 (see ask-research-estimate.test.mjs for the full bound)");
-  const cjk = "中文字".repeat(1000); // 3000 CJK characters, 9000 UTF-8 bytes
-  assert.ok(estimateTokens(cjk, "") >= 9000 + RESEARCH_MAX_TOKENS);
-  const emoji = "\u{1F600}".repeat(1000); // 4000 UTF-8 bytes
-  assert.ok(estimateTokens("", emoji) >= 4000 + RESEARCH_MAX_TOKENS);
+  const cjk = "中文字".repeat(1000); // 3000 CJK characters
+  assert.ok(estimateTokens(cjk, "") >= 9000 + RESEARCH_MAX_TOKENS); // 9000 UTF-8 bytes
+  const emoji = "\u{1F600}".repeat(1000); // 2000 UTF-16 units
+  assert.ok(estimateTokens("", emoji) >= 4000 + RESEARCH_MAX_TOKENS); // 4000 UTF-8 bytes
   // scales with the input: ten times the CJK text is about ten times the estimate
   const ratio = (estimateTokens(cjk.repeat(10), "") - RESEARCH_MAX_TOKENS) / (estimateTokens(cjk, "") - RESEARCH_MAX_TOKENS);
   assert.ok(ratio > 9.5 && ratio < 10.5, String(ratio));
@@ -753,7 +818,7 @@ test("F1. research sends get the budget they were promised, with and without a g
     try {
       await ask(ABSTAIN_Q, { env: envPatch, claude: (b) => (b.model === SONNET ? errOf(529) : { status: 200, text: OKT }) });
     } finally { rec.stop(); }
-    const [, compose, retry] = rec.seen;
+    const [compose, retry] = rec.seen;
     assert.ok(compose > 5800 && compose <= 6000, `${label} compose ${compose}`);
     assert.ok(retry >= 2500 && retry <= 9000, `${label} retry ${retry}`);
   }
@@ -789,7 +854,7 @@ test("F3. a slow second reservation write cannot push the retry past the Claude 
     const bind = st.bind;
     st.bind = (...a) => {
       const o = bind(...a);
-      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 3) {
+      if (String(a[0] || "").startsWith("claude_tokens_") && /RETURNING/.test(sql) && ++reserves === 2) {
         const all = o.all.bind(o);
         o.all = async () => { mock.timers.tick(7000); return all(); }; // the second reservation "takes" 7 s of the 9 s budget
       }
