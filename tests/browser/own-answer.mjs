@@ -48,6 +48,7 @@ async function open(browser, width, height, meDelayMs, { clock = null, mineStamp
     if (m === "GET" && u.pathname.endsWith("/api/me")) { await (meDelayMs < 0 ? gate : new Promise((r) => setTimeout(r, meDelayMs))); meAt.t = Date.now(); return json(route, { slug: ME.slug, name: ME.name }); }
     if (m === "POST" && u.pathname.endsWith("/api/intent")) { await new Promise((r) => setTimeout(r, 400)); return json(route, { ok: true }); }
     if (m === "GET" && u.pathname.endsWith("/api/state")) return json(route, { type: "state", ver: 1, at: stamp, party: [], signups: doc });
+    if (m === "GET" && /\/api\/data\/[a-z-]+(?:\.json)?$/.test(u.pathname)) return route.fallback(); // the member documents: the API stub answers them (the board reads <brain>/data/<name>)
     return route.abort();
   });
   await ctx.route(DATA_RE, (route) => json(route, DATA_RE.exec(route.request().url())[1] === "party" ? PARTY : doc));

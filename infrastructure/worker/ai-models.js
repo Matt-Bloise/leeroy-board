@@ -13,6 +13,7 @@
 // =============================================================================
 
 import { classPageFallback } from "./ask-fallback.js";
+import { partyForMember } from "./sheet-privacy.js";
 import { broadcastToRoom, purgeWorkerCache, buildPartySheetsFromD1 } from "./index.js";
 import { rank as rankWikiCore, factHays, stem } from "./rank-core.js";
 import { sha256Hex } from "./crypto.js";
@@ -32,6 +33,7 @@ import { researchPrepare, appendBasis, neutraliseMentions, defuseLinks, fitToCap
 import { forceResearchProvider, researchModeOn, RESEARCH_DOWN_NOTE, RESEARCH_DOWN_ANSWER } from "./research/provider.js";
 import { prepareResearchPrivacy, tryResearchClaude, researchParty } from "./research/claude.js";
 import { primeRosterPrivacy } from "./roster-source.js";
+import { sheetsHideAnything, WITHHELD_LINE } from "./public-party.js";
 import { askerFacts, buildRelevant, BUILD_NOT_RELEVANT_LINE, VISITOR_BUILD_LINE, hasBuildText, findAsker, renderAskerBuild, renderPartyBuilds, groundedOrNotPublished, guardRefusal } from "./ask-build.js";
 
 // Added to every system prompt: personalise from YOUR_BUILD, answer only from LIBRARY and the build/party state.
@@ -890,7 +892,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     // Pull relevant library pages, index stamp & full party/schedule state from D1 for grounded RAG context
     const [{ pages: parsedPages, hays: cachedHays }, { results: stateRows }, partySheets, idxRow] = await Promise.all([
       getParsedLibraryData(env),
-      env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('party', 'signups', 'timeline', 'tonight')").all(),
+      env.DB.prepare("SELECT key, json FROM kv_state WHERE key IN ('signups', 'timeline', 'tonight')").all(),
       buildPartySheetsFromD1(env),
       env.DB.prepare("SELECT stamp FROM lib_blobs WHERE name = 'index.json'").first(),
     ]);
@@ -951,7 +953,7 @@ export async function buildAnswerInputs(env, { question, by, memberSlug, journey
     const sheets = rparty ? rparty.sheets : sheets0;
     const { sheet: askerSheet, bySlug: askerBySlug } = findAsker(sheets, { by, memberSlug, isMember: askerIsMember });
     const fullBuild = askerIsMember ? renderAskerBuild(askerSheet, stateMap, { includeHidden: share === false && askerBySlug }) : VISITOR_BUILD_LINE;
-    const partyBuilds = renderPartyBuilds(sheets, askerSheet);
+    const partyBuilds = sheetsHideAnything(sheets0) ? WITHHELD_LINE : renderPartyBuilds(partyForMember(sheets, askerSheet ? askerSheet.slug : null), askerSheet); // other members' builds: while ANY member hides ANY field, the one line instead of every member's part (public-party.js)
     // The stored build is shown only when the question makes it relevant (ask-build.js buildRelevant); otherwise the model is told once to leave it out.
     const buildHelps = Boolean(askerSheet) && hasBuildText(fullBuild)
       && buildRelevant(question, askerFacts(askerSheet, { includeHidden: share === false && askerBySlug }), { skip, previousQuestion: prevQ }).relevant;
