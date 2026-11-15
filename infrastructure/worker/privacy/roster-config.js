@@ -18,13 +18,15 @@ export function setFirstNameSource(fn) {
 }
 export const getFirstNameSource = () => firstNameSource;
 
-// ROSTER_FROM_D1 (ADR 0002): roster-source.js hands the D1 roster in here. null (the default, and always while the flag is off) means the built-in list only.
-// With an override the members are the override first, then every built-in member the override does not already cover: the redaction roster is a superset
-// of both while built-ins exist, so switching the flag on can never uncover a name the built-ins covered.
+// ROSTER_FROM_D1 (ADR 0002): roster-source.js hands the D1 roster in here. null (the default, and always while the flag is off or refused) means the built-in list only.
+// With an override the redaction roster is the UNION, per redaction key (display name, aliases, first names, character names and the slug), of the D1 roster and the
+// built-ins: a key is covered if ANY source covers it. A D1 member whose display name matches a built-in (same skeleton) gets that built-in's aliases and first
+// names merged in, so a D1 row that omits or changes aliases never uncovers a built-in alias. A built-in with no D1 match is kept whole. D1 members come first.
+// Switching the flag on can therefore never uncover a key the built-ins covered.
 let rosterOverride = null;
 let overrideKey = "null";
 export function setRosterOverride(list) {
-  const next = Array.isArray(list) && list.length ? list.map((m) => ({ display: m.display, aliases: [...(m.aliases || [])], firstNames: [...(m.firstNames || [])] })) : null;
+  const next = Array.isArray(list) && list.length ? list.map((m) => ({ display: m.display, aliases: [...(m.aliases || [])], firstNames: [...(m.firstNames || [])], characterNames: [...(m.characterNames || [])] })) : null;
   const key = JSON.stringify(next);
   if (key === overrideKey) return; // unchanged: keep the cached roster object (the guard caches its parse per object)
   rosterOverride = next;
@@ -32,7 +34,19 @@ export function setRosterOverride(list) {
   cached = null;
 }
 
-// [{ display, aliases, firstNames }] built from ROSTER_DATA (display and aliases only), plus the override when one is set.
+const dedupe = (names) => {
+  const seen = new Set();
+  const out = [];
+  for (const n of names) {
+    const k = skeleton(String(n));
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(n);
+  }
+  return out;
+};
+
+// [{ display, aliases, firstNames, characterNames? }] built from ROSTER_DATA (display and aliases only), plus the override when one is set.
 export function researchMembers() {
   const base = ROSTER_DATA.map((r, i) => ({
     display: r.display,
@@ -40,11 +54,20 @@ export function researchMembers() {
     firstNames: firstNameSource ? firstNameSource(r, i) ?? [] : [],
   }));
   if (!rosterOverride) return base;
-  const covered = new Set(rosterOverride.map((r) => skeleton(String(r.display))));
-  return [
-    ...rosterOverride.map((r, i) => ({ display: r.display, aliases: [...r.aliases], firstNames: [...r.firstNames, ...(firstNameSource ? firstNameSource(r, i) ?? [] : [])] })),
-    ...base.filter((b) => !covered.has(skeleton(String(b.display)))),
-  ];
+  const matched = new Set();
+  const merged = rosterOverride.map((r) => {
+    const key = skeleton(String(r.display));
+    const peers = base.filter((b, j) => skeleton(String(b.display)) === key && (matched.add(j), true));
+    const out = {
+      display: r.display,
+      aliases: dedupe([...r.aliases, ...peers.flatMap((p) => p.aliases)]),
+      // the first-name source is keyed by built-in position, so it is applied to built-ins only (via peers), never to a D1 member by its own index
+      firstNames: dedupe([...r.firstNames, ...peers.flatMap((p) => p.firstNames)]),
+    };
+    if (r.characterNames.length) out.characterNames = dedupe(r.characterNames);
+    return out;
+  });
+  return [...merged, ...base.filter((_, j) => !matched.has(j))];
 }
 
 let cached = null;

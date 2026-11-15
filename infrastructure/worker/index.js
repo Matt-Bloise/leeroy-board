@@ -57,7 +57,7 @@ import { collectInterest } from "./interest.js";
 import { withSecurityHeaders } from "./security-headers.js";
 import { runMoments, momentsStatus, momentsEnabled, momentsDryRun, momentsShadow, d1Store, MOMENTS_CRON, MOMENTS_SHADOW_STATE_KEY, MOMENTS_LEDGER_KEY } from "./moments.js";
 import { originVerdict, corsHeaders as buildCorsHeaders } from "./cors.js";
-import { activeRoster, primeRosterPrivacy } from "./roster-source.js";
+import { activeRoster, rosterScope } from "./roster-source.js";
 import { PARTY_MEMBERS, loadPartyMembers, reconcileSheetsWithDoc, sheetForDocMember, sheetForWrite } from "./party-source.js";
 
 export { BoardRoom };
@@ -441,14 +441,14 @@ export const ROUTES = [
 ];
 
 const worker = {
-  async fetch(req, env, ctx) {
+  async fetch(req, rawEnv, ctx) {
+    const env = rosterScope(rawEnv); // ROSTER_FROM_D1: one roster decision (one flag evaluation, and none unless something asks) for this request
     try { gauge.hit(env, ctx); } catch (e) { /* the gauge can never fail a request */ } // REQUEST_GAUGE (default off): one in-memory add, a batched D1 write every 25 requests; see worker/gauge.js
     const url = new URL(req.url);
     const verdict = originVerdict(req, env);
     if (!verdict.ok) {
       return new Response("Forbidden Origin", { status: 403 });
     }
-    try { await primeRosterPrivacy(env); } catch (e) { /* ROSTER_FROM_D1: the redaction roster follows the D1 roster; on any error it stays the built-in one */ }
     const cors = buildCorsHeaders(verdict.origin);
 
     if (req.method === "OPTIONS") {
@@ -1964,8 +1964,8 @@ const worker = {
     }
   },
 
-  async scheduled(controller, env, ctx) {
-    try { await primeRosterPrivacy(env); } catch (e) { /* see fetch */ }
+  async scheduled(controller, rawEnv, ctx) {
+    const env = rosterScope(rawEnv); // see fetch
     // The every-minute trigger runs only the timed posts; every other trigger is the source sweep. Timed posts are off until MOMENTS_ENABLED.
     if (controller && controller.cron === MOMENTS_CRON) {
       ctx.waitUntil(

@@ -1,6 +1,6 @@
 # ADR 0002: The member roster lives in D1, not in code
 
-Status: PROPOSED, revised after an outside review (see "Council review"). Step 1 is implemented behind the flag `ROSTER_FROM_D1` (default off everywhere). The later steps are not started. Step 1 must not be turned on in production: the gates in step 2 come first.
+Status: PROPOSED, revised after an outside review (see "Council review"). Step 1 is implemented behind the flag `ROSTER_FROM_D1` (default off everywhere) and behind a code interlock: while the constant `ROSTER_STEP2_READY` (`worker/roster-source.js`) is `false`, the flag on is refused and behaves as off, for auth and redaction alike. The later steps are not started. Only the step 2 PR flips the constant.
 Date: 2026-11-15
 Work item: w-20261115-09
 Scope: where the names and builds of the real party members come from, who the default admin is, and what the redaction layer uses to hide the names.
@@ -40,7 +40,7 @@ What is still in code is the five real ones, and three behaviours that depend on
    - **Step 1 (built-ins still exist):** a missing, unreadable or invalid row means "no D1 roster": the code behaves exactly as with the flag off, built-in default admin included. This is a transitional compatibility choice, not the end state.
    - **From the step that removes the built-ins (step 6):** fail closed. No valid roster means the admin token resolves to no member (401 on member routes) and no outside model call is made. The admin-only routes use `adminGate`, which does not use the roster, so the row can always be repaired with the admin token.
 4. **Code ships only a fictional sample roster**, used by previews, local dev and tests. It contains no real person. Until the migration finishes the real built-ins stay as the fallback, which is why the flag falls back to them (see Rollback).
-5. **The redaction source follows the same roster.** While built-ins exist, the redaction roster is the union of the D1 roster and the built-ins, D1 first. Union can only add coverage; switching the flag on can never uncover a name the built-ins covered.
+5. **The redaction source follows the same roster.** While built-ins exist, the redaction roster is the union **per redaction key** of the D1 roster and the built-ins: display name, aliases, first names, character names and the D1 slug. A key is covered if any source covers it. A D1 member whose display name has the same skeleton as a built-in gets that built-in's aliases and first names merged into it (so a D1 row that omits or changes aliases never uncovers a built-in alias); a built-in with no such D1 member is kept whole; D1 members come first; keys are deduplicated by skeleton. The first-name source (a runtime injection keyed by built-in position) applies to built-ins only. Union can only add coverage; switching the flag on can never uncover a key the built-ins covered. The union exists only while built-ins exist; step 6 ends it.
 
 ## Consumers
 
@@ -50,11 +50,11 @@ Verified by reading each (`git grep` over the tree at 714cbf09) and by counting 
 
 | Consumer | Where | What it does with the built-ins | Step |
 |---|---|---|---|
-| `PARTY_MEMBERS` | `worker/party-source.js:8` | the five sheet entries, base of `mergePartyMembers` (`:29`) and the fallback in `loadPartyMembers` (`:47`) | 1 (read side), 5 (remove) |
+| `PARTY_MEMBERS` | `worker/party-source.js:8` | the five sheet entries, base of `mergePartyMembers` (`:29`) and the fallback in `loadPartyMembers` (`:47`) | 1 (read side), 6 (remove) |
 | Auth member match | `worker/index.js:70` | built-in list searched before D1 | 1 |
 | Default admin | `worker/index.js:81` | `PARTY_MEMBERS[3]` | 1 |
-| `ROSTER_DATA` | `worker/bot-data.js:568` | base of `mergeRoster` (`party-source.js:52`, `:67`); `discord.js:748` finds the asker's display by it | 1 (read side), 5 |
-| Project reserved slugs | `worker/project-build.js:14`, `:61` | `reservedSlugs` are the built-in slugs | 3 |
+| `ROSTER_DATA` | `worker/bot-data.js:568` | base of `mergeRoster` (`party-source.js:52`, `:67`); `discord.js:748` finds the asker's display by it | 1 (read side), 6 |
+| Project reserved slugs | `worker/project-build.js:14`, `:61` | `reservedSlugs` are the built-in slugs | 2 |
 
 ### Worker: redaction (privacy)
 
@@ -68,11 +68,11 @@ Verified by reading each (`git grep` over the tree at 714cbf09) and by counting 
 
 | Consumer | Where | Step |
 |---|---|---|
-| `ROSTER_DATA` for voice aliases and the ask name strip | `worker/ai-models.js:25`, `:48`, `:908` | 3 |
-| Literal party sentence in the prompt | `worker/ai-models.js:1013` | 3 |
-| `MEMBER_NAMES` | `worker/answer-format.js:19`, `:30`; `worker/answer-lint.js:9`, `:209` | 3 |
-| `ROSTER_DATA` for build lookups and `HOUSE` | `worker/ask-build.js:4`, `:43`, `:188` | 3 |
-| Names in comments or fixtures | `worker/eval.js:183`, `:220`; `worker/limits.js:38`; `worker/self-rag.js:68` | 3 |
+| `ROSTER_DATA` for voice aliases and the ask name strip | `worker/ai-models.js:25`, `:48`, `:908` | 2 |
+| Literal party sentence in the prompt | `worker/ai-models.js:1013` | 2 |
+| `MEMBER_NAMES` | `worker/answer-format.js:19`, `:30`; `worker/answer-lint.js:9`, `:209` | 2 |
+| `ROSTER_DATA` for build lookups and `HOUSE` | `worker/ask-build.js:4`, `:43`, `:188` | 2 |
+| Names in comments or fixtures | `worker/eval.js:183`, `:220`; `worker/limits.js:38`; `worker/self-rag.js:68` | 2 |
 | `member-model.js`, `sheet-values.js`, `tonight-copy.js` | no real name found in them (0 hits each): not consumers of the real roster by name. **(unverified)** that they do not take a name from a caller | none |
 
 ### Data files and the front end
@@ -97,10 +97,10 @@ Verified by reading each (`git grep` over the tree at 714cbf09) and by counting 
 
 | Tool | Where | Note |
 |---|---|---|
-| `tools/add-member.mjs` | `:76` (text that tells the operator to edit the built-ins) | must stop telling people to edit code; step 7 |
+| `tools/add-member.mjs` | `:76` (text that tells the operator to edit the built-ins) | must stop telling people to edit code; step 8 |
 | `tools/import-signups.mjs` | `:33` imports `slugify` from `add-member.mjs`; takes `--party-file` | reads names from a file, no built-in list: low risk |
-| `tools/first-paint-measure.mjs` | **(unverified)** it carries no real-name hits; it may load pages that show them | measure against the fictional seed in step 6 |
-| `infrastructure/scripts/test-endpoints-parity.mjs` | `:15`, `:64` asserts `ROSTER_DATA.length === 5` | pins the count to the built-ins; step 5 |
+| `tools/first-paint-measure.mjs` | **(unverified)** it carries no real-name hits; it may load pages that show them | measure against the fictional seed in step 5 |
+| `infrastructure/scripts/test-endpoints-parity.mjs` | `:15`, `:64` asserts `ROSTER_DATA.length === 5` | pins the count to the built-ins; step 6 |
 | `tools/check-secret-scope.sh` | `:6` | comment or example text |
 
 ### Tests
@@ -116,14 +116,16 @@ Verified by reading each (`git grep` over the tree at 714cbf09) and by counting 
 
 Small steps. Each is one PR and reversible on its own. Only step 3 writes production data, and it writes one additive row.
 
-1. **Flag and read side (this PR).** `ROSTER_FROM_D1`, default off. With it on, `party_roster` supplies the auth member match, the default admin, the base of `loadPartyMembers` and `loadRoster`, and the redaction roster (union with built-ins). Off: byte-identical. No data file touched. Known limitation, accepted only because the flag is off: the redaction override is module state set at the top of `fetch` and `scheduled`, which concurrent requests can race (see Risks).
+1. **Flag and read side (this PR).** `ROSTER_FROM_D1`, default off. With it on, `party_roster` supplies the auth member match, the default admin, the base of `loadPartyMembers` and `loadRoster`, and the redaction roster (union with built-ins). Off: byte-identical. No data file touched. Known limitation, held back by the interlock: the redaction override is module state, set by `primeRosterPrivacy` where research privacy is about to run (`ai-models.js`), which concurrent requests can race (see Risks). With `ROSTER_STEP2_READY = false` the override is never set and the flag on is refused.
 2. **Gates before the flag may be turned on in production.** One PR, still flag-gated:
+   - Flip `ROSTER_STEP2_READY` to `true` in this PR and only in this PR; the step 1 interlock test (`ROSTER_STEP2_READY` is `false`, flag on changes neither auth nor redaction) is replaced by the snapshot tests.
+   - Keep the per-key union of Decision 5 (F1): with the module override gone, the snapshot's privacy members are still the union per key of D1 and the built-ins, tested with a D1 row that names a built-in with no or different aliases.
    - Evaluate the flag and resolve the roster **once per operation** and pass that snapshot down through auth, membership, prompts, tokenisation and the outbound guard. Remove the module-level override (`setRosterOverride`).
    - Move the text consumers (prompt party line, `MEMBER_NAMES`, `ROSTER_DATA` uses in `ai-models.js` and `ask-build.js`, `project-build.js` reserved slugs) to read that snapshot, so flag on means one roster everywhere and there is no split state.
    - Privacy fails closed with the flag on: no resolved roster means no outside model call, on every entry point including cron and `waitUntil` work.
    - Write validation rejects alias and name collisions across the roster, the party document and `discord_members`, with a stated normalisation (the case and Unicode skeleton the tokeniser uses).
    - Measurable gates, with privacy-safe counters (revision, source, initialisation failures, blocked calls), not a one-day smoke test.
-3. **Write the real row to D1** by hand with the admin token (`PUT /api/config/party_roster`), in the owner's shell, not in a repository. Turn the flag on. Verify every member and the default admin, an `/ask` privacy run on a warm and on a cold isolate, a cron-first run, and that `/admin/export` carries the row (it does; see Risks). Rollback: flag off, then delete the row.
+3. **Write the real row to D1** by hand with the admin token (`PUT /api/config/party_roster`), in the owner's shell, not in a repository. Turn the flag on. Verify every member and the default admin, an `/ask` privacy run on a warm and on a cold isolate, a cron-first run, and that `/admin/export` carries the row (it does; see Risks). Rollback: flag off, then delete the row. There is no DELETE config route, so deleting is `wrangler d1 execute <db> --remote --command "DELETE FROM kv_state WHERE key = 'party_roster'"` in the owner's shell (or overwrite it with `PUT /api/config/party_roster`).
 4. **Fictional end-to-end seed (additive).** Add `worker/sample-roster.js` and a fictional copy of the data documents and test fixtures, new files only, nothing deleted. Previews and local dev seed the sample roster into `party_roster` and the fictional documents, and run with the flag on, so they contain no real name end to end.
 5. **Switch tests, previews and local dev to the fictional seed**, one area per PR (unit tests, browser tests, the API snapshot, front-end fixtures). The A5 tests that pin data to the built-ins are changed in the same PR as the data they pin.
 6. **Remove the real built-ins and the real data** in one PR so the A5 safety net is never disabled: `PARTY_MEMBERS` and `ROSTER_DATA` become the sample, `data/*` and the packaged files carry the fictional documents, the parity script and the A5 tests move with them, and the fail-closed policy of Decision 3 takes effect. The flag stays as an emergency switch until step 7. Merge only after step 3 has run clean in production for at least a week. Production D1 is not re-seeded (the seed guard: only on 0 rows), so the live data is unchanged by these commits; the owner updates the live party document through the normal admin path.
@@ -149,7 +151,7 @@ Rollback is a supported security state, not only a code state: after the flag ha
 | Risk | Detail | Mitigation |
 |---|---|---|
 | **Default admin** | Auth must not fail open or pick the wrong person. With the flag on and a valid row, the admin token resolves to `default_admin`. A `default_admin` that is not in the roster is refused on write. In step 1 a row that is missing or invalid falls back to the built-in default (today's behaviour); from step 6 it fails closed (Decision 3). The two policies differ on purpose, and the step-1 one is what the flag-off identity proof requires. | Validation on PUT and again on read; tests for configured admin, invalid row, missing row. The admin-only routes use `adminGate`, which does not use the roster. |
-| **Redaction coverage** | The commit that moves names out of code must not uncover them for the model. In step 1 the privacy roster is a module-level override set at the top of `fetch` and `scheduled`. Concurrent handlers in one isolate can interleave: a request that sees the flag off (or a Flagship timeout, which reads as off) clears the override while another request is mid-flight, and `waitUntil` work can outlive its handler. While the built-ins exist the union keeps their names covered, but a name that exists only in D1 is exposed to that race. | **Gate, step 2:** replace the module override with a per-operation snapshot and make privacy fail closed. Step 1 is safe only because the flag is off. In step 1: union with the built-ins, override cleared when the flag is off or the row is invalid (flag off equals the built-in roster exactly), tests tokenise and guard a prompt containing a name, an alias and a first name from a fictional D1 roster. The union keeps the display names, aliases and first names of the D1 list; a built-in member is added only when its display name is not already in the D1 list. Test renamed and overlapping members in step 2. |
+| **Redaction coverage** | The commit that moves names out of code must not uncover them for the model. In step 1 the privacy roster is a module-level override set by `primeRosterPrivacy` just before research privacy runs. Concurrent handlers in one isolate can interleave: a request that sees the flag off (or a Flagship timeout, which reads as off) clears the override while another request is mid-flight, and `waitUntil` work can outlive its handler. While the built-ins exist the union keeps their names covered, but a name that exists only in D1 is exposed to that race. | **Gate, step 2:** replace the module override with a per-operation snapshot and make privacy fail closed. **Step 1 interlock:** `ROSTER_FROM_D1` on is refused (behaves as off, for auth and redaction) while `ROSTER_STEP2_READY` is `false`, so the race cannot occur; a test pins the constant to `false` and checks that the flag on changes nothing. In step 1: union with the built-ins, override cleared when the flag is off or the row is invalid (flag off equals the built-in roster exactly), tests tokenise and guard a prompt containing a name, an alias and a first name from a fictional D1 roster. The union is per redaction key (Decision 5): a D1 member that names a built-in keeps the built-in's aliases and first names, and a built-in with no D1 match is kept whole. Test renamed and overlapping members in step 2. |
 | **Cache staleness** | `loadConfigKeyStrict` caches 60 seconds per isolate; `PUT /api/config` invalidates only the isolate that served the write. A name added to the roster is unredacted in other isolates for up to 60 seconds, and "add the name first" is not an enforceable boundary. | Step 2 gate: a fresh authoritative read of the roster (or a revision check against the sheet content) before any outside call, with stated stale-on-error behaviour (fail closed). A shorter TTL alone is not accepted as the fix. |
 | **Backups and export** | `GET /admin/export` exports every `kv_state` row except `secret%` and `feed_cache:%` (`worker/export.js:36`), so `party_roster`, including `first_names`, enters backup files. A private config key is not private in a backup. | Treat export files as holding real names: owner-only storage, no repository, no shared drive. Step 2 decides whether `party_roster` joins the excluded rows and is backed up by a separate controlled path. **(unverified)** where the owner's backups are stored. |
 | **Rollout evidence** | A one-day smoke test shows neither concurrency nor failure safety. | Step 2 gates: checks for every member and the default admin, warm and cold isolates, cron-first execution, a D1 outage and a roster update, with privacy-safe counters (revision, source, initialisation failures, blocked calls; never a value). |
@@ -157,9 +159,9 @@ Rollback is a supported security state, not only a code state: after the flag ha
 | **Seed guard** | The deploy seeds only when `kv_state` has 0 rows. A fresh database, a restore drill or a `--allow-create` run seeds from `data/`, which holds real names until step 6. Conversely a populated database never picks up a changed data file. | Step 4 seeds the sample roster for previews and local; step 6 changes the data files; the owner never relies on the seed to carry the real roster. Restore drills use `/admin/export`, which includes `kv_state` and so the roster row. |
 | **Previews and local dev** | They have no Flagship binding, so they read the `[vars]` value. Left off, they use the built-ins and still show real names; turned on, they need a fictional `party_roster` row. | Step 4. Until then previews are unchanged. |
 | **Tests** | 33 test files carry real names and the A5 tests pin data to the built-ins. Changing one side alone fails CI by design. | Steps 5 and 6 change both sides together, per area. New tests for this ADR use fictional names only. |
-| **Public history** | Names already committed stay in git history, forks and clones, and in the shipped addon zip. This ADR does not make them private. | Out of scope: step 8 is a separate decision (history rewrite versus acceptance). Do not describe step 6 as "removed from the internet". |
-| **Hot path cost** | `activeRoster` evaluates the flag on every `resolveMemberAuth` call and every `loadPartyMembers`, and `primeRosterPrivacy` once per request. With a Flagship binding each is a binding call with a 100 ms timeout. | When the flag is off the cost is the flag read and nothing else. If measured to matter, memoise the flag per isolate for a few seconds; the config row is already cached. |
-| **Flag disagreement** | Several evaluations in one request (privacy priming, auth, `loadPartyMembers`, `loadRoster`) can see different values, and each can add up to the 100 ms Flagship timeout. | Not bounded, as first claimed: privacy priming can choose the built-ins while a later lookup chooses D1. Step 2 evaluates the flag once per operation and passes the snapshot down. |
+| **Public history** | Names already committed stay in git history, forks and clones, and in the shipped addon zip. This ADR does not make them private. | Out of scope: step 9 is a separate decision (history rewrite versus acceptance). Do not describe step 6 as "removed from the internet". |
+| **Hot path cost** | Measured with a counting Flagship binding on the first version of this branch: `ROSTER_FROM_D1` was evaluated 1 time on an OPTIONS request, 2 on an admin-authenticated `GET /api/me`, 1 on `GET /health` and 2 on a cron tick; each is a binding call with a 100 ms timeout. | Fixed: the decision is memoised per request (`rosterScope` in `fetch` and `scheduled`), priming moved to the ask path, and the interlock is checked before the flag. Now: 0 evaluations on OPTIONS and on routes that never use the roster, at most 1 on routes that do (tests count them with the interlock open; with it closed, which is the shipped state, 0 everywhere). The config row is already cached 60 s. |
+| **Flag disagreement** | Several evaluations in one request (privacy priming, auth, `loadPartyMembers`, `loadRoster`) can see different values, and each can add up to the 100 ms Flagship timeout. | Within one request there is now one evaluation, so auth, loaders and priming agree. Across concurrent requests the module-state override can still disagree; the interlock holds that back and step 2 replaces the module state with a per-operation snapshot. |
 
 ## Open questions
 
@@ -173,8 +175,10 @@ Rollback is a supported security state, not only a code state: after the flag ha
 - `worker/roster-shape.js` (shape, validation, converters), `worker/roster-source.js` (`activeRoster`, `primeRosterPrivacy`).
 - `config.js`: `party_roster` added to `CONFIG_KEYS`, the validator and the private key list.
 - `party-source.js`: `loadPartyMembers` and `loadRoster` take the D1 roster as the base when `activeRoster` returns one.
-- `index.js`: `resolveMemberAuth` (member match, configured default admin), `primeRosterPrivacy` at the top of `fetch` and `scheduled`.
-- `privacy/roster-config.js`: `setRosterOverride`; `researchMembers()` returns the override plus uncovered built-ins, or the built-ins exactly when no override is set.
+- `index.js`: `resolveMemberAuth` (member match, configured default admin); `fetch` and `scheduled` run on a request-scoped env.
+- `privacy/roster-config.js`: `setRosterOverride`; `researchMembers()` returns the per-key union of the override and the built-ins, or the built-ins exactly when no override is set.
+- `roster-source.js`: `ROSTER_STEP2_READY` interlock, `rosterScope` per-request memo; `ai-models.js` primes the privacy roster where research privacy is used.
+- `roster-shape.js` validation: version required, name, alias, first-name and slug collisions on the tokeniser skeleton, reserved words, `P<digits>`, one-letter names, regex or markup characters, object-prototype words, empty alias and first-name arrays.
 - Flag plumbing: `wrangler.toml` (`ROSTER_FROM_D1 = "off"`), `flagship-flags.txt`, `docs/runbooks/flags.md`, `tests/unit/flags.test.mjs`.
 - Tests: `tests/unit/roster-from-d1.test.mjs` (flag-off differential over auth, admin default, membership, redaction roster and the SQL issued; flag-on behaviour; fallbacks; redaction with a fictional roster including aliases and first names; flag plumbing).
 

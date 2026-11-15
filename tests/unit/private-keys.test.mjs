@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 import { isPrivateKvKey, isDeniedKvKey } from "../../infrastructure/worker/config.js";
 
 test("config rows are private", () => {
-  for (const k of ["persona", "name_map", "discord_members", "discord_roster", "vocab", "votes:index", "feed_posts"]) {
+  for (const k of ["persona", "name_map", "discord_members", "discord_roster", "vocab", "votes:index", "feed_posts", "party_roster", "PARTY_ROSTER"]) {
     assert.equal(isPrivateKvKey(k), true, k);
+    assert.equal(isDeniedKvKey(k), true, k + " is on the deny list, not only unlisted");
   }
 });
 test("prefixed working rows are private, case-insensitively", () => {

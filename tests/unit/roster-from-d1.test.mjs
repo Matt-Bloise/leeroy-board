@@ -9,9 +9,10 @@ import worker from "../../infrastructure/worker/index.js";
 import { PARTY_MEMBERS, loadPartyMembers, loadRoster } from "../../infrastructure/worker/party-source.js";
 import { ROSTER_DATA } from "../../infrastructure/worker/bot-data.js";
 import { validateRosterConfig, sheetMembersFromConfig, rosterDataFromConfig, privacyMembersFromConfig } from "../../infrastructure/worker/roster-shape.js";
-import { activeRoster, primeRosterPrivacy } from "../../infrastructure/worker/roster-source.js";
+import { activeRoster, primeRosterPrivacy, rosterScope, setStep2ReadyForTests, ROSTER_STEP2_READY } from "../../infrastructure/worker/roster-source.js";
+import { buildAnswerInputs } from "../../infrastructure/worker/ai-models.js";
 import { CONFIG_KEYS, invalidateConfigCache, isPrivateKvKey, validateConfigValue } from "../../infrastructure/worker/config.js";
-import { researchMembers, setRosterOverride, setFirstNameSource } from "../../infrastructure/worker/privacy/roster-config.js";
+import { researchMembers, researchRoster, setRosterOverride, setFirstNameSource } from "../../infrastructure/worker/privacy/roster-config.js";
 import { prepareResearchPrivacy, resetResearchClaudeForTests } from "../../infrastructure/worker/research/claude.js";
 import { guardBody } from "../../infrastructure/worker/privacy/outbound-guard.js";
 import { invalidateMembersCache } from "../../infrastructure/worker/auth.js";
@@ -74,7 +75,8 @@ async function me(env, who) {
     return { status: res.status, body: await res.text() };
   } finally { console.error = silence; }
 }
-const reset = () => { invalidateMembersCache(); invalidateConfigCache(); setRosterOverride(null); setFirstNameSource(null); resetResearchClaudeForTests(); };
+// Every test opens the step 2 interlock unless it is about the interlock itself (roster-source.js ROSTER_STEP2_READY is false in the shipped code).
+const reset = () => { setStep2ReadyForTests(true); invalidateMembersCache(); invalidateConfigCache(); setRosterOverride(null); setFirstNameSource(null); resetResearchClaudeForTests(); };
 const ROW = JSON.stringify(FICTION);
 globalThis.fetch = async () => new Response("blocked in tests", { status: 599 });
 
@@ -88,7 +90,8 @@ test("party_roster is an admin-only private config key with a validated shape", 
   bad({ ...FICTION, default_admin: "nobody" });
   bad({ ...FICTION, default_admin: undefined });
   bad({ ...FICTION, members: [] });
-  bad({ ...FICTION, members: [FICTION.members[0], { ...FICTION.members[0] }] }); // duplicate slug
+  // duplicate slug and nothing else wrong: a different name, different aliases
+  assert.match(validateRosterConfig({ ...FICTION, members: [FICTION.members[0], { ...FICTION.members[1], slug: FICTION.members[0].slug }] }), /slugs must be unique/);
   bad({ ...FICTION, members: [{ ...FICTION.members[0], slug: "Bad Slug" }, FICTION.members[2]] });
   bad({ ...FICTION, members: [{ ...FICTION.members[0], aliases: ["Upper"] }, FICTION.members[2]] }); // aliases are lowercase like discord_members.match
   bad({ ...FICTION, members: [{ ...FICTION.members[0], name: "" }, FICTION.members[2]] });
@@ -212,7 +215,7 @@ test("flag on: a DB error while reading the roster is not an outage; the built-i
 });
 
 // ---- redaction follows the roster ---------------------------------------------------------------------------------------------------------------------------
-const NEEDLES = ["Alderfox", "Brindle Moth", "Cask Wren", "Perrin", "Odalys"];
+const NEEDLES = ["Alderfox", "Brindle Moth", "Cask Wren", "Perrin", "Odalys", "fox", "brindle", "cask"]; // includes the aliases, so an override that loses aliases fails
 const leaks = (text) => NEEDLES.filter((n) => text.toLowerCase().includes(n.toLowerCase()));
 
 test("flag on: names, aliases and first names from the D1 roster are tokenised and guarded; built-in names stay covered", async () => {
@@ -259,13 +262,249 @@ test("a flag-on request followed by a flag-off request in the same isolate leave
   reset();
   const on = await envOf({ flag: "on", kv: { party_roster: ROW } });
   assert.equal(JSON.parse((await me(on, "admin")).body).slug, "cask-wren");
-  assert.equal(researchMembers()[0].display, "Alderfox", "the flag-on request primed the privacy roster");
+  await primeRosterPrivacy(on); // what the research path does just before it tokenises
+  assert.equal(researchMembers()[0].display, "Alderfox", "the flag-on research path primed the privacy roster");
   const off = await envOf({ flag: "off", kv: { party_roster: ROW } });
   invalidateConfigCache(); // the config cache is per isolate and 60 s; a flag flip does not wait for it, but this test must not depend on timing
   const r = await me(off, "admin");
   assert.equal(JSON.parse(r.body).slug, PARTY_MEMBERS[3].slug);
+  await buildAnswerInputs(off, { question: "what is a good spec", by: "Visitor", research: true }); // the next research call primes again, off, and clears the override
   assert.deepEqual(researchMembers().map((m) => m.display), ROSTER_DATA.map((x) => x.display), "no D1 name is left in the privacy roster");
   assert.deepEqual(await loadPartyMembers(off), PARTY_MEMBERS);
   assert.equal(off.__seen.filter((x) => x.includes("party_roster")).length, 0);
   reset();
+});
+
+// ---- F1: the redaction roster is a union PER KEY ------------------------------------------------------------------------------------------------------------------
+const skel = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
+const GENERIC = ["mage", "rat", "tank"];
+const builtInWithAliases = () => ROSTER_DATA.filter((r) => (r.aliases || []).some((a) => !GENERIC.includes(a)));
+
+test("a D1 row that names a built-in member with no aliases, or different ones, keeps every built-in alias redacted", async () => {
+  assert.ok(builtInWithAliases().length > 0);
+  for (const variant of ["no aliases", "different alias"]) {
+    reset();
+    const names = ["one", "two", "three", "four", "five", "six", "seven"];
+    const row = {
+      version: 1, default_admin: "zz-one",
+      members: ROSTER_DATA.map((r, i) => ({ slug: `zz-${names[i]}`, name: r.display, race: "human", class: "rogue", ...(variant === "different alias" ? { aliases: [`zq${i}extra`] } : {}) })),
+    };
+    // the row as the privacy layer gets it (validation is not under test here)
+    setRosterOverride(privacyMembersFromConfig(row));
+    const members = researchMembers();
+    for (const r of ROSTER_DATA) {
+      const m = members.find((x) => skel(x.display) === skel(r.display));
+      assert.ok(m, "the member is present");
+      for (const a of r.aliases || []) assert.ok(m.aliases.some((x) => skel(x) === skel(a)), `${variant}: a built-in alias is still a key`);
+    }
+    const aliases = builtInWithAliases().flatMap((r) => r.aliases).filter((a) => !GENERIC.includes(a));
+    const priv = prepareResearchPrivacy({ systemPrompt: `Context ${aliases.join(" and ")}.`, userPrompt: `Ask about ${aliases.join(", ")}.`, question: "q", by: "Visitor", party: null });
+    assert.equal(priv.ok, true, priv.reason);
+    for (const a of aliases) assert.equal((priv.system + priv.user).toLowerCase().includes(a.toLowerCase()), false, `${variant}: alias still readable in the prompt`);
+  }
+  reset();
+});
+
+test("the union keeps D1 aliases too, and does not list one key twice", () => {
+  reset();
+  const b = builtInWithAliases()[0];
+  setRosterOverride([{ display: b.display, aliases: ["zorbel", "zorbel", ...b.aliases], firstNames: ["Quillan", "quillan"] }]);
+  const m = researchMembers().find((x) => skel(x.display) === skel(b.display));
+  assert.equal(m.aliases.filter((a) => skel(a) === "zorbel").length, 1, "D1 alias listed once");
+  for (const a of b.aliases) assert.equal(m.aliases.filter((x) => skel(x) === skel(a)).length, 1, "a built-in alias that D1 repeats is listed once");
+  assert.equal(m.firstNames.length, 1, "first names deduped");
+  assert.equal(researchMembers().filter((x) => skel(x.display) === skel(b.display)).length, 1, "the member is not duplicated as a separate built-in");
+  reset();
+});
+
+test("a first name injected for a built-in position attaches to that built-in only, never to a D1 member at the same index", () => {
+  reset();
+  setFirstNameSource((_m, i) => (i === 0 ? ["Zephyrine"] : []));
+  setRosterOverride(privacyMembersFromConfig(FICTION));
+  const members = researchMembers();
+  assert.equal(members.find((m) => m.display === "Alderfox").firstNames.includes("Zephyrine"), false);
+  assert.equal(members.find((m) => m.display === ROSTER_DATA[0].display).firstNames.includes("Zephyrine"), true);
+  setRosterOverride([{ display: ROSTER_DATA[0].display, aliases: [], firstNames: [] }]);
+  assert.equal(researchMembers().find((m) => skel(m.display) === skel(ROSTER_DATA[0].display)).firstNames.includes("Zephyrine"), true, "merged through the built-in");
+  reset();
+});
+
+test("a D1 member's slug is a redaction key", () => {
+  reset();
+  setRosterOverride(privacyMembersFromConfig(FICTION));
+  assert.ok(researchMembers().find((m) => m.display === "Cask Wren").characterNames.includes("cask-wren"));
+  reset();
+});
+
+// ---- F2: the interlock ---------------------------------------------------------------------------------------------------------------------------------------
+test("interlock: ROSTER_STEP2_READY is false in the shipped code, and with it closed the flag on changes neither auth nor redaction", async () => {
+  assert.equal(ROSTER_STEP2_READY, false);
+  assert.match(fs.readFileSync(path.join(ROOT, "infrastructure/worker/roster-source.js"), "utf8"), /^export const ROSTER_STEP2_READY = false;$/m);
+  reset();
+  setStep2ReadyForTests(null); // the shipped state
+  const env = await envOf({ flag: "on", kv: { party_roster: ROW }, memberSlug: "brindle-moth" });
+  assert.equal(await activeRoster(env), null);
+  assert.equal(JSON.parse((await me(env, "admin")).body).slug, PARTY_MEMBERS[3].slug, "admin is still the built-in default");
+  assert.equal(JSON.parse((await me(env, "member")).body).name, "brindle-moth", "a D1-only member is not resolved to the D1 sheet (name falls back to the slug, as with the flag off)");
+  assert.deepEqual(await loadPartyMembers(env), PARTY_MEMBERS);
+  assert.deepEqual(await loadRoster(env), ROSTER_DATA);
+  setRosterOverride(privacyMembersFromConfig(FICTION)); // a stale override
+  await primeRosterPrivacy(env);
+  assert.deepEqual(researchMembers().map((m) => m.display), ROSTER_DATA.map((r) => r.display), "redaction is the built-ins exactly");
+  assert.equal(env.__seen.filter((x) => x.includes("party_roster")).length, 0, "D1 is never asked for the roster row");
+  reset();
+});
+
+test("interlock open: flag on uses D1 for auth AND redaction together, and the privacy roster is a superset of the built-ins", async () => {
+  reset();
+  const env = await envOf({ flag: "on", kv: { party_roster: ROW } });
+  assert.equal(JSON.parse((await me(env, "admin")).body).slug, "cask-wren");
+  await primeRosterPrivacy(env);
+  const keys = new Set(researchMembers().flatMap((m) => [m.display, ...m.aliases].map(skel)));
+  for (const r of ROSTER_DATA) for (const n of [r.display, ...(r.aliases || [])]) assert.ok(keys.has(skel(n)), "built-in key still covered");
+  for (const n of ["Alderfox", "fox", "Cask Wren", "cask"]) assert.ok(keys.has(skel(n)), "D1 key covered");
+  reset();
+});
+
+// ---- F3: flag evaluations per request ------------------------------------------------------------------------------------------------------------------------
+async function countingEnv(opts) {
+  const env = await envOf(opts);
+  const counter = { n: 0 };
+  env.FLAGS = { getBooleanValue: async (key) => { if (key === "ROSTER_FROM_D1") counter.n++; return opts.value === true; } };
+  return { env, counter };
+}
+async function req(env, method, p, headers = {}) {
+  const silence = console.error; console.error = () => {};
+  try { return await worker.fetch(new Request(`https://api.test${p}`, { method, headers: { ...headers, "CF-Connecting-IP": "203.0.113.9" } }), env, ctx); } finally { console.error = silence; }
+}
+
+test("flag evaluations per request: none on OPTIONS or on a route that never uses the roster, at most one on routes that do, flag on or off", async () => {
+  for (const value of [true, false]) {
+    reset();
+    const probe = async (method, p, who) => {
+      const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, memberSlug: "brindle-moth", value });
+      const headers = who === "admin" ? { Authorization: `Bearer ${ADMIN_TOKEN}` } : who === "member" ? { Authorization: `Board ${env.__key}` } : {};
+      await req(env, method, p, headers);
+      return counter.n;
+    };
+    assert.equal(await probe("OPTIONS", "/api/me", "admin"), 0, `OPTIONS (flag ${value})`);
+    assert.equal(await probe("OPTIONS", "/api/anything", "none"), 0);
+    assert.equal(await probe("GET", "/health", "none"), 0, "a route that never uses the roster does not ask Flagship");
+    assert.equal(await probe("GET", "/api/me", "admin"), 1, "admin auth: exactly one evaluation");
+    assert.equal(await probe("GET", "/api/me", "member"), 1, "member auth evaluates once");
+    assert.equal(await probe("GET", "/api/me", "none"), 1);
+  }
+  reset();
+});
+
+test("flag evaluations: the interlock refuses before asking Flagship, so a closed interlock costs nothing", async () => {
+  reset();
+  setStep2ReadyForTests(null);
+  const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, value: true });
+  await req(env, "GET", "/api/me", { Authorization: `Bearer ${ADMIN_TOKEN}` });
+  assert.equal(counter.n, 0);
+  reset();
+});
+
+test("flag evaluations: a scheduled run asks at most once", async () => {
+  reset();
+  const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, value: true });
+  const silence = console.error; console.error = () => {};
+  try { await worker.scheduled({ cron: "0 */6 * * *" }, env, ctx); } catch { /* the sweep has nothing to fetch in tests */ } finally { console.error = silence; }
+  assert.ok(counter.n <= 1, `scheduled evaluated ${counter.n} times`);
+  reset();
+});
+
+test("one request's memo is its own: a second request asks again, and an unscoped env is not memoised", async () => {
+  reset();
+  const { env, counter } = await countingEnv({ kv: { party_roster: ROW }, value: true });
+  const a = rosterScope(env);
+  await activeRoster(a); await activeRoster(a); await activeRoster(a);
+  assert.equal(counter.n, 1);
+  await activeRoster(rosterScope(env));
+  assert.equal(counter.n, 2);
+  await activeRoster(env); await activeRoster(env);
+  assert.equal(counter.n, 4);
+  reset();
+});
+
+test("research privacy is primed where it is used (the ask path); research off does not prime; fetch and scheduled do not prime", async () => {
+  reset();
+  const env = await envOf({ flag: "on", kv: { party_roster: ROW } });
+  await buildAnswerInputs(env, { question: "what is a good spec", by: "Visitor", research: false });
+  assert.deepEqual(researchMembers().map((m) => m.display), ROSTER_DATA.map((r) => r.display), "research off leaves the built-ins");
+  await buildAnswerInputs(env, { question: "what is a good spec", by: "Visitor", research: true });
+  assert.equal(researchMembers()[0].display, "Alderfox", "research on primes the D1 roster first");
+  const idx = fs.readFileSync(path.join(ROOT, "infrastructure/worker/index.js"), "utf8");
+  assert.equal(/primeRosterPrivacy/.test(idx), false, "priming is not done in fetch or scheduled");
+  assert.match(fs.readFileSync(path.join(ROOT, "infrastructure/worker/ai-models.js"), "utf8"), /primeRosterPrivacy\(env\)[\s\S]{0,200}researchParty\(/);
+  reset();
+});
+
+// ---- F5: validation --------------------------------------------------------------------------------------------------------------------------------------------
+const withMembers = (...ms) => ({ version: 1, default_admin: ms[0].slug, members: ms });
+const mem = (slug, name, extra = {}) => ({ slug, name, race: "human", class: "rogue", ...extra });
+const A = mem("alderfox", "Alderfox", { aliases: ["alderfox", "fox"] });
+const B = mem("brindle-moth", "Brindle Moth", { aliases: ["brindle moth", "brindle"] });
+
+test("validation rejects the shapes that would corrupt the redaction roster", () => {
+  const rejects = (label, cfg, re) => { const e = validateRosterConfig(cfg); assert.equal(typeof e, "string", label); if (re) assert.match(e, re, label); };
+  rejects("missing version", { default_admin: "alderfox", members: [A] }, /version/);
+  rejects("version 2", { version: 2, default_admin: "alderfox", members: [A] }, /version/);
+  rejects("duplicate name", withMembers(A, mem("other", "Alderfox")), /collides/);
+  rejects("case-duplicate name", withMembers(A, mem("other", "ALDERFOX")), /collides/);
+  rejects("look-alike name (spacing)", withMembers(B, mem("other", "Brindlemoth")), /collides/);
+  rejects("alias collides with another member's alias", withMembers(A, mem("other", "Other One", { aliases: ["fox"] })), /collides/);
+  rejects("alias collides with another member's name", withMembers(A, mem("other", "Other One", { aliases: ["alderfox"] })), /collides/);
+  rejects("first name collides with another member's alias", withMembers(A, mem("other", "Other One", { first_names: ["Fox"] })), /collides/);
+  for (const w of ["all", "everyone", "id", "here", "All", "EVERYONE"]) {
+    rejects(`reserved name ${w}`, withMembers(A, mem("other", w)), /reserved|at least 2/);
+    rejects(`reserved alias ${w}`, withMembers(A, mem("other", "Other One", { aliases: [w.toLowerCase()] })), /reserved|at least 2/);
+  }
+  for (const w of ["all", "everyone", "here"]) rejects(`reserved name is rejected for the reserved reason: ${w}`, withMembers(A, mem("other", w)), /reserved/);
+  rejects("reserved slug", withMembers(mem("everyone", "Other One")), /reserved/);
+  rejects("reserved first name", withMembers(A, mem("other", "Other One", { first_names: ["Here"] })), /reserved/);
+  for (const t of ["P1", "p23", "P007"]) { rejects(`token-like name ${t}`, withMembers(A, mem("other", t)), /token/); rejects(`token-like alias ${t}`, withMembers(A, mem("other", "Other One", { aliases: [t.toLowerCase()] })), /token/); }
+  rejects("one-letter name", withMembers(A, mem("other", "Z")), /at least 2/);
+  rejects("one-letter alias", withMembers(A, mem("other", "Other One", { aliases: ["z"] })), /at least 2/);
+  rejects("one-letter first name", withMembers(A, mem("other", "Other One", { first_names: ["Z"] })), /at least 2/);
+  for (const bad of ["Al.der", "Al*der", "Al+der", "Al?der", "Al(der", "Al)der", "Al[der", "Al]der", "Al{der", "Al}der", "Al|der", "Al^der", "Al$der", "Al\\der", "Al/der", "<Alder>"]) {
+    rejects(`regex or markup character in a name: ${bad}`, withMembers(A, mem("other", bad)), /character/);
+    rejects(`... in an alias: ${bad}`, withMembers(A, mem("other", "Other One", { aliases: [bad.toLowerCase()] })), /character/);
+    rejects(`... in a first name: ${bad}`, withMembers(A, mem("other", "Other One", { first_names: [bad] })), /character/);
+  }
+  for (const w of ["constructor", "prototype", "tostring", "valueof", "hasownproperty", "__proto__", "toString", "to-string"]) {
+    rejects(`prototype word as slug ${w}`, withMembers(A, mem(w, "Other One")), /./);
+  }
+  rejects("prototype word as a name", withMembers(A, mem("other", "Constructor")), /prototype/);
+  rejects("prototype word as an alias", withMembers(A, mem("other", "Other One", { aliases: ["constructor"] })), /prototype/);
+  rejects("empty aliases array", withMembers(mem("alderfox", "Alderfox", { aliases: [] })), /aliases/);
+  rejects("empty first_names array", withMembers(mem("alderfox", "Alderfox", { first_names: [] })), /first_names/);
+});
+
+test("validation accepts the fictional roster, accents and apostrophes", () => {
+  assert.equal(validateRosterConfig(FICTION), null);
+  assert.equal(validateRosterConfig(withMembers(mem("tamsin", "Tamsin O'Hare", { aliases: ["tamsin o'hare", "tam"] }), mem("rene", "Renée Vail"))), null);
+});
+
+test("validation: the member cap is 50, and the first_names rules hold", () => {
+  const pairs = [];
+  for (const x of "bcdfghjklmnpqrstvwxz") for (const y of "aeiou") pairs.push(x + y);
+  const many = (n) => Array.from({ length: n }, (_, i) => mem(`m-${pairs[i]}`, `Velm${pairs[i]}tor`));
+  assert.equal(validateRosterConfig({ version: 1, default_admin: "m-ba", members: many(50) }), null);
+  assert.match(validateRosterConfig({ version: 1, default_admin: "m-ba", members: many(51) }), /1 to 50/);
+  assert.match(validateRosterConfig({ version: 1, default_admin: "m-ba", members: [] }), /1 to 50/);
+  const fn = (v) => validateRosterConfig(withMembers(mem("alderfox", "Alderfox", { first_names: v })));
+  assert.equal(fn(["Perrin"]), null);
+  assert.equal(fn(["Perrin", "Odalys", "Quillan", "Rowan", "Sable", "Tarn", "Ulric", "Vesper"]), null, "8 is the limit");
+  assert.match(fn(["Perrin", "Odalys", "Quillan", "Rowan", "Sable", "Tarn", "Ulric", "Vesper", "Wren"]), /first_names/);
+  assert.match(fn("Perrin"), /first_names/);
+  assert.match(fn([5]), /first_names/);
+  assert.match(fn([""]), /first_names/);
+  assert.match(fn(["x".repeat(61)]), /first_names/);
+});
+
+test("PUT-time validation is the same function (validateConfigValue)", () => {
+  assert.equal(typeof validateConfigValue("party_roster", { ...FICTION, version: undefined }), "string");
+  assert.equal(typeof validateConfigValue("party_roster", withMembers(A, mem("other", "Alderfox"))), "string");
 });
