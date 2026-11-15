@@ -7,16 +7,37 @@ export const SIGNUP_VALUE_MAX = 200;
 
 // Reads a JSON body of at most `max` bytes. Returns { body } (an empty object when the text is not JSON) or { tooLarge: true }.
 export async function readJsonCapped(req, max = MAX_BODY_BYTES) {
-  const declared = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > max) return { tooLarge: true };
-  const text = await req.text();
-  if (new TextEncoder().encode(text).length > max) return { tooLarge: true };
+  const read = await readTextCapped(req, max);
+  if (read.tooLarge) return { tooLarge: true };
+  const text = read.text;
   try {
     const parsed = JSON.parse(text);
     return { body: parsed && typeof parsed === "object" ? parsed : {} };
   } catch {
     return { body: {} };
   }
+}
+
+// Reads a request body as text, at most `max` bytes. Unlike req.text() it stops pulling once the cap is passed, so a body with no Content-Length
+// (chunked) is not read to the end. Returns { text } or { tooLarge: true }.
+export async function readTextCapped(req, max) {
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) return { tooLarge: true };
+  if (!req.body) return { text: "" };
+  const reader = req.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) { reader.cancel().catch(() => {}); return { tooLarge: true }; }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.byteLength; }
+  return { text: new TextDecoder().decode(all) };
 }
 
 export function questionTooLong(q) {

@@ -159,7 +159,8 @@ test("allowedOrigins: only bare scheme://host[:port] entries count (kills the lo
 const fakeReq = (text, declared) => ({
   headers: { get: (k) => (k.toLowerCase() === "content-length" && declared !== undefined ? String(declared) : null) },
   textCalls: 0,
-  async text() { this.textCalls++; return text; },
+  // The capped reader pulls req.body (not req.text()); textCalls counts how many times the body stream was opened.
+  get body() { this.textCalls++; return new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } }); },
 });
 
 test("readJsonCapped: a declared length over the cap is refused before the body is read; exactly the cap is accepted (kills >= and dropped check)", async () => {
