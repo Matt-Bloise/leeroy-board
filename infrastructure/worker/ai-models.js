@@ -1381,7 +1381,7 @@ export async function answerWithAi({
         const hardEnd = t0 + hardEndMs(askDeadlineMs(env));
         const viaClaude = hardEnd - Date.now() < 2500
           ? { reason: "claude:no-time" }
-          : await tryResearchClaude({ env, priv, deep, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
+          : await tryResearchClaude({ env, priv, deep, hardEndAt: hardEnd, call: (a) => callAnthropicClaude({ ...a, deadlineAt: Math.min(Number(a.deadlineAt) || hardEnd, hardEnd) }) });
         if (viaClaude.answer) ({ answer: rawAnswer, model, provider } = viaClaude);
         else if (viaClaude.reason) researchNote = ` [${viaClaude.reason}]`;
       }
@@ -1434,7 +1434,7 @@ export async function answerWithAi({
         } catch {}
       }
       // Skip the last-resort Workers AI hop when the chain has already used most of the Discord deadline.
-      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai") && Date.now() - t0 < ASK_DEADLINE_MS - ASK_FALLBACK_TIMEOUT_MS) {
+      if (!rawAnswer && chosenProvider !== "workers-ai" && isProviderConfigured(env, "workers-ai") && Date.now() - t0 < askDeadlineMs(env) - ASK_FALLBACK_TIMEOUT_MS) {
         try {
           ({ answer: rawAnswer, model, provider } = await dispatchToProvider({
             provider: "workers-ai",
