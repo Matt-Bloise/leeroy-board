@@ -28,12 +28,14 @@ const STUB = `export class DiscordSDK {
 }
 `;
 
-async function open(browser, { delay, query = {}, stub = true, quiet = null, host = null }) {
+async function open(browser, { delay, query = {}, stub = true, quiet = null, host = null, dataStatus = 0 }) {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, serviceWorkers: "block", reducedMotion: "reduce" });
   await ctx.addInitScript((d) => { window.__sdkDelay = d; window.__ext = []; }, delay || 0);
   /* Activity runs: the page is served on a fictional https://<id>.discordsays.com host (as the Developer Portal proxy does), every request answered from BASE.
      Registered first so the API stub and the SDK stub below win for /api/ and the SDK module. */
-  if (host) await ctx.route(`https://${host}/**`, async (r) => { const u = new URL(r.request().url()); if (/^\/api\/(data|library)\//.test(u.pathname)) return r.fulfill({ status: 404, contentType: "application/json", body: '{"error":"stub"}' }); /* the page falls back to its static files; this suite is not about data reads */ if (u.pathname.startsWith("/api/")) return r.fallback(); try { r.fulfill({ response: await r.fetch({ url: new URL(u.pathname + u.search, BASE).href }) }); } catch (e) { r.abort().catch(() => {}); } });
+  if (host) await ctx.route(`https://${host}/**`, async (r) => { const u = new URL(r.request().url()); /* /api/data/* and /api/library/* are answered from fixtures (the repo's data files, as the Worker would serve them to an all-visible party): the member documents have no static fallback, so a 404 here would stop the board. dataStatus makes the data routes fail instead (the closed rule: presence and link interception must still start). */
+    const dm = /^\/api\/(data|library)\/(.+?)(?:\.json)?$/.exec(u.pathname);
+    if (dm) { if (dataStatus) return r.fulfill({ status: dataStatus, contentType: "application/json", body: '{"error":"stub"}' }); try { return r.fulfill({ response: await r.fetch({ url: new URL(`data/${dm[1] === "library" ? "library/" : ""}${dm[2]}.json`, BASE).href }) }); } catch (e) { return r.fulfill({ status: 404, contentType: "application/json", body: '{"error":"stub"}' }); } } if (u.pathname.startsWith("/api/")) return r.fallback(); try { r.fulfill({ response: await r.fetch({ url: new URL(u.pathname + u.search, BASE).href }) }); } catch (e) { r.abort().catch(() => {}); } });
   if (stub) await ctx.route("**/vendor/embedded-app-sdk.mjs*", (r) => r.fulfill({ status: 200, contentType: "text/javascript", body: STUB }));
   /* this suite does not test the Worker: an origin named by ?api= answers 503 so the page uses its own data files */
   if (quiet) await ctx.route(quiet, (r) => r.fulfill({ status: 503, contentType: "application/json", body: '{"error":"stub"}' }));
@@ -84,6 +86,16 @@ try {
     const mail = await footClick(page, "Contact");
     ok(`[${label}] mailto is left alone`, mail.prevented === false && mail.ext.length === 2, JSON.stringify(mail));
     ok(`[${label}] no page errors`, errors.length === 0, errors.join(" | "));
+    await ctx.close();
+  }
+
+  { // the member documents fail (the Worker answers 500): the board shows the "could not load" line, and Discord mode still starts: presence and link interception
+    const { ctx, page, errors } = await open(browser, { delay: 0, host: ACT_HOST, dataStatus: 500 });
+    await page.waitForFunction(() => /In this Activity now/.test((document.getElementById("presence-text") || {}).textContent || ""), null, { timeout: 30000 }).catch(() => {});
+    ok("[member data down] presence still reads \"In this Activity now\"", /In this Activity now/.test(await presence(page)), await presence(page));
+    const priv = await footClick(page, "Privacy");
+    ok("[member data down] the footer link is still intercepted and opened outside", priv.prevented === true && priv.ext.length === 1, JSON.stringify(priv));
+    ok("[member data down] the page says it could not load, and shows no member data", await page.evaluate(() => /could not load/i.test(document.body.innerText)));
     await ctx.close();
   }
 

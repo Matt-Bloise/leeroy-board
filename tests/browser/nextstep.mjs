@@ -26,7 +26,10 @@ async function open(browser, c, who) {
   page.on("pageerror", (e) => errors.push(`pageerror ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error" && !/^\[Report Only\]/.test(m.text()) && !/^Failed to load resource|cloudflareinsights/.test(m.text())) errors.push(m.text()); });
   await ctx.addInitScript((me) => { try { localStorage.setItem("board-me", me); localStorage.setItem("board-journey", "guided"); } catch (e) {} }, c.me === "viewer" ? slug(who.name) : "just-looking");
-  await ctx.route("**/data/client.json*", async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "nextstep.v2": !!c.flag }; await json(route, j); });
+  // the flag lives in the client document: from the static file on a host with no brain, from <brain>/api/data/client (no extension) wherever the board has one (previews, production): stub both the same way
+  const clientStub = async (route) => { const j = await (await route.fetch()).json(); j.flags = { ...(j.flags || {}), "nextstep.v2": !!c.flag }; await json(route, j); };
+  await ctx.route("**/data/client.json*", clientStub);
+  await ctx.route("**/api/data/client*", clientStub);
   await ctx.route("**/data/sample/roster.json*", async (route) => {
     const j = await (await route.fetch()).json(), seat = (status, role, name) => ({ role, status, ...(name ? { character: { id: "t-me", name, class_key: "mage", class: "Mage", spec: "Frost", color: "#69ccf0" } } : {}) });
     j.group = { ...j.group, ...(c.group || {}) };

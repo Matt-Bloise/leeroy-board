@@ -3,7 +3,8 @@
 // Run: node --test tests/unit/sheets-reconcile.test.mjs
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { buildPartySheetsFromD1, recordSheetEventInD1, projectPublicParty, purgeWorkerCache } from "../../infrastructure/worker/index.js";
+import worker, { buildPartySheetsFromD1, recordSheetEventInD1, purgeWorkerCache } from "../../infrastructure/worker/index.js";
+import { projectForAnonymous } from "../../infrastructure/worker/public-party.js";
 import { reconcileSheetsWithDoc } from "../../infrastructure/worker/party-source.js";
 import { schemaDb } from "../helpers/sqlite-d1.mjs";
 
@@ -99,21 +100,21 @@ test("an anonymous GET /api/state lists the document member; a hidden field stay
   assert.ok(fox.fields.race, "the visible field still does");
 });
 
-test("hiding a class also removes class_key from the public document", () => {
+test("hiding a class also removes class_key from what is read", () => {
   const doc = { members: [{ name: "Red Fox", class: "Paladin", class_key: "paladin" }] };
-  projectPublicParty(doc, [{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin", false) } }], "red-fox", "class");
-  assert.equal(doc.members[0].class, undefined);
-  assert.equal(doc.members[0].class_key, undefined);
+  const out = projectForAnonymous(doc, [{ slug: "red-fox", name: "Red Fox", fields: { class: f("paladin", false) } }]);
+  assert.equal(out.members[0].class, undefined);
+  assert.equal(out.members[0].class_key, undefined);
+  assert.equal(doc.members[0].class_key, "paladin", "the stored document is not touched");
 });
 
 test("a hide reaches a renamed person, but not a distinct person with a similar name", () => {
   const doc = { members: [{ name: "Winton (alt)", class: "Paladin", class_key: "paladin" }] };
-  projectPublicParty(doc, [{ slug: "winton", name: "Winton", fields: { class: f("paladin", false) } }], "winton", "class");
-  assert.equal(doc.members[0].class, undefined, "renamed: hidden");
+  assert.equal(projectForAnonymous(doc, [{ slug: "winton", name: "Winton", fields: { class: f("paladin", false) } }]).members[0].class, undefined, "renamed: hidden");
   const two = { members: [{ name: "Winton", class: "Paladin", class_key: "paladin" }, { name: "Winton (alt)", class: "Mage", class_key: "mage" }] };
-  projectPublicParty(two, [{ slug: "winton", name: "Winton", fields: { class: f("paladin", false) } }, { slug: "winton-alt", name: "Winton (alt)", fields: { class: f("mage") } }], "winton", "class");
-  assert.equal(two.members[0].class, undefined);
-  assert.equal(two.members[1].class, "Mage", "the other person keeps theirs");
+  const out = projectForAnonymous(two, [{ slug: "winton", name: "Winton", fields: { class: f("paladin", false) } }, { slug: "winton-alt", name: "Winton (alt)", fields: { class: f("mage") } }]);
+  assert.equal(out.members[0].class, undefined);
+  assert.equal(out.members[1].class, "Mage", "the other person keeps theirs");
 });
 
 test("GET /api/bootstrap reads the party row once", async () => {
@@ -192,4 +193,13 @@ test("without a party document a write under a new slug never takes over a store
   const env = makeEnv({ stored, doc: null });
   await quiet(() => recordSheetEventInD1(env, ORIGIN, { slug: "winton-alt", name: "Winton (alt)", field: "level", value: 1 }));
   assert.deepEqual(kv(env, "party_sheets").map((r) => r.slug).sort(), ["winton", "winton-alt"]);
+});
+
+test("sheet-match.js (the cycle-free copy public-party.js uses) agrees with party-source.js", async () => {
+  const a = await import("../../infrastructure/worker/sheet-match.js");
+  const b = await import("../../infrastructure/worker/party-source.js");
+  const sheets = [{ slug: "winton", name: "Winton" }, { slug: "sam-h", name: "Sam (Horde)" }, { slug: "ada", name: "Ada" }];
+  const docs = [{ name: "Winton (alt)" }, { name: "Sam" }, { name: "Ada" }, { name: "Nobody" }, { name: "Sam (Horde)" }];
+  for (const m of docs) assert.equal(a.sheetForDocMember(sheets, docs, m), b.sheetForDocMember(sheets, docs, m), m.name);
+  for (const n of ["Winton (alt)", "Sam (Horde) ", "", "Ada"]) assert.equal(a.normName(n), b.normName(n));
 });
