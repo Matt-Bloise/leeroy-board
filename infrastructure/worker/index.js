@@ -34,12 +34,14 @@ import { gauge, handleGauge } from "./gauge.js";
 import { authenticate } from "./auth.js";
 import { invalidatePersonaCache } from "./persona.js";
 import { evalEnabled, validateEvalRequest, runEval } from "./eval.js";
-import { loadBudget, dailyCap, utcDayKey, askBudgetKeys, hashId } from "./budget.js";
+import { loadBudget, dailyCap, utcDayKey, hashId } from "./budget.js";
+import { askWallPlan } from "./research/no-wall.js";
 import { upsertMember } from "./members.js";
 import { updateKvJson, commitSheetWrite, KvConflictError } from "./kv-cas.js";
 import { readJsonCapped, questionTooLong, pickSignupPatch, upsertSignupEntry, MAX_QUESTION_CHARS } from "./limits.js";
 import { approveProposal, rejectProposal, describeProposal } from "./wiki-proposals.js";
 import { defaultDocRow } from "./default-docs.js";
+import { libraryGlossaryBody, LIBRARY_GLOSSARY_BLOB, LIBRARY_GLOSSARY_CACHE_PATH } from "./party-glossary.js";
 import { isPublicAtlasDoc, isPublicDataDoc, publicDataDoc, dataCachePath } from "./public-docs.js";
 import { feedOn, serveFeedDoc } from "./feed.js";
 import { CONFIG_KEYS, CONFIG_MAX_BYTES, invalidateConfigCache, isDeniedKvKey, isPrivateKvKey, loadConfigKey, validateConfigValue } from "./config.js";
@@ -215,6 +217,9 @@ function setCachedResponse(ctx, origin, path, resp, ttlMs = ISOLATE_CACHE_TTL_MS
     ctx.waitUntil(caches.default.put(cacheKey, stored));
   } catch {}
 }
+
+// Cached library paths that are not a category blob: the glossary has its own cache key. Spread into every library purge list.
+export const LIBRARY_PURGE_PATHS = Object.freeze(["/api/library/glossary.json", LIBRARY_GLOSSARY_CACHE_PATH]);
 
 export async function purgeWorkerCache(origin, paths = []) {
   // /api/state and /api/bootstrap carry every document, so any purge clears their isolate copies too (not only the edge cache below)
@@ -1320,11 +1325,13 @@ const worker = {
             : row.status === "answered"
             ? "answered"
             : "failed";
+        // The stored model carries diagnostic suffixes (" (after <provider>: <reason>)", " (failed: <reason>)", " [<reason>]"). The asker, a guest included, sees only the bare label.
+        const rowModel = String(row.model || "").replace(/ (?:\(after |\(failed|\[).*$/s, "") || null;
         const [provider, model] = isPrPreview
-          ? ["workers-ai", row.model || "workers-ai"]
-          : String(row.model || "").includes(":")
-            ? String(row.model).split(/:(.+)/)
-            : [resolveAiProvider(env), row.model || null];
+          ? ["workers-ai", rowModel || "workers-ai"]
+          : String(rowModel || "").includes(":")
+            ? String(rowModel).split(/:(.+)/)
+            : [resolveAiProvider(env), rowModel || null];
         let sources = [];
         try {
           sources = JSON.parse(row.cites_json || "[]");
@@ -1399,6 +1406,7 @@ const worker = {
               "/api/library/index.json",
               "/api/library/search.json",
               "/api/library/open.json",
+              ...LIBRARY_PURGE_PATHS,
               `/api/library/${r.refresh.category}.json`,
             ]);
             await broadcastToRoom(env, { type: "library", categories: cats, page: r.refresh.page });
@@ -1472,6 +1480,7 @@ const worker = {
           "/api/library/index.json",
           "/api/library/search.json",
           "/api/library/open.json",
+          ...LIBRARY_PURGE_PATHS,
           `/api/library/${category}.json`,
         ]);
         await broadcastToRoom(env, { type: "library", categories: [category], page: pageId });
@@ -1526,22 +1535,29 @@ const worker = {
 
       // 3. GET /library/:name -> Edge-cached library JSON blob from D1 `lib_blobs`
       if (req.method === "GET" && path.startsWith("/library/")) {
-        const name = decodeURIComponent(path.slice("/library/".length));
+        let name;
+        try { name = decodeURIComponent(path.slice("/library/".length)); } catch { return jsonResp({ error: "Library blob not found" }, 404, cors); }
+        // Blob names never hold whitespace or control characters. Those would be stripped when the cache key is built, so a trailing space or %00 could otherwise land on another blob's cache key.
+        if (/[\s\u0000-\u001f\u007f]/.test(name)) return jsonResp({ error: "Library blob not found" }, 404, cors);
         // seed.stamp is the deploy seed's bookkeeping row, not a Library document.
         if (name === "seed.stamp") return jsonResp({ error: `Library blob ${name} not found` }, 404, cors);
-        let resp = await getCachedResponse(url.origin, `/api/library/${name}`);
+        // The glossary is the one blob that is filtered on the way out (party-glossary.js): the stored row may hold text that names the vocabulary. Its cache entry has its own key
+        // (a copy cached unfiltered by an earlier deploy is never read) and a short lifetime, and a library write purges it (LIBRARY_PURGE_PATHS).
+        const isGlossary = name === LIBRARY_GLOSSARY_BLOB;
+        const cachePath = isGlossary ? LIBRARY_GLOSSARY_CACHE_PATH : `/api/library/${name}`;
+        let resp = await getCachedResponse(url.origin, cachePath);
         if (!resp) {
           const row = await env.DB.prepare("SELECT json, stamp FROM lib_blobs WHERE name = ?")
             .bind(name)
             .first();
           if (!row) return jsonResp({ error: `Library blob ${name} not found` }, 404, cors);
-          const ttl = name === "index.json" || name === "refresh.json" || name === "news.json" ? 30 : 3600;
-          resp = jsonResp(row.json, 200, {
+          const ttl = isGlossary ? 300 : name === "index.json" || name === "refresh.json" || name === "news.json" ? 30 : 3600;
+          resp = jsonResp(isGlossary ? libraryGlossaryBody(row.json) : row.json, 200, {
             ...cors,
-            ETag: `"${row.stamp}"`,
-            "Cache-Control": `public, max-age=${ttl}, s-maxage=${ttl * 4}, stale-while-revalidate=600`,
+            ETag: `"${row.stamp}${isGlossary ? "-f1" : ""}"`,
+            "Cache-Control": `public, max-age=${ttl}, s-maxage=${isGlossary ? ttl : ttl * 4}, stale-while-revalidate=${isGlossary ? 0 : 600}`,
           });
-          setCachedResponse(ctx, url.origin, `/api/library/${name}`, resp, ttl * 1000);
+          setCachedResponse(ctx, url.origin, cachePath, resp, ttl * 1000);
         } else {
           const headers = new Headers(resp.headers);
           for (const [k, v] of Object.entries(cors)) headers.set(k, v);
@@ -1878,7 +1894,8 @@ const worker = {
           };
           await broadcastToRoom(env, { type: "intent", item: intentItem });
 
-          const askBudget = askBudgetKeys({ userPart: isGuest ? guestHash : await hashId(memberSlug), guest: isGuest });
+          // ASK_RESEARCH on: a signed-in member is never walled (answerWithAi skips the verdict); a guest keeps the rate limit above and gets the guests' own budget keys (research/no-wall.js). Flag off: exactly askBudgetKeys.
+          const { budget: askBudget } = await askWallPlan(env, { isMember: !isGuest, userPart: isGuest ? guestHash : await hashId(memberSlug), guest: isGuest, preview: isPrPreview });
           ctx.waitUntil(
             answerWithAi({
               env,
@@ -1961,6 +1978,7 @@ const worker = {
             "/api/library/index.json",
             "/api/library/search.json",
             "/api/library/open.json",
+            ...LIBRARY_PURGE_PATHS,
             `/api/library/${pageRow.category}.json`,
           ]);
 

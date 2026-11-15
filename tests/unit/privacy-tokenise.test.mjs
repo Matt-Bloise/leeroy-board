@@ -294,10 +294,56 @@ test("tokens carry a per-request nonce; forged or bare tokens never restore a na
   const out = tokenise(typed, m1);
   assert.ok(!/[{}]/.test(out), out);
   assert.equal(detokenise(out, m1), out, "escaped forms must not be restored");
-  assert.equal(detokenise(`{P2} {P1} {P1.wrong} {ID} { p 1 }`, m1), "someone someone someone someone someone");
+  // nonce tolerance: a wrong nonce on a P index that exists in THIS map restores that member's display; everything else stays "someone"
+  assert.equal(detokenise(`{P2} {P1} {ID} { p 1 }`, m1), "someone someone someone someone");
   assert.equal(detokenise(`${m1.tokenFor(0)} ${m1.tokenFor(1)}'s ${m1.special.ALL} ${m1.special.INVITE} ${m1.special.GUILD} ${m1.special.ID}`, m1), "Thornwick Mossbeard's everyone a link the server someone");
-  assert.equal(detokenise(m1.tokenFor(0), m2), "someone", "another request's token is not honoured");
   assert.equal(detokenise(m1.tokenFor(7), m1), "someone");
+});
+
+test("nonce tolerance: a mis-copied nonce restores only when it has the shape of a real nonce (4 chars, digit 0-7 first and third) and the index is in THIS map", () => {
+  const m = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+  const wrong = (n, nonce) => `{P${n}.${nonce}}`;
+  assert.equal(detokenise(wrong(1, "702f"), m), "Thornwick", "wrong nonce, real shape, valid index");
+  assert.equal(detokenise(wrong(2, "1n70"), m), "Mossbeard");
+  assert.equal(detokenise(wrong(1, "702F"), m), "Thornwick", "case does not matter");
+  assert.equal(detokenise(wrong(1, NONCE), m), "Thornwick", "the right nonce still works");
+  for (const bad of ["a", "5", "702", "702f1", "abcd1234", "abcd", "name", "zzzz", "7a-b", ""]) {
+    assert.equal(detokenise(wrong(1, bad), m), "someone", `nonce "${bad}" is not a plausible nonce shape`);
+  }
+  assert.equal(detokenise(wrong(99, "702f"), m), "someone", "index not in this map");
+  assert.equal(detokenise(wrong(0, "702f"), m), "someone");
+  assert.equal(detokenise("{P1} { P1.702f } {P1 .702f} {p1.702f} {ID.702f} {ALL.702f}", m), "someone someone someone someone someone someone", "bare, spaced, lowercase and non-P kinds with a wrong nonce stay someone");
+  assert.equal(detokenise(`${wrong(1, "702f")} and ${wrong(2, "7a1b")} but ${wrong(50, "7a1b")}`, m), "Thornwick and Mossbeard but someone");
+  const other = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC });
+  assert.equal(detokenise(other.tokenFor(0), m), "Thornwick", "another request's token resolves by index only, never to anything outside this map");
+  assert.equal(detokenise("Wait for {P2.5} of the patch and use {P1.name} as a placeholder.", m), "Wait for someone of the patch and use someone as a placeholder.", "ordinary brace text is not restored (as before this change)");
+});
+
+test("nonce tolerance: generated nonces always have the shape the tolerance accepts", () => {
+  for (let i = 0; i < 3000; i++) assert.match(buildNameMap(FIC, null, { genericAliases: FIC_GENERIC }).nonce, /^[0-7][0-9a-z][0-7][0-9a-z]$/);
+});
+
+test("nonce tolerance: a shifted dot never matches a higher index ({P13.h4a} is not {P1.3h4a})", () => {
+  const members = Array.from({ length: 14 }, (_, i) => ({ display: `Zorbian${"abcdefghijklmn"[i]}${"qrstuvwxyzabcd"[i]}`, aliases: [], firstNames: [], discordIds: [], characterNames: [] }));
+  const m = buildNameMap(members, null, { nonce: "3h4a" });
+  assert.equal(m.tokenFor(0), "{P1.3h4a}");
+  assert.equal(detokenise("{P13.h4a}", m), "someone", "3-char nonce");
+  assert.equal(detokenise("{P13.h4a1}", m), "someone", "5-char nonce");
+  assert.equal(detokenise("{P1.3h4a}", m), members[0].display);
+  assert.equal(detokenise("{P13.3h4a}", m), members[12].display, "the exact token for index 13");
+});
+
+test("nonce tolerance: a user-typed token is escaped before tokenising, and its nonce is never restored when a model relays it", () => {
+  const m = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+  const out = tokenise("who is {P1.abcd} and {P2.k7f2} and { P1 . wxyz } and {P2.7a1b} and {P3.7A1B}?", m);
+  assert.ok(!/[{}]/.test(out), out);
+  assert.ok(out.includes("[P1.ABCD]") && out.includes("[P2.7A1B]"), out);
+  assert.equal(detokenise(out, m), out, "escaped text has no brace form to restore");
+  // a model relaying what the user typed, as braces, in any index or case
+  assert.equal(detokenise("{P2.7a1b}", m), "someone", "crafted nonce, same index");
+  assert.equal(detokenise("{P3.7A1B}", m), "someone", "crafted nonce, other case");
+  assert.equal(detokenise("{P1.7a1b}", m), "someone", "crafted nonce, other index");
+  assert.equal(detokenise("{P1.7a1c}", m), "Thornwick", "a plausible mis-copy the user did not type still restores");
 });
 
 test("unknown asker gets a token and the neutral display, never the raw string", () => {
@@ -540,4 +586,13 @@ test("scan: new files and tests contain no values from the live roster", () => {
       assert.ok(!re.test(src), `${f} contains a roster value (length ${v.length})`);
     }
   }
+});
+
+test("detokenise is a single pass: a restored display is never re-resolved", () => {
+  const members = [{ display: "{P2.7a1b}", aliases: [], firstNames: [], discordIds: [], characterNames: [] }, { display: "Mossbeard", aliases: [], firstNames: [], discordIds: [], characterNames: [] }];
+  const m = buildNameMap(members, null, { nonce: NONCE });
+  assert.equal(detokenise(`{P1.${NONCE}}`, m), "{P2.7a1b}", "a display that looks like a token stays as the display");
+  assert.equal(detokenise("{P1.702f}", m), "{P2.7a1b}", "same for a mis-copied nonce");
+  const f = buildNameMap(FIC, null, { genericAliases: FIC_GENERIC, nonce: NONCE });
+  assert.equal(detokenise("{{P1.702f}}", f), "{Thornwick}", "nested braces: the inner group restores once, the outer braces stay");
 });

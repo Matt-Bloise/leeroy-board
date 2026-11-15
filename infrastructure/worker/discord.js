@@ -10,7 +10,7 @@
 //   7.  `/countdown`  — Launch countdown with hype and stress test status
 //   8.  `/dates`      — Every WoW: Forever date we know, with certainty ratings
 //   9.  `/library`    — The reference threads: what's on the shelves and what's coming
-//   10. `/quiz`       — Random Pop Quiz question (spoiler bar or reaction reveal)
+//   10. `/quiz`       — Random Pop Quiz question (answer behind a spoiler bar)
 //   11. `/didyouknow` — Random did-you-know fact from the verified library
 //   12. `/build`      — Link to someone's build thread with party roster choices
 //   13. `/leeroy`     — The yell with channel cooldown: "LEEROOOOOOOOY JENKINS!"
@@ -24,13 +24,16 @@
 //   21. Context menus — "Ask Leeroy" & "Fix this fact" on any Discord message
 // =============================================================================
 
-import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS } from "./ai-models.js";
+import { answerWithAi, resolveAiProvider, ASK_DEADLINE_MS, isPrPreviewEnv } from "./ai-models.js";
+import { askWallPlan, memberLine, memberAck, guestLibraryOnly, MEMBER_FAILED_LINE } from "./research/no-wall.js";
+import { researchModeOn } from "./research/provider.js";
 import { loadPublicInputs, projectForAnonymous, projectLaunch } from "./public-party.js";
 import { answerUxEnabled } from "./answer-format.js";
 import { SLASH_COPY } from "./slash-copy.js";
+import { mapPlanChoices, resolveMapPlan, MAP_PLAN_ALIASES } from "./map-plan.js";
 import { isAnswerButtonId, handleAnswerButton, prepareAnswerButtons, newReqid, insertAskTurn } from "./answer-ux.js";
 import { MAX_QUESTION_CHARS } from "./limits.js";
-import { askBudgetKeys, hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
+import { hashId, checkAskBudget, loadAskCaps, budgetMessage } from "./budget.js";
 import { buildStartReply } from "./announce.js";
 import { resolveMember } from "./members.js";
 import { loadPersona, pickLine, helpIntro } from "./persona.js";
@@ -94,6 +97,14 @@ import { interestOn, askLevelButton, countsButton, askLevelModal, questionFromMo
 
 export const GOLD = 0xffd100; // WoW UI Gold
 export const LAUNCH_UTC = Date.UTC(2026, 10, 4, 23, 0, 0); // Wed Nov 4 2026, 6:00 PM EST
+// /tooltip: "Verified in" is true only when the page's title or an alias contains the name asked for; a facts-only hit is "Mentioned on".
+function tooltipNamedBy(row, name) {
+  const needle = String(name || "").trim().toLowerCase();
+  if (!needle) return false;
+  let aliases = [];
+  try { const a = JSON.parse((row && row.aliases_json) || "[]"); if (Array.isArray(a)) aliases = a; } catch { /* unreadable aliases: title only */ }
+  return [row && row.title, ...aliases].some((t) => typeof t === "string" && t.toLowerCase().includes(needle));
+}
 export const STRESS_UTC = Date.UTC(2026, 9, 21, 21, 0, 0); // Wed Oct 21 2026, 5:00 PM EDT
 
 // Channel cooldown tracking for /leeroy (in-memory per isolate)
@@ -175,7 +186,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
     description: "Open a place, zone or route plan on the Living Board Azeroth Atlas",
     options: [
       { name: "place", description: "Place or zone slug (e.g. orgrimmar, crossroads, tirisfal-glades)", type: 3, required: false, autocomplete: true },
-      { name: "plan", description: "Meeting route plan slug (e.g. vos, xroads)", type: 3, required: false, autocomplete: true },
+      { name: "plan", description: "Place to chart a route plan to (e.g. orgrimmar, the-crossroads, or a sign-up meeting point)", type: 3, required: false, autocomplete: true },
     ],
   },
   {
@@ -255,19 +266,7 @@ export const DISCORD_SLASH_COMMANDS_MANIFEST = [
   },
   {
     name: "quiz",
-    description: "One random Pop Quiz question (answer hidden)",
-    options: [
-      {
-        name: "reveal",
-        description: "How the answer shows",
-        type: 3,
-        required: false,
-        choices: [
-          { name: "Spoiler bar (default)", value: "spoiler" },
-          { name: "React with eyes to reveal", value: "reaction" },
-        ],
-      },
-    ],
+    description: "One random Pop Quiz question (answer behind a spoiler bar)",
   },
   {
     name: "didyouknow",
@@ -601,7 +600,7 @@ export async function patchOriginalWithRetry(interaction, content, components = 
 // the answer, or the persona error line plus "Try again in a moment" when the provider chain failed or the deadline
 // (ASK_DEADLINE_MS, 24s, under the roughly 30s waitUntil cap) passed. An answer that lands after the deadline is still
 // stored by answerWithAi in ask_turns (the website shows it) and is never sent a second time.
-export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "" }) {
+export async function answerAndDeliver({ env, interaction, intentId, persona, answer, wrap = (s) => s, isPrivate = false, askerId = "", memberOpen = false }) {
   const startedAt = Date.now();
   const deadlineMs = Number(env && env.ASK_DEADLINE_MS) > 0 ? Number(env.ASK_DEADLINE_MS) : ASK_DEADLINE_MS;
   const work = Promise.resolve().then(answer).then(() => "done", () => "failed");
@@ -624,8 +623,13 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
     } catch {}
   }
   if (!text) {
-    const line = pickLine(persona, "errorLines", intentId);
-    text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+    if (memberOpen) {
+      // ASK_RESEARCH on, a member: an in-voice line with no "try again", no limit, no time (research/no-wall.js).
+      text = memberLine(persona, intentId);
+    } else {
+      const line = pickLine(persona, "errorLines", intentId);
+      text = /try again/i.test(line) ? line : `${line} Try again in a moment.`;
+    }
   }
   // ANSWER_UX: More, Sources, Helpful and Off buttons on a real answer. Any failure here only means no buttons.
   const ux = answerUxEnabled(env);
@@ -664,7 +668,7 @@ export async function answerAndDeliver({ env, interaction, intentId, persona, an
 
 // Every interaction response goes through here: allowed_mentions off and content clamped.
 export async function handleDiscordInteraction(req, env, ctx, origin) {
-  const state = { verified: false, type: null };
+  const state = { verified: false, type: null, member: false };
   let res;
   try {
     res = await handleDiscordInteractionInner(req, env, ctx, origin, state);
@@ -673,9 +677,14 @@ export async function handleDiscordInteraction(req, env, ctx, origin) {
     if (!state.verified || state.type === 1) throw err;
     // Name and a fixed tag only: err.message can carry a slice of user input.
     console.error("Discord interaction failed:", String((err && err.name) || "Error"), "[interaction_catch]");
+    // ASK_RESEARCH on, a roster member: the old line says "before you try again"; a member never reads retry wording (research/no-wall.js). Everyone else, and flag off: unchanged.
+    let failedLine = SLASH_COPY.interactionFailed();
+    if (state.member && state.type !== 4) {
+      try { if (await researchModeOn(env, { preview: isPrPreviewEnv(env) })) failedLine = MEMBER_FAILED_LINE; } catch {}
+    }
     const body = state.type === 4
       ? { type: 8, data: { choices: [] } }
-      : { type: 4, data: { content: SLASH_COPY.interactionFailed(), flags: 64 } };
+      : { type: 4, data: { content: failedLine, flags: 64 } };
     // Falls through to hardenInteractionBody below, so the catch reply carries allowed_mentions too.
     res = new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   }
@@ -744,6 +753,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     "Guest";
   const membersConfig = await loadConfigKey(env, "discord_members");
   const member = resolveMember(user.id, rawUser, membersConfig); // null when the user is not a recognised party member
+  state.member = Boolean(member); // read by the catch in handleDiscordInteraction
   const byName = member ? member.name : String(rawUser).slice(0, 80);
   const intentSlug = member ? member.slug : "guest"; // attribution only for read-style writes (ask, fix this fact)
   // CARDS_ENABLED: flush a due board line and retry an unfinished card edit. Cheap D1 reads; the scheduled ticks do the same.
@@ -766,11 +776,12 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         headers: { "Content-Type": "application/json" },
       });
     }
-    const askBudget = askBudgetKeys({ userPart: await hashId(user.id) });
+    // ASK_RESEARCH on: a roster member is never walled (noWall); everyone else keeps the check, on the guests' budget keys (research/no-wall.js). Flag off: exactly askBudgetKeys.
+    const { research, noWall, budget: askBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) });
     // Per-user and per-tenant caps get a friendly ephemeral reply before anything is stored. The global cap keeps the in-voice flow below.
-    if (askBudget) {
+    if (askBudget && !noWall) {
       const verdict = await checkAskBudget(env, askBudget, await loadAskCaps(env), new Date(), { skipGlobal: provider !== "workers-ai" });
-      if (verdict && verdict.code !== "budget_global") {
+      if (verdict && verdict.code !== "budget_global" && !guestLibraryOnly(research, verdict)) { // research: a guest at the guests' share gets library facts from answerWithAi, not this refusal
         return new Response(JSON.stringify({ type: 4, data: { content: budgetMessage(verdict.code), flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -804,6 +815,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         persona,
         isPrivate,
         askerId: String(user.id || ""),
+        memberOpen: noWall,
         wrap: (a) => `${quoteQuestion(question)}\n\n${a}`,
         answer: () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question, provider, share: !isPrivate, budget: askBudget, isMember: Boolean(member), storeDetails: true }),
       })
@@ -812,7 +824,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     // With a persona pack: Type 4 with a thinking line, edited into the answer later. Otherwise Type 5 (Deferred Response)
     if (persona) {
       return new Response(
-        JSON.stringify({ type: 4, data: { content: pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
+        JSON.stringify({ type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId), ...(isPrivate ? { flags: 64 } : {}) } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -869,6 +881,13 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         JSON.stringify({ type: 8, data: { choices } }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    if (cmd === "map" && focused && focused.name === "plan") {
+      let signups = null;
+      try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+      const planChoices = mapPlanChoices(signups).filter((m) => m.name.toLowerCase().includes(query) || m.value.includes(query) || Object.entries(MAP_PLAN_ALIASES).some(([a, v]) => v === m.value && a.includes(query))).slice(0, 25).map((m) => ({ name: m.name, value: m.value }));
+      return new Response(JSON.stringify({ type: 8, data: { choices: planChoices } }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
     if (cmd === "map") {
@@ -1011,14 +1030,14 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
         {
           type: 1,
           components: [
-            { type: 2, style: 5, label: "Open Tonight on Board", url: `${boardUrl}/#tonight` },
+            { type: 2, style: 5, label: Date.now() >= LAUNCH_UTC ? "Open the Board" : "Open Tonight on Board", url: `${boardUrl}/#tonight` },
           ],
         },
       ];
       // INTEREST_NUDGES: one-tap answers. "I'm in" (the existing sign-up button) only before launch and while this member's RSVP is empty:
       // after launch the sign-up record is history, and a click would write rsvp:in into it.
       if (await interestOn(env)) {
-        const mine = (signups.entries || []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
+        const mine = (signups && Array.isArray(signups.entries) ? signups.entries : []).find((e) => String((e && e.name) || "").toLowerCase() === byName.toLowerCase()) || {};
         const beforeLaunch = Math.floor(Date.now() / 1000) < LAUNCH_EPOCH;
         const nudges = [...(member && beforeLaunch && !mine.rsvp ? [{ type: 2, style: 3, label: "I'm in tonight", custom_id: "signup:rsvp:in" }] : []), askLevelButton(), countsButton()];
         tonightRows.push({ type: 1, components: nudges });
@@ -1188,8 +1207,20 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     if (cmd === "map") {
       const place = getOpt("place").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
       const plan = getOpt("plan").toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
-      const hash = plan ? `#atlas.plan.${plan}` : place ? `#atlas.${place}` : "#atlas";
-      const label = plan ? `Meeting Route Plan (${plan})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
+      let planMeet = null;
+      if (plan) {
+        let signups = null;
+        try { const r = await env.DB.prepare("SELECT json FROM kv_state WHERE key = 'signups'").first(); signups = r ? JSON.parse(r.json) : null; } catch { /* unreadable sign-ups: the routable places alone */ }
+        planMeet = resolveMapPlan(plan, signups);
+      }
+      if (plan && !planMeet) {
+        return new Response(
+          JSON.stringify({ type: 4, data: { content: `No route plan for "${plan}". Pick a place from the \`plan\` list (e.g. \`orgrimmar\`, \`the-crossroads\`, \`valley-of-strength\`).`, flags: 64, allowed_mentions: ALLOWED_MENTIONS_NONE } }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const hash = planMeet ? `#atlas.plan.${planMeet.value}` : place ? `#atlas.${place}` : "#atlas";
+      const label = planMeet ? `Meeting Route Plan (${planMeet.value})` : place ? `Atlas Place (${place})` : "Azeroth Atlas";
       return new Response(
         JSON.stringify({
           type: 4,
@@ -1357,7 +1388,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
           name: "Free Server Stress Test",
           value: `<t:${stressSec}:F> (<t:${stressSec}:R>)\n**${humanDuration(toStress)}** to go. Battle.net > WoW > Game Version "World of Warcraft: Forever Stress Test".`,
         });
-      } else {
+      } else if (toLaunch > 0) {
         fields.push({
           name: "Character Name Reservation",
           value: "Names open for pack buyers: up to three characters per account until Nov 3.",
@@ -1443,13 +1474,11 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2j. `/quiz`
     if (cmd === "quiz") {
-      const reveal = getOpt("reveal") || "spoiler";
       const qList = QUIZ_DATA.questions || [];
       const q = qList[Math.floor(Math.random() * qList.length)] || qList[0];
       const head = `**${q.round}** #${q.n}`;
-      const content = reveal === "reaction"
-        ? `${head}\n${q.q}\n-# React with 👀 to reveal the answer. Full quiz on the Living Board.`
-        : `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
+      // Always the spoiler bar: the Worker has no reaction handling, so an old registered "reveal: reaction" choice is ignored.
+      const content = `${head}\n${q.q}\n||${q.a}||\n${SLASH_COPY.quizSpoilerFooter()}`;
 
       return new Response(
         JSON.stringify({ type: 4, data: { content } }),
@@ -1515,15 +1544,17 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
 
     // 2n. `/help`
     if (cmd === "help") {
+      // The mailbox commands are admin-only, so only an admin sees them (same check as /intents).
+      const staffHelp = (await rosterAdminCheck(env, interaction)).ok;
       const help = [
         helpIntro(await loadPersona(env), "**Leeroy Jenkins, party assistant.** Ask anything about WoW: Forever."),
         `**The Living Board:** [open it](<${boardUrl}>) in any browser, nothing to install.`,
-        "**Ask:** `/ask <question>` plus your question, or set `private: True` to keep the answer to yourself.",
+        "**Ask:** `/ask` with your question, or set `private: True` to keep the answer to yourself.",
         "**Ask about a message:** computer, right-click it; phone, press and hold it. Then Apps -> **Ask Leeroy** (or **Fix this fact**).",
-        "**Quick:** `/tonight` your launch night, `/countdown` the clock, `/dates` every date, `/signup` sign up, `/page` a library page, `/tooltip` a spell, `/map` the Atlas, `/library` the shelves.",
+        "**Quick:** `/tonight` " + (Date.now() >= LAUNCH_UTC ? "the launch-night recap" : "your launch night") + ", `/countdown` the clock, `/dates` every date, `/signup` sign up, `/page` a library page, `/tooltip` a spell, `/map` the Atlas, `/library` the shelves.",
         "**Fun:** `/quiz` Pop Quiz, `/didyouknow` random facts, `/build` party builds, `/leeroy` the yell.",
         "**Votes:** `/vote start` with a title and 2 to 5 choices separated by |; everyone presses buttons to vote.",
-        "**Worker Mailbox:** `/intents` view pending mailbox changes, `/ack` clear intents, `/answer` answer an ask turn.",
+        ...(staffHelp ? ["**Worker Mailbox (admins):** `/intents` view pending mailbox changes, `/ack` clear intents, `/answer` answer an ask turn."] : []),
         "-# Leeroy never pings anyone. At least he has chicken.",
       ].join("\n");
 
@@ -1598,7 +1629,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
     if (cmd === "tooltip") {
       const name = getOpt("name");
       const row = await env.DB.prepare(
-        "SELECT id, category, title FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
+        "SELECT id, category, title, aliases_json FROM lib_pages WHERE title LIKE ? ESCAPE '\\' OR aliases_json LIKE ? ESCAPE '\\' OR facts_json LIKE ? ESCAPE '\\' LIMIT 1"
       )
         .bind(likePattern(name), likePattern(name), likePattern(name))
         .first();
@@ -1624,7 +1655,7 @@ async function handleDiscordInteractionInner(req, env, ctx, origin, state = { ve
               {
                 color: GOLD,
                 title: `Tooltip: ${name}`,
-                description: `Verified in **${row.title}** (\`${row.category}\`).\nView the full tooltip and item stats on the Living Board.`,
+                description: `${tooltipNamedBy(row, name) ? "Verified in" : "Mentioned on"} **${row.title}** (\`${row.category}\`).\nView the full tooltip and item stats on the Living Board.`,
                 url: `${boardUrl}/#lib.${row.id}`,
               },
             ],
@@ -1861,20 +1892,22 @@ ${GATE_OFF_NOTE}` : ""}`,
       });
 
       const persona = await loadPersona(env);
+      const { noWall, budget: menuBudget } = await askWallPlan(env, { isMember: Boolean(member), userPart: await hashId(user.id), preview: isPrPreviewEnv(env) }); // same plan as /ask: no pre-check for a member, the guests' keys otherwise
       ctx.waitUntil(
         answerAndDeliver({
           env,
           interaction,
           intentId,
           persona,
+          memberOpen: noWall,
           wrap: (answerText) => `> **${byName} asked Leeroy about message:**\n> ${text.slice(0, 200)}\n\n${answerText}`,
           askerId: String(user.id || ""),
-          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: askBudgetKeys({ userPart: await hashId(user.id) }), isMember: Boolean(member), storeDetails: true }),
+          answer: async () => answerWithAi({ env, origin, intentId, by: byName, memberSlug: member ? member.slug : undefined, question: text, provider, share: true, budget: menuBudget, isMember: Boolean(member), storeDetails: true }),
         })
       );
 
       return new Response(
-        JSON.stringify(persona ? { type: 4, data: { content: pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
+        JSON.stringify(persona ? { type: 4, data: { content: noWall ? memberAck(persona, intentId) : pickLine(persona, "ackLines", intentId) } } : { type: 5, data: {} }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -1989,12 +2022,18 @@ ${GATE_OFF_NOTE}` : ""}`,
     if (!vote) return ephemeral("That vote no longer exists.");
     const nowMs = Date.now();
     if (parsed.action === "results") return ephemeral(`**${vote.title}**\n${tallyLines(vote).join("\n")}`);
-    if (!isOpen(vote, nowMs)) return ephemeral("That vote is closed. No new votes are counted.");
+    // A closed vote answers by updating the message itself, so the client's stale buttons turn disabled and "Closed." shows.
+    // If the stored vote cannot be rendered, fall back to the plain ephemeral "closed" answer.
+    const closedUpdate = (v) => {
+      try { return new Response(JSON.stringify({ type: 7, data: renderMessage(v, nowMs) }), { status: 200, headers: { "Content-Type": "application/json" } }); } catch { return ephemeral("That vote is closed. No new votes are counted."); }
+    };
+    if (!isOpen(vote, nowMs)) return closedUpdate(vote);
     const discordId = String(user.id || "");
     if (!discordId) return ephemeral("I can't tell who you are, so I can't count that vote.");
     if (saltProblems(env, ["USER_SALT"]).length) return ephemeral("Voting is unavailable: the Worker is missing its USER_SALT secret.");
     const result = castVote(vote, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
-    if (!result.ok) return ephemeral(result.error === "closed" ? "That vote is closed. No new votes are counted." : "That choice does not exist.");
+    // isOpen was checked above with the same nowMs, so castVote cannot report "closed" here.
+    if (!result.ok) return ephemeral("That choice does not exist.");
     await recordBallot(env.DB, vote.id, await voterHash(discordId, vote.id, env.USER_SALT), parsed.index, nowMs);
     const fresh = (await loadVote(env.DB, vote.id)) || result.vote; // re-read so the counts shown include ballots cast at the same moment
     await purgeWorkerCache(origin, ["/api/votes"]);
@@ -2101,7 +2140,7 @@ ${GATE_OFF_NOTE}` : ""}`,
   }
 
   return new Response(
-    JSON.stringify({ type: 4, data: { content: "Command received by Leeroy.", flags: 64 } }),
+    JSON.stringify({ type: 4, data: { content: "Nothing was done: Leeroy does not recognise that command or button.", flags: 64 } }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
 }

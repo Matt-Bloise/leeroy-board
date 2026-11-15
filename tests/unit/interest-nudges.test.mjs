@@ -300,7 +300,7 @@ test("flag on: the counts button shows the stored counts and writes nothing; fla
   assert.equal(JSON.stringify(db.raw.prepare("SELECT key, json FROM kv_state WHERE key != 'replay' ORDER BY key").all()), snap);
   assert.equal(outbound.length, 0, "no Discord call to show counts");
   const off = await send(interaction(3, { custom_id: COUNTS_BUTTON_ID, component_type: 2 }), chatEnv("off"));
-  assert.equal(off.data.content, "Command received by Leeroy.");
+  assert.match(off.data.content, /nothing was done/i);
 });
 
 // ---- review fixes (PR 326 review) -----------------------------------------------------------------------------------------------
@@ -450,4 +450,80 @@ test("countsReply stays under Discord's 2000-character limit at every size, with
     for (const l of lines.slice(1)) assert.ok(l.startsWith("\u2022") || /^and \d+ more$/.test(l), `a complete line only: ${l.slice(0, 40)}`);
     for (const l of bullets) assert.ok(/ (interested|reactions( \(.*\))?)$/.test(l), `line not cut: ${l.slice(-30)}`);
   }
+});
+
+// ---- flag-on defects found after PR 326 -------------------------------------------------------------------------------------------
+test("a 403 on one timed post's message read skips that post; the other counts still land (401 and 429 on a message still stop the run)", async () => {
+  const db = seeded();
+  const r = await run(db, fakeDiscord({ status: { [`/messages/${CARD_MSG}`]: 403 } }).fetchImpl);
+  assert.equal(r.ok, true);
+  assert.equal(r.wrote, true);
+  const row = kv(db, INTEREST_COUNTS_KEY);
+  assert.deepEqual(Object.keys(row.posts), ["moment:hype-post"]);
+  assert.equal(row.events["raid-night"].interested, 4);
+  assert.equal(row.failedAt, undefined);
+  for (const [code, stopped] of [[401, "unauthorized"], [429, "rate_limited"]]) {
+    const prev = withPrev(seeded());
+    const s = await run(prev, fakeDiscord({ status: { [`/messages/${CARD_MSG}`]: code } }).fetchImpl);
+    assert.equal(s.stopped, stopped);
+    assert.equal(kv(prev, INTEREST_COUNTS_KEY).at, PREV.at);
+  }
+});
+
+test("a 403 on the scheduled-events list still stops the run and keeps the last counts", async () => {
+  const db = withPrev(seeded());
+  const r = await run(db, fakeDiscord({ status: { "scheduled-events": 403 } }).fetchImpl);
+  assert.equal(r.stopped, "forbidden");
+  assert.equal(kv(db, INTEREST_COUNTS_KEY).at, PREV.at);
+  assert.ok(kv(db, INTEREST_COUNTS_KEY).failedAt);
+});
+
+test("any other non-OK answer to the scheduled-events list (400, 404, 408) fails the run: previous snapshot kept, failedAt set, no empty events written", async () => {
+  for (const code of [400, 404, 408]) {
+    const db = withPrev(seeded());
+    const r = await run(db, fakeDiscord({ status: { "scheduled-events": code } }).fetchImpl);
+    assert.equal(r.ok, false, `status ${code}`);
+    assert.equal(r.wrote, false);
+    const row = kv(db, INTEREST_COUNTS_KEY);
+    assert.equal(row.at, PREV.at, `status ${code}: at kept`);
+    assert.deepEqual(row.events, PREV.events);
+    assert.deepEqual(row.posts, PREV.posts);
+    assert.equal(row.failedAt, new Date(NOW).toISOString());
+  }
+});
+
+test("flag on: /tonight with a sign-ups row of JSON null still answers (before and after launch), with the ask and counts buttons", async () => {
+  for (const when of [BEFORE_LAUNCH, AFTER_LAUNCH]) {
+    const db = seeded();
+    seed(db, { signups: null });
+    const t = await atTime(when, () => send(interaction(2, { id: "c1", name: "tonight", type: 1 }), chatEnv("on", db)));
+    assert.equal(t.type, 4);
+    assert.doesNotMatch(t.data.content, /Something broke on my side/);
+    assert.ok(ids(t).includes(ASK_LEVEL_BUTTON_ID) && ids(t).includes(COUNTS_BUTTON_ID));
+  }
+});
+
+// ---- flag off stays byte-identical ----------------------------------------------------------------------------------------------------
+// The golden file was captured from master (before the flag-on fixes) with the flag unset, off, and a Flagship false binding.
+// Regenerate only on purpose: UPDATE_FLAG_OFF_GOLDEN=1 node --test tests/unit/interest-nudges.test.mjs
+test("flag off: /tonight and /signup replies are byte-identical to the master golden, before and after launch, with and without sign-ups", async () => {
+  const goldenPath = fileURLToPath(new URL("../fixtures/interest-nudges/flag-off-tonight-signup.json", import.meta.url));
+  const out = {};
+  for (const [label, when] of [["before", BEFORE_LAUNCH], ["after", AFTER_LAUNCH]]) {
+    for (const [sLabel, signupsRow] of [["none", undefined], ["empty", { entries: [] }], ["zib-maybe", SIGNUPS]]) {
+      for (const flag of [null, "off"]) {
+        const db = seeded();
+        if (signupsRow === undefined) db.raw.prepare("DELETE FROM kv_state WHERE key = 'signups'").run(); else seed(db, { signups: signupsRow });
+        for (const cmd of ["tonight", "signup"]) {
+          const body = await atTime(when, () => send(interaction(2, { id: "c9", name: cmd, type: 1 }), chatEnv(flag, db)));
+          const key = `${cmd}/${label}/${sLabel}`;
+          if (flag === null) out[key] = JSON.stringify(body);
+          else assert.equal(JSON.stringify(body), out[key], `${key}: flag "off" matches flag unset`);
+        }
+      }
+    }
+  }
+  if (process.env.UPDATE_FLAG_OFF_GOLDEN) fs.writeFileSync(goldenPath, JSON.stringify(out, null, 1) + "\n");
+  const golden = JSON.parse(fs.readFileSync(goldenPath, "utf8"));
+  assert.deepEqual(out, golden);
 });
