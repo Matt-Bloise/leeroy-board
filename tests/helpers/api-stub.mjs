@@ -9,6 +9,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fictionalise } from "./fictional-party.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const SNAPSHOT_PATH = path.join(here, "..", "fixtures", "api-snapshot", "snapshot.json");
 let cached = null;
@@ -22,7 +23,9 @@ export function repoDoc(key) {
   let f = path.join(DATA, m[1] === "data" ? "" : m[1], m[2]);
   // the five member documents are asked for WITHOUT an extension (js/board.js memberUrl: <brain>/data/<name>); the Worker answers them with nobody hiding, i.e. the repo file of the same name
   if (m[1] === "data" && !/\./.test(m[2]) && MEMBER_DOCS.has(m[2])) f = path.join(DATA, m[2] + ".json");
-  return existsSync(f) ? { status: 200, type: "application/json; charset=utf-8", body: readFileSync(f, "utf8") } : null;
+  // data/ documents are served with the member names swapped for fictional ones (tests/helpers/fictional-party.mjs), the same swap the recorded snapshot carries, so the repo documents and the snapshot agree
+  // and no browser suite's page, screenshot or log says which real person plays what.
+  return existsSync(f) ? { status: 200, type: "application/json; charset=utf-8", body: m[1] === "data" ? fictionalise(readFileSync(f, "utf8")) : readFileSync(f, "utf8") } : null;
 }
 export function loadSnapshot(file = SNAPSHOT_PATH) { return (cached ||= JSON.parse(readFileSync(file, "utf8"))); }
 

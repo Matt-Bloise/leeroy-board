@@ -1,5 +1,5 @@
 // Slice 0: docs/cinematic/intent.json is the intent register for the table (home board) and the Next steps scene.
-// Static checks always run. The coverage check opens both views in Chromium at 390x844 (static server, no API, no network beyond 127.0.0.1)
+// Static checks always run. The coverage check opens both views in Chromium at 390x844 (static server, API answered by the snapshot stub, no network beyond 127.0.0.1)
 // and fails if a visible region or visible text, image or control has no entry. It is skipped, with a printed reason, when no Chromium is installed
 // (the CI unit job installs the npm packages but not the browser): run it locally with `node --test tests/unit/intent-register.test.mjs`.
 import test from "node:test";
@@ -9,6 +9,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { installApiStub } from "../helpers/api-stub.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const reg = JSON.parse(fs.readFileSync(path.join(root, "docs/cinematic/intent.json"), "utf8"));
@@ -51,8 +52,9 @@ test("every visible element on both views is covered by an entry", async (t) => 
   const srv = spawn(process.execPath, [path.join(root, "tools/static-server.mjs"), String(port), root], { stdio: "ignore" });
   try {
     await new Promise((r) => setTimeout(r, 800));
-    const base = `http://127.0.0.1:${port}/?preview=1`;
+    const base = `http://127.0.0.1:${port}/?preview=1&brain=local`; // brain=local: the board asks /api on this origin, which the API stub below answers (there is no static party file)
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+    await installApiStub(ctx); // the member documents come from the Worker API only; the stub answers it from the snapshot and the checkout
     await ctx.route((u) => u.hostname !== "127.0.0.1", (r) => r.abort());
     // find uncovered visible elements: own text, controls, images, canvases, or a background image
     const uncovered = (page, entries) => page.evaluate((selectors) => {
@@ -78,7 +80,7 @@ test("every visible element on both views is covered by an entry", async (t) => 
     await fresh.close();
 
     const member = await ctx.newPage();
-    await member.addInitScript(() => { try { localStorage.setItem("board-as", "Santa"); localStorage.setItem("board-hinted", "1"); } catch { /* storage blocked */ } });
+    await member.addInitScript(() => { try { localStorage.setItem("board-as", "Brindle Oakhand"); localStorage.setItem("board-hinted", "1"); } catch { /* storage blocked */ } });
     await member.goto(base, { waitUntil: "load" });
     await member.waitForTimeout(3500);
     await member.click("#scene-close");

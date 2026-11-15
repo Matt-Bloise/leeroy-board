@@ -100,6 +100,19 @@ test("Pages: baseline security headers are served on the preview origin", async 
   await r.arrayBuffer();
 });
 
+// Member data is Worker-only (tools/pages-bundle.mjs): the member documents are not static files, so the Pages origin answers 404 for each, and the atlas links file ships without its start_zone records.
+test("Pages: the member data files are not published (404) and data/atlas/links.json carries no start_zone record", async () => {
+  for (const p of ["party", "decide", "tonight", "guided-atlas", "client"]) {
+    const r = await fetch(`${PAGES}/data/${p}.json`, { redirect: "manual" });
+    await r.arrayBuffer();
+    assert.equal(r.status, 404, `/data/${p}.json answered ${r.status}: member data must come from the Worker only`);
+  }
+  const l = await fetch(`${PAGES}/data/atlas/links.json`);
+  assert.equal(l.status, 200);
+  const j = await l.json();
+  assert.ok(Array.isArray(j.records) && !j.records.some((r) => r && r.kind === "start_zone"), "links.json still has start_zone records");
+});
+
 test("Pages: cache lifetimes by path, HTML always revalidated, stamped code immutable (atlas code and css too), atlas tiles and HTML not", async () => {
   const cc = async (path) => { const r = await fetch(`${PAGES}${path}`); assert.equal(r.status, 200, `${path} answered ${r.status}`); await r.arrayBuffer(); return r.headers.get("cache-control") || ""; };
   assert.match(await cc("/"), /max-age=0/);

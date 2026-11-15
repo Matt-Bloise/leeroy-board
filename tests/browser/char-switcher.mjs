@@ -10,6 +10,7 @@
 // Exit 0 when every check passes, 1 otherwise.
 import { pageUrl, originOf, dirOf } from "../helpers/page-url.mjs";
 import { stubbed } from "../helpers/browser-stub.mjs";
+import { repoDoc } from "../helpers/api-stub.mjs";
 const pw = await import("playwright").catch(() => { console.error("playwright not found; run npm install in tests/"); process.exit(2); });
 const { AxeBuilder } = await import("@axe-core/playwright").catch(() => { console.error("@axe-core/playwright not found; run npm install in tests/"); process.exit(2); });
 const argv = process.argv.slice(2), ui = argv.indexOf("--url");
@@ -61,7 +62,7 @@ const box = (page, sel) => page.locator(sel).first().boundingBox();
 const apart = (a, b) => !!a && !!b && (a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5 || a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5);
 
 const browser = stubbed(await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] } : {}));
-const first = await (await fetch(new URL("data/party.json", dirOf(BASE)))).json();
+const first = JSON.parse(repoDoc("/data/party").body); /* the checkout's party document, the same one the API stub serves: a deployed site publishes no static copy (member data is Worker-only) */
 const me = slug(first.members[0].name);
 
 /* off, signed out, one character: nothing new */

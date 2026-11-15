@@ -1,12 +1,15 @@
 // Tiny static file server for local browser runs (tools/local-browser.sh): serves the repo root like Cloudflare Pages does
 // (directory index, 404.html with status 404, no clean-URL redirects, the rules of the repo's _headers file joined per header as Pages does,
 // and Pages' default Cache-Control "public, max-age=0, must-revalidate" when no rule sets one). Listens on 127.0.0.1 only. No dependencies.
+// It also leaves out what the deploy leaves out (tools/pages-bundle.mjs): the member data files answer 404 and data/atlas/links.json is served reduced,
+// so a page or test that reads a private file over HTTP fails here as it would on leeroy.party.
 //   node tools/static-server.mjs [port=8080] [root=repo root]
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isPrivatePath, STRIPPED_FILES } from "./pages-bundle.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.argv[2] || 8080), ROOT = path.resolve(process.argv[3] || path.join(here, ".."));
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".avif": "image/avif", ".woff2": "font/woff2", ".woff": "font/woff", ".txt": "text/plain; charset=utf-8", ".xml": "application/xml", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon", ".mp3": "audio/mpeg", ".wasm": "application/wasm" };
@@ -31,10 +34,12 @@ http.createServer(async (req, res) => {
   try { rel = decodeURIComponent(new URL(req.url, "http://x").pathname); } catch { res.writeHead(400).end(); return; }
   const abs = path.join(ROOT, path.normalize(rel));
   if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) { res.writeHead(403).end(); return; }
-  const hit = await file(abs), notFound = !hit;
+  const repoRel = path.relative(ROOT, abs).split(path.sep).join("/"), isPrivate = isPrivatePath(repoRel);
+  const hit = isPrivate ? null : await file(abs), notFound = !hit;
   const target = hit || (await file(path.join(ROOT, "404.html")));
   if (!target) { res.writeHead(404, { "content-type": "text/plain" }).end("not found"); return; }
-  const body = await readFile(target);
+  let body = await readFile(target);
+  if (hit && repoRel in STRIPPED_FILES) body = Buffer.from(STRIPPED_FILES[repoRel](body.toString("utf8")));
   res.writeHead(notFound ? 404 : 200, { "cache-control": "public, max-age=0, must-revalidate", ...ruleHeaders(rel), "content-type": TYPES[path.extname(target).toLowerCase()] || "application/octet-stream" });
   res.end(req.method === "HEAD" ? undefined : body);
 }).listen(PORT, "127.0.0.1", () => console.log(`static server on http://127.0.0.1:${PORT}/ (root ${ROOT})`));
